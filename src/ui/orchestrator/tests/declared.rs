@@ -1573,10 +1573,11 @@ impl Extension for Fetcher {
         ]
     }
 
-    fn absorb(&mut self, answer: uze_extensions::contract::Opaque) {
+    fn absorb(&mut self, answer: uze_extensions::contract::Opaque) -> Outcome {
         if let Some(said) = answer.downcast::<String>() {
             self.said.push(said);
         }
+        Outcome::Stay
     }
 }
 

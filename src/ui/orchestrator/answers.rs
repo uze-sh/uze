@@ -502,7 +502,11 @@ impl WorkspaceModel {
         let Some(engine) = self.remembered.declared.engines.get_mut(&answer.extension) else {
             return false;
         };
-        engine.absorb(answer.answer);
+        if let uze_extensions::contract::Outcome::Failed { title, detail } =
+            engine.absorb(answer.answer)
+        {
+            self.say_failed(&title, detail);
+        }
         true
     }
 

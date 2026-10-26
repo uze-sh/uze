@@ -290,30 +290,30 @@ impl Extension for SpecExtension {
         crate::contract::Lanes::Parallel
     }
 
-    fn absorb(&mut self, answer: Opaque) {
+    fn absorb(&mut self, answer: Opaque) -> Outcome {
         let answer = match answer.0.downcast::<SpecRead>() {
             Ok(read) => {
                 if let Some(open) = self.open.as_mut().filter(|open| open.root == read.root) {
                     open.view.absorb(read.answer);
                 }
-                return;
+                return Outcome::Stay;
             }
             Err(other) => Opaque(other),
         };
         let Some(read) = answer.downcast::<SummaryRead>() else {
-            return;
+            return Outcome::Stay;
         };
         if self.counting.as_ref() == Some(&read.cwd) {
             self.counting = None;
         }
-        if self.focus.as_ref().map(|focus| &focus.root) != Some(&read.cwd) {
-            return;
+        if self.focus.as_ref().map(|focus| &focus.root) == Some(&read.cwd) {
+            self.counted = Some(Counted {
+                cwd: read.cwd,
+                summary: read.summary,
+                at: Instant::now(),
+            });
         }
-        self.counted = Some(Counted {
-            cwd: read.cwd,
-            summary: read.summary,
-            at: Instant::now(),
-        });
+        Outcome::Stay
     }
 
     fn place(&self, surface: &str) -> Option<Opaque> {

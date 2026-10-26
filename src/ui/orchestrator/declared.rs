@@ -764,6 +764,7 @@ impl WorkspaceModel {
                     self.show_surface(id, &surface);
                 }
             }
+            Outcome::Failed { title, detail } => self.say_failed(&title, detail),
         }
         self.dirty = true;
     }
@@ -783,6 +784,11 @@ impl WorkspaceModel {
         if let Some(id) = shown {
             open_declared(self, id);
         }
+    }
+
+    /// What a surface says went wrong, as a toast: it may have closed.
+    pub(super) fn say_failed(&mut self, title: &str, detail: String) {
+        self.raise_toast(ToastKind::Failed, title, detail, None);
     }
 
     /// Text a surface asked to have copied: on the clipboard, and said.

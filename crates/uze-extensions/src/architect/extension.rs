@@ -192,13 +192,14 @@ impl Extension for ArchitectExtension {
         }]
     }
 
-    fn absorb(&mut self, answer: Opaque) {
+    fn absorb(&mut self, answer: Opaque) -> Outcome {
         let Some(read) = answer.downcast::<ArtifactsRead>() else {
-            return;
+            return Outcome::Stay;
         };
         if let Some(open) = self.open.as_mut().filter(|open| open.root == read.root) {
             open.view.absorb(read.answer);
         }
+        Outcome::Stay
     }
 
     fn place(&self, surface: &str) -> Option<Opaque> {

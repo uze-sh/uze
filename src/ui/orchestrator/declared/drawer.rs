@@ -254,6 +254,7 @@ impl WorkspaceModel {
                     self.show_surface(id, &surface);
                 }
             }
+            Outcome::Failed { title, detail } => self.say_failed(&title, detail),
         }
         self.dirty = true;
     }

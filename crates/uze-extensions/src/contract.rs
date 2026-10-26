@@ -55,6 +55,23 @@ pub enum Outcome {
     /// front: a summary in the sidebar sending the viewer to what it
     /// counts.
     Show(String),
+    /// Say this went wrong, wherever the viewer is now: a write that
+    /// failed must not pass unsaid, even once its surface has closed.
+    Failed {
+        title: String,
+        detail: String,
+    },
+}
+
+/// How a full-frame surface is entered: by one of the doors it offers, or
+/// sent to a path another surface pointed at.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Entry {
+    /// The extension's own name for a way in, which a person chose before
+    /// pressing anything: reviewing or navigating.
+    Door(String),
+    /// `target`, inside the checkout the surface opens on.
+    Path { target: PathBuf, directory: bool },
 }
 
 /// The checkout a full-frame surface opens on, as the host found it in
@@ -143,6 +160,22 @@ pub trait Extension: Send {
     /// handed back to it.
     fn open(&mut self, _surface: &str, _checkout: &Checkout) {}
 
+    /// `entry` was used on `surface`: before it opens, it says how it
+    /// opens; while it stands, a door pressed again may close it or show
+    /// the other half.
+    fn enter(&mut self, _surface: &str, _entry: Entry) -> Outcome {
+        Outcome::Stay
+    }
+
+    /// Whether a letter pressed on `surface` is text rather than a
+    /// shortcut: everything behind it is sealed while it is.
+    fn typing(&self, _surface: &str) -> bool {
+        false
+    }
+
+    /// Text pasted while `surface` is typing.
+    fn paste(&mut self, _surface: &str, _text: &str, _space: Size) {}
+
     /// The checkout in front of the viewer, told on every pass of the
     /// host's loop: what a section about the work in front reads from.
     /// `None` when no agent's checkout is in front, or when the operator
@@ -195,13 +228,11 @@ pub trait Extension: Send {
         Lanes::Serial
     }
 
-    /// A job's answer, while its surface is still open.
-    fn absorb(&mut self, _answer: Opaque) {}
-
-    /// A job's answer that arrived after its surface closed. A write that
-    /// failed is still worth saying; a read that finished is not.
-    fn orphaned(&mut self, _answer: Opaque) -> Option<Outcome> {
-        None
+    /// A job's answer, whether or not its surface is still open: one that
+    /// closed drops a read that finished, and still says a write that
+    /// failed.
+    fn absorb(&mut self, _answer: Opaque) -> Outcome {
+        Outcome::Stay
     }
 
     /// Where the viewer was on `surface`, handed back on reopening.
