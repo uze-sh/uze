@@ -1,8 +1,8 @@
 //! The workspace's extensions as this machine has them: which ones the
 //! operator switched off, the declared ones installed plugins carry —
 //! where their files are and what they compile to — what the operator
-//! accepted for each and where it is enabled. What an extension draws is
-//! the client's.
+//! accepted for each and where it is enabled, and the checkout one may
+//! read. What an extension draws is the client's.
 
 use std::collections::BTreeSet;
 
@@ -13,12 +13,14 @@ use uze_workspace::extensions;
 use super::services::Extensions;
 
 mod checked;
+mod checkout;
 mod compiled;
 mod consent;
 mod installed;
 mod summary;
 
 pub use checked::{CheckedExtension, Overlay};
+pub use checkout::{ExtensionCheckout, NotACheckout};
 pub use compiled::{ExtensionLoad, FIXTURE_LIMIT, SourceData, extension_stamp};
 pub use consent::{
     Asker, Consented, ExtensionConsent, ExtensionStanding, ExtensionState, Switched, consent_key,
