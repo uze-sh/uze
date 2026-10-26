@@ -27,6 +27,17 @@ const GLOB_PATTERN: usize = 1024;
 const GLOB_PATH: usize = 4096;
 
 pub(crate) fn register(engine: &mut Engine, limits: &Limits) {
+    // Shadows `MoreStringPackage`'s `pad`, which in rhai 1.27.0 loops
+    // forever on an empty padding (rhai#1195, unreleased): a native loop the
+    // operation count never sees would hold a pool lane for good. Drop it
+    // once the fixed release is in the lock.
+    let string_size = limits.string_size;
+    engine.register_fn(
+        "pad",
+        move |text: &mut ImmutableString, len: rhai::INT, padding: &str| -> Answer<()> {
+            pad(text, len, padding, string_size)
+        },
+    );
     engine.register_fn("lines", |text: &str| -> Array {
         text.lines()
             .map(|line| Dynamic::from(line.to_owned()))
@@ -251,6 +262,36 @@ fn unquote(value: &str) -> ImmutableString {
     } else {
         value.into()
     }
+}
+
+/// Pads `text` to `len` characters with `padding` repeated, as Rhai's own
+/// `pad` does, refusing an empty padding and a length past the string bound.
+fn pad(
+    text: &mut ImmutableString,
+    len: rhai::INT,
+    padding: &str,
+    string_size: usize,
+) -> Answer<()> {
+    if padding.is_empty() {
+        return Err(failure("`pad` needs a padding of at least one character"));
+    }
+    let Ok(len) = usize::try_from(len) else {
+        return Ok(());
+    };
+    let have = text.chars().count();
+    if len <= have {
+        return Ok(());
+    }
+    if len > string_size {
+        return Err(failure(format!(
+            "`pad` to {len} characters is past the string bound of {string_size} bytes"
+        )));
+    }
+    let mut padded = String::with_capacity(text.len() + (len - have) * padding.len());
+    padded.push_str(text);
+    padded.extend(padding.chars().cycle().take(len - have));
+    *text = padded.into();
+    Ok(())
 }
 
 #[cfg(test)]

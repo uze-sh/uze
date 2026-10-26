@@ -360,3 +360,31 @@ fn an_answer_costs_what_d28_measured() {
         "slowest answer {slowest:?}"
     );
 }
+
+/// Rhai 1.27.0's `pad` loops forever on an empty padding string (fixed
+/// upstream in #1195, unreleased): a native loop the operation count never
+/// sees, which would hold a pool lane for good.
+#[test]
+fn padding_with_nothing_fails_instead_of_hanging() {
+    let (sent, received) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sent.send(answer(
+            r#"fn answer(input, context) { let text = "ab"; text.pad(10, ""); #{ data: text } }"#,
+            &Grants::new(),
+        ));
+    });
+    let outcome = received
+        .recv_timeout(Duration::from_secs(5))
+        .expect("pad with an empty string hung");
+    assert!(outcome.is_err(), "{outcome:?}");
+}
+
+#[test]
+fn padding_still_pads() {
+    let envelope = answer(
+        r#"fn answer(input, context) { let text = "ab"; text.pad(5, "xy"); #{ data: text } }"#,
+        &Grants::new(),
+    )
+    .unwrap();
+    assert_eq!(envelope.data, json!("abxyx"));
+}
