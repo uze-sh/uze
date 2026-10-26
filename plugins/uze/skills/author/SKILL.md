@@ -107,7 +107,10 @@ each; `--mcp` adds an `mcp.json` and a working stdio server stub under
 `board.kdl` view both draw, the `fixtures/board.json` it is bound to, and
 `tests/board.test.kdl` with the snapshot its first test takes (the id is
 lowercase with single hyphens, and `code`, `architect`, `spec` and `uze`
-are taken). There is no
+are taken). Writing the extension itself (its manifest, a script, its
+grants, its tests, and the consent it needs before it runs) is the
+`uze:extension` Skill's subject: follow it from here, and come back for
+check, install and update. There is no
 `--instructions`: a plugin's own `AGENTS.md` reaches no project, and the
 flag is refused naming an `always_on` rule. Every generated file carries commented field
 documentation. A file the plugin ships is named `${PLUGIN_ROOT}/…` in
@@ -209,7 +212,7 @@ the language server's hover:
 - data: `List`, `Table`, `Details`/`Entry`
 - measures: `Progress`/`Segment`, `Gauge`, `Chart`, `Pips`, `Stat`
 - status: `Badge`, `Marks`/`Mark`, `Activity`, `Elapsed`
-- input: `Toggle`, `Button` (recorded, not run, in this protocol)
+- input: `Toggle`, `Button` (runs the declared action its `action` names; see `uze:extension`)
 
 Colour is always a role (`muted`, `warning`, `{tone:state}`), never a
 value. `ui.` and `context.` are scopes: a fixture field named `context`

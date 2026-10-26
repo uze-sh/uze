@@ -298,6 +298,7 @@ fn package_uze_plus_skill_uze_naturally_gets_the_stable_label_no_special_case() 
         vec![
             uze_core::path::file_name_for("uze:architect"),
             uze_core::path::file_name_for("uze:author"),
+            uze_core::path::file_name_for("uze:extension"),
             uze_core::path::file_name_for("uze:init"),
             uze_core::path::file_name_for("uze:rules"),
             uze_core::path::file_name_for("uze:worktree"),
