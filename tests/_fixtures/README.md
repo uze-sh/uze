@@ -36,7 +36,9 @@ old `packages/` set hard to reason about.
   (`extensions/gsd-band/`: a `board` view (`board.kdl`: the milestone's bar,
   a table of its six phases, the phase in progress and its activity) and a
   compact `summary` section (`summary.kdl`), both fed by
-  `fixtures/milestone.json`). Installed from a
+  `fixtures/milestone.json`; a `state` source answered by `state.rhai`
+  under `read:checkout`, and a `refresh` action, which nothing runs until
+  scripts do). Installed from a
   linked marketplace by `tests/lifecycle/declared_extension.rs`, by the
   workspace's real-engine test in `src/ui/orchestrator/tests/declared.rs`
   and by the journey

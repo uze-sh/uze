@@ -48,8 +48,48 @@ const MANIFEST_NODES: &[(&str, &str)] = &[
     ),
     (
         "source",
-        "Where a surface's data comes from: `source \"<id>\" { fixture \"…\"; }`.",
+        "Where a surface's data comes from: `source \"<id>\" { script \"….rhai\"; }`.",
     ),
+    (
+        "action",
+        "Something the operator can do on a surface: `action \"<id>\" label=… on=… { refresh \"<source>\"; }`.",
+    ),
+    (
+        "wants",
+        "What the extension reaches beyond drawing: `read:checkout`, `clipboard`, `open-path`.",
+    ),
+];
+const SOURCE_NODES: &[(&str, &str)] = &[
+    ("script", "A Rhai file whose `answer` returns the data."),
+    ("fixture", "A JSON file the source is fed by."),
+    ("input", "What it is asked with: `input name=\"{field}\"`."),
+    (
+        "every",
+        "How often it is asked again while shown: `every \"10s\"`, at least 5s.",
+    ),
+    (
+        "refresh-on",
+        "What asks it again: `\"paths.changed\" \"<path>\"` or `\"checkout.changed\"`.",
+    ),
+];
+const ACTION_PROPS: &[(&str, &str)] = &[
+    ("label", "What the footer and menus call it."),
+    ("on", "The surface it is offered on."),
+    (
+        "key",
+        "The key it suggests, such as `ctrl-r`; bound only where it is free.",
+    ),
+    ("confirm", "The question asked before it runs."),
+];
+const ACTION_NODES: &[(&str, &str)] = &[
+    ("script", "A Rhai file whose `answer` runs the action."),
+    ("refresh", "The sources it asks again."),
+    (
+        "clipboard",
+        "The text it copies, with `{field}` references.",
+    ),
+    ("open-path", "The file inside the checkout it opens."),
+    ("open", "The surface of this extension it opens."),
 ];
 const SURFACE_PROPS: &[(&str, &str)] = &[
     ("slot", "Where it is drawn: `view`, `section` or `drawer`."),
@@ -90,11 +130,14 @@ pub(crate) fn completions(kind: FileKind, text: &str, offset: usize, fields: &Va
                 .iter()
                 .map(|(name, doc)| item(name, KIND_KEYWORD, doc))
                 .collect(),
-            [.., parent] if parent == "source" => vec![item(
-                "fixture",
-                KIND_KEYWORD,
-                "A JSON file the source is fed by.",
-            )],
+            [.., parent] if parent == "source" => SOURCE_NODES
+                .iter()
+                .map(|(name, doc)| item(name, KIND_KEYWORD, doc))
+                .collect(),
+            [.., parent] if parent == "action" => ACTION_NODES
+                .iter()
+                .map(|(name, doc)| item(name, KIND_KEYWORD, doc))
+                .collect(),
             _ => Vec::new(),
         },
         (At::NodeName { .. }, FileKind::Test) => match located.path.as_slice() {
@@ -150,6 +193,10 @@ fn properties(kind: FileKind, located: &Located) -> Vec<Value> {
     };
     match kind {
         FileKind::Manifest if node == "surface" => SURFACE_PROPS
+            .iter()
+            .map(|(name, doc)| item(name, KIND_PROPERTY, doc))
+            .collect(),
+        FileKind::Manifest if node == "action" => ACTION_PROPS
             .iter()
             .map(|(name, doc)| item(name, KIND_PROPERTY, doc))
             .collect(),
@@ -328,6 +375,9 @@ pub(crate) fn hover(kind: FileKind, word: &str) -> Option<String> {
         FileKind::Manifest => MANIFEST_NODES
             .iter()
             .chain(SURFACE_PROPS)
+            .chain(SOURCE_NODES)
+            .chain(ACTION_PROPS)
+            .chain(ACTION_NODES)
             .find(|(name, _)| *name == word)
             .map(|(name, doc)| format!("**{name}**\n\n{doc}")),
     }
@@ -416,6 +466,10 @@ mod tests {
         assert!(steps.contains(&"expect-text".to_owned()), "{steps:?}");
         let slots = at_cursor(FileKind::Manifest, "surface \"b\" slot=\"|", &Value::Null);
         assert_eq!(slots, ["view", "section", "drawer"]);
+        let answers = at_cursor(FileKind::Manifest, "source \"b\" {\n    s|", &Value::Null);
+        assert!(answers.contains(&"script".to_owned()), "{answers:?}");
+        let does = at_cursor(FileKind::Manifest, "action \"r\" {\n    r|", &Value::Null);
+        assert!(does.contains(&"refresh".to_owned()), "{does:?}");
     }
 
     #[test]

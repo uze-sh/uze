@@ -151,6 +151,17 @@ fn the_gsd_band_is_found_in_the_working_tree_compiled_once_and_drawn_from_its_fi
     fs::remove_file(&cached[0]).unwrap();
 
     let fixtures = app.extensions().fixtures(&band, &compiled);
+    assert_eq!(
+        compiled
+            .manifest
+            .source("state")
+            .and_then(|state| state.script()),
+        Some("state.rhai")
+    );
+    assert!(
+        !fixtures.contains_key("state"),
+        "a script source has no data until scripts run"
+    );
     let data = fixtures["milestone"].as_ref().expect("the fixture is read");
     assert_eq!(data["phases"].as_array().map(Vec::len), Some(6));
 

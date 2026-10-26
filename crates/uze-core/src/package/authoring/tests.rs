@@ -540,6 +540,9 @@ fn a_scaffolded_extension_compiles() -> Result<()> {
         .collect();
     assert_eq!(surfaces, ["board", "summary"]);
     assert!(found[0].dir.join("fixtures/board.json").is_file());
+    let live = compiled.manifest.source("live").expect("a script source");
+    assert_eq!(live.script(), Some("board.rhai"));
+    assert!(found[0].dir.join("board.rhai").is_file());
     fs::remove_dir_all(&root).expect("teardown");
     Ok(())
 }
@@ -551,7 +554,7 @@ fn a_reserved_or_malformed_extension_id_is_refused_before_any_write() -> Result<
     let _git_identity = git_identity();
     let root = scratch("authoring-extension-reserved");
     let market = scaffold_marketplace("tools", None, &root.join("market"))?;
-    for id in ["code", "uze", "Board", "../board"] {
+    for id in ["code", "uze", "timeline", "Board", "../board"] {
         let refused = scaffold_plugin(
             &market,
             "greet",

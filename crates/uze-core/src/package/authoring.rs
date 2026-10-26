@@ -429,8 +429,8 @@ fn refuse_an_extension_id(id: &str) -> Result<()> {
     Ok(())
 }
 
-/// `extensions/<id>/`: a manifest declaring a view and a section over one
-/// source, the view both draw, the fixture that source answers with, and
+/// `extensions/<id>/`: a manifest declaring a view over a fixture and a
+/// section over a script, the view both draw, the fixture, the script, and
 /// tests of the view.
 fn write_extension_files(plugin_root: &Path, id: &str) -> Result<()> {
     let extension = plugin_root
@@ -449,6 +449,10 @@ fn write_extension_files(plugin_root: &Path, id: &str) -> Result<()> {
     write_file(
         &fixtures.join("board.json"),
         include_str!("authoring/board.json"),
+    )?;
+    write_file(
+        &extension.join("board.rhai"),
+        include_str!("authoring/board.rhai"),
     )?;
     let tests = extension.join(crate::capability::extension::TESTS_DIR);
     create_dir(&tests)?;

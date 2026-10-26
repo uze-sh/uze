@@ -686,6 +686,7 @@ fn a_scaffolded_extension_passes_its_own_check() {
         "extension.kdl",
         "board.kdl",
         "fixtures/board.json",
+        "board.rhai",
         "tests/board.test.kdl",
         "tests/snapshots/board.view.100x30.dark.snap",
     ] {
@@ -873,6 +874,65 @@ fn check_places_an_extensions_errors_and_what_its_fixture_lacks() {
         "{output}"
     );
     assert!(output.contains("check failed (1 problem)"), "{output}");
+    let _ = fs::remove_dir_all(root);
+}
+
+/// The manifest's grants, sources and actions are checked as the install
+/// checks them: a grant a later change brings, a program, a source asked
+/// too often and a confirmed action on a bare key each fail the check,
+/// placed in `extension.kdl`.
+#[test]
+fn check_reports_what_a_manifest_may_not_run_yet() {
+    let root = uze_testkit::temp::scratch("authoring-cli-extension-grants");
+    let at = root.join("my-market");
+    assert!(
+        create_marketplace(&root, &at)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    assert!(
+        uze(&root)
+            .args([
+                "agent",
+                "plugin",
+                "create",
+                "greet",
+                "--market",
+                "tools",
+                "--extension",
+                "board",
+            ])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let plugin = at.join("plugins/greet");
+    let manifest = plugin.join("extensions/board/extension.kdl");
+    let written = fs::read_to_string(&manifest).unwrap();
+    fs::write(
+        &manifest,
+        written.replace("every \"30s\"", "every \"2s\"")
+            + "wants \"net\" \"write:checkout\"\n"
+            + "source \"meter\" { run \"./bin/meter\"; }\n"
+            + "action \"wipe\" label=\"Wipe\" on=\"board\" key=\"w\" confirm=\"Wipe it?\" { refresh \"live\"; }\n",
+    )
+    .unwrap();
+
+    let (passed, output) = check(&root, &plugin);
+    assert!(!passed, "{output}");
+    for said in [
+        "`every` is at least 5s",
+        "`net` arrives in a later change (change 8)",
+        "`write:checkout` does not exist",
+        "programs arrive in a later change (change 5)",
+        "its key needs a modifier, not a bare `w`",
+    ] {
+        assert!(output.contains(said), "{said}: {output}");
+    }
+    assert!(output.contains("check failed (5 problems)"), "{output}");
     let _ = fs::remove_dir_all(root);
 }
 

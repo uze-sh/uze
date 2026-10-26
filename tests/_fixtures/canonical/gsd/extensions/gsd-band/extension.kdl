@@ -3,9 +3,21 @@ id "gsd-band"
 name "GSD"
 description "The checkout's GSD milestone: every phase, where it stands, and what to run next"
 
+wants "read:checkout"
+
 surface "board" slot="view" view="board.kdl" source="milestone" title="Milestone"
 surface "summary" slot="section" view="summary.kdl" source="milestone" title="GSD"
 
 source "milestone" {
     fixture "fixtures/milestone.json"
+}
+
+source "state" {
+    script "state.rhai"
+    every "10s"
+    refresh-on "paths.changed" ".planning"
+}
+
+action "refresh" label="Refresh" on="board" key="ctrl-r" {
+    refresh "milestone" "state"
 }

@@ -7,10 +7,19 @@ name "{EXTENSION_ID}"
 description "A board drawn from one source."
 
 // A `view` opens full-frame from the workspace's tab strip; a `section` is
-// a block of the sidebar. Both draw `board.kdl` over the `board` source.
+// a block of the sidebar. Both draw `board.kdl`.
 surface "board" slot="view" view="board.kdl" source="board"
-surface "summary" slot="section" view="board.kdl" source="board" title="{EXTENSION_ID}"
+surface "summary" slot="section" view="board.kdl" source="live" title="{EXTENSION_ID}"
 
 // A source's fixture is a sample of what it answers, drawn until a real
 // source exists. Every field a view names should be in it.
 source "board" { fixture "fixtures/board.json"; }
+
+// A script is the real source: `board.rhai` answers with the same fields,
+// asked again every 30 seconds while the section is visible. It runs once
+// the extension is enabled in a project; until then the section waits.
+source "live" {
+    script "board.rhai"
+    input title="This week"
+    every "30s"
+}
