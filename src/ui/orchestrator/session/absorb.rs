@@ -429,6 +429,7 @@ impl Attach<'_> {
                     .space_overview
                     .as_ref()
                     .map(|overview| overview.root.clone()),
+                self.model.extension_watch(),
                 self.channels.checkout_stamps.sender.clone(),
             );
         }
@@ -516,8 +517,10 @@ impl Attach<'_> {
     /// the refresh clock. A checkout read for the first time only sets its
     /// stamp — the evaluation that put it on screen already read it.
     pub(in crate::ui::orchestrator) fn absorb_checkout_stamps(&mut self) {
-        while let Ok(resolution) = self.channels.checkout_stamps.receiver.try_recv() {
+        while let Ok(mut resolution) = self.channels.checkout_stamps.receiver.try_recv() {
             self.model.remembered.checkout_watch_pending = false;
+            self.model
+                .absorb_extension_watch(std::mem::take(&mut resolution.extensions));
             // What the open overview's project declares moved — an edit by
             // hand, an install, an agent writing `AGENTS.md` — so the
             // overview is read again. Its first read only sets the stamp:

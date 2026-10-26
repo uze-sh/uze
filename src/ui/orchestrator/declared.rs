@@ -26,7 +26,9 @@ use uze_extensions::declared::{
 use uze_extensions::view::{Command, Role, ScrollTarget, Section, SectionRow, Size, View};
 
 mod drawer;
+mod events;
 pub(super) use drawer::*;
+pub(super) use events::*;
 
 /// The host's number for a slot, handed out once and never reused, so a
 /// hit drawn on one frame cannot land on another slot after a reload.
@@ -362,6 +364,9 @@ pub(super) struct HostedExtensions {
     /// What each compiled extension offers the keyboard, from its last
     /// compile that went through.
     pub(super) keys: BTreeMap<ExtensionIdentity, uze_keys::ExtensionTable>,
+    /// What the checkout watch last read for the extensions, and what
+    /// moved since the last pass.
+    pub(super) watching: Watching,
 }
 
 impl Default for HostedExtensions {
@@ -385,6 +390,7 @@ impl Default for HostedExtensions {
             locale: uze_platform::locale::language(),
             runner: std::sync::Arc::default(),
             keys: BTreeMap::new(),
+            watching: Watching::default(),
         };
         for (id, engine) in builtins() {
             let owner = Owner::Builtin(id);

@@ -571,22 +571,40 @@ pub(super) struct StampResolution {
     /// The stamp of what the open overview's project declares, with the
     /// project it was read for.
     pub(super) declaration: Option<(PathBuf, u64)>,
+    /// What the hosted extensions asked to be watched, as read.
+    pub(super) extensions: super::declared::ExtensionWatchRead,
 }
 
-/// Reads the change stamp of every checkout on screen. Off the render
-/// path like every other read, cheap as it is: a directory on a slow mount
-/// still answers a `stat` at its own pace. Without a `background_pass!`:
-/// it runs every second, and a span each time would be most of the
-/// journal.
+/// Reads the change stamp of every checkout on screen, and what the
+/// hosted extensions watch: the stamps of their checkouts and a bounded
+/// digest of each path they declared (`uze_application::paths_digest`).
+/// Off the render path like every other read, cheap as it is: a directory
+/// on a slow mount still answers a `stat` at its own pace. Without a
+/// `background_pass!`: it runs every second, and a span each time would
+/// be most of the journal.
 pub(super) fn spawn_checkout_watch(
     home: &UzeHome,
     checkouts: Vec<(PathBuf, Option<String>)>,
     overview: Option<PathBuf>,
+    extensions: super::declared::ExtensionWatch,
     sender: mpsc::Sender<StampResolution>,
 ) {
     let home = home.clone();
     thread::spawn(move || {
-        let (stamps, declaration) = answered_or(
+        let paths = answered_or(
+            || {
+                extensions
+                    .paths
+                    .into_iter()
+                    .map(|(root, path)| {
+                        let digest = uze_application::paths_digest(&root, &path);
+                        ((root, path), digest)
+                    })
+                    .collect()
+            },
+            Vec::new(),
+        );
+        let (stamps, declaration, watched) = answered_or(
             || {
                 tui_application(home)
                     .map(|app| {
@@ -603,15 +621,27 @@ pub(super) fn spawn_checkout_watch(
                             let stamp = workspace.declaration_stamp(&root);
                             (root, stamp)
                         });
-                        (stamps, declaration)
+                        let watched = extensions
+                            .checkouts
+                            .into_iter()
+                            .map(|root| {
+                                let stamp = workspace.checkout_stamp(&root, None);
+                                (root, stamp)
+                            })
+                            .collect();
+                        (stamps, declaration, watched)
                     })
                     .unwrap_or_default()
             },
-            (Vec::new(), None),
+            (Vec::new(), None, Vec::new()),
         );
         let _ = sender.send(StampResolution {
             stamps,
             declaration,
+            extensions: super::declared::ExtensionWatchRead {
+                checkouts: watched,
+                paths,
+            },
         });
     });
 }

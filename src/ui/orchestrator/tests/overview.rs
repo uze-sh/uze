@@ -3421,6 +3421,7 @@ fn a_declaration_changed_on_disk_reads_the_overview_again() {
             .send(StampResolution {
                 stamps: Vec::new(),
                 declaration: Some((PathBuf::from("/repo"), stamp)),
+                extensions: Default::default(),
             })
             .unwrap();
         driven.attach.absorb_checkout_stamps();

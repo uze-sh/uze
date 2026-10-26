@@ -26,6 +26,8 @@ mod declared;
 #[cfg(test)]
 mod declared_actions;
 #[cfg(test)]
+mod declared_events;
+#[cfg(test)]
 mod delivery;
 #[cfg(test)]
 mod drawing;

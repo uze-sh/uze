@@ -176,6 +176,18 @@ impl WorkspaceModel {
         home: &UzeHome,
         answers: &mpsc::Sender<EngineAnswer>,
     ) -> usize {
+        self.schedule_engine_jobs_at(home, answers, Instant::now())
+    }
+
+    /// [`Self::schedule_engine_jobs`] on the pass at `now`, which each
+    /// engine is told before it is asked for its jobs: what its `every`
+    /// and its events' window are counted on.
+    pub(super) fn schedule_engine_jobs_at(
+        &mut self,
+        home: &UzeHome,
+        answers: &mpsc::Sender<EngineAnswer>,
+        now: Instant,
+    ) -> usize {
         let in_front = self
             .focused_cwd()
             .map(|root| uze_extensions::contract::Checkout {
@@ -192,9 +204,12 @@ impl WorkspaceModel {
             .cloned()
             .collect();
         let mut handed = 0;
+        for (owner, engine) in &mut self.remembered.declared.engines {
+            engine.focus(in_front.as_ref().filter(|_| offered.contains(owner)));
+        }
+        self.pass_engines(now);
         let declared = &mut self.remembered.declared;
         for (owner, engine) in &mut declared.engines {
-            engine.focus(in_front.as_ref().filter(|_| offered.contains(owner)));
             let jobs = engine.jobs();
             handed += jobs.len();
             if !jobs.is_empty() {
