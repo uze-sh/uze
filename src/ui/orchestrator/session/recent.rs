@@ -38,6 +38,7 @@ impl Attach<'_> {
     ) {
         let model = &self.model;
         let drawn_over = model.approval.is_some()
+            || model.extension_offer.is_some()
             || model.interrupt.is_some()
             || model.proposal.is_some()
             || model.asks_overview_question()

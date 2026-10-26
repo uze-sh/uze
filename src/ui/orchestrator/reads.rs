@@ -258,6 +258,94 @@ pub(super) fn spawn_commands_awaiting(
     });
 }
 
+/// What a project offers to enable where it opens.
+pub(super) struct ExtensionOffersRead {
+    pub(super) project: PathBuf,
+    pub(super) offers: Vec<uze_application::ExtensionReport>,
+}
+
+/// Asks, for each directory first seen, which extensions of the plugins
+/// its project declares wait for the operator there. Off the frame: it
+/// reads and digests every installed extension's files.
+pub(super) fn spawn_extension_offers(
+    home: &UzeHome,
+    directories: Vec<PathBuf>,
+    sender: mpsc::Sender<ExtensionOffersRead>,
+) {
+    if directories.is_empty() {
+        return;
+    }
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _pass = crate::telemetry::background_pass!("tui.extension_offers", parent: &parent);
+        let Ok(app) = tui_application(home) else {
+            return;
+        };
+        let mut asked = BTreeSet::new();
+        for directory in directories {
+            let Some(project) = app.extensions().project_here(&directory) else {
+                continue;
+            };
+            if !asked.insert(project.clone()) {
+                continue;
+            }
+            let offers = app.extensions().offers(&project);
+            if !offers.is_empty() {
+                let _ = sender.send(ExtensionOffersRead { project, offers });
+            }
+        }
+    });
+}
+
+/// Records the operator's answer to the offer: consent when the extension
+/// needs it and enabling in the project, or the offer put away there.
+pub(super) fn spawn_extension_offer_answer(
+    home: &UzeHome,
+    project: PathBuf,
+    offer: uze_application::ExtensionReport,
+    allow: bool,
+    asker: uze_application::Asker,
+    sender: mpsc::Sender<ExtensionOfferResolution>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _span = tracing::info_span!(parent: &parent, "tui.extension_offer").entered();
+        let identity = offer.identity();
+        let outcome = answered_or(
+            || {
+                let app = tui_application(home).map_err(|error| error.to_string())?;
+                let extensions = app.extensions();
+                let answered = if !allow {
+                    extensions.decline_offer(&identity, &project).map(drop)
+                } else if offer.condition == uze_application::ExtensionCondition::NeedsEnabling {
+                    extensions.enable(&identity, &project, asker).map(drop)
+                } else {
+                    extensions
+                        .consent(&identity, asker)
+                        .and_then(|_| extensions.enable(&identity, &project, asker))
+                        .map(drop)
+                };
+                if allow && answered.is_ok() {
+                    // The workspace asks the extension's sources again
+                    // once it looks again.
+                    crate::ui::extension_switch::plugins_changed();
+                }
+                answered.map_err(|error| error.to_string())
+            },
+            Err("answering failed".to_owned()),
+        );
+        let _ = sender.send(ExtensionOfferResolution {
+            project,
+            attribution: offer.attribution(),
+            name: offer.name.clone(),
+            allowed: allow,
+            outcome,
+        });
+    });
+}
+
 /// Records the operator's approval and prepares the checkout that waited
 /// for it, which runs the project's setup: nothing a frame waits on.
 pub(super) fn spawn_command_approval(

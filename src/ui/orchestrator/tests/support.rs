@@ -885,6 +885,9 @@ pub(super) fn driven(model: WorkspaceModel, home: &UzeHome) -> Driven<'_> {
             )),
             keyboard: crate::ui::keys::KeyboardSupport::default(),
             theme_generation: uze_theme::generation(),
+            // The operator at a terminal of their own, whatever the suite
+            // runs inside.
+            asker: uze_application::Asker::Operator,
         },
         server,
         events: events_rx,

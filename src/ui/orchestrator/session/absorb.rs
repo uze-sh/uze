@@ -358,6 +358,11 @@ impl Attach<'_> {
             unread.clone(),
             self.channels.commands_awaiting.sender.clone(),
         );
+        spawn_extension_offers(
+            self.home,
+            unread.clone(),
+            self.channels.extension_offers.sender.clone(),
+        );
         spawn_retired_region_check(
             self.home,
             unread,
@@ -748,6 +753,12 @@ impl Attach<'_> {
         }
         while let Ok(resolution) = self.channels.approvals.receiver.try_recv() {
             self.model.absorb_approval(resolution);
+        }
+        while let Ok(read) = self.channels.extension_offers.receiver.try_recv() {
+            self.model.extensions_offered(read.project, read.offers);
+        }
+        while let Ok(resolution) = self.channels.extension_offer_answers.receiver.try_recv() {
+            self.model.absorb_extension_offer(resolution);
         }
     }
 

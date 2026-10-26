@@ -68,6 +68,7 @@ use agents::StatusAnswer;
 mod answers;
 mod approval;
 mod declared;
+mod extension_offer;
 use declared::*;
 mod events;
 mod interrupt;
@@ -208,6 +209,7 @@ const AGENT_SETTLE_QUIET: Duration = Duration::from_millis(400);
 const AGENT_SETTLE_CAP: Duration = Duration::from_millis(2500);
 
 use approval::*;
+use extension_offer::*;
 use interrupt::*;
 use overview_question::*;
 use proposal::*;
@@ -615,6 +617,7 @@ pub(crate) fn attach_workspace(
         manage_memory: manage,
         keyboard: terminal.keyboard(),
         theme_generation: uze_theme::generation(),
+        asker: crate::asker::asker(),
     };
     // Every way out of the loop — a quit, a runtime gone, an error — must
     // hand the model's memory back, so the loop runs inside one call whose
@@ -848,6 +851,13 @@ pub(super) enum WorkspaceHit {
     /// A toast's offer to read a project's commands that wait for the
     /// operator's approval: opens the question about them.
     ReviewCommands,
+    /// The toast's way to an extension the project offers to enable:
+    /// opens the question about it.
+    ReviewExtensions,
+    /// An answer to that question: allow and enable, or put it away.
+    ExtensionOfferAnswer(bool),
+    /// The question itself, which a click does not put away.
+    ExtensionOfferBody,
     /// One of the answers to that question: `true` approves.
     ApprovalAnswer(bool),
     /// The question itself, which a click on answers nothing.
@@ -1476,6 +1486,10 @@ struct Channels {
     commands_awaiting: Answers<AwaitingRead>,
     /// Recording an approval, and the setup it lets run.
     approvals: Answers<ApprovalResolution>,
+    /// What a project offers to enable, read where it opens.
+    extension_offers: Answers<ExtensionOffersRead>,
+    /// Answering one of those offers.
+    extension_offer_answers: Answers<ExtensionOfferResolution>,
     /// The machine facts agents proposed, read on the evaluation clock.
     proposals: Answers<ProposalsResolution>,
     /// Accepting or discarding one.
@@ -1647,6 +1661,11 @@ struct Remembered {
     /// the lines they would approve. Said once a session per project; the
     /// question stays here until it is answered yes.
     commands_awaiting: BTreeMap<PathBuf, uze_application::CommandsAwaitingApproval>,
+    /// Each project the workspace offered extensions to enable in, with
+    /// those not answered yet. Said once a session per project; putting
+    /// one away is also remembered on the machine, so it is not offered
+    /// again on the next opening.
+    extension_offers: BTreeMap<PathBuf, Vec<uze_application::ExtensionReport>>,
     /// The names a harness launched through the workspace's shim runs
     /// under, once the registry has answered, and whether it was asked.
     launchers: Option<Vec<String>>,
@@ -1855,6 +1874,9 @@ struct WorkspaceModel {
     /// Seals the client while it is open: an answer only ever comes from
     /// the operator's own click or keystroke.
     approval: Option<ApprovalDialog>,
+    /// The open question about enabling an extension in a project (see
+    /// `extension_offer`). Seals the client like the approval does.
+    extension_offer: Option<ExtensionOfferDialog>,
     /// The open question about interrupting an agent mid-turn to continue
     /// it on another harness (see `interrupt`). Seals the client like the
     /// approval does.
@@ -2323,6 +2345,7 @@ impl WorkspaceModel {
             && !self.recent.has_keys()
             && self.context_menu.is_none()
             && self.approval.is_none()
+            && self.extension_offer.is_none()
             && self.interrupt.is_none()
             && self.proposal.is_none()
             && !self.asks_overview_question()

@@ -23,6 +23,7 @@ impl Attach<'_> {
             return scopes;
         }
         if self.model.approval.is_some()
+            || self.model.extension_offer.is_some()
             || self.model.interrupt.is_some()
             || self.model.proposal.is_some()
             || self.model.asks_overview_question()
@@ -165,6 +166,7 @@ impl Attach<'_> {
     /// surface's own "anything else means no".
     pub(super) fn unclaimed(&mut self, key: KeyEvent, chord: Chord) {
         if self.model.approval.is_some()
+            || self.model.extension_offer.is_some()
             || self.model.interrupt.is_some()
             || self.model.proposal.is_some()
             || self.model.asks_overview_question()
@@ -314,6 +316,10 @@ impl Attach<'_> {
         }
         if self.model.approval.is_some() {
             self.approval_action(action);
+            return Flow::Continue;
+        }
+        if self.model.extension_offer.is_some() {
+            self.extension_offer_action(action);
             return Flow::Continue;
         }
         if self.model.proposal.is_some() {

@@ -97,6 +97,10 @@ pub(super) struct Attach<'a> {
     /// The theme this client last drew in and told the server about, as
     /// [`uze_theme::generation`] counts them.
     pub(super) theme_generation: u64,
+    /// Who answers this client's questions about extensions, read once
+    /// from the environment it was started in: a client an agent's pane
+    /// started is never the operator, whatever it is sent.
+    pub(super) asker: uze_application::Asker,
 }
 
 impl Attach<'_> {

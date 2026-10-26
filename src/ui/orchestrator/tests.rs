@@ -34,6 +34,8 @@ mod drawing;
 #[cfg(test)]
 mod extension_keys;
 #[cfg(test)]
+mod extension_offer;
+#[cfg(test)]
 mod extensions;
 #[cfg(test)]
 mod foot;
