@@ -3544,6 +3544,7 @@ dependencies = [
  "uze-integrations",
  "uze-keys",
  "uze-platform",
+ "uze-script",
  "uze-testkit",
  "uze-workspace",
 ]

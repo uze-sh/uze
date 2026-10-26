@@ -255,7 +255,7 @@ impl Extensions<'_> {
         })
     }
 
-    fn judged(&self, load: &ExtensionLoad, project: &Path) -> Result<ExtensionState> {
+    pub(super) fn judged(&self, load: &ExtensionLoad, project: &Path) -> Result<ExtensionState> {
         let manifest = &load.compiled.manifest;
         if !needs_consent(manifest) {
             return Ok(ExtensionState::FixturesOnly);

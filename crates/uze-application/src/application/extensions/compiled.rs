@@ -53,6 +53,15 @@ impl Extensions<'_> {
     /// them.
     #[tracing::instrument(name = "extensions.load", skip_all, fields(extension = %installed.identity))]
     pub fn load(&self, installed: &InstalledExtension) -> Result<ExtensionLoad, Vec<Diagnostic>> {
+        self.load_with_files(installed).map(|(load, _)| load)
+    }
+
+    /// [`Self::load`], keeping the bytes it read: what a script that
+    /// answers is taken from, so it is the file the digest covers.
+    pub(super) fn load_with_files(
+        &self,
+        installed: &InstalledExtension,
+    ) -> Result<(ExtensionLoad, Loaded), Vec<Diagnostic>> {
         let loaded = Loaded::read(&installed.dir).map_err(|refusal| vec![refusal])?;
         let compiled = compile_cached(
             &self.0.home,
@@ -61,11 +70,12 @@ impl Extensions<'_> {
             extension::compile_loaded,
         )?;
         let fixtures = fixtures_of(&compiled, &loaded);
-        Ok(ExtensionLoad {
+        let load = ExtensionLoad {
             digest: loaded.digest().to_owned(),
             compiled,
             fixtures,
-        })
+        };
+        Ok((load, loaded))
     }
 
     /// [`Self::load`]'s compile alone.
@@ -193,7 +203,7 @@ fn walk(dir: &Path, max_depth: usize) -> Vec<(String, PathBuf)> {
 
 /// A fixture's JSON from the loaded files, no larger than
 /// [`FIXTURE_LIMIT`].
-fn loaded_fixture(loaded: &Loaded, fixture: &str) -> SourceData {
+pub(super) fn loaded_fixture(loaded: &Loaded, fixture: &str) -> SourceData {
     let bytes = loaded
         .bytes(fixture)
         .ok_or_else(|| format!("{fixture}: not found"))?;

@@ -15,6 +15,9 @@ uze-core = { path = "../uze-core" }
 # in, and what the client hands the engine.
 uze-contract = { path = "../uze-contract" }
 uze-workspace = { path = "../uze-workspace" }
+# The engine a declared extension's script answers in; the runner is its
+# one caller.
+uze-script = { path = "../uze-script" }
 uze-keys = { path = "../uze-keys" }
 uze-integrations = { path = "../uze-integrations" }
 # The checkout an extension may read is a worktree root Git names.

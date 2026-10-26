@@ -49,9 +49,9 @@ pub use uze_core::{
 /// compiled to, and what was wrong with it when it did not.
 pub use application::{
     Asker, CheckedExtension, Consented, DeclaredExtensionSummary, ExtensionCheckout,
-    ExtensionConsent, ExtensionLoad, ExtensionOverlay, ExtensionStanding, ExtensionState,
-    FIXTURE_LIMIT, InstalledExtension, NotACheckout, SourceData, Switched, consent_key,
-    extension_stamp,
+    ExtensionConsent, ExtensionLoad, ExtensionOverlay, ExtensionRunner, ExtensionStanding,
+    ExtensionState, FIXTURE_LIMIT, InstalledExtension, NotACheckout, SourceData, Switched,
+    consent_key, extension_stamp,
 };
 pub use uze_contract::{CompiledExtension, Identity as ExtensionIdentity};
 pub use uze_core::capability::extension::Diagnostic as ExtensionDiagnostic;
