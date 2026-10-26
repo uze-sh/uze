@@ -514,6 +514,11 @@ pub(crate) fn render_machine_status(report: &MachineStatusReport, asked: Machine
     text.push_str(&render_plugin_list(&report.packages));
     text.push_str(&render_requirement_gaps(&report.packages));
     text.push_str(&render_held_back(&report.held_back));
+    let extensions = render_extension_standings(&report.extensions, StandingScope::Machine);
+    if !extensions.is_empty() {
+        text.push('\n');
+        text.push_str(&extensions);
+    }
     text
 }
 
@@ -713,6 +718,11 @@ pub(crate) fn render_status(status: &ProjectStatus) -> String {
             &report.harnesses,
             label,
         ));
+    }
+    let extensions = render_extension_standings(&status.extensions, StandingScope::Here);
+    if !extensions.is_empty() {
+        text.push('\n');
+        text.push_str(&extensions);
     }
     for harness in &report.harnesses {
         if let Some(reason) = &harness.agent_context {

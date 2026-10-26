@@ -56,6 +56,7 @@ impl Plugins<'_> {
             .into_iter()
             .filter(|report| report.plugin_id() == inspection.plugin.id)
             .collect();
+        inspection.extensions_project = project.map(std::path::Path::to_path_buf);
         Ok(inspection)
     }
 
@@ -115,6 +116,7 @@ impl Plugins<'_> {
             reconciliation,
             held_back: super::doctor::held_back_notes(self.0, Some(package.id.as_str())),
             extensions: Vec::new(),
+            extensions_project: None,
         })
     }
 }
@@ -459,6 +461,10 @@ pub struct PluginInspection {
     /// about.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub extensions: Vec<super::ExtensionReport>,
+    /// The project those extensions were judged for; absent when they
+    /// were judged for the machine.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extensions_project: Option<std::path::PathBuf>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]

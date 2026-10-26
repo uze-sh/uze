@@ -70,7 +70,7 @@ pub use extensions::{
     ExtensionCondition, ExtensionConsent, ExtensionLoad, ExtensionReport, ExtensionRunner,
     ExtensionStanding, ExtensionState, FIXTURE_LIMIT, InstalledExtension, NotACheckout,
     Overlay as ExtensionOverlay, SourceData, Switched, WATCH_DEPTH, WATCH_ENTRIES, consent_key,
-    extension_stamp, paths_digest,
+    extension_stamp, grant_meaning, paths_digest,
 };
 pub use profile::{HarnessPreview, ProfileApplyResult, ProfilePreview, ProfileSummary};
 pub use read_models::*;

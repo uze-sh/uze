@@ -5,6 +5,7 @@
 mod agent;
 mod config;
 mod extension_check;
+mod extensions;
 mod grammar;
 mod help;
 mod install;
@@ -19,6 +20,7 @@ mod workspace;
 
 pub(crate) use agent::*;
 pub(crate) use config::*;
+pub(crate) use extensions::*;
 pub(crate) use grammar::*;
 pub(crate) use help::*;
 pub(crate) use install::*;

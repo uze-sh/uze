@@ -365,6 +365,16 @@ pub(crate) fn render_inspection(report: &PluginInspection, verbose: bool) -> Str
         std::slice::from_ref(&report.plugin),
     ));
     text.push_str(&super::status::render_held_back(&report.held_back));
+    let scope = if report.extensions_project.is_some() {
+        super::extensions::StandingScope::Here
+    } else {
+        super::extensions::StandingScope::Machine
+    };
+    let extensions = super::extensions::render_extension_standings(&report.extensions, scope);
+    if !extensions.is_empty() {
+        text.push('\n');
+        text.push_str(&extensions);
+    }
     text
 }
 

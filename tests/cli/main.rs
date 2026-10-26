@@ -4,6 +4,7 @@
 //! `acceptance/`.
 
 mod budget;
+mod extensions;
 mod grammar;
 mod machine;
 mod portable_shell;

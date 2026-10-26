@@ -935,6 +935,7 @@ fn project_space(
             steps_not_spelled_here: Vec::new(),
             steps_only_in_sh: Vec::new(),
             commands_awaiting_approval: None,
+            extensions: Vec::new(),
         },
         plugins: Default::default(),
         memory,

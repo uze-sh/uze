@@ -107,6 +107,43 @@ impl ExtensionReport {
     pub fn plugin_id(&self) -> String {
         format!("{}@{}", self.plugin, self.marketplace)
     }
+
+    /// The day an update that wanted no new grant was applied, as
+    /// `2026-10-26` in UTC.
+    pub fn updated_on(&self) -> Option<String> {
+        self.updated_at.map(utc_day)
+    }
+}
+
+/// What a grant lets an extension do, as the operator reads it before
+/// accepting it.
+pub fn grant_meaning(grant: &str) -> &'static str {
+    match uze_contract::Grant::parse(grant) {
+        Some(uze_contract::Grant::ReadCheckout) => "reads the files of the checkout in front",
+        Some(uze_contract::Grant::Clipboard) => "copies text you choose to the clipboard",
+        Some(uze_contract::Grant::OpenPath) => "opens a file of the checkout in its program",
+        None => "a grant this build does not know",
+    }
+}
+
+/// `seconds` since the epoch as its UTC day, `YYYY-MM-DD`.
+fn utc_day(seconds: u64) -> String {
+    // Howard Hinnant's civil-from-days, March-based so the leap day ends
+    // the year.
+    let days = (seconds / 86_400) as i64 + 719_468;
+    let era = days.div_euclid(146_097);
+    let of_era = days.rem_euclid(146_097);
+    let year_of_era = (of_era - of_era / 1_460 + of_era / 36_524 - of_era / 146_096) / 365;
+    let of_year = of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_index = (5 * of_year + 2) / 153;
+    let day = of_year - (153 * month_index + 2) / 5 + 1;
+    let month = if month_index < 10 {
+        month_index + 3
+    } else {
+        month_index - 9
+    };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}")
 }
 
 impl Extensions<'_> {
@@ -301,6 +338,14 @@ mod tests {
             "marketplaces:\n  studio:\n    path: ../market\n    plugins: [gsd]\n",
         )
         .unwrap();
+    }
+
+    #[test]
+    fn an_update_is_dated_by_its_utc_day() {
+        assert_eq!(utc_day(0), "1970-01-01");
+        assert_eq!(utc_day(1_830_297_600), "2028-01-01");
+        assert_eq!(utc_day(1_835_395_200), "2028-02-29");
+        assert_eq!(utc_day(1_792_972_800), "2026-10-26");
     }
 
     #[test]

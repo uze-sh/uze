@@ -503,6 +503,14 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
                             ))
                         );
                     }
+                    if matches!(format, OutputFormat::Text)
+                        && let uze_application::application::InstallReport::Installed {
+                            plugins,
+                            ..
+                        } = &report
+                    {
+                        ask_about_extensions(&app, plugins);
+                    }
                     if let Some(failure) = undelivered_failure(report.undelivered()) {
                         return Err(failure);
                     }
@@ -613,7 +621,10 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
             harness,
             format,
         } => {
-            let report = app.plugins().inspect_on(&plugin, harness.as_deref())?;
+            let project = app.extensions().project_here(&cwd()?);
+            let report =
+                app.plugins()
+                    .inspect_in(&plugin, harness.as_deref(), project.as_deref())?;
             emit(format, &report, |report| render_inspection(report, verbose));
         }
         Command::Status {
@@ -929,6 +940,7 @@ mod status_output_tests {
             steps_not_spelled_here: Vec::new(),
             steps_only_in_sh: Vec::new(),
             commands_awaiting_approval: None,
+            extensions: Vec::new(),
         }
     }
 

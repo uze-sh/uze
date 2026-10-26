@@ -211,7 +211,8 @@ impl ExtensionRunner {
         let grants: Grants = compiled.manifest.wants.iter().copied().collect();
         let asked = Asked {
             identity: identity.clone(),
-            source: declared.id.clone(),
+            asking: Asking::Source,
+            declaration: declared.id.clone(),
             checkout: checkout.root.clone(),
             input: input_digest(&input),
             files: files.digest().to_owned(),

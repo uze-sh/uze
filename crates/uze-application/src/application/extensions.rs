@@ -31,7 +31,7 @@ pub use consent::{
 };
 pub use installed::InstalledExtension;
 use reach::CheckoutReach;
-pub use report::{ExtensionCondition, ExtensionReport};
+pub use report::{ExtensionCondition, ExtensionReport, grant_meaning};
 pub use runner::ExtensionRunner;
 pub use summary::DeclaredExtensionSummary;
 pub use watch::{WATCH_DEPTH, WATCH_ENTRIES, paths_digest};
