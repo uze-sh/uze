@@ -107,6 +107,9 @@ impl Attach<'_> {
         if in_the_pane && self.model.focused_cwd().is_some() {
             offered.push(Action::DeliverAllTasks);
         }
+        if self.model.focused_cwd().is_some() {
+            offered.extend(self.model.declared_view_doors());
+        }
         offered
     }
 
@@ -371,6 +374,13 @@ impl Attach<'_> {
         // over each other: one of them in front must not swallow it.
         if action == Action::OpenSpaceOverview {
             self.toggle_space_overview();
+            return Flow::Continue;
+        }
+        // A declared view's door, from the index: it opens over whatever
+        // stands in the pane, as its button on the strip does.
+        if let Action::Extension(id) = action
+            && self.model.open_declared_door(id)
+        {
             return Flow::Continue;
         }
         if self.model.open_slot.is_some() {

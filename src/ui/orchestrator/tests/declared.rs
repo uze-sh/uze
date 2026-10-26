@@ -316,6 +316,68 @@ fn a_declared_view_opens_from_its_button_and_closes_from_it() {
     );
 }
 
+/// A declared view is reached from the index as from its button: an
+/// entry named after its title, with whose it is beside it.
+#[test]
+fn a_declared_view_opens_from_the_index() {
+    let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("declared-index"));
+    let model = hosting_the_board();
+    let slot = view_slot(&model);
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    driven.frame();
+    let doors = driven.attach.model.declared_view_doors();
+    let [door] = doors.as_slice() else {
+        panic!("one view, one entry: {doors:?}");
+    };
+    assert!(door.label().starts_with("Open "), "{}", door.label());
+    assert_eq!(door.description(), "gsd-band · gsd@market");
+
+    driven.press_key(key_event(uze_keys::Chord::parse("f1").unwrap()));
+    let index = driven.attach.model.action_index.as_ref().expect("open");
+    assert!(index.offered.contains(door), "{:?}", index.offered);
+    let rows = super::action_index_rows(
+        &index.scopes,
+        &index.offered,
+        "",
+        &driven.attach.model.disabled_extensions,
+    );
+    let at = rows
+        .iter()
+        .position(|(action, _)| action == door)
+        .expect("listed");
+    driven.attach.model.action_index.as_mut().unwrap().selected = at;
+    driven.press_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Enter,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    assert_eq!(driven.attach.model.open_slot, Some(slot), "opened");
+}
+
+/// What a third party's surface raises outlives it, so its toast says
+/// whose surface it was; a built-in's says nothing more.
+#[test]
+fn a_declared_extensions_toasts_are_attributed() {
+    let mut model = hosting_the_board();
+    let slot = view_slot(&model);
+    super::open_surface(&mut model, slot);
+    model.follow_surface(Outcome::Failed {
+        title: "archive failed".to_owned(),
+        detail: "phase 12 is in use".to_owned(),
+    });
+    model.follow_surface(Outcome::Copy("phase 12".to_owned()));
+    let said = format!("{:?}", model.toast_stack());
+    assert!(
+        said.contains("gsd-band · gsd@market: phase 12 is in use"),
+        "{said}"
+    );
+    assert!(said.contains("gsd-band · gsd@market: phase 12"), "{said}");
+    assert_eq!(
+        model.clipboard.as_deref(),
+        Some("phase 12"),
+        "the text alone"
+    );
+}
+
 #[test]
 fn switching_a_tab_runs_nothing() {
     let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("declared-tab"));

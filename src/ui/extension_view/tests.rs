@@ -985,6 +985,7 @@ fn a_surfaces_question_is_drawn_as_the_products_dialog() {
             render_confirm(
                 frame,
                 view.confirm.as_ref().expect("asked"),
+                None,
                 frame.area(),
                 uze_keys::Scope::Code,
                 &mut answers,
@@ -1011,6 +1012,43 @@ fn a_surfaces_question_is_drawn_as_the_products_dialog() {
         answers.iter().map(|(_, hit)| *hit).collect::<Vec<_>>(),
         [ViewHit::Answer(false), ViewHit::Answer(true)],
         "the way out before the affirmative"
+    );
+}
+
+/// A third party's question says whose it is beside what it asks about.
+#[test]
+fn a_declared_extensions_question_is_attributed() {
+    let confirm = uze_extensions::view::Confirm {
+        title: "Archive the phase".to_owned(),
+        subject: "phase 12".to_owned(),
+        body: "Moves it out of the milestone.".to_owned(),
+        confirm: "Archive".to_owned(),
+        on_confirm: false,
+        field: None,
+    };
+    let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+    terminal
+        .draw(|frame| {
+            render_confirm(
+                frame,
+                &confirm,
+                Some("gsd-band · gsd@studio"),
+                frame.area(),
+                uze_keys::Scope::Declared,
+                &mut Vec::new(),
+            )
+        })
+        .unwrap();
+    let screen: String = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect();
+    assert!(
+        screen.contains("phase 12  gsd-band · gsd@studio"),
+        "{screen}"
     );
 }
 

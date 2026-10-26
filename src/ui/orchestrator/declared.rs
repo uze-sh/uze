@@ -25,6 +25,7 @@ use uze_extensions::declared::{
 };
 use uze_extensions::view::{Command, Role, ScrollTarget, Section, SectionRow, Size, View};
 
+mod doors;
 mod drawer;
 mod events;
 pub(super) use drawer::*;
@@ -938,7 +939,7 @@ impl WorkspaceModel {
             Outcome::Close => self.close_surface(),
             Outcome::Notice(span) => self.open_notice = Some(span),
             Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
-            Outcome::Copy(text) => self.copy_answered(text),
+            Outcome::Copy(text) => self.copy_answered_by(text, self.open_slot),
             Outcome::Toast(text) => {
                 if let Some(owner) = self.slot_in_pane().map(|slot| slot.owner.clone()) {
                     self.say_told(&owner, text);
@@ -949,7 +950,10 @@ impl WorkspaceModel {
                     self.show_surface(id, &surface);
                 }
             }
-            Outcome::Failed { title, detail } => self.say_failed(&title, detail),
+            Outcome::Failed { title, detail } => {
+                let detail = self.attributed(self.open_slot, detail);
+                self.say_failed(&title, detail);
+            }
             // Only the timeline's rows ask, and their click opens it
             // beside the row (see `open_commit_detail`).
             Outcome::OpenCommit { .. } => {}
@@ -990,9 +994,27 @@ impl WorkspaceModel {
         self.raise_toast(ToastKind::Told, text, said, None);
     }
 
-    /// Text a surface asked to have copied: on the clipboard, and said.
-    pub(super) fn copy_answered(&mut self, text: String) {
-        self.raise_toast(ToastKind::Done, "copied", text.clone(), None);
+    /// Who a third party's surface in `slot` is, as every surface of it
+    /// is attributed (`id · plugin@marketplace`); `None` for a built-in.
+    pub(super) fn attribution_of(&self, slot: Option<SlotId>) -> Option<String> {
+        let identity = self.remembered.declared.slot(slot?)?.owner.declared()?;
+        Some(crate::ui::extension_view::tree::attribution(identity))
+    }
+
+    /// `detail`, led by who said it when a third party's surface did: a
+    /// toast outlives the surface that raised it.
+    pub(super) fn attributed(&self, slot: Option<SlotId>, detail: String) -> String {
+        match self.attribution_of(slot) {
+            Some(by) => format!("{by}: {detail}"),
+            None => detail,
+        }
+    }
+
+    /// Text a surface asked to have copied: on the clipboard, and said,
+    /// attributed to the surface in `slot` when it is a third party's.
+    pub(super) fn copy_answered_by(&mut self, text: String, slot: Option<SlotId>) {
+        let said = self.attributed(slot, text.clone());
+        self.raise_toast(ToastKind::Done, "copied", said, None);
         self.clipboard = Some(text);
     }
 

@@ -251,9 +251,11 @@ pub(super) fn render(
     }
     if let Some(question) = &question {
         let mut view_hits = Vec::new();
+        let attribution = model.attribution_of(Some(question.tag));
         crate::ui::extension_view::render_confirm(
             frame,
             &question.confirm,
+            attribution.as_deref(),
             frame.area(),
             question.scope,
             &mut view_hits,

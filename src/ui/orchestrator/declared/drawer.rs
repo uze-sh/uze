@@ -248,7 +248,7 @@ impl WorkspaceModel {
             Outcome::Close => self.close_drawer(),
             Outcome::Notice(span) => self.dock_notice = Some(span),
             Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
-            Outcome::Copy(text) => self.copy_answered(text),
+            Outcome::Copy(text) => self.copy_answered_by(text, self.open_drawer()),
             Outcome::Toast(text) => {
                 if let Some(owner) = self.open_drawer_slot().map(|slot| slot.owner.clone()) {
                     self.say_told(&owner, text);
@@ -259,7 +259,10 @@ impl WorkspaceModel {
                     self.show_surface(id, &surface);
                 }
             }
-            Outcome::Failed { title, detail } => self.say_failed(&title, detail),
+            Outcome::Failed { title, detail } => {
+                let detail = self.attributed(self.open_drawer(), detail);
+                self.say_failed(&title, detail);
+            }
             Outcome::OpenCommit { .. } => {}
         }
         self.dirty = true;

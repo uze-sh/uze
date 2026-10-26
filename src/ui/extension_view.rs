@@ -400,13 +400,27 @@ pub(crate) fn render_row_menu(
 /// question in the product is asked in, centred in `area`, with the keys
 /// that answer it where the surface is open: `scope`. The caller puts the
 /// scrim behind it and its answers ahead of everything it covers.
+/// `attribution` names a third party's extension (`id · plugin@marketplace`)
+/// beside what it asks about: a question that may close a pane or delete
+/// a file says whose question it is.
 pub(crate) fn render_confirm(
     frame: &mut ratatui::Frame<'_>,
     confirm: &uze_extensions::view::Confirm,
+    attribution: Option<&str>,
     area: Rect,
     scope: uze_keys::Scope,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) {
+    let subject = match attribution {
+        Some(by) if confirm.subject.is_empty() => {
+            Line::from(TextSpan::styled(by.to_owned(), theme::fg(Token::TextMuted)))
+        }
+        Some(by) => Line::from(vec![
+            TextSpan::raw(confirm.subject.clone()),
+            TextSpan::styled(format!("  {by}"), theme::fg(Token::TextMuted)),
+        ]),
+        None => Line::from(confirm.subject.clone()),
+    };
     let dialog = widget::dialog::Dialog {
         // A yes-or-no is asked only before what cannot be undone; a
         // question that takes text is asking for a name.
@@ -415,7 +429,7 @@ pub(crate) fn render_confirm(
             None => widget::dialog::Tone::Danger,
         },
         title: &confirm.title,
-        subject: Some(Line::from(confirm.subject.clone())),
+        subject: Some(subject),
         body: vec![confirm.body.clone()],
         confirm: Some(&confirm.confirm),
         focus: Some(match confirm.on_confirm {
