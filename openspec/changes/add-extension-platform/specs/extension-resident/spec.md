@@ -46,7 +46,7 @@ functions, each registered only under its grant (`fetch`: `net`;
 
 #### Scenario: A checkout read cannot leave the checkout
 - **WHEN** a script calls `read_checkout` on `docs/key` and `docs` is a link to `~/.ssh`
-- **THEN** the read is refused, since no link is followed and no path resolves outside the checkout
+- **THEN** the read is refused, since no link is followed and no path resolves outside the checkout, and `read_checkout` of a path containing `..` is refused the same way
 
 #### Scenario: The script cannot prompt on its own
 - **WHEN** a script calls `agent_prompt` from a timer and the extension holds `agent:prompt` but not `agent:prompt:auto`

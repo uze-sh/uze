@@ -128,8 +128,24 @@ stop while the operator's pause is on.
 - **THEN** only `continue` can be sent, and only when the pane is ready
 
 #### Scenario: A flood is cut by the limit
-- **WHEN** an extension sends more unattended prompts to one agent than the rate allows
+- **WHEN** an extension sends a second unattended prompt to one agent within the same turn, or a fourth reaches it within a minute from any extensions
 - **THEN** the excess is dropped with a notice naming the extension, and no more than the limit reaches the agent
+
+### Requirement: Unattended prompts are rate-limited by the host
+The host, in its one writer into a pane, SHALL allow per (extension, agent)
+one unattended prompt per agent turn and at most one per 60 seconds; per
+agent across every extension 3 per minute and 20 per hour; at least 10
+seconds between any two unattended writes into one pane; each at most 512
+bytes. `agent:prompt:auto` SHALL last 24 hours from acceptance, per project
+and agent, after which the next attempt asks again.
+
+#### Scenario: The grant expires
+- **WHEN** 24 hours have passed since `agent:prompt:auto` was accepted for an agent and a timer fires
+- **THEN** nothing is written, and the operator sees a toast that opens the dialog to accept it again
+
+#### Scenario: A turn is the unit
+- **WHEN** an agent's turn finishes and two extensions each hold `agent:prompt:auto` on it
+- **THEN** each may write once for that turn, ten seconds apart, and neither writes again before the next turn or 60 seconds
 
 #### Scenario: The operator pauses automation
 - **WHEN** the operator presses the pause key for unattended prompts

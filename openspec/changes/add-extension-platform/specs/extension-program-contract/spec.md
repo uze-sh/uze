@@ -28,15 +28,24 @@ tests. A script SHALL need no build.
 ### Requirement: A program is an argv the host runs once per question
 A source, an action or a command declared by an extension SHALL be an argv
 array. The host SHALL run it once per question, without a shell, with the
-checkout the surface is open on as its working directory, and SHALL NOT keep
-it running after it answers. A declaration that spells a program as a single
-string to be split or interpreted by a shell SHALL be refused by the check.
+checkout the surface is open on, a Git worktree root as D6 defines it, as
+its working directory, and SHALL NOT keep it running after it answers. A
+declaration that spells a program as a single string to be split or
+interpreted by a shell SHALL be refused by the check.
 
-> **Unresolved review findings** (design.md): M8, S6, S12.
+> **Review findings** (design.md, *Triage*): M8, S6, S12.
 
 #### Scenario: A source is run on demand and exits
 - **WHEN** a surface needs the data of a source and no fresh answer is cached
-- **THEN** the host runs the source's argv once, reads its answer, and no process of that extension remains afterwards
+- **THEN** the host runs the source's argv once, reads its answer, and no process of its process group remains afterwards
+
+#### Scenario: A home directory is not a checkout
+- **WHEN** the workspace is opened on a repository whose root is `$HOME`
+- **THEN** no extension source runs there and the Extensions screen says why
+
+#### Scenario: A moved checkout is caught on the next run
+- **WHEN** the checkout's root is replaced by a link to another directory while the client runs
+- **THEN** the next run is refused, since the root no longer resolves to the worktree the workspace knows
 
 #### Scenario: A shell string is refused
 - **WHEN** a manifest declares `run "openspec list --json | jq ."`
@@ -49,7 +58,7 @@ and close it. The object SHALL carry `protocol` (the contract version), a
 the declaration named in its `input` list, taken from the selected item or
 the surface's state. Nothing the declaration did not name SHALL be sent.
 
-> **Unresolved review findings** (design.md): S8.
+> **Review findings** (design.md, *Triage*): S8.
 
 #### Scenario: Only declared inputs reach the program
 - **WHEN** a source declares `input "change" "mode"` and the operator has selected change `support-macos` in mode `tasks`
@@ -80,7 +89,7 @@ action nothing or an object whose `toast`, `refresh` and `store` fields the
 host applies. Stderr SHALL be only a refusal's or failure's reason, bounded,
 never parsed.
 
-> **Unresolved review findings** (design.md): `output: lines` (adopted, D4).
+> **Review findings** (design.md, *Triage*): `output: lines`, adopted in D4, arrives with programs.
 
 #### Scenario: A list source feeds a navigator
 - **WHEN** a list source prints `[{"name": "support-macos", "status": "in-progress"}]`
@@ -145,7 +154,7 @@ stopped together with every process it started, and the run SHALL count as a
 failure naming the bound that was hit. A manifest MAY lower the bounds for
 one program and SHALL NOT raise them above the host's ceiling.
 
-> **Unresolved review findings** (design.md): S13.
+> **Review findings** (design.md, *Triage*): S13.
 
 #### Scenario: A program that hangs is stopped
 - **WHEN** a source is still running when its time limit passes
@@ -155,13 +164,28 @@ one program and SHALL NOT raise them above the host's ceiling.
 - **WHEN** a source writes more than the output ceiling
 - **THEN** the run is stopped and counted as a failure, and the host never holds more than the ceiling in memory
 
+### Requirement: A run is bounded in processes, CPU, files and disk
+Where the platform confines, every program run SHALL be reaped through a
+subreaper, bounded in CPU time to twice its time limit, in files written to
+64 MiB inside its scratch directory, in open files to 256 and in address
+space to 2 GiB, with at most two runs in flight across every extension. The
+host SHALL NOT bound processes per user, which would throttle the agents.
+
+#### Scenario: Two runs at a time
+- **WHEN** five extensions each ask a question on one event
+- **THEN** at most two programs run at once and the rest wait their turn in their extension's lane
+
+#### Scenario: Disk cannot be filled
+- **WHEN** a program writes without end into its scratch directory
+- **THEN** the write fails at the bound and the run is reported as it exited
+
 ### Requirement: Nothing the workspace draws waits on a program
 Every program run SHALL happen off the thread that draws and reads input, and
 its answer SHALL carry the question it answers, so an answer that arrives
 after the viewer moved on is dropped rather than drawn. While a run is in
 flight the surface SHALL keep drawing its last answer.
 
-> **Unresolved review findings** (design.md): A1, M4.
+> **Review findings** (design.md, *Triage*): A1, M4.
 
 #### Scenario: A slow source does not freeze the client
 - **WHEN** a source takes five seconds to answer
@@ -172,16 +196,21 @@ flight the surface SHALL keep drawing its last answer.
 - **THEN** A's document is never drawn and B's is
 
 ### Requirement: Answers are remembered until something says they changed
-The host SHALL remember a source's last answer per checkout and input, and
-SHALL run the source again only when a declared event, an action's `refresh`,
-or an explicit refresh names it. A remembered answer SHALL be rebuildable:
-deleting it costs nothing but a run.
+The host SHALL remember a source's last answer for the session, per
+identity, source, checkout and input, in memory, and SHALL run the source
+again only when a declared event, an action's `refresh`, or an explicit
+refresh names it. A remembered answer SHALL never be written to disk; the
+first open of a session costs one run.
 
-> **Unresolved review findings** (design.md): M2.
+> **Review findings** (design.md, *Triage*): M2, resolved by D4.
 
 #### Scenario: Reopening a surface costs no run
-- **WHEN** the operator closes the board and opens it again with nothing changed
+- **WHEN** the operator closes the board and opens it again with nothing changed in the same session
 - **THEN** the board is drawn from the remembered answers without running any program
+
+#### Scenario: A restart remembers nothing
+- **WHEN** the workspace client is restarted and the board is opened
+- **THEN** its sources run once, and no file under `$UZE_HOME` held their previous answers
 
 #### Scenario: An event refreshes what it names
 - **WHEN** the checkout changes and the manifest maps `checkout.changed` to `refresh: [changes]`

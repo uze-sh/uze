@@ -14,7 +14,7 @@ no change to the workspace client's code. The built-in `code` and `architect`
 extensions SHALL be hosted through that contract with no change an operator
 can observe.
 
-> **Unresolved review findings** (design.md): A1, A2, A3.
+> **Review findings** (design.md, *Triage*): A1, A2, A3, resolved by `generic-extension-host`.
 
 #### Scenario: The built-ins behave as before
 - **WHEN** the operator opens the code surface and the architect surface after the change
@@ -32,18 +32,26 @@ literals or field references (`{field}`) into the answer of a source or the
 current selection; the manifest SHALL NOT contain conditionals, loops or
 expressions. Unknown keys SHALL be refused.
 
-> **Unresolved review findings** (design.md): S15.
+> **Review findings** (design.md, *Triage*): S15.
 
 #### Scenario: An expression is refused
 - **WHEN** a manifest writes `marker "{done > 0 ? done : '-'}"`
 - **THEN** the check fails saying a template is a field reference, not an expression
+
+#### Scenario: A malformed id is refused
+- **WHEN** a plugin ships `extensions/../x/extension.kdl` or an id with an uppercase letter or a double hyphen
+- **THEN** the check refuses the id, saying an id is lowercase letters, digits and single hyphens, up to 32 characters
+
+#### Scenario: A grant this build cannot enforce is named with its change
+- **WHEN** a manifest's `wants` names `agent:prompt` on a build that carries no agent bridge
+- **THEN** the check refuses the grant saying it arrives with the bridge, and checks the rest of the manifest
 
 ### Requirement: A manifest's protocol is checked
 A manifest declaring a `protocol` this build does not know SHALL be refused
 with the version it declares and the versions this build accepts, and the
 rest of the plugin SHALL install.
 
-> **Unresolved review findings** (design.md): `noyalib` 0.0.x (moot for manifests since D22).
+> **Review findings** (design.md, *Triage*): `noyalib` 0.0.x, moot for manifests since D22.
 
 #### Scenario: A newer protocol is named, not guessed
 - **WHEN** a manifest declares `protocol 2` to a build that knows only `1`
@@ -227,7 +235,7 @@ meaning the host draws in the active theme. Colour SHALL be named only as a
 semantic role; no manifest or answer SHALL name a colour value or a glyph,
 except the pixels of an image.
 
-> **Unresolved review findings** (design.md): the proposed shrink to the openspec board's catalog; M4.
+> **Review findings** (design.md, *Triage*): the proposed shrink to the openspec board's catalog (superseded by the gallery rule); M4 (memoized).
 
 #### Scenario: A colour value is refused
 - **WHEN** a manifest writes `role: "#ff0000"`
@@ -281,7 +289,7 @@ it does: a program, or a built-in (`clipboard`, `open_path`, `refresh`,
 its menu; every action SHALL appear in the footer and action index with its
 resolved key.
 
-> **Unresolved review findings** (design.md): A4.
+> **Review findings** (design.md, *Triage*): A4, resolved by D8.
 
 #### Scenario: An item action is in the item's menu
 - **WHEN** the operator opens the menu of a navigator item on a surface with an `archive` action on `board.item`
@@ -298,7 +306,7 @@ checkout), `paths.changed`, `every`, the bridge's agent events,
 `work.named`, `install.converged`, `rebase.paused`, `theme.changed`. Events
 SHALL be coalesced per extension in a window.
 
-> **Unresolved review findings** (design.md): observability of events (see D17).
+> **Review findings** (design.md, *Triage*): observability of events, resolved by D17.
 
 #### Scenario: An undeclared event costs nothing
 - **WHEN** an agent finishes and an extension declared only `checkout.changed`
@@ -321,11 +329,12 @@ SHALL be coalesced per extension in a window.
 - **THEN** the check reports the interval raised to the 5-second floor, and the source does not run while nothing that shows it is visible
 
 ### Requirement: An extension keeps a small store of its own
-An extension SHALL have one bounded key/value store per project, keyed by
-its identity (`plugin@marketplace/id`), or one for all projects only if the
-manifest declares it and consent says so. Programs SHALL receive it when
-their declaration names it and patch it through any answer. It SHALL be
-removed with the plugin; a patch over the bound SHALL be refused.
+An extension SHALL have one key/value store per project, bounded at 1 MiB,
+keyed by its identity (`plugin@marketplace/id`), or one for all projects
+only if the manifest declares `store: global` and the operator consented to
+that grant on its own. Programs SHALL receive it when their declaration
+names it and patch it through any answer. It SHALL be removed with the
+plugin; a patch over the bound SHALL be refused.
 
 #### Scenario: A high score survives a restart
 - **WHEN** a program answers `store: {"best": 42}` and the workspace client is restarted
@@ -410,11 +419,26 @@ whether they are enabled, and SHALL let the operator disable and re-enable an
 installed extension. A disabled extension SHALL run no program and deliver no
 surface.
 
-> **Unresolved review findings** (design.md): enablement scope; S4.
+> **Review findings** (design.md, *Triage*): enablement scope; S4.
 
 #### Scenario: Disabling stops every program
 - **WHEN** the operator disables an extension
 - **THEN** its surfaces disappear from the workspace and none of its sources, actions, events or commands run
+
+### Requirement: Enabling is per project
+Consent to an extension's grants SHALL be given once per machine, per
+identity and digest; enabling SHALL be per project. An extension enabled in
+one project SHALL run no program and deliver no surface in another until
+enabled there, and there SHALL be no machine-wide enable. A plugin a project
+declares SHALL offer its extensions in that project on first open.
+
+#### Scenario: Enabling does not cross projects
+- **WHEN** `gsd-band` is enabled in project A and the operator opens project B, which declares the same plugin
+- **THEN** B shows the extension as needing enabling and nothing of it runs in B
+
+#### Scenario: Consent is not asked twice for the same code
+- **WHEN** the operator accepted `gsd-band`'s grants in project A and enables it in project B at the same digest
+- **THEN** B asks to enable, listing the grants already accepted, and records no second consent
 
 ### Requirement: A linked extension reloads on save
 An extension installed from a linked marketplace SHALL reload when its files
@@ -428,7 +452,7 @@ SHALL run under the same grants and confinement as any extension.
 - **THEN** the surface redraws with the new gap from its last answers and no program runs
 
 #### Scenario: A linked extension gets nothing extra
-- **WHEN** a linked extension's program writes outside the checkout without `write:checkout`
+- **WHEN** a linked extension's program writes into the checkout
 - **THEN** the write is denied exactly as for an extension from any other marketplace, and the inspector shows the denial
 
 #### Scenario: Only linked extensions are watched

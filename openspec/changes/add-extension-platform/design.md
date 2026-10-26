@@ -23,7 +23,8 @@ See proposal.md for why. What the design has to work with:
   `BuiltinExtension` records, and the Extensions screen is static.
 - **Plugins are discovered by layout.** `delivery/engine.rs`
   `package_resources_at` walks a package for `skills/`, `hooks.json`,
-  `mcp.json`, `agents/` and `AGENTS.md`. Trust (`package/trust.rs`) asks only
+  `mcp.json`, `agents/` and `AGENTS.md`; extensions are not among them
+  (*Discovery*). Trust (`package/trust.rs`) asks only
   when a source crosses the trust boundary (remote Git, embedded), and it
   records nothing: "not a permission system".
 - **Process building blocks exist** in `machine/subprocess.rs`:
@@ -131,47 +132,68 @@ rendering libraries; `crate-layering.mmd` gains the crate.
 make `uze-core` depend on presentation. Define it in `uze-core` and mirror it
 in `uze-extensions`. Rejected: two definitions of one schema drift.
 
+### Discovery
+
+An extension is found by its own path, never as a routed package resource
+(A5, resolved by `extension-view-engine`):
+`uze_core::capability::extension::discover(plugin_dir)` lists every
+`extensions/<id>/extension.kdl` (directory entries only, id order), and
+`uze_application::Extensions::installed()` is its only consumer, reading a
+linked marketplace's plugin from its working tree and every other from the
+Store. `delivery/engine.rs::package_resources_at` walks `skills/`,
+`mcp.json`, `agents/` and `hooks.json` and nothing else, so the Router,
+exposure, receipts and the integrations never see an extension.
+`Extensions::check(plugin_dir)` compiles each one for `uze agent plugin
+check`; change 4 makes it check sources, actions, events and `wants` too
+(preferences in change 6), with the decoder's refusals (unknown node,
+repeated property, wrong case, type annotation), and the grants record
+(D5) is read beside it. VS Code reads `contributes` from the manifest and
+Zed reads `extension.toml` and nothing else; both find an extension by a
+fixed path, which is what `discover` does.
+
 ### D2. The generic contract: `Extension` plus opaque jobs
 
-```rust
-pub trait Extension {
-    fn id(&self) -> &str;
-    fn surfaces(&self) -> &[SurfaceDecl];            // view / section, title, applies_when
-    fn view(&self, surface: SurfaceId, space: Size) -> Option<View>;
-    fn section(&self, surface: SurfaceId) -> Option<Section>;
-    fn command(&mut self, surface: SurfaceId, command: Command, space: Size) -> Outcome;
-    fn hit(&mut self, surface: SurfaceId, hit: ViewHit, space: Size) -> Outcome;
-    fn scroll(&mut self, surface: SurfaceId, target: ScrollTarget, direction: ScrollDirection);
-    fn event(&mut self, event: &Event);
-    fn jobs(&mut self) -> Vec<Job>;                  // work that needs the Host
-    fn absorb(&mut self, answer: JobAnswer);
-    fn place(&self) -> Place;                        // opaque, handed back on resume
-    fn resume(&mut self, place: Place);
-}
-pub struct Job { pub run: Box<dyn FnOnce(&dyn Host) -> JobAnswer + Send> }
-pub struct JobAnswer(Box<dyn Any + Send>);
-pub enum Outcome { Stay, Close, Copy(String), OpenPath { .. }, Toast { title, detail }, Notice(Span) }
-pub struct ExtensionHit { pub extension: ExtensionSlot, pub surface: SurfaceId, pub hit: ViewHit }
-```
+Rewritten 2026-10-26 to describe what `extension-view-engine` and
+`generic-extension-host` built (A1–A3 resolved). The host speaks to every
+extension, built-in or declared, through `contract::Extension` alone
+(`crates/uze-extensions/src/contract.rs`), by the slot a surface stands in
+(`src/ui/orchestrator/declared.rs`).
 
-- **Opaque jobs replace the typed `spawn_*`/`absorb_*` pairs.** An extension
-  hands the host a closure that needs a `Host` and gets back the value that
-  closure produced. The orchestrator gets one pair,
-  `spawn_extension_job`/`absorb_extension_answer`, and `WorkspaceHost` still
-  appears only inside `thread::spawn`
-  (`the_workspace_client_reaches_for_git_only_from_a_thread` keeps holding).
-  `code`'s diff, refresh, file and measure reads, and `architect`'s artifact
-  read, become jobs. Each answer still carries the question it answers, so
-  staleness stays the extension's to judge, as it is today.
-- `ExtensionHit` becomes a struct. The per-extension variants existed only to
-  say "whose row 3", which the slot and surface now say.
-- `Outcome` is one enum. `code`'s `Copy` and `architect`'s `OpenPath` are its
-  first members.
-- `Place` replaces `Remembered.code_places`/`architect_places` with one map
-  keyed by (extension, checkout).
-- The registry becomes a factory (`ExtensionRegistry::open(id, context) ->
-  Box<dyn Extension>`) over built-ins plus the installed declared extensions,
-  which the host supplies as data from `uze-application`.
+- **Surfaces.** `identity()` is what the host attributes; `surfaces()` lists
+  `SurfaceInfo { id, slot, title }`; `view`, `section`, `command`, `hit`
+  and `scroll` answer by surface id. The gestures a board or an editor
+  needs (`open`, `enter`, `typing`, `paste`, `focus`, `missed`, `close`,
+  `layout`, `hover`, `drags`, `drag`, `pan`, `scroll_to`, `text`) each have
+  a default that does nothing (A1, H4).
+- **Opaque jobs.** `jobs()` hands the host `Job { run: FnOnce(&dyn Host)
+  -> Opaque, fallback: FnOnce() -> Opaque }`; the host runs each on a
+  thread in `orchestrator/answers.rs::schedule_engine_jobs` with
+  `WorkspaceHost`, answers the fallback when the thread dies, and routes
+  the answer to the same engine's `absorb`
+  (`orchestrator/answers.rs::absorb_engine_answer`), which returns an
+  `Outcome` (a write that failed after its surface closed is still said;
+  the `orphaned` hook was dropped because the extension knows whether its
+  surface is open). `lanes()` says whether the extension's jobs run one at
+  a time (`Serial`, the default: a save ahead of the read after it) or
+  together (`Parallel`).
+- **Outcome** is one enum: `Stay`, `Close`, `Notice`, `OpenPath { project,
+  target }`, `OpenCommit`, `Copy`, `Show`, `Failed`.
+- **Place and memory.** `place()`/`resume()` carry where the viewer was, per
+  surface; `memory()`/`restore_memory()` carry what outlives every surface
+  (a cache, a measure), kept by the host while the client runs.
+- `ExtensionHit { slot, hit }`: the slot names the extension and the
+  surface, so no per-extension variant exists.
+- **The host's side.** One engine per extension, shared by its slots, keyed
+  by `Owner::{Builtin(id), Declared(Identity)}`; the `Hosted` trait
+  (`replace`, `set_data`, `inspect`, `forget`) is what the host asks beyond
+  the contract, empty for a built-in. The architect's artifact read is
+  `Host::artifact_source` (A2); the code timeline is a `section` of
+  `CodeExtension` and its commit popup is `Outcome::OpenCommit` (A3).
+
+What this change adds to the contract: nothing. A declared extension that
+runs scripts asks the host through a `Job`, exactly as `code` asks for a
+diff: the question is a declaration id and an input (D3), never argv or
+script text.
 
 *Alternative:* an enum of request kinds in the contract. Rejected: every new
 extension would widen a shared enum, which is the closed-set problem again.
@@ -180,13 +202,20 @@ extension would widen a shared enum, which is the closed-set problem again.
 
 `declared/` implements `Extension` from a `Manifest` (leaf crate) and holds
 all view state: selection, folds, scroll, subject, mode, menus, confirmation.
-A job it hands the host is always "run program P with input I". The host
-fulfills it through a new `Host::run_program(ProgramRequest) ->
-ProgramAnswer`. That method is the grant that did not exist, stated as
-narrowly as ADR-048's: run *a declared argv of this extension*. It is never a
-free-form command. Field references (`{name}`) are resolved by the engine
-against the answer or the selection, and in the manifest they only ever
-produce whole strings; views follow D23.
+A job it hands the host is always "answer declaration D of extension E with
+input I". The host fulfills it through a new `Host::answer(Question) ->
+Answer`, where a question names the extension's identity, a declaration id
+and the declared input; the `ExtensionRunner` in `uze-application` resolves
+the declaration from the compile the operator consented to (D5), and only
+then knows whether it is a `script`, a `run` or a `fixture`, so what runs is
+what was accepted, never what the engine carries. The engine never holds
+argv or script text. There is no separate `ProgramHost`: a built-in has no
+manifest, so there is no declaration to find, and an architecture test says
+only `declared/` calls `answer`. That method is the grant that did not
+exist, stated as narrowly as ADR-048's: answer *a declaration of this
+extension*. It is never a free-form command. Field references (`{name}`)
+are resolved by the engine against the answer or the selection, and in the
+manifest they only ever produce whole strings; views follow D23.
 
 ### D4. The program contract reuses the hook contract's shape
 
@@ -199,9 +228,19 @@ and never raise them. The runner is the only place in the workspace that
 spawns an extension program. An architecture rule sanctions it by name, the
 way `uze-git` and `acquisition::git` are sanctioned.
 
-Answers are remembered in `cache/extensions/<id>/`, keyed by (checkout,
-source, input digest). That is the *remembered* tier: deleting it costs one
-run.
+Answers are remembered in memory for the session, by the host's runner
+(the `ExtensionRunner` of `uze-application`, never `uze-extensions`), keyed
+by (identity, source, checkout, input digest); nothing is written to disk,
+so there is no cache path to name and nothing a restart could leave stale.
+Reopening a surface in one session costs no run; the first open of a
+session costs one (decided 2026-10-26, M2: `uze-extensions` may not use
+`std::fs`, no event invalidates a disk cache across restarts, and D28
+measured 0.45 ms per script answer).
+
+Modes and envelope members arrive with the change that can honour them:
+`json` and `data`/`refresh`/`toast`/`notice` with change 4; `lines` and
+`store` with change 5 (programs, the store); `view` (compose), `notify`
+and `sound` with change 6; `cells`, `image` and `sprite` with change 7.
 
 A declaration names its output mode:
 - `json` (the default): a list of objects or an object, for `bind`.
@@ -236,26 +275,66 @@ when the declaration names them, `event`, `store` and
 Trust today answers "may these bytes be installed" and records nothing. An
 extension needs a different question: "may this code run with these grants".
 So consent to an extension is **enabling** it, separate from installing the
-plugin:
+plugin. Settled 2026-10-26 (S4, S5, 0.2.2, R-A10, R-S14):
 
-- The grants the operator accepted are a **record** at
-  `state/extensions.json`, per extension id: the accepted grants, the digest
-  they were accepted at, and enabled/disabled. It declares its shape through
-  `uze_document::Shaped`, and its path is named in `UzeHome`.
+- **Identity.** An extension's canonical identity, for every machine-facing
+  key, is `plugin@marketplace/id`, the marketplace by the name registered
+  in `marketplaces.json` (a marketplace re-registered under another URL is
+  another identity). It keys the grants record, the session cache (D4), the
+  store (D18) and the keymap namespace, whose `keys.json` name is
+  `ext.<plugin>@<marketplace>/<id>.<action>` (D8). The chrome keeps showing
+  `id · plugin@marketplace`, which is the `Display` of
+  `uze_contract::Identity`. A bare `id` is never a key: a same-named
+  extension from another plugin is a stranger, with no record, store, cache
+  or keys in common, and a change of plugin or marketplace is a new
+  identity consented to from nothing.
+- **The record** is `state/extensions.json`, shape 1, per identity: the
+  accepted grants, the digest and time they were accepted at, the resolved
+  `exec:` paths (change 5), whether confinement was enforced when accepted
+  (`enforced_at_accept`), and the projects it is enabled in (`enabled_in`,
+  each identified as ADR-055 identifies a project). It declares its shape
+  through `uze_document::Shaped`, and its path is named in `UzeHome`.
+- **Consent is per machine; enabling is per project.** Consent is given once
+  per (identity, digest), because the code is the same in every project.
+  Enabling is per project: an extension runs only in a project the operator
+  switched it on in; a plugin a project declares offers its extensions
+  there, and the first open of the workspace in that project shows the
+  toast → dialog, as the project's `approved-commands` do; a plugin
+  installed at machine scope appears in every project, disabled until
+  switched on there. There is no machine-wide enable.
+- **The digest is of the bytes that run.** It is the SHA-256 of the whole
+  `extensions/<id>/` tree (manifest, views, scripts, packaged programs,
+  fixtures) over the bytes the loader read into memory once, bounded; what
+  compiles and runs is what was digested, never a re-read of the disk.
 - Every source asks, local ones included (unlike `trust.rs`), because what is
   consented to is execution on this machine, not provenance.
-- An update is compared by **grant set**, not by digest. Only a widening
-  holds the extension. That keeps a linked local marketplace editable
-  without a prompt on every save.
-- Where consent is asked:
-  - `uze install`, on a TTY, prompts after the plugin installs, using the
-    prompt style of `PromptingAuthority`.
+- **An update is compared by grant set** where every accepted grant is
+  enforced on this machine, and **by digest** where any is not (an `exec:`
+  without OS confinement, a general-purpose runner anywhere) or where
+  `agent:prompt:auto` is held. Only a widening, or a digest change under
+  the digest rule, holds the extension; a narrowing applies; the same set
+  applies without asking, and the Extensions screen shows "updated
+  <date>, same grants" with the new digest. A linked local marketplace is
+  always by grant set, which keeps it editable without a prompt on every
+  save. Optional pinning by digest is an operator preference owed to change
+  8.
+- Where consent is asked, and only there:
+  - `uze install`, on a TTY outside an agent's pane, prompts after the
+    plugin installs, using the prompt style of `PromptingAuthority`.
   - A non-interactive install leaves the extension disabled and reports it.
   - The TUI Extensions screen has Enable/Disable with the grants listed.
   - `uze status` and `uze inspect <plugin>` report each extension's state
-    (enabled, needing consent, held by a widened update); enabling is never
-    a CLI verb run from an agent's pane (R-A10).
+    (enabled, needing consent, held by a widened update). Enabling is never
+    a CLI verb run from an agent's pane (R-A10): the CLI refuses when
+    `UZE_AGENT` is in the environment or `launched_by` points at a pane, the
+    check `uze workspace allow` already makes (ADR-055), and there is no
+    `--yes`/`--trust` flag for extensions.
 - Built-in extensions are part of the binary and need no grants.
+- **Grants arrive with their enforcement.** Change 4 accepts
+  `read:checkout`, `clipboard` and `open_path` (the last two only from a
+  gesture); the check refuses every other grant with "arrives in change
+  N": `exec:` and `store` in 5, `agent:*`, `notify` and preferences in 6,
+  `resident` in 7, `net` and `secret` in 8.
 
 *Alternative:* extend `trust.rs`'s `executable_capabilities` so installing
 is the consent. Rejected for two reasons. Trust is skipped for local sources.
@@ -271,25 +350,131 @@ platform and "unavailable" as one of them (AGENTS.md: a `cfg!` at a call site
 is a missing concept there). The runner in `uze-core` asks it for a
 confinement and never names a platform.
 
-- **Linux**: Landlock, applied in the child between fork and exec. The
-  filesystem is read-only on the checkout, the extension's Store directory
-  and system paths (`/usr`, `/bin`, `/lib*`, `/etc`). Writing is allowed only
-  in the checkout, and only with `write:checkout`. The rest of `$UZE_HOME` is
-  denied. Network is denied via Landlock TCP rules (ABI ≥ 4) plus a small
-  seccomp filter on `socket(AF_INET|AF_INET6)` unless `net` is granted. The
-  ruleset is built before fork, so the child only restricts itself.
-- **macOS**: `sandbox-exec` with a generated profile expressing the same
-  three questions.
-- **Unavailable** (old kernel, Landlock disabled, other platforms): programs
-  still run with argv-only execution, a scrubbed environment and bounds. The
-  consent screen, the Extensions screen and `uze doctor` say that grants are
-  declared but not enforced here.
+Settled 2026-10-26 (S1, S3, S6, S7, S9, S10, S13, S17, S18, 0.2.1, 0.2.3);
+all of it arrives with change 5, since change 4 runs no program.
+
+- **Linux**: Landlock, applied by a re-executed single-threaded helper
+  (`uze __confine -- <argv>`) that installs Landlock, then seccomp, then
+  `execve`, never in a `pre_exec` of the multi-threaded client. Reading is
+  allowed on the checkout and its Git common directory, the extension's
+  Store directory, the per-run scratch directory, system prefixes (`/usr`,
+  `/bin`, `/sbin`, `/lib*`, `/etc`, `/opt`, `/nix/store`, `/snap`),
+  `/proc/self`, `/proc/sys/kernel/{random,osrelease}`, `/dev/{null,zero,
+  urandom,random}` and the prefix of each pinned `exec:` path; nothing of
+  `$HOME` outside those prefixes, and no other process's `/proc/<pid>` (a
+  harness's environment holds API keys). Nothing of the checkout is
+  writable; the only writable paths are `/dev/null` and a per-run scratch
+  directory the runner creates and removes. The rest of `$UZE_HOME` is
+  denied. Network is denied by an allowlist of socket families in a
+  seccomp filter the helper installs on itself before `execve`: without
+  `net`, `socket` is refused for every family and `socketpair` only admits
+  AF_UNIX, `connect`/`bind`/`listen`/`accept*`/`sendto`/`sendmmsg`/
+  `recvmmsg`/`get|setsockopt` are refused, and `io_uring_*`, `ptrace` and
+  `process_vm_*` are refused in every mode; with `net`, `socket` admits
+  AF_INET and AF_INET6 only, so a pathname Unix socket (`docker.sock`, an
+  ssh or gpg agent, the systemd user bus, the WSL interop socket) is never
+  reachable, and Landlock ABI ≥ 4 allows TCP connect and denies bind. On
+  WSL, AF_VSOCK is refused in `socket` and `socketpair`, `WSL_INTEROP` and
+  `WSL_DISTRO_NAME` leave the environment, and `/run/WSL` and `/mnt/*`
+  (drvfs) are outside the read ruleset. The filter's prologue checks the
+  audit architecture and kills on a mismatch. On Landlock ABI ≥ 6 abstract
+  Unix sockets and signals are scoped to the domain; below it, seccomp
+  limits `kill`, `tkill`, `tgkill`, `pidfd_send_signal` and
+  `rt_sigqueueinfo` to the program's own group or itself. Enforcement is
+  recorded and shown **per right** (`truncate` below ABI 3, TCP below 4,
+  `ioctl` below 5, scoping below 6) with `CompatLevel::HardRequirement` for
+  what consent promised, never a silent best effort. A device a program
+  needs (`nvidia-smi`) is declared on its `exec:` grant as `reads` paths
+  (`/dev/nvidia*`, `/proc/driver/nvidia`), listed on the consent screen,
+  with `IOCTL_DEV` on ABI ≥ 5.
+- **Resources** (S13): the helper is a subreaper (`PR_SET_CHILD_SUBREAPER`);
+  `RLIMIT_CPU` is twice the time limit, `RLIMIT_FSIZE` 64 MiB on the
+  scratch directory, `RLIMIT_NOFILE` 256, `RLIMIT_AS` 2 GiB; never
+  `RLIMIT_NPROC`, which is per uid and would throttle the agents. A fork
+  bomb is contained by the subreaper, a double kill of the group and a cap
+  of two concurrent runs in all; a pids cgroup is used only where the
+  subtree is already delegated, detected and never required. The run's
+  `cwd` is the checkout root and its `TMPDIR` the scratch directory.
+- **`exec:git` in a hostile checkout** (S9): the runner injects
+  `GIT_CONFIG_PARAMETERS` (`core.fsmonitor=`, `core.hooksPath=/dev/null`,
+  `core.sshCommand=`, `credential.helper=`, `safe.directory=<root>`) and
+  `GIT_CONFIG_NOSYSTEM=1`, as `acquisition/git.rs` does.
+- **macOS**: `sandbox-exec` with a generated profile: `(deny default)`,
+  `(deny network*)`, no `(allow system-socket)`, no mach-lookup beyond the
+  Codex base list; with `net`, `(allow network-outbound (remote tcp))`,
+  UDP to `*:53`, and the mach services DNS and TLS need, Unix sockets still
+  denied; `(allow signal (target same-sandbox))`; `(allow process-fork)`
+  with the same rlimits.
+- **Windows**: not enforced in change 5 (disclosed, below); a Job Object
+  with `JOB_OBJECT_UILIMIT_*` (clipboard, desktop, atoms), kill-on-close,
+  `ActiveProcessLimit` 32, a process memory limit and breakaway denied,
+  over a clean environment. A restricted token or dedicated user (Codex's
+  `unelevated`/`elevated`, Claude Code's sandbox runtime) is its own later
+  change, `extension-confinement-windows`.
+- **Checked on every run** (S18): the helper verifies `RulesetStatus` is
+  `FullyEnforced` (else it reports right by right), that
+  `prctl(PR_SET_NO_NEW_PRIVS)` and `SECCOMP_SET_MODE_FILTER` returned, and
+  that `sandbox-exec` exited 0; any failure returns an exit code of its own
+  to the runner, which marks the run unenforced and, if the record says
+  `enforced_at_accept: true`, **refuses** the run and asks for consent
+  again rather than running "as you" by surprise.
+- **Unavailable** (old kernel, Landlock disabled, a container that blocks
+  `landlock_*`, native Windows, macOS without `sandbox-exec`): programs
+  still run with argv-only execution, a scrubbed environment and bounds.
+  An extension with `exec:` grants may still be enabled, from UZE's chrome
+  only, after a separate consent step with the fixed text of *Product
+  decisions owed* ("This machine cannot confine programs. `<program>` runs
+  as you…"); the record keeps `enforced_at_accept: false`, the identity is
+  re-asked by digest on every update (D5), and the Extensions screen,
+  `uze status` and `uze doctor` show "runs as you". No setting silences it.
 - **Dependency**: the `landlock` crate, published by the Landlock LSM
   maintainers from `landlock-lsm/rust-landlock`, pure Rust with no C. It is
   judged by the dependency policy before it is taken. The fallback is
   hand-written syscalls over `libc`, which the workspace already has. The
   seccomp filter is written over `libc` (`prctl` plus a fixed BPF program)
   rather than taking a seccomp crate.
+
+**`exec:` is a dependency pinned at enable time** (S3, S7). The host
+resolves each `exec:<name>` on its own search path
+(`harness_search_path()`: absolute entries, no network mount, never the
+checkout, `$UZE_HOME`, a temporary directory or a WSL `/mnt/*` path),
+canonicalises it, records it with the consent and shows it on the consent
+screen (`gh → /usr/bin/gh`). A name not found leaves the extension
+enablable with the source marked "`gh` not found", and the host resolves
+again only when the operator asks ("Resolve again" on the Extensions
+screen), never on a run. A run executes the recorded path with the argv
+rebuilt from the accepted manifest by declaration id, each `{field}` one
+whole element (S8, `--` required before a substituted value); a packaged
+script runs as `<interpreter path> <script>` from the `exec:` grant its
+shebang names, so `env` never runs; a packaged native binary is listed on
+the consent screen as "ships a program of its own" and is executable only
+itself; a relative program path resolves with `realpath` inside the
+extension's Store directory or is refused. A fixed list of general-purpose
+runners in `uze-core` (`sh`, `bash`, `zsh`, `python*`, `node`, `deno`,
+`bun`, `ruby`, `perl`, `env`, `xargs`, `npx`, `uvx`, `docker`, `ssh`,
+`git`, `make`) is consented to as "can run anything" and, without
+confinement, re-asked by digest on every update. `exec:uze` is refused by
+the check; the harnesses' own names are refused by `uze-application`
+asking the integration registry (core names no harness). Landlock grants
+execute on system prefixes and on the directory of a pinned path outside
+them (`~/.cargo/bin`, `~/.nvm/versions/node/*/bin`, `/opt/homebrew`), with
+`no_new_privs`: what the OS enforces is reach, not which binary, because
+every real CLI executes helpers (`git` → `git-core/*`, `gh` → `git`).
+
+**A checkout is a Git worktree root the workspace already knows** (S6): the
+root of a task's checkout or the project's root, never a string an
+extension supplied, canonicalised through `uze-git`'s `rev-parse
+--show-toplevel` and `realpath`, and never `/`, a volume root (`C:\`,
+`/mnt/c`), `$HOME` or an ancestor of it (a dotfiles repository in `~` is
+not a checkout: the screen says "your home directory is not a checkout"),
+`$UZE_HOME` or anything above or below it, a temporary directory, or a
+bare repository (its `.git`, directory or pointer file, must be inside).
+The runner and `read_checkout` check it on every run or call, not only
+when a surface opens, so a checkout moved or replaced by a link while the
+client runs is caught. `read:checkout` opens the root and the worktree's
+Git common directory, read-only; `context.checkout` is the same canonical
+string; `read_checkout` resolves beneath the root without following links
+(D19) and refuses `..`.
 
 ### D7. Everything an extension produces is sanitized once, at the boundary
 
@@ -300,19 +485,66 @@ when an answer is absorbed and when the manifest is loaded, so nothing
 downstream sees raw bytes. An architecture test asserts that the declared
 engine builds `Span`s only through the sanitizing constructor.
 
-### D8. Keymap: dynamic extension actions in one extension scope
+Settled 2026-10-26 (S14), for change 4, where third-party answers begin:
+the function becomes a `Clean` newtype in `uze-contract` that sanitizes in
+`Deserialize`, so an unclean string cannot be constructed from an answer or
+a manifest; it also strips format (Cf), zero-width and tag characters
+(U+E0000–E007F), U+2028/U+2029 and combining marks stacked beyond two, and
+bounds length in display cells (`unicode-width`), not bytes. The
+constructor-grep test becomes "the declared engine builds `Span`s only
+through `Clean`".
 
-`uze-keys` gains `Action::Extension(ExtensionActionId)`, named
-`ext.<extension>.<action>` in `keys.json`, and a `Scope::Extension` that is
-live when a declared extension's surface is in front. Registration happens
-when the keymap is resolved, from the enabled extensions:
+### D8. Keymap: one variant, a second table per extension
 
-1. A suggested chord that resolves to anything in the live scope stack is not
-   bound.
-2. A chord the operator's file binds wins.
-3. Collisions are reported in `uze doctor`.
+Rewritten 2026-10-26 (A4, R-U7). `uze-keys` keeps `Action` closed, `Copy`
+and `const`-listed (`ALL_ACTIONS` lists the host's actions only, so none
+of its ~730 uses changes); it gains one variant,
+`Action::Extension(ExtensionActionId)`, an interned number in a
+process-wide table (`uze_keys::extension`: `intern(name) -> id`,
+`name(id)`) that maps it to its `keys.json` name,
+`ext.<plugin>@<marketplace>/<id>.<action>` (the canonical identity of D5
+followed by the action id), and to the label and description the manifest
+gave, sanitized. `Scope::Declared` stays the one sealed scope of every
+declared surface; what varies per extension is a **second table**,
+registered when an extension is enabled and dropped when it is disabled
+(as `extension_switch::opened_by` already drops the switch), in two parts:
+
+- surface actions, live only while that extension's surface is in front,
+  resolved after `Global` and before `Scope::Declared`'s generic
+  vocabulary;
+- `open` actions (R-U7), live over the pane and every surface, resolved
+  after `Global`, `Workspace` and `Surfaces`, so they never shadow the
+  host.
+
+A suggested key (`key` in the manifest) is bound only when
+`Keymap::resolve` answers `Fallthrough` for it in the stack the action
+lives in (`[Global, Workspace, Surfaces, Declared]` for a surface action,
+`[Global, Workspace, Surfaces]` for `open`); since only the extension in
+front is consulted, two extensions with the same suggestion never collide
+with each other, and the host always wins. An `open` chord two extensions
+suggest goes to the first by identity and the other stays unbound, said in
+`uze doctor` and on the Extensions screen beside the action. The
+operator's `keys.json` binds or unbinds `ext.*` names like any other and
+beats the suggestion; a mnemonic conflict inside one extension drops that
+one binding with a `Problem` from `load`, never the load; a name of an
+extension not installed is a warning, as a newer uze's names are. A
+surface action may hold a bare letter (the surface seals, as `i` opens the
+inspector today); an `open` must carry a modifier or a function key (the
+`load.rs` test "a bare key the pane would never receive"). An action that
+declares `confirm` (or is an agent action, change 6) is destructive: the
+check refuses a bare-letter suggestion for it, which derives "destructive
+never holds an unmodified letter" from the declaration. The footer, the
+action index and item menus print the chord `chord_for` resolves, or offer
+the action by pointer when there is none. `label()`/`description()` of an
+`Extension(id)` come from the table.
 
 Built-in extensions keep their own scopes and actions.
+
+*References:* VS Code evaluates rules bottom-up with the user's file
+appended last (host → extension → operator here, `when` is the scope);
+Helix's sealed submodes are `Scope::Declared`; lazy.nvim's silent
+last-wins is what is refused; Zellij plugins contribute no keys and
+intercept input only as residents, which is the resident tier.
 
 ### D9. The catalog grows in `view.rs`, drawn by `src/ui/widget`
 
@@ -408,7 +640,7 @@ list over a CLI, and making each one a resident script would trade the
 | `view` | the full frame, opened like `code` | the frame less the host's attribution strip | layouts `sidebar` or `board`, as before |
 | `section` | a collapsible block of the workspace sidebar | sidebar width, rows the host grants | the timeline's place |
 | `drawer` | a card docked on the right of the agent area, toggled by its strip button or `alt+k` | 45% of the agent area, 44 to 72 columns, draggable; the pane keeps at least 40 | laid beside the pane, so the pane and its PTY narrow on open; not modal: a click lends it the keys, Esc gives them back; one open per space (added by `extension-view-engine`) |
-| `status` | a compact row in the sidebar's header | one row, sidebar width | no workspace status bar exists (`render.rs:57-67`), and one would shorten every pane; the operator orders segments |
+| `status` | a compact row in the sidebar's header | one row, sidebar width | no workspace status bar exists (the sidebar layout in `src/ui/render.rs`), and one would shorten every pane; the operator orders segments |
 | `band` | a fixed number of rows (1 to 6, declared in the manifest) along the top or bottom of an agent's pane | pane width × declared rows | reserved in `compute_layout`; never resized by an answer |
 | `overlay` | a picker, form or dialog over the frame | host-chosen | modal, under host chrome, opened by a gesture or the `open` action |
 | `notify` | an OS notification or the terminal bell | — | rate-limited, prefixed with the host's attribution |
@@ -488,6 +720,10 @@ clock, so no program runs to make something move. A composed view is built
 into a `View` once per (answer digest, size) and memoized (M5 of the
 second review).
 
+Compose arrives with change 6 (decided 2026-10-26, with R-S11): `bind`
+plus `each` over `Segment` already draws `gsd-band`'s per-phase bar, and
+no entry of change 4's gallery needs a tree the manifest cannot express.
+
 The catalog grows by the rule `view.rs` already states, made concrete: a
 node joins when a gallery entry (D20) needs it. D9's list is superseded by
 this table.
@@ -501,13 +737,13 @@ not need a program that prints UI.
 ### D16. The agent bridge
 
 **Reporting channel.** Nothing today lets a process in a pane tell the
-workspace client anything but "open a space" (ADR-056;
-`crates/uze-terminal/src/protocol.rs:300-313`). The bridge adds the channel
+workspace client anything but "open a space" (ADR-056; `OpenSpace` in
+`crates/uze-terminal/src/protocol.rs`). The bridge adds the channel
 the codebase already uses for work labels: a pane process proves itself with
 `UZE_AGENT`/`UZE_AGENT_KEY` and writes a record the client polls.
 - `uze agent report <event> [fields]`, verified by the agent key, appends to
   a bounded per-agent journal named in `UzeHome`; the client's one-second
-  watch (`src/ui/orchestrator/reads.rs:575-617`) reads it. Where a harness
+  watch (`src/ui/orchestrator/reads.rs`) reads it. Where a harness
   sandbox denies `$UZE_HOME` (ADR-056's advice), the journal is unwritable
   and the bridge reports that agent's events as unavailable.
 - The reporter is delivered **per launch**, through
@@ -542,8 +778,9 @@ shape where the harness reports it. Its scope is the workspace's open
 spaces, so `jump` can cross checkouts.
 
 **Writing to an agent is typing.** UZE writes through the path it already
-has, `submit_notice` gated by `may_submit` (`absorb.rs`, `agents.rs:269-278`,
-answering Busy, Typed or Unknown), never the operator's key forwarder. What
+has, `submit_notice` gated by `may_submit` (`absorb.rs`,
+`orchestrator/agents.rs::may_submit`, answering Busy, Typed or Unknown),
+never the operator's key forwarder. What
 it writes reaches the harness's input, where `!`, `/`, `#`, `@` and a `y`
 in an open approval are actions. So:
 - the text is filtered strictly: no control, Cf, zero-width or tag
@@ -573,14 +810,19 @@ in an open approval are actions. So:
 - `agent:prompt`: from a gesture, after the host shows the exact text, the
   target agent and the extension.
 - `agent:prompt:auto`, asked on its own after the rest, per project and per
-  agent, time-boxed, never machine-wide: an event or a timer may send only
-  the manifest's **fixed text**, or a declared skill with arguments from a
-  **closed set** the manifest lists. Nothing from a source's answer, an
-  event payload or the repository becomes prompt text.
-  Each write is rate-limited per agent, attributed in the band or a notice,
-  and pausable with the host's pause key, which a resident surface cannot
-  capture. Any change of the extension's digest revokes it, whatever D5
-  says of grant sets.
+  agent, for 24 hours from acceptance, never machine-wide: an event or a
+  timer may send only the manifest's **fixed text**, or a declared skill
+  with arguments from a **closed set** the manifest lists. Nothing from a
+  source's answer, an event payload or the repository becomes prompt text.
+  Each write counts against the rates of *Product decisions owed*
+  (decided 2026-10-26, enforced by the host in `submit_notice`, never by
+  the extension), is attributed in the band or a notice, and pausable with
+  the host's pause key, which a resident surface cannot capture and which
+  resets every counter until resumed. A "turn" is the bridge's
+  `agent.turn.finished`, or the paint heuristic's end where no reporter
+  exists; while the pane is not `Ready` nothing is sent or queued
+  (ADR-059); the excess is dropped with an attributed notice. Any change of
+  the extension's digest revokes it, whatever D5 says of grant sets.
 
 *Alternative:* no agent actions. Rejected: the gsd-band's value is its next
 action button, and every harness that allows it (mods, OpenCode, the Codex
@@ -593,9 +835,9 @@ D10 is superseded by this decision; tasks 7.x are folded into group 15.
 - `every: <duration>` runs the sources it names on an interval, with a floor
   of 5 seconds, only while a surface that shows them is visible.
 - `paths.changed: [<paths>]` runs them when a declared path inside the
-  checkout changes, from the client's existing one-second watch
-  (`reads.rs:575-617`) extended with a bounded digest of the declared
-  paths' modification times. It covers paths Git ignores.
+  checkout changes, from the client's existing one-second watch (the
+  watch in `src/ui/orchestrator/reads.rs`) extended with a bounded digest
+  of the declared paths' modification times. It covers paths Git ignores.
 - `checkout.changed` comes from that same watch, per checkout an open
   surface is on.
 - `agent.*` comes from the bridge (D16), not from repaints.
@@ -613,25 +855,34 @@ D10 is superseded by this decision; tasks 7.x are folded into group 15.
 
 ### D18. Store and preferences
 
-- **Store**: a key/value document per (extension identity, project),
-  bounded at 1 MiB, unless the manifest declares `store: global` and
-  consent says so. A program receives it in `input.store` when its
+Settled 2026-10-26: the store arrives with change 5 (`gpu-meter` is the
+first entry that needs it), preferences with change 6 (`agents-hud`'s
+`{pref.*}`), and the `secret` type with `net` in change 8, since a secret
+without a network call has no use.
+
+- **Store** (R-S13): a key/value document per (extension identity, project),
+  bounded at 1 MiB, unless the manifest declares `store: global` and a
+  consent of its own says so. A program receives it in `input.store` when its
   declaration names it, and any answer may carry a `store` patch in the
   envelope (D4); the host applies patches in arrival order, last write per
   key wins. It is extension state, so its path is named in `UzeHome` in the
   tier the `persistence-tiers` rule gives state an operator would miss, and
   it is removed with the plugin.
 - **Preferences**: typed fields the manifest declares (`text`, `number`,
-  `toggle`, `choice`, `secret`), edited on the Extensions screen, passed in
-  `input.preferences` only when the declaration names them, and readable by
-  bind templates (`{pref.name}`) except a `secret`.
-- **Secrets** are kept by `uze-platform` in the OS keychain where there is
-  one, else in a per-extension `0600` file outside every path an agent's
-  pane is told about; never in `state/extensions.json`. A secret is never
-  shown again, logged, piped, part of a cache key, or sent to an agent. An
-  answer from a run that received a secret may not patch the store or carry
-  an `agent.prompt` (tainted), and its strings are checked for the secret
-  before they are drawn.
+  `toggle`, `choice`; `secret` from change 8), edited on the Extensions
+  screen, passed in `input.preferences` only when the declaration names
+  them, and readable by bind templates (`{pref.name}`) except a `secret`.
+- **Secrets** (R-S8) are kept by `uze-platform` in the OS keychain where
+  there is one, with no new crate: Windows Credential Manager through the
+  `windows-sys` already in the tree, macOS Keychain through the system's
+  `security` by path or the framework, and on Linux a `0600` file under
+  `state/extensions/secrets/` (Secret Service would bring `zbus`), outside
+  every path an agent's pane is told about; never in
+  `state/extensions.json`. A secret is never shown again, logged, piped,
+  part of a cache key, or sent to an agent. An answer from a run that
+  received a secret may not patch the store or carry an `agent.prompt`
+  (tainted), and its strings are checked for the secret before they are
+  drawn.
 
 ### D19. The resident tier: a Rhai script that keeps its state
 
@@ -676,12 +927,35 @@ that survives between calls.
   on the host side. Neither `uze-core` (the package manager, which the shim
   uses) nor `uze-application` (which does not depend on `uze-extensions`)
   hosts it.
-- **Dependency**: `rhai`, published by the `rhaiscript` organisation
-  (13.4M downloads, released 2026-10-21), MIT or Apache-2.0, pure Rust with
-  no C, MSRV below the workspace's; it uses `unsafe` in a few places and does
-  not forbid it, which the dependency review states. `fetch` needs a
-  production HTTP/TLS client, which the workspace does not have outside
-  telemetry; it is owed with the change that ships `net`.
+- **Dependency** (decided 2026-10-26): `rhai`, published by the
+  `rhaiscript` organisation (13.5M downloads, 4.4M in the last 90 days;
+  1.27.0 released 2026-10-21, about one release every one to three months),
+  MIT or Apache-2.0, MSRV 1.66, pure Rust: with `default-features = false,
+  features = ["std", "sync"]` it brings about twenty crates and no C
+  (`ahash`, `smartstring`, `smallvec`, `thin-vec`, `num-traits`,
+  `once_cell`, `bitflags`, a proc macro over `syn`). It does not forbid
+  `unsafe` and uses it in five places (dynamic downcasts and function
+  registration), which the PR states. `sync` is required because a `Job`
+  is `FnOnce + Send` on the pool (D28). The engine is `Engine::new_raw`
+  with the packages UZE chooses, `set_max_operations`,
+  `set_max_call_levels`, `set_max_expr_depths`,
+  `set_max_string_size`/`array`/`map`, `set_max_modules(0)`, a
+  `DummyModuleResolver`, `disable_symbol("eval")`,
+  `set_strict_variables(true)`, `on_print`/`on_debug` to the inspector and
+  `on_progress` as the deadline; `unchecked`, `internals` and `debugging`
+  are never enabled. Rhai bounds values, not memory: the per-extension
+  measure of D28 is the memory bound. `uze-script` is the only crate that
+  names `rhai`, and the architecture suite says so. Alternatives: Lua,
+  Luau and QuickJS compile C; `starlark-rust` and `rune` have one
+  maintainer and no operation counter; WebAssembly was rejected in D27.
+- **`fetch`** is owed with the change that ships `net` (change 8, when a
+  gallery entry needs it; none of the ten does), and ships without a TLS
+  crate: no pure-Rust TLS stack passes the dependency rule (`rustls` needs
+  `ring` or `aws-lc-rs`, both C; `native-tls` is OpenSSL on Linux), so
+  `fetch` is a host function over `uze_platform::tools::curl()`, the
+  system's `curl` by path with `-q` and a scrubbed environment, the one
+  HTTP client UZE already trusts for its updater, run through the program
+  runner under the run's bounds and the `net` grant.
 
 *Alternatives:* a WebAssembly component (see D27). A resident process
 speaking JSON over stdio: confined only where the OS confines, and a process
@@ -1004,7 +1278,7 @@ what changes is who answers "give me the data" or "do this":
 | Answer | Declared as | For | Confinement | Consent |
 |---|---|---|---|---|
 | a **Rhai script**, called once per question, keeping no state | `script "board.rhai"` | the default: parsing checkout files, computing fields, building a compose tree | the engine's (D19), on every platform | the plain grants (`read:checkout`, `net` …) |
-| a **program** (argv) | `run "./bin/board.sh"` | wrapping a CLI (`gh`, `kubectl`, `nvidia-smi`, `openspec`), or a quick script in the author's own language | D6's, where the platform offers it | `exec:` grants asked apart, stating "runs programs on your system, as you"; where confinement is unavailable, an explicit "runs as you, with everything you can reach" |
+| a **program** (argv) | `run "./bin/board.sh"` | wrapping a CLI (`gh`, `kubectl`, `nvidia-smi`, `openspec`), or a quick script in the author's own language | D6's, where the platform offers it | `exec:` grants asked apart, as their own step after the rest, with the pinned path shown; confined: "`gpu-meter` runs `nvidia-smi` on this machine. It can read this checkout and nothing else of yours, write nothing, and reach no network."; where confinement is unavailable, the fixed text of *Product decisions owed* ("This machine cannot confine programs. `nvidia-smi` runs as you, with everything you can reach: your files, your keys, the network. Enable `gpu-meter` from `acme@github` only if you would run its code yourself."); a general-purpose runner adds "`python3` can run anything; this grant is the same as running any code as you." (0.2.3) |
 | a **fixture** | `fixture "fixtures/board.json"` | before a script exists, the inspector, and tests (D25, D26) | — | — |
 
 - One language, embedded, with no build. The author writes a `.rhai` file;
@@ -1183,8 +1457,9 @@ What the budget takes from it:
 
 This is purely additive for operators. No persisted state changes shape.
 `state/extensions.json` is new at shape 1 (grants and preferences), the
-per-extension store is new at shape 1, and the answer cache is new and
-rebuildable. The per-agent journal (D16) is new and disposable. The
+per-extension store is new at shape 1 (change 5), and the answer cache
+lives in memory for a session, so nothing of it is on disk. The per-agent
+journal (D16) is new and disposable. The
 reporter rides each launch's contribution, so removing it reverts agent
 events to the paint heuristic and leaves nothing installed in a harness. The built-in extensions move behind the contract in the first
 group of tasks, with no observable change. Rollback is reverting the change:
@@ -1206,10 +1481,112 @@ workspace client. Both are validated with
 Two reviews ran on 2026-09-27, one on architecture fit and one adversarial on
 security and product. The plan was frozen with their findings recorded here.
 A second round ran on the 2026-10-23 revision (*Second review*, below).
-Each finding names the decision above that it invalidates. **None is resolved
-yet, and implementation waits on all blockers and criticals.**
+Each finding names the decision above that it invalidates. On 2026-10-26
+every finding was triaged (*Triage*, below): each is resolved, with the
+change that carries it, or deferred, with the reason. The sections after
+the triage are the history as it was frozen; a marker such as **Open** in
+them is historical, and the triage table is the current state.
 
-### Proposed split (pending decision, revised 2026-10-23)
+### Triage (2026-10-26)
+
+Changes: 1 `extension-view-engine`, 2 `extension-tests-and-lsp`, 3
+`generic-extension-host`, 4 `extension-manifest-and-scripts`, 5
+`extension-programs-and-confinement`, 6 `agent-bridge`, 7
+`extension-media-and-resident`, 8 growth; "out" is a capability D11 or D17
+removed; "done" is already built.
+
+| Finding | Decision | Change | Where |
+|---|---|---|---|
+| A1 staleness, lanes, fallback, memory | done: `Lanes`, `Job { run, fallback }`, `memory()`; `orphaned` dropped | 3 | D2 |
+| A2 architect's artifact read | done: `Host::artifact_source` | 3 | D2 |
+| A3 code timeline | done: a `section` of `CodeExtension`, `Outcome::OpenCommit` | 3 | D2 |
+| A4 keymap | one variant `Action::Extension(id)`, a second table per extension | 4 | D8 |
+| A5 discovery | done: `capability::extension::discover`, consumed by `Extensions::installed` | 1 | *Discovery* |
+| ADR-041 and AGENTS.md on `uze-contract` | done, amended 2026-10-23 | 1 | D1 |
+| invariants "one `ExtensionHit` variant per surface" | done; the docs of `uze-extensions/src/lib.rs` and `registry.rs` are still stale | 4 | task 11.6 |
+| invariants "UZE does not persist trust" | amended beside the grants record: trust is still never persisted; consent to run is another question | 4 | task 11.4 |
+| layering substring checks | done: `workspace_dependencies` in `layering.rs` | 1 | — |
+| answer cache on disk (M2) | in memory, per session, in the runner | 4 | D4 |
+| `Host::run_program(argv)` | `Host::answer(identity, declaration, input)`; no `ProgramHost` | 4 | D3 |
+| rendering cost (M4) | done for bind (memoized per generation, digest, space, ui; `Code`/`Markdown` doubly cached); compose memoized per (digest, size) | 6 | D15 |
+| CLI shape `uze ext` (M7) | moot | out | D11 |
+| "no process remains" (M8) | narrowed to the process group | 5 | spec program-contract |
+| dry run of field references (M8) | done: `missing_fields` over fixtures | 2 | D26 |
+| confinement in `pre_exec` | self-re-exec helper `uze __confine` | 5 | D6 |
+| S1 socket families | family allowlist in seccomp, installed by the helper; AF_UNIX only via `socketpair`; AF_VSOCK refused on WSL | 5 | D6 |
+| S2 `write:checkout` | removed; `edit:checkout` returns later, by gesture, only if a gallery entry needs it | out (8) | *Product decisions owed* |
+| S3 `exec:` enforcement | a dependency pinned at enable; argv rebuilt from the accepted manifest; runners "can run anything" | 5 | D6 |
+| S4 consent keyed by id | identity `plugin@marketplace/id` keys the record, cache, store and keymap; digest over the loaded bytes | 4 | D5 |
+| S5 grant set vs digest | by grant set where enforced, by digest where not; optional pinning as a preference | 4 (rule), 5 (unenforced), 8 (pinning) | D5 |
+| S6 checkout undefined | a worktree root the workspace knows, never `$HOME`, `/`, `$UZE_HOME`, tmp or bare; checked every run | 4 (`read_checkout`), 5 (runner) | D6 |
+| S7 PATH hijack | realpath pinned and recorded at enable; never re-resolved on a run | 5 | D6 |
+| S8 `-` arguments | `--` required before a substituted value; the check refuses `run` until 5 | 5 | task 22.5 |
+| S9 `exec:git` | `GIT_CONFIG_PARAMETERS` and `GIT_CONFIG_NOSYSTEM` injected | 5 | D6 |
+| S10 Landlock allowlist | the list of D6; enforcement recorded per right, `HardRequirement` | 5 | D6 |
+| S11 `uze ext` raw output | moot | out | D11 |
+| S12 check runs code | `--run` runs scripts in the engine (4); programs only with `--run` under enforced confinement, else `--checkout` or recorded answers (5) | 4, 5 | D26 |
+| S13 resource limits | engine budgets, a pool of two, a serial lane (4); subreaper, rlimits, two concurrent runs, no `RLIMIT_NPROC` (5) | 4, 5 | D6, D19, D28 |
+| S14 sanitizer gaps | `Clean` newtype sanitizing on deserialize, width in cells | 4 | D7 |
+| S15 spoofing | id charset, `timeline` reserved, attribution `id · plugin@marketplace`, the strip on every third-party surface | 4 | D14, task 3.4 |
+| S16 clipboard | the toast shows the copied text; multi-line or over 256 bytes confirms first | 4 | task 6.4 |
+| S17 signals | seccomp limits signals to the group; Landlock scope on ABI ≥ 6; Seatbelt same-sandbox | 5 | D6 |
+| S18 confinement fails silently | checked every run; refused when the record says it was enforced | 5 | D6 |
+| R-A1 ADR-056/040 | amended with `uze agent report` | 6 | task 14.9 |
+| R-A2 status bar | done | — | D14 |
+| R-A3 queueing | done | — | D16 |
+| R-A4 hook vocabulary | done | — | D16 |
+| R-A5 reserve `spec` | `RESERVED_IDS` already holds `code`, `architect`, `spec`, `uze`; `timeline` joins | 4 | task 3.4 |
+| R-A6 runtime placement, HTTP, raw keys | done (`uze-script`); `fetch` deferred; raw keys with the resident tier | 4, 7, 8 | D19 |
+| R-A7 band resizes the PTY | fixed rows in `compute_layout` | 6 | D14 |
+| R-A8 several images per frame | the painter holds N images per frame, per slot, decoded off-thread | 7 | task 17.2 |
+| R-A9 duplicates | done | — | D9, D10 |
+| R-A10 consent in a pane | enabling refused when `UZE_AGENT` or `launched_by` says a pane; no `--yes` | 4 | D5 |
+| R-A11 compose rebuilt per frame | memoized | 6 | D15 |
+| R-A12 `notify`/`sound` | `uze_platform::notify`, no crate: BEL and OSC 9/777 where the terminal says so, `notify-send`/`osascript`/PowerShell by path, `None` without a desktop; `sound` is BEL with a fixed cue name | 6 | task 14.10 |
+| R-A13 stale citations | symbols instead of lines in this revision; the crate docs in change 4 | 4 | task 11.6 |
+| R-A14 interrupt, `invocation_prefix` | done | — | D16 |
+| R-S1 unattended prompts | fixed text or closed set, with the rates of 0.2.4 | 6 | D16 |
+| R-S2 forgeable events | events are claims | 6 | D16 |
+| R-S3 writing is typing | strict filter, byte equality, refuse unless `Ready` | 6 | D16 |
+| R-S4 resident imports | `read_checkout` beneath the root, no link, no `..` (4); `run_program` reported as it is (5, 7) | 4, 7 | D6, D19 |
+| R-S5 `agent_prompt` without gesture; `run_program` limits | confirmation unless `auto` (6); limits of D6 and D28 (5) | 5, 6 | D19 |
+| R-S6 pipes | moot | out | D17 |
+| R-S7 pane imitation, composed feedback | attribution strip on `view` and `section` (4) and `overlay` (6); feedback only through the envelope | 4 | D14, task 13.1b |
+| R-S8 secrets | `secret` arrives with `net`; keychain per platform, no new crate | 8 | D18 |
+| R-S9 tool summaries | `agent:observe`; name and relative path only | 6 | D16 |
+| R-S10 nominal target | `target` required; no broadcast | 6 | D16 |
+| R-S11 composed buttons | resolved arguments in the confirmation; a click within 300 ms of a re-layout ignored | 6 | D15 |
+| R-S12 image decoding | 8 MiB per file before decoding, 32 MiB of decoded pixels per extension, one decode at a time per extension, off the drawing thread, cropped to the slot | 7 | D4 |
+| R-S13 store across projects | per (identity, project); `store: global` with its own consent; 1 MiB | 5 | D18 |
+| R-S14 digest TOCTOU, pause key, restart, notifications, fail-open | digest over the loaded bytes (4); the rest with the bridge (6) | 4, 6 | D5, D16 |
+| R-U1 event payloads | done | 4 (`every`, paths), 6 (`deliver: each`, `events`) | D17 |
+| R-U2 which agent | done | 6 | D14, D16 |
+| R-U3 composed references | done | 6 | D15 |
+| R-U4 store from a source | done | 5 | D4 |
+| R-U5 bridge model | done | 6 | D16 |
+| R-U6 `notify`/`sound` from an answer | done | 6 | D4 |
+| R-U7 `open` and global keys | the global part of the second table; `jump` itself in 6 | 4 | D8 |
+| R-U8 size in context, empty answers | done | 4 | D4, D14 |
+| R-U9 media formats | done | 7 | D4 |
+| R-U10 nesting and repetition | done | 1 | D15, D23 |
+| R-U11 manifest grammar, test loop, shebangs | done | 2 | D21, D26 |
+| Third review (KDL) | landed in D22/D26, ADR-060; the `kdl` fence inside a `.md` in the editor is cosmetic | 8 | task 23.8 |
+| consent clicked through | leads with implicit rights and combinations | 4 | spec extension-security |
+| `output: lines` | with programs | 5 | D4 |
+| openspec board under confinement | moot (12.1 dropped) | out | D20 |
+| trait lacks hover, drag, pan, `scroll_to` | done | 3 | D2 |
+| `Outcome::OpenPath` typed | done: `OpenPath { project, target }` | 3 | D2 |
+| events from the badge and repaints | `every`, `paths.changed`, `checkout.changed` per checkout (4); `agent.*` from the bridge (6) | 4, 6 | D17 |
+| removal clause names `uze plugin remove` | the verb is `uze remove <plugin>` with its machine flag | 4 | spec plugin |
+| `noyalib` on third-party input | moot since D22; the exception is in the `dependencies` rule | out | *Risks* |
+| `rhai` review | accepted, `std`+`sync`, raw engine with bounds | 4 | D19 |
+| HTTP/TLS client | deferred; `fetch` over the system's `curl` when a gallery entry needs it | 8 | D19 |
+| store | deferred to `gpu-meter` | 5 | D18 |
+| preferences, secrets | deferred to `agents-hud`; `secret` with `net` | 6, 8 | D18 |
+| compose (`view` mode) | deferred; bind covers change 4's gallery | 6 | D15 |
+| `overlay`, `status`, `band`, `notify` slots | deferred with `jump`, `agents-hud`, `gsd-band`'s band, `chimes` | 6 | D14 |
+
+### Proposed split (decided 2026-10-26; first revised 2026-10-23)
 
 Visual engine first. The first change runs no third-party code, so none of
 the execution findings (S1–S18, R-S*) gate it and it can be unfrozen on its
@@ -1236,26 +1613,74 @@ migrating the built-ins later moves them onto it rather than rewriting it.
    moved onto the path split 1 laid, the per-extension fields, channels and
    hit variants removed, and the invariant and AGENTS.md edits for
    `ExtensionHit`, with no new behaviour.
-4. **extension-manifest-and-scripts**: the full `extension.kdl`,
-   discovery, check, `uze-script` with the stateless script runner (D27),
-   output modes and the envelope, sources, actions, `every`,
-   `paths.changed`, the store and preferences, the grants record and
-   consent. Third-party code runs from here on, confined on every platform.
-   Proof: `jump`, and `gsd-band`'s board from its script.
-5. **extension-programs-and-confinement**: the argv runner and `exec:`
-   grants, with Landlock, seccomp and Seatbelt as `uze-platform`'s
-   confinement and the dependency review. Proof: `gpu-meter`.
-6. **agent-bridge**: the reporter per launch and its journal, the normalized
-   events with delivery modes, the `agents` and `events` sources, the `band`
-   and `status` slots, `notify`/`sound` through `uze-platform`, and the
-   agent actions. Proof: `gsd-band` with its next-step button, `agents-hud`,
-   `flightdeck`, `chimes`, `plan-review`.
+4. **extension-manifest-and-scripts**, the least that runs a third-party
+   plugin end to end, in this order:
+   1. the full `extension.kdl` in `uze-core`'s decoder and the check:
+      `source { script | run | fixture, input, every, refresh-on, deliver }`
+      (`run` decoded but refused by the check until change 5), `action {
+      id, label, on, key, confirm, script | refresh | clipboard | open_path
+      | open }`, `wants`, `events`; `preferences` refused until 6; the
+      grants of D5 only (`read:checkout`, `clipboard`, `open_path`), every
+      other refused with "arrives in change N"; `timeline` reserved;
+   2. the grants record and consent: `state/extensions.json` per identity,
+      consent per machine and per (identity, digest), enabling per
+      project, the digest over the loaded bytes, enabling refused inside
+      an agent's pane, non-interactive install leaves it disabled;
+   3. the keymap's second table (D8, group 8);
+   4. `uze-script` and `Host::answer` with the `ExtensionRunner`'s
+      in-memory session cache (D3, D4, group 24);
+   5. sources and actions in the declared engine (group 6): jobs,
+      staleness by question, `applies-when`, item menus, the footer, a
+      confirmation showing the resolved arguments, the minimal envelope
+      (`data`, `refresh`, `toast`, `notice`), `clipboard` and `open_path`
+      from a gesture only, the `Clean` sanitizer and the attribution strip
+      on every third-party `view` and `section`;
+   6. `every`, `paths.changed` and `checkout.changed` per checkout (group
+      15; `deliver: each` and the `events` source wait for 6);
+   7. the Extensions screen and `uze status`/`inspect` (groups 9, 10);
+   8. docs: the ADR-041 amendment, the extensions rule, the invariants,
+      citations by symbol, the diagrams with `uze-script`, a minimal
+      `uze:extension` Skill.
+   Third-party code runs from here on, confined on every platform. Proof:
+   a plugin from a non-linked marketplace (cloned into the Store) with a
+   `view` and a `section` fed by a Rhai script under `read:checkout`, one
+   action with `refresh` and one with `confirm`, installed by `uze
+   install`, consented to on the Extensions screen, opened from the tab
+   strip, driven by key and pointer; and `gsd-band`'s board from
+   `board.rhai` with `paths.changed: [.planning]` and `every`. Out, with
+   the reason: programs and `exec:` (no confinement yet, 5); the store
+   (`gpu-meter`, 5); preferences and secrets (`agents-hud`, 6; `secret`
+   with `net`, 8); compose and the `view` output mode (bind covers the
+   gallery, 6); the `overlay`, `status`, `band` and `notify` slots (6);
+   `jump` (needs `agents`, 6); `fetch` and `net` (8); the resident tier
+   and media (7); pipes and an extension CLI (8).
+5. **extension-programs-and-confinement**: the argv runner with the argv
+   rebuilt from the accepted manifest, `exec:` resolved to a pinned
+   realpath, Landlock, seccomp and Seatbelt in `uze-platform` with the
+   `uze __confine` helper and "unavailable" declared, the "runs as you"
+   consent step, the digest rule for unenforced grants, the resource
+   limits of D6, `output: lines`, the store (D18), `run_program` for
+   scripts, and `--run` for programs in the check. Proof: `gpu-meter`.
+   Windows's restricted token is its own later change
+   (`extension-confinement-windows`).
+6. **agent-bridge**: `uze agent report` and its journal (ADR-056 and
+   ADR-040 amended), the `agent.*` events with `deliver: each` and the
+   `events` source, the `agents` source, the `status`, `band`, `overlay`
+   and `notify` slots, `uze_platform::notify`, preferences, compose (the
+   `view` output mode, R-S11), the agent actions and `agent:prompt:auto`
+   with the rates of 0.2.4 (ADR-059 amended), `focus_agent`. Proof:
+   `gsd-band` with its next-step button, `agents-hud`, `flightdeck`,
+   `chimes`, `jump`, `plan-review`.
 7. **extension-media-and-resident**: `cells` with regions, `image`,
-   `sprite`, then the resident exports of D19 on the runtime change 4
-   brought, and its HTTP client. Proof: `pets`, `screen`, `snake`.
-8. **Growth**: pipes and extension CLI commands only if a gallery entry
-   needs them (D11), then whatever a new gallery entry
-   needs.
+   `sprite`, several images per frame with the per-extension budget of
+   R-S12, then the resident entry points of D19 on the runtime change 4
+   brought, raw keys (the extensions rule amended), `timer`. Proof: `pets`,
+   `screen`, `snake`.
+8. **Growth**: `net` and `fetch` over the system's `curl`, the `secret`
+   preference and the keychain, `edit:checkout` by gesture, pinning by
+   digest as a preference, the `kdl` fence inside a `.md` in the editor,
+   pipes and extension CLI commands (D11): each only when a gallery entry
+   needs it, then whatever a new gallery entry needs.
 
 ### What each change touches
 
@@ -1264,8 +1689,8 @@ migrating the built-ins later moves them onto it rather than rewriting it.
 | 1 view engine | `uze-contract`; `uze-extensions/src/declared/`; `uze-core/src/capability/extension/` (bounded KDL decoder); the KDL grammar; reload of linked extensions; the inspector | `view.rs` and `extension_view.rs` grow; `uze-theme` symbols; a compile service in `uze-application`; the minimal generic path in the orchestrator; `layering.rs`; ADR-041 amended |
 | 2 tests and LSP | tests in `uze agent plugin check`, `uze agent plugin lsp` | — |
 | 3 generic host | — | the orchestrator's per-extension wiring for `code`, `architect`, `spec` (about 60 sites), behind the existing orchestrator and TestBackend tests |
-| 4 manifest and scripts | `uze-script` and the stateless runner, the grants record, the store, discovery, the Extensions screen | `uze-keys` through a second table resolved after the host's, leaving `Action`'s ~730 uses untouched |
-| 5 confinement | the argv runner; confinement in `uze-platform` | — |
+| 4 manifest and scripts | `uze-script` and the stateless runner, the grants record, the full manifest in the check, the Extensions screen | `uze-keys` through a second table resolved after the host's, leaving `Action`'s ~730 uses untouched; `uze-contract` gains `Clean` |
+| 5 confinement | the argv runner; confinement in `uze-platform`; the `uze __confine` helper; the store | — |
 | 6 agent bridge | the journal, `uze agent report`, the `agents` source | each of the four integrations; `capability/hook.rs`; `compute_layout` for bands |
 | 7 media and resident | the resident entry points in `uze-script` | the decoders leave `code/picture.rs` for `shared/`; `graphics.rs` holds several images per frame |
 
@@ -1279,28 +1704,76 @@ classified in `command_performance.rs`, the `.mmd` diagrams updated and
 drawn by `make artifacts`, and each new dependency judged by the
 `dependencies` rule.
 
-Ordering errors inside the current tasks: the keymap (group 8) must come
-before the engine's actions (6.4), and the ADR and invariant amendments (11.4)
-must come before or with task 1.1.
+Order inside change 4: manifest and check, the grants record, the keymap's
+second table (group 8), `uze-script` and `Host::answer` (group 24),
+sources and actions (group 6), events (group 15), surfaces for the
+operator (groups 9 and 10), docs (group 11). The keymap comes before the
+engine's actions because an action without a key cannot be tested by a
+`.test.kdl`'s `press`, and a key without an action does not exist. Each
+ADR, rule and invariant amendment lands with the commit that creates the
+fact it describes (0.9): ADR-041 with the commit that creates
+`uze-script` (4); ADR-056, ADR-040 and ADR-059 with `uze agent report`
+and `agent.prompt` (6); the extensions rule with two lines on `rhai` and
+the question by declaration (4) and with raw keys (7).
 
 ### Product decisions owed
 
-- **`write:checkout`**: remove it as a raw grant (the program returns edits,
-  and the host applies them with a denylist for `.git`, shell and agent
-  configuration, and instruction files), or keep it and have consent say it
-  is equivalent to running any code as the operator.
-- **Enablement scope**: machine-wide or per project. The Store is
-  machine-wide, but plugins are project-declared, and a machine-wide enable
-  runs an extension in every repository. (`agent:prompt:auto` is decided:
-  per project and per agent, D16.)
-- **What unenforced consent says**: the plan needs the exact wording for
-  "this runs as you, with everything you can reach", and whether an extension
-  may be enabled at all where confinement is missing.
-- **The `rhai` review and the HTTP client** (D19, D27): the dependency
-  review of `rhai` (needed by change 4), and which TLS client `fetch` uses
-  (needed by the change that ships `net`), judged by the dependency policy with
-  their cost on build time and binary size.
-- **Unattended prompt rate** (D16): the number per agent per window.
+All five decided on 2026-10-26:
+
+- **`write:checkout`** (decided 2026-10-26): removed. No tier writes the
+  checkout. A later `edit:checkout` grant, added only when a gallery entry
+  needs it, returns edits in the envelope and the host applies them on a
+  gesture through ADR-048's grants, refusing the protected metadata list
+  (`.git` and a worktree's resolved gitdir, `.agents`, `.claude`, `.codex`,
+  `.opencode`, `.gemini`, `.vscode`, `.githooks`, `.envrc`, `.env*`,
+  `AGENTS.md`, `CLAUDE.md`, `agents.yaml`, `agents.lock`); its consent says
+  a project file is code the agents and the operator run. Under
+  confinement the checkout is read-only; a program's only writable path is
+  a per-run scratch directory. None of the ten gallery entries writes the
+  checkout, so removing it costs nothing now (Codex keeps `.git`,
+  `.agents`, `.codex` and `.aws` read-only inside any writable root; Claude
+  Code's sandbox runtime denies every write by default).
+- **Enablement scope** (decided 2026-10-26): consent is per machine and per
+  (identity, digest); enabling is per project. One record,
+  `state/extensions.json`, holds both: per identity, the accepted grants,
+  the digest and time they were accepted at, the resolved `exec:` paths,
+  whether confinement was enforced when accepted, and the projects it is
+  enabled in. A plugin a project declares offers its extensions in that
+  project; the workspace asks on first open there, as it asks for a
+  project's commands. There is no machine-wide enable (VS Code trusts per
+  folder; Claude Code's "don't ask again" writes the project's
+  `settings.local.json`, never the user's; ADR-055 approves per project).
+- **Unenforced consent** (decided 2026-10-26): an extension whose `exec:`
+  grants cannot be enforced on this machine may still be enabled, from
+  UZE's chrome only, after a separate step that says: "This machine cannot
+  confine programs. `<program>` runs as you, with everything you can
+  reach: your files, your keys, the network. Enable `<id>` from
+  `<plugin@marketplace>` only if you would run its code yourself." The
+  record keeps `enforced_at_accept: false`; such an identity is re-asked by
+  digest on every update (S5); the Extensions screen, `uze status` and
+  `uze doctor` show "runs as you". No setting silences it. In change 4
+  there is no unenforced case: only scripts run, and the engine confines
+  on every platform (Deno treats `--allow-run` as `--allow-all`; Codex
+  Windows falls back from `elevated` to `unelevated` and lets the operator
+  forbid the fallback; Claude Code's `allowUnsandboxedCommands` is
+  explicit).
+- **The `rhai` review and the HTTP client** (decided 2026-10-26): `rhai`
+  1.27 accepted with `default-features = false, features = ["std",
+  "sync"]`, in `uze-script` only, built raw with the bounds of D19; the
+  HTTP client is deferred to change 8 and is the system's `curl` by path
+  through `uze_platform::tools::curl()`, never a TLS crate (D19).
+- **Unattended prompt rate** (decided 2026-10-26, numbers of change 6):
+  per (extension, agent) one prompt per agent turn and at most one per
+  60 s; per agent across extensions 3 per minute and 20 per hour; 10 s
+  between any two unattended writes into one pane; each the fixed text or
+  the member of the closed set, at most 512 bytes; `agent:prompt:auto`
+  lasts 24 h from acceptance per project and agent, then the next attempt
+  becomes a toast → dialog. `gsd-band`, the one entry that needs `auto`,
+  sends one prompt per turn; 3 per minute covers three extensions on one
+  pane without making the agent an automaton; 24 h is GitHub's sudo-mode
+  window (Raycast's 1-minute floor for background intervals; Zellij and
+  Claude Code have no limit, which is where the prompt-repeating HUDs came
+  from).
 
 Decided on 2026-10-23 by the operator: unattended prompts carry fixed text
 or a closed set (D16); a busy pane refuses rather than queues (ADR-059);
@@ -1421,7 +1894,8 @@ Authoring:
 ### Architecture blockers (invalidate D2, D8, D1/task 4.1)
 
 - **A1. Staleness and job policy live in the orchestrator, not in the
-  extension.** D2 is wrong about this. `src/ui/orchestrator.rs:4238-4462` keeps
+  extension.** D2 is wrong about this. The orchestrator's read scheduling
+  (today `orchestrator/answers.rs::schedule_engine_jobs`) keeps
   a save ahead of the re-read that follows it, runs one read at a time,
   keeps a measure cache that outlives the surface, drops answers by root,
   gives each read a typed fallback when a thread panics, and reports a write
@@ -1431,7 +1905,8 @@ Authoring:
   - an `orphaned(answer) -> Option<Outcome>` hook;
   - extension memory that outlives a surface, separate from `Place`.
 - **A2. The architect's artifact read is not a `Host` call.** It goes through
-  `uze_application::project_artifacts` (`src/ui/extension_host.rs:46`). Either
+  `uze_application::project_artifacts` (today
+  `WorkspaceHost::artifact_source` in `src/ui/extension_host.rs`). Either
   add a grant, or have the host resolve it into the open context.
 - **A3. The code timeline is the orchestrator's `GitBadge.timeline`.** That
   read also feeds the badge and target evaluation, the section is drawn with
@@ -1456,10 +1931,12 @@ Authoring:
 
 - **Documents that must be amended, and have no task yet:**
   - ADR-041 and AGENTS.md ("uze-extensions depends on no UZE crate");
-  - `invariants.md:616-627` and AGENTS.md ("one `ExtensionHit` variant per
-    surface"), which are checked by `invariants_citations.rs`;
-  - `invariants.md:342-350` (UZE does not persist trust decisions), which D5
-    contradicts.
+  - `invariants.md`'s section "Every extension is hosted through the one
+    contract" and AGENTS.md ("one `ExtensionHit` variant per surface"),
+    which are checked by `invariants_citations.rs`;
+  - `invariants.md`'s section "Remote executable capabilities cross an
+    explicit consent boundary" (UZE does not persist trust decisions),
+    which D5 contradicts.
 - **Layering rules the plan misread.** They are substring checks, so admitting
   `uze-contract` (task 3.6) changes nothing. Moving `code/markdown.rs`
   (task 2.1) must move its sanctioned path in
