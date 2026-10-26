@@ -444,6 +444,14 @@ the installed one did not have asks again.
 > `tests/packages/acquisition.rs::an_update_introducing_executable_capability_asks_again`
 > `crates/uze-core/src/package/trust.rs::a_changed_environment_or_working_directory_introduces_new_execution`
 
+Trust (may these bytes be installed) is still never persisted. Consent to
+run an extension's code is a different question, answered per grant set and
+recorded in `state/extensions.json` (ADR-041, `add-extension-platform` D5):
+that record is what lets a widened update be held.
+
+> `crates/uze-workspace/src/extensions/consent.rs::tests::consent_is_recorded_by_identity_with_its_grants_and_digest`
+> `crates/uze-workspace/src/extensions/consent.rs::tests::an_update_is_judged_by_its_grant_set`
+
 ### An authored agent never widens what the harness lets it do
 
 A plugin or a project writes its agents; the operator grants permissions.
@@ -2960,6 +2968,84 @@ dozen of them, and a harness UZE integrates keeps its state under `$HOME`
 on this side.
 
 > `crates/uze-platform/src/mounts.rs::tests::a_windows_drive_mounted_into_wsl_is_a_network_mount`
+
+## Declared extensions (`extension-manifest-and-scripts`)
+
+### The declared engine builds what it draws only through `Clean`
+
+Everything a declared extension hands the host is somebody else's text:
+the data a script or a fixture answered, an envelope's notice and toast,
+the reason the runner gives for a failure, which quotes the script. Each
+reaches a `Span`, a badge, a title or a toast through
+`uze_contract::Clean` where the engine takes it, so a terminal control or
+a bidi override is drawn inert rather than performed.
+
+> `crates/uze-extensions/src/declared/tests.rs::an_escape_sequence_in_data_is_drawn_inert`
+> `crates/uze-extensions/src/declared/source_tests.rs::a_reason_the_host_gives_is_drawn_inert`
+> `crates/uze-extensions/src/declared/action_tests.rs::an_actions_envelope_toasts_says_its_notice_and_refreshes`
+
+### Only the runner asks by declaration
+
+The declared engine asks the host for an answer by identity and
+declaration id (`Host::answer(Question)`), never with argv or a script's
+text, and nothing but the declared engine asks it: in `src/`, only
+`src/ui/extension_host.rs` names a `Question`, to pass it to
+`ExtensionRunner`. What answers a declaration is the runner's to find, so
+there is one path from a source to whatever runs.
+
+> `tests/architecture/layering.rs::only_the_declared_engine_asks_a_source`
+> `crates/uze-application/src/application/extensions/runner.rs::tests::a_fixture_is_answered_by_the_same_path_without_consent`
+
+### Consent comes before the first run
+
+A script runs only once the operator consented to the extension's grants
+and enabled it in the project of the checkout asking; until then the
+runner withholds, says why, and runs nothing. Disabling stops a remembered
+answer at once, since the state is judged before the session's cache is
+looked at. An extension that only declares fixtures needs no consent.
+
+> `crates/uze-application/src/application/extensions/runner.rs::tests::a_script_answers_only_once_consented_to_and_enabled_in_the_project`
+> `tests/lifecycle/extension_consent.rs::a_script_runs_only_once_consented_to_and_enabled_in_its_project`
+> `tests/lifecycle/extension_consent.rs::a_fixtures_only_extension_needs_no_consent`
+
+### The identity keys the record
+
+A consent is recorded by `plugin@marketplace/id`. An extension of the
+same id in another plugin, or in the same plugin from another marketplace,
+is a stranger: it inherits neither the consent nor the projects it was
+enabled in.
+
+> `crates/uze-workspace/src/extensions/consent.rs::tests::a_same_named_extension_of_another_plugin_is_a_stranger`
+> `crates/uze-workspace/src/extensions/consent.rs::tests::enabling_belongs_to_one_project`
+
+### What runs is what was digested
+
+The runner reads the extension's directory once into memory, judges the
+consent against that load's digest and runs the script's bytes from the
+same load: a save is a new question, and the digest an applied update
+records is the one of the bytes that answered.
+
+> `crates/uze-application/src/application/extensions/runner.rs::tests::what_runs_is_the_load_whose_digest_was_accepted`
+> `crates/uze-application/src/application/extensions/compiled.rs::tests::a_fixture_is_read_from_the_loaded_bytes`
+> `crates/uze-application/src/application/extensions/compiled.rs::tests::a_load_digests_what_it_compiled`
+
+### An update that widens the grants is held
+
+An update under the same grants or fewer is applied and its digest
+recorded; one that wants a grant nobody accepted is held, naming the new
+grant, and runs nothing until the operator consents again. A grant a
+narrowing dropped is asked for again when it returns.
+
+> `tests/lifecycle/extension_consent.rs::an_update_is_held_by_a_new_grant_and_applied_under_the_same_or_fewer`
+> `crates/uze-application/src/application/extensions/runner.rs::tests::an_update_that_widens_the_grants_runs_nothing_until_consented_to`
+
+### Enabling is refused inside an agent's pane
+
+Consent and enabling are a person's answers. Asked from an agent's pane
+(a process carrying the stamp of an agent UZE launched) both are refused,
+as `uze workspace allow` refuses a project's commands; disabling never is.
+
+> `tests/lifecycle/extension_consent.rs::an_agents_pane_can_neither_consent_nor_enable`
 
 ## Harness conformance (`assert-one-capability-contract`)
 

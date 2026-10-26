@@ -180,6 +180,26 @@ fn a_failed_or_stopped_script_is_said_on_the_surface() {
     ));
 }
 
+/// A reason is the runner's words, but a script's error quotes the
+/// script: it reaches the surface through `Clean` like any data.
+#[test]
+fn a_reason_the_host_gives_is_drawn_inert() {
+    let mut engine = board();
+    engine.focus(Some(&checkout("/work/a")));
+    let host = Answering::with(Answer::Failed {
+        reason: "board.rhai: \u{1b}]52;c;ZXZpbA==\u{7}unknown \u{202e}name".to_owned(),
+        trace: Vec::new(),
+    });
+    ask_all(&mut engine, &host);
+    assert_eq!(
+        tree(&engine).kind,
+        NodeKind::Notice {
+            text: "board.rhai: unknown name".to_owned(),
+            role: Role::Danger,
+        }
+    );
+}
+
 #[test]
 fn a_source_the_host_would_not_ask_says_why_until_it_answers() {
     let mut engine = board();

@@ -498,6 +498,64 @@ mod tests {
         );
     }
 
+    /// The bytes a script runs from are the load the consent was judged
+    /// over: a save under the same grants is recorded as that load's
+    /// digest, and the saved script is the one that answers.
+    #[test]
+    fn what_runs_is_the_load_whose_digest_was_accepted() {
+        let world = World::new("runner-digest");
+        world.enabled();
+        fs::write(
+            world.band.join("state.rhai"),
+            "fn answer(input, context) { #{ data: #{ saved: true } } }\n",
+        )
+        .unwrap();
+        let runner = ExtensionRunner::new();
+        assert_eq!(
+            data(world.ask(&runner, &world.question("state"))),
+            serde_json::json!({ "saved": true })
+        );
+        let home = uze_core::UzeHome::at(world.scratch.join("uze"));
+        let accepted =
+            uze_workspace::extensions::consent::consent(&home, &crate::consent_key(&world.band()))
+                .expect("recorded")
+                .accepted_digest;
+        assert_eq!(accepted, Loaded::read(&world.band).unwrap().digest());
+    }
+
+    #[test]
+    fn an_update_that_widens_the_grants_runs_nothing_until_consented_to() {
+        let world = World::new("runner-widened");
+        world.enabled();
+        let manifest = world.band.join("extension.kdl");
+        let text = fs::read_to_string(&manifest).unwrap();
+        fs::write(
+            &manifest,
+            text.replace(
+                "wants \"read:checkout\"",
+                "wants \"read:checkout\" \"clipboard\"",
+            ),
+        )
+        .unwrap();
+        let runner = ExtensionRunner::new();
+        let question = world.question("state");
+        assert_eq!(
+            withheld(world.ask(&runner, &question)),
+            "held: its update wants clipboard, which nobody accepted"
+        );
+        assert_eq!(runner.runs(), 0, "nothing ran");
+
+        world
+            .app
+            .extensions()
+            .consent(&world.band(), Asker::Operator)
+            .unwrap();
+        assert_eq!(
+            data(world.ask(&runner, &question)),
+            serde_json::json!({ "lines": 3 })
+        );
+    }
+
     #[test]
     fn a_refused_checkout_runs_nothing_and_says_why() {
         let world = World::new("runner-checkout");
