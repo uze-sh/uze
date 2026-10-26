@@ -26,8 +26,8 @@
 - [x] 4.2 The engine: `Engine::new_raw`, chosen packages, no modules, no `eval`, strict variables, `print`/`debug` to a trace, the size and depth limits and `on_progress` as the deadline (parent 24.2)
 - [x] 4.3 Host functions as grants: `read_checkout`, `list_checkout` (beneath the root, no link followed, `..` refused) and `clock`; the native primitives `lines`, `glob`, `regex`, `json`, `front_matter`, `kdl`; the check refuses a script naming a function its grants do not register (parent 24.3, 25.4)
 - [x] 4.4 Compile on first use, cached by digest; `answer(input, context)` returning the envelope, validated (parent 24.4, 25.3)
-- [ ] 4.5 `Host::answer(Question { identity, declaration, input }) -> Answer` in `uze-extensions`, implemented in `src/ui/extension_host.rs` through the `ExtensionRunner` of `uze-application`, which resolves the declaration from the consented compile, checks the checkout and answers scripts and fixtures; the session cache by (identity, source, checkout, input digest); an architecture test that only `declared/` calls `answer` (parent 6.1, 25.1)
-- [ ] 4.6 Extension jobs on a pool of two threads with a serial lane per extension (parent 25.2)
+- [x] 4.5 `Host::answer(Question { identity, declaration, input }) -> Answer` in `uze-extensions`, implemented in `src/ui/extension_host.rs` through the `ExtensionRunner` of `uze-application`, which resolves the declaration from the consented compile, checks the checkout and answers scripts and fixtures; the session cache by (identity, source, checkout, input digest); an architecture test that only `declared/` calls `answer` (parent 6.1, 25.1)
+- [x] 4.6 Extension jobs on a pool of two threads with a serial lane per extension (parent 25.2)
 
 ## 5. Sources and actions in the declared engine
 

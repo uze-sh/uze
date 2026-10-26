@@ -197,3 +197,53 @@ the fixed release is in the lock.
 - **`Clean` is the host's.** The envelope's strings leave `uze-script` as the
   script wrote them; they pass `uze_contract::Clean` where the host takes
   them (task 5.2).
+
+## D14 — The contract holds the question, the answer and the envelope, and the question names its checkout
+
+- status:   pending
+- task:     4.5
+- commit:   a12efaae, 88bf703d
+- trigger:  M4 and the parent's D3 write `Host::answer(Question { identity, declaration, input })`, but a script reads beneath a checkout the runner must resolve, `uze-extensions` may name no UZE crate but `uze-contract`, and the runner in `uze-application` may not name `uze-extensions`. D13 left a provisional `Grant` and `Envelope` in `uze-script`.
+- decided:  `uze_contract::{Question, Answer, Envelope}`. `Question` carries `checkout: Option<PathBuf>`, the root of the surface asking. `Answer` is `Answered { envelope, trace }`, `Failed { reason, trace }` (it ran and did not answer, or was stopped) or `Withheld { reason }` (nothing ran: consent, enabling, the checkout). `uze-script` uses `uze_contract::Grant` and returns `uze_contract::Envelope`; `uze-extensions` re-exports the three. `Host::answer` defaults to `Withheld`, so every host that runs no declared extension says so.
+- rejected: The checkout inside `input`: the runner would read a path out of the extension's own data. Two envelope types bridged in the client: one shape, written twice.
+- blast:    `uze-script` depends on `uze-contract`, as the layering test already allowed.
+
+## D15 — The runner reads the extension on every question and remembers only what a script answered
+
+- status:   pending
+- task:     4.5
+- commit:   6cbeddc8
+- trigger:  The task asks the runner to find the declaration in the consented compile by the accepted digest, and to keep a session cache by (identity, source, checkout, input digest), without saying when consent is checked against the cache, what the project of a checkout is, or what a script is handed as `context`.
+- decided:  Each question loads the extension once (`Loaded::read`, the compile cache by digest) and takes the script's bytes from that load, so what runs is what the digest covers. The state is judged for `project_root_of(checkout)` before the cache is looked at, so disabling stops a remembered answer at once. The cache key adds the files' digest: a save is a new question. Only an `Answered` script is remembered; a failure or a withheld answer is asked again. A fixture is answered from the same load, with no consent and no cache. `context` is `{ checkout, extension, source }`; `input` is the declared one as written, its `{field}` references resolved by the engine in 5.1. The reach resolves every path through its links and refuses one that lands outside the root, reads at most 1 MiB of UTF-8 and lists at most 10,000 entries, a link listed as `link`. Scripts compile by the SHA-256 of their bytes in one `ScriptCache` per runner.
+- rejected: Keeping the load in memory by stamp: a second reader of the directory's state for a cost D28 does not measure as a problem. Remembering failures: a script fixed in the checkout would stay broken for the session.
+- blast:    A path swapped for a link between the resolution and the read is followed; the window is one `open` wide and the checkout's own agent is the only writer that could aim it.
+
+## D16 — The pool takes the serial lanes; a built-in's parallel reads keep their threads
+
+- status:   pending
+- task:     4.6
+- commit:   6fd88f9c
+- trigger:  D28 asks for one pool of two threads with a serial lane per extension, while the contract's `Lanes::Parallel` says `code` and `spec` run their Git reads together, and `schedule_engine_jobs` gave each a thread.
+- decided:  `orchestrator/lanes.rs` is a `LanePool` of `POOL_THREADS` (2) threads for the whole client, one lane per `Owner`; a lane runs one task at a time in the order asked, and a busy lane is skipped, never waited on. Every extension whose `lanes()` is `Serial` (every declared one, and `architect`) runs there; a `Parallel` built-in keeps a thread per job. The task built in `reads.rs` carries an `EngineHost { home, runner }` onto the pool's thread; `WorkspaceHost` stays named only inside `thread::spawn` there.
+- rejected: Everything on the pool: a diff waiting behind a file read inside `code`'s own lane would undo what `Parallel` promises. A pool per extension: fifty enabled extensions would be a hundred threads.
+- blast:    `architect`'s reads now share two threads with every declared extension.
+
+## D17 — What the declared engine asks, and when
+
+- status:   pending
+- task:     4.5, 5.1 (its start)
+- commit:   88bf703d
+- trigger:  The engine had to ask `Host::answer` for each source a surface shows, but nothing said which checkout a source shown by a view and a section at once is about, or when a question is asked again.
+- decided:  Shown are the open views' sources on the checkout each was opened on, then the sections' and drawers' on the checkout in front; a source shown on two checkouts is asked about the first, so the two never take turns. A source is asked again when its checkout or input changes, when a view showing it opens (consent may have changed), and after a newer compile. With no checkout known nothing is asked. Every question is numbered and an answer whose number is not the source's latest is dropped. `Failed` replaces the data with its reason, in the danger role; `Withheld` is drawn in the warning role, said in the inspector as `not asked: …`. Fixtures are still handed in with the load, so they draw without waiting, and are asked through the runner like any source.
+- rejected: The engine branching on a source's kind: what answers is the runner's to know (parent D3). Asking only visible drawers: the engine is not told a drawer opened; a closed drawer's question costs one remembered answer.
+- blast:    A linked extension's fixture saved broken is drawn as its error instead of the last good draw, once the runner answers it.
+
+## D18 — Who asks a source is checked by name
+
+- status:   pending
+- task:     4.5
+- commit:   6fd88f9c
+- trigger:  The task asks for an architecture test that only `declared/` calls `answer`, but `answer` is a common method name (`ScriptCache`, a language server) and the client must hand the question on.
+- decided:  `only_the_declared_engine_asks_a_source`: in `uze-extensions`, a `.answer(` outside `declared.rs` and `declared/` fails; in `src/`, `Host::answer` and `host.answer(` fail everywhere, and naming `uze_extensions::Question` or `uze_contract::Question` fails outside `src/ui/extension_host.rs`, which passes it to the runner. The orchestrator test that draws a section from `state.rhai` keeps its checkout under the build's `target/`, since the runner refuses one in the temporary directory (D11).
+- rejected: Matching `Question {`: the client has local types of that name.
+- blast:    A second engine that answers sources is a change to the test, said in its reason.
