@@ -174,11 +174,22 @@ pub(crate) fn run_agent_plugin(app: &UzeApplication, action: AgentPluginAction) 
         AgentPluginAction::Check {
             path,
             update_snapshots,
+            run,
+            checkout,
             format,
         } => {
             let report = app.project().check(&path, false)?;
             let mut extensions = app.extensions().check(&path);
             let mut runs = uze::ui::extension_test::Runs::new();
+            let rehearsals = if run {
+                let checkout = match checkout {
+                    Some(checkout) => checkout,
+                    None => cwd()?,
+                };
+                super::extension_check::rehearse_scripts(app, &mut extensions, &checkout)
+            } else {
+                super::extension_check::Rehearsals::new()
+            };
             for extension in &mut extensions {
                 super::extension_check::bind_fixtures(extension);
                 let run = uze::ui::extension_test::run_tests(app, extension, update_snapshots);
@@ -188,12 +199,17 @@ pub(crate) fn run_agent_plugin(app: &UzeApplication, action: AgentPluginAction) 
             let checked = PluginCheckReport {
                 report: &report,
                 extensions: &extensions,
+                runs: &rehearsals,
             };
             emit(format, &checked, |checked| {
                 format!(
                     "{}{}",
                     render_check(checked.report, false, checked.extensions),
-                    super::extension_check::render_extensions(checked.extensions, &runs)
+                    super::extension_check::render_extensions(
+                        checked.extensions,
+                        &runs,
+                        checked.runs
+                    )
                 )
             });
             let problems = report.findings.len()
@@ -222,6 +238,9 @@ pub(crate) struct PluginCheckReport<'a> {
     report: &'a uze_application::ValidationReport,
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     extensions: &'a [uze_application::CheckedExtension],
+    /// What `--run` ran, by extension id.
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    runs: &'a super::extension_check::Rehearsals,
 }
 
 /// The check's answer: what it would deliver, and every finding, located.

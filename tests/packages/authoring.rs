@@ -701,6 +701,66 @@ fn a_scaffolded_extension_passes_its_own_check() {
     let _ = fs::remove_dir_all(root);
 }
 
+/// `--run` runs the scaffold's script in the engine against the checkout
+/// named, and a checkout an extension may not read fails the check naming
+/// the source that could not answer.
+#[test]
+fn the_check_runs_a_script_against_a_checkout_with_run() {
+    let root = uze_testkit::temp::scratch("authoring-cli-extension-run");
+    let at = root.join("my-market");
+    assert!(
+        create_marketplace(&root, &at)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let created = uze(&root)
+        .args(["agent", "plugin", "create", "greet", "--market", "tools"])
+        .args(["--extension", "board"])
+        .output()
+        .unwrap();
+    assert!(created.status.success());
+    let plugin = at.join("plugins/greet");
+    // Outside the system's temporary directory, which is never a checkout
+    // an extension reads.
+    let checkout = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("authoring-run-{}", std::process::id()));
+    fs::create_dir_all(&checkout).unwrap();
+    isolated_git_in(&checkout, &["init", "-q"]);
+    let run = |checkout: &std::path::Path| {
+        let output = uze(&root)
+            .args(["agent", "plugin", "check"])
+            .arg(&plugin)
+            .arg("--run")
+            .arg("--checkout")
+            .arg(checkout)
+            .output()
+            .unwrap();
+        (
+            output.status.success(),
+            format!(
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            ),
+        )
+    };
+
+    let (passed, output) = run(&checkout);
+    assert!(passed, "{output}");
+    assert!(output.contains("board.rhai answered `live`"), "{output}");
+    assert!(output.contains("3 tests passed"), "{output}");
+
+    let (passed, output) = run(&root);
+    assert!(!passed, "{output}");
+    assert!(output.contains("source `live` did not answer"), "{output}");
+    let (passed, _) = check(&root, &plugin);
+    assert!(passed, "without --run nothing runs, and nothing fails");
+    let _ = fs::remove_dir_all(checkout);
+    let _ = fs::remove_dir_all(root);
+}
+
 /// A test that no longer holds fails the check at its step's line, saying
 /// what was drawn; a changed view fails its snapshot until it is written
 /// again with `--update-snapshots`.

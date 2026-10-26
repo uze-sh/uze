@@ -349,6 +349,13 @@ pub(crate) enum AgentPluginAction {
         /// instead of failing on it
         #[arg(long)]
         update_snapshots: bool,
+        /// Run each extension's scripts in the engine against a checkout,
+        /// and draw its tests from what they answer
+        #[arg(long)]
+        run: bool,
+        /// The checkout `--run` reads; the one this is run in by default
+        #[arg(long, value_name = "PATH", requires = "run")]
+        checkout: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
