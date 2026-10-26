@@ -109,7 +109,7 @@
 - decided:  A volume root is a path with no parent or a network (9p) mount point from `uze_platform::mounts`; a temporary directory is anything at or below `std::env::temp_dir()`; the home directory and its ancestors, and `$UZE_HOME` with anything above or below it, are compared canonically with `uze_platform::path::is_within`. A bare repository is named from its files (`HEAD`, `objects`, `refs` at its top) because Git refuses it; a worktree root without a `.git` inside it is refused too. Enabling does not check the checkout: the runner does, on every answer, from step 4.
 - rejected: Refusing only when Git says bare: through `uze-git` a bare repository reads as no repository at all, and the reason would be wrong.
 - blast:    A project kept under the system temporary directory has no extension source run in it.
-## S1. `rhai` reviewed, and one licence the earlier review missed (task 4.1)
+## D12 — `rhai` reviewed, and one licence the earlier review missed (task 4.1)
 
 **Who publishes it.** `cargo info rhai@1.27.0`: repository
 `github.com/rhaiscript/rhai`, MIT OR Apache-2.0, MSRV 1.66.
@@ -137,13 +137,17 @@ argument of a method call). `uze-script` itself is `#![forbid(unsafe_code)]`.
 dependency of `rhai` (no feature removes it), and MPL-2.0 is in neither
 `deny.toml`'s `allow` nor `about.toml`'s `accepted`. `cargo deny check` (the
 workspace graph) and `make attributions` will refuse it. The earlier review
-said every licence was on the list; it was not. Open, for the operator: an
-MPL-2.0 exception for `smartstring` alone in both files (file-level copyleft;
-UZE does not modify it, and its source is published), or another engine.
-`cargo deny` and `cargo-about` are not installed on this machine, so neither
-was run.
+said every licence was on the list; it was not. **Decided by the operator
+(2026-10-26):** one per-crate MPL-2.0 exception for `smartstring` in both
+files (file-level copyleft; UZE never modifies it). `smartstring` is also
+archived (RUSTSEC-2026-0249, ignored with its exit in `deny.toml`), so
+`uze-script` enables rhai's `compact_str`, which replaces it inside the
+engine; rhai 1.27 still compiles it, and the exception leaves when rhai
+makes it optional. rhai 1.27.0's `pad` loops forever on an empty padding
+(rhai#1195, unreleased): `uze-script` shadows it with a bounded `pad` until
+the fixed release is in the lock.
 
-## S2. `uze-script`'s shape where the plan did not settle it (tasks 4.1–4.4)
+## D13 — `uze-script`'s shape where the plan did not settle it (tasks 4.1–4.4)
 
 - **`uze-contract` is not a dependency yet.** Nothing in it is used today;
   the minimal `Grant` (`read:checkout` only, the grant that registers
