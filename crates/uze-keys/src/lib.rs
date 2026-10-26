@@ -49,7 +49,7 @@ pub mod load;
 pub mod scope;
 
 pub use action::{ALL_ACTIONS, Action};
-pub use active::{active, set_active};
+pub use active::{active, register_extension, set_active, unregister_extension};
 pub use chord::{Caveat, CaveatKind, Chord, ChordProblem, Key, Mods, Tier};
 pub use extension::{ExtensionActionId, ExtensionTable, Front, Offered};
 pub use file::{CURRENT_VERSION, KeymapFile};
