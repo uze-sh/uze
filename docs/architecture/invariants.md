@@ -932,12 +932,30 @@ by hand from the extension's raw data, which put the palette, the eliding
 and the hit rectangles on the host's side of a boundary whose whole point
 is that they are not there. A section is now `view::Section`, drawn by
 `extension_view::render_section` like any other extension surface, and its
-hits come back as `ExtensionHit` — one variant per surface, so
-"row 3 was clicked" cannot be confused between a file list and a list of
-commits.
+hits come back as `ExtensionHit` tagged with the slot the surface stands
+in, so "row 3 was clicked" cannot be confused between a file list and a
+list of commits.
 
 > `src/ui/orchestrator/tests/timeline.rs::the_timeline_speaks_only_the_extensions_vocabulary`
 > `crates/uze-extensions/src/code/tests.rs::the_timeline_section_names_meaning_rather_than_colour`
+
+### Every extension is hosted through the one contract
+
+The built-ins and the extensions a plugin declares stand in the same slot
+map and are spoken to through the same `contract::Extension`: the host
+opens, closes, scrolls and hands gestures to a slot, never to a type it
+knows by name. What an extension needs read is a `Job` it hands over, run
+off the drawing thread with the workspace's `Host` and answered back to
+the extension that asked, its fallback answered if the thread dies. Where
+a built-in's section has a place of its own in the sidebar, the host keeps
+the place and the budget; what the section holds and what its rows mean
+are still the extension's.
+
+> `src/ui/orchestrator/tests/declared.rs::a_hosted_engines_jobs_run_off_the_frame_and_answer_it`
+> `src/ui/orchestrator/tests/extensions.rs::opening_the_code_surface_lists_its_tree_as_jobs`
+> `src/ui/orchestrator/tests/extensions.rs::opening_the_architect_reads_its_artifacts_as_a_job`
+> `src/ui/orchestrator/tests/extensions.rs::the_spec_summary_is_counted_as_a_job_for_the_checkout_in_front`
+> `src/ui/orchestrator/tests/timeline.rs::the_timeline_is_read_as_a_job_and_a_commit_asks_for_its_account`
 
 ### Slot lifecycle is the application's, not the client's
 

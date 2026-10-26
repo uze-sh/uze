@@ -58,3 +58,13 @@
 - rejected: A `Hosted` method only the code engine answers (the doors, the commit): it would keep a built-in's shape in the host. A status-segment slot for the badge: the parent change's, not this one's.
 - blast:    Two behaviours moved: a letter typed while a file is being renamed in the tree now reaches the name, where it was dropped before; and the wheel or a drag past the edge stops at the last line on every view, not only on code. The badge and the timeline are two reads now, each on its own cadence, where the timeline rode on every fourth badge read. The `tui.code_*` spans are `tui.engine_jobs`.
 
+## D7 — One hit for every slot, and no diagram to redraw
+
+- status:   pending
+- task:     5.1
+- commit:   5a057ffb
+- trigger:  With every built-in in a slot, `ExtensionHit` had one variant left, and the slot already names the extension and its surface, so a `surface` field would only repeat it (and a string would end `WorkspaceHit` being `Copy`). `workspace-components.mmd`, which the task named, draws the `uze-workspace` domain, and no diagram draws the TUI's extension host; the crate layering did not change.
+- decided:  `ExtensionHit` is the struct `{ slot, hit }`; the slot map and the open view are named for hosting (`HostedExtensions`, `HostedSlot`, `open_slot`, `close_surface`), the frame state for the frame (`navigator_width`, `surface_frame`). The extensions rule and `invariants.md` say the host speaks only the contract; no diagram was drawn, since a new one would be a document nobody owns yet.
+- rejected: `{ slot, surface, hit }` as the task wrote it; a new diagram of the host.
+- blast:    Names only, no behaviour.
+

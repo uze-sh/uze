@@ -18,9 +18,16 @@ code UZE runs in its own process, a different trust class from plugin bytes
 a harness reads (ADR-041).
 
 - One directory per extension (`code/`, `architect/`, `spec/`) with its
-  surface in the file beside it, one `ExtensionRegistry::builtin` entry,
-  one `ExtensionHit` variant per surface it draws. `view.rs` and `Host` are
-  the two contracts and sit at the crate root.
+  surface in the file beside it, its `contract::Extension` in
+  `extension.rs`, and one `ExtensionRegistry::builtin` entry. `view.rs`,
+  `contract.rs` and `Host` are the contracts and sit at the crate root.
+- The host speaks to every extension, built-in or declared, through
+  `contract::Extension` alone, by the slot a surface stands in
+  (`src/ui/orchestrator/declared.rs`); its hits are `ExtensionHit { slot,
+  hit }`. What it reads is a `Job` it hands over, never a read the host
+  spawns for it by name. A gesture or an answer the contract cannot carry
+  is a new method with a default that does nothing, not a branch on which
+  extension it is.
 - `Host` grants every capability, including the five that write
   (`write_file`, `delete_file`, `delete_dir`, `rename_path`,
   `restore_to_head`), whose only caller is `code/request.rs`.
