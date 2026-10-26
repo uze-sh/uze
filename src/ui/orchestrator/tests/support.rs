@@ -224,9 +224,9 @@ pub(super) fn full_frame_at(model: &mut WorkspaceModel, area: Rect) -> Workspace
     // What the loop itself keeps from a frame — the extension surface
     // reports the geometry a click has to be resolved against, and a
     // test that dropped it would resolve clicks against the default.
-    if let Some(rendered) = metrics.code {
-        model.code_tree_scroll = rendered.navigator_scroll;
-        model.code_scrollbars = rendered;
+    if let Some(rendered) = metrics.surface {
+        model.navigator_scroll = rendered.navigator_scroll;
+        model.surface_frame = rendered;
     }
     if let Some(frame) = metrics.recent {
         model.recent.scroll = frame.scroll;
@@ -519,7 +519,7 @@ pub(super) fn timeline_hit(model: &WorkspaceModel, hits: &[(Rect, WorkspaceHit)]
 
 /// `hit` on the timeline, tagged as the sidebar tags it.
 pub(super) fn timeline_tag(model: &WorkspaceModel, hit: ViewHit) -> WorkspaceHit {
-    WorkspaceHit::Extension(ExtensionHit::Declared {
+    WorkspaceHit::Extension(ExtensionHit {
         slot: model
             .remembered
             .declared
@@ -1020,7 +1020,7 @@ pub(super) fn code_slot(model: &WorkspaceModel) -> u32 {
 
 /// `hit` on the code surface, tagged as its frame tags it.
 pub(super) fn code_hit(model: &WorkspaceModel, hit: ViewHit) -> WorkspaceHit {
-    WorkspaceHit::Extension(ExtensionHit::Declared {
+    WorkspaceHit::Extension(ExtensionHit {
         slot: code_slot(model),
         hit,
     })
@@ -1030,7 +1030,7 @@ pub(super) fn code_hit(model: &WorkspaceModel, hit: ViewHit) -> WorkspaceHit {
 /// built for.
 pub(super) fn show_code(model: &mut WorkspaceModel, view: uze_extensions::code::CodeView) {
     let slot = code_slot(model);
-    super::open_declared_on(model, slot, view.root().to_path_buf());
+    super::open_surface_on(model, slot, view.root().to_path_buf());
     *code_view_mut(model).expect("the code surface opened") = view;
 }
 
@@ -1055,7 +1055,7 @@ pub(super) fn open_architect_with(
 ) {
     use uze_extensions::architect;
     super::open_architect(model);
-    let root = model.declared_root.clone().expect("opened on a checkout");
+    let root = model.open_root.clone().expect("opened on a checkout");
     let answer = architect::ArtifactsAnswer {
         branch: "main".to_owned(),
         artifacts: architect::Artifacts::Found {
@@ -1139,7 +1139,7 @@ pub(super) fn count_spec(model: &mut WorkspaceModel, summary: uze_extensions::sp
 
 /// Hands the open spec view the read of its checkout, as its job would.
 pub(super) fn answer_spec(model: &mut WorkspaceModel, answer: uze_extensions::spec::SpecAnswer) {
-    let root = model.declared_root.clone().expect("opened on a checkout");
+    let root = model.open_root.clone().expect("opened on a checkout");
     spec_engine(model).absorb(uze_extensions::contract::Opaque::new(
         uze_extensions::spec::SpecRead { root, answer },
     ));

@@ -192,13 +192,13 @@ fn releasing_a_drag_over_the_code_surface_copies_what_it_covered() {
     let first_line = driven.hit(|hit| {
         matches!(
             hit,
-            WorkspaceHit::Extension(ExtensionHit::Declared {
+            WorkspaceHit::Extension(ExtensionHit {
                 hit: ViewHit::PlaceCaret { line: 0, .. },
                 ..
             })
         )
     });
-    let text = first_line.x + driven.attach.model.code_scrollbars.content_gutter;
+    let text = first_line.x + driven.attach.model.surface_frame.content_gutter;
 
     driven.press(text, first_line.y);
     driven.mouse(
@@ -234,7 +234,7 @@ fn releasing_a_drag_over_the_code_surface_copies_what_it_covered() {
         driven
             .attach
             .model
-            .code_scrollbars
+            .surface_frame
             .text_rows
             .iter()
             .find(|row| row.line == line)

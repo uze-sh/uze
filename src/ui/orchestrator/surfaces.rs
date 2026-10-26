@@ -41,10 +41,10 @@ impl WorkspaceModel {
             }
         }
         if self
-            .open_declared_slot()
+            .slot_in_pane()
             .is_some_and(|slot| !self.offers_declared(&slot.owner))
         {
-            self.close_declared();
+            self.close_surface();
         }
         self.close_drawers_switched_off();
         self.dirty = true;
@@ -52,7 +52,7 @@ impl WorkspaceModel {
 
     /// Closes whichever surface is standing in the pane.
     pub(super) fn close_extension(&mut self) {
-        self.close_declared();
+        self.close_surface();
     }
 
     /// Closes the open surface once its tab is no longer the one in front.
@@ -83,7 +83,7 @@ pub(super) fn open_architect(model: &mut WorkspaceModel) {
         .declared
         .builtin_slot(architect::CATALOG.id, architect::SURFACE);
     if let Some(slot) = slot {
-        open_declared(model, slot);
+        open_surface(model, slot);
     }
 }
 
@@ -93,7 +93,7 @@ pub(super) fn open_spec(model: &mut WorkspaceModel) {
         .declared
         .builtin_slot(spec::CATALOG.id, spec::DOCUMENT);
     if let Some(slot) = slot {
-        open_declared(model, slot);
+        open_surface(model, slot);
     }
 }
 
@@ -117,7 +117,7 @@ pub(super) fn open_code_at(model: &mut WorkspaceModel, project: &Path, target: &
     if let Some(engine) = code_engine(model) {
         engine.enter(code::SURFACE, entry);
     }
-    open_declared_on(model, slot, project.to_path_buf());
+    open_surface_on(model, slot, project.to_path_buf());
 }
 
 /// The code surface through one of its doors, on the active tab's
@@ -129,16 +129,16 @@ pub(super) fn open_code(model: &mut WorkspaceModel, door: &str) {
     let Some(slot) = code_slot(model) else {
         return;
     };
-    let standing = model.declared_open == Some(slot);
+    let standing = model.open_slot == Some(slot);
     if !standing && (!model.offers_extension(code::CATALOG.id) || model.focused_cwd().is_none()) {
         return;
     }
     let entered =
         code_engine(model).map(|engine| engine.enter(code::SURFACE, Entry::Door(door.to_owned())));
     match entered {
-        Some(Outcome::Close) if standing => model.close_declared(),
+        Some(Outcome::Close) if standing => model.close_surface(),
         _ if standing => model.dirty = true,
-        _ => open_declared(model, slot),
+        _ => open_surface(model, slot),
     }
 }
 

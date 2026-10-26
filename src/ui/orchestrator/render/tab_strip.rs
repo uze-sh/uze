@@ -168,7 +168,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
             label: text::elide(&slot.surface.title, DECLARED_LABEL),
             hue: theme::color(Token::TextSecondary),
             strong: false,
-            lit: model.declared_open == Some(slot.id),
+            lit: model.open_slot == Some(slot.id),
             switch: true,
         });
         // Its drawers beside them: lit while one stands docked by the

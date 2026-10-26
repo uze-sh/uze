@@ -54,7 +54,7 @@ impl Attach<'_> {
             Scope::Spec
         } else if self.model.showing(code::CATALOG.id) {
             Scope::Code
-        } else if self.model.declared_open.is_some() {
+        } else if self.model.open_slot.is_some() {
             Scope::Declared
         } else if let Some(overview) = &self.model.space_overview {
             if overview.filtering {
@@ -215,8 +215,8 @@ impl Attach<'_> {
             field.buffer.insert(character);
             field.picked = 0;
         } else if self.model.open_typing() {
-            let space = self.code_space();
-            self.model.tell_declared(Command::Type(character), space);
+            let space = self.surface_space();
+            self.model.tell_surface(Command::Type(character), space);
             return;
         }
         self.model.dirty = true;
@@ -355,8 +355,8 @@ impl Attach<'_> {
             self.toggle_space_overview();
             return Flow::Continue;
         }
-        if self.model.declared_open.is_some() {
-            self.declared_action(action);
+        if self.model.open_slot.is_some() {
+            self.surface_action(action);
             return Flow::Continue;
         }
         if self.model.space_overview.is_some() && overview_answers(action) {

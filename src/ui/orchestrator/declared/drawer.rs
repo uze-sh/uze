@@ -36,7 +36,7 @@ impl WorkspaceModel {
     /// The declared drawers the tab strip offers, in slot order.
     pub(in crate::ui::orchestrator) fn declared_drawers(
         &self,
-    ) -> impl Iterator<Item = &DeclaredSlot> {
+    ) -> impl Iterator<Item = &HostedSlot> {
         self.remembered
             .declared
             .slots
@@ -45,7 +45,7 @@ impl WorkspaceModel {
     }
 
     /// The drawer open in the space in front, while its extension is on.
-    pub(in crate::ui::orchestrator) fn open_drawer_slot(&self) -> Option<&DeclaredSlot> {
+    pub(in crate::ui::orchestrator) fn open_drawer_slot(&self) -> Option<&HostedSlot> {
         let declared = &self.remembered.declared;
         let id = *declared.drawers.get(&self.space_in_front()?)?;
         declared
@@ -128,7 +128,7 @@ impl WorkspaceModel {
         if let Some(open) = self.open_drawer() {
             return Some(open);
         }
-        let viewing = self.open_declared_slot().map(|slot| &slot.owner);
+        let viewing = self.slot_in_pane().map(|slot| &slot.owner);
         self.declared_drawers()
             .find(|slot| Some(&slot.owner) == viewing)
             .or_else(|| self.declared_drawers().next())
@@ -141,7 +141,7 @@ impl WorkspaceModel {
     /// it; a space it was never opened in starts it over.
     pub(in crate::ui::orchestrator) fn follow_drawer_space(&mut self) {
         let now = self.space_in_front();
-        let DeclaredExtensions {
+        let HostedExtensions {
             slots,
             engines,
             drawer_places,

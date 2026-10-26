@@ -1,6 +1,6 @@
 //! Extension surfaces, hosted through one generic path.
 //!
-//! Every surface is a *slot*: one entry of [`DeclaredExtensions::slots`],
+//! Every surface is a *slot*: one entry of [`HostedExtensions::slots`],
 //! keyed by the extension that owns it (a built-in, or one a plugin
 //! declares) and the surface's id, answered by that extension's engine.
 //! The built-ins that have moved onto this path are hosted from the start;
@@ -278,7 +278,7 @@ fn declared_engine(compiled: CompiledExtension, locale: &str) -> Box<dyn Hosted>
 pub(super) type Known = BTreeMap<ExtensionIdentity, (PathBuf, u64)>;
 
 /// One surface an extension offers, as the host holds it.
-pub(super) struct DeclaredSlot {
+pub(super) struct HostedSlot {
     pub(super) id: SlotId,
     pub(super) owner: Owner,
     pub(super) surface: SurfaceInfo,
@@ -286,7 +286,7 @@ pub(super) struct DeclaredSlot {
     pub(super) collapsed: bool,
 }
 
-impl DeclaredSlot {
+impl HostedSlot {
     pub(super) fn is_view(&self) -> bool {
         self.surface.slot == SurfaceSlot::View
     }
@@ -312,7 +312,7 @@ pub(super) struct HostedExtension {
 /// stand in. Kept across attaches with the rest of what the client
 /// resolved: a compile is a resolution, and where a viewer was on one is
 /// remembered per checkout.
-pub(super) struct DeclaredExtensions {
+pub(super) struct HostedExtensions {
     pub(super) extensions: BTreeMap<ExtensionIdentity, HostedExtension>,
     /// One engine per extension, shared by its slots, so its view, its
     /// section and its drawer keep one state. None for a declared extension
@@ -320,7 +320,7 @@ pub(super) struct DeclaredExtensions {
     pub(super) engines: BTreeMap<Owner, Box<dyn Hosted>>,
     /// The built-ins first, then in identity order, each extension's
     /// surfaces in the order it declares them.
-    pub(super) slots: Vec<DeclaredSlot>,
+    pub(super) slots: Vec<HostedSlot>,
     pub(super) next_slot: SlotId,
     /// When the installed extensions were last asked for, this run.
     pub(super) discovered_at: Option<Instant>,
@@ -347,7 +347,7 @@ pub(super) struct DeclaredExtensions {
     pub(super) locale: String,
 }
 
-impl Default for DeclaredExtensions {
+impl Default for HostedExtensions {
     fn default() -> Self {
         let mut hosted = Self {
             extensions: BTreeMap::new(),
@@ -371,7 +371,7 @@ impl Default for DeclaredExtensions {
             let owner = Owner::Builtin(id);
             for surface in engine.surfaces() {
                 let slot = hosted.take_slot_id();
-                hosted.insert_slot(DeclaredSlot {
+                hosted.insert_slot(HostedSlot {
                     id: slot,
                     owner: owner.clone(),
                     surface,
@@ -384,12 +384,12 @@ impl Default for DeclaredExtensions {
     }
 }
 
-impl DeclaredExtensions {
-    pub(super) fn slot(&self, id: SlotId) -> Option<&DeclaredSlot> {
+impl HostedExtensions {
+    pub(super) fn slot(&self, id: SlotId) -> Option<&HostedSlot> {
         self.slots.iter().find(|slot| slot.id == id)
     }
 
-    pub(super) fn slot_mut(&mut self, id: SlotId) -> Option<&mut DeclaredSlot> {
+    pub(super) fn slot_mut(&mut self, id: SlotId) -> Option<&mut HostedSlot> {
         self.slots.iter_mut().find(|slot| slot.id == id)
     }
 
@@ -515,7 +515,7 @@ impl DeclaredExtensions {
                 let owner = Owner::Declared(identity);
                 if !self.slots.iter().any(|slot| slot.owner == owner) {
                     let id = self.take_slot_id();
-                    self.insert_slot(DeclaredSlot {
+                    self.insert_slot(HostedSlot {
                         id,
                         surface: SurfaceInfo {
                             id: String::new(),
@@ -571,7 +571,7 @@ impl DeclaredExtensions {
                 Some(slot) => slot.surface = surface,
                 None => {
                     let id = self.take_slot_id();
-                    self.insert_slot(DeclaredSlot {
+                    self.insert_slot(HostedSlot {
                         id,
                         owner: owner.clone(),
                         surface,
@@ -589,7 +589,7 @@ impl DeclaredExtensions {
     }
 
     /// After the last slot of its own extension, or in owner order.
-    fn insert_slot(&mut self, slot: DeclaredSlot) {
+    fn insert_slot(&mut self, slot: HostedSlot) {
         let at = self
             .slots
             .iter()
@@ -730,15 +730,15 @@ impl WorkspaceModel {
 
     /// The views plugins declare that the tab strip offers, in slot order:
     /// a built-in's has a door of its own.
-    pub(super) fn declared_views(&self) -> impl Iterator<Item = &DeclaredSlot> {
+    pub(super) fn declared_views(&self) -> impl Iterator<Item = &HostedSlot> {
         self.remembered.declared.slots.iter().filter(|slot| {
             slot.is_view() && slot.owner.declared().is_some() && self.offers_declared(&slot.owner)
         })
     }
 
     /// The view standing in the pane.
-    pub(super) fn open_declared_slot(&self) -> Option<&DeclaredSlot> {
-        self.remembered.declared.slot(self.declared_open?)
+    pub(super) fn slot_in_pane(&self) -> Option<&HostedSlot> {
+        self.remembered.declared.slot(self.open_slot?)
     }
 
     /// Whether `hit` is one the open surface drew — in the pane, or in the
@@ -747,27 +747,27 @@ impl WorkspaceModel {
     pub(super) fn is_open_surfaces(&self, hit: WorkspaceHit) -> bool {
         matches!(
             hit,
-            WorkspaceHit::Extension(ExtensionHit::Declared { slot, .. })
-                if self.declared_open == Some(slot)
+            WorkspaceHit::Extension(ExtensionHit { slot, .. })
+                if self.open_slot == Some(slot)
         )
     }
 
     /// Whether the built-in `id`'s view stands in the pane.
     pub(super) fn showing(&self, id: &str) -> bool {
-        self.open_declared_slot()
+        self.slot_in_pane()
             .is_some_and(|slot| slot.owner.is_builtin(id))
     }
 
     /// The open view's engine and surface, for a gesture on it.
     pub(super) fn open_engine_mut(&mut self) -> Option<(String, &mut Box<dyn Hosted>)> {
-        let id = self.declared_open?;
+        let id = self.open_slot?;
         self.remembered.declared.slot_engine_mut(id)
     }
 
     /// Whether the open view takes a letter as text: everything behind it
     /// is sealed while it does.
     pub(super) fn open_typing(&self) -> bool {
-        self.open_declared_slot().is_some_and(|slot| {
+        self.slot_in_pane().is_some_and(|slot| {
             self.remembered
                 .declared
                 .engine(&slot.owner)
@@ -785,7 +785,7 @@ impl WorkspaceModel {
 
     /// Whether what the open view draws is taken hold of and moved.
     pub(super) fn open_drags(&self) -> bool {
-        self.open_declared_slot().is_some_and(|slot| {
+        self.slot_in_pane().is_some_and(|slot| {
             self.remembered
                 .declared
                 .engine(&slot.owner)
@@ -795,22 +795,22 @@ impl WorkspaceModel {
 
     /// How the open view is laid out now.
     pub(super) fn open_layout(&self) -> Option<uze_extensions::view::Layout> {
-        let slot = self.open_declared_slot()?;
+        let slot = self.slot_in_pane()?;
         self.remembered
             .declared
             .engine(&slot.owner)
             .map(|engine| engine.layout(&slot.surface.id))
     }
 
-    /// Closes the declared view, keeping where the viewer was on this
-    /// checkout — every way out goes through here, as with the built-ins.
-    pub(super) fn close_declared(&mut self) {
-        let Some(id) = self.declared_open.take() else {
+    /// Closes the view standing in the pane, keeping where the viewer was
+    /// on this checkout — every way out goes through here.
+    pub(super) fn close_surface(&mut self) {
+        let Some(id) = self.open_slot.take() else {
             return;
         };
         self.inspecting = false;
-        self.declared_notice = None;
-        let root = self.declared_root.take();
+        self.open_notice = None;
+        let root = self.open_root.take();
         let declared = &mut self.remembered.declared;
         let Some(slot) = declared.slot(id) else {
             return;
@@ -827,15 +827,15 @@ impl WorkspaceModel {
     }
 
     /// What the engine of the open view answered, followed.
-    pub(super) fn follow_declared(&mut self, outcome: Outcome) {
+    pub(super) fn follow_surface(&mut self, outcome: Outcome) {
         match outcome {
             Outcome::Stay => {}
-            Outcome::Close => self.close_declared(),
-            Outcome::Notice(span) => self.declared_notice = Some(span),
+            Outcome::Close => self.close_surface(),
+            Outcome::Notice(span) => self.open_notice = Some(span),
             Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
             Outcome::Copy(text) => self.copy_answered(text),
             Outcome::Show(surface) => {
-                if let Some(id) = self.declared_open {
+                if let Some(id) = self.open_slot {
                     self.show_surface(id, &surface);
                 }
             }
@@ -860,7 +860,7 @@ impl WorkspaceModel {
             .find(|slot| slot.owner == owner && slot.surface.id == surface && slot.is_view())
             .map(|slot| slot.id);
         if let Some(id) = shown {
-            open_declared(self, id);
+            open_surface(self, id);
         }
     }
 
@@ -877,8 +877,8 @@ impl WorkspaceModel {
 
     /// Scrolls the open view to show line `first` at the top, as its held
     /// scrollbar asks.
-    pub(super) fn scroll_declared_to(&mut self, first: usize, space: Size) {
-        let Some(id) = self.declared_open else {
+    pub(super) fn scroll_surface_to(&mut self, first: usize, space: Size) {
+        let Some(id) = self.open_slot else {
             return;
         };
         if let Some((surface, engine)) = self.remembered.declared.slot_engine_mut(id) {
@@ -889,12 +889,12 @@ impl WorkspaceModel {
 
     /// Hands the open view's engine a command. A list of actions the keys
     /// opened hangs off its row, not off where the pointer last was.
-    pub(super) fn tell_declared(&mut self, command: Command, space: Size) {
-        let Some(id) = self.declared_open else {
+    pub(super) fn tell_surface(&mut self, command: Command, space: Size) {
+        let Some(id) = self.open_slot else {
             return;
         };
         if command == Command::OpenMenu {
-            self.code_menu_at = None;
+            self.menu_at = None;
         }
         let outcome = self
             .remembered
@@ -902,11 +902,11 @@ impl WorkspaceModel {
             .slot_engine_mut(id)
             .map(|(surface, engine)| engine.command(&surface, command, space))
             .unwrap_or(Outcome::Stay);
-        self.follow_declared(outcome);
+        self.follow_surface(outcome);
     }
 
     /// Hands a slot's engine a gesture on what it drew.
-    pub(super) fn hit_declared(&mut self, id: SlotId, hit: ViewHit, space: Size) {
+    pub(super) fn hit_surface(&mut self, id: SlotId, hit: ViewHit, space: Size) {
         if hit == ViewHit::ToggleSection {
             if let Some(slot) = self.remembered.declared.slot_mut(id) {
                 slot.collapsed = !slot.collapsed;
@@ -930,19 +930,19 @@ impl WorkspaceModel {
             return;
         }
         // A section is part of the sidebar: it has no "close" of its own.
-        if self.declared_open == Some(id) || outcome != Outcome::Close {
-            self.follow_declared(outcome);
+        if self.open_slot == Some(id) || outcome != Outcome::Close {
+            self.follow_surface(outcome);
         }
         self.dirty = true;
     }
 
-    pub(super) fn scroll_declared(
+    pub(super) fn scroll_surface(
         &mut self,
         target: ScrollTarget,
         direction: ScrollDirection,
         space: Size,
     ) {
-        let Some(id) = self.declared_open else {
+        let Some(id) = self.open_slot else {
             return;
         };
         if let Some((surface, engine)) = self.remembered.declared.slot_engine_mut(id) {
@@ -954,10 +954,10 @@ impl WorkspaceModel {
     /// What the open view draws this frame: the engine's answer, or, when
     /// it has none to give yet, a message saying why. Its notice is the
     /// host's last word from the engine, when it said one.
-    pub(super) fn declared_view(&self, space: Size) -> Option<View> {
-        let slot = self.open_declared_slot()?;
+    pub(super) fn view_in_pane(&self, space: Size) -> Option<View> {
+        let slot = self.slot_in_pane()?;
         let mut view = self.surface_view(slot, space);
-        if let Some(notice) = &self.declared_notice {
+        if let Some(notice) = &self.open_notice {
             view.notice = Some(notice.clone());
         }
         Some(view)
@@ -965,7 +965,7 @@ impl WorkspaceModel {
 
     /// What a view or drawer slot draws in `space`: its engine's answer,
     /// or a message saying why it has none yet.
-    pub(super) fn surface_view(&self, slot: &DeclaredSlot, space: Size) -> View {
+    pub(super) fn surface_view(&self, slot: &HostedSlot, space: Size) -> View {
         let errors = self.remembered.declared.errors_of(&slot.owner);
         let drawn = self
             .remembered
@@ -1035,7 +1035,7 @@ impl WorkspaceModel {
     /// Opens or closes the inspector beside the open view.
     pub(super) fn toggle_inspector(&mut self) {
         if self
-            .open_declared_slot()
+            .slot_in_pane()
             .is_some_and(|slot| slot.owner.declared().is_some())
         {
             self.inspecting = !self.inspecting;
@@ -1061,7 +1061,7 @@ impl WorkspaceModel {
 
     /// What the inspector shows of the open view.
     pub(super) fn inspection(&self) -> Option<Inspection> {
-        let slot = self.open_declared_slot()?;
+        let slot = self.slot_in_pane()?;
         let mut inspection = self
             .remembered
             .declared
@@ -1075,7 +1075,7 @@ impl WorkspaceModel {
 
 /// A section whose extension failed: what it drew last, or its header
 /// alone, with the error as its caption and, while open, a row a problem.
-fn with_errors(drawn: Option<Section>, slot: &DeclaredSlot, errors: &[String]) -> Section {
+fn with_errors(drawn: Option<Section>, slot: &HostedSlot, errors: &[String]) -> Section {
     let mut section = drawn.unwrap_or_else(|| Section {
         title: slot.surface.title.clone(),
         collapsed: slot.collapsed,
@@ -1101,17 +1101,17 @@ fn with_errors(drawn: Option<Section>, slot: &DeclaredSlot, errors: &[String]) -
     section
 }
 
-pub(super) fn open_declared(model: &mut WorkspaceModel, id: SlotId) {
+pub(super) fn open_surface(model: &mut WorkspaceModel, id: SlotId) {
     // An agent's surface, never a shell of the space's: a shell works in
     // no project, wherever it stands.
     if let Some(root) = model.focused_cwd() {
-        open_declared_on(model, id, root);
+        open_surface_on(model, id, root);
     }
 }
 
 /// Opens the view in slot `id` on `root`, which a path another surface
 /// pointed at may have named rather than the checkout in front.
-pub(super) fn open_declared_on(model: &mut WorkspaceModel, id: SlotId, root: PathBuf) {
+pub(super) fn open_surface_on(model: &mut WorkspaceModel, id: SlotId, root: PathBuf) {
     let Some(slot) = model.remembered.declared.slot(id) else {
         return;
     };
@@ -1139,8 +1139,8 @@ pub(super) fn open_declared_on(model: &mut WorkspaceModel, id: SlotId, root: Pat
             }
         }
     }
-    model.declared_open = Some(id);
-    model.declared_root = Some(root);
-    model.code_tree_scroll = extension_view::NavigatorScroll::default();
+    model.open_slot = Some(id);
+    model.open_root = Some(root);
+    model.navigator_scroll = extension_view::NavigatorScroll::default();
     model.dirty = true;
 }

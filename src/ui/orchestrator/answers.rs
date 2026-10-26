@@ -240,7 +240,7 @@ impl WorkspaceModel {
             return None;
         };
         let lines = marking.marked()?.lines();
-        let slot = self.open_declared_slot()?;
+        let slot = self.slot_in_pane()?;
         let engine = self.remembered.declared.engine(&slot.owner)?;
         Some(engine.text(&slot.surface.id, lines))
     }
@@ -275,9 +275,9 @@ impl WorkspaceModel {
         }
         // A view whose extension went, or whose surface it stopped
         // declaring, is put away rather than drawn from nothing.
-        if self.declared_open.is_some() && self.open_declared_slot().is_none() {
-            self.declared_open = None;
-            self.declared_root = None;
+        if self.open_slot.is_some() && self.slot_in_pane().is_none() {
+            self.open_slot = None;
+            self.open_root = None;
             self.inspecting = false;
         }
         changed

@@ -59,20 +59,18 @@ pub mod view;
 pub use shared::places::{ArtifactRoot, ArtifactSource};
 
 /// Something a viewer did inside an extension's own surface, addressed to
-/// the extension that owns it.
+/// the slot the host stands that surface in.
 ///
 /// The payload is [`view::ViewHit`] for every extension, because the host
 /// produces it from what it drew and none of that is extension-specific.
-/// The variant is what routes: with two extensions open in one session,
-/// "row 3 was clicked" is meaningless without saying whose row 3.
+/// The slot is what routes: with two surfaces open in one session, "row 3
+/// was clicked" is meaningless without saying whose row 3. Which extension
+/// and which of its surfaces a slot is, built-in or declared, is the
+/// host's map to keep, since two plugins may declare the same ids.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ExtensionHit {
-    /// A surface hosted in a slot, a built-in's or one a plugin declared, by
-    /// the number the host gave the slot. One variant for every surface,
-    /// view and section alike: which extension and which of its surfaces a
-    /// slot is, is the host's map to keep, since two plugins may declare
-    /// the same ids.
-    Declared { slot: u32, hit: view::ViewHit },
+pub struct ExtensionHit {
+    pub slot: u32,
+    pub hit: view::ViewHit,
 }
 
 /// Why [`Host::read_file`] has no contents to give.

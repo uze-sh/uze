@@ -541,9 +541,7 @@ pub(super) fn render_spec_summary(
     let mut section_hits = Vec::new();
     let mut column = Rows::over(Rect::new(rows.x, rows.y, rows.width, rows.remaining()));
     let under = match model.hovered {
-        Some(WorkspaceHit::Extension(ExtensionHit::Declared { slot: over, hit }))
-            if over == slot =>
-        {
+        Some(WorkspaceHit::Extension(ExtensionHit { slot: over, hit })) if over == slot => {
             Some(hit)
         }
         _ => None,
@@ -567,12 +565,11 @@ pub(super) fn render_spec_summary(
         },
         &mut section_hits,
     );
-    hits.extend(section_hits.into_iter().map(|(rect, hit)| {
-        (
-            rect,
-            WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit }),
-        )
-    }));
+    hits.extend(
+        section_hits
+            .into_iter()
+            .map(|(rect, hit)| (rect, WorkspaceHit::Extension(ExtensionHit { slot, hit }))),
+    );
     slid
 }
 
@@ -589,9 +586,7 @@ fn render_declared_section(
     let mut section_hits = Vec::new();
     let mut column = Rows::over(Rect::new(rows.x, rows.y, rows.width, rows.remaining()));
     let under = match model.hovered {
-        Some(WorkspaceHit::Extension(ExtensionHit::Declared { slot: over, hit }))
-            if over == slot =>
-        {
+        Some(WorkspaceHit::Extension(ExtensionHit { slot: over, hit })) if over == slot => {
             Some(hit)
         }
         _ => None,
@@ -611,12 +606,11 @@ fn render_declared_section(
         },
         &mut section_hits,
     );
-    hits.extend(section_hits.into_iter().map(|(rect, hit)| {
-        (
-            rect,
-            WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit }),
-        )
-    }));
+    hits.extend(
+        section_hits
+            .into_iter()
+            .map(|(rect, hit)| (rect, WorkspaceHit::Extension(ExtensionHit { slot, hit }))),
+    );
     slid
 }
 
@@ -1399,9 +1393,7 @@ pub(super) fn render_timeline(
     // instead of stopping at an "…": a branch is read from both ends, and
     // the end is the half an "…" eats.
     let under = match model.hovered {
-        Some(WorkspaceHit::Extension(ExtensionHit::Declared { slot: hovered, hit }))
-            if hovered == slot =>
-        {
+        Some(WorkspaceHit::Extension(ExtensionHit { slot: hovered, hit })) if hovered == slot => {
             Some(hit)
         }
         _ => None,
@@ -1421,12 +1413,11 @@ pub(super) fn render_timeline(
         },
         &mut section_hits,
     );
-    hits.extend(section_hits.into_iter().map(|(rect, hit)| {
-        (
-            rect,
-            WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit }),
-        )
-    }));
+    hits.extend(
+        section_hits
+            .into_iter()
+            .map(|(rect, hit)| (rect, WorkspaceHit::Extension(ExtensionHit { slot, hit }))),
+    );
     sliding
 }
 

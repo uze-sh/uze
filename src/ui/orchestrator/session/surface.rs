@@ -10,26 +10,26 @@ impl Attach<'_> {
     /// chosen when the press lands — see [`EdgeDrag`] — and once chosen
     /// it holds until release, so a hand that wanders does not switch
     /// gestures mid-drag.
-    pub(super) fn drag_code_edge(&mut self, column: u16, row: u16, area: Rect) {
-        let Some(mut drag) = self.model.code_edge_drag else {
+    pub(super) fn drag_edge(&mut self, column: u16, row: u16, area: Rect) {
+        let Some(mut drag) = self.model.edge_drag else {
             return;
         };
         let intent = drag.decide(column, row);
-        self.model.code_edge_drag = Some(drag);
+        self.model.edge_drag = Some(drag);
         match intent {
             Some(EdgeIntent::Resize) => {
                 let (tree_column, content_column, _footer) =
-                    crate::ui::extension_view::content_columns(area, self.model.code_tree_width);
+                    crate::ui::extension_view::content_columns(area, self.model.navigator_width);
                 let width = crate::ui::extension_view::clamp_navigator_width(
                     column.saturating_sub(tree_column.x),
                     tree_column.width + content_column.width,
                 );
-                if self.model.code_tree_width != Some(width) {
-                    self.model.code_tree_width = Some(width);
+                if self.model.navigator_width != Some(width) {
+                    self.model.navigator_width = Some(width);
                     self.model.dirty = true;
                 }
             }
-            Some(EdgeIntent::Scroll) => self.scroll_code_tree_to(row),
+            Some(EdgeIntent::Scroll) => self.scroll_navigator_to(row),
             None => {}
         }
     }
@@ -42,22 +42,22 @@ impl Attach<'_> {
     /// render knew which row it drew and only the pointer knows how far
     /// along it landed.
     pub(super) fn slot_press(&mut self, column: u16, row: u16) {
-        let Some(slot) = self.model.declared_open else {
+        let Some(slot) = self.model.open_slot else {
             return;
         };
         let view_hit = self
             .slot_hit_at(column, row)
             .map(|(rect, hit)| self.finished(rect, hit, column));
-        let space = self.code_space();
+        let space = self.surface_space();
         match view_hit {
             Some(ViewHit::GrabNavigatorEdge) => {
-                self.model.code_edge_drag = Some(EdgeDrag::armed_at(column, row));
+                self.model.edge_drag = Some(EdgeDrag::armed_at(column, row));
             }
             Some(ViewHit::DragContentScrollbar)
-                if self.model.code_scrollbars.content_bar.is_some() =>
+                if self.model.surface_frame.content_bar.is_some() =>
             {
-                self.model.dragging_code_content = true;
-                self.scroll_code_content_to(row);
+                self.model.dragging_content = true;
+                self.scroll_content_to(row);
             }
             Some(click @ ViewHit::PlaceCaret { .. }) if self.model.open_drags() => {
                 self.model.board_grab = Some(DiagramGrab {
@@ -66,7 +66,7 @@ impl Attach<'_> {
                     click,
                 });
             }
-            Some(hit) => self.model.hit_declared(slot, hit, space),
+            Some(hit) => self.model.hit_surface(slot, hit, space),
             None => {
                 if let Some((surface, engine)) = self.model.open_engine_mut() {
                     engine.missed(&surface, space);
@@ -83,9 +83,9 @@ impl Attach<'_> {
     /// them. One resolver, so a press and a hover cannot land on two
     /// different things.
     pub(super) fn slot_hit_at(&self, column: u16, row: u16) -> Option<(Rect, ViewHit)> {
-        let open = self.model.declared_open?;
+        let open = self.model.open_slot?;
         self.model.hits.iter().find_map(|(rect, hit)| match hit {
-            WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit })
+            WorkspaceHit::Extension(ExtensionHit { slot, hit })
                 if *slot == open && rect.contains(Position::new(column, row)) =>
             {
                 Some((*rect, *hit))
@@ -105,15 +105,15 @@ impl Attach<'_> {
     /// this reached for before, `last_size`, is the *pane's*, which is the
     /// frame less the sidebar and the tab strip. See
     /// `extension_view::Rendered::content_space`.
-    pub(super) fn code_space(&self) -> uze_extensions::view::Size {
-        self.model.code_scrollbars.content_space
+    pub(super) fn surface_space(&self) -> uze_extensions::view::Size {
+        self.model.surface_frame.content_space
     }
 
     /// A held board follows the pointer: the room it is moved in is the
     /// room the last frame laid it out in, for the reason
-    /// [`Self::code_space`] gives.
+    /// [`Self::surface_space`] gives.
     pub(super) fn drag_board(&mut self, column: u16, row: u16) {
-        let space = self.code_space();
+        let space = self.surface_space();
         let Some(mut grab) = self.model.board_grab else {
             return;
         };
@@ -130,12 +130,12 @@ impl Attach<'_> {
 
     /// A press that never moved was a click on whatever was under it.
     pub(super) fn release_board(&mut self) {
-        let space = self.code_space();
+        let space = self.surface_space();
         if let Some(grab) = self.model.board_grab.take()
             && !grab.moved
-            && let Some(slot) = self.model.declared_open
+            && let Some(slot) = self.model.open_slot
         {
-            self.model.hit_declared(slot, grab.click, space);
+            self.model.hit_surface(slot, grab.click, space);
         }
     }
 
@@ -144,11 +144,10 @@ impl Attach<'_> {
     /// press means to the surface itself — a caret placed — is said on
     /// release, once it is known whether this was a click or a drag.
     pub(super) fn mark_text_from(&mut self, column: u16, row: u16) {
-        if let Some((at, _)) = selection::locate(&self.model.code_scrollbars.text_rows, column, row)
-        {
+        if let Some((at, _)) = selection::locate(&self.model.surface_frame.text_rows, column, row) {
             self.model.selection = Some(Selection::Text(selection::TextSelection::pressed(
                 at,
-                self.model.code_scrollbars.heading.clone(),
+                self.model.surface_frame.heading.clone(),
             )));
         }
     }
@@ -162,7 +161,7 @@ impl Attach<'_> {
     /// when it began.
     pub(super) fn mark_text_to(&mut self, column: u16, row: u16) {
         let Some((at, scroll)) =
-            selection::locate(&self.model.code_scrollbars.text_rows, column, row)
+            selection::locate(&self.model.surface_frame.text_rows, column, row)
         else {
             return;
         };
@@ -220,7 +219,7 @@ impl Attach<'_> {
     /// frame drew, with nothing of the surface's own — a menu, a
     /// question — lying over it.
     pub(super) fn presses_on_text(&self, column: u16, row: u16) -> bool {
-        selection::on_text(&self.model.code_scrollbars.text_rows, column, row)
+        selection::on_text(&self.model.surface_frame.text_rows, column, row)
             && matches!(
                 self.surface_hit_at(column, row),
                 Some((_, ViewHit::PlaceCaret { .. }))
@@ -237,7 +236,7 @@ impl Attach<'_> {
     /// way a press on it is: a pointer that came to rest past the text's
     /// edge means the nearest of its rows.
     pub(super) fn caret_hit_near(&self, column: u16, row: u16) -> Option<ViewHit> {
-        let rows = &self.model.code_scrollbars.text_rows;
+        let rows = &self.model.surface_frame.text_rows;
         let nearest = rows
             .iter()
             .min_by_key(|text| text.area.y.abs_diff(row))?
@@ -263,7 +262,7 @@ impl Attach<'_> {
                     rect,
                     cell,
                     column,
-                    self.model.code_scrollbars.content_gutter,
+                    self.model.surface_frame.content_gutter,
                 ),
             },
             other => other,
@@ -272,9 +271,9 @@ impl Attach<'_> {
 
     /// Hands the open surface a pointer gesture the host finished itself.
     pub(super) fn surface_mouse(&mut self, hit: ViewHit) {
-        let space = self.code_space();
-        if let Some(slot) = self.model.declared_open {
-            self.model.hit_declared(slot, hit, space);
+        let space = self.surface_space();
+        if let Some(slot) = self.model.open_slot {
+            self.model.hit_surface(slot, hit, space);
         }
         self.model.dirty = true;
     }
@@ -284,7 +283,7 @@ impl Attach<'_> {
     /// scrolled out of what was drawn.
     pub(super) fn surface_text(&self, lines: std::ops::Range<usize>) -> Vec<String> {
         self.model
-            .open_declared_slot()
+            .slot_in_pane()
             .and_then(|slot| {
                 let engine = self.model.remembered.declared.engine(&slot.owner)?;
                 Some(engine.text(&slot.surface.id, lines))
@@ -297,11 +296,11 @@ impl Attach<'_> {
     /// content scrolls off into blank rows, each notch one more to take
     /// back, and only the host knows how many rows the wrapped lines took.
     pub(super) fn scroll_surface_content(&mut self, direction: ScrollDirection) {
-        if direction == ScrollDirection::Down && self.model.code_scrollbars.content_at_end {
+        if direction == ScrollDirection::Down && self.model.surface_frame.content_at_end {
             return;
         }
-        let space = self.code_space();
-        self.model.scroll_declared(
+        let space = self.surface_space();
+        self.model.scroll_surface(
             uze_extensions::view::ScrollTarget::Content,
             direction,
             space,
@@ -312,10 +311,10 @@ impl Attach<'_> {
     /// content.
     pub(super) fn on_content_scrollbar(&self, column: u16, row: u16) -> bool {
         match self.model.hit_at(column, row) {
-            Some(WorkspaceHit::Extension(ExtensionHit::Declared {
+            Some(WorkspaceHit::Extension(ExtensionHit {
                 slot,
                 hit: ViewHit::DragContentScrollbar,
-            })) => self.model.declared_open == Some(slot),
+            })) => self.model.open_slot == Some(slot),
             _ => false,
         }
     }
@@ -323,20 +322,20 @@ impl Attach<'_> {
     /// Shows the part of the list a point on its scrollbar names. The
     /// navigator's scroll is the host's — only it knows how many rows
     /// fit.
-    pub(super) fn scroll_code_tree_to(&mut self, row: u16) {
-        if let Some(bar) = self.model.code_scrollbars.navigator_bar {
-            self.model.code_tree_scroll.first = bar.first_at(row);
+    pub(super) fn scroll_navigator_to(&mut self, row: u16) {
+        if let Some(bar) = self.model.surface_frame.navigator_bar {
+            self.model.navigator_scroll.first = bar.first_at(row);
             self.model.dirty = true;
         }
     }
 
     /// The same for the content, whose scroll is the extension's own.
-    pub(super) fn scroll_code_content_to(&mut self, row: u16) {
-        let Some(bar) = self.model.code_scrollbars.content_bar else {
+    pub(super) fn scroll_content_to(&mut self, row: u16) {
+        let Some(bar) = self.model.surface_frame.content_bar else {
             return;
         };
-        let space = self.code_space();
-        self.model.scroll_declared_to(bar.first_at(row), space);
+        let space = self.surface_space();
+        self.model.scroll_surface_to(bar.first_at(row), space);
     }
 
     /// The view standing in a slot: its own door closes it, the doors lead
@@ -344,13 +343,13 @@ impl Attach<'_> {
     /// and everything else is a command its engine answers. Esc puts the
     /// inspector away before the view, and the page keys scroll it while it
     /// is open, since it was opened last.
-    pub(super) fn declared_action(&mut self, action: Action) {
+    pub(super) fn surface_action(&mut self, action: Action) {
         match action {
             Action::ToggleArchitect if self.model.showing(architect::CATALOG.id) => {
-                self.model.close_declared();
+                self.model.close_surface();
             }
             Action::ToggleSpec if self.model.showing(spec::CATALOG.id) => {
-                self.model.close_declared();
+                self.model.close_surface();
             }
             Action::ToggleChanges => open_code(&mut self.model, code::CHANGES),
             Action::ToggleFiles => open_code(&mut self.model, code::FILES),
@@ -362,8 +361,8 @@ impl Attach<'_> {
             Action::ScrollPageUp if self.model.inspecting => self.model.page_inspector(false),
             _ => {
                 if let Some(command) = crate::ui::extension_view::command_for(action) {
-                    let space = self.code_space();
-                    self.model.tell_declared(command, space);
+                    let space = self.surface_space();
+                    self.model.tell_surface(command, space);
                 }
             }
         }

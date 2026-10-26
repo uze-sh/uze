@@ -55,7 +55,7 @@ fn an_open_surface_is_drawn_where_the_pane_is() {
     let extension_hits: Vec<Rect> = model
         .hits
         .iter()
-        .filter(|(_, hit)| matches!(hit, WorkspaceHit::Extension(ExtensionHit::Declared { .. })))
+        .filter(|(_, hit)| matches!(hit, WorkspaceHit::Extension(ExtensionHit { .. })))
         .map(|(rect, _)| *rect)
         .collect();
     assert!(!extension_hits.is_empty(), "the surface is drawn");
@@ -477,7 +477,7 @@ fn a_surface_button_goes_out_without_a_press_flash() {
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
     open_code(&mut model, uze_extensions::code::FILES);
-    model.close_declared();
+    model.close_surface();
     model.pressed = Some((WorkspaceHit::OpenFiles, std::time::Instant::now()));
     model.hovered = Some(WorkspaceHit::OpenFiles);
 

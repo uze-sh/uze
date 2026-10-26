@@ -8,7 +8,7 @@ use crate::ui::extension_view::{SECTION_AIR, SECTION_CHROME};
 /// The pane, split for the inspector when it is open beside a declared
 /// view: the view keeps what the drawer leaves.
 pub(super) fn declared_split(model: &WorkspaceModel, pane: Rect) -> (Rect, Option<Rect>) {
-    if model.declared_open.is_none() || !model.inspecting {
+    if model.open_slot.is_none() || !model.inspecting {
         return (pane, None);
     }
     let width = widget::drawer::width(model.overview_drawer_width, pane.width);
@@ -26,7 +26,7 @@ pub(super) fn render_declared_overlays(
     model: &WorkspaceModel,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
-    let Some(slot) = model.open_declared_slot() else {
+    let Some(slot) = model.slot_in_pane() else {
         return;
     };
     let errors = model.remembered.declared.errors_of(&slot.owner);
@@ -81,7 +81,7 @@ pub(super) fn render_declared_drawer(
     model.dock_space.set(space);
     let view = model.surface_view(slot, space);
     let hovered = match model.hovered {
-        Some(WorkspaceHit::Extension(ExtensionHit::Declared { slot: hovered, hit }))
+        Some(WorkspaceHit::Extension(ExtensionHit { slot: hovered, hit }))
             if hovered == slot.id =>
         {
             Some(hit)
@@ -103,7 +103,7 @@ pub(super) fn render_declared_drawer(
     hits.extend(view_hits.into_iter().map(|(rect, hit)| {
         (
             rect,
-            WorkspaceHit::Extension(ExtensionHit::Declared { slot: slot.id, hit }),
+            WorkspaceHit::Extension(ExtensionHit { slot: slot.id, hit }),
         )
     }));
     hits.push((area, WorkspaceHit::DockBody));

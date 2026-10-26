@@ -144,10 +144,10 @@ pub(super) struct FrameMetrics {
     /// Rows of the space tree the sidebar could not show — how far the
     /// tree may be scrolled, and zero when it fits.
     pub(super) tree_overflow: u16,
-    /// What the code surface's frame left behind: where its navigator
+    /// What the open view's frame left behind: where its navigator
     /// settled, and the scrollbars it drew — see
     /// `extension_view::Rendered`.
-    pub(super) code: Option<crate::ui::extension_view::Rendered>,
+    pub(super) surface: Option<crate::ui::extension_view::Rendered>,
     /// What the management modal's frame left behind, when it was open.
     pub(super) manage: Option<ManageFrame>,
     /// Whether a caption too long for its room was drawn sliding. The one
@@ -197,9 +197,7 @@ pub(super) fn render(
     let (surface_area, inspector_area) = declared_split(model, layout.pane);
     // A plugin's view is drawn under the strip naming whose it is, which
     // nothing it draws can cover.
-    let declared = model
-        .open_declared_slot()
-        .and_then(|slot| slot.owner.declared());
+    let declared = model.slot_in_pane().and_then(|slot| slot.owner.declared());
     let surface_area = match declared {
         Some(identity) => crate::ui::extension_view::tree::render_attribution(
             frame,
@@ -269,7 +267,7 @@ pub(super) fn render(
             view_hits.into_iter().map(|(rect, hit)| {
                 (
                     rect,
-                    WorkspaceHit::Extension(ExtensionHit::Declared {
+                    WorkspaceHit::Extension(ExtensionHit {
                         slot: question.tag,
                         hit,
                     }),
@@ -382,19 +380,19 @@ fn render_extension(
     let OpenExtension { view, scope, tag } = open;
     let (scope, tag) = (*scope, *tag);
     let mut view_hits = Vec::new();
-    metrics.code = Some(crate::ui::extension_view::render(
+    metrics.surface = Some(crate::ui::extension_view::render(
         frame,
         view,
         area,
         crate::ui::extension_view::NavigatorFrame {
-            width: model.code_tree_width,
-            scroll: model.code_tree_scroll,
+            width: model.navigator_width,
+            scroll: model.navigator_scroll,
             resizing: model
-                .code_edge_drag
+                .edge_drag
                 .is_some_and(|drag| drag.intent == Some(EdgeIntent::Resize)),
             sliding: match model.hovered {
-                Some(WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit }))
-                    if model.declared_open == Some(slot) =>
+                Some(WorkspaceHit::Extension(ExtensionHit { slot, hit }))
+                    if model.open_slot == Some(slot) =>
                 {
                     Some((hit, model.hovered_for()))
                 }
@@ -404,7 +402,7 @@ fn render_extension(
         crate::ui::extension_view::FooterKeys {
             scope,
             hovered: model.hovered_hint(),
-            host: match model.open_declared_slot() {
+            host: match model.slot_in_pane() {
                 Some(slot) if slot.owner.declared().is_some() => {
                     &[uze_keys::Action::ToggleInspector]
                 }
@@ -417,23 +415,17 @@ fn render_extension(
         },
         &mut view_hits,
     ));
-    metrics.marquee |= metrics.code.as_ref().is_some_and(|drawn| drawn.marquee);
-    crate::ui::extension_view::render_row_menu(
-        frame,
-        view,
-        area,
-        model.code_menu_at,
-        &mut view_hits,
-    );
+    metrics.marquee |= metrics.surface.as_ref().is_some_and(|drawn| drawn.marquee);
+    crate::ui::extension_view::render_row_menu(frame, view, area, model.menu_at, &mut view_hits);
     hits.extend(view_hits.into_iter().map(|(rect, hit)| {
         (
             rect,
-            WorkspaceHit::Extension(ExtensionHit::Declared { slot: tag, hit }),
+            WorkspaceHit::Extension(ExtensionHit { slot: tag, hit }),
         )
     }));
     // After the row menu's: one opened low enough to cover the footer
     // answers for the cells it covers.
-    if let Some(drawn) = &metrics.code {
+    if let Some(drawn) = &metrics.surface {
         hits.extend(hint_targets(drawn.hints.clone()));
     }
     view.confirm.clone().map(|confirm| Question {
@@ -466,7 +458,7 @@ fn render_extension_navigation(
         navigation_hits.into_iter().map(|(rect, hit)| {
             (
                 rect,
-                WorkspaceHit::Extension(ExtensionHit::Declared {
+                WorkspaceHit::Extension(ExtensionHit {
                     slot: open.tag,
                     hit,
                 }),
@@ -486,10 +478,10 @@ struct OpenExtension {
 }
 
 fn open_extension(model: &WorkspaceModel, area: Rect) -> Option<OpenExtension> {
-    let slot = model.open_declared_slot()?;
+    let slot = model.slot_in_pane()?;
     let space = match model.open_layout() {
         Some(uze_extensions::view::Layout::Board) => crate::ui::extension_view::board_space(area),
-        _ => crate::ui::extension_view::content_space(area, model.code_tree_width),
+        _ => crate::ui::extension_view::content_space(area, model.navigator_width),
     };
     let scope = match &slot.owner {
         Owner::Builtin(id) if *id == uze_extensions::code::CATALOG.id => uze_keys::Scope::Code,
@@ -500,7 +492,7 @@ fn open_extension(model: &WorkspaceModel, area: Rect) -> Option<OpenExtension> {
         _ => uze_keys::Scope::Declared,
     };
     Some(OpenExtension {
-        view: model.declared_view(space)?,
+        view: model.view_in_pane(space)?,
         scope,
         tag: slot.id,
     })

@@ -4,7 +4,7 @@
 
 use super::support::*;
 use super::{
-    DeclaredExtensions, ExtensionAnswer, Hosted, Inspection, LoadedExtension, WorkspaceHit,
+    ExtensionAnswer, Hosted, HostedExtensions, Inspection, LoadedExtension, WorkspaceHit,
     WorkspaceModel,
 };
 use std::collections::BTreeMap;
@@ -245,10 +245,10 @@ fn recompiled(
 fn hosting_the_board() -> WorkspaceModel {
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
-    model.remembered.declared = DeclaredExtensions {
+    model.remembered.declared = HostedExtensions {
         engine: board,
         discovered_at: Some(std::time::Instant::now()),
-        ..DeclaredExtensions::default()
+        ..HostedExtensions::default()
     };
     assert!(model.absorb_extension_answer(discovered()));
     model
@@ -274,7 +274,7 @@ fn view_slot(model: &WorkspaceModel) -> u32 {
 
 fn said(model: &WorkspaceModel) -> String {
     match model
-        .declared_view(Size {
+        .view_in_pane(Size {
             width: 80,
             height: 20,
         })
@@ -297,7 +297,7 @@ fn a_declared_view_opens_from_its_button_and_closes_from_it() {
     driven.frame();
     let button = drawn(&driven.attach.model, WorkspaceHit::OpenDeclared(slot));
     driven.press(button.x, button.y);
-    assert_eq!(driven.attach.model.declared_open, Some(slot), "opened");
+    assert_eq!(driven.attach.model.open_slot, Some(slot), "opened");
 
     driven.frame();
     let rows = frame_rows_at(&mut driven.attach.model, driven.area);
@@ -309,7 +309,7 @@ fn a_declared_view_opens_from_its_button_and_closes_from_it() {
     let button = drawn(&driven.attach.model, WorkspaceHit::OpenDeclared(slot));
     driven.press(button.x, button.y);
     assert_eq!(
-        driven.attach.model.declared_open, None,
+        driven.attach.model.open_slot, None,
         "closed by the same button"
     );
 }
@@ -319,12 +319,12 @@ fn switching_a_tab_runs_nothing() {
     let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("declared-tab"));
     let mut model = hosting_the_board();
     let slot = view_slot(&model);
-    super::open_declared(&mut model, slot);
+    super::open_surface(&mut model, slot);
     let mut driven = driven(model, &home).on_a_roomy_terminal();
     driven.frame();
     let tab = drawn(
         &driven.attach.model,
-        WorkspaceHit::Extension(ExtensionHit::Declared {
+        WorkspaceHit::Extension(ExtensionHit {
             slot,
             hit: ViewHit::Node {
                 node: 1,
@@ -355,16 +355,16 @@ fn switching_a_tab_runs_nothing() {
 fn a_view_that_asks_for_a_copy_or_a_path_gets_the_clipboard_or_the_code_surface() {
     let mut model = hosting_the_board();
     let slot = view_slot(&model);
-    super::open_declared(&mut model, slot);
+    super::open_surface(&mut model, slot);
     let space = Size {
         width: 80,
         height: 20,
     };
-    model.tell_declared(Command::Activate, space);
+    model.tell_surface(Command::Activate, space);
     assert_eq!(model.clipboard.as_deref(), Some("tab 0"));
 
-    model.tell_declared(Command::Back, space);
-    assert_ne!(model.declared_open, Some(slot), "the view gave way");
+    model.tell_surface(Command::Back, space);
+    assert_ne!(model.open_slot, Some(slot), "the view gave way");
     let code = code_view(&model).expect("the code surface opened");
     assert_eq!(code.root(), std::path::Path::new("/project"));
 }
@@ -373,7 +373,7 @@ fn a_view_that_asks_for_a_copy_or_a_path_gets_the_clipboard_or_the_code_surface(
 fn an_answer_about_an_extension_no_longer_installed_is_dropped() {
     let mut model = hosting_the_board();
     let slot = view_slot(&model);
-    super::open_declared(&mut model, slot);
+    super::open_surface(&mut model, slot);
 
     // The plugin was removed: its view goes, whatever stood in the pane.
     model.absorb_extension_answer(ExtensionAnswer {
@@ -382,7 +382,7 @@ fn an_answer_about_an_extension_no_longer_installed_is_dropped() {
         recompiled: Vec::new(),
         loaded: Vec::new(),
     });
-    assert_eq!(model.declared_open, None, "put away");
+    assert_eq!(model.open_slot, None, "put away");
     assert!(model.declared_views().next().is_none());
 
     // A recompile that was out meanwhile does not bring it back.
@@ -395,8 +395,8 @@ fn an_answer_about_an_extension_no_longer_installed_is_dropped() {
 fn a_reload_keeps_the_place() {
     let mut model = hosting_the_board();
     let slot = view_slot(&model);
-    super::open_declared(&mut model, slot);
-    model.tell_declared(
+    super::open_surface(&mut model, slot);
+    model.tell_surface(
         Command::NextView,
         Size {
             width: 80,
@@ -417,7 +417,7 @@ fn a_reload_keeps_the_place() {
         .settled(std::time::Instant::now() + super::DECLARED_SETTLE);
     assert_eq!(settled.len(), 1, "the save settled");
     model.absorb_extension_answer(recompiled(Ok(compiled())));
-    assert_eq!(model.declared_open, Some(slot));
+    assert_eq!(model.open_slot, Some(slot));
     assert_eq!(said(&model), "tab 1 compile 2");
 }
 
@@ -425,7 +425,7 @@ fn a_reload_keeps_the_place() {
 fn an_error_keeps_the_last_draw_and_says_itself_over_it() {
     let mut model = hosting_the_board();
     let slot = view_slot(&model);
-    super::open_declared(&mut model, slot);
+    super::open_surface(&mut model, slot);
     model.absorb_extension_answer(recompiled(Err(vec![ExtensionDiagnostic {
         file: "board.kdl".to_owned(),
         line: 3,
@@ -451,10 +451,10 @@ fn an_error_keeps_the_last_draw_and_says_itself_over_it() {
 fn an_extension_that_never_compiled_says_its_error_alone() {
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
-    model.remembered.declared = DeclaredExtensions {
+    model.remembered.declared = HostedExtensions {
         engine: board,
         discovered_at: Some(std::time::Instant::now()),
-        ..DeclaredExtensions::default()
+        ..HostedExtensions::default()
     };
     model.absorb_extension_answer(ExtensionAnswer {
         discovery: true,
@@ -469,7 +469,7 @@ fn an_extension_that_never_compiled_says_its_error_alone() {
         }]))],
     });
     let slot = view_slot(&model);
-    super::open_declared(&mut model, slot);
+    super::open_surface(&mut model, slot);
     let rows = frame_rows_at(&mut model, ratatui::layout::Rect::new(0, 0, 140, 40));
     assert!(
         rows.iter().any(|row| row.contains("can't be drawn")),
@@ -483,7 +483,7 @@ fn an_extension_that_never_compiled_says_its_error_alone() {
 
     // Once it compiles, the stand-in gives way to its real surfaces.
     model.absorb_extension_answer(recompiled(Ok(compiled())));
-    assert_eq!(model.declared_open, None, "the stand-in went");
+    assert_eq!(model.open_slot, None, "the stand-in went");
     assert_eq!(model.declared_views().count(), 1);
 }
 
@@ -503,7 +503,7 @@ fn a_declared_section_folds_from_its_header() {
     driven.frame();
     let header = drawn(
         &driven.attach.model,
-        WorkspaceHit::Extension(ExtensionHit::Declared {
+        WorkspaceHit::Extension(ExtensionHit {
             slot: section,
             hit: ViewHit::ToggleSection,
         }),
@@ -524,7 +524,7 @@ fn a_declared_section_folds_from_its_header() {
     driven.frame();
     let header = drawn(
         &driven.attach.model,
-        WorkspaceHit::Extension(ExtensionHit::Declared {
+        WorkspaceHit::Extension(ExtensionHit {
             slot: section,
             hit: ViewHit::ToggleSection,
         }),
@@ -537,11 +537,11 @@ fn a_declared_section_folds_from_its_header() {
 fn a_switched_off_extension_takes_its_button_and_its_view() {
     let mut model = hosting_the_board();
     let slot = view_slot(&model);
-    super::open_declared(&mut model, slot);
+    super::open_surface(&mut model, slot);
     model.follow_extension_switch(std::collections::BTreeSet::from([super::switch_id(
         &identity(),
     )]));
-    assert_eq!(model.declared_open, None);
+    assert_eq!(model.open_slot, None);
     assert!(model.declared_views().next().is_none());
 }
 
@@ -550,7 +550,7 @@ fn the_inspector_stands_beside_the_view_and_esc_puts_it_away_first() {
     let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("declared-inspector"));
     let mut model = hosting_the_board();
     let slot = view_slot(&model);
-    super::open_declared(&mut model, slot);
+    super::open_surface(&mut model, slot);
     let mut driven = driven(model, &home).on_a_roomy_terminal();
     let key = |name: &str| key_event(uze_keys::Chord::parse(name).unwrap());
     driven.press_key(key("i"));
@@ -567,9 +567,9 @@ fn the_inspector_stands_beside_the_view_and_esc_puts_it_away_first() {
 
     driven.press_key(key("esc"));
     assert!(!driven.attach.model.inspecting, "the inspector goes first");
-    assert_eq!(driven.attach.model.declared_open, Some(slot));
+    assert_eq!(driven.attach.model.open_slot, Some(slot));
     driven.press_key(key("esc"));
-    assert_eq!(driven.attach.model.declared_open, None, "then the view");
+    assert_eq!(driven.attach.model.open_slot, None, "then the view");
 }
 
 /// The `gsd` fixture plugin installed from a marketplace linked to its
@@ -630,7 +630,7 @@ fn the_real_gsd_band_opens_switches_its_tab_and_redraws_a_save() {
     driven.frame();
     let button = drawn(&driven.attach.model, WorkspaceHit::OpenDeclared(slot));
     driven.press(button.x, button.y);
-    assert_eq!(driven.attach.model.declared_open, Some(slot));
+    assert_eq!(driven.attach.model.open_slot, Some(slot));
 
     driven.frame();
     let rows = frame_rows_at(&mut driven.attach.model, driven.area);
@@ -663,7 +663,7 @@ fn the_real_gsd_band_opens_switches_its_tab_and_redraws_a_save() {
         .hits
         .iter()
         .find_map(|(rect, hit)| match hit {
-            WorkspaceHit::Extension(ExtensionHit::Declared {
+            WorkspaceHit::Extension(ExtensionHit {
                 slot: on,
                 hit:
                     ViewHit::Node {
@@ -705,7 +705,7 @@ fn the_real_gsd_band_opens_switches_its_tab_and_redraws_a_save() {
     let rows = frame_rows_at(&mut driven.attach.model, driven.area);
     assert!(shown(&rows, "65% done"), "{rows:#?}");
     assert!(shown(&rows, "Turn finished in 4m12s"), "{rows:#?}");
-    assert_eq!(driven.attach.model.declared_open, Some(slot), "kept open");
+    assert_eq!(driven.attach.model.open_slot, Some(slot), "kept open");
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -733,7 +733,7 @@ fn notes_compiled() -> CompiledExtension {
 #[test]
 fn a_discovery_is_due_when_the_plugins_move_or_the_clock_says_so() {
     let now = std::time::Instant::now();
-    let mut declared = DeclaredExtensions::default();
+    let mut declared = HostedExtensions::default();
     assert!(declared.discovery_due(0, now), "never asked this run");
 
     declared.discovered_at = Some(now);
@@ -755,15 +755,15 @@ fn a_discovery_is_due_when_the_plugins_move_or_the_clock_says_so() {
 fn a_rediscovery_brings_in_a_new_extension_and_takes_a_removed_one_away() {
     let mut model = hosting_the_board();
     let slot = view_slot(&model);
-    super::open_declared(&mut model, slot);
-    model.tell_declared(
+    super::open_surface(&mut model, slot);
+    model.tell_surface(
         Command::NextView,
         Size {
             width: 80,
             height: 20,
         },
     );
-    model.close_declared();
+    model.close_surface();
     assert_eq!(model.remembered.declared.places.len(), 1, "a place kept");
 
     // Installed: only the newcomer is loaded, the board is as it was.
@@ -787,7 +787,7 @@ fn a_rediscovery_brings_in_a_new_extension_and_takes_a_removed_one_away() {
     assert_eq!(model.declared_views().next().unwrap().id, slot, "kept");
 
     // Removed: its slots close and its place goes with them.
-    super::open_declared(&mut model, slot);
+    super::open_surface(&mut model, slot);
     let changed = model.absorb_extension_answer(ExtensionAnswer {
         discovery: true,
         discovered: Some(vec![notes()]),
@@ -795,7 +795,7 @@ fn a_rediscovery_brings_in_a_new_extension_and_takes_a_removed_one_away() {
         loaded: Vec::new(),
     });
     assert!(changed);
-    assert_eq!(model.declared_open, None, "its open view closed");
+    assert_eq!(model.open_slot, None, "its open view closed");
     let declared = &model.remembered.declared;
     assert!(
         declared
@@ -862,14 +862,14 @@ fn every_engine_is_built_for_the_operators_language() {
         board(compiled, locale)
     }
     assert_eq!(
-        DeclaredExtensions::default().locale,
+        HostedExtensions::default().locale,
         uze_platform::locale::language(),
         "the platform's answer, read once"
     );
-    let mut declared = DeclaredExtensions {
+    let mut declared = HostedExtensions {
         engine: portuguese_only,
         locale: "pt".to_owned(),
-        ..DeclaredExtensions::default()
+        ..HostedExtensions::default()
     };
     declared.absorb_loaded(loaded(Ok(compiled())));
     let declared_slots = declared
@@ -885,7 +885,7 @@ fn inspector_open() -> Driven<'static> {
     ));
     let mut model = hosting_the_board();
     let slot = view_slot(&model);
-    super::open_declared(&mut model, slot);
+    super::open_surface(&mut model, slot);
     let mut driven = driven(model, home).on_a_roomy_terminal();
     driven.frame();
     let hint = drawn(
@@ -913,10 +913,7 @@ fn clicking_the_inspector_hint_is_pressing_its_key() {
     );
     driven.press(hint.x, hint.y);
     assert!(!driven.attach.model.inspecting, "closed by the same hint");
-    assert!(
-        driven.attach.model.declared_open.is_some(),
-        "the view stays"
-    );
+    assert!(driven.attach.model.open_slot.is_some(), "the view stays");
 }
 
 #[test]
@@ -1012,10 +1009,10 @@ fn the_inspector_is_resized_by_its_rule_and_fits_the_frame() {
 fn hosting_the_drawer() -> WorkspaceModel {
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
-    model.remembered.declared = DeclaredExtensions {
+    model.remembered.declared = HostedExtensions {
         engine: board,
         discovered_at: Some(std::time::Instant::now()),
-        ..DeclaredExtensions::default()
+        ..HostedExtensions::default()
     };
     let mut with_drawer = compiled();
     with_drawer
@@ -1079,7 +1076,7 @@ fn a_drawer_opens_from_its_button_beside_the_pane_and_closes_from_it() {
     let button = drawn(&driven.attach.model, WorkspaceHit::ToggleDrawer(slot));
     driven.press(button.x, button.y);
     assert_eq!(driven.attach.model.open_drawer(), Some(slot), "opened");
-    assert_eq!(driven.attach.model.declared_open, None, "not a view");
+    assert_eq!(driven.attach.model.open_slot, None, "not a view");
 
     let docked = layout_of(&driven);
     let drawer = docked.drawer.expect("docked beside the pane");
@@ -1163,7 +1160,7 @@ fn a_click_in_the_drawer_reaches_its_engine_and_esc_gives_the_keys_back_then_clo
     driven.frame();
     let tab = drawn(
         &driven.attach.model,
-        WorkspaceHit::Extension(ExtensionHit::Declared {
+        WorkspaceHit::Extension(ExtensionHit {
             slot,
             hit: ViewHit::Node {
                 node: 1,
@@ -1439,7 +1436,7 @@ fn a_tests_click_and_the_workspaces_reach_the_same_tab() {
         .map(|(_, hit)| *hit);
     assert_eq!(
         from_the_workspace,
-        Some(WorkspaceHit::Extension(ExtensionHit::Declared {
+        Some(WorkspaceHit::Extension(ExtensionHit {
             slot,
             hit: from_a_test
         }))
@@ -1471,7 +1468,7 @@ fn the_drawers_scrollbar_follows_the_pointer() {
     driven.frame();
     let bar = drawn(
         &driven.attach.model,
-        WorkspaceHit::Extension(ExtensionHit::Declared {
+        WorkspaceHit::Extension(ExtensionHit {
             slot,
             hit: ViewHit::DragContentScrollbar,
         }),
@@ -1617,10 +1614,10 @@ fn a_hosted_engines_jobs_run_off_the_frame_and_answer_it() {
         ]
         .into(),
     );
-    model.remembered.declared = DeclaredExtensions {
+    model.remembered.declared = HostedExtensions {
         engine: fetcher,
         discovered_at: Some(std::time::Instant::now()),
-        ..DeclaredExtensions::default()
+        ..HostedExtensions::default()
     };
     assert!(model.absorb_extension_answer(ExtensionAnswer {
         discovery: true,
@@ -1716,7 +1713,7 @@ fn a_declared_views_scrollbar_follows_the_pointer() {
         match driven
             .attach
             .model
-            .declared_view(space)
+            .view_in_pane(space)
             .map(|view| view.content)
         {
             Some(Content::Tree { scroll, .. }) => scroll,
@@ -1726,7 +1723,7 @@ fn a_declared_views_scrollbar_follows_the_pointer() {
     assert_eq!(shown(&driven), 0);
     let bar = drawn(
         &driven.attach.model,
-        WorkspaceHit::Extension(ExtensionHit::Declared {
+        WorkspaceHit::Extension(ExtensionHit {
             slot,
             hit: ViewHit::DragContentScrollbar,
         }),

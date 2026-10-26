@@ -44,7 +44,7 @@ fn coming_back_to_a_checkouts_code_returns_to_where_it_was_left() {
     };
 
     let space =
-        crate::ui::extension_view::content_space(Rect::new(0, 0, 120, 40), model.code_tree_width);
+        crate::ui::extension_view::content_space(Rect::new(0, 0, 120, 40), model.navigator_width);
 
     select_tab(&mut model, first);
     open_code(&mut model, uze_extensions::code::FILES);
@@ -58,7 +58,7 @@ fn coming_back_to_a_checkouts_code_returns_to_where_it_was_left() {
     );
     let walked_to = code_view(&model).expect("open").place();
 
-    model.close_declared();
+    model.close_surface();
     assert!(!model.showing(uze_extensions::code::CATALOG.id));
 
     // Another agent's checkout is a different place, not this one.
@@ -70,7 +70,7 @@ fn coming_back_to_a_checkouts_code_returns_to_where_it_was_left() {
         walked_to,
         "a checkout never visited opens on its own first row"
     );
-    model.close_declared();
+    model.close_surface();
 
     select_tab(&mut model, first);
     open_code(&mut model, uze_extensions::code::FILES);
@@ -108,10 +108,10 @@ fn coming_back_to_a_checkouts_architect_returns_to_the_diagram_it_was_left_on() 
     answer_artifacts(&mut model);
     // Moved off the diagram the surface opens on, which is the part
     // that must survive the round trip.
-    model.tell_declared(Command::NextView, space);
+    model.tell_surface(Command::NextView, space);
     let moved_to = architect_place(&model);
 
-    model.close_declared();
+    model.close_surface();
     assert!(!model.showing(architect::CATALOG.id));
 
     // Another agent's checkout is a different place, not this one.
@@ -122,7 +122,7 @@ fn coming_back_to_a_checkouts_architect_returns_to_the_diagram_it_was_left_on() 
         moved_to,
         "a checkout never visited opens on its own first diagram"
     );
-    model.close_declared();
+    model.close_surface();
 
     select_tab(&mut model, first);
     answer_artifacts(&mut model);
@@ -205,7 +205,7 @@ fn a_checkout_measured_once_is_not_measured_again_on_the_way_back_in() {
     }));
     assert!(code_view(&model).expect("open").has_map());
 
-    model.close_declared();
+    model.close_surface();
     open_code(&mut model, uze_extensions::code::FILES);
     assert!(
         code_view(&model).expect("open").has_map(),
@@ -254,7 +254,7 @@ fn the_content_scrollbar_answers_in_the_panes_margin() {
     let track = Rect::new(pane.right(), pane.y + 1, 1, pane.height - 1);
     let bar = crate::ui::widget::Scrollbar::measure(track, usize::from(track.height), 500)
         .expect("five hundred lines in a pane is a scrollbar");
-    driven.attach.model.code_scrollbars.content_bar = Some(bar);
+    driven.attach.model.surface_frame.content_bar = Some(bar);
     driven.attach.model.hits.insert(
         0,
         (
@@ -339,7 +339,7 @@ fn the_code_halves_take_the_bars_leading_slot() {
     let control = model.hits.iter().find(|(_, hit)| {
         matches!(
             hit,
-            WorkspaceHit::Extension(ExtensionHit::Declared {
+            WorkspaceHit::Extension(ExtensionHit {
                 hit: ViewHit::SelectSubject(_),
                 ..
             })
@@ -376,7 +376,7 @@ fn a_sidebar_section_answers_while_a_surface_is_open() {
     let mut driven = driven(model, &home);
     driven.frame();
     let header = driven.hit(|hit| {
-        *hit == WorkspaceHit::Extension(ExtensionHit::Declared {
+        *hit == WorkspaceHit::Extension(ExtensionHit {
             slot: summary,
             hit: ViewHit::ToggleSection,
         })
@@ -426,7 +426,7 @@ fn the_spec_section_totals_the_work_and_opens_the_surface_on_a_change() {
             .hits
             .iter()
             .find(|(_, hit)| {
-                *hit == WorkspaceHit::Extension(ExtensionHit::Declared {
+                *hit == WorkspaceHit::Extension(ExtensionHit {
                     slot: summary,
                     hit: wanted,
                 })
@@ -484,7 +484,7 @@ fn the_spec_section_totals_the_work_and_opens_the_surface_on_a_change() {
         let (rect, _) = hits
             .iter()
             .find(|(_, hit)| {
-                *hit == WorkspaceHit::Extension(ExtensionHit::Declared {
+                *hit == WorkspaceHit::Extension(ExtensionHit {
                     slot: summary,
                     hit: wanted,
                 })
@@ -525,14 +525,14 @@ fn a_spec_answer_for_a_surface_since_closed_or_moved_is_dropped() {
             height: 24,
         };
         matches!(
-            model.declared_view(space).map(|view| view.content),
+            model.view_in_pane(space).map(|view| view.content),
             Some(uze_extensions::view::Content::Message { text, .. }) if text.starts_with("Reading")
         )
     };
     select_tab(&mut model, first);
     open_spec(&mut model);
-    let asked_for = model.declared_root.clone().expect("a root");
-    model.close_declared();
+    let asked_for = model.open_root.clone().expect("a root");
+    model.close_surface();
     spec_engine(&mut model).absorb(read(asked_for.clone()));
     assert!(
         !model.showing(uze_extensions::spec::CATALOG.id),
@@ -541,7 +541,7 @@ fn a_spec_answer_for_a_surface_since_closed_or_moved_is_dropped() {
 
     select_tab(&mut model, second);
     open_spec(&mut model);
-    let here = model.declared_root.clone().expect("a root");
+    let here = model.open_root.clone().expect("a root");
     if here != asked_for {
         spec_engine(&mut model).absorb(read(asked_for.clone()));
         assert!(
@@ -605,10 +605,10 @@ fn coming_back_to_a_checkouts_spec_returns_to_the_document_it_was_left_on() {
     open_spec(&mut model);
     answer(&mut model);
     for command in [Command::Expand, Command::SelectNext, Command::SelectNext] {
-        model.tell_declared(command, space);
+        model.tell_surface(command, space);
     }
     let left_on = spec_place(&model);
-    model.close_declared();
+    model.close_surface();
 
     open_spec(&mut model);
     answer(&mut model);
@@ -647,14 +647,14 @@ fn a_click_on_the_map_resolves_to_the_column_under_the_pointer() {
     full_frame(&mut model);
 
     assert_eq!(
-        model.code_scrollbars.content_gutter, 0,
+        model.surface_frame.content_gutter, 0,
         "a drawing carries no line numbers, so it has no gutter"
     );
     let (rect, line, cell) = model
         .hits
         .iter()
         .find_map(|(rect, hit)| match hit {
-            WorkspaceHit::Extension(ExtensionHit::Declared {
+            WorkspaceHit::Extension(ExtensionHit {
                 hit: ViewHit::PlaceCaret { line, cell },
                 ..
             }) => Some((*rect, *line, *cell)),
@@ -668,7 +668,7 @@ fn a_click_on_the_map_resolves_to_the_column_under_the_pointer() {
             rect,
             cell,
             far_right,
-            model.code_scrollbars.content_gutter,
+            model.surface_frame.content_gutter,
         ),
         usize::from(rect.width - 1),
         "the last column of a row is the last cell of the drawing"
@@ -720,7 +720,7 @@ fn a_click_inside_the_explorer_reaches_the_extension() {
         .find(|(_, hit)| {
             matches!(
                 hit,
-                WorkspaceHit::Extension(ExtensionHit::Declared {
+                WorkspaceHit::Extension(ExtensionHit {
                     hit: ViewHit::SelectItem(_),
                     ..
                 })
@@ -731,7 +731,7 @@ fn a_click_inside_the_explorer_reaches_the_extension() {
     assert!(
         matches!(
             model.hit_at(row.x + 2, row.y),
-            Some(WorkspaceHit::Extension(ExtensionHit::Declared {
+            Some(WorkspaceHit::Extension(ExtensionHit {
                 hit: ViewHit::SelectItem(_),
                 ..
             }))
@@ -742,7 +742,7 @@ fn a_click_inside_the_explorer_reaches_the_extension() {
     let caret = model.hits.iter().find(|(_, hit)| {
         matches!(
             hit,
-            WorkspaceHit::Extension(ExtensionHit::Declared {
+            WorkspaceHit::Extension(ExtensionHit {
                 hit: ViewHit::PlaceCaret { .. },
                 ..
             })
@@ -802,7 +802,7 @@ fn a_list_open_over_the_architects_board_follows_the_pointer() {
             .hits
             .iter()
             .find(|(_, hit)| {
-                *hit == WorkspaceHit::Extension(ExtensionHit::Declared {
+                *hit == WorkspaceHit::Extension(ExtensionHit {
                     slot,
                     hit: ViewHit::SelectItem(item),
                 })
@@ -818,7 +818,7 @@ fn a_list_open_over_the_architects_board_follows_the_pointer() {
         .hits
         .iter()
         .find(|(_, hit)| {
-            *hit == WorkspaceHit::Extension(ExtensionHit::Declared {
+            *hit == WorkspaceHit::Extension(ExtensionHit {
                 slot,
                 hit: ViewHit::ChooseItem,
             })
@@ -859,22 +859,22 @@ fn the_architects_source_is_marked_and_copied_and_its_diagram_is_not() {
 
     driven.frame();
     assert!(
-        driven.attach.model.code_scrollbars.text_rows.is_empty(),
+        driven.attach.model.surface_frame.text_rows.is_empty(),
         "a diagram has no text to mark"
     );
 
-    let space = driven.attach.model.code_scrollbars.content_space;
+    let space = driven.attach.model.surface_frame.content_space;
     let slot = architect_slot(&driven.attach.model);
     driven
         .attach
         .model
-        .hit_declared(slot, ViewHit::SelectMode(2), space);
+        .hit_surface(slot, ViewHit::SelectMode(2), space);
     driven.frame();
     let row_of = |driven: &Driven<'_>, line: usize| {
         driven
             .attach
             .model
-            .code_scrollbars
+            .surface_frame
             .text_rows
             .iter()
             .find(|row| row.line == line)
@@ -996,7 +996,7 @@ fn the_architects_board_is_dragged_through_its_slot() {
         .find(|(_, hit)| {
             matches!(
                 hit,
-                WorkspaceHit::Extension(ExtensionHit::Declared {
+                WorkspaceHit::Extension(ExtensionHit {
                     slot: hit_slot,
                     hit: ViewHit::PlaceCaret { .. },
                 }) if *hit_slot == slot

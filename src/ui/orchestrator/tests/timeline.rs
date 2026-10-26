@@ -194,7 +194,7 @@ fn the_timeline_speaks_only_the_extensions_vocabulary() {
     let commits: Vec<usize> = hits
         .iter()
         .filter_map(|(_, hit)| match hit {
-            WorkspaceHit::Extension(ExtensionHit::Declared {
+            WorkspaceHit::Extension(ExtensionHit {
                 slot,
                 hit: ViewHit::SelectItem(index),
             }) if model.is_timeline(*slot) => Some(*index),
@@ -210,7 +210,7 @@ fn the_timeline_speaks_only_the_extensions_vocabulary() {
             .filter(|(rect, _)| rect.y >= timeline_top)
             .all(|(_, hit)| matches!(
                 hit,
-                WorkspaceHit::Extension(ExtensionHit::Declared { slot, .. })
+                WorkspaceHit::Extension(ExtensionHit { slot, .. })
                     if model.is_timeline(*slot)
             )),
         "a host hit escaped into the extension's section: {hits:?}"
@@ -357,7 +357,7 @@ fn the_timeline_scrolls_by_rows_within_its_history() {
     let targets: Vec<usize> = hits
         .iter()
         .filter_map(|(_, hit)| match hit {
-            WorkspaceHit::Extension(ExtensionHit::Declared {
+            WorkspaceHit::Extension(ExtensionHit {
                 slot,
                 hit: ViewHit::SelectItem(index),
             }) if model.is_timeline(*slot) => Some(*index),

@@ -658,7 +658,7 @@ pub(crate) fn attach_workspace(
             terminal.draw(|frame| {
                 render(frame, model, identities, &mut hits, &mut metrics);
                 uncovered = metrics
-                    .code
+                    .surface
                     .as_ref()
                     .and_then(|drawn| drawn.picture.clone())
                     .filter(|placement| placement.uncovered_in(frame.buffer_mut()));
@@ -674,9 +674,9 @@ pub(crate) fn attach_workspace(
                 .remembered
                 .tree_scroll
                 .min(metrics.tree_overflow);
-            if let Some(rendered) = metrics.code {
-                attach.model.code_tree_scroll = rendered.navigator_scroll;
-                attach.model.code_scrollbars = rendered;
+            if let Some(rendered) = metrics.surface {
+                attach.model.navigator_scroll = rendered.navigator_scroll;
+                attach.model.surface_frame = rendered;
             }
             if let Some(frame) = metrics.recent {
                 attach.model.recent.scroll = frame.scroll;
@@ -1546,7 +1546,7 @@ struct Remembered {
     prompt_buffers: BTreeMap<PaneId, PromptBuffer>,
     /// The surfaces plugins declare, each with the engine that answers for
     /// it, and where the viewer was on each per checkout.
-    declared: DeclaredExtensions,
+    declared: HostedExtensions,
     /// Preserved work across the machine, as last swept. The last good
     /// answer stays drawn while a new one is in flight, so opening the
     /// list never shows an empty one it is about to fill.
@@ -1856,13 +1856,13 @@ struct WorkspaceModel {
     /// The open question about a machine fact an agent proposed (see
     /// `proposal`). Seals the client like the approval does.
     proposal: Option<ProposalDialog>,
-    /// The view standing in a slot in the pane, by its slot, and the
-    /// checkout it was opened on — what its place is remembered under. It
-    /// borrows the code surface's frame — the navigator width, its scroll,
-    /// the scrollbars — because the two are never open together and the
-    /// frame is the host's, not either extension's.
-    declared_open: Option<SlotId>,
-    declared_root: Option<PathBuf>,
+    /// The view standing in the pane, by its slot, and the checkout it was
+    /// opened on — what its place is remembered under. Every view, built-in
+    /// or declared, stands in a slot, and the frame around it — the
+    /// navigator width, its scroll, the scrollbars — is the host's, kept
+    /// below, since only one view is open at a time.
+    open_slot: Option<SlotId>,
+    open_root: Option<PathBuf>,
     /// Whether the inspector stands beside it.
     inspecting: bool,
     /// The width a plugin's docked drawer was dragged to, kept for the
@@ -1895,7 +1895,7 @@ struct WorkspaceModel {
     /// page key moves it by.
     inspector_rows: std::cell::Cell<u16>,
     /// What its engine last asked to say at the end of its footer.
-    declared_notice: Option<uze_extensions::view::Span>,
+    open_notice: Option<uze_extensions::view::Span>,
     /// The tab the open surface stands in for. It is drawn where that
     /// tab's pane is, about that tab's checkout, so a different tab coming
     /// to the front — however it got there — puts it away rather than
@@ -1929,26 +1929,26 @@ struct WorkspaceModel {
     /// above, kept on the model rather than on the view itself so it
     /// survives closing and reopening the surface within the same
     /// session, the same way the sidebar's width survives switching tabs.
-    code_tree_width: Option<u16>,
+    navigator_width: Option<u16>,
     /// Where the navigator is scrolled to. The host's, not the
     /// extension's, for the reason the width is: how far a list of rows
     /// can scroll is a question about how many fit, and only the render
     /// knows — which is also why a frame hands it back settled (see
     /// `render::FrameMetrics`).
-    code_tree_scroll: extension_view::NavigatorScroll,
+    navigator_scroll: extension_view::NavigatorScroll,
     /// The scrollbars the last frame drew, so a drag can answer *where in
     /// the content* the pointer went. Geometry belongs to the render, so
     /// it travels from there rather than being derived twice.
-    code_scrollbars: extension_view::Rendered,
-    /// Where the pointer asked for the code surface's row menu, which is
+    surface_frame: extension_view::Rendered,
+    /// Where the pointer asked for the open view's row menu, which is
     /// where it opens. `None` when the keyboard asked, and the menu opens
     /// under its row instead.
-    code_menu_at: Option<Rect>,
+    menu_at: Option<Rect>,
     /// A press on the navigator's edge, waiting to find out what it is.
-    code_edge_drag: Option<EdgeDrag>,
+    edge_drag: Option<EdgeDrag>,
     /// Whether the content's own scrollbar is being held. Unambiguous, so
     /// it needs nothing but a flag.
-    dragging_code_content: bool,
+    dragging_content: bool,
     /// Whether the pointer is held since a press on a toast, so the rest
     /// of that gesture is the toast's and reaches nothing beneath it.
     pressing_toast: bool,
@@ -2303,7 +2303,7 @@ impl WorkspaceModel {
     /// that isn't already claimed by one of them straight into the focused
     /// pane's PTY instead of dropping it.
     fn no_modal_open(&self) -> bool {
-        self.chrome_answers() && self.declared_open.is_none()
+        self.chrome_answers() && self.open_slot.is_none()
     }
 
     /// Whether the sidebar and the strip answer the pointer: nothing is
@@ -2340,7 +2340,7 @@ impl WorkspaceModel {
             return false;
         }
         let timeline = self.hits.iter().find_map(|(rect, hit)| match hit {
-            WorkspaceHit::Extension(ExtensionHit::Declared {
+            WorkspaceHit::Extension(ExtensionHit {
                 slot,
                 hit: ViewHit::ToggleSection,
             }) if self.is_timeline(*slot) => Some(rect.y),
@@ -2423,7 +2423,7 @@ impl WorkspaceModel {
     fn over_timeline(&self, column: u16, row: u16) -> bool {
         matches!(
             self.hit_at(column, row),
-            Some(WorkspaceHit::Extension(ExtensionHit::Declared { slot, .. }))
+            Some(WorkspaceHit::Extension(ExtensionHit { slot, .. }))
                 if self.is_timeline(slot)
         )
     }
@@ -2436,7 +2436,7 @@ impl WorkspaceModel {
             .filter(|(_, hit)| {
                 matches!(
                     hit,
-                    WorkspaceHit::Extension(ExtensionHit::Declared {
+                    WorkspaceHit::Extension(ExtensionHit {
                         slot,
                         hit: ViewHit::SelectItem(_),
                     }) if self.is_timeline(*slot)
