@@ -20,3 +20,20 @@
 //! `front_matter`, pure and run in Rust.
 
 #![forbid(unsafe_code)]
+
+mod engine;
+mod envelope;
+mod error;
+mod primitives;
+mod reach;
+mod scan;
+mod script;
+mod trace;
+mod value;
+
+pub use envelope::Envelope;
+pub use error::{Limit, Location, ScriptError};
+pub use reach::{CheckoutPath, Entry, EntryKind, Grant, Grants, Reach, ReachError};
+pub use scan::{host_functions_of, ungranted_calls};
+pub use script::{Answered, Script, ScriptCache};
+pub use trace::{Trace, TraceKind, TraceLine};

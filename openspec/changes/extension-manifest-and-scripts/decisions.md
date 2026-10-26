@@ -142,3 +142,54 @@ MPL-2.0 exception for `smartstring` alone in both files (file-level copyleft;
 UZE does not modify it, and its source is published), or another engine.
 `cargo deny` and `cargo-about` are not installed on this machine, so neither
 was run.
+
+## S2. `uze-script`'s shape where the plan did not settle it (tasks 4.1–4.4)
+
+- **`uze-contract` is not a dependency yet.** Nothing in it is used today;
+  the minimal `Grant` (`read:checkout` only, the grant that registers
+  script functions) lives in `uze-script::Grant` until task 1.1 lands the
+  contract's own, which then replaces it. The layering test admits
+  `uze-contract` and `uze-platform` and nothing else. `uze-platform` is used
+  for `Reach::clock`'s default.
+- **`answer` takes `Arc<dyn Reach>`, not `&dyn Reach`.** Rhai keeps every
+  registered function as `'static + Send + Sync`, and a borrowed `Reach`
+  cannot be handed to one without `unsafe`.
+- **`answer` returns `Answered { outcome, trace }`** rather than
+  `Result<Envelope, ScriptError>`: the trace of a failed answer is what the
+  inspector needs most.
+- **An engine per answer.** About 0.2 ms (D28); in exchange each answer has
+  its own trace, deadline and exactly its grants' functions, and nothing is
+  shared between extensions on the pool. The packages are built once.
+- **The check reads tokens, not the syntax tree.** Walking Rhai's AST needs
+  `internals`, which D19 never enables; `host_functions_of` scans
+  identifiers outside comments and strings whose whole text is a host
+  function (`Fn("read_checkout")`), erring towards naming too much. The
+  engine registering only what was granted stays the real bound.
+- **`import` and `export` are disabled symbols** as well as `eval`, beside
+  the `DummyModuleResolver` and `set_max_modules(0)`, so a script naming one
+  fails to compile rather than at its first run.
+- **`LanguageCorePackage` is left out**: its `sleep` would hold a pool lane
+  past any operation count. Time is the host's `clock` (milliseconds since
+  the epoch).
+- **Limits** (`engine.rs`, each with its reason): 1,000,000 operations, a
+  100 ms deadline (five times D28's 20 ms p95 target, checked every 256
+  operations), 32 call levels, expression depths 64/32, strings 1 MiB,
+  arrays and maps 10,000, scripts 256 KiB, a trace of 200 lines of 1 KiB.
+  Measured here: a 50-row answer at most 0.2 ms in release (1.8 ms in a
+  debug build), a compile under 1 ms in release. Rhai rechecks a
+  container's size on every push, so a script pushing 10,000 items one by
+  one reaches the deadline in a debug build before the array bound.
+- **Primitives**: `lines`, `glob`/`glob_match` (`*`, `**`, `**/`, `?`, over a
+  list, linear in pattern × path), `regex`/`regex_match` (the `regex` crate,
+  rust-lang, already in the lock; compiled size capped at 1 MiB, 32
+  patterns cached per answer), `json_parse`/`json_stringify` (depth 128),
+  `front_matter` (a `---` block's top-level `key: value` lines, the rest in
+  `raw`; no YAML parser, since the only one in the tree is `uze-core`'s
+  exception). **`kdl` is deferred**: the `kdl` parser recurses without a
+  limit and is parsed only behind `uze-core`'s size cap, nesting pre-scan and
+  timed worker (D22); exposing it here would duplicate those guards in a
+  second crate. It returns when a gallery entry needs it, through a guarded
+  parse the contract can share.
+- **`Clean` is the host's.** The envelope's strings leave `uze-script` as the
+  script wrote them; they pass `uze_contract::Clean` where the host takes
+  them (task 5.2).
