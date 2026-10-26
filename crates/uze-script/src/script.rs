@@ -7,7 +7,7 @@ use rhai::{AST, Dynamic, Scope};
 use serde_json::Value;
 
 use crate::engine::{self, LIMITS};
-use crate::envelope::Envelope;
+use crate::envelope::{self, Envelope};
 use crate::error::{Limit, ScriptError};
 use crate::reach::{Grants, Reach};
 use crate::trace::Trace;
@@ -102,7 +102,7 @@ impl Script {
         let answer: Dynamic = engine
             .call_fn(&mut Scope::new(), &self.ast, ENTRY, (input, context))
             .map_err(|error| ScriptError::from_eval(&error))?;
-        Envelope::from_answer(&answer)
+        envelope::from_answer(&answer)
     }
 }
 

@@ -9,6 +9,9 @@ authors.workspace = true
 publish = false
 
 [dependencies]
+# The grants a script's host functions need, and the envelope it answers
+# with: the manifest's vocabulary, so consent and the engine name one set.
+uze-contract = { path = "../uze-contract" }
 # The clock a script reads when the host does not answer one of its own.
 uze-platform = { path = "../uze-platform" }
 # The scripting engine (`add-extension-platform` D19, D27). rhaiscript,

@@ -3657,6 +3657,7 @@ dependencies = [
  "rhai",
  "serde_json",
  "thiserror 2.0.21",
+ "uze-contract",
  "uze-platform",
 ]
 

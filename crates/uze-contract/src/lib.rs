@@ -18,6 +18,7 @@
 //! - [`binding`]: how a compiled view refers to data and UI state.
 //! - [`catalog`]: the nodes a view may name, and what each accepts.
 //! - [`clean`]: the one way a string an extension supplied becomes drawable.
+//! - [`question`]: what an extension asks the host, and the answer.
 //! - [`testing`]: what an extension's test file declares.
 
 #![forbid(unsafe_code)]
@@ -27,6 +28,7 @@ pub mod catalog;
 pub mod clean;
 pub mod compiled;
 pub mod manifest;
+pub mod question;
 pub mod testing;
 
 pub use binding::{Binding, Condition, Path, Scope, TextPart};
@@ -37,6 +39,7 @@ pub use manifest::{
     ActionDecl, Does, EVERY_FLOOR, EventName, Grant, KeySuggestion, Manifest, Slot, SourceDecl,
     SourceKind, SurfaceDecl,
 };
+pub use question::{Answer, Envelope, Question};
 pub use testing::{Given, GivenData, Step, StepKind, TestDecl, TestFile, ThemeName, World};
 
 /// The extension protocol this build speaks. A manifest declaring another

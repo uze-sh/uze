@@ -8,31 +8,7 @@
 
 use std::time::Duration;
 
-/// A grant that registers host functions in the engine. The vocabulary
-/// moves to `uze-contract` with the manifest's `wants`; this is the part of
-/// it a script can reach.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Grant {
-    /// `read:checkout`: `read_checkout` and `list_checkout`.
-    ReadCheckout,
-}
-
-impl Grant {
-    /// The grant as a manifest writes it.
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::ReadCheckout => "read:checkout",
-        }
-    }
-
-    /// The grant a manifest names, when it registers script functions.
-    pub fn from_name(name: &str) -> Option<Self> {
-        match name {
-            "read:checkout" => Some(Self::ReadCheckout),
-            _ => None,
-        }
-    }
-}
+pub use uze_contract::Grant;
 
 /// The grants an extension was consented to.
 pub type Grants = std::collections::BTreeSet<Grant>;
