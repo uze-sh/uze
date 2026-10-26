@@ -1,6 +1,7 @@
 //! The `uze` binary's library half: the terminal UI and what it shares with
 //! the CLI.
 
+pub mod asker;
 pub mod keymap;
 pub mod self_update;
 pub mod size;

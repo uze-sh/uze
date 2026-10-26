@@ -607,13 +607,22 @@ fn activate_label(model: &TuiModel) -> Option<String> {
             ProfilePanel::Editor => Some("change".to_owned()),
             ProfilePanel::Harnesses => None,
         },
-        Route::Extensions => model.selected_extension().map(|extension| {
-            if model.extension_enabled(&extension.id()) {
-                "disable"
+        // What Enter does: Enable when it is offered, else Disable when
+        // that is, else nothing to name.
+        Route::Extensions => model.selected_extension().and_then(|extension| {
+            let offers = model.extension_offers(extension);
+            let offered = |action| {
+                offers
+                    .iter()
+                    .any(|offer| offer.action == action && offer.is_available())
+            };
+            if offered(uze_keys::Action::EnableExtension) {
+                Some("enable".to_owned())
+            } else if offered(uze_keys::Action::DisableExtension) {
+                Some("disable".to_owned())
             } else {
-                "enable"
+                None
             }
-            .to_owned()
         }),
         Route::Overview | Route::Harnesses => None,
     }

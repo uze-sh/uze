@@ -60,6 +60,9 @@ pub(crate) enum Intent {
         name: String,
         enabled: bool,
     },
+    /// Consent to a declared extension, enable it in a project, or disable
+    /// it there: the operator's answer on the Extensions screen.
+    ExtensionHere(super::model::ExtensionHere),
     /// Read the themes and the glyph sets the Settings screen chooses
     /// from. Sent on arriving there rather than per frame, so the list
     /// cannot change under the cursor between two frames.
@@ -131,6 +134,7 @@ impl Intent {
             Self::SelectGlyphSet(_) => "select_glyph_set",
             Self::SelectChime(_) => "select_chime",
             Self::SwitchExtension { .. } => "switch_extension",
+            Self::ExtensionHere(_) => "extension_here",
             Self::LoadSettings => "load_settings",
             Self::SelectTheme(_) => "select_theme",
             Self::Refresh => "refresh",
@@ -258,6 +262,24 @@ pub(crate) fn dispatch(
                 }
                 Err(error) => model.status = Status::Error(error),
             }
+        }
+        Intent::ExtensionHere(here) => {
+            if here.switch_on {
+                let id = crate::ui::extension_switch::declared_id(&here.identity);
+                if let Err(error) = switch_extension(home, &id, true) {
+                    model.status = Status::Error(error);
+                    return;
+                }
+                model.disabled_extensions = crate::ui::extension_switch::disabled();
+            }
+            let doing = if here.enable {
+                format!("Enabling {}…", here.name)
+            } else {
+                format!("Disabling {}…", here.name)
+            };
+            spawn_mutation(Mutation::asked(model, doing, home, sender), move |app| {
+                extension_here(app, &here)
+            });
         }
         Intent::LoadSettings => load_settings(home, model),
         Intent::PersistKeymap => persist_keymap(home, model),
@@ -843,6 +865,7 @@ fn answered_refresh(
 fn load_refresh_data(home: UzeHome, context_root: &std::path::Path) -> Result<RefreshData> {
     let app = tui_application(home)?;
     let snapshot = app.machine_snapshot(context_root)?;
+    let extension_project = app.extensions().project_here(context_root);
     let mut plugins = snapshot.plugins;
     // Official plugins always lead the list — a stable sort keeps every
     // other ordering (whatever `list_plugins` returns) untouched within
@@ -855,6 +878,8 @@ fn load_refresh_data(home: UzeHome, context_root: &std::path::Path) -> Result<Re
         marketplaces: snapshot.marketplaces,
         profiles: snapshot.profiles,
         declared_extensions: app.extensions().summaries(),
+        extension_standings: app.extensions().reports(extension_project.as_deref()),
+        extension_project,
         context_status: snapshot.context_status,
         workspace: snapshot.workspace,
         // Only `spawn_startup` ever fills this in; an ordinary refresh
@@ -1543,6 +1568,30 @@ fn switch_extension(home: &UzeHome, id: &str, enabled: bool) -> std::result::Res
         .map_err(|error| error.to_string())?;
     crate::ui::extension_switch::set(id, enabled);
     Ok(())
+}
+
+/// The operator's answer about a declared extension in one project, made
+/// from this client, which only the operator's keyboard reaches.
+fn extension_here(app: &UzeApplication, here: &super::model::ExtensionHere) -> Result<String> {
+    let extensions = app.extensions();
+    let asker = crate::asker::asker();
+    if here.consent {
+        extensions.consent(&here.identity, asker)?;
+    }
+    let project = here.project.file_name().map_or_else(
+        || here.project.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    let message = if here.enable {
+        extensions.enable(&here.identity, &here.project, asker)?;
+        format!("{} is enabled in {project}", here.name)
+    } else {
+        extensions.disable(&here.identity, &here.project)?;
+        format!("{} is disabled in {project}", here.name)
+    };
+    // The workspace asks its sources again once it looks again.
+    crate::ui::extension_switch::plugins_changed();
+    Ok(message)
 }
 
 fn select_theme(home: &UzeHome, id: &str) -> std::result::Result<(), String> {

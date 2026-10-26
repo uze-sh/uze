@@ -422,6 +422,41 @@ fn slugify(input: &str) -> String {
     slug
 }
 
+/// What allowing an extension means, then each grant it wants with what
+/// it lets it do: what the operator reads before anything of it runs.
+fn extension_grants_body(
+    here: &crate::ui::model::ExtensionHere,
+    grants: &[String],
+    new_grants: &[String],
+) -> Vec<String> {
+    let project = here.project.file_name().map_or_else(
+        || here.project.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    let mut body = vec![if new_grants.is_empty() {
+        format!(
+            "It runs a script inside the workspace, in {project} only, and reaches no further \
+             than this:"
+        )
+    } else {
+        "Its update wants more than you accepted. Nothing of it runs until you allow it:".to_owned()
+    }];
+    let shown = if new_grants.is_empty() {
+        grants
+    } else {
+        new_grants
+    };
+    if shown.is_empty() {
+        body.push("nothing beyond drawing what its script answers".to_owned());
+    }
+    body.extend(
+        shown
+            .iter()
+            .map(|grant| format!("{grant} · {}", uze_application::grant_meaning(grant))),
+    );
+    body
+}
+
 impl Confirmation {
     /// Whether this only explains, with one way out and nothing to agree to.
     fn is_notice(&self) -> bool {
@@ -431,6 +466,7 @@ impl Confirmation {
     /// What agreeing asks for.
     fn intent(self, model: &TuiModel) -> Intent {
         match self {
+            Self::EnableExtension { here, .. } => Intent::ExtensionHere(here),
             Self::RemovePlugin(id) => Intent::Remove(id),
             Self::RemoveMarketplace(name) => Intent::RemoveMarketplace(name),
             Self::UpdatePlugin(id) => Intent::Update(id, TrustGrant::Ask),
@@ -466,6 +502,25 @@ impl Confirmation {
         };
         let named = |id: &str| Some(Line::from(id.to_owned()));
         match self {
+            Self::EnableExtension {
+                here,
+                attribution,
+                grants,
+                new_grants,
+            } => Dialog {
+                body: extension_grants_body(here, grants, new_grants),
+                ..dialog(
+                    Tone::Caution,
+                    if new_grants.is_empty() {
+                        "Allow this extension to run?"
+                    } else {
+                        "Allow what its update wants?"
+                    },
+                    named(attribution),
+                    "",
+                    Some("Allow and enable"),
+                )
+            },
             Self::RemovePlugin(id) => dialog(
                 Tone::Danger,
                 "Remove plugin",

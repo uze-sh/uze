@@ -179,6 +179,49 @@ pub fn extension_offers(enabled: bool) -> Vec<ActionOffer> {
     ]
 }
 
+/// What can be done to a declared extension, as it stands in the project
+/// the screen was opened in. One that runs code is enabled and disabled
+/// per project, after consent; one that runs nothing, does not compile or
+/// is seen with no project open has only the machine's switch.
+pub fn declared_extension_offers(
+    switched_on: bool,
+    standing: Option<&super::ExtensionReport>,
+) -> Vec<ActionOffer> {
+    use super::ExtensionCondition as Condition;
+    let Some(standing) = standing.filter(|standing| {
+        matches!(
+            standing.condition,
+            Condition::NeedsConsent
+                | Condition::NeedsEnabling
+                | Condition::Enabled
+                | Condition::Held
+        )
+    }) else {
+        return extension_offers(switched_on);
+    };
+    let enabled_here = switched_on && standing.condition == Condition::Enabled;
+    let enable = if enabled_here {
+        ActionOffer::unavailable(Action::EnableExtension, "already enabled in this project")
+    } else if let Some(reason) = &standing.checkout_refused {
+        ActionOffer::unavailable(Action::EnableExtension, reason.clone())
+    } else {
+        ActionOffer::available(Action::EnableExtension)
+    };
+    let disable = if standing.condition == Condition::Enabled {
+        ActionOffer::available(Action::DisableExtension)
+    } else {
+        ActionOffer::unavailable(Action::DisableExtension, "not enabled in this project")
+    };
+    vec![
+        enable,
+        disable,
+        ActionOffer::unavailable(
+            Action::InstallPlugin,
+            "it comes with its plugin; there is nothing to install",
+        ),
+    ]
+}
+
 /// What can be done to one line of the Keys screen. A free function for
 /// the same reason as [`extension_offers`]: the line is the keymap's, and
 /// all this needs to know about it is whether the operator changed it.

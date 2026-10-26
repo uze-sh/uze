@@ -11,6 +11,8 @@
 //! drawer describes the selection the same way Plugins/Harnesses do — from
 //! what the list already holds, so there is nothing to fetch.
 
+use std::path::Path;
+
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
@@ -25,6 +27,7 @@ use crate::ui::model::{ExtensionEntry, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::widget::RowState;
 use crate::ui::{content_area, render_screen_header};
+use uze_application::{ExtensionCondition as Condition, ExtensionReport};
 
 pub(crate) fn render_extensions(
     frame: &mut ratatui::Frame<'_>,
@@ -97,6 +100,7 @@ pub(crate) fn render_extensions(
             rect,
             extension,
             model.extension_enabled(&extension.id()),
+            declared_standing(model, extension),
             state,
         );
         hits.push((rect, Hit::ExtensionRow(position)));
@@ -134,11 +138,39 @@ fn bundled_caption(model: &TuiModel) -> String {
     caption
 }
 
+/// Where a declared extension stands in the project the screen was
+/// opened in; nothing for a built-in.
+fn declared_standing<'a>(
+    model: &'a TuiModel,
+    extension: ExtensionEntry<'_>,
+) -> Option<&'a ExtensionReport> {
+    match extension {
+        ExtensionEntry::Builtin(_) => None,
+        ExtensionEntry::Declared(summary) => model.extension_standing(&summary.identity),
+    }
+}
+
+/// The word a card ends with for an extension whose switch is on: where it
+/// stands, coloured by whether the operator has something to answer.
+fn standing_word(standing: &ExtensionReport) -> Option<Span<'static>> {
+    let (word, token) = match standing.condition {
+        _ if standing.checkout_refused.is_some() => ("Runs nothing here", Token::StateWarning),
+        Condition::NeedsConsent => ("Needs consent", Token::StateWarning),
+        Condition::Held => ("Held", Token::StateWarning),
+        Condition::NeedsEnabling => ("Not enabled here", Token::TextDim),
+        Condition::Enabled | Condition::Consented | Condition::FixturesOnly | Condition::Broken => {
+            return None;
+        }
+    };
+    Some(Span::styled(word, theme::fg(token)))
+}
+
 fn render_extension_card(
     frame: &mut ratatui::Frame<'_>,
     rect: Rect,
     extension: ExtensionEntry<'_>,
     enabled: bool,
+    standing: Option<&ExtensionReport>,
     state: RowState,
 ) {
     let enabled_state = || {
@@ -172,6 +204,8 @@ fn render_extension_card(
                     errors_said(summary.errors.len()),
                     theme::fg(Token::StateDanger),
                 )
+            } else if enabled && let Some(word) = standing.and_then(standing_word) {
+                word
             } else {
                 enabled_state()
             }),
@@ -206,7 +240,8 @@ fn render_extension_drawer(
 ) {
     let inner = super::drawer(frame, content, ResizablePanel::Drawer, model, hits);
     let enabled = model.extension_enabled(&extension.id());
-    let offers = uze_application::application::offers::extension_offers(enabled);
+    let offers = model.extension_offers(extension);
+    let standing = declared_standing(model, extension);
     let (body, status) = super::drawer_body_and_footer(inner, &offers);
 
     let mut lines = vec![
@@ -246,6 +281,9 @@ fn render_extension_drawer(
             )));
         }
     }
+    if let Some(standing) = standing {
+        lines.extend(standing_lines(standing, model.extension_project.as_deref()));
+    }
     lines.push(Line::from(""));
     lines.push(super::section_label("surface"));
     lines.extend(
@@ -276,7 +314,12 @@ fn render_extension_drawer(
     render_drawer_footer(
         frame,
         status,
-        if enabled {
+        if let Some(status) = enabled
+            .then(|| standing.and_then(standing_status))
+            .flatten()
+        {
+            status
+        } else if enabled {
             DrawerStatus {
                 color: theme::color(Token::StateSuccess),
                 headline: "Enabled",
@@ -332,4 +375,97 @@ fn declared_surfaces(summary: &uze_application::DeclaredExtensionSummary) -> (Ve
     } else {
         (surfaces, usage.to_owned())
     }
+}
+
+/// The drawer's account of where a declared extension stands: the grants
+/// it wants with what each lets it do, and, when it runs nothing, why.
+fn standing_lines(standing: &ExtensionReport, project: Option<&Path>) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    if !standing.grants.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(super::section_label("grants"));
+        for grant in &standing.grants {
+            lines.push(Line::from(vec![
+                Span::styled(grant.clone(), theme::fg(Token::TextPrimary)),
+                Span::styled(
+                    format!(" · {}", uze_application::grant_meaning(grant)),
+                    theme::fg(Token::TextMuted),
+                ),
+            ]));
+        }
+    }
+    let mut said = Vec::new();
+    if standing.condition == Condition::Held {
+        said.push((
+            format!(
+                "its update wants {}, which you have not allowed",
+                standing.new_grants.join(", ")
+            ),
+            Token::StateWarning,
+        ));
+    }
+    if let Some(reason) = &standing.checkout_refused {
+        said.push((format!("runs nothing here: {reason}"), Token::StateWarning));
+    }
+    if let Some(day) = standing.updated_on() {
+        said.push((format!("updated {day}, same grants"), Token::TextMuted));
+    }
+    let elsewhere = standing
+        .enabled_in
+        .iter()
+        .filter(|enabled| project.is_none_or(|project| enabled.as_path() != project))
+        .count();
+    if elsewhere > 0 {
+        said.push((
+            match elsewhere {
+                1 => "enabled in 1 other project".to_owned(),
+                n => format!("enabled in {n} other projects"),
+            },
+            Token::TextMuted,
+        ));
+    }
+    if !said.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(super::section_label("this project"));
+        lines.extend(
+            said.into_iter()
+                .map(|(text, token)| Line::from(Span::styled(text, theme::fg(token)))),
+        );
+    }
+    lines
+}
+
+/// The drawer's foot for a declared extension that runs code and waits
+/// for the operator, or runs nothing in this checkout; `None` when the
+/// switch's own foot says it.
+fn standing_status(standing: &ExtensionReport) -> Option<DrawerStatus<'static>> {
+    let warning = theme::color(Token::StateWarning);
+    Some(match standing.condition {
+        _ if standing.checkout_refused.is_some() => DrawerStatus {
+            color: warning,
+            headline: "Runs nothing here",
+            subtitle: "This checkout is not one an extension may read",
+        },
+        Condition::NeedsConsent => DrawerStatus {
+            color: warning,
+            headline: "Needs consent",
+            subtitle: "It runs a script; nothing of it runs until you allow its grants",
+        },
+        Condition::Held => DrawerStatus {
+            color: warning,
+            headline: "Held",
+            subtitle: "Its update wants more than you allowed; nothing of it runs",
+        },
+        Condition::NeedsEnabling => DrawerStatus {
+            color: theme::color(Token::TextDim),
+            headline: "Not enabled here",
+            subtitle: "Allowed on this machine, and off in this project",
+        },
+        Condition::Enabled => DrawerStatus {
+            color: theme::color(Token::StateSuccess),
+            headline: "Enabled here",
+            subtitle: "Its scripts answer in this project",
+        },
+        Condition::Consented | Condition::FixturesOnly | Condition::Broken => return None,
+    })
 }

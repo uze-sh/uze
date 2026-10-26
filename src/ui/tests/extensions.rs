@@ -262,3 +262,190 @@ fn clicking_the_drawers_switch_on_a_declared_extension_is_pressing_its_key() {
         }
     );
 }
+
+fn standing(condition: uze_application::ExtensionCondition) -> uze_application::ExtensionReport {
+    uze_application::ExtensionReport {
+        id: "gsd-band".to_owned(),
+        plugin: "gsd".to_owned(),
+        marketplace: "market".to_owned(),
+        name: "GSD".to_owned(),
+        grants: vec!["read:checkout".to_owned()],
+        condition,
+        new_grants: Vec::new(),
+        enabled_in: Vec::new(),
+        updated_at: None,
+        checkout_refused: None,
+        offer_declined: false,
+        errors: Vec::new(),
+    }
+}
+
+const PROJECT: &str = "/work/acme";
+
+/// A declared extension that runs a script, standing as `standing` says in
+/// the project the screen was opened in.
+fn standing_in_a_project(standing: uze_application::ExtensionReport) -> TuiModel {
+    let mut model = listing_a_declared_extension(&[]);
+    model.declared_extensions[0].linked = false;
+    model.extension_standings = vec![standing];
+    model.extension_project = Some(std::path::PathBuf::from(PROJECT));
+    model
+}
+
+fn screen_of(model: &TuiModel) -> String {
+    let (terminal, _) = super::support::drawn_at(model, 220, 44);
+    super::support::buffer_rows(&terminal).join("\n")
+}
+
+fn here(consent: bool, enable: bool) -> Intent {
+    Intent::ExtensionHere(crate::ui::model::ExtensionHere {
+        identity: declared(&[]).identity,
+        name: "GSD".to_owned(),
+        project: std::path::PathBuf::from(PROJECT),
+        consent,
+        enable,
+        switch_on: false,
+    })
+}
+
+#[test]
+fn an_extension_that_needs_consent_says_so_and_shows_its_grants() {
+    let model = standing_in_a_project(standing(uze_application::ExtensionCondition::NeedsConsent));
+    let screen = screen_of(&model);
+    assert!(
+        screen
+            .lines()
+            .any(|row| row.contains("gsd-band · gsd@market") && row.contains("Needs consent")),
+        "{screen}"
+    );
+    assert!(screen.contains("grants"), "{screen}");
+    assert!(
+        screen.contains("read:checkout · reads the files of the checkout"),
+        "{screen}"
+    );
+    assert!(
+        screen.contains("enter enable"),
+        "Enter's hint is what it does: {screen}"
+    );
+}
+
+/// Enable shows the grants in a dialog before anything is recorded, and
+/// only its answer consents and enables.
+#[test]
+fn enabling_an_unconsented_extension_asks_with_its_grants_first() {
+    let mut model =
+        standing_in_a_project(standing(uze_application::ExtensionCondition::NeedsConsent));
+    let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(model.apply_key(enter), Intent::None, "nothing recorded yet");
+    let screen = screen_of(&model);
+    assert!(screen.contains("Allow this extension to run?"), "{screen}");
+    assert!(screen.contains("gsd-band · gsd@market"), "{screen}");
+    assert!(screen.contains("in acme only"), "{screen}");
+    assert!(
+        screen.contains("read:checkout · reads the files of the checkout"),
+        "{screen}"
+    );
+    assert!(screen.contains("Allow and enable"), "{screen}");
+    assert_eq!(model.apply_key(enter), here(true, true));
+}
+
+/// The dialog's Allow button is its Enter.
+#[test]
+fn clicking_allow_in_the_grants_dialog_is_pressing_enter() {
+    let mut model =
+        standing_in_a_project(standing(uze_application::ExtensionCondition::NeedsConsent));
+    model.apply_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let (_, hits) = super::support::drawn_at(&model, 140, 40);
+    let (rect, _) = *hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::Answer(true))
+        .expect("the dialog's Allow is drawn");
+    model.hits = hits;
+    let intent = model.apply_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: rect.x,
+            row: rect.y,
+            modifiers: KeyModifiers::NONE,
+        },
+        Rect::new(0, 0, 140, 40),
+    );
+    assert_eq!(intent, here(true, true));
+}
+
+#[test]
+fn a_held_extension_names_what_its_update_wants_and_asks_for_it() {
+    let mut held = standing(uze_application::ExtensionCondition::Held);
+    held.new_grants = vec!["clipboard".to_owned()];
+    let mut model = standing_in_a_project(held);
+    let screen = screen_of(&model);
+    assert!(
+        screen
+            .lines()
+            .any(|row| row.contains("gsd-band · gsd@market") && row.contains("Held")),
+        "{screen}"
+    );
+    assert!(
+        screen.contains("its update wants clipboard, which you have not"),
+        "{screen}"
+    );
+    model.apply_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let screen = screen_of(&model);
+    assert!(screen.contains("Allow what its update wants?"), "{screen}");
+    assert!(
+        screen.contains("clipboard · copies text you choose to the"),
+        "{screen}"
+    );
+}
+
+/// Consented on this machine, an extension is enabled here without a
+/// second question, and disabled here once it is.
+#[test]
+fn a_consented_extension_is_enabled_and_disabled_in_this_project_alone() {
+    let mut model =
+        standing_in_a_project(standing(uze_application::ExtensionCondition::NeedsEnabling));
+    assert!(screen_of(&model).contains("Not enabled here"));
+    let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(model.apply_key(enter), here(false, true));
+
+    let mut enabled = standing(uze_application::ExtensionCondition::Enabled);
+    enabled.enabled_in = vec![
+        std::path::PathBuf::from(PROJECT),
+        std::path::PathBuf::from("/work/other"),
+    ];
+    enabled.updated_at = Some(1_792_972_800);
+    let mut model = standing_in_a_project(enabled);
+    let screen = screen_of(&model);
+    assert!(screen.contains("Enabled here"), "{screen}");
+    assert!(screen.contains("enabled in 1 other project"), "{screen}");
+    assert!(
+        screen.contains("updated 2026-10-26, same grants"),
+        "{screen}"
+    );
+    assert_eq!(model.apply_key(enter), here(false, false));
+}
+
+/// A home directory is no checkout: the extension says why it runs
+/// nothing, and Enable is not offered.
+#[test]
+fn a_refused_checkout_is_the_reason_the_extension_runs_nothing() {
+    let mut refused = standing(uze_application::ExtensionCondition::NeedsEnabling);
+    refused.checkout_refused = Some("your home directory is not a checkout".to_owned());
+    let mut model = standing_in_a_project(refused);
+    let screen = screen_of(&model);
+    assert!(
+        screen
+            .lines()
+            .any(|row| row.contains("gsd-band · gsd@market") && row.contains("Runs nothing here")),
+        "{screen}"
+    );
+    assert!(
+        screen.contains("runs nothing here: your home directory is not a"),
+        "{screen}"
+    );
+    assert!(!screen.contains("enter enable"), "{screen}");
+    assert_eq!(
+        model.apply_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        Intent::None
+    );
+}

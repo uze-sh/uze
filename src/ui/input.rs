@@ -570,10 +570,14 @@ impl TuiModel {
             // drawer elsewhere. Editor: change the highlighted value.
             // Harnesses: no-op — toggling is the toggle action's job,
             // deliberately not doubled onto Enter.
-            // Enter switches an extension whichever way it is not.
+            // Enter switches an extension whichever way it is not: Enable
+            // when it is offered, Disable otherwise.
             Route::Extensions => match self.selected_extension() {
                 Some(extension) => {
-                    self.switch_selected_extension(!self.extension_enabled(&extension.id()))
+                    let enable = self.extension_offers(extension).iter().any(|offer| {
+                        offer.action == Action::EnableExtension && offer.is_available()
+                    });
+                    self.switch_selected_extension(enable)
                 }
                 None => Intent::None,
             },
