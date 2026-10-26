@@ -31,10 +31,10 @@
 
 ## 5. Sources and actions in the declared engine
 
-- [ ] 5.1 Sources: inputs resolved, jobs emitted, answers absorbed with staleness by question; a failed or stopped script said on the surface (parent 6.3)
-- [ ] 5.2 Actions: buttons and item menus run the declared action; the footer; confirmation with the resolved arguments, attributed; `refresh`, `open`, `clipboard` (toast shows the text; over one line or 256 bytes asks) and `open-path` inside the checkout, the last two from a gesture only; the envelope's `data`, `refresh`, `toast`, `notice` applied (parent 6.4)
-- [ ] 5.3 The attribution strip `id · plugin@marketplace` on every third-party `view` and `section`, uncoverable (parent 6.8)
-- [ ] 5.4 Engine tests from fixture manifests and canned answers: refresh, confirm, stale answer dropped, failure state, an undeclared action recorded (parent 6.7)
+- [x] 5.1 Sources: inputs resolved, jobs emitted, answers absorbed with staleness by question; a failed or stopped script said on the surface (parent 6.3)
+- [x] 5.2 Actions: buttons and item menus run the declared action; the footer; confirmation with the resolved arguments, attributed; `refresh`, `open`, `clipboard` (toast shows the text; over one line or 256 bytes asks) and `open-path` inside the checkout, the last two from a gesture only; the envelope's `data`, `refresh`, `toast`, `notice` applied (parent 6.4)
+- [x] 5.3 The attribution strip `id · plugin@marketplace` on every third-party `view` and `section`, uncoverable (parent 6.8)
+- [x] 5.4 Engine tests from fixture manifests and canned answers: refresh, confirm, stale answer dropped, failure state, an undeclared action recorded (parent 6.7)
 
 ## 6. Events
 

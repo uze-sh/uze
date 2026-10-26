@@ -297,3 +297,83 @@ the fixed release is in the lock.
 - decided:  `uze::keymap::extension_collisions` compiles every installed extension (switched on or not: a collision holds whenever it is enabled), resolves the tables over the keymap in force, and `uze doctor` adds each problem to the report's `machine_concerns` with the subject `keys`, so the text and the JSON both carry them as warnings that never fail the command.
 - rejected: A field on `DoctorReport`: it would touch `uze-application` for a fact only the binary can compute.
 - blast:    None beyond the doctor's warnings.
+
+## D24 — A question says what it asks: a source, a refresh or an action
+
+- status:   pending
+- task:     5.1, 5.2
+- commit:   404d6350
+- trigger:  An action's `script` runs through the same runner as a source's, and a `refresh` must run a script the session cache would otherwise answer from memory; `Question.declaration` named a source only.
+- decided:  `uze_contract::Asking { Source, Refresh, Action }` on `Question` (serde default `Source`). `Source` may be served from the session cache; `Refresh` runs and replaces what was remembered; `Action` finds the `ActionDecl`, runs its `Does::Script` under the same checkout and consent gates and is never remembered (an action that does not run a script is a failure). The script's `context` names `action` instead of `source`.
+- rejected: A second `Host` method for actions: one door, one test that only `declared/` asks it (D18). A `fresh: bool` beside the id: it cannot say an action is never remembered.
+- blast:    Every `Question` names what it asks.
+
+## D25 — What an action receives, and where it runs
+
+- status:   pending
+- task:     5.1, 5.2
+- commit:   d7945687
+- trigger:  The task says the item is the action's input and that `{field}` references resolve "with the item selected when there is one", without the input's shape, how `{item.name}` (the spec's spelling) and `{name}` relate, or whether a `Button` runs an action offered on another surface.
+- decided:  An action's script is asked with `{ "item": <item> }`. Every template (a source's `input`, `confirm`, `clipboard`, `open-path`) reads an item scope holding the item's own fields plus `item` naming it, so `{name}` and `{item.name}` agree, beside `ui.*` and `context.{checkout,slot,locale}`; a lone reference keeps its JSON type, one to nothing is `null`. A button's item is its `item` property; a key acts on the row selected in the surface's first `List` (`Act::List` now carries each row's item), `null` when none. A `Button` runs the declared action of its id wherever it is drawn; a key only where `on` offers it (D20). Every gesture is still recorded for the inspector and `expect-action`, now with `declared`; an undeclared one runs nothing. Item menus (D21) are not drawn yet.
+- rejected: The item as the whole input: a script would branch on whether a row was selected to read anything.
+- blast:    D21's `item: null` for keys becomes the selection; item menus move to step 7.3 with the tab strip.
+
+## D26 — What an envelope does beside its data
+
+- status:   pending
+- task:     5.1, 5.2
+- commit:   d7945687
+- trigger:  The envelope's `refresh`, `toast` and `notice` must be applied, but `Outcome` had no toast, `absorb` answers one outcome, an action's envelope has `data` with no source to bind, and two sources refreshing each other would ask forever.
+- decided:  `notice` is held per surface by the engine and drawn as the view's `notice` and the section's caption, in the info role, cleared by the next answer for that surface. `toast` becomes `Outcome::Toast(text)`; the host raises it with the extension's identity (`Display`) as the detail, from a gesture, a drawer or an answer arriving later. `refresh` marks each named source stale, asked with `Asking::Refresh` once a surface shows it; an answer never refreshes its own source, and the answer to a refresh another answer asked refreshes nothing (one hop). An action's `data` is not drawn: what it changed is refreshed. Every string passes `Clean` where the engine takes it.
+- rejected: An action's `data` replacing the source its surface shows: the runner's cache would serve the old answer on the next question.
+- blast:    `Outcome::Toast` is a new variant every host match follows.
+
+## D27 — A confirmation is asked in a view, and a long copy is one
+
+- status:   pending
+- task:     5.2
+- commit:   d7945687
+- trigger:  The contract draws a question only on a `View` (`View.confirm`); a `Section` and a drawer have no room for one, and the spec asks that a copy over one line or 256 bytes asks first.
+- decided:  The engine resolves the action first, then holds it until answered: title the resolved `confirm` (or `Copy N lines?`/`Copy N bytes?`), subject the identity's `Display`, body the resolved arguments (the script and its item, the sources, the copied text, the path, the surface), the confirm word the action's label, the keyboard starting on the way out. `Activate` answers with the focused button, `Close` answers no, the focus keys swap, `ViewHit::Answer` answers from a click; nothing else runs while asked. Pressed in a section or a drawer, the question is set on the view the action is `on`, or the extension's first view, which is shown (`Outcome::Show`); an extension with no view refuses it in a toast. Closing the view drops the question. The copied text passes `Clean::text`.
+- rejected: A host-level dialog for sections: a second question path beside `View.confirm` for a case no fixture has.
+- blast:    A confirmed action pressed in the sidebar opens its view.
+
+## D28 — `open-path` is judged by its words, against the surface's checkout
+
+- status:   pending
+- task:     5.2
+- commit:   d7945687
+- trigger:  `open-path` runs "only inside the checkout", and `uze-extensions` reads no filesystem.
+- decided:  The resolved text must be a relative path with no `..`, root or prefix component and not empty; it is joined to the checkout the surface is about (the view's, else the one in front) and returned as `Outcome::OpenPath { project, target }`. Refusals and a missing checkout are `Outcome::Failed` toasts naming why. A link inside the checkout is the checkout's own and opens as the code surface opens any of its files.
+- rejected: Canonicalising through the host: the code surface opens the path through its own reads, which a lexical bound already keeps beneath the root.
+- blast:    `a/../b` is refused though it stays inside.
+
+## D29 — A plugin's section carries the strip over its header
+
+- status:   pending
+- task:     5.3
+- commit:   d7945687
+- trigger:  The view and the drawer already drew `render_attribution` from the identity's three fields; a section drew only its own title, which the extension chooses.
+- decided:  `tree::attribution(&Identity)` is the identity's `Display`. A declared section takes one more row (`ATTRIBUTION_ROWS`), the strip drawn over its header and outside the area the section is drawn in, folded or open; a column with no room for both draws neither. The `.test.kdl` runner draws a section the same way.
+- rejected: The strip in the header's caption: the caption is the section's, and an answer's notice now lands there.
+- blast:    Every plugin section is a row taller.
+
+## D30 — The ungranted-call check lives in `uze-application`
+
+- status:   pending
+- task:     4.3
+- commit:   66b6d42c
+- trigger:  Task 4.3 left `uze_script::ungranted_calls` unwired: the check reads the `.rhai` files, and `uze-core` compiles the manifest without `uze-script`.
+- decided:  `Extensions::check` (the CLI's `uze agent plugin check` and the language server's path) scans every script a source or an action runs, from the editor's overlay or disk, and adds an error at the first call: "`read_checkout` needs the `read:checkout` grant, which the manifest does not want", suggesting `wants "read:checkout"`. `uze-core` stays without `uze-script`: the layering test admits the engine only where it is named today, and `uze-application` already depends on it.
+- rejected: A `uze-core` dependency on `uze-script`: the package manager would link a script engine to compile a manifest.
+- blast:    None beyond the new diagnostic.
+
+## D31 — An extension not enabled says so on the surface and in a toast
+
+- status:   pending
+- task:     5.1, 5.2
+- commit:   d7945687
+- trigger:  The task asks to confirm what a surface says when its extension runs scripts and is not enabled in the project.
+- decided:  Confirmed: the runner withholds with "needs consent", "needs enabling in this project" or "held: …", drawn in place of the data in the warning role and said in the inspector as `not asked: …`. An action withheld for the same reason is a toast titled "<label> did not run" with the reason as detail. The way to the Extensions screen is step 7's.
+- rejected: None.
+- blast:    None.
