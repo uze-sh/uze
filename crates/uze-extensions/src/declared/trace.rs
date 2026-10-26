@@ -40,6 +40,8 @@ pub enum DataState {
     Waiting,
     /// The source failed, saying why.
     Failed(String),
+    /// The host would not ask the source, saying why.
+    Withheld(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]

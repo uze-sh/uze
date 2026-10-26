@@ -57,6 +57,7 @@ pub mod spec;
 pub mod view;
 
 pub use shared::places::{ArtifactRoot, ArtifactSource};
+pub use uze_contract::{Answer, Envelope, Question};
 
 /// Something a viewer did inside an extension's own surface, addressed to
 /// the slot the host stands that surface in.
@@ -267,5 +268,15 @@ pub trait Host {
     /// policy names it. A host that keeps no policy names none.
     fn delivery_target(&self, _checkout: &std::path::Path) -> Option<String> {
         None
+    }
+
+    /// Answers a declared extension's question: one of its declarations,
+    /// asked with its input about a checkout. Never a program or a script's
+    /// text: the host finds what answers it in the compile the operator
+    /// consented to, and says why when nothing may. Only the declared
+    /// engine asks it. A host that runs no declared extension answers
+    /// none.
+    fn answer(&self, _question: Question) -> Answer {
+        Answer::withheld("this host answers no declared extension")
     }
 }

@@ -10,6 +10,11 @@
 //! - `value`: how a binding becomes a value (D23).
 //! - `trace`: the inspector's account of a build.
 //! - `time`: the instant an `Elapsed` counts from.
+//!
+//! What a source answers arrives one way: the engine asks the host, through
+//! a [`Job`], to answer the source with its input about the checkout the
+//! surface showing it is on, and takes the answer only while it is the
+//! latest question asked of that source.
 
 mod bind;
 mod fixture_check;
@@ -20,10 +25,11 @@ mod value;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
+use std::path::PathBuf;
 
-use uze_contract::{Clean, CompiledExtension, CompiledView, SurfaceDecl};
+use uze_contract::{Answer, Clean, CompiledExtension, CompiledView, Question, SurfaceDecl};
 
-use crate::contract::{Extension, Opaque, Outcome, SurfaceInfo, SurfaceSlot};
+use crate::contract::{Checkout, Extension, Job, Opaque, Outcome, SurfaceInfo, SurfaceSlot};
 use crate::view::{
     Command, Content, Layout, NodeAct, Role, ScrollDirection, ScrollTarget, Section, Size, Span,
     View, ViewHit,
@@ -54,9 +60,21 @@ pub struct DeclaredExtension {
     generation: u64,
     /// By source id.
     data: BTreeMap<String, SourceData>,
+    /// Why a source has no data, when the host would not ask it: it needs
+    /// consent or enabling, or its checkout is not one it may read. By
+    /// source id, and said on the surface in place of the data.
+    withheld: BTreeMap<String, String>,
     /// A digest of each source's data, taken once when it arrives rather
     /// than on every frame that asks whether it changed.
     digests: BTreeMap<String, u64>,
+    /// The checkout in front, which a section and a drawer are about.
+    in_front: Option<PathBuf>,
+    /// The checkout each open view is about, by surface.
+    opened: BTreeMap<String, PathBuf>,
+    /// The latest question asked of each source, by source id.
+    asked: BTreeMap<String, Asked>,
+    /// How many questions were asked, numbering each.
+    questions: u64,
     /// `ui.<id>` values, by surface then id.
     ui: BTreeMap<String, BTreeMap<String, String>>,
     /// The first row shown, by surface.
@@ -70,6 +88,25 @@ pub struct DeclaredExtension {
     /// costs and a test can tell a served build from a fresh one.
     builds: std::cell::Cell<u64>,
 }
+
+/// A question asked of a source: about which checkout, with which input,
+/// and its number, which the answer carries back.
+#[derive(Clone, Debug, PartialEq)]
+struct Asked {
+    checkout: PathBuf,
+    input: serde_json::Value,
+    number: u64,
+}
+
+/// The host's answer to the question numbered `number` of `source`.
+struct SourceAnswer {
+    source: String,
+    number: u64,
+    answer: Answer,
+}
+
+/// What a source's job answers when its thread stopped before answering.
+const STOPPED: &str = "the question stopped before it was answered";
 
 /// What a build depends on. The same key is the same tree, so a frame that
 /// changed nothing costs a comparison.
@@ -103,7 +140,12 @@ impl DeclaredExtension {
             compiled,
             generation: 0,
             data: BTreeMap::new(),
+            withheld: BTreeMap::new(),
             digests: BTreeMap::new(),
+            in_front: None,
+            opened: BTreeMap::new(),
+            asked: BTreeMap::new(),
+            questions: 0,
             ui: BTreeMap::new(),
             scroll: BTreeMap::new(),
             locale: locale.into(),
@@ -119,10 +161,13 @@ impl DeclaredExtension {
 
     /// A newer compile of the same extension, such as after a linked
     /// extension was saved. UI state is kept where its ids still exist.
+    /// Every source shown is asked again, since what answers it may have
+    /// changed.
     pub fn replace(&mut self, compiled: CompiledExtension) {
         self.compiled = compiled;
         self.generation += 1;
         self.memo.get_mut().clear();
+        self.asked.clear();
         let surfaces: Vec<String> = self.ui.keys().cloned().collect();
         for surface in surfaces {
             let ids = self
@@ -138,8 +183,102 @@ impl DeclaredExtension {
 
     pub fn set_data(&mut self, source: impl Into<String>, data: SourceData) {
         let source = source.into();
+        self.withheld.remove(&source);
         self.digests.insert(source.clone(), digest(&data));
         self.data.insert(source, data);
+    }
+
+    /// `source` has no data because the host would not ask it, and
+    /// `reason` says why.
+    fn withhold(&mut self, source: String, reason: String) {
+        self.data.remove(&source);
+        self.digests
+            .insert(source.clone(), digest(&Err(format!("withheld: {reason}"))));
+        self.withheld.insert(source, reason);
+    }
+
+    /// Why `source` has no data, when the host would not ask it.
+    pub fn withheld(&self, source: &str) -> Option<&str> {
+        self.withheld.get(source).map(String::as_str)
+    }
+
+    /// Each source a surface shows now, with the checkout it is about:
+    /// an open view's first, then the sections' and drawers' on the
+    /// checkout in front. A source shown on two checkouts at once is asked
+    /// about the first, so the two never take turns asking.
+    fn shown_sources(&self) -> Vec<(String, PathBuf)> {
+        let surfaces = &self.compiled.manifest.surfaces;
+        let opened = surfaces
+            .iter()
+            .filter_map(|surface| Some((surface, self.opened.get(&surface.id)?.clone())));
+        let in_front = surfaces
+            .iter()
+            .filter(|surface| surface.slot != uze_contract::Slot::View)
+            .filter_map(|surface| Some((surface, self.in_front.clone()?)));
+        let mut shown: Vec<(String, PathBuf)> = Vec::new();
+        for (surface, checkout) in opened.chain(in_front) {
+            if !shown.iter().any(|(source, _)| *source == surface.source) {
+                shown.push((surface.source.clone(), checkout));
+            }
+        }
+        shown
+    }
+
+    /// The input `source` is asked with: what it declares, as written.
+    fn input_of(&self, source: &str) -> serde_json::Value {
+        let declared = self.compiled.manifest.source(source);
+        serde_json::Value::Object(
+            declared
+                .map(|declared| {
+                    declared
+                        .input
+                        .iter()
+                        .map(|(name, text)| (name.clone(), serde_json::Value::String(text.clone())))
+                        .collect()
+                })
+                .unwrap_or_default(),
+        )
+    }
+
+    /// The job asking `source` about `checkout`, numbered so its answer is
+    /// taken only while it is the latest.
+    fn ask(&mut self, source: String, checkout: PathBuf, input: serde_json::Value) -> Job {
+        self.questions += 1;
+        let number = self.questions;
+        self.asked.insert(
+            source.clone(),
+            Asked {
+                checkout: checkout.clone(),
+                input: input.clone(),
+                number,
+            },
+        );
+        let question = Question {
+            identity: self.compiled.identity.clone(),
+            declaration: source.clone(),
+            input,
+            checkout: Some(checkout),
+        };
+        let stopped = source.clone();
+        Job {
+            run: Box::new(move |host| {
+                Opaque::new(SourceAnswer {
+                    source,
+                    number,
+                    answer: host.answer(question),
+                })
+            }),
+            fallback: Box::new(move || {
+                Opaque::new(SourceAnswer {
+                    source: stopped,
+                    number,
+                    answer: Answer::Failed {
+                        reason: STOPPED.to_owned(),
+                        trace: Vec::new(),
+                    },
+                })
+            }),
+        }
     }
 
     pub fn data(&self, source: &str) -> Option<&SourceData> {
@@ -177,10 +316,11 @@ impl DeclaredExtension {
     pub fn trace(&self, surface: &str) -> Option<Trace> {
         let space = self.last_space(surface);
         let (decl, _) = self.declaration(surface)?;
-        let data = match self.data.get(&decl.source) {
-            None => DataState::Waiting,
-            Some(Err(reason)) => DataState::Failed(Clean::label(reason).into_string()),
-            Some(Ok(_)) => DataState::Bound,
+        let data = match (self.withheld.get(&decl.source), self.data.get(&decl.source)) {
+            (Some(reason), _) => DataState::Withheld(Clean::label(reason).into_string()),
+            (None, None) => DataState::Waiting,
+            (None, Some(Err(reason))) => DataState::Failed(Clean::label(reason).into_string()),
+            (None, Some(Ok(_))) => DataState::Bound,
         };
         let recorded = self
             .recorded
@@ -269,6 +409,9 @@ impl DeclaredExtension {
         held: Option<&BTreeMap<String, String>>,
         space: Size,
     ) -> Built {
+        if let Some(reason) = self.withheld.get(&decl.source) {
+            return Built::notice(view, reason, Role::Warning);
+        }
         let data = match self.data.get(&decl.source) {
             None => return Built::notice(view, "Waiting for data", Role::Muted),
             Some(Err(reason)) => return Built::notice(view, reason, Role::Danger),
@@ -500,6 +643,60 @@ impl Extension for DeclaredExtension {
         self.scroll.insert(surface.to_owned(), first.min(bound));
     }
 
+    /// Its source is asked again: what the operator allowed may have
+    /// changed since it was last asked.
+    fn open(&mut self, surface: &str, checkout: &Checkout) {
+        let Some(decl) = self.compiled.manifest.surface(surface) else {
+            return;
+        };
+        self.asked.remove(&decl.source);
+        self.opened
+            .insert(surface.to_owned(), checkout.root.clone());
+    }
+
+    fn close(&mut self, surface: &str) {
+        self.opened.remove(surface);
+    }
+
+    fn focus(&mut self, checkout: Option<&Checkout>) {
+        self.in_front = checkout.map(|checkout| checkout.root.clone());
+    }
+
+    /// A question for each source a surface shows whose latest question
+    /// was about another checkout or input, or that was never asked.
+    fn jobs(&mut self) -> Vec<Job> {
+        let mut jobs = Vec::new();
+        for (source, checkout) in self.shown_sources() {
+            let input = self.input_of(&source);
+            let current = self
+                .asked
+                .get(&source)
+                .is_some_and(|asked| asked.checkout == checkout && asked.input == input);
+            if !current {
+                jobs.push(self.ask(source, checkout, input));
+            }
+        }
+        jobs
+    }
+
+    /// An answer to a question that is no longer the latest is dropped.
+    /// A failure is drawn in place of the data, said as the host said it.
+    fn absorb(&mut self, answer: Opaque) -> Outcome {
+        let Some(answered) = answer.downcast::<SourceAnswer>() else {
+            return Outcome::Stay;
+        };
+        let latest = self.asked.get(&answered.source).map(|asked| asked.number);
+        if latest != Some(answered.number) {
+            return Outcome::Stay;
+        }
+        match answered.answer {
+            Answer::Answered { envelope, .. } => self.set_data(answered.source, Ok(envelope.data)),
+            Answer::Failed { reason, .. } => self.set_data(answered.source, Err(reason)),
+            Answer::Withheld { reason } => self.withhold(answered.source, reason),
+        }
+        Outcome::Stay
+    }
+
     fn place(&self, surface: &str) -> Option<Opaque> {
         self.declaration(surface)?;
         Some(Opaque::new(Place {
@@ -553,3 +750,6 @@ mod tests;
 
 #[cfg(test)]
 mod board_tests;
+
+#[cfg(test)]
+mod source_tests;
