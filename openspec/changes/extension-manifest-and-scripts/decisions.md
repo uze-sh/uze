@@ -247,3 +247,53 @@ the fixed release is in the lock.
 - decided:  `only_the_declared_engine_asks_a_source`: in `uze-extensions`, a `.answer(` outside `declared.rs` and `declared/` fails; in `src/`, `Host::answer` and `host.answer(` fail everywhere, and naming `uze_extensions::Question` or `uze_contract::Question` fails outside `src/ui/extension_host.rs`, which passes it to the runner. The orchestrator test that draws a section from `state.rhai` keeps its checkout under the build's `target/`, since the runner refuses one in the temporary directory (D11).
 - rejected: Matching `Question {`: the client has local types of that name.
 - blast:    A second engine that answers sources is a change to the test, said in its reason.
+
+## D19 — The tables are registered beside the keymap in force, per extension
+
+- status:   pending
+- task:     3.2
+- commit:   eb7d8135
+- trigger:  D8 of the parent says a table is registered when an extension is enabled and dropped when it is disabled, but the keymap in force is one process-wide value that the Keys screen and `keys.json` replace whole.
+- decided:  `uze_keys::active` keeps the operator's keymap and the registered `ExtensionTable`s apart, by owner (`plugin@marketplace/id`), and answers both resolved together (`Keymap::with_extensions`); `register_extension`/`unregister_extension` change one owner. The workspace registers each hosted declared extension whose switch is on and that declares an action, after a discovery or compile lands and after a switch, and takes back what it registered when the extension is switched off or leaves. "Enabled" is the extension switch for now: the consent record's `enabled_in` reaches drawing with step 7, as D10 says.
+- rejected: Tables inside the keymap that `set_active` replaces: a rebind on the Keys screen, or a test resetting the default, would forget every extension. One "replace all" registration: two clients or tests registering different sets would take each other's keys.
+- blast:    Step 7's Extensions screen reads `Keymap::extension_problems` for the same collisions `uze doctor` prints.
+
+## D20 — An action is live on its own surface, after the host's keys and before the shared vocabulary
+
+- status:   pending
+- task:     3.2
+- commit:   feda4c94
+- trigger:  The spec says "while that extension's surface is in front", and an extension may declare several surfaces; D8 says "after `Global` and before `Scope::Declared`" without placing `Surfaces`, and does not say under which scope `keys.json` writes an `ext.*` name.
+- decided:  `Keymap::resolve_for(chord, scopes, Front { owner, surface })` asks the table only when `Scope::Declared` is reachable, and only for actions whose `on` is the surface in front; any host binding in a reachable scope other than `Declared` (the global keys, the doors in `Surfaces`) answers first, then the table, then the declared surfaces' generic vocabulary. A suggestion is bound when `resolve` falls through on `[Global, Workspace, Declared, Surfaces]`; a conflict is judged per surface, the first declared keeping the chord. `keys.json` binds `ext.*` names under `"declared"` (another scope is a warning) and the first chord written is the one bound; an operator chord a global key or a door holds is dropped with a warning, since it could never fire. Every table problem is a `Severity::Warning`.
+- rejected: One table per extension regardless of surface: two surfaces of one extension never share a screen, so a chord on each is no conflict. Letting the operator's chord shadow `Global`: leaving and help must stay reachable everywhere.
+- blast:    Ext names saved by the Keys screen go back under `declared` (`difference_from_default`).
+
+## D21 — A key reaches the engine through the host's `Hosted::press`, not the contract
+
+- status:   pending
+- task:     3.3
+- commit:   b31dd5ab
+- trigger:  The task routes a key to a named action and leaves what it does to step 5, while `contract.rs` is being changed in parallel by tasks 4.5–4.6.
+- decided:  `Hosted::press(surface, action)` (default: nothing) calls `DeclaredExtension::press`, which records the action on no item (`item: null`) exactly as a button does, and only when the manifest offers it on that surface. The `.test.kdl` runner registers the extension's table and resolves `press` through it, so `expect-action` sees a key-fired action; its footer carries the same host keys as the workspace's. Item menus are not drawn: the declared engine has none yet (task 5.2 brings them, with `chord_for` beside each entry), and a drawer's keys go through the drawer's own path with no table.
+- rejected: A `Command::Action(String)` in `view.rs` or a new contract method now: either changes the contract in two branches at once, for a behaviour step 5 rewrites.
+- blast:    Step 5 replaces the record with the run, and may move `press` into the contract with the runner.
+
+## D22 — The footer names only the actions that hold a key; `open` with a global key waits
+
+- status:   pending
+- task:     3.3
+- commit:   b31dd5ab
+- trigger:  The task says the footer, the index and the menus show an action "with `chord_for`'s answer or by pointer", and the design system keeps a footer to one line of keys.
+- decided:  The footer lists the surface's declared actions that hold a key, before the inspector, and a click on one is pressing it; the index lists every one, with its key or without, and choosing one runs it. `open` actions bound over the pane and every surface (R-U7, D8's second part) are left out of this step: the table holds surface actions only, and an `open` action is offered on its `on` surface like any other.
+- rejected: A footer hint without a key: the hint line is keys, and the index is the pointer's way to the rest.
+- blast:    `open` with a global key lands with step 7's tab strip and `jump` in change 6.
+
+## D23 — `uze doctor` reports key collisions from the binary, as `keys` concerns
+
+- status:   pending
+- task:     3.2
+- commit:   e0fc2857
+- trigger:  The collisions live in the keymap in force, which is the binary's (`src/keymap.rs`), while `DoctorReport` is `uze-application`'s and is being changed in parallel.
+- decided:  `uze::keymap::extension_collisions` compiles every installed extension (switched on or not: a collision holds whenever it is enabled), resolves the tables over the keymap in force, and `uze doctor` adds each problem to the report's `machine_concerns` with the subject `keys`, so the text and the JSON both carry them as warnings that never fail the command.
+- rejected: A field on `DoctorReport`: it would touch `uze-application` for a fact only the binary can compute.
+- blast:    None beyond the doctor's warnings.

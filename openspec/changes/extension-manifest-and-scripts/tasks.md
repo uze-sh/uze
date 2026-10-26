@@ -16,9 +16,9 @@
 
 ## 3. Keymap
 
-- [ ] 3.1 `Action::Extension(ExtensionActionId)` interned in `uze_keys::extension`, named `ext.<plugin>@<marketplace>/<id>.<action>`, label from the manifest, sanitized; `ALL_ACTIONS` unchanged (parent 8.1)
-- [ ] 3.2 The per-extension table: surface actions before `Scope::Declared`, a suggestion bound only on `Fallthrough`, the operator's file first, a conflict dropping one binding with a `Problem`, an absent extension's name a warning, collisions in `uze doctor` (parent 8.2)
-- [ ] 3.3 Footer, action index and item menus show extension actions with `chord_for`'s answer or by pointer; disabling drops the table; `press` in `.test.kdl` reaches an extension action (parent 8.3)
+- [x] 3.1 `Action::Extension(ExtensionActionId)` interned in `uze_keys::extension`, named `ext.<plugin>@<marketplace>/<id>.<action>`, label from the manifest, sanitized; `ALL_ACTIONS` unchanged (parent 8.1)
+- [x] 3.2 The per-extension table: surface actions before `Scope::Declared`, a suggestion bound only on `Fallthrough`, the operator's file first, a conflict dropping one binding with a `Problem`, an absent extension's name a warning, collisions in `uze doctor` (parent 8.2)
+- [x] 3.3 Footer, action index and item menus show extension actions with `chord_for`'s answer or by pointer; disabling drops the table; `press` in `.test.kdl` reaches an extension action (parent 8.3)
 
 ## 4. Scripts
 
