@@ -66,7 +66,7 @@ mod theme;
 
 pub use agent_context::{AgentContextStatus, ResourceDelivery, UndeliveredReason};
 pub use extensions::{
-    CheckedExtension, DeclaredExtensionSummary, FIXTURE_LIMIT, InstalledExtension,
+    CheckedExtension, DeclaredExtensionSummary, ExtensionLoad, FIXTURE_LIMIT, InstalledExtension,
     Overlay as ExtensionOverlay, SourceData, extension_stamp,
 };
 pub use profile::{HarnessPreview, ProfileApplyResult, ProfilePreview, ProfileSummary};

@@ -15,6 +15,7 @@
 
 mod bounded;
 mod document;
+mod loaded;
 pub mod locate;
 mod manifest;
 mod test_file;
@@ -26,6 +27,7 @@ use std::path::{Path, PathBuf};
 use uze_contract::{CompiledExtension, Identity};
 
 pub use bounded::{DEPTH_MAX, FILE_MAX, PARSE_LIMIT};
+pub use loaded::{LOAD_BYTES, LOAD_DEPTH, LOAD_FILES, Loaded};
 pub use test_file::{TEST_SUFFIX, TESTS_DIR};
 pub use view::EACH_MAX;
 
@@ -122,7 +124,70 @@ pub fn compile_overlaid(
     dir: &Path,
     overlay: &Overlay,
 ) -> Result<CompiledExtension, Vec<Diagnostic>> {
-    let source = read_file(dir, MANIFEST_FILE, overlay).map_err(|refusal| vec![refusal])?;
+    compile_from(identity, &OnDisk { dir, overlay })
+}
+
+/// [`compile`] from files already read into memory, reaching nothing on
+/// disk: what compiles is what was digested.
+pub fn compile_loaded(
+    identity: Identity,
+    loaded: &Loaded,
+) -> Result<CompiledExtension, Vec<Diagnostic>> {
+    compile_from(identity, loaded)
+}
+
+/// Where a compile reads an extension's files from.
+trait Files {
+    /// The text of `file`, behind the same bounds wherever it is held.
+    fn text(&self, file: &str) -> Result<String, Diagnostic>;
+    /// Whether `file` is one of the extension's files, or why not.
+    fn holds(&self, file: &str) -> Result<(), String>;
+}
+
+/// The extension's directory, with an editor's unsaved text over it.
+struct OnDisk<'a> {
+    dir: &'a Path,
+    overlay: &'a Overlay,
+}
+
+impl Files for OnDisk<'_> {
+    fn text(&self, file: &str) -> Result<String, Diagnostic> {
+        read_file(self.dir, file, self.overlay)
+    }
+
+    fn holds(&self, file: &str) -> Result<(), String> {
+        if self.overlay.contains_key(file) {
+            return Ok(());
+        }
+        let path = inside(self.dir, file)?;
+        if path.is_file() {
+            Ok(())
+        } else {
+            Err("is not a file".to_owned())
+        }
+    }
+}
+
+impl Files for Loaded {
+    fn text(&self, file: &str) -> Result<String, Diagnostic> {
+        let bytes = self.bytes(file).ok_or_else(|| {
+            Diagnostic::whole(file, "does not exist in the extension's directory", None)
+        })?;
+        bounded::decoded(bytes.to_vec(), file)
+    }
+
+    fn holds(&self, file: &str) -> Result<(), String> {
+        self.bytes(file)
+            .map(|_| ())
+            .ok_or_else(|| "does not exist in the extension's directory".to_owned())
+    }
+}
+
+fn compile_from(
+    identity: Identity,
+    files: &impl Files,
+) -> Result<CompiledExtension, Vec<Diagnostic>> {
+    let source = files.text(MANIFEST_FILE).map_err(|refusal| vec![refusal])?;
     let mut report = Report::new(MANIFEST_FILE, &source);
     let decoded = bounded::parse(&mut report)
         .and_then(|document| manifest::decode(&document, &identity.id, &mut report));
@@ -141,12 +206,8 @@ pub fn compile_overlaid(
         if !read.insert(surface.view.as_str()) {
             continue;
         }
-        let found = match overlay.contains_key(&surface.view) {
-            true => Ok(()),
-            false => inside(dir, &surface.view).map(|_| ()),
-        };
-        match found {
-            Ok(()) => match compile_view(dir, &surface.view, overlay) {
+        match files.holds(&surface.view) {
+            Ok(()) => match compile_view(files, &surface.view) {
                 Ok(view) => {
                     views.insert(surface.view.clone(), view);
                 }
@@ -156,16 +217,7 @@ pub fn compile_overlaid(
         }
     }
     for (what, file, at) in decoded.files() {
-        if overlay.contains_key(file) {
-            continue;
-        }
-        if let Err(why) = inside(dir, file).and_then(|path| {
-            if path.is_file() {
-                Ok(())
-            } else {
-                Err("is not a file".to_owned())
-            }
-        }) {
+        if let Err(why) = files.holds(file) {
             report.at(at, format!("the {what} `{file}` {why}"), None);
         }
     }
@@ -182,11 +234,10 @@ pub fn compile_overlaid(
 }
 
 fn compile_view(
-    dir: &Path,
+    files: &impl Files,
     file: &str,
-    overlay: &Overlay,
 ) -> Result<uze_contract::CompiledView, Vec<Diagnostic>> {
-    let source = read_file(dir, file, overlay).map_err(|refusal| vec![refusal])?;
+    let source = files.text(file).map_err(|refusal| vec![refusal])?;
     let mut report = Report::new(file, &source);
     let compiled =
         bounded::parse(&mut report).map(|document| view::compile(&document, file, &mut report));

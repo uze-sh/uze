@@ -1396,10 +1396,10 @@ fn a_tests_click_and_the_workspaces_reach_the_same_tab() {
         .into_iter()
         .find(|extension| extension.identity.id == "gsd-band")
         .expect("the band is installed");
-    let compiled = app.extensions().compile(&band).expect("it compiles");
-    let data: std::collections::BTreeMap<String, serde_json::Value> = app
-        .extensions()
-        .fixtures(&band, &compiled)
+    let load = app.extensions().load(&band).expect("it compiles");
+    let compiled = load.compiled;
+    let data: std::collections::BTreeMap<String, serde_json::Value> = load
+        .fixtures
         .into_iter()
         .filter_map(|(source, data)| Some((source, data.ok()?)))
         .collect();

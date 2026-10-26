@@ -992,3 +992,41 @@ Text "a" show="ui.tab=task""#,
         "{refused:?}"
     );
 }
+
+/// What compiles from a load is what was read: a view swapped on disk
+/// after the read changes nothing, and the same files compile alike from
+/// either source.
+#[test]
+fn a_loaded_extension_compiles_from_its_bytes_alone() {
+    let dir = plugin(
+        "extension-loaded",
+        &[("gsd-band", &gsd_files(MANIFEST, BOARD))],
+    );
+    let extension = dir.join(EXTENSIONS_DIR).join("gsd-band");
+    let loaded = Loaded::read(&extension).expect("within the bounds");
+    std::fs::write(extension.join("board.kdl"), "Stack {").unwrap();
+    std::fs::remove_file(extension.join("fixtures/board.json")).unwrap();
+
+    let from_memory = compile_loaded(identity("gsd-band"), &loaded).expect("it compiles");
+    assert!(
+        compile_in(dir.path(), "gsd-band").is_err(),
+        "the disk now holds a broken view and no fixture"
+    );
+    std::fs::write(extension.join("board.kdl"), BOARD).unwrap();
+    std::fs::write(extension.join("fixtures/board.json"), "{}").unwrap();
+    assert_eq!(Ok(from_memory), compile_in(dir.path(), "gsd-band"));
+}
+
+#[test]
+fn a_loaded_extension_missing_a_file_says_so() {
+    let mut files = std::collections::BTreeMap::new();
+    files.insert(MANIFEST_FILE.to_owned(), MANIFEST.as_bytes().to_vec());
+    files.insert("board.kdl".to_owned(), BOARD.as_bytes().to_vec());
+    let errors = compile_loaded(identity("gsd-band"), &Loaded::from_files(files)).unwrap_err();
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message.contains("fixtures/board.json")),
+        "{errors:?}"
+    );
+}

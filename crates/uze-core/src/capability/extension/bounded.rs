@@ -37,6 +37,12 @@ pub fn read(path: &Path, file: &str) -> Result<String, Diagnostic> {
     std::fs::File::open(path)
         .and_then(|opened| opened.take(FILE_MAX as u64 + 1).read_to_end(&mut bytes))
         .map_err(unreadable)?;
+    decoded(bytes, file)
+}
+
+/// `bytes` as the text of `file`, refused past [`FILE_MAX`] or when it is
+/// not UTF-8, as a file on disk would be.
+pub fn decoded(bytes: Vec<u8>, file: &str) -> Result<String, Diagnostic> {
     if bytes.len() > FILE_MAX {
         return Err(Diagnostic::whole(
             file,

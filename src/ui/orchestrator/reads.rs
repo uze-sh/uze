@@ -1539,11 +1539,10 @@ pub(super) fn spawn_extension_job(
                     .into_iter()
                     .map(|installed| {
                         let stamp = uze_application::extension_stamp(&installed.dir);
-                        let compiled = extensions.compile(&installed);
-                        let data = compiled
-                            .as_ref()
-                            .map(|compiled| extensions.fixtures(&installed, compiled))
-                            .unwrap_or_default();
+                        let (compiled, data) = match extensions.load(&installed) {
+                            Ok(load) => (Ok(load.compiled), load.fixtures),
+                            Err(diagnostics) => (Err(diagnostics), Default::default()),
+                        };
                         LoadedExtension {
                             installed,
                             stamp,

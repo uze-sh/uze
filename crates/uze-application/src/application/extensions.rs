@@ -17,7 +17,7 @@ mod installed;
 mod summary;
 
 pub use checked::{CheckedExtension, Overlay};
-pub use compiled::{FIXTURE_LIMIT, SourceData, extension_stamp};
+pub use compiled::{ExtensionLoad, FIXTURE_LIMIT, SourceData, extension_stamp};
 pub use installed::InstalledExtension;
 pub use summary::DeclaredExtensionSummary;
 

@@ -64,12 +64,12 @@ fn the(app: &UzeApplication, id: &str) -> InstalledExtension {
 
 /// The real engine, handed what the services compiled and read.
 fn engine(app: &UzeApplication, installed: &InstalledExtension) -> DeclaredExtension {
-    let compiled = app
+    let load = app
         .extensions()
-        .compile(installed)
+        .load(installed)
         .unwrap_or_else(|diagnostics| panic!("the band compiles: {diagnostics:#?}"));
-    let mut engine = DeclaredExtension::new(compiled.clone(), "en");
-    for (source, data) in app.extensions().fixtures(installed, &compiled) {
+    let mut engine = DeclaredExtension::new(load.compiled, "en");
+    for (source, data) in load.fixtures {
         engine.set_data(source, data);
     }
     engine
@@ -150,7 +150,7 @@ fn the_gsd_band_is_found_in_the_working_tree_compiled_once_and_drawn_from_its_fi
     );
     fs::remove_file(&cached[0]).unwrap();
 
-    let fixtures = app.extensions().fixtures(&band, &compiled);
+    let fixtures = app.extensions().load(&band).expect("it loads").fixtures;
     assert_eq!(
         compiled
             .manifest
@@ -347,15 +347,13 @@ fn the_panel_is_a_drawer_whose_story_is_told_whole() {
     let env = TestEnvironment::isolated();
     let (app, _market) = installed_from_a_linked_marketplace(&env);
     let panel = the(&app, "gsd-panel");
-    let compiled = app
-        .extensions()
-        .compile(&panel)
-        .expect("the panel compiles");
+    let load = app.extensions().load(&panel).expect("the panel compiles");
+    let compiled = load.compiled;
     let surface = compiled.manifest.surface("panel").expect("its one surface");
     assert_eq!(surface.slot, uze_contract::Slot::Drawer);
 
     let mut engine = DeclaredExtension::new(compiled.clone(), "en");
-    for (source, data) in app.extensions().fixtures(&panel, &compiled) {
+    for (source, data) in load.fixtures {
         engine.set_data(source, data);
     }
     let view = engine
