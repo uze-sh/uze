@@ -9,17 +9,19 @@
 //! bytes and enabled the extension in the checkout's project, run over the
 //! checkout and nothing else.
 //!
-//! What a script answered is remembered for the session, in memory, by
-//! (identity, source, checkout, input digest) and the digest of the files
-//! it ran from: two surfaces asking the same question share one run, and
-//! a save of the extension is a new question.
+//! What a source's script answered is remembered for the session, in
+//! memory, by (identity, source, checkout, input digest) and the digest of
+//! the files it ran from: two surfaces asking the same question share one
+//! run, and a save of the extension is a new question. A refresh runs the
+//! script and replaces what was remembered; an action's script runs on
+//! every gesture, under the same consent, and is never remembered.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use uze_contract::{Answer, Envelope, Identity, Question, SourceKind};
+use uze_contract::{Answer, Asking, Does, Envelope, Identity, Question, SourceKind};
 use uze_core::capability::extension::Loaded;
 use uze_script::{Grants, ScriptCache};
 
@@ -30,7 +32,10 @@ use crate::application::services::Extensions;
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct Asked {
     identity: Identity,
-    source: String,
+    /// What was asked: a source's answer is remembered and an action's
+    /// never is, and a refresh runs whatever is remembered.
+    asking: Asking,
+    declaration: String,
     checkout: PathBuf,
     /// `sha256:` of the input as JSON.
     input: String,
@@ -88,45 +93,65 @@ impl ExtensionRunner {
                 return Answer::withheld(format!("it does not compile: {first}"));
             }
         };
-        let Some(source) = load.compiled.manifest.source(&question.declaration) else {
-            return failed(format!("it declares no source `{}`", question.declaration));
-        };
-        match &source.kind {
-            SourceKind::Fixture(file) => match super::compiled::loaded_fixture(&files, file) {
-                Ok(data) => Answer::Answered {
-                    envelope: Envelope::data(data),
-                    trace: Vec::new(),
-                },
-                Err(reason) => failed(reason),
-            },
-            SourceKind::Run(_) => {
-                Answer::withheld("programs arrive with a later change (change 5)")
-            }
-            SourceKind::Script(file) => {
-                let Some(asked) = &question.checkout else {
-                    return Answer::withheld("no checkout is in front to read");
+        let script = match question.asking {
+            Asking::Source | Asking::Refresh => {
+                let Some(source) = load.compiled.manifest.source(&question.declaration) else {
+                    return failed(format!("it declares no source `{}`", question.declaration));
                 };
-                let checkout = match checkout(asked) {
-                    Ok(checkout) => checkout,
-                    Err(refused) => return Answer::withheld(refused.reason()),
-                };
-                let project = crate::project_root_of(&checkout.root);
-                match extensions.judged(&load, &project) {
-                    Ok(ExtensionState::Enabled) => {}
-                    Ok(state) => return Answer::withheld(withheld_because(&state)),
-                    Err(error) => return Answer::withheld(error.to_string()),
+                match &source.kind {
+                    SourceKind::Fixture(file) => {
+                        return match super::compiled::loaded_fixture(&files, file) {
+                            Ok(data) => Answer::Answered {
+                                envelope: Envelope::data(data),
+                                trace: Vec::new(),
+                            },
+                            Err(reason) => failed(reason),
+                        };
+                    }
+                    SourceKind::Run(_) => {
+                        return Answer::withheld("programs arrive with a later change (change 5)");
+                    }
+                    SourceKind::Script(file) => file,
                 }
-                let grants: Grants = load.compiled.manifest.wants.iter().copied().collect();
-                let asked = Asked {
-                    identity: identity.clone(),
-                    source: source.id.clone(),
-                    checkout: checkout.root.clone(),
-                    input: input_digest(&question.input),
-                    files: load.digest.clone(),
-                };
-                self.run_script(asked, &files, file, &grants, &question.input)
             }
+            Asking::Action => {
+                let Some(action) = load.compiled.manifest.action(&question.declaration) else {
+                    return failed(format!("it declares no action `{}`", question.declaration));
+                };
+                match &action.does {
+                    Does::Script(file) => file,
+                    _ => {
+                        return failed(format!(
+                            "the action `{}` runs no script",
+                            question.declaration
+                        ));
+                    }
+                }
+            }
+        };
+        let Some(asked) = &question.checkout else {
+            return Answer::withheld("no checkout is in front to read");
+        };
+        let checkout = match checkout(asked) {
+            Ok(checkout) => checkout,
+            Err(refused) => return Answer::withheld(refused.reason()),
+        };
+        let project = crate::project_root_of(&checkout.root);
+        match extensions.judged(&load, &project) {
+            Ok(ExtensionState::Enabled) => {}
+            Ok(state) => return Answer::withheld(withheld_because(&state)),
+            Err(error) => return Answer::withheld(error.to_string()),
         }
+        let grants: Grants = load.compiled.manifest.wants.iter().copied().collect();
+        let asked = Asked {
+            identity: identity.clone(),
+            asking: question.asking,
+            declaration: question.declaration.clone(),
+            checkout: checkout.root.clone(),
+            input: input_digest(&question.input),
+            files: load.digest.clone(),
+        };
+        self.run_script(asked, &files, script, &grants, &question.input)
     }
 
     fn run_script(
@@ -137,7 +162,13 @@ impl ExtensionRunner {
         grants: &Grants,
         input: &serde_json::Value,
     ) -> Answer {
-        if let Some(envelope) = lock(&self.answered).get(&asked) {
+        let remembered = Asked {
+            asking: Asking::Source,
+            ..asked.clone()
+        };
+        if asked.asking == Asking::Source
+            && let Some(envelope) = lock(&self.answered).get(&remembered)
+        {
             return Answer::Answered {
                 envelope: envelope.clone(),
                 trace: Vec::new(),
@@ -151,10 +182,14 @@ impl ExtensionRunner {
             Ok(script) => script,
             Err(error) => return failed(format!("{file}: {error}")),
         };
+        let declared = match asked.asking {
+            Asking::Action => "action",
+            Asking::Source | Asking::Refresh => "source",
+        };
         let context = serde_json::json!({
             "checkout": asked.checkout.display().to_string(),
             "extension": asked.identity.id,
-            "source": asked.source,
+            declared: asked.declaration,
         });
         let reach = Arc::new(CheckoutReach::new(asked.checkout.clone()));
         self.runs.fetch_add(1, Ordering::Relaxed);
@@ -167,7 +202,9 @@ impl ExtensionRunner {
             .collect();
         match answered.outcome {
             Ok(envelope) => {
-                lock(&self.answered).insert(asked, envelope.clone());
+                if asked.asking != Asking::Action {
+                    lock(&self.answered).insert(remembered, envelope.clone());
+                }
                 Answer::Answered { envelope, trace }
             }
             Err(error) => Answer::Failed {
@@ -283,6 +320,7 @@ mod tests {
             Question {
                 identity: self.band(),
                 declaration: source.to_owned(),
+                asking: Asking::Source,
                 input: serde_json::json!({}),
                 checkout: Some(self.checkout.join(".planning")),
             }
@@ -395,6 +433,69 @@ mod tests {
             "a save of the extension is a new question"
         );
         assert_eq!(runner.runs(), 3);
+    }
+
+    #[test]
+    fn a_refresh_runs_again_and_an_action_is_never_remembered() {
+        let world = World::new("runner-action");
+        let manifest = world.band.join("extension.kdl");
+        let text = fs::read_to_string(&manifest).unwrap();
+        fs::write(
+            &manifest,
+            format!("{text}\naction \"count\" label=\"Count\" on=\"board\" {{\n    script \"state.rhai\"\n}}\n"),
+        )
+        .unwrap();
+        world.enabled();
+        let runner = ExtensionRunner::new();
+        let question = world.question("state");
+        assert_eq!(
+            data(world.ask(&runner, &question)),
+            serde_json::json!({ "lines": 3 })
+        );
+
+        fs::write(world.checkout.join(".planning/STATE.md"), "one").unwrap();
+        let refresh = Question {
+            asking: Asking::Refresh,
+            ..question.clone()
+        };
+        assert_eq!(
+            data(world.ask(&runner, &refresh)),
+            serde_json::json!({ "lines": 1 })
+        );
+        assert_eq!(
+            data(world.ask(&runner, &question)),
+            serde_json::json!({ "lines": 1 }),
+            "the refreshed answer is the one remembered"
+        );
+        assert_eq!(runner.runs(), 2);
+
+        let action = Question {
+            declaration: "count".to_owned(),
+            asking: Asking::Action,
+            input: serde_json::json!({ "item": null }),
+            ..question.clone()
+        };
+        world.ask(&runner, &action);
+        world.ask(&runner, &action);
+        assert_eq!(runner.runs(), 4, "an action runs on every gesture");
+
+        let refresh_action = Question {
+            declaration: "refresh".to_owned(),
+            ..action.clone()
+        };
+        assert!(matches!(
+            world.ask(&runner, &refresh_action),
+            Answer::Failed { reason, .. } if reason.contains("runs no script")
+        ));
+        world
+            .app
+            .extensions()
+            .disable(&world.band(), &world.checkout)
+            .unwrap();
+        assert_eq!(
+            withheld(world.ask(&runner, &action)),
+            "needs enabling in this project"
+        );
     }
 
     #[test]

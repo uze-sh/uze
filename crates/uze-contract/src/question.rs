@@ -18,13 +18,31 @@ use crate::Identity;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Question {
     pub identity: Identity,
-    /// A source id the manifest declares.
+    /// A source or an action id the manifest declares, as `asking` says.
     pub declaration: String,
+    /// What kind of declaration it names, and whether a remembered answer
+    /// may serve.
+    #[serde(default)]
+    pub asking: Asking,
     /// The declared input, as the engine resolved it.
     pub input: serde_json::Value,
     /// The checkout the surface asking is about. A script reads only
     /// beneath it; a fixture needs none.
     pub checkout: Option<PathBuf>,
+}
+
+/// What a [`Question`] asks of its declaration.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub enum Asking {
+    /// A source, which may be answered from what it answered this session.
+    #[default]
+    Source,
+    /// A source asked again by a gesture or an answer: it runs, and its
+    /// answer replaces the one remembered.
+    Refresh,
+    /// An action whose `does` is a script, run on a gesture and never
+    /// remembered.
+    Action,
 }
 
 /// What a source answered: `data`, and optionally the sources to ask

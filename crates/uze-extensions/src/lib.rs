@@ -57,7 +57,7 @@ pub mod spec;
 pub mod view;
 
 pub use shared::places::{ArtifactRoot, ArtifactSource};
-pub use uze_contract::{Answer, Envelope, Question};
+pub use uze_contract::{Answer, Asking, Envelope, Question};
 
 /// Something a viewer did inside an extension's own surface, addressed to
 /// the slot the host stands that surface in.

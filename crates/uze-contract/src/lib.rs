@@ -39,7 +39,7 @@ pub use manifest::{
     ActionDecl, Does, EVERY_FLOOR, EventName, Grant, KeySuggestion, Manifest, Slot, SourceDecl,
     SourceKind, SurfaceDecl,
 };
-pub use question::{Answer, Envelope, Question};
+pub use question::{Answer, Asking, Envelope, Question};
 pub use testing::{Given, GivenData, Step, StepKind, TestDecl, TestFile, ThemeName, World};
 
 /// The extension protocol this build speaks. A manifest declaring another

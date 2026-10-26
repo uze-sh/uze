@@ -256,6 +256,7 @@ impl DeclaredExtension {
         let question = Question {
             identity: self.compiled.identity.clone(),
             declaration: source.clone(),
+            asking: uze_contract::Asking::Source,
             input,
             checkout: Some(checkout),
         };
