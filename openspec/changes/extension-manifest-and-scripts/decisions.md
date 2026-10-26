@@ -377,3 +377,23 @@ the fixed release is in the lock.
 - decided:  Confirmed: the runner withholds with "needs consent", "needs enabling in this project" or "held: …", drawn in place of the data in the warning role and said in the inspector as `not asked: …`. An action withheld for the same reason is a toast titled "<label> did not run" with the reason as detail. The way to the Extensions screen is step 7's.
 - rejected: None.
 - blast:    None.
+
+## D32 — The clock is the host's pass, counted by the engine
+
+- status:   pending
+- task:     6.1, 6.2
+- commit:   da62ab2b, 0054cfc6
+- trigger:  The task asks where `every`'s clock lives, without a thread per source, and the engine reads no clock of its own but is the only one that knows which sources a surface shows.
+- decided:  The contract gains `Extension::pass(&Pass { now, visible, happened })`, told by `schedule_engine_jobs_at` on every tick of the orchestrator before `jobs()`, and `Extension::watches()`. The engine stamps each question with the last `now` and, for each source shown on a surface in `visible` whose `every` has passed since, asks again with `Asking::Refresh` (past the runner's cache, which would answer the same input from memory). In view is the view standing in the pane, every unfolded declared section while a checkout is in front (the sidebar is always drawn, with no gesture that hides it), and the open drawer. Tests drive `now` by hand.
+- rejected: A timer thread per source, or the host reading each manifest's `every`: the engine already holds the declarations and what it asked when.
+- blast:    D17's first question still goes to a folded section's or a closed drawer's source, once: only asking again waits for view.
+
+## D33 — What is watched, bounded, and how events reach a source
+
+- status:   pending
+- task:     6.2
+- commit:   da62ab2b, 019cdeab, 0054cfc6
+- trigger:  `paths.changed` needs a digest of declared paths that the parent bounds without numbers, `checkout.changed` must come from the existing watch, and an event nobody declared must cost nothing.
+- decided:  Each enabled engine's `watches()` names, for each source shown that declares `refresh-on`, the checkout it is shown on and its events; `spawn_checkout_watch` reads, in its one thread, `checkout_stamp(root, None)` for `checkout.changed` and `uze_application::paths_digest` for each path: at most 2,000 entries (`WATCH_ENTRIES`) and 8 levels (`WATCH_DEPTH`) beneath it, breadth first in name order, links read and never followed, Git not asked; a path not relative and inside digests as itself. A first read only sets the value compared with. What moved is told to each engine watching it on the next pass; the engine gathers the sources it is a reason for in a 250 ms window (`COALESCE`) from the first event, and asks each once when it closes, with `Asking::Refresh`; one closing while nothing showing the source is in view is remembered and asked when one is.
+- rejected: A filesystem watcher (a dependency and a thread per checkout). Gathering in the host: the window would have to know which source each event reaches.
+- blast:    A change past the 2,000th entry or the eighth level is not seen; the window adds up to 250 ms to the one-second watch.

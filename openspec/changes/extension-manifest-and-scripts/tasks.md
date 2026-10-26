@@ -38,8 +38,8 @@
 
 ## 6. Events
 
-- [ ] 6.1 `every` with a 5-second floor, only while a surface showing the source is visible (parent 15.1)
-- [ ] 6.2 `paths.changed` and per-checkout `checkout.changed` from the one-second watch in `orchestrator/reads.rs`, with a bounded digest of the declared paths' modification times, coalesced in 250 ms (parent 15.2)
+- [x] 6.1 `every` with a 5-second floor, only while a surface showing the source is visible (parent 15.1)
+- [x] 6.2 `paths.changed` and per-checkout `checkout.changed` from the one-second watch in `orchestrator/reads.rs`, with a bounded digest of the declared paths' modification times, coalesced in 250 ms (parent 15.2)
 
 ## 7. Operator surfaces
 
