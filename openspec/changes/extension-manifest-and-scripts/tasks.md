@@ -43,11 +43,11 @@
 
 ## 7. Operator surfaces
 
-- [ ] 7.1 The Extensions screen: built-in and declared extensions with plugin, grants and state for this project; Consent and Enable showing the grants; Disable; the reason a held or refused extension does not run (parent 9.1, 9.2)
-- [ ] 7.2 The toast → dialog on first open of a project that declares a plugin whose extension is not enabled there (parent 9.1)
-- [ ] 7.3 Declared `view` surfaces in the tab strip and the action index; confirmation dialogs and toasts from an extension attributed (parent 9.3, 9.4)
-- [ ] 7.4 `uze status` and `uze inspect <plugin>` report extensions and their state; `uze install` asks on a terminal outside a pane and reports otherwise (parent 10.1, 10.2)
-- [ ] 7.5 `uze agent plugin check --run` executes scripts in the engine against a checkout (parent 10.3)
+- [x] 7.1 The Extensions screen: built-in and declared extensions with plugin, grants and state for this project; Consent and Enable showing the grants; Disable; the reason a held or refused extension does not run (parent 9.1, 9.2)
+- [x] 7.2 The toast → dialog on first open of a project that declares a plugin whose extension is not enabled there (parent 9.1)
+- [x] 7.3 Declared `view` surfaces in the tab strip and the action index; confirmation dialogs and toasts from an extension attributed (parent 9.3, 9.4)
+- [x] 7.4 `uze status` and `uze inspect <plugin>` report extensions and their state; `uze install` asks on a terminal outside a pane and reports otherwise (parent 10.1, 10.2)
+- [x] 7.5 `uze agent plugin check --run` executes scripts in the engine against a checkout (parent 10.3)
 
 ## 8. Docs and proof
 

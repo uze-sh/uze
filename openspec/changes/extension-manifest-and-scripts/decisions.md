@@ -397,3 +397,63 @@ the fixed release is in the lock.
 - decided:  Each enabled engine's `watches()` names, for each source shown that declares `refresh-on`, the checkout it is shown on and its events; `spawn_checkout_watch` reads, in its one thread, `checkout_stamp(root, None)` for `checkout.changed` and `uze_application::paths_digest` for each path: at most 2,000 entries (`WATCH_ENTRIES`) and 8 levels (`WATCH_DEPTH`) beneath it, breadth first in name order, links read and never followed, Git not asked; a path not relative and inside digests as itself. A first read only sets the value compared with. What moved is told to each engine watching it on the next pass; the engine gathers the sources it is a reason for in a 250 ms window (`COALESCE`) from the first event, and asks each once when it closes, with `Asking::Refresh`; one closing while nothing showing the source is in view is remembered and asked when one is.
 - rejected: A filesystem watcher (a dependency and a thread per checkout). Gathering in the host: the window would have to know which source each event reaches.
 - blast:    A change past the 2,000th entry or the eighth level is not seen; the window adds up to 250 ms to the one-second watch.
+
+## D40 — One report shape for every surface, and the record dates a same-grant update
+
+- status:   pending
+- task:     7.1, 7.4
+- commit:   96a68eb2
+- trigger:  The Extensions screen, `uze status`, `uze inspect` and the workspace's offer each need an extension's state, grants, the projects it is enabled in, a held update's new grants and why a checkout runs nothing, and the spec's "updated <date>, same grants" needs a date the record did not keep apart from consent.
+- decided:  `uze_application::ExtensionReport` (`Extensions::reports(project: Option<&Path>)`), with an `ExtensionCondition` word (`fixtures-only`, `needs-consent`, `needs-enabling`, `enabled`, `consented` with no project asked about, `held`, `broken`). The consent record gains `updated_at: Option<u64>`, set by `apply_update` and cleared by `accept`, read and written in shape 1 (`serde(default)`, absent when empty). The day is printed in UTC (`YYYY-MM-DD`). `checkout_refused` is filled only for an extension that would run in the project asked about. `uze inspect` judges in the project it runs in (`inspect_in`) and says which in `extensions_project`.
+- rejected: A second read model per surface: four renderers deriving the same states would drift. Showing `accepted_at` as the update's date: a consent and an update would read the same.
+- blast:    `ProjectStatus`, `MachineStatusReport` and `PluginInspection` carry `extensions` in their JSON.
+
+## D41 — Enable and Disable of a script extension are this project's, and Enable asks for the grants first
+
+- status:   pending
+- task:     7.1
+- commit:   f36316ea
+- trigger:  D5 keeps the machine-wide switch beside the record, and the screen's one pair of offers (`EnableExtension`, `DisableExtension`) switched it; consent and enabling per project need the same keys.
+- decided:  For a declared extension that runs code, seen in a project, Enable opens a dialog with each grant and what it lets the extension do when consent is missing or a held update widened (`Allow and enable`), then consents and enables it in that project, turning the switch on if it was off; once consented it enables directly. Disable disables it in the project and keeps consent and the switch. A built-in, a fixtures-only or broken extension, or any extension seen with no project open keeps the switch alone. Enable is unavailable, naming the reason, when the checkout is refused. Enter does Enable when offered, else Disable, and the footer names that.
+- rejected: A third offer for consent: two keys for one decision, and a consent never enabled anywhere is a question asked for nothing. Disable switching the machine off too: it would take the extension from every other project.
+- blast:    The worker reads `crate::asker::asker()` for the screen's answers.
+
+## D42 — The offer at opening is remembered in the consent record when put away
+
+- status:   pending
+- task:     7.2
+- commit:   f94a3918
+- trigger:  The offer must not return on every opening once declined; the commands' pattern (ADR-055) remembers the question only for the session, and an unconsented extension has no entry in the record to hold a decline.
+- decided:  Like the commands, the toast is raised once a session per project (`Remembered::extension_offers`) for each extension of a plugin the project's `agents.yaml` declares that waits for the operator there and whose checkout may be read (`Extensions::offers`). Putting the dialog away (Cancel, Esc, a click outside) is written to a top-level `offers_declined` map of `state/extensions.json` by identity and canonical project, kept apart from the consents so it judges nothing; `forget_plugin` drops it with the rest. The Extensions screen still offers the extension. After one answer, the next extension the project offers is asked about straight away.
+- rejected: Keeping the decline in `ClientLayout`: it is the operator's answer about an extension, and a layout reset would bring the question back. A `Consent` entry with no grants: `judge` would read it as a consent held by every grant.
+- blast:    A record written by this build carries `offers_declined` when someone put an offer away; shape 1 reads it as optional.
+
+## D43 — Who answers is read once per client, from the environment it started in
+
+- status:   pending
+- task:     7.1, 7.2
+- commit:   f36316ea, f94a3918
+- trigger:  D9 makes `src/cli/workspace.rs::asker()` the one reading of the stamps, but the binary's library half (the TUI) cannot reach the CLI's module, and a test suite run inside an agent's pane carries the stamps.
+- decided:  `asker()` moves to `src/asker.rs` in the library half and `cli` re-exports it, so the CLI and both TUI surfaces read it one way. The workspace's `Attach` reads it once when the client starts and hands it to the offer's answer; the test harness sets `Operator`. A client an agent's pane started is refused like the CLI.
+- rejected: Trusting the TUI because only a keyboard reaches its dialogs: a client started by an agent in its own pane is driven by that agent.
+- blast:    None beyond the move.
+
+## D44 — `--run` rehearses scripts without consent and its answers stand in for fixtures
+
+- status:   pending
+- task:     7.5
+- commit:   928ab8fd
+- trigger:  The task asks `--run` to execute scripts in the engine against a checkout with the tests' inputs, but `.test.kdl` gives data to sources (`given`), not inputs to scripts, and the runner answers only consented, enabled extensions.
+- decided:  `ExtensionRunner::rehearse` loads the extension's directory as the check reads it, compiles it, and runs one `script` source with the input it declares, over the checkout `--checkout <path>` names (the current directory by default), refused as the runner refuses one (D11); no consent is asked, since the check runs what its caller is authoring, and the engine still registers only the manifest's grants. Each answer replaces that source's fixture before the views are bound and the tests draw; a test's `given` still wins, since it states its own world. A script that fails, or a refused checkout, is an error of the extension placed on its script, so the check fails. Fixtures, programs and sources not answered by a script are not run. The text report says `<script> answered \`<source>\` in <checkout>`; the JSON carries `runs` by extension.
+- rejected: `given` overridden by the run: a test that pins its data would stop testing what it says. Asking for consent in the check: an author would consent to their own draft on every save.
+- blast:    An agent can run its checkout's scripts through the check; they read only beneath that checkout.
+
+## D45 — A declared view is an index entry, `open:<surface>`, interned beside its actions
+
+- status:   pending
+- task:     7.3
+- commit:   e2876522
+- trigger:  Declared views were on the tab strip (tested since change 3) but not in the action index, whose rows are `Action`s, and D22 left `open` with a global key for later.
+- decided:  Each view of a declared extension that is switched on is offered without a key in the index as `Action::Extension` interned as `ext.<plugin>@<marketplace>/<id>.open:<surface>`, labelled `Open <title>` and described with its attribution; no manifest id holds a colon, so it never meets a declared action, and no table binds it. Choosing it opens the view over whatever stands in the pane. Confirmation dialogs of a third party's surface carry the attribution beside their subject, and its `Failed` and `Copy` toasts lead with it (`id · plugin@marketplace: …`); the clipboard gets the text alone. The strip on the surface itself stays task 5.3's.
+- rejected: A row kind of its own in the index: two vocabularies for one list. Attributing in the toast's title: titles are the host's short words.
+- blast:    `jump` and global keys for views (change 6) can bind these names.
