@@ -7,12 +7,12 @@
 
 ## 2. Consent record
 
-- [ ] 2.1 `state/extensions.json` shape 1 in `uze-workspace`, named in `UzeHome`, `uze_document::Shaped`, reading the current switch file as shape 0: per identity `accepted_grants`, `accepted_digest`, `accepted_at`, `enabled_in`, and the change-5 fields (parent 4.5)
-- [ ] 2.2 The digest over the loaded directory (bounded read into memory, SHA-256 over sorted paths and bytes), compiled from those bytes (parent 4.8)
-- [ ] 2.3 The update rule by grant set; a change of plugin or marketplace is a new identity; `uze remove` removes the records (parent 4.6)
-- [ ] 2.4 The read model in `uze-application`: per extension, its state (fixtures only, needs consent, needs enabling here, enabled, held with the new grants) for a project; `consent`, `enable(project)`, `disable(project)` (parent 4.7)
-- [ ] 2.5 Refuse consent and enabling when `UZE_AGENT` is set or `launched_by` names a pane, as `uze workspace allow` does (parent 4.9)
-- [ ] 2.6 The checkout for extensions: a worktree root through `uze-git`, canonical, refusing `/`, a volume root, `$HOME` and ancestors, `$UZE_HOME` and anything above or below, tmp and bare repositories (parent 4.10)
+- [x] 2.1 `state/extensions.json` shape 1 in `uze-workspace`, named in `UzeHome`, `uze_document::Shaped`, reading the current switch file as shape 0: per identity `accepted_grants`, `accepted_digest`, `accepted_at`, `enabled_in`, and the change-5 fields (parent 4.5)
+- [x] 2.2 The digest over the loaded directory (bounded read into memory, SHA-256 over sorted paths and bytes), compiled from those bytes (parent 4.8)
+- [x] 2.3 The update rule by grant set; a change of plugin or marketplace is a new identity; `uze remove` removes the records (parent 4.6)
+- [x] 2.4 The read model in `uze-application`: per extension, its state (fixtures only, needs consent, needs enabling here, enabled, held with the new grants) for a project; `consent`, `enable(project)`, `disable(project)` (parent 4.7)
+- [x] 2.5 Refuse consent and enabling when `UZE_AGENT` is set or `launched_by` names a pane, as `uze workspace allow` does (parent 4.9)
+- [x] 2.6 The checkout for extensions: a worktree root through `uze-git`, canonical, refusing `/`, a volume root, `$HOME` and ancestors, `$UZE_HOME` and anything above or below, tmp and bare repositories (parent 4.10)
 
 ## 3. Keymap
 

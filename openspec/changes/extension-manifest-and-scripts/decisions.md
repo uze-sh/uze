@@ -39,3 +39,73 @@
 - decided:  `preferences` (6), `deliver` (6), `output` (5) and `agent.*` events (6) are refused as "arrives in a later change (change N)"; `events` is an unknown node. `run` is decoded into `SourceKind::Run` and refused by the check (5). Later grants: `exec:*`/`store` 5, `agent:*`/`notify` 6, `resident` 7, `net`/`secret`/`edit:checkout` 8; `write:checkout` does not exist. The grant is `open-path`, kebab-case as D22 asks of every manifest word.
 - rejected: Decoding `deliver` now with only `latest`: a property that can take one value is a promise this change does not keep.
 - blast:    Change 6 replaces the refusal of `deliver` and adds `events`.
+
+## D5 — The built-ins' switch stays in `config.toml`, beside the record
+
+- status:   pending
+- task:     2.1
+- commit:   2d8a4a00
+- trigger:  M2 says `state/extensions.json` absorbs the existing switch and reads the old `disabled` list as shape 0, but that switch is the `[extensions]` section of `config.toml`: authored TOML at the root, not a record under `state/`.
+- decided:  They coexist. `[extensions]` stays the machine-wide on/off of built-ins and of every declared extension, keyed as today; `state/extensions.json` is a new record at shape 1 with no shape-0 rung, keyed `plugin@marketplace/id`. A declared extension that runs code needs both the switch on and the record's consent and enabling for the project.
+- rejected: Migrating the section into the record: `persistence-tiers` gives authored files no shape and forbids writing over the operator's text, and a built-in's switch is a preference, not a consent.
+- blast:    Step 7's Extensions screen shows the switch and the consent state side by side.
+
+## D6 — The load is bounded at 256 files, 8 MiB and four levels, and lives in `uze-core`
+
+- status:   pending
+- task:     2.2
+- commit:   44e4363d
+- trigger:  M3 asks for a bounded read into memory without fixing the bounds, and puts the read in `uze-application` while `uze-core` is the only reader of an extension's KDL.
+- decided:  `uze_core::capability::extension::Loaded::read` reads the whole directory once (`LOAD_FILES` 256, `LOAD_BYTES` 8 MiB, `LOAD_DEPTH` 4: the bounds the compile cache already walked with) and digests it with `digest::files_sha256` over `sha2`, already a dependency. `compile_loaded` compiles from those bytes alone; `Extensions::load` in `uze-application` calls both and reads fixtures from the same load. A link is neither followed nor loaded, and a directory past the bounds is refused whole instead of compiled uncached. The authoring check and the language server still read disk with an editor's overlay.
+- rejected: Reading in `uze-application` and handing text to `uze-core`: two modules would decide what an extension's files are.
+- blast:    An extension that relied on a link inside its directory, or on more than 8 MiB, no longer loads in the workspace; `uze agent plugin check` still compiles it.
+
+## D7 — A narrowing records the narrower set, applied when it is judged
+
+- status:   pending
+- task:     2.3
+- commit:   2d8a4a00
+- trigger:  The update rule says a narrower or equal set applies and records the new digest, but not whether `accepted_grants` shrinks with it, nor who writes it.
+- decided:  An applied update records the grants as they are now, so a grant an update dropped is a widening when it returns. It is applied when `Extensions::state` or `standings` judges it, under the record's lock and judged again there.
+- rejected: Keeping the wider accepted set: an author could drop a grant, ship, and bring it back with no question asked.
+- blast:    Reading a state can write the record; a read-only caller sees the same answer.
+
+## D8 — Only a plugin leaving the machine forgets its consents
+
+- status:   pending
+- task:     2.3
+- commit:   2d8a4a00
+- trigger:  Updating a plugin goes through the same teardown as removing it (`detach_and_remove`).
+- decided:  `Plugins::remove` and removing the plugin's marketplace forget its extensions' records; an update keeps them and is judged by the update rule. Taking the plugin out of `agents.yaml` keeps them.
+- rejected: Forgetting in the shared teardown: every update would ask for consent again.
+- blast:    None beyond the removal paths.
+
+## D9 — The asker is passed in, by the check `uze workspace allow` makes
+
+- status:   pending
+- task:     2.5
+- commit:   2d8a4a00
+- trigger:  The task asks for `consent(identity)` and `enable(identity, project)` refusing inside an agent's pane, but `uze-application` may not spell `UZE_AGENT` (the layering suite), and `uze workspace allow` read the stamps inline.
+- decided:  `consent` and `enable` take an `Asker` (`Operator` or `AgentPane`). `src/cli/workspace.rs::asker()` is the one reading of the stamps, used by `uze workspace allow` and by the callers step 7 adds. `disable` takes none: taking a reach away is never refused.
+- rejected: Reading the environment in `uze-application`, which breaks the variable's single owner.
+- blast:    Every caller of consent and enabling names who is asking.
+
+## D10 — Fixtures only means no script, no program and no grant
+
+- status:   pending
+- task:     2.4
+- commit:   2d8a4a00
+- trigger:  The task defines `FixturesOnly` as declaring neither a script nor grants; an action can also run a script, and the workspace's drawing does not yet consult the new state.
+- decided:  An extension needs consent when it wants any grant, has a source that is not a fixture, or an action whose `does` is a script. `ExtensionState::runs_scripts` is the question step 4 asks before a script answers; until then nothing runs and the switch decides drawing as before.
+- rejected: Hiding a not-enabled extension's surfaces now: its fixtures still draw, and the spec's BREAKING note lands with the scripts that make it matter.
+- blast:    Step 4 wires `runs_scripts` into the runner.
+
+## D11 — What a checkout is refused for, and how each is seen
+
+- status:   pending
+- task:     2.6
+- commit:   3f412c5f
+- trigger:  D6 of the parent lists what is refused but not how a volume root, a temporary directory or a bare repository is recognised, and `uze-git`'s reads never discover a bare repository.
+- decided:  A volume root is a path with no parent or a network (9p) mount point from `uze_platform::mounts`; a temporary directory is anything at or below `std::env::temp_dir()`; the home directory and its ancestors, and `$UZE_HOME` with anything above or below it, are compared canonically with `uze_platform::path::is_within`. A bare repository is named from its files (`HEAD`, `objects`, `refs` at its top) because Git refuses it; a worktree root without a `.git` inside it is refused too. Enabling does not check the checkout: the runner does, on every answer, from step 4.
+- rejected: Refusing only when Git says bare: through `uze-git` a bare repository reads as no repository at all, and the reason would be wrong.
+- blast:    A project kept under the system temporary directory has no extension source run in it.
