@@ -587,6 +587,7 @@ fn a_pressed_button_records_its_action_with_the_item_and_runs_nothing() {
         surface: VIEW.into(),
         action: "next".into(),
         item: json!({ "phase": "12", "skill": "x" }),
+        declared: false,
     };
     assert_eq!(extension.recorded(), std::slice::from_ref(&expected));
     assert_eq!(extension.trace(VIEW).expect("a trace").recorded, [expected]);
@@ -595,7 +596,7 @@ fn a_pressed_button_records_its_action_with_the_item_and_runs_nothing() {
 }
 
 #[test]
-fn a_key_on_a_declared_action_records_it_where_it_is_offered() {
+fn a_key_on_a_declared_action_runs_it_where_it_is_offered() {
     let mut compiled = extension(compiled_view(Vec::new(), Vec::new(), Vec::new()));
     compiled.manifest.actions = vec![uze_contract::ActionDecl {
         id: "refresh".to_owned(),
@@ -616,14 +617,15 @@ fn a_key_on_a_declared_action_records_it_where_it_is_offered() {
         Outcome::Stay,
         "not declared"
     );
-    let outcome = extension.press(VIEW, "refresh");
-    assert!(matches!(&outcome, Outcome::Notice(span) if span.text == "refresh recorded, not run"));
+    assert!(extension.recorded().is_empty());
+    assert_eq!(extension.press(VIEW, "refresh"), Outcome::Stay);
     assert_eq!(
         extension.recorded(),
         [RecordedAction {
             surface: VIEW.into(),
             action: "refresh".into(),
             item: Value::Null,
+            declared: true,
         }]
     );
 }

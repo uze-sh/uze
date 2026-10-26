@@ -391,11 +391,7 @@ impl Stage {
             let mut terminal =
                 Terminal::new(TestBackend::new(self.width, self.height)).expect("a test backend");
             let mut hits = Vec::new();
-            let said = attribution(
-                &self.identity.id,
-                &self.identity.plugin,
-                &self.identity.marketplace,
-            );
+            let said = attribution(&self.identity);
             terminal
                 .draw(|frame| {
                     let area = frame.area();
@@ -403,6 +399,7 @@ impl Stage {
                     match self.slot {
                         Slot::Section => {
                             if let Some(section) = self.engine.section(&self.surface, false) {
+                                let area = render_attribution(frame, area, &said);
                                 let mut rows = crate::ui::Rows::over(area);
                                 render_section(
                                     frame,

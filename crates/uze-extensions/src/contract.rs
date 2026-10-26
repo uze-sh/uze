@@ -58,6 +58,9 @@ pub enum Outcome {
     },
     /// Put this on the clipboard, and say so.
     Copy(String),
+    /// Say this in a toast, which the host attributes to the extension
+    /// that said it: what an extension's answer told the viewer.
+    Toast(String),
     /// Open this extension's full-frame `surface` on the checkout in
     /// front: a summary in the sidebar sending the viewer to what it
     /// counts.

@@ -238,12 +238,10 @@ pub(crate) fn render_attribution(frame: &mut ratatui::Frame<'_>, area: Rect, sai
 }
 
 /// What the attribution strip says: the extension, and the plugin and
-/// marketplace it came from.
-pub(crate) fn attribution(extension: &str, plugin: &str, marketplace: &str) -> String {
-    format!(
-        "{extension}{}{plugin}@{marketplace}",
-        theme::glyph(Symbol::HintSeparator)
-    )
+/// marketplace it came from, as the identity spells itself. Never the
+/// name the extension gives itself, which any plugin may choose.
+pub(crate) fn attribution(identity: &uze_contract::Identity) -> String {
+    identity.to_string()
 }
 
 /// The time since `since_ms` at `now_ms`, in the fewest characters that

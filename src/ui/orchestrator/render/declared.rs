@@ -66,11 +66,7 @@ pub(super) fn render_declared_drawer(
         Some(identity) => crate::ui::extension_view::tree::render_attribution(
             frame,
             inner,
-            &crate::ui::extension_view::tree::attribution(
-                &identity.id,
-                &identity.plugin,
-                &identity.marketplace,
-            ),
+            &crate::ui::extension_view::tree::attribution(identity),
         ),
         None => inner,
     };
@@ -205,23 +201,30 @@ fn draw_scrolled(
     frame.render_widget(Paragraph::new(shown), area);
 }
 
-/// The rows a declared section takes: its header, and while it is open its
-/// content and a row of air, within a third of what the column has left.
+/// The rows a plugin's section gives the strip naming whose it is, over its
+/// header.
+pub(super) const ATTRIBUTION_ROWS: u16 = 1;
+
+/// The rows a declared section takes: the strip naming whose it is, its
+/// header, and while it is open its content and a row of air, within a
+/// third of what the column has left. Nothing when the strip and the
+/// header would not both fit: a section is never drawn unattributed.
 pub(super) fn declared_section_height(
     section: &uze_extensions::view::Section,
     width: u16,
     remaining: u16,
 ) -> u16 {
     let budget = remaining / 3;
-    if budget < SECTION_CHROME {
+    let chrome = ATTRIBUTION_ROWS + SECTION_CHROME;
+    if budget < chrome {
         return 0;
     }
     if section.collapsed {
-        return SECTION_CHROME;
+        return chrome;
     }
     let open = match &section.tree {
         Some(tree) => crate::ui::extension_view::tree_section_height(tree, width),
         None => SECTION_CHROME + u16::try_from(section.rows.len()).unwrap_or(u16::MAX),
     };
-    (open + SECTION_AIR).min(budget)
+    (ATTRIBUTION_ROWS + open + SECTION_AIR).min(budget)
 }

@@ -46,6 +46,9 @@ pub(super) enum Act {
         key: String,
         rows: usize,
         selected: Option<usize>,
+        /// The item each row was drawn from, `null` for a row no `each`
+        /// repeated: what an action on the selection receives.
+        items: Vec<Value>,
     },
 }
 
@@ -458,24 +461,27 @@ impl<'a> Builder<'a> {
         node: &'a Compiled,
         scopes: &mut Scopes<'a>,
         trace: &mut TraceNode,
-    ) -> Vec<view::Node> {
+    ) -> (Vec<view::Node>, Vec<Value>) {
         let Some(each) = &node.each else {
-            return self.expand(&node.children, scopes, &mut trace.children, make_node);
+            let rows = self.expand(&node.children, scopes, &mut trace.children, make_node);
+            let items = vec![Value::Null; rows.len()];
+            return (rows, items);
         };
         let elements = match self.list(scopes, each) {
             Ok(elements) => elements,
             Err(reason) => {
                 trace.absent(reason);
-                return Vec::new();
+                return (Vec::new(), Vec::new());
             }
         };
         let mut rows = Vec::new();
+        let mut items = Vec::new();
         for element in elements {
             scopes.push(element);
             let mut made = self.expand(&node.children, scopes, &mut trace.children, make_node);
             scopes.pop();
             match made.len() {
-                0 => {}
+                0 => continue,
                 1 => rows.extend(made.pop()),
                 _ => {
                     let mut row = view::Node::new(self.id(), NodeKind::Stack { gap: 0 });
@@ -483,8 +489,9 @@ impl<'a> Builder<'a> {
                     rows.push(row);
                 }
             }
+            items.push(element.clone());
         }
-        rows
+        (rows, items)
     }
 
     /// The tree's root: the one top-level `Stack` as it is, anything else
@@ -547,11 +554,12 @@ fn make_node<'a>(
             }
         }
         NodeName::List => {
-            children = builder.rows(node, scopes, trace);
-            list(builder, node, scopes, id, children.len())
+            let items;
+            (children, items) = builder.rows(node, scopes, trace);
+            list(builder, node, scopes, id, items)
         }
         NodeName::Table => {
-            children = builder.rows(node, scopes, trace);
+            (children, _) = builder.rows(node, scopes, trace);
             NodeKind::Table {
                 columns: (0..node.args.len())
                     .map(|at| column(builder, node, scopes, at))
@@ -717,8 +725,9 @@ fn list<'a>(
     node: &'a Compiled,
     scopes: &Scopes<'a>,
     id: usize,
-    rows: usize,
+    items: Vec<Value>,
 ) -> NodeKind {
+    let rows = items.len();
     let key = builder.key(node);
     let selected = builder
         .env
@@ -732,6 +741,7 @@ fn list<'a>(
             key,
             rows,
             selected,
+            items,
         },
     );
     NodeKind::List {

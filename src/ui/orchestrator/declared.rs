@@ -211,7 +211,8 @@ fn builtins() -> Vec<(&'static str, Box<dyn Hosted>)> {
 }
 
 fn recorded_line(action: &RecordedAction) -> String {
-    Clean::label(&format!("{} {}", action.action, action.item)).into_string()
+    let ran = if action.declared { "" } else { " · not run" };
+    Clean::label(&format!("{} {}{ran}", action.action, action.item)).into_string()
 }
 
 /// The traced view as an indented outline, one node a line: how often it
@@ -932,6 +933,11 @@ impl WorkspaceModel {
             Outcome::Notice(span) => self.open_notice = Some(span),
             Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
             Outcome::Copy(text) => self.copy_answered(text),
+            Outcome::Toast(text) => {
+                if let Some(owner) = self.slot_in_pane().map(|slot| slot.owner.clone()) {
+                    self.say_told(&owner, text);
+                }
+            }
             Outcome::Show(surface) => {
                 if let Some(id) = self.open_slot {
                     self.show_surface(id, &surface);
@@ -965,6 +971,17 @@ impl WorkspaceModel {
     /// What a surface says went wrong, as a toast: it may have closed.
     pub(super) fn say_failed(&mut self, title: &str, detail: String) {
         self.raise_toast(ToastKind::Failed, title, detail, None);
+    }
+
+    /// What an extension's answer told the viewer, as a toast whose
+    /// detail is who said it: the host's attribution, never the
+    /// extension's own name.
+    pub(super) fn say_told(&mut self, owner: &Owner, text: String) {
+        let said = match owner.declared() {
+            Some(identity) => identity.to_string(),
+            None => owner.switch_id(),
+        };
+        self.raise_toast(ToastKind::Told, text, said, None);
     }
 
     /// Text a surface asked to have copied: on the clipboard, and said.

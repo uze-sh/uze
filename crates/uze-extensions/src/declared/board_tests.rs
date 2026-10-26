@@ -335,6 +335,7 @@ fn the_next_step_is_recorded_with_its_phase() {
             surface: VIEW.into(),
             action: "next".into(),
             item: json!({ "phase": "12", "skill": "gsd:execute-phase" }),
+            declared: false,
         }]
     );
 }

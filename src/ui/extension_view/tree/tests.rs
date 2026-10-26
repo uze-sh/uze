@@ -1042,7 +1042,11 @@ fn the_attribution_strip_names_the_extension_and_keeps_its_row() {
         let mut left = Rect::default();
         terminal
             .draw(|frame| {
-                let said = attribution("gsd-band", "gsd", "community");
+                let said = attribution(&uze_contract::Identity {
+                    marketplace: "community".to_owned(),
+                    plugin: "gsd".to_owned(),
+                    id: "gsd-band".to_owned(),
+                });
                 left = render_attribution(frame, frame.area(), &said);
             })
             .unwrap();

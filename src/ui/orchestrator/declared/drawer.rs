@@ -249,6 +249,11 @@ impl WorkspaceModel {
             Outcome::Notice(span) => self.dock_notice = Some(span),
             Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
             Outcome::Copy(text) => self.copy_answered(text),
+            Outcome::Toast(text) => {
+                if let Some(owner) = self.open_drawer_slot().map(|slot| slot.owner.clone()) {
+                    self.say_told(&owner, text);
+                }
+            }
             Outcome::Show(surface) => {
                 if let Some(id) = self.open_drawer() {
                     self.show_surface(id, &surface);

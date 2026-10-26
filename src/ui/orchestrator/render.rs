@@ -202,11 +202,7 @@ pub(super) fn render(
         Some(identity) => crate::ui::extension_view::tree::render_attribution(
             frame,
             surface_area,
-            &crate::ui::extension_view::tree::attribution(
-                &identity.id,
-                &identity.plugin,
-                &identity.marketplace,
-            ),
+            &crate::ui::extension_view::tree::attribution(identity),
         ),
         None => surface_area,
     };

@@ -236,8 +236,21 @@ impl WorkspaceModel {
         if marked.is_some_and(|before| self.marked_text() != Some(before)) {
             self.selection = None;
         }
-        if let uze_extensions::contract::Outcome::Failed { title, detail } = outcome {
-            self.say_failed(&title, detail);
+        // An answer arrives after its gesture, wherever the viewer is now:
+        // only what is said reaches them. A copy, a path or a surface to
+        // open is a gesture's, never an answer's.
+        use uze_extensions::contract::Outcome;
+        match outcome {
+            Outcome::Failed { title, detail } => self.say_failed(&title, detail),
+            Outcome::Toast(text) => self.say_told(&answer.extension, text),
+            Outcome::Notice(span)
+                if self
+                    .slot_in_pane()
+                    .is_some_and(|slot| slot.owner == answer.extension) =>
+            {
+                self.open_notice = Some(span);
+            }
+            _ => {}
         }
         true
     }

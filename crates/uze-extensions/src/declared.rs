@@ -7,6 +7,7 @@
 //! nothing: what reaches it was compiled by `uze-core` and read by the host.
 //!
 //! - `bind`: the binder, compiled view + data + UI state into a node tree.
+//! - `action`: what a declared action does once a gesture reaches it.
 //! - `value`: how a binding becomes a value (D23).
 //! - `trace`: the inspector's account of a build.
 //! - `time`: the instant an `Elapsed` counts from.
@@ -14,8 +15,11 @@
 //! What a source answers arrives one way: the engine asks the host, through
 //! a [`Job`], to answer the source with its input about the checkout the
 //! surface showing it is on, and takes the answer only while it is the
-//! latest question asked of that source.
+//! latest question asked of that source. What an answer says beside its
+//! data is applied as it arrives: the sources it names are asked again,
+//! its notice is said on the surfaces showing it, its toast is the host's.
 
+mod action;
 mod bind;
 mod fixture_check;
 mod time;
@@ -23,17 +27,19 @@ mod trace;
 mod value;
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
-use uze_contract::{Answer, Clean, CompiledExtension, CompiledView, Question, SurfaceDecl};
+use uze_contract::{Answer, Asking, Clean, CompiledExtension, CompiledView, Question, SurfaceDecl};
 
 use crate::contract::{Checkout, Extension, Job, Opaque, Outcome, SurfaceInfo, SurfaceSlot};
 use crate::view::{
     Command, Content, Layout, NodeAct, Role, ScrollDirection, ScrollTarget, Section, Size, Span,
     View, ViewHit,
 };
+pub use action::COPY_UNASKED_MAX;
+use action::{ActionAnswer, Pending, Queued};
 pub use bind::NODE_CAP;
 use bind::{Act, Built};
 pub use fixture_check::{MissingField, TAB_COMBINATIONS_MAX, missing_fields};
@@ -42,15 +48,17 @@ pub use trace::{Absence, DataState, Trace, TraceEntry, TraceNode};
 /// What a source answered: its data, or why there is none.
 pub type SourceData = Result<serde_json::Value, String>;
 
-/// A gesture that would have run an action, kept for the inspector: this
-/// version runs nothing an extension ships.
+/// A gesture that reached an action, kept for the inspector: one the
+/// manifest declares ran (or was asked about), one it does not ran nothing.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RecordedAction {
     pub surface: String,
     pub action: String,
-    /// The `item` the action would have received, as the data holds it:
-    /// whoever draws it cleans it first, as every other string.
+    /// The `item` the action received, as the data holds it: whoever
+    /// draws it cleans it first, as every other string.
     pub item: serde_json::Value,
+    /// Whether the manifest declares it, so it ran.
+    pub declared: bool,
 }
 
 pub struct DeclaredExtension {
@@ -73,6 +81,17 @@ pub struct DeclaredExtension {
     opened: BTreeMap<String, PathBuf>,
     /// The latest question asked of each source, by source id.
     asked: BTreeMap<String, Asked>,
+    /// Sources a refresh asked again, which the next question asks past
+    /// any answer the host remembers.
+    stale: BTreeSet<String>,
+    /// Of those, the ones another source's answer asked again.
+    refreshed_by_answer: BTreeSet<String>,
+    /// The action a question stands on, waiting for its answer.
+    pending: Option<Pending>,
+    /// Actions' scripts to hand to the host, in the order pressed.
+    queued: Vec<Queued>,
+    /// What the last answer said on each surface, by surface.
+    notices: BTreeMap<String, Span>,
     /// How many questions were asked, numbering each.
     questions: u64,
     /// `ui.<id>` values, by surface then id.
@@ -96,6 +115,9 @@ struct Asked {
     checkout: PathBuf,
     input: serde_json::Value,
     number: u64,
+    /// A refresh asked by another source's answer: its own answer asks
+    /// nothing again, so two sources cannot keep asking each other.
+    by_answer: bool,
 }
 
 /// The host's answer to the question numbered `number` of `source`.
@@ -145,6 +167,11 @@ impl DeclaredExtension {
             in_front: None,
             opened: BTreeMap::new(),
             asked: BTreeMap::new(),
+            stale: BTreeSet::new(),
+            refreshed_by_answer: BTreeSet::new(),
+            pending: None,
+            queued: Vec::new(),
+            notices: BTreeMap::new(),
             questions: 0,
             ui: BTreeMap::new(),
             scroll: BTreeMap::new(),
@@ -206,7 +233,7 @@ impl DeclaredExtension {
     /// an open view's first, then the sections' and drawers' on the
     /// checkout in front. A source shown on two checkouts at once is asked
     /// about the first, so the two never take turns asking.
-    fn shown_sources(&self) -> Vec<(String, PathBuf)> {
+    fn shown_sources(&self) -> Vec<(String, PathBuf, String)> {
         let surfaces = &self.compiled.manifest.surfaces;
         let opened = surfaces
             .iter()
@@ -215,34 +242,118 @@ impl DeclaredExtension {
             .iter()
             .filter(|surface| surface.slot != uze_contract::Slot::View)
             .filter_map(|surface| Some((surface, self.in_front.clone()?)));
-        let mut shown: Vec<(String, PathBuf)> = Vec::new();
+        let mut shown: Vec<(String, PathBuf, String)> = Vec::new();
         for (surface, checkout) in opened.chain(in_front) {
-            if !shown.iter().any(|(source, _)| *source == surface.source) {
-                shown.push((surface.source.clone(), checkout));
+            if !shown.iter().any(|(source, ..)| *source == surface.source) {
+                shown.push((surface.source.clone(), checkout, surface.id.clone()));
             }
         }
         shown
     }
 
-    /// The input `source` is asked with: what it declares, as written.
-    fn input_of(&self, source: &str) -> serde_json::Value {
-        let declared = self.compiled.manifest.source(source);
+    /// The input `source` is asked with on `surface`: what it declares,
+    /// each `{field}` resolved as a view's text is (D23), against the item
+    /// selected there, `ui.*` and `context.*`. A lone reference keeps its
+    /// type; one to nothing is `null`.
+    fn input_of(&self, source: &str, surface: &str) -> serde_json::Value {
+        let Some(declared) = self.compiled.manifest.source(source) else {
+            return serde_json::Value::Object(serde_json::Map::new());
+        };
+        let item = action::template_scope(&self.selected_item(surface));
         serde_json::Value::Object(
             declared
-                .map(|declared| {
-                    declared
-                        .input
-                        .iter()
-                        .map(|(name, text)| (name.clone(), serde_json::Value::String(text.clone())))
-                        .collect()
+                .input
+                .iter()
+                .map(|(name, template)| {
+                    let value = self.bind_template(surface, template, &item);
+                    (name.clone(), value)
                 })
-                .unwrap_or_default(),
+                .collect(),
         )
+    }
+
+    /// `template` bound against `scope` as an item, with `surface`'s UI
+    /// state and lookups. Text that is not a template is itself.
+    fn bind_template(
+        &self,
+        surface: &str,
+        template: &str,
+        scope: &serde_json::Value,
+    ) -> serde_json::Value {
+        let Ok(parts) = uze_contract::binding::parse_text(template) else {
+            return serde_json::Value::String(template.to_owned());
+        };
+        let binding = uze_contract::binding::binding_of(parts);
+        let view = self.declaration(surface).map(|(_, view)| view);
+        let ui = view
+            .map(|view| bind::effective_ui(view, self.ui.get(surface)))
+            .unwrap_or_default();
+        let context = serde_json::json!({
+            "checkout": self.checkout_text(surface),
+            "slot": self
+                .compiled
+                .manifest
+                .surface(surface)
+                .map(|decl| decl.slot.name()),
+            "locale": self.locale,
+        });
+        let env = value::Env {
+            ui: &ui,
+            context: &context,
+            lookups: view.map_or(&[], |view| view.lookups.as_slice()),
+            locale: &self.locale,
+        };
+        env.bind(&[scope], &binding)
+            .map(std::borrow::Cow::into_owned)
+            .unwrap_or(serde_json::Value::Null)
+    }
+
+    /// `template` resolved to text against `item`.
+    fn resolve_text(&self, surface: &str, template: &str, item: &serde_json::Value) -> String {
+        let scope = action::template_scope(item);
+        value::scalar_text(&self.bind_template(surface, template, &scope))
+    }
+
+    fn checkout_text(&self, surface: &str) -> Option<String> {
+        self.opened
+            .get(surface)
+            .or(self.in_front.as_ref())
+            .map(|root| root.display().to_string())
+    }
+
+    /// The item of the row selected in `surface`'s first list, at its
+    /// last build; `null` when nothing is selected.
+    fn selected_item(&self, surface: &str) -> serde_json::Value {
+        let space = self.last_space(surface);
+        let first = self.first_act(surface, space, |act| matches!(act, Act::List { .. }));
+        match first {
+            Some(Act::List {
+                selected: Some(row),
+                items,
+                ..
+            }) => items.get(row).cloned().unwrap_or_default(),
+            _ => serde_json::Value::Null,
+        }
+    }
+
+    /// What a surface is called where it is named.
+    fn surface_title(&self, surface: &str) -> String {
+        match self.compiled.manifest.surface(surface) {
+            Some(decl) => self.title(decl),
+            None => Clean::label(surface).into_string(),
+        }
     }
 
     /// The job asking `source` about `checkout`, numbered so its answer is
     /// taken only while it is the latest.
-    fn ask(&mut self, source: String, checkout: PathBuf, input: serde_json::Value) -> Job {
+    fn ask(
+        &mut self,
+        source: String,
+        checkout: PathBuf,
+        input: serde_json::Value,
+        asking: Asking,
+        by_answer: bool,
+    ) -> Job {
         self.questions += 1;
         let number = self.questions;
         self.asked.insert(
@@ -251,12 +362,13 @@ impl DeclaredExtension {
                 checkout: checkout.clone(),
                 input: input.clone(),
                 number,
+                by_answer,
             },
         );
         let question = Question {
             identity: self.compiled.identity.clone(),
             declaration: source.clone(),
-            asking: uze_contract::Asking::Source,
+            asking,
             input,
             checkout: Some(checkout),
         };
@@ -290,6 +402,17 @@ impl DeclaredExtension {
         self.ui.get(surface)
     }
 
+    /// The surfaces drawn from `source`.
+    fn surfaces_showing(&self, source: &str) -> Vec<String> {
+        self.compiled
+            .manifest
+            .surfaces
+            .iter()
+            .filter(|surface| surface.source == source)
+            .map(|surface| surface.id.clone())
+            .collect()
+    }
+
     /// Lets go of where the viewer was on `surface`, as on a surface never
     /// opened: what a host hands a drawer arriving in a space it was never
     /// opened in, since one engine answers for every space.
@@ -307,19 +430,28 @@ impl DeclaredExtension {
     }
 
     /// The declared `action` asked for by a key or the index while
-    /// `surface` is in front, on no item. Recorded, as a button is, until
-    /// actions run; one the manifest does not offer on `surface` is
-    /// nothing.
+    /// `surface` is in front, on the item selected there. One the manifest
+    /// does not offer on `surface` is nothing, and nothing runs while a
+    /// question stands.
     pub fn press(&mut self, surface: &str, action: &str) -> Outcome {
         let offered = self
             .compiled
             .manifest
             .action(action)
             .is_some_and(|declared| declared.on == surface);
-        if !offered {
+        if !offered || self.pending.is_some() {
             return Outcome::Stay;
         }
-        self.record(surface, action.to_owned(), serde_json::Value::Null)
+        let item = self.selected_item(surface);
+        self.act_on(surface, action, item)
+    }
+
+    /// The question standing on `surface`, when one does.
+    pub fn asking(&self, surface: &str) -> Option<&crate::view::Confirm> {
+        self.pending
+            .as_ref()
+            .filter(|pending| pending.surface == surface)
+            .map(|pending| &pending.confirm)
     }
 
     /// How many times a surface was bound since this extension was made.
@@ -482,23 +614,13 @@ impl DeclaredExtension {
                 self.set_ui(surface, key, (!on).to_string());
                 Outcome::Stay
             }
-            (Act::Button { action, item }, NodeAct::Press) => self.record(surface, action, item),
+            (Act::Button { action, item }, NodeAct::Press) => self.act_on(surface, &action, item),
             (Act::List { key, rows, .. }, NodeAct::Row(row)) if row < rows => {
                 self.set_ui(surface, key, row.to_string());
                 Outcome::Stay
             }
             _ => Outcome::Stay,
         }
-    }
-
-    fn record(&mut self, surface: &str, action: String, item: serde_json::Value) -> Outcome {
-        let said = format!("{} recorded, not run", Clean::label(&action));
-        self.recorded.push(RecordedAction {
-            surface: surface.to_owned(),
-            action,
-            item,
-        });
-        Outcome::Notice(Span::new(said, Role::Muted))
     }
 
     /// The next (or previous) tab of the surface's first `Tabs`.
@@ -530,6 +652,7 @@ impl DeclaredExtension {
             key,
             rows,
             selected,
+            ..
         }) = first
         else {
             return;
@@ -586,8 +709,8 @@ impl Extension for DeclaredExtension {
                 root,
             },
             footer: vec![Command::Close],
-            notice: None,
-            confirm: None,
+            notice: self.notices.get(surface).cloned(),
+            confirm: self.asking(surface).cloned(),
             modes: Vec::new(),
             subjects: Vec::new(),
             layout: Layout::default(),
@@ -603,7 +726,7 @@ impl Extension for DeclaredExtension {
         let root = self.with_built(surface, Size::default(), |built| built.root.clone())?;
         Some(Section {
             title: self.title(decl),
-            caption: Span::default(),
+            caption: self.notices.get(surface).cloned().unwrap_or_default(),
             collapsed,
             scroll: 0,
             rows: Vec::new(),
@@ -613,6 +736,9 @@ impl Extension for DeclaredExtension {
     }
 
     fn command(&mut self, surface: &str, command: Command, space: Size) -> Outcome {
+        if let Some(outcome) = self.command_while_asking(surface, &command) {
+            return outcome;
+        }
         let space = self.space_for(surface, space);
         match command {
             Command::Close => return Outcome::Close,
@@ -626,6 +752,9 @@ impl Extension for DeclaredExtension {
     }
 
     fn hit(&mut self, surface: &str, hit: ViewHit, space: Size) -> Outcome {
+        if let Some(outcome) = self.hit_while_asking(surface, &hit) {
+            return outcome;
+        }
         let space = self.space_for(surface, space);
         match hit {
             ViewHit::Close => Outcome::Close,
@@ -671,47 +800,84 @@ impl Extension for DeclaredExtension {
             .insert(surface.to_owned(), checkout.root.clone());
     }
 
+    /// A question standing on it goes unanswered, so nothing runs.
     fn close(&mut self, surface: &str) {
         self.opened.remove(surface);
+        self.pending.take_if(|pending| pending.surface == surface);
+        self.notices.remove(surface);
     }
 
     fn focus(&mut self, checkout: Option<&Checkout>) {
         self.in_front = checkout.map(|checkout| checkout.root.clone());
     }
 
-    /// A question for each source a surface shows whose latest question
-    /// was about another checkout or input, or that was never asked.
+    /// The actions' scripts pressed since, then a question for each source
+    /// a surface shows whose latest question was about another checkout or
+    /// input, that a refresh asked again, or that was never asked.
     fn jobs(&mut self) -> Vec<Job> {
-        let mut jobs = Vec::new();
-        for (source, checkout) in self.shown_sources() {
-            let input = self.input_of(&source);
+        let mut jobs = self.action_jobs();
+        for (source, checkout, surface) in self.shown_sources() {
+            let input = self.input_of(&source, &surface);
             let current = self
                 .asked
                 .get(&source)
                 .is_some_and(|asked| asked.checkout == checkout && asked.input == input);
-            if !current {
-                jobs.push(self.ask(source, checkout, input));
+            if current {
+                continue;
             }
+            let (asking, by_answer) = match self.stale.take(&source) {
+                Some(_) => (Asking::Refresh, self.refreshed_by_answer.remove(&source)),
+                None => (Asking::Source, false),
+            };
+            jobs.push(self.ask(source, checkout, input, asking, by_answer));
         }
         jobs
     }
 
     /// An answer to a question that is no longer the latest is dropped.
     /// A failure is drawn in place of the data, said as the host said it.
+    /// What the envelope says beside its data is applied with it.
     fn absorb(&mut self, answer: Opaque) -> Outcome {
-        let Some(answered) = answer.downcast::<SourceAnswer>() else {
+        let answer = match answer.0.downcast::<ActionAnswer>() {
+            Ok(answered) => return self.absorb_action(*answered),
+            Err(other) => other,
+        };
+        let Ok(answered) = answer.downcast::<SourceAnswer>() else {
             return Outcome::Stay;
         };
-        let latest = self.asked.get(&answered.source).map(|asked| asked.number);
-        if latest != Some(answered.number) {
+        let Some(asked) = self.asked.get(&answered.source) else {
+            return Outcome::Stay;
+        };
+        if asked.number != answered.number {
             return Outcome::Stay;
         }
+        let by_answer = asked.by_answer;
+        let source = answered.source;
         match answered.answer {
-            Answer::Answered { envelope, .. } => self.set_data(answered.source, Ok(envelope.data)),
-            Answer::Failed { reason, .. } => self.set_data(answered.source, Err(reason)),
-            Answer::Withheld { reason } => self.withhold(answered.source, reason),
+            Answer::Answered { envelope, .. } => {
+                self.set_data(source.clone(), Ok(envelope.data.clone()));
+                let surfaces = self.surfaces_showing(&source);
+                for surface in &surfaces {
+                    self.notices.remove(surface);
+                }
+                let mut asks = envelope.clone();
+                if by_answer {
+                    asks.refresh.clear();
+                }
+                for refreshed in &asks.refresh {
+                    self.refreshed_by_answer.insert(refreshed.clone());
+                }
+                self.apply(&asks, &surfaces, Some(&source))
+            }
+            Answer::Failed { reason, .. } => {
+                self.set_data(source, Err(reason));
+                Outcome::Stay
+            }
+            Answer::Withheld { reason } => {
+                self.withhold(source, reason);
+                Outcome::Stay
+            }
         }
-        Outcome::Stay
     }
 
     fn place(&self, surface: &str) -> Option<Opaque> {
