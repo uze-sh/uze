@@ -12,6 +12,28 @@ presentation engine share one definition of an extension without either
 reaching the other (`openspec/changes/archive/2026-10-24-extension-view-engine`). Nothing else
 about the decision changed.
 
+Amended (extension-manifest-and-scripts): the loading mechanism is chosen.
+An extension's logic is a Rhai script run by `uze-script`, a crate
+depending on `uze-contract` and `uze-platform` only, whose engine is built
+raw and reaches only the host functions the extension's grants register
+(`read:checkout` registers `read_checkout` and `list_checkout`, beneath the
+checkout and following no link). A program (argv) is not run yet: when it
+arrives (change 5 of `add-extension-platform`) it is run by the OS-confined
+runner where the platform confines it, and consent says where it does not.
+Dynamic libraries and native resident interpreters stay ruled out. The
+"second concrete use case" is the gallery of `add-extension-platform` D20.
+Extension state (today the grants record, `state/extensions.json`, named in
+`UzeHome`; later the store and the preferences) lives under `UzeHome` and is
+written by `uze-application` on the extension's behalf: an extension still
+touches none of UZE's state directly. The declared engine asks the host by
+declaration id, never by argv or script text:
+`Host::answer(Question { identity, declaration, asking, input, checkout })`,
+which `ExtensionRunner` answers from the compile whose digest the operator
+consented to, after judging consent, enabling in the project and the
+checkout. Trust (may these bytes be installed) is still never persisted;
+consent to run an extension's code is a different question, answered per
+grant set, and a later update that widens the set is held until asked again.
+
 ## Context
 
 UZE already has a trust boundary. `trust.rs` gates one question — may

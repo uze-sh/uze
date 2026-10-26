@@ -31,6 +31,14 @@ a harness reads (ADR-041).
 - `Host` grants every capability, including the five that write
   (`write_file`, `delete_file`, `delete_dir`, `rename_path`,
   `restore_to_head`), whose only caller is `code/request.rs`.
+- A declared extension's logic is a Rhai script in `uze-script`, the only
+  crate that names `rhai`; `uze-extensions` and `src/ui` never do. The
+  declared engine asks the host for an answer by declaration id
+  (`Host::answer`, called only from `declared/`), never with argv or script
+  text: what runs is what the operator consented to.
+- An extension's actions reach the keyboard through `Action::Extension` and
+  a table of that extension's own, resolved after the host's; nothing in
+  `uze-extensions` names a chord.
 - What more than one extension needs lives under `shared/`, and only once
   a second one actually needs it; `shared.rs` says why each module joined.
 - `code` is **one** extension covering the checkout's changes, files,

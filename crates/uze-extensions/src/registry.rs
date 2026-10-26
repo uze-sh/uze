@@ -32,9 +32,9 @@ pub struct ExtensionRegistry {
 impl ExtensionRegistry {
     /// Composition root: the one place that names the concrete extension
     /// modules. Unlike the integration registry there is deliberately no
-    /// `isolated` variant — extensions are pure compiled-in code that
-    /// never touches the machine, so there is no environment to root
-    /// under.
+    /// `isolated` variant: an extension reaches the machine only through
+    /// the [`Host`](crate::Host) it is handed, so there is no environment
+    /// of its own to root under.
     pub fn builtin() -> Self {
         Self {
             extensions: vec![code::CATALOG, architect::CATALOG, spec::CATALOG],

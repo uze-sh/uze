@@ -11,8 +11,11 @@
 //! diagrams in cells. [`code`] answers what it *is*, four ways: what
 //! changed in it, what it contains, its commit timeline, and a map of
 //! where its lines are. Another is a module with its own `CATALOG` entry, one
-//! registration in `ExtensionRegistry::builtin`, and one [`ExtensionHit`]
-//! variant per surface it draws, not a new crate.
+//! registration in `ExtensionRegistry::builtin`, and its surfaces tagged
+//! with the slot the host stands them in ([`ExtensionHit`]), not a new
+//! crate. An extension a plugin declares is none of these: [`declared`]
+//! compiles its manifest into the same contract, and its logic answers
+//! through [`Host::answer`].
 //!
 //! # Where a file goes
 //!
@@ -30,7 +33,8 @@
 //! Everything outside the extension's own process memory — running Git,
 //! reading a file, knowing where `$HOME` is — arrives through [`Host`].
 //! The extension names what it needs; the host decides whether to oblige.
-//! Today it always does, in this process, so nothing observable changes.
+//! A built-in is always obliged, in this process; a declared extension's
+//! question is answered only within what the operator consented to.
 //!
 //! What changes is that an extension is now a pure function of what it is
 //! handed. That is what makes the trust question answerable later: code
