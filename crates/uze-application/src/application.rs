@@ -67,9 +67,10 @@ mod theme;
 pub use agent_context::{AgentContextStatus, ResourceDelivery, UndeliveredReason};
 pub use extensions::{
     Asker, CheckedExtension, Consented, DeclaredExtensionSummary, ExtensionCheckout,
-    ExtensionConsent, ExtensionLoad, ExtensionRunner, ExtensionStanding, ExtensionState,
-    FIXTURE_LIMIT, InstalledExtension, NotACheckout, Overlay as ExtensionOverlay, SourceData,
-    Switched, WATCH_DEPTH, WATCH_ENTRIES, consent_key, extension_stamp, paths_digest,
+    ExtensionCondition, ExtensionConsent, ExtensionLoad, ExtensionReport, ExtensionRunner,
+    ExtensionStanding, ExtensionState, FIXTURE_LIMIT, InstalledExtension, NotACheckout,
+    Overlay as ExtensionOverlay, SourceData, Switched, WATCH_DEPTH, WATCH_ENTRIES, consent_key,
+    extension_stamp, paths_digest,
 };
 pub use profile::{HarnessPreview, ProfileApplyResult, ProfilePreview, ProfileSummary};
 pub use read_models::*;

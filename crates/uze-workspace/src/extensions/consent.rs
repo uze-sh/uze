@@ -34,6 +34,10 @@ pub struct Consent {
     pub accepted_digest: String,
     /// When that digest was accepted, in seconds since the epoch.
     pub accepted_at: u64,
+    /// When an update that wanted no new grant was last applied, in
+    /// seconds since the epoch; absent once the operator answers again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<u64>,
     /// The projects it runs in, each by its canonical root, as a
     /// project's approved commands name it (ADR-055).
     pub enabled_in: BTreeSet<PathBuf>,
@@ -122,6 +126,7 @@ pub fn accept(
         consent.accepted_grants = grants.clone();
         consent.accepted_digest = digest.to_owned();
         consent.accepted_at = now;
+        consent.updated_at = None;
         Ok(consent.clone())
     })
 }
@@ -148,6 +153,7 @@ pub fn apply_update(
         consent.accepted_grants = grants.clone();
         consent.accepted_digest = digest.to_owned();
         consent.accepted_at = now;
+        consent.updated_at = Some(now);
         Ok(Some(consent.clone()))
     })
 }
@@ -184,20 +190,59 @@ pub fn disable(home: &UzeHome, key: &str, project: &Path) -> Result<bool> {
 /// leaves the machine, and names the keys forgotten.
 pub fn forget_plugin(home: &UzeHome, plugin: &str, marketplace: &str) -> Result<Vec<String>> {
     let prefix = identity_key(plugin, marketplace, "");
-    if !consents(home).keys().any(|key| key.starts_with(&prefix)) {
+    let declined_any = uze_document::read::<ExtensionsRecord>(&home.extensions_record_path())
+        .ok()
+        .and_then(uze_document::Carried::record)
+        .is_some_and(|record| {
+            record
+                .offers_declined
+                .keys()
+                .any(|key| key.starts_with(&prefix))
+        });
+    if !declined_any && !consents(home).keys().any(|key| key.starts_with(&prefix)) {
         return Ok(Vec::new());
     }
-    rewrite(home, |extensions| {
-        let forgotten: Vec<String> = extensions
+    rewrite_record(home, |record| {
+        let forgotten: Vec<String> = record
+            .extensions
             .keys()
             .filter(|key| key.starts_with(&prefix))
             .cloned()
             .collect();
         for key in &forgotten {
-            extensions.remove(key);
+            record.extensions.remove(key);
         }
+        record
+            .offers_declined
+            .retain(|key, _| !key.starts_with(&prefix));
         Ok(forgotten)
     })
+}
+
+/// Records that the operator put away the offer to enable `key` in the
+/// project rooted at `project`, and says whether it was not already.
+pub fn decline_offer(home: &UzeHome, key: &str, project: &Path) -> Result<bool> {
+    let project = canonical(project);
+    if offer_declined(home, key, &project) {
+        return Ok(false);
+    }
+    rewrite_record(home, |record| {
+        Ok(record
+            .offers_declined
+            .entry(key.to_owned())
+            .or_default()
+            .insert(project))
+    })
+}
+
+/// Whether the operator put away the offer to enable `key` in `project`.
+/// Fails open to "no": an unreadable record only makes the offer again.
+pub fn offer_declined(home: &UzeHome, key: &str, project: &Path) -> bool {
+    uze_document::read::<ExtensionsRecord>(&home.extensions_record_path())
+        .ok()
+        .and_then(uze_document::Carried::record)
+        .and_then(|mut record| record.offers_declined.remove(key))
+        .is_some_and(|projects| projects.contains(&canonical(project)))
 }
 
 /// The record as `state/extensions.json` holds it.
@@ -205,6 +250,12 @@ pub fn forget_plugin(home: &UzeHome, plugin: &str, marketplace: &str) -> Result<
 struct ExtensionsRecord {
     schema_version: u32,
     extensions: BTreeMap<String, Consent>,
+    /// The projects where the operator put away the workspace's offer to
+    /// enable an extension, by identity key: an answer too, so the offer
+    /// is not made again on every opening. Kept apart from the consents
+    /// because declining accepts nothing.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    offers_declined: BTreeMap<String, BTreeSet<PathBuf>>,
 }
 
 impl Default for ExtensionsRecord {
@@ -212,6 +263,7 @@ impl Default for ExtensionsRecord {
         Self {
             schema_version: <Self as uze_document::Shaped>::SHAPE,
             extensions: BTreeMap::new(),
+            offers_declined: BTreeMap::new(),
         }
     }
 }
@@ -230,6 +282,13 @@ fn rewrite<T>(
     home: &UzeHome,
     change: impl FnOnce(&mut BTreeMap<String, Consent>) -> Result<T>,
 ) -> Result<T> {
+    rewrite_record(home, |record| change(&mut record.extensions))
+}
+
+fn rewrite_record<T>(
+    home: &UzeHome,
+    change: impl FnOnce(&mut ExtensionsRecord) -> Result<T>,
+) -> Result<T> {
     let _held =
         crate::file_lock::Held::acquire(&home.extensions_record_lock_path(), LOCK_PATIENCE)?;
     let path = home.extensions_record_path();
@@ -245,7 +304,7 @@ fn rewrite<T>(
         }
         Err(reason) => return Err(reason.into()),
     };
-    let answer = change(&mut record.extensions)?;
+    let answer = change(&mut record)?;
     record.schema_version = <ExtensionsRecord as uze_document::Shaped>::SHAPE;
     write_atomic(
         &path,
@@ -463,5 +522,37 @@ mod tests {
             std::fs::read(home.extensions_record_path()).unwrap(),
             newer.to_vec()
         );
+    }
+
+    #[test]
+    fn an_applied_update_carries_its_date_until_the_operator_answers_again() {
+        let (home, _) = home("consent-updated-at");
+        accept(&home, BAND, &grants(&["read:checkout"]), "sha256:a", 1).unwrap();
+        assert_eq!(consent(&home, BAND).unwrap().updated_at, None);
+
+        let applied = apply_update(&home, BAND, &grants(&["read:checkout"]), "sha256:b", 9)
+            .unwrap()
+            .unwrap();
+        assert_eq!(applied.updated_at, Some(9));
+
+        accept(&home, BAND, &grants(&["read:checkout"]), "sha256:b", 12).unwrap();
+        assert_eq!(consent(&home, BAND).unwrap().updated_at, None);
+    }
+
+    #[test]
+    fn a_declined_offer_is_remembered_per_project_and_accepts_nothing() {
+        let (home, project) = home("consent-declined-offer");
+        let other = project.parent().unwrap().join("other");
+        std::fs::create_dir_all(&other).unwrap();
+
+        assert!(!offer_declined(&home, BAND, &project));
+        assert!(decline_offer(&home, BAND, &project).unwrap());
+        assert!(!decline_offer(&home, BAND, &project).unwrap(), "already");
+        assert!(offer_declined(&home, BAND, &project));
+        assert!(!offer_declined(&home, BAND, &other));
+        assert_eq!(consent(&home, BAND), None, "declining is no consent");
+
+        forget_plugin(&home, "gsd", "acme").unwrap();
+        assert!(!offer_declined(&home, BAND, &project));
     }
 }

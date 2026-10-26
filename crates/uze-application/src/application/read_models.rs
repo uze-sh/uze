@@ -38,6 +38,27 @@ impl Plugins<'_> {
         self.inspect_on(id, None)
     }
 
+    /// [`inspect_on`](Self::inspect_on), with the declared extensions the
+    /// plugin carries judged for the project rooted at `project`, or for
+    /// the machine with `None`.
+    #[tracing::instrument(name = "plugins.inspect_in", skip_all, fields(id = %id), err)]
+    pub fn inspect_in(
+        &self,
+        id: &str,
+        harness: Option<&str>,
+        project: Option<&std::path::Path>,
+    ) -> Result<PluginInspection> {
+        let mut inspection = self.inspect_on(id, harness)?;
+        inspection.extensions = self
+            .0
+            .extensions()
+            .reports(project)
+            .into_iter()
+            .filter(|report| report.plugin_id() == inspection.plugin.id)
+            .collect();
+        Ok(inspection)
+    }
+
     /// [`inspect`](Self::inspect) narrowed to one harness, named any way
     /// [`UzeApplication::integration_named`] accepts. Attaches nothing and
     /// starts no harness: the plans are computed from the Store and the
@@ -93,6 +114,7 @@ impl Plugins<'_> {
             managed_state: managed_state(&reconciliation),
             reconciliation,
             held_back: super::doctor::held_back_notes(self.0, Some(package.id.as_str())),
+            extensions: Vec::new(),
         })
     }
 }
@@ -432,6 +454,11 @@ pub struct PluginInspection {
     pub reconciliation: ReconciliationReport,
     /// See [`StatusReport::held_back`]; this package's alone.
     pub held_back: Vec<HeldBackNote>,
+    /// The declared extensions this plugin carries, and where each stands:
+    /// on the machine, or in the project [`Plugins::inspect_in`] was asked
+    /// about.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<super::ExtensionReport>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -1102,6 +1129,10 @@ pub struct ProjectStatus {
     /// approves them (ADR-055).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commands_awaiting_approval: Option<super::services::CommandsAwaitingApproval>,
+    /// Every declared extension installed plugins carry, and where each
+    /// stands in this project.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<super::ExtensionReport>,
 }
 
 /// One delivered capability a harness holds back until the person acts in
@@ -1122,6 +1153,10 @@ pub struct MachineStatusReport {
     pub packages: Vec<PluginSummary>,
     /// See [`StatusReport::held_back`].
     pub held_back: Vec<HeldBackNote>,
+    /// Every declared extension installed plugins carry, and where each
+    /// stands on this machine.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<super::ExtensionReport>,
 }
 
 /// Drift along the chain a project's environment passes through:

@@ -154,6 +154,71 @@ impl ExtensionRunner {
         self.run_script(asked, &files, script, &grants, &question.input)
     }
 
+    /// Runs the script that answers `source` of the extension in `dir`,
+    /// as `uze agent plugin check --run` does: the author's files as they
+    /// are on disk, asked with the input the source declares, over the
+    /// checkout `checkout` sits in. No consent is asked: a check runs what
+    /// the person running it is writing, and the engine still reaches only
+    /// what the manifest's grants register, beneath that checkout.
+    /// `None` when `source` is not answered by a script.
+    #[tracing::instrument(name = "extensions.rehearse", skip_all, fields(source))]
+    pub fn rehearse(
+        &self,
+        extensions: &Extensions<'_>,
+        dir: &Path,
+        identity: &Identity,
+        source: &str,
+        checkout: &Path,
+    ) -> Option<Answer> {
+        self.rehearse_over(dir, identity, source, checkout, |path| {
+            extensions.checkout(path)
+        })
+    }
+
+    /// [`Self::rehearse`], with the checkout resolved by `resolve`.
+    pub(crate) fn rehearse_over(
+        &self,
+        dir: &Path,
+        identity: &Identity,
+        source: &str,
+        checkout: &Path,
+        resolve: impl FnOnce(&Path) -> Result<ExtensionCheckout, NotACheckout>,
+    ) -> Option<Answer> {
+        let files = match Loaded::read(dir) {
+            Ok(files) => files,
+            Err(refusal) => return Some(Answer::withheld(refusal.to_string())),
+        };
+        let compiled =
+            match uze_core::capability::extension::compile_loaded(identity.clone(), &files) {
+                Ok(compiled) => compiled,
+                Err(diagnostics) => {
+                    let first = diagnostics
+                        .first()
+                        .map(ToString::to_string)
+                        .unwrap_or_default();
+                    return Some(Answer::withheld(format!("it does not compile: {first}")));
+                }
+            };
+        let declared = compiled.manifest.source(source)?;
+        let SourceKind::Script(file) = &declared.kind else {
+            return None;
+        };
+        let checkout = match resolve(checkout) {
+            Ok(checkout) => checkout,
+            Err(refused) => return Some(Answer::withheld(refused.reason())),
+        };
+        let input = serde_json::to_value(&declared.input).unwrap_or_default();
+        let grants: Grants = compiled.manifest.wants.iter().copied().collect();
+        let asked = Asked {
+            identity: identity.clone(),
+            source: declared.id.clone(),
+            checkout: checkout.root.clone(),
+            input: input_digest(&input),
+            files: files.digest().to_owned(),
+        };
+        Some(self.run_script(asked, &files, file, &grants, &input))
+    }
+
     fn run_script(
         &self,
         asked: Asked,
@@ -248,7 +313,7 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use std::fs;
 
     use super::*;
@@ -259,16 +324,16 @@ mod tests {
     /// working tree, and a checkout of a project whose state file its
     /// `state.rhai` counts the lines of, in a world whose temporary
     /// directory is elsewhere.
-    struct World {
+    pub(crate) struct World {
         scratch: PathBuf,
-        app: UzeApplication,
-        band: PathBuf,
-        checkout: PathBuf,
-        around: Surroundings,
+        pub(crate) app: UzeApplication,
+        pub(crate) band: PathBuf,
+        pub(crate) checkout: PathBuf,
+        pub(crate) around: Surroundings,
     }
 
     impl World {
-        fn new(label: &str) -> Self {
+        pub(crate) fn new(label: &str) -> Self {
             let scratch =
                 uze_platform::path::canonical(&uze_testkit::temp::scratch(label)).unwrap();
             let market = scratch.join("market");
@@ -308,7 +373,7 @@ mod tests {
             }
         }
 
-        fn band(&self) -> Identity {
+        pub(crate) fn band(&self) -> Identity {
             Identity {
                 marketplace: "studio".to_owned(),
                 plugin: "gsd".to_owned(),
@@ -332,7 +397,7 @@ mod tests {
             })
         }
 
-        fn enabled(&self) {
+        pub(crate) fn enabled(&self) {
             let extensions = self.app.extensions();
             extensions.consent(&self.band(), Asker::Operator).unwrap();
             extensions
@@ -613,5 +678,31 @@ mod tests {
             }
             other => panic!("not failed: {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_check_rehearses_a_script_without_consent_and_only_a_script() {
+        let world = World::new("runner-rehearse");
+        let runner = ExtensionRunner::new();
+        let rehearse = |source: &str, checkout: &Path| {
+            runner.rehearse_over(&world.band, &world.band(), source, checkout, |path| {
+                extension_checkout(path, &world.around)
+            })
+        };
+        assert_eq!(
+            data(rehearse("state", &world.checkout).unwrap()),
+            serde_json::json!({ "lines": 3 }),
+            "nobody consented, and the check still runs it"
+        );
+        assert!(
+            rehearse("milestone", &world.checkout).is_none(),
+            "a fixture is no run"
+        );
+        assert!(rehearse("nothing", &world.checkout).is_none());
+        fs::create_dir_all(world.scratch.join("tmp")).unwrap();
+        assert!(
+            withheld(rehearse("state", &world.scratch.join("tmp")).unwrap())
+                .contains("not inside a Git checkout")
+        );
     }
 }

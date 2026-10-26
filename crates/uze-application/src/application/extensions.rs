@@ -18,6 +18,7 @@ mod compiled;
 mod consent;
 mod installed;
 mod reach;
+mod report;
 mod runner;
 mod summary;
 mod watch;
@@ -30,6 +31,7 @@ pub use consent::{
 };
 pub use installed::InstalledExtension;
 use reach::CheckoutReach;
+pub use report::{ExtensionCondition, ExtensionReport};
 pub use runner::ExtensionRunner;
 pub use summary::DeclaredExtensionSummary;
 pub use watch::{WATCH_DEPTH, WATCH_ENTRIES, paths_digest};

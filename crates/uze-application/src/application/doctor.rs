@@ -339,6 +339,7 @@ impl Health<'_> {
         Ok(MachineStatusReport {
             packages,
             held_back: held_back_notes(self.0, None),
+            extensions: self.0.extensions().reports(None),
         })
     }
 
@@ -353,6 +354,10 @@ impl Health<'_> {
             steps_not_spelled_here: workspace.steps_not_spelled_here(project_root),
             steps_only_in_sh: workspace.steps_only_in_sh(project_root),
             commands_awaiting_approval: workspace.commands_awaiting_approval(&report.root),
+            extensions: self
+                .0
+                .extensions()
+                .reports(Some(&crate::project_root_of(&report.root))),
             report,
         })
     }
