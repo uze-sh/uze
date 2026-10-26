@@ -1,7 +1,8 @@
 //! The workspace's extensions as this machine has them: which ones the
-//! operator switched off, and the declared ones installed plugins carry —
-//! where their files are and what they compile to. What an extension draws
-//! is the client's.
+//! operator switched off, the declared ones installed plugins carry —
+//! where their files are and what they compile to — what the operator
+//! accepted for each and where it is enabled. What an extension draws is
+//! the client's.
 
 use std::collections::BTreeSet;
 
@@ -13,11 +14,15 @@ use super::services::Extensions;
 
 mod checked;
 mod compiled;
+mod consent;
 mod installed;
 mod summary;
 
 pub use checked::{CheckedExtension, Overlay};
 pub use compiled::{ExtensionLoad, FIXTURE_LIMIT, SourceData, extension_stamp};
+pub use consent::{
+    Asker, Consented, ExtensionConsent, ExtensionStanding, ExtensionState, Switched, consent_key,
+};
 pub use installed::InstalledExtension;
 pub use summary::DeclaredExtensionSummary;
 

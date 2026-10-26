@@ -22,7 +22,7 @@ impl Plugins<'_> {
         // Removal changes vendor-visible state; cached inspection verdicts
         // must not outlive it (ADR 018).
         self.0.inspection_cache.invalidate();
-        self.detach_and_remove(id, false)
+        self.take_off(id, false, true, Consents::Forget)
     }
 
     /// Whether an installed package is protected from removal. Only the
@@ -41,17 +41,18 @@ impl Plugins<'_> {
         id: &str,
         allow_protected: bool,
     ) -> Result<RemovePluginReport> {
-        self.take_off(id, allow_protected, true)
+        self.take_off(id, allow_protected, true, Consents::Keep)
     }
 
-    /// `detach_and_remove` without rebuilding the derived views, for a
-    /// caller removing several packages that rebuilds them once at the end.
+    /// The plugin leaving the machine with its marketplace, without
+    /// rebuilding the derived views, for a caller removing several packages
+    /// that rebuilds them once at the end.
     pub(crate) fn detach_and_remove_unpublished(
         &self,
         id: &str,
         allow_protected: bool,
     ) -> Result<RemovePluginReport> {
-        self.take_off(id, allow_protected, false)
+        self.take_off(id, allow_protected, false, Consents::Forget)
     }
 
     fn take_off(
@@ -59,6 +60,7 @@ impl Plugins<'_> {
         id: &str,
         allow_protected: bool,
         republish: bool,
+        consents: Consents,
     ) -> Result<RemovePluginReport> {
         let package = match self.0.package_by_name(id) {
             Ok(package) => package,
@@ -98,6 +100,11 @@ impl Plugins<'_> {
         }
         self.0.store.remove_package(&package.id)?;
         state::forget_undelivered(&self.0.home, package.id.as_str(), None)?;
+        if consents == Consents::Forget {
+            self.0
+                .extensions()
+                .forget_plugin(package.id.plugin_name(), package.id.marketplace())?;
+        }
         // The package set changed, so every derived view is now stale. A
         // failure to rebuild one does not un-remove the package.
         if republish {
@@ -109,6 +116,17 @@ impl Plugins<'_> {
             already_missing_receipts,
         })
     }
+}
+
+/// What a removal does with the consents given to the plugin's
+/// extensions. An update takes the plugin off only to put it back, and its
+/// extensions keep what was accepted for them, judged again by the update
+/// rule; a plugin leaving the machine takes them along, so the same name
+/// installed again is consented to from nothing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Consents {
+    Keep,
+    Forget,
 }
 
 /// Whether `plugin`, offered by `marketplace`, belongs to the official set

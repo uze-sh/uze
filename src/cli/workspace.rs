@@ -16,12 +16,7 @@ pub(crate) fn allow_project_commands(app: &UzeApplication, path: &Path) -> Resul
         ));
         return Ok(());
     };
-    // Either stamp is enough to refuse: the key proves which agent is asking,
-    // but any process carrying an agent's identity is one a project launched.
-    let stamped = |name: &str| std::env::var_os(name).is_some_and(|value| !value.is_empty());
-    if stamped(uze_terminal::launch::AGENT_IDENTITY_VARIABLE)
-        || stamped(uze_terminal::launch::AGENT_KEY_VARIABLE)
-    {
+    if asker() == uze_application::Asker::AgentPane {
         return Err(refusal(
             "an agent cannot approve the commands its project runs; the operator approves \
              them, in the workspace or with `uze workspace allow` from their own terminal",
@@ -50,6 +45,23 @@ pub(crate) fn allow_project_commands(app: &UzeApplication, path: &Path) -> Resul
         progress::path(&awaiting.project)
     ));
     Ok(())
+}
+
+/// Who is asking for a person's answer, as this process's environment
+/// says: an agent's pane when it carries the stamp of an agent UZE
+/// launched. Either stamp is enough to refuse: the key proves which agent
+/// is asking, but any process carrying an agent's identity is one a
+/// project launched. What a project's commands and an extension's consent
+/// are both refused on.
+pub(crate) fn asker() -> uze_application::Asker {
+    let stamped = |name: &str| std::env::var_os(name).is_some_and(|value| !value.is_empty());
+    if stamped(uze_terminal::launch::AGENT_IDENTITY_VARIABLE)
+        || stamped(uze_terminal::launch::AGENT_KEY_VARIABLE)
+    {
+        uze_application::Asker::AgentPane
+    } else {
+        uze_application::Asker::Operator
+    }
 }
 
 pub(crate) fn revoke_project_commands(app: &UzeApplication, path: &Path) -> Result<()> {

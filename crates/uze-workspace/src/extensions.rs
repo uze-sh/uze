@@ -10,8 +10,16 @@
 //!
 //! Machine-scoped, like the theme: which surfaces a person wants in their
 //! workspace is theirs, not the project's.
+//!
+//! A declared extension that runs code answers to more than this switch:
+//! [`consent`] holds what the operator accepted for it and where it is
+//! enabled. The switch stays authored text in `config.toml`, beside the
+//! record rather than absorbed by it, because a built-in's switch is a
+//! preference, not a consent.
 
 use std::collections::BTreeSet;
+
+pub mod consent;
 
 use crate::{Result, config, home::UzeHome};
 

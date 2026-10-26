@@ -201,6 +201,21 @@ impl UzeHome {
         self.state_dir().join("profiles.json")
     }
 
+    /// The operator's consent to each declared extension, by identity:
+    /// the grants accepted, the digest of the code they were accepted for
+    /// and the projects it is enabled in. A record: only a person's answer
+    /// says it, and nothing on the machine derives it again.
+    pub fn extensions_record_path(&self) -> PathBuf {
+        self.state_dir().join("extensions.json")
+    }
+
+    /// The guard every read-modify-write of the extensions record takes:
+    /// the workspace and a terminal both answer for it. A lock, not a
+    /// record.
+    pub fn extensions_record_lock_path(&self) -> PathBuf {
+        self.state_dir().join("extensions.lock")
+    }
+
     /// What the TUI was left looking like, in both of its modes (see
     /// `client_layout`).
     pub fn client_layout_path(&self) -> PathBuf {

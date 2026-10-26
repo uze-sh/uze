@@ -2,6 +2,7 @@
 //! application layer, independent of any specific harness.
 
 mod declared_extension;
+mod extension_consent;
 mod install;
 mod manifest_and_lock;
 mod subdirectory_marketplace;
