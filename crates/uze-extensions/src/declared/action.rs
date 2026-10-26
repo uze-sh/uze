@@ -401,7 +401,7 @@ impl DeclaredExtension {
 
     /// Asks `sources` again, past any answer the host remembers, once a
     /// surface shows each. `from` is the source whose answer asked.
-    fn refresh(&mut self, sources: &[String], from: Option<&str>) {
+    pub(super) fn refresh(&mut self, sources: &[String], from: Option<&str>) {
         for source in sources {
             if Some(source.as_str()) == from || self.compiled.manifest.source(source).is_none() {
                 continue;

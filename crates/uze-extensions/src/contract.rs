@@ -9,6 +9,7 @@
 
 use std::any::Any;
 use std::path::PathBuf;
+use std::time::Instant;
 
 use crate::Host;
 use crate::view::{
@@ -95,6 +96,27 @@ pub struct Checkout {
     /// The branch the checkout delivers to, once the host has evaluated
     /// it.
     pub target: Option<String>,
+}
+
+/// Something that happens to a checkout: what an extension asks the host
+/// to watch, and what the host tells it happened.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CheckoutEvent {
+    pub checkout: PathBuf,
+    /// For `paths.changed`, the paths watched, or the ones that changed.
+    pub event: uze_contract::EventName,
+}
+
+/// What the host saw on one pass of its loop.
+#[derive(Clone, Copy, Debug)]
+pub struct Pass<'a> {
+    /// The host's clock, which every interval is counted on.
+    pub now: Instant,
+    /// The extension's surfaces in view: an open view in front, a section
+    /// unfolded in the sidebar, an open drawer.
+    pub visible: &'a [String],
+    /// What happened to the checkouts it watches since the last pass.
+    pub happened: &'a [CheckoutEvent],
 }
 
 /// Whether an extension's jobs may run at the same time.
@@ -235,6 +257,17 @@ pub trait Extension: Send {
     fn text(&self, _surface: &str, _lines: std::ops::Range<usize>) -> Vec<String> {
         Vec::new()
     }
+
+    /// What may happen to a checkout that the extension would be asked
+    /// again for: the host watches these and nothing else, so an event no
+    /// extension declared costs nothing.
+    fn watches(&self) -> Vec<CheckoutEvent> {
+        Vec::new()
+    }
+
+    /// One pass of the host's loop, told before [`Extension::jobs`]: the
+    /// clock, the surfaces in view, and what happened since.
+    fn pass(&mut self, _pass: &Pass<'_>) {}
 
     /// Work to hand the host now. Empty when there is none.
     fn jobs(&mut self) -> Vec<Job> {

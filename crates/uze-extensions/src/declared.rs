@@ -11,6 +11,7 @@
 //! - `value`: how a binding becomes a value (D23).
 //! - `trace`: the inspector's account of a build.
 //! - `time`: the instant an `Elapsed` counts from.
+//! - `events`: what asks a source again beside its surfaces.
 //!
 //! What a source answers arrives one way: the engine asks the host, through
 //! a [`Job`], to answer the source with its input about the checkout the
@@ -18,9 +19,14 @@
 //! latest question asked of that source. What an answer says beside its
 //! data is applied as it arrives: the sources it names are asked again,
 //! its notice is said on the surfaces showing it, its toast is the host's.
+//! A source is also asked again on its `every` while a surface showing it
+//! is in view, and for the events its `refresh-on` names, which the host
+//! watches because [`Extension::watches`] says so; an event while nothing
+//! showing the source is in view is remembered, and asked once one is.
 
 mod action;
 mod bind;
+mod events;
 mod fixture_check;
 mod time;
 mod trace;
@@ -30,10 +36,13 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
+use std::time::Instant;
 
 use uze_contract::{Answer, Asking, Clean, CompiledExtension, CompiledView, Question, SurfaceDecl};
 
-use crate::contract::{Checkout, Extension, Job, Opaque, Outcome, SurfaceInfo, SurfaceSlot};
+use crate::contract::{
+    Checkout, CheckoutEvent, Extension, Job, Opaque, Outcome, Pass, SurfaceInfo, SurfaceSlot,
+};
 use crate::view::{
     Command, Content, Layout, NodeAct, Role, ScrollDirection, ScrollTarget, Section, Size, Span,
     View, ViewHit,
@@ -42,6 +51,7 @@ pub use action::COPY_UNASKED_MAX;
 use action::{ActionAnswer, Pending, Queued};
 pub use bind::NODE_CAP;
 use bind::{Act, Built};
+pub use events::COALESCE;
 pub use fixture_check::{MissingField, TAB_COMBINATIONS_MAX, missing_fields};
 pub use trace::{Absence, DataState, Trace, TraceEntry, TraceNode};
 
@@ -92,6 +102,14 @@ pub struct DeclaredExtension {
     queued: Vec<Queued>,
     /// What the last answer said on each surface, by surface.
     notices: BTreeMap<String, Span>,
+    /// The host's clock at its last pass, which a question is stamped
+    /// with; `None` until a host counts time.
+    now: Option<Instant>,
+    /// Events gathered for their window to close.
+    window: events::Window,
+    /// Sources an event or their `every` asked again, asked once a surface
+    /// showing them is in view.
+    due: BTreeSet<String>,
     /// How many questions were asked, numbering each.
     questions: u64,
     /// `ui.<id>` values, by surface then id.
@@ -115,6 +133,8 @@ struct Asked {
     checkout: PathBuf,
     input: serde_json::Value,
     number: u64,
+    /// When it was asked, on the host's clock: what `every` counts from.
+    at: Option<Instant>,
     /// A refresh asked by another source's answer: its own answer asks
     /// nothing again, so two sources cannot keep asking each other.
     by_answer: bool,
@@ -172,6 +192,9 @@ impl DeclaredExtension {
             pending: None,
             queued: Vec::new(),
             notices: BTreeMap::new(),
+            now: None,
+            window: events::Window::default(),
+            due: BTreeSet::new(),
             questions: 0,
             ui: BTreeMap::new(),
             scroll: BTreeMap::new(),
@@ -362,6 +385,7 @@ impl DeclaredExtension {
                 checkout: checkout.clone(),
                 input: input.clone(),
                 number,
+                at: self.now,
                 by_answer,
             },
         );
@@ -391,6 +415,49 @@ impl DeclaredExtension {
                     },
                 })
             }),
+        }
+    }
+
+    /// The sources shown on a surface in `visible`.
+    fn sources_in_view(&self, visible: &[String]) -> BTreeSet<String> {
+        self.compiled
+            .manifest
+            .surfaces
+            .iter()
+            .filter(|surface| visible.contains(&surface.id))
+            .map(|surface| surface.source.clone())
+            .collect()
+    }
+
+    /// Whether `source`'s `every` has passed since it was last asked.
+    fn every_passed(&self, source: &str, now: Instant) -> bool {
+        let every = self
+            .compiled
+            .manifest
+            .source(source)
+            .and_then(|declared| declared.every);
+        let asked = self.asked.get(source).and_then(|asked| asked.at);
+        matches!((every, asked), (Some(every), Some(at)) if now.saturating_duration_since(at) >= every)
+    }
+
+    /// Gathers each shown source that `happened` is a reason for, on the
+    /// checkout it is shown on.
+    fn gather(&mut self, happened: &CheckoutEvent, now: Instant) {
+        for (source, checkout, _) in self.shown_sources() {
+            let reason = checkout == happened.checkout
+                && self
+                    .compiled
+                    .manifest
+                    .source(&source)
+                    .is_some_and(|declared| {
+                        declared
+                            .refresh_on
+                            .iter()
+                            .any(|event| events::is_reason(event, &happened.event))
+                    });
+            if reason {
+                self.window.add(source, now);
+            }
         }
     }
 
@@ -811,6 +878,52 @@ impl Extension for DeclaredExtension {
         self.in_front = checkout.map(|checkout| checkout.root.clone());
     }
 
+    /// Each checkout a source declaring `refresh-on` is shown on, with
+    /// what it declares.
+    fn watches(&self) -> Vec<CheckoutEvent> {
+        let watched = self
+            .shown_sources()
+            .into_iter()
+            .flat_map(|(source, checkout, _)| {
+                let declared = self.compiled.manifest.source(&source);
+                declared
+                    .into_iter()
+                    .flat_map(|declared| declared.refresh_on.iter().cloned())
+                    .map(move |event| (checkout.clone(), event))
+                    .collect::<Vec<_>>()
+            });
+        events::merged(watched)
+    }
+
+    /// Events are gathered for their window; what it gathered, and every
+    /// source in view whose `every` passed, is asked again past what the
+    /// host remembers, once a surface showing it is in view.
+    fn pass(&mut self, pass: &Pass<'_>) {
+        self.now = Some(pass.now);
+        for happened in pass.happened {
+            self.gather(happened, pass.now);
+        }
+        let gathered = self.window.take(pass.now);
+        self.due.extend(gathered);
+        let in_view = self.sources_in_view(pass.visible);
+        let every: Vec<String> = in_view
+            .iter()
+            .filter(|source| self.every_passed(source, pass.now))
+            .cloned()
+            .collect();
+        self.due.extend(every);
+        let asked: Vec<String> = self
+            .due
+            .iter()
+            .filter(|source| in_view.contains(*source))
+            .cloned()
+            .collect();
+        for source in &asked {
+            self.due.remove(source);
+        }
+        self.refresh(&asked, None);
+    }
+
     /// The actions' scripts pressed since, then a question for each source
     /// a surface shows whose latest question was about another checkout or
     /// input, that a refresh asked again, or that was never asked.
@@ -939,3 +1052,6 @@ mod source_tests;
 
 #[cfg(test)]
 mod action_tests;
+
+#[cfg(test)]
+mod event_tests;
