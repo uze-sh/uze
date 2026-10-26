@@ -340,45 +340,6 @@ impl Attach<'_> {
             _ if self.model.declared_open.is_some() && on_surface => {
                 self.slot_press(mouse.column, mouse.row);
             }
-            _ if self.model.code.is_some() && on_surface => {
-                let hit = self.model.hit_rect_at(mouse.column, mouse.row);
-                // Mirrors `WorkspaceHit::ResizeSidebar` below: arms
-                // dragging instead of reaching the extension, which only
-                // knows about `ExtensionHit`s that are its own — the
-                // resize handle's drag lifecycle belongs to this
-                // workspace client, not the extension.
-                let view_hit = match hit {
-                    Some((rect, WorkspaceHit::Extension(ExtensionHit::Code(hit)))) => {
-                        Some(self.finished(rect, hit, mouse.column))
-                    }
-                    _ => None,
-                };
-                // Three of the surface's gestures are the host's rather
-                // than the extension's, because all three are about
-                // geometry it never sees: the edge between the columns,
-                // and the content's scrollbar.
-                if view_hit == Some(ViewHit::GrabNavigatorEdge) {
-                    // Armed, not decided: which of the edge's two jobs
-                    // this is belongs to the first movement.
-                    self.model.code_edge_drag = Some(EdgeDrag::armed_at(mouse.column, mouse.row));
-                } else if view_hit == Some(ViewHit::DragContentScrollbar)
-                    && self.model.code_scrollbars.content_bar.is_some()
-                {
-                    self.model.dragging_code_content = true;
-                    self.scroll_code_content_to(mouse.row);
-                } else {
-                    let space = self.code_space();
-                    if let Some(outcome) = self
-                        .model
-                        .code
-                        .as_mut()
-                        .map(|view| code::handle_mouse(view, view_hit, space))
-                    {
-                        self.follow_code(outcome);
-                    }
-                }
-                self.model.dirty = true;
-            }
             _ => {
                 let Some((hit_rect, hit)) = self.model.hit_rect_at(mouse.column, mouse.row) else {
                     self.model.last_click = None;
@@ -797,21 +758,16 @@ impl Attach<'_> {
     pub(super) fn open_context_menu(&mut self, mouse: MouseEvent) -> Flow {
         // A row of the code surface asks the surface for its actions: the
         // menu is the extension's, and only the gesture is the host's.
-        if let Some(WorkspaceHit::Extension(ExtensionHit::Code(
-            ViewHit::SelectItem(row) | ViewHit::ToggleGroup(row),
-        ))) = self.model.hit_at(mouse.column, mouse.row)
+        if let Some(WorkspaceHit::Extension(ExtensionHit::Declared {
+            slot,
+            hit: ViewHit::SelectItem(row) | ViewHit::ToggleGroup(row),
+        })) = self.model.hit_at(mouse.column, mouse.row)
+            && self.model.declared_open == Some(slot)
+            && self.model.showing(code::CATALOG.id)
         {
             self.model.code_menu_at = Some(Rect::new(mouse.column, mouse.row, 1, 1));
             let space = self.code_space();
-            if let Some(outcome) = self
-                .model
-                .code
-                .as_mut()
-                .map(|view| code::handle_mouse(view, Some(ViewHit::OpenMenu(row)), space))
-            {
-                self.follow_code(outcome);
-            }
-            self.model.dirty = true;
+            self.model.hit_declared(slot, ViewHit::OpenMenu(row), space);
             return Flow::Continue;
         }
         match mouse {
@@ -958,18 +914,6 @@ impl Attach<'_> {
                 {
                     self.model.dirty = true;
                 }
-                let over_code = match hovered {
-                    Some(WorkspaceHit::Extension(ExtensionHit::Code(hit))) => Some(hit),
-                    _ => None,
-                };
-                if self
-                    .model
-                    .code
-                    .as_mut()
-                    .is_some_and(|view| code::handle_hover(view, over_code))
-                {
-                    self.model.dirty = true;
-                }
                 if self.model.hovered != hovered {
                     self.model.hovered = hovered;
                     self.model.hovered_since = self.model.tick;
@@ -1105,47 +1049,18 @@ impl Attach<'_> {
                     ),
                 };
                 match target {
+                    // The list is the host's to scroll (see
+                    // `WorkspaceModel::code_tree_scroll`).
                     Some(uze_extensions::view::ScrollTarget::Navigator) => {
                         self.model.code_tree_scroll =
                             self.model.code_tree_scroll.scrolled(direction);
                         self.model.dirty = true;
                     }
-                    Some(target) => self.model.scroll_declared(target, direction, space),
-                    None => {}
-                }
-            }
-            _ if self.model.code.is_some() && in_pane => {
-                let direction = if mouse.kind == MouseEventKind::ScrollUp {
-                    ScrollDirection::Up
-                } else {
-                    ScrollDirection::Down
-                };
-                let target = match on_content_scrollbar {
-                    true => Some(uze_extensions::view::ScrollTarget::Content),
-                    false => crate::ui::extension_view::scroll_target(
-                        layout.pane,
-                        self.model.code_tree_width,
-                        mouse.column,
-                        mouse.row,
-                    ),
-                };
-                match target {
-                    // The list is the host's to scroll (see
-                    // `WorkspaceModel::code_tree_scroll`); the diff is the
-                    // extension's own content.
-                    Some(uze_extensions::view::ScrollTarget::Navigator) => {
-                        self.model.code_tree_scroll =
-                            self.model.code_tree_scroll.scrolled(direction);
-                    }
                     Some(uze_extensions::view::ScrollTarget::Content) => {
-                        let at_end = self.model.code_scrollbars.content_at_end;
-                        if let Some(view) = self.model.code.as_mut() {
-                            code::handle_scroll(view, direction, at_end);
-                        }
+                        self.scroll_surface_content(direction);
                     }
                     None => {}
                 }
-                self.model.dirty = true;
             }
             _ if self.model.commit_detail.is_some() => {
                 if let Some(popup) = self.model.commit_detail.as_mut() {
@@ -1481,7 +1396,9 @@ impl Attach<'_> {
             // of its halves is showing, so pressing it puts the surface
             // away in one click. Unlit, it is the keys' door: it opens, or
             // switches from the other surface.
-            WorkspaceHit::OpenFiles if self.model.code.is_some() => self.model.close_code(),
+            WorkspaceHit::OpenFiles if self.model.showing(code::CATALOG.id) => {
+                self.model.close_declared();
+            }
             WorkspaceHit::OpenArchitect if self.model.showing(architect::CATALOG.id) => {
                 self.model.close_declared();
             }
@@ -1579,7 +1496,6 @@ impl Attach<'_> {
             // other two overlays; the sidebar section's are answered
             // here, since it is drawn as part of the sidebar rather than
             // over it.
-            WorkspaceHit::Extension(ExtensionHit::Code(_)) => {}
             // The spec section: its header is a handle on the timeline and
             // folds it, and a change opens the surface on that change.
             WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit })

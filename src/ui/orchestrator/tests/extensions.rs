@@ -25,7 +25,7 @@ fn coming_back_to_a_checkouts_code_returns_to_where_it_was_left() {
 
     let (mut model, first, second) = two_agents_with_shells();
     let answer_listing = |model: &mut WorkspaceModel, root: &str| {
-        let view = model.code.as_mut().expect("the surface is open");
+        let view = code_view_mut(model).expect("the surface is open");
         view.take_request();
         view.absorb(code::FileAnswer::Listed {
             chain: Vec::new(),
@@ -47,35 +47,35 @@ fn coming_back_to_a_checkouts_code_returns_to_where_it_was_left() {
         crate::ui::extension_view::content_space(Rect::new(0, 0, 120, 40), model.code_tree_width);
 
     select_tab(&mut model, first);
-    open_code(&mut model, uze_extensions::code::ContentMode::Contents);
+    open_code(&mut model, uze_extensions::code::FILES);
     answer_listing(&mut model, "/repo/.worktrees/a");
     // Walked away from the row the tree opened on, which is the part
     // that must survive the round trip.
     code::handle_command(
-        model.code.as_mut().expect("open"),
+        code_view_mut(&mut model).expect("open"),
         uze_extensions::view::Command::SelectNext,
         space,
     );
-    let walked_to = model.code.as_ref().expect("open").place();
+    let walked_to = code_view(&model).expect("open").place();
 
-    model.close_code();
-    assert!(model.code.is_none());
+    model.close_declared();
+    assert!(!model.showing(uze_extensions::code::CATALOG.id));
 
     // Another agent's checkout is a different place, not this one.
     select_tab(&mut model, second);
-    open_code(&mut model, uze_extensions::code::ContentMode::Contents);
+    open_code(&mut model, uze_extensions::code::FILES);
     answer_listing(&mut model, "/repo/.worktrees/b");
     assert_ne!(
-        model.code.as_ref().expect("open").place(),
+        code_view(&model).expect("open").place(),
         walked_to,
         "a checkout never visited opens on its own first row"
     );
-    model.close_code();
+    model.close_declared();
 
     select_tab(&mut model, first);
-    open_code(&mut model, uze_extensions::code::ContentMode::Contents);
+    open_code(&mut model, uze_extensions::code::FILES);
     assert_eq!(
-        model.code.as_ref().expect("open").place(),
+        code_view(&model).expect("open").place(),
         walked_to,
         "and the one left mid-walk is where it was left"
     );
@@ -142,35 +142,37 @@ fn coming_back_to_a_checkouts_architect_returns_to_the_diagram_it_was_left_on() 
 /// save and the re-read that follows it have an order.
 #[test]
 fn every_directory_a_resumed_tree_needs_is_asked_for_at_once() {
-    use std::sync::mpsc;
-
     use uze_extensions::code;
 
     let root = PathBuf::from("/repo/.worktrees/a");
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
-    model.remembered.code_places.insert(
-        root.clone(),
-        code::CodePlace::at(&root, &root.join("src/ui/widget/row.rs"), false),
+    model.remembered.declared.places.insert(
+        (
+            super::Owner::Builtin(code::CATALOG.id),
+            code::SURFACE.to_owned(),
+            root.clone(),
+        ),
+        uze_extensions::contract::Opaque::new(code::CodePlace::at(
+            &root,
+            &root.join("src/ui/widget/row.rs"),
+            false,
+        )),
     );
-    open_code(&mut model, uze_extensions::code::ContentMode::Contents);
+    open_code(&mut model, uze_extensions::code::FILES);
 
-    let (sender, _receiver) = mpsc::channel();
-    model.schedule_file_request(&sender);
-
-    let held = model.code_request_pending;
-    let waiting = model
-        .code
-        .as_ref()
+    let handed = code_engine(&mut model).jobs().len();
+    let waiting = code_view(&model)
         .expect("the surface is open")
-        .peek_request();
+        .peek_request()
+        .cloned();
     assert!(
         waiting.is_none(),
         "every directory went out together, and the read behind them with it: {waiting:?}"
     );
     assert!(
-        held,
-        "the read is what took the one-at-a-time chain, not the listings"
+        handed > 2,
+        "the directories on the way, and the read: {handed}"
     );
 }
 
@@ -180,16 +182,13 @@ fn every_directory_a_resumed_tree_needs_is_asked_for_at_once() {
 /// until it lands.
 #[test]
 fn a_checkout_measured_once_is_not_measured_again_on_the_way_back_in() {
-    use std::sync::mpsc;
-
     use uze_extensions::code;
-
-    use crate::ui::orchestrator::MeasureResolution;
+    use uze_extensions::contract::Opaque;
 
     let root = PathBuf::from("/repo/.worktrees/a");
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
-    open_code(&mut model, uze_extensions::code::ContentMode::Contents);
+    open_code(&mut model, uze_extensions::code::FILES);
 
     let measured = code::Measure {
         root: root.clone(),
@@ -200,28 +199,26 @@ fn a_checkout_measured_once_is_not_measured_again_on_the_way_back_in() {
             changed: false,
         }],
     };
-    model.absorb_measure(MeasureResolution {
+    code_engine(&mut model).absorb(Opaque::new(code::MeasureRead {
         root: root.clone(),
         measure: Some(measured),
-    });
-    assert!(model.code.as_ref().expect("open").has_map());
+    }));
+    assert!(code_view(&model).expect("open").has_map());
 
-    model.close_code();
-    open_code(&mut model, uze_extensions::code::ContentMode::Contents);
+    model.close_declared();
+    open_code(&mut model, uze_extensions::code::FILES);
     assert!(
-        model.code.as_ref().expect("open").has_map(),
+        code_view(&model).expect("open").has_map(),
         "the map is there the moment the surface is"
     );
 
-    model
-        .code
-        .as_mut()
+    // What opening asked for, out of the way.
+    code_engine(&mut model).jobs();
+    code_view_mut(&mut model)
         .expect("open")
         .show(uze_extensions::code::ContentMode::Map);
-    let (sender, _receiver) = mpsc::channel();
-    model.schedule_code_measure(&sender);
     assert!(
-        model.code_measure_asked.is_none(),
+        code_engine(&mut model).jobs().is_empty(),
         "and nothing was asked of the checkout again"
     );
 }
@@ -233,7 +230,7 @@ fn a_checkout_measured_once_is_not_measured_again_on_the_way_back_in() {
 /// groove drawn to be dragged did nothing.
 #[test]
 fn the_content_scrollbar_answers_in_the_panes_margin() {
-    use uze_extensions::{ExtensionHit, code, view::ViewHit};
+    use uze_extensions::{code, view::ViewHit};
 
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-content-groove"));
     let (mut model, first, _second) = two_agents_with_shells();
@@ -244,7 +241,7 @@ fn the_content_scrollbar_answers_in_the_panes_margin() {
         code::ContentMode::Contents,
     );
     view.take_request();
-    model.code = Some(view);
+    show_code(&mut model, view);
 
     let mut driven = driven(model, &home);
     driven.frame();
@@ -262,18 +259,10 @@ fn the_content_scrollbar_answers_in_the_panes_margin() {
         0,
         (
             track,
-            WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::DragContentScrollbar)),
+            code_hit(&driven.attach.model, ViewHit::DragContentScrollbar),
         ),
     );
-    let place = |driven: &Driven<'_>| {
-        driven
-            .attach
-            .model
-            .code
-            .as_ref()
-            .expect("still open")
-            .place()
-    };
+    let place = |driven: &Driven<'_>| code_view(&driven.attach.model).expect("still open").place();
     let top = place(&driven);
 
     driven.press(track.x, track.bottom() - 1);
@@ -323,7 +312,7 @@ fn the_code_halves_take_the_bars_leading_slot() {
             changed: false,
         }],
     });
-    model.code = Some(view);
+    show_code(&mut model, view);
 
     let rows = frame_rows(&mut model);
     let layout = full_frame(&mut model);
@@ -350,7 +339,10 @@ fn the_code_halves_take_the_bars_leading_slot() {
     let control = model.hits.iter().find(|(_, hit)| {
         matches!(
             hit,
-            WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::SelectSubject(_)))
+            WorkspaceHit::Extension(ExtensionHit::Declared {
+                hit: ViewHit::SelectSubject(_),
+                ..
+            })
         )
     });
     let (rect, _) = control.expect("the control can be pointed at");
@@ -633,13 +625,13 @@ fn coming_back_to_a_checkouts_spec_returns_to_the_document_it_was_left_on() {
 /// a tile nobody could reach at all.
 #[test]
 fn a_click_on_the_map_resolves_to_the_column_under_the_pointer() {
-    use uze_extensions::{ExtensionHit, code, view::ViewHit};
+    use uze_extensions::{code, view::ViewHit};
 
     let root = PathBuf::from("/repo/.worktrees/a");
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
-    open_code(&mut model, uze_extensions::code::ContentMode::Contents);
-    let view = model.code.as_mut().expect("the surface is open");
+    open_code(&mut model, uze_extensions::code::FILES);
+    let view = code_view_mut(&mut model).expect("the surface is open");
     view.absorb_measure(code::Measure {
         root,
         files: (0..6)
@@ -662,9 +654,10 @@ fn a_click_on_the_map_resolves_to_the_column_under_the_pointer() {
         .hits
         .iter()
         .find_map(|(rect, hit)| match hit {
-            WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::PlaceCaret { line, cell })) => {
-                Some((*rect, *line, *cell))
-            }
+            WorkspaceHit::Extension(ExtensionHit::Declared {
+                hit: ViewHit::PlaceCaret { line, cell },
+                ..
+            }) => Some((*rect, *line, *cell)),
             _ => None,
         })
         .expect("the map's rows are clickable");
@@ -718,7 +711,7 @@ fn a_click_inside_the_explorer_reaches_the_extension() {
             },
         ]),
     });
-    model.code = Some(view);
+    show_code(&mut model, view);
     full_frame(&mut model);
 
     let row = model
@@ -727,7 +720,10 @@ fn a_click_inside_the_explorer_reaches_the_extension() {
         .find(|(_, hit)| {
             matches!(
                 hit,
-                WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::SelectItem(_)))
+                WorkspaceHit::Extension(ExtensionHit::Declared {
+                    hit: ViewHit::SelectItem(_),
+                    ..
+                })
             )
         })
         .expect("the explorer drew a clickable file row")
@@ -735,9 +731,10 @@ fn a_click_inside_the_explorer_reaches_the_extension() {
     assert!(
         matches!(
             model.hit_at(row.x + 2, row.y),
-            Some(WorkspaceHit::Extension(ExtensionHit::Code(
-                ViewHit::SelectItem(_)
-            )))
+            Some(WorkspaceHit::Extension(ExtensionHit::Declared {
+                hit: ViewHit::SelectItem(_),
+                ..
+            }))
         ),
         "a click on the row resolves to that row, not to something under it"
     );
@@ -745,7 +742,10 @@ fn a_click_inside_the_explorer_reaches_the_extension() {
     let caret = model.hits.iter().find(|(_, hit)| {
         matches!(
             hit,
-            WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::PlaceCaret { .. }))
+            WorkspaceHit::Extension(ExtensionHit::Declared {
+                hit: ViewHit::PlaceCaret { .. },
+                ..
+            })
         )
     });
     assert!(
@@ -927,6 +927,41 @@ fn opening_the_architect_reads_its_artifacts_as_a_job() {
         .expect("the read answers");
     assert!(model.absorb_engine_answer(answer));
     assert!(!reading(&model), "the answer was drawn");
+}
+
+/// The code surface's tree is listed by its jobs, and drawn once they
+/// answer: nothing of it is read on the thread that draws.
+#[test]
+fn opening_the_code_surface_lists_its_tree_as_jobs() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-code-jobs"));
+    let root = uze_testkit::temp::scratch("orchestrator-code-jobs-checkout");
+    std::fs::write(root.join("main.rs"), "fn main() {}\n").unwrap();
+    let mut model = agent_session_in(root.to_str().unwrap());
+    model.follow_extension_switch([uze_extensions::spec::CATALOG.id.to_owned()].into());
+    open_code(&mut model, uze_extensions::code::FILES);
+    assert!(model.showing(uze_extensions::code::CATALOG.id));
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let mut handed = model.schedule_engine_jobs(&home, &sender);
+    assert!(handed >= 1, "the surface asked for its tree");
+    while handed > 0 {
+        let answer = receiver
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .expect("every job answers");
+        assert!(model.absorb_engine_answer(answer));
+        handed = handed - 1 + model.schedule_engine_jobs(&home, &sender);
+    }
+    let view = uze_extensions::code::view(
+        code_view(&model).expect("open"),
+        uze_extensions::view::Size {
+            width: 80,
+            height: 24,
+        },
+    );
+    let rows = view.navigator.expect("a tree").rows;
+    assert!(
+        format!("{rows:?}").contains("main.rs"),
+        "the listing was drawn: {rows:?}"
+    );
 }
 
 /// A board held and moved follows the pointer; one pressed and let go

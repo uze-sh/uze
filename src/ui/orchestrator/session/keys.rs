@@ -43,7 +43,7 @@ impl Attach<'_> {
             Scope::RecentFilter
         } else if self.model.recent.has_keys() {
             Scope::Recent
-        } else if self.model.code.as_ref().is_some_and(code::CodeView::typing) {
+        } else if self.model.open_typing() {
             // A file or a new name taking text seals everything behind
             // it, the same way the action index does: nothing else may
             // answer a letter.
@@ -52,10 +52,10 @@ impl Attach<'_> {
             Scope::Architect
         } else if self.model.showing(spec::CATALOG.id) {
             Scope::Spec
+        } else if self.model.showing(code::CATALOG.id) {
+            Scope::Code
         } else if self.model.declared_open.is_some() {
             Scope::Declared
-        } else if self.model.code.is_some() {
-            Scope::Code
         } else if let Some(overview) = &self.model.space_overview {
             if overview.filtering {
                 Scope::SpaceOverviewFilter
@@ -214,13 +214,9 @@ impl Attach<'_> {
         {
             field.buffer.insert(character);
             field.picked = 0;
-        } else if self
-            .model
-            .code
-            .as_ref()
-            .is_some_and(code::CodeView::editing)
-        {
-            self.tell_the_code_surface(Command::Type(character));
+        } else if self.model.open_typing() {
+            let space = self.code_space();
+            self.model.tell_declared(Command::Type(character), space);
             return;
         }
         self.model.dirty = true;
@@ -258,7 +254,7 @@ impl Attach<'_> {
             // The step opens the new agent's popup on its directory.
             Action::NewAgent => self.model.directory_step.is_some(),
             Action::NextAgent => self.asked_for_a_tab,
-            Action::ToggleChanges | Action::ToggleFiles => self.model.code.is_some(),
+            Action::ToggleChanges | Action::ToggleFiles => self.model.showing(code::CATALOG.id),
             Action::ToggleRecent => self.model.recent.open,
             Action::OpenActionIndex => self.model.action_index.is_some(),
             _ => false,
@@ -363,10 +359,6 @@ impl Attach<'_> {
             self.declared_action(action);
             return Flow::Continue;
         }
-        if self.model.code.is_some() {
-            self.code_action(action);
-            return Flow::Continue;
-        }
         if self.model.space_overview.is_some() && overview_answers(action) {
             self.space_overview_action(action);
             return Flow::Continue;
@@ -406,8 +398,8 @@ impl Attach<'_> {
                     self.model.dirty = true;
                 }
             }
-            Action::ToggleChanges => open_code(&mut self.model, code::ContentMode::Diff),
-            Action::ToggleFiles => open_code(&mut self.model, code::ContentMode::Contents),
+            Action::ToggleChanges => open_code(&mut self.model, code::CHANGES),
+            Action::ToggleFiles => open_code(&mut self.model, code::FILES),
             Action::ToggleArchitect => open_architect(&mut self.model),
             Action::ToggleSpec => open_spec(&mut self.model),
             Action::NextSpace => self.step_space(1, columns, rows),

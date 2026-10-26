@@ -266,9 +266,15 @@ pub(super) fn render(
         );
         hits.splice(
             0..0,
-            view_hits
-                .into_iter()
-                .map(|(rect, hit)| (rect, WorkspaceHit::Extension(question.tag.apply(hit)))),
+            view_hits.into_iter().map(|(rect, hit)| {
+                (
+                    rect,
+                    WorkspaceHit::Extension(ExtensionHit::Declared {
+                        slot: question.tag,
+                        hit,
+                    }),
+                )
+            }),
         );
     }
     if let Some(modal) = &model.release_notes {
@@ -387,9 +393,6 @@ fn render_extension(
                 .code_edge_drag
                 .is_some_and(|drag| drag.intent == Some(EdgeIntent::Resize)),
             sliding: match model.hovered {
-                Some(WorkspaceHit::Extension(ExtensionHit::Code(hit))) => {
-                    Some((hit, model.hovered_for()))
-                }
                 Some(WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit }))
                     if model.declared_open == Some(slot) =>
                 {
@@ -422,11 +425,12 @@ fn render_extension(
         model.code_menu_at,
         &mut view_hits,
     );
-    hits.extend(
-        view_hits
-            .into_iter()
-            .map(|(rect, hit)| (rect, WorkspaceHit::Extension(tag.apply(hit)))),
-    );
+    hits.extend(view_hits.into_iter().map(|(rect, hit)| {
+        (
+            rect,
+            WorkspaceHit::Extension(ExtensionHit::Declared { slot: tag, hit }),
+        )
+    }));
     // After the row menu's: one opened low enough to cover the footer
     // answers for the cells it covers.
     if let Some(drawn) = &metrics.code {
@@ -459,9 +463,15 @@ fn render_extension_navigation(
     );
     hits.splice(
         0..0,
-        navigation_hits
-            .into_iter()
-            .map(|(rect, hit)| (rect, WorkspaceHit::Extension(open.tag.apply(hit)))),
+        navigation_hits.into_iter().map(|(rect, hit)| {
+            (
+                rect,
+                WorkspaceHit::Extension(ExtensionHit::Declared {
+                    slot: open.tag,
+                    hit,
+                }),
+            )
+        }),
     );
 }
 
@@ -471,64 +481,28 @@ fn render_extension_navigation(
 struct OpenExtension {
     view: uze_extensions::view::View,
     scope: uze_keys::Scope,
-    tag: Tag,
-}
-
-/// Whose a hit the open surface drew is: a built-in's, by the variant that
-/// names it, or a declared slot's, by its number.
-#[derive(Clone, Copy)]
-enum Tag {
-    BuiltIn(fn(ViewHit) -> ExtensionHit),
-    Declared(SlotId),
-}
-
-impl Tag {
-    fn apply(self, hit: ViewHit) -> ExtensionHit {
-        match self {
-            Self::BuiltIn(tag) => tag(hit),
-            Self::Declared(slot) => ExtensionHit::Declared { slot, hit },
-        }
-    }
+    /// The slot it stands in, which every hit it drew is tagged with.
+    tag: SlotId,
 }
 
 fn open_extension(model: &WorkspaceModel, area: Rect) -> Option<OpenExtension> {
-    if let Some(slot) = model.open_declared_slot() {
-        let space = match model.open_layout() {
-            Some(uze_extensions::view::Layout::Board) => {
-                crate::ui::extension_view::board_space(area)
-            }
-            _ => crate::ui::extension_view::code_space(area, model.code_tree_width, None),
-        };
-        let scope = match &slot.owner {
-            Owner::Builtin(id) if *id == uze_extensions::architect::CATALOG.id => {
-                uze_keys::Scope::Architect
-            }
-            Owner::Builtin(id) if *id == uze_extensions::spec::CATALOG.id => uze_keys::Scope::Spec,
-            _ => uze_keys::Scope::Declared,
-        };
-        let tag = Tag::Declared(slot.id);
-        return Some(OpenExtension {
-            view: model.declared_view(space)?,
-            scope,
-            tag,
-        });
-    }
-    let (view, scope, tag): (_, _, fn(ViewHit) -> ExtensionHit) = if let Some(code) = &model.code {
-        (
-            uze_extensions::code::view(
-                code,
-                crate::ui::extension_view::code_space(area, model.code_tree_width, Some(code)),
-            ),
-            uze_keys::Scope::Code,
-            ExtensionHit::Code,
-        )
-    } else {
-        return None;
+    let slot = model.open_declared_slot()?;
+    let space = match model.open_layout() {
+        Some(uze_extensions::view::Layout::Board) => crate::ui::extension_view::board_space(area),
+        _ => crate::ui::extension_view::content_space(area, model.code_tree_width),
+    };
+    let scope = match &slot.owner {
+        Owner::Builtin(id) if *id == uze_extensions::code::CATALOG.id => uze_keys::Scope::Code,
+        Owner::Builtin(id) if *id == uze_extensions::architect::CATALOG.id => {
+            uze_keys::Scope::Architect
+        }
+        Owner::Builtin(id) if *id == uze_extensions::spec::CATALOG.id => uze_keys::Scope::Spec,
+        _ => uze_keys::Scope::Declared,
     };
     Some(OpenExtension {
-        view,
+        view: model.declared_view(space)?,
         scope,
-        tag: Tag::BuiltIn(tag),
+        tag: slot.id,
     })
 }
 
@@ -539,7 +513,7 @@ fn open_extension(model: &WorkspaceModel, area: Rect) -> Option<OpenExtension> {
 struct Question {
     confirm: uze_extensions::view::Confirm,
     scope: uze_keys::Scope,
-    tag: Tag,
+    tag: SlotId,
 }
 
 /// Pins, on the space in front, the control that places a new agent in

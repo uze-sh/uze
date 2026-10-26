@@ -99,36 +99,6 @@ pub(super) struct Attach<'a> {
     pub(super) theme_generation: u64,
 }
 
-/// What a code door does when it is pressed.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum CodeDoor {
-    /// It is the door already open, so it shuts. The action is called a
-    /// toggle and the hint line promises one; re-showing what is already
-    /// showing looks exactly like a key that does nothing.
-    Close,
-    /// The other door, so the surface switches to it — the gesture of
-    /// someone reaching for the other half of the same surface.
-    Switch,
-    /// Nothing is open, so this door is not the one that opens it: that
-    /// is the workspace's own binding, one scope out.
-    Nothing,
-}
-
-pub(super) fn code_door(showing: Option<code::ContentMode>, wanted: code::ContentMode) -> CodeDoor {
-    // A document read as its preview is still the files half: the door to
-    // the files is the door already open, and it shuts rather than
-    // turning the preview back into source first.
-    let half = |mode| match mode {
-        code::ContentMode::Preview => code::ContentMode::Contents,
-        other => other,
-    };
-    match showing {
-        Some(mode) if half(mode) == half(wanted) => CodeDoor::Close,
-        Some(_) => CodeDoor::Switch,
-        None => CodeDoor::Nothing,
-    }
-}
-
 impl Attach<'_> {
     /// Draws in a theme put in force since the last frame — chosen in
     /// Settings, or followed from the desktop — and tells the server, so a
@@ -354,42 +324,5 @@ impl Attach<'_> {
         }
         self.turn_activity_clock();
         Flow::Continue
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    /// A door pressed twice closes. `alt+e` on a surface already showing
-    /// files used to re-show them, which is indistinguishable from a key that
-    /// does nothing — and the action is called a toggle.
-    #[test]
-    fn a_code_door_pressed_on_the_surface_it_opened_closes_it() {
-        use super::{CodeDoor, code_door};
-        use uze_extensions::code::ContentMode;
-
-        assert_eq!(
-            code_door(Some(ContentMode::Contents), ContentMode::Contents),
-            CodeDoor::Close,
-            "its own door, pressed again, has to close"
-        );
-        assert_eq!(
-            code_door(Some(ContentMode::Diff), ContentMode::Diff),
-            CodeDoor::Close
-        );
-        // The other door switches instead: reaching for the other half of the
-        // same surface is not asking to leave it.
-        assert_eq!(
-            code_door(Some(ContentMode::Diff), ContentMode::Contents),
-            CodeDoor::Switch
-        );
-        // A document in its preview is the files half all the same: the
-        // files door shuts it rather than turning it back into source.
-        assert_eq!(
-            code_door(Some(ContentMode::Preview), ContentMode::Contents),
-            CodeDoor::Close
-        );
-        // With nothing open, this scope is not live at all — the workspace's
-        // own binding is what opens the surface.
-        assert_eq!(code_door(None, ContentMode::Contents), CodeDoor::Nothing);
     }
 }

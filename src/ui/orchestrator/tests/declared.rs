@@ -364,8 +364,8 @@ fn a_view_that_asks_for_a_copy_or_a_path_gets_the_clipboard_or_the_code_surface(
     assert_eq!(model.clipboard.as_deref(), Some("tab 0"));
 
     model.tell_declared(Command::Back, space);
-    assert_eq!(model.declared_open, None, "the view gave way");
-    let code = model.code.as_ref().expect("the code surface opened");
+    assert_ne!(model.declared_open, Some(slot), "the view gave way");
+    let code = code_view(&model).expect("the code surface opened");
     assert_eq!(code.root(), std::path::Path::new("/project"));
 }
 

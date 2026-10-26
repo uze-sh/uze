@@ -91,6 +91,17 @@ pub(super) trait Hosted: Extension {
     /// Lets go of where the viewer was on `surface`. Nothing by default:
     /// an engine that keeps no place has none to forget.
     fn forget(&mut self, _surface: &str) {}
+
+    /// The code surface, for the tests to look into.
+    #[cfg(test)]
+    fn code_view(&self) -> Option<&code::CodeView> {
+        None
+    }
+
+    #[cfg(test)]
+    fn code_view_mut(&mut self) -> Option<&mut code::CodeView> {
+        None
+    }
 }
 
 impl Hosted for DeclaredExtension {
@@ -165,10 +176,22 @@ impl Hosted for DeclaredExtension {
 
 impl Hosted for uze_extensions::architect::ArchitectExtension {}
 impl Hosted for uze_extensions::spec::SpecExtension {}
+impl Hosted for code::CodeExtension {
+    #[cfg(test)]
+    fn code_view(&self) -> Option<&code::CodeView> {
+        code::CodeExtension::code_view(self)
+    }
+
+    #[cfg(test)]
+    fn code_view_mut(&mut self) -> Option<&mut code::CodeView> {
+        code::CodeExtension::code_view_mut(self)
+    }
+}
 
 /// The built-ins hosted on the slot path, each with its engine.
 fn builtins() -> Vec<(&'static str, Box<dyn Hosted>)> {
     vec![
+        (code::CATALOG.id, Box::new(code::CodeExtension::default())),
         (
             architect::CATALOG.id,
             Box::new(architect::ArchitectExtension::default()),
@@ -695,15 +718,15 @@ impl WorkspaceModel {
         self.remembered.declared.slot(self.declared_open?)
     }
 
-    /// Whether `hit` is one the open surface drew, a built-in's or a
-    /// slot's.
+    /// Whether `hit` is one the open surface drew — in the pane, or in the
+    /// bar's leading slot — rather than one of the sections an extension
+    /// keeps in the sidebar, which answer as the sidebar does.
     pub(super) fn is_open_surfaces(&self, hit: WorkspaceHit) -> bool {
-        match hit {
-            WorkspaceHit::Extension(ExtensionHit::Declared { slot, .. }) => {
-                self.declared_open == Some(slot)
-            }
-            other => other.is_open_surfaces(),
-        }
+        matches!(
+            hit,
+            WorkspaceHit::Extension(ExtensionHit::Declared { slot, .. })
+                if self.declared_open == Some(slot)
+        )
     }
 
     /// Whether the built-in `id`'s view stands in the pane.
@@ -716,6 +739,35 @@ impl WorkspaceModel {
     pub(super) fn open_engine_mut(&mut self) -> Option<(String, &mut Box<dyn Hosted>)> {
         let id = self.declared_open?;
         self.remembered.declared.slot_engine_mut(id)
+    }
+
+    /// Whether the open view takes a letter as text: everything behind it
+    /// is sealed while it does.
+    pub(super) fn open_typing(&self) -> bool {
+        self.open_declared_slot().is_some_and(|slot| {
+            self.remembered
+                .declared
+                .engine(&slot.owner)
+                .is_some_and(|engine| engine.typing(&slot.surface.id))
+        })
+    }
+
+    /// Text pasted into the open view, while it takes text.
+    pub(super) fn paste_into_open(&mut self, text: &str, space: Size) {
+        if let Some((surface, engine)) = self.open_engine_mut() {
+            engine.paste(&surface, text, space);
+        }
+        self.dirty = true;
+    }
+
+    /// Whether what the open view draws is taken hold of and moved.
+    pub(super) fn open_drags(&self) -> bool {
+        self.open_declared_slot().is_some_and(|slot| {
+            self.remembered
+                .declared
+                .engine(&slot.owner)
+                .is_some_and(|engine| engine.drags(&slot.surface.id))
+        })
     }
 
     /// How the open view is laid out now.
@@ -809,11 +861,15 @@ impl WorkspaceModel {
         self.dirty = true;
     }
 
-    /// Hands the open view's engine a command.
+    /// Hands the open view's engine a command. A list of actions the keys
+    /// opened hangs off its row, not off where the pointer last was.
     pub(super) fn tell_declared(&mut self, command: Command, space: Size) {
         let Some(id) = self.declared_open else {
             return;
         };
+        if command == Command::OpenMenu {
+            self.code_menu_at = None;
+        }
         let outcome = self
             .remembered
             .declared
@@ -1020,17 +1076,22 @@ fn with_errors(drawn: Option<Section>, slot: &DeclaredSlot, errors: &[String]) -
 }
 
 pub(super) fn open_declared(model: &mut WorkspaceModel, id: SlotId) {
+    // An agent's surface, never a shell of the space's: a shell works in
+    // no project, wherever it stands.
+    if let Some(root) = model.focused_cwd() {
+        open_declared_on(model, id, root);
+    }
+}
+
+/// Opens the view in slot `id` on `root`, which a path another surface
+/// pointed at may have named rather than the checkout in front.
+pub(super) fn open_declared_on(model: &mut WorkspaceModel, id: SlotId, root: PathBuf) {
     let Some(slot) = model.remembered.declared.slot(id) else {
         return;
     };
     if !slot.is_view() || !model.offers_declared(&slot.owner) {
         return;
     }
-    // An agent's surface, never a shell of the space's: a shell works in
-    // no project, wherever it stands.
-    let Some(root) = model.focused_cwd() else {
-        return;
-    };
     model.close_extension();
     model.stand_extension_in_front();
     let checkout = Checkout {

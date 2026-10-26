@@ -144,275 +144,6 @@ impl WorkspaceModel {
         });
         true
     }
-
-    /// Hands the surface's file requests to threads.
-    ///
-    /// Everything that reads or writes a *file* stays serialised: a save
-    /// followed by the re-read that re-colours it must land in that
-    /// order, and two reads racing would let the older one describe the
-    /// newer one's file.
-    ///
-    /// The second colouring pass is not in that chain. It is the slowest
-    /// request there is — seconds for a long file — and the next file
-    /// opened used to wait behind the colour of the one being left. It
-    /// cannot describe a newer file than the one on screen, because the
-    /// view installs colour only for the text it already holds.
-    ///
-    /// Listings are not in that chain. They answer about directories
-    /// nothing else in the queue names, they cost a `readdir` each, and
-    /// they arrive in bulk — opening a surface back where it was left
-    /// asks for every directory that was open. One per pass made that a
-    /// frame each: a third of a second of a tree filling in one row at a
-    /// time, for a tenth of a millisecond of actual work. The read of the
-    /// checkout's `files.exclude` is off it for the same reason: it is
-    /// what the first listing waits on.
-    pub(super) fn schedule_file_request(&mut self, sender: &mpsc::Sender<FileResolution>) {
-        let Some(view) = self.code.as_mut() else {
-            return;
-        };
-        let root = view.root().to_path_buf();
-        loop {
-            let listing = match view.peek_request() {
-                // A second colouring pass is off the chain too: it is the
-                // slowest request there is, and a file opened after it
-                // must not wait for the colour of one being left.
-                Some(
-                    code::FileRequest::List(_)
-                    | code::FileRequest::Exclusions(_)
-                    | code::FileRequest::Colour(_),
-                ) => true,
-                // The chain is busy, and the queue is in the order the
-                // surface asked: stopping here rather than looking past
-                // it is what keeps a save ahead of the read that follows
-                // it.
-                Some(_) if !self.code_request_pending => false,
-                _ => return,
-            };
-            let Some(request) = view.take_request() else {
-                return;
-            };
-            self.code_request_pending |= !listing;
-            spawn_file_request(root.clone(), request, sender.clone());
-        }
-    }
-
-    /// Installs one file answer, if the surface is still open on the
-    /// checkout it was read for.
-    pub(super) fn absorb_file_answer(&mut self, resolution: FileResolution) -> bool {
-        // A listing never took the chain, so it does not release it — a
-        // pass that let one clear a read's reservation would put the next
-        // read alongside the read it has to follow.
-        if !matches!(
-            resolution.answer,
-            code::FileAnswer::Listed { .. }
-                | code::FileAnswer::Excluded(_)
-                | code::FileAnswer::Coloured { .. }
-        ) {
-            self.code_request_pending = false;
-        }
-        let Some(view) = self
-            .code
-            .as_mut()
-            .filter(|view| view.root() == resolution.root)
-        else {
-            // A surface that moved on no longer has anywhere to say a
-            // write failed, and a failed write must not pass unsaid: the
-            // reader believes it landed.
-            return self.report_unheard_write_failure(resolution.answer);
-        };
-        view.absorb(resolution.answer);
-        true
-    }
-
-    pub(super) fn report_unheard_write_failure(&mut self, answer: code::FileAnswer) -> bool {
-        let (title, path, message) = match answer {
-            code::FileAnswer::Saved {
-                path,
-                outcome: Err(message),
-            } => ("save failed", path, message),
-            code::FileAnswer::Deleted {
-                path,
-                outcome: Err(message),
-            } => ("delete failed", path, message),
-            code::FileAnswer::Renamed {
-                from,
-                outcome: Err(message),
-                ..
-            } => ("rename failed", from, message),
-            _ => return false,
-        };
-        self.raise_toast(
-            ToastKind::Failed,
-            title,
-            format!(
-                "{}: {message}",
-                path.file_name().map_or_else(
-                    || path.display().to_string(),
-                    |name| { name.to_string_lossy().into_owned() }
-                )
-            ),
-            None,
-        );
-        true
-    }
-
-    /// Asks for the selection's diff alone, the moment it moved.
-    pub(super) fn schedule_diff_read(&mut self, sender: &mpsc::Sender<DiffResolution>) {
-        if self.code_diff_pending {
-            return;
-        }
-        let Some(view) = self.code.as_ref() else {
-            return;
-        };
-        let Some(request) = view.diff_request() else {
-            return;
-        };
-        self.code_diff_pending = true;
-        spawn_diff_read(view.root().to_path_buf(), request, sender.clone());
-    }
-
-    pub(super) fn absorb_diff(&mut self, resolution: DiffResolution) -> bool {
-        self.code_diff_pending = false;
-        if self
-            .code
-            .as_ref()
-            .is_none_or(|view| view.root() != resolution.root)
-        {
-            return false;
-        }
-        let marked = self.code_marked_text();
-        if let Some(view) = self.code.as_mut() {
-            view.absorb_diff(resolution.answer);
-        }
-        self.forget_marking_if_moved(marked);
-        true
-    }
-
-    /// Asks for the changes half again, on its own cadence.
-    pub(super) fn schedule_changes_refresh(&mut self, sender: &mpsc::Sender<ChangesResolution>) {
-        if self.code_changes_pending {
-            return;
-        }
-        let Some(view) = self.code.as_ref() else {
-            return;
-        };
-        // The periodic re-read is what the cadence governs. A moved
-        // selection is the one-file read's, unless there is no list yet
-        // to find it in — the first read is a whole one.
-        let first = view.diff_pending() && view.diff_request().is_none();
-        if !first && !view.refresh_due() {
-            return;
-        }
-        self.code_changes_pending = true;
-        spawn_changes_refresh(view.root().to_path_buf(), view.placement(), sender.clone());
-    }
-
-    /// Gives a surface that has just opened the measurement this client
-    /// already holds for its checkout, so the map is there to be asked
-    /// for rather than arriving a second later.
-    pub(super) fn show_remembered_measure(&mut self) {
-        let Some(view) = self.code.as_mut() else {
-            return;
-        };
-        if let Some((_, measure)) = self.code_measures.get(view.root()) {
-            view.absorb_measure(measure.clone());
-        }
-    }
-
-    /// Asks for the checkout's measurement, once per surface that has no
-    /// map yet. A `git grep` over every file is not a read to repeat, so
-    /// the root it was asked about is remembered rather than the request
-    /// being in flight: outside a repository the answer is nothing, and
-    /// nothing must not be asked for again.
-    pub(super) fn schedule_code_measure(&mut self, sender: &mpsc::Sender<MeasureResolution>) {
-        let Some(view) = self.code.as_ref().filter(|view| view.wants_measure()) else {
-            return;
-        };
-        let root = view.root().to_path_buf();
-        if self.code_measure_asked.as_deref() == Some(root.as_path()) {
-            return;
-        }
-        // A measurement this recent describes the same checkout: a map is
-        // where the lines are, and that is not a picture that changes
-        // between one look at it and the next.
-        if self
-            .code_measures
-            .get(&root)
-            .is_some_and(|(taken, _)| taken.elapsed() < CODE_MEASURE_FRESH)
-        {
-            return;
-        }
-        self.code_measure_asked = Some(root.clone());
-        spawn_code_measure(root, sender.clone());
-    }
-
-    /// Installs the measurement, if the surface is still open on the
-    /// checkout it was measured from.
-    pub(super) fn absorb_measure(&mut self, resolution: MeasureResolution) -> bool {
-        let Some(measure) = resolution.measure else {
-            let Some(view) = self
-                .code
-                .as_mut()
-                .filter(|view| view.root() == resolution.root)
-            else {
-                return false;
-            };
-            view.absorb_unmeasurable();
-            return true;
-        };
-        // Kept whether or not there is still a surface to show it: the
-        // next one to open on this checkout is the reason it was worth
-        // measuring.
-        self.code_measures
-            .insert(resolution.root.clone(), (Instant::now(), measure.clone()));
-        let Some(view) = self
-            .code
-            .as_mut()
-            .filter(|view| view.root() == resolution.root)
-        else {
-            return false;
-        };
-        view.absorb_measure(measure);
-        true
-    }
-
-    /// Installs a refreshed changes half, if the surface is still open on
-    /// the checkout it was read for. The view itself decides whether the
-    /// answer still describes where the viewer is.
-    pub(super) fn absorb_changes(&mut self, resolution: ChangesResolution) -> bool {
-        self.code_changes_pending = false;
-        if self
-            .code
-            .as_ref()
-            .is_none_or(|view| view.root() != resolution.root)
-        {
-            return false;
-        }
-        let marked = self.code_marked_text();
-        if let Some(view) = self.code.as_mut() {
-            view.absorb_changes(resolution.refreshed);
-        }
-        self.forget_marking_if_moved(marked);
-        true
-    }
-
-    /// The text a marking on the code surface covers right now.
-    pub(super) fn code_marked_text(&self) -> Option<Vec<String>> {
-        let Some(Selection::Text(marking)) = &self.selection else {
-            return None;
-        };
-        Some(code::text(self.code.as_ref()?, marking.marked()?.lines()))
-    }
-
-    /// Drops a marking whose text a refresh changed. A marking is a
-    /// position in the text, and the same lines of a different diff are
-    /// not what was marked; a refresh that found everything as it was —
-    /// most of them — leaves it drawn.
-    pub(super) fn forget_marking_if_moved(&mut self, before: Option<Vec<String>>) {
-        if before.is_some_and(|before| self.code_marked_text() != Some(before)) {
-            self.selection = None;
-        }
-    }
 }
 
 impl WorkspaceModel {
@@ -498,16 +229,43 @@ impl WorkspaceModel {
     /// Takes what a hosted engine's job answered to the engine that asked.
     /// One whose extension went meanwhile is dropped. Returns whether it
     /// is drawn.
+    ///
+    /// A marking on the open view whose text the answer changed is
+    /// dropped: a marking is a position in the text, and the same lines of
+    /// a different diff are not what was marked. One that found everything
+    /// as it was, most of them, leaves it drawn.
     pub(super) fn absorb_engine_answer(&mut self, answer: EngineAnswer) -> bool {
+        if !self
+            .remembered
+            .declared
+            .engines
+            .contains_key(&answer.extension)
+        {
+            return false;
+        }
+        let marked = self.marked_text();
         let Some(engine) = self.remembered.declared.engines.get_mut(&answer.extension) else {
             return false;
         };
-        if let uze_extensions::contract::Outcome::Failed { title, detail } =
-            engine.absorb(answer.answer)
-        {
+        let outcome = engine.absorb(answer.answer);
+        if marked.is_some_and(|before| self.marked_text() != Some(before)) {
+            self.selection = None;
+        }
+        if let uze_extensions::contract::Outcome::Failed { title, detail } = outcome {
             self.say_failed(&title, detail);
         }
         true
+    }
+
+    /// The text a marking on the open view covers right now.
+    pub(super) fn marked_text(&self) -> Option<Vec<String>> {
+        let Some(Selection::Text(marking)) = &self.selection else {
+            return None;
+        };
+        let lines = marking.marked()?.lines();
+        let slot = self.open_declared_slot()?;
+        let engine = self.remembered.declared.engine(&slot.owner)?;
+        Some(engine.text(&slot.surface.id, lines))
     }
 
     /// Takes a declared-extension job's answer. Returns whether anything on

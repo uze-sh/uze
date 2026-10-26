@@ -941,6 +941,64 @@ pub(super) fn select_tab(model: &mut WorkspaceModel, tab: TabId) {
     model.note_space_projects(&identities_fixture());
 }
 
+/// The code surface's engine, as the slot map hosts it.
+pub(super) fn code_engine(model: &mut WorkspaceModel) -> &mut dyn super::Hosted {
+    model
+        .remembered
+        .declared
+        .engines
+        .get_mut(&super::Owner::Builtin(uze_extensions::code::CATALOG.id))
+        .expect("the code surface is hosted")
+        .as_mut()
+}
+
+/// The code surface, while it stands in the pane.
+pub(super) fn code_view(model: &WorkspaceModel) -> Option<&uze_extensions::code::CodeView> {
+    model
+        .remembered
+        .declared
+        .engine(&super::Owner::Builtin(uze_extensions::code::CATALOG.id))?
+        .code_view()
+        .filter(|_| model.showing(uze_extensions::code::CATALOG.id))
+}
+
+pub(super) fn code_view_mut(
+    model: &mut WorkspaceModel,
+) -> Option<&mut uze_extensions::code::CodeView> {
+    if !model.showing(uze_extensions::code::CATALOG.id) {
+        return None;
+    }
+    code_engine(model).code_view_mut()
+}
+
+/// The slot the code surface stands in, as its hits are tagged.
+pub(super) fn code_slot(model: &WorkspaceModel) -> u32 {
+    model
+        .remembered
+        .declared
+        .builtin_slot(
+            uze_extensions::code::CATALOG.id,
+            uze_extensions::code::SURFACE,
+        )
+        .expect("the code surface has a slot")
+}
+
+/// `hit` on the code surface, tagged as its frame tags it.
+pub(super) fn code_hit(model: &WorkspaceModel, hit: ViewHit) -> WorkspaceHit {
+    WorkspaceHit::Extension(ExtensionHit::Declared {
+        slot: code_slot(model),
+        hit,
+    })
+}
+
+/// Stands `view` in the pane as the code surface, on the checkout it was
+/// built for.
+pub(super) fn show_code(model: &mut WorkspaceModel, view: uze_extensions::code::CodeView) {
+    let slot = code_slot(model);
+    super::open_declared_on(model, slot, view.root().to_path_buf());
+    *code_view_mut(model).expect("the code surface opened") = view;
+}
+
 /// The architect's engine, as the slot map hosts it.
 pub(super) fn architect_engine(model: &mut WorkspaceModel) -> &mut dyn super::Hosted {
     model

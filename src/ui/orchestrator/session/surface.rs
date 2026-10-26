@@ -59,9 +59,7 @@ impl Attach<'_> {
                 self.model.dragging_code_content = true;
                 self.scroll_code_content_to(row);
             }
-            Some(click @ ViewHit::PlaceCaret { .. })
-                if self.model.open_layout() == Some(uze_extensions::view::Layout::Board) =>
-            {
+            Some(click @ ViewHit::PlaceCaret { .. }) if self.model.open_drags() => {
                 self.model.board_grab = Some(DiagramGrab {
                     last: (column, row),
                     moved: false,
@@ -232,13 +230,7 @@ impl Attach<'_> {
     /// The open surface's own hit under a point, resolved the way that
     /// surface orders its hits.
     pub(super) fn surface_hit_at(&self, column: u16, row: u16) -> Option<(Rect, ViewHit)> {
-        if self.model.declared_open.is_some() {
-            return self.slot_hit_at(column, row);
-        }
-        match self.model.hit_rect_at(column, row) {
-            Some((rect, WorkspaceHit::Extension(ExtensionHit::Code(hit)))) => Some((rect, hit)),
-            _ => None,
-        }
+        self.slot_hit_at(column, row)
     }
 
     /// The caret position the text nearest a point names, finished the
@@ -283,9 +275,6 @@ impl Attach<'_> {
         let space = self.code_space();
         if let Some(slot) = self.model.declared_open {
             self.model.hit_declared(slot, hit, space);
-        } else if let Some(view) = self.model.code.as_mut() {
-            let outcome = code::handle_mouse(view, Some(hit), space);
-            self.follow_code(outcome);
         }
         self.model.dirty = true;
     }
@@ -294,42 +283,35 @@ impl Attach<'_> {
     /// rather than read off the frame, because a selection reaches lines
     /// scrolled out of what was drawn.
     pub(super) fn surface_text(&self, lines: std::ops::Range<usize>) -> Vec<String> {
-        if let Some(slot) = self.model.open_declared_slot() {
-            self.model
-                .remembered
-                .declared
-                .engine(&slot.owner)
-                .map(|engine| engine.text(&slot.surface.id, lines))
-                .unwrap_or_default()
-        } else if let Some(view) = self.model.code.as_ref() {
-            code::text(view, lines)
-        } else {
-            Vec::new()
-        }
+        self.model
+            .open_declared_slot()
+            .and_then(|slot| {
+                let engine = self.model.remembered.declared.engine(&slot.owner)?;
+                Some(engine.text(&slot.surface.id, lines))
+            })
+            .unwrap_or_default()
     }
 
     /// Scrolls what the open surface shows a step, the way its wheel does.
+    /// Not down once the last frame drew its last line: past it the
+    /// content scrolls off into blank rows, each notch one more to take
+    /// back, and only the host knows how many rows the wrapped lines took.
     pub(super) fn scroll_surface_content(&mut self, direction: ScrollDirection) {
-        let space = self.code_space();
-        let at_end = self.model.code_scrollbars.content_at_end;
-        if self.model.declared_open.is_some() {
-            self.model.scroll_declared(
-                uze_extensions::view::ScrollTarget::Content,
-                direction,
-                space,
-            );
-        } else if let Some(view) = self.model.code.as_mut() {
-            code::handle_scroll(view, direction, at_end);
+        if direction == ScrollDirection::Down && self.model.code_scrollbars.content_at_end {
+            return;
         }
+        let space = self.code_space();
+        self.model.scroll_declared(
+            uze_extensions::view::ScrollTarget::Content,
+            direction,
+            space,
+        );
     }
 
     /// Whether a point is on the groove an open surface drew for its
     /// content.
     pub(super) fn on_content_scrollbar(&self, column: u16, row: u16) -> bool {
         match self.model.hit_at(column, row) {
-            Some(WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::DragContentScrollbar))) => {
-                true
-            }
             Some(WorkspaceHit::Extension(ExtensionHit::Declared {
                 slot,
                 hit: ViewHit::DragContentScrollbar,
@@ -353,61 +335,8 @@ impl Attach<'_> {
         let Some(bar) = self.model.code_scrollbars.content_bar else {
             return;
         };
-        if let Some(view) = self.model.code.as_mut() {
-            code::scroll_to(view, bar.first_at(row));
-            self.model.dirty = true;
-        } else if self.model.declared_open.is_some() {
-            let space = self.code_space();
-            self.model.scroll_declared_to(bar.first_at(row), space);
-        }
-    }
-
-    /// The code surface, which answers for itself. It is handed a meaning
-    /// rather than a key: an extension knows no more about the keyboard
-    /// than it does about the palette.
-    ///
-    /// Two actions are the host's rather than the surface's — the doors,
-    /// which once it is open mean "show me the other half" instead of
-    /// opening anything.
-    pub(super) fn code_action(&mut self, action: Action) {
-        match action {
-            Action::ToggleArchitect => {
-                open_architect(&mut self.model);
-                return;
-            }
-            Action::ToggleSpec => {
-                open_spec(&mut self.model);
-                return;
-            }
-            // A *toggle*, which is what the action is called and what the
-            // key that reaches it promises: pressed on the surface it
-            // already opened, it closes. Pressed on the other one it
-            // switches, because that is the gesture someone reaching for
-            // the other half of the same surface means.
-            Action::ToggleChanges | Action::ToggleFiles => {
-                let wanted = match action {
-                    Action::ToggleChanges => code::ContentMode::Diff,
-                    _ => code::ContentMode::Contents,
-                };
-                let showing = self.model.code.as_ref().map(code::CodeView::showing);
-                match code_door(showing, wanted) {
-                    CodeDoor::Close => self.model.close_code(),
-                    CodeDoor::Switch => {
-                        if let Some(view) = self.model.code.as_mut() {
-                            view.show(wanted);
-                        }
-                    }
-                    CodeDoor::Nothing => {}
-                }
-                self.model.dirty = true;
-                return;
-            }
-            _ => {}
-        }
-        let Some(command) = crate::ui::extension_view::command_for(action) else {
-            return;
-        };
-        self.tell_the_code_surface(command);
+        let space = self.code_space();
+        self.model.scroll_declared_to(bar.first_at(row), space);
     }
 
     /// The view standing in a slot: its own door closes it, the doors lead
@@ -423,8 +352,8 @@ impl Attach<'_> {
             Action::ToggleSpec if self.model.showing(spec::CATALOG.id) => {
                 self.model.close_declared();
             }
-            Action::ToggleChanges => open_code(&mut self.model, code::ContentMode::Diff),
-            Action::ToggleFiles => open_code(&mut self.model, code::ContentMode::Contents),
+            Action::ToggleChanges => open_code(&mut self.model, code::CHANGES),
+            Action::ToggleFiles => open_code(&mut self.model, code::FILES),
             Action::ToggleArchitect => open_architect(&mut self.model),
             Action::ToggleSpec => open_spec(&mut self.model),
             Action::ToggleInspector => self.model.toggle_inspector(),
@@ -439,31 +368,5 @@ impl Attach<'_> {
             }
         }
         self.model.dirty = true;
-    }
-
-    /// Hands one command down, and does what the surface asks back.
-    pub(super) fn tell_the_code_surface(&mut self, command: Command) {
-        if command == Command::OpenMenu {
-            self.model.code_menu_at = None;
-        }
-        let space = self.code_space();
-        if let Some(outcome) = self
-            .model
-            .code
-            .as_mut()
-            .map(|view| code::handle_command(view, command, space))
-        {
-            self.follow_code(outcome);
-        }
-        self.model.dirty = true;
-    }
-
-    /// What the code surface asked of the host on its way back.
-    pub(super) fn follow_code(&mut self, outcome: code::CodeOutcome) {
-        match outcome {
-            code::CodeOutcome::Stay => {}
-            code::CodeOutcome::Close => self.model.close_code(),
-            code::CodeOutcome::Copy(text) => self.model.copy_answered(text),
-        }
     }
 }

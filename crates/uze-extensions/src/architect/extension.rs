@@ -138,6 +138,10 @@ impl Extension for ArchitectExtension {
             .is_some_and(|state| handle_hover(state, hit))
     }
 
+    fn drags(&self, surface: &str) -> bool {
+        self.layout(surface) == Layout::Board
+    }
+
     fn drag(&mut self, surface: &str, columns: i32, rows: i32, space: Size) {
         if let Some(state) = self.view_mut(surface) {
             drag_by(state, columns, rows, space);

@@ -119,12 +119,6 @@ fn paced(floor: Duration, took: Duration) -> Duration {
 /// so it paints the frame instead of letting indicatif write to stderr.
 const AGENT_ACTIVITY_TICK: Duration = Duration::from_millis(120);
 
-/// How long a checkout's measurement is taken to still describe it.
-///
-/// Long enough that opening the code surface, closing it and opening it
-/// again is free — which is how it is used — and short enough that a map
-/// is never a picture of a morning ago.
-const CODE_MEASURE_FRESH: Duration = Duration::from_secs(30);
 /// How long a pressed control wears its pressed skin. Long enough to be
 /// seen at a glance, short enough that it reads as the press itself and
 /// never as a state the control got stuck in.
@@ -893,7 +887,7 @@ pub(super) enum WorkspaceHit {
     PullTarget,
     /// The tab strip's right-corner button — opens the Git extension's
     /// changes of the active tab's checkout — the code surface
-    /// (`WorkspaceModel::code`), opened on its diff.
+    /// hosted in its slot, opened on its diff.
     OpenChanges,
     /// The tab strip's code button — the same surface, opened on the
     /// checkout's file tree.
@@ -1018,14 +1012,6 @@ pub(super) enum WorkspaceHit {
 }
 
 impl WorkspaceHit {
-    /// Whether this is a target a built-in's open surface drew — in the
-    /// pane, or in the bar's leading slot — rather than one of the sections
-    /// an extension keeps in the sidebar, which answer as the sidebar does.
-    /// A slot's are told apart by the model, which knows which is open.
-    pub(super) fn is_open_surfaces(self) -> bool {
-        matches!(self, WorkspaceHit::Extension(ExtensionHit::Code(_)))
-    }
-
     /// Whether this is one of recent's own targets, its way in and out
     /// among them.
     pub(super) fn is_recents(self) -> bool {
@@ -1462,11 +1448,6 @@ struct Channels {
     git: Answers<GitResolution>,
     commit_details: Answers<CommitDetailResolution>,
     release_notes: Answers<ReleaseNotesResolution>,
-    code_changes: Answers<ChangesResolution>,
-    code_diffs: Answers<DiffResolution>,
-    /// The surface's file reads and writes, off-thread for the same
-    /// reason its changes are.
-    code_files: Answers<FileResolution>,
     /// Preserved work across the machine. Off-thread like every other
     /// read: it opens `$UZE_HOME` and walks every project UZE has
     /// recorded, which is not something a frame may wait on.
@@ -1486,8 +1467,6 @@ struct Channels {
     extension_stamps: Answers<StampsAnswer>,
     /// What hosted engines' jobs answered, each for the slot that asked.
     engine_answers: Answers<EngineAnswer>,
-    /// The code surface's map, measured once per checkout it is opened on.
-    code_measures: Answers<MeasureResolution>,
     /// Keeping each project's `AGENTS.md` workspace section in step.
     retired_regions: Answers<RetiredRegionsNotice>,
     /// Bringing each project's target in line with its remote.
@@ -1574,13 +1553,6 @@ struct Remembered {
     git_took: Duration,
     /// Per-pane reconstruction of the line being typed, flushed on Enter.
     prompt_buffers: BTreeMap<PaneId, PromptBuffer>,
-    /// Where the viewer was on each checkout's code surface, keyed by the
-    /// checkout — reviewing one agent's work and coming back to another's
-    /// is two places, not one. Kept here rather than in the client layout
-    /// because a path a file once had is a claim about a tree that is
-    /// being rewritten while nobody is looking; within a session it is
-    /// worth returning to, and across runs it is worth nothing.
-    code_places: BTreeMap<PathBuf, code::CodePlace>,
     /// The surfaces plugins declare, each with the engine that answers for
     /// it, and where the viewer was on each per checkout.
     declared: DeclaredExtensions,
@@ -1893,12 +1865,6 @@ struct WorkspaceModel {
     /// The open question about a machine fact an agent proposed (see
     /// `proposal`). Seals the client like the approval does.
     proposal: Option<ProposalDialog>,
-    /// Open state of the code surface; `None` when closed. Drawn where the
-    /// pane is, with the sidebar and the strip live around it — so unlike
-    /// `renaming`/`agent_picker`/`context_menu` a click outside it is not a
-    /// dismissal but a click on whatever it landed on. `Esc`, either
-    /// shortcut that opens it, or putting another tab in front closes it.
-    code: Option<code::CodeView>,
     /// The view standing in a slot in the pane, by its slot, and the
     /// checkout it was opened on — what its place is remembered under. It
     /// borrows the code surface's frame — the navigator width, its scroll,
@@ -2013,28 +1979,6 @@ struct WorkspaceModel {
     /// The commit a background `git show` is out for; see
     /// [`CommitDetailResolution`] for why the answer names it back.
     commit_detail_pending: Option<String>,
-    /// Whether a re-read of the surface's changes half is out, and
-    /// whether one of its file requests is. Two flags because the two
-    /// halves have two cadences and can be in flight at once.
-    code_changes_pending: bool,
-    /// Whether a one-file diff read is out. Its own flag, apart from the
-    /// refresh's: a click must not wait behind a `status` it does not
-    /// need.
-    code_diff_pending: bool,
-    code_request_pending: bool,
-    /// The checkout the map's measurement was asked about. Not a flag:
-    /// the answer outside a repository is nothing, and a flag cleared on
-    /// nothing would ask again every frame.
-    code_measure_asked: Option<PathBuf>,
-    /// The last measurement of each checkout, and when it was taken.
-    ///
-    /// Kept because measuring is a `git grep` that opens every file the
-    /// checkout has, and the surface it feeds is opened and closed all
-    /// day. Without it, every open paid that again and showed no map
-    /// until it landed — the one thing the cost was supposed to buy.
-    /// Handed to a surface the moment it opens, and taken again in the
-    /// background once it is old enough to have missed something.
-    code_measures: BTreeMap<PathBuf, (Instant, code::Measure)>,
     /// Sink for recorded prompts. `None` leaves the history untouched —
     /// the default, so tests exercise the submission path without writing
     /// to a real UZE home.
@@ -2373,7 +2317,7 @@ impl WorkspaceModel {
     /// that isn't already claimed by one of them straight into the focused
     /// pane's PTY instead of dropping it.
     fn no_modal_open(&self) -> bool {
-        self.chrome_answers() && self.code.is_none() && self.declared_open.is_none()
+        self.chrome_answers() && self.declared_open.is_none()
     }
 
     /// Whether the sidebar and the strip answer the pointer: nothing is

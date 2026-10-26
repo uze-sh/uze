@@ -216,7 +216,7 @@ enum Focus {
     Content,
 }
 
-/// Open state of the code surface (`WorkspaceModel::code`).
+/// Open state of the code surface, held by [`CodeExtension`].
 pub struct CodeView {
     /// The checkout this is scoped to, resolved once at open time from
     /// the active tab's live `cwd`. Inside a linked worktree this is that

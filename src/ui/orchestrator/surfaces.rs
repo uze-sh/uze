@@ -1,39 +1,9 @@
-//! Opening and closing the extension surfaces over the workspace: code, and the ones hosted in slots (architect, spec and the views plugins declare).
+//! Opening and closing the extension surfaces over the workspace, every one hosted in a slot: code, architect, spec and the views plugins declare.
 
 use super::*;
+use uze_extensions::contract::{Entry, Outcome};
 
-/// Opens the Git changes overlay scoped to the *currently selected tab's*
-/// live `cwd` — the hierarchy the user gave for this feature is
-/// `Workspace > Space > Agent/Shell > Git`, one level further down than
-/// the space itself. Snapshotted once here; the view doesn't track further
-/// `cd`s in that tab while it's open (see `git`'s own module doc).
-/// Opens the file explorer on the active tab's checkout.
-///
-/// Asked for, not read: the first listing is a request the background
-/// thread fulfils, so the overlay appears the instant it is pressed.
-/// Opens the code surface on the active tab's checkout, in the mode the
-/// door that was used means.
-///
-/// Two doors rather than one because a person knows whether they are
-/// reviewing or navigating before they press anything; one button would
-/// only defer that choice by a level.
-///
-/// Asked for, not read: the reads are `schedule_changes_refresh`'s and
-/// `schedule_file_request`'s, on threads. Formatting the path is not a
-/// read, so the surface opens already knowing which checkout it is about.
 impl WorkspaceModel {
-    /// Closes the code surface, keeping where the viewer was on this
-    /// checkout — every way out goes through here, or coming back would
-    /// start over or not depending on which one was used.
-    pub(super) fn close_code(&mut self) {
-        let Some(view) = self.code.take() else {
-            return;
-        };
-        self.remembered
-            .code_places
-            .insert(view.root().to_path_buf(), view.place());
-    }
-
     pub(super) fn offers_extension(&self, id: &str) -> bool {
         !self.disabled_extensions.contains(id)
     }
@@ -52,7 +22,6 @@ impl WorkspaceModel {
         }
         self.disabled_extensions = disabled;
         if !self.offers_extension(code::CATALOG.id) {
-            self.close_code();
             self.remembered.git_badge = None;
             self.commit_detail = None;
             self.commit_detail_pending = None;
@@ -83,7 +52,6 @@ impl WorkspaceModel {
 
     /// Closes whichever surface is standing in the pane.
     pub(super) fn close_extension(&mut self) {
-        self.close_code();
         self.close_declared();
     }
 
@@ -136,45 +104,55 @@ pub(super) fn open_spec(model: &mut WorkspaceModel) {
 /// path was written relative to the project and may sit outside a tab
 /// that is somewhere below it.
 pub(super) fn open_code_at(model: &mut WorkspaceModel, project: &Path, target: &Path) {
-    if !model.offers_extension(code::CATALOG.id) {
-        return;
-    }
-    let display_root = crate::ui::display_project_path(project);
-    let place = code::CodePlace::at(project, target, target.is_dir());
-    let view = code::CodeView::opening(
-        project.to_path_buf(),
-        display_root,
-        code::ContentMode::Contents,
-    );
-    model.close_declared();
-    model.stand_extension_in_front();
-    model.code = Some(view.resuming(place));
-    model.code_tree_scroll = extension_view::NavigatorScroll::default();
-    model.code_measure_asked = None;
-    model.show_remembered_measure();
-    model.dirty = true;
-}
-
-pub(super) fn open_code(model: &mut WorkspaceModel, mode: code::ContentMode) {
-    if !model.offers_extension(code::CATALOG.id) {
-        return;
-    }
-    let Some(cwd) = model.focused_cwd() else {
+    let Some(slot) = code_slot(model) else {
         return;
     };
-    let display_root = crate::ui::display_project_path(&cwd);
-    let place = model.remembered.code_places.get(&cwd).cloned();
-    let view = code::CodeView::opening(cwd, display_root, mode);
-    model.close_declared();
-    model.stand_extension_in_front();
-    model.code = Some(match place {
-        Some(place) => view.resuming(place),
-        None => view,
-    });
-    model.code_measure_asked = None;
-    model.show_remembered_measure();
-    // The scroll is not restored with the place: the first frame reveals
-    // whatever is selected, which is where the viewer was looking anyway.
-    model.code_tree_scroll = extension_view::NavigatorScroll::default();
-    model.dirty = true;
+    if !model.offers_extension(code::CATALOG.id) {
+        return;
+    }
+    let entry = Entry::Path {
+        target: target.to_path_buf(),
+        directory: target.is_dir(),
+    };
+    if let Some(engine) = code_engine(model) {
+        engine.enter(code::SURFACE, entry);
+    }
+    open_declared_on(model, slot, project.to_path_buf());
+}
+
+/// The code surface through one of its doors, on the active tab's
+/// checkout. Two doors rather than one because a person knows whether
+/// they are reviewing or navigating before they press anything; pressed
+/// while the surface stands, the door already open shuts it and the other
+/// shows that half.
+pub(super) fn open_code(model: &mut WorkspaceModel, door: &str) {
+    let Some(slot) = code_slot(model) else {
+        return;
+    };
+    let standing = model.declared_open == Some(slot);
+    if !standing && (!model.offers_extension(code::CATALOG.id) || model.focused_cwd().is_none()) {
+        return;
+    }
+    let entered =
+        code_engine(model).map(|engine| engine.enter(code::SURFACE, Entry::Door(door.to_owned())));
+    match entered {
+        Some(Outcome::Close) if standing => model.close_declared(),
+        _ if standing => model.dirty = true,
+        _ => open_declared(model, slot),
+    }
+}
+
+fn code_slot(model: &WorkspaceModel) -> Option<SlotId> {
+    model
+        .remembered
+        .declared
+        .builtin_slot(code::CATALOG.id, code::SURFACE)
+}
+
+fn code_engine(model: &mut WorkspaceModel) -> Option<&mut Box<dyn Hosted>> {
+    model
+        .remembered
+        .declared
+        .engines
+        .get_mut(&Owner::Builtin(code::CATALOG.id))
 }

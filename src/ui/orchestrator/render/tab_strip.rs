@@ -204,7 +204,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
                 WorkspaceHit::OpenFiles,
                 Symbol::Code,
                 "code",
-                model.code.is_some(),
+                model.showing(uze_extensions::code::CATALOG.id),
             ),
         ]
         .into_iter()

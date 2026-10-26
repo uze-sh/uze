@@ -67,10 +67,6 @@ pub use shared::places::{ArtifactRoot, ArtifactSource};
 /// "row 3 was clicked" is meaningless without saying whose row 3.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExtensionHit {
-    /// The code extension's full-frame surface — the changes, the file
-    /// tree and a file's contents are one surface in three modes, so
-    /// they are one variant.
-    Code(view::ViewHit),
     /// The code extension's sidebar section — its commit timeline.
     ///
     /// A second variant for a second *surface* of the one extension, not

@@ -202,6 +202,13 @@ pub trait Extension: Send {
         false
     }
 
+    /// Whether what `surface` draws is taken hold of and moved: a press on
+    /// it is then held until the first movement says whether it was a
+    /// click or a drag. One that is not moved has its click at once.
+    fn drags(&self, _surface: &str) -> bool {
+        false
+    }
+
     /// What `surface` drew was taken hold of and moved by so many cells.
     fn drag(&mut self, _surface: &str, _columns: i32, _rows: i32, _space: Size) {}
 

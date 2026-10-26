@@ -592,7 +592,7 @@ impl Attach<'_> {
     }
 
     /// What the Git badge, the release notes, the commit detail and the
-    /// code and spec surfaces' and the hosted engines' reads answered.
+    /// hosted engines' reads answered.
     /// What keeping `AGENTS.md` in step could not do: said once a session
     /// per file, never repaired over the operator's edit.
     /// The registry's launcher names, asked once and absorbed when they
@@ -761,18 +761,6 @@ impl Attach<'_> {
         while let Ok(resolution) = self.channels.commit_details.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_commit_detail(resolution);
         }
-        while let Ok(resolution) = self.channels.code_changes.receiver.try_recv() {
-            self.model.dirty |= self.model.absorb_changes(resolution);
-        }
-        while let Ok(resolution) = self.channels.code_diffs.receiver.try_recv() {
-            self.model.dirty |= self.model.absorb_diff(resolution);
-        }
-        while let Ok(resolution) = self.channels.code_files.receiver.try_recv() {
-            self.model.dirty |= self.model.absorb_file_answer(resolution);
-        }
-        while let Ok(resolution) = self.channels.code_measures.receiver.try_recv() {
-            self.model.dirty |= self.model.absorb_measure(resolution);
-        }
         while let Ok(answer) = self.channels.extension_jobs.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_extension_answer(answer);
         }
@@ -787,14 +775,6 @@ impl Attach<'_> {
     /// Asks whatever those same surfaces now show and have not read.
     pub(super) fn schedule_surface_reads(&mut self) {
         self.model.schedule_git_read(&self.channels.git.sender);
-        self.model
-            .schedule_diff_read(&self.channels.code_diffs.sender);
-        self.model
-            .schedule_changes_refresh(&self.channels.code_changes.sender);
-        self.model
-            .schedule_file_request(&self.channels.code_files.sender);
-        self.model
-            .schedule_code_measure(&self.channels.code_measures.sender);
         self.model.schedule_extension_jobs(
             self.home,
             crate::ui::extension_switch::plugins_revision(),

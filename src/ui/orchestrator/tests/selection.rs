@@ -186,13 +186,16 @@ fn releasing_a_drag_over_the_code_surface_copies_what_it_covered() {
     };
     code::handle_command(&mut view, uze_extensions::view::Command::Activate, space);
     settle(&mut view);
-    model.code = Some(view);
+    show_code(&mut model, view);
     let mut driven = driven(model, &home);
     driven.frame();
     let first_line = driven.hit(|hit| {
         matches!(
             hit,
-            WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::PlaceCaret { line: 0, .. }))
+            WorkspaceHit::Extension(ExtensionHit::Declared {
+                hit: ViewHit::PlaceCaret { line: 0, .. },
+                ..
+            })
         )
     });
     let text = first_line.x + driven.attach.model.code_scrollbars.content_gutter;
@@ -223,7 +226,7 @@ fn releasing_a_drag_over_the_code_surface_copies_what_it_covered() {
     // The copy's toast is put away first: it stands over the pane's
     // top-right corner, where the file's first line now is.
     driven.attach.model.dismiss_toast(0);
-    if let Some(view) = driven.attach.model.code.as_mut() {
+    if let Some(view) = code_view_mut(&mut driven.attach.model) {
         code::handle_command(view, uze_extensions::view::Command::Edit, space);
     }
     driven.frame();
@@ -245,7 +248,7 @@ fn releasing_a_drag_over_the_code_surface_copies_what_it_covered() {
         second.area.y,
         MouseEventKind::Drag(MouseButton::Left),
     );
-    let caret = match code::view(driven.attach.model.code.as_ref().unwrap(), space).content {
+    let caret = match code::view(code_view(&driven.attach.model).unwrap(), space).content {
         uze_extensions::view::Content::Lines { caret, .. } => caret,
         _ => None,
     };
