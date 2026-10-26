@@ -20,6 +20,7 @@ mod installed;
 mod reach;
 mod runner;
 mod summary;
+mod watch;
 
 pub use checked::{CheckedExtension, Overlay};
 pub use checkout::{ExtensionCheckout, NotACheckout};
@@ -31,6 +32,7 @@ pub use installed::InstalledExtension;
 use reach::CheckoutReach;
 pub use runner::ExtensionRunner;
 pub use summary::DeclaredExtensionSummary;
+pub use watch::{WATCH_DEPTH, WATCH_ENTRIES, paths_digest};
 
 impl Extensions<'_> {
     /// The ids switched off; empty until the operator switches one off.

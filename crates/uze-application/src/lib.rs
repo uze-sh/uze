@@ -51,7 +51,7 @@ pub use application::{
     Asker, CheckedExtension, Consented, DeclaredExtensionSummary, ExtensionCheckout,
     ExtensionConsent, ExtensionLoad, ExtensionOverlay, ExtensionRunner, ExtensionStanding,
     ExtensionState, FIXTURE_LIMIT, InstalledExtension, NotACheckout, SourceData, Switched,
-    consent_key, extension_stamp,
+    WATCH_DEPTH, WATCH_ENTRIES, consent_key, extension_stamp, paths_digest,
 };
 pub use uze_contract::{CompiledExtension, Identity as ExtensionIdentity};
 pub use uze_core::capability::extension::Diagnostic as ExtensionDiagnostic;

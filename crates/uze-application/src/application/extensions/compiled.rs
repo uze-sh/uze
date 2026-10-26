@@ -163,7 +163,7 @@ pub fn extension_stamp(dir: &Path) -> u64 {
 
 /// Each field length-prefixed, so no arrangement of names and contents
 /// reads as another.
-fn push_field(stream: &mut Vec<u8>, field: &[u8]) {
+pub(super) fn push_field(stream: &mut Vec<u8>, field: &[u8]) {
     stream.extend_from_slice(&(field.len() as u64).to_le_bytes());
     stream.extend_from_slice(field);
 }

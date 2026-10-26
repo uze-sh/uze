@@ -69,7 +69,7 @@ pub use extensions::{
     Asker, CheckedExtension, Consented, DeclaredExtensionSummary, ExtensionCheckout,
     ExtensionConsent, ExtensionLoad, ExtensionRunner, ExtensionStanding, ExtensionState,
     FIXTURE_LIMIT, InstalledExtension, NotACheckout, Overlay as ExtensionOverlay, SourceData,
-    Switched, consent_key, extension_stamp,
+    Switched, WATCH_DEPTH, WATCH_ENTRIES, consent_key, extension_stamp, paths_digest,
 };
 pub use profile::{HarnessPreview, ProfileApplyResult, ProfilePreview, ProfileSummary};
 pub use read_models::*;
