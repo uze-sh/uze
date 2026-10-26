@@ -14,13 +14,13 @@ use crate::view::NodeKind;
 
 /// A host that answers every question with what it was given, and keeps
 /// the questions.
-struct Answering {
-    answer: Answer,
-    asked: RefCell<Vec<Question>>,
+pub(super) struct Answering {
+    pub answer: Answer,
+    pub asked: RefCell<Vec<Question>>,
 }
 
 impl Answering {
-    fn with(answer: Answer) -> Self {
+    pub fn with(answer: Answer) -> Self {
         Self {
             answer,
             asked: RefCell::new(Vec::new()),
@@ -59,7 +59,7 @@ impl crate::Host for Answering {
     }
 }
 
-fn answered(data: serde_json::Value) -> Answer {
+pub(super) fn answered(data: serde_json::Value) -> Answer {
     Answer::Answered {
         envelope: uze_contract::Envelope::data(data),
         trace: Vec::new(),
@@ -75,7 +75,7 @@ fn board() -> DeclaredExtension {
     DeclaredExtension::new(extension(view), "pt")
 }
 
-fn checkout(root: &str) -> Checkout {
+pub(super) fn checkout(root: &str) -> Checkout {
     Checkout {
         root: PathBuf::from(root),
         display: root.to_owned(),

@@ -936,3 +936,6 @@ mod board_tests;
 
 #[cfg(test)]
 mod source_tests;
+
+#[cfg(test)]
+mod action_tests;

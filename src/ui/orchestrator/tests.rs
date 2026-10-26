@@ -24,6 +24,8 @@ mod context_menu;
 #[cfg(test)]
 mod declared;
 #[cfg(test)]
+mod declared_actions;
+#[cfg(test)]
 mod delivery;
 #[cfg(test)]
 mod drawing;
