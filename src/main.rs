@@ -650,7 +650,17 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         Command::Market { action } => run_market(&app, action)?,
         Command::Doctor { format } => {
             let spinner = progress::spinner("Running diagnostics");
-            let report = app.health().report();
+            let mut report = app.health().report();
+            // The keyboard is this binary's, not the application's: what the
+            // installed extensions' keys meet is asked of the keymap in force.
+            report.machine_concerns.extend(
+                uze::keymap::extension_collisions(&app)
+                    .into_iter()
+                    .map(|detail| uze_application::application::MachineConcern {
+                        subject: "keys".to_owned(),
+                        detail,
+                    }),
+            );
             spinner.finish_and_clear();
             emit(format, &report, render_doctor);
             // A failure fails the command, so a script or CI can ask; a
