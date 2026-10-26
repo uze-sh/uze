@@ -17,6 +17,8 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::extension::{self, ExtensionActionId};
+
 macro_rules! actions {
     ($($variant:ident => $name:literal, $destructive:expr, $label:literal, $description:literal;)*) => {
         /// Everything uze's keyboard can reach.
@@ -34,6 +36,12 @@ macro_rules! actions {
             /// [`Action::SelectTab`], whose chords stay live over the
             /// overview and choose a tab of the strip behind it.
             SelectSection(u8),
+            /// An action a plugin's extension declares, named
+            /// `ext.<plugin>@<marketplace>/<id>.<action>` and live only
+            /// while that extension's surface is in front. Never in
+            /// [`ALL_ACTIONS`]: what plugins declare is not this build's
+            /// vocabulary. See [`crate::extension`].
+            Extension(ExtensionActionId),
         }
 
         /// Every action this build knows, in vocabulary order — the order
@@ -55,6 +63,7 @@ macro_rules! actions {
                     $(Action::$variant => $name.to_owned(),)*
                     Action::SelectTab(index) => format!("select-tab-{index}"),
                     Action::SelectSection(index) => format!("select-section-{index}"),
+                    Action::Extension(id) => extension::name(id),
                 }
             }
 
@@ -64,6 +73,9 @@ macro_rules! actions {
             pub fn parse(name: &str) -> Option<Action> {
                 match name {
                     $($name => Some(Action::$variant),)*
+                    other if extension::is_name(other) => {
+                        Some(Action::Extension(extension::intern(other)))
+                    }
                     other => other
                         .strip_prefix("select-tab-")
                         .and_then(|index| index.parse::<u8>().ok())
@@ -86,6 +98,7 @@ macro_rules! actions {
                 match self {
                     $(Action::$variant => $destructive,)*
                     Action::SelectTab(_) | Action::SelectSection(_) => false,
+                    Action::Extension(id) => extension::destructive(id),
                 }
             }
 
@@ -95,6 +108,7 @@ macro_rules! actions {
                     $(Action::$variant => $label.to_owned(),)*
                     Action::SelectTab(index) => format!("Tab {index}"),
                     Action::SelectSection(index) => format!("Section {index}"),
+                    Action::Extension(id) => extension::label(id),
                 }
             }
 
@@ -113,6 +127,7 @@ macro_rules! actions {
                     Action::SelectSection(index) => {
                         format!("Show section {index} of the space's overview")
                     }
+                    Action::Extension(id) => extension::description(id),
                 }
             }
         }

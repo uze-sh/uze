@@ -12,6 +12,8 @@ use std::collections::BTreeMap;
 use crate::{
     action::Action,
     chord::{Chord, Key},
+    extension::{self, ExtensionActionId, ExtensionTable, Front},
+    load::Problem,
     scope::Scope,
 };
 
@@ -63,7 +65,41 @@ pub enum Resolution {
 pub struct Keymap {
     bindings: Vec<Binding>,
     by_chord: BTreeMap<(Scope, Chord), Action>,
+    extensions: Extensions,
 }
+
+/// The second table: what each registered extension's actions are bound
+/// to, kept apart from the host's bindings so two extensions suggesting one
+/// chord never meet — only the extension in front is ever asked.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct Extensions {
+    /// What the operator's file says of an extension action, which beats
+    /// its suggestion. An empty list is "no key", as for any action.
+    written: BTreeMap<ExtensionActionId, Vec<Chord>>,
+    /// The extensions registered, as they were handed over.
+    tables: Vec<ExtensionTable>,
+    /// By owner: each action offered, its surface and its chord, if any.
+    bound: BTreeMap<String, Vec<Bound>>,
+    /// What resolving the tables dropped, and why.
+    problems: Vec<Problem>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct Bound {
+    action: ExtensionActionId,
+    surface: String,
+    chord: Option<Chord>,
+}
+
+/// The stack a declared surface's action lives in, outermost first, as the
+/// workspace builds it: a suggestion is bound only where this answers
+/// [`Resolution::Fallthrough`].
+const DECLARED_STACK: [Scope; 4] = [
+    Scope::Global,
+    Scope::Workspace,
+    Scope::Declared,
+    Scope::Surfaces,
+];
 
 impl Keymap {
     /// Builds a keymap, refusing one in which a chord reaches two actions
@@ -77,7 +113,11 @@ impl Keymap {
             .iter()
             .map(|binding| ((binding.scope, binding.chord), binding.action))
             .collect();
-        Ok(Keymap { bindings, by_chord })
+        Ok(Keymap {
+            bindings,
+            by_chord,
+            extensions: Extensions::default(),
+        })
     }
 
     pub fn bindings(&self) -> &[Binding] {
@@ -132,6 +172,9 @@ impl Keymap {
     /// first. Empty for an action that is deliberately unbound — which is a
     /// finished design, not a gap, and every surface prints it as one.
     pub fn chords_for(&self, action: Action, scopes: &[Scope]) -> Vec<Chord> {
+        if let Action::Extension(id) = action {
+            return self.extension_chord(id, scopes).into_iter().collect();
+        }
         let mut chords: Vec<Chord> = Vec::new();
         for scope in Keymap::reachable(scopes) {
             for binding in &self.bindings {
@@ -192,7 +235,235 @@ impl Keymap {
                 action,
             });
         }
-        Keymap::new(bindings)
+        // A host chord that moved may free a suggestion or take one, so
+        // the tables are resolved again over the new bindings.
+        Ok(Keymap::new(bindings)?
+            .with_written(self.extensions.written.clone())
+            .with_extensions(self.extensions.tables.clone()))
+    }
+
+    /// What `chord` means with `scopes` open and `front` the declared
+    /// surface in front, if one is.
+    ///
+    /// The extension's table is asked after the host's own keys — the
+    /// global ones and the doors to the surfaces — and before the generic
+    /// vocabulary every declared surface shares, so the operator can give
+    /// an extension a letter that surface uses, and nothing an extension
+    /// declares ever shadows the host.
+    pub fn resolve_for(
+        &self,
+        chord: Chord,
+        scopes: &[Scope],
+        front: Option<Front<'_>>,
+    ) -> Resolution {
+        if let Some(action) = front.and_then(|front| self.extension_at(front, chord, scopes)) {
+            return Resolution::Act(Action::Extension(action));
+        }
+        self.resolve(chord, scopes)
+    }
+
+    fn extension_at(
+        &self,
+        front: Front<'_>,
+        chord: Chord,
+        scopes: &[Scope],
+    ) -> Option<ExtensionActionId> {
+        let reachable = Keymap::reachable(scopes);
+        if !reachable.contains(&Scope::Declared) || self.host_takes(chord, &reachable) {
+            return None;
+        }
+        self.extensions
+            .bound
+            .get(front.owner)?
+            .iter()
+            .find(|bound| bound.surface == front.surface && bound.chord == Some(chord))
+            .map(|bound| bound.action)
+    }
+
+    /// Whether a host scope other than the declared surface's own answers
+    /// `chord` among `reachable`.
+    fn host_takes(&self, chord: Chord, reachable: &[Scope]) -> bool {
+        reachable
+            .iter()
+            .any(|scope| *scope != Scope::Declared && self.by_chord.contains_key(&(*scope, chord)))
+    }
+
+    fn extension_chord(&self, id: ExtensionActionId, scopes: &[Scope]) -> Option<Chord> {
+        let reachable = Keymap::reachable(scopes);
+        if !reachable.contains(&Scope::Declared) {
+            return None;
+        }
+        self.extensions
+            .bound
+            .get(&extension::owner(id))?
+            .iter()
+            .find(|bound| bound.action == id)?
+            .chord
+            .filter(|chord| !self.host_takes(*chord, &reachable))
+    }
+
+    /// The actions `owner` offers on `surface`, in the order it declares
+    /// them, each with the chord that reaches it there — the index's and
+    /// the footer's list for a declared surface in front.
+    pub fn extension_actions(&self, front: Front<'_>) -> Vec<(Action, Option<Chord>)> {
+        self.extensions
+            .bound
+            .get(front.owner)
+            .into_iter()
+            .flatten()
+            .filter(|bound| bound.surface == front.surface)
+            .map(|bound| {
+                let action = Action::Extension(bound.action);
+                (action, self.chord_for(action, &DECLARED_STACK))
+            })
+            .collect()
+    }
+
+    /// This keymap with `tables` as the extensions registered, replacing
+    /// whichever were before: an extension disabled is one left out.
+    ///
+    /// Never refuses. What cannot be bound is dropped, one binding at a
+    /// time, and said in [`Keymap::extension_problems`]: a suggestion the
+    /// host already holds, a chord two actions of one surface reach, a
+    /// name the operator wrote for an extension not registered.
+    pub fn with_extensions(&self, tables: Vec<ExtensionTable>) -> Keymap {
+        let mut keymap = self.clone();
+        let mut problems = Vec::new();
+        let mut bound = BTreeMap::new();
+        for table in &tables {
+            let actions = self.bind_table(table, &mut problems);
+            bound.insert(table.owner.clone(), actions);
+        }
+        for id in self.extensions.written.keys() {
+            if !bound.contains_key(&extension::owner(*id)) {
+                problems.push(Problem::warning(format!(
+                    "`{}` names an extension that is not installed; it is ignored",
+                    extension::name(*id)
+                )));
+            }
+        }
+        keymap.extensions.tables = tables;
+        keymap.extensions.bound = bound;
+        keymap.extensions.problems = problems;
+        keymap
+    }
+
+    fn bind_table(&self, table: &ExtensionTable, problems: &mut Vec<Problem>) -> Vec<Bound> {
+        let mut actions: Vec<Bound> = Vec::new();
+        for offered in &table.offered {
+            let name = extension::name(offered.action);
+            let chord = match self.extensions.written.get(&offered.action) {
+                Some(written) => self.written_chord(&name, written, problems),
+                None => self.suggested_chord(&name, offered.suggested.as_ref(), problems),
+            };
+            let taken = chord.and_then(|chord| {
+                actions
+                    .iter()
+                    .find(|other| other.surface == offered.surface && other.chord == Some(chord))
+            });
+            let chord =
+                match taken {
+                    Some(other) => {
+                        problems.push(Problem::warning(format!(
+                        "`{}` reaches both `{}` and `{name}`; `{name}` is offered without a key",
+                        other.chord.map(|chord| chord.to_string()).unwrap_or_default(),
+                        extension::name(other.action),
+                    )));
+                        None
+                    }
+                    None => chord,
+                };
+            actions.push(Bound {
+                action: offered.action,
+                surface: offered.surface.clone(),
+                chord,
+            });
+        }
+        actions
+    }
+
+    /// The operator's chord for an extension action: the first they wrote,
+    /// unless a key of the host's always answers it first.
+    fn written_chord(
+        &self,
+        name: &str,
+        written: &[Chord],
+        problems: &mut Vec<Problem>,
+    ) -> Option<Chord> {
+        let reachable = Keymap::reachable(&DECLARED_STACK);
+        let chord = *written.first()?;
+        if self.host_takes(chord, &reachable) {
+            problems.push(Problem::warning(format!(
+                "`{chord}` for `{name}` is `{}` everywhere, so it never reaches the extension",
+                self.resolve(chord, &DECLARED_STACK).action_name()
+            )));
+            return None;
+        }
+        Some(chord)
+    }
+
+    /// The manifest's chord for an extension action, when nothing of the
+    /// host's answers it on a declared surface.
+    fn suggested_chord(
+        &self,
+        name: &str,
+        suggested: Option<&Result<Chord, crate::chord::ChordProblem>>,
+        problems: &mut Vec<Problem>,
+    ) -> Option<Chord> {
+        match suggested? {
+            Err(problem) => {
+                problems.push(Problem::warning(format!(
+                    "the key `{name}` suggests is no key: {problem}; it is offered without one"
+                )));
+                None
+            }
+            Ok(chord) => match self.resolve(*chord, &DECLARED_STACK) {
+                Resolution::Fallthrough => Some(*chord),
+                taken => {
+                    problems.push(Problem::warning(format!(
+                        "`{chord}` that `{name}` suggests is `{}`; it is offered without a key",
+                        taken.action_name()
+                    )));
+                    None
+                }
+            },
+        }
+    }
+
+    /// What resolving the registered extensions dropped, and why: what
+    /// `uze doctor` says about the keyboard.
+    pub fn extension_problems(&self) -> &[Problem] {
+        &self.extensions.problems
+    }
+
+    /// The operator's bindings of extension actions, as written.
+    pub fn written_extension_bindings(
+        &self,
+    ) -> impl Iterator<Item = (ExtensionActionId, &[Chord])> {
+        self.extensions
+            .written
+            .iter()
+            .map(|(id, chords)| (*id, chords.as_slice()))
+    }
+
+    /// This keymap carrying the operator's bindings of extension actions.
+    pub(crate) fn with_written(
+        mut self,
+        written: BTreeMap<ExtensionActionId, Vec<Chord>>,
+    ) -> Keymap {
+        self.extensions.written = written;
+        self
+    }
+}
+
+impl Resolution {
+    /// What a chord already means, named as a keymap file names it.
+    fn action_name(self) -> String {
+        match self {
+            Resolution::Act(action) => action.name(),
+            Resolution::Text => "typing".to_owned(),
+            Resolution::Fallthrough => "free".to_owned(),
+        }
     }
 }
 

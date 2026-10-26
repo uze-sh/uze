@@ -36,14 +36,14 @@ pub enum Severity {
 }
 
 impl Problem {
-    fn error(message: impl Into<String>) -> Problem {
+    pub(crate) fn error(message: impl Into<String>) -> Problem {
         Problem {
             severity: Severity::Error,
             message: message.into(),
         }
     }
 
-    fn warning(message: impl Into<String>) -> Problem {
+    pub(crate) fn warning(message: impl Into<String>) -> Problem {
         Problem {
             severity: Severity::Warning,
             message: message.into(),
@@ -89,6 +89,7 @@ pub fn resolve(file: &KeymapFile) -> Result<Loaded, Vec<Problem>> {
     let mut problems = Vec::new();
     let mut errors = Vec::new();
     let mut bindings = default_bindings();
+    let mut extensions = std::collections::BTreeMap::new();
 
     if let Some(version) = file.version
         && version > crate::file::CURRENT_VERSION
@@ -135,6 +136,19 @@ pub fn resolve(file: &KeymapFile) -> Result<Loaded, Vec<Problem>> {
             if !readable {
                 continue;
             }
+            if let Action::Extension(id) = action {
+                // An extension's action lives on its declared surface, and
+                // in the extension's own table: never among the host's.
+                if scope == Scope::Declared {
+                    extensions.insert(id, written);
+                } else {
+                    problems.push(Problem::warning(format!(
+                        "`{action_name}` is an extension's action, bound under `{}`; it is ignored under `{scope_name}`",
+                        Scope::Declared.name()
+                    )));
+                }
+                continue;
+            }
             // Declaring an action replaces every default chord it had in
             // that surface — including with nothing, which is how an
             // operator says "no key, the button is enough".
@@ -151,7 +165,10 @@ pub fn resolve(file: &KeymapFile) -> Result<Loaded, Vec<Problem>> {
         return Err(errors);
     }
     match Keymap::new(bindings) {
-        Ok(keymap) => Ok(Loaded { keymap, problems }),
+        Ok(keymap) => Ok(Loaded {
+            keymap: keymap.with_written(extensions),
+            problems,
+        }),
         Err(conflicts) => Err(conflicts
             .into_iter()
             .map(|conflict| Problem::error(conflict.to_string()))
@@ -170,7 +187,9 @@ pub fn saved_over(written: &KeymapFile, keymap: &Keymap) -> KeymapFile {
     for (scope_name, actions) in &written.bindings {
         let known_scope = Scope::parse(scope_name).is_some();
         for (action_name, chords) in actions {
-            if !known_scope || Action::parse(action_name).is_none() {
+            let misplaced_extension = scope_name != Scope::Declared.name()
+                && matches!(Action::parse(action_name), Some(Action::Extension(_)));
+            if !known_scope || Action::parse(action_name).is_none() || misplaced_extension {
                 file.set(scope_name, action_name, chords.clone());
             }
         }
@@ -209,6 +228,13 @@ pub fn difference_from_default(keymap: &Keymap) -> KeymapFile {
         if theirs != chords(default) {
             file.set(scope.name(), &action.name(), theirs);
         }
+    }
+    for (id, chords) in keymap.written_extension_bindings() {
+        file.set(
+            Scope::Declared.name(),
+            &crate::extension::name(id),
+            chords.iter().map(ToString::to_string).collect(),
+        );
     }
     file
 }
