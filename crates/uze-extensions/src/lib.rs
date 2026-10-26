@@ -67,17 +67,11 @@ pub use shared::places::{ArtifactRoot, ArtifactSource};
 /// "row 3 was clicked" is meaningless without saying whose row 3.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExtensionHit {
-    /// The code extension's sidebar section — its commit timeline.
-    ///
-    /// A second variant for a second *surface* of the one extension, not
-    /// a second extension: `SelectItem(3)` means a different thing in a
-    /// file list than in a list of commits, and the host is the only side
-    /// that knows which of the two it drew.
-    CodeTimeline(view::ViewHit),
-    /// A surface a plugin declared, by the number the host gave the slot it
-    /// stands in. One variant for every declared surface, view and section
-    /// alike: which extension and which of its surfaces a slot is, is the
-    /// host's map to keep, since two plugins may declare the same ids.
+    /// A surface hosted in a slot, a built-in's or one a plugin declared, by
+    /// the number the host gave the slot. One variant for every surface,
+    /// view and section alike: which extension and which of its surfaces a
+    /// slot is, is the host's map to keep, since two plugins may declare
+    /// the same ids.
     Declared { slot: u32, hit: view::ViewHit },
 }
 

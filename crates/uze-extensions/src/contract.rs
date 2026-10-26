@@ -49,6 +49,13 @@ pub enum Outcome {
         project: PathBuf,
         target: PathBuf,
     },
+    /// Show the account of commit `hash` of the checkout at `project`,
+    /// beside the row it was chosen on: where a history ends and what one
+    /// commit did begins.
+    OpenCommit {
+        project: PathBuf,
+        hash: String,
+    },
     /// Put this on the clipboard, and say so.
     Copy(String),
     /// Open this extension's full-frame `surface` on the checkout in

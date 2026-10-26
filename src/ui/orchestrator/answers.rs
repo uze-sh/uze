@@ -33,7 +33,7 @@ impl WorkspaceModel {
         self.agent_directory_in_front().map(Path::to_path_buf)
     }
 
-    /// Asks for whatever the badge is missing, on a thread of its own.
+    /// Asks for the badge again once it is due, on a thread of its own.
     ///
     /// Cheap enough to call every tick — it compares two instants and a
     /// path — which is the point: the read it schedules is the expensive
@@ -49,23 +49,17 @@ impl WorkspaceModel {
         if self.remembered.git_pending.is_some() {
             return;
         }
-        let now = Instant::now();
-        let current = self
+        let every = paced(GIT_BADGE_REFRESH, self.remembered.git_took);
+        let fresh = self
             .remembered
             .git_badge
             .as_ref()
-            .filter(|badge| badge.cwd == cwd);
-        let every = paced(GIT_BADGE_REFRESH, self.remembered.git_took);
-        let summary_fresh =
-            current.is_some_and(|badge| now.duration_since(badge.checked_at) < every);
-        let timeline_fresh = current
-            .is_some_and(|badge| now.duration_since(badge.timeline_checked_at) < TIMELINE_REFRESH);
-        if summary_fresh && timeline_fresh {
+            .is_some_and(|badge| badge.cwd == cwd && badge.checked_at.elapsed() < every);
+        if fresh {
             return;
         }
-        let target = self.remembered.targets.get(&evaluation_key(&cwd)).cloned();
         self.remembered.git_pending = Some(cwd.clone());
-        spawn_git_read(cwd, target, !timeline_fresh, sender.clone());
+        spawn_git_read(cwd, sender.clone());
     }
 
     /// Installs a finished read, or drops it.
@@ -84,27 +78,10 @@ impl WorkspaceModel {
         {
             return false;
         }
-        let now = Instant::now();
-        let carried = self
-            .remembered
-            .git_badge
-            .take()
-            .filter(|badge| badge.cwd == resolution.cwd);
-        self.remembered.git_badge = Some(match resolution.answer {
-            GitAnswer::Summary(summary) => GitBadge {
-                cwd: resolution.cwd,
-                summary,
-                timeline: carried.as_ref().and_then(|badge| badge.timeline.clone()),
-                timeline_checked_at: carried.map_or(now, |badge| badge.timeline_checked_at),
-                checked_at: now,
-            },
-            GitAnswer::Full { summary, timeline } => GitBadge {
-                cwd: resolution.cwd,
-                summary,
-                timeline,
-                timeline_checked_at: now,
-                checked_at: now,
-            },
+        self.remembered.git_badge = Some(GitBadge {
+            cwd: resolution.cwd,
+            summary: resolution.summary,
+            checked_at: Instant::now(),
         });
         true
     }

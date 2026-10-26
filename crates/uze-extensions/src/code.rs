@@ -89,7 +89,8 @@ pub use crate::shared::markdown::render as markdown;
 pub use changes::{ChangeSummary, change_summary};
 pub use exclude::Exclusions;
 pub use extension::{
-    CHANGES, ChangesRead, CodeExtension, DiffRead, FILES, FileRead, MeasureRead, SURFACE,
+    CHANGES, ChangesRead, CodeExtension, DiffRead, FILES, FileRead, MeasureRead, SURFACE, TIMELINE,
+    TIMELINE_COMMITS, TimelineRead,
 };
 pub use history::{Commit, CommitDetail, Timeline, commit_detail, timeline, timeline_section};
 pub use map::{FileMeasure, Measure, measure};

@@ -29,8 +29,6 @@ fn a_message_never_moves_an_action() {
             additions: 12,
             deletions: 3,
         }),
-        timeline: None,
-        timeline_checked_at: Instant::now(),
         checked_at: Instant::now(),
     });
     let (_, quiet) = tab_strip(&model);

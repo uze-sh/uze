@@ -250,11 +250,7 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
     // under a long tree, and a history that is only there while the tree
     // is short is no place to go looking for one. Its rows are reserved
     // before the spaces are laid out, and handed back to them below.
-    let timeline = model
-        .remembered
-        .git_badge
-        .as_ref()
-        .and_then(|badge| badge.timeline.as_ref());
+    let timeline = model.timeline();
     // Two sections stacked at the foot: the steps above the history, each
     // taking its rows before the tree is laid out, so neither is ever
     // drawn over the other. Any of them may be open at once; each is
@@ -263,7 +259,7 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
     let column_bottom = rows.bottom;
     let steps = model.first_steps();
     let steps_height = steps.height();
-    let reserved = timeline.map_or(0, |timeline| {
+    let reserved = timeline.as_ref().map_or(0, |(_, timeline)| {
         timeline_height(
             timeline,
             model.timeline_collapsed,
@@ -502,7 +498,7 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
         rows.scroll_past(0);
         rows.bottom = column_bottom;
         rows.y = column_bottom - reserved;
-        metrics.marquee |= render_timeline(frame, timeline, model, grabbed(0), &mut rows, hits);
+        metrics.marquee |= render_timeline(frame, &timeline, model, grabbed(0), &mut rows, hits);
     }
 }
 
@@ -1357,12 +1353,12 @@ pub(super) const MIN_TREE_ROWS: u16 = 4;
 /// within the history there is and what the column can spare past the
 /// tree's minimum. Nothing when even the header would not fit.
 pub(in crate::ui::orchestrator) fn timeline_height(
-    timeline: &uze_extensions::code::Timeline,
+    timeline: &uze_extensions::view::Section,
     collapsed: bool,
     rows_wanted: Option<u16>,
     remaining: u16,
 ) -> u16 {
-    let commits = timeline.commits.len() as u16;
+    let commits = timeline.rows.len() as u16;
     let (chrome, rows, budget) = match rows_wanted {
         _ if collapsed => (SECTION_CHROME, 0, remaining / 2),
         Some(wanted) => (
@@ -1381,24 +1377,20 @@ pub(in crate::ui::orchestrator) fn timeline_height(
 /// The sidebar's commit-timeline section.
 ///
 /// Nothing here knows what a commit is. The extension says what the
-/// section holds ([`git::timeline_section`]) and
+/// section holds (`code::TIMELINE`) and
 /// `extension_view::render_section` draws it; this only supplies the host
 /// state the extension is not allowed to hold — whether the section is
 /// folded, how far it is scrolled, whether its divider is being dragged —
 /// and tags the hits that come back with the surface they came from.
 pub(super) fn render_timeline(
     frame: &mut ratatui::Frame<'_>,
-    timeline: &uze_extensions::code::Timeline,
+    (slot, section): &(SlotId, uze_extensions::view::Section),
     model: &WorkspaceModel,
     dragging: bool,
     rows: &mut Rows,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) -> bool {
-    let section = uze_extensions::code::timeline_section(
-        timeline,
-        model.timeline_collapsed,
-        model.timeline_scroll,
-    );
+    let slot = *slot;
     let mut section_hits = Vec::new();
     let mut column = Rows::over(Rect::new(rows.x, rows.y, rows.width, rows.remaining()));
     // The branch name on the header and a commit's subject are captions
@@ -1407,7 +1399,11 @@ pub(super) fn render_timeline(
     // instead of stopping at an "…": a branch is read from both ends, and
     // the end is the half an "…" eats.
     let under = match model.hovered {
-        Some(WorkspaceHit::Extension(ExtensionHit::CodeTimeline(hit))) => Some(hit),
+        Some(WorkspaceHit::Extension(ExtensionHit::Declared { slot: hovered, hit }))
+            if hovered == slot =>
+        {
+            Some(hit)
+        }
         _ => None,
     };
     let hovered_row = match under {
@@ -1416,7 +1412,7 @@ pub(super) fn render_timeline(
     };
     let sliding = crate::ui::extension_view::render_section(
         frame,
-        &section,
+        section,
         &mut column,
         SectionState {
             dragging,
@@ -1428,7 +1424,7 @@ pub(super) fn render_timeline(
     hits.extend(section_hits.into_iter().map(|(rect, hit)| {
         (
             rect,
-            WorkspaceHit::Extension(ExtensionHit::CodeTimeline(hit)),
+            WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit }),
         )
     }));
     sliding

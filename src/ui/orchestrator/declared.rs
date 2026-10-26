@@ -697,6 +697,29 @@ impl WorkspaceModel {
         Some((slot, section))
     }
 
+    /// The timeline's slot and section, scrolled as far as the host
+    /// scrolled it, while the code extension is on.
+    pub(super) fn timeline(&self) -> Option<(SlotId, Section)> {
+        if !self.offers_extension(code::CATALOG.id) {
+            return None;
+        }
+        let declared = &self.remembered.declared;
+        let slot = declared.builtin_slot(code::CATALOG.id, code::TIMELINE)?;
+        let mut section = declared
+            .engine(&Owner::Builtin(code::CATALOG.id))?
+            .section(code::TIMELINE, self.timeline_collapsed)?;
+        section.scroll = self.timeline_scroll;
+        Some((slot, section))
+    }
+
+    /// Whether `slot` is the timeline's.
+    pub(super) fn is_timeline(&self, slot: SlotId) -> bool {
+        self.remembered
+            .declared
+            .builtin_slot(code::CATALOG.id, code::TIMELINE)
+            == Some(slot)
+    }
+
     /// Whether `slot` is the spec summary's.
     pub(super) fn is_spec_summary(&self, slot: SlotId) -> bool {
         self.remembered
@@ -817,6 +840,9 @@ impl WorkspaceModel {
                 }
             }
             Outcome::Failed { title, detail } => self.say_failed(&title, detail),
+            // Only the timeline's rows ask, and their click opens it
+            // beside the row (see `open_commit_detail`).
+            Outcome::OpenCommit { .. } => {}
         }
         self.dirty = true;
     }

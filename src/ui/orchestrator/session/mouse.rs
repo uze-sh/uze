@@ -431,7 +431,7 @@ impl Attach<'_> {
                     .sidebar
                     .bottom()
                     .saturating_sub(timeline_header + 1)
-                    .clamp(1, TIMELINE_COMMITS as u16);
+                    .clamp(1, code::TIMELINE_COMMITS as u16);
                 if self.model.timeline_rows != Some(wanted) {
                     self.model.timeline_rows = Some(wanted);
                     self.model.dirty = true;
@@ -639,7 +639,10 @@ impl Attach<'_> {
             }) if self.model.is_spec_summary(slot) => {
                 toggle_spec_summary(&mut self.model);
             }
-            WorkspaceHit::Extension(ExtensionHit::CodeTimeline(ViewHit::ToggleSection)) => {
+            WorkspaceHit::Extension(ExtensionHit::Declared {
+                slot,
+                hit: ViewHit::ToggleSection,
+            }) if self.model.is_timeline(slot) => {
                 toggle_timeline(&mut self.model);
             }
             _ => {}
@@ -1164,7 +1167,10 @@ impl Attach<'_> {
             WorkspaceHit::ToggleSpaceCollapsed(space) => {
                 toggle_space_collapsed(&mut self.model, space);
             }
-            WorkspaceHit::Extension(ExtensionHit::CodeTimeline(ViewHit::ToggleSection)) => {
+            WorkspaceHit::Extension(ExtensionHit::Declared {
+                slot,
+                hit: ViewHit::ToggleSection,
+            }) if self.model.is_timeline(slot) => {
                 toggle_timeline(&mut self.model);
             }
             _ => return false,
@@ -1496,6 +1502,42 @@ impl Attach<'_> {
             // other two overlays; the sidebar section's are answered
             // here, since it is drawn as part of the sidebar rather than
             // over it.
+            // The timeline: its header folds it and is the handle its
+            // height is dragged by, and a commit opens its account beside
+            // the row.
+            WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit })
+                if self.model.is_timeline(slot) =>
+            {
+                match hit {
+                    ViewHit::ToggleSection => self.press_foot_header(
+                        WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit }),
+                        hit_rect,
+                    ),
+                    ViewHit::SelectItem(_) => {
+                        let space = self.code_space();
+                        let asked = self
+                            .model
+                            .remembered
+                            .declared
+                            .slot_engine_mut(slot)
+                            .map(|(surface, engine)| engine.hit(&surface, hit, space));
+                        if let Some(uze_extensions::contract::Outcome::OpenCommit {
+                            project,
+                            hash,
+                        }) = asked
+                        {
+                            open_commit_detail(
+                                &mut self.model,
+                                project,
+                                hash,
+                                hit_rect,
+                                &self.channels.commit_details.sender,
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+            }
             // The spec section: its header is a handle on the timeline and
             // folds it, and a change opens the surface on that change.
             WorkspaceHit::Extension(ExtensionHit::Declared { slot, hit })
@@ -1550,32 +1592,6 @@ impl Attach<'_> {
                 };
                 self.model.hit_declared(slot, hit, space);
             }
-            WorkspaceHit::Extension(ExtensionHit::CodeTimeline(hit)) => match hit {
-                ViewHit::ToggleSection => self.press_foot_header(
-                    WorkspaceHit::Extension(ExtensionHit::CodeTimeline(hit)),
-                    hit_rect,
-                ),
-                ViewHit::SelectItem(index) => open_commit_detail(
-                    &mut self.model,
-                    index,
-                    hit_rect,
-                    &self.channels.commit_details.sender,
-                ),
-                ViewHit::GrabNavigatorEdge
-                | ViewHit::Node { .. }
-                | ViewHit::ToggleGroup(_)
-                | ViewHit::OpenMenu(_)
-                | ViewHit::MenuEntry(_)
-                | ViewHit::Answer(_)
-                | ViewHit::ChooseGroup
-                | ViewHit::ChooseItem
-                | ViewHit::SelectTrail(_)
-                | ViewHit::PlaceCaret { .. }
-                | ViewHit::SelectMode(_)
-                | ViewHit::SelectSubject(_)
-                | ViewHit::DragContentScrollbar
-                | ViewHit::Close => {}
-            },
             WorkspaceHit::OpenManage => self.open_manage(),
             // Only reachable while the modal is open, which `handle` routes
             // to `manage_mouse` before any hit is looked up.

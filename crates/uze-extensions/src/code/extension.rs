@@ -1,6 +1,7 @@
 //! The code surface as the host hosts every extension: one view, entered
 //! by the door a person chose, open on one checkout at a time, whose four
-//! reads are jobs.
+//! reads are jobs; and the sidebar's timeline of the checkout in front,
+//! read again on its own cadence.
 //!
 //! The jobs run in parallel, and the order the files half needs is kept
 //! here rather than by the host: everything that reads or writes a file
@@ -14,8 +15,9 @@ use std::time::{Duration, Instant};
 
 use super::{
     CATALOG, CodeOutcome, CodePlace, CodeView, ContentMode, DiffAnswer, DiffRequest, FileAnswer,
-    FileRequest, Measure, RefreshedChanges, fulfill, handle_command, handle_hover, handle_mouse,
-    handle_scroll, measure, scroll_to, text, unanswered, view,
+    FileRequest, Measure, RefreshedChanges, Timeline, fulfill, handle_command, handle_hover,
+    handle_mouse, handle_scroll, measure, scroll_to, text, timeline, timeline_section, unanswered,
+    view,
 };
 use crate::contract::{
     Checkout, Entry, Extension, Job, Lanes, Opaque, Outcome, SurfaceInfo, SurfaceSlot,
@@ -28,6 +30,17 @@ pub const SURFACE: &str = "code";
 pub const CHANGES: &str = "changes";
 /// The door that navigates: the tree, on a file's contents.
 pub const FILES: &str = "files";
+/// The sidebar's section: the recent history of the checkout in front.
+pub const TIMELINE: &str = "timeline";
+
+/// How far back the timeline reads: the most its section can be dragged
+/// open to.
+pub const TIMELINE_COMMITS: usize = 30;
+/// How often the timeline is read again while the checkout in front stays
+/// put. Telling a delivered commit from one still ahead compares patches
+/// across the branch and its target, and history does not move at the
+/// pace a working tree does.
+const TIMELINE_REFRESH: Duration = Duration::from_secs(3);
 
 /// How long a checkout's measurement is taken to still describe it.
 ///
@@ -61,6 +74,20 @@ pub struct MeasureRead {
     pub measure: Option<Measure>,
 }
 
+/// The history of the checkout in front, for the checkout it was asked
+/// about; `None` where it has none to read.
+pub struct TimelineRead {
+    pub cwd: PathBuf,
+    pub timeline: Option<Timeline>,
+}
+
+/// The history last read, and of which checkout.
+struct History {
+    cwd: PathBuf,
+    timeline: Option<Timeline>,
+    at: Instant,
+}
+
 /// How the next opening goes: the mode a door means, or a path another
 /// surface sent the viewer to, which wins over where they last were.
 enum Arrival {
@@ -84,6 +111,10 @@ pub struct CodeExtension {
     /// Kept whether or not a surface is open to show it: the next to open
     /// on that checkout is the reason it was worth measuring.
     measures: BTreeMap<PathBuf, (Instant, Measure)>,
+    focus: Option<Checkout>,
+    /// Drawn until a read of the checkout now in front replaces it.
+    history: Option<History>,
+    reading_history: Option<PathBuf>,
 }
 
 impl CodeExtension {
@@ -189,6 +220,44 @@ impl CodeExtension {
         jobs.push(measure_job(root));
     }
 
+    /// The history of the checkout in front, again once it has stood for
+    /// [`TIMELINE_REFRESH`] or the viewer moved to another, one read at a
+    /// time.
+    fn history_job(&mut self, jobs: &mut Vec<Job>) {
+        if self.reading_history.is_some() {
+            return;
+        }
+        let Some(focus) = &self.focus else {
+            return;
+        };
+        let fresh = self.history.as_ref().is_some_and(|history| {
+            history.cwd == focus.root && history.at.elapsed() < TIMELINE_REFRESH
+        });
+        if fresh {
+            return;
+        }
+        self.reading_history = Some(focus.root.clone());
+        jobs.push(history_job(focus));
+    }
+
+    fn absorb_history(&mut self, read: TimelineRead) {
+        if self.reading_history.as_ref() == Some(&read.cwd) {
+            self.reading_history = None;
+        }
+        if self.focus.as_ref().map(|focus| &focus.root) == Some(&read.cwd) {
+            self.history = Some(History {
+                cwd: read.cwd,
+                timeline: read.timeline,
+                at: Instant::now(),
+            });
+        }
+    }
+
+    fn timeline(&self) -> Option<(&PathBuf, &Timeline)> {
+        let history = self.history.as_ref()?;
+        Some((&history.cwd, history.timeline.as_ref()?))
+    }
+
     fn absorb_file(&mut self, read: FileRead) -> Outcome {
         // A listing never took the chain, so it does not release it.
         if !matches!(
@@ -280,6 +349,26 @@ fn changes_job(root: PathBuf, placement: super::ViewPlacement) -> Job {
     }
 }
 
+fn history_job(focus: &Checkout) -> Job {
+    let cwd = focus.root.clone();
+    let target = focus.target.clone();
+    let fallback_cwd = cwd.clone();
+    Job {
+        run: Box::new(move |host| {
+            Opaque::new(TimelineRead {
+                timeline: timeline(host, &cwd, TIMELINE_COMMITS, target.as_deref()),
+                cwd,
+            })
+        }),
+        fallback: Box::new(move || {
+            Opaque::new(TimelineRead {
+                cwd: fallback_cwd,
+                timeline: None,
+            })
+        }),
+    }
+}
+
 fn measure_job(root: PathBuf) -> Job {
     let fallback_root = root.clone();
     Job {
@@ -359,19 +448,32 @@ impl Extension for CodeExtension {
     }
 
     fn surfaces(&self) -> Vec<SurfaceInfo> {
-        vec![SurfaceInfo {
-            id: SURFACE.to_owned(),
-            slot: SurfaceSlot::View,
-            title: CATALOG.name.to_owned(),
-        }]
+        vec![
+            SurfaceInfo {
+                id: SURFACE.to_owned(),
+                slot: SurfaceSlot::View,
+                title: CATALOG.name.to_owned(),
+            },
+            SurfaceInfo {
+                id: TIMELINE.to_owned(),
+                slot: SurfaceSlot::Section,
+                title: TIMELINE.to_owned(),
+            },
+        ]
     }
 
     fn view(&self, surface: &str, space: Size) -> Option<View> {
         self.view_ref(surface).map(|state| view(state, space))
     }
 
-    fn section(&self, _surface: &str, _collapsed: bool) -> Option<Section> {
-        None
+    /// The history of the checkout in front. How far it is scrolled is
+    /// the host's, which laid its rows out.
+    fn section(&self, surface: &str, collapsed: bool) -> Option<Section> {
+        if surface != TIMELINE {
+            return None;
+        }
+        self.timeline()
+            .map(|(_, timeline)| timeline_section(timeline, collapsed, 0))
     }
 
     fn command(&mut self, surface: &str, command: Command, space: Size) -> Outcome {
@@ -380,7 +482,24 @@ impl Extension for CodeExtension {
         })
     }
 
+    /// On the timeline, a commit asks for its account; the fold of the
+    /// header is the host's.
     fn hit(&mut self, surface: &str, hit: ViewHit, space: Size) -> Outcome {
+        if surface == TIMELINE {
+            let ViewHit::SelectItem(index) = hit else {
+                return Outcome::Stay;
+            };
+            let Some((cwd, commit)) = self
+                .timeline()
+                .and_then(|(cwd, timeline)| Some((cwd, timeline.commits.get(index)?)))
+            else {
+                return Outcome::Stay;
+            };
+            return Outcome::OpenCommit {
+                project: cwd.clone(),
+                hash: commit.hash.clone(),
+            };
+        }
         self.view_mut(surface).map_or(Outcome::Stay, |state| {
             outcome(handle_mouse(state, Some(hit), space))
         })
@@ -428,6 +547,13 @@ impl Extension for CodeExtension {
         };
         self.arrival = Some(arrival);
         Outcome::Stay
+    }
+
+    fn focus(&mut self, checkout: Option<&Checkout>) {
+        self.focus = checkout.cloned();
+        if self.focus.is_none() {
+            self.history = None;
+        }
     }
 
     fn open(&mut self, surface: &str, checkout: &Checkout) {
@@ -508,6 +634,7 @@ impl Extension for CodeExtension {
         self.changes_job(&mut jobs);
         self.file_jobs(&mut jobs);
         self.measure_job(&mut jobs);
+        self.history_job(&mut jobs);
         jobs
     }
 
@@ -540,8 +667,15 @@ impl Extension for CodeExtension {
             }
             Err(other) => other,
         };
-        if let Ok(read) = answer.downcast::<MeasureRead>() {
-            self.absorb_measure(*read);
+        let answer = match answer.downcast::<MeasureRead>() {
+            Ok(read) => {
+                self.absorb_measure(*read);
+                return Outcome::Stay;
+            }
+            Err(other) => other,
+        };
+        if let Ok(read) = answer.downcast::<TimelineRead>() {
+            self.absorb_history(*read);
         }
         Outcome::Stay
     }

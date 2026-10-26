@@ -900,71 +900,31 @@ pub(super) fn spawn_join(
     });
 }
 
-/// What one background Git read was asked to produce, and produced.
-///
-/// The working tree and the history behind it move at different speeds
-/// (see [`GIT_BADGE_REFRESH`]/[`TIMELINE_REFRESH`]), so a read that only
-/// owes a summary says so in its answer rather than handing back a
-/// `None` the receiver would have to tell apart from "there is no
-/// history".
-pub(super) enum GitAnswer {
-    Summary(Option<code::ChangeSummary>),
-    Full {
-        summary: Option<code::ChangeSummary>,
-        timeline: Option<code::Timeline>,
-    },
-}
-
-/// A finished Git read, tagged with the checkout it answers about: the
-/// selection can move while a read is in flight, and an answer about a
-/// checkout the workspace has since left must never be drawn as the
-/// current one.
+/// A finished read of the badge, tagged with the checkout it answers
+/// about: the selection can move while a read is in flight, and an answer
+/// about a checkout the workspace has since left must never be drawn as
+/// the current one.
 pub(super) struct GitResolution {
     pub(super) cwd: PathBuf,
-    pub(super) answer: GitAnswer,
+    pub(super) summary: Option<code::ChangeSummary>,
     /// How long the read took — what the next one waits in proportion to.
     pub(super) took: Duration,
 }
 
-/// Reads the badge — and, when `history` is set, the timeline behind it —
-/// off the UI thread.
+/// Reads the badge off the UI thread.
 ///
-/// Every one of these launches `git` several times (`rev-parse`,
-/// `status`, `log`, `rev-list`), which is why it cannot run where a frame
-/// is drawn: on a large repository `status --untracked-files=all` alone
-/// outlasts several frames, and it used to run inside the `dirty` branch
-/// immediately before `terminal.draw`.
-pub(super) fn spawn_git_read(
-    cwd: PathBuf,
-    target: Option<String>,
-    history: bool,
-    sender: mpsc::Sender<GitResolution>,
-) {
+/// It launches `git` several times (`rev-parse`, `status`), which is why
+/// it cannot run where a frame is drawn: on a large repository `status
+/// --untracked-files=all` alone outlasts several frames, and it used to run
+/// inside the `dirty` branch immediately before `terminal.draw`.
+pub(super) fn spawn_git_read(cwd: PathBuf, sender: mpsc::Sender<GitResolution>) {
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _pass = crate::telemetry::background_pass!("tui.git_read", parent: &parent);
         let started = Instant::now();
-        let answer = answered_or(
-            || {
-                let summary = code::change_summary(&WorkspaceHost, &cwd);
-                if history {
-                    GitAnswer::Full {
-                        summary,
-                        timeline: code::timeline(
-                            &WorkspaceHost,
-                            &cwd,
-                            TIMELINE_COMMITS,
-                            target.as_deref(),
-                        ),
-                    }
-                } else {
-                    GitAnswer::Summary(summary)
-                }
-            },
-            GitAnswer::Summary(None),
-        );
+        let summary = answered_or(|| code::change_summary(&WorkspaceHost, &cwd), None);
         let took = started.elapsed();
-        let _ = sender.send(GitResolution { cwd, answer, took });
+        let _ = sender.send(GitResolution { cwd, summary, took });
     });
 }
 

@@ -172,7 +172,7 @@ fn without_history_the_sidebar_ends_with_the_spaces() {
     let Sidebar { rows, hits, .. } = sidebar(&model, &identities_fixture());
 
     assert!(rows.iter().all(|row| !row.contains("timeline")), "{rows:?}");
-    assert_eq!(timeline_hit(&hits), None);
+    assert_eq!(timeline_hit(&model, &hits), None);
 }
 
 /// A space's own row lands on a shell of the space's, not on whichever

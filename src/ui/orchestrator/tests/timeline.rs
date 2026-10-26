@@ -4,8 +4,8 @@
 use super::WorkspaceHit;
 use super::support::*;
 use super::{
-    CommitDetailPopup, CommitDetailResolution, ExtensionHit, GitAnswer, GitResolution,
-    ScrollDirection, open_commit_detail,
+    CommitDetailPopup, CommitDetailResolution, ExtensionHit, GitResolution, ScrollDirection,
+    open_commit_detail,
     render::{self, render_commit_detail, timeline_height},
     scroll_timeline, toggle_timeline,
 };
@@ -63,13 +63,7 @@ fn a_git_answer_for_another_checkout_is_released_and_dropped() {
     let changed = model.absorb_git_read(GitResolution {
         took: Duration::ZERO,
         cwd: PathBuf::from("/elsewhere"),
-        answer: GitAnswer::Full {
-            summary: None,
-            timeline: Some(uze_extensions::code::Timeline {
-                branch: "other".to_owned(),
-                commits: Vec::new(),
-            }),
-        },
+        summary: None,
     });
 
     assert!(!changed, "nothing on screen changed");
@@ -84,43 +78,66 @@ fn a_git_answer_for_another_checkout_is_released_and_dropped() {
     );
 }
 
-/// The two cadences are independent: a summary-only answer keeps the
-/// history the badge already had, rather than blanking the timeline
-/// every 750ms between the 3s reads that fill it.
+/// The badge and the history are read apart, each on its own cadence: a
+/// read of the badge every 750ms leaves alone the history the 3s reads
+/// fill.
 #[test]
-fn a_summary_only_answer_keeps_the_history_already_read() {
+fn a_badge_read_leaves_the_history_alone() {
     let mut model = session_with_timeline(&["landed"]);
-    let read_at = model
-        .remembered
-        .git_badge
-        .as_ref()
-        .map(|badge| badge.timeline_checked_at);
 
     let changed = model.absorb_git_read(GitResolution {
         took: Duration::ZERO,
         cwd: PathBuf::from("/repo"),
-        answer: GitAnswer::Summary(Some(uze_extensions::code::ChangeSummary {
+        summary: Some(uze_extensions::code::ChangeSummary {
             additions: 2,
             deletions: 1,
-        })),
+        }),
     });
 
     assert!(changed);
+    assert_eq!(timeline_section(&model).rows.len(), 1, "the history stands");
     let badge = model.remembered.git_badge.as_ref().expect("a badge");
-    assert_eq!(
-        badge
-            .timeline
-            .as_ref()
-            .map(|timeline| timeline.commits.len()),
-        Some(1),
-        "the timeline survives a summary-only read"
-    );
-    assert_eq!(
-        Some(badge.timeline_checked_at),
-        read_at,
-        "and keeps its own read time, so its own cadence still governs it"
-    );
     assert!(badge.summary.is_some());
+}
+
+/// The history of the checkout in front is the code extension's read, run
+/// as a job, and a commit clicked in it asks for its account beside the
+/// row.
+#[test]
+fn the_timeline_is_read_as_a_job_and_a_commit_asks_for_its_account() {
+    let repository = uze_testkit::git::Repository::new("orchestrator-timeline-job");
+    repository.commit_file("a.txt", "a\n");
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-timeline-job-home"));
+    let mut model = agent_session_in(&repository.root().display().to_string());
+    model.follow_extension_switch([uze_extensions::spec::CATALOG.id.to_owned()].into());
+    let (sender, receiver) = std::sync::mpsc::channel();
+    assert_eq!(model.schedule_engine_jobs(&home, &sender), 1);
+    assert_eq!(
+        model.schedule_engine_jobs(&home, &sender),
+        0,
+        "one read at a time"
+    );
+    let answer = receiver
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .expect("the read answers");
+    assert!(model.absorb_engine_answer(answer));
+    assert_eq!(timeline_section(&model).rows.len(), 2);
+
+    let mut driven = driven(model, &home);
+    driven.frame();
+    let row = timeline_tag(&driven.attach.model, ViewHit::SelectItem(0));
+    let (rect, _) = *driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .find(|(_, hit)| *hit == row)
+        .expect("the newest commit is drawn");
+    driven.press(rect.x, rect.y);
+    assert!(
+        driven.attach.model.commit_detail_pending.is_some(),
+        "its account is asked for"
+    );
 }
 
 /// A commit account is asked for, not read inline, and an answer
@@ -130,7 +147,13 @@ fn a_commit_account_arrives_only_for_the_row_last_clicked() {
     let mut model = session_with_timeline(&["newest", "older"]);
     let (sender, _receiver) = std::sync::mpsc::channel();
 
-    open_commit_detail(&mut model, 1, Rect::new(0, 0, 10, 1), &sender);
+    open_commit_detail(
+        &mut model,
+        PathBuf::from("/repo"),
+        "0000001".to_owned(),
+        Rect::new(0, 0, 10, 1),
+        &sender,
+    );
     assert!(
         model.commit_detail.is_none(),
         "the popup opens when the read lands, never from the click"
@@ -166,14 +189,15 @@ fn the_timeline_speaks_only_the_extensions_vocabulary() {
     let model = session_with_timeline(&["feat: newest", "chore: older"]);
     let Sidebar { rows, hits, .. } = sidebar(&model, &identities_fixture());
 
-    let header = timeline_hit(&hits).expect("the header folds the section");
+    let header = timeline_hit(&model, &hits).expect("the header folds the section");
 
     let commits: Vec<usize> = hits
         .iter()
         .filter_map(|(_, hit)| match hit {
-            WorkspaceHit::Extension(ExtensionHit::CodeTimeline(ViewHit::SelectItem(index))) => {
-                Some(*index)
-            }
+            WorkspaceHit::Extension(ExtensionHit::Declared {
+                slot,
+                hit: ViewHit::SelectItem(index),
+            }) if model.is_timeline(*slot) => Some(*index),
             _ => None,
         })
         .collect();
@@ -184,7 +208,11 @@ fn the_timeline_speaks_only_the_extensions_vocabulary() {
     assert!(
         hits.iter()
             .filter(|(rect, _)| rect.y >= timeline_top)
-            .all(|(_, hit)| matches!(hit, WorkspaceHit::Extension(ExtensionHit::CodeTimeline(_)))),
+            .all(|(_, hit)| matches!(
+                hit,
+                WorkspaceHit::Extension(ExtensionHit::Declared { slot, .. })
+                    if model.is_timeline(*slot)
+            )),
         "a host hit escaped into the extension's section: {hits:?}"
     );
     assert!(
@@ -220,14 +248,7 @@ fn dragging_the_timeline_sets_how_many_commits_show() {
         "the tree keeps its rows: {rows:?}"
     );
 
-    let timeline = model
-        .remembered
-        .git_badge
-        .as_ref()
-        .unwrap()
-        .timeline
-        .as_ref()
-        .unwrap();
+    let timeline = &timeline_section(&model);
     assert_eq!(
         timeline_height(timeline, false, Some(0), 24),
         2,
@@ -336,9 +357,10 @@ fn the_timeline_scrolls_by_rows_within_its_history() {
     let targets: Vec<usize> = hits
         .iter()
         .filter_map(|(_, hit)| match hit {
-            WorkspaceHit::Extension(ExtensionHit::CodeTimeline(ViewHit::SelectItem(index))) => {
-                Some(*index)
-            }
+            WorkspaceHit::Extension(ExtensionHit::Declared {
+                slot,
+                hit: ViewHit::SelectItem(index),
+            }) if model.is_timeline(*slot) => Some(*index),
             _ => None,
         })
         .collect();
@@ -573,18 +595,11 @@ fn an_open_commit_is_a_modal_like_the_support_dropdown() {
 /// says `HEAD`, whichever colour it wears.
 #[test]
 fn a_commits_dot_wears_its_standing() {
-    let mut model = session_with_timeline(&["feat: ahead", "fix: also ahead", "chore: landed"]);
-    let commits = &mut model
-        .remembered
-        .git_badge
-        .as_mut()
-        .unwrap()
-        .timeline
-        .as_mut()
-        .unwrap()
-        .commits;
-    commits[0].ahead = true;
-    commits[1].ahead = true;
+    let mut model = agent_session_in("/repo");
+    let mut timeline = timeline_of(&["feat: ahead", "fix: also ahead", "chore: landed"]);
+    timeline.commits[0].ahead = true;
+    timeline.commits[1].ahead = true;
+    give_timeline(&mut model, timeline);
 
     let buffer = sidebar(&model, &identities_fixture()).buffer;
     let rows = sidebar(&model, &identities_fixture()).rows;
@@ -647,7 +662,7 @@ fn the_timeline_keeps_the_foot_of_the_column() {
     assert!(header.contains("▾ timeline"), "{header}");
     assert!(inside(header).ends_with("main"), "{header}");
     assert_eq!(
-        timeline_hit(&hits).map(|rect| rect.y),
+        timeline_hit(&model, &hits).map(|rect| rect.y),
         Some((last - 3) as u16)
     );
     let space_row = rows
@@ -672,7 +687,7 @@ fn folding_the_timeline_keeps_only_its_header() {
             .all(|row| !row.contains("feat:") && !row.contains("fix:")),
         "{rows:?}"
     );
-    let hit = timeline_hit(&hits).expect("the header folds and unfolds");
+    let hit = timeline_hit(&model, &hits).expect("the header folds and unfolds");
     assert_eq!((hit.y, hit.height), (last as u16, 1));
 }
 
@@ -691,19 +706,7 @@ fn the_timeline_takes_at_most_half_the_column() {
     assert!(drawn.len() * 2 <= rows.len(), "{rows:?}");
     assert!(drawn[0].contains("commit 0"), "newest first: {rows:?}");
     assert_eq!(
-        timeline_height(
-            model
-                .remembered
-                .git_badge
-                .as_ref()
-                .unwrap()
-                .timeline
-                .as_ref()
-                .unwrap(),
-            false,
-            None,
-            1
-        ),
+        timeline_height(&timeline_section(&model), false, None, 1),
         0,
         "a column too short for the header shows nothing"
     );

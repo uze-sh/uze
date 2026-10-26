@@ -93,15 +93,6 @@ const EVENTS_PER_FRAME: usize = 64;
 /// enough to follow commands typed in the active pane without attaching that
 /// cost to every PTY damage redraw.
 const GIT_BADGE_REFRESH: Duration = Duration::from_millis(750);
-/// How far back the sidebar's timeline reads — the most its section can
-/// be dragged open to. The section itself never claims the column from
-/// the spaces it sits under (see `render::timeline_height`).
-const TIMELINE_COMMITS: usize = 30;
-/// How often the timeline is re-read while the tab stays put — slower
-/// than the badge: telling a delivered commit from one still ahead
-/// compares patches across the branch and its target, and history does
-/// not move at the pace a working tree does.
-const TIMELINE_REFRESH: Duration = Duration::from_secs(3);
 
 /// How far apart two reads of the same thing are kept: never closer than
 /// `floor`, and never closer than a few times what the last one took.
@@ -2216,11 +2207,6 @@ impl Submission {
 struct GitBadge {
     cwd: PathBuf,
     summary: Option<code::ChangeSummary>,
-    /// The same checkout's recent history, for the same tab: what the
-    /// sidebar's timeline section draws. Re-read on its own, slower
-    /// cadence (`TIMELINE_REFRESH`).
-    timeline: Option<code::Timeline>,
-    timeline_checked_at: Instant,
     checked_at: Instant,
 }
 /// The keys a hint drew, as targets.
@@ -2353,12 +2339,12 @@ impl WorkspaceModel {
         if self.timeline_collapsed {
             return false;
         }
-        let timeline = self.hits.iter().find_map(|(rect, hit)| {
-            matches!(
-                hit,
-                WorkspaceHit::Extension(ExtensionHit::CodeTimeline(ViewHit::ToggleSection))
-            )
-            .then_some(rect.y)
+        let timeline = self.hits.iter().find_map(|(rect, hit)| match hit {
+            WorkspaceHit::Extension(ExtensionHit::Declared {
+                slot,
+                hit: ViewHit::ToggleSection,
+            }) if self.is_timeline(*slot) => Some(rect.y),
+            _ => None,
         });
         let Some(timeline) = timeline else {
             return false;
@@ -2437,7 +2423,8 @@ impl WorkspaceModel {
     fn over_timeline(&self, column: u16, row: u16) -> bool {
         matches!(
             self.hit_at(column, row),
-            Some(WorkspaceHit::Extension(ExtensionHit::CodeTimeline(_)))
+            Some(WorkspaceHit::Extension(ExtensionHit::Declared { slot, .. }))
+                if self.is_timeline(slot)
         )
     }
 
@@ -2449,7 +2436,10 @@ impl WorkspaceModel {
             .filter(|(_, hit)| {
                 matches!(
                     hit,
-                    WorkspaceHit::Extension(ExtensionHit::CodeTimeline(ViewHit::SelectItem(_)))
+                    WorkspaceHit::Extension(ExtensionHit::Declared {
+                        slot,
+                        hit: ViewHit::SelectItem(_),
+                    }) if self.is_timeline(*slot)
                 )
             })
             .count()

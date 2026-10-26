@@ -4,8 +4,8 @@
 use super::WorkspaceHit;
 use super::support::*;
 use super::{
-    ExtensionHit, GitAnswer, GitBadge, GitResolution, WorkStateView, WorkspaceModel,
-    open_architect, open_code, open_spec,
+    ExtensionHit, GitBadge, GitResolution, WorkStateView, WorkspaceModel, open_architect,
+    open_code, open_spec,
     render::{LeadingSlot, render_tab_strip},
 };
 use crate::ui::theme::{self, Token};
@@ -418,7 +418,7 @@ fn a_switched_off_extension_reads_nothing_for_the_sidebar() {
     assert!(model.remembered.git_pending.is_none());
     assert!(!model.absorb_git_read(GitResolution {
         cwd: PathBuf::from("/repo"),
-        answer: GitAnswer::Summary(None),
+        summary: None,
         took: Duration::ZERO,
     }));
     assert!(model.remembered.git_badge.is_none());
@@ -692,8 +692,6 @@ fn the_changes_count_answers_with_its_hue_and_never_with_a_ground() {
             additions: 476,
             deletions: 286,
         }),
-        timeline: None,
-        timeline_checked_at: Instant::now(),
         checked_at: Instant::now(),
     });
     let (_, hits) = tab_strip(&model);
@@ -782,8 +780,6 @@ fn the_changes_badge_comes_with_the_work_and_the_code_button_never_leaves() {
             additions: 3,
             deletions: 1,
         }),
-        timeline: None,
-        timeline_checked_at: Instant::now(),
         checked_at: Instant::now(),
     });
     full_frame(&mut model);

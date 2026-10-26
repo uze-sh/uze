@@ -907,9 +907,16 @@ fn the_architects_source_is_marked_and_copied_and_its_diagram_is_not() {
 fn opening_the_architect_reads_its_artifacts_as_a_job() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-architect-job"));
     let mut model = agent_session_in("/repo");
-    // The spec counts the checkout in front on the same pass; off, only
-    // the architect's read is handed out.
-    model.follow_extension_switch([uze_extensions::spec::CATALOG.id.to_owned()].into());
+    // The spec counts the checkout in front on the same pass, and the
+    // code reads its history; off, only the architect's read is handed
+    // out.
+    model.follow_extension_switch(
+        [
+            uze_extensions::spec::CATALOG.id.to_owned(),
+            uze_extensions::code::CATALOG.id.to_owned(),
+        ]
+        .into(),
+    );
     super::open_architect(&mut model);
     assert!(model.showing(uze_extensions::architect::CATALOG.id));
     let reading = |model: &WorkspaceModel| {
@@ -1032,6 +1039,8 @@ fn the_spec_summary_is_counted_as_a_job_for_the_checkout_in_front() {
         .remembered
         .targets
         .insert(super::evaluation_key(repository.root()), target);
+    // The code reads the same checkout's history on the same pass.
+    model.follow_extension_switch([uze_extensions::code::CATALOG.id.to_owned()].into());
     let (sender, receiver) = std::sync::mpsc::channel();
     assert_eq!(model.schedule_engine_jobs(&home, &sender), 1);
     assert_eq!(

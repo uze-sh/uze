@@ -4,7 +4,7 @@
 
 use super::WorkspaceHit;
 use super::{
-    AgentIdentity, AgentView, Attach, ExtensionHit, Flow, GitBadge, PlacementResolution, Viewport,
+    AgentIdentity, AgentView, Attach, ExtensionHit, Flow, PlacementResolution, Viewport,
     WorkStateView, WorkspaceModel, agent_activity_frame,
     render::{
         self, FrameMetrics, LeadingSlot, WorkspaceLayout, compute_layout, render_sidebar,
@@ -461,26 +461,48 @@ pub(super) fn select_second_agent(model: &mut WorkspaceModel) {
 /// `subjects`, newest first, every commit landed `3h` ago.
 pub(super) fn session_with_timeline(subjects: &[&str]) -> WorkspaceModel {
     let mut model = agent_session_in("/repo");
-    model.remembered.git_badge = Some(GitBadge {
-        cwd: PathBuf::from("/repo"),
-        summary: None,
-        timeline: Some(uze_extensions::code::Timeline {
-            branch: "main".to_owned(),
-            commits: subjects
-                .iter()
-                .enumerate()
-                .map(|(index, subject)| uze_extensions::code::Commit {
-                    hash: format!("{index:07x}"),
-                    subject: (*subject).to_owned(),
-                    age: "3h".to_owned(),
-                    ahead: false,
-                })
-                .collect(),
-        }),
-        timeline_checked_at: Instant::now(),
-        checked_at: Instant::now(),
-    });
+    give_timeline(&mut model, timeline_of(subjects));
     model
+}
+
+/// A history of `subjects`, newest first, every commit landed `3h` ago.
+pub(super) fn timeline_of(subjects: &[&str]) -> uze_extensions::code::Timeline {
+    uze_extensions::code::Timeline {
+        branch: "main".to_owned(),
+        commits: subjects
+            .iter()
+            .enumerate()
+            .map(|(index, subject)| uze_extensions::code::Commit {
+                hash: format!("{index:07x}"),
+                subject: (*subject).to_owned(),
+                age: "3h".to_owned(),
+                ahead: false,
+            })
+            .collect(),
+    }
+}
+
+/// Hands the code extension `timeline` as the read of the checkout in
+/// front, as its job would have.
+pub(super) fn give_timeline(model: &mut WorkspaceModel, timeline: uze_extensions::code::Timeline) {
+    let cwd = model.focused_cwd().expect("a checkout in front");
+    let engine = code_engine(model);
+    engine.focus(Some(&uze_extensions::contract::Checkout {
+        root: cwd.clone(),
+        display: cwd.display().to_string(),
+        target: None,
+    }));
+    engine.absorb(uze_extensions::contract::Opaque::new(
+        uze_extensions::code::TimelineRead {
+            cwd,
+            timeline: Some(timeline),
+        },
+    ));
+}
+
+/// The timeline's section, as the sidebar is handed it.
+pub(super) fn timeline_section(model: &WorkspaceModel) -> uze_extensions::view::Section {
+    model.timeline().expect("a timeline").1
 }
 
 /// A sidebar row without its right-hand divider and the padding
@@ -489,12 +511,25 @@ pub(super) fn inside(row: &str) -> &str {
     row.trim_end_matches('│').trim_end()
 }
 
-pub(super) fn timeline_hit(hits: &[(Rect, WorkspaceHit)]) -> Option<Rect> {
+pub(super) fn timeline_hit(model: &WorkspaceModel, hits: &[(Rect, WorkspaceHit)]) -> Option<Rect> {
     hits.iter()
-        .find(|(_, hit)| {
-            *hit == WorkspaceHit::Extension(ExtensionHit::CodeTimeline(ViewHit::ToggleSection))
-        })
+        .find(|(_, hit)| *hit == timeline_tag(model, ViewHit::ToggleSection))
         .map(|(rect, _)| *rect)
+}
+
+/// `hit` on the timeline, tagged as the sidebar tags it.
+pub(super) fn timeline_tag(model: &WorkspaceModel, hit: ViewHit) -> WorkspaceHit {
+    WorkspaceHit::Extension(ExtensionHit::Declared {
+        slot: model
+            .remembered
+            .declared
+            .builtin_slot(
+                uze_extensions::code::CATALOG.id,
+                uze_extensions::code::TIMELINE,
+            )
+            .expect("the timeline has a slot"),
+        hit,
+    })
 }
 
 pub(super) fn manage_route(driven: &Driven<'_>) -> crate::ui::model::Route {

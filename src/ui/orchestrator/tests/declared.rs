@@ -1607,9 +1607,16 @@ fn a_hosted_engines_jobs_run_off_the_frame_and_answer_it() {
     let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("declared-jobs"));
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
-    // The spec counts the checkout in front on the same pass; off, only
-    // this extension's jobs are handed out.
-    model.follow_extension_switch([uze_extensions::spec::CATALOG.id.to_owned()].into());
+    // The spec counts the checkout in front on the same pass, and the
+    // code reads its history; off, only this extension's jobs are handed
+    // out.
+    model.follow_extension_switch(
+        [
+            uze_extensions::spec::CATALOG.id.to_owned(),
+            uze_extensions::code::CATALOG.id.to_owned(),
+        ]
+        .into(),
+    );
     model.remembered.declared = DeclaredExtensions {
         engine: fetcher,
         discovered_at: Some(std::time::Instant::now()),

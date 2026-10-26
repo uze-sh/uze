@@ -976,11 +976,8 @@ pub(super) fn toggle_spec_summary(model: &mut WorkspaceModel) {
 /// oldest commit rather than a page of nothing.
 pub(super) fn scroll_timeline(model: &mut WorkspaceModel, direction: ScrollDirection) {
     let commits = model
-        .remembered
-        .git_badge
-        .as_ref()
-        .and_then(|badge| badge.timeline.as_ref())
-        .map_or(0, |timeline| timeline.commits.len());
+        .timeline()
+        .map_or(0, |(_, section)| section.rows.len());
     let last_first = commits.saturating_sub(model.timeline_rows_shown().max(1));
     model.timeline_scroll = match direction {
         ScrollDirection::Up => model.timeline_scroll.saturating_sub(1),
@@ -1002,37 +999,30 @@ pub(super) fn scroll_tree(model: &mut WorkspaceModel, direction: ScrollDirection
     model.dirty = true;
 }
 
-/// Opens the popup for the timeline's `index`-th commit, beside the row
-/// it was clicked in. Read now, once: the account of a commit does not
-/// change, and the click is the one moment it is wanted.
-/// Asks for the account of the commit on timeline row `index`.
+/// Asks for the account of commit `hash` of the checkout at `project`,
+/// for a popup beside the timeline row it was clicked in. Read now, once:
+/// the account of a commit does not change, and the click is the one
+/// moment it is wanted.
 ///
 /// The read is a `git show`, so it happens off-thread like every other
 /// Git call here and the popup appears when the answer lands — see
 /// [`WorkspaceModel::absorb_commit_detail`].
 pub(super) fn open_commit_detail(
     model: &mut WorkspaceModel,
-    index: usize,
+    project: PathBuf,
+    hash: String,
     anchor: Rect,
     sender: &mpsc::Sender<CommitDetailResolution>,
 ) {
-    let Some(badge) = model.remembered.git_badge.as_ref() else {
-        return;
-    };
-    let Some(commit) = badge
-        .timeline
-        .as_ref()
-        .and_then(|timeline| timeline.commits.get(index))
-    else {
-        return;
-    };
-    let hash = commit.hash.clone();
-    let cwd = badge.cwd.clone();
-    let target = model.remembered.targets.get(&evaluation_key(&cwd)).cloned();
+    let target = model
+        .remembered
+        .targets
+        .get(&evaluation_key(&project))
+        .cloned();
     model.commit_detail = None;
     model.commit_detail_pending = Some(hash.clone());
     model.dirty = true;
-    spawn_commit_detail(cwd, hash, anchor, target, sender.clone());
+    spawn_commit_detail(project, hash, anchor, target, sender.clone());
 }
 
 #[cfg(test)]

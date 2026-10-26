@@ -3506,4 +3506,62 @@ mod hosted {
         extension.command(SURFACE, Command::Type('!'), space());
         assert_eq!(extension.text(SURFACE, 0..1), ["two !one"]);
     }
+
+    #[test]
+    fn the_checkout_in_front_has_its_history_read_and_a_commit_asks_for_its_account() {
+        let repository = uze_testkit::git::Repository::new("code-hosted-timeline");
+        repository.commit_file("a.txt", "a\n");
+        let root = repository.root().to_path_buf();
+        let mut extension = CodeExtension::default();
+        assert!(
+            extension.jobs().is_empty(),
+            "nothing in front, nothing read"
+        );
+        let front = Checkout {
+            root: root.clone(),
+            display: root.display().to_string(),
+            target: None,
+        };
+        extension.focus(Some(&front));
+        let reads: Vec<Opaque> = extension
+            .jobs()
+            .into_iter()
+            .map(|job| (job.run)(&crate::shared::DiskHost))
+            .collect();
+        assert_eq!(reads.len(), 1);
+        assert!(extension.jobs().is_empty(), "one read at a time");
+        for read in reads {
+            extension.absorb(read);
+        }
+        let section = extension.section(TIMELINE, false).expect("a history");
+        assert_eq!(section.rows.len(), 2, "the first commit and this one");
+        assert!(extension.jobs().is_empty(), "fresh, not read again");
+        let Outcome::OpenCommit { project, hash } =
+            extension.hit(TIMELINE, ViewHit::SelectItem(0), space())
+        else {
+            panic!("a commit asks for its account");
+        };
+        assert_eq!(project, root);
+        assert!(!hash.is_empty());
+        assert_eq!(
+            extension.hit(TIMELINE, ViewHit::SelectItem(5), space()),
+            Outcome::Stay,
+            "a row past the history is nothing"
+        );
+
+        let late = TimelineRead {
+            cwd: PathBuf::from("/elsewhere"),
+            timeline: None,
+        };
+        extension.absorb(Opaque::new(late));
+        assert!(
+            extension.section(TIMELINE, false).is_some(),
+            "a read about a checkout not in front is dropped"
+        );
+        extension.focus(None);
+        assert!(
+            extension.section(TIMELINE, false).is_none(),
+            "and none in front"
+        );
+    }
 }

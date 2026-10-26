@@ -255,6 +255,7 @@ impl WorkspaceModel {
                 }
             }
             Outcome::Failed { title, detail } => self.say_failed(&title, detail),
+            Outcome::OpenCommit { .. } => {}
         }
         self.dirty = true;
     }
