@@ -40,7 +40,7 @@ pub fn missing_fields(
         let Some(fixture) = compiled
             .manifest
             .source(&surface.source)
-            .and_then(|source| source.fixture.clone())
+            .and_then(|source| source.fixture().map(str::to_owned))
             .filter(|_| fixtures.contains_key(&surface.source))
         else {
             continue;

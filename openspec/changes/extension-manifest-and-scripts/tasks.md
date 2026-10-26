@@ -1,8 +1,8 @@
 ## 1. Manifest and check
 
-- [ ] 1.1 `uze-contract`: `SourceDecl { id, kind: Script | Run | Fixture, input, every, refresh_on }`, `ActionDecl { id, label, on, key, confirm, does: Script | Refresh | Clipboard | OpenPath | Open }`, `Grant`, `EventName`, and `Manifest.wants`/`actions`; `timeline` in `RESERVED_IDS` and the 32-character bound on ids, with tests (parent 3.1, 3.4)
-- [ ] 1.2 `uze-core` decoder: the full manifest with the existing refusals (unknown node, repeated property, wrong case, type annotation); `preferences` refused naming change 6 (parent 4.2)
-- [ ] 1.3 The check: relative paths resolving inside the extension; only `read:checkout`, `clipboard` and `open-path` accepted; `run`, `exec:` and later grants refused with the change that brings them; `write:checkout` refused as nonexistent; a `confirm` action with a bare-letter key refused; `every` under 5 s refused; an action or `refresh` naming an unknown source refused (parent 4.3, 4.4)
+- [x] 1.1 `uze-contract`: `SourceDecl { id, kind: Script | Run | Fixture, input, every, refresh_on }`, `ActionDecl { id, label, on, key, confirm, does: Script | Refresh | Clipboard | OpenPath | Open }`, `Grant`, `EventName`, and `Manifest.wants`/`actions`; `timeline` in `RESERVED_IDS` and the 32-character bound on ids, with tests (parent 3.1, 3.4)
+- [x] 1.2 `uze-core` decoder: the full manifest with the existing refusals (unknown node, repeated property, wrong case, type annotation); `preferences` refused naming change 6 (parent 4.2)
+- [x] 1.3 The check: relative paths resolving inside the extension; only `read:checkout`, `clipboard` and `open-path` accepted; `run`, `exec:` and later grants refused with the change that brings them; `write:checkout` refused as nonexistent; a `confirm` action with a bare-letter key refused; `every` under 5 s refused; an action or `refresh` naming an unknown source refused (parent 4.3, 4.4)
 - [ ] 1.4 `uze agent plugin check` reports the new diagnostics; the scaffold template and the `gsd` fixture plugin gain a script source
 
 ## 2. Consent record

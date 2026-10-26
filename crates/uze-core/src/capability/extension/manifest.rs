@@ -1,39 +1,83 @@
-//! Decoding `extension.kdl` into [`Manifest`].
+//! Decoding `extension.kdl` into [`Manifest`], and checking what it says.
 //!
 //! The manifest's shape is fixed and small, so each node is matched by
 //! name and every other spelling is refused, including the nodes later
-//! protocols add, which are named as such rather than as typos.
+//! changes add, which are named as such rather than as typos.
+//!
+//! - [`source`]: a `source` and what answers and refreshes it.
+//! - [`action`]: an `action` and what it does.
+//! - [`grants`]: `wants`, and the grants this build does not offer yet.
+//! - [`check`]: what one declaration says about another, once all are read.
+
+mod action;
+mod check;
+mod grants;
+mod source;
 
 use std::collections::BTreeSet;
 
 use kdl::{KdlDocument, KdlEntry, KdlNode, KdlValue};
+use uze_contract::binding::parse_text;
 use uze_contract::{
-    Clean, Manifest, PROTOCOL, RESERVED_IDS, Slot, SourceDecl, SurfaceDecl, is_valid_id,
+    Clean, Does, Manifest, PROTOCOL, RESERVED_IDS, Slot, SourceKind, SurfaceDecl, is_valid_id,
 };
 
 use super::document::{Place, Report, accepts, entries, nearest, refuse_extra, spelled};
 
-const NODES: &[&str] = &["protocol", "id", "name", "description", "surface", "source"];
-/// What later changes of `add-extension-platform` add to a manifest.
-const LATER: &[&str] = &[
-    "script",
-    "program",
-    "action",
+const NODES: &[&str] = &[
+    "protocol",
+    "id",
+    "name",
+    "description",
     "wants",
-    "refresh-on",
-    "grant",
+    "surface",
+    "source",
+    "action",
 ];
+/// What later changes of `add-extension-platform` add to a manifest, with
+/// the change that brings each.
+const LATER: &[(&str, u32)] = &[("preferences", 6)];
 const SURFACE_PROPS: &[&str] = &["slot", "view", "source", "title"];
 
-/// A manifest, and where in its file each surface and source was written,
-/// for what the rest of the check says about them.
+/// A manifest, and where in its file each declaration was written, for
+/// what the rest of the check says about them.
 pub struct Decoded {
     pub manifest: Manifest,
     /// Parallel to `manifest.surfaces`: the offsets of `view=` and
     /// `source=`.
     pub surface_places: Vec<(usize, usize)>,
-    /// Parallel to `manifest.sources`: the offset of its `fixture`.
-    pub fixture_places: Vec<usize>,
+    /// Parallel to `manifest.sources`.
+    pub source_places: Vec<source::Places>,
+    /// Parallel to `manifest.actions`.
+    pub action_places: Vec<action::Places>,
+}
+
+impl Decoded {
+    /// Each file the manifest names for something to read or run, what it
+    /// is, and the offset it was written at: fixtures and scripts, which
+    /// must exist inside the extension's directory.
+    pub fn files(&self) -> Vec<(&'static str, &str, usize)> {
+        let sources = self
+            .manifest
+            .sources
+            .iter()
+            .zip(&self.source_places)
+            .filter_map(|(source, places)| match &source.kind {
+                SourceKind::Fixture(file) => Some(("fixture", file.as_str(), places.kind)),
+                SourceKind::Script(file) => Some(("script", file.as_str(), places.kind)),
+                SourceKind::Run(_) => None,
+            });
+        let actions = self
+            .manifest
+            .actions
+            .iter()
+            .zip(&self.action_places)
+            .filter_map(|(action, places)| match &action.does {
+                Does::Script(file) => Some(("script", file.as_str(), places.does)),
+                _ => None,
+            });
+        sources.chain(actions).collect()
+    }
 }
 
 /// Decodes the manifest of the extension found under `extensions/<dir_id>/`.
@@ -47,16 +91,19 @@ pub fn decode(document: &KdlDocument, dir_id: &str, report: &mut Report<'_>) -> 
             id: String::new(),
             name: String::new(),
             description: String::new(),
+            wants: Vec::new(),
             surfaces: Vec::new(),
             sources: Vec::new(),
+            actions: Vec::new(),
         },
         surface_places: Vec::new(),
-        fixture_places: Vec::new(),
+        source_places: Vec::new(),
+        action_places: Vec::new(),
     };
     let mut seen = BTreeSet::new();
     for node in document.nodes() {
         let name = node.name().value();
-        let scalar = matches!(name, "protocol" | "id" | "name" | "description");
+        let scalar = matches!(name, "protocol" | "id" | "name" | "description" | "wants");
         if scalar && !seen.insert(name) {
             report.on(
                 node,
@@ -81,6 +128,7 @@ pub fn decode(document: &KdlDocument, dir_id: &str, report: &mut Report<'_>) -> 
                     .map(|text| Clean::text(&text).into_string())
                     .unwrap_or_default();
             }
+            "wants" => decoded.manifest.wants = grants::wants(node, report),
             "surface" => {
                 if let Some((surface, places)) = surface(node, report) {
                     decoded.manifest.surfaces.push(surface);
@@ -88,9 +136,15 @@ pub fn decode(document: &KdlDocument, dir_id: &str, report: &mut Report<'_>) -> 
                 }
             }
             "source" => {
-                if let Some((source, place)) = source(node, report) {
+                if let Some((source, places)) = source::decode(node, report) {
                     decoded.manifest.sources.push(source);
-                    decoded.fixture_places.push(place);
+                    decoded.source_places.push(places);
+                }
+            }
+            "action" => {
+                if let Some((action, places)) = action::decode(node, report) {
+                    decoded.manifest.actions.push(action);
+                    decoded.action_places.push(places);
                 }
             }
             other => unknown(node, other, report),
@@ -105,7 +159,7 @@ pub fn decode(document: &KdlDocument, dir_id: &str, report: &mut Report<'_>) -> 
         }
     }
     refuse_repeated_ids(document, report);
-    refuse_unknown_sources(&decoded, report);
+    check::references(&decoded, report);
     Some(decoded)
 }
 
@@ -185,6 +239,26 @@ fn string_arg(node: &KdlNode, arg: Option<&KdlEntry>, report: &mut Report<'_>) -
     }
 }
 
+/// Every argument of a node that takes one string or more, in order, and
+/// nothing else.
+fn string_args(node: &KdlNode, report: &mut Report<'_>) -> Vec<(String, usize)> {
+    let parts = entries(node, report);
+    refuse_extra(node, &parts, usize::MAX, &[], false, report);
+    if parts.args.is_empty() {
+        let name = node.name().value();
+        report.on(
+            node,
+            format!("`{name}` takes at least one string"),
+            Some(format!("write `{name} \"…\"`")),
+        );
+    }
+    parts
+        .args
+        .iter()
+        .filter_map(|arg| string_arg(node, Some(arg), report).map(|text| (text, arg.offset())))
+        .collect()
+}
+
 fn id(node: &KdlNode, dir_id: &str, report: &mut Report<'_>) -> Option<String> {
     let id = text(node, report)?;
     if !is_valid_id(&id) {
@@ -192,7 +266,8 @@ fn id(node: &KdlNode, dir_id: &str, report: &mut Report<'_>) -> Option<String> {
         report.on(
             node,
             format!(
-                "`{id}` is not an extension id: lowercase letters, digits and single hyphens, starting with a letter"
+                "`{id}` is not an extension id: lowercase letters, digits and single hyphens, starting with a letter, at most {} long",
+                uze_contract::ID_MAX
             ),
             is_valid_id(&lowered).then(|| format!("write `id \"{lowered}\"`")),
         );
@@ -216,32 +291,41 @@ fn id(node: &KdlNode, dir_id: &str, report: &mut Report<'_>) -> Option<String> {
     Some(id)
 }
 
+/// The value of property `name` of an entry list, when written.
+fn prop<'n>(parts: &super::document::Entries<'n>, name: &str) -> Option<&'n KdlEntry> {
+    parts
+        .props
+        .iter()
+        .find(|(prop, _)| *prop == name)
+        .map(|(_, entry)| *entry)
+}
+
+/// A string property that must be written, with its offset.
+fn required_prop(
+    node: &KdlNode,
+    parts: &super::document::Entries<'_>,
+    name: &str,
+    report: &mut Report<'_>,
+) -> Option<(String, usize)> {
+    let entry = prop(parts, name);
+    if entry.is_none() {
+        report.on(
+            node,
+            format!("`{}` declares no `{name}=`", node.name().value()),
+            Some(format!("add `{name}=\"…\"`")),
+        );
+    }
+    entry.and_then(|entry| string_prop(name, entry, report).map(|text| (text, entry.offset())))
+}
+
 fn surface(node: &KdlNode, report: &mut Report<'_>) -> Option<(SurfaceDecl, (usize, usize))> {
     let parts = entries(node, report);
     refuse_extra(node, &parts, 1, SURFACE_PROPS, false, report);
     let id = declared_id(node, parts.args.first().copied(), report);
-    let prop = |name: &str| {
-        parts
-            .props
-            .iter()
-            .find(|(prop, _)| *prop == name)
-            .map(|(_, entry)| *entry)
-    };
-    let required = |name: &str, report: &mut Report<'_>| {
-        let entry = prop(name);
-        if entry.is_none() {
-            report.on(
-                node,
-                format!("`surface` declares no `{name}=`"),
-                Some(format!("add `{name}=\"…\"`")),
-            );
-        }
-        entry.and_then(|entry| string_prop(name, entry, report).map(|text| (text, entry.offset())))
-    };
-    let slot = required("slot", report);
-    let view = required("view", report);
-    let source = required("source", report);
-    let title = prop("title").and_then(|entry| string_prop("title", entry, report));
+    let slot = required_prop(node, &parts, "slot", report);
+    let view = required_prop(node, &parts, "view", report);
+    let source = required_prop(node, &parts, "source", report);
+    let title = prop(&parts, "title").and_then(|entry| string_prop("title", entry, report));
     let slot = slot.and_then(|(slot, offset)| {
         let parsed = Slot::parse(&slot);
         if parsed.is_none() {
@@ -257,13 +341,7 @@ fn surface(node: &KdlNode, report: &mut Report<'_>) -> Option<(SurfaceDecl, (usi
         parsed
     });
     let view = view.filter(|(view, offset)| relative_file(view, "kdl", *offset, report));
-    let source = source.filter(|(source, offset)| {
-        let valid = is_valid_id(source);
-        if !valid {
-            report.at(*offset, format!("`{source}` is not a source id"), None);
-        }
-        valid
-    });
+    let source = source.filter(|(source, offset)| referred_id(source, "source", *offset, report));
     let ((view, view_at), (source, source_at)) = (view?, source?);
     Some((
         SurfaceDecl {
@@ -277,59 +355,7 @@ fn surface(node: &KdlNode, report: &mut Report<'_>) -> Option<(SurfaceDecl, (usi
     ))
 }
 
-fn source(node: &KdlNode, report: &mut Report<'_>) -> Option<(SourceDecl, usize)> {
-    let parts = entries(node, report);
-    refuse_extra(node, &parts, 1, &[], true, report);
-    let id = declared_id(node, parts.args.first().copied(), report);
-    let mut fixture = None;
-    for child in node.children().map(KdlDocument::nodes).unwrap_or_default() {
-        match child.name().value() {
-            "fixture" if fixture.is_some() => {
-                report.on(
-                    child,
-                    "a source takes one `fixture`",
-                    Some("keep one".to_owned()),
-                );
-            }
-            "fixture" => {
-                fixture = text(child, report)
-                    .filter(|file| relative_file(file, "json", child.offset(), report))
-                    .map(|file| (file, child.offset()));
-            }
-            other if LATER.contains(&other) || other == "run" => report.on(
-                child,
-                format!("a source fed by `{other}` is not supported by protocol {PROTOCOL}"),
-                Some("feed it a `fixture \"….json\"`".to_owned()),
-            ),
-            other => report.on(
-                child,
-                format!("a source holds no `{other}`"),
-                Some("feed it a `fixture \"….json\"`".to_owned()),
-            ),
-        }
-    }
-    if fixture.is_none()
-        && node
-            .children()
-            .is_none_or(|children| children.nodes().is_empty())
-    {
-        report.on(
-            node,
-            "this source declares nothing to feed it",
-            Some("add `{ fixture \"fixtures/….json\"; }`".to_owned()),
-        );
-    }
-    let (fixture, place) = fixture?;
-    Some((
-        SourceDecl {
-            id: id?,
-            fixture: Some(fixture),
-        },
-        place,
-    ))
-}
-
-/// A surface's or a source's own id, its first argument.
+/// A surface's, a source's or an action's own id, its first argument.
 fn declared_id(node: &KdlNode, arg: Option<&KdlEntry>, report: &mut Report<'_>) -> Option<String> {
     let id = string_arg(node, arg, report)?;
     if is_valid_id(&id) {
@@ -338,11 +364,21 @@ fn declared_id(node: &KdlNode, arg: Option<&KdlEntry>, report: &mut Report<'_>) 
     report.on(
         arg?,
         format!(
-            "`{id}` is not an id: lowercase letters, digits and single hyphens, starting with a letter"
+            "`{id}` is not an id: lowercase letters, digits and single hyphens, starting with a letter, at most {} long",
+            uze_contract::ID_MAX
         ),
         None,
     );
     None
+}
+
+/// Whether `id`, naming a `kind` declared elsewhere, is spelled as an id.
+fn referred_id(id: &str, kind: &str, offset: usize, report: &mut Report<'_>) -> bool {
+    let valid = is_valid_id(id);
+    if !valid {
+        report.at(offset, format!("`{id}` is not a {kind} id"), None);
+    }
+    valid
 }
 
 fn string_prop(name: &str, entry: &KdlEntry, report: &mut Report<'_>) -> Option<String> {
@@ -359,16 +395,33 @@ fn string_prop(name: &str, entry: &KdlEntry, report: &mut Report<'_>) -> Option<
     }
 }
 
+/// Whether `text`, which the host fills in when it runs something, holds
+/// only literal text and `{field}` references. Reports why not.
+fn template(text: &str, offset: usize, report: &mut Report<'_>) -> bool {
+    match parse_text(text) {
+        Ok(_) => true,
+        Err(why) => {
+            report.at(offset, why, None);
+            false
+        }
+    }
+}
+
+/// Whether `path` is relative and stays beneath where it is resolved from:
+/// no root, no drive, no `..`, `/` between its parts.
+fn is_relative_inside(path: &str) -> bool {
+    !path.is_empty()
+        && !path.contains('\\')
+        && !path.contains(':')
+        && std::path::Path::new(path)
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)))
+}
+
 /// Whether `file` names a file inside the extension's directory with the
 /// `extension` it must have. Reports why not.
 pub fn relative_file(file: &str, extension: &str, offset: usize, report: &mut Report<'_>) -> bool {
-    let inside = !file.is_empty()
-        && !file.contains('\\')
-        && !file.contains(':')
-        && std::path::Path::new(file)
-            .components()
-            .all(|part| matches!(part, std::path::Component::Normal(_)));
-    if !inside {
+    if !is_relative_inside(file) {
         report.at(
             offset,
             format!("`{file}` is not a path inside the extension's directory"),
@@ -388,11 +441,11 @@ pub fn relative_file(file: &str, extension: &str, offset: usize, report: &mut Re
 }
 
 fn unknown(node: &KdlNode, name: &str, report: &mut Report<'_>) {
-    if LATER.contains(&name) {
+    if let Some((_, change)) = LATER.iter().find(|(later, _)| *later == name) {
         report.on(
             node,
-            format!("`{name}` is not supported by protocol {PROTOCOL}"),
-            Some("remove it: this version draws from fixtures and runs nothing".to_owned()),
+            format!("`{name}` arrives in a later change (change {change})"),
+            Some("remove it for now".to_owned()),
         );
         return;
     }
@@ -411,8 +464,27 @@ fn unknown(node: &KdlNode, name: &str, report: &mut Report<'_>) {
     );
 }
 
+/// A node inside a block that is not one of `known`, said with the nearest
+/// spelling or the list.
+fn unknown_child(child: &KdlNode, holder: &str, known: &[&str], report: &mut Report<'_>) {
+    let name = child.name().value();
+    let case = known.iter().find(|known| known.eq_ignore_ascii_case(name));
+    report.on(
+        child,
+        format!("{holder} holds no `{name}`"),
+        Some(match (case, nearest(name, known)) {
+            (Some(known), _) => format!("write `{known}`"),
+            (None, Some(near)) => format!("did you mean `{near}`?"),
+            (None, None) => format!(
+                "{holder} holds {}",
+                accepts(known).trim_start_matches("it takes ")
+            ),
+        }),
+    );
+}
+
 fn refuse_repeated_ids(document: &KdlDocument, report: &mut Report<'_>) {
-    for kind in ["surface", "source"] {
+    for kind in ["surface", "source", "action"] {
         let mut seen = BTreeSet::new();
         for node in document
             .nodes()
@@ -429,176 +501,5 @@ fn refuse_repeated_ids(document: &KdlDocument, report: &mut Report<'_>) {
     }
 }
 
-fn refuse_unknown_sources(decoded: &Decoded, report: &mut Report<'_>) {
-    let declared: Vec<&str> = decoded
-        .manifest
-        .sources
-        .iter()
-        .map(|source| source.id.as_str())
-        .collect();
-    for (surface, (_, source_at)) in decoded
-        .manifest
-        .surfaces
-        .iter()
-        .zip(&decoded.surface_places)
-    {
-        if decoded.manifest.source(&surface.source).is_none() {
-            report.at(
-                *source_at,
-                format!(
-                    "the surface `{}` reads the source `{}`, which is not declared",
-                    surface.id, surface.source
-                ),
-                Some(if declared.is_empty() {
-                    format!(
-                        "declare `source \"{}\" {{ fixture \"….json\"; }}`",
-                        surface.source
-                    )
-                } else {
-                    format!("declared sources: {}", declared.join(", "))
-                }),
-            );
-        }
-    }
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::capability::extension::Diagnostic;
-
-    pub(crate) const GSD: &str = r#"// extension.kdl
-protocol 1
-id "gsd-band"
-name "GSD band"
-description "O milestone GSD do checkout"
-surface "board" slot="view" view="board.kdl" source="board"
-surface "summary" slot="section" view="board.kdl" source="board" title="GSD"
-source "board" { fixture "fixtures/board.json"; }
-"#;
-
-    fn decode_text(source: &str) -> (Option<Decoded>, Vec<Diagnostic>) {
-        let document: KdlDocument = source.parse().expect("valid KDL");
-        let mut report = Report::new("extension.kdl", source);
-        let decoded = decode(&document, "gsd-band", &mut report);
-        (decoded, report.into_diagnostics())
-    }
-
-    fn refusals(source: &str) -> Vec<Diagnostic> {
-        let (_, diagnostics) = decode_text(source);
-        assert!(!diagnostics.is_empty(), "{source} was accepted");
-        diagnostics
-    }
-
-    #[test]
-    fn the_gsd_band_manifest_decodes() {
-        let (decoded, diagnostics) = decode_text(GSD);
-        assert_eq!(diagnostics, vec![]);
-        let manifest = decoded.unwrap().manifest;
-        assert_eq!(manifest.protocol, 1);
-        assert_eq!(manifest.id, "gsd-band");
-        assert_eq!(manifest.name, "GSD band");
-        assert_eq!(manifest.surfaces.len(), 2);
-        let summary = manifest.surface("summary").unwrap();
-        assert_eq!(summary.slot, Slot::Section);
-        assert_eq!(summary.view, "board.kdl");
-        assert_eq!(summary.title.as_deref(), Some("GSD"));
-        assert_eq!(manifest.surface("board").unwrap().title, None);
-        assert_eq!(
-            manifest.source("board").unwrap().fixture.as_deref(),
-            Some("fixtures/board.json")
-        );
-    }
-
-    #[test]
-    fn an_unknown_protocol_names_both_versions_and_stops() {
-        let (decoded, diagnostics) = decode_text(&GSD.replace("protocol 1", "protocol 2"));
-        assert!(decoded.is_none());
-        assert_eq!(diagnostics.len(), 1);
-        let message = &diagnostics[0].message;
-        assert!(
-            message.contains("protocol 2") && message.contains("protocol 1"),
-            "{message}"
-        );
-        assert_eq!((diagnostics[0].line, diagnostics[0].column), (2, 1));
-    }
-
-    #[test]
-    fn a_reserved_or_malformed_id_is_refused() {
-        let reserved = refusals(&GSD.replace("\"gsd-band\"", "\"code\""));
-        assert!(
-            reserved[0]
-                .message
-                .contains("`code` is reserved by a built-in extension")
-        );
-        let malformed = refusals(&GSD.replace("\"gsd-band\"", "\"GSD-band\""));
-        assert!(malformed[0].message.contains("is not an extension id"));
-        assert_eq!(
-            malformed[0].suggestion.as_deref(),
-            Some("write `id \"gsd-band\"`")
-        );
-        let elsewhere = refusals(&GSD.replace("\"gsd-band\"", "\"other\""));
-        assert!(elsewhere[0].message.contains("extensions/gsd-band/"));
-    }
-
-    #[test]
-    fn a_surface_is_checked_property_by_property() {
-        let diagnostics = refusals(&GSD.replace(
-            r#"surface "board" slot="view" view="board.kdl" source="board""#,
-            r#"surface "board" slot="band" view="../board.kdl" source="board" colour="red""#,
-        ));
-        let messages: Vec<&str> = diagnostics.iter().map(|d| d.message.as_str()).collect();
-        assert_eq!(
-            messages,
-            vec![
-                "`surface` has no property `colour`",
-                "this version has no slot `band`",
-                "`../board.kdl` is not a path inside the extension's directory",
-            ]
-        );
-        let unknown = refusals(&GSD.replace(r#"source="board" title"#, r#"source="feed" title"#));
-        assert!(
-            unknown[0].message.contains("`feed`, which is not declared"),
-            "{}",
-            unknown[0]
-        );
-        assert_eq!(
-            unknown[0].suggestion.as_deref(),
-            Some("declared sources: board")
-        );
-    }
-
-    #[test]
-    fn a_missing_part_and_a_repeated_one_are_named() {
-        let diagnostics = refusals(&GSD.replace("name \"GSD band\"\n", "id \"gsd-band\"\n"));
-        let messages: Vec<&str> = diagnostics.iter().map(|d| d.message.as_str()).collect();
-        assert!(messages.contains(&"`id` is declared twice"), "{messages:?}");
-        assert!(messages.contains(&"declares no `name`"), "{messages:?}");
-        let twice = refusals(&format!(
-            "{GSD}source \"board\" {{ fixture \"b.json\"; }}\n"
-        ));
-        assert!(
-            twice[0]
-                .message
-                .contains("source `board` is declared twice")
-        );
-    }
-
-    #[test]
-    fn later_protocols_nodes_and_the_wrong_case_are_told_apart() {
-        let later = refusals(&format!("{GSD}action \"next\"\n"));
-        assert!(later[0].message.contains("not supported by protocol 1"));
-        let case = refusals(&format!("{GSD}Surface \"x\"\n"));
-        assert_eq!(
-            case[0].suggestion.as_deref(),
-            Some("manifest nodes are lowercase: write `surface`")
-        );
-        let script =
-            refusals(&GSD.replace("fixture \"fixtures/board.json\"", "script \"board.rhai\""));
-        assert!(
-            script[0].message.contains("`script` is not supported"),
-            "{}",
-            script[0]
-        );
-    }
-}
+mod tests;

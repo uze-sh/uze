@@ -171,7 +171,7 @@ fn check_one(identity: Identity, dir: &Path, overlay: &Overlay) -> CheckedExtens
     match extension::compile_overlaid(identity, dir, overlay) {
         Ok(compiled) => {
             for source in &compiled.manifest.sources {
-                let Some(fixture) = source.fixture.as_deref() else {
+                let Some(fixture) = source.fixture() else {
                     continue;
                 };
                 match fixture_data(dir, fixture, overlay) {

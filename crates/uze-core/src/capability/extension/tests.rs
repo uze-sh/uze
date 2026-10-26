@@ -632,6 +632,47 @@ fn a_surface_naming_a_missing_view_or_one_outside_is_refused() {
     assert_eq!(diagnostics[0].line, 7);
 }
 
+#[test]
+fn a_script_must_be_a_file_inside_the_extension() {
+    let manifest = format!(
+        "{}action \"archive\" label=\"Archive\" on=\"board\" {{ script \"archive.rhai\"; }}\n",
+        MANIFEST.replace("fixture \"fixtures/board.json\"", "script \"board.rhai\"")
+    );
+    let missing = plugin(
+        "extension-missing-script",
+        &[("gsd-band", &gsd_files(&manifest, BOARD))],
+    );
+    let diagnostics = compile_in(missing.path(), "gsd-band").unwrap_err();
+    let messages: Vec<&str> = diagnostics.iter().map(|d| d.message.as_str()).collect();
+    assert_eq!(
+        messages,
+        vec![
+            "the script `board.rhai` does not exist in the extension's directory",
+            "the script `archive.rhai` does not exist in the extension's directory",
+        ]
+    );
+    let present = plugin(
+        "extension-present-script",
+        &[(
+            "gsd-band",
+            &[
+                (MANIFEST_FILE, manifest.as_str()),
+                ("board.kdl", BOARD),
+                ("board.rhai", "fn answer(input, context) { #{ data: #{} } }"),
+                (
+                    "archive.rhai",
+                    "fn answer(input, context) { #{ data: #{} } }",
+                ),
+            ],
+        )],
+    );
+    let compiled = compile_in(present.path(), "gsd-band").unwrap();
+    assert_eq!(
+        compiled.manifest.source("board").unwrap().script(),
+        Some("board.rhai")
+    );
+}
+
 // A symbolic link needs a privilege on Windows that a test run may lack;
 // Unix makes one freely.
 #[cfg(unix)]

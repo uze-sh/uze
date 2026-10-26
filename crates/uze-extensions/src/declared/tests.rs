@@ -7,7 +7,7 @@ use uze_contract::binding::{binding_of, parse_text};
 use uze_contract::compiled::{Lookup, Node, Span as SourceSpan};
 use uze_contract::{
     Binding, CompiledExtension, CompiledView, Condition, Identity, Item, Manifest, NodeName, Path,
-    Slot, SourceDecl, SurfaceDecl,
+    Slot, SourceDecl, SourceKind, SurfaceDecl,
 };
 
 use super::*;
@@ -162,10 +162,12 @@ pub(super) fn extension(view: CompiledView) -> CompiledExtension {
             name: "GSD band".to_owned(),
             description: String::new(),
             surfaces: vec![surface(VIEW, Slot::View), surface(SECTION, Slot::Section)],
-            sources: vec![SourceDecl {
-                id: SOURCE.to_owned(),
-                fixture: Some("fixtures/board.json".to_owned()),
-            }],
+            wants: Vec::new(),
+            sources: vec![SourceDecl::new(
+                SOURCE,
+                SourceKind::Fixture("fixtures/board.json".to_owned()),
+            )],
+            actions: Vec::new(),
         },
         views: BTreeMap::from([("board.kdl".to_owned(), view)]),
     }

@@ -33,7 +33,10 @@ pub use binding::{Binding, Condition, Path, Scope, TextPart};
 pub use catalog::{NodeName, PropKind, RoleName};
 pub use clean::Clean;
 pub use compiled::{CompiledExtension, CompiledView, Item, Lookup, Node, Span};
-pub use manifest::{Manifest, Slot, SourceDecl, SurfaceDecl};
+pub use manifest::{
+    ActionDecl, Does, EVERY_FLOOR, EventName, Grant, KeySuggestion, Manifest, Slot, SourceDecl,
+    SourceKind, SurfaceDecl,
+};
 pub use testing::{Given, GivenData, Step, StepKind, TestDecl, TestFile, ThemeName, World};
 
 /// The extension protocol this build speaks. A manifest declaring another
@@ -42,10 +45,15 @@ pub const PROTOCOL: u32 = 1;
 
 /// Ids a declared extension may not take, because a built-in extension or
 /// UZE itself already answers to them.
-pub const RESERVED_IDS: &[&str] = &["code", "architect", "spec", "uze"];
+pub const RESERVED_IDS: &[&str] = &["code", "architect", "spec", "timeline", "uze"];
+
+/// The longest an id may be: it is part of every keymap name and of the
+/// attribution the host draws, which must fit beside what it attributes.
+pub const ID_MAX: usize = 32;
 
 /// Whether `id` is spelled the way an extension id must be: lowercase ASCII
-/// letters, digits and single hyphens, starting with a letter.
+/// letters, digits and single hyphens, starting with a letter, at most
+/// [`ID_MAX`] long.
 ///
 /// Narrow on purpose (S15 of the first review): an id ends up in paths,
 /// keymap names and the attribution UZE draws, and a `../` or a homoglyph
@@ -62,6 +70,7 @@ pub fn is_valid_id(id: &str) -> bool {
         previous_hyphen = ch == '-';
         ok && !doubled
     }) && !id.is_empty()
+        && id.len() <= ID_MAX
         && !id.ends_with('-')
 }
 
@@ -95,6 +104,19 @@ mod tests {
         }
         for bad in ["", "-a", "a-", "a--b", "GSD", "2fa", "a_b", "../x", "а"] {
             assert!(!is_valid_id(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn an_id_is_at_most_thirty_two_characters() {
+        assert!(is_valid_id(&"a".repeat(ID_MAX)));
+        assert!(!is_valid_id(&"a".repeat(ID_MAX + 1)));
+    }
+
+    #[test]
+    fn the_timeline_is_reserved_with_the_built_ins() {
+        for id in ["code", "architect", "spec", "timeline", "uze"] {
+            assert!(RESERVED_IDS.contains(&id), "{id}");
         }
     }
 

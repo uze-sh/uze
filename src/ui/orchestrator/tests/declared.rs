@@ -200,10 +200,12 @@ fn compiled() -> CompiledExtension {
                 surface("board", uze_contract::Slot::View),
                 surface("band", uze_contract::Slot::Section),
             ],
-            sources: vec![uze_contract::SourceDecl {
-                id: "board".to_owned(),
-                fixture: Some("fixtures/board.json".to_owned()),
-            }],
+            wants: Vec::new(),
+            sources: vec![uze_contract::SourceDecl::new(
+                "board",
+                uze_contract::SourceKind::Fixture("fixtures/board.json".to_owned()),
+            )],
+            actions: Vec::new(),
         },
         views: BTreeMap::new(),
     }

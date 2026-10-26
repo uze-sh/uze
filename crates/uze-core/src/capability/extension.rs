@@ -155,21 +155,18 @@ pub fn compile_overlaid(
             Err(why) => report.at(*view_at, format!("the view `{}` {why}", surface.view), None),
         }
     }
-    for (source, fixture_at) in decoded.manifest.sources.iter().zip(&decoded.fixture_places) {
-        let Some(fixture) = &source.fixture else {
-            continue;
-        };
-        if overlay.contains_key(fixture) {
+    for (what, file, at) in decoded.files() {
+        if overlay.contains_key(file) {
             continue;
         }
-        if let Err(why) = inside(dir, fixture).and_then(|path| {
+        if let Err(why) = inside(dir, file).and_then(|path| {
             if path.is_file() {
                 Ok(())
             } else {
                 Err("is not a file".to_owned())
             }
         }) {
-            report.at(*fixture_at, format!("the fixture `{fixture}` {why}"), None);
+            report.at(at, format!("the {what} `{file}` {why}"), None);
         }
     }
     let mut diagnostics = report.into_diagnostics();

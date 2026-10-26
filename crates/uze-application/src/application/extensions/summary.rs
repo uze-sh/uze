@@ -125,7 +125,9 @@ mod tests {
                     surface("board", Slot::View, Some("Board")),
                     surface("band", Slot::Section, None),
                 ],
+                wants: Vec::new(),
                 sources: Vec::new(),
+                actions: Vec::new(),
             },
             views: BTreeMap::new(),
         };

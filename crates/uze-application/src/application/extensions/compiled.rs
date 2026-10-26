@@ -62,7 +62,7 @@ impl Extensions<'_> {
             .sources
             .iter()
             .filter_map(|source| {
-                let fixture = source.fixture.as_deref()?;
+                let fixture = source.fixture()?;
                 Some((source.id.clone(), read_fixture(&installed.dir, fixture)))
             })
             .collect()
@@ -283,10 +283,12 @@ mod tests {
                 name: "Board".to_owned(),
                 description: String::new(),
                 surfaces: Vec::new(),
-                sources: vec![uze_contract::SourceDecl {
-                    id: "board".to_owned(),
-                    fixture: Some("fixtures/board.json".to_owned()),
-                }],
+                wants: Vec::new(),
+                sources: vec![uze_contract::SourceDecl::new(
+                    "board",
+                    uze_contract::SourceKind::Fixture("fixtures/board.json".to_owned()),
+                )],
+                actions: Vec::new(),
             },
             views: BTreeMap::new(),
         }
