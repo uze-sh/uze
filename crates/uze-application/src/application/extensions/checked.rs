@@ -69,15 +69,8 @@ impl CheckedExtension {
     /// The one-based line and column `offset` falls at in `file`.
     pub fn place(&self, file: &str, offset: usize) -> Option<(usize, usize)> {
         let text = self.texts.get(file)?;
-        let before = text.get(..offset)?;
-        let line = before.matches('\n').count() + 1;
-        let column = before
-            .rsplit_once('\n')
-            .map_or(before, |(_, last)| last)
-            .chars()
-            .count()
-            + 1;
-        Some((line, column))
+        text.get(..offset)?;
+        Some(line_and_column(text, offset))
     }
 
     /// A warning at `offset` of `file`, placed when the text is known.
@@ -188,6 +181,9 @@ fn check_one(identity: Identity, dir: &Path, overlay: &Overlay) -> CheckedExtens
                     checked.texts.insert(view.clone(), text);
                 }
             }
+            checked
+                .errors
+                .extend(scripts_call_only_what_is_granted(&compiled, &text_of));
             checked.compiled = Some(compiled);
         }
         Err(diagnostics) => checked.errors.extend(diagnostics),
@@ -216,6 +212,77 @@ fn check_one(identity: Identity, dir: &Path, overlay: &Overlay) -> CheckedExtens
         }
     }
     checked
+}
+
+/// Each host function a script of `compiled` names that the manifest's
+/// grants do not register, located at its first call: the engine would
+/// refuse it at the first run, and the author should hear it from the
+/// check instead.
+fn scripts_call_only_what_is_granted(
+    compiled: &CompiledExtension,
+    text_of: &dyn Fn(&str) -> Option<String>,
+) -> Vec<Diagnostic> {
+    let manifest = &compiled.manifest;
+    let grants: uze_script::Grants = manifest.wants.iter().copied().collect();
+    let mut scripts: Vec<&str> = manifest
+        .sources
+        .iter()
+        .filter_map(|source| match &source.kind {
+            uze_contract::SourceKind::Script(file) => Some(file.as_str()),
+            _ => None,
+        })
+        .chain(
+            manifest
+                .actions
+                .iter()
+                .filter_map(|action| match &action.does {
+                    uze_contract::Does::Script(file) => Some(file.as_str()),
+                    _ => None,
+                }),
+        )
+        .collect();
+    scripts.sort_unstable();
+    scripts.dedup();
+    let mut diagnostics = Vec::new();
+    for file in scripts {
+        let Some(text) = text_of(file) else {
+            continue;
+        };
+        for (function, grant) in uze_script::ungranted_calls(&text, &grants) {
+            let offset = text
+                .find(&format!("{function}("))
+                .or_else(|| text.find(&function))
+                .unwrap_or(0);
+            let (line, column) = line_and_column(&text, offset);
+            diagnostics.push(Diagnostic {
+                file: file.to_owned(),
+                line,
+                column,
+                message: format!(
+                    "`{function}` needs the `{}` grant, which the manifest does not want",
+                    grant.name()
+                ),
+                suggestion: Some(format!(
+                    "add `wants \"{}\"` to {}",
+                    grant.name(),
+                    extension::MANIFEST_FILE
+                )),
+            });
+        }
+    }
+    diagnostics
+}
+
+fn line_and_column(text: &str, offset: usize) -> (usize, usize) {
+    let before = text.get(..offset).unwrap_or_default();
+    let line = before.matches('\n').count() + 1;
+    let column = before
+        .rsplit_once('\n')
+        .map_or(before, |(_, last)| last)
+        .chars()
+        .count()
+        + 1;
+    (line, column)
 }
 
 /// A source's fixture, from the editor's text when it holds one, with where
@@ -353,6 +420,45 @@ source "board" { fixture "fixtures/board.json"; }
             .extensions()
             .check_extension(&dir, &super::Overlay::new());
         assert!(saved.is_clean(), "{:?}", saved.errors);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_script_calling_a_function_its_grants_do_not_register_is_refused() {
+        let root = uze_testkit::temp::scratch("extensions-check-ungranted");
+        let manifest = MANIFEST.replace(
+            "source \"board\" { fixture \"fixtures/board.json\"; }",
+            "source \"board\" { script \"board.rhai\"; }",
+        );
+        let plugin = plugin_with(&root, &manifest, "{}");
+        let script = plugin.join("extensions/board/board.rhai");
+        fs::write(
+            &script,
+            "// counts the plan\nfn answer(input, context) {\n    let text = read_checkout(\"PLAN.md\");\n    #{ data: #{ size: text.len() } }\n}\n",
+        )
+        .unwrap();
+        let app = UzeApplication::new(UzeHome::at(root.join("home")), Vec::new());
+
+        let checked = app.extensions().check(&plugin);
+        let errors: Vec<String> = checked[0].errors.iter().map(ToString::to_string).collect();
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(errors[0].starts_with("board.rhai:3:16:"), "{errors:?}");
+        assert!(
+            errors[0].contains("`read_checkout` needs the `read:checkout` grant"),
+            "{errors:?}"
+        );
+        assert_eq!(
+            checked[0].errors[0].suggestion.as_deref(),
+            Some("add `wants \"read:checkout\"` to extension.kdl")
+        );
+
+        let granted = manifest.replace(
+            "source \"board\"",
+            "wants \"read:checkout\"\nsource \"board\"",
+        );
+        fs::write(plugin.join("extensions/board/extension.kdl"), granted).unwrap();
+        let checked = app.extensions().check(&plugin);
+        assert!(checked[0].is_clean(), "{:?}", checked[0].errors);
         fs::remove_dir_all(root).unwrap();
     }
 
