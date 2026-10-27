@@ -36,6 +36,13 @@ a harness reads (ADR-041).
   declared engine asks the host for an answer by declaration id
   (`Host::answer`, called only from `declared/`), never with argv or script
   text: what runs is what the operator consented to.
+- A declared extension's program is started only by
+  `uze_core::machine::extension_program`, through this binary's
+  `__confine` helper where the machine confines;
+  `uze-application`'s `extensions/program.rs` is the one caller, and the
+  architecture suite fails on any other. It runs the accepted declaration
+  by id, from the path pinned at consent or a copy of the consented
+  bytes, never a `PATH` search or the files on disk.
 - An extension's actions reach the keyboard through `Action::Extension` and
   a table of that extension's own, resolved after the host's; nothing in
   `uze-extensions` names a chord.

@@ -2,7 +2,7 @@
 name: extension
 # Who finds this skill: the moment someone wants a surface of their own in
 # the workspace, not the moment they want a plugin (that is `uze:author`).
-description: Writing a declared extension a plugin carries — the `extension.kdl` manifest (surfaces, sources, actions, grants), a Rhai script that answers a source, the grants this version offers, the check loop with `.test.kdl` tests, and the consent and per-project enabling a script needs before it runs. Use when adding an extension to a plugin, writing or debugging an extension's script, a source, an action or a key, when `uze agent plugin check` refuses an extension, or when an extension draws "needs consent" or "needs enabling in this project".
+description: Writing a declared extension a plugin carries — the `extension.kdl` manifest (surfaces, sources, actions, grants), a Rhai script or a program that answers a source, `exec:` grants and how a program is pinned and confined, the extension's store, the check loop with `.test.kdl` tests, and the consent and per-project enabling code needs before it runs. Use when adding an extension to a plugin, writing or debugging an extension's script or program, a source, an action or a key, when `uze agent plugin check` refuses an extension, or when an extension draws "needs consent", "needs enabling in this project" or "`<program>` not found".
 invoke:
   model: true
   user: true
@@ -11,7 +11,7 @@ invoke:
 An extension is a surface a plugin adds to the workspace: a full-frame
 `view` opened from the tab strip, or a `section` of the sidebar. It never
 draws: it declares what it shows, and the workspace draws it. Its data
-comes from **sources**, a fixture or a Rhai script; what a person can do
+comes from **sources**, a fixture, a Rhai script or a program; what a person can do
 on it are **actions**; what its scripts may reach are **grants**, which
 the operator consents to before anything runs.
 
@@ -123,21 +123,108 @@ fn answer(input, context) {
   input and checkout; `every`, `refresh-on` and a `refresh` action ask
   past it. An action's script runs on every gesture.
 
-## Grants
+## A program
 
-This version offers three:
+When a script cannot answer (a GPU, a CLI that knows what a file does
+not), a source or an action runs a program: an argv, never a shell
+string, its first element a file inside the extension (`./bin/meter`) or
+the name of a program an `exec:` grant covers.
+
+```kdl
+wants "exec:git"
+
+source "recent" {
+    run "git" "log" "--format=%h%x09%s" "-n" "5" timeout="5s"
+    output "lines"
+    fields "hash" "subject"
+    every "60s"
+}
+
+action "show" label="Show" on="board" {
+    run "./bin/show" "--" "{hash}"
+}
+```
+
+- The host runs the declaration the operator accepted, by its id, once
+  per question, in the checkout's root. A `{field}` becomes one whole
+  argument; one that begins an argument goes after `--`, or the check
+  refuses it, so a value can never be read as a flag.
+- It gets one JSON document on stdin, `{protocol, context, input}`, and
+  each flat input as `UZE_IN_<NAME>` too. Its environment is the locale,
+  the terminal, `PATH`, `HOME`, `TMPDIR` (its own scratch folder) and a
+  Git told to run no hook, fsmonitor or helper; no token of the operator's
+  reaches it.
+- It answers on stdout: `json` (the default), one value or an envelope
+  (`data`, `refresh`, `toast`, `notice`, `store`); or `lines`, one item a
+  line, its fields named by `fields`, split at a tab or at
+  `separator=","`. Exit `0` answers, `3` refuses with the reason on
+  stderr (an action's notice; a source's failure), anything else fails.
+- Bounds: 10 s (`timeout` lowers it), 1 MiB of stdout, 64 KiB of stderr;
+  past one, the run and every process it started are ended. A program
+  source is asked at most every 30 s.
+- A packaged script runs as its `#!` interpreter followed by the script,
+  so the interpreter needs its own grant: `#!/usr/bin/env python3` wants
+  `exec:python3`. `env -S` is refused.
+- From a script, `run_program(name, [args…])` runs a program its grants
+  cover, the same way, and returns `#{ code, stdout, stderr }`; its
+  arguments are taken as written, and the time it waits does not count
+  against the script's 100 ms.
+
+**Pinned and confined.** When the operator allows an extension, each
+`exec:` name is resolved once on the machine's search path to its real
+path and recorded (`nvidia-smi → /usr/lib/wsl/lib/nvidia-smi`); a run
+never searches `PATH` again, and a name found only inside the project,
+UZE's home or a temporary directory is refused. A name not found leaves
+its source saying "`gh` not found" until the operator presses **Resolve
+again** on the Extensions screen.
+
+Where the machine confines (Linux with Landlock, macOS), a program reads
+the checkout, its Git directory, its extension's files and the system,
+writes only its scratch folder, opens no socket, and cannot leave its
+process group. A device or a driver file it needs is declared beside its
+grant, and the operator sees it:
+
+```kdl
+exec "nvidia-smi" {
+    reads "/dev/dxg" "/dev/nvidiactl" "/proc/driver/nvidia"
+}
+```
+
+A path under `/dev/` is spoken to (read, write, `ioctl`); any other is
+read. Where the machine cannot confine, the program runs as the operator,
+and allowing it says so in those words; `uze doctor` says which this
+machine is.
+
+## The store
+
+An extension that wants `store` keeps one JSON object per project
+(`store:global`: one for the machine, asked about on its own), at most
+1 MiB, removed with its plugin. Any answer's envelope may carry `store`,
+an object whose keys replace the store's (`null` removes one), applied in
+the order answers arrive. A script reads it with `store()`; a program
+source that declares `store` gets it on its input.
+
+```rhai
+let kept = store();
+let history = if "history" in kept { kept.history } else { [] };
+history.push(load);
+#{ data: #{ history: history }, store: #{ history: history } }
+```
+
+## Grants
 
 | grant | reaches |
 |---|---|
 | `read:checkout` | `read_checkout(path)` (a file's text, at most 1 MiB) and `list_checkout(path)` (`#{ name, kind }` with `kind` one of `file`, `dir`, `link`), beneath the checkout root; `..` and a link leading out are refused |
 | `clipboard` | a `clipboard` action |
 | `open-path` | an `open-path` action |
+| `exec:<program>` | running that program, pinned and confined as above; `sh`, `python3`, `node`, `git` and the like are named to the operator as able to run anything |
+| `store` · `store:global` | the extension's store, per project or for the machine |
 
 Later grants are refused by the check naming the change that brings them:
-`exec:*` and `store` (programs and an extension's own store), `agent:*`
-and `notify`, `resident`, and `net`, `secret`, `edit:checkout`. There is
-no `write:checkout`. A `run` source is refused the same way until
-programs arrive. Ask for the fewest grants that do the job: each one is
+`agent:*` and `notify`, `resident`, and `net`, `secret`, `edit:checkout`.
+There is no `write:checkout`, and `exec:uze` and a harness's own program
+are never granted. Ask for the fewest grants that do the job: each one is
 what the operator is asked about.
 
 ## The check loop
@@ -172,7 +259,9 @@ test "refresh is the action its key presses" {
 manifest suggests one. The rest of the test vocabulary, snapshots and
 `--update-snapshots` are in `uze:author`, *Test an extension*.
 `uze agent plugin check --run` executes the scripts in the engine against
-a checkout. Then `uze update <plugin> -m` puts the change in the
+a checkout, and the programs too where this machine confines them, their
+`exec:` names resolved on the spot; elsewhere their recorded answers
+stand in. Then `uze update <plugin> -m` puts the change in the
 workspace (`uze:author`, *Install and iterate*).
 
 ## Consent and enabling
@@ -188,6 +277,10 @@ the files consented to; enabling is per project, and so is disabling.
 - An update that wants the same grants or fewer is applied without
   asking. One that wants a new grant is **held** (`held: its update wants
   …`) and runs nothing until the operator consents again.
+- Programs are asked about on a step of their own, after the other
+  grants, each with where it was pinned and whether it runs confined. One
+  allowed to run as the operator is asked again on every update, and one
+  allowed confined is asked again if the machine stops confining.
 - Both answers are the operator's: they are given on the workspace's
   Extensions screen, which shows the grants, and asked by `uze install`
   on a terminal. From an agent's pane both are refused. An agent writing

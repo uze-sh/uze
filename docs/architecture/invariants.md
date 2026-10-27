@@ -3047,6 +3047,55 @@ as `uze workspace allow` refuses a project's commands; disabling never is.
 
 > `tests/lifecycle/extension_consent.rs::an_agents_pane_can_neither_consent_nor_enable`
 
+### An extension's program is started from one place
+
+The program runner in `uze-core` (`machine::extension_program`) is the
+only code that starts an extension's program or the `__confine` helper,
+and the helper's own command the only caller of
+`uze_platform::confine::enter`. Consent, pinning, the bounds and the
+confinement are all on that one path, so no program runs around them.
+
+> `tests/architecture/layering.rs::only_the_program_runner_starts_an_extension_program`
+
+### A program runs where it was pinned, from the bytes that were digested
+
+An `exec:` name runs from the real path recorded when the operator
+allowed the extension, never a `PATH` search at run time, and never from
+beneath the project, UZE's home or a temporary directory. A packaged
+program runs from a copy of the consented load, in its run's own
+directory, so a file changed on disk since is not what runs.
+
+> `crates/uze-core/src/machine/extension_program.rs::tests::a_program_is_pinned_to_its_real_path_and_never_beneath_the_project`
+> `crates/uze-workspace/src/extensions/consent.rs::tests::programs_accepted_unconfined_are_asked_again_on_any_update`
+
+### A confined program reaches only what it was granted
+
+Where the machine confines, a program reads the checkout, its Git
+directory, its extension and the system; writes only its scratch folder;
+opens no socket; signals nothing outside its run and cannot leave its
+process group; inherits no secret of the operator's environment; and is
+ended with every process it started past its time or output bound. A run
+accepted as confined never runs unconfined: without the helper, or when
+the helper cannot apply the confinement, nothing runs.
+
+> `tests/lifecycle/extension_programs.rs::a_confined_program_writes_nowhere_but_its_scratch`
+> `tests/lifecycle/extension_programs.rs::a_confined_program_reads_the_checkout_and_nothing_outside_it`
+> `tests/lifecycle/extension_programs.rs::a_confined_program_opens_no_socket`
+> `tests/lifecycle/extension_programs.rs::a_confined_program_cannot_leave_its_process_group`
+> `tests/lifecycle/extension_programs.rs::a_helper_that_cannot_confine_runs_nothing`
+> `crates/uze-core/src/machine/extension_program.rs::tests::a_token_in_the_environment_does_not_reach_the_program`
+> `crates/uze-core/src/machine/extension_program.rs::tests::a_hang_is_ended_with_its_children`
+
+### An extension's store is its own, bounded, and leaves with its plugin
+
+What an extension keeps is one record per extension and project (or for
+the machine under `store:global`), at most 1 MiB, patched only from a
+fresh answer of an extension that wants `store`, and removed with its
+plugin.
+
+> `crates/uze-workspace/src/extensions/store.rs::tests::a_store_is_patched_key_by_key_and_kept_per_project`
+> `tests/lifecycle/extension_programs.rs::answers_keep_a_store_and_a_script_runs_a_granted_program`
+
 ## Harness conformance (`assert-one-capability-contract`)
 
 ### Every harness answers the same questions

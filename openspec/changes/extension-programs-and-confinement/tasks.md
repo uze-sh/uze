@@ -54,6 +54,6 @@
 
 - [x] 9.1 The `gpu-meter` fixture plugin: `exec:nvidia-smi` with its device reads, `output "lines"`, a store history drawn as a `Chart`, a `section` and a `view`, tests with recorded answers
 - [x] 9.2 Prove `gpu-meter` against the real `nvidia-smi` on this machine, confined, end to end through the runner (an integration test skipped where `nvidia-smi` is absent)
-- [ ] 9.3 The extensions rule, invariants, `crate-layering.mmd`/`containers.mmd` with the helper, the `uze:extension` skill teaching `run`, `exec:` and the store
+- [x] 9.3 The extensions rule, invariants, `crate-layering.mmd`/`containers.mmd` with the helper, the `uze:extension` skill teaching `run`, `exec:` and the store
 - [ ] 9.4 A journey: a packaged program under `exec:sh` installed, consented to on the program step, enabled and drawn
 - [ ] 9.5 `make check`, `openspec validate --all --strict`, and the hand proof script for the operator's review
