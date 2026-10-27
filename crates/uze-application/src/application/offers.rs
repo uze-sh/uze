@@ -181,13 +181,32 @@ pub fn extension_offers(enabled: bool) -> Vec<ActionOffer> {
 
 /// What can be done to a declared extension, as it stands in the project
 /// the screen was opened in. One that runs code is enabled and disabled
-/// per project, after consent; one that runs nothing, does not compile or
-/// is seen with no project open has only the machine's switch.
+/// per project, after consent; one that runs nothing or does not compile
+/// has only the machine's switch. Seen with no project open (`in_a_project`
+/// false), one that runs code is enabled nowhere: its switch is not what
+/// holds it back, so flipping it would answer the click with nothing.
 pub fn declared_extension_offers(
     switched_on: bool,
     standing: Option<&super::ExtensionReport>,
+    in_a_project: bool,
 ) -> Vec<ActionOffer> {
     use super::ExtensionCondition as Condition;
+    if !in_a_project
+        && switched_on
+        && standing.is_some_and(|standing| {
+            matches!(
+                standing.condition,
+                Condition::NeedsConsent | Condition::NeedsEnabling | Condition::Held
+            )
+        })
+    {
+        let mut offers = extension_offers(switched_on);
+        offers[0] = ActionOffer::unavailable(
+            Action::EnableExtension,
+            "it is enabled per project: open an agent in one, then enable it here",
+        );
+        return offers;
+    }
     let Some(standing) = standing.filter(|standing| {
         matches!(
             standing.condition,

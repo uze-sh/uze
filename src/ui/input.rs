@@ -571,8 +571,10 @@ impl TuiModel {
             // Harnesses: no-op — toggling is the toggle action's job,
             // deliberately not doubled onto Enter.
             // Enter switches an extension whichever way it is not: Enable
-            // when it is offered, Disable otherwise.
+            // when it is offered, Disable otherwise — except for one that
+            // waits for a project, which Enter must not switch off.
             Route::Extensions => match self.selected_extension() {
+                Some(extension) if self.extension_waits_for_a_project(extension) => Intent::None,
                 Some(extension) => {
                     let enable = self.extension_offers(extension).iter().any(|offer| {
                         offer.action == Action::EnableExtension && offer.is_available()

@@ -449,3 +449,22 @@ fn a_refused_checkout_is_the_reason_the_extension_runs_nothing() {
         Intent::None
     );
 }
+
+/// Seen with no project in front (a shell alone in the space), an
+/// extension that runs code is enabled nowhere, and its machine switch is
+/// already on: Enable must say where it is enabled instead of answering
+/// the click with nothing.
+#[test]
+fn enabling_with_no_project_in_front_says_where_it_is_enabled() {
+    let mut model =
+        standing_in_a_project(standing(uze_application::ExtensionCondition::NeedsConsent));
+    model.extension_project = None;
+    let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(model.apply_key(enter), Intent::None);
+    assert!(
+        !matches!(model.overlay, crate::ui::model::Overlay::Confirm { .. }),
+        "no dialog for a project there is none of"
+    );
+    let screen = screen_of(&model);
+    assert!(screen.contains("open an agent in one"), "{screen}");
+}

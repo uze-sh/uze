@@ -61,6 +61,11 @@ on "cancel" must not save first.
   Enter opens.
 - A click that does nothing must not *look* like it acted. For example, a
   drawer must not close as if it ran something.
+- Nor may a button offered as available answer a click with nothing. When
+  what it would do cannot happen here, it is offered as unavailable and the
+  place it is drawn says why and what to do instead. For example, an
+  extension's Enable with no project in front says "Needs a project" and
+  never quietly flips a switch that is already on.
 
 **Hover:**
 - Everything clickable has a hover, and nothing that isn't clickable does.

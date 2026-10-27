@@ -1290,9 +1290,26 @@ impl TuiModel {
                 uze_application::application::offers::declared_extension_offers(
                     switched_on,
                     self.extension_standing(&summary.identity),
+                    self.extension_project.is_some(),
                 )
             }
         }
+    }
+
+    /// Whether `extension` runs code and nothing says which project it is
+    /// about: the screen was opened with no agent's project in front.
+    pub(crate) fn extension_waits_for_a_project(&self, extension: ExtensionEntry<'_>) -> bool {
+        use uze_application::ExtensionCondition as Condition;
+        self.extension_project.is_none()
+            && self.extension_enabled(&extension.id())
+            && self
+                .standing_in_a_project(extension)
+                .is_some_and(|standing| {
+                    matches!(
+                        standing.condition,
+                        Condition::NeedsConsent | Condition::NeedsEnabling | Condition::Held
+                    )
+                })
     }
 
     /// Switching the selected extension to `enabled`, or nothing when it

@@ -315,7 +315,11 @@ fn render_extension_drawer(
         frame,
         status,
         if let Some(status) = enabled
-            .then(|| standing.and_then(standing_status))
+            .then(|| {
+                standing.and_then(|standing| {
+                    standing_status(standing, model.extension_project.is_some())
+                })
+            })
             .flatten()
         {
             status
@@ -438,9 +442,19 @@ fn standing_lines(standing: &ExtensionReport, project: Option<&Path>) -> Vec<Lin
 /// The drawer's foot for a declared extension that runs code and waits
 /// for the operator, or runs nothing in this checkout; `None` when the
 /// switch's own foot says it.
-fn standing_status(standing: &ExtensionReport) -> Option<DrawerStatus<'static>> {
+fn standing_status(
+    standing: &ExtensionReport,
+    in_a_project: bool,
+) -> Option<DrawerStatus<'static>> {
     let warning = theme::color(Token::StateWarning);
     Some(match standing.condition {
+        Condition::NeedsConsent | Condition::NeedsEnabling | Condition::Held if !in_a_project => {
+            DrawerStatus {
+                color: warning,
+                headline: "Needs a project",
+                subtitle: "Enabled per project: open an agent in one, then enable it here",
+            }
+        }
         _ if standing.checkout_refused.is_some() => DrawerStatus {
             color: warning,
             headline: "Runs nothing here",
