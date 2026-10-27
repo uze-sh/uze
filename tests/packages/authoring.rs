@@ -1217,7 +1217,9 @@ fn every_fixture_plugins_extensions_check_clean() {
     }
     checked.sort();
     assert!(
-        checked.iter().any(|name| name == "gpu") && checked.iter().any(|name| name == "gsd"),
+        ["deck", "gpu", "gsd"]
+            .iter()
+            .all(|name| checked.iter().any(|checked| checked == name)),
         "{checked:?}"
     );
     let _ = fs::remove_dir_all(root);

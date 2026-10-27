@@ -29,8 +29,10 @@ fn answer(input, context) {
         history.remove(0);
     }
 
+    let warn_at = input.preferences["warn-at"];
     #{
         data: #{
+            warn: warn_at.to_float() / 100.0,
             name: field(parts, 0),
             load: load,
             load_ratio: load.to_float() / 100.0,

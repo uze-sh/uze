@@ -362,6 +362,15 @@ fn lines_name_their_fields_and_only_a_program_has_an_output() {
         first_message(&running("run \"./bin/meter\"\n    output \"csv\"", "", "")),
         "there is no output `csv`"
     );
+    let composed = decoded(&running(
+        "script \"board.rhai\"\n    output \"view\"",
+        "",
+        "",
+    ));
+    assert_eq!(
+        composed.source("board").unwrap().output,
+        uze_contract::Output::View
+    );
 }
 
 #[test]

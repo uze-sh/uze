@@ -190,6 +190,7 @@ pub fn decode(node: &KdlNode, report: &mut Report<'_>) -> Option<(SourceDecl, Pl
             );
             return None;
         }
+        (Some((mode, _, _)), None) if mode == "view" => Output::View,
         (_, Some(_)) => {
             report.on(
                 node,

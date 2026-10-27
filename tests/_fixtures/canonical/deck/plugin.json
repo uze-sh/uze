@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "deck",
+  "version": "1.0.0",
+  "description": "The deck reference extension: a composed band over each agent's pane, a status row, an overlay picker, an events log and a notification."
+}

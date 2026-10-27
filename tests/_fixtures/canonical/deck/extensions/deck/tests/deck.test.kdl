@@ -1,0 +1,25 @@
+test "the band draws the composed phases in its two rows" {
+    surface "phases"
+    given "phases" fixture="fixtures/phases.json"
+    size 60 2
+    expect-text "3 phases"
+    snapshot "band"
+}
+
+test "the picker lists the notes and copies one" {
+    surface "picker"
+    given "notes" fixture="fixtures/notes.json"
+    size 60 12
+    expect-text "Write the script"
+    expect-text "Ship the board"
+    snapshot "picker"
+}
+
+test "the log lists what changed and opens the picker" {
+    surface "log"
+    given "changes" fixture="fixtures/changes.json"
+    size 70 12
+    expect-text "paths.changed"
+    press-button "Pick a note"
+    expect-action "pick"
+}

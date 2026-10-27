@@ -1,6 +1,6 @@
 // The sidebar's section: the load as a meter and its history in one row.
 Stack {
-    Gauge "load" ratio="{load_ratio}" warning=0.7 danger=0.9
+    Gauge "load" ratio="{load_ratio}" warning="{warn}" danger=0.9
     Chart series="{history}" kind="sparkline"
     Text "{memory} · {temperature}" role="faint"
 }

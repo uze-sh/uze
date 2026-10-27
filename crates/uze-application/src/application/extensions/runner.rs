@@ -451,7 +451,22 @@ impl ExtensionRunner {
             Ok(checkout) => checkout,
             Err(refused) => return Some(Answer::withheld(refused.reason())),
         };
-        let input = serde_json::to_value(&declared.input).unwrap_or_default();
+        let mut input = serde_json::to_value(&declared.input).unwrap_or_default();
+        // A check is asked with the preferences as declared: their defaults.
+        if declared.with_preferences
+            && let serde_json::Value::Object(fields) = &mut input
+        {
+            let defaults = compiled
+                .manifest
+                .preferences
+                .iter()
+                .map(|decl| (decl.name.clone(), decl.default.clone()))
+                .collect();
+            fields.insert(
+                "preferences".to_owned(),
+                serde_json::Value::Object(defaults),
+            );
+        }
         let file = match &declared.kind {
             SourceKind::Script(file) => file,
             SourceKind::Fixture(_) | SourceKind::Events(_) => return None,

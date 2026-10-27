@@ -119,3 +119,13 @@
 - decided:  The engine logs every event the host hands it (newest first, at most 200) and answers each `events <n>` source with the last `n` itself, as data, whenever the log moves and when it is built; such a source is never a job, so the host is never asked about one. The runner refuses one as "answered by the workspace" if asked.
 - rejected: A host function or a store-backed log: a log the operator did not ask to keep would outlive the session.
 - blast:    `DeclaredExtension::{gather, answer_event_sources, jobs}`.
+
+## D13 — The slots are proven by a fixture plugin of their own, `deck`
+
+- status:   pending
+- task:     7.1
+- commit:
+- trigger:  Task 7.1 gives `gsd-band` a composed band and `notes` an overlay; `gsd-band`'s fixture backs dozens of tests and snapshots of change 1, and `notes` lives only in the hand proof.
+- decided:  `tests/_fixtures/canonical/deck` holds one extension exercising this change whole: a 2-row top `band` composed by `phases.rhai` (one `Segment` per phase directory, weighted by its plans and filled by its summaries) whose label reads a `toggle` preference, a `status` row from the same source, a `view` over an `events 20` source with an `open` action to a `picker` `overlay` and a `done` action whose script answers `notify` and `sound`. `gpu-meter` gains a `status` row and a `warn-at` preference its script reads from `input.preferences`. The packages gate checks `deck` with `gpu` and `gsd`. A check rehearses with each preference at its default.
+- rejected: Growing `gsd-band`: every snapshot of change 1 would be redrawn for a change that is not about it.
+- blast:    Two fixture plugins; `runner::rehearse_over`.

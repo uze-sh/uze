@@ -1,0 +1,45 @@
+// A milestone's phases as a band over each agent's pane, composed by its
+// script; their count as a status row; the checkout's notes in a picker
+// that copies one; and what changed in the checkout, as a log.
+protocol 1
+id "deck"
+name "Deck"
+description "The checkout's phases over each agent, its notes in a picker, and what changed"
+
+wants "read:checkout" "clipboard" "notify"
+
+surface "phases" slot="band" rows=2 place="top" view="waiting.kdl" source="phases" title="Phases"
+surface "count" slot="status" view="count.kdl" source="phases" title="Phases"
+surface "log" slot="view" view="log.kdl" source="changes" title="Deck"
+surface "picker" slot="overlay" view="picker.kdl" source="notes" title="Notes"
+
+preferences {
+    toggle "detail" label="Show each phase's name" default=#true
+}
+
+// One bar segment per phase, however many the milestone has: composed.
+source "phases" {
+    script "phases.rhai"
+    output "view"
+    preferences
+    refresh-on "paths.changed" ".planning"
+}
+
+source "notes" {
+    script "notes.rhai"
+    input file="NOTES.md"
+}
+
+source "changes" { events 20; }
+
+action "pick" label="Pick a note" on="log" key="ctrl-p" {
+    open "picker"
+}
+
+action "copy-note" label="Copy" on="picker" {
+    clipboard "{text}"
+}
+
+action "done" label="Say done" on="log" {
+    script "done.rhai"
+}

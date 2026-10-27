@@ -18,8 +18,16 @@ exec "nvidia-smi" {
 
 surface "meter" slot="view" view="meter.kdl" source="gpu" title="GPU"
 surface "summary" slot="section" view="summary.kdl" source="gpu" title="GPU"
+surface "load" slot="status" view="status.kdl" source="gpu" title="GPU"
+
+// At what load its meters turn to a warning, which the operator sets on
+// the Extensions screen.
+preferences {
+    number "warn-at" label="Warn at load (%)" default=70 min=1 max=100
+}
 
 source "gpu" {
     script "gpu.rhai"
     every "10s"
+    preferences
 }
