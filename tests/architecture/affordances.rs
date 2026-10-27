@@ -103,6 +103,10 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     put(Action::ClearPromptHistory, Index);
     put(Action::EnableExtension, Control("the drawer's buttons"));
     put(Action::DisableExtension, Control("the drawer's buttons"));
+    put(
+        Action::ResolvePrograms,
+        Control("the Resolve again button in a declared extension's drawer"),
+    );
     put(Action::SetupHarness, Control("the drawer's buttons"));
     put(Action::AnalyzeContext, Index);
     put(Action::ApplyContextPlan, Index);
