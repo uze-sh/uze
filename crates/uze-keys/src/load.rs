@@ -436,6 +436,10 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Declared, "tab", Action::NextDiagram),
         bind(Scope::Declared, "shift+tab", Action::PreviousDiagram),
         bind(Scope::Declared, "enter", Action::Activate),
+        // Nothing on a declared surface moves sideways, so the arrows are
+        // free to move between a question's answers, as on every other.
+        bind(Scope::Declared, "left", Action::FocusPrevious),
+        bind(Scope::Declared, "right", Action::FocusNext),
         bind(Scope::Declared, "pagedown", Action::ScrollPageDown),
         bind(Scope::Declared, "pageup", Action::ScrollPageUp),
         bind(Scope::Declared, "i", Action::ToggleInspector),

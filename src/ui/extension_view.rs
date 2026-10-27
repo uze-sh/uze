@@ -412,7 +412,9 @@ pub(crate) fn render_confirm(
     hits: &mut Vec<(Rect, ViewHit)>,
 ) {
     let subject = match attribution {
-        Some(by) if confirm.subject.is_empty() => {
+        // A declared action's question is about the extension itself, so
+        // its subject already is the attribution.
+        Some(by) if confirm.subject.is_empty() || confirm.subject == by => {
             Line::from(TextSpan::styled(by.to_owned(), theme::fg(Token::TextMuted)))
         }
         Some(by) => Line::from(vec![
