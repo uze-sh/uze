@@ -179,3 +179,13 @@
 - decided:  `make check` passes but for the three failures known to this machine's environment (opencode's `bun` shim, two `foreground_status_*` in `uze-terminal`); `cargo deny` and `openspec validate --all --strict` (80 items) pass. The proof script (`run8.sh`, kept with the plan's artifact) rebuilds a world from the branch's `ci` fixture; its automatic part passes. Its checklist in the real TUI is the operator's.
 - rejected: Waiting for the operator to close the task: the run is unattended.
 - blast:    None.
+
+## D19 — Driving `run8.sh` in the real TUI, and what was left out on purpose
+
+- status:   pending
+- task:     4.2
+- commit:
+- trigger:  The checklist a–d was driven through a detached tmux instead of waiting for the operator.
+- decided:  a: the offer (reached from F1's new "Review extensions") names `net:api.github.com` and what it lets the extension do. b and d: the token is typed into a field that shows only dots, the drawer and the editor then say "set", never the value; it lands in a `0600` file under a `0700` directory, apart from the preferences (which hold `"token": true`), and nowhere in the record or the logs. c, the real runs from GitHub, is not driven: it needs a real token and a request to a real host, which this unattended run does not make; `fetch` and the scrub are proven on recorded responses through a stand-in `curl`. Found on the way: the modal kept "Needs consent" after the workspace enabled CI (fixed, bridge D48).
+- rejected: Sending a request to api.github.com with a made-up token: an outward call for a 401.
+- blast:    None.
