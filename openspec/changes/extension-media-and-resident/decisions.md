@@ -89,3 +89,103 @@
 - decided:  An `Image` takes 8 rows without `height`, a `Sprite` half its frame's height in rows (1 to 8), neither more than 64; both keep their rows while read, refused or drawn, so nothing moves when the picture lands (its first row says the `alt`, or why it was refused, in the warning hue). A grid draws at most 200 rows of 400 cells and binds 1,000 regions, its rows counting against the node cap; a control character or one not one column wide is a blank, and a role it does not know, a colour value among them, is the default. A region under the pointer brightens to the accent.
 - rejected: An image as tall as its picture fitted to the width: the row count would change when it is read.
 - blast:    `declared/bind.rs`, `extension_view/tree.rs`.
+
+## D20 — What a resident script keeps, it keeps on `this`
+
+- status:   pending
+- task:     3.1
+- commit:   688b49be
+- trigger:  M4 says the scope is kept between calls; a Rhai function sees no variable outside itself, so a kept `Scope` alone holds nothing an entry point can read.
+- decided:  The session runs the script's top level once, at `start`, in a `Scope` it keeps, and calls every entry point with `this` bound to one map it keeps (`this.score += 1`). `this` is where a resident script's state lives; the top level's constants are what the scope keeps.
+- rejected: Passing the state in and out as an argument and a member of the answer: every call would copy the whole game across the boundary twice.
+- blast:    `uze-script::resident`.
+
+## D21 — Only `render(size)` is required; the slot rides in `start`'s context
+
+- status:   pending
+- task:     3.1
+- commit:   688b49be
+- trigger:  D19 names `render(slot, size)`; the task names `render(size)`; and a script that only draws has nothing to start, hear or stop.
+- decided:  `render(size)` (`#{ width, height }`) is the one entry point a resident script must define. `start(context)` (with `slot`, `locale`, `size`, `checkout`, `extension`, `source`), `event(event)`, `input(input)` and `stop()` are optional: a missing `start` answers a redraw, a missing `event` or `input` none.
+- rejected: `render(slot, size)`: a session renders for one surface, whose slot does not change while it runs.
+- blast:    `uze-script::resident`, the runner's start context.
+
+## D22 — `start`, `event` and `input` answer a bool, or a map with `redraw` beside the envelope's members
+
+- status:   pending
+- task:     3.1
+- commit:   688b49be
+- trigger:  "answer whether to redraw" leaves a resident script no way to keep a score in its store, toast or notify, which `snake` (4.1) needs.
+- decided:  `()` or a bool says whether to redraw; a map says it as `redraw` beside `store`, `toast`, `notice`, `notify`, `sound` and `refresh`, applied as a source's envelope is (the store patch by the runner, the rest by the engine). A map holding `data` is refused: only `render` draws.
+- rejected: A host function per effect (`toast()`, `keep()`): a second way to say what the envelope already says.
+- blast:    `uze-script::resident::redraw_of`, the engine's `absorb_resident`.
+
+## D23 — `timer(ms)` asks for one tick, held to 34 ms, and rides back on the envelope
+
+- status:   pending
+- task:     3.1
+- commit:   688b49be
+- trigger:  "asks for a tick event at most 30/s" does not say whether a timer repeats, nor how the engine learns of it.
+- decided:  `timer(ms)` asks for one tick, `ms` after the call that asked, never sooner than `TIMER_FLOOR` (34 ms: under 30 a second); the last `timer` of a call wins, and a call that asks none leaves no tick. The delay is set by the session on `Envelope::timer` (a field the contract carries, never a member a script may return), and the engine queues `event(#{ name: "timer" })` when it is due. `timer` is a host function under the `resident` grant, so the check refuses it elsewhere.
+- rejected: A repeating timer: a script that forgets to stop one keeps the host ticking for nothing; one shot asked again from `event` is one line.
+- blast:    `uze-contract::Envelope::timer`, `uze-script::{resident, reach::HOST_FUNCTIONS}`, the engine.
+
+## D24 — The first failed call stops the session, whatever failed
+
+- status:   pending
+- task:     3.1
+- commit:   688b49be
+- trigger:  The spec stops a script past a bound; a script that throws or answers a wrong shape leaves its state as unknown as one stopped mid-loop.
+- decided:  Any failed call (a bound, a thrown error, a wrong answer) ends the session's thread; every later call answers that same error, the runner drops the session, and the engine draws the reason (`game.rhai: the script crossed its operations bound at 3:5`) in place of the frame. The surface showing it again starts a new session.
+- rejected: Carrying on after a runtime error: the next frame would draw from state the failed call left half-changed.
+- blast:    `uze-script::resident`, the runner, `declared/resident.rs`.
+
+## D25 — The session lives in the runner, reached by the source's id through `Host::answer`
+
+- status:   pending
+- task:     3.2
+- commit:   424f526e, 49449eda
+- trigger:  The engine keeps no thread and names no `rhai`; the session needs both and the consent `Host::answer` already judges.
+- decided:  `Asking::Resident(ResidentCall)` (`Start`, `Event`, `Input`, `Render`, `Stop`) on the existing `Question`, the call's argument as its input. The runner opens a session on `Start` after the same consent and enabling as a script, keyed by (identity, source), and answers every later call from it without reading the extension again: up to thirty a second must not re-read and re-digest its files. `forget` (consent changed) drops an extension's sessions, and the engine's `reconsider` and `replace` close and reopen them. Every call runs as a job on the extension's serial lane, so they arrive in order and none on the drawing thread.
+- rejected: A `Host::resident` method beside `answer`: a second door the architecture suite would have to guard. The session in `uze-extensions`: it would name `rhai` and spawn a thread.
+- blast:    `uze-contract::{Asking, ResidentCall}`, `uze-application::extensions::runner`, `uze-extensions::declared::resident`.
+
+## D26 — A drawn frame is the engine drawing a surface; the first render waits for one too
+
+- status:   pending
+- task:     3.2
+- commit:   49449eda
+- trigger:  "at most once per drawn frame" needs the engine to know a frame was drawn, which only the host knows.
+- decided:  Every `view` and `section` the host asks of the engine counts a frame. A render is asked only when a call answered a redraw, a frame was counted since the last render was asked (the first included, so it knows its size), and a thirtieth of a second passed on the host's clock; at the size the surface was last drawn at. Raw input waiting for a busy session is held up to 64 calls; what arrives past them is dropped.
+- rejected: A frame counter in the contract (`Extension::drawn`): one more method every extension carries for the one that needs it.
+- blast:    `uze-extensions::declared::{resident, view, section}`.
+
+## D27 — One session per source, on the checkout its first surface in view is about
+
+- status:   pending
+- task:     3.2
+- commit:   49449eda
+- trigger:  A source shown by a view and a section at once, or on two checkouts, would otherwise run two games.
+- decided:  The engine opens one session per resident source, on the checkout `shown_sources` picks (the open view's first), for the first surface in view showing it; a different checkout stops it and starts a new one. A session started again drops the last one's failure and keeps its last frame until its first render.
+- rejected: A session per surface: two states for one source, which every other source never has.
+- blast:    `uze-extensions::declared::resident`.
+
+## D28 — Esc lets go of a resident surface, as it does a docked drawer; a press takes it back
+
+- status:   pending
+- task:     3.3
+- commit:   33b23f47
+- trigger:  M5: "esc unfocuses it"; a view or an overlay already closes on Esc, and the surface has no other way to be focused again.
+- decided:  A resident view in the pane or a resident overlay reads raw input while nothing stands over it (the index, a question, a picker, a menu, the drawer holding the keys). Esc (with any modifier) lets go of it, and the next Esc reaches the host and puts it away, as the docked drawer's two Escs do; F1 and F8 (with any modifier) always reach the host. A left press inside its content takes it back and is handed over relative to the content's top left; opening it again focuses it. Keys are spelled `{key, mods}` from the `Chord` (`src/ui/keys.rs` alone names a `KeyCode`).
+- rejected: Esc closing it at once: a game left by accident loses its state.
+- blast:    `src/ui/orchestrator/{declared/raw.rs, session/keys.rs, session/mouse.rs}`, `extension_view::Rendered::content_area`.
+
+## D29 — A resident script's `store()` is the store as its session started
+
+- status:   pending
+- task:     3.2
+- commit:   424f526e
+- trigger:  The session's reach is built once, at `Start`, and the store is read into it then.
+- decided:  `store()` answers what the store held when the session started; what its calls keep is written at once, and read by `store()` from the next session on. A resident script keeps what it is playing on `this`.
+- rejected: Reading the store on every call: a file read per call at thirty a second.
+- blast:    `uze-application::extensions::runner::start_resident`.

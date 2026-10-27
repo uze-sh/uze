@@ -12,9 +12,9 @@
 
 ## 3. Resident tier
 
-- [ ] 3.1 `uze-script`: a resident session on a thread of its own: `start`, `event`, `input`, `render`, `stop`, scope kept, bounds per call; `timer(ms)`
-- [ ] 3.2 The engine and runner: a resident source opens and closes with its surfaces' visibility; renders asked at most once per frame and 30 a second; a breach stops it naming the bound; a late render keeps the last frame
-- [ ] 3.3 Raw keys and pointer to a focused resident surface, except `esc`, F1 and F8; the extensions rule amended (parent 18.4)
+- [x] 3.1 `uze-script`: a resident session on a thread of its own: `start`, `event`, `input`, `render`, `stop`, scope kept, bounds per call; `timer(ms)`
+- [x] 3.2 The engine and runner: a resident source opens and closes with its surfaces' visibility; renders asked at most once per frame and 30 a second; a breach stops it naming the bound; a late render keeps the last frame
+- [x] 3.3 Raw keys and pointer to a focused resident surface, except `esc`, F1 and F8; the extensions rule amended (parent 18.4)
 
 ## 4. Gallery
 
