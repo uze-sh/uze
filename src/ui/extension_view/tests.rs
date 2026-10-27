@@ -6,7 +6,7 @@ use uze_extensions::view::{ContentLine, LineTone, Rgb, RowMenu};
 /// Rendered Markdown as the rows `prose_rows` folds it to, in plain
 /// text.
 fn prose_at(markdown: &str, width: usize) -> Vec<String> {
-    uze_extensions::code::markdown(markdown, "base16-ocean.dark", width)
+    uze_extensions::shared::markdown::render(markdown, "base16-ocean.dark", width)
         .iter()
         .flat_map(|line| prose_rows(line, width))
         .map(|row| row.spans.iter().map(|span| span.content.as_ref()).collect())

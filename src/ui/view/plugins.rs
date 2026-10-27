@@ -1420,11 +1420,14 @@ fn preview_rows(
                 && cached.text == resource.preview.text
         });
         if !current {
-            let rows =
-                uze_extensions::code::markdown(&preview_markdown(resource), &theme, width.into())
-                    .iter()
-                    .flat_map(|line| crate::ui::extension_view::prose_rows(line, width.into()))
-                    .collect();
+            let rows = uze_extensions::shared::markdown::render(
+                &preview_markdown(resource),
+                &theme,
+                width.into(),
+            )
+            .iter()
+            .flat_map(|line| crate::ui::extension_view::prose_rows(line, width.into()))
+            .collect();
             *cached = Some(RenderedPreview {
                 identity: resource.identity.clone(),
                 theme,

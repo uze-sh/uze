@@ -260,7 +260,8 @@ fn folded(source: &str, width: u16, cut: bool) -> Vec<Line<'static>> {
         true => CODE_MEASURE,
         false => usize::from(width),
     };
-    let content: Vec<ContentLine> = uze_extensions::code::markdown(source, &theme_name, measure);
+    let content: Vec<ContentLine> =
+        uze_extensions::shared::markdown::render(source, &theme_name, measure);
     let mut lines: Vec<Line<'static>> = match cut {
         true => content
             .iter()

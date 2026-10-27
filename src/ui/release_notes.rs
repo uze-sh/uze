@@ -233,8 +233,11 @@ fn rendered_notes(body: &str, width: u16) -> Vec<Line<'static>> {
             .as_ref()
             .is_some_and(|notes| notes.body == body && notes.theme == theme && notes.width == width)
         {
-            let lines =
-                extension_view::prose(&uze_extensions::code::markdown(body, &theme, width.into()));
+            let lines = extension_view::prose(&uze_extensions::shared::markdown::render(
+                body,
+                &theme,
+                width.into(),
+            ));
             *cached = Some(RenderedNotes {
                 body: body.to_owned(),
                 theme,

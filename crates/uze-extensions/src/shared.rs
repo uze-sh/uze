@@ -39,17 +39,21 @@
 //! (`extension-media-and-resident`): the code surface's decoders read a
 //! file into straight-alpha pixels, and an `Image` or a `Sprite`'s sheet
 //! is read the same way, under the bounds a declared extension is held to.
+//!
+//! Only [`markdown`] is public: the host renders Markdown that belongs to no
+//! extension (release notes, a plugin's preview) and reads it from here,
+//! not through the code surface that happened to render it first.
 
-pub mod canvas;
-pub mod checkout;
+pub(crate) mod canvas;
+pub(crate) mod checkout;
 #[cfg(test)]
 mod disk_host;
-pub mod front_matter;
-pub mod highlight;
+pub(crate) mod front_matter;
+pub(crate) mod highlight;
 pub mod markdown;
-pub mod nearest;
-pub mod picture;
-pub mod places;
+pub(crate) mod nearest;
+pub(crate) mod picture;
+pub(crate) mod places;
 
 #[cfg(test)]
 pub(crate) use disk_host::DiskHost;

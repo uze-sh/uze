@@ -84,7 +84,6 @@ mod request;
 mod row_menu;
 mod treemap;
 
-pub use crate::shared::markdown::render as markdown;
 pub use changes::{ChangeSummary, change_summary};
 pub use exclude::Exclusions;
 pub use extension::{

@@ -56,7 +56,7 @@ pub mod code;
 pub mod contract;
 pub mod declared;
 pub mod registry;
-mod shared;
+pub mod shared;
 pub mod spec;
 pub mod view;
 
