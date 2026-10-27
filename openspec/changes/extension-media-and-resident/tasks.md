@@ -5,10 +5,10 @@
 
 ## 2. Media in the host
 
-- [ ] 2.1 Move the decoders from `code/picture.rs` to `shared/picture.rs`; the code surface unchanged
-- [ ] 2.2 `Cells` rendered from roles, regions as hits; `Image` and `Sprite` laid out in every slot
-- [ ] 2.3 The painter holds one placement per slot (R-A8); decodes on the pool, one at a time per extension, under R-S12's bounds; the block fallback
-- [ ] 2.4 Sprites play on the host's clock from their state field
+- [x] 2.1 Move the decoders from `code/picture.rs` to `shared/picture.rs`; the code surface unchanged
+- [x] 2.2 `Cells` rendered from roles, regions as hits; `Image` and `Sprite` laid out in every slot
+- [x] 2.3 The painter holds one placement per slot (R-A8); decodes on the pool, one at a time per extension, under R-S12's bounds; the block fallback
+- [x] 2.4 Sprites play on the host's clock from their state field
 
 ## 3. Resident tier
 

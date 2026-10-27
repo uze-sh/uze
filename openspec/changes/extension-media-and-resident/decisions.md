@@ -29,3 +29,63 @@
 - decided:  `SourceKind::Resident(file)` under `resident`; `script()` returns `None` for it and `resident()` names its file, so nothing that runs a script per question can run it by mistake; its file is checked and digested as a script.
 - rejected: `script "x.rhai" resident=#true`: one flag away from running a resident script per question.
 - blast:    `uze-contract::SourceKind`, the decoder, the runner.
+
+## D10 — A picture is asked of the host by identity and name, never by path
+
+- status:   pending
+- task:     2.2
+- commit:   2890ddc8
+- trigger:  M2 says where an image comes from, not how the engine reaches the extension's directory without being handed a path.
+- decided:  `Host::media(identity, name)`, asked only by the declared engine's media jobs: the runner finds `name` in the installed extension's loaded files, or `scratch:<file>` in what its programs' runs kept, and reads no further than `IMAGE_FILE_MAX` and a byte. The engine refuses a name that leaves the extension (absolute, `..`, a backslash) or its scratch (a `/`), and any but a PNG, JPEG or GIF, before asking.
+- rejected: The extension's directory in the compiled extension or the `Host`: a path an extension holds is a path it can name anything beneath.
+- blast:    `uze_extensions::Host`, `declared/media.rs`, `ExtensionRunner::media`, `EngineHost`.
+
+## D11 — A run's scratch keeps its pictures, copied out as it ends
+
+- status:   pending
+- task:     2.2
+- commit:   2890ddc8
+- trigger:  The runner removed a run's scratch directory with everything in it, so `scratch:` had nothing to read.
+- decided:  As a program's run ends, up to 16 plain PNG, JPEG or GIF files at the top of its scratch, none past 8 MiB and no link, are copied (whole, through a `.partial` and a rename) to `runtime/extensions/pictures/<plugin@marketplace>/<id>/`, each replacing the one of its name; generated, since the next run writes them again. Every answer of a source marks the `scratch:` pictures held to be read again, drawn as they were until the new read lands. A check (`--run`) keeps none.
+- rejected: Keeping the whole scratch until the next run: a program's temporary files are not its views' to read.
+- blast:    `UzeHome::extension_pictures_dir`, `extensions/program.rs`.
+
+## D12 — The 32 MiB are the decoded bytes one extension holds at once
+
+- status:   pending
+- task:     2.3
+- commit:   2890ddc8
+- trigger:  R-S12 names 32 MiB "of pixels" per extension, not whether per image or in all, nor in pixels or bytes.
+- decided:  RGBA bytes held by one extension's pictures together: a read gets what is left once what no build names any more is let go, and the decoder refuses a header asking past it before allocating ("its pictures would hold over 32 MiB"). The bound reaches every decoder through a thread-local set for one decode (`shared::picture::decode_within`), so the BMP and ICO readers carry no new argument. One read is out per extension at a time.
+- rejected: A bound per image: a view of a hundred 30 MiB images would hold three gigabytes.
+- blast:    `shared/picture.rs`, `declared/media.rs`.
+
+## D13 — One placement per slot, collected while the frame is drawn
+
+- status:   pending
+- task:     2.3
+- commit:   2890ddc8
+- trigger:  R-A8: several images a frame, keyed by slot; the tree painter that draws them knows no slot, and its callers (six slots, four section sites) return different shapes.
+- decided:  Each slot's drawing runs inside `graphics::in_slot(slot id, …)`; drawing a picture `place`s it for that slot, the first one a slot draws winning; the loop takes what the frame placed, keeps what is still uncovered, and the `Painter` keeps what it sent apart per slot, its one encoder taking the latest request of each slot. A second picture in one slot, and one cut at a window's edge, is drawn in half blocks only. The code surface's picture goes the same way, and `Rendered::picture` is gone.
+- rejected: A placements list threaded through every render function's return: four shapes changed for one value only the loop reads.
+- blast:    `src/ui/graphics.rs`, `extension_view/{picture,tree}.rs`, the slot renderers, `orchestrator.rs`.
+
+## D14 — A sprite's state begins when a build first sees it, and moves at the host's beat
+
+- status:   pending
+- task:     2.4
+- commit:   2890ddc8
+- trigger:  "frame = elapsed × fps" needs when the state began, and the host draws every frame from a tree it does not rebuild.
+- decided:  The binder stamps a state with the host's clock at its last pass (`Pass::now`) the first build it plays, and keeps the stamp while later builds play the same state at the same place; the host picks `elapsed × fps` (wrapped, or held on the last frame) from its own clock, and a sprite with a frame still to show asks for the next frame as `Activity` does. Frames advance on the activity beat (120 ms), so a state faster than about 8 fps skips frames rather than speeding the clock. A sprite's few pixels grow in whole pixels (nearest) in Sixel; a picture never past its own size.
+- rejected: The engine choosing the frame: it is asked only when its data changes.
+- blast:    `view::{sprite_frame, sprite_moves}`, `declared/bind.rs`, `extension_view/tree.rs`, `graphics::Placement::fit_crisp`.
+
+## D15 — What a media node takes when it says nothing, and what a grid holds
+
+- status:   pending
+- task:     2.2
+- commit:   2890ddc8
+- trigger:  The catalog leaves `height` optional and bounds neither a grid nor its regions.
+- decided:  An `Image` takes 8 rows without `height`, a `Sprite` half its frame's height in rows (1 to 8), neither more than 64; both keep their rows while read, refused or drawn, so nothing moves when the picture lands (its first row says the `alt`, or why it was refused, in the warning hue). A grid draws at most 200 rows of 400 cells and binds 1,000 regions, its rows counting against the node cap; a control character or one not one column wide is a blank, and a role it does not know, a colour value among them, is the default. A region under the pointer brightens to the accent.
+- rejected: An image as tall as its picture fitted to the width: the row count would change when it is read.
+- blast:    `declared/bind.rs`, `extension_view/tree.rs`.
