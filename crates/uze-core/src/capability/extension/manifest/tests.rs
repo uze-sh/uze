@@ -226,7 +226,7 @@ fn a_source_is_answered_by_exactly_one_thing() {
     ));
     assert_eq!(
         two,
-        "a source is answered by one of `script`, `run`, `fixture`, `events` or `agents`"
+        "a source is answered by one of `script`, `run`, `fixture`, `events`, `agents` or `resident`"
     );
     let none =
         first_message(&GSD.replace("{ fixture \"fixtures/board.json\"; }", "{ every \"10s\"; }"));
@@ -502,7 +502,6 @@ fn only_the_grants_this_version_enforces_are_accepted() {
     for (grant, change) in [
         ("net", 8),
         ("secret", 8),
-        ("resident", 7),
         ("edit:checkout", 8),
     ] {
         assert_eq!(
