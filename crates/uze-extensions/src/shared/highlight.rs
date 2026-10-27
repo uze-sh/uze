@@ -113,6 +113,19 @@ fn plain_text() -> Grammar {
 pub(crate) struct Highlighter {
     lines: HighlightLines<'static>,
     set: &'static SyntaxSet,
+    /// Whether it reads Markdown, whose fences may name a language only a
+    /// vendored grammar knows.
+    markdown: bool,
+    /// The fence being read with a vendored grammar, while one is open.
+    fence: Option<Box<Fence>>,
+}
+
+/// A Markdown fence whose language the Markdown grammar cannot embed,
+/// since that grammar knows only the bundled set: its lines are coloured
+/// by a highlighter of their own until the fence closes.
+struct Fence {
+    marker: String,
+    inner: Highlighter,
 }
 
 impl Highlighter {
@@ -120,8 +133,51 @@ impl Highlighter {
         Self {
             lines: HighlightLines::new(grammar.syntax, theme(theme_name)),
             set: grammar.set,
+            markdown: grammar.syntax.name == "Markdown",
+            fence: None,
         }
     }
+}
+
+/// The marker and info string of a line opening a Markdown fence: up to
+/// three spaces, then three or more backticks or tildes.
+fn fence_opened(text: &str) -> Option<(String, &str)> {
+    let indent = text.len() - text.trim_start_matches(' ').len();
+    if indent > 3 {
+        return None;
+    }
+    let rest = &text[indent..];
+    let mark = rest.chars().next().filter(|ch| matches!(ch, '`' | '~'))?;
+    let run = rest.len() - rest.trim_start_matches(mark).len();
+    (run >= 3).then(|| (rest[..run].to_owned(), rest[run..].trim()))
+}
+
+/// Whether `text` closes the fence `marker` opened: as many of its
+/// characters or more, and nothing after them.
+fn fence_closed(text: &str, marker: &str) -> bool {
+    let trimmed = text.trim();
+    let Some(mark) = marker.chars().next() else {
+        return false;
+    };
+    trimmed.len() >= marker.len() && trimmed.chars().all(|ch| ch == mark)
+}
+
+/// The vendored grammar a fence's info string names, when the bundled set,
+/// which the Markdown grammar embeds from, has none of that name.
+fn vendored_fence_grammar(info: &str) -> Option<Grammar> {
+    let token = info
+        .trim_start_matches(['{', '.'])
+        .split([',', ' ', '{', '}'])
+        .next()
+        .unwrap_or_default();
+    if token.is_empty() || bundled().find_syntax_by_token(token).is_some() {
+        return None;
+    }
+    let set = vendored();
+    Some(Grammar {
+        set,
+        syntax: set.find_syntax_by_token(token)?,
+    })
 }
 
 fn theme_set() -> &'static ThemeSet {
@@ -290,6 +346,32 @@ pub(crate) fn line(
     text: &str,
     theme_name: &str,
 ) -> Vec<(Rgb, String)> {
+    if highlighter.markdown {
+        // The fence's own lines go through the Markdown grammar, which
+        // keeps its state of a fence opened and closed; only what is
+        // between them is read with the fence's language.
+        match &mut highlighter.fence {
+            Some(fence) if fence_closed(text, &fence.marker) => highlighter.fence = None,
+            Some(fence) => return line(&mut fence.inner, text, theme_name),
+            None => {
+                if let Some((marker, grammar)) = fence_opened(text)
+                    .and_then(|(marker, info)| Some((marker, vendored_fence_grammar(info)?)))
+                {
+                    let opened = own_line(highlighter, text, theme_name);
+                    highlighter.fence = Some(Box::new(Fence {
+                        marker,
+                        inner: Highlighter::new(grammar, theme_name),
+                    }));
+                    return opened;
+                }
+            }
+        }
+    }
+    own_line(highlighter, text, theme_name)
+}
+
+/// One line in `highlighter`'s own grammar.
+fn own_line(highlighter: &mut Highlighter, text: &str, theme_name: &str) -> Vec<(Rgb, String)> {
     // syntect's line-oriented highlighter expects a trailing newline
     // (matches `load_defaults_newlines` above) to track multi-line
     // constructs correctly across calls.
@@ -490,6 +572,27 @@ Stack gap=1 {
             FALLBACK_SYNTAX_THEME,
         );
         assert!(spans.len() > 1, "a kdl fence is coloured: {spans:?}");
+    }
+
+    #[test]
+    fn a_kdl_fence_in_a_markdown_file_is_coloured_as_kdl() {
+        let text = "# Notes\n\n```kdl\nText \"{name}\" strong=#true\n```\n\nafter\n";
+        let coloured = lines(text, Path::new("NOTES.md"), FALLBACK_SYNTAX_THEME, 100);
+        let fenced = &coloured[3];
+        assert!(fenced.len() > 1, "the fence's line is coloured: {fenced:?}");
+        let mut alone = highlighter_for_language("kdl", FALLBACK_SYNTAX_THEME);
+        assert_eq!(
+            *fenced,
+            line(
+                &mut alone,
+                "Text \"{name}\" strong=#true",
+                FALLBACK_SYNTAX_THEME
+            ),
+            "as the KDL grammar colours it"
+        );
+        let after = &coloured[6];
+        let plain_after = lines("after\n", Path::new("NOTES.md"), FALLBACK_SYNTAX_THEME, 1);
+        assert_eq!(*after, plain_after[0], "the fence closed: {after:?}");
     }
 
     #[test]
