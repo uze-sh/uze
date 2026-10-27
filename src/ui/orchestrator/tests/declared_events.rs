@@ -403,3 +403,94 @@ fn an_observer_not_enabled_in_the_agents_project_sees_nothing_of_it() {
         "enabled in its project, it does"
     );
 }
+
+/// An observing extension, enabled in `/repo`'s project, with the agent
+/// `a1` seen there.
+fn observed(root: &Path) -> (WorkspaceModel, super::BridgedAgent) {
+    let finished = EventName::Agent(uze_contract::AgentEvent::TurnFinished);
+    let mut observing = compiled(None, vec![finished]);
+    observing.manifest.wants = vec![uze_contract::Grant::AgentObserve];
+    let mut model = hosting(root, observing);
+    model
+        .remembered
+        .declared
+        .extensions
+        .get_mut(&identity())
+        .expect("hosted")
+        .per_project = true;
+    let agent = the_agent(&mut model);
+    observe(&mut model, root, true);
+    model.see_agents(vec![agent.clone()]);
+    (model, agent)
+}
+
+/// Enables the observer in `root`'s project, or in none.
+fn observe(model: &mut WorkspaceModel, root: &Path, observing: bool) {
+    let project = model.projects.get(root).cloned().expect("its project");
+    model
+        .remembered
+        .declared
+        .extensions
+        .get_mut(&identity())
+        .expect("hosted")
+        .record = Some(Some(uze_application::ExtensionConsent {
+        enabled_in: if observing {
+            [project].into()
+        } else {
+            Default::default()
+        },
+        ..Default::default()
+    }));
+}
+
+fn journal_read(
+    reports: Option<Vec<uze_application::AgentReport>>,
+    offset: u64,
+) -> ExtensionWatchRead {
+    ExtensionWatchRead {
+        checkouts: Vec::new(),
+        paths: Vec::new(),
+        reports: vec![("a1".to_owned(), reports, offset)],
+    }
+}
+
+fn working(model: &mut WorkspaceModel, agent: &super::BridgedAgent, working: bool) {
+    model
+        .remembered
+        .agent_activity
+        .entry(agent.pane)
+        .or_default()
+        .working_until = working.then(|| Instant::now() + Duration::from_secs(60));
+}
+
+#[test]
+fn an_agent_that_reported_has_its_turns_painted_again_once_its_journal_is_not_read() {
+    let root = PathBuf::from("/repo");
+    let (mut model, agent) = observed(&root);
+    model.absorb_extension_watch(journal_read(None, 40));
+    let started = uze_application::AgentReport {
+        event: "turn.started".to_owned(),
+        at: 1,
+        ..Default::default()
+    };
+    model.absorb_extension_watch(journal_read(Some(vec![started, turn_finished()]), 80));
+    let turns = |model: &WorkspaceModel| model.remembered.declared.bridge.turns.get("a1").copied();
+    assert_eq!(turns(&model), Some(1), "the report's turn");
+
+    observe(&mut model, &root, false);
+    assert!(
+        model.extension_watch().journals.is_empty(),
+        "nobody reads it"
+    );
+    working(&mut model, &agent, true);
+    model.see_agents(vec![agent.clone()]);
+    working(&mut model, &agent, false);
+    model.see_agents(vec![agent.clone()]);
+    working(&mut model, &agent, true);
+    model.see_agents(vec![agent.clone()]);
+    assert_eq!(
+        turns(&model),
+        Some(3),
+        "its turns go on from the paint, so one prompt a turn does not freeze"
+    );
+}

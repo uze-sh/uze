@@ -6,9 +6,9 @@
 //! observes; a first read only sets the offset. A report becomes an
 //! `agent.*` event with the tool's name scrubbed and its path kept only
 //! inside the agent's checkout, relative to it. An agent whose harness has
-//! reported nothing this session has its turns read from the pane's paint
-//! instead: a turn starts when it starts working and finishes when it
-//! stops.
+//! reported nothing this session, or whose journal nobody reads now, has
+//! its turns read from the pane's paint instead: a turn starts when it
+//! starts working and finishes when it stops.
 
 use super::*;
 use uze_contract::AgentEvent;
@@ -32,8 +32,8 @@ pub(in crate::ui::orchestrator) struct BridgedAgent {
 pub(in crate::ui::orchestrator) struct Bridge {
     /// Where each agent's journal is read from next.
     offsets: BTreeMap<String, u64>,
-    /// The agents a report came from this session: their turns are no
-    /// longer read from paint.
+    /// The agents a report came from this session: their turns are not
+    /// read from paint while their journal is.
     reporting: BTreeSet<String>,
     /// Whether each agent was working at the last look.
     working: BTreeMap<String, bool>,
@@ -95,32 +95,46 @@ impl WorkspaceModel {
     /// The journals the next watch reads: each agent's, from its offset,
     /// or `None` for one never read, whose first read only sets it.
     pub(in crate::ui::orchestrator) fn journals_to_read(&self) -> Vec<(String, Option<u64>)> {
-        let observers = self.observers();
         let bridge = &self.remembered.declared.bridge;
-        bridge
-            .agents
+        self.journals_read_of(&bridge.agents)
+            .into_iter()
+            .map(|id| {
+                let offset = bridge.offsets.get(&id).copied();
+                (id, offset)
+            })
+            .collect()
+    }
+
+    /// Which of `agents` have their journal read: those an observing
+    /// extension reaches.
+    fn journals_read_of(&self, agents: &[BridgedAgent]) -> Vec<String> {
+        let observers = self.observers();
+        agents
             .iter()
             .filter(|agent| {
                 observers
                     .iter()
                     .any(|owner| self.reaches_agent_in(owner, &agent.checkout))
             })
-            .map(|agent| (agent.id.clone(), bridge.offsets.get(&agent.id).copied()))
+            .map(|agent| agent.id.clone())
             .collect()
     }
 
-    /// Takes the agents as they stand: the paint's turns for those that
-    /// report nothing.
+    /// Takes the agents as they stand: the paint's turns for those whose
+    /// reports are not being read, whether they never reported or nobody
+    /// reads their journal now, so their turns never stop counting.
     pub(in crate::ui::orchestrator) fn see_agents(&mut self, agents: Vec<BridgedAgent>) {
         let working: Vec<(String, bool)> = agents
             .iter()
             .map(|agent| (agent.id.clone(), self.agent_is_working(agent.pane)))
             .collect();
+        let read: BTreeSet<String> = self.journals_read_of(&agents).into_iter().collect();
         let bridge = &mut self.remembered.declared.bridge;
         let mut painted = Vec::new();
         for ((id, now), agent) in working.iter().zip(&agents) {
             let before = bridge.working.insert(id.clone(), *now);
-            if bridge.reporting.contains(id) || before.is_none_or(|before| before == *now) {
+            let reported = bridge.reporting.contains(id) && read.contains(id);
+            if reported || before.is_none_or(|before| before == *now) {
                 continue;
             }
             painted.push(AgentHappened {
