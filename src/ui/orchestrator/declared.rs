@@ -331,6 +331,9 @@ pub(super) struct HostedExtension {
     /// What the operator's record said of it at the last discovery, once
     /// one read it.
     pub(super) record: Option<Option<ExtensionConsent>>,
+    /// Its preferences as the last discovery read them, handed to every
+    /// engine of it built since.
+    pub(super) preferences: Option<serde_json::Value>,
 }
 
 /// Every declared extension the client hosts, and the slots their surfaces
@@ -541,6 +544,29 @@ impl HostedExtensions {
         moved
     }
 
+    /// Takes what a discovery read of each extension's preferences, and
+    /// hands a changed one to its engine. Answers whether any changed.
+    pub(super) fn absorb_preferences(
+        &mut self,
+        preferences: BTreeMap<ExtensionIdentity, serde_json::Value>,
+    ) -> bool {
+        let mut moved = false;
+        for (identity, set) in preferences {
+            let Some(extension) = self.extensions.get_mut(&identity) else {
+                continue;
+            };
+            if extension.preferences.as_ref() == Some(&set) {
+                continue;
+            }
+            extension.preferences = Some(set.clone());
+            moved = true;
+            if let Some(engine) = self.engines.get_mut(&Owner::Declared(identity)) {
+                engine.configure(&set);
+            }
+        }
+        moved
+    }
+
     /// Takes one extension's compile and data. A compile that succeeded
     /// replaces what each of its surfaces' engines holds, keeping where the
     /// viewer is; one that failed changes nothing but the error said over
@@ -556,6 +582,7 @@ impl HostedExtensions {
                 changed: None,
                 errors: Vec::new(),
                 record: None,
+                preferences: None,
             });
         entry.installed = loaded.installed;
         entry.stamp = loaded.stamp;
@@ -622,6 +649,13 @@ impl HostedExtensions {
             }
             None => {
                 let mut engine = (self.engine)(compiled.clone(), &self.locale);
+                if let Some(set) = self
+                    .extensions
+                    .get(identity)
+                    .and_then(|extension| extension.preferences.as_ref())
+                {
+                    engine.configure(set);
+                }
                 give_data(engine.as_mut(), data);
                 self.engines.insert(owner.clone(), engine);
             }

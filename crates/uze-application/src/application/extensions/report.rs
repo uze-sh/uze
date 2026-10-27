@@ -94,6 +94,69 @@ pub struct ExtensionReport {
     /// Whether those programs run confined, when it has any.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confined: Option<bool>,
+    /// Each preference it declares, at its value now.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub preferences: Vec<PreferenceRow>,
+}
+
+/// One preference as the Extensions screen lists and edits it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct PreferenceRow {
+    pub name: String,
+    pub label: String,
+    /// `text`, `number`, `toggle` or `choice`.
+    pub kind: &'static str,
+    pub value: serde_json::Value,
+    /// A choice's values, in order; empty for any other kind.
+    pub values: Vec<String>,
+}
+
+impl PreferenceRow {
+    /// The value as the screen says it.
+    pub fn said(&self) -> String {
+        match &self.value {
+            serde_json::Value::Bool(true) => "on".to_owned(),
+            serde_json::Value::Bool(false) => "off".to_owned(),
+            serde_json::Value::String(text) => text.clone(),
+            other => other.to_string(),
+        }
+    }
+
+    /// What the next press makes it, when one press is the whole answer:
+    /// a toggle flipped, a choice moved on to its next value. `None` for a
+    /// text or a number, which is typed.
+    pub fn pressed(&self) -> Option<serde_json::Value> {
+        match self.kind {
+            "toggle" => Some(serde_json::Value::Bool(
+                !self.value.as_bool().unwrap_or(false),
+            )),
+            "choice" => {
+                let at = self
+                    .values
+                    .iter()
+                    .position(|value| Some(value.as_str()) == self.value.as_str())
+                    .map_or(0, |at| (at + 1) % self.values.len().max(1));
+                self.values.get(at).cloned().map(serde_json::Value::String)
+            }
+            _ => None,
+        }
+    }
+
+    /// `typed` as this preference's value: a number read as one.
+    pub fn typed(&self, typed: &str) -> Option<serde_json::Value> {
+        match self.kind {
+            "number" => {
+                let typed = typed.trim();
+                typed
+                    .parse::<i64>()
+                    .map(serde_json::Value::from)
+                    .ok()
+                    .or_else(|| typed.parse::<f64>().ok().map(serde_json::Value::from))
+            }
+            "text" => Some(serde_json::Value::String(typed.to_owned())),
+            _ => None,
+        }
+    }
 }
 
 impl ExtensionReport {
@@ -216,6 +279,7 @@ impl Extensions<'_> {
                     errors: Vec::new(),
                     programs: Vec::new(),
                     confined: None,
+                    preferences: Vec::new(),
                 };
                 let load = match self.load(&installed) {
                     Ok(load) => load,
@@ -263,6 +327,26 @@ impl Extensions<'_> {
                         ExtensionCondition::Broken
                     }
                 };
+                let set = super::consent::admitted_preferences(&self.0.home, &identity, manifest);
+                report.preferences = manifest
+                    .preferences
+                    .iter()
+                    .map(|decl| PreferenceRow {
+                        name: decl.name.clone(),
+                        label: decl.label.clone(),
+                        kind: match decl.kind {
+                            uze_contract::PreferenceKind::Text => "text",
+                            uze_contract::PreferenceKind::Number { .. } => "number",
+                            uze_contract::PreferenceKind::Toggle => "toggle",
+                            uze_contract::PreferenceKind::Choice { .. } => "choice",
+                        },
+                        value: set.get(&decl.name).cloned().unwrap_or_default(),
+                        values: match &decl.kind {
+                            uze_contract::PreferenceKind::Choice { values } => values.clone(),
+                            _ => Vec::new(),
+                        },
+                    })
+                    .collect();
                 let recorded = consent::consent(&self.0.home, &key);
                 if manifest.programs().next().is_some() {
                     let consented = recorded

@@ -436,6 +436,19 @@ fn standing_lines(standing: &ExtensionReport, project: Option<&Path>) -> Vec<Lin
         };
         lines.push(Line::from(Span::styled(confinement, theme::fg(token))));
     }
+    if !standing.preferences.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(super::section_label("preferences"));
+        for preference in &standing.preferences {
+            lines.push(Line::from(vec![
+                Span::styled(preference.label.clone(), theme::fg(Token::TextPrimary)),
+                Span::styled(
+                    format!(" · {}", preference.said()),
+                    theme::fg(Token::TextMuted),
+                ),
+            ]));
+        }
+    }
     let mut said = Vec::new();
     if standing.condition == Condition::Held {
         said.push((

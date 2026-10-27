@@ -39,3 +39,23 @@
 - decided:  A status row is drawn in the sidebar's header under the host's own order and named on the Extensions screen; a band carries its extension's id in the host's chrome along its edge (task 4.2), never a full strip. `overlay` keeps the strip like a view. The test harness draws status and band into their rows as the workspace does.
 - rejected: A strip on every slot: a 1-row band would be all strip.
 - blast:    `src/ui/extension_test.rs`; the band's edge mark is task 4.2's.
+
+## D5 — Preferences are set in an editor the drawer's Preferences button opens
+
+- status:   pending
+- task:     2.3
+- commit:
+- trigger:  S7 has the drawer's rows edited by Enter and click, but a drawer's rows are not focusable: its buttons are offers, reached by their actions.
+- decided:  The drawer lists each preference (`Show °F · off`). `Action::EditPreferences` ("Preferences", no default key, a drawer button and an index row) opens `Overlay::Preferences`: a menu of `label  value` rows, the arrows move, Enter flips a toggle or moves a choice on at once, and opens the host's text prompt for a text or a number (Esc puts the prompt away, then the editor). A click on a row is choosing it and pressing Enter. Each answer is `Intent::SetPreference`, written off the frame through `Extensions::set_preference` (refused for a value the declaration does not hold), and the workspace reads it at its next discovery.
+- rejected: Focusable rows inside the drawer: a second keyboard model for one screen.
+- blast:    `src/ui/{model,overlay,hit,input,worker}.rs`, `uze-keys` action.
+
+## D6 — Preferences are read with each discovery and handed to every engine
+
+- status:   pending
+- task:     2.2
+- commit:
+- trigger:  The engine needs the preferences before it draws, and reading the record is filesystem work the drawing thread may not do.
+- decided:  The declared discovery job reads `Extensions::preferences` for each found extension beside its consent record (`ExtensionAnswer::preferences`); the host keeps them on `HostedExtension` and calls `configure` on a change and on every engine it builds. A source declaring `preferences` is asked with `input.preferences` as admitted now, which is also part of its question's digest. Setting a preference raises `plugins_changed`, so the next pass reads them again.
+- rejected: A watch on the preferences file: one more poll for what changes only when the operator sets it, from this client.
+- blast:    `src/ui/orchestrator/{reads,declared,answers}.rs`, `runner.rs`.

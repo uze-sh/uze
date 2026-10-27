@@ -695,6 +695,8 @@ mod tests {
                 "disable-extension",
                 // Rare: after installing a program an extension wants.
                 "resolve-programs",
+                // On the extension's own drawer, beside its other offers.
+                "edit-preferences",
                 "install-project-environment",
                 // Rare, and project-wide rather than about the harness the
                 // keyboard is on: the index lists both on that screen.

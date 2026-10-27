@@ -121,6 +121,29 @@ pub struct ProgramPin {
     pub reads: Vec<String>,
 }
 
+/// `plugin@marketplace`, as the stores and preferences are kept under.
+pub(super) fn plugin_key(identity: &Identity) -> String {
+    format!("{}@{}", identity.plugin, identity.marketplace)
+}
+
+/// Each preference `manifest` declares, at the operator's value where it
+/// may hold it and at its default otherwise.
+pub(super) fn admitted_preferences(
+    home: &uze_core::UzeHome,
+    identity: &Identity,
+    manifest: &Manifest,
+) -> serde_json::Value {
+    let set =
+        uze_workspace::extensions::preferences::read(home, &plugin_key(identity), &identity.id);
+    serde_json::Value::Object(
+        manifest
+            .preferences
+            .iter()
+            .map(|decl| (decl.name.clone(), decl.admit(set.get(&decl.name))))
+            .collect(),
+    )
+}
+
 /// Whether this machine confines programs, right by right.
 pub fn confinement() -> uze_platform::confine::Availability {
     uze_platform::confine::availability()
@@ -271,6 +294,49 @@ impl Extensions<'_> {
         Ok(resolve_programs(&load.compiled.manifest, &self.0.home))
     }
 
+    /// `identity`'s preferences as its surfaces read them: each declared
+    /// one, the operator's value where it may hold it, else its default.
+    pub fn preferences(&self, identity: &Identity) -> Result<serde_json::Value> {
+        let load = self.load_identity(identity)?;
+        Ok(admitted_preferences(
+            &self.0.home,
+            identity,
+            &load.compiled.manifest,
+        ))
+    }
+
+    /// Sets the preference `name` of `identity` to `value`, refused when it
+    /// declares no such preference or `value` is not one it may hold.
+    /// Anyone may: a preference changes what is drawn, not what is reached.
+    #[tracing::instrument(name = "extensions.set_preference", skip_all, fields(extension = %identity, preference = name), err)]
+    pub fn set_preference(
+        &self,
+        identity: &Identity,
+        name: &str,
+        value: serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        let load = self.load_identity(identity)?;
+        let manifest = &load.compiled.manifest;
+        let Some(decl) = manifest.preference(name) else {
+            return Err(refusal(format!(
+                "{identity} declares no preference `{name}`"
+            )));
+        };
+        if !decl.holds(&value) {
+            return Err(refusal(format!(
+                "`{value}` is not a value the preference `{name}` may hold"
+            )));
+        }
+        uze_workspace::extensions::preferences::set(
+            &self.0.home,
+            &plugin_key(identity),
+            &identity.id,
+            name,
+            value,
+        )?;
+        Ok(admitted_preferences(&self.0.home, identity, manifest))
+    }
+
     /// The programs `identity` wants, each with the path its consent
     /// pinned, or why it has none.
     pub fn pinned_programs(&self, identity: &Identity) -> Result<Vec<ProgramPin>> {
@@ -354,6 +420,10 @@ impl Extensions<'_> {
     /// `plugin@marketplace`, and what they kept, as it leaves the machine.
     pub(crate) fn forget_plugin(&self, plugin: &str, marketplace: &str) -> Result<Vec<String>> {
         uze_workspace::extensions::store::forget_plugin(
+            &self.0.home,
+            &format!("{plugin}@{marketplace}"),
+        )?;
+        uze_workspace::extensions::preferences::forget_plugin(
             &self.0.home,
             &format!("{plugin}@{marketplace}"),
         )?;

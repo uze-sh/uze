@@ -310,6 +310,7 @@ impl WorkspaceModel {
             declared.absorb_loaded(loaded);
         }
         changed |= declared.absorb_records(answer.records);
+        changed |= declared.absorb_preferences(answer.preferences);
         // A view whose extension went, or whose surface it stopped
         // declaring, is put away rather than drawn from nothing.
         if self.open_slot.is_some() && self.slot_in_pane().is_none() {

@@ -478,6 +478,20 @@ pub(crate) enum Overlay {
     AddMarketplace(String),
     /// A new profile's id, typed the same way as `AddMarketplace`.
     NewProfile(String),
+    /// A declared extension's preferences, one row each: Enter flips a
+    /// toggle, moves a choice on, or types a text or a number.
+    Preferences(PreferencesEditor),
+}
+
+/// The preferences of one declared extension, being set.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct PreferencesEditor {
+    pub(crate) identity: uze_application::ExtensionIdentity,
+    pub(crate) name: String,
+    pub(crate) rows: Vec<uze_application::PreferenceRow>,
+    pub(crate) selected: usize,
+    /// What is typed for the selected row, while one is.
+    pub(crate) typing: Option<String>,
 }
 
 /// What a confirmation is about, and so what agreeing to it does.
@@ -1428,6 +1442,29 @@ impl TuiModel {
         }
     }
 
+    /// Opening the selected extension's preferences, when it declares any.
+    pub(crate) fn edit_selected_preferences(&mut self) -> crate::ui::worker::Intent {
+        use crate::ui::worker::Intent;
+        let Some(extension) = self.selected_extension() else {
+            return Intent::None;
+        };
+        let Some(standing) = self
+            .standing_in_a_project(extension)
+            .filter(|standing| !standing.preferences.is_empty())
+            .cloned()
+        else {
+            return Intent::None;
+        };
+        self.overlay = Overlay::Preferences(PreferencesEditor {
+            identity: standing.identity(),
+            name: extension.name().to_owned(),
+            rows: standing.preferences,
+            selected: 0,
+            typing: None,
+        });
+        Intent::None
+    }
+
     /// Finding the selected extension's programs again, when that is
     /// offered: after the operator installed one it wants.
     pub(crate) fn resolve_selected_programs(&mut self) -> crate::ui::worker::Intent {
@@ -1749,6 +1786,10 @@ impl TuiModel {
                 *selected = 0;
             }
             Overlay::AddMarketplace(input) | Overlay::NewProfile(input) => input.push(character),
+            Overlay::Preferences(PreferencesEditor {
+                typing: Some(input),
+                ..
+            }) => input.push(character),
             _ => self.edit_filter(|filter| filter.push(character)),
         }
         super::worker::Intent::None

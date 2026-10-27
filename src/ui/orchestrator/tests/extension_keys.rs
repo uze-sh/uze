@@ -166,6 +166,7 @@ fn keyed_view_open<'a>(home: &'a UzeHome, plugin: &str) -> Driven<'a> {
         ..HostedExtensions::default()
     };
     assert!(model.absorb_extension_answer(ExtensionAnswer {
+        preferences: BTreeMap::new(),
         discovery: true,
         discovered: Some(vec![installed(plugin)]),
         recompiled: Vec::new(),

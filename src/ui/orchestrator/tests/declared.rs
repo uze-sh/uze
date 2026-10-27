@@ -227,6 +227,7 @@ fn loaded(
 
 fn discovered() -> ExtensionAnswer {
     ExtensionAnswer {
+        preferences: BTreeMap::new(),
         discovery: true,
         discovered: Some(vec![installed()]),
         recompiled: Vec::new(),
@@ -239,6 +240,7 @@ fn recompiled(
     compiled: std::result::Result<CompiledExtension, Vec<ExtensionDiagnostic>>,
 ) -> ExtensionAnswer {
     ExtensionAnswer {
+        preferences: BTreeMap::new(),
         discovery: false,
         discovered: None,
         recompiled: vec![identity()],
@@ -455,6 +457,7 @@ fn an_answer_about_an_extension_no_longer_installed_is_dropped() {
 
     // The plugin was removed: its view goes, whatever stood in the pane.
     model.absorb_extension_answer(ExtensionAnswer {
+        preferences: BTreeMap::new(),
         discovery: true,
         discovered: Some(Vec::new()),
         recompiled: Vec::new(),
@@ -536,6 +539,7 @@ fn an_extension_that_never_compiled_says_its_error_alone() {
         ..HostedExtensions::default()
     };
     model.absorb_extension_answer(ExtensionAnswer {
+        preferences: BTreeMap::new(),
         discovery: true,
         discovered: Some(vec![installed()]),
         recompiled: Vec::new(),
@@ -848,6 +852,7 @@ fn a_rediscovery_brings_in_a_new_extension_and_takes_a_removed_one_away() {
 
     // Installed: only the newcomer is loaded, the board is as it was.
     let changed = model.absorb_extension_answer(ExtensionAnswer {
+        preferences: BTreeMap::new(),
         discovery: true,
         discovered: Some(vec![installed(), notes()]),
         recompiled: Vec::new(),
@@ -870,6 +875,7 @@ fn a_rediscovery_brings_in_a_new_extension_and_takes_a_removed_one_away() {
     // Removed: its slots close and its place goes with them.
     super::open_surface(&mut model, slot);
     let changed = model.absorb_extension_answer(ExtensionAnswer {
+        preferences: BTreeMap::new(),
         discovery: true,
         discovered: Some(vec![notes()]),
         recompiled: Vec::new(),
@@ -890,6 +896,7 @@ fn a_rediscovery_brings_in_a_new_extension_and_takes_a_removed_one_away() {
 
     // Nothing moved: nothing to redraw.
     assert!(!model.absorb_extension_answer(ExtensionAnswer {
+        preferences: BTreeMap::new(),
         discovery: true,
         discovered: Some(vec![notes()]),
         recompiled: Vec::new(),
@@ -1110,6 +1117,7 @@ fn hosting_the_drawer() -> WorkspaceModel {
             title: Some("Side".to_owned()),
         });
     assert!(model.absorb_extension_answer(ExtensionAnswer {
+        preferences: BTreeMap::new(),
         discovery: true,
         discovered: Some(vec![installed()]),
         recompiled: Vec::new(),
@@ -1705,6 +1713,7 @@ fn a_hosted_engines_jobs_run_off_the_frame_and_answer_it() {
         ..HostedExtensions::default()
     };
     assert!(model.absorb_extension_answer(ExtensionAnswer {
+        preferences: BTreeMap::new(),
         discovery: true,
         discovered: Some(vec![installed()]),
         recompiled: Vec::new(),
@@ -1756,6 +1765,7 @@ fn a_failed_discovery_lets_the_next_one_be_asked() {
     declared.discovery_pending = true;
     declared.discovered_at = Some(std::time::Instant::now());
     model.absorb_extension_answer(ExtensionAnswer {
+        preferences: BTreeMap::new(),
         discovery: true,
         discovered: None,
         recompiled: Vec::new(),

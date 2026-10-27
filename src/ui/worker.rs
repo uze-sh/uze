@@ -63,6 +63,13 @@ pub(crate) enum Intent {
     /// Consent to a declared extension, enable it in a project, or disable
     /// it there: the operator's answer on the Extensions screen.
     ExtensionHere(super::model::ExtensionHere),
+    /// Set one preference of a declared extension.
+    SetPreference {
+        identity: uze_application::ExtensionIdentity,
+        name: String,
+        label: String,
+        value: serde_json::Value,
+    },
     /// Pin a declared extension's programs again, where they are now.
     ResolvePrograms {
         identity: uze_application::ExtensionIdentity,
@@ -141,6 +148,7 @@ impl Intent {
             Self::SwitchExtension { .. } => "switch_extension",
             Self::ExtensionHere(_) => "extension_here",
             Self::ResolvePrograms { .. } => "resolve_programs",
+            Self::SetPreference { .. } => "set_preference",
             Self::LoadSettings => "load_settings",
             Self::SelectTheme(_) => "select_theme",
             Self::Refresh => "refresh",
@@ -286,6 +294,23 @@ pub(crate) fn dispatch(
             spawn_mutation(Mutation::asked(model, doing, home, sender), move |app| {
                 extension_here(app, &here)
             });
+        }
+        Intent::SetPreference {
+            identity,
+            name,
+            label,
+            value,
+        } => {
+            spawn_mutation(
+                Mutation::asked(model, format!("Setting {label}…"), home, sender),
+                move |app| {
+                    app.extensions().set_preference(&identity, &name, value)?;
+                    // The workspace reads the preferences again once it
+                    // looks again, and draws what reads them.
+                    crate::ui::extension_switch::plugins_changed();
+                    Ok(format!("{label} is set"))
+                },
+            );
         }
         Intent::ResolvePrograms { identity, name } => {
             spawn_mutation(

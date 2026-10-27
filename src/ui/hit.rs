@@ -9,6 +9,8 @@ use super::worker::Intent;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Hit {
     Route(Route),
+    /// A row of a declared extension's preferences, by position.
+    ExtensionPreferenceRow(usize),
     MarketplaceRow(usize),
     /// A plugin row's chevron, by position in the visible list: unfolds or
     /// folds its resources without the row's own click behind it.
@@ -132,6 +134,15 @@ impl TuiModel {
             // area must never silently confirm.
             let answer = match self.hit_at(column, row) {
                 Some(Hit::OfferedAction(action)) => Some(*action),
+                // A click on a row is choosing it and pressing Enter.
+                Some(Hit::ExtensionPreferenceRow(index)) => {
+                    let index = *index;
+                    if let Overlay::Preferences(editor) = &mut self.overlay {
+                        editor.selected = index;
+                        editor.typing = None;
+                    }
+                    Some(uze_keys::Action::Activate)
+                }
                 Some(Hit::Answer(yes)) => {
                     let yes = *yes;
                     if let Overlay::Confirm { focus, .. } = &mut self.overlay {
@@ -281,7 +292,10 @@ impl TuiModel {
             }
             // Only reachable while the index is open, which the guarded
             // arm above already answered.
-            Hit::ActionIndexEntry(_) | Hit::OverlayBody | Hit::Answer(_) => Intent::None,
+            Hit::ActionIndexEntry(_)
+            | Hit::OverlayBody
+            | Hit::Answer(_)
+            | Hit::ExtensionPreferenceRow(_) => Intent::None,
             Hit::OfferedAction(action) => self.act(action),
             Hit::KeysTrack(track) => {
                 self.dragging_keys_track = Some(track);

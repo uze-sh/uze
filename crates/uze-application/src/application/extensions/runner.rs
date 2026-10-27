@@ -205,6 +205,23 @@ impl ExtensionRunner {
             Ok(state) => return Answer::withheld(withheld_because(&state)),
             Err(error) => return Answer::withheld(error.to_string()),
         }
+        // A source that names its preferences is asked with them, as they
+        // are set now: a different setting is a different question.
+        let with_preferences = matches!(question.asking, Asking::Source | Asking::Refresh)
+            && manifest
+                .source(&question.declaration)
+                .is_some_and(|source| source.with_preferences);
+        let mut input = question.input.clone();
+        if with_preferences && let serde_json::Value::Object(fields) = &mut input {
+            fields.insert(
+                "preferences".to_owned(),
+                super::consent::admitted_preferences(&extensions.0.home, identity, manifest),
+            );
+        }
+        let question = &Question {
+            input,
+            ..question.clone()
+        };
         let grants: Grants = manifest.wants.iter().cloned().collect();
         let asked = Asked {
             identity: identity.clone(),
@@ -214,7 +231,7 @@ impl ExtensionRunner {
             input: input_digest(&question.input),
             files: load.digest.clone(),
         };
-        let plugin = format!("{}@{}", identity.plugin, identity.marketplace);
+        let plugin = super::consent::plugin_key(identity);
         let store_of = manifest.store().map(|scope| StoreOf {
             plugin: &plugin,
             id: &identity.id,

@@ -282,6 +282,7 @@ fn standing(condition: uze_application::ExtensionCondition) -> uze_application::
         errors: Vec::new(),
         programs: Vec::new(),
         confined: None,
+        preferences: Vec::new(),
     }
 }
 
@@ -580,5 +581,96 @@ fn the_drawer_lists_pinned_programs_and_resolves_them_again_on_a_click() {
         model.resolve_selected_programs(),
         expected,
         "the click is the action"
+    );
+}
+
+fn with_preferences() -> TuiModel {
+    let mut standing = standing(uze_application::ExtensionCondition::Enabled);
+    standing.preferences = vec![
+        uze_application::PreferenceRow {
+            name: "fahrenheit".to_owned(),
+            label: "Show °F".to_owned(),
+            kind: "toggle",
+            value: serde_json::json!(false),
+            values: Vec::new(),
+        },
+        uze_application::PreferenceRow {
+            name: "warn-at".to_owned(),
+            label: "Warn at".to_owned(),
+            kind: "number",
+            value: serde_json::json!(70),
+            values: Vec::new(),
+        },
+    ];
+    standing_in_a_project(standing)
+}
+
+fn set(name: &str, label: &str, value: serde_json::Value) -> Intent {
+    Intent::SetPreference {
+        identity: declared(&[]).identity,
+        name: name.to_owned(),
+        label: label.to_owned(),
+        value,
+    }
+}
+
+/// The drawer lists an extension's preferences; its Preferences button
+/// opens them, Enter flips a toggle, and a number is typed and set.
+#[test]
+fn preferences_are_listed_and_set_from_the_keyboard() {
+    let mut model = with_preferences();
+    let screen = screen_of(&model);
+    assert!(screen.contains("preferences"), "{screen}");
+    assert!(screen.contains("Show °F · off"), "{screen}");
+    assert!(screen.contains("Warn at · 70"), "{screen}");
+    assert!(screen.contains("Preferences"), "{screen}");
+    assert_eq!(model.edit_selected_preferences(), Intent::None);
+    let editor = screen_of(&model);
+    assert!(editor.contains("Show °F  off"), "{editor}");
+    let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(
+        model.apply_key(enter),
+        set("fahrenheit", "Show °F", serde_json::json!(true))
+    );
+    assert!(
+        screen_of(&model).contains("Show °F  on"),
+        "the row says what was set"
+    );
+    model.apply_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    assert_eq!(model.apply_key(enter), Intent::None, "a number is typed");
+    for _ in 0..2 {
+        model.apply_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+    }
+    model.apply_key(KeyEvent::new(KeyCode::Char('5'), KeyModifiers::NONE));
+    model.apply_key(KeyEvent::new(KeyCode::Char('0'), KeyModifiers::NONE));
+    assert_eq!(
+        model.apply_key(enter),
+        set("warn-at", "Warn at", serde_json::json!(50))
+    );
+}
+
+/// A click on a preference's row is choosing it and pressing Enter.
+#[test]
+fn clicking_a_preference_row_is_pressing_enter_on_it() {
+    let mut model = with_preferences();
+    model.edit_selected_preferences();
+    let (_, hits) = super::support::drawn_at(&model, 220, 44);
+    let (row, _) = *hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::ExtensionPreferenceRow(0))
+        .expect("the first row is clickable");
+    model.hits = hits;
+    let clicked = model.apply_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: row.x + 1,
+            row: row.y,
+            modifiers: KeyModifiers::NONE,
+        },
+        Rect::new(0, 0, 220, 44),
+    );
+    assert_eq!(
+        clicked,
+        set("fahrenheit", "Show °F", serde_json::json!(true))
     );
 }

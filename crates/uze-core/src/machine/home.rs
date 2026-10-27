@@ -233,6 +233,26 @@ impl UzeHome {
         }
     }
 
+    /// The operator's preferences for extension `id` of
+    /// `plugin@marketplace`: a record, since only their answer says it.
+    /// Removed with its plugin.
+    pub fn extension_preferences_path(&self, plugin: &str, id: &str) -> PathBuf {
+        self.state_dir()
+            .join("extensions")
+            .join("preferences")
+            .join(plugin)
+            .join(format!("{id}.json"))
+    }
+
+    /// Every preference record of the plugin `plugin@marketplace`'s
+    /// extensions.
+    pub fn extension_plugin_preferences_dir(&self, plugin: &str) -> PathBuf {
+        self.state_dir()
+            .join("extensions")
+            .join("preferences")
+            .join(plugin)
+    }
+
     /// The scratch directory one program run of an extension may write,
     /// created before it and removed after it: generated, since losing it
     /// costs nothing, and named here so the run's `TMPDIR` is never the
@@ -846,6 +866,7 @@ mod tests {
             home.extensions_record_path(),
             home.extension_stores_dir(),
             home.extension_store_path("gsd@market", "gsd-band", Some("abc")),
+            home.extension_preferences_path("gsd@market", "gsd-band"),
         ];
         for record in records {
             assert!(

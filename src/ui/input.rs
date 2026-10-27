@@ -51,6 +51,10 @@ impl TuiModel {
             Overlay::None | Overlay::HarnessHelp | Overlay::Health => {}
             Overlay::ActionIndex { .. } => scopes.push(Scope::ActionIndex),
             Overlay::AddMarketplace(_) | Overlay::NewProfile(_) => scopes.push(Scope::TextPrompt),
+            Overlay::Preferences(ref editor) if editor.typing.is_some() => {
+                scopes.push(Scope::TextPrompt)
+            }
+            Overlay::Preferences(_) => scopes.push(Scope::ActionIndex),
             Overlay::Confirm { .. } => scopes.push(Scope::Confirm),
             Overlay::ReleaseNotes(_) => scopes.push(Scope::ReleaseNotes),
         }
@@ -290,6 +294,7 @@ impl TuiModel {
             Action::EnableExtension => self.switch_selected_extension(true),
             Action::DisableExtension => self.switch_selected_extension(false),
             Action::ResolvePrograms => self.resolve_selected_programs(),
+            Action::EditPreferences => self.edit_selected_preferences(),
             Action::AddMarketplace => {
                 self.overlay = Overlay::AddMarketplace(String::new());
                 Intent::None

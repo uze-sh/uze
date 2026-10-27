@@ -1600,6 +1600,9 @@ pub(super) struct ExtensionAnswer {
     /// was consented to and where it is enabled. Empty for a recompile.
     pub(super) records:
         BTreeMap<uze_application::ExtensionIdentity, Option<uze_application::ExtensionConsent>>,
+    /// What the operator set each found extension's preferences to, each
+    /// admitted against what it declares. Empty for a recompile.
+    pub(super) preferences: BTreeMap<uze_application::ExtensionIdentity, serde_json::Value>,
     pub(super) loaded: Vec<LoadedExtension>,
 }
 
@@ -1628,6 +1631,7 @@ pub(super) fn spawn_extension_job(
             discovered: None,
             recompiled: recompiled.clone(),
             records: BTreeMap::new(),
+            preferences: BTreeMap::new(),
             loaded: Vec::new(),
         };
         let answer = answered_or(
@@ -1638,6 +1642,7 @@ pub(super) fn spawn_extension_job(
                         discovered: None,
                         recompiled: recompiled.clone(),
                         records: BTreeMap::new(),
+                        preferences: BTreeMap::new(),
                         loaded: Vec::new(),
                     };
                 };
@@ -1684,11 +1689,21 @@ pub(super) fn spawn_extension_job(
                         (identity, record)
                     })
                     .collect();
+                let preferences = discovered
+                    .iter()
+                    .flatten()
+                    .filter_map(|installed| {
+                        let identity = installed.identity.clone();
+                        let preferences = extensions.preferences(&identity).ok()?;
+                        Some((identity, preferences))
+                    })
+                    .collect();
                 ExtensionAnswer {
                     discovery,
                     discovered,
                     recompiled: recompiled.clone(),
                     records,
+                    preferences,
                     loaded,
                 }
             },

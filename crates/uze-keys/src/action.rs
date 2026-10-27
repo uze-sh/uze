@@ -204,6 +204,8 @@ actions! {
          its entries in the index";
     ResolvePrograms => "resolve-programs", false,
         "Resolve again", "Find the selected extension's programs again on this machine";
+    EditPreferences => "edit-preferences", false,
+        "Preferences", "Set the selected extension's preferences";
 
     // --- Management, things done to a project ---------------------------
     InstallProjectEnvironment => "install-project-environment", false,

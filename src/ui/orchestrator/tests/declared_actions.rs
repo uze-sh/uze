@@ -117,6 +117,7 @@ fn hosting() -> WorkspaceModel {
         linked: false,
     };
     assert!(model.absorb_extension_answer(ExtensionAnswer {
+        preferences: BTreeMap::new(),
         discovery: true,
         discovered: Some(vec![installed.clone()]),
         recompiled: Vec::new(),

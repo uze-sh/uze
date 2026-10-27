@@ -6,9 +6,9 @@
 
 ## 2. Preferences
 
-- [ ] 2.1 `state/extensions/preferences/<plugin@marketplace>/<id>.json` in `UzeHome` (record), read leniently against the declaration, written atomically
-- [ ] 2.2 `Extensions::{preferences, set_preference}` in `uze-application`; `input.preferences` for a source declaring it; `{pref.*}` handed to the engine with the data
-- [ ] 2.3 The Extensions drawer: a "preferences" section, Enter and click edit (field dialog for text and number, flip, cycle), with TestBackend tests that click equals key
+- [x] 2.1 `state/extensions/preferences/<plugin@marketplace>/<id>.json` in `UzeHome` (record), read leniently against the declaration, written atomically
+- [x] 2.2 `Extensions::{preferences, set_preference}` in `uze-application`; `input.preferences` for a source declaring it; `{pref.*}` handed to the engine with the data
+- [x] 2.3 The Extensions drawer: a "preferences" section, Enter and click edit (field dialog for text and number, flip, cycle), with TestBackend tests that click equals key
 
 ## 3. Compose
 

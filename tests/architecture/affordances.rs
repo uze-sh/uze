@@ -104,6 +104,10 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     put(Action::EnableExtension, Control("the drawer's buttons"));
     put(Action::DisableExtension, Control("the drawer's buttons"));
     put(
+        Action::EditPreferences,
+        Control("the Preferences button in a declared extension's drawer, and a click on a row"),
+    );
+    put(
         Action::ResolvePrograms,
         Control("the Resolve again button in a declared extension's drawer"),
     );

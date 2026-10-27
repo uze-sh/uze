@@ -123,6 +123,7 @@ impl TuiModel {
                 }
                 _ => Intent::None,
             },
+            Overlay::Preferences(editor) => self.preferences_action(editor, action),
             Overlay::NewProfile(input) => match action {
                 Action::Activate => {
                     let id = slugify(&input);
@@ -146,6 +147,68 @@ impl TuiModel {
                 _ => Intent::None,
             },
         }
+    }
+
+    /// A key on an extension's preferences: the arrows move between the
+    /// rows, Enter answers the row (flips, moves on, or starts typing), and
+    /// Esc puts the typing away, then the editor.
+    fn preferences_action(
+        &mut self,
+        mut editor: crate::ui::model::PreferencesEditor,
+        action: Action,
+    ) -> Intent {
+        let Some(row) = editor.rows.get(editor.selected).cloned() else {
+            self.close_overlay();
+            return Intent::None;
+        };
+        let set = |editor: &mut crate::ui::model::PreferencesEditor, value: serde_json::Value| {
+            editor.rows[editor.selected].value = value.clone();
+            Intent::SetPreference {
+                identity: editor.identity.clone(),
+                name: row.name.clone(),
+                label: row.label.clone(),
+                value,
+            }
+        };
+        let intent = match (&mut editor.typing, action) {
+            (Some(_), Action::Dismiss) => {
+                editor.typing = None;
+                Intent::None
+            }
+            (Some(typed), Action::EraseBack) => {
+                typed.pop();
+                Intent::None
+            }
+            (Some(typed), Action::Activate) => match row.typed(typed) {
+                Some(value) => {
+                    editor.typing = None;
+                    set(&mut editor, value)
+                }
+                None => Intent::None,
+            },
+            (None, Action::SelectNext) => {
+                editor.selected = (editor.selected + 1).min(editor.rows.len().saturating_sub(1));
+                Intent::None
+            }
+            (None, Action::SelectPrevious) => {
+                editor.selected = editor.selected.saturating_sub(1);
+                Intent::None
+            }
+            (None, Action::Activate) => match row.pressed() {
+                Some(value) => set(&mut editor, value),
+                None => {
+                    editor.typing = Some(row.said());
+                    Intent::None
+                }
+            },
+            (None, Action::Dismiss) => {
+                self.close_overlay();
+                return Intent::None;
+            }
+            _ => Intent::None,
+        };
+        self.overlay = Overlay::Preferences(editor);
+        intent
     }
 
     pub(crate) fn close_overlay(&mut self) {
@@ -365,6 +428,62 @@ pub(crate) struct TextPrompt<'a> {
 
 /// A dialog that asks for one line of text — the same dialog every
 /// question is, with a field between what it means and the answers.
+/// An extension's preferences: a card of rows, each its label and value,
+/// the selected one filled; or, while one is typed, the field for it.
+pub(crate) fn render_preferences(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    editor: &crate::ui::model::PreferencesEditor,
+    hits: &mut Vec<(Rect, Hit)>,
+) {
+    if let (Some(typed), Some(row)) = (&editor.typing, editor.rows.get(editor.selected)) {
+        let title = format!("{} · {}", editor.name, row.label);
+        let body = match row.kind {
+            "number" => "A number.",
+            _ => "Text.",
+        };
+        render_text_prompt(
+            frame,
+            area,
+            &TextPrompt {
+                title: &title,
+                body,
+                placeholder: &row.label,
+                confirm: "Set",
+            },
+            typed,
+            hits,
+        );
+        return;
+    }
+    crate::ui::widget::scrim::render(frame, area);
+    let labels: Vec<String> = editor
+        .rows
+        .iter()
+        .map(|row| format!("{}  {}", row.label, row.said()))
+        .collect();
+    let entries: Vec<crate::ui::widget::menu::Entry<'_>> = labels
+        .iter()
+        .map(|label| crate::ui::widget::menu::Entry::action(label))
+        .collect();
+    let center = Rect {
+        x: area.x + area.width / 3,
+        y: area.y + area.height / 3,
+        width: area.width / 3,
+        height: 1,
+    };
+    let rects = crate::ui::widget::menu::render(frame, area, center, &entries, editor.selected);
+    let body = rects.iter().copied().reduce(Rect::union);
+    hits.splice(
+        0..0,
+        rects
+            .into_iter()
+            .enumerate()
+            .map(|(index, rect)| (rect, Hit::ExtensionPreferenceRow(index)))
+            .chain(body.map(|body| (body, Hit::OverlayBody))),
+    );
+}
+
 pub(crate) fn render_text_prompt(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,

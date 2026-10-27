@@ -245,6 +245,9 @@ pub fn declared_extension_offers(
         ),
     ];
     offers.extend(resolve);
+    if !standing.preferences.is_empty() {
+        offers.push(ActionOffer::available(Action::EditPreferences));
+    }
     offers
 }
 
