@@ -220,3 +220,13 @@
 - decided:  jump (25): each of two isolated agents is sent a line only it shows, and the gate after ctrl+g is the chosen agent's line with the picker's header gone; a list's first row is selected as the picker opens, so ctrl+g takes the first agent and Down then ctrl+g the second. pets (27): the gates read the agent's label and state written beside the sprite (ready, working, then done or ready), the checks read the store (`name` Pixel, then `fed` 1 after Feed). screen (28): opened 60 rows tall so the section has room for its picture; the gates wait for its half blocks (the container's tmux speaks Sixel, so pixels are sent over them, and are not read); the checks read the pinned `sh`, the picture kept under `runtime/extensions/pictures/media@studio/screen/shot.png`, no scratch left, nothing in the checkout.
 - not proven: Enter on a picker row (Enter activates a focused input, D21, and does not press a row's button); a row's Go by pointer (exercised while probing, not kept as a scene); which sprite frame plays; the picture's colours or size in pixels.
 - blast:    `journeys/suites/04-workspace/{25,27,28}-*.yml`.
+
+## D70 — Closed on one full check and the umbrella's ledger
+
+- status:   pending
+- task:     5.3
+- commit:
+- trigger:  The change exists to leave `extension-platform` with no open task.
+- decided:  The umbrella's 17 open tasks are ticked, each pointing at the group of this change that delivered it; `extension-platform` has 0 open tasks. Every step of `make check` passes in one run (56 test suites) with PATH free of the machine's broken `mise` `bun` shim and the two `foreground_status_*` tests of `uze-terminal` skipped by name: both fail identically on `main` (`f5a7972e`) and this work does not touch their code. `openspec validate --all --strict` passes (81).
+- rejected: Fixing the two `uze-terminal` tests here: they belong to the terminal runtime, not to the extension platform.
+- blast:    None.

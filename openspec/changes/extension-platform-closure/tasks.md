@@ -26,4 +26,4 @@
 
 - [x] 5.1 Journeys: a widened update held, enabling refused in an agent's pane (12.3) — D60, D61
 - [x] 5.2 A journey per gallery entry still without one: gpu-meter, gsd-next, chimes, jump, plan-review, pets, screen (20.2) — D62–D67
-- [ ] 5.3 The umbrella's 17 tasks ticked with pointers here; `make check`, `openspec validate --all --strict`
+- [x] 5.3 The umbrella's 17 tasks ticked with pointers here; `make check`, `openspec validate --all --strict`
