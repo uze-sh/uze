@@ -9,14 +9,7 @@ use uze_terminal::ClientRequest;
 
 fn launched_agent() -> super::WorkspaceModel {
     let mut model = agent_session_in("/repo");
-    let session = model.session.as_mut().unwrap();
-    session.workspace.spaces[0].tabs[0].env = vec![(
-        uze_terminal::launch::AGENT_IDENTITY_VARIABLE.to_owned(),
-        "a1".to_owned(),
-    )];
-    model.note_space_projects(&identities_fixture());
-    let agents = super::bridged_agents(&model, &identities_fixture());
-    model.see_agents(agents);
+    launch_agent_a1(&mut model);
     model
 }
 
@@ -118,5 +111,68 @@ fn f8_pauses_with_a_surface_open_in_the_pane() {
     assert!(
         driven.attach.model.remembered.declared.bridge.writes.paused,
         "the surface in front does not swallow the brake"
+    );
+}
+
+fn key(text: &str) -> crossterm::event::KeyEvent {
+    key_event(uze_keys::Chord::parse(text).unwrap())
+}
+
+/// Asks to type `text`, then answers the question by keyboard alone:
+/// the arrow onto the allowing answer, then Enter.
+fn allowed_by_keyboard(driven: &mut Driven<'_>, text: &str) -> Vec<String> {
+    driven
+        .attach
+        .model
+        .ask_of_agent(Owner::Builtin("probe"), prompt(text));
+    assert!(driven.attach.model.agent_write.is_some(), "asked first");
+    driven.press_key(key("right"));
+    driven.press_key(key("enter"));
+    assert!(
+        driven.attach.model.agent_write.is_none(),
+        "Enter answers the question"
+    );
+    driven.pump();
+    typed(&driven.sent())
+}
+
+#[test]
+fn the_question_is_answered_by_keyboard_over_the_bare_pane() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-keys-pane"));
+    let mut driven = driven(launched_agent(), &home);
+    let sent = allowed_by_keyboard(&mut driven, "Review PLAN.md");
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert!(sent[0].contains("Review PLAN.md"), "{sent:?}");
+}
+
+#[test]
+fn esc_declines_the_question_over_the_bare_pane_and_reaches_nothing_behind_it() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-esc-pane"));
+    let mut driven = driven(launched_agent(), &home);
+    driven
+        .attach
+        .model
+        .ask_of_agent(Owner::Builtin("probe"), prompt("Review"));
+    driven.press_key(key("tab"));
+    driven.press_key(key("esc"));
+    assert!(driven.attach.model.agent_write.is_none(), "Esc declines");
+    driven.pump();
+    assert!(typed(&driven.sent()).is_empty(), "nothing reached the pane");
+}
+
+#[test]
+fn the_question_is_answered_by_keyboard_over_the_code_surface() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-keys-code"));
+    let mut driven = driven(launched_agent(), &home);
+    driven.press_key(key("alt+g"));
+    assert!(
+        driven.attach.model.open_slot.is_some(),
+        "the changes in front"
+    );
+    let sent = allowed_by_keyboard(&mut driven, "Review PLAN.md");
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert!(
+        driven.attach.model.open_slot.is_some(),
+        "the surface stays where it was"
     );
 }

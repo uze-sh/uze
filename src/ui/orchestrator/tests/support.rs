@@ -424,6 +424,15 @@ pub(super) fn stamp_first_tab(model: &mut WorkspaceModel, id: &str) {
     )];
 }
 
+/// Makes the first tab the agent `a1` UZE launched, seen by the bridge,
+/// so an extension may ask something of it.
+pub(super) fn launch_agent_a1(model: &mut WorkspaceModel) {
+    stamp_first_tab(model, "a1");
+    model.note_space_projects(&identities_fixture());
+    let agents = super::bridged_agents(model, &identities_fixture());
+    model.see_agents(agents);
+}
+
 pub(super) fn agent_session_in(cwd: &str) -> WorkspaceModel {
     let mut session = session("/repo");
     let tab = &mut session.workspace.spaces[0].tabs[0];

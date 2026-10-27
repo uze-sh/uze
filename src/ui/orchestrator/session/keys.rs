@@ -24,6 +24,7 @@ impl Attach<'_> {
         }
         if self.model.approval.is_some()
             || self.model.extension_offer.is_some()
+            || self.model.agent_write.is_some()
             || self.model.interrupt.is_some()
             || self.model.proposal.is_some()
             || self.model.asks_overview_question()
@@ -185,6 +186,7 @@ impl Attach<'_> {
     pub(super) fn unclaimed(&mut self, key: KeyEvent, chord: Chord) {
         if self.model.approval.is_some()
             || self.model.extension_offer.is_some()
+            || self.model.agent_write.is_some()
             || self.model.interrupt.is_some()
             || self.model.proposal.is_some()
             || self.model.asks_overview_question()

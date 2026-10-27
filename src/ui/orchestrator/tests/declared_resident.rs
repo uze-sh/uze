@@ -246,3 +246,56 @@ fn a_press_on_a_resident_view_is_its_relative_to_it_and_takes_it_back() {
         "a press takes it back"
     );
 }
+
+/// The view open, its agent `a1` launched in the pane behind it.
+fn playing_beside_an_agent(home: &UzeHome) -> Driven<'_> {
+    let mut driven = playing(home);
+    launch_agent_a1(&mut driven.attach.model);
+    driven.frame();
+    driven
+}
+
+fn prompt(text: &str) -> uze_extensions::contract::AgentRequest {
+    uze_extensions::contract::AgentRequest {
+        what: uze_extensions::contract::AgentAsk::Prompt {
+            text: text.to_owned(),
+        },
+        agent: None,
+        label: "Review".to_owned(),
+        unattended: false,
+    }
+}
+
+fn typed(sent: &[uze_terminal::ClientRequest]) -> Vec<String> {
+    sent.iter()
+        .filter_map(|request| match request {
+            uze_terminal::ClientRequest::Input { bytes, .. } => {
+                Some(String::from_utf8_lossy(bytes).into_owned())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn the_question_is_answered_by_keyboard_over_a_declared_view() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("resident-agent-question"));
+    let mut driven = playing_beside_an_agent(&home);
+    let host = Session::default();
+    run(&mut driven, &host);
+    driven
+        .attach
+        .model
+        .ask_of_agent(Owner::Builtin("probe"), prompt("Review PLAN.md"));
+    driven.press_key(key("right"));
+    driven.press_key(key("enter"));
+    assert!(
+        driven.attach.model.agent_write.is_none(),
+        "Enter answers it"
+    );
+    driven.pump();
+    let sent = typed(&driven.sent());
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    run(&mut driven, &host);
+    assert!(inputs(&host).is_empty(), "the view behind heard nothing");
+}
