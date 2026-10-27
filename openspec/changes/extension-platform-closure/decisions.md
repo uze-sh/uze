@@ -379,3 +379,13 @@
 - decided:  Every character that takes no cell counts towards a run that a base character resets; past four in a run the rest are dropped, and the five blocks keep their own cap of two. The output also stops before passing `max × 16` bytes (a four-byte base and three four-byte marks per cell).
 - rejected: Dropping every zero-width character outside the five blocks: scripts such as Hebrew and Arabic need them.
 - blast:    `uze-contract::clean`.
+
+## D126 — A process's first program run sweeps the scratch directories killed runs left
+
+- status:   pending
+- task:     review finding
+- commit:
+- trigger:  `runtime/extensions/scratch/<run>` is removed by the run that made it, so one is left only when UZE itself was killed mid-run; `runtime/extensions` is a kept tenant, so nothing ever reclaimed it.
+- decided:  `UzeHome::extension_scratch_root` names the directory; the first run of each process (a `Once`, in `uze-application`'s program runner) removes every run directory beneath it not changed for an hour, far past the 10 s a program may run. A living process removes its own runs', so once per process is enough.
+- rejected: Naming `scratch` a swept tenant of `runtime/`: it lives beneath `extensions`, a kept tenant, and a sweep by `doctor` could take the directory of a run in flight in another process.
+- blast:    `uze-core::machine::home`, `uze-application::extensions::program`.

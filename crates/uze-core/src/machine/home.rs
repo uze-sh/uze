@@ -287,10 +287,14 @@ impl UzeHome {
     /// costs nothing, and named here so the run's `TMPDIR` is never the
     /// operator's shared tmp, where a pinned program may not live.
     pub fn extension_scratch_dir(&self, run: &str) -> PathBuf {
-        self.runtime_dir()
-            .join("extensions")
-            .join("scratch")
-            .join(run)
+        self.extension_scratch_root().join(run)
+    }
+
+    /// Where every run's scratch directory is made. A run removes its own;
+    /// one a killed UZE left behind is swept by the next process's first
+    /// run, once older than any run could be.
+    pub fn extension_scratch_root(&self) -> PathBuf {
+        self.runtime_dir().join("extensions").join("scratch")
     }
 
     /// The pictures the programs of extension `id` of `plugin@marketplace`

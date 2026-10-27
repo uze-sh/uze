@@ -61,6 +61,44 @@ const DEVICES: &str = "/dev/";
 
 static RUNS: AtomicU64 = AtomicU64::new(0);
 
+/// How old a run's scratch directory must be before another process takes
+/// it for one a killed run left: far past any program's time limit.
+const STALE_SCRATCH: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// The scratch directories a killed process left are swept once, by its
+/// successor's first run: a process that lives removes its own runs'.
+static SWEPT: std::sync::Once = std::sync::Once::new();
+
+/// A fresh scratch directory for one run, named apart from every other
+/// run of every process, after this process's first one swept what killed
+/// runs left.
+fn scratch_for_run(home: &UzeHome) -> PathBuf {
+    SWEPT.call_once(|| sweep_stale_scratch(home, STALE_SCRATCH));
+    let run = format!(
+        "{}-{}",
+        std::process::id(),
+        RUNS.fetch_add(1, Ordering::Relaxed)
+    );
+    home.extension_scratch_dir(&run)
+}
+
+/// Removes every run's scratch directory last changed more than
+/// `older_than` ago.
+fn sweep_stale_scratch(home: &UzeHome, older_than: std::time::Duration) {
+    let Ok(entries) = std::fs::read_dir(home.extension_scratch_root()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let stale = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .is_ok_and(|modified| modified.elapsed().is_ok_and(|age| age >= older_than));
+        if stale && entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
 /// One question for a program, with everything it is answered from.
 pub(super) struct Asked<'a> {
     pub home: &'a UzeHome,
@@ -138,12 +176,7 @@ pub(super) fn reply(asked: &Asked<'_>) -> Result<uze_script::ProgramReply, uze_s
 
 /// Lays the run out, runs it and takes its directory away again.
 fn ran(asked: &Asked<'_>) -> Result<ProgramOutcome, NotRun> {
-    let run = format!(
-        "{}-{}",
-        std::process::id(),
-        RUNS.fetch_add(1, Ordering::Relaxed)
-    );
-    let dir = asked.home.extension_scratch_dir(&run);
+    let dir = scratch_for_run(asked.home);
     let ended = prepare(asked, &dir).map(|prepared| extension_program::run(&prepared));
     if let (Ok(_), Some(kept)) = (&ended, asked.pictures) {
         keep_pictures(&dir.join(SCRATCH), kept);
@@ -455,12 +488,7 @@ const RESOLVER_FILES: &[&str] = &[
 /// Runs `run` through the program runner: in its own scratch directory,
 /// with network and nothing of the checkout, under its bounds.
 pub(super) fn curl(run: &CurlRun<'_>) -> ProgramOutcome {
-    let id = format!(
-        "{}-{}",
-        std::process::id(),
-        RUNS.fetch_add(1, Ordering::Relaxed)
-    );
-    let dir = run.home.extension_scratch_dir(&id);
+    let dir = scratch_for_run(run.home);
     let scratch = dir.join(SCRATCH);
     if let Err(error) = std::fs::create_dir_all(&scratch) {
         return ProgramOutcome::NotStarted {
@@ -613,6 +641,21 @@ mod tests {
             .collect();
         names.sort();
         assert_eq!(names, ["shot.png"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_scratch_a_killed_run_left_is_reclaimed_once_stale() {
+        let root = uze_testkit::temp::scratch("program-stale-scratch");
+        let home = UzeHome::at(root.clone());
+        let left = home.extension_scratch_dir("1-0");
+        std::fs::create_dir_all(left.join(SCRATCH)).unwrap();
+        std::fs::write(left.join(SCRATCH).join("partial"), b"x").unwrap();
+
+        sweep_stale_scratch(&home, STALE_SCRATCH);
+        assert!(left.exists(), "a run that may still be going was swept");
+        sweep_stale_scratch(&home, std::time::Duration::ZERO);
+        assert!(!left.exists(), "a stale scratch was left");
         let _ = std::fs::remove_dir_all(&root);
     }
 
