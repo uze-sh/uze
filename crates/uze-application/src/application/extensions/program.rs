@@ -261,7 +261,7 @@ fn prepare(asked: &Asked<'_>, dir: &Path) -> Result<ProgramRun, NotRun> {
     };
     let scope = match asked.asking {
         Asking::Action => asked.input.get("item").cloned().unwrap_or_default(),
-        Asking::Source | Asking::Refresh => asked.input.clone(),
+        Asking::Source | Asking::Refresh | Asking::Resident(_) => asked.input.clone(),
     };
     let rest = if asked.literal {
         asked.program.argv[1..].to_vec()
@@ -344,7 +344,7 @@ fn prepare(asked: &Asked<'_>, dir: &Path) -> Result<ProgramRun, NotRun> {
 fn declared_as(asking: Asking) -> &'static str {
     match asking {
         Asking::Action => "action",
-        Asking::Source | Asking::Refresh => "source",
+        Asking::Source | Asking::Refresh | Asking::Resident(_) => "source",
     }
 }
 

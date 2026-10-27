@@ -22,10 +22,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use uze_contract::{
-    Answer, Asking, Does, Envelope, Identity, Output, Program, Question, SourceKind, StoreScope,
+    Answer, Asking, Does, Envelope, Identity, Output, Program, Question, ResidentCall, SourceKind,
+    StoreScope,
 };
 use uze_core::capability::extension::Loaded;
-use uze_script::{Grants, ScriptCache};
+use uze_script::{Grants, Resident, ResidentScript, ScriptCache};
 use uze_workspace::extensions::store::{self, StoreOf};
 
 use super::{CheckoutReach, ExtensionCheckout, ExtensionState, NotACheckout};
@@ -54,15 +55,33 @@ pub struct ExtensionRunner {
     answered: Mutex<HashMap<Asked, Envelope>>,
     scripts: Mutex<ScriptCache>,
     runs: AtomicU64,
+    /// The resident sources running now, by extension and source: each
+    /// opened by its `Start` and closed by its `Stop`, its first failure or
+    /// the operator's consent changing.
+    residents: Mutex<HashMap<(Identity, String), Arc<Running>>>,
     /// The program that confines an extension's programs: this binary,
     /// where this machine confines. `None` runs them unconfined, which
     /// only an extension accepted to run as the operator may.
     helper: Option<PathBuf>,
 }
 
+/// A resident session, and what applies its answers' store patches.
+struct Running {
+    session: Resident,
+    file: String,
+    keep: Box<dyn Fn(Envelope) -> Envelope + Send + Sync>,
+}
+
+impl std::fmt::Debug for Running {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Running").field("file", &self.file).finish()
+    }
+}
+
 /// What answers a question, found in the compile that was consented to.
 enum Answerer<'a> {
     Script(&'a str),
+    Resident(&'a str),
     Program {
         program: &'a Program,
         output: &'a Output,
@@ -94,6 +113,7 @@ impl ExtensionRunner {
             answered: Mutex::default(),
             scripts: Mutex::default(),
             runs: AtomicU64::default(),
+            residents: Mutex::default(),
             helper,
         }
     }
@@ -109,6 +129,7 @@ impl ExtensionRunner {
     /// stands for what it would answer now.
     pub fn forget(&self, identity: &Identity) {
         lock(&self.answered).retain(|asked, _| asked.identity != *identity);
+        lock(&self.residents).retain(|(running, _), _| running != identity);
     }
 
     /// The bytes of the picture `name` an `Image` or a sprite of
@@ -161,6 +182,14 @@ impl ExtensionRunner {
         question: &Question,
         checkout: impl FnOnce(&Path) -> Result<ExtensionCheckout, NotACheckout>,
     ) -> Answer {
+        // A running session was consented to when it started, and is
+        // closed when what the operator allowed changes: its calls, up to
+        // thirty a second, read nothing again.
+        if let Asking::Resident(call) = question.asking
+            && call != ResidentCall::Start
+        {
+            return self.call_resident(question, call);
+        }
         let identity = &question.identity;
         let Some(installed) = extensions
             .installed()
@@ -181,10 +210,16 @@ impl ExtensionRunner {
         };
         let manifest = &load.compiled.manifest;
         let answerer = match question.asking {
-            Asking::Source | Asking::Refresh => {
+            Asking::Source | Asking::Refresh | Asking::Resident(_) => {
                 let Some(source) = manifest.source(&question.declaration) else {
                     return failed(format!("it declares no source `{}`", question.declaration));
                 };
+                if matches!(question.asking, Asking::Resident(_)) && source.resident().is_none() {
+                    return failed(format!(
+                        "the source `{}` is not resident",
+                        question.declaration
+                    ));
+                }
                 match &source.kind {
                     SourceKind::Fixture(file) => {
                         return match super::compiled::loaded_fixture(&files, file) {
@@ -201,6 +236,11 @@ impl ExtensionRunner {
                         with_store: source.with_store,
                     },
                     SourceKind::Script(file) => Answerer::Script(file),
+                    SourceKind::Resident(file)
+                        if matches!(question.asking, Asking::Resident(_)) =>
+                    {
+                        Answerer::Resident(file)
+                    }
                     SourceKind::Events(_) | SourceKind::Agents | SourceKind::Resident(_) => {
                         return failed(format!(
                             "the source `{}` is answered by the workspace, from what it sees",
@@ -316,32 +356,56 @@ impl ExtensionRunner {
                 Ok(super::program::answer(&ask))
             }
         };
+        let reach = || {
+            let mut reach = CheckoutReach::new(checkout.root.clone());
+            if let Some(store) = read_store() {
+                reach = reach.with_store(store);
+            }
+            if manifest.programs().next().is_some() {
+                reach = reach.with_programs(self.programs_for(
+                    home,
+                    &installed.dir,
+                    manifest,
+                    identity,
+                    &checkout,
+                    consent.clone(),
+                ));
+            }
+            reach
+        };
         match answerer {
-            Answerer::Script(script) => {
-                let mut reach = CheckoutReach::new(checkout.root.clone());
-                if let Some(store) = read_store() {
-                    reach = reach.with_store(store);
-                }
-                if manifest.programs().next().is_some() {
-                    reach = reach.with_programs(self.programs_for(
-                        home,
-                        &installed.dir,
-                        manifest,
-                        identity,
-                        &checkout,
-                        consent.clone(),
-                    ));
-                }
-                self.run_script(
-                    asked,
+            Answerer::Resident(file) => {
+                let plugin = plugin.clone();
+                let id = identity.id.clone();
+                let owned_home = home.clone();
+                let scope = manifest.store();
+                let project = project.clone();
+                let keep = move |envelope: Envelope| {
+                    let of = scope.map(|scope| StoreOf {
+                        plugin: &plugin,
+                        id: &id,
+                        project: (scope == StoreScope::Project).then_some(project.as_path()),
+                    });
+                    keep_store(&owned_home, of.as_ref(), envelope)
+                };
+                self.start_resident(
+                    question,
                     &files,
-                    script,
+                    file,
                     &grants,
-                    &question.input,
-                    Arc::new(reach),
-                    &keep,
+                    Arc::new(reach()),
+                    Box::new(keep),
                 )
             }
+            Answerer::Script(script) => self.run_script(
+                asked,
+                &files,
+                script,
+                &grants,
+                &question.input,
+                Arc::new(reach()),
+                &keep,
+            ),
             Answerer::Program {
                 program,
                 output,
@@ -358,6 +422,101 @@ impl ExtensionRunner {
                 }
             }),
         }
+    }
+
+    /// Opens the session of a resident source, closing any it had: its
+    /// script compiled from the consented bytes, started with the
+    /// engine's context and what the runner knows of where it runs.
+    fn start_resident(
+        &self,
+        question: &Question,
+        files: &Loaded,
+        file: &str,
+        grants: &Grants,
+        reach: Arc<dyn uze_script::Reach>,
+        keep: Box<dyn Fn(Envelope) -> Envelope + Send + Sync>,
+    ) -> Answer {
+        let key = (question.identity.clone(), question.declaration.clone());
+        if let Some(running) = lock(&self.residents).remove(&key) {
+            running.session.stop();
+        }
+        let Some(bytes) = files.bytes(file) else {
+            return failed(format!("{file}: not found"));
+        };
+        let script = match ResidentScript::compile(bytes) {
+            Ok(script) => Arc::new(script),
+            Err(error) => return failed(format!("{file}: {error}")),
+        };
+        let mut context = question.input.clone();
+        if let serde_json::Value::Object(fields) = &mut context {
+            fields.insert("extension".to_owned(), question.identity.id.clone().into());
+            fields.insert("source".to_owned(), question.declaration.clone().into());
+            if let Some(checkout) = &question.checkout {
+                fields.insert("checkout".to_owned(), checkout.display().to_string().into());
+            }
+        }
+        self.runs.fetch_add(1, Ordering::Relaxed);
+        let (session, answered) = Resident::start(script, grants, reach, &context);
+        let running = Arc::new(Running {
+            session,
+            file: file.to_owned(),
+            keep,
+        });
+        let answer = resident_answer(&running, answered);
+        if matches!(answer, Answer::Answered { .. }) {
+            lock(&self.residents).insert(key, running);
+        }
+        answer
+    }
+
+    /// One call into a running resident source's session. Its first
+    /// failure closes it: what it says is the bound it crossed.
+    fn call_resident(&self, question: &Question, call: ResidentCall) -> Answer {
+        let key = (question.identity.clone(), question.declaration.clone());
+        let running = lock(&self.residents).get(&key).cloned();
+        let Some(running) = running else {
+            return match call {
+                ResidentCall::Stop => Answer::Answered {
+                    envelope: Envelope::default(),
+                    trace: Vec::new(),
+                },
+                _ => failed(format!(
+                    "the resident source `{}` is not running",
+                    question.declaration
+                )),
+            };
+        };
+        let session = &running.session;
+        let answered = match call {
+            ResidentCall::Start => unreachable!("a start opens a session"),
+            ResidentCall::Event => session.event(&question.input),
+            ResidentCall::Input => session.input(&question.input),
+            ResidentCall::Render => {
+                let side = |name: &str| {
+                    question
+                        .input
+                        .get(name)
+                        .and_then(serde_json::Value::as_u64)
+                        .and_then(|side| u16::try_from(side).ok())
+                        .unwrap_or(0)
+                };
+                session.render(side("width"), side("height"))
+            }
+            ResidentCall::Stop => {
+                lock(&self.residents).remove(&key);
+                session.stop()
+            }
+        };
+        let answer = resident_answer(&running, answered);
+        if matches!(answer, Answer::Failed { .. }) {
+            lock(&self.residents).remove(&key);
+        }
+        answer
+    }
+
+    /// How many resident sources are running now.
+    pub fn residents(&self) -> usize {
+        lock(&self.residents).len()
     }
 
     /// What runs the programs a script of `identity` calls `run_program`
@@ -659,7 +818,7 @@ impl ExtensionRunner {
         };
         let declared = match asked.asking {
             Asking::Action => "action",
-            Asking::Source | Asking::Refresh => "source",
+            Asking::Source | Asking::Refresh | Asking::Resident(_) => "source",
         };
         let context = serde_json::json!({
             "checkout": asked.checkout.display().to_string(),
@@ -741,6 +900,27 @@ fn read_bounded(path: &Path) -> std::io::Result<Vec<u8>> {
         .take(uze_contract::IMAGE_FILE_MAX as u64 + 1)
         .read_to_end(&mut bytes)?;
     Ok(bytes)
+}
+
+/// A resident call's answer, as the engine takes a source's: its store
+/// patch applied, its trace kept, and a failure naming the script.
+fn resident_answer(running: &Running, answered: uze_script::Answered) -> Answer {
+    let trace = answered
+        .trace
+        .lines
+        .iter()
+        .map(|line| line.text.clone())
+        .collect();
+    match answered.outcome {
+        Ok(envelope) => Answer::Answered {
+            envelope: (running.keep)(envelope),
+            trace,
+        },
+        Err(error) => Answer::Failed {
+            reason: format!("{}: {error}", running.file),
+            trace,
+        },
+    }
 }
 
 fn failed(reason: impl Into<String>) -> Answer {
@@ -1057,6 +1237,97 @@ pub(super) mod tests {
     /// The bytes a script runs from are the load the consent was judged
     /// over: a save under the same grants is recorded as that load's
     /// digest, and the saved script is the one that answers.
+    /// The band given a resident source answered by `script`.
+    fn with_resident(world: &World, script: &str) {
+        let manifest = world.band.join("extension.kdl");
+        let text = fs::read_to_string(&manifest).unwrap().replace(
+            "wants \"read:checkout\"",
+            "wants \"read:checkout\" \"resident\"\n\nsource \"game\" {\n    resident \"game.rhai\"\n}",
+        );
+        fs::write(&manifest, text).unwrap();
+        fs::write(world.band.join("game.rhai"), script).unwrap();
+    }
+
+    fn resident(world: &World, call: ResidentCall, input: serde_json::Value) -> Question {
+        Question {
+            asking: Asking::Resident(call),
+            input,
+            ..world.question("game")
+        }
+    }
+
+    #[test]
+    fn a_resident_source_keeps_its_session_until_it_is_stopped() {
+        let world = World::new("runner-resident");
+        with_resident(
+            &world,
+            "fn start(context) { this.keys = []; this.checkout = context.checkout; true }
+             fn input(input) { this.keys.push(input.key); true }
+             fn render(size) { #{ type: \"text\", args: [`${this.keys.len()} ${size.width}`] } }",
+        );
+        let runner = ExtensionRunner::new();
+        let start = resident(&world, ResidentCall::Start, serde_json::json!({}));
+        assert!(
+            withheld(world.ask(&runner, &start)).contains("consent"),
+            "nothing starts before consent"
+        );
+        world.enabled();
+        assert_eq!(data(world.ask(&runner, &start)), serde_json::json!(true));
+        assert_eq!(runner.residents(), 1);
+        for key in ["up", "left"] {
+            let input = resident(
+                &world,
+                ResidentCall::Input,
+                serde_json::json!({ "key": key }),
+            );
+            assert_eq!(data(world.ask(&runner, &input)), serde_json::json!(true));
+        }
+        let render = resident(
+            &world,
+            ResidentCall::Render,
+            serde_json::json!({ "width": 30, "height": 8 }),
+        );
+        assert_eq!(
+            data(world.ask(&runner, &render)),
+            serde_json::json!({ "type": "text", "args": ["2 30"] })
+        );
+        let stop = resident(&world, ResidentCall::Stop, serde_json::json!({}));
+        assert!(matches!(world.ask(&runner, &stop), Answer::Answered { .. }));
+        assert_eq!(runner.residents(), 0);
+        assert!(matches!(
+            world.ask(&runner, &render),
+            Answer::Failed { reason, .. } if reason.contains("not running")
+        ));
+    }
+
+    #[test]
+    fn a_resident_source_past_its_bound_is_stopped_naming_it() {
+        let world = World::new("runner-resident-bound");
+        with_resident(&world, "fn render(size) { loop {} }");
+        world.enabled();
+        let runner = ExtensionRunner::new();
+        let start = resident(&world, ResidentCall::Start, serde_json::json!({}));
+        assert_eq!(data(world.ask(&runner, &start)), serde_json::json!(true));
+        let render = resident(&world, ResidentCall::Render, serde_json::json!({}));
+        let Answer::Failed { reason, .. } = world.ask(&runner, &render) else {
+            panic!("a runaway render fails");
+        };
+        assert!(
+            reason.starts_with("game.rhai: the script crossed its"),
+            "{reason}"
+        );
+        assert!(reason.contains("bound"), "{reason}");
+        assert_eq!(runner.residents(), 0, "a breach stops the session");
+        let source = Question {
+            asking: Asking::Source,
+            ..world.question("game")
+        };
+        assert!(
+            matches!(world.ask(&runner, &source), Answer::Failed { .. }),
+            "a resident source is never answered per question"
+        );
+    }
+
     #[test]
     fn what_runs_is_the_load_whose_digest_was_accepted() {
         let world = World::new("runner-digest");
