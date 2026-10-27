@@ -1050,16 +1050,10 @@ fn withheld_because(state: &ExtensionState) -> String {
     match state {
         ExtensionState::NeedsConsent { .. } => "needs consent".to_owned(),
         ExtensionState::NeedsEnabling => "needs enabling in this project".to_owned(),
-        ExtensionState::Held { new_grants } => {
-            let grants: Vec<String> = new_grants
-                .iter()
-                .map(|grant| grant.name().into_owned())
-                .collect();
-            format!(
-                "held: its update wants {}, which nobody accepted",
-                grants.join(", ")
-            )
-        }
+        held @ ExtensionState::Held { .. } => format!(
+            "held: its update wants {}, which nobody accepted",
+            held.wanted_anew().join(", ")
+        ),
         ExtensionState::FixturesOnly | ExtensionState::Enabled => "runs nothing".to_owned(),
     }
 }

@@ -50,6 +50,11 @@ pub struct Consent {
     /// Filled with `exec_paths`; `false` asks again on every update.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enforced_at_accept: Option<bool>,
+    /// The paths each `exec:` program was accepted to read, by name. Absent
+    /// in a record written before they were kept, which accepted none, so
+    /// the next update that declares any asks once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accepted_reads: Option<BTreeMap<String, BTreeSet<String>>>,
 }
 
 impl Consent {
@@ -71,6 +76,26 @@ pub struct Pinned {
     pub enforced: bool,
 }
 
+/// What an extension's current files want, as the record compares it: its
+/// grants as a manifest spells them, and the paths each `exec:` program
+/// declares it reads.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Wants {
+    pub grants: BTreeSet<String>,
+    /// Only programs that declare a read are named.
+    pub reads: BTreeMap<String, BTreeSet<String>>,
+}
+
+impl Wants {
+    /// Wants these grants and nothing else.
+    pub fn grants(grants: BTreeSet<String>) -> Self {
+        Self {
+            grants,
+            ..Self::default()
+        }
+    }
+}
+
 /// The key an extension's consent is recorded under.
 pub fn identity_key(plugin: &str, marketplace: &str, id: &str) -> String {
     format!("{plugin}@{marketplace}/{id}")
@@ -86,24 +111,40 @@ pub enum Judgement {
     /// The files changed and want no grant beyond what was accepted: the
     /// update applies, and the record owes it the new digest.
     Updated,
-    /// The files want grants nobody accepted; nothing of it runs until
-    /// someone does.
-    Held { new_grants: BTreeSet<String> },
+    /// The files want grants, or reads of a program, nobody accepted;
+    /// nothing of it runs until someone does.
+    Held {
+        new_grants: BTreeSet<String>,
+        /// The paths each program would read beyond what was accepted.
+        new_reads: BTreeMap<String, BTreeSet<String>>,
+    },
 }
 
-/// Judges an extension wanting `grants` with files digesting to `digest`
-/// against what `consent` accepted. Compared by grant set: a wider set
-/// holds it, the same set or a narrower one applies.
-pub fn judge(consent: Option<&Consent>, grants: &BTreeSet<String>, digest: &str) -> Judgement {
+/// Judges an extension wanting `wants` with files digesting to `digest`
+/// against what `consent` accepted. Compared by grant set and by each
+/// program's reads: a wider one holds it, the same or a narrower one
+/// applies.
+pub fn judge(consent: Option<&Consent>, wants: &Wants, digest: &str) -> Judgement {
     let Some(consent) = consent else {
         return Judgement::Unconsented;
     };
-    let new_grants: BTreeSet<String> = grants
+    let new_grants: BTreeSet<String> = wants
+        .grants
         .difference(&consent.accepted_grants)
         .cloned()
         .collect();
-    if !new_grants.is_empty() {
-        Judgement::Held { new_grants }
+    // The same files read what they read when they were accepted, so only
+    // new files are compared: a record that kept no reads asks once.
+    let new_reads = if consent.accepted_digest == digest {
+        BTreeMap::new()
+    } else {
+        reads_beyond(consent.accepted_reads.as_ref(), &wants.reads)
+    };
+    if !new_grants.is_empty() || !new_reads.is_empty() {
+        Judgement::Held {
+            new_grants,
+            new_reads,
+        }
     } else if consent.accepted_digest == digest {
         Judgement::Current
     } else if consent.accepted_unconfined() {
@@ -113,6 +154,25 @@ pub fn judge(consent: Option<&Consent>, grants: &BTreeSet<String>, digest: &str)
     } else {
         Judgement::Updated
     }
+}
+
+/// Each program's reads in `wanted` that `accepted` does not name.
+fn reads_beyond(
+    accepted: Option<&BTreeMap<String, BTreeSet<String>>>,
+    wanted: &BTreeMap<String, BTreeSet<String>>,
+) -> BTreeMap<String, BTreeSet<String>> {
+    wanted
+        .iter()
+        .filter_map(|(program, reads)| {
+            let known = accepted.and_then(|accepted| accepted.get(program));
+            let new: BTreeSet<String> = reads
+                .iter()
+                .filter(|read| !known.is_some_and(|known| known.contains(*read)))
+                .cloned()
+                .collect();
+            (!new.is_empty()).then(|| (program.clone(), new))
+        })
+        .collect()
 }
 
 /// Every consent on this machine, by identity key. Fails closed: a record
@@ -129,20 +189,21 @@ pub fn consent(home: &UzeHome, key: &str) -> Option<Consent> {
     consents(home).remove(key)
 }
 
-/// Records that the operator accepted `grants` for the files digesting to
+/// Records that the operator accepted `wants` for the files digesting to
 /// `digest`, at `now`. The projects it was enabled in stay enabled: they
 /// are the operator's earlier answer, about the same extension.
 pub fn accept(
     home: &UzeHome,
     key: &str,
-    grants: &BTreeSet<String>,
+    wants: &Wants,
     digest: &str,
     now: u64,
     pinned: Option<Pinned>,
 ) -> Result<Consent> {
     rewrite(home, |extensions| {
         let consent = extensions.entry(key.to_owned()).or_default();
-        consent.accepted_grants = grants.clone();
+        consent.accepted_grants = wants.grants.clone();
+        consent.accepted_reads = Some(wants.reads.clone());
         consent.accepted_digest = digest.to_owned();
         consent.accepted_at = now;
         consent.updated_at = None;
@@ -169,15 +230,16 @@ pub fn repin(
     })
 }
 
-/// Applies an update that wants no new grant: the record takes the new
-/// digest, the date and the grants as they are now, so a grant the update
-/// dropped is asked for again if it comes back. `None` when the record does
-/// not judge it [`Judgement::Updated`] any more (another process applied
-/// it, or it widened in between): judged again under the lock.
+/// Applies an update that wants no new grant and no new read: the record
+/// takes the new digest, the date, the grants and the reads as they are
+/// now, so one the update dropped is asked for again if it comes back.
+/// `None` when the record does not judge it [`Judgement::Updated`] any
+/// more (another process applied it, or it widened in between): judged
+/// again under the lock.
 pub fn apply_update(
     home: &UzeHome,
     key: &str,
-    grants: &BTreeSet<String>,
+    wants: &Wants,
     digest: &str,
     now: u64,
 ) -> Result<Option<Consent>> {
@@ -185,10 +247,11 @@ pub fn apply_update(
         let Some(consent) = extensions.get_mut(key) else {
             return Ok(None);
         };
-        if judge(Some(consent), grants, digest) != Judgement::Updated {
+        if judge(Some(consent), wants, digest) != Judgement::Updated {
             return Ok(None);
         }
-        consent.accepted_grants = grants.clone();
+        consent.accepted_grants = wants.grants.clone();
+        consent.accepted_reads = Some(wants.reads.clone());
         consent.accepted_digest = digest.to_owned();
         consent.accepted_at = now;
         consent.updated_at = Some(now);
@@ -366,8 +429,12 @@ mod tests {
         (UzeHome::at(root.join("uze")), project)
     }
 
-    fn grants(names: &[&str]) -> BTreeSet<String> {
+    fn names(names: &[&str]) -> BTreeSet<String> {
         names.iter().map(|name| (*name).to_owned()).collect()
+    }
+
+    fn grants(grants: &[&str]) -> Wants {
+        Wants::grants(names(grants))
     }
 
     const BAND: &str = "gsd@acme/gsd-band";
@@ -453,7 +520,7 @@ mod tests {
         assert!(!enable(&home, BAND, &project).unwrap(), "already enabled");
 
         let recorded = consent(&home, BAND).unwrap();
-        assert_eq!(recorded.accepted_grants, grants(&["read:checkout"]));
+        assert_eq!(recorded.accepted_grants, names(&["read:checkout"]));
         assert_eq!(recorded.accepted_digest, "sha256:a");
         assert!(recorded.enabled_in(&project));
         assert_eq!(recorded.exec_paths, None);
@@ -509,7 +576,7 @@ mod tests {
     #[test]
     fn an_update_is_judged_by_its_grant_set() {
         let accepted = Consent {
-            accepted_grants: grants(&["read:checkout", "clipboard"]),
+            accepted_grants: names(&["read:checkout", "clipboard"]),
             accepted_digest: "sha256:a".to_owned(),
             ..Consent::default()
         };
@@ -534,7 +601,8 @@ mod tests {
                 "sha256:b"
             ),
             Judgement::Held {
-                new_grants: grants(&["open-path"])
+                new_grants: names(&["open-path"]),
+                new_reads: BTreeMap::new(),
             },
             "a widening is held, naming only what is new"
         );
@@ -559,7 +627,7 @@ mod tests {
             .expect("a narrowing applies");
         assert_eq!(applied.accepted_digest, "sha256:b");
         assert_eq!(applied.accepted_at, 9);
-        assert_eq!(applied.accepted_grants, grants(&["read:checkout"]));
+        assert_eq!(applied.accepted_grants, names(&["read:checkout"]));
         assert!(applied.enabled_in(&project));
 
         assert_eq!(
@@ -575,6 +643,92 @@ mod tests {
             "the dropped grant coming back is a widening, never applied silently"
         );
         assert_eq!(consent(&home, BAND).unwrap().accepted_digest, "sha256:b");
+    }
+
+    fn reading(program: &str, paths: &[&str]) -> Wants {
+        Wants {
+            grants: names(&[&format!("exec:{program}")]),
+            reads: BTreeMap::from([(program.to_owned(), names(paths))]),
+        }
+    }
+
+    #[test]
+    fn an_update_that_widens_a_programs_reads_is_held_and_one_that_narrows_applies() {
+        let (home, _) = home("consent-reads");
+        let accepted = accept(
+            &home,
+            BAND,
+            &reading("sh", &["/etc/gsd", "/var/gsd"]),
+            "sha256:a",
+            1,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            judge(
+                Some(&accepted),
+                &reading("sh", &["/etc/gsd", "/home/op/.ssh"]),
+                "sha256:b"
+            ),
+            Judgement::Held {
+                new_grants: BTreeSet::new(),
+                new_reads: BTreeMap::from([("sh".to_owned(), names(&["/home/op/.ssh"]))]),
+            },
+            "a widened read holds the update, naming only what is new"
+        );
+        assert_eq!(
+            apply_update(
+                &home,
+                BAND,
+                &reading("sh", &["/home/op/.ssh"]),
+                "sha256:b",
+                2
+            )
+            .unwrap(),
+            None
+        );
+        let narrowed = apply_update(&home, BAND, &reading("sh", &["/etc/gsd"]), "sha256:c", 3)
+            .unwrap()
+            .expect("a narrowing applies");
+        assert_eq!(
+            narrowed.accepted_reads,
+            Some(BTreeMap::from([("sh".to_owned(), names(&["/etc/gsd"]))]))
+        );
+        assert!(
+            matches!(
+                judge(
+                    Some(&narrowed),
+                    &reading("sh", &["/etc/gsd", "/var/gsd"]),
+                    "sha256:d"
+                ),
+                Judgement::Held { .. }
+            ),
+            "a read the update dropped is asked for again when it comes back"
+        );
+    }
+
+    #[test]
+    fn a_record_that_kept_no_reads_asks_once_at_the_next_update() {
+        let before = Consent {
+            accepted_grants: names(&["exec:sh"]),
+            accepted_digest: "sha256:a".to_owned(),
+            ..Consent::default()
+        };
+        let wants = reading("sh", &["/etc/gsd"]);
+        assert_eq!(
+            judge(Some(&before), &wants, "sha256:a"),
+            Judgement::Current,
+            "the files it was accepted for still run"
+        );
+        assert!(matches!(
+            judge(Some(&before), &wants, "sha256:b"),
+            Judgement::Held { .. }
+        ));
+        assert_eq!(
+            judge(Some(&before), &grants(&["exec:sh"]), "sha256:b"),
+            Judgement::Updated,
+            "an update that reads nothing asks nothing"
+        );
     }
 
     #[test]

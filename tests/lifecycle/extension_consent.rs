@@ -199,7 +199,8 @@ fn an_update_is_held_by_a_new_grant_and_applied_under_the_same_or_fewer() {
     assert_eq!(
         state(&app, &band, &here),
         ExtensionState::Held {
-            new_grants: [Grant::Clipboard].into()
+            new_grants: [Grant::Clipboard].into(),
+            widened: Vec::new(),
         },
         "a widening holds it, naming what is new"
     );
@@ -224,6 +225,54 @@ fn an_update_is_held_by_a_new_grant_and_applied_under_the_same_or_fewer() {
     assert!(
         matches!(state(&app, &band, &here), ExtensionState::Held { .. }),
         "a grant the narrowing dropped is asked for again"
+    );
+}
+
+/// Sets the band's `exec "sh"` to read `reads`, wanting `exec:sh`.
+fn sh_reads(band: &Path, reads: &str) {
+    wants(band, "\"read:checkout\" \"exec:sh\"");
+    let manifest = band.join("extension.kdl");
+    let text = fs::read_to_string(&manifest).unwrap();
+    let text = text.split("exec \"sh\"").next().unwrap_or_default();
+    fs::write(
+        manifest,
+        format!("{text}exec \"sh\" {{\n    reads {reads}\n}}\n"),
+    )
+    .unwrap();
+}
+
+#[test]
+fn an_update_that_widens_what_a_program_reads_is_held() {
+    let env = TestEnvironment::isolated();
+    let (app, band_dir) = installed_from_a_linked_marketplace(&env);
+    let band = the(&app, "gsd-band").identity;
+    let here = project(&env, "a");
+    sh_reads(&band_dir, "\"/etc/gsd\"");
+    app.extensions().consent(&band, Asker::Operator).unwrap();
+    app.extensions()
+        .enable(&band, &here, Asker::Operator)
+        .unwrap();
+
+    sh_reads(&band_dir, "\"/etc/gsd\" \"/home/op/.ssh\"");
+    assert_eq!(
+        state(&app, &band, &here),
+        ExtensionState::Held {
+            new_grants: Default::default(),
+            widened: vec!["exec:sh reads /home/op/.ssh".to_owned()],
+        },
+        "a read nobody accepted holds the update under the same grants"
+    );
+
+    sh_reads(&band_dir, "\"/etc/gsd\"");
+    fs::write(
+        band_dir.join("state.rhai"),
+        "fn answer(input, context) { #{} }\n",
+    )
+    .unwrap();
+    assert_eq!(
+        state(&app, &band, &here),
+        ExtensionState::Enabled,
+        "the same reads or fewer apply"
     );
 }
 

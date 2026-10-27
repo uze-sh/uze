@@ -66,7 +66,8 @@ pub struct ExtensionReport {
     /// What it wants, as a manifest spells each grant.
     pub grants: Vec<String>,
     pub condition: ExtensionCondition,
-    /// What a held update wants beyond what was accepted.
+    /// What a held update wants beyond what was accepted: its grants, then
+    /// the rest of its reach (`exec:sh reads /etc/gsd`).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub new_grants: Vec<String>,
     /// The projects it is enabled in, by canonical root.
@@ -360,11 +361,8 @@ impl Extensions<'_> {
                 report.condition = match self.judged(&load, judged_in) {
                     Ok(ExtensionState::FixturesOnly) => ExtensionCondition::FixturesOnly,
                     Ok(ExtensionState::NeedsConsent { .. }) => ExtensionCondition::NeedsConsent,
-                    Ok(ExtensionState::Held { new_grants }) => {
-                        report.new_grants = new_grants
-                            .iter()
-                            .map(|grant| grant.name().into_owned())
-                            .collect();
+                    Ok(held @ ExtensionState::Held { .. }) => {
+                        report.new_grants = held.wanted_anew();
                         ExtensionCondition::Held
                     }
                     Ok(ExtensionState::NeedsEnabling | ExtensionState::Enabled)

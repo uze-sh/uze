@@ -14,7 +14,7 @@ use uze_contract::{Does, Grant, Identity, Manifest, SourceKind};
 use uze_core::capability::extension::program::is_general_runner;
 use uze_core::machine::extension_program::{self, Unresolved};
 use uze_core::{Result, UzeError};
-use uze_workspace::extensions::consent::{self, Judgement, Pinned};
+use uze_workspace::extensions::consent::{self, Judgement, Pinned, Wants};
 
 pub use uze_workspace::extensions::consent::Consent as ExtensionConsent;
 
@@ -44,9 +44,32 @@ pub enum ExtensionState {
     NeedsEnabling,
     /// Consented to and switched on here: its scripts may answer.
     Enabled,
-    /// An update wants grants nobody accepted; nothing of it runs until
-    /// someone does.
-    Held { new_grants: BTreeSet<Grant> },
+    /// An update wants grants, or reach of a program, nobody accepted;
+    /// nothing of it runs until someone does.
+    Held {
+        new_grants: BTreeSet<Grant>,
+        /// What else it wants anew, one reach a line: `exec:sh reads
+        /// /etc/gsd`.
+        widened: Vec<String>,
+    },
+}
+
+impl ExtensionState {
+    /// What a held update wants anew, each as a report spells it: its
+    /// grants, then the rest of its reach. Empty for any other state.
+    pub fn wanted_anew(&self) -> Vec<String> {
+        match self {
+            Self::Held {
+                new_grants,
+                widened,
+            } => new_grants
+                .iter()
+                .map(|grant| grant.name().into_owned())
+                .chain(widened.iter().cloned())
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
 }
 
 impl ExtensionState {
@@ -220,6 +243,35 @@ fn wanted(manifest: &Manifest) -> BTreeSet<Grant> {
     manifest.wants.iter().cloned().collect()
 }
 
+/// What the consent record compares for `manifest`: its grants and what
+/// each of its programs declares it reads.
+fn wants_of(manifest: &Manifest) -> Wants {
+    Wants {
+        grants: spelled(&wanted(manifest)),
+        reads: manifest
+            .programs()
+            .filter(|name| !manifest.reads_of(name).is_empty())
+            .map(|name| {
+                (
+                    name.to_owned(),
+                    manifest.reads_of(name).iter().cloned().collect(),
+                )
+            })
+            .collect(),
+    }
+}
+
+/// Each program's new reads, as a held update says them.
+fn widened_reads(new_reads: &BTreeMap<String, BTreeSet<String>>) -> Vec<String> {
+    new_reads
+        .iter()
+        .map(|(program, reads)| {
+            let reads: Vec<&str> = reads.iter().map(String::as_str).collect();
+            format!("{}{program} reads {}", Grant::EXEC, reads.join(", "))
+        })
+        .collect()
+}
+
 fn spelled(grants: &BTreeSet<Grant>) -> BTreeSet<String> {
     grants
         .iter()
@@ -307,7 +359,7 @@ impl Extensions<'_> {
         let recorded = consent::accept(
             &self.0.home,
             &consent_key(identity),
-            &spelled(&grants),
+            &wants_of(manifest),
             &load.digest,
             now(),
             pinned,
@@ -426,9 +478,9 @@ impl Extensions<'_> {
                 "{identity} has not been consented to on this machine; consent comes before \
                  enabling"
             ))),
-            ExtensionState::Held { new_grants } => Err(refusal(format!(
+            held @ ExtensionState::Held { .. } => Err(refusal(format!(
                 "{identity} is held: its update wants {}, which nobody accepted",
-                grant_list(&new_grants)
+                quoted_list(&held.wanted_anew())
             ))),
             ExtensionState::NeedsEnabling | ExtensionState::Enabled => {
                 let changed = consent::enable(&self.0.home, &consent_key(identity), project)?;
@@ -504,20 +556,24 @@ impl Extensions<'_> {
         if confinement_lost {
             return Ok(ExtensionState::NeedsConsent { grants });
         }
-        let enabled_here = match consent::judge(recorded.as_ref(), &spelled(&grants), &load.digest)
-        {
+        let wants = wants_of(manifest);
+        let enabled_here = match consent::judge(recorded.as_ref(), &wants, &load.digest) {
             Judgement::Unconsented => return Ok(ExtensionState::NeedsConsent { grants }),
-            Judgement::Held { new_grants } => {
+            Judgement::Held {
+                new_grants,
+                new_reads,
+            } => {
                 return Ok(ExtensionState::Held {
                     new_grants: new_grants
                         .iter()
                         .filter_map(|name| Grant::parse(name))
                         .collect(),
+                    widened: widened_reads(&new_reads),
                 });
             }
             Judgement::Current => recorded.is_some_and(|consent| consent.enabled_in(project)),
             Judgement::Updated => {
-                consent::apply_update(&self.0.home, &key, &spelled(&grants), &load.digest, now())?
+                consent::apply_update(&self.0.home, &key, &wants, &load.digest, now())?
                     .or(recorded)
                     .is_some_and(|consent| consent.enabled_in(project))
             }
@@ -530,10 +586,10 @@ impl Extensions<'_> {
     }
 }
 
-fn grant_list(grants: &BTreeSet<Grant>) -> String {
-    grants
+fn quoted_list(wanted: &[String]) -> String {
+    wanted
         .iter()
-        .map(|grant| format!("`{grant}`"))
+        .map(|wanted| format!("`{wanted}`"))
         .collect::<Vec<_>>()
         .join(", ")
 }

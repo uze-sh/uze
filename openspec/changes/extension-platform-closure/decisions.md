@@ -507,3 +507,13 @@
 - decided:  The body line of curl's configuration is `data-raw`, which curl never reads as a file name; the test pins that a body of `@/etc/passwd` is written literally.
 - rejected: Refusing bodies that begin with `@`: a legitimate body may, and `data-raw` removes the meaning rather than one spelling of it.
 - blast:    `uze-application::extensions::fetch`.
+
+## D161 — The paths a program reads are accepted at consent, and an update that widens them is held
+
+- status:   pending
+- task:     review finding 2
+- commit:
+- trigger:  `exec "<name>" { reads … }` was read from the current manifest on every run, never recorded at consent and never compared by `consent::judge`, so an update that widened what a program reads applied without asking.
+- decided:  The consent record keeps `accepted_reads` (program name to paths), filled by `accept` and `apply_update`. `judge` compares them as it compares grants: a read nobody accepted holds the update (`Judgement::Held { new_reads }`), the same or fewer apply and narrow the record, so a dropped read coming back asks again. Reads are compared only when the digest changed, so a record written before they were kept (absent field = none accepted) still runs the files it was accepted for and asks once at the next update that declares any. The field is additive with `serde(default)`: the record keeps shape 1, as `exec_paths` did; an older build that rewrites the record drops the field, which only makes the next update ask again (fails closed). A held update says each widened read as `exec:<name> reads <paths>` among what it wants anew (`ExtensionState::Held { widened }`, `wanted_anew`), so the CLI, the screen and the report need no new field.
+- rejected: Filtering a run's reads by the record at run time: every machine consented before this change would lose its programs' reads until it answered again, for files the operator already accepted. A shape 2 with a migration: an absent field already means what the ladder would have written.
+- blast:    `uze-workspace::extensions::consent`, `uze-application::extensions::{consent,report,runner}`, `tests/lifecycle/extension_consent.rs`.
