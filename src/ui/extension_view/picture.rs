@@ -59,7 +59,12 @@ pub(super) fn render_fitted(
             true => Placement::fit_crisp(picture, body, cell),
             false => Placement::fit(picture, body, cell),
         })
-        .map(|placement| placement.on(screen));
+        .map(|placement| placement.on(screen))
+        // A Sixel image leaves the cursor on the row under it, so one that
+        // ends on the screen's last row scrolls the whole screen up a row
+        // every time it is sent, as a sprite is on each frame of it: that
+        // row keeps its half blocks.
+        .filter(|placement| placement.cells.bottom() < screen.bottom());
     // Under pixels, the half blocks fill exactly the cells the pixels are
     // sent over: they are the mark that says nothing covered them, and a
     // fit at two pixels a cell can come out a column short of a fit at the
@@ -175,6 +180,41 @@ mod tests {
                 placement.cells
             );
         }
+    }
+
+    #[test]
+    fn a_picture_on_the_screens_last_row_stays_in_half_blocks() {
+        let backend = ratatui::backend::TestBackend::new(40, 10);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let (mut at_the_bottom, mut above_it) = (None, None);
+        terminal
+            .draw(|frame| {
+                at_the_bottom = render_fitted(
+                    frame,
+                    Rect::new(0, 8, 4, 2),
+                    &picture(16, 16),
+                    Some((10, 20)),
+                    true,
+                );
+                above_it = render_fitted(
+                    frame,
+                    Rect::new(10, 6, 4, 2),
+                    &picture(16, 16),
+                    Some((10, 20)),
+                    true,
+                );
+            })
+            .unwrap();
+        assert!(at_the_bottom.is_none(), "{at_the_bottom:?}");
+        let buffer = terminal.backend().buffer();
+        assert!(
+            (0..4).any(|x| buffer[(x, 9)].symbol() == graphics::HALF_BLOCK),
+            "drawn in half blocks"
+        );
+        assert!(
+            above_it.is_some(),
+            "a row above the last is drawn in pixels"
+        );
     }
 
     #[test]
