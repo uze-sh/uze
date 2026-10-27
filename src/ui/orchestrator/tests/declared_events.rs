@@ -134,27 +134,46 @@ fn save(file: &Path, seconds: u64) {
         .unwrap();
 }
 
+/// Hands out the jobs due at `now` and takes each one's answer back, as the
+/// workspace does: a source with a question out is not asked again.
+fn asked(
+    model: &mut WorkspaceModel,
+    home: &UzeHome,
+    sender: &std::sync::mpsc::Sender<super::super::EngineAnswer>,
+    answers: &std::sync::mpsc::Receiver<super::super::EngineAnswer>,
+    now: Instant,
+) -> usize {
+    let handed = model.schedule_engine_jobs_at(home, sender, now);
+    for _ in 0..handed {
+        let answer = answers
+            .recv_timeout(Duration::from_secs(10))
+            .expect("every job handed out answers");
+        model.absorb_engine_answer(answer);
+    }
+    handed
+}
+
 #[test]
 fn every_asks_only_while_a_surface_showing_the_source_is_in_view() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-every-home"));
     let root = PathBuf::from("/repo");
     let mut model = hosting(&root, compiled(Some(Duration::from_secs(10)), Vec::new()));
     fold_the_section(&mut model, true);
-    let (sender, _answers) = std::sync::mpsc::channel();
+    let (sender, answers) = std::sync::mpsc::channel();
     let start = Instant::now();
-    assert_eq!(model.schedule_engine_jobs_at(&home, &sender, start), 1);
+    assert_eq!(asked(&mut model, &home, &sender, &answers, start), 1);
     let later = start + Duration::from_secs(30);
     assert_eq!(
-        model.schedule_engine_jobs_at(&home, &sender, later),
+        asked(&mut model, &home, &sender, &answers, later),
         0,
         "folded, nothing showing it is in view"
     );
     fold_the_section(&mut model, false);
-    assert_eq!(model.schedule_engine_jobs_at(&home, &sender, later), 1);
+    assert_eq!(asked(&mut model, &home, &sender, &answers, later), 1);
     let soon = later + Duration::from_secs(5);
-    assert_eq!(model.schedule_engine_jobs_at(&home, &sender, soon), 0);
+    assert_eq!(asked(&mut model, &home, &sender, &answers, soon), 0);
     let due = later + Duration::from_secs(10);
-    assert_eq!(model.schedule_engine_jobs_at(&home, &sender, due), 1);
+    assert_eq!(asked(&mut model, &home, &sender, &answers, due), 1);
 }
 
 #[test]
@@ -167,16 +186,16 @@ fn a_burst_of_saves_under_a_declared_path_asks_the_source_once() {
         paths: vec![".planning".to_owned()],
     };
     let mut model = hosting(&root, compiled(None, vec![planning]));
-    let (sender, _answers) = std::sync::mpsc::channel();
+    let (sender, answers) = std::sync::mpsc::channel();
     let start = Instant::now();
-    assert_eq!(model.schedule_engine_jobs_at(&home, &sender, start), 1);
+    assert_eq!(asked(&mut model, &home, &sender, &answers, start), 1);
 
     let watch = model.extension_watch();
     assert_eq!(watch.paths, [(root.clone(), ".planning".to_owned())]);
     model.absorb_extension_watch(read(&watch));
     let read_once = start + Duration::from_secs(1);
     assert_eq!(
-        model.schedule_engine_jobs_at(&home, &sender, read_once),
+        asked(&mut model, &home, &sender, &answers, read_once),
         0,
         "a first read only sets what the next is compared with"
     );
@@ -184,20 +203,20 @@ fn a_burst_of_saves_under_a_declared_path_asks_the_source_once() {
     save(&root.join(".planning/PLAN.md"), 2);
     model.absorb_extension_watch(read(&watch));
     let saved = start + Duration::from_secs(2);
-    assert_eq!(model.schedule_engine_jobs_at(&home, &sender, saved), 0);
+    assert_eq!(asked(&mut model, &home, &sender, &answers, saved), 0);
     save(&root.join(".planning/STATE.md"), 3);
     model.absorb_extension_watch(read(&watch));
     let burst = saved + Duration::from_millis(100);
-    assert_eq!(model.schedule_engine_jobs_at(&home, &sender, burst), 0);
+    assert_eq!(asked(&mut model, &home, &sender, &answers, burst), 0);
     let closed = saved + COALESCE;
     assert_eq!(
-        model.schedule_engine_jobs_at(&home, &sender, closed),
+        asked(&mut model, &home, &sender, &answers, closed),
         1,
         "the burst asks once its window closes"
     );
     model.absorb_extension_watch(read(&watch));
     let quiet = closed + Duration::from_secs(1);
-    assert_eq!(model.schedule_engine_jobs_at(&home, &sender, quiet), 0);
+    assert_eq!(asked(&mut model, &home, &sender, &answers, quiet), 0);
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -206,9 +225,9 @@ fn a_checkout_whose_stamp_moved_asks_a_source_declaring_it() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-checkout-home"));
     let root = PathBuf::from("/repo");
     let mut model = hosting(&root, compiled(None, vec![EventName::CheckoutChanged]));
-    let (sender, _answers) = std::sync::mpsc::channel();
+    let (sender, answers) = std::sync::mpsc::channel();
     let start = Instant::now();
-    assert_eq!(model.schedule_engine_jobs_at(&home, &sender, start), 1);
+    assert_eq!(asked(&mut model, &home, &sender, &answers, start), 1);
     assert_eq!(
         model.extension_watch().checkouts,
         std::slice::from_ref(&root)
@@ -221,14 +240,14 @@ fn a_checkout_whose_stamp_moved_asks_a_source_declaring_it() {
     model.absorb_extension_watch(stamped(1));
     model.absorb_extension_watch(stamped(1));
     assert_eq!(
-        model.schedule_engine_jobs_at(&home, &sender, start + COALESCE),
+        asked(&mut model, &home, &sender, &answers, start + COALESCE),
         0
     );
     model.absorb_extension_watch(stamped(2));
     let moved = start + Duration::from_secs(1);
-    model.schedule_engine_jobs_at(&home, &sender, moved);
+    asked(&mut model, &home, &sender, &answers, moved);
     assert_eq!(
-        model.schedule_engine_jobs_at(&home, &sender, moved + COALESCE),
+        asked(&mut model, &home, &sender, &answers, moved + COALESCE),
         1
     );
 }
@@ -294,9 +313,9 @@ fn an_agents_report_asks_the_source_of_an_extension_observing_agents() {
     let mut observing = compiled(None, vec![finished.clone()]);
     observing.manifest.wants = vec![uze_contract::Grant::AgentObserve];
     let mut model = hosting(&root, observing);
-    let (sender, _answers) = std::sync::mpsc::channel();
+    let (sender, answers) = std::sync::mpsc::channel();
     let start = Instant::now();
-    assert_eq!(model.schedule_engine_jobs_at(&home, &sender, start), 1);
+    assert_eq!(asked(&mut model, &home, &sender, &answers, start), 1);
 
     let agent = the_agent(&mut model);
     let project = model.projects.get(&root).cloned().expect("its project");
@@ -327,13 +346,13 @@ fn an_agents_report_asks_the_source_of_an_extension_observing_agents() {
         [("a1".to_owned(), Some(40))]
     );
     let read_once = start + Duration::from_secs(1);
-    assert_eq!(model.schedule_engine_jobs_at(&home, &sender, read_once), 0);
+    assert_eq!(asked(&mut model, &home, &sender, &answers, read_once), 0);
 
     model.absorb_extension_watch(read(Some(vec![turn_finished()]), 80));
     let reported = start + Duration::from_secs(2);
-    model.schedule_engine_jobs_at(&home, &sender, reported);
+    asked(&mut model, &home, &sender, &answers, reported);
     assert_eq!(
-        model.schedule_engine_jobs_at(&home, &sender, reported + COALESCE),
+        asked(&mut model, &home, &sender, &answers, reported + COALESCE),
         1,
         "the agent's finished turn asks the source again"
     );
