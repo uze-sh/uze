@@ -56,6 +56,7 @@ pub(super) fn identities_fixture() -> Vec<AgentIdentity> {
         launch: std::path::PathBuf::from("agent"),
         continuity_gap: None,
         configured: true,
+        skill_prefix: Some("/"),
     }]
 }
 
@@ -322,6 +323,7 @@ pub(super) fn identities_in_the_root() -> Vec<AgentIdentity> {
             launch: std::path::PathBuf::from("/uze/shims/claude"),
             continuity_gap: None,
             configured: true,
+            skill_prefix: Some("/"),
         },
         AgentIdentity {
             binary: "codex",
@@ -330,6 +332,7 @@ pub(super) fn identities_in_the_root() -> Vec<AgentIdentity> {
             launch: std::path::PathBuf::from("codex"),
             continuity_gap: None,
             configured: true,
+            skill_prefix: Some("/"),
         },
     ]
 }
@@ -679,6 +682,7 @@ pub(super) fn identities() -> Vec<AgentIdentity> {
             launch: std::path::PathBuf::from("/uze/shims/claude"),
             continuity_gap: None,
             configured: true,
+            skill_prefix: Some("/"),
         },
         AgentIdentity {
             binary: "codex",
@@ -687,6 +691,7 @@ pub(super) fn identities() -> Vec<AgentIdentity> {
             launch: std::path::PathBuf::from("codex"),
             continuity_gap: Some("no launcher".to_owned()),
             configured: true,
+            skill_prefix: Some("/"),
         },
     ]
 }

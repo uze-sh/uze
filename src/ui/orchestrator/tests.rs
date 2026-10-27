@@ -14,6 +14,8 @@ use super::*;
 #[cfg(test)]
 mod activity;
 #[cfg(test)]
+mod agent_writes;
+#[cfg(test)]
 mod agents;
 #[cfg(test)]
 mod approval;
@@ -25,7 +27,6 @@ mod context_menu;
 mod declared;
 #[cfg(test)]
 mod declared_actions;
-#[cfg(test)]
 mod declared_events;
 #[cfg(test)]
 mod delivery;

@@ -194,7 +194,12 @@ impl DeclaredExtension {
                 Some(id)
             }
         };
-        Ok(crate::contract::AgentRequest { what, agent, label })
+        Ok(crate::contract::AgentRequest {
+            what,
+            agent,
+            label,
+            unattended: false,
+        })
     }
 
     /// The question asked before `run`, when `declared` asks one or what

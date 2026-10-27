@@ -23,6 +23,8 @@ pub(in crate::ui::orchestrator) struct BridgedAgent {
     pub(in crate::ui::orchestrator) space: String,
     pub(in crate::ui::orchestrator) checkout: PathBuf,
     pub(in crate::ui::orchestrator) pane: PaneId,
+    /// How its harness's prompt invokes a skill, when it can.
+    pub(in crate::ui::orchestrator) skill_prefix: Option<&'static str>,
 }
 
 /// What the bridge keeps between reads.
@@ -39,10 +41,24 @@ pub(in crate::ui::orchestrator) struct Bridge {
     agents: Vec<BridgedAgent>,
     /// What happened since the engines were last told.
     happened: Vec<AgentHappened>,
+    /// Each agent's turns seen this session, for one write per turn.
+    pub(in crate::ui::orchestrator) turns: BTreeMap<String, u64>,
+    /// The agents that asked for an approval not yet answered.
+    pub(in crate::ui::orchestrator) awaiting_approval: BTreeSet<String>,
+    /// What extensions may still write, and whether the operator paused
+    /// them.
+    pub(in crate::ui::orchestrator) writes: super::agent::Writes,
 }
 
 /// The most of a tool's name an event carries.
 const TOOL_MAX: usize = 64;
+
+impl Bridge {
+    /// The agents as last seen.
+    pub(in crate::ui::orchestrator) fn agents_seen(&self) -> &[BridgedAgent] {
+        &self.agents
+    }
+}
 
 impl WorkspaceModel {
     /// Whether any enabled extension observes the agents.
@@ -104,6 +120,9 @@ impl WorkspaceModel {
             .offsets
             .retain(|id, _| agents.iter().any(|agent| &agent.id == id));
         bridge.agents = agents;
+        for event in &painted {
+            note_turn(bridge, event);
+        }
         bridge.happened.extend(painted);
     }
 
@@ -128,6 +147,9 @@ impl WorkspaceModel {
                 .into_iter()
                 .filter_map(|report| happened_of(agent, report))
                 .collect();
+            for event in &happened {
+                note_turn(bridge, event);
+            }
             bridge.happened.extend(happened);
         }
     }
@@ -178,6 +200,7 @@ impl WorkspaceModel {
             .collect();
         let mut requests = Vec::new();
         for owner in observers {
+            let asking = owner.clone();
             let Some(engine) = self.remembered.declared.engines.get_mut(&owner) else {
                 continue;
             };
@@ -185,15 +208,36 @@ impl WorkspaceModel {
                 engine.agent_events(&happened, now);
             }
             engine.agents(&value);
-            requests.extend(engine.requests());
+            requests.extend(
+                engine
+                    .requests()
+                    .into_iter()
+                    .map(|request| (asking.clone(), request)),
+            );
         }
         if !happened.is_empty() {
             self.dirty = true;
         }
-        for request in requests {
+        for (owner, request) in requests {
             if let Outcome::Agent(request) = request {
-                self.ask_of_agent(request);
+                self.ask_of_agent(owner, request);
             }
+        }
+    }
+}
+
+/// What `event` says of its agent's turn and of an approval it waits on.
+fn note_turn(bridge: &mut Bridge, event: &AgentHappened) {
+    match event.event {
+        AgentEvent::TurnStarted => {
+            *bridge.turns.entry(event.agent.clone()).or_default() += 1;
+            bridge.awaiting_approval.remove(&event.agent);
+        }
+        AgentEvent::ApprovalAsked => {
+            bridge.awaiting_approval.insert(event.agent.clone());
+        }
+        _ => {
+            bridge.awaiting_approval.remove(&event.agent);
         }
     }
 }
@@ -273,6 +317,7 @@ mod tests {
             space: "uze".into(),
             checkout: PathBuf::from("/work/uze"),
             pane: PaneId(1),
+            skill_prefix: Some("/"),
         }
     }
 

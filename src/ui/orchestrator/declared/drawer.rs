@@ -245,7 +245,11 @@ impl WorkspaceModel {
     pub(in crate::ui::orchestrator) fn follow_drawer(&mut self, outcome: Outcome) {
         match outcome {
             Outcome::Stay => {}
-            Outcome::Agent(request) => self.ask_of_agent(request),
+            Outcome::Agent(request) => {
+                if let Some(owner) = self.open_drawer_slot().map(|slot| slot.owner.clone()) {
+                    self.ask_of_agent(owner, request);
+                }
+            }
             Outcome::Close => self.close_drawer(),
             Outcome::Notice(span) => self.dock_notice = Some(span),
             Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),

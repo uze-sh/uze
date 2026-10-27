@@ -161,6 +161,9 @@ impl Attach<'_> {
             _ if self.model.extension_offer.is_some() => {
                 self.extension_offer_press(mouse.column, mouse.row);
             }
+            _ if self.model.agent_write.is_some() => {
+                self.agent_write_press(mouse.column, mouse.row);
+            }
             _ if self.model.proposal.is_some() => {
                 self.proposal_press(mouse.column, mouse.row);
             }
@@ -1385,6 +1388,8 @@ impl Attach<'_> {
             | WorkspaceHit::ApprovalBody
             | WorkspaceHit::ExtensionOfferAnswer(_)
             | WorkspaceHit::ExtensionOfferBody
+            | WorkspaceHit::AgentWriteAnswer(_)
+            | WorkspaceHit::AgentWriteBody
             | WorkspaceHit::ProposalAnswer(_)
             | WorkspaceHit::ProposalBody
             | WorkspaceHit::InterruptAnswer(_)

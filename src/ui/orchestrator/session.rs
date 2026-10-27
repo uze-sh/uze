@@ -319,6 +319,8 @@ impl Attach<'_> {
         self.absorb_command_approvals();
         self.absorb_launchers();
         self.absorb_project_labels();
+        self.type_agent_writes();
+        self.follow_agent_focus();
         self.schedule_surface_reads();
         if self.model.expire_pane_activity(Instant::now()) {
             self.model.dirty = true;

@@ -858,6 +858,9 @@ pub(super) enum WorkspaceHit {
     ExtensionOfferAnswer(bool),
     /// The question itself, which a click does not put away.
     ExtensionOfferBody,
+    /// An answer to an extension's prompt question: true types it.
+    AgentWriteAnswer(bool),
+    AgentWriteBody,
     /// One of the answers to that question: `true` approves.
     ApprovalAnswer(bool),
     /// The question itself, which a click on answers nothing.
@@ -1345,8 +1348,10 @@ fn bridged_agents(model: &WorkspaceModel, identities: &[AgentIdentity]) -> Vec<B
         .flat_map(|session| &session.workspace.spaces)
         .flat_map(|space| space.tabs.iter().map(move |tab| (space, tab)))
         .filter_map(|(space, tab)| {
+            let identity = agent_for_tab(identities, tab)?;
             Some(BridgedAgent {
-                harness: agent_for_tab(identities, tab)?.integration.to_owned(),
+                harness: identity.integration.to_owned(),
+                skill_prefix: identity.skill_prefix,
                 id: launched_agent_id(tab)?.to_owned(),
                 label: tab.label.clone(),
                 space: space.label.clone(),
@@ -1910,6 +1915,11 @@ struct WorkspaceModel {
     /// The open question about enabling an extension in a project (see
     /// `extension_offer`). Seals the client like the approval does.
     extension_offer: Option<ExtensionOfferDialog>,
+    /// A prompt an extension would type into an agent, shown first
+    /// (`agent-bridge`). Seals the client like the offer does.
+    agent_write: Option<AgentWriteDialog>,
+    /// The agent's tab an extension asked to put in front.
+    agent_focus: Option<TabId>,
     /// The open question about interrupting an agent mid-turn to continue
     /// it on another harness (see `interrupt`). Seals the client like the
     /// approval does.
@@ -2389,6 +2399,7 @@ impl WorkspaceModel {
             && self.context_menu.is_none()
             && self.approval.is_none()
             && self.extension_offer.is_none()
+            && self.agent_write.is_none()
             && self.interrupt.is_none()
             && self.proposal.is_none()
             && !self.asks_overview_question()

@@ -271,6 +271,7 @@ fn the_agent(model: &WorkspaceModel) -> super::BridgedAgent {
         space: "repo".to_owned(),
         checkout: PathBuf::from("/repo"),
         pane: tab.pane.id,
+        skill_prefix: Some("/"),
     }
 }
 

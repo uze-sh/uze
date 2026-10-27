@@ -331,6 +331,10 @@ impl Attach<'_> {
             self.extension_offer_action(action);
             return Flow::Continue;
         }
+        if self.model.agent_write.is_some() {
+            self.agent_write_action(action);
+            return Flow::Continue;
+        }
         if self.model.proposal.is_some() {
             self.proposal_action(action);
             return Flow::Continue;
@@ -478,6 +482,7 @@ impl Attach<'_> {
                 }
             }
             Action::ToggleRecent => self.open_recent(),
+            Action::PauseAgentWrites => self.model.toggle_agent_writes(),
             _ => {}
         }
         Flow::Continue

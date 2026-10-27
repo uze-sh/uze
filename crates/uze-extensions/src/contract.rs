@@ -92,6 +92,8 @@ pub struct AgentRequest {
     pub agent: Option<String>,
     /// The action's label, as the confirmation and the notice say it.
     pub label: String,
+    /// Sent by an agent's event rather than a gesture.
+    pub unattended: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

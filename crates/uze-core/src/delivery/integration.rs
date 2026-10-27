@@ -637,8 +637,10 @@ pub trait IntegrationPort: Send + Sync {
     /// The prefix a human types to explicitly invoke an exposed capability
     /// on this harness (e.g. `/` for slash commands, `$` for Codex's
     /// explicit skill invocation, nothing for a bare-name harness).
-    /// Presentation-only, rendered by docs/matrix tooling; never used for
-    /// lookup or matching.
+    /// Rendered by docs/matrix tooling, and the spelling the workspace
+    /// types when an extension's `agent-prompt` names a skill
+    /// (`AgentIdentity::skill_invocation`); never used for lookup or
+    /// matching.
     fn invocation_prefix(&self) -> &'static str {
         ""
     }

@@ -66,6 +66,7 @@ fn a_long_caption_is_elided_rather_than_run_off_the_sidebar() {
         launch: std::path::PathBuf::from(LONG),
         continuity_gap: None,
         configured: true,
+        skill_prefix: Some("/"),
     }];
 
     let rows = sidebar(&model, &identities).rows;

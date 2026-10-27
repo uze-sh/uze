@@ -254,6 +254,9 @@ actions! {
         "To worktree, no changes",
         "Move this agent into a worktree cut from the last commit; the \
          uncommitted changes stay here";
+    PauseAgentWrites => "pause-agent-writes", false,
+        "Pause extensions",
+        "Hold every prompt an extension would type into an agent, until pressed again";
     SwitchHarness => "switch-harness", false,
         "Continue in",
         "Relaunch this agent on another harness in the same checkout, \

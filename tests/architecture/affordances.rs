@@ -281,6 +281,9 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     // and the index lists it only where there is a space to deliver.
     put(Action::DeliverAllTasks, Index);
     put(Action::ToggleRecent, Control("the sidebar header's name"));
+    // A brake, pressed while an extension types where it should not: its
+    // key over any pane, and the index's row, which lists it there.
+    put(Action::PauseAgentWrites, Index);
     // Taking work away is never one misclick from a pointer: the index
     // offers it for recent's selected row, and only where it applies.
     put(Action::DiscardTask, Index);

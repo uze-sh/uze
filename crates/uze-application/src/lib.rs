@@ -14,7 +14,7 @@ pub use application::services::{
     PlacementKind, PreservedWork, ProjectArtifacts, ProjectSpace, PullReport, Reconciliation,
     ReleasedTask, RequestQuestion, ShownCommand, SpaceMemory, SpaceOverview, SpacePlugin,
     SpacePlugins, SplitWork, SubagentCheckout, TargetSyncReport, UpstreamSync, WorkStateView,
-    WorkspaceEntry, project_artifacts,
+    WorkspaceEntry, project_artifacts, skill_invocation,
 };
 
 /// Types the read models above are made of. Presentation consumes these

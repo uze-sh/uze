@@ -129,3 +129,53 @@
 - decided:  Each agent is `{id, harness, label, space, checkout, state: working|done|ready, reports}`; the engine answers its `agents` sources only when the value changed, so an unchanged workspace asks nothing again.
 - rejected: Per checkout: a HUD is about all of them.
 - blast:    `declared/bridge.rs::agents_value`, `Extension::agents`.
+
+## D14 — A skill is spelled from the harness's invocation prefix, carried on `AgentIdentity`
+
+- status:   pending
+- task:     4.1
+- commit:
+- trigger:  Task 4.1 asks for `IntegrationPort::skill_invocation(skill, args)`; the TUI cannot ask an integration (it names none), and building the application on the frame to ask is a read on the drawing thread.
+- decided:  No new port method: `invocation_prefix` (`/`, `$`, `@`) already is each harness's spelling, and its doc now says the workspace types with it. `AgentIdentity.skill_prefix` carries it, and `uze_application::skill_invocation(prefix, skill, args)` composes `<prefix><skill> <args…>`.
+- rejected: A port method returning `String` per harness: four identical bodies today.
+- blast:    `AgentIdentity`, `IntegrationPort::invocation_prefix`'s doc.
+
+## D15 — A prompt is shown in a sealing dialog and typed by the session, guarded twice
+
+- status:   pending
+- task:     4.3
+- commit:
+- trigger:  B5: shown first (text, agent, extension), typed through `submit_notice` only into a ready agent whose harness is the pane's foreground and with no approval pending; refused, never queued.
+- decided:  `ask_of_agent(owner, request)` refuses at once what can never go (paused, no agent, a control character or line break, a leading `! / # @ $` outside a skill's spelling) and otherwise opens `AgentWriteDialog`, sealing the client as the extension offer does. Allowing hands a `Write` to the session, which on the same pump checks the pane's harness (`agent_for_tab`), a pending approval (from `approval.asked` until the agent's next event), `may_submit` and the rates, then types it or drops it with an attributed notice. A request with no `agent` aims at the agent in front. A second request while a dialog is open is refused. `$` joins D16's list: it is Codex's command character.
+- rejected: Typing from the model: only the session holds the pane's stream.
+- blast:    `src/ui/orchestrator/declared/agent.rs`, the session's pump, keys, mouse and render.
+
+## D16 — An unattended prompt's 24-hour allowance lives in the client, not on disk
+
+- status:   pending
+- task:     4.4
+- commit:
+- trigger:  The spec: `agent:prompt:auto` "accepted per project and agent for 24 hours and revoked by any change of the extension's files".
+- decided:  The first unattended prompt from an extension to an agent opens the dialog in its unattended form; allowing it lets that extension prompt that agent on its own for 24 hours of this client's life. Not persisted: an agent id is per launch, so a record would outlive what it names, and a recompile replaces the engine anyway. A client restart asks again.
+- rejected: A record in `state/extensions.json` keyed by agent id: generated ids, written every day, for an allowance that a restart asking again costs one dialog.
+- blast:    `Writes::unattended_until`.
+
+## D17 — The rates, and F8 as the pause key
+
+- status:   pending
+- task:     4.4
+- commit:
+- trigger:  B5's numbers, and a key that works over any pane.
+- decided:  Per extension and agent: one write per turn (turns counted from `agent.turn.started`, reported or painted) and one per 60 s; per agent: 3 a minute, 20 an hour, 10 s between unattended writes. `Action::PauseAgentWrites` on F8 (Workspace scope, in the index) toggles the pause, resets every count and drops whatever was allowed and not yet typed.
+- rejected: An `alt+` letter: an agent's prompt reads those.
+- blast:    `uze-keys`, `declared/agent.rs::Rates`.
+
+## D18 — `agent-restart` is refused until restarting a conversation is a workspace operation
+
+- status:   pending
+- task:     4.2
+- commit:
+- trigger:  Nothing in the workspace starts an agent's harness again on a new conversation; switching harness is the nearest, and it carries the conversation.
+- decided:  The manifest accepts `agent-restart` under `agent:restart`, and the host refuses it with a notice saying it is not available yet. `focus-agent` selects the agent's tab.
+- rejected: Killing the pane and launching anew from the extension path: a lifecycle operation built for one caller.
+- blast:    `declared/agent.rs::ask_of_agent`.

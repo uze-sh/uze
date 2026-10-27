@@ -34,6 +34,7 @@ mod drawer;
 mod events;
 mod overlay;
 mod status;
+pub(super) use agent::*;
 pub(super) use bridge::*;
 pub(super) use drawer::*;
 pub(super) use events::*;
@@ -1054,7 +1055,11 @@ impl WorkspaceModel {
     pub(super) fn follow_surface(&mut self, outcome: Outcome) {
         match outcome {
             Outcome::Stay => {}
-            Outcome::Agent(request) => self.ask_of_agent(request),
+            Outcome::Agent(request) => {
+                if let Some(owner) = self.slot_in_pane().map(|slot| slot.owner.clone()) {
+                    self.ask_of_agent(owner, request);
+                }
+            }
             Outcome::Close => self.close_surface(),
             Outcome::Notice(span) => self.open_notice = Some(span),
             Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
@@ -1085,7 +1090,16 @@ impl WorkspaceModel {
     pub(super) fn follow_chrome(&mut self, id: SlotId, outcome: Outcome) {
         match outcome {
             Outcome::Stay | Outcome::Close | Outcome::Notice(_) | Outcome::OpenCommit { .. } => {}
-            Outcome::Agent(request) => self.ask_of_agent(request),
+            Outcome::Agent(request) => {
+                if let Some(owner) = self
+                    .remembered
+                    .declared
+                    .slot(id)
+                    .map(|slot| slot.owner.clone())
+                {
+                    self.ask_of_agent(owner, request);
+                }
+            }
             Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
             Outcome::Copy(text) => self.copy_answered_by(text, Some(id)),
             Outcome::Toast(text) => {

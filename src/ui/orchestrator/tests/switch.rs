@@ -17,6 +17,7 @@ fn identity(binary: &str, configured: bool) -> AgentIdentity {
         launch: std::path::PathBuf::from(binary),
         continuity_gap: None,
         configured,
+        skill_prefix: Some("/"),
     }
 }
 

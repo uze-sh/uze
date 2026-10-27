@@ -390,6 +390,9 @@ pub(super) fn render(
     if let Some(open) = &model.approval {
         render_approval(frame, frame.area(), open, hits);
     }
+    if let Some(open) = &model.agent_write {
+        render_agent_write(frame, frame.area(), open, hits);
+    }
     if let Some(open) = &model.extension_offer {
         render_extension_offer(frame, frame.area(), open, hits);
     }

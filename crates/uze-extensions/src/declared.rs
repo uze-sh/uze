@@ -619,6 +619,7 @@ impl DeclaredExtension {
                         },
                         agent: Some(event.agent.clone()),
                         label: Clean::label(&action.label).into_string(),
+                        unattended: true,
                     }),
                     _ => None,
                 })

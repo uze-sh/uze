@@ -5,7 +5,7 @@ use super::*;
 impl Attach<'_> {
     /// Submits `message` into `pane` as UZE's own words — see
     /// [`notice_bytes`] for why it cannot be typed as it stands.
-    fn submit_notice(&mut self, pane: PaneId, message: &str) {
+    pub(in crate::ui::orchestrator) fn submit_notice(&mut self, pane: PaneId, message: &str) {
         let bracketed = self
             .model
             .panes
