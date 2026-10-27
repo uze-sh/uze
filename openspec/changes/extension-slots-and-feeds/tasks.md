@@ -30,8 +30,8 @@
 
 ## 6. Events delivered
 
-- [ ] 6.1 `input.event` for a source asked by an event; `deliver "each"` with its window bound and `dropped`
-- [ ] 6.2 The `events` source: the last N events of the extension, in memory
+- [x] 6.1 `input.event` for a source asked by an event; `deliver "each"` with its window bound and `dropped`
+- [x] 6.2 The `events` source: the last N events of the extension, in memory
 - [ ] 6.3 A TestBackend test that `Activity`, `Elapsed` and segmented `Progress` move while no run happens (parent 13.5)
 
 ## 7. Proof and docs

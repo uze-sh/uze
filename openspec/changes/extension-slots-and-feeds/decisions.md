@@ -89,3 +89,33 @@
 - decided:  The engine stamps a source's answer with the host's clock (`Pass::now`) whenever its digest changes, and a node hit on a surface of a composed source within 300 ms of that stamp is `Stay`. Keys are not held back: a key acts on the selection, not on what is under the pointer.
 - rejected: Holding back every surface's clicks: a bound view's nodes do not move under the pointer the way a program's tree may.
 - blast:    `DeclaredExtension::{set_data, just_laid_out, hit}`.
+
+## D10 — An event rides with its question and is no part of what the question is remembered by
+
+- status:   pending
+- task:     6.1
+- commit:
+- trigger:  `input.event` changes the input, and the engine asks again whenever a source's input differs from its latest question's, so the next frame (without the event) would ask a second time.
+- decided:  The event is added to the `Question` only, inside `ask`, when the question is a refresh and an event waits for that source; `Asked.input` keeps the declared input alone. An event is `{name, paths?, checkout}` plus `dropped` when a source delivered `each` missed some. No time is in it: the engine reads the host's clock and nothing else.
+- rejected: Keying the session cache by the event: every save would be a new question for the runner's memory too.
+- blast:    `DeclaredExtension::ask`, `events::event_value`.
+
+## D11 — `deliver "each"` queues 16 events per window and asks again once each answer is in
+
+- status:   pending
+- task:     6.1
+- commit:
+- trigger:  S8 runs a source once per event, bounded per window, without saying how the runs are paced.
+- decided:  `events::Delivery` queues at most `EACH_PER_WINDOW` (16) events per source and counts the rest as `dropped`, said on the next event handed over. When the window closes the source is asked with the first; each later pass asks it again with the next once its last question was answered (never two out at once) and no new window is open for it.
+- rejected: One run with every event as a list: `deliver "each"` is for programs that handle one at a time.
+- blast:    `declared/events.rs`, `DeclaredExtension::{pass, awaiting}`.
+
+## D12 — An `events` source is answered by the engine, from every event it saw
+
+- status:   pending
+- task:     6.2
+- commit:
+- trigger:  The design keeps the last events "in memory for the session", and only the engine sees an extension's events; the runner never does.
+- decided:  The engine logs every event the host hands it (newest first, at most 200) and answers each `events <n>` source with the last `n` itself, as data, whenever the log moves and when it is built; such a source is never a job, so the host is never asked about one. The runner refuses one as "answered by the workspace" if asked.
+- rejected: A host function or a store-backed log: a log the operator did not ask to keep would outlive the session.
+- blast:    `DeclaredExtension::{gather, answer_event_sources, jobs}`.

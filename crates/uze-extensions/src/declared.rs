@@ -119,6 +119,13 @@ pub struct DeclaredExtension {
     /// When each source's answer last changed, on the host's clock: what a
     /// click on a composed surface is held back by.
     laid_out: BTreeMap<String, Instant>,
+    /// The events waiting for the sources they ask again.
+    delivery: events::Delivery,
+    /// The number of the last question each source answered.
+    answered: BTreeMap<String, u64>,
+    /// The events this extension saw, newest first, at most
+    /// [`uze_contract::EVENTS_MAX`]: what an `events` source answers.
+    log: std::collections::VecDeque<serde_json::Value>,
     /// Events gathered for their window to close.
     window: events::Window,
     /// Sources an event or their `every` asked again, asked once a surface
@@ -199,6 +206,12 @@ struct Memory {
 
 impl DeclaredExtension {
     pub fn new(compiled: CompiledExtension, locale: impl Into<String>) -> Self {
+        let mut extension = Self::unanswered(compiled, locale);
+        extension.answer_event_sources();
+        extension
+    }
+
+    fn unanswered(compiled: CompiledExtension, locale: impl Into<String>) -> Self {
         Self {
             compiled,
             generation: 0,
@@ -214,6 +227,9 @@ impl DeclaredExtension {
             queued: Vec::new(),
             notices: BTreeMap::new(),
             now: None,
+            answered: BTreeMap::new(),
+            delivery: events::Delivery::default(),
+            log: std::collections::VecDeque::new(),
             laid_out: BTreeMap::new(),
             window: events::Window::default(),
             due: BTreeSet::new(),
@@ -239,6 +255,7 @@ impl DeclaredExtension {
     pub fn replace(&mut self, compiled: CompiledExtension) {
         self.compiled = compiled;
         self.generation += 1;
+        self.answer_event_sources();
         self.memo.get_mut().clear();
         self.asked.clear();
         let surfaces: Vec<String> = self.ui.keys().cloned().collect();
@@ -449,6 +466,16 @@ impl DeclaredExtension {
                 by_answer,
             },
         );
+        // What asked it again rides with the question and is no part of
+        // what the question is remembered by: the next frame's input has no
+        // event, and is the same question.
+        let mut input = input;
+        if matches!(asking, Asking::Refresh)
+            && let Some(event) = self.delivery.take(&source)
+            && let serde_json::Value::Object(fields) = &mut input
+        {
+            fields.insert("event".to_owned(), event);
+        }
         let question = Question {
             identity: self.compiled.identity.clone(),
             declaration: source.clone(),
@@ -503,21 +530,44 @@ impl DeclaredExtension {
     /// Gathers each shown source that `happened` is a reason for, on the
     /// checkout it is shown on.
     fn gather(&mut self, happened: &CheckoutEvent, now: Instant) {
+        let event = events::event_value(happened);
+        self.log.push_front(event.clone());
+        self.log.truncate(usize::from(uze_contract::EVENTS_MAX));
         for (source, checkout, _) in self.shown_sources() {
+            let Some(declared) = self.compiled.manifest.source(&source) else {
+                continue;
+            };
             let reason = checkout == happened.checkout
-                && self
-                    .compiled
-                    .manifest
-                    .source(&source)
-                    .is_some_and(|declared| {
-                        declared
-                            .refresh_on
-                            .iter()
-                            .any(|event| events::is_reason(event, &happened.event))
-                    });
+                && declared
+                    .refresh_on
+                    .iter()
+                    .any(|declared| events::is_reason(declared, &happened.event));
             if reason {
+                let each = declared.deliver == uze_contract::Deliver::Each;
+                self.delivery.keep(&source, event.clone(), each);
                 self.window.add(source, now);
             }
+        }
+        self.answer_event_sources();
+    }
+
+    /// Every `events` source, answered from what this extension saw: the
+    /// host is never asked about one.
+    fn answer_event_sources(&mut self) {
+        let sources: Vec<(String, u16)> = self
+            .compiled
+            .manifest
+            .sources
+            .iter()
+            .filter_map(|source| match source.kind {
+                uze_contract::SourceKind::Events(kept) => Some((source.id.clone(), kept)),
+                _ => None,
+            })
+            .collect();
+        for (source, kept) in sources {
+            let events: Vec<serde_json::Value> =
+                self.log.iter().take(usize::from(kept)).cloned().collect();
+            self.set_data(source, Ok(serde_json::Value::Array(events)));
         }
     }
 
@@ -527,6 +577,15 @@ impl DeclaredExtension {
 
     pub fn ui(&self, surface: &str) -> Option<&BTreeMap<String, String>> {
         self.ui.get(surface)
+    }
+
+    /// Whether `source`'s latest question is still out.
+    fn awaiting(&self, source: &str) -> bool {
+        self.stale.contains(source)
+            || self
+                .asked
+                .get(source)
+                .is_some_and(|asked| self.answered.get(source) != Some(&asked.number))
     }
 
     /// The surfaces drawn from `source`.
@@ -1012,6 +1071,20 @@ impl Extension for DeclaredExtension {
         }
         let gathered = self.window.take(pass.now);
         self.due.extend(gathered);
+        // A source delivered `each` is asked again for its next event once
+        // its last question has been answered.
+        let waiting: Vec<String> = self
+            .delivery
+            .queued
+            .keys()
+            .filter(|source| {
+                self.delivery.waiting(source)
+                    && !self.awaiting(source)
+                    && !self.window.holds(source)
+            })
+            .cloned()
+            .collect();
+        self.due.extend(waiting);
         let in_view = self.sources_in_view(pass.visible);
         let every: Vec<String> = in_view
             .iter()
@@ -1037,6 +1110,16 @@ impl Extension for DeclaredExtension {
     fn jobs(&mut self) -> Vec<Job> {
         let mut jobs = self.action_jobs();
         for (source, checkout, surface) in self.shown_sources() {
+            let local = self
+                .compiled
+                .manifest
+                .source(&source)
+                .is_some_and(|declared| {
+                    matches!(declared.kind, uze_contract::SourceKind::Events(_))
+                });
+            if local {
+                continue;
+            }
             let input = self.input_of(&source, &surface);
             let current = self
                 .asked
@@ -1073,6 +1156,7 @@ impl Extension for DeclaredExtension {
         }
         let by_answer = asked.by_answer;
         let source = answered.source;
+        self.answered.insert(source.clone(), answered.number);
         match answered.answer {
             Answer::Answered { envelope, .. } => {
                 self.set_data(source.clone(), Ok(envelope.data.clone()));

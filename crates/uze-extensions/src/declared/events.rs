@@ -13,6 +13,77 @@ use crate::contract::CheckoutEvent;
 /// How long after an event others are taken with it.
 pub const COALESCE: Duration = Duration::from_millis(250);
 
+/// The most events a source delivered `each` is asked with per window;
+/// the rest are counted as dropped in the next one's input.
+pub const EACH_PER_WINDOW: usize = 16;
+
+/// What a source is asked with as `input.event`.
+pub(super) fn event_value(happened: &CheckoutEvent) -> serde_json::Value {
+    match &happened.event {
+        EventName::PathsChanged { paths } => serde_json::json!({
+            "name": EventName::PATHS_CHANGED,
+            "paths": paths,
+            "checkout": happened.checkout.display().to_string(),
+        }),
+        EventName::CheckoutChanged => serde_json::json!({
+            "name": EventName::CHECKOUT_CHANGED,
+            "checkout": happened.checkout.display().to_string(),
+        }),
+    }
+}
+
+/// The events waiting to be handed to the sources that asked for them.
+#[derive(Debug, Default)]
+pub(super) struct Delivery {
+    /// A source delivered `latest`: the last event that asked it.
+    pub(super) latest: BTreeMap<String, serde_json::Value>,
+    /// A source delivered `each`: the events not yet handed over, in order.
+    pub(super) queued: BTreeMap<String, std::collections::VecDeque<serde_json::Value>>,
+    /// How many events each such source missed, said in its next input.
+    pub(super) dropped: BTreeMap<String, u64>,
+}
+
+impl Delivery {
+    /// Keeps `event` for `source`, delivered as `each` says.
+    pub(super) fn keep(&mut self, source: &str, event: serde_json::Value, each: bool) {
+        if !each {
+            self.latest.insert(source.to_owned(), event);
+            return;
+        }
+        let queue = self.queued.entry(source.to_owned()).or_default();
+        if queue.len() < EACH_PER_WINDOW {
+            queue.push_back(event);
+        } else {
+            *self.dropped.entry(source.to_owned()).or_default() += 1;
+        }
+    }
+
+    /// The event `source` is asked with next, its dropped count said.
+    pub(super) fn take(&mut self, source: &str) -> Option<serde_json::Value> {
+        let mut event = match self
+            .queued
+            .get_mut(source)
+            .and_then(|queue| queue.pop_front())
+        {
+            Some(event) => event,
+            None => self.latest.remove(source)?,
+        };
+        if let Some(dropped) = self.dropped.remove(source)
+            && let serde_json::Value::Object(fields) = &mut event
+        {
+            fields.insert("dropped".to_owned(), serde_json::Value::from(dropped));
+        }
+        Some(event)
+    }
+
+    /// Whether `source` still has events to be asked with one by one.
+    pub(super) fn waiting(&self, source: &str) -> bool {
+        self.queued
+            .get(source)
+            .is_some_and(|queue| !queue.is_empty())
+    }
+}
+
 /// The sources events asked again, gathered from the first event until
 /// [`COALESCE`] has passed.
 #[derive(Debug, Default)]
@@ -25,6 +96,11 @@ impl Window {
     pub(super) fn add(&mut self, source: String, now: Instant) {
         self.opened.get_or_insert(now);
         self.sources.insert(source);
+    }
+
+    /// Whether `source` is gathered in the window still open.
+    pub(super) fn holds(&self, source: &str) -> bool {
+        self.sources.contains(source)
     }
 
     /// The sources gathered, once the window has stood for [`COALESCE`];

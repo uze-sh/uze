@@ -167,3 +167,90 @@ fn only_a_source_declaring_an_event_is_watched_on_the_checkout_it_is_shown_on() 
         "the view's checkout: the section shows the same source"
     );
 }
+
+/// What every question asked during one pass carried as `input.event`.
+fn events_asked(
+    engine: &mut DeclaredExtension,
+    now: Instant,
+    happened: &[CheckoutEvent],
+) -> Vec<serde_json::Value> {
+    engine.pass(&Pass {
+        now,
+        visible: &[SECTION.to_owned()],
+        happened,
+    });
+    let host = Answering::with(answered(json!({ "count": 1 })));
+    for job in engine.jobs() {
+        let answer = (job.run)(&host);
+        engine.absorb(answer);
+    }
+    host.asked
+        .into_inner()
+        .into_iter()
+        .map(|question| question.input.get("event").cloned().unwrap_or_default())
+        .collect()
+}
+
+#[test]
+fn an_event_reaches_its_source_as_input_and_each_is_delivered_one_by_one() {
+    let start = Instant::now();
+    let mut latest = board(None, vec![planning()]);
+    latest.focus(Some(&checkout("/work/a")));
+    events_asked(&mut latest, start, &[]);
+    events_asked(&mut latest, start, &[saved("/work/a"), saved("/work/a")]);
+    let asked = events_asked(&mut latest, start + COALESCE, &[]);
+    assert_eq!(asked.len(), 1, "a burst asks once: {asked:?}");
+    assert_eq!(asked[0]["name"], "paths.changed");
+    assert_eq!(asked[0]["paths"], json!([".planning"]));
+
+    let mut each = board(None, vec![planning()]);
+    each.compiled.manifest.sources[0].deliver = uze_contract::Deliver::Each;
+    each.focus(Some(&checkout("/work/a")));
+    events_asked(&mut each, start, &[]);
+    let burst: Vec<CheckoutEvent> = (0..events::EACH_PER_WINDOW + 2)
+        .map(|_| saved("/work/a"))
+        .collect();
+    events_asked(&mut each, start, &burst);
+    let mut delivered = Vec::new();
+    for step in 1..=events::EACH_PER_WINDOW as u32 + 1 {
+        delivered.extend(events_asked(&mut each, start + COALESCE * step, &[]));
+    }
+    assert_eq!(
+        delivered.len(),
+        events::EACH_PER_WINDOW,
+        "one run per event, bounded per window"
+    );
+    assert_eq!(
+        delivered[0]["dropped"], 2,
+        "the first says what was dropped"
+    );
+    assert!(delivered[1].get("dropped").is_none());
+}
+
+#[test]
+fn an_events_source_answers_what_the_extension_saw_without_asking_the_host() {
+    let start = Instant::now();
+    let mut engine = board(None, vec![planning()]);
+    engine.compiled.manifest.sources[0].kind = uze_contract::SourceKind::Events(2);
+    engine.answer_event_sources();
+    engine.focus(Some(&checkout("/work/a")));
+    assert_eq!(
+        engine.data(super::tests::SOURCE).cloned(),
+        Some(Ok(json!([])))
+    );
+    let asked = events_asked(
+        &mut engine,
+        start,
+        &[saved("/work/a"), saved("/work/b"), saved("/work/c")],
+    );
+    assert!(asked.is_empty(), "the host is never asked about it");
+    let Some(Ok(seen)) = engine.data(super::tests::SOURCE).cloned() else {
+        panic!("no data");
+    };
+    assert_eq!(
+        seen.as_array().unwrap().len(),
+        2,
+        "the last two, newest first"
+    );
+    assert_eq!(seen[0]["checkout"], "/work/c");
+}
