@@ -18,10 +18,10 @@
 
 ## 4. Slots
 
-- [ ] 4.1 `status`: rows in the sidebar's header from the slot path, folded; the order in the client layout; Move up and Move down on the Extensions screen
-- [ ] 4.2 `band`: rows taken in `orchestrator/render.rs::compute_layout` before the PTY size; drawn per agent pane of an enabled project; mouse and selection offsets; a test that no resize follows an answer
-- [ ] 4.3 `overlay`: opened by an `open` action or the index, centered, attributed, Esc closes, focus restored
-- [ ] 4.4 Every new slot through the generic slot path (no per-slot field in the orchestrator beyond geometry), and the consent screen naming a band's rows
+- [x] 4.1 `status`: rows in the sidebar's header from the slot path, folded; the order in the client layout; Move up and Move down on the Extensions screen
+- [x] 4.2 `band`: rows taken in `orchestrator/render.rs::compute_layout` before the PTY size; drawn per agent pane of an enabled project; mouse and selection offsets; a test that no resize follows an answer
+- [x] 4.3 `overlay`: opened by an `open` action or the index, centered, attributed, Esc closes, focus restored
+- [x] 4.4 Every new slot through the generic slot path (no per-slot field in the orchestrator beyond geometry), and the consent screen naming a band's rows
 
 ## 5. Notify and sound
 

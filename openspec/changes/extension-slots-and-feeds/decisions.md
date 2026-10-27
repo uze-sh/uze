@@ -129,3 +129,93 @@
 - decided:  `tests/_fixtures/canonical/deck` holds one extension exercising this change whole: a 2-row top `band` composed by `phases.rhai` (one `Segment` per phase directory, weighted by its plans and filled by its summaries) whose label reads a `toggle` preference, a `status` row from the same source, a `view` over an `events 20` source with an `open` action to a `picker` `overlay` and a `done` action whose script answers `notify` and `sound`. `gpu-meter` gains a `status` row and a `warn-at` preference its script reads from `input.preferences`. The packages gate checks `deck` with `gpu` and `gsd`. A check rehearses with each preference at its default.
 - rejected: Growing `gsd-band`: every snapshot of change 1 would be redrawn for a change that is not about it.
 - blast:    Two fixture plugins; `runner::rehearse_over`.
+
+## D20 — The status order is kept per extension, in the management section of the client layout
+
+- status:   pending
+- task:     4.1
+- commit:
+- trigger:  S2 keeps the operator's order of status rows in the client's remembered layout and moves them from the Extensions screen, while the rows are drawn by the workspace.
+- decided:  `ManagementLayout::status_order` holds the switch keys (`id · plugin@marketplace`) of extensions, not surfaces: an extension's rows move together, in the order it declares them. The Extensions screen owns and edits it; the workspace reads the modal's copy while it is open (a move is drawn behind it at once) and the last one closed otherwise, and the layout recorder persists it with the rest of the modal's section. An extension the order does not name stands after those it does, in identity order, which both sides use as discovery order (`src/ui/status_order.rs`).
+- rejected: A list per surface in `WorkspaceLayout`: Move up and Move down act on the selected extension, which may declare several rows, and the workspace section would need an intent crossing from the modal for every move.
+- blast:    `uze-workspace::client_layout`, `src/ui/{status_order,model,input}.rs`, `orchestrator/declared/status.rs`.
+
+## D21 — Status rows stand under the header's rule, not above it
+
+- status:   pending
+- task:     4.1
+- commit:
+- trigger:  S2 puts the rows "in the sidebar's header", whose hairline lands on the row the tab strip's own rule does.
+- decided:  The rows are drawn right under the rule, before the first space's card, inset one column as the header's name is and short of the column's trailing pad.
+- rejected: Rows between the header and its rule: every row would push the rule off the tab strip's, and the two columns would stop sharing one divider.
+- blast:    `orchestrator/render/{sidebar,declared}.rs`.
+
+## D22 — A status row and a band draw only a tree that has something in it; a row is folded by cutting every text
+
+- status:   pending
+- task:     4.1, 4.2
+- commit:
+- trigger:  S2 frees the row of an empty answer and folds a long one; an engine also answers `Waiting for data`, a refusal or a failure as a message.
+- decided:  Only a `Content::Tree` with a visible node is drawn (`drawn_tree`): an empty stack, blank text, a waiting, a withheld or a failed answer take no status row and leave a band's rows blank (the Extensions screen and the inspector say why). A status view has `truncate` set on every `Text` before it is drawn into its one row, so the tree renderer cuts it with an ellipsis rather than wrapping it out of sight.
+- rejected: Drawing the engine's message in the row: a sidebar header that says `Waiting for data` for every extension on every switch of checkout.
+- blast:    `orchestrator/declared/status.rs`.
+
+## D23 — A band is laid over the agent's own tab, judged enabled from the record the last discovery read
+
+- status:   pending
+- task:     4.2
+- commit:
+- trigger:  S3 draws a band on every agent pane whose checkout's project has the extension enabled, and `compute_layout` must know it without asking the filesystem.
+- decided:  The rows are reserved while the tab selected is the agent whose context is in front (`agent_tab_in_front`), never one of its shells, and the extension is switched on and enabled in that agent's project: always for one that runs nothing (`uze_application::enabled_per_project`, kept on `HostedExtension::per_project`), else when the record's `enabled_in` holds the project as the session placed it, compared as written. Only the focused pane is ever drawn and sized, so its band always draws the engine's answer about the checkout in front. Bands stack in slot order, top ones down and bottom ones up, and one that would leave the pane fewer than 6 rows is not laid out.
+- rejected: Canonicalizing the project per frame: a filesystem call on the drawing thread. Laying bands over shells: a shell is no agent's pane.
+- blast:    `orchestrator/declared/band.rs`, `orchestrator/render.rs::{Reserved, take_bands}`, `orchestrator/agents.rs`.
+
+## D24 — A band keeps its rows while a view or the overview stands in the pane
+
+- status:   pending
+- task:     4.2
+- commit:
+- trigger:  A view and the overview are drawn in `layout.pane`, which is now the band-less rect the terminal is sized to.
+- decided:  The band stays drawn above (or below) whatever stands in the pane; the view takes the rest. Opening a view never changes the band's reservation, so it never resizes the agent behind it either, and every surface keeps measuring clicks against the one `layout.pane`.
+- rejected: Giving a view the band's rows back: a second agent-area rect for every view, overview and hit path to agree on.
+- blast:    `orchestrator/render.rs`.
+
+## D25 — The band's id mark keeps a column the band's whole height
+
+- status:   pending
+- task:     4.2
+- commit:
+- trigger:  D4 has the host draw the extension's id at the end of the band's first row, where nothing it draws can cover it.
+- decided:  The id (`identity.id`, muted, cut at half the band's width) and one cell of air are taken off the right of every row of the band, and the band's view is drawn in the rect left; its first row ends in the id.
+- rejected: Narrowing the first row alone: the view is one rect, and a tree laid out in a ragged one is not something the renderer knows.
+- blast:    `orchestrator/render/declared.rs::render_band`.
+
+## D26 — An overlay is modal through its own slot field, closed by a bare mark rather than a footer Close
+
+- status:   pending
+- task:     4.3
+- commit:
+- trigger:  S4 makes an overlay modal over whatever is open, a view included, and the design system closes a modal with a bare `×` and Esc, naming no close in its foot.
+- decided:  `WorkspaceModel::open_overlay` holds its slot beside `open_slot`: while it stands the key scopes stop at `Declared` (its declared actions and the moves every declared surface answers), `chrome_answers` is false, and a press is its own, its mark's, a footer key's, or a click outside that closes it. The engine's `Close` is dropped from its footer. An `open` action reaches it as the engine's `Outcome::Show`, and `show_surface` opens an overlay or, for a view, puts the overlay away first. The index offers it as an `open:<surface>` door, as a view's. Esc and a click outside leave everything behind it as it was, which is what restores the focus.
+- rejected: Opening an overlay in the pane's slot: a view could not stand under it.
+- blast:    `orchestrator/declared/{overlay,doors}.rs`, `orchestrator/session/{keys,mouse,surface}.rs`, `orchestrator/render/declared.rs::render_overlay`.
+
+## D27 — Move up and Move down are the existing list actions, offered as drawer buttons
+
+- status:   pending
+- task:     4.1
+- commit:
+- trigger:  S2 asks for Move up and Move down on the Extensions screen.
+- decided:  `Action::MoveItemUp` and `MoveItemDown` ("Move the entry in focus up its list") are offered in the drawer of an extension that declares a status row (`offers::status_order_offers`), unavailable at either end, and answered on the Extensions route. They hold no key there: the overview's `shift+up`/`shift+down` stay its own, and the buttons and the index reach them.
+- rejected: Two new actions for one list: the vocabulary already says it.
+- blast:    `uze-application::offers`, `src/ui/{model,input}.rs`, `tests/architecture/affordances.rs`.
+
+## D28 — A consent step names the rows all of an extension's bands take
+
+- status:   pending
+- task:     4.4
+- commit:
+- trigger:  The risk in design.md lists a band's cost on the consent screen as "draws N rows over each agent's pane".
+- decided:  `ExtensionReport::band_rows` is the sum of its bands' rows, `None` without one, and both consent steps (the Extensions screen's and the workspace's offer) add the line after the grants. An extension that runs nothing asks no consent, so its band is said only on the Extensions screen's surface list (`· band, N rows`).
+- rejected: A consent step for a fixtures-only extension with a band: consent is about what runs, and a band runs nothing.
+- blast:    `uze-application::extensions::report`, `src/ui/{overlay,model}.rs`, `orchestrator/extension_offer.rs`.
