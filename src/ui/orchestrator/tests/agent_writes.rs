@@ -63,6 +63,7 @@ fn a_prompt_is_shown_then_typed_once_allowed_and_a_second_in_the_turn_is_dropped
         .attach
         .model
         .ask_of_agent(Owner::Builtin("probe"), prompt("And again"));
+    driven.frame();
     driven.attach.model.answer_agent_write(true);
     driven.pump();
     assert!(typed(&driven.sent()).is_empty(), "dropped, not queued");
@@ -127,6 +128,7 @@ fn allowed_by_keyboard(driven: &mut Driven<'_>, text: &str) -> Vec<String> {
         .model
         .ask_of_agent(Owner::Builtin("probe"), prompt(text));
     assert!(driven.attach.model.agent_write.is_some(), "asked first");
+    driven.frame();
     driven.press_key(key("right"));
     driven.press_key(key("enter"));
     assert!(
@@ -195,30 +197,107 @@ fn on_its_own(action: &str, text: &str) -> AgentRequest {
 fn allowing_one_unattended_prompt_allows_that_action_alone() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-unattended"));
     let mut driven = driven(launched_agent(), &home);
-    let model = &mut driven.attach.model;
-    model.ask_of_agent(Owner::Builtin("probe"), on_its_own("review", "Review"));
-    assert!(model.agent_write.is_some(), "the first is asked");
-    model.answer_agent_write(true);
-    assert!(model.agent_write.is_none());
-
-    model.ask_of_agent(
-        Owner::Builtin("probe"),
-        on_its_own("deploy", "Ship it to production"),
-    );
+    let probe = || Owner::Builtin("probe");
+    driven
+        .attach
+        .model
+        .ask_of_agent(probe(), on_its_own("review", "Review"));
     assert!(
-        model.agent_write.is_some(),
+        driven.attach.model.agent_write.is_some(),
+        "the first is asked"
+    );
+    driven.frame();
+    driven.attach.model.answer_agent_write(true);
+    assert!(driven.attach.model.agent_write.is_none());
+
+    driven
+        .attach
+        .model
+        .ask_of_agent(probe(), on_its_own("deploy", "Ship it to production"));
+    assert!(
+        driven.attach.model.agent_write.is_some(),
         "another action of the same extension still asks"
     );
-    assert!(
-        model.remembered.declared.bridge.writes.allowed.len() == 1,
+    let writes = &driven.attach.model.remembered.declared.bridge.writes;
+    assert_eq!(
+        writes.allowed.len(),
+        1,
         "only the allowed one waits to be typed"
     );
-    model.answer_agent_write(false);
+    driven.attach.model.answer_agent_write(false);
 
-    model.ask_of_agent(Owner::Builtin("probe"), on_its_own("review", "Review"));
+    driven
+        .attach
+        .model
+        .ask_of_agent(probe(), on_its_own("review", "Review"));
     assert!(
-        model.agent_write.is_none(),
+        driven.attach.model.agent_write.is_none(),
         "the allowed action is not asked again"
     );
-    assert_eq!(model.remembered.declared.bridge.writes.allowed.len(), 2);
+    let writes = &driven.attach.model.remembered.declared.bridge.writes;
+    assert_eq!(writes.allowed.len(), 2);
+}
+
+/// `words` words of prose: a prompt of about six bytes a word.
+fn prose(words: usize) -> String {
+    (0..words)
+        .map(|index| format!("w{index:04}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[test]
+fn a_prompt_over_the_bound_is_refused_before_it_is_shown() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-long"));
+    let mut driven = driven(launched_agent(), &home);
+    let long = prose(400);
+    assert!(long.len() > 2048);
+    driven
+        .attach
+        .model
+        .ask_of_agent(Owner::Builtin("probe"), prompt(&long));
+    assert!(driven.attach.model.agent_write.is_none(), "refused unseen");
+}
+
+#[test]
+fn a_prompt_taller_than_the_frame_cannot_be_allowed_until_it_is_read_whole() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-tall"));
+    let mut driven = driven(launched_agent(), &home);
+    let tall = prose(200);
+    assert!(tall.len() <= 2048);
+    driven
+        .attach
+        .model
+        .ask_of_agent(Owner::Builtin("probe"), prompt(&tall));
+    driven.frame();
+    assert!(
+        !driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .any(|(_, hit)| *hit == WorkspaceHit::AgentWriteAnswer(true)),
+        "no way to allow what the frame cannot show"
+    );
+    driven.press_key(key("right"));
+    driven.press_key(key("enter"));
+    driven.attach.model.answer_agent_write(true);
+    driven.pump();
+    assert!(typed(&driven.sent()).is_empty(), "nothing typed unread");
+    assert!(
+        driven.attach.model.agent_write.is_some(),
+        "the question waits to be read"
+    );
+
+    // Room enough: every word is on screen, and only then may it go.
+    driven.area = ratatui::layout::Rect::new(0, 0, 120, 60);
+    driven.frame();
+    let shown = frame_rows_at(&mut driven.attach.model, driven.area).join(" ");
+    for word in tall.split_whitespace() {
+        assert!(shown.contains(word), "{word} is drawn");
+    }
+    let allow = driven.hit(|hit| *hit == WorkspaceHit::AgentWriteAnswer(true));
+    driven.press(allow.x, allow.y);
+    driven.pump();
+    assert_eq!(typed(&driven.sent()).len(), 1);
 }

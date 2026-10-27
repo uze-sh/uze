@@ -333,6 +333,7 @@ fn the_question_is_answered_by_keyboard_over_a_declared_view() {
         .attach
         .model
         .ask_of_agent(Owner::Builtin("probe"), prompt("Review PLAN.md"));
+    driven.frame();
     driven.press_key(key("right"));
     driven.press_key(key("enter"));
     assert!(
@@ -361,6 +362,7 @@ fn a_question_over_a_resident_overlay_takes_its_keys_and_clicks() {
         .attach
         .model
         .ask_of_agent(Owner::Builtin("probe"), prompt("Review PLAN.md"));
+    driven.frame();
     driven.press_key(key("right"));
     driven.press_key(key("enter"));
     assert!(

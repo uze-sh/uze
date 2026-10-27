@@ -134,8 +134,65 @@ fn render_with<T: Clone>(
     alternative: Option<(&str, T)>,
     confirm: T,
 ) -> Answers<T> {
+    let (width, measure) = measure_in(area);
+    let Content {
+        lines,
+        field_row,
+        buttons_row,
+    } = content(dialog, measure);
+
+    let height = (lines.len() as u16 + 2).min(area.height.saturating_sub(2));
+    let popup = area.centered(Constraint::Length(width), Constraint::Length(height));
+    frame.render_widget(Clear, popup);
+    // Wider than a popup's own inset and with no row above: a dialog's
+    // first line is a question, and it is read across rather than down.
+    let hint = match &alternative {
+        Some((label, _)) => choice_hint(dialog, scopes, label),
+        None => hint_line(dialog, scopes),
+    };
+    let inner = Surface::floating()
+        .hint(hint)
+        .padding(Padding::horizontal(PAD_X))
+        .render(frame, popup);
+    frame.render_widget(Paragraph::new(lines), inner);
+    if let (Some(field), Some(row)) = (&dialog.field, field_row)
+        && row + 2 <= inner.height
+    {
+        field.render(frame, Rect::new(inner.x, inner.y + row, inner.width, 2));
+    }
+    let buttons = if buttons_row < inner.height {
+        buttons(
+            frame,
+            Rect::new(inner.x, inner.y + buttons_row, inner.width, 1),
+            dialog,
+            cancel,
+            alternative,
+            confirm,
+        )
+    } else {
+        Vec::new()
+    };
+    Answers { popup, buttons }
+}
+
+/// The dialog's width in `area`, and the measure its text is folded to.
+fn measure_in(area: Rect) -> (u16, usize) {
     let width = WIDTH.min(area.width.saturating_sub(4));
-    let measure = usize::from(width.saturating_sub(2 + PAD_X * 2).max(1));
+    (
+        width,
+        usize::from(width.saturating_sub(2 + PAD_X * 2).max(1)),
+    )
+}
+
+/// A dialog's rows, laid out to `measure`: where its field and its
+/// answers stand among them.
+struct Content {
+    lines: Vec<Line<'static>>,
+    field_row: Option<u16>,
+    buttons_row: u16,
+}
+
+fn content(dialog: &Dialog<'_>, measure: usize) -> Content {
     let hue = dialog.tone.token();
 
     let mut lines = vec![
@@ -178,38 +235,20 @@ fn render_with<T: Clone>(
     lines.push(Line::default());
     lines.push(Line::default());
 
-    let height = (lines.len() as u16 + 2).min(area.height.saturating_sub(2));
-    let popup = area.centered(Constraint::Length(width), Constraint::Length(height));
-    frame.render_widget(Clear, popup);
-    // Wider than a popup's own inset and with no row above: a dialog's
-    // first line is a question, and it is read across rather than down.
-    let hint = match &alternative {
-        Some((label, _)) => choice_hint(dialog, scopes, label),
-        None => hint_line(dialog, scopes),
-    };
-    let inner = Surface::floating()
-        .hint(hint)
-        .padding(Padding::horizontal(PAD_X))
-        .render(frame, popup);
-    frame.render_widget(Paragraph::new(lines), inner);
-    if let (Some(field), Some(row)) = (&dialog.field, field_row)
-        && row + 2 <= inner.height
-    {
-        field.render(frame, Rect::new(inner.x, inner.y + row, inner.width, 2));
+    Content {
+        lines,
+        field_row,
+        buttons_row,
     }
-    let buttons = if buttons_row < inner.height {
-        buttons(
-            frame,
-            Rect::new(inner.x, inner.y + buttons_row, inner.width, 1),
-            dialog,
-            cancel,
-            alternative,
-            confirm,
-        )
-    } else {
-        Vec::new()
-    };
-    Answers { popup, buttons }
+}
+
+/// Whether `dialog` is drawn whole in `area`. Its height follows its
+/// wrapped text, and a frame too short for that cuts the end off: a
+/// question whose text must be read before it is answered asks this
+/// first.
+pub(crate) fn fits(area: Rect, dialog: &Dialog<'_>) -> bool {
+    let (_, measure) = measure_in(area);
+    content(dialog, measure).lines.len() as u16 + 2 <= area.height.saturating_sub(2)
 }
 
 /// `enter delete · esc cancel` — the dialog's own words for what each key

@@ -31,6 +31,9 @@ const UNATTENDED_EVERY: Duration = Duration::from_secs(10);
 /// The characters a prompt may not lead with: each is a harness's own
 /// command syntax, which only a skill's spelling may use.
 const COMMAND_LEADS: &[char] = &['!', '/', '#', '@', '$'];
+/// The longest prompt an extension may ask to type: one the operator can
+/// read whole before allowing it (D182).
+const PROMPT_MAX: usize = 2048;
 /// The longest prompt sent with nobody pressing anything (*Product
 /// decisions owed*, the unattended prompt rate).
 const UNATTENDED_MAX: usize = 512;
@@ -133,6 +136,9 @@ pub(in crate::ui::orchestrator) struct AgentWriteDialog {
     write: Write,
     agent_label: String,
     on_allow: bool,
+    /// Whether the last frame showed the text whole: nothing is allowed
+    /// that was not read (D182).
+    shown_whole: std::cell::Cell<bool>,
 }
 
 impl WorkspaceModel {
@@ -197,6 +203,9 @@ impl WorkspaceModel {
         if let Err(reason) = strictly_text(&text, skill) {
             return refuse(self, reason);
         }
+        if text.len() > PROMPT_MAX {
+            return refuse(self, "a prompt is 2048 bytes at most");
+        }
         if request.unattended && text.len() > UNATTENDED_MAX {
             return refuse(self, "a prompt sent on its own is 512 bytes at most");
         }
@@ -225,6 +234,7 @@ impl WorkspaceModel {
             write,
             agent_label: format!("{} · {}", seen.label, seen.space),
             on_allow: false,
+            shown_whole: std::cell::Cell::new(false),
         });
         self.dirty = true;
     }
@@ -236,9 +246,19 @@ impl WorkspaceModel {
     }
 
     /// Takes the answer off the question: allowing hands the write to the
-    /// session, and an unattended one is allowed for a day.
+    /// session, and an unattended one is allowed for a day. Allowing a
+    /// text the last frame could not show whole is no answer: the
+    /// question stays until it is read or declined.
     pub(in crate::ui::orchestrator) fn answer_agent_write(&mut self, allow: bool) {
         self.dirty = true;
+        if allow
+            && !self
+                .agent_write
+                .as_ref()
+                .is_some_and(|open| open.shown_whole.get())
+        {
+            return;
+        }
         let Some(dialog) = self.agent_write.take() else {
             return;
         };
@@ -434,18 +454,46 @@ pub(in crate::ui::orchestrator) fn render_agent_write(
             "Type it",
         )
     };
+    let question = Dialog {
+        tone: Tone::Caution,
+        title: &title,
+        subject: Some(Line::from(attribution(&open.write.owner))),
+        body,
+        confirm: Some(confirm),
+        focus: Some(if open.on_allow { 1 } else { CANCEL }),
+        field: None,
+    };
+    let shown_whole = dialog::fits(area, &question);
+    open.shown_whole.set(shown_whole);
+    // Too tall to read whole here: no way to allow it until the frame
+    // has room, which is said instead of the text.
+    let too_tall;
+    let drawn = if shown_whole {
+        &question
+    } else {
+        too_tall = Dialog {
+            tone: Tone::Caution,
+            title: "Too long to read here",
+            subject: question.subject.clone(),
+            body: vec![
+                format!(
+                    "{} asks to type {} characters into {}.",
+                    open.write.label,
+                    open.write.text.chars().count(),
+                    open.agent_label
+                ),
+                "Make the terminal taller to read it before answering.".to_owned(),
+            ],
+            confirm: None,
+            focus: Some(CANCEL),
+            field: None,
+        };
+        &too_tall
+    };
     let answers = dialog::render(
         frame,
         area,
-        &Dialog {
-            tone: Tone::Caution,
-            title: &title,
-            subject: Some(Line::from(attribution(&open.write.owner))),
-            body,
-            confirm: Some(confirm),
-            focus: Some(if open.on_allow { 1 } else { CANCEL }),
-            field: None,
-        },
+        drawn,
         &[uze_keys::Scope::Global, uze_keys::Scope::Confirm],
         WorkspaceHit::AgentWriteAnswer(false),
         WorkspaceHit::AgentWriteAnswer(true),

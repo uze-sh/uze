@@ -478,3 +478,13 @@
 - decided:  `AgentRequest` carries the id of the action that asks, and the allowance is keyed by (extension, agent, action id). The question names the action ("Only <label>, to <agent>, on its events…"). The allowance lives only in memory (extension-agent-bridge D16), so no persisted format changes.
 - rejected: Keying by the prompt's text: an action whose text is templated would ask on every event. Keying by the label: two actions may share one.
 - blast:    `uze-extensions` `contract::AgentRequest` (new `action` field; `Outcome::Agent` now boxes it, which the larger request needs under clippy's `result_large_err`) and `declared/action.rs`; `src/ui/orchestrator/declared/agent.rs` and the five places that hand a request to `ask_of_agent`.
+
+## D182 — A prompt is at most 2048 bytes, and is allowed only once the frame has shown it whole
+
+- status:   pending
+- task:     review finding 5 (SECURITY)
+- commit:
+- trigger:  An attended prompt had no length bound and the question's dialog clips at the frame's height, so the operator could allow text they never saw.
+- decided:  Every prompt (attended or not) over 2048 bytes is refused with an attributed notice before anything is shown. The question is not made scrollable: `dialog::fits` says whether the frame shows the dialog whole, the question records it on every frame, and while it does not, the dialog says how long the prompt is and to make the terminal taller, offers no way to allow, and an allow (key or call) leaves it open. Esc still declines; once the frame has room the text appears whole and may be allowed.
+- rejected: A scrollable body: an allow reachable before the end was scrolled to is the same hole, and proving the end was read needs state the widget does not keep. Refusing outright at ask time: the frame's height is not known there, and a resize makes a refused prompt readable.
+- blast:    `src/ui/orchestrator/declared/agent.rs`; `src/ui/widget/dialog.rs` (`fits`, the layout split out of `render_with`).
