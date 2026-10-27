@@ -393,6 +393,12 @@ impl Attach<'_> {
             self.toggle_space_overview();
             return Flow::Continue;
         }
+        // The brake works wherever it is pressed: over a surface as over
+        // the pane, since it is the surface's extension it stops.
+        if action == Action::PauseAgentWrites {
+            self.model.toggle_agent_writes();
+            return Flow::Continue;
+        }
         // A declared view's door, from the index: it opens over whatever
         // stands in the pane, as its button on the strip does.
         if let Action::Extension(id) = action
@@ -485,7 +491,6 @@ impl Attach<'_> {
                 }
             }
             Action::ToggleRecent => self.open_recent(),
-            Action::PauseAgentWrites => self.model.toggle_agent_writes(),
             _ => {}
         }
         Flow::Continue

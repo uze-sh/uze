@@ -961,7 +961,10 @@ fn list<'a>(
         .ui
         .get(&key)
         .and_then(|held| held.parse::<usize>().ok())
-        .filter(|row| *row < rows);
+        .filter(|row| *row < rows)
+        // A picker is for choosing: it opens on its first row, so its keys
+        // act at once.
+        .or_else(|| (rows > 0 && builder.env.context["slot"] == "overlay").then_some(0));
     builder.acts.insert(
         id,
         Act::List {

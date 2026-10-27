@@ -298,3 +298,13 @@
 - decided:  `ask_of_agent` refuses an unattended prompt over 512 bytes with an attributed notice; one sent on a gesture is shown first and has no bound of its own.
 - rejected: Cutting it: a cut prompt says something its author did not write.
 - blast:    `declared/agent.rs`.
+
+## D46 — Found driving the TUI by hand: F8 over a surface, a picker's first row, a focus closing the picker
+
+- status:   pending
+- task:     4.4, 4.5
+- commit:
+- trigger:  Driving `run6.sh`'s checklist in the real TUI (tmux): with Flight deck open, F8 did nothing and the next prompt was still shown; in Jump, ctrl+g said "select a row first" until Down was pressed, and after it the picker stayed open over the agent it had put in front.
+- decided:  F8 is bound in `Scope::Surfaces` (over the pane and every surface, as the surfaces' doors are) and handled before a surface in front takes the key. A list in an `overlay` with nothing selected selects its first row: a picker is for choosing. A `focus-agent` from an overlay closes it.
+- rejected: Leaving the picker open: the agent it put in front would stay covered.
+- blast:    `uze-keys` default bindings, `session/keys.rs`, `declared/bind.rs::list`, `declared/overlay.rs`.

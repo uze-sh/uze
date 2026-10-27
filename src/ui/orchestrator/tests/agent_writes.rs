@@ -101,3 +101,22 @@ fn a_paused_workspace_takes_no_prompt_and_a_command_character_is_refused() {
     driven.pump();
     assert!(typed(&driven.sent()).is_empty());
 }
+
+#[test]
+fn f8_pauses_with_a_surface_open_in_the_pane() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-agent-pause-surface",
+    ));
+    let mut driven = driven(launched_agent(), &home);
+    driven.press_key(KeyEvent::new(KeyCode::Char('g'), KeyModifiers::ALT));
+    assert!(
+        driven.attach.model.open_slot.is_some(),
+        "the changes stand in the pane"
+    );
+    driven.press_key(KeyEvent::new(KeyCode::F(8), KeyModifiers::NONE));
+    assert!(
+        driven.attach.model.remembered.declared.bridge.writes.paused,
+        "the surface in front does not swallow the brake"
+    );
+}

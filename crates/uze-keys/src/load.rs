@@ -368,9 +368,10 @@ fn default_bindings() -> Vec<Binding> {
         // space, on the same modifier.
         bind(Scope::Workspace, "alt+s", Action::NewSpace),
         bind(Scope::Workspace, "f2", Action::RenameSelection),
-        // A function key: it must work over any agent's prompt, and is
-        // pressed when an extension is typing where it should not.
-        bind(Scope::Workspace, "f8", Action::PauseAgentWrites),
+        // A function key: it must work over any agent's prompt and over
+        // every surface, and is pressed when an extension is typing where
+        // it should not.
+        bind(Scope::Surfaces, "f8", Action::PauseAgentWrites),
         // The sidebar is vertical and holds spaces; the strip is
         // horizontal and holds tabs. Ctrl walks the container, Alt walks
         // what is inside it.
