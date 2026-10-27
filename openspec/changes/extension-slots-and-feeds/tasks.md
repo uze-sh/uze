@@ -39,4 +39,4 @@
 - [x] 7.1 Fixtures: `gpu-meter` with a `status` surface and a `warn-at` preference; `gsd-band` with a 2-row `band` composed by its script; `notes` with an `overlay` picker; the probe asking for `notify` and `sound`; their `.test.kdl` and snapshots
 - [x] 7.2 The extensions rule, invariants (bands never resize a pane; compose validates before drawing; notifications are attributed and rate-limited), diagrams, the `uze:extension` skill
 - [x] 7.3 A journey: a band and a status row appear once enabled, and a preference changes what they draw
-- [ ] 7.4 `make check`, `openspec validate --all --strict`, and the hand proof script
+- [x] 7.4 `make check`, `openspec validate --all --strict`, and the hand proof script

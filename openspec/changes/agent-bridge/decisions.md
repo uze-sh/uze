@@ -279,3 +279,12 @@
 - decided:  `Remembered` carries the declared extensions, their standings and the project they were judged for, so a reopening inside `RESOLUTION_STANDS_FOR` draws what the last refresh read. A standing changed from the workspace's offer is seen at the next resolution (30 s at most, or `F5`), as every other machine fact the modal shows.
 - rejected: Invalidating the modal's memory from the workspace's offer: a second path into the management state for one screen.
 - blast:    `src/ui/model.rs`.
+## D44 — Closed on make check and the hand proof's automatic part; the TUI checklist waits for the operator
+
+- status:   pending
+- task:     5.4
+- commit:
+- trigger:  The task asks for `make check`, `openspec validate --all --strict` and the hand proof script.
+- decided:  `make check` passes on the branch rebased onto `main` (`f5a7972e`) but for the three failures known to this machine's environment (opencode's `bun` shim, two `foreground_status_*` in `uze-terminal`); `openspec validate --all --strict` passes. The proof script (`run6.sh`, kept with the plan's artifact, shared by 6a and 6b) rebuilds a world from the branch's `deck` and `bridge` fixtures; its automatic part passes (install disabled, nothing allowed unasked, both plugins check clean, a report from outside an agent refused with exit 0). Its checklist a–i in the real TUI is the operator's.
+- rejected: Waiting for the operator to close the task: the run is unattended.
+- blast:    None.

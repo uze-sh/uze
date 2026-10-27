@@ -279,3 +279,13 @@
 - decided:  `journeys/suites/04-workspace/18-…` stages `deck` (a copy of the fixture: a container mounts only `journeys/`), enables it from the offer, gates on the band over the agent and the row in the sidebar's header naming the phases, turns `detail` off in the Extensions screen's preferences editor, and reads `state/extensions/preferences/deck@studio/deck.json` and the checkout the script never wrote. What the band and the row draw is a gate, never a check: nothing on disk says it. A number preference typed through the host's prompt, the picker overlay and the `done` notification are left to the client's own tests.
 - rejected: Pointing the journey at `tests/_fixtures/canonical/deck` through `{repo}`: the Docker run cannot reach it, so the copy can drift from the fixture, which the extension check still proves.
 - blast:    `journeys/suites/04-workspace/18-a-band-and-a-status-row-a-preference-redraws.yml`.
+
+## D42 — Closed on make check and the hand proof's automatic part; the TUI checklist waits for the operator
+
+- status:   pending
+- task:     7.4
+- commit:
+- trigger:  The task asks for `make check`, `openspec validate --all --strict` and the hand proof script.
+- decided:  `make check` passes on the branch rebased onto `main` (`f5a7972e`) but for the three failures known to this machine's environment (opencode's `bun` shim, two `foreground_status_*` in `uze-terminal`); `openspec validate --all --strict` passes. The proof script (`run6.sh`, kept with the plan's artifact, shared by 6a and 6b) rebuilds a world from the branch's `deck` and `bridge` fixtures; its automatic part passes (install disabled, nothing allowed unasked, both plugins check clean, a report from outside an agent refused with exit 0). Its checklist a–i in the real TUI is the operator's.
+- rejected: Waiting for the operator to close the task: the run is unattended.
+- blast:    None.
