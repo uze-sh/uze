@@ -499,11 +499,21 @@ fn only_the_grants_this_version_enforces_are_accepted() {
         the_message(&wanting("\"exec\"")),
         "`exec` names the program it grants"
     );
-    for (grant, change) in [("net", 8), ("secret", 8), ("edit:checkout", 8)] {
-        assert_eq!(
-            the_message(&wanting(&format!("\"{grant}\""))),
-            format!("`{grant}` arrives in a later change (change {change})")
-        );
+    decoded(&wanting("\"net:api.github.com\""));
+    for (grant, message) in [
+        ("net", "`net` names the host it grants"),
+        ("net:https://x.com", "`https://x.com` is not a host name"),
+        ("net:*.github.com", "`*.github.com` is not a host name"),
+        (
+            "secret",
+            "`secret` is not a grant: a secret is a preference the operator sets",
+        ),
+        (
+            "edit:checkout",
+            "`edit:checkout` is not offered: no extension writes the checkout yet",
+        ),
+    ] {
+        assert_eq!(the_message(&wanting(&format!("\"{grant}\""))), message);
     }
     assert_eq!(
         the_message(&wanting("\"write:checkout\"")),
@@ -702,6 +712,42 @@ fn preferences_are_typed_with_a_default_they_may_hold() {
     assert!(
         first_message(&format!("{GSD}preferences {{ toggle \"on\"; }}\n"))
             .contains("says its `default`")
+    );
+}
+
+#[test]
+fn a_secret_has_no_default_and_is_kept_only_for_a_host() {
+    let with = |wants: &str, secret: &str| {
+        GSD.replace(
+            "source \"board\"",
+            &format!("{wants}preferences {{ {secret} }}\nsource \"board\""),
+        )
+    };
+    let manifest = decoded(&with(
+        "wants \"net:api.github.com\"\n",
+        "secret \"token\" label=\"GitHub token\";",
+    ));
+    let token = manifest.preference("token").unwrap();
+    assert!(token.is_secret());
+    assert_eq!(token.default, serde_json::Value::Null);
+    assert!(token.holds(&serde_json::json!("ghp_x")));
+    for refused in [
+        serde_json::json!(""),
+        serde_json::json!("a\nb"),
+        serde_json::json!(1),
+    ] {
+        assert!(!token.holds(&refused), "{refused}");
+    }
+    assert_eq!(manifest.hosts().collect::<Vec<_>>(), ["api.github.com"]);
+    assert!(
+        the_message(&with("", "secret \"token\";")).contains("the secret `token` is never used")
+    );
+    assert!(
+        first_message(&with(
+            "wants \"net:api.github.com\"\n",
+            "secret \"token\" default=\"x\";"
+        ))
+        .contains("default")
     );
 }
 

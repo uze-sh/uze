@@ -53,6 +53,7 @@ pub use application::{
     ExtensionRunner, ExtensionStanding, ExtensionState, FIXTURE_LIMIT, InstalledExtension,
     NotACheckout, PreferenceRow, ProgramPin, SourceData, Switched, WATCH_DEPTH, WATCH_ENTRIES,
     confinement, consent_key, enabled_per_project, extension_stamp, grant_meaning, paths_digest,
+    secrets_kept_in,
 };
 pub use uze_contract::{CompiledExtension, Identity as ExtensionIdentity};
 pub use uze_core::capability::extension::Diagnostic as ExtensionDiagnostic;

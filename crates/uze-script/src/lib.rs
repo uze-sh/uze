@@ -10,7 +10,10 @@
 //! - [`Script`]: compile once, answer many times; [`ScriptCache`] keeps
 //!   compiled scripts by digest.
 //! - [`Reach`]: the host's narrow interface (`read_checkout`,
-//!   `list_checkout`, `clock`), and the [`Grant`] each function needs.
+//!   `list_checkout`, `clock`, `run_program`, `fetch`), and the [`Grant`]
+//!   each function needs.
+//! - [`FetchRequest`]: what `fetch` asked, checked against the `net:`
+//!   grants before the host sees it.
 //! - [`host_functions_of`] and [`ungranted_calls`]: what the check reads
 //!   from a script's text before anything runs.
 //! - [`ScriptError`]: the bound a script crossed, or where it went wrong.
@@ -26,6 +29,7 @@
 mod engine;
 mod envelope;
 mod error;
+mod fetch;
 mod primitives;
 mod reach;
 mod resident;
@@ -36,7 +40,10 @@ mod value;
 
 pub use envelope::Envelope;
 pub use error::{Limit, Location, ScriptError};
-pub use reach::{CheckoutPath, Entry, EntryKind, Grant, Grants, ProgramReply, Reach, ReachError};
+pub use fetch::{FetchMethod, FetchReply, FetchRequest, SecretUse, granted_host, host_of};
+pub use reach::{
+    ANY_HOST, CheckoutPath, Entry, EntryKind, Grant, Grants, ProgramReply, Reach, ReachError,
+};
 pub use resident::{Resident, ResidentScript, TIMER_FLOOR};
 pub use scan::{host_functions_of, ungranted_calls};
 pub use script::{Answered, Script, ScriptCache};

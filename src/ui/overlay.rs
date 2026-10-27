@@ -162,7 +162,13 @@ impl TuiModel {
             return Intent::None;
         };
         let set = |editor: &mut crate::ui::model::PreferencesEditor, value: serde_json::Value| {
-            editor.rows[editor.selected].value = value.clone();
+            // A secret's row keeps only whether it is set: what was typed
+            // goes to the keychain and is never shown again.
+            editor.rows[editor.selected].value = if row.is_secret() {
+                serde_json::Value::Bool(value.as_str().is_some_and(|typed| !typed.is_empty()))
+            } else {
+                value.clone()
+            };
             Intent::SetPreference {
                 identity: editor.identity.clone(),
                 name: row.name.clone(),
@@ -197,7 +203,11 @@ impl TuiModel {
             (None, Action::Activate) => match row.pressed() {
                 Some(value) => set(&mut editor, value),
                 None => {
-                    editor.typing = Some(row.said());
+                    editor.typing = Some(if row.is_secret() {
+                        String::new()
+                    } else {
+                        row.said()
+                    });
                     Intent::None
                 }
             },
@@ -438,9 +448,26 @@ pub(crate) fn render_preferences(
 ) {
     if let (Some(typed), Some(row)) = (&editor.typing, editor.rows.get(editor.selected)) {
         let title = format!("{} · {}", editor.name, row.label);
+        let secret_body;
         let body = match row.kind {
             "number" => "A number.",
+            "secret" => {
+                secret_body = format!(
+                    "Kept in {} and never shown again. Leave it empty to forget it.",
+                    uze_application::secrets_kept_in()
+                );
+                &secret_body
+            }
             _ => "Text.",
+        };
+        // A secret is drawn as one dot per character typed.
+        let masked: String;
+        let shown = if row.is_secret() {
+            masked = crate::ui::theme::glyph(uze_theme::Symbol::CursorMasked)
+                .repeat(typed.chars().count());
+            &masked
+        } else {
+            typed
         };
         render_text_prompt(
             frame,
@@ -451,7 +478,7 @@ pub(crate) fn render_preferences(
                 placeholder: &row.label,
                 confirm: "Set",
             },
-            typed,
+            shown,
             hits,
         );
         return;

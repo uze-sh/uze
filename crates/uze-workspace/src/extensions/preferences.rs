@@ -65,6 +65,23 @@ pub fn set(
     Ok(record.values)
 }
 
+/// Every preference record of the plugin `plugin@marketplace`'s
+/// extensions, by extension id: what leaves with it.
+pub fn of_plugin(home: &UzeHome, plugin: &str) -> Vec<(String, Map<String, Value>)> {
+    let Ok(entries) = std::fs::read_dir(home.extension_plugin_preferences_dir(plugin)) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().into_string().ok()?;
+            let id = name.strip_suffix(".json")?.to_owned();
+            let values = read(home, plugin, &id);
+            Some((id, values))
+        })
+        .collect()
+}
+
 /// Removes every preference record of the plugin `plugin@marketplace`'s
 /// extensions, as it leaves the machine.
 pub fn forget_plugin(home: &UzeHome, plugin: &str) -> Result<()> {

@@ -1,7 +1,8 @@
 //! `read:checkout` answered over one checkout: what a script's
 //! `read_checkout` and `list_checkout` reach, and no further; and, when
-//! the extension holds them, its store as it was when the script began and
-//! the programs its `exec:` grants cover.
+//! the extension holds them, its store as it was when the script began,
+//! the programs its `exec:` grants cover and the hosts its `net:` grants
+//! name.
 //!
 //! `uze-script` has already refused an absolute path and a `..`. What is
 //! left is the filesystem's half: a link inside the checkout may point
@@ -13,7 +14,9 @@ use std::io::Read as _;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use uze_script::{CheckoutPath, Entry, EntryKind, ProgramReply, Reach, ReachError};
+use uze_script::{
+    CheckoutPath, Entry, EntryKind, FetchReply, FetchRequest, ProgramReply, Reach, ReachError,
+};
 
 /// What runs a granted program for a script, as the runner runs a `run`
 /// source.
@@ -35,6 +38,7 @@ pub struct CheckoutReach {
     root: PathBuf,
     store: Option<serde_json::Value>,
     programs: Option<RunsPrograms>,
+    fetcher: Option<super::fetch::Fetcher>,
 }
 
 impl std::fmt::Debug for CheckoutReach {
@@ -43,6 +47,7 @@ impl std::fmt::Debug for CheckoutReach {
             .field("root", &self.root)
             .field("store", &self.store.is_some())
             .field("programs", &self.programs.is_some())
+            .field("fetcher", &self.fetcher.is_some())
             .finish()
     }
 }
@@ -53,7 +58,14 @@ impl CheckoutReach {
             root,
             store: None,
             programs: None,
+            fetcher: None,
         }
+    }
+
+    /// What makes the requests the script asks for with `fetch`.
+    pub(super) fn with_fetcher(mut self, fetcher: super::fetch::Fetcher) -> Self {
+        self.fetcher = Some(fetcher);
+        self
     }
 
     /// The store the script reads with `store()`.
@@ -99,6 +111,15 @@ impl Reach for CheckoutReach {
         match &self.programs {
             Some(programs) => programs(name, args),
             None => Err(ReachError(format!("`{name}` is not run here"))),
+        }
+    }
+
+    fn fetch(&self, request: &FetchRequest) -> Result<FetchReply, ReachError> {
+        match &self.fetcher {
+            Some(fetcher) => fetcher.fetch(request),
+            None => Err(ReachError(
+                "fetch: a check reaches no host; its recorded answers stand in".to_owned(),
+            )),
         }
     }
 

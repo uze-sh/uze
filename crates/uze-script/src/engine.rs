@@ -218,6 +218,7 @@ fn register_host(
     }
     if grants.iter().any(|grant| grant.program().is_some()) {
         let runner = Arc::clone(&reach);
+        let clock = Arc::clone(&clock);
         let granted: Vec<String> = grants
             .iter()
             .filter_map(|grant| grant.program().map(str::to_owned))
@@ -252,6 +253,24 @@ fn register_host(
                 Ok(map)
             },
         );
+    }
+    if crate::reach::holds(grants, &crate::reach::ANY_HOST) {
+        let fetcher = Arc::clone(&reach);
+        let granted = grants.clone();
+        let waited = Arc::clone(&clock);
+        let fetch = move |url: &str, options: Map| -> Result<Map, Box<rhai::EvalAltResult>> {
+            let request = crate::fetch::FetchRequest::read(url, &options, &granted)
+                .map_err(|error| failure(error.0))?;
+            let started = Instant::now();
+            let reply = fetcher.fetch(&request);
+            waited.waited(started.elapsed());
+            Ok(crate::fetch::reply_map(
+                reply.map_err(|error| failure(error.0))?,
+            ))
+        };
+        let plain = fetch.clone();
+        engine.register_fn("fetch", move |url: &str| plain(url, Map::new()));
+        engine.register_fn("fetch", fetch);
     }
     if grants.contains(&Grant::ReadCheckout) {
         let reader = Arc::clone(&reach);

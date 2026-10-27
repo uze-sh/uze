@@ -108,7 +108,8 @@ pub struct ExtensionReport {
 pub struct PreferenceRow {
     pub name: String,
     pub label: String,
-    /// `text`, `number`, `toggle` or `choice`.
+    /// `text`, `number`, `toggle`, `choice` or `secret`, whose value is
+    /// only whether it is set.
     pub kind: &'static str,
     pub value: serde_json::Value,
     /// A choice's values, in order; empty for any other kind.
@@ -118,6 +119,13 @@ pub struct PreferenceRow {
 impl PreferenceRow {
     /// The value as the screen says it.
     pub fn said(&self) -> String {
+        if self.is_secret() {
+            return if self.value == serde_json::Value::Bool(true) {
+                "set".to_owned()
+            } else {
+                "not set".to_owned()
+            };
+        }
         match &self.value {
             serde_json::Value::Bool(true) => "on".to_owned(),
             serde_json::Value::Bool(false) => "off".to_owned(),
@@ -146,6 +154,11 @@ impl PreferenceRow {
         }
     }
 
+    /// Whether it is a secret: typed masked, never shown again.
+    pub fn is_secret(&self) -> bool {
+        self.kind == "secret"
+    }
+
     /// `typed` as this preference's value: a number read as one.
     pub fn typed(&self, typed: &str) -> Option<serde_json::Value> {
         match self.kind {
@@ -157,7 +170,7 @@ impl PreferenceRow {
                     .ok()
                     .or_else(|| typed.parse::<f64>().ok().map(serde_json::Value::from))
             }
-            "text" => Some(serde_json::Value::String(typed.to_owned())),
+            "text" | "secret" => Some(serde_json::Value::String(typed.to_owned())),
             _ => None,
         }
     }
@@ -200,6 +213,12 @@ impl ExtensionReport {
     }
 }
 
+/// Where this machine keeps an extension's secrets, as the operator reads
+/// it where they type one.
+pub fn secrets_kept_in() -> &'static str {
+    uze_workspace::extensions::secrets::kept_in()
+}
+
 /// What a grant lets an extension do, as the operator reads it before
 /// accepting it.
 pub fn grant_meaning(grant: &str) -> &'static str {
@@ -214,6 +233,9 @@ pub fn grant_meaning(grant: &str) -> &'static str {
             "keeps what it remembers in UZE's state, shared by every project"
         }
         Some(uze_contract::Grant::Exec(_)) => "runs this program on your machine",
+        Some(uze_contract::Grant::Net(_)) => {
+            "sends requests over HTTPS to this host, and to no other"
+        }
         Some(uze_contract::Grant::Resident) => {
             "keeps its script running while its surface is open, reading your keys when focused"
         }
@@ -369,8 +391,23 @@ impl Extensions<'_> {
                             uze_contract::PreferenceKind::Number { .. } => "number",
                             uze_contract::PreferenceKind::Toggle => "toggle",
                             uze_contract::PreferenceKind::Choice { .. } => "choice",
+                            uze_contract::PreferenceKind::Secret => "secret",
                         },
-                        value: set.get(&decl.name).cloned().unwrap_or_default(),
+                        // A secret is said set or not, from the record that
+                        // says so; its value is never read for a report.
+                        value: if decl.is_secret() {
+                            serde_json::Value::Bool(
+                                uze_workspace::extensions::preferences::read(
+                                    &self.0.home,
+                                    &super::consent::plugin_key(&identity),
+                                    &identity.id,
+                                )
+                                .get(&decl.name)
+                                    == Some(&serde_json::Value::Bool(true)),
+                            )
+                        } else {
+                            set.get(&decl.name).cloned().unwrap_or_default()
+                        },
                         values: match &decl.kind {
                             uze_contract::PreferenceKind::Choice { values } => values.clone(),
                             _ => Vec::new(),

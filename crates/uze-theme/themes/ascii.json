@@ -69,6 +69,7 @@
     "bar.medium": "|",
     "bar.thin": "|",
     "cursor.text": "_",
+    "cursor.masked": "*",
     "scroll.thumb": "#",
 
     "arrow.up": "^",

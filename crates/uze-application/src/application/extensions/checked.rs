@@ -301,17 +301,21 @@ fn scripts_call_only_what_is_granted(
                 .or_else(|| text.find(&function))
                 .unwrap_or(0);
             let (line, column) = line_and_column(&text, offset);
+            // `fetch` is granted by a host of the author's choosing.
+            let wanted = if grant == uze_script::ANY_HOST {
+                "net:<host>".to_owned()
+            } else {
+                grant.name().into_owned()
+            };
             diagnostics.push(Diagnostic {
                 file: file.to_owned(),
                 line,
                 column,
                 message: format!(
-                    "`{function}` needs the `{}` grant, which the manifest does not want",
-                    grant.name()
+                    "`{function}` needs the `{wanted}` grant, which the manifest does not want"
                 ),
                 suggestion: Some(format!(
-                    "add `wants \"{}\"` to {}",
-                    grant.name(),
+                    "add `wants \"{wanted}\"` to {}",
                     extension::MANIFEST_FILE
                 )),
             });

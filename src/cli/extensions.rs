@@ -71,6 +71,13 @@ pub(crate) fn render_extension_standings(
                 ),
             }));
         }
+        for host in report
+            .grants
+            .iter()
+            .filter_map(|grant| grant.strip_prefix("net:"))
+        {
+            rows.push(below(format!("{} {host}", progress::label("reaches"))));
+        }
         match report.confined {
             Some(true) => rows.push(below(progress::label("its programs run confined"))),
             Some(false) => rows.push(below(format!(

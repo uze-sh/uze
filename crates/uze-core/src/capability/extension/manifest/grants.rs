@@ -1,17 +1,13 @@
 //! `wants`: the grants an extension asks for.
 //!
 //! A grant exists in this build only once its enforcement does (D5), so
-//! every other name is refused, and the ones a later change brings are told
-//! apart from typos by naming that change.
+//! every other name is refused, and the ones the plan chose not to build
+//! are told apart from typos by saying so.
 
 use kdl::KdlNode;
 use uze_contract::Grant;
 
 use crate::capability::extension::document::{Report, nearest};
-
-/// The grants later changes bring, by name or by prefix (`exec:` stands
-/// for every `exec:<program>`), with the change that brings each.
-const LATER: &[(&str, u32)] = &[("net", 8), ("secret", 8), ("edit:checkout", 8)];
 
 /// The grants `node` names, each one this build offers, in order.
 pub fn wants(node: &KdlNode, report: &mut Report<'_>) -> Vec<Grant> {
@@ -48,6 +44,42 @@ fn grant(name: &str, offset: usize, report: &mut Report<'_>) -> Option<Grant> {
         );
         return None;
     }
+    if let Some(host) = name.strip_prefix(Grant::NET) {
+        report.at(
+            offset,
+            format!("`{host}` is not a host name"),
+            Some(
+                "write `net:` and the host alone, in lower case, with no scheme, port, path or \
+                 wildcard, such as `net:api.github.com`"
+                    .to_owned(),
+            ),
+        );
+        return None;
+    }
+    if name == "net" {
+        report.at(
+            offset,
+            "`net` names the host it grants",
+            Some("write `net:<host>`, such as `net:api.github.com`".to_owned()),
+        );
+        return None;
+    }
+    if name == "secret" {
+        report.at(
+            offset,
+            "`secret` is not a grant: a secret is a preference the operator sets",
+            Some("declare `secret \"token\" label=\"…\"` inside `preferences`".to_owned()),
+        );
+        return None;
+    }
+    if name == "edit:checkout" {
+        report.at(
+            offset,
+            "`edit:checkout` is not offered: no extension writes the checkout yet",
+            Some("read it with `read:checkout`".to_owned()),
+        );
+        return None;
+    }
     if name == "exec" {
         report.at(
             offset,
@@ -61,14 +93,6 @@ fn grant(name: &str, offset: usize, report: &mut Report<'_>) -> Option<Grant> {
             offset,
             "`write:checkout` does not exist: no extension writes the checkout",
             Some("read it with `read:checkout`".to_owned()),
-        );
-        return None;
-    }
-    if let Some(change) = later(name) {
-        report.at(
-            offset,
-            format!("`{name}` arrives in a later change (change {change})"),
-            Some(offered()),
         );
         return None;
     }
@@ -88,24 +112,11 @@ fn grant(name: &str, offset: usize, report: &mut Report<'_>) -> Option<Grant> {
     None
 }
 
-/// The change that brings `name`, when a later one does.
-pub fn later(name: &str) -> Option<u32> {
-    LATER
-        .iter()
-        .find(|(later, _)| match later.strip_suffix(':') {
-            Some(prefix) => name
-                .strip_prefix(prefix)
-                .is_some_and(|rest| rest.starts_with(':')),
-            None => name == *later,
-        })
-        .map(|(_, change)| *change)
-}
-
 fn offered() -> String {
     let names: Vec<String> = Grant::FIXED
         .iter()
         .map(|grant| format!("`{grant}`"))
-        .chain(["`exec:<program>`".to_owned()])
+        .chain(["`exec:<program>`".to_owned(), "`net:<host>`".to_owned()])
         .collect();
     format!("this version offers {}", names.join(", "))
 }

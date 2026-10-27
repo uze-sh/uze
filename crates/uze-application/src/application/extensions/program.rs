@@ -414,6 +414,140 @@ fn confinement(
     }
 }
 
+/// One request `fetch` makes, as the system's `curl` runs it
+/// (`extension-growth` G1): its arguments after the fixed ones and its
+/// configuration on standard input, which is where a secret goes.
+pub(super) struct CurlRun<'a> {
+    pub home: &'a UzeHome,
+    /// The `curl` executed: the system's own, by path.
+    pub curl: &'a Path,
+    pub args: Vec<String>,
+    pub config: Vec<u8>,
+    pub time_limit: std::time::Duration,
+    /// The confinement helper, when this runner confines.
+    pub helper: Option<&'a Path>,
+}
+
+/// The variables `curl` keeps from UZE's environment beyond what any
+/// program does: the proxy and the CA bundle a machine behind a TLS-
+/// inspecting proxy needs (`uze_platform::tools::curl_reads`).
+const CURL_KEEPS: &[&str] = &[
+    "HTTPS_PROXY",
+    "https_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+    "NO_PROXY",
+    "no_proxy",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "CURL_CA_BUNDLE",
+];
+
+/// Where name resolution reads, beneath `/etc` and wherever its links
+/// lead (`/run/systemd/resolve` on most desktops).
+const RESOLVER_FILES: &[&str] = &[
+    "/etc/resolv.conf",
+    "/etc/hosts",
+    "/etc/nsswitch.conf",
+    "/etc/gai.conf",
+];
+
+/// Runs `run` through the program runner: in its own scratch directory,
+/// with network and nothing of the checkout, under its bounds.
+pub(super) fn curl(run: &CurlRun<'_>) -> ProgramOutcome {
+    let id = format!(
+        "{}-{}",
+        std::process::id(),
+        RUNS.fetch_add(1, Ordering::Relaxed)
+    );
+    let dir = run.home.extension_scratch_dir(&id);
+    let scratch = dir.join(SCRATCH);
+    if let Err(error) = std::fs::create_dir_all(&scratch) {
+        return ProgramOutcome::NotStarted {
+            reason: format!("its scratch directory could not be made: {error}"),
+        };
+    }
+    let mut environment = environment(std::env::vars_os(), &scratch, &scratch, &BTreeMap::new());
+    let kept: Vec<(String, std::ffi::OsString)> = std::env::vars_os()
+        .filter_map(|(name, value)| Some((name.into_string().ok()?, value)))
+        .filter(|(name, _)| CURL_KEEPS.contains(&name.as_str()))
+        .collect();
+    let certificates: Vec<PathBuf> = kept
+        .iter()
+        .filter(|(name, _)| name.starts_with("SSL_") || name.starts_with("CURL_"))
+        .map(|(_, value)| PathBuf::from(value))
+        .collect();
+    environment.extend(kept);
+    let confine = match run.helper {
+        Some(helper) => {
+            let rules = serde_json::to_string(&curl_confinement(run, &scratch, certificates));
+            match rules {
+                Ok(rules) => Some(Confine {
+                    helper: helper.to_path_buf(),
+                    rules,
+                }),
+                Err(error) => {
+                    let _ = std::fs::remove_dir_all(&dir);
+                    return ProgramOutcome::NotStarted {
+                        reason: format!("its confinement could not be written: {error}"),
+                    };
+                }
+            }
+        }
+        None => None,
+    };
+    let args = uze_platform::tools::CURL_ARGUMENTS
+        .iter()
+        .map(|arg| (*arg).to_owned())
+        .chain(run.args.iter().cloned())
+        .collect();
+    let ended = extension_program::run(&ProgramRun {
+        executable: run.curl.to_path_buf(),
+        args,
+        cwd: scratch.clone(),
+        environment,
+        stdin: run.config.clone(),
+        time_limit: run.time_limit,
+        confine,
+    });
+    let _ = std::fs::remove_dir_all(&dir);
+    ended
+}
+
+/// What a request may reach: the system's programs and libraries, the
+/// resolver's files wherever they lead, the CA bundle it was pointed at,
+/// and the network; it writes only its scratch.
+fn curl_confinement(run: &CurlRun<'_>, scratch: &Path, certificates: Vec<PathBuf>) -> Confinement {
+    let existing = |paths: Vec<PathBuf>| -> Vec<PathBuf> {
+        let mut paths: Vec<PathBuf> = paths.into_iter().filter(|path| path.exists()).collect();
+        paths.sort();
+        paths.dedup();
+        paths
+    };
+    let resolver = RESOLVER_FILES
+        .iter()
+        .filter_map(|file| std::fs::canonicalize(file).ok());
+    let read = SYSTEM_READS
+        .iter()
+        .map(PathBuf::from)
+        .chain(resolver)
+        .chain(certificates)
+        .collect();
+    let read_execute = SYSTEM_PREFIXES
+        .iter()
+        .map(PathBuf::from)
+        .chain(run.curl.parent().map(Path::to_path_buf))
+        .collect();
+    Confinement {
+        read: existing(read),
+        read_execute: existing(read_execute),
+        write: existing(vec![scratch.to_path_buf(), PathBuf::from("/dev/null")]),
+        devices: Vec::new(),
+        network: true,
+        limits: Limits::with_cpu_seconds(run.time_limit.as_secs().saturating_mul(2)),
+    }
+}
+
 /// How the run ended, as the surface that asked is told.
 fn outcome(asked: &Asked<'_>, ended: ProgramOutcome) -> Answer {
     let name = asked.program.program();

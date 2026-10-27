@@ -14,6 +14,26 @@ pub fn references(decoded: &Decoded, report: &mut Report<'_>) {
     sources_run_what_this_build_runs(decoded, report);
     actions_name_what_is_declared(decoded, report);
     programs_are_granted(decoded, report);
+    secrets_are_sent_somewhere(decoded, report);
+}
+
+/// A secret is only ever placed in a request `fetch` makes, so one kept by
+/// an extension that may reach no host would be asked of the operator for
+/// nothing.
+fn secrets_are_sent_somewhere(decoded: &Decoded, report: &mut Report<'_>) {
+    let manifest = &decoded.manifest;
+    if manifest.hosts().next().is_some() {
+        return;
+    }
+    for secret in manifest.preferences.iter().filter(|decl| decl.is_secret()) {
+        report.whole(
+            format!(
+                "the secret `{}` is never used: only `fetch` sends one, and the manifest wants no `net:<host>`",
+                secret.name
+            ),
+            Some("add the host the secret is sent to, such as \"net:api.github.com\", to `wants`".to_owned()),
+        );
+    }
 }
 
 /// The shortest interval a source answered by a program is asked at: each

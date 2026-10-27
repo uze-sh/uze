@@ -650,6 +650,40 @@ fn preferences_are_listed_and_set_from_the_keyboard() {
     );
 }
 
+/// A secret is typed into a field that draws a dot per character, starts
+/// empty however it was set, and is then said only to be set.
+#[test]
+fn a_secret_is_typed_masked_and_never_shown_again() {
+    let mut standing = standing(uze_application::ExtensionCondition::Enabled);
+    standing.preferences = vec![uze_application::PreferenceRow {
+        name: "token".to_owned(),
+        label: "GitHub token".to_owned(),
+        kind: "secret",
+        value: serde_json::json!(true),
+        values: Vec::new(),
+    }];
+    let mut model = standing_in_a_project(standing);
+    assert!(screen_of(&model).contains("GitHub token · set"));
+    model.edit_selected_preferences();
+    assert!(screen_of(&model).contains("GitHub token  set"));
+    let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(model.apply_key(enter), Intent::None, "a secret is typed");
+    for ch in "ghp_abc".chars() {
+        model.apply_key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
+    }
+    let typing = screen_of(&model);
+    assert!(!typing.contains("ghp_abc"), "{typing}");
+    assert!(typing.contains("•••••••"), "{typing}");
+    assert!(typing.contains("never shown"), "{typing}");
+    assert_eq!(
+        model.apply_key(enter),
+        set("token", "GitHub token", serde_json::json!("ghp_abc"))
+    );
+    let after = screen_of(&model);
+    assert!(after.contains("GitHub token  set"), "{after}");
+    assert!(!after.contains("ghp_abc"), "{after}");
+}
+
 /// A click on a preference's row is choosing it and pressing Enter.
 #[test]
 fn clicking_a_preference_row_is_pressing_enter_on_it() {

@@ -16,6 +16,7 @@ mod checked;
 mod checkout;
 mod compiled;
 mod consent;
+mod fetch;
 mod installed;
 mod program;
 mod reach;
@@ -33,7 +34,9 @@ pub use consent::{
 };
 pub use installed::InstalledExtension;
 use reach::CheckoutReach;
-pub use report::{ExtensionCondition, ExtensionReport, PreferenceRow, grant_meaning};
+pub use report::{
+    ExtensionCondition, ExtensionReport, PreferenceRow, grant_meaning, secrets_kept_in,
+};
 pub use runner::ExtensionRunner;
 pub use summary::DeclaredExtensionSummary;
 pub use watch::{WATCH_DEPTH, WATCH_ENTRIES, paths_digest};

@@ -134,7 +134,9 @@ pub(super) fn plugin_key(identity: &Identity) -> String {
 }
 
 /// Each preference `manifest` declares, at the operator's value where it
-/// may hold it and at its default otherwise.
+/// may hold it and at its default otherwise. A secret is never among
+/// them: neither a bind template's `{pref.*}` nor a source's
+/// `input.preferences` reads one.
 pub(super) fn admitted_preferences(
     home: &uze_core::UzeHome,
     identity: &Identity,
@@ -146,9 +148,33 @@ pub(super) fn admitted_preferences(
         manifest
             .preferences
             .iter()
+            .filter(|decl| !decl.is_secret())
             .map(|decl| (decl.name.clone(), decl.admit(set.get(&decl.name))))
             .collect(),
     )
+}
+
+/// Keeps what the operator typed as the secret `name` of `identity`, or
+/// forgets it when they typed nothing. Its value is in no message.
+fn set_secret(
+    home: &uze_core::UzeHome,
+    identity: &Identity,
+    name: &str,
+    value: &serde_json::Value,
+) -> Result<()> {
+    let plugin = plugin_key(identity);
+    match value.as_str() {
+        Some("") => {
+            uze_workspace::extensions::secrets::delete(home, &plugin, &identity.id, name)?;
+        }
+        Some(typed) if uze_contract::is_secret_value(typed) => {
+            uze_workspace::extensions::secrets::store(home, &plugin, &identity.id, name, typed)?;
+        }
+        _ => {
+            return Err(refusal(format!("the secret `{name}` is one line of text")));
+        }
+    }
+    Ok(())
 }
 
 /// Whether this machine confines programs, right by right.
@@ -329,6 +355,10 @@ impl Extensions<'_> {
                 "{identity} declares no preference `{name}`"
             )));
         };
+        if decl.is_secret() {
+            set_secret(&self.0.home, identity, name, &value)?;
+            return Ok(admitted_preferences(&self.0.home, identity, manifest));
+        }
         if !decl.holds(&value) {
             return Err(refusal(format!(
                 "`{value}` is not a value the preference `{name}` may hold"
@@ -427,6 +457,10 @@ impl Extensions<'_> {
     /// `plugin@marketplace`, and what they kept, as it leaves the machine.
     pub(crate) fn forget_plugin(&self, plugin: &str, marketplace: &str) -> Result<Vec<String>> {
         uze_workspace::extensions::store::forget_plugin(
+            &self.0.home,
+            &format!("{plugin}@{marketplace}"),
+        )?;
+        uze_workspace::extensions::secrets::forget_plugin(
             &self.0.home,
             &format!("{plugin}@{marketplace}"),
         )?;

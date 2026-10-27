@@ -253,6 +253,25 @@ impl UzeHome {
             .join(plugin)
     }
 
+    /// Where a secret preference of extension `id` of `plugin@marketplace`
+    /// is kept on a machine with no keychain: a `0600` file holding the
+    /// value alone. A record, since only the operator's typing says it, and
+    /// apart from the preferences so nothing that reads those reads it.
+    /// Removed with its plugin.
+    pub fn extension_secret_path(&self, plugin: &str, id: &str, name: &str) -> PathBuf {
+        self.extension_plugin_secrets_dir(plugin)
+            .join(id)
+            .join(name)
+    }
+
+    /// Every secret file of the plugin `plugin@marketplace`'s extensions.
+    pub fn extension_plugin_secrets_dir(&self, plugin: &str) -> PathBuf {
+        self.state_dir()
+            .join("extensions")
+            .join("secrets")
+            .join(plugin)
+    }
+
     /// What the agent `agent` reported about itself through `uze agent
     /// report`, newest last, bounded: generated, since a report is a claim
     /// about now and losing it costs nothing.

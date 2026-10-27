@@ -275,6 +275,9 @@ vocabulary! {
         BarThin = "bar.thin",
         /// The caret in a text input.
         CursorText = "cursor.text",
+        /// One character typed into a field that never shows what was
+        /// typed: a secret.
+        CursorMasked = "cursor.masked",
         /// A scrollbar's handle: where you are in a list, and how much of
         /// it you can see.
         ///

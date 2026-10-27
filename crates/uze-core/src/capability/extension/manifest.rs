@@ -496,6 +496,7 @@ fn preferences(node: &KdlNode, report: &mut Report<'_>) -> Vec<uze_contract::Pre
         let parts = entries(child, report);
         let allowed: &[&str] = match kind_name {
             "number" => &["label", "default", "min", "max"],
+            "secret" => &["label"],
             _ => &["label", "default"],
         };
         let max_args = if kind_name == "choice" { usize::MAX } else { 1 };
@@ -527,6 +528,15 @@ fn preferences(node: &KdlNode, report: &mut Report<'_>) -> Vec<uze_contract::Pre
                 }
             })
         };
+        if kind_name == "secret" {
+            declared.push(PreferenceDecl {
+                name,
+                label: Clean::label(&label).into_string(),
+                kind: PreferenceKind::Secret,
+                default: serde_json::Value::Null,
+            });
+            continue;
+        }
         let kind = match kind_name {
             "text" => PreferenceKind::Text,
             "toggle" => PreferenceKind::Toggle,

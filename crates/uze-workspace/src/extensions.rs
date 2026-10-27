@@ -21,6 +21,7 @@ use std::collections::BTreeSet;
 
 pub mod consent;
 pub mod preferences;
+pub mod secrets;
 pub mod store;
 
 use crate::{Result, config, home::UzeHome};

@@ -356,10 +356,19 @@ impl ExtensionRunner {
                 Ok(super::program::answer(&ask))
             }
         };
+        // Set once a request of this answer carried a secret, for its
+        // whole session when it is resident.
+        let tainted = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let reach = || {
             let mut reach = CheckoutReach::new(checkout.root.clone());
             if let Some(store) = read_store() {
                 reach = reach.with_store(store);
+            }
+            if let Some(mut fetcher) =
+                super::fetch::Fetcher::of(home, identity, manifest, self.helper.as_deref())
+            {
+                fetcher.tainted = Arc::clone(&tainted);
+                reach = reach.with_fetcher(fetcher);
             }
             if manifest.programs().next().is_some() {
                 reach = reach.with_programs(self.programs_for(
@@ -380,7 +389,9 @@ impl ExtensionRunner {
                 let owned_home = home.clone();
                 let scope = manifest.store();
                 let project = project.clone();
+                let tainted = Arc::clone(&tainted);
                 let keep = move |envelope: Envelope| {
+                    let envelope = super::fetch::untainted(&tainted, envelope);
                     let of = scope.map(|scope| StoreOf {
                         plugin: &plugin,
                         id: &id,
@@ -404,7 +415,7 @@ impl ExtensionRunner {
                 &grants,
                 &question.input,
                 Arc::new(reach()),
-                &keep,
+                &|envelope| keep(super::fetch::untainted(&tainted, envelope)),
             ),
             Answerer::Program {
                 program,

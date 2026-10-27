@@ -86,6 +86,11 @@ impl Manifest {
         self.wants.iter().filter_map(Grant::program)
     }
 
+    /// The hosts `fetch` may reach, as `wants` grants them.
+    pub fn hosts(&self) -> impl Iterator<Item = &str> {
+        self.wants.iter().filter_map(Grant::host)
+    }
+
     /// The paths `program` reads that its `exec` declaration names.
     pub fn reads_of(&self, program: &str) -> &[String] {
         self.exec
@@ -218,6 +223,10 @@ pub struct PreferenceDecl {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum PreferenceKind {
     Text,
+    /// Kept in the operating system's keychain, never shown again, never
+    /// read by `{pref.*}` nor handed to a script: only `fetch`'s `secret`
+    /// option places it, in a request's header.
+    Secret,
     /// Bounds are whole numbers; a value between them may have a fraction.
     Number {
         min: Option<i64>,
@@ -230,10 +239,21 @@ pub enum PreferenceKind {
 }
 
 impl PreferenceKind {
-    pub const NAMES: &'static [&'static str] = &["text", "number", "toggle", "choice"];
+    pub const NAMES: &'static [&'static str] = &["text", "number", "toggle", "choice", "secret"];
+}
+
+/// A secret's value as it may be kept: one line of printable text, no
+/// longer than a token a forge hands out, so it fits in one header.
+pub fn is_secret_value(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 4096 && !value.chars().any(char::is_control)
 }
 
 impl PreferenceDecl {
+    /// Whether its value is a secret, kept out of every answer.
+    pub fn is_secret(&self) -> bool {
+        self.kind == PreferenceKind::Secret
+    }
+
     /// `value` when it is one this preference may hold, else its default.
     pub fn admit(&self, value: Option<&serde_json::Value>) -> serde_json::Value {
         value
@@ -246,6 +266,7 @@ impl PreferenceDecl {
     pub fn holds(&self, value: &serde_json::Value) -> bool {
         match &self.kind {
             PreferenceKind::Text => value.is_string(),
+            PreferenceKind::Secret => value.as_str().is_some_and(is_secret_value),
             PreferenceKind::Number { min, max } => value.as_f64().is_some_and(|number| {
                 min.is_none_or(|min| number >= min as f64)
                     && max.is_none_or(|max| number <= max as f64)
@@ -664,10 +685,14 @@ pub enum Grant {
     /// Running the program of this name, at the path pinned when the
     /// extension was enabled.
     Exec(String),
+    /// Requesting `https://` URLs of this host, and no other, through
+    /// `fetch`.
+    Net(String),
 }
 
 impl Grant {
-    /// The grants named by a fixed word; `exec:<name>` is the one family.
+    /// The grants named by a fixed word; `exec:<name>` and `net:<host>` are
+    /// the families.
     pub const FIXED: &'static [Grant] = &[
         Self::ReadCheckout,
         Self::Clipboard,
@@ -682,10 +707,14 @@ impl Grant {
         Self::Resident,
     ];
     pub const EXEC: &'static str = "exec:";
+    pub const NET: &'static str = "net:";
 
     pub fn parse(name: &str) -> Option<Self> {
         if let Some(program) = name.strip_prefix(Self::EXEC) {
             return is_program_name(program).then(|| Self::Exec(program.to_owned()));
+        }
+        if let Some(host) = name.strip_prefix(Self::NET) {
+            return is_host_name(host).then(|| Self::Net(host.to_owned()));
         }
         Self::FIXED
             .iter()
@@ -707,6 +736,7 @@ impl Grant {
             Self::AgentRestart => "agent:restart",
             Self::Resident => "resident",
             Self::Exec(program) => return format!("{}{program}", Self::EXEC).into(),
+            Self::Net(host) => return format!("{}{host}", Self::NET).into(),
         })
     }
 
@@ -717,6 +747,31 @@ impl Grant {
             _ => None,
         }
     }
+
+    /// The host a `net:` grant covers.
+    pub fn host(&self) -> Option<&str> {
+        match self {
+            Self::Net(host) => Some(host),
+            _ => None,
+        }
+    }
+}
+
+/// A host as `net:` spells it: a DNS name in lower case, its labels of
+/// letters, digits and inner hyphens, with no scheme, port, path or
+/// wildcard, so the grant read at consent is the one host reached.
+pub fn is_host_name(host: &str) -> bool {
+    !host.is_empty()
+        && host.len() <= 253
+        && host.split('.').all(|label| {
+            !label.is_empty()
+                && label.len() <= 63
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        })
 }
 
 /// A program's name as `exec:` spells it: a file name a search path can
@@ -846,8 +901,24 @@ mod tests {
         }
         assert_eq!(Grant::parse("exec:gh"), Some(Grant::Exec("gh".into())));
         assert_eq!(Grant::Exec("nvidia-smi".into()).name(), "exec:nvidia-smi");
+        assert_eq!(
+            Grant::parse("net:api.github.com"),
+            Some(Grant::Net("api.github.com".into()))
+        );
+        assert_eq!(
+            Grant::Net("api.github.com".into()).name(),
+            "net:api.github.com"
+        );
         for later in [
             "net",
+            "net:",
+            "net:https://api.github.com",
+            "net:api.github.com/repos",
+            "net:api.github.com:443",
+            "net:*.github.com",
+            "net:API.github.com",
+            "net:-x.com",
+            "net:a..b",
             "write:checkout",
             "open_path",
             "Clipboard",

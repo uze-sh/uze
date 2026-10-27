@@ -10,6 +10,8 @@ use std::time::Duration;
 
 pub use uze_contract::Grant;
 
+use crate::fetch::{FetchReply, FetchRequest};
+
 /// The grants an extension was consented to.
 pub type Grants = std::collections::BTreeSet<Grant>;
 
@@ -113,6 +115,15 @@ pub trait Reach: Send + Sync {
             "`{name}` is not a program this extension may run"
         )))
     }
+
+    /// Makes `request`, already checked against the extension's `net:`
+    /// grants, under the bounds and confinement of a program run.
+    fn fetch(&self, request: &FetchRequest) -> Result<FetchReply, ReachError> {
+        Err(ReachError(format!(
+            "fetch: `{}` is not reached here",
+            request.host
+        )))
+    }
 }
 
 /// How a program `run_program` started ended.
@@ -126,8 +137,10 @@ pub struct ProgramReply {
 
 /// The host functions, and the grant each needs (`None`: always there).
 /// `run_program`'s grant is the `exec:` of the program it is called with,
-/// so it is named apart, in [`RUN_PROGRAM`].
+/// so it is named apart, in [`RUN_PROGRAM`]. `fetch` needs a `net:` grant
+/// of any host, which [`ANY_HOST`] stands for.
 pub(crate) const HOST_FUNCTIONS: &[(&str, Option<Grant>)] = &[
+    ("fetch", Some(ANY_HOST)),
     ("read_checkout", Some(Grant::ReadCheckout)),
     ("list_checkout", Some(Grant::ReadCheckout)),
     ("store", Some(Grant::Store)),
@@ -138,8 +151,15 @@ pub(crate) const HOST_FUNCTIONS: &[(&str, Option<Grant>)] = &[
 /// The host function that runs a granted program.
 pub(crate) const RUN_PROGRAM: &str = "run_program";
 
-/// Whether `grants` hold what `grant` asks: `store:global` is a store too.
+/// The grant `fetch` is registered under: a `net:` grant of any host.
+pub const ANY_HOST: Grant = Grant::Net(String::new());
+
+/// Whether `grants` hold what `grant` asks: `store:global` is a store too,
+/// and [`ANY_HOST`] is held by any `net:` grant.
 pub(crate) fn holds(grants: &Grants, grant: &Grant) -> bool {
+    if *grant == ANY_HOST {
+        return grants.iter().any(|held| held.host().is_some());
+    }
     grants.contains(grant) || (*grant == Grant::Store && grants.contains(&Grant::StoreGlobal))
 }
 
