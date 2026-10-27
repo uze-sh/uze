@@ -28,6 +28,7 @@ mod declared;
 #[cfg(test)]
 mod declared_actions;
 mod declared_events;
+mod declared_media;
 #[cfg(test)]
 mod declared_motion;
 #[cfg(test)]

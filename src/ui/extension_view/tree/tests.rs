@@ -21,7 +21,10 @@ fn in_both(check: impl Fn(&str)) {
 
 fn at(now_ms: u64) -> TreeFrame {
     TreeFrame {
-        clock: Clock { now_ms },
+        clock: Clock {
+            now_ms,
+            instant: std::time::Instant::now(),
+        },
         hovered: None,
         fold: false,
     }

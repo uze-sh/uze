@@ -92,9 +92,54 @@ pub(crate) fn decode(path: &Path, bytes: &[u8]) -> Option<Picture> {
 }
 
 fn affordable(width: usize, height: usize) -> bool {
-    width
+    let most = WITHIN
+        .with(std::cell::Cell::get)
+        .map_or(MOST_PIXELS, |bytes| bytes / 4);
+    let fits = width
         .checked_mul(height)
-        .is_some_and(|pixels| pixels <= MOST_PIXELS)
+        .is_some_and(|pixels| pixels <= MOST_PIXELS.min(most));
+    if !fits {
+        PAST.with(|past| past.set(true));
+    }
+    fits
+}
+
+thread_local! {
+    /// The bytes of RGBA the decode running on this thread may allocate,
+    /// when [`decode_within`] bounds it: read by [`affordable`], which every
+    /// decoder asks from the header, so no decoder carries the bound.
+    static WITHIN: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+    /// Whether a header asked past the bound, which tells an image refused
+    /// for its size from bytes that are no image.
+    static PAST: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Why [`decode_within`] has no picture.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Refused {
+    /// The bytes are not an image of the format the name claims.
+    NotAnImage,
+    /// Its header asks for more decoded bytes than the bound leaves.
+    PastBound,
+}
+
+/// [`decode`], allocating no more than `most_bytes` of RGBA: the header is
+/// read first, and an image past the bound is refused before its pixels
+/// are.
+pub(crate) fn decode_within(
+    path: &Path,
+    bytes: &[u8],
+    most_bytes: usize,
+) -> Result<Picture, Refused> {
+    let before = WITHIN.with(|within| within.replace(Some(most_bytes)));
+    PAST.with(|past| past.set(false));
+    let decoded = decode(path, bytes);
+    WITHIN.with(|within| within.set(before));
+    let past = PAST.with(|past| past.replace(false));
+    decoded.ok_or(match past {
+        true => Refused::PastBound,
+        false => Refused::NotAnImage,
+    })
 }
 
 fn png(bytes: &[u8]) -> Option<Decoded> {
@@ -391,6 +436,27 @@ mod tests {
         assert!(affordable(4096, 4096));
         assert!(!affordable(100_000, 100_000));
         assert!(!affordable(usize::MAX, 2));
+    }
+
+    #[test]
+    fn a_bounded_decode_refuses_a_header_past_its_bound_and_keeps_one_within() {
+        let path = Path::new("a.png");
+        let image = encoded(4, 4, png::ColorType::Rgba, &[7; 64]);
+        assert_eq!(
+            decode_within(path, &image, 4 * 4 * 4 - 1),
+            Err(Refused::PastBound),
+            "sixteen pixels are 64 bytes"
+        );
+        let picture = decode_within(path, &image, 4 * 4 * 4).unwrap();
+        assert_eq!((picture.width, picture.height), (4, 4));
+        assert_eq!(
+            decode_within(path, b"not an image", usize::MAX),
+            Err(Refused::NotAnImage)
+        );
+        assert!(
+            decode(path, &image).is_some(),
+            "the bound ends with the decode it was set for"
+        );
     }
 
     #[test]

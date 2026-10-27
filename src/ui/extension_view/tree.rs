@@ -7,15 +7,19 @@
 //! drawn, so scrolling and clipping are one question asked of every row.
 //!
 //! Nothing here is kept between frames. What moves on its own, an
-//! [`NodeKind::Activity`] and an [`NodeKind::Elapsed`], is drawn from the
-//! [`Clock`] the frame is handed, which is how both stay current without
-//! the extension being asked for a new tree.
+//! [`NodeKind::Activity`], an [`NodeKind::Elapsed`] and a
+//! [`NodeKind::Sprite`], is drawn from the [`Clock`] the frame is handed,
+//! which is how each stays current without the extension being asked for
+//! a new tree.
 
 mod display;
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use uze_extensions::view::{Align, Node, NodeAct, NodeKind, Segment, Tab};
+use uze_extensions::view::{
+    Align, CellGlyph, CellRegion, Node, NodeAct, NodeKind, Picture, Segment, Tab, sprite_frame,
+    sprite_moves,
+};
 
 use super::*;
 use crate::ui::widget::{Button, row::RowState};
@@ -45,18 +49,32 @@ const ELAPSED_WIDTH: u16 = 6;
 pub(crate) struct Clock {
     /// Milliseconds of the Unix epoch.
     pub(crate) now_ms: u64,
+    /// The same instant on the clock the host stamps a sprite's state
+    /// with.
+    pub(crate) instant: Instant,
 }
 
 impl Clock {
     pub(crate) fn now() -> Self {
+        let instant = Instant::now();
         if let Some(now_ms) = STOPPED_AT.with(std::cell::Cell::get) {
-            return Self { now_ms };
+            return Self { now_ms, instant };
         }
         let now_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|since| u64::try_from(since.as_millis()).unwrap_or(u64::MAX))
             .unwrap_or(0);
-        Self { now_ms }
+        Self { now_ms, instant }
+    }
+
+    /// How far into its state a sprite stamped `since` is: from the
+    /// stamp, or from the epoch, which plays a loop in step with the
+    /// clock, for one never stamped.
+    fn into_state(self, since: Option<Instant>) -> Duration {
+        match since {
+            Some(since) => self.instant.saturating_duration_since(since),
+            None => Duration::from_millis(self.now_ms),
+        }
     }
 
     fn tick(self) -> usize {
@@ -221,13 +239,30 @@ pub(crate) fn tree_height(root: &Node, width: u16) -> u16 {
 
 /// Whether anything in `root` moves with the clock.
 pub(crate) fn tree_animates(root: &Node) -> bool {
-    match root.kind {
+    match &root.kind {
         NodeKind::Activity { busy: true } => true,
         NodeKind::Elapsed {
             since_ms: Some(_), ..
         } => true,
+        NodeKind::Sprite {
+            frames,
+            fps,
+            looped,
+            since,
+            ..
+        } => sprite_moves(frames.len(), *fps, *looped, Clock::now().into_state(*since)),
         _ => root.children.iter().any(tree_animates),
     }
+}
+
+/// The columns a picture takes `rows` rows tall, two of its pixels to a
+/// cell's height so its proportions hold.
+fn picture_columns(picture: &Picture, rows: u16) -> u16 {
+    if picture.height == 0 {
+        return 1;
+    }
+    let columns = picture.width * usize::from(rows) * 2 / picture.height;
+    cells_of(columns.max(1))
 }
 
 /// The strip naming whose a declared view is, across the top of `area`,
@@ -363,6 +398,25 @@ fn natural(node: &Node) -> u16 {
         } => display::stat_width(value, label, delta.as_deref()),
         NodeKind::Kbd { key } => cells_of(text::columns(key)),
         NodeKind::Grid { .. } => node.children.iter().map(natural).max().unwrap_or(0),
+        NodeKind::Cells { rows, .. } => cells_of(rows.iter().map(Vec::len).max().unwrap_or(0)),
+        NodeKind::Image {
+            picture,
+            alt,
+            refused,
+            height,
+        } => match picture {
+            Some(picture) => picture_columns(picture, *height),
+            None => cells_of(text::columns(refused.as_deref().unwrap_or(alt)).max(1)),
+        },
+        NodeKind::Sprite {
+            frames,
+            height,
+            refused,
+            ..
+        } => match frames.first() {
+            Some(frame) => picture_columns(frame, *height),
+            None => cells_of(refused.as_deref().map_or(1, text::columns)),
+        },
     };
     own.max(node.min_width)
 }
@@ -425,6 +479,10 @@ fn height(node: &Node, width: u16) -> usize {
             language,
         } => display::code(source, language, width).len().max(1),
         NodeKind::Chart { height: rows, .. } => usize::from(*rows),
+        NodeKind::Cells { rows, .. } => rows.len(),
+        NodeKind::Image { height: rows, .. } | NodeKind::Sprite { height: rows, .. } => {
+            usize::from(*rows)
+        }
         NodeKind::Stat { .. } => 2,
         NodeKind::Grid { gap } => {
             let (columns, tile) = grid_columns(node, *gap, width);
@@ -714,6 +772,25 @@ fn pip_width() -> u16 {
 
 fn toggle_mark_width() -> u16 {
     theme::width(Symbol::MarkToggleOn).max(theme::width(Symbol::MarkToggleOff))
+}
+
+/// A row of a `Cells` grid as spans, one for each run of a role.
+fn glyph_runs(glyphs: &[CellGlyph]) -> Vec<TextSpan<'static>> {
+    let mut spans: Vec<TextSpan<'static>> = Vec::new();
+    let mut run = String::new();
+    let mut role = None;
+    for glyph in glyphs {
+        if role.is_some_and(|role| role != glyph.role) {
+            let ink = Style::default().fg(color(role.unwrap_or_default()));
+            spans.push(TextSpan::styled(std::mem::take(&mut run), ink));
+        }
+        role = Some(glyph.role);
+        run.push(glyph.ch);
+    }
+    if let Some(role) = role {
+        spans.push(TextSpan::styled(run, Style::default().fg(color(role))));
+    }
+    spans
 }
 
 /// The house button, in the neutral hue: what a declared button does is
@@ -1094,6 +1171,107 @@ impl Painter<'_, '_> {
             }
             NodeKind::Kbd { key } => self.line(y, x, width, display::kbd(key, width)),
             NodeKind::Grid { gap } => return self.grid(node, *gap, x, width, y),
+            NodeKind::Cells { rows, regions } => {
+                return self.cells(node.id, rows, regions, (x, width), y);
+            }
+            NodeKind::Image {
+                picture,
+                alt,
+                refused,
+                height,
+            } => match picture {
+                Some(picture) => self.picture(picture, (x, width), y, *height, false),
+                None => self.standing_in(refused.as_deref(), alt, (x, width), y),
+            },
+            NodeKind::Sprite {
+                frames,
+                fps,
+                looped,
+                since,
+                height,
+                refused,
+            } => {
+                let elapsed = self.held.clock.into_state(*since);
+                match frames.get(sprite_frame(frames.len(), *fps, *looped, elapsed)) {
+                    Some(frame) => self.picture(frame, (x, width), y, *height, true),
+                    None => self.standing_in(refused.as_deref(), "", (x, width), y),
+                }
+            }
+        }
+        true
+    }
+
+    /// A picture in the `rows` rows from `y`, fitted to the node's width.
+    /// Only while all of it is in the window are its pixels placed: a
+    /// picture cut at the window's edge is drawn in half blocks alone.
+    fn picture(
+        &mut self,
+        picture: &Picture,
+        (x, width): (u16, u16),
+        y: usize,
+        rows: u16,
+        crisp: bool,
+    ) {
+        let width = picture_columns(picture, rows).min(width);
+        let Some(rect) = self.visible(y, usize::from(rows), x, width) else {
+            return;
+        };
+        let cell = (rect.height == rows)
+            .then(crate::ui::graphics::cell_pixels)
+            .flatten();
+        super::picture::render_fitted(self.frame, rect, picture, cell, crisp);
+    }
+
+    /// What stands in for a picture there is none of: why it was refused,
+    /// in the warning's hue, or its `alt`, quiet, while it is read.
+    fn standing_in(&mut self, refused: Option<&str>, alt: &str, (x, width): (u16, u16), y: usize) {
+        let (said, style) = match refused {
+            Some(why) => (why, Style::default().fg(color(Role::Warning))),
+            None => (alt, theme::fg(Token::TextMuted)),
+        };
+        let line = Line::from(TextSpan::styled(
+            text::elide(said, usize::from(width)),
+            style,
+        ));
+        self.line(y, x, width, line);
+    }
+
+    /// The grid a row at a time, each run of one role a span, then a
+    /// target over every region of it, brightening under the pointer.
+    fn cells(
+        &mut self,
+        id: usize,
+        rows: &[Vec<CellGlyph>],
+        regions: &[CellRegion],
+        (x, width): (u16, u16),
+        y: usize,
+    ) -> bool {
+        for (row, glyphs) in rows.iter().enumerate() {
+            if self.held.fold && !self.fits(y + row, 1) {
+                return self.fold_at(y + row, rows.len() - row);
+            }
+            self.line(y + row, x, width, Line::from(glyph_runs(glyphs)));
+        }
+        for (index, region) in regions.iter().enumerate() {
+            let top = usize::from(region.y);
+            let room = width.saturating_sub(region.x).min(region.width);
+            if top >= rows.len() || room == 0 {
+                continue;
+            }
+            let tall = usize::from(region.height).min(rows.len() - top);
+            let hit = ViewHit::Node {
+                node: id,
+                act: NodeAct::Region(index),
+            };
+            let Some(rect) = self.visible(y + top, tall, x.saturating_add(region.x), room) else {
+                continue;
+            };
+            if self.hovered(hit) {
+                self.frame
+                    .buffer_mut()
+                    .set_style(rect, theme::fg(Token::Accent));
+            }
+            self.hits.push((rect, hit));
         }
         true
     }
@@ -1330,3 +1508,6 @@ impl Painter<'_, '_> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod media_tests;

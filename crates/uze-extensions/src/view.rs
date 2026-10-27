@@ -651,6 +651,71 @@ pub enum NodeKind {
     Grid {
         gap: u16,
     },
+    /// A grid of characters, each in one of the host's roles, with
+    /// rectangles of it that answer a click ([`NodeAct::Region`]).
+    Cells {
+        rows: Vec<Vec<CellGlyph>>,
+        regions: Vec<CellRegion>,
+    },
+    /// A picture fitted to `height` rows. Until it is decoded, or when it
+    /// was refused, the first row says so instead.
+    Image {
+        picture: Option<Picture>,
+        alt: String,
+        /// Why there is no picture, naming the bound it broke.
+        refused: Option<String>,
+        height: u16,
+    },
+    /// A sprite's state: its frames, played from `since` on the host's
+    /// clock (see [`sprite_frame`]), fitted to `height` rows.
+    Sprite {
+        frames: Vec<Picture>,
+        fps: u16,
+        looped: bool,
+        /// When the state began playing; `None` plays it from the clock's
+        /// own phase.
+        since: Option<std::time::Instant>,
+        height: u16,
+        refused: Option<String>,
+    },
+}
+
+/// One character of a [`NodeKind::Cells`], in a role: never a colour.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CellGlyph {
+    pub ch: char,
+    pub role: Role,
+}
+
+/// A rectangle of a [`NodeKind::Cells`], in its own cells from its
+/// top-left: what a click inside answers with its index.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CellRegion {
+    pub x: u16,
+    pub y: u16,
+    pub width: u16,
+    pub height: u16,
+}
+
+/// Which of `count` frames played at `fps` shows `elapsed` into a state:
+/// the clock's frame, wrapping when the state loops and held on its last
+/// frame when it does not.
+pub fn sprite_frame(count: usize, fps: u16, looped: bool, elapsed: std::time::Duration) -> usize {
+    if count == 0 {
+        return 0;
+    }
+    let played = elapsed.as_millis() * u128::from(fps) / 1000;
+    let played = usize::try_from(played).unwrap_or(usize::MAX);
+    match looped {
+        true => played % count,
+        false => played.min(count - 1),
+    }
+}
+
+/// Whether a sprite `elapsed` into its state still has a frame to show
+/// after the one it shows: what asks the host for the next frame.
+pub fn sprite_moves(count: usize, fps: u16, looped: bool, elapsed: std::time::Duration) -> bool {
+    count > 1 && fps > 0 && (looped || sprite_frame(count, fps, looped, elapsed) < count - 1)
 }
 
 /// How a [`NodeKind::Chart`] draws its series.
@@ -700,6 +765,8 @@ pub enum NodeAct {
     Press,
     /// A row of a [`NodeKind::List`], by its index.
     Row(usize),
+    /// A region of a [`NodeKind::Cells`], by its index.
+    Region(usize),
 }
 
 /// An image as straight-alpha RGBA, row by row from the top-left.
@@ -1064,4 +1131,31 @@ pub enum PanDirection {
     Right,
     Up,
     Down,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[test]
+    fn a_looped_state_wraps_and_a_held_one_stops_on_its_last_frame() {
+        let at = Duration::from_millis;
+        assert_eq!(sprite_frame(4, 10, true, at(0)), 0);
+        assert_eq!(sprite_frame(4, 10, true, at(250)), 2, "2.5 frames in");
+        assert_eq!(sprite_frame(4, 10, true, at(450)), 0, "wrapped");
+        assert_eq!(sprite_frame(4, 10, false, at(250)), 2);
+        assert_eq!(sprite_frame(4, 10, false, at(10_000)), 3, "held");
+        assert_eq!(sprite_frame(0, 10, true, at(500)), 0);
+    }
+
+    #[test]
+    fn a_sprite_asks_for_a_frame_while_it_has_one_to_show() {
+        let at = Duration::from_millis;
+        assert!(sprite_moves(4, 10, true, at(10_000)), "a loop never ends");
+        assert!(sprite_moves(4, 10, false, at(250)));
+        assert!(!sprite_moves(4, 10, false, at(300)), "on its last frame");
+        assert!(!sprite_moves(1, 10, true, at(0)), "one frame never moves");
+    }
 }

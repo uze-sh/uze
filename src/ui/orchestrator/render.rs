@@ -448,36 +448,38 @@ fn render_extension(
     let (scope, tag) = (*scope, *tag);
     let host_keys = footer_host_keys(model);
     let mut view_hits = Vec::new();
-    metrics.surface = Some(crate::ui::extension_view::render(
-        frame,
-        view,
-        area,
-        crate::ui::extension_view::NavigatorFrame {
-            width: model.navigator_width,
-            scroll: model.navigator_scroll,
-            resizing: model
-                .edge_drag
-                .is_some_and(|drag| drag.intent == Some(EdgeIntent::Resize)),
-            sliding: match model.hovered {
-                Some(WorkspaceHit::Extension(ExtensionHit { slot, hit }))
-                    if model.open_slot == Some(slot) =>
-                {
-                    Some((hit, model.hovered_for()))
-                }
+    metrics.surface = Some(crate::ui::graphics::in_slot(tag, || {
+        crate::ui::extension_view::render(
+            frame,
+            view,
+            area,
+            crate::ui::extension_view::NavigatorFrame {
+                width: model.navigator_width,
+                scroll: model.navigator_scroll,
+                resizing: model
+                    .edge_drag
+                    .is_some_and(|drag| drag.intent == Some(EdgeIntent::Resize)),
+                sliding: match model.hovered {
+                    Some(WorkspaceHit::Extension(ExtensionHit { slot, hit }))
+                        if model.open_slot == Some(slot) =>
+                    {
+                        Some((hit, model.hovered_for()))
+                    }
+                    _ => None,
+                },
+            },
+            crate::ui::extension_view::FooterKeys {
+                scope,
+                hovered: model.hovered_hint(),
+                host: &host_keys,
+            },
+            match &model.selection {
+                Some(Selection::Text(marking)) => Some(marking),
                 _ => None,
             },
-        },
-        crate::ui::extension_view::FooterKeys {
-            scope,
-            hovered: model.hovered_hint(),
-            host: &host_keys,
-        },
-        match &model.selection {
-            Some(Selection::Text(marking)) => Some(marking),
-            _ => None,
-        },
-        &mut view_hits,
-    ));
+            &mut view_hits,
+        )
+    }));
     metrics.marquee |= metrics.surface.as_ref().is_some_and(|drawn| drawn.marquee);
     crate::ui::extension_view::render_row_menu(frame, view, area, model.menu_at, &mut view_hits);
     hits.extend(view_hits.into_iter().map(|(rect, hit)| {

@@ -7,22 +7,34 @@
 //! disagree.
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 use uze_contract::binding::is_present;
 use uze_contract::compiled::Node as Compiled;
 use uze_contract::{Clean, CompiledView, Condition, Item, NodeName};
 
+use super::media::{Held, Lookup, MediaKey, Playing};
 use super::time::since_ms;
 use super::trace::{Absence, TraceNode};
 use super::value::{Env, Scopes, as_count, as_flag, as_number, as_role, path_text, scalar_text};
-use crate::view::{self, Align, ChartKind, NodeKind, Role, Segment, Tab};
+use crate::view::{self, Align, CellGlyph, CellRegion, ChartKind, NodeKind, Role, Segment, Tab};
 
 /// The most nodes one tree holds. Past it the build stops and says so:
 /// two nested `each` over a large answer would otherwise draw (and cost)
 /// without bound (D28).
 pub const NODE_CAP: usize = 2_000;
+
+/// The most rows and columns a `Cells` grid draws, and regions it binds:
+/// past them the rest is left out, as a log's lines are counted.
+const CELLS_ROWS_MAX: usize = 200;
+const CELLS_COLUMNS_MAX: usize = 400;
+const REGIONS_MAX: usize = 1_000;
+
+/// The rows an `Image` takes when it names no `height`, and the most a
+/// picture or a sprite is given.
+const IMAGE_ROWS: u16 = 8;
+const MEDIA_ROWS_MAX: u16 = 64;
 
 /// How deep `use` may nest. The compiler refuses a cycle; this keeps a
 /// view compiled by something else from recursing without end.
@@ -41,6 +53,9 @@ pub(super) enum Act {
     Toggle { key: String, on: bool },
     /// Pressing records `action` with the `item` it would receive.
     Button { action: String, item: Value },
+    /// A click in a region of a `Cells` records its `action` with its
+    /// `item`, by the region's index.
+    Cells { regions: Vec<(String, Value)> },
     /// Choosing a row sets `key` to its index.
     List {
         key: String,
@@ -62,6 +77,11 @@ pub(super) struct Built {
     pub folded: bool,
     /// How many nodes the tree holds.
     pub count: usize,
+    /// The pictures it named, held or not: what the next read is chosen
+    /// from.
+    pub media: BTreeSet<MediaKey>,
+    /// The sprites it plays, by where they stand in the view.
+    pub playing: BTreeMap<String, Playing>,
 }
 
 impl Built {
@@ -81,6 +101,8 @@ impl Built {
             templates: skeletons(view),
             folded: false,
             count: 1,
+            media: BTreeSet::new(),
+            playing: BTreeMap::new(),
         }
     }
 }
@@ -166,9 +188,17 @@ fn literal(node: &Compiled, prop: &str) -> Option<String> {
 }
 
 /// Binds `view` to `data` under `env`.
-pub(super) fn build<'a>(view: &'a CompiledView, data: &'a Value, env: Env<'a>) -> Built {
+pub(super) fn build<'a>(
+    view: &'a CompiledView,
+    data: &'a Value,
+    env: Env<'a>,
+    lookup: Lookup<'a>,
+) -> Built {
     let mut builder = Builder {
         env,
+        lookup,
+        media: BTreeSet::new(),
+        playing: BTreeMap::new(),
         view,
         next_id: 0,
         count: 0,
@@ -189,6 +219,8 @@ pub(super) fn build<'a>(view: &'a CompiledView, data: &'a Value, env: Env<'a>) -
         templates: builder.templates,
         folded: builder.folded,
         count: builder.count,
+        media: builder.media,
+        playing: builder.playing,
     }
 }
 
@@ -197,6 +229,9 @@ type Make<'a, T> = fn(&mut Builder<'a>, &'a Compiled, &mut Scopes<'a>, &mut Trac
 
 struct Builder<'a> {
     env: Env<'a>,
+    lookup: Lookup<'a>,
+    media: BTreeSet<MediaKey>,
+    playing: BTreeMap<String, Playing>,
     view: &'a CompiledView,
     next_id: usize,
     count: usize,
@@ -714,9 +749,201 @@ fn leaf<'a>(
         NodeName::Kbd => NodeKind::Kbd {
             key: builder.label(node, scopes),
         },
+        NodeName::Cells => cells(builder, node, scopes, id),
+        NodeName::Image => image(builder, node, scopes),
+        NodeName::Sprite => sprite(builder, node, scopes, id),
         // Containers are built by `make_node`, and parts of a container by
         // their container; neither reaches here.
         _ => NodeKind::Stack { gap: 0 },
+    }
+}
+
+/// A grid of characters in roles, and the regions of it that run an
+/// action. A role it does not know, a colour value among them, is the
+/// default one: a declared extension never sends a colour.
+fn cells<'a>(
+    builder: &mut Builder<'a>,
+    node: &'a Compiled,
+    scopes: &Scopes<'a>,
+    id: usize,
+) -> NodeKind {
+    let rows = builder
+        .prop(node, scopes, "rows")
+        .map(|value| cell_rows(&value))
+        .unwrap_or_default();
+    // Each row is drawn, so it counts against the cap as a log's lines do.
+    builder.count = builder.count.saturating_add(rows.len().saturating_sub(1));
+    let mut regions = Vec::new();
+    let mut meant = Vec::new();
+    if let Some(Value::Array(declared)) = builder.prop(node, scopes, "regions").as_deref() {
+        for region in declared.iter().take(REGIONS_MAX) {
+            let side = |field: &str| region.get(field).and_then(as_count).unwrap_or(0);
+            let Some(action) = region.get("action").and_then(Value::as_str) else {
+                continue;
+            };
+            let (width, height) = (side("w"), side("h"));
+            if width == 0 || height == 0 {
+                continue;
+            }
+            regions.push(CellRegion {
+                x: side("x"),
+                y: side("y"),
+                width,
+                height,
+            });
+            meant.push((
+                action.to_owned(),
+                region.get("item").cloned().unwrap_or(Value::Null),
+            ));
+        }
+    }
+    builder.acts.insert(id, Act::Cells { regions: meant });
+    NodeKind::Cells { rows, regions }
+}
+
+/// `rows`, each a string or a list of `{ch, role}` (or of strings).
+fn cell_rows(value: &Value) -> Vec<Vec<CellGlyph>> {
+    let Value::Array(rows) = value else {
+        return Vec::new();
+    };
+    let cell = |cell: &Value| match cell {
+        Value::String(text) => glyph(text.chars().next(), Role::Default),
+        Value::Object(_) => glyph(
+            cell.get("ch")
+                .and_then(Value::as_str)
+                .and_then(|text| text.chars().next()),
+            cell.get("role").map(as_role).unwrap_or_default(),
+        ),
+        _ => glyph(None, Role::Default),
+    };
+    rows.iter()
+        .take(CELLS_ROWS_MAX)
+        .map(|row| match row {
+            Value::String(text) => text
+                .chars()
+                .take(CELLS_COLUMNS_MAX)
+                .map(|ch| glyph(Some(ch), Role::Default))
+                .collect(),
+            Value::Array(cells) => cells.iter().take(CELLS_COLUMNS_MAX).map(cell).collect(),
+            _ => Vec::new(),
+        })
+        .collect()
+}
+
+/// One cell: a character one column wide, or a blank. A control
+/// character would reach the terminal as a byte, and a wide one would
+/// push every cell after it out of its column.
+fn glyph(ch: Option<char>, role: Role) -> CellGlyph {
+    let ch = ch
+        .filter(|ch| !ch.is_control() && unicode_width::UnicodeWidthChar::width(*ch) == Some(1))
+        .unwrap_or(' ');
+    CellGlyph { ch, role }
+}
+
+/// A picture as the shelf holds it, named for the next read when it holds
+/// none.
+fn image<'a>(builder: &mut Builder<'a>, node: &'a Compiled, scopes: &Scopes<'a>) -> NodeKind {
+    let name = builder
+        .arg(node, scopes, 0)
+        .map(|value| scalar_text(&value))
+        .unwrap_or_default();
+    let height = match builder.count_prop(node, scopes, "height") {
+        0 => IMAGE_ROWS,
+        rows => rows.min(MEDIA_ROWS_MAX),
+    };
+    let key = MediaKey::Image(name);
+    let (picture, refused) = match builder.lookup.shelf.get(&key) {
+        Some(Held::Picture(picture)) => (Some(picture.clone()), None),
+        Some(Held::Refused(why)) => (None, Some(Clean::label(why).into_string())),
+        _ => (None, None),
+    };
+    builder.media.insert(key);
+    NodeKind::Image {
+        picture,
+        alt: builder.text_prop(node, scopes, "alt").unwrap_or_default(),
+        refused,
+        height,
+    }
+}
+
+/// A declared sprite playing the state `state` names, or its fallback,
+/// from when the build first saw it play that state.
+fn sprite<'a>(
+    builder: &mut Builder<'a>,
+    node: &'a Compiled,
+    scopes: &Scopes<'a>,
+    id: usize,
+) -> NodeKind {
+    let named = builder
+        .arg(node, scopes, 0)
+        .map(|value| scalar_text(&value))
+        .unwrap_or_default();
+    let Some(decl) = builder
+        .lookup
+        .sprites
+        .iter()
+        .find(|sprite| sprite.id == named)
+    else {
+        return NodeKind::Sprite {
+            frames: Vec::new(),
+            fps: 0,
+            looped: false,
+            since: None,
+            height: 1,
+            refused: Some(format!(
+                "it declares no sprite `{}`",
+                Clean::label(&named).as_str()
+            )),
+        };
+    };
+    let asked = builder.text_prop(node, scopes, "state").unwrap_or_default();
+    let state = decl
+        .states
+        .iter()
+        .find(|state| state.name == asked)
+        .or_else(|| decl.states.iter().find(|state| state.name == decl.fallback));
+    let height = match builder.count_prop(node, scopes, "height") {
+        0 => u16::try_from(decl.frame.1.div_ceil(2))
+            .unwrap_or(u16::MAX)
+            .clamp(1, IMAGE_ROWS),
+        rows => rows.min(MEDIA_ROWS_MAX),
+    };
+    let key = MediaKey::Sheet(decl.id.clone());
+    let (sheet, refused): (&[view::Picture], _) = match builder.lookup.shelf.get(&key) {
+        Some(Held::Frames(frames)) => (frames, None),
+        Some(Held::Refused(why)) => (&[], Some(Clean::label(why).into_string())),
+        _ => (&[], None),
+    };
+    let frames: Vec<view::Picture> = state
+        .map(|state| {
+            state
+                .frames
+                .iter()
+                .filter_map(|frame| sheet.get(usize::try_from(*frame).ok()?).cloned())
+                .collect()
+        })
+        .unwrap_or_default();
+    builder.media.insert(key);
+    let playing = state.map(|state| state.name.clone()).unwrap_or_default();
+    let at = format!("{}#{id}", builder.key(node));
+    let since = match builder.lookup.before.and_then(|before| before.get(&at)) {
+        Some(before) if before.state == playing => before.since,
+        _ => builder.lookup.now,
+    };
+    builder.playing.insert(
+        at,
+        Playing {
+            state: playing,
+            since,
+        },
+    );
+    NodeKind::Sprite {
+        frames,
+        fps: state.map_or(0, |state| u16::try_from(state.fps).unwrap_or(u16::MAX)),
+        looped: state.is_some_and(|state| state.looped),
+        since,
+        height,
+        refused,
     }
 }
 

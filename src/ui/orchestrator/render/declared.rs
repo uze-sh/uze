@@ -86,8 +86,9 @@ pub(super) fn render_declared_drawer(
         _ => None,
     };
     let mut view_hits = Vec::new();
-    let docked =
-        crate::ui::extension_view::render_docked(frame, &view, content, hovered, &mut view_hits);
+    let docked = crate::ui::graphics::in_slot(slot.id, || {
+        crate::ui::extension_view::render_docked(frame, &view, content, hovered, &mut view_hits)
+    });
     model.dock_bar.set(docked.bar);
     let animates = docked.animates;
     let errors = model.remembered.declared.errors_of(&slot.owner);
@@ -244,19 +245,21 @@ pub(super) fn render_overlay(
         return false;
     };
     let mut view_hits = Vec::new();
-    let drawn = crate::ui::extension_view::render(
-        frame,
-        &view,
-        content,
-        crate::ui::extension_view::NavigatorFrame::default(),
-        crate::ui::extension_view::FooterKeys {
-            scope: uze_keys::Scope::Declared,
-            hovered: model.hovered_hint(),
-            host: &[],
-        },
-        None,
-        &mut view_hits,
-    );
+    let drawn = crate::ui::graphics::in_slot(slot.id, || {
+        crate::ui::extension_view::render(
+            frame,
+            &view,
+            content,
+            crate::ui::extension_view::NavigatorFrame::default(),
+            crate::ui::extension_view::FooterKeys {
+                scope: uze_keys::Scope::Declared,
+                hovered: model.hovered_hint(),
+                host: &[],
+            },
+            None,
+            &mut view_hits,
+        )
+    });
     let tag = slot.id;
     let mut targets: Vec<(Rect, WorkspaceHit)> = vec![(close_rect, WorkspaceHit::CloseOverlay)];
     targets.extend(view_hits.into_iter().map(|(rect, hit)| {
@@ -295,8 +298,9 @@ fn render_docked_slot(
         _ => None,
     };
     let mut view_hits = Vec::new();
-    let docked =
-        crate::ui::extension_view::render_docked(frame, view, area, hovered, &mut view_hits);
+    let docked = crate::ui::graphics::in_slot(slot, || {
+        crate::ui::extension_view::render_docked(frame, view, area, hovered, &mut view_hits)
+    });
     hits.extend(
         view_hits
             .into_iter()

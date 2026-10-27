@@ -111,6 +111,43 @@ impl ExtensionRunner {
         lock(&self.answered).retain(|asked, _| asked.identity != *identity);
     }
 
+    /// The bytes of the picture `name` an `Image` or a sprite of
+    /// `identity` names: a file of the extension as installed, or
+    /// `scratch:<file>`, one its programs left in their scratch and the
+    /// run kept. Read no further than [`uze_contract::IMAGE_FILE_MAX`] and
+    /// a byte, so the engine refuses a larger one without it being held.
+    pub fn media(
+        &self,
+        extensions: &Extensions<'_>,
+        identity: &Identity,
+        name: &str,
+    ) -> Result<Vec<u8>, String> {
+        let Some(installed) = extensions
+            .installed()
+            .into_iter()
+            .find(|installed| installed.identity == *identity)
+        else {
+            return Err(format!("no installed plugin carries {identity}"));
+        };
+        if let Some(file) = name.strip_prefix(uze_contract::SCRATCH_PREFIX) {
+            if !super::program::is_picture_name(file) {
+                return Err(format!("`{name}` names no picture of its scratch"));
+            }
+            let kept = extensions
+                .0
+                .home
+                .extension_pictures_dir(&super::consent::plugin_key(identity), &identity.id);
+            return read_bounded(&kept.join(file))
+                .map_err(|_| format!("its program has not written `{file}`"));
+        }
+        let files = Loaded::read(&installed.dir)
+            .map_err(|refusal| format!("its files cannot be read: {refusal}"))?;
+        let bytes = files
+            .bytes(name)
+            .ok_or_else(|| format!("`{name}` is not in the extension"))?;
+        Ok(bytes[..bytes.len().min(uze_contract::IMAGE_FILE_MAX + 1)].to_vec())
+    }
+
     /// Answers `question` from what is installed and consented to now.
     #[tracing::instrument(name = "extensions.answer", skip_all, fields(extension = %question.identity, source = %question.declaration))]
     pub fn answer(&self, extensions: &Extensions<'_>, question: &Question) -> Answer {
@@ -238,6 +275,7 @@ impl ExtensionRunner {
             project: (scope == StoreScope::Project).then_some(project.as_path()),
         });
         let home = &extensions.0.home;
+        let pictures = home.extension_pictures_dir(&plugin, &identity.id);
         let read_store = || {
             store_of
                 .as_ref()
@@ -270,6 +308,7 @@ impl ExtensionRunner {
                 consent: consent.as_ref(),
                 helper: self.helper.as_deref(),
                 literal,
+                pictures: Some(&pictures),
             };
             if literal {
                 Err(super::program::reply(&ask))
@@ -340,6 +379,7 @@ impl ExtensionRunner {
             .map(|name| (name.to_owned(), manifest.reads_of(name).to_vec()))
             .collect();
         let id = identity.id.clone();
+        let pictures = home.extension_pictures_dir(&super::consent::plugin_key(identity), &id);
         let checkout = checkout.clone();
         let helper = self.helper.clone();
         Arc::new(move |name: &str, args: &[String]| {
@@ -364,6 +404,7 @@ impl ExtensionRunner {
                 consent: consent.as_ref(),
                 helper: helper.as_deref(),
                 literal: true,
+                pictures: Some(&pictures),
             };
             super::program::reply(&ask)
         })
@@ -569,6 +610,7 @@ impl ExtensionRunner {
             consent: Some(&rehearsed),
             helper: self.helper.as_deref(),
             literal: false,
+            pictures: None,
         };
         let answer = super::program::answer(&ask);
         match answer {
@@ -689,6 +731,16 @@ fn keep_store(
         });
     }
     envelope
+}
+
+/// `path`'s bytes, no further than one past [`uze_contract::IMAGE_FILE_MAX`].
+fn read_bounded(path: &Path) -> std::io::Result<Vec<u8>> {
+    use std::io::Read as _;
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)?
+        .take(uze_contract::IMAGE_FILE_MAX as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 fn failed(reason: impl Into<String>) -> Answer {
@@ -1096,6 +1148,34 @@ pub(super) mod tests {
             world.ask(&runner, &world.question("nothing")),
             Answer::Failed { reason, .. } if reason.contains("no source `nothing`")
         ));
+    }
+
+    #[test]
+    fn a_picture_is_read_from_the_extension_or_what_its_programs_kept() {
+        let world = World::new("runner-media");
+        let runner = ExtensionRunner::new();
+        let extensions = world.app.extensions();
+        fs::write(world.band.join("cat.png"), b"cat").unwrap();
+        assert_eq!(
+            runner.media(&extensions, &world.band(), "cat.png").unwrap(),
+            b"cat"
+        );
+        let kept = uze_core::UzeHome::at(world.scratch.join("uze"))
+            .extension_pictures_dir("gsd@studio", "gsd-band");
+        fs::create_dir_all(&kept).unwrap();
+        fs::write(kept.join("shot.png"), b"shot").unwrap();
+        assert_eq!(
+            runner
+                .media(&extensions, &world.band(), "scratch:shot.png")
+                .unwrap(),
+            b"shot"
+        );
+        for refused in ["scratch:../cat.png", "scratch:notes.txt", "missing.png"] {
+            assert!(
+                runner.media(&extensions, &world.band(), refused).is_err(),
+                "{refused}"
+            );
+        }
     }
 
     #[test]

@@ -56,6 +56,15 @@ pub const RESERVED_IDS: &[&str] = &["code", "architect", "spec", "timeline", "uz
 /// attribution the host draws, which must fit beside what it attributes.
 pub const ID_MAX: usize = 32;
 
+/// The largest file an `Image` or a sprite's sheet is read from
+/// (`extension-media-and-resident`, R-S12): refused before it is decoded,
+/// and kept from a program's scratch no larger.
+pub const IMAGE_FILE_MAX: usize = 8 * 1024 * 1024;
+
+/// What an `Image` names to show a file its program wrote into its run's
+/// scratch: `scratch:<file>`.
+pub const SCRATCH_PREFIX: &str = "scratch:";
+
 /// Whether `id` is spelled the way an extension id must be: lowercase ASCII
 /// letters, digits and single hyphens, starting with a letter, at most
 /// [`ID_MAX`] long.

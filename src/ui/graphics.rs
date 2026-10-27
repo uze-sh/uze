@@ -2,15 +2,24 @@
 //!
 //! A cell holds two pixels in half blocks, which is enough to recognise an
 //! image and not enough to read one. A terminal that speaks Sixel draws
-//! real pixels, so where one says it does, the frame's image is sent again
-//! as Sixel over the half blocks that stand in for it. The half blocks stay
-//! drawn underneath: they are what shows on any other terminal, and the
-//! mark that tells whether anything was drawn over the image this frame.
+//! real pixels, so where one says it does, the frame's images are sent
+//! again as Sixel over the half blocks that stand in for them. The half
+//! blocks stay drawn underneath: they are what shows on any other
+//! terminal, and the mark that tells whether anything was drawn over an
+//! image this frame.
+//!
+//! A frame may hold one image per slot it draws (R-A8): the pane's view, a
+//! section, a drawer, a status row, a band and an overlay each [`place`]
+//! theirs while drawing inside [`in_slot`], and the [`Painter`] keeps what
+//! it sent for each slot apart, so a band's sprite moving never sends the
+//! section's picture again.
 //!
 //! Encoded here rather than by a crate: Sixel is a palette and runs of
 //! six-pixel columns, and the one thing worth care — choosing the palette —
 //! is a median cut of a few dozen lines.
 
+use std::cell::{Cell, RefCell};
+use std::collections::BTreeMap;
 use std::sync::{
     Arc, OnceLock,
     mpsc::{Receiver, Sender},
@@ -57,7 +66,60 @@ pub(crate) fn probe() {
 
 /// The pixels in one cell, `(width, height)`, when images can be drawn.
 pub(crate) fn cell_pixels() -> Option<(u16, u16)> {
+    if let Some(cell) = DRAWN_AT.with(Cell::get) {
+        return Some(cell);
+    }
     CELL_PIXELS.get().copied().flatten()
+}
+
+/// Which slot an image belongs to: the slot id a surface stands in.
+pub(crate) type PictureSlot = u32;
+
+/// Where an image drawn outside every slot is kept: one of its own.
+const UNSCOPED: PictureSlot = PictureSlot::MAX;
+
+thread_local! {
+    /// The slot being drawn, which what is placed is kept under.
+    static SLOT: Cell<PictureSlot> = const { Cell::new(UNSCOPED) };
+    /// What this frame placed so far, at most one a slot.
+    static PLACED: RefCell<Vec<(PictureSlot, Placement)>> = const { RefCell::new(Vec::new()) };
+    /// A cell size a test draws as though the terminal had answered it.
+    static DRAWN_AT: Cell<Option<(u16, u16)>> = const { Cell::new(None) };
+}
+
+/// Runs `draw` with what it places kept under `slot`.
+pub(crate) fn in_slot<T>(slot: PictureSlot, draw: impl FnOnce() -> T) -> T {
+    let outer = SLOT.with(|current| current.replace(slot));
+    let drawn = draw();
+    SLOT.with(|current| current.set(outer));
+    drawn
+}
+
+/// Keeps `placement` for the slot being drawn, unless the slot placed one
+/// already this frame: one image a slot, the first it drew.
+pub(crate) fn place(placement: Placement) {
+    let slot = SLOT.with(Cell::get);
+    PLACED.with(|placed| {
+        let mut placed = placed.borrow_mut();
+        if placed.iter().all(|(held, _)| *held != slot) {
+            placed.push((slot, placement));
+        }
+    });
+}
+
+/// What the frame drawn since the last call placed, by slot.
+pub(crate) fn take_placed() -> Vec<(PictureSlot, Placement)> {
+    PLACED.with(|placed| std::mem::take(&mut *placed.borrow_mut()))
+}
+
+/// Runs `draw` as though the terminal drew images at `cell` pixels a cell,
+/// on this thread alone.
+#[cfg(test)]
+pub(crate) fn drawn_at<T>(cell: (u16, u16), draw: impl FnOnce() -> T) -> T {
+    let before = DRAWN_AT.with(|drawn| drawn.replace(Some(cell)));
+    let drawn = draw();
+    DRAWN_AT.with(|drawn| drawn.set(before));
+    drawn
 }
 
 fn device_attributes(reply: &[u8]) -> Option<&[u8]> {
@@ -119,6 +181,9 @@ pub(crate) struct Placement {
     /// on a cleared screen, which took the pixels with it even where the
     /// image lands on the same cells.
     screen: Rect,
+    /// Drawn larger than itself pixel for pixel, as a sprite's pixel art
+    /// is, rather than never past its own size and smoothed.
+    crisp: bool,
 }
 
 impl Placement {
@@ -153,7 +218,34 @@ impl Placement {
             pixels: (u16::try_from(width).ok()?, u16::try_from(height).ok()?),
             picture: picture.clone(),
             screen: Rect::default(),
+            crisp: false,
         })
+    }
+
+    /// `picture` fitted to `room` as [`Placement::fit`] does, but as large
+    /// as the room allows: a sprite's few pixels, each drawn as a block of
+    /// them.
+    pub(crate) fn fit_crisp(picture: &Picture, room: Rect, cell: (u16, u16)) -> Option<Self> {
+        if picture.width == 0 || picture.height == 0 || room.width == 0 || room.height == 0 {
+            return None;
+        }
+        let space = (
+            usize::from(room.width) * usize::from(cell.0),
+            usize::from(room.height) * usize::from(cell.1),
+        );
+        let scale = (space.0 / picture.width).min(space.1 / picture.height);
+        if scale == 0 {
+            return Self::fit(picture, room, cell);
+        }
+        let larger = Picture {
+            width: picture.width * scale,
+            height: picture.height * scale,
+            pixels: Arc::clone(&picture.pixels),
+        };
+        let mut placement = Self::fit(&larger, room, cell)?;
+        placement.picture = picture.clone();
+        placement.crisp = true;
+        Some(placement)
     }
 
     /// This placement as drawn in a frame of `screen`.
@@ -208,15 +300,11 @@ impl PartialEq for Identity {
     }
 }
 
-/// What was last sent as pixels, so a frame that changed nothing about
-/// the image sends nothing — and the encoding of the one wanted next,
-/// made on a thread of its own.
-///
-/// Resampling and encoding a pane-sized image is tens of milliseconds,
-/// which the frame may not wait for. So a frame only says which image it
-/// left uncovered; the bytes are written when they arrive, if that image
-/// is still the one on screen and uncovered, and dropped otherwise.
-pub(crate) struct Painter {
+/// What was last sent as pixels in one slot, so a frame that changed
+/// nothing about its image sends nothing — and the encoding of the one
+/// wanted next.
+#[derive(Default)]
+struct SlotPaint {
     /// What the terminal shows over the half blocks, as far as anything
     /// written since says.
     shown: Option<Identity>,
@@ -229,70 +317,13 @@ pub(crate) struct Painter {
     /// The last encode that came back, kept so an image covered and then
     /// uncovered is written again without being made again.
     encoded: Option<(Identity, Arc<Vec<u8>>)>,
-    /// The one thread that encodes, started with the first image.
-    encoder: Option<Sender<(Identity, Placement)>>,
-    sender: Sender<(Identity, Arc<Vec<u8>>)>,
-    answers: Receiver<(Identity, Arc<Vec<u8>>)>,
 }
 
-impl Default for Painter {
-    fn default() -> Self {
-        let (sender, answers) = std::sync::mpsc::channel();
-        Self {
-            shown: None,
-            wanted: None,
-            encoding: None,
-            encoded: None,
-            encoder: None,
-            sender,
-            answers,
-        }
-    }
-}
-
-impl Painter {
-    /// Records the image a frame left uncovered, `placement`, and returns
-    /// its bytes at once when they are already made.
-    ///
-    /// A frame that covered the image or drew none forgets what was
-    /// shown, because whatever covered it wrote over those pixels, and
-    /// the half blocks drawn back when it went are all that is left.
-    pub(crate) fn after_frame(&mut self, placement: Option<&Placement>) -> Option<Arc<Vec<u8>>> {
-        let Some(placement) = placement else {
-            self.shown = None;
-            self.wanted = None;
-            return None;
-        };
-        let identity = placement.identity();
-        if self.shown.as_ref() == Some(&identity) {
-            return None;
-        }
-        self.wanted = Some(identity.clone());
-        if let Some(bytes) = self.ready() {
-            return Some(bytes);
-        }
-        if self.encoding.as_ref() != Some(&identity) {
-            self.encoding = Some(identity.clone());
-            let answers = self.sender.clone();
-            let encoder = self.encoder.get_or_insert_with(|| encoder(answers));
-            let _ = encoder.send((identity, placement.clone()));
-        }
-        None
-    }
-
-    /// The bytes to write now, when an encode has come back for the image
-    /// the last frame left uncovered. Asked between frames.
-    pub(crate) fn take_ready(&mut self) -> Option<Arc<Vec<u8>>> {
-        while let Ok(answer) = self.answers.try_recv() {
-            self.absorb(answer);
-        }
-        self.ready()
-    }
-
+impl SlotPaint {
     /// Keeps an answer only when it is for the encode last asked for: one
     /// that started earlier is for an image already replaced, whichever
     /// order the two threads finish in.
-    fn absorb(&mut self, (identity, bytes): (Identity, Arc<Vec<u8>>)) {
+    fn absorb(&mut self, identity: Identity, bytes: Arc<Vec<u8>>) {
         if self.encoding.as_ref() != Some(&identity) {
             return;
         }
@@ -311,22 +342,111 @@ impl Painter {
     }
 }
 
+/// An encode asked for, or one come back: for which slot, of which image.
+type Encode<T> = (PictureSlot, Identity, T);
+
+/// What was last sent as pixels in each slot, and the encodings of the
+/// ones wanted next, made on a thread of their own.
+///
+/// Resampling and encoding a pane-sized image is tens of milliseconds,
+/// which the frame may not wait for. So a frame only says which images it
+/// left uncovered; their bytes are written when they arrive, if each is
+/// still the one on screen in its slot and uncovered, and dropped
+/// otherwise.
+pub(crate) struct Painter {
+    slots: BTreeMap<PictureSlot, SlotPaint>,
+    /// The one thread that encodes, started with the first image.
+    encoder: Option<Sender<Encode<Placement>>>,
+    sender: Sender<Encode<Arc<Vec<u8>>>>,
+    answers: Receiver<Encode<Arc<Vec<u8>>>>,
+}
+
+impl Default for Painter {
+    fn default() -> Self {
+        let (sender, answers) = std::sync::mpsc::channel();
+        Self {
+            slots: BTreeMap::new(),
+            encoder: None,
+            sender,
+            answers,
+        }
+    }
+}
+
+impl Painter {
+    /// Records the images a frame left uncovered, one a slot, and returns
+    /// the bytes already made for them.
+    ///
+    /// A slot the frame covered or drew no image in forgets what it
+    /// showed, because whatever covered it wrote over those pixels, and
+    /// the half blocks drawn back when it went are all that is left.
+    pub(crate) fn after_frame(&mut self, placed: &[(PictureSlot, Placement)]) -> Vec<Arc<Vec<u8>>> {
+        for (slot, paint) in &mut self.slots {
+            if placed.iter().all(|(drawn, _)| drawn != slot) {
+                paint.shown = None;
+                paint.wanted = None;
+            }
+        }
+        let mut written = Vec::new();
+        for (slot, placement) in placed {
+            let identity = placement.identity();
+            let paint = self.slots.entry(*slot).or_default();
+            if paint.shown.as_ref() == Some(&identity) {
+                continue;
+            }
+            paint.wanted = Some(identity.clone());
+            if let Some(bytes) = paint.ready() {
+                written.push(bytes);
+                continue;
+            }
+            if paint.encoding.as_ref() != Some(&identity) {
+                paint.encoding = Some(identity.clone());
+                let answers = self.sender.clone();
+                let encoder = self.encoder.get_or_insert_with(|| encoder(answers));
+                let _ = encoder.send((*slot, identity, placement.clone()));
+            }
+        }
+        written
+    }
+
+    /// The bytes to write now, for each slot an encode has come back for
+    /// the image the last frame left uncovered there. Asked between
+    /// frames.
+    pub(crate) fn take_ready(&mut self) -> Vec<Arc<Vec<u8>>> {
+        while let Ok((slot, identity, bytes)) = self.answers.try_recv() {
+            if let Some(paint) = self.slots.get_mut(&slot) {
+                paint.absorb(identity, bytes);
+            }
+        }
+        self.slots
+            .values_mut()
+            .filter_map(SlotPaint::ready)
+            .collect()
+    }
+}
+
 /// Starts the thread that encodes, which answers on `answers`.
 ///
-/// One thread, taking only the latest request it has been sent: moving
-/// through a directory of images asks for one encode per selection, and a
-/// thread each would run them all at once, every one for an image already
-/// gone. The painter drops any answer but the last one asked for.
-fn encoder(answers: Sender<(Identity, Arc<Vec<u8>>)>) -> Sender<(Identity, Placement)> {
-    let (requests, received) = std::sync::mpsc::channel::<(Identity, Placement)>();
+/// One thread, taking only the latest request it has been sent for each
+/// slot: moving through a directory of images asks for one encode per
+/// selection, and a thread each would run them all at once, every one for
+/// an image already gone. The painter drops any answer but the last one
+/// asked for in a slot.
+fn encoder(answers: Sender<Encode<Arc<Vec<u8>>>>) -> Sender<Encode<Placement>> {
+    let (requests, received) = std::sync::mpsc::channel::<Encode<Placement>>();
     std::thread::spawn(move || {
         while let Ok(first) = received.recv() {
-            let (identity, placement) = received.try_iter().last().unwrap_or(first);
-            if answers
-                .send((identity, Arc::new(positioned(&placement))))
-                .is_err()
-            {
-                return;
+            let mut latest: BTreeMap<PictureSlot, (Identity, Placement)> = BTreeMap::new();
+            for (slot, identity, placement) in std::iter::once(first).chain(received.try_iter()) {
+                latest.insert(slot, (identity, placement));
+            }
+            for (slot, (identity, placement)) in latest {
+                if answers
+                    .send((slot, identity, Arc::new(positioned(&placement))))
+                    .is_err()
+                {
+                    return;
+                }
             }
         }
     });
@@ -337,7 +457,10 @@ fn encoder(answers: Sender<(Identity, Arc<Vec<u8>>)>) -> Sender<(Identity, Place
 /// back where it was.
 fn positioned(placement: &Placement) -> Vec<u8> {
     let (width, height) = placement.pixels;
-    let pixels = resampled(&placement.picture, usize::from(width), usize::from(height));
+    let pixels = match placement.crisp {
+        true => nearest(&placement.picture, usize::from(width), usize::from(height)),
+        false => resampled(&placement.picture, usize::from(width), usize::from(height)),
+    };
     let mut out = format!(
         "\x1b7\x1b[{};{}H",
         placement.cells.y + 1,
@@ -381,6 +504,21 @@ fn resampled(picture: &Picture, width: usize, height: usize) -> Vec<[u8; 3]> {
             let column = (*first..).map(|y| &across[y * width + x]);
             let [red, green, blue] = blend(weights.iter().zip(column));
             out.push([red, green, blue].map(|channel| channel.round().clamp(0.0, 255.0) as u8));
+        }
+    }
+    out
+}
+
+/// `picture` laid over the theme's ground at `width` × `height`, each pixel
+/// the source pixel it falls on: pixel art drawn larger stays sharp.
+fn nearest(picture: &Picture, width: usize, height: usize) -> Vec<[u8; 3]> {
+    let lay = theme::laid_over_ground();
+    let mut out = Vec::with_capacity(width * height);
+    for y in 0..height {
+        let row = (y * picture.height / height.max(1)).min(picture.height - 1);
+        for x in 0..width {
+            let column = (x * picture.width / width.max(1)).min(picture.width - 1);
+            out.push(lay(picture.pixels[row * picture.width + column]));
         }
     }
     out
@@ -707,10 +845,25 @@ mod tests {
     /// Waits for the encode last asked for, by receiving answers until it
     /// lands, never by polling.
     fn settle(painter: &mut Painter) {
-        while painter.encoding.is_some() {
-            let answer = painter.answers.recv().unwrap();
-            painter.absorb(answer);
+        while painter.slots.values().any(|paint| paint.encoding.is_some()) {
+            let (slot, identity, bytes) = painter.answers.recv().unwrap();
+            if let Some(paint) = painter.slots.get_mut(&slot) {
+                paint.absorb(identity, bytes);
+            }
         }
+    }
+
+    /// One frame with at most one image, in slot 0.
+    fn frame(painter: &mut Painter, placement: Option<&Placement>) -> Option<Arc<Vec<u8>>> {
+        let placed: Vec<(PictureSlot, Placement)> = placement
+            .map(|placement| (0, placement.clone()))
+            .into_iter()
+            .collect();
+        painter.after_frame(&placed).pop()
+    }
+
+    fn ready(painter: &mut Painter) -> Option<Arc<Vec<u8>>> {
+        painter.take_ready().pop()
     }
 
     fn placement_of(side: usize, room: Rect) -> Placement {
@@ -726,14 +879,14 @@ mod tests {
     fn a_frame_that_changed_nothing_about_the_image_sends_nothing() {
         let placement = placement_of(2, Rect::new(0, 0, 4, 4));
         let mut painter = Painter::default();
-        assert!(painter.after_frame(Some(&placement)).is_none(), "encoding");
+        assert!(frame(&mut painter, Some(&placement)).is_none(), "encoding");
         settle(&mut painter);
-        assert!(painter.take_ready().is_some(), "written once made");
-        assert!(painter.after_frame(Some(&placement)).is_none());
-        assert!(painter.take_ready().is_none());
-        assert!(painter.after_frame(None).is_none(), "covered");
+        assert!(ready(&mut painter).is_some(), "written once made");
+        assert!(frame(&mut painter, Some(&placement)).is_none());
+        assert!(ready(&mut painter).is_none());
+        assert!(frame(&mut painter, None).is_none(), "covered");
         assert!(
-            painter.after_frame(Some(&placement)).is_some(),
+            frame(&mut painter, Some(&placement)).is_some(),
             "written again once uncovered, without being made again"
         );
     }
@@ -743,14 +896,12 @@ mod tests {
         let old = placement_of(2, Rect::new(0, 0, 4, 4));
         let new = placement_of(3, Rect::new(0, 0, 4, 4));
         let mut painter = Painter::default();
-        painter.after_frame(Some(&old));
-        painter.after_frame(Some(&new));
+        frame(&mut painter, Some(&old));
+        frame(&mut painter, Some(&new));
         settle(&mut painter);
-        let written = painter
-            .take_ready()
-            .expect("the image on screen is written");
+        let written = ready(&mut painter).expect("the image on screen is written");
         assert_eq!(*written, positioned(&new));
-        assert!(painter.take_ready().is_none());
+        assert!(ready(&mut painter).is_none());
     }
 
     /// A picture read again — a screenshot an agent regenerated at the
@@ -760,15 +911,15 @@ mod tests {
         let room = Rect::new(0, 0, 4, 4);
         let mut painter = Painter::default();
         let first = placement_of(2, room);
-        painter.after_frame(Some(&first));
+        frame(&mut painter, Some(&first));
         settle(&mut painter);
-        assert!(painter.take_ready().is_some());
+        assert!(ready(&mut painter).is_some());
         drop(first);
         let second = placement_of(2, room);
-        assert!(painter.after_frame(Some(&second)).is_none(), "encoding");
+        assert!(frame(&mut painter, Some(&second)).is_none(), "encoding");
         settle(&mut painter);
         assert!(
-            painter.take_ready().is_some(),
+            ready(&mut painter).is_some(),
             "sent, not taken for the first"
         );
     }
@@ -780,24 +931,80 @@ mod tests {
         let placement = placement_of(2, Rect::new(0, 0, 4, 4));
         let mut painter = Painter::default();
         let before = placement.clone().on(Rect::new(0, 0, 80, 24));
-        painter.after_frame(Some(&before));
+        frame(&mut painter, Some(&before));
         settle(&mut painter);
-        assert!(painter.take_ready().is_some());
+        assert!(ready(&mut painter).is_some());
         let after = placement.on(Rect::new(0, 0, 80, 25));
         assert_eq!(before.cells, after.cells);
-        painter.after_frame(Some(&after));
+        frame(&mut painter, Some(&after));
         settle(&mut painter);
-        assert!(painter.take_ready().is_some(), "sent again after the clear");
+        assert!(ready(&mut painter).is_some(), "sent again after the clear");
     }
 
     #[test]
     fn an_encode_that_lands_while_the_image_is_covered_waits_for_it_to_be_uncovered() {
         let placement = placement_of(2, Rect::new(0, 0, 4, 4));
         let mut painter = Painter::default();
-        painter.after_frame(Some(&placement));
-        painter.after_frame(None);
+        frame(&mut painter, Some(&placement));
+        frame(&mut painter, None);
         settle(&mut painter);
-        assert!(painter.take_ready().is_none(), "never over what covers it");
-        assert!(painter.after_frame(Some(&placement)).is_some());
+        assert!(ready(&mut painter).is_none(), "never over what covers it");
+        assert!(frame(&mut painter, Some(&placement)).is_some());
+    }
+
+    #[test]
+    fn two_slots_hold_an_image_each_in_one_frame() {
+        let band = placement_of(2, Rect::new(0, 0, 4, 4));
+        let section = placement_of(3, Rect::new(10, 0, 4, 4));
+        let mut painter = Painter::default();
+        let both = [(1, band.clone()), (2, section.clone())];
+        assert!(painter.after_frame(&both).is_empty(), "encoding");
+        settle(&mut painter);
+        let mut written = painter.take_ready();
+        written.sort();
+        let mut expected = vec![Arc::new(positioned(&band)), Arc::new(positioned(&section))];
+        expected.sort();
+        assert_eq!(written, expected, "each slot's image is sent");
+        assert!(painter.after_frame(&both).is_empty(), "nothing changed");
+        let moved = placement_of(2, Rect::new(0, 0, 4, 4));
+        painter.after_frame(&[(1, moved), (2, section)]);
+        settle(&mut painter);
+        assert_eq!(
+            painter.take_ready().len(),
+            1,
+            "a new frame in the band sends the band alone"
+        );
+    }
+
+    #[test]
+    fn what_a_frame_places_is_kept_one_a_slot_under_the_slot_drawing() {
+        take_placed();
+        let image = placement_of(2, Rect::new(0, 0, 4, 4));
+        in_slot(7, || {
+            place(image.clone());
+            place(placement_of(3, Rect::new(0, 0, 4, 4)));
+        });
+        in_slot(8, || place(image.clone()));
+        let placed = take_placed();
+        assert_eq!(
+            placed.iter().map(|(slot, _)| *slot).collect::<Vec<_>>(),
+            [7, 8]
+        );
+        assert_eq!(placed[0].1.pixels, image.pixels, "the first a slot drew");
+        assert!(take_placed().is_empty(), "taken once");
+    }
+
+    #[test]
+    fn a_crisp_picture_grows_by_whole_pixels_to_its_room() {
+        let picture = Picture {
+            width: 4,
+            height: 2,
+            pixels: vec![[9, 9, 9, 255]; 8].into(),
+        };
+        let placement = Placement::fit_crisp(&picture, Rect::new(0, 0, 10, 5), (10, 20)).unwrap();
+        assert_eq!(placement.pixels, (100, 50), "25 pixels a pixel");
+        assert!(placement.crisp);
+        let drawn = nearest(&picture, 8, 4);
+        assert_eq!(drawn.len(), 32);
     }
 }

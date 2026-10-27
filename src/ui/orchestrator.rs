@@ -662,16 +662,14 @@ pub(crate) fn attach_workspace(
             let mut metrics = render::FrameMetrics::default();
             let model = &attach.model;
             let identities = &attach.identities;
-            let mut uncovered = None;
+            let mut uncovered = Vec::new();
             terminal.draw(|frame| {
+                crate::ui::graphics::take_placed();
                 render(frame, model, identities, &mut hits, &mut metrics);
-                uncovered = metrics
-                    .surface
-                    .as_ref()
-                    .and_then(|drawn| drawn.picture.clone())
-                    .filter(|placement| placement.uncovered_in(frame.buffer_mut()));
+                uncovered = crate::ui::graphics::take_placed();
+                uncovered.retain(|(_, placement)| placement.uncovered_in(frame.buffer_mut()));
             })?;
-            if let Some(pixels) = painter.after_frame(uncovered.as_ref()) {
+            for pixels in painter.after_frame(&uncovered) {
                 terminal.emit(&pixels);
             }
             attach.model.hits = hits;
@@ -694,7 +692,7 @@ pub(crate) fn attach_workspace(
             attach.model.absorb_manage_frame(metrics.manage);
             attach.model.dirty = false;
         }
-        if let Some(pixels) = painter.take_ready() {
+        for pixels in painter.take_ready() {
             terminal.emit(&pixels);
         }
         attach

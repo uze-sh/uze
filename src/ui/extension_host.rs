@@ -625,6 +625,15 @@ impl uze_extensions::Host for EngineHost {
         }
     }
 
+    /// Through the runner alone, which finds the file in the installed
+    /// extension or in what its programs' runs kept.
+    fn media(&self, identity: &uze_contract::Identity, name: &str) -> Result<Vec<u8>, String> {
+        match super::tui_application(self.home.clone()) {
+            Ok(app) => self.runner.media(&app.extensions(), identity, name),
+            Err(error) => Err(format!("the workspace's application cannot start: {error}")),
+        }
+    }
+
     fn delivery_target(&self, checkout: &Path) -> Option<String> {
         super::tui_application(self.home.clone())
             .ok()

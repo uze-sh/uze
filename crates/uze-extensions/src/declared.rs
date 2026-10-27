@@ -42,6 +42,7 @@ pub fn validate_composed(
 }
 mod events;
 mod fixture_check;
+mod media;
 mod notify;
 mod time;
 mod trace;
@@ -68,6 +69,7 @@ pub use bind::NODE_CAP;
 use bind::{Act, Built};
 pub use events::COALESCE;
 pub use fixture_check::{MissingField, TAB_COMBINATIONS_MAX, missing_fields};
+pub use media::{IMAGE_FILE_MAX, MEDIA_BYTES_MAX};
 pub use notify::{INTERVAL as NOTIFY_INTERVAL, PER_HOUR as NOTIFY_PER_HOUR};
 pub use trace::{Absence, DataState, Trace, TraceEntry, TraceNode};
 
@@ -161,6 +163,8 @@ pub struct DeclaredExtension {
     /// How many builds have run, so the inspector can say what drawing
     /// costs and a test can tell a served build from a fresh one.
     builds: std::cell::Cell<u64>,
+    /// The pictures its views name, read one at a time.
+    media: media::Shelf,
 }
 
 /// A question asked of a source: about which checkout, with which input,
@@ -196,6 +200,8 @@ const STOPPED: &str = "the question stopped before it was answered";
 #[derive(Clone, Debug, PartialEq)]
 struct MemoKey {
     generation: u64,
+    /// The shelf's, so a picture read since is drawn.
+    media: u64,
     digest: Option<u64>,
     space: Size,
     ui: BTreeMap<String, String>,
@@ -258,6 +264,7 @@ impl DeclaredExtension {
             recorded: Vec::new(),
             memo: RefCell::default(),
             builds: std::cell::Cell::new(0),
+            media: media::Shelf::default(),
         }
     }
 
@@ -274,6 +281,7 @@ impl DeclaredExtension {
         self.generation += 1;
         self.answer_event_sources();
         self.memo.get_mut().clear();
+        self.media.clear();
         self.asked.clear();
         let surfaces: Vec<String> = self.ui.keys().cloned().collect();
         for surface in surfaces {
@@ -820,13 +828,15 @@ impl DeclaredExtension {
         let held = self.ui.get(surface);
         let key = MemoKey {
             generation: self.generation,
+            media: self.media.generation,
             digest: self.digests.get(&decl.source).copied(),
             space,
             ui: held.cloned().unwrap_or_default(),
         };
         let mut memo = self.memo.borrow_mut();
         if memo.get(surface).is_none_or(|last| last.key != key) {
-            let built = self.build(decl, view, held, space);
+            let before = memo.get(surface).map(|last| last.built.playing.clone());
+            let built = self.build(decl, view, held, space, before.as_ref());
             self.builds.set(self.builds.get() + 1);
             memo.insert(surface.to_owned(), Memo { key, built });
         }
@@ -839,6 +849,7 @@ impl DeclaredExtension {
         view: &CompiledView,
         held: Option<&BTreeMap<String, String>>,
         space: Size,
+        before: Option<&BTreeMap<String, media::Playing>>,
     ) -> Built {
         if let Some(reason) = self.withheld.get(&decl.source) {
             return Built::notice(view, reason, Role::Warning);
@@ -861,6 +872,12 @@ impl DeclaredExtension {
             locale: &self.locale,
             preferences: &self.preferences,
         };
+        let lookup = media::Lookup {
+            shelf: &self.media,
+            sprites: &self.compiled.manifest.sprites,
+            before,
+            now: self.now,
+        };
         // A composed source answered the tree itself: its view file is
         // what draws while it has not, and the tree replaces it once it has.
         let composed = self
@@ -870,11 +887,11 @@ impl DeclaredExtension {
             .is_some_and(|source| source.output == uze_contract::Output::View);
         if composed {
             return match compose::compose(data, &self.compiled.manifest, &view.file) {
-                Ok(tree) => bind::build(&tree, &serde_json::Value::Null, env),
+                Ok(tree) => bind::build(&tree, &serde_json::Value::Null, env, lookup),
                 Err(why) => Built::notice(view, &why, Role::Danger),
             };
         }
-        bind::build(view, data, env)
+        bind::build(view, data, env, lookup)
     }
 
     /// What a gesture on node `node` means at the last build.
@@ -911,6 +928,10 @@ impl DeclaredExtension {
                 Outcome::Stay
             }
             (Act::Button { action, item }, NodeAct::Press) => self.act_on(surface, &action, item),
+            (Act::Cells { regions }, NodeAct::Region(index)) => match regions.get(index).cloned() {
+                Some((action, item)) => self.act_on(surface, &action, item),
+                None => Outcome::Stay,
+            },
             (Act::List { key, rows, .. }, NodeAct::Row(row)) if row < rows => {
                 self.set_ui(surface, key, row.to_string());
                 Outcome::Stay
@@ -1167,6 +1188,8 @@ impl Extension for DeclaredExtension {
     /// A question standing on it goes unanswered, so nothing runs.
     fn close(&mut self, surface: &str) {
         self.opened.remove(surface);
+        // What it drew no longer asks for its pictures.
+        self.memo.get_mut().remove(surface);
         self.pending.take_if(|pending| pending.surface == surface);
         self.notices.remove(surface);
     }
@@ -1268,6 +1291,17 @@ impl Extension for DeclaredExtension {
             };
             jobs.push(self.ask(source, checkout, input, asking, by_answer));
         }
+        let wanted: BTreeSet<media::MediaKey> = self
+            .memo
+            .get_mut()
+            .values()
+            .flat_map(|memo| memo.built.media.iter().cloned())
+            .collect();
+        jobs.extend(self.media.next(
+            &wanted,
+            &self.compiled.identity,
+            &self.compiled.manifest.sprites,
+        ));
         jobs
     }
 
@@ -1277,6 +1311,13 @@ impl Extension for DeclaredExtension {
     fn absorb(&mut self, answer: Opaque) -> Outcome {
         let answer = match answer.0.downcast::<ActionAnswer>() {
             Ok(answered) => return self.absorb_action(*answered),
+            Err(other) => other,
+        };
+        let answer = match answer.downcast::<media::MediaAnswer>() {
+            Ok(read) => {
+                self.media.absorb(*read);
+                return Outcome::Stay;
+            }
             Err(other) => other,
         };
         let Ok(answered) = answer.downcast::<SourceAnswer>() else {
@@ -1294,6 +1335,8 @@ impl Extension for DeclaredExtension {
         match answered.answer {
             Answer::Answered { envelope, .. } => {
                 self.set_data(source.clone(), Ok(envelope.data.clone()));
+                // What its program wrote may be a new picture.
+                self.media.stale_scratch();
                 let surfaces = self.surfaces_showing(&source);
                 for surface in &surfaces {
                     self.notices.remove(surface);
@@ -1380,3 +1423,6 @@ mod action_tests;
 
 #[cfg(test)]
 mod event_tests;
+
+#[cfg(test)]
+mod media_tests;

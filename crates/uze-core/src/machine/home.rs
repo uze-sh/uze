@@ -274,6 +274,18 @@ impl UzeHome {
             .join(run)
     }
 
+    /// The pictures the programs of extension `id` of `plugin@marketplace`
+    /// wrote into their scratch, kept when the run ends so an `Image` can
+    /// show one as `scratch:<file>`: generated, since its program writes
+    /// them again on its next run.
+    pub fn extension_pictures_dir(&self, plugin: &str, id: &str) -> PathBuf {
+        self.runtime_dir()
+            .join("extensions")
+            .join("pictures")
+            .join(plugin)
+            .join(id)
+    }
+
     /// The guard every read-modify-write of the extensions record takes:
     /// the workspace and a terminal both answer for it. A lock, not a
     /// record.

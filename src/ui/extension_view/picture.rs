@@ -37,9 +37,28 @@ pub(super) fn render_picture(
         area.width,
         area.height.saturating_sub(1),
     );
+    render_fitted(frame, body, picture, cell, false)
+}
+
+/// `picture` scaled to fit `body` and centred in it — in half blocks
+/// always, and where the terminal draws images (`cell`, its pixels a
+/// cell), as the [`Placement`] the frame lays over them once it is out,
+/// placed for the slot being drawn. `crisp` grows a few pixels into blocks
+/// of them, as a sprite is drawn, where a picture is never drawn past its
+/// own size.
+pub(super) fn render_fitted(
+    frame: &mut ratatui::Frame<'_>,
+    body: Rect,
+    picture: &Picture,
+    cell: Option<(u16, u16)>,
+    crisp: bool,
+) -> Option<Placement> {
     let screen = frame.area();
     let placement = cell
-        .and_then(|cell| Placement::fit(picture, body, cell))
+        .and_then(|cell| match crisp {
+            true => Placement::fit_crisp(picture, body, cell),
+            false => Placement::fit(picture, body, cell),
+        })
         .map(|placement| placement.on(screen));
     // Under pixels, the half blocks fill exactly the cells the pixels are
     // sent over: they are the mark that says nothing covered them, and a
@@ -55,6 +74,9 @@ pub(super) fn render_picture(
     };
     if let Some((cells, rows)) = drawn {
         render_half_blocks(frame, cells, rows, picture);
+    }
+    if let Some(placement) = &placement {
+        graphics::place(placement.clone());
     }
     placement
 }
@@ -89,7 +111,7 @@ fn render_half_blocks(frame: &mut ratatui::Frame<'_>, cells: Rect, rows: u16, pi
 /// How many columns and pixel rows `picture` takes in `width` × `height`
 /// cells, keeping its proportions: a cell is about twice as tall as it is
 /// wide, so each half of one is close to square.
-fn fitted(picture: &Picture, width: u16, height: u16) -> Option<(u16, u16)> {
+pub(super) fn fitted(picture: &Picture, width: u16, height: u16) -> Option<(u16, u16)> {
     if picture.width == 0 || picture.height == 0 || width == 0 || height == 0 {
         return None;
     }

@@ -573,17 +573,19 @@ pub(super) fn render_spec_summary(
         .into_iter()
         .chain(section.lit.iter().copied())
         .collect();
-    let slid = crate::ui::extension_view::render_section(
-        frame,
-        section,
-        &mut column,
-        SectionState {
-            dragging,
-            sliding: under.map(|hit| (hit, model.hovered_for())),
-            lit_rows: &lit_rows,
-        },
-        &mut section_hits,
-    );
+    let slid = crate::ui::graphics::in_slot(slot, || {
+        crate::ui::extension_view::render_section(
+            frame,
+            section,
+            &mut column,
+            SectionState {
+                dragging,
+                sliding: under.map(|hit| (hit, model.hovered_for())),
+                lit_rows: &lit_rows,
+            },
+            &mut section_hits,
+        )
+    });
     hits.extend(
         section_hits
             .into_iter()
@@ -629,17 +631,19 @@ fn render_declared_section(
         Some(ViewHit::SelectItem(index)) => vec![index],
         _ => Vec::new(),
     };
-    let slid = crate::ui::extension_view::render_section(
-        frame,
-        section,
-        &mut column,
-        SectionState {
-            dragging: false,
-            sliding: under.map(|hit| (hit, model.hovered_for())),
-            lit_rows: &lit_rows,
-        },
-        &mut section_hits,
-    );
+    let slid = crate::ui::graphics::in_slot(slot, || {
+        crate::ui::extension_view::render_section(
+            frame,
+            section,
+            &mut column,
+            SectionState {
+                dragging: false,
+                sliding: under.map(|hit| (hit, model.hovered_for())),
+                lit_rows: &lit_rows,
+            },
+            &mut section_hits,
+        )
+    });
     hits.extend(
         section_hits
             .into_iter()
@@ -1436,17 +1440,19 @@ pub(super) fn render_timeline(
         Some(ViewHit::SelectItem(index)) => Some(index),
         _ => None,
     };
-    let sliding = crate::ui::extension_view::render_section(
-        frame,
-        section,
-        &mut column,
-        SectionState {
-            dragging,
-            sliding: under.map(|hit| (hit, model.hovered_for())),
-            lit_rows: hovered_row.as_slice(),
-        },
-        &mut section_hits,
-    );
+    let sliding = crate::ui::graphics::in_slot(slot, || {
+        crate::ui::extension_view::render_section(
+            frame,
+            section,
+            &mut column,
+            SectionState {
+                dragging,
+                sliding: under.map(|hit| (hit, model.hovered_for())),
+                lit_rows: hovered_row.as_slice(),
+            },
+            &mut section_hits,
+        )
+    });
     hits.extend(
         section_hits
             .into_iter()

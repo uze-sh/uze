@@ -283,4 +283,15 @@ pub trait Host {
     fn answer(&self, _question: Question) -> Answer {
         Answer::withheld("this host answers no declared extension")
     }
+
+    /// The bytes of a picture a declared extension's view names: `name`
+    /// inside the extension's directory, from the compile the operator
+    /// consented to, or `scratch:<file>`, a file its program wrote into
+    /// its run's scratch and the host kept. Read no further than
+    /// [`declared::IMAGE_FILE_MAX`] and one byte, so a file past it is
+    /// refused without being held. Only the declared engine asks it. A
+    /// host that runs no declared extension shows none.
+    fn media(&self, _identity: &uze_contract::Identity, _name: &str) -> Result<Vec<u8>, String> {
+        Err("this host shows no extension's pictures".to_owned())
+    }
 }

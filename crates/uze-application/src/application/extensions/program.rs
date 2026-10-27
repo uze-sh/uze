@@ -9,7 +9,9 @@
 //! what was digested even if the files on disk change in between. Where
 //! this machine confines, the run reads the checkout, its Git directory,
 //! the extension's own files and the paths its `exec` declares, and
-//! writes only its scratch directory, which is removed after it.
+//! writes only its scratch directory, which is removed after it — save
+//! the pictures it left there, kept for its views to show as
+//! `scratch:<file>`.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -81,6 +83,9 @@ pub(super) struct Asked<'a> {
     /// Whether the arguments are a script's own, taken as they are, rather
     /// than a declaration's, with `{field}` substituted.
     pub literal: bool,
+    /// Where the pictures the run leaves in its scratch are kept, when its
+    /// views may show them; a check keeps none.
+    pub pictures: Option<&'a Path>,
 }
 
 /// Runs what `asked` declares and reads its answer as its output mode
@@ -140,8 +145,56 @@ fn ran(asked: &Asked<'_>) -> Result<ProgramOutcome, NotRun> {
     );
     let dir = asked.home.extension_scratch_dir(&run);
     let ended = prepare(asked, &dir).map(|prepared| extension_program::run(&prepared));
+    if let (Ok(_), Some(kept)) = (&ended, asked.pictures) {
+        keep_pictures(&dir.join(SCRATCH), kept);
+    }
     let _ = std::fs::remove_dir_all(&dir);
     ended
+}
+
+/// The run's own scratch, inside its directory: its `TMPDIR`.
+const SCRATCH: &str = "tmp";
+
+/// The most pictures one run keeps.
+const KEPT_PICTURES: usize = 16;
+
+/// Copies the pictures a run left at the top of its scratch into `kept`,
+/// each replacing the one of its name: a PNG, JPEG or GIF, a plain file
+/// and no link, no larger than an `Image` reads. Each lands whole or not
+/// at all, so a view never reads one half written.
+fn keep_pictures(scratch: &Path, kept: &Path) {
+    let Ok(entries) = std::fs::read_dir(scratch) else {
+        return;
+    };
+    let pictures = entries.flatten().filter(|entry| {
+        let plain = entry.file_type().is_ok_and(|kind| kind.is_file());
+        let small = entry
+            .metadata()
+            .is_ok_and(|meta| meta.len() <= uze_contract::IMAGE_FILE_MAX as u64);
+        plain && small && entry.file_name().to_str().is_some_and(is_picture_name)
+    });
+    for entry in pictures.take(KEPT_PICTURES) {
+        let name = entry.file_name();
+        let partial = kept.join(format!(".{}.partial", name.to_string_lossy()));
+        let kept_well = std::fs::create_dir_all(kept)
+            .and_then(|()| std::fs::copy(entry.path(), &partial))
+            .and_then(|_| std::fs::rename(&partial, kept.join(&name)));
+        if let Err(error) = kept_well {
+            let _ = std::fs::remove_file(&partial);
+            tracing::debug!(%error, file = %name.to_string_lossy(), "a picture was not kept");
+        }
+    }
+}
+
+/// Whether `name` is a file an `Image` shows: a PNG, JPEG or GIF, named
+/// plainly.
+pub(super) fn is_picture_name(name: &str) -> bool {
+    let plain = !name.is_empty() && !name.starts_with('.') && !name.contains(['/', '\\']);
+    let extension = Path::new(name)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase);
+    plain && matches!(extension.as_deref(), Some("png" | "jpg" | "jpeg" | "gif"))
 }
 
 fn failed(reason: impl Into<String>) -> Answer {
@@ -179,7 +232,7 @@ fn not_started(reason: impl Into<String>) -> NotRun {
 /// The program resolved, its arguments substituted, its directories made
 /// and its confinement written: everything but starting it.
 fn prepare(asked: &Asked<'_>, dir: &Path) -> Result<ProgramRun, NotRun> {
-    let scratch = dir.join("tmp");
+    let scratch = dir.join(SCRATCH);
     let bin = dir.join("bin");
     std::fs::create_dir_all(&scratch)
         .and_then(|()| std::fs::create_dir_all(&bin))
@@ -396,6 +449,46 @@ fn outcome(asked: &Asked<'_>, ended: ProgramOutcome) -> Answer {
         )),
         ProgramOutcome::NotStarted { reason } => {
             failed(format!("`{name}` did not start: {reason}"))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_run_keeps_the_plain_pictures_it_left_and_nothing_else() {
+        let root = uze_testkit::temp::scratch("program-pictures");
+        let (scratch, kept) = (root.join("tmp"), root.join("kept"));
+        std::fs::create_dir_all(scratch.join("deeper")).unwrap();
+        std::fs::write(scratch.join("shot.png"), b"png").unwrap();
+        std::fs::write(scratch.join("notes.txt"), b"text").unwrap();
+        std::fs::write(scratch.join("deeper/inner.png"), b"png").unwrap();
+        let big = std::fs::File::create(scratch.join("big.png")).unwrap();
+        big.set_len(uze_contract::IMAGE_FILE_MAX as u64 + 1)
+            .unwrap();
+        // A link is never kept, where the platform can make one at all.
+        let _ = uze_platform::fs::symlink(&scratch.join("shot.png"), &scratch.join("link.png"));
+
+        keep_pictures(&scratch, &kept);
+
+        let mut names: Vec<String> = std::fs::read_dir(&kept)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["shot.png"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_picture_name_is_a_plain_png_jpeg_or_gif() {
+        for name in ["a.png", "b.JPG", "c.jpeg", "d.gif"] {
+            assert!(is_picture_name(name), "{name}");
+        }
+        for name in ["", ".hidden.png", "a/b.png", "a.txt", "png"] {
+            assert!(!is_picture_name(name), "{name}");
         }
     }
 }
