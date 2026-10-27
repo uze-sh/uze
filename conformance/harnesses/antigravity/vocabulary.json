@@ -22,59 +22,45 @@
       },
       "call": {
         "CommandLine": "mkdir -p {dir} && printf ran > {side} # {mark}",
-        "Cwd": "{project}",
         "WaitMsBeforeAsync": 2000,
-        "toolSummary": "Lab command",
-        "toolAction": "Running command"
+        "toolSummary": "Lab command"
       }
     },
     "file.read": {
       "tools": [
-        "view_file"
+        "read_file"
       ],
       "fields": {
-        "path": "AbsolutePath"
+        "path": "Path"
       },
       "call": {
-        "AbsolutePath": "{project}/README.md",
-        "toolSummary": "Lab read",
-        "toolAction": "Reading file"
+        "Path": "{project}/README.md"
       }
     },
     "file.write": {
       "tools": [
-        "write_to_file"
+        "write_file"
       ],
       "fields": {
-        "path": "TargetFile"
+        "path": "Path"
       },
       "call": {
-        "TargetFile": "{side}",
-        "CodeContent": "lab",
-        "Description": "lab",
-        "Overwrite": true,
-        "toolSummary": "Lab write",
-        "toolAction": "Writing file"
+        "Path": "{side}",
+        "Content": "lab",
+        "Overwrite": true
       }
     },
     "file.edit": {
       "tools": [
-        "replace_file_content"
+        "edit_file"
       ],
       "fields": {
-        "path": "TargetFile"
+        "path": "Path"
       },
       "call": {
-        "TargetFile": "{project}/README.md",
-        "TargetContent": "lab project",
-        "ReplacementContent": "lab project, edited",
-        "Instruction": "lab",
-        "Description": "lab",
-        "AllowMultiple": false,
-        "StartLine": 1,
-        "EndLine": 1,
-        "toolSummary": "Lab edit",
-        "toolAction": "Editing file"
+        "Path": "{project}/README.md",
+        "Target": "lab project",
+        "Replacement": "lab project, edited"
       }
     },
     "search.files": null,
@@ -86,9 +72,7 @@
         "query": "query"
       },
       "call": {
-        "query": "lab",
-        "toolSummary": "Lab search",
-        "toolAction": "Searching the web"
+        "query": "lab"
       }
     },
     "agent.spawn": {
@@ -97,15 +81,9 @@
       ],
       "fields": {},
       "call": {
-        "Subagents": [
-          {
-            "TypeName": "flow_auditor",
-            "Role": "Lab",
-            "Prompt": "lab subagent"
-          }
-        ],
-        "toolSummary": "Lab dispatch",
-        "toolAction": "Dispatching agent"
+        "TypeName": "flow_auditor",
+        "Role": "Lab",
+        "Prompt": "lab subagent"
       }
     },
     "agent.message": {
@@ -115,9 +93,7 @@
       "fields": {},
       "call": {
         "Message": "lab",
-        "Recipient": "general",
-        "toolSummary": "Lab message",
-        "toolAction": "Sending message"
+        "Recipient": "general"
       }
     }
   }

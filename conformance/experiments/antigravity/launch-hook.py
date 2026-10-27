@@ -7,11 +7,11 @@ session's workspace is a customization root, so `<dir>/.agents/hooks.json`
 is loaded for that process alone, merged with the user's own
 `~/.gemini/config/hooks.json`. The hook is hand-written POSIX `sh` (the
 image has no Python or jq), with no UZE in its path: it appends the
-`TargetFile` of every PostToolUse payload to the file named by
+`Path` of every PostToolUse payload to the file named by
 `UZE_AGENT_TRAIL`, which reaches it through the launch environment.
 
 Two TUI sessions, the same scripted turn in each (in the tools' declared
-argument shapes): `write_to_file` into `/work/other-repo` — a second Git
+argument shapes): `write_file` into `/work/other-repo` — a second Git
 repository outside the workspace `/work/project` — then `run_command`
 `git -C /work/other-repo status`. Both launch with `UZE_AGENT_TRAIL` and
 `GIT_TRACE2_EVENT=/work/trace` in the environment; only the first adds the
@@ -78,37 +78,32 @@ FINAL = "UZE_CONFORMANCE_PASS"
 
 SEQUENCE = [
     {
-        "name": "write_to_file",
+        "name": "write_file",
         "args": {
-            "TargetFile": TOUCHED,
-            "CodeContent": "lab",
-            "Description": "lab",
+            "Path": TOUCHED,
+            "Content": "lab",
             "Overwrite": True,
-            "toolSummary": "Lab write",
-            "toolAction": "Writing file",
         },
     },
     {
         "name": "run_command",
         "args": {
             "CommandLine": "git -C /work/other-repo status",
-            "Cwd": "/work/project",
             "WaitMsBeforeAsync": 2000,
             "toolSummary": "Command execution",
-            "toolAction": "Running command",
         },
     },
 ]
 
 #: The hook UZE would generate: stdin captured as evidence, the env it saw,
-#: and the `TargetFile` appended to the trail. `tr` + `sed` because the image
+#: and the `Path` appended to the trail. `tr` + `sed` because the image
 #: has no JSON tool; a path with an escaped quote would defeat it, which is
 #: a limitation of the probe, not of the harness.
 TRAIL_HOOK = r"""#!/bin/sh
 in=$(cat)
 printf '%s\n' "$in" >> /work/evidence/launch-hook-stdin.log
 printf 'UZE_AGENT_TRAIL=%s\n' "${UZE_AGENT_TRAIL-<unset>}" >> /work/evidence/launch-hook-env.log
-f=$(printf '%s' "$in" | tr -d '\n' | sed -n 's/.*"TargetFile" *: *"\([^"]*\)".*/\1/p')
+f=$(printf '%s' "$in" | tr -d '\n' | sed -n 's/.*"Path" *: *"\([^"]*\)".*/\1/p')
 if [ -n "$f" ] && [ -n "$UZE_AGENT_TRAIL" ]; then
   printf '%s\n' "$f" >> "$UZE_AGENT_TRAIL"
 fi
@@ -344,12 +339,12 @@ def run(cfg, prov_ip):
         '"status":"SUCCESS"' in continued and "uze-trail" not in continued,
         continued[:600].replace("\n", " "),
     )
-    # 3. The path: absolute TargetFile on stdin, env inherited, trail appended.
+    # 3. The path: absolute Path on stdin, env inherited, trail appended.
     stdin = section(inject["inspect"], "launch hook stdin")
     trail = section(inject["inspect"], "trail")
     common.check(
         "launch-hook-stdin-has-targetfile",
-        f'"TargetFile":"{TOUCHED}"' in stdin.replace(" ", ""),
+        f'"Path":"{TOUCHED}"' in stdin.replace(" ", ""),
         stdin[:400].replace("\n", " "),
     )
     common.check(

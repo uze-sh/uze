@@ -45,10 +45,8 @@ SEQUENCE = [
         "name": "run_command",
         "args": {
             "CommandLine": "echo lab",
-            "Cwd": "/work/project",
             "WaitMsBeforeAsync": 2000,
             "toolSummary": "Command execution",
-            "toolAction": "Running command",
         },
     }
 ]

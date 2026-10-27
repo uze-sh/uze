@@ -183,26 +183,15 @@ def _prelude(files, manifest):
 def _steps():
     calls = [
         {
-            "name": "view_file",
-            "args": {
-                "AbsolutePath": f"{PROJECT}/{rel}",
-                "toolSummary": "Lab read",
-                "toolAction": "Reading file",
-            },
+            "name": "read_file",
+            "args": {"Path": f"{PROJECT}/{rel}"},
         }
         for rel in READS
     ]
     calls.append(
         {
-            "name": "write_to_file",
-            "args": {
-                "TargetFile": f"{PROJECT}/{WRITE}",
-                "CodeContent": "lab",
-                "Description": "lab",
-                "Overwrite": True,
-                "toolSummary": "Lab write",
-                "toolAction": "Writing file",
-            },
+            "name": "write_file",
+            "args": {"Path": f"{PROJECT}/{WRITE}", "Content": "lab", "Overwrite": True},
         }
     )
     return calls

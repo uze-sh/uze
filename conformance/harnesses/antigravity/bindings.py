@@ -173,6 +173,15 @@ timeout 240 agy --print {shlex.quote(prompt)} --dangerously-skip-permissions \\
                 "reason to the model (measured on 1.4.3; until 1.4.2 it "
                 "arrived only as the error an unreadable hook output caused)"
             )
+        if prop in ("rules-glob-reaches-model", "rules-plugin-fires-where-declared"):
+            # Measured with no UZE in the loop (`experiments/antigravity/rules`):
+            # 1.4.6 appends a matching glob rule to `view_file`'s result, 1.4.8
+            # appends none to `read_file`'s, nor after a `write_file`.
+            return (
+                "Antigravity attaches no `trigger: glob` rule since 1.4.7 renamed "
+                "its file tools: the rule never reaches the model after a matching "
+                "read or write (google-antigravity/antigravity-cli#1349)"
+            )
         if prop == "agent-vendor-fields-block-model":
             return (
                 "Antigravity drops an agent that carries `model` (measured on "
@@ -188,19 +197,13 @@ timeout 240 agy --print {shlex.quote(prompt)} --dangerously-skip-permissions \\
         return label.replace(":", "_")
 
     def dispatch(self, label, prompt):
-        """agy dispatches with `invoke_subagent`, naming the agent in a
-        `Subagents[].TypeName`; the schema also requires a role, a prompt
-        and the tool summary/action every agy tool carries."""
+        """agy dispatches with `invoke_subagent`, naming the agent in its
+        `TypeName` beside the role and prompt the schema requires; 1.4.7
+        flattened the `Subagents` list into one agent per call."""
         args = {
-            "Subagents": [
-                {
-                    "TypeName": label,
-                    "Role": "Lab Dispatch",
-                    "Prompt": "Run your checks.",
-                }
-            ],
-            "toolSummary": "Lab dispatch",
-            "toolAction": "Dispatching agent",
+            "TypeName": label,
+            "Role": "Lab Dispatch",
+            "Prompt": "Run your checks.",
         }
         return "toolcall", {"TOOL_NAME": "invoke_subagent", "FC_ARGS": json.dumps(args)}
 

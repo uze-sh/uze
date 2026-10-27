@@ -44,7 +44,7 @@ pub(super) fn session_payload() -> String {
 pub(super) fn payload(target: HookTarget, command: &str) -> String {
     if target == crate::antigravity::HOOKS {
         return serde_json::json!({
-            "toolCall": {"name": "run_command", "args": {"CommandLine": command, "Cwd": "/repo"}},
+            "toolCall": {"name": "run_command", "args": {"CommandLine": command}},
             "workspacePaths": ["/repo"],
         })
         .to_string();

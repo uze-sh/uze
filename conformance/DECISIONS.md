@@ -651,6 +651,42 @@ a vendor bug, and asserting it would ask UZE for a channel the harness does
 not have).
 
 
+## Antigravity 1.4.7: every tool reshaped, and #893 fixed again
+
+**Context.** From 2026-10-21 (1.4.7) every hook check of the nightly went
+red with no record at all, and the agent dispatches never reached the
+subagent. The release notes name none of it. `--discovery` did: every
+scripted call came back "additional properties … not allowed". 1.4.7
+dropped `toolAction` from every tool and `Cwd` from `run_command`,
+flattened `invoke_subagent`'s `Subagents` list into one
+`TypeName`/`Role`/`Prompt` per call, and renamed the file tools
+(`view_file`, `write_to_file`, `replace_file_content` became `read_file`,
+`write_file`, `edit_file`, each naming its file `Path`). Once the calls
+validated, the API-key probe saw the control hook deny under
+`GEMINI_API_KEY`: the declaration registered for 1.4.3 had been holding on
+a turn where no hook could run.
+
+**Chosen.** Script every call in the shape 1.4.8 declares, move UZE's
+`file.*` bindings to the new names (a matcher naming the old ones matches
+nothing on 1.4.7), re-record the snapshot, and assert the API-key mode
+again as on 1.1.25.
+
+**Discarded.** Keeping the old names beside the new ones in `also_matches`
+(the matcher emits the native name alone, so it would serve no build, and
+the field each one reads differs); re-pinning the API-key declaration to
+1.4.8 (its reason is false on a turn that validates).
+
+**Followed up (2026-10-27).** The calls fixed, every `trigger: glob` rule
+still stayed out of the conversation. `experiments/antigravity/rules`, with
+no UZE in the loop, ran the same world on a 1.4.6 image: its `view_file`
+results carry the matching rules, 1.4.8's `read_file` results carry none.
+Reported as google-antigravity/antigravity-cli#1349 and declared for 1.4.8.
+The checks that only mean something once the rule arrives (it arrives
+once, never early, never where undeclared) follow that declaration:
+`contract/declared.py` holds them on a settled turn while this run measured
+the rule missing, and they escalate with it. Without the measured presence
+they stay unproven, so a fixture that stopped writing is still a red check.
+
 ## OpenCode 2.1.4: `permission.evaluate` names the call, and UZE keys on that
 
 **Context.** `native-first-hooks` 6.3 (moved to `prove-plugin-delivery`
