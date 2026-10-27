@@ -152,9 +152,10 @@ impl WorkspaceModel {
         bridge
             .working
             .retain(|id, _| agents.iter().any(|agent| &agent.id == id));
-        bridge
-            .offsets
-            .retain(|id, _| agents.iter().any(|agent| &agent.id == id));
+        // An offset is kept only while the journal is read: observing
+        // again starts from the journal's end, so what the agent did
+        // unobserved is never replayed, nor sends unattended prompts.
+        bridge.offsets.retain(|id, _| read.contains(id));
         bridge
             .turn_began
             .retain(|id, _| agents.iter().any(|agent| &agent.id == id));

@@ -494,3 +494,24 @@ fn an_agent_that_reported_has_its_turns_painted_again_once_its_journal_is_not_re
         "its turns go on from the paint, so one prompt a turn does not freeze"
     );
 }
+
+#[test]
+fn resuming_observation_reads_an_agents_journal_from_its_end() {
+    let root = PathBuf::from("/repo");
+    let (mut model, agent) = observed(&root);
+    model.absorb_extension_watch(journal_read(None, 40));
+    assert_eq!(
+        model.extension_watch().journals,
+        [("a1".to_owned(), Some(40))]
+    );
+
+    observe(&mut model, &root, false);
+    model.see_agents(vec![agent.clone()]);
+    observe(&mut model, &root, true);
+    model.see_agents(vec![agent]);
+    assert_eq!(
+        model.extension_watch().journals,
+        [("a1".to_owned(), None)],
+        "what it did unobserved is not replayed: the next read only sets the offset"
+    );
+}
