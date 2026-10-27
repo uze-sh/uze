@@ -1,0 +1,152 @@
+journey: gsd-next's band over the agent offers the milestone's next phase, and its button types the phase's skill into the agent once the operator sees it
+tags: [gate, tui, workspace]
+about: |
+  The operator's side of `gsd-next`, from the agent bridge's gallery: a
+  one-row band under each agent's pane names the milestone's next phase
+  and offers "Run phase N", which asks to type the GSD skill that runs it
+  into the agent of that pane, in its harness's own spelling of a skill.
+  Installed without a terminal it is disabled; the workspace offers it,
+  the operator allows `agent:prompt` and enables it, and pressing the
+  button shows the exact line before anything is typed. Allowed, it
+  reaches the agent, which is ready.
+
+  What reached the agent is read from the conversation the stand-in
+  records, one `user` record per line typed into it, as Claude Code
+  records a turn; the consent is read from `state/extensions.json`. The
+  screen only gates each gesture.
+
+world:
+  project: demo-app
+  commits:
+    - message: "chore: initial commit"
+      files:
+        README.md: "# demo-app\n"
+  # `tests/_fixtures/canonical/bridge`'s `gsd-next`, staged as a
+  # marketplace's plugin: a container mounts only `journeys/`.
+  files:
+    market/marketplace.json: |
+      {
+        "name": "studio",
+        "description": "A marketplace this journey stages and installs from its clone.",
+        "plugins": [
+          { "name": "bridge", "source": "./plugins/bridge", "description": "The agent bridge's next GSD step." }
+        ]
+      }
+    market/plugins/bridge/plugin.json: |
+      {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "bridge",
+        "version": "1.0.0",
+        "description": "The agent bridge's reference extension: the next GSD step, run by the agent."
+      }
+    market/plugins/bridge/extensions/gsd-next/extension.kdl: |
+      protocol 1
+      id "gsd-next"
+      name "GSD next step"
+      description "The milestone's next phase, run by the agent on a press"
+
+      wants "agent:prompt"
+
+      surface "next" slot="band" rows=1 place="bottom" view="next.kdl" source="milestone" title="Next step"
+
+      source "milestone" {
+          fixture "fixtures/milestone.json"
+      }
+
+      action "run" label="Run the next phase" on="next" {
+          agent-prompt skill="gsd:execute-phase" "{number}" target="self"
+      }
+    market/plugins/bridge/extensions/gsd-next/next.kdl: |
+      Row gap=2 align="center" {
+          Text "{milestone}" strong=#true
+          Text "{next.number} · {next.name}" role="muted" truncate=#true grow=#true when="next"
+          Text "Every phase is done" role="faint" grow=#true unless="next"
+          Button "Run phase {next.number}" action="run" item="{next}" when="next"
+      }
+    market/plugins/bridge/extensions/gsd-next/fixtures/milestone.json: |
+      { "milestone": "v1.2", "next": { "number": "12", "name": "Consulta de dados" } }
+
+scenes:
+  - scene: a plugin installed from a marketplace's clone leaves its band disabled
+    when:
+      - shell: "{uze} market add {world}/market"
+        say: register the marketplace, linked to nothing
+      - shell: "cd {project} && {uze} install bridge@studio > {world}/install.log 2>&1"
+        say: add the plugin to the project, with nobody at a terminal to answer
+    then:
+      - file: "{uze_home}/store/plugins/studio/bridge/extensions/gsd-next/extension.kdl"
+        contains: "gsd:execute-phase"
+        about: the extension was installed from the clone, into the Store
+      - file: "{uze_home}/state/extensions.json"
+        exists: false
+        about: nobody consented to anything, and nothing was enabled
+
+  - scene: and then the operator allows it to type into an agent and enables it, and its band names the next phase under the agent
+    when:
+      - open: ["{uze}", "workspace"]
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - click: "new"
+        say: open the new-agent popup from the space's row
+        in: sidebar
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
+        say: place an agent on the project
+        expect: "GSD next step runs nothing"
+        expect_timeout: 90
+      - click: "Review"
+        say: review the extension the project offers
+        expect: "Enable GSD next step in demo-app"
+        expect_timeout: 10
+      - wait: screen
+        until: "agent:prompt"
+        timeout: 5
+        say: the question says it may type into an agent
+      - click: "Allow and enable"
+        say: allow it and enable it here
+        expect: "extension enabled"
+        expect_timeout: 10
+      - wait: screen
+        until: 'v1\.2 +12 · Consulta de dados +Run phase 12'
+        in: pane
+        timeout: 20
+        say: the band under the agent names the next phase and offers to run it
+    then:
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.bridge@studio/gsd-next.accepted_grants.*
+        count: 1
+        includes: ["agent:prompt"]
+        about: the consent holds the one grant its question showed
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.bridge@studio/gsd-next.enabled_in.*
+        equals: "{project}"
+        count: 1
+        about: and it is enabled in this project, and in no other
+      - file: "{home}/.claude/projects/*/*.jsonl"
+        excludes: "gsd:execute-phase"
+        about: nothing has been typed into the agent yet
+
+  - scene: and then the operator presses Run phase 12, reads the skill it types, and allows it, and the agent receives it
+    when:
+      - click: "Run phase 12"
+        say: press the band's button
+        in: pane
+        expect: "Type this into agent 1"
+        expect_timeout: 10
+      - wait: screen
+        until: "/gsd:execute-phase 12"
+        timeout: 5
+        say: the question shows the skill in the harness's spelling, with the phase
+      - click: "Type it"
+        say: allow it
+        expect: "sent to agent"
+        expect_timeout: 10
+      - wait: shell
+        until: "grep -q 'gsd:execute-phase' {home}/.claude/projects/*/*.jsonl"
+        timeout: 10
+        say: the agent reads the line
+    then:
+      - file: "{home}/.claude/projects/*/*.jsonl"
+        contains: '"content":"/gsd:execute-phase 12"'
+        about: the agent received exactly the line the question showed, as one turn

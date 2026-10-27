@@ -1,0 +1,194 @@
+journey: plan-review's section shows the checkout's plan and its open steps, and Ask for a review types the review into the agent once the operator sees it
+tags: [gate, tui, workspace]
+about: |
+  The operator's side of `plan-review`, from the agent bridge's gallery:
+  a section in the sidebar reads the checkout's `PLAN.md` with a script
+  and shows its title and the steps still open, with "Ask for a review",
+  which asks to type a fixed request naming the file into the agent.
+  Installed without a terminal it is disabled; the workspace offers it,
+  the operator allows `read:checkout` and `agent:prompt` and enables it,
+  and the request is shown before it is typed into the agent, which is
+  ready.
+
+  What reached the agent is read from the conversation the stand-in
+  records; that the script only read the checkout is read from the
+  checkout itself, and the consent from `state/extensions.json`. The
+  screen only gates each gesture.
+
+world:
+  project: demo-app
+  commits:
+    - message: "chore: initial commit"
+      files:
+        README.md: "# demo-app\n"
+    - message: "docs: plan the agent bridge"
+      files:
+        PLAN.md: |
+          # Agent bridge
+
+          - [x] Draft the events
+          - [ ] Write the fixtures
+          - [ ] Prove the journey
+  # `tests/_fixtures/canonical/bridge`'s `plan-review`, staged as a
+  # marketplace's plugin: a container mounts only `journeys/`.
+  files:
+    market/marketplace.json: |
+      {
+        "name": "studio",
+        "description": "A marketplace this journey stages and installs from its clone.",
+        "plugins": [
+          { "name": "bridge", "source": "./plugins/bridge", "description": "The agent bridge's plan review." }
+        ]
+      }
+    market/plugins/bridge/plugin.json: |
+      {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "bridge",
+        "version": "1.0.0",
+        "description": "The agent bridge's reference extension: the plan, reviewed by the agent."
+      }
+    market/plugins/bridge/extensions/plan-review/extension.kdl: |
+      protocol 1
+      id "plan-review"
+      name "Plan review"
+      description "The checkout's plan, and its review asked of the agent"
+
+      wants "read:checkout" "agent:prompt"
+
+      surface "plan" slot="section" view="plan.kdl" source="plan" title="Plan"
+
+      source "plan" {
+          script "plan.rhai"
+          input file="PLAN.md"
+          refresh-on "paths.changed" "PLAN.md"
+      }
+
+      action "review" label="Ask for a review" on="plan" {
+          agent-prompt "Review {file} and say what you would change before going on" target="self"
+      }
+    market/plugins/bridge/extensions/plan-review/plan.rhai: |
+      fn answer(input, context) {
+          let present = false;
+          for entry in list_checkout(".") {
+              if entry.name == input.file && entry.kind == "file" { present = true; }
+          }
+          if !present {
+              return #{ data: #{ file: input.file } };
+          }
+          let title = input.file;
+          let open = [];
+          for line in lines(read_checkout(input.file)) {
+              if line.starts_with("# ") && title == input.file { title = line.sub_string(2); }
+              if line.starts_with("- [ ] ") { open.push(#{ text: line.sub_string(6) }); }
+          }
+          #{ data: #{ file: input.file, title: title, open: open, left: open.len() } }
+      }
+    market/plugins/bridge/extensions/plan-review/plan.kdl: |
+      Stack gap=1 {
+          Stack when="title" {
+              Text "{title}" strong=#true truncate=#true
+              List each="open" empty="Every step is done" {
+                  Text "{text}" truncate=#true
+              }
+              Button "Ask for a review" action="review" item="{.}"
+          }
+          Text "No plan yet" role="faint" unless="title"
+      }
+
+scenes:
+  - scene: a plugin installed from a marketplace's clone leaves its section disabled
+    when:
+      - shell: "{uze} market add {world}/market"
+        say: register the marketplace, linked to nothing
+      - shell: "cd {project} && {uze} install bridge@studio > {world}/install.log 2>&1"
+        say: add the plugin to the project, with nobody at a terminal to answer
+    then:
+      - file: "{uze_home}/store/plugins/studio/bridge/extensions/plan-review/plan.rhai"
+        contains: "read_checkout"
+        about: the extension's script was installed from the clone, into the Store
+      - file: "{uze_home}/state/extensions.json"
+        exists: false
+        about: nobody consented to anything, and nothing was enabled
+
+  - scene: and then the operator allows and enables it, and its section shows the plan's open steps
+    when:
+      - open: ["{uze}", "workspace"]
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - click: "new"
+        say: open the new-agent popup from the space's row
+        in: sidebar
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
+        say: place an agent on the project
+        expect: "Plan review runs nothing"
+        expect_timeout: 90
+      - click: "Review"
+        say: review the extension the project offers
+        expect: "Enable Plan review in demo-app"
+        expect_timeout: 10
+      - wait: screen
+        until: "agent:prompt"
+        timeout: 5
+        say: the question says it may type into an agent
+      - click: "Allow and enable"
+        say: allow its grants and enable it here
+        expect: "extension enabled"
+        expect_timeout: 10
+      - wait: screen
+        until: "Agent bridge"
+        in: sidebar
+        timeout: 20
+        say: the section names the plan
+      - wait: screen
+        until: "Write the fixtures"
+        in: sidebar
+        timeout: 5
+        say: and lists its open steps
+      - wait: screen
+        until: "Prove the journey"
+        in: sidebar
+        timeout: 5
+        say: every one of them
+    then:
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.bridge@studio/plan-review.accepted_grants.*
+        count: 2
+        includes: ["read:checkout", "agent:prompt"]
+        about: the consent holds exactly the grants its question showed
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.bridge@studio/plan-review.enabled_in.*
+        equals: "{project}"
+        count: 1
+        about: and it is enabled in this project
+      - cmd:
+          run: "git -C {project} diff --exit-code HEAD -- PLAN.md"
+        about: the script read the plan and left it as committed
+      - file: "{home}/.claude/projects/*/*.jsonl"
+        excludes: "Review PLAN.md"
+        about: nothing has been typed into the agent yet
+
+  - scene: and then Ask for a review shows the request and, allowed, types it into the agent
+    when:
+      - click: "Ask for a review"
+        say: press the section's button
+        in: sidebar
+        expect: "Type this into agent 1"
+        expect_timeout: 10
+      - wait: screen
+        until: "Review PLAN.md and say what you would change before"
+        timeout: 5
+        say: the question shows the exact text, naming the plan's file
+      - click: "Type it"
+        say: allow it
+        expect: "sent to agent"
+        expect_timeout: 10
+      - wait: shell
+        until: "grep -q 'Review PLAN.md' {home}/.claude/projects/*/*.jsonl"
+        timeout: 10
+        say: the agent reads the line
+    then:
+      - file: "{home}/.claude/projects/*/*.jsonl"
+        contains: '"content":"Review PLAN.md and say what you would change before going on"'
+        about: the agent received exactly the text the question showed, as one turn

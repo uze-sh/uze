@@ -1,0 +1,229 @@
+journey: pets draws a pet under the agent that follows the agent's state, and its section feeds the pet and keeps what it was fed in its store
+tags: [gate, tui, workspace]
+about: |
+  The operator's side of `pets`, from the media gallery: a two-row band
+  under each agent's pane plays a sprite from a sheet the extension ships,
+  beside the agent's label and state, and a section in the sidebar names
+  the pet and feeds it. Installed without a terminal it is disabled; the
+  workspace offers it, the operator allows `agent:observe` and `store`
+  and enables it.
+
+  A sprite is pixels or half blocks, and neither is read here: what tells
+  the band follows the agent is the state written beside the sprite, which
+  is the same answer the sprite plays. The machine is what the checks
+  read: the consent record, and the extension's store under
+  `state/extensions/store/`, where the pet's name and its meals are kept.
+  The harness reports nothing of itself, so its turn is read from how its
+  pane paints, as journey 19 does.
+
+world:
+  project: demo-app
+  commits:
+    - message: "chore: initial commit"
+      files:
+        README.md: "# demo-app\n"
+  # `tests/_fixtures/canonical/media`'s `pets`, staged as a marketplace's
+  # plugin: a container mounts only `journeys/`. Its sheet, `pet.png`, is
+  # binary, so the first scene writes it from base64 and publishes it.
+  files:
+    market/marketplace.json: |
+      {
+        "name": "studio",
+        "description": "A marketplace this journey stages and installs from its clone.",
+        "plugins": [
+          { "name": "media", "source": "./plugins/media", "description": "The media gallery's pets." }
+        ]
+      }
+    market/plugins/media/plugin.json: |
+      {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "media",
+        "version": "1.0.0",
+        "description": "The media gallery's reference extension: a pet over each agent."
+      }
+    market/plugins/media/extensions/pets/extension.kdl: |
+      protocol 1
+      id "pets"
+      name "Pets"
+      description "A pet for every agent, moving as the agent works"
+
+      wants "agent:observe" "store"
+
+      sprite "pet" sheet="pet.png" frame="16x16" columns=4 fallback="ready" {
+          state "ready" frames="0-1" fps=2
+          state "working" frames="2-5" fps=8
+          state "done" frames="6-7" fps=2 loop=#false
+          state "content" frames="6-7" fps=2
+          state "hungry" frames="0-1" fps=1
+      }
+
+      surface "pack" slot="band" rows=2 place="bottom" view="pack.kdl" source="crew" title="Pets"
+      surface "kennel" slot="section" view="kennel.kdl" source="kennel" title="Pet"
+
+      source "crew" {
+          agents
+          refresh-on "agent.turn.started"
+          refresh-on "agent.turn.finished"
+      }
+
+      source "kennel" {
+          script "kennel.rhai"
+      }
+
+      action "feed" label="Feed" on="kennel" {
+          script "feed.rhai"
+      }
+    market/plugins/media/extensions/pets/pack.kdl: |
+      Row gap=2 {
+          Row gap=1 each="." {
+              Sprite "pet" state="{state}" height=2
+              Stack {
+                  Text "{label}" truncate=#true
+                  Text "{state}" role="muted"
+              }
+          }
+          Text "No agents" role="faint" unless="."
+      }
+    market/plugins/media/extensions/pets/kennel.kdl: |
+      Row gap=1 {
+          Sprite "pet" state="{mood}" height=2
+          Stack grow=#true {
+              Text "{name}" strong=#true
+              Text "{said}" role="muted"
+          }
+          Button "Feed" action="feed"
+      }
+    market/plugins/media/extensions/pets/kennel.rhai: |
+      fn answer(input, context) {
+          let content_for = 600000;
+          let kept = store();
+          let name = kept.name ?? "Pixel";
+          let fed = kept.fed ?? 0;
+          let content = fed > 0 && clock() - (kept.last_fed ?? 0) < content_for;
+          #{
+              data: #{
+                  name: name,
+                  fed: fed,
+                  mood: if content { "content" } else { "hungry" },
+                  said: if content { `content, fed ${fed} times` } else { "hungry" },
+              },
+              store: #{ name: name },
+          }
+      }
+    market/plugins/media/extensions/pets/feed.rhai: |
+      fn answer(input, context) {
+          let kept = store();
+          #{
+              data: (),
+              store: #{ fed: (kept.fed ?? 0) + 1, last_fed: clock() },
+              refresh: ["kennel"],
+          }
+      }
+
+scenes:
+  - scene: a plugin installed from a marketplace's clone leaves its pets disabled
+    when:
+      - shell: |
+          set -e
+          cd {world}/market
+          printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAEAAAAAgCAYAAACinX6EAAAA6klEQVR42u1Y2w2AIAxkCL+dhEkcwsGczg0wJH4Q4guuei1CQiIh9a4lSu+ca2xMfgw1e80QWBcfavbEEkAJSOBfzdcriBJA8O+wH3FAgiUIUPHRF2iKH4bx8PmzAtQQUFUANAF2PPwJWDzBHCfeGnHS/gGlBNj/EHUJfI1v/haA+xDz93jSMaZdY75+t5UECUjgw2LmiGxRFQ3j92Fej7MHrMfZB8DW42w/gq7H2X5E9wNakcO/LkDEy/HTtWs1AXV+AEVNzvN57L6nWw0CCYgbIt0PMHaNqSgAIofphogGPc72I7of8LexAVHMuhE6+DAVAAAAAElFTkSuQmCC' | base64 -d > plugins/media/extensions/pets/pet.png
+          git add -A
+          git commit -qm "feat: the pet's sheet"
+        say: the author publishes the pet's sheet of frames
+      - shell: "{uze} market add {world}/market"
+        say: register the marketplace, linked to nothing
+      - shell: "cd {project} && {uze} install media@studio > {world}/install.log 2>&1"
+        say: add the plugin to the project, with nobody at a terminal to answer
+    then:
+      - file: "{uze_home}/store/plugins/studio/media/extensions/pets/pet.png"
+        contains: "PNG"
+        about: the extension's sheet was installed from the clone, into the Store
+      - file: "{uze_home}/state/extensions.json"
+        exists: false
+        about: nobody consented to anything, and nothing was enabled
+
+  - scene: and then the operator allows and enables it, and the band names the agent ready while its section names the pet hungry
+    when:
+      - open: ["{uze}", "workspace"]
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - click: "new"
+        say: open the new-agent popup from the space's row
+        in: sidebar
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
+        say: place an agent on the project
+        expect: "Pets runs nothing there yet"
+        expect_timeout: 90
+      - click: "Review"
+        say: review the extension the project offers
+        expect: "Enable Pets in demo-app"
+        expect_timeout: 10
+      - click: "Allow and enable"
+        say: allow its grants and enable it here
+        expect: "extension enabled"
+        expect_timeout: 10
+      - wait: screen
+        until: 'agent 1(.|\n)*ready'
+        in: pane
+        timeout: 20
+        say: the band under the agent names it, ready
+      - wait: screen
+        until: "Pixel"
+        in: sidebar
+        timeout: 20
+        say: the section names the pet
+      - wait: file
+        until: "{uze_home}/state/extensions/store/media@studio/pets/*.json"
+        timeout: 10
+        say: whose name the script keeps
+    then:
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.media@studio/pets.accepted_grants.*
+        count: 2
+        includes: ["agent:observe", "store"]
+        about: the consent holds exactly the grants it wants
+      - json: "{uze_home}/state/extensions/store/media@studio/pets/*.json"
+        at: store.name
+        equals: "Pixel"
+        count: 1
+        about: the pet's name is kept in the extension's store, for this project
+      - json: "{uze_home}/state/extensions/store/media@studio/pets/*.json"
+        at: store.fed
+        exists: false
+        about: and it has not been fed
+
+  - scene: and then the agent works, and the band beside its pet says so, and says it is done once the turn is over
+    when:
+      - type: "work for 6 seconds"
+        say: ask the agent for a turn of six seconds
+        expect: 'agent 1(.|\n)*working'
+        expect_timeout: 15
+      - wait: screen
+        until: 'agent 1(.|\n)*(done|ready)'
+        timeout: 30
+        say: the band follows it out of the turn
+    then:
+      - file: "{home}/.claude/projects/*/*.jsonl"
+        contains: '"content":"work for 6 seconds"'
+        about: the agent took the operator's line as its turn
+
+  - scene: and then Feed feeds the pet, which is kept in the store and makes it content
+    when:
+      - click: "Feed"
+        say: press the section's button
+        in: sidebar
+        expect: "content, fed 1"
+        expect_timeout: 10
+    then:
+      - json: "{uze_home}/state/extensions/store/media@studio/pets/*.json"
+        at: store.fed
+        equals: "1"
+        count: 1
+        about: the meal is kept in the extension's store
+      - json: "{uze_home}/state/extensions/store/media@studio/pets/*.json"
+        at: store.name
+        equals: "Pixel"
+        count: 1
+        about: beside the pet's name, which feeding kept

@@ -1,0 +1,233 @@
+journey: gpu-meter names the program it runs before it is allowed, and on a machine without it says so in its section rather than drawing a reading
+tags: [gate, tui, workspace]
+about: |
+  The operator's side of `gpu-meter`, from the GPU gallery: its script
+  runs `nvidia-smi` through `run_program`, under `exec:nvidia-smi`, and
+  keeps its readings in the extension's store. Installed without a
+  terminal it is disabled; the workspace offers it, the operator allows
+  its store, and then, on a second question of its own, its program,
+  which this machine does not have: the question says it was not found
+  instead of naming a path. Allowed anyway, the extension is enabled with
+  nothing pinned, and its section says why it has no reading.
+
+  A journey's machine has no GPU, and a stand-in `nvidia-smi` could not
+  be pinned there: a program under the temporary directory, where every
+  world lives, is refused a pin. So the reading itself, its meters and
+  its history, are proven by the extension's own tests against its
+  fixture, and this journey proves what a machine without the program
+  meets. The machine is what the checks read: the consent record, with
+  the grant accepted and no path pinned, and the store a reading would
+  have written.
+
+world:
+  project: demo-app
+  commits:
+    - message: "chore: initial commit"
+      files:
+        README.md: "# demo-app\n"
+  # `tests/_fixtures/canonical/gpu`, staged as a marketplace's plugin: a
+  # container mounts only `journeys/`.
+  files:
+    market/marketplace.json: |
+      {
+        "name": "studio",
+        "description": "A marketplace this journey stages and installs from its clone.",
+        "plugins": [
+          { "name": "gpu", "source": "./plugins/gpu", "description": "The GPU gallery's meter." }
+        ]
+      }
+    market/plugins/gpu/plugin.json: |
+      {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "gpu",
+        "version": "1.0.0",
+        "description": "The gpu-meter reference extension: a GPU's load, memory and temperature read from nvidia-smi."
+      }
+    market/plugins/gpu/extensions/gpu-meter/extension.kdl: |
+      protocol 1
+      id "gpu-meter"
+      name "GPU"
+      description "The GPU's load, memory and temperature, and their recent history"
+
+      wants "exec:nvidia-smi" "store"
+
+      exec "nvidia-smi" {
+          reads "/dev/dxg" "/dev/nvidiactl" "/dev/nvidia0" "/dev/nvidia-uvm" "/proc/driver/nvidia"
+      }
+
+      surface "meter" slot="view" view="meter.kdl" source="gpu" title="GPU"
+      surface "summary" slot="section" view="summary.kdl" source="gpu" title="GPU"
+      surface "load" slot="status" view="status.kdl" source="gpu" title="GPU"
+
+      preferences {
+          number "warn-at" label="Warn at load (%)" default=70 min=1 max=100
+      }
+
+      source "gpu" {
+          script "gpu.rhai"
+          every "10s"
+          preferences
+      }
+    market/plugins/gpu/extensions/gpu-meter/meter.kdl: |
+      Stack gap=1 {
+          Text "{name}" strong=#true
+          Gauge "load" ratio="{load_ratio}" warning="{warn}" danger=0.9
+          Gauge "memory" ratio="{memory_ratio}" warning=0.8 danger=0.95
+          Grid min-width=20 {
+              Stat "{load}%" "load"
+              Stat "{memory}" "memory"
+              Stat "{temperature}" "temperature"
+          }
+          Rule "load, last readings"
+          Chart series="{history}" kind="bar" height=4
+      }
+    market/plugins/gpu/extensions/gpu-meter/status.kdl: |
+      Row gap=1 {
+          Gauge "GPU" ratio="{load_ratio}" warning="{warn}" danger=0.95 grow=#true
+          Text "{temperature}" role="faint"
+      }
+    market/plugins/gpu/extensions/gpu-meter/summary.kdl: |
+      Stack {
+          Gauge "load" ratio="{load_ratio}" warning="{warn}" danger=0.9
+          Chart series="{history}" kind="sparkline"
+          Text "{memory} · {temperature}" role="faint"
+      }
+    market/plugins/gpu/extensions/gpu-meter/gpu.rhai: |
+      fn field(parts, at) {
+          let text = parts[at];
+          text.trim();
+          text
+      }
+
+      fn answer(input, context) {
+          let query = "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu";
+          let kept_readings = 30;
+          let ran = run_program("nvidia-smi", [query, "--format=csv,noheader,nounits"]);
+          if ran.code != 0 {
+              throw `nvidia-smi answered ${ran.code}: ${ran.stderr}`;
+          }
+          let line = lines(ran.stdout)[0];
+          let parts = line.split(",");
+          let load = parse_int(field(parts, 1));
+          let used = parse_int(field(parts, 2));
+          let total = parse_int(field(parts, 3));
+          let temperature = parse_float(field(parts, 4));
+
+          let kept = store();
+          let history = if "history" in kept { kept.history } else { [] };
+          history.push(load);
+          while history.len() > kept_readings {
+              history.remove(0);
+          }
+
+          let warn_at = input.preferences["warn-at"];
+          #{
+              data: #{
+                  warn: warn_at.to_float() / 100.0,
+                  name: field(parts, 0),
+                  load: load,
+                  load_ratio: load.to_float() / 100.0,
+                  memory: `${used} / ${total} MiB`,
+                  memory_ratio: used.to_float() / total.to_float(),
+                  temperature: `${temperature.round()}°C`,
+                  history: history,
+              },
+              store: #{ history: history },
+          }
+      }
+    market/plugins/gpu/extensions/gpu-meter/fixtures/gpu.json: |
+      {
+        "name": "NVIDIA GeForce RTX 4060 Ti",
+        "load": 9,
+        "load_ratio": 0.09,
+        "warn": 0.7,
+        "memory": "1926 / 8188 MiB",
+        "memory_ratio": 0.235,
+        "temperature": "56°C",
+        "history": [3, 5, 9, 41, 87, 92, 60, 12, 9]
+      }
+
+scenes:
+  - scene: a plugin installed from a marketplace's clone leaves its meter disabled
+    when:
+      - shell: "{uze} market add {world}/market"
+        say: register the marketplace, linked to nothing
+      - shell: "cd {project} && {uze} install gpu@studio > {world}/install.log 2>&1"
+        say: add the plugin to the project, with nobody at a terminal to answer
+    then:
+      - file: "{uze_home}/store/plugins/studio/gpu/extensions/gpu-meter/gpu.rhai"
+        contains: "run_program"
+        about: the extension's script was installed from the clone, into the Store
+      - file: "{uze_home}/state/extensions.json"
+        exists: false
+        about: nobody consented to anything, and nothing was enabled
+      - cmd:
+          run: "if command -v nvidia-smi; then exit 1; fi"
+        about: this machine has no nvidia-smi on its search path
+
+  - scene: and then the operator allows its store and then its program, which the question says was not found, and enables it
+    when:
+      - open: ["{uze}", "workspace"]
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - click: "new"
+        say: open the new-agent popup from the space's row
+        in: sidebar
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
+        say: place an agent on the project
+        expect: "GPU runs nothing there yet"
+        expect_timeout: 90
+      - click: "Review"
+        say: review the extension the project offers
+        expect: "Enable GPU in demo-app"
+        expect_timeout: 10
+      - wait: screen
+        until: "store ·"
+        timeout: 5
+        say: the first question shows the grant that is not a program
+      - click: "Allow and enable"
+        say: allow it
+        expect: "Allow these programs to run"
+        expect_timeout: 10
+      - wait: screen
+        until: "nvidia-smi · `nvidia-smi` not found"
+        timeout: 5
+        say: the second question names the program, and says it was not found
+      - click: "Allow and enable"
+        say: allow its program anyway and enable it here
+        expect: "extension enabled"
+        expect_timeout: 10
+    then:
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.gpu@studio/gpu-meter.accepted_grants.*
+        count: 2
+        includes: ["exec:nvidia-smi", "store"]
+        about: the consent holds exactly the grants the two questions showed
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.gpu@studio/gpu-meter.exec_paths.nvidia-smi
+        exists: false
+        about: and pins no path for a program that was not found
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.gpu@studio/gpu-meter.enabled_in.*
+        equals: "{project}"
+        count: 1
+        about: it is enabled in this project
+
+  - scene: and then its section says why it has no reading, and nothing is kept
+    when:
+      - wait: screen
+        until: "`nvidia-smi` not found;"
+        in: sidebar
+        timeout: 20
+        say: the section says the program it could not run was not found
+      - wait: screen
+        until: "resolve it again on the"
+        in: sidebar
+        timeout: 5
+        say: and where to resolve it once it is there
+    then:
+      - dir: "{uze_home}/state/extensions/store/gpu@studio/gpu-meter"
+        exists: false
+        about: no reading was taken, so no history is kept

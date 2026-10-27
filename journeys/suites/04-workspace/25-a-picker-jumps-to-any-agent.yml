@@ -1,0 +1,177 @@
+journey: jump's picker opens over the pane by its key, lists every agent, and the one chosen is focused as the picker closes
+tags: [gate, tui, workspace]
+about: |
+  The operator's side of `jump`, from the agent bridge's gallery: an
+  overlay listing every agent, opened from anywhere by alt+j, whose
+  ctrl+g (or a row's Go) focuses the agent of the row chosen. Installed
+  without a terminal it is disabled; the workspace offers it, the
+  operator allows `agent:observe` and enables it. With two agents open,
+  the second in front, the picker takes the operator back to the first.
+
+  Which agent is in front is the client's own state, kept on no disk, so
+  the screen is what tells the jump landed: each agent's pane shows a
+  line only it was sent. The machine is what the checks read: the consent
+  record, and the two agents UZE recorded, each in a checkout of its own.
+
+world:
+  project: demo-app
+  commits:
+    - message: "chore: initial commit"
+      files:
+        README.md: "# demo-app\n"
+  manifest: |
+    workspace:
+      worktree: always
+      target: main
+      slots: 2
+  # `tests/_fixtures/canonical/bridge`'s `jump`, staged as a
+  # marketplace's plugin: a container mounts only `journeys/`.
+  files:
+    market/marketplace.json: |
+      {
+        "name": "studio",
+        "description": "A marketplace this journey stages and installs from its clone.",
+        "plugins": [
+          { "name": "bridge", "source": "./plugins/bridge", "description": "The agent bridge's jump picker." }
+        ]
+      }
+    market/plugins/bridge/plugin.json: |
+      {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "bridge",
+        "version": "1.0.0",
+        "description": "The agent bridge's reference extension: jump to any agent."
+      }
+    market/plugins/bridge/extensions/jump/extension.kdl: |
+      protocol 1
+      id "jump"
+      name "Jump"
+      description "Jump to any agent, in any space, from anywhere"
+
+      wants "agent:observe"
+
+      surface "picker" slot="overlay" view="picker.kdl" source="crew" title="Jump to an agent"
+
+      source "crew" { agents; }
+
+      action "open" label="Jump to an agent" on="picker" key="alt-j" {
+          open "picker"
+      }
+
+      action "go" label="Go" on="picker" key="ctrl-g" {
+          focus-agent target="{id}"
+      }
+    market/plugins/bridge/extensions/jump/picker.kdl: |
+      List id="agents" each="." empty="No agents" {
+          Row gap=2 {
+              Text "{label}" truncate=#true grow=#true
+              Text "{space}" role="muted"
+              Button "Go" action="go" item="{.}"
+          }
+      }
+
+scenes:
+  - scene: a plugin installed from a marketplace's clone leaves its picker disabled
+    when:
+      - shell: "{uze} market add {world}/market"
+        say: register the marketplace, linked to nothing
+      - shell: "cd {project} && {uze} install bridge@studio > {world}/install.log 2>&1"
+        say: add the plugin to the project, with nobody at a terminal to answer
+    then:
+      - file: "{uze_home}/store/plugins/studio/bridge/extensions/jump/extension.kdl"
+        contains: "focus-agent"
+        about: the extension was installed from the clone, into the Store
+      - file: "{uze_home}/state/extensions.json"
+        exists: false
+        about: nobody consented to anything, and nothing was enabled
+
+  - scene: and then the operator enables it, and two agents work, the second in front
+    when:
+      - open: ["{uze}", "workspace"]
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - click: "new"
+        say: open the new-agent popup from the space's row
+        in: sidebar
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
+        say: place the first agent on the project
+        expect: "Jump runs nothing there yet"
+        expect_timeout: 90
+      - click: "Review"
+        say: review the extension the project offers
+        expect: "Enable Jump in demo-app"
+        expect_timeout: 10
+      - click: "Allow and enable"
+        say: allow its grant and enable it here
+        expect: "extension enabled"
+        expect_timeout: 10
+      - type: "the first agent was told this"
+        say: send the first agent a line only it will show
+        expect: "the first agent was told this"
+        expect_timeout: 10
+      - click: "new"
+        say: open the new-agent popup again
+        in: sidebar
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
+        say: place the second agent, which comes to the front
+        expect: 'agent 2(?!: preparing)'
+        expect_timeout: 90
+      - wait: screen
+        until: '(?s)\A(?!.*the first agent was told this)'
+        timeout: 10
+        say: the second agent's pane is in front, without the first one's line
+      - type: "the second agent was told this"
+        say: send the second agent a line only it will show
+        expect: "the second agent was told this"
+        expect_timeout: 10
+    then:
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.bridge@studio/jump.accepted_grants.*
+        count: 1
+        includes: ["agent:observe"]
+        about: the consent holds the one grant its question showed
+      - agents: { count: 2, live: 2, isolated: 2 }
+        about: two agents work, each in a checkout of its own
+
+  # The first row is selected as the picker opens, as a list's is, so
+  # ctrl+g takes it straight away and Down moves to the second.
+  - scene: and then alt+j opens the picker over the pane, and ctrl+g on the first agent's row focuses it and closes the picker
+    when:
+      - key: "M-j"
+        say: press the picker's key
+        expect: "jump · bridge@studio"
+        expect_timeout: 10
+      - wait: screen
+        until: 'agent 1 .*Go'
+        timeout: 10
+        say: it lists the first agent
+      - wait: screen
+        until: 'agent 2 .*Go'
+        timeout: 10
+        say: and the second
+      - key: "C-g"
+        say: focus the agent of the first row, selected as it opened
+        expect: '(?s)\A(?!.*jump · bridge@studio)(?!.*the second agent was told this).*the first agent was told this'
+        expect_timeout: 10
+    then:
+      - agents: { count: 2, live: 2 }
+        about: a jump moves the operator, and closes nothing
+
+  - scene: and then the picker opened again takes the operator back to the second agent, Down selecting its row
+    when:
+      - key: "M-j"
+        say: press the picker's key again
+        expect: "jump · bridge@studio"
+        expect_timeout: 10
+      - key: "Down"
+        say: select the second row
+      - key: "C-g"
+        say: take it
+        expect: '(?s)\A(?!.*jump · bridge@studio)(?!.*the first agent was told this).*the second agent was told this'
+        expect_timeout: 10
+    then:
+      - agents: { count: 2, live: 2 }
+        about: and back again, still closing nothing

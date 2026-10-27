@@ -1,0 +1,201 @@
+journey: screen's section shows the picture its program wrote into its scratch, once its program is allowed on a step of its own, and Full size opens it over the frame
+tags: [gate, tui, workspace]
+about: |
+  The operator's side of `screen`, from the media gallery: a packaged
+  `sh` script stands in for a device's screenshot, writes a small PNG into
+  the scratch folder UZE gives each run, and answers which device it was;
+  a section in the sidebar draws that picture, and "Full size" opens it in
+  a card over the frame. Installed without a terminal it is disabled; the
+  workspace offers it, and the operator allows it and then, on a second
+  question of their own, its program, named with the path it was found
+  at.
+
+  A picture is drawn in half blocks first, and in pixels over them where
+  the terminal speaks Sixel, as the container's tmux does: the half
+  blocks are what the gates wait for, and neither their colours nor the
+  pixels are read. The picture is smaller than either room, so both draw
+  it at its own size. The machine is what the checks
+  read: the consent record with `exec:sh` allowed and `sh` pinned to an
+  absolute path that exists, the picture kept out of the run's scratch
+  under the generated tier, and the checkout the program never wrote.
+
+world:
+  project: demo-app
+  commits:
+    - message: "chore: initial commit"
+      files:
+        README.md: "# demo-app\n"
+  # `tests/_fixtures/canonical/media`'s `screen`, staged as a
+  # marketplace's plugin: a container mounts only `journeys/`. A packaged
+  # script runs as its `#!` interpreter, so it needs no executable bit.
+  files:
+    market/marketplace.json: |
+      {
+        "name": "studio",
+        "description": "A marketplace this journey stages and installs from its clone.",
+        "plugins": [
+          { "name": "media", "source": "./plugins/media", "description": "The media gallery's screen." }
+        ]
+      }
+    market/plugins/media/plugin.json: |
+      {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "media",
+        "version": "1.0.0",
+        "description": "The media gallery's reference extension: a device's screen a program takes."
+      }
+    market/plugins/media/extensions/screen/extension.kdl: |
+      protocol 1
+      id "screen"
+      name "Screen"
+      description "A device's screen, taken every half minute"
+
+      wants "exec:sh"
+
+      surface "shot" slot="section" view="shot.kdl" source="screen" title="Screen"
+      surface "full" slot="overlay" view="full.kdl" source="screen" title="Screen"
+
+      source "screen" {
+          run "./bin/shot" timeout="5s"
+          every "30s"
+      }
+
+      action "enlarge" label="Full size" on="shot" {
+          open "full"
+      }
+    market/plugins/media/extensions/screen/full.kdl: |
+      Stack {
+          Text "{device} · {screen}" role="muted"
+          Image "scratch:shot.png" alt="The device's screen" height=24
+      }
+    market/plugins/media/extensions/screen/shot.kdl: |
+      Stack {
+          Image "scratch:shot.png" alt="The device's screen" height=8
+          Row gap=1 {
+              Text "{device}" role="muted" truncate=#true grow=#true
+              Button "Full size" action="enlarge"
+          }
+      }
+    market/plugins/media/extensions/screen/bin/shot: |
+      #!/bin/sh
+      # Stands in for a device's screenshot: writes a small PNG of a home
+      # screen into its scratch and says which device it was.
+      shot="$TMPDIR/shot.png"
+      printf '\211PNG\015\012\032\012\000\000\000\015IHDR\000\000\000\044\000' > "$shot"
+      printf '\000\000\100\010\002\000\000\000\375\007B\203\000\000\000\200IDA' >> "$shot"
+      printf 'Tx\332c\340\021\220\241\033b\030\265\214\052\226I\050X\320\015' >> "$shot"
+      printf '\215ZFe\313\236E\005\140Ep\005Q\047\052\260\042\270\202\200i\037' >> "$shot"
+      printf '\260\242Q\313F\055\033\265l\264\270\032\272\226Q\036\377\037N' >> "$shot"
+      printf '\270aE\243\226\215Z6j\331hq5t\055\243\074\376\011V\277\243\226' >> "$shot"
+      printf '\215Z6\342\055\033\055\256\206\236e\224\307\077\301\352w\324\262' >> "$shot"
+      printf 'Q\313F\274e\243\305\325\250e\003n\331\350\044\302\250e\203\3062' >> "$shot"
+      printf '\000\225\354\220\052\371S\030\246\000\000\000\000IEND\256B\140' >> "$shot"
+      printf '\202' >> "$shot"
+      printf '{"data":{"device":"emulator-5554","screen":"home"}}\n'
+
+scenes:
+  - scene: a plugin installed from a marketplace's clone leaves its program extension disabled
+    when:
+      - shell: "{uze} market add {world}/market"
+        say: register the marketplace, linked to nothing
+      - shell: "cd {project} && {uze} install media@studio > {world}/install.log 2>&1"
+        say: add the plugin to the project, with nobody at a terminal to answer
+    then:
+      - file: "{uze_home}/store/plugins/studio/media/extensions/screen/bin/shot"
+        contains: "TMPDIR/shot.png"
+        about: the extension's program was installed from the clone, into the Store
+      - file: "{uze_home}/state/extensions.json"
+        exists: false
+        about: nobody consented to anything, and nothing was enabled
+
+  - scene: and then the operator allows its program on a step of its own and enables it, and its section draws the picture the program took
+    when:
+      # Tall enough that the sidebar gives the section the eight rows its
+      # picture asks for.
+      - open: ["{uze}", "workspace"]
+        rows: 60
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - click: "new"
+        say: open the new-agent popup from the space's row
+        in: sidebar
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
+        say: place an agent on the project
+        expect: "Screen runs nothing there yet"
+        expect_timeout: 90
+      - click: "Review"
+        say: review the extension the project offers
+        expect: "Allow these programs to run"
+        expect_timeout: 10
+      - wait: screen
+        until: 'sh · /'
+        timeout: 5
+        say: its only question is its program, named with the path it was found at
+      - click: "Allow and enable"
+        say: allow its program and enable it here
+        expect: "extension enabled"
+        expect_timeout: 10
+      - wait: screen
+        until: "emulator-5554"
+        in: sidebar
+        timeout: 20
+        say: the section names the device the program answered
+      - wait: screen
+        until: "▀▀▀"
+        in: sidebar
+        timeout: 10
+        say: and draws the picture it wrote, in half blocks
+    then:
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.media@studio/screen.accepted_grants.*
+        count: 1
+        includes: ["exec:sh"]
+        about: the consent holds the one grant it wants, its program
+      - cmd:
+          run: |
+            {python} -I -c "
+            import json, os, sys
+            record = json.load(open('{uze_home}/state/extensions.json'))
+            pinned = record['extensions']['media@studio/screen']['exec_paths']['sh']
+            print(pinned)
+            sys.exit(0 if os.path.isabs(pinned) and os.access(pinned, os.X_OK) else 1)
+            "
+        about: sh is pinned to an absolute path of a program that is there
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.media@studio/screen.enabled_in.*
+        equals: "{project}"
+        count: 1
+        about: and it is enabled in this project
+      - file: "{uze_home}/runtime/extensions/pictures/media@studio/screen/shot.png"
+        contains: "PNG"
+        about: the picture the program left in its scratch is kept where the views read it
+      - dir: "{uze_home}/runtime/extensions/scratch/*"
+        exists: false
+        about: and the run's scratch folder itself is gone
+      - file: "{project}/shot.png"
+        exists: false
+        about: the picture was never written into the checkout
+
+  - scene: and then Full size opens the picture in a card over the frame, which Esc puts away
+    when:
+      - click: "Full size"
+        say: press the section's button
+        in: sidebar
+        expect: "emulator-5554 · home"
+        expect_timeout: 10
+      - wait: screen
+        until: '│ +▀▀▀ +│'
+        timeout: 10
+        say: the card draws the picture inside it, at its own size
+      - key: "Escape"
+        say: put the card away
+        expect: '(?s)\A(?!.*emulator-5554 · home)'
+        expect_timeout: 10
+    then:
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.media@studio/screen.enabled_in.*
+        equals: "{project}"
+        count: 1
+        about: opening and closing the card changes nothing the operator answered
