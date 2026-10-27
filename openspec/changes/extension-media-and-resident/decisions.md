@@ -259,3 +259,13 @@
 - decided:  `make check` passes but for the three failures known to this machine's environment (opencode's `bun` shim, two `foreground_status_*` in `uze-terminal`); `cargo deny` and `openspec validate --all --strict` (80 items) pass. The proof script (`run7.sh`, kept with the plan's artifact) rebuilds a world from the branch's `media` fixture; its automatic part passes. Its checklist in the real TUI is the operator's.
 - rejected: Waiting for the operator to close the task: the run is unattended.
 - blast:    None.
+
+## D47 — Driving the TUI by hand: what tmux proves, and what it cannot
+
+- status:   pending
+- task:     5.3
+- commit:
+- trigger:  The hand proofs' checklists were driven in the real TUI through a detached tmux (keys and SGR mouse sent, the screen read with `capture-pane`) instead of waiting for the operator.
+- decided:  Proven so: the three offers and the programs step for `screen`; `pets`' sprite and kennel ("Pixel", "hungry") in their rows. Not proven: how an image looks. A detached tmux answers the Sixel query with a made-up 16×32 cell, so UZE sends Sixel, and `capture-pane` shows neither the pixels nor a faithful half-block grid (the capture showed half blocks over the section's title and past it). Whether that is tmux's capture or a placement fault is open; it is the first thing to look at on a real Sixel terminal. `snake` with raw keys is journey 20's.
+- rejected: Calling the image path proven from a capture that cannot show it.
+- blast:    None; an open question for the operator's real terminal.

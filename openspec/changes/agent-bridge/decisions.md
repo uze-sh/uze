@@ -308,3 +308,13 @@
 - decided:  F8 is bound in `Scope::Surfaces` (over the pane and every surface, as the surfaces' doors are) and handled before a surface in front takes the key. A list in an `overlay` with nothing selected selects its first row: a picker is for choosing. A `focus-agent` from an overlay closes it.
 - rejected: Leaving the picker open: the agent it put in front would stay covered.
 - blast:    `uze-keys` default bindings, `session/keys.rs`, `declared/bind.rs::list`, `declared/overlay.rs`.
+
+## D47 — Driving `run6.sh` in the real TUI: passed, fixed, and found for the operator
+
+- status:   pending
+- task:     5.4
+- commit:
+- trigger:  The checklist a–i was driven through a detached tmux instead of waiting for the operator.
+- decided:  Passed: a (seven offers, each grant explained), b (the deck band with its id, the status rows, the gsd-next band with "Run phase 12"), d (alt+j over the pane), e (the HUD row spins with the turn's time while the stand-in works, `chimes` says "turn finished"), f (the prompt shown, typed once, a second refused, the transcript holding it once), g (F8), h (the plan section follows an edit), i (notify, the second within 10 s counted). c is journey 18's. Fixed on the way: F8 over a surface, the picker's first row and closing it (D46), the action's stale notice (slots D43). Found and left for the operator: (1) the offer's toast has a Review button but no keyboard way in (F1 has no entry); (2) a declared section is drawn ("Waiting for data", "needs consent") before its extension is allowed — it draws no data, but it is there; (3) opening an agent in a directory the session already shows as a space adds a second space ("project 2"), the loose end noted since change 5.
+- rejected: Fixing (1)–(3) unasked: each is a product question about the workspace, not the bridge.
+- blast:    None.
