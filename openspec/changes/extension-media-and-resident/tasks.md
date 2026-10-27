@@ -24,4 +24,4 @@
 
 - [x] 5.1 The extensions rule, invariants, diagrams, the `uze:extension` skill
 - [x] 5.2 A journey: `snake` played with raw keys, and its score kept
-- [ ] 5.3 `make check`, `openspec validate --all --strict`, and the hand proof script
+- [x] 5.3 `make check`, `openspec validate --all --strict`, and the hand proof script

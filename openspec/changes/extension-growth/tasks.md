@@ -17,4 +17,4 @@
 ## 4. Proof and docs
 
 - [x] 4.1 The extensions rule, invariants, the skill
-- [ ] 4.2 `make check`, `openspec validate --all --strict`, and the hand proof script
+- [x] 4.2 `make check`, `openspec validate --all --strict`, and the hand proof script

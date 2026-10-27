@@ -169,3 +169,13 @@
 - decided:  Left as written: that delta describes the version change 4 shipped, and no change is archived yet (the operator's instruction). When the changes are archived in order, this change's `extension-net` spec is what the consolidated spec says of `net`.
 - rejected: Editing an earlier change's delta to describe a later state: its review would no longer match what it shipped.
 - blast:    None now; archive order matters.
+
+## D18 — Closed on make check and the hand proof's automatic part; the TUI checklist waits for the operator
+
+- status:   pending
+- task:     4.2
+- commit:
+- trigger:  The task asks for `make check`, `openspec validate --all --strict` and the hand proof script.
+- decided:  `make check` passes but for the three failures known to this machine's environment (opencode's `bun` shim, two `foreground_status_*` in `uze-terminal`); `cargo deny` and `openspec validate --all --strict` (80 items) pass. The proof script (`run8.sh`, kept with the plan's artifact) rebuilds a world from the branch's `ci` fixture; its automatic part passes. Its checklist in the real TUI is the operator's.
+- rejected: Waiting for the operator to close the task: the run is unattended.
+- blast:    None.

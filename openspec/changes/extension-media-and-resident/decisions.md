@@ -249,3 +249,13 @@
 - decided:  `persistence-tiers` states tiers by what deleting costs and lists no path of the generated tier; `runtime/extensions/pictures/` is named in `UzeHome` and is generated (D11), so that rule is unchanged. The extensions rule gains one bullet: a picture is asked by identity and name through `Host::media`, from `declared/media.rs` alone, and read from the extension's files or its programs' kept scratch, bounded before and while decoding. Two invariants join `docs/architecture/invariants.md` (an image's bounds and sources; a resident script's bounds and the chords it never reads), and the resident view's test now presses F8 as well as F1, which the second invariant claims. `containers.mmd` says the script engine keeps a resident session, and the application keeps a program's pictures in `runtime/` and reads them back for an `Image`. The `uze:extension` skill teaches the media nodes, the sprite declaration and the resident tier with a counter whose script was run through a `Resident` session before it was written down.
 - rejected: A row for the pictures in `persistence-tiers`: the rule names tiers, and a path listed there would be the one generated path it lists.
 - blast:    `.agents/rules/extensions.md`, `docs/architecture/{invariants.md, containers.mmd}`, `plugins/uze/skills/{extension,author}/SKILL.md`, `src/ui/orchestrator/tests/declared_resident.rs`.
+
+## D46 — Closed on make check and the hand proof's automatic part; the TUI checklist waits for the operator
+
+- status:   pending
+- task:     5.3
+- commit:
+- trigger:  The task asks for `make check`, `openspec validate --all --strict` and the hand proof script.
+- decided:  `make check` passes but for the three failures known to this machine's environment (opencode's `bun` shim, two `foreground_status_*` in `uze-terminal`); `cargo deny` and `openspec validate --all --strict` (80 items) pass. The proof script (`run7.sh`, kept with the plan's artifact) rebuilds a world from the branch's `media` fixture; its automatic part passes. Its checklist in the real TUI is the operator's.
+- rejected: Waiting for the operator to close the task: the run is unattended.
+- blast:    None.
