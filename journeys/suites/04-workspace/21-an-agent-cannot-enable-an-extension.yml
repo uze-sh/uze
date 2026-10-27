@@ -1,0 +1,105 @@
+journey: an extension installed from an agent's pane stays disabled, and the install says an agent cannot enable it
+tags: [gate, cli, tui, workspace]
+about: |
+  An agent may install a plugin, but never answer for the operator: the
+  question of whether an extension's script runs, and where, is theirs.
+  An agent is placed on the project from the workspace, and then, from a
+  shell carrying the stamp its launch did, installs a plugin whose
+  extension runs a script. The plugin arrives; the extension does not run,
+  the install says that an agent cannot enable it and who does, and
+  nothing is recorded as consented or enabled.
+
+  The machine is what each scene checks: the Store and the project's
+  declaration the install wrote, and the consent record it did not. The
+  stamp the shell runs with is read off the agent's own process, never
+  written by the journey.
+
+world:
+  project: demo-app
+  commits:
+    - message: "chore: initial commit"
+      files:
+        README.md: "# demo-app\n"
+  files:
+    market/marketplace.json: |
+      {
+        "name": "studio",
+        "description": "A marketplace this journey stages and installs from its clone.",
+        "plugins": [
+          { "name": "notes", "source": "./plugins/notes", "description": "A board of the checkout's README." }
+        ]
+      }
+    market/plugins/notes/plugin.json: |
+      {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "notes",
+        "version": "1.0.0",
+        "description": "The checkout's README, read by a script."
+      }
+    market/plugins/notes/extensions/notes/extension.kdl: |
+      protocol 1
+      id "notes"
+      name "Notes"
+      description "The checkout's README, read by a script"
+
+      wants "read:checkout"
+
+      surface "row" slot="status" view="row.kdl" source="readme" title="Notes"
+
+      source "readme" {
+          script "readme.rhai"
+          input file="README.md"
+      }
+    market/plugins/notes/extensions/notes/row.kdl: |
+      Text "{said}" role="muted"
+    market/plugins/notes/extensions/notes/readme.rhai: |
+      fn answer(input, context) {
+          let lines = lines(read_checkout(input.file));
+          #{ data: #{ said: `${input.file} has ${lines.len()} lines` } }
+      }
+
+scenes:
+  - scene: an agent works on the project, and the marketplace is known to this machine
+    when:
+      - shell: "{uze} market add {world}/market"
+        say: register the marketplace, linked to nothing
+      - open: ["{uze}", "workspace"]
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - click: "new"
+        say: open the new-agent popup from the space's row
+        in: sidebar
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
+        say: place an agent on the project
+        expect: 'agent 1(?!: preparing)'
+        expect_timeout: 90
+        pause: 1.5
+    then:
+      - agents: { count: 1, live: 1 }
+        about: one agent runs, whose launch carries its stamp
+      - file: "{uze_home}/state/extensions.json"
+        exists: false
+        about: nothing has been consented to yet
+
+  - scene: and then the agent installs a plugin whose extension runs a script, which arrives disabled, saying an agent cannot enable it
+    when:
+      # Run as the agent: the stamp is the one its launch carried, read
+      # from its own process rather than from any record.
+      - shell: "cd {project} && {uze} install notes@studio > {world}/install.log 2>&1"
+        inherit: { from: "{world}/bin/claude", names: [UZE_AGENT, UZE_AGENT_KEY] }
+        say: the agent installs the plugin from a shell in its pane
+    then:
+      - file: "{uze_home}/store/plugins/studio/notes/extensions/notes/readme.rhai"
+        contains: read_checkout
+        about: the plugin was installed, its script into the Store
+      - file: "{project}/agents.yaml"
+        contains: notes
+        about: and the project declares it
+      - file: "{world}/install.log"
+        contains: "notes@studio installed disabled; an agent cannot enable an extension, so the operator does, from the workspace"
+        about: the install says the extension waits, why an agent cannot answer, and who does
+      - file: "{uze_home}/state/extensions.json"
+        exists: false
+        about: nothing was consented to, and it is enabled nowhere
