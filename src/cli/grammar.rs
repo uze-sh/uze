@@ -195,6 +195,16 @@ pub(crate) enum Command {
         #[arg(short = 'c', allow_hyphen_values = true)]
         command: String,
     },
+    /// Applies a confinement to this process and becomes the program after
+    /// `--`; the helper a confined program runs through, answered in `main`
+    /// before anything else (`cli::confine`).
+    #[command(name = "__confine", hide = true)]
+    Confine {
+        /// The confinement, as JSON
+        confinement: String,
+        #[arg(last = true, required = true)]
+        program: Vec<std::ffi::OsString>,
+    },
     /// The agent's own surface: what an agent calls to take part in the
     /// project it works in. Only `work` needs an agent `uze workspace`
     /// launched; `context`, `market`, `plugin`, `artifacts` and `rules` answer any

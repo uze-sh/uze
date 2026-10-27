@@ -49,6 +49,9 @@ fn die_quietly_on_a_closed_pipe() {
 }
 
 fn main() {
+    // Ahead of everything, the runtime shim included: the confinement
+    // helper must reach nothing before it confines itself.
+    confine_if_asked();
     // Checked before any `clap` parsing, on `argv[0]` alone: a process
     // invoked as `claude`/`codex`/`opencode` (via the symlink
     // `ensure_runtime_shim` creates at `~/.uze/shims/<name>`) never reaches
@@ -686,6 +689,9 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         Command::Workspace { .. } | Command::Terminal { .. } | Command::Shell { .. } => {
             unreachable!("workspace commands return before application setup")
         }
+        Command::Confine { .. } => {
+            unreachable!("the confinement helper is answered before the command line is parsed")
+        }
         Command::Upgrade { .. } => {
             unreachable!("the release check returns before application setup")
         }
@@ -703,6 +709,7 @@ fn tells_about_releases(command: &Command) -> bool {
             | Command::Workspace { .. }
             | Command::Terminal { .. }
             | Command::Shell { .. }
+            | Command::Confine { .. }
             | Command::Upgrade { .. }
     )
 }

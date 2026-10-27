@@ -216,6 +216,12 @@ pub const CLASSIFICATION: &[(&str, PerformanceClass)] = &[
         ),
     ),
     (
+        "__confine",
+        PerformanceClass::JustifiedSlow(
+            "becomes the confined program and lasts as long as it does",
+        ),
+    ),
+    (
         "setup",
         PerformanceClass::JustifiedSlow(
             "provisions or updates harness executables through each harness's official installer",

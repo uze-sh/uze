@@ -4,6 +4,7 @@
 
 mod agent;
 mod config;
+mod confine;
 mod extension_check;
 mod extensions;
 mod grammar;
@@ -20,6 +21,7 @@ mod workspace;
 
 pub(crate) use agent::*;
 pub(crate) use config::*;
+pub(crate) use confine::*;
 pub(crate) use extensions::*;
 pub(crate) use grammar::*;
 pub(crate) use help::*;
