@@ -16,12 +16,14 @@ mod checked;
 mod checkout;
 mod compiled;
 mod consent;
+mod costs;
 mod fetch;
 mod installed;
 mod program;
 mod reach;
 mod report;
 mod runner;
+mod runs;
 mod summary;
 mod watch;
 
@@ -32,12 +34,14 @@ pub use consent::{
     Asker, Consented, ExtensionConsent, ExtensionStanding, ExtensionState, ProgramPin, Switched,
     confinement, consent_key, enabled_per_project,
 };
+pub use costs::{MeasuredCost, MeasuredCosts, bytes_text};
 pub use installed::InstalledExtension;
 use reach::CheckoutReach;
 pub use report::{
     ExtensionCondition, ExtensionReport, PreferenceRow, grant_meaning, secrets_kept_in,
 };
 pub use runner::ExtensionRunner;
+pub use runs::{ExtensionCost, ExtensionRun, MEMORY_TARGET, P95_TARGET, RunOutcome};
 pub use summary::DeclaredExtensionSummary;
 pub use watch::{WATCH_DEPTH, WATCH_ENTRIES, paths_digest};
 

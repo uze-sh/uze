@@ -305,6 +305,13 @@ impl UzeHome {
             .join(id)
     }
 
+    /// What each declared extension cost the workspace that last measured
+    /// it: runs per minute, p95 and memory, which `uze doctor` reads.
+    /// Generated: the next workspace measures them again.
+    pub fn extension_costs_path(&self) -> PathBuf {
+        self.runtime_dir().join("extensions").join("costs.json")
+    }
+
     /// The guard every read-modify-write of the extensions record takes:
     /// the workspace and a terminal both answer for it. A lock, not a
     /// record.

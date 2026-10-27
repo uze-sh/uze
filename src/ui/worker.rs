@@ -1817,6 +1817,7 @@ mod tests {
         RefreshData {
             doctor: Some(DoctorReport {
                 program_confinement: Default::default(),
+                extension_costs: None,
                 uze_home: PathBuf::from("/home/uze"),
                 store: StoreHealth::Ready,
                 plugins: Vec::new(),

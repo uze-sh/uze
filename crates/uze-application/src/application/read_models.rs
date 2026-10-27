@@ -1380,6 +1380,9 @@ pub struct DoctorReport {
     pub machine_concerns: Vec<MachineConcern>,
     /// Whether an extension's programs run confined on this machine.
     pub program_confinement: ProgramConfinement,
+    /// What the declared extensions cost the workspace that last measured
+    /// them, when one did.
+    pub extension_costs: Option<super::MeasuredCosts>,
 }
 
 /// Whether this machine confines the programs extensions run, and how,

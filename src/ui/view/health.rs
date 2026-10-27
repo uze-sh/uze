@@ -145,6 +145,7 @@ mod tests {
         use uze_application::application::{ManagedStateSummary, PackageManagedState};
         let doctor = DoctorReport {
             program_confinement: Default::default(),
+            extension_costs: None,
             uze_home: PathBuf::from("/home"),
             store: uze_application::application::StoreHealth::Ready,
             plugins: Vec::new(),

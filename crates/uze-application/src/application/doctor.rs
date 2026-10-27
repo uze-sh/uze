@@ -248,6 +248,7 @@ impl Health<'_> {
                 })
                 && !uze_core::acquisition::git::ssh_available(),
             program_confinement: super::read_models::ProgramConfinement::of_this_machine(),
+            extension_costs: self.0.extensions().measured_costs(),
             machine_concerns: uze_platform::machine::concerns()
                 .into_iter()
                 .map(|concern| MachineConcern {

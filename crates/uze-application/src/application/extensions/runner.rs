@@ -29,6 +29,7 @@ use uze_core::capability::extension::Loaded;
 use uze_script::{Grants, Resident, ResidentScript, ScriptCache};
 use uze_workspace::extensions::store::{self, StoreOf};
 
+use super::runs::{self, ExtensionCost, ExtensionRun, RunBook};
 use super::{CheckoutReach, ExtensionCheckout, ExtensionState, NotACheckout};
 use crate::application::services::Extensions;
 
@@ -52,9 +53,12 @@ struct Asked {
 /// saying so never runs a program unconfined.
 #[derive(Debug)]
 pub struct ExtensionRunner {
-    answered: Mutex<HashMap<Asked, Envelope>>,
+    /// Each remembered answer, with what its data weighs as JSON.
+    answered: Mutex<HashMap<Asked, (Envelope, usize)>>,
     scripts: Mutex<ScriptCache>,
     runs: AtomicU64,
+    /// What it answered for each extension, for the inspector.
+    book: Mutex<RunBook>,
     /// The resident sources running now, by extension and source: each
     /// opened by its `Start` and closed by its `Stop`, its first failure or
     /// the operator's consent changing.
@@ -113,6 +117,7 @@ impl ExtensionRunner {
             answered: Mutex::default(),
             scripts: Mutex::default(),
             runs: AtomicU64::default(),
+            book: Mutex::default(),
             residents: Mutex::default(),
             helper,
         }
@@ -175,8 +180,76 @@ impl ExtensionRunner {
         self.answer_over(extensions, question, |path| extensions.checkout(path))
     }
 
-    /// [`Self::answer`], with the checkout resolved by `checkout`.
+    /// [`Self::answer`], with the checkout resolved by `checkout`, noted
+    /// in the session's account. A running resident session's calls, up
+    /// to thirty a second, are its own and are not.
     pub(crate) fn answer_over(
+        &self,
+        extensions: &Extensions<'_>,
+        question: &Question,
+        checkout: impl FnOnce(&Path) -> Result<ExtensionCheckout, NotACheckout>,
+    ) -> Answer {
+        if matches!(question.asking, Asking::Resident(call) if call != ResidentCall::Start) {
+            return self.answer_unnoted(extensions, question, checkout);
+        }
+        TOLD.with(|told| told.set(Told::default()));
+        let started = std::time::Instant::now();
+        let answer = self.answer_unnoted(extensions, question, checkout);
+        let took = started.elapsed();
+        let told = TOLD.with(std::cell::Cell::get);
+        let digest = input_digest(&question.input);
+        let digest = digest.trim_start_matches("sha256:");
+        lock(&self.book).note(
+            &question.identity,
+            ExtensionRun {
+                declaration: question.declaration.clone(),
+                asking: question.asking,
+                input: runs::input_line(&question.input),
+                digest: digest.chars().take(8).collect(),
+                took,
+                outcome: runs::outcome_of(&answer, told.ran, told.fixture),
+                ran: told.ran,
+                at: started,
+            },
+        );
+        answer
+    }
+
+    /// What it answered for `identity` this session, newest first.
+    pub fn runs_of(&self, identity: &Identity) -> Vec<ExtensionRun> {
+        lock(&self.book).runs(identity)
+    }
+
+    /// What `identity` costs at `now`: its runs per minute and p95, and
+    /// what the runner holds of its answers.
+    pub fn cost_of(&self, identity: &Identity, now: std::time::Instant) -> ExtensionCost {
+        let mut cost = lock(&self.book).cost(identity, now);
+        cost.remembered_bytes = lock(&self.answered)
+            .iter()
+            .filter(|(asked, _)| asked.identity == *identity)
+            .map(|(_, (_, bytes))| *bytes)
+            .sum();
+        cost
+    }
+
+    /// Whether the programs it starts run confined.
+    pub fn confines(&self) -> bool {
+        self.helper.is_some()
+    }
+
+    /// A run started: counted for the session, and told to the question
+    /// it ran for.
+    fn count_run(&self) {
+        self.runs.fetch_add(1, Ordering::Relaxed);
+        TOLD.with(|told| {
+            told.set(Told {
+                ran: true,
+                ..told.get()
+            });
+        });
+    }
+
+    fn answer_unnoted(
         &self,
         extensions: &Extensions<'_>,
         question: &Question,
@@ -222,6 +295,12 @@ impl ExtensionRunner {
                 }
                 match &source.kind {
                     SourceKind::Fixture(file) => {
+                        TOLD.with(|told| {
+                            told.set(Told {
+                                fixture: true,
+                                ..told.get()
+                            });
+                        });
                         return match super::compiled::loaded_fixture(&files, file) {
                             Ok(data) => Answer::Answered {
                                 envelope: Envelope::data(data),
@@ -466,7 +545,7 @@ impl ExtensionRunner {
                 fields.insert("checkout".to_owned(), checkout.display().to_string().into());
             }
         }
-        self.runs.fetch_add(1, Ordering::Relaxed);
+        self.count_run();
         let (session, answered) = Resident::start(script, grants, reach, &context);
         let running = Arc::new(Running {
             session,
@@ -589,19 +668,19 @@ impl ExtensionRunner {
             ..asked.clone()
         };
         if asked.asking == Asking::Source
-            && let Some(envelope) = lock(&self.answered).get(&remembered)
+            && let Some((envelope, _)) = lock(&self.answered).get(&remembered)
         {
             return Answer::Answered {
                 envelope: envelope.clone(),
                 trace: Vec::new(),
             };
         }
-        self.runs.fetch_add(1, Ordering::Relaxed);
+        self.count_run();
         let answer = run();
         if asked.asking != Asking::Action
             && let Answer::Answered { envelope, .. } = &answer
         {
-            lock(&self.answered).insert(remembered, envelope.clone());
+            lock(&self.answered).insert(remembered, weighed(envelope));
         }
         answer
     }
@@ -812,7 +891,7 @@ impl ExtensionRunner {
             ..asked.clone()
         };
         if asked.asking == Asking::Source
-            && let Some(envelope) = lock(&self.answered).get(&remembered)
+            && let Some((envelope, _)) = lock(&self.answered).get(&remembered)
         {
             return Answer::Answered {
                 envelope: envelope.clone(),
@@ -836,7 +915,7 @@ impl ExtensionRunner {
             "extension": asked.identity.id,
             declared: asked.declaration,
         });
-        self.runs.fetch_add(1, Ordering::Relaxed);
+        self.count_run();
         let answered = script.answer(input, &context, grants, reach);
         let trace = answered
             .trace
@@ -848,7 +927,7 @@ impl ExtensionRunner {
             Ok(envelope) => {
                 let envelope = keep(envelope);
                 if asked.asking != Asking::Action {
-                    lock(&self.answered).insert(remembered, envelope.clone());
+                    lock(&self.answered).insert(remembered, weighed(&envelope));
                 }
                 Answer::Answered { envelope, trace }
             }
@@ -959,6 +1038,24 @@ fn withheld_because(state: &ExtensionState) -> String {
         }
         ExtensionState::FixturesOnly | ExtensionState::Enabled => "runs nothing".to_owned(),
     }
+}
+
+/// What the current question was told while it was answered, on the
+/// thread answering it.
+#[derive(Clone, Copy, Debug, Default)]
+struct Told {
+    ran: bool,
+    fixture: bool,
+}
+
+thread_local! {
+    static TOLD: std::cell::Cell<Told> = std::cell::Cell::new(Told::default());
+}
+
+/// An answer to remember, with what its data weighs.
+fn weighed(envelope: &Envelope) -> (Envelope, usize) {
+    let bytes = serde_json::to_vec(&envelope.data).map_or(0, |bytes| bytes.len());
+    (envelope.clone(), bytes)
 }
 
 fn input_digest(input: &serde_json::Value) -> String {
@@ -1122,6 +1219,52 @@ pub(super) mod tests {
             "needs enabling in this project",
             "a remembered answer is not served once it may not run"
         );
+    }
+
+    /// The inspector lists every question with its input and how it ended,
+    /// and what it costs counts only what ran (D25, D28).
+    #[test]
+    fn every_question_is_listed_and_only_runs_cost() {
+        let world = World::new("runner-account");
+        let runner = ExtensionRunner::new();
+        let mut question = world.question("state");
+        question.input = serde_json::json!({ "phase": "12" });
+        withheld(world.ask(&runner, &question));
+        world.enabled();
+        data(world.ask(&runner, &question));
+        data(world.ask(&runner, &question));
+        data(world.ask(&runner, &world.question("milestone")));
+
+        let runs = runner.runs_of(&world.band());
+        use super::runs::RunOutcome;
+        let outcomes: Vec<(&str, &RunOutcome, bool)> = runs
+            .iter()
+            .map(|run| (run.declaration.as_str(), &run.outcome, run.ran))
+            .collect();
+        assert_eq!(
+            outcomes,
+            [
+                ("milestone", &RunOutcome::Fixture, false),
+                ("state", &RunOutcome::Remembered, false),
+                ("state", &RunOutcome::Answered, true),
+                (
+                    "state",
+                    &RunOutcome::Withheld("needs consent".to_owned()),
+                    false
+                ),
+            ]
+        );
+        assert_eq!(runs[2].input, r#"{"phase":"12"}"#);
+        assert_eq!(runs[2].digest.len(), 8);
+
+        let cost = runner.cost_of(&world.band(), std::time::Instant::now());
+        assert!(cost.runs_per_minute > 0.0 && cost.runs_per_minute <= 1.0);
+        assert!(cost.p95.is_some());
+        assert!(cost.remembered_bytes > 0, "the answer it remembers weighs");
+        runner.forget(&world.band());
+        let forgotten = runner.cost_of(&world.band(), std::time::Instant::now());
+        assert_eq!(forgotten.remembered_bytes, 0);
+        assert_eq!(runner.runs_of(&world.band()).len(), 4, "the account stays");
     }
 
     #[test]
