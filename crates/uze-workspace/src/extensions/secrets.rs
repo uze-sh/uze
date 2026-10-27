@@ -80,6 +80,8 @@ pub fn forget_plugin(home: &UzeHome, plugin: &str) -> Result<()> {
 mod tests {
     use super::*;
 
+    // Only where secrets are kept in a file: on macOS and Windows this
+    // would write to the operator's own Keychain or Credential Manager.
     #[cfg(all(unix, not(target_os = "macos")))]
     #[test]
     fn a_secret_is_kept_apart_from_the_preferences_and_leaves_with_its_plugin() {
@@ -92,7 +94,7 @@ mod tests {
                 .as_deref(),
             Some("ghp_value")
         );
-        let preferences = super::super::preferences::read(&home, "ci@studio", "ci-status");
+        let preferences = crate::extensions::preferences::read(&home, "ci@studio", "ci-status");
         assert_eq!(
             preferences.get("token"),
             Some(&serde_json::Value::Bool(true))

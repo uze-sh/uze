@@ -1053,7 +1053,7 @@ fn check_reports_what_a_manifest_may_not_run_yet() {
     assert!(!passed, "{output}");
     for said in [
         "`every` is at least 5s",
-        "`net` arrives in a later change (change 8)",
+        "`net` names the host it grants",
         "`write:checkout` does not exist",
         "the program `bin/meter`",
         "its key needs a modifier, not a bare `w`",

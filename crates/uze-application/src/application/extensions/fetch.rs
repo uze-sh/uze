@@ -442,9 +442,10 @@ mod tests {
             "[remote \"origin\"]\n\turl = git@github.com:hiukky/uze.git\n",
         )
         .unwrap();
-        let reach =
-            super::super::CheckoutReach::new(uze_platform::path::canonical(&checkout).unwrap())
-                .with_fetcher(world.fetcher.clone());
+        let reach = crate::application::extensions::CheckoutReach::new(
+            uze_platform::path::canonical(&checkout).unwrap(),
+        )
+        .with_fetcher(world.fetcher.clone());
         let script = std::fs::read(extension.join("runs.rhai")).unwrap();
         let grants: uze_script::Grants = [
             uze_contract::Grant::ReadCheckout,
