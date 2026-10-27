@@ -28,6 +28,7 @@
 //! showing the source is in view is remembered, and asked once one is.
 
 mod action;
+mod authoring;
 mod bind;
 mod compose;
 
@@ -69,6 +70,7 @@ use crate::view::{
 pub use action::COPY_UNASKED_MAX;
 use action::{ActionAnswer, Pending, Queued};
 pub use applies::RECHECK as APPLIES_RECHECK;
+pub use authoring::fake_agents;
 pub use bind::NODE_CAP;
 use bind::{Act, Built};
 pub use events::COALESCE;
@@ -181,6 +183,8 @@ pub struct DeclaredExtension {
     media: media::Shelf,
     /// Whether each checkout has each path an `applies-when` names.
     markers: applies::Markers,
+    /// What the author of a linked extension did to it from the inspector.
+    authoring: authoring::Authoring,
 }
 
 /// A question asked of a source: about which checkout, with which input,
@@ -285,6 +289,7 @@ impl DeclaredExtension {
             builds: std::cell::Cell::new(0),
             media: media::Shelf::default(),
             markers: applies::Markers::default(),
+            authoring: authoring::Authoring::default(),
         }
     }
 
@@ -577,7 +582,11 @@ impl DeclaredExtension {
     /// Gathers each shown source that `happened` is a reason for, on the
     /// checkout it is shown on.
     fn gather(&mut self, happened: &CheckoutEvent, now: Instant) {
-        let event = events::event_value(happened);
+        self.gather_value(happened, events::event_value(happened), now);
+    }
+
+    /// [`Self::gather`], with what the sources are asked with as `event`.
+    fn gather_value(&mut self, happened: &CheckoutEvent, event: serde_json::Value, now: Instant) {
         self.log.push_front(event.clone());
         self.log.truncate(usize::from(uze_contract::EVENTS_MAX));
         for (source, checkout, _) in self.shown_sources() {
@@ -1183,21 +1192,11 @@ impl Extension for DeclaredExtension {
     }
 
     fn agents(&mut self, agents: &serde_json::Value) {
-        if *agents == self.agents {
+        if self.authoring.faking_agents {
+            self.authoring.real_agents = agents.clone();
             return;
         }
-        self.agents = agents.clone();
-        let sources: Vec<String> = self
-            .compiled
-            .manifest
-            .sources
-            .iter()
-            .filter(|source| matches!(source.kind, uze_contract::SourceKind::Agents))
-            .map(|source| source.id.clone())
-            .collect();
-        for source in sources {
-            self.set_data(source, Ok(self.agents.clone()));
-        }
+        self.give_agents(agents);
     }
 
     fn notifications(&mut self) -> Vec<crate::contract::Notify> {
@@ -1367,10 +1366,10 @@ impl Extension for DeclaredExtension {
                             | uze_contract::SourceKind::Resident(_)
                     )
                 });
-            if local {
+            if local || self.authoring.fixtured.contains(&source) {
                 continue;
             }
-            let input = self.input_of(&source, &surface);
+            let input = self.input_now(&source, &surface);
             let current = self
                 .asked
                 .get(&source)
@@ -1539,3 +1538,6 @@ mod input_tests;
 
 #[cfg(test)]
 mod applies_tests;
+
+#[cfg(test)]
+mod authoring_tests;
