@@ -259,7 +259,7 @@ fn happened(event: uze_contract::AgentEvent, agent: &str) -> crate::contract::Ag
     crate::contract::AgentHappened {
         event,
         agent: agent.to_owned(),
-        harness: "claude-code".to_owned(),
+        harness: "harness".to_owned(),
         checkout: PathBuf::from("/work/b"),
         detail: json!({ "tool": "Bash" }),
     }
