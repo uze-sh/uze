@@ -318,3 +318,13 @@
 - decided:  Passed: a (seven offers, each grant explained), b (the deck band with its id, the status rows, the gsd-next band with "Run phase 12"), d (alt+j over the pane), e (the HUD row spins with the turn's time while the stand-in works, `chimes` says "turn finished"), f (the prompt shown, typed once, a second refused, the transcript holding it once), g (F8), h (the plan section follows an edit), i (notify, the second within 10 s counted). c is journey 18's. Fixed on the way: F8 over a surface, the picker's first row and closing it (D46), the action's stale notice (slots D43). Found: (1) the offer's toast had a Review button but no keyboard way in — fixed: `Action::ReviewExtensions`, listed in the index only while something is offered; left for the operator: (2) a declared section is drawn ("Waiting for data", "needs consent") before its extension is allowed — it draws no data, but it is there; (3) opening an agent in a directory the session already shows as a space adds a second space ("project 2"), the loose end noted since change 5.
 - rejected: Fixing (2)–(3) unasked: each is a product question about the workspace, not the bridge.
 - blast:    None.
+
+## D48 — The management modal reads the machine again after the workspace changes an extension
+
+- status:   pending
+- task:     5.4
+- commit:
+- trigger:  Driving `run8.sh` in the TUI: CI was enabled from the workspace's offer, and the Extensions screen opened right after still said "Needs consent" and offered to consent again (D43's 30-second standing).
+- decided:  The workspace's offer answer already bumps `extension_switch::plugins_revision`; the modal keeps the revision its last resolution read and asks again on opening when it moved (`opening_asks_again`), as it does over another project. D43's 30 s now covers only what changed outside this client.
+- rejected: Clearing the modal's memory from the orchestrator: the revision is the one signal both already share.
+- blast:    `src/ui/management.rs`.

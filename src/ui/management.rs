@@ -67,6 +67,9 @@ pub(crate) struct ManagementMemory {
     /// only an answer about the project it was asked for, so opening the
     /// modal over a different one asks again however recent it was.
     resolved_for: Option<PathBuf>,
+    /// The plugins' revision ([`crate::ui::extension_switch::plugins_revision`])
+    /// the last resolution read.
+    resolved_revision: Option<u64>,
 }
 
 impl ManagementMemory {
@@ -104,6 +107,7 @@ impl ManagementMemory {
             remembered: None,
             in_flight: false,
             resolved_for: None,
+            resolved_revision: None,
         }
     }
 
@@ -141,9 +145,17 @@ impl ManagementMemory {
         // with one in flight, because that one is about the project this
         // is not.
         let elsewhere = self.resolved_for.as_deref() != Some(root);
-        if (opening_re_resolves(model.remembered.resolved_at) || elsewhere)
-            && (!self.in_flight || elsewhere)
-        {
+        // The workspace changed what is installed or allowed (an offer
+        // answered, a plugin added): what the last opening read is no
+        // longer the machine, however recent.
+        let revised =
+            self.resolved_revision != Some(crate::ui::extension_switch::plugins_revision());
+        if opening_asks_again(
+            model.remembered.resolved_at,
+            elsewhere,
+            revised,
+            self.in_flight,
+        ) {
             // Behind the frame: every list is already on screen, so
             // nothing about this reads as the plugins having gone away.
             spawn_refresh(
@@ -152,6 +164,7 @@ impl ManagementMemory {
                 model.context_root.clone(),
             );
             self.resolved_for = Some(model.context_root.clone());
+            self.resolved_revision = Some(crate::ui::extension_switch::plugins_revision());
             self.in_flight = true;
         }
         model.maintenance_in_flight = self.in_flight;
@@ -232,6 +245,18 @@ impl ManagementMemory {
 /// asks; a resolution inside [`RESOLUTION_STANDS_FOR`] is.
 pub(crate) fn opening_re_resolves(resolved_at: Option<Instant>) -> bool {
     resolved_at.is_none_or(|at| at.elapsed() >= RESOLUTION_STANDS_FOR)
+}
+
+/// Whether opening the modal asks the machine again: past the resolution's
+/// life, over another project, or after the plugins changed; never twice at
+/// once about the same project.
+pub(crate) fn opening_asks_again(
+    resolved_at: Option<Instant>,
+    elsewhere: bool,
+    revised: bool,
+    in_flight: bool,
+) -> bool {
+    (opening_re_resolves(resolved_at) || elsewhere || revised) && (!in_flight || elsewhere)
 }
 
 /// The directory this session speaks about, resolved the same way

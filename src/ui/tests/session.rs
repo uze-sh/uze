@@ -143,3 +143,23 @@ fn settings_reopened_where_it_was_left_still_reads_its_lists() {
         "only that screen reads them"
     );
 }
+
+#[test]
+fn an_extension_enabled_in_the_workspace_is_read_again_by_the_next_opening() {
+    use crate::ui::management::opening_asks_again;
+    use std::time::Instant;
+
+    let just = Some(Instant::now());
+    assert!(
+        !opening_asks_again(just, false, false, false),
+        "a fresh reading stands"
+    );
+    assert!(
+        opening_asks_again(just, false, true, false),
+        "an offer answered in the workspace revised the plugins: the screen reads again"
+    );
+    assert!(
+        !opening_asks_again(just, false, true, true),
+        "but never twice at once about the same project"
+    );
+}
