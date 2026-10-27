@@ -314,3 +314,32 @@ fn a_state_keeps_playing_from_where_it_began_across_builds() {
         "a new state starts when it is seen"
     );
 }
+
+#[test]
+fn a_picture_of_a_surface_gone_from_view_is_released() {
+    let mut engine = hosted(vec![n(NodeName::Image).arg("a.png").item()], json!({}));
+    let host = Showing {
+        files: BTreeMap::from([("a.png".to_owned(), png(2, 2, [9, 9, 9, 255]))]),
+    };
+    let key = media::MediaKey::Image("a.png".to_owned());
+    let seen = |engine: &mut DeclaredExtension, visible: &[&str]| {
+        let visible: Vec<String> = visible.iter().map(|id| (*id).to_owned()).collect();
+        engine.pass(&Pass {
+            now: Instant::now(),
+            visible: &visible,
+            happened: &[],
+        });
+    };
+    seen(&mut engine, &[VIEW]);
+    tree(&engine);
+    read_all(&mut engine, &host);
+    assert!(engine.media.get(&key).is_some(), "held while drawn");
+
+    seen(&mut engine, &[]);
+    read_all(&mut engine, &host);
+    assert!(engine.media.get(&key).is_none(), "let go once out of view");
+    assert!(
+        engine.memo.borrow().get(VIEW).is_none(),
+        "its build no longer holds the picture"
+    );
+}

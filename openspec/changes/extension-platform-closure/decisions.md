@@ -434,3 +434,13 @@
 - decided:  `RECORDED_MAX` = 64, as the runner keeps the last 64 questions it answered per extension; the oldest go first on a press and on restoring a memory.
 - rejected: A byte budget: the items are already bounded by the data a source may answer, and a count is what the inspector shows.
 - blast:    `declared/action.rs` (`RECORDED_MAX`, `act_with`); `declared.rs` (`restore_memory`); `declared/action_tests.rs`.
+
+## D145 — Only the surfaces in view at the last pass hold pictures
+
+- status:   pending
+- task:     review finding
+- commit:
+- trigger:  The pictures wanted were gathered from every memo, and a memo was dropped only when a view closed, so a folded section, a closed drawer, a band or an overlay out of view kept its pictures held against the 32 MiB budget.
+- decided:  The engine keeps the surfaces of the last `Pass` (`in_view`). Before asking for pictures, `jobs` lets go of every build out of view that names a picture, and gathers the wanted pictures from the builds left, so the shelf releases what no surface in view draws. A build out of view that names no picture is kept, so a section drawn folded every frame is not rebuilt each pass. Before any pass (a host that never passes, tests) every build counts as in view.
+- rejected: Dropping every memo out of view: a folded section's header is drawn each frame and would be rebuilt after every pass for nothing.
+- blast:    `declared.rs` (`in_view`, `pass`, `jobs`, `pictures_in_view`); `declared/media_tests.rs`.

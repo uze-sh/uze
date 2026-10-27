@@ -157,6 +157,9 @@ pub struct DeclaredExtension {
     /// Sources an event or their `every` asked again, asked once a surface
     /// showing them is in view.
     due: BTreeSet<String>,
+    /// The surfaces in view at the host's last pass; `None` until a host
+    /// passes, when every build counts as drawn.
+    in_view: Option<Vec<String>>,
     /// How many questions were asked, numbering each.
     questions: u64,
     /// The row selected in each surface's first list and its item as it was
@@ -284,6 +287,7 @@ impl DeclaredExtension {
             laid_out: BTreeMap::new(),
             window: events::Window::default(),
             due: BTreeSet::new(),
+            in_view: None,
             questions: 0,
             chosen: BTreeMap::new(),
             ui: BTreeMap::new(),
@@ -529,6 +533,20 @@ impl DeclaredExtension {
             let item = items.get(row).cloned().unwrap_or_default();
             self.chosen.insert(surface.to_owned(), (row, item));
         }
+    }
+
+    /// The pictures the surfaces in view at the last pass draw. A build
+    /// out of view that names one is let go, so a folded section, a closed
+    /// drawer or a hidden band or overlay holds nothing against the budget;
+    /// one naming none is kept, so a surface drawn folded is not rebuilt.
+    fn pictures_in_view(&mut self) -> BTreeSet<media::MediaKey> {
+        let memo = self.memo.get_mut();
+        if let Some(in_view) = &self.in_view {
+            memo.retain(|surface, memo| in_view.contains(surface) || memo.built.media.is_empty());
+        }
+        memo.values()
+            .flat_map(|memo| memo.built.media.iter().cloned())
+            .collect()
     }
 
     /// What a surface is called where it is named.
@@ -1352,6 +1370,7 @@ impl Extension for DeclaredExtension {
     /// host remembers, once a surface showing it is in view.
     fn pass(&mut self, pass: &Pass<'_>) {
         self.now = Some(pass.now);
+        self.in_view = Some(pass.visible.to_vec());
         for happened in pass.happened {
             self.gather(happened, pass.now);
         }
@@ -1435,12 +1454,7 @@ impl Extension for DeclaredExtension {
             };
             jobs.push(self.ask(source, checkout, input, asking, by_answer));
         }
-        let wanted: BTreeSet<media::MediaKey> = self
-            .memo
-            .get_mut()
-            .values()
-            .flat_map(|memo| memo.built.media.iter().cloned())
-            .collect();
+        let wanted = self.pictures_in_view();
         jobs.extend(self.media.next(
             &wanted,
             &self.compiled.identity,
