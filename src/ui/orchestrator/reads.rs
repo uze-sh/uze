@@ -1596,6 +1596,10 @@ pub(super) struct ExtensionAnswer {
     /// The extensions a recompile was asked for, so their reservation is
     /// released whatever became of them.
     pub(super) recompiled: Vec<uze_application::ExtensionIdentity>,
+    /// What a discovery read of each found extension's record: whether it
+    /// was consented to and where it is enabled. Empty for a recompile.
+    pub(super) records:
+        BTreeMap<uze_application::ExtensionIdentity, Option<uze_application::ExtensionConsent>>,
     pub(super) loaded: Vec<LoadedExtension>,
 }
 
@@ -1623,6 +1627,7 @@ pub(super) fn spawn_extension_job(
             discovery,
             discovered: None,
             recompiled: recompiled.clone(),
+            records: BTreeMap::new(),
             loaded: Vec::new(),
         };
         let answer = answered_or(
@@ -1632,6 +1637,7 @@ pub(super) fn spawn_extension_job(
                         discovery,
                         discovered: None,
                         recompiled: recompiled.clone(),
+                        records: BTreeMap::new(),
                         loaded: Vec::new(),
                     };
                 };
@@ -1669,10 +1675,20 @@ pub(super) fn spawn_extension_job(
                         }
                     })
                     .collect();
+                let records = discovered
+                    .iter()
+                    .flatten()
+                    .map(|installed| {
+                        let identity = installed.identity.clone();
+                        let record = extensions.consent_record(&identity);
+                        (identity, record)
+                    })
+                    .collect();
                 ExtensionAnswer {
                     discovery,
                     discovered,
                     recompiled: recompiled.clone(),
+                    records,
                     loaded,
                 }
             },

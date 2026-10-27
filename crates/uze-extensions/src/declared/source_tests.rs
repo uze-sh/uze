@@ -245,3 +245,32 @@ fn a_newer_compile_asks_every_shown_source_again() {
     engine.replace(compiled);
     assert_eq!(engine.jobs().len(), 1);
 }
+
+#[test]
+fn what_the_operator_allowed_changing_asks_every_shown_source_again() {
+    let mut engine = board();
+    engine.focus(Some(&checkout("/work/a")));
+    let withheld = Answering::with(Answer::withheld("needs consent"));
+    ask_all(&mut engine, &withheld);
+    assert!(engine.jobs().is_empty(), "asked once");
+
+    engine.reconsider();
+    assert_eq!(engine.withheld(SOURCE), None, "the old reason is not said");
+    assert_eq!(
+        engine.trace(VIEW).expect("a trace").data,
+        DataState::Waiting
+    );
+    let in_flight = engine.jobs();
+    assert_eq!(in_flight.len(), 1, "the section asks again");
+
+    engine.reconsider();
+    let jobs = engine.jobs();
+    run(&mut engine, in_flight, &withheld);
+    assert_eq!(engine.withheld(SOURCE), None, "asked before the change");
+    run(
+        &mut engine,
+        jobs,
+        &Answering::with(answered(json!({ "count": 2 }))),
+    );
+    assert_eq!(texts(&tree(&engine)), ["2"]);
+}

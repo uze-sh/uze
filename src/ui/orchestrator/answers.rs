@@ -305,10 +305,11 @@ impl WorkspaceModel {
                 !recompiled || declared.extensions.contains_key(&loaded.installed.identity)
             })
             .collect();
-        let changed = went || !loaded.is_empty();
+        let mut changed = went || !loaded.is_empty();
         for loaded in loaded {
             declared.absorb_loaded(loaded);
         }
+        changed |= declared.absorb_records(answer.records);
         // A view whose extension went, or whose surface it stopped
         // declaring, is put away rather than drawn from nothing.
         if self.open_slot.is_some() && self.slot_in_pane().is_none() {

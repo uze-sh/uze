@@ -16,7 +16,8 @@
 
 use super::*;
 use uze_application::{
-    CompiledExtension, ExtensionDiagnostic, ExtensionIdentity, InstalledExtension, SourceData,
+    CompiledExtension, ExtensionConsent, ExtensionDiagnostic, ExtensionIdentity,
+    InstalledExtension, SourceData,
 };
 use uze_contract::Clean;
 use uze_extensions::contract::{Checkout, Extension, Opaque, Outcome, SurfaceInfo, SurfaceSlot};
@@ -88,6 +89,9 @@ pub(super) trait Hosted: Extension {
     /// state it holds, is kept.
     fn replace(&mut self, _compiled: CompiledExtension) {}
     fn set_data(&mut self, _source: &str, _data: SourceData) {}
+    /// What the operator allowed it changed. Nothing by default: a
+    /// built-in is never consented to.
+    fn reconsider(&mut self) {}
     fn inspect(&self, _surface: &str) -> Inspection {
         Inspection::default()
     }
@@ -119,6 +123,10 @@ impl Hosted for DeclaredExtension {
 
     fn set_data(&mut self, source: &str, data: SourceData) {
         DeclaredExtension::set_data(self, source, data);
+    }
+
+    fn reconsider(&mut self) {
+        DeclaredExtension::reconsider(self);
     }
 
     fn forget(&mut self, surface: &str) {
@@ -320,6 +328,9 @@ pub(super) struct HostedExtension {
     /// What was wrong with the last compile or fixture read, one problem a
     /// line, said where it is. Empty when it all went through.
     pub(super) errors: Vec<String>,
+    /// What the operator's record said of it at the last discovery, once
+    /// one read it.
+    pub(super) record: Option<Option<ExtensionConsent>>,
 }
 
 /// Every declared extension the client hosts, and the slots their surfaces
@@ -504,6 +515,32 @@ impl HostedExtensions {
         before != self.extensions.len() + self.slots.len()
     }
 
+    /// Takes what a discovery read of each extension's record: one that
+    /// moved since the last (a consent, or enabling or disabling it in a
+    /// project) has every surface of it ask again, and what the runner
+    /// remembered of it let go. Answers whether any moved.
+    pub(super) fn absorb_records(
+        &mut self,
+        records: BTreeMap<ExtensionIdentity, Option<ExtensionConsent>>,
+    ) -> bool {
+        let mut moved = false;
+        for (identity, record) in records {
+            let Some(extension) = self.extensions.get_mut(&identity) else {
+                continue;
+            };
+            let before = extension.record.replace(record.clone());
+            if before.is_none_or(|before| before == record) {
+                continue;
+            }
+            moved = true;
+            self.runner.forget(&identity);
+            if let Some(engine) = self.engines.get_mut(&Owner::Declared(identity)) {
+                engine.reconsider();
+            }
+        }
+        moved
+    }
+
     /// Takes one extension's compile and data. A compile that succeeded
     /// replaces what each of its surfaces' engines holds, keeping where the
     /// viewer is; one that failed changes nothing but the error said over
@@ -518,6 +555,7 @@ impl HostedExtensions {
                 stamp: loaded.stamp,
                 changed: None,
                 errors: Vec::new(),
+                record: None,
             });
         entry.installed = loaded.installed;
         entry.stamp = loaded.stamp;

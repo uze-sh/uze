@@ -231,6 +231,17 @@ impl DeclaredExtension {
         }
     }
 
+    /// What the operator allowed it changed: consent, or enabling or
+    /// disabling it in a project. Every source shown is asked again, and a
+    /// reason it was withheld for no longer stands, so it waits for the
+    /// new answer instead of saying the old one.
+    pub fn reconsider(&mut self) {
+        self.asked.clear();
+        for source in std::mem::take(&mut self.withheld).into_keys() {
+            self.digests.remove(&source);
+        }
+    }
+
     pub fn set_data(&mut self, source: impl Into<String>, data: SourceData) {
         let source = source.into();
         self.withheld.remove(&source);

@@ -227,6 +227,7 @@ fn discovered() -> ExtensionAnswer {
         discovery: true,
         discovered: Some(vec![installed()]),
         recompiled: Vec::new(),
+        records: Default::default(),
         loaded: vec![loaded(Ok(compiled()))],
     }
 }
@@ -238,6 +239,7 @@ fn recompiled(
         discovery: false,
         discovered: None,
         recompiled: vec![identity()],
+        records: Default::default(),
         loaded: vec![loaded(compiled)],
     }
 }
@@ -444,6 +446,7 @@ fn an_answer_about_an_extension_no_longer_installed_is_dropped() {
         discovery: true,
         discovered: Some(Vec::new()),
         recompiled: Vec::new(),
+        records: Default::default(),
         loaded: Vec::new(),
     });
     assert_eq!(model.open_slot, None, "put away");
@@ -524,6 +527,7 @@ fn an_extension_that_never_compiled_says_its_error_alone() {
         discovery: true,
         discovered: Some(vec![installed()]),
         recompiled: Vec::new(),
+        records: Default::default(),
         loaded: vec![loaded(Err(vec![ExtensionDiagnostic {
             file: "extension.kdl".to_owned(),
             line: 1,
@@ -835,6 +839,7 @@ fn a_rediscovery_brings_in_a_new_extension_and_takes_a_removed_one_away() {
         discovery: true,
         discovered: Some(vec![installed(), notes()]),
         recompiled: Vec::new(),
+        records: Default::default(),
         loaded: vec![LoadedExtension {
             installed: notes(),
             stamp: 1,
@@ -856,6 +861,7 @@ fn a_rediscovery_brings_in_a_new_extension_and_takes_a_removed_one_away() {
         discovery: true,
         discovered: Some(vec![notes()]),
         recompiled: Vec::new(),
+        records: Default::default(),
         loaded: Vec::new(),
     });
     assert!(changed);
@@ -875,6 +881,7 @@ fn a_rediscovery_brings_in_a_new_extension_and_takes_a_removed_one_away() {
         discovery: true,
         discovered: Some(vec![notes()]),
         recompiled: Vec::new(),
+        records: Default::default(),
         loaded: Vec::new(),
     }));
 }
@@ -1093,6 +1100,7 @@ fn hosting_the_drawer() -> WorkspaceModel {
         discovery: true,
         discovered: Some(vec![installed()]),
         recompiled: Vec::new(),
+        records: Default::default(),
         loaded: vec![loaded(Ok(with_drawer))],
     }));
     model.follow_drawer_space();
@@ -1687,6 +1695,7 @@ fn a_hosted_engines_jobs_run_off_the_frame_and_answer_it() {
         discovery: true,
         discovered: Some(vec![installed()]),
         recompiled: Vec::new(),
+        records: Default::default(),
         loaded: vec![loaded(Ok(compiled()))],
     }));
     // One engine for the extension, however many surfaces it declares.
@@ -1737,6 +1746,7 @@ fn a_failed_discovery_lets_the_next_one_be_asked() {
         discovery: true,
         discovered: None,
         recompiled: Vec::new(),
+        records: Default::default(),
         loaded: Vec::new(),
     });
     let declared = &model.remembered.declared;
@@ -1911,6 +1921,78 @@ fn a_section_is_drawn_from_a_script_that_reads_the_checkout_once_enabled() {
     let rows = drawn_once_answered(&mut model, &home, area, "4 lines of state");
     assert!(shown(&rows, "4 lines of state"), "{rows:#?}");
     assert_eq!(model.remembered.declared.runner.runs(), 1);
+
+    std::fs::remove_dir_all(root).unwrap();
+    std::fs::remove_dir_all(checkout).unwrap();
+}
+
+/// Consent and enabling are a record, not a compile: the discovery the
+/// answer starts finds it moved, and the section shown asks again without
+/// waiting for its extension to be saved or its view to be opened.
+#[test]
+fn a_section_asks_again_once_its_extension_is_enabled_or_disabled() {
+    let root = uze_testkit::temp::scratch("declared-record");
+    let home = uze_application::UzeHome::at(root.join("uze"));
+    let band = the_gsd_band_installed(&root, &home)
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let manifest = band.join("extension.kdl");
+    let declared = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(
+        &manifest,
+        declared.replace(
+            "source \"milestone\" {",
+            "surface \"lines\" slot=\"section\" view=\"lines.kdl\" source=\"state\" title=\"State\"\n\n\
+             source \"milestone\" {",
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        band.join("lines.kdl"),
+        "Stack {\n    Text \"{lines} lines of state\"\n}\n",
+    )
+    .unwrap();
+    let checkout = checkout_outside_the_temporary_directory("declared-record");
+    std::fs::write(checkout.join(".planning/STATE.md"), "a\nb\nc\nd").unwrap();
+
+    let mut model = agent_session_in(&checkout.display().to_string());
+    model.remembered.declared.discovered_at = Some(std::time::Instant::now());
+    answered(
+        &mut model,
+        &home,
+        super::ExtensionJob::Discover(Default::default()),
+    );
+    let area = ratatui::layout::Rect::new(0, 0, 120, 40);
+    let rows = drawn_once_answered(&mut model, &home, area, "needs consent");
+    assert!(shown(&rows, "needs consent"), "{rows:#?}");
+
+    let app = uze_application::UzeApplication::new(home.clone(), Vec::new());
+    let identity = ExtensionIdentity {
+        marketplace: "studio".to_owned(),
+        plugin: "gsd".to_owned(),
+        id: "gsd-band".to_owned(),
+    };
+    let project = uze_application::project_root_of(&checkout);
+    let extensions = app.extensions();
+    extensions
+        .consent(&identity, uze_application::Asker::Operator)
+        .unwrap();
+    extensions
+        .enable(&identity, &project, uze_application::Asker::Operator)
+        .unwrap();
+    let known = model.remembered.declared.known();
+    answered(&mut model, &home, super::ExtensionJob::Discover(known));
+    let rows = drawn_once_answered(&mut model, &home, area, "4 lines of state");
+    assert!(shown(&rows, "4 lines of state"), "{rows:#?}");
+    assert!(!shown(&rows, "needs consent"), "{rows:#?}");
+
+    extensions.disable(&identity, &project).unwrap();
+    let known = model.remembered.declared.known();
+    answered(&mut model, &home, super::ExtensionJob::Discover(known));
+    let rows = drawn_once_answered(&mut model, &home, area, "needs enabling in this");
+    assert!(shown(&rows, "needs enabling in this"), "{rows:#?}");
+    assert!(!shown(&rows, "4 lines of state"), "{rows:#?}");
 
     std::fs::remove_dir_all(root).unwrap();
     std::fs::remove_dir_all(checkout).unwrap();

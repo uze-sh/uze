@@ -62,6 +62,13 @@ impl ExtensionRunner {
         self.runs.load(Ordering::Relaxed)
     }
 
+    /// Lets go of what `identity`'s sources answered this session: what
+    /// the operator allowed it changed, so nothing it answered before
+    /// stands for what it would answer now.
+    pub fn forget(&self, identity: &Identity) {
+        lock(&self.answered).retain(|asked, _| asked.identity != *identity);
+    }
+
     /// Answers `question` from what is installed and consented to now.
     #[tracing::instrument(name = "extensions.answer", skip_all, fields(extension = %question.identity, source = %question.declaration))]
     pub fn answer(&self, extensions: &Extensions<'_>, question: &Question) -> Answer {
@@ -499,6 +506,31 @@ pub(super) mod tests {
             "a save of the extension is a new question"
         );
         assert_eq!(runner.runs(), 3);
+    }
+
+    #[test]
+    fn an_extension_forgotten_answers_again_and_another_keeps_its_answer() {
+        let world = World::new("runner-forget");
+        world.enabled();
+        let runner = ExtensionRunner::new();
+        let question = world.question("state");
+
+        data(world.ask(&runner, &question));
+        fs::write(world.checkout.join(".planning/STATE.md"), "changed").unwrap();
+        runner.forget(&Identity {
+            id: "another".to_owned(),
+            ..world.band()
+        });
+        data(world.ask(&runner, &question));
+        assert_eq!(runner.runs(), 1, "another extension's record moved");
+
+        runner.forget(&world.band());
+        assert_eq!(
+            data(world.ask(&runner, &question)),
+            serde_json::json!({ "lines": 1 }),
+            "what it allowed changed, so it runs again"
+        );
+        assert_eq!(runner.runs(), 2);
     }
 
     #[test]

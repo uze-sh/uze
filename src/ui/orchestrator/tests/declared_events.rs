@@ -83,6 +83,7 @@ fn hosting(root: &Path, compiled: CompiledExtension) -> WorkspaceModel {
         discovery: true,
         discovered: Some(vec![installed.clone()]),
         recompiled: Vec::new(),
+        records: Default::default(),
         loaded: vec![LoadedExtension {
             installed,
             stamp: 1,

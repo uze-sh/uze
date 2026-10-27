@@ -166,6 +166,7 @@ fn keyed_view_open<'a>(home: &'a UzeHome, plugin: &str) -> Driven<'a> {
         discovery: true,
         discovered: Some(vec![installed(plugin)]),
         recompiled: Vec::new(),
+        records: Default::default(),
         loaded: vec![LoadedExtension {
             installed: installed(plugin),
             stamp: 1,

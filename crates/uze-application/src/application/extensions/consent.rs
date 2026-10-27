@@ -165,6 +165,12 @@ impl Extensions<'_> {
         self.judged(&load, project)
     }
 
+    /// What is recorded for `identity` now: what was accepted for it and
+    /// the projects it is enabled in. `None` before any consent.
+    pub fn consent_record(&self, identity: &Identity) -> Option<ExtensionConsent> {
+        consent::consent(&self.0.home, &consent_key(identity))
+    }
+
     /// Records that the operator accepted what `identity` wants, for the
     /// files it has now. Refused from an agent's pane, and for an
     /// extension with nothing to consent to.
