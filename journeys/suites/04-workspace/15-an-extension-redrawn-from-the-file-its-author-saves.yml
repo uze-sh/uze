@@ -334,12 +334,16 @@ scenes:
         timeout: 20
         say: the board is drawn from its fixture
     then:
-      - file: "{uze_home}/runtime/extensions/*.json"
+      # A compiled view is named by a 16-digit digest; `costs.json`, what the
+      # workspace measures of each extension, sits beside them.
+      - file: "{uze_home}/runtime/extensions/????????????????.json"
         count: 1
         about: the compiled view is kept in the generated tier, so the next open parses nothing
       - capture:
           name: before-the-tab
           tree: ["{world}/market", "{uze_home}/runtime/extensions"]
+          # Rewritten every 30 s by the workspace, whatever the operator does.
+          except: ["extensions/costs.json"]
 
   - scene: and then switching a tab draws the log and touches nothing
     when:
@@ -351,6 +355,7 @@ scenes:
         expect_timeout: 10
     then:
       - tree: ["{world}/market", "{uze_home}/runtime/extensions"]
+        except: ["extensions/costs.json"]
         same_as: before-the-tab
         about: a tab is the host's state — nothing was compiled, read into the cache or written
 
@@ -370,7 +375,7 @@ scenes:
         timeout: 5
         say: on the tab the author chose
     then:
-      - file: "{uze_home}/runtime/extensions/*.json"
+      - file: "{uze_home}/runtime/extensions/????????????????.json"
         count: 2
         about: the save was compiled anew, beside the compile of the files it replaced
       - file: "{uze_home}/store/plugins/studio/gsd/extensions/gsd-band/board.kdl"
