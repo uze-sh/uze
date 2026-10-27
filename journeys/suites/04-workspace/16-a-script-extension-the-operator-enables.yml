@@ -180,7 +180,9 @@ scenes:
         except: ["demo-app/.git/*", "demo-app/.worktrees/*/.git"]
         same_as: before-the-script
         about: the script read the checkout and wrote nothing into it
-      - file: "{uze_home}/runtime/extensions/*.json"
+      # A compiled view is named by a 16-digit digest; `costs.json`, what
+      # the workspace measured of each extension, sits beside it.
+      - file: "{uze_home}/runtime/extensions/????????????????.json"
         count: 1
         about: the view was compiled once, into the generated tier
 
