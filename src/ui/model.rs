@@ -643,6 +643,10 @@ impl ExtensionEntry<'_> {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RefreshData {
+    /// The plugins' revision ([`super::extension_switch::plugins_revision`])
+    /// when the reading began: an answer older than one already shown is
+    /// not shown over it.
+    pub(crate) plugins_revision: u64,
     pub(crate) plugins: Vec<PluginSummary>,
     pub(crate) doctor: Option<DoctorReport>,
     pub(crate) marketplace_plugins: Vec<MarketplacePluginSummary>,
@@ -938,6 +942,8 @@ pub(crate) struct Remembered {
     pub(crate) extension_screen: ListScreen,
     pub(crate) harness_screen: ListScreen,
     pub(crate) profiles_selected: usize,
+    /// The plugins' revision the reading on screen began at.
+    pub(crate) plugins_revision: u64,
     /// The plugins' extensions and where they stand, as the last refresh
     /// read them: a reopening inside [`super::management::RESOLUTION_STANDS_FOR`]
     /// asks nothing again, so without these it listed only the built-ins.
@@ -2539,6 +2545,10 @@ impl TuiModel {
     }
 
     pub(crate) fn refreshed(&mut self, data: RefreshData) {
+        if data.plugins_revision < self.remembered.plugins_revision {
+            return;
+        }
+        self.remembered.plugins_revision = data.plugins_revision;
         self.remembered.plugins = data.plugins;
         self.remembered.doctor = data.doctor;
         self.remembered.resolved_at = Some(Instant::now());

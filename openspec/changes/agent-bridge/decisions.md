@@ -328,3 +328,13 @@
 - decided:  The workspace's offer answer already bumps `extension_switch::plugins_revision`; the modal keeps the revision its last resolution read and asks again on opening when it moved (`opening_asks_again`), as it does over another project. D43's 30 s now covers only what changed outside this client.
 - rejected: Clearing the modal's memory from the orchestrator: the revision is the one signal both already share.
 - blast:    `src/ui/management.rs`.
+
+## D49 — A reading that began before a change does not stand for it
+
+- status:   pending
+- task:     5.4
+- commit:
+- trigger:  Driving `run5.sh` in the TUI: the startup reading was still in flight when the GPU was allowed from the workspace, so opening the modal asked nothing new (one was in flight) and the older answer, landing after, showed "Needs consent" for an extension already running.
+- decided:  Every reading carries the plugins' revision it began at; `TuiModel::refreshed` drops one older than the reading on screen, and an opening after a revision asks again even with one in flight (D48's rule, widened).
+- rejected: Waiting for the flight to land and asking then: a second channel of state for the same answer.
+- blast:    `src/ui/{model,worker,management}.rs`.

@@ -256,7 +256,11 @@ pub(crate) fn opening_asks_again(
     revised: bool,
     in_flight: bool,
 ) -> bool {
-    (opening_re_resolves(resolved_at) || elsewhere || revised) && (!in_flight || elsewhere)
+    // A reading in flight began before the change that revised the
+    // plugins, so it cannot stand for it: ask again beside it, and the
+    // older answer is dropped where it lands (`TuiModel::refreshed`).
+    (opening_re_resolves(resolved_at) || elsewhere || revised)
+        && (!in_flight || elsewhere || revised)
 }
 
 /// The directory this session speaks about, resolved the same way

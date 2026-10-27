@@ -893,8 +893,16 @@ fn answered_refresh(
     home: UzeHome,
     context_root: &std::path::Path,
 ) -> std::result::Result<RefreshData, String> {
+    let revision = super::extension_switch::plugins_revision();
     answered_or(
-        || load_refresh_data(home, context_root).map_err(|error| error.to_string()),
+        || {
+            load_refresh_data(home, context_root)
+                .map(|data| RefreshData {
+                    plugins_revision: revision,
+                    ..data
+                })
+                .map_err(|error| error.to_string())
+        },
         Err("Refreshing failed".to_owned()),
     )
 }
@@ -909,6 +917,7 @@ fn load_refresh_data(home: UzeHome, context_root: &std::path::Path) -> Result<Re
     // each of the two groups.
     plugins.sort_by_key(|plugin| !plugin.source.starts_with("embedded:"));
     Ok(RefreshData {
+        plugins_revision: 0,
         plugins,
         doctor: Some(snapshot.doctor),
         marketplace_plugins: snapshot.marketplace_plugins,
