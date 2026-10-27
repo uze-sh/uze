@@ -45,7 +45,18 @@ a harness reads (ADR-041).
   bytes, never a `PATH` search or the files on disk.
 - An extension's actions reach the keyboard through `Action::Extension` and
   a table of that extension's own, resolved after the host's; nothing in
-  `uze-extensions` names a chord.
+  `uze-extensions` names a chord. An overlay's door may be live
+  everywhere (`uze_keys::extension::EVERYWHERE`), and then only on a
+  function key or a chord with ctrl or alt.
+- An extension reaches an agent only through the bridge
+  (`src/ui/orchestrator/declared/{bridge,agent}.rs`): it is told what
+  agents did through `Extension::agent_events`/`agents` under
+  `agent:observe`, and what it asks of one is an `Outcome::Agent` the host
+  shows, guards and limits. `submit_notice` has two callers, the project's
+  instructions and the bridge (ADR-059 amended); the architecture suite
+  fails on a third. A notification goes out through `uze_platform::notify`
+  from the host, under `notify`, attributed and rate-limited by the
+  engine.
 - What more than one extension needs lives under `shared/`, and only once
   a second one actually needs it; `shared.rs` says why each module joined.
 - `code` is **one** extension covering the checkout's changes, files,

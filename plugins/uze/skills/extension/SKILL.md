@@ -122,6 +122,48 @@ as its default.
   `Button` names a declared `action` and carries its own `item`. Nothing
   in a composed tree is a reference: `{x}` there is text.
 
+### The agents
+
+With `agent:observe`, an extension sees the workspace's agents:
+
+```kdl
+wants "agent:observe" "agent:prompt"
+
+source "crew" { agents; refresh-on "agent.turn.finished"; }
+
+action "review" label="Ask to review the plan" on="board" {
+    agent-prompt "Review PLAN.md and say what is missing" target="self"
+}
+action "next" label="Run phase {number}" on="band" {
+    agent-prompt skill="gsd:execute-phase" "{number}" target="self"
+}
+action "go" label="Go to agent" on="crew-view" { focus-agent target="{id}"; }
+action "jump" label="Jump" on="crew-view" key="alt-j" { open "picker"; }
+```
+
+- `source … { agents; }` is answered by the workspace: every agent of the
+  open spaces as `{id, harness, label, space, checkout, state, reports}`,
+  `state` one of `working`, `done`, `ready`.
+- `refresh-on "agent.<event>"`: `session.started`, `turn.started`,
+  `turn.finished`, `tool.started`, `tool.finished`, `approval.asked`,
+  `approval.resolved`, from any agent; `input.event` adds `agent`,
+  `harness`, and what the harness reported (`tool`, a `path` inside the
+  agent's checkout, `call`, `outcome`). A harness that reports nothing
+  still has its turns, read from its pane.
+- `agent-prompt` types text (or, with `skill=`, the harness's own way of
+  invoking that skill) into the agent `target` names: `"self"` for the
+  agent in front or the band's, `"{id}"` for one from the `agents` source.
+  The workspace shows the exact text first, types it only into an agent
+  that is ready, and refuses it otherwise: nothing is queued. One a turn,
+  one a minute per extension and agent, three a minute per agent. A
+  prompt may not begin with `!`, `/`, `#`, `@` or `$` unless it is a skill.
+- `when="agent.turn.finished"` sends a fixed prompt on that event, with
+  `agent:prompt:auto`: its text may hold no `{field}`, the operator allows
+  it once per agent for a day, and F8 pauses every extension's writes.
+- `focus-agent` puts the agent in front. An `open` action naming an
+  overlay with a `key` opens it from anywhere, over the agent's pane too,
+  so that key must be a function key or carry ctrl or alt.
+
 ## A script
 
 A source's script is a Rhai file defining `fn answer(input, context)`. It
@@ -265,9 +307,13 @@ history.push(load);
 | `exec:<program>` | running that program, pinned and confined as above; `sh`, `python3`, `node`, `git` and the like are named to the operator as able to run anything |
 | `store` · `store:global` | the extension's store, per project or for the machine |
 | `notify` | a notification and a sound an answer asks for, rate-limited |
+| `agent:observe` | the `agents` source, `agent.*` events and `focus-agent` |
+| `agent:prompt` | `agent-prompt` on a gesture, shown first |
+| `agent:prompt:auto` | `agent-prompt … when=`, fixed text, allowed per agent for a day |
+| `agent:restart` | `agent-restart`, always asked; not available yet |
 
 Later grants are refused by the check naming the change that brings them:
-`agent:*`, `resident`, and `net`, `secret`, `edit:checkout`.
+`resident`, and `net`, `secret`, `edit:checkout`.
 There is no `write:checkout`, and `exec:uze` and a harness's own program
 are never granted. Ask for the fewest grants that do the job: each one is
 what the operator is asked about.

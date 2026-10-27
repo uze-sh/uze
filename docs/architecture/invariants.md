@@ -3096,6 +3096,62 @@ plugin.
 > `crates/uze-workspace/src/extensions/store.rs::tests::a_store_is_patched_key_by_key_and_kept_per_project`
 > `tests/lifecycle/extension_programs.rs::answers_keep_a_store_and_a_script_runs_a_granted_program`
 
+### A band never resizes the pane it stands over
+
+A band's rows are taken from the agent's pane before the terminal is
+sized, so an answer, an empty answer or a band's withdrawal never sends a
+resize; a click on the pane under a band reaches the agent at the pane's
+own coordinates. A band stands only over an agent's own tab, in a project
+the extension is enabled in.
+
+> `src/ui/orchestrator/tests/slots.rs::a_band_takes_its_rows_before_the_pane_is_sized_and_no_answer_resizes_it`
+> `src/ui/orchestrator/tests/slots.rs::a_click_on_the_panes_first_row_under_a_top_band_reaches_it_as_its_first_row`
+> `src/ui/orchestrator/tests/slots.rs::a_band_stands_over_an_agents_own_pane_in_a_project_it_is_enabled_in`
+
+### A composed answer is validated whole before it is drawn
+
+A source answering `output "view"` answers a tree checked against the same
+catalog a view file is compiled against, every string cleaned and every
+value a literal; a tree that does not validate is refused whole, naming
+its first wrong node, and a control may only name an action the manifest
+declares.
+
+> `crates/uze-extensions/src/declared/compose.rs::tests::a_tree_that_does_not_validate_names_its_first_wrong_node`
+> `crates/uze-extensions/src/declared/compose.rs::tests::a_tree_of_catalog_nodes_becomes_a_view_of_literals`
+
+### A notification is granted, attributed and rate-limited
+
+An answer's `notify` and `sound` go out only from an extension that wants
+`notify`, at most one every 10 s and 30 an hour, titled with who said it;
+what is dropped is counted in the extension's notice.
+
+> `src/ui/orchestrator/tests/declared_notify.rs::a_notification_is_attributed_sent_once_and_the_next_within_ten_seconds_counted`
+> `src/ui/orchestrator/tests/declared_notify.rs::an_extension_without_notify_sends_nothing`
+> `crates/uze-extensions/src/declared/notify.rs::tests::thirty_an_hour_and_then_none_until_the_first_is_an_hour_old`
+
+### An agent's report moves what is drawn, never what is allowed
+
+What an agent reports (`uze agent report`) lands in a bounded journal and
+reaches only the extensions holding `agent:observe`, as `agent.*` events
+with a scrubbed tool and a path kept only inside the agent's checkout. It
+asks sources again and draws; it grants nothing.
+
+> `src/ui/orchestrator/tests/declared_events.rs::an_agents_report_asks_the_source_of_an_extension_observing_agents`
+> `src/ui/orchestrator/declared/bridge.rs::tests::a_report_keeps_only_a_path_inside_the_checkout_and_a_scrubbed_tool`
+> `tests/cli/agent_report.rs::a_report_from_no_agent_takes_nothing_and_still_exits_well`
+
+### An extension types into an agent only through the bridge, shown first and never queued
+
+An extension's prompt is shown to the operator (text, agent, extension)
+before it is typed, typed only into a ready agent whose harness holds its
+pane and that waits on no approval, within the bridge's rates; otherwise
+it is refused with the reason and dropped. F8 holds every write. The
+project's instructions and the bridge are the only writers into a pane.
+
+> `src/ui/orchestrator/tests/agent_writes.rs::a_prompt_is_shown_then_typed_once_allowed_and_a_second_in_the_turn_is_dropped`
+> `src/ui/orchestrator/tests/agent_writes.rs::a_paused_workspace_takes_no_prompt_and_a_command_character_is_refused`
+> `tests/architecture/layering.rs::only_the_bridge_and_the_instructions_type_into_an_agent`
+
 ## Harness conformance (`assert-one-capability-contract`)
 
 ### Every harness answers the same questions

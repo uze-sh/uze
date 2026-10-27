@@ -16,7 +16,7 @@ C4Container
     Container(shim, "Runtime shim", "src/shim.rs", "The workspace's: dispatched by argv[0], carries a conversation and project context into a launch without writing in the project")
     ContainerDb(store, "Store", "store/", "Installed package bytes; no harness reads them")
     ContainerDb(state, "Records", "state/", "Receipts, extension consents and what only UZE knows")
-    ContainerDb(runtime, "Generated tier", "runtime/", "Plugins and mirrors harnesses read, rebuilt from the Store")
+    ContainerDb(runtime, "Generated tier", "runtime/", "Plugins and mirrors harnesses read, rebuilt from the Store; each agent's bounded report journal")
   }
   System_Ext(harness, "Harnesses", "The coding-agent CLIs uze delivers into")
   System_Ext(git, "Git", "Marketplaces and the project's own history")
@@ -37,6 +37,8 @@ C4Container
   Rel(core, state, "Records")
   Rel(core, runtime, "Materializes")
   Rel(harness, runtime, "Reads plugins from")
+  Rel(harness, cli, "Reports turns, tools and approvals through", "uze agent report, from its launch")
+  Rel(tui, harness, "Types an extension's allowed prompt into", "submit_notice, behind may_submit")
   Rel(core, git, "Reads and writes", "uze-git")
   Rel(integrations, harness, "Projects plugins, hooks, rules, context")
   Rel(terminal, harness, "Hosts", "PTY")
