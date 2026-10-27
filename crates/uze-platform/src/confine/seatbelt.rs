@@ -4,7 +4,9 @@
 //!
 //! Metadata (`stat`) is readable everywhere, as it is under Landlock;
 //! contents only beneath the granted paths and the few system paths the
-//! dynamic loader needs.
+//! dynamic loader needs. The root directory's own listing is readable too:
+//! macOS's `/bin/sh` reads it as it starts and aborts when refused, and it
+//! names no more than metadata already shows.
 
 use std::{io, path::Path};
 
@@ -50,7 +52,8 @@ pub(super) fn profile(confinement: &Confinement) -> io::Result<String> {
          (allow signal (target same-sandbox))\n\
          (allow process-info* (target self))\n\
          (allow sysctl-read)\n\
-         (allow file-read-metadata)\n",
+         (allow file-read-metadata)\n\
+         (allow file-read-data (literal \"/\"))\n",
     );
     let services = MACH_SERVICES.iter().chain(if confinement.network {
         NETWORK_MACH_SERVICES
@@ -155,7 +158,11 @@ mod tests {
             "(allow file-read* file-map-executable process-exec (subpath \"/usr/bin\"))"
         ));
         assert!(profile.contains("(allow file-read* file-map-executable (subpath \"/System\"))"));
-        assert!(profile.contains("(allow file-read* (subpath \"/repo\"))"));
+        assert!(profile.contains("(allow file-read-data (literal \"/\"))"));
+        assert!(
+            !profile.contains("(subpath \"/\")"),
+            "the root's listing, never beneath it"
+        );
         assert!(profile.contains("(allow file-read* file-write* (subpath \"/tmp/run\"))"));
         assert!(profile.contains("(allow signal (target same-sandbox))"));
         assert!(profile.contains("(deny network*)"));
