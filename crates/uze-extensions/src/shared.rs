@@ -34,6 +34,11 @@
 //! [`front_matter`] joined it when the architect's diagrams and the spec
 //! surface's decision records turned out to split the same block two
 //! ways, and to disagree about which lines open it.
+//!
+//! [`picture`] joined it when a declared extension came to show images
+//! (`extension-media-and-resident`): the code surface's decoders read a
+//! file into straight-alpha pixels, and an `Image` or a `Sprite`'s sheet
+//! is read the same way, under the bounds a declared extension is held to.
 
 pub mod canvas;
 pub mod checkout;
@@ -43,6 +48,7 @@ pub mod front_matter;
 pub mod highlight;
 pub mod markdown;
 pub mod nearest;
+pub mod picture;
 pub mod places;
 
 #[cfg(test)]

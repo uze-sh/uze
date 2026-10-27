@@ -639,7 +639,9 @@ pub fn prop_doc(prop: &str) -> Option<&'static str> {
         "kind" => "`sparkline` (one row) or `bar` (columns `height` rows tall).",
         "height" => "How many rows it takes: a chart's bars, a picture's or a sprite's height.",
         "rows" => "A list of rows, each a list of `{ch, role}` cells or a plain string.",
-        "regions" => "A list of `{x, y, w, h, action, item}`: a click inside runs `action` with `item`.",
+        "regions" => {
+            "A list of `{x, y, w, h, action, item}`: a click inside runs `action` with `item`."
+        }
         "alt" => "What stands in for the picture where the terminal draws none.",
         "state" => "The state to play: one of the sprite's, or its fallback otherwise.",
         "delta" => "A change beside the figure, such as `+12%`, in `role`.",

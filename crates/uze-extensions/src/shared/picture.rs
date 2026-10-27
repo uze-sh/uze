@@ -67,14 +67,14 @@ fn format_of(path: &Path) -> Option<Format> {
 }
 
 /// Whether `path` names a format [`decode`] reads.
-pub(super) fn is_picture(path: &Path) -> bool {
+pub(crate) fn is_picture(path: &Path) -> bool {
     format_of(path).is_some()
 }
 
 /// The image in `bytes`, read as the format `path` names and shrunk to
 /// [`LARGEST_SIDE`], or `None` for bytes that are not one — an extension
 /// is only a claim.
-pub(super) fn decode(path: &Path, bytes: &[u8]) -> Option<Picture> {
+pub(crate) fn decode(path: &Path, bytes: &[u8]) -> Option<Picture> {
     let decoded = match format_of(path)? {
         Format::Png => png(bytes),
         Format::Jpeg => jpeg(bytes),

@@ -499,11 +499,7 @@ fn only_the_grants_this_version_enforces_are_accepted() {
         the_message(&wanting("\"exec\"")),
         "`exec` names the program it grants"
     );
-    for (grant, change) in [
-        ("net", 8),
-        ("secret", 8),
-        ("edit:checkout", 8),
-    ] {
+    for (grant, change) in [("net", 8), ("secret", 8), ("edit:checkout", 8)] {
         assert_eq!(
             the_message(&wanting(&format!("\"{grant}\""))),
             format!("`{grant}` arrives in a later change (change {change})")

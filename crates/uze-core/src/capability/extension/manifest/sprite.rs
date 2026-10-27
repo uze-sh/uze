@@ -6,8 +6,8 @@
 use kdl::{KdlNode, KdlValue};
 use uze_contract::{SpriteDecl, SpriteState};
 
-use crate::capability::extension::document::{Report, entries, refuse_extra, spelled};
 use super::{declared_id, prop, relative_file, required_prop, unknown_child};
+use crate::capability::extension::document::{Report, entries, refuse_extra, spelled};
 
 /// The most frames a second a state plays.
 pub const FPS_MAX: u32 = 30;

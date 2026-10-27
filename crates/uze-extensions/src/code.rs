@@ -79,7 +79,6 @@ mod extension;
 mod files;
 mod history;
 mod map;
-mod picture;
 mod render;
 mod request;
 mod row_menu;

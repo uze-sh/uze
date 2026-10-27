@@ -196,7 +196,7 @@ pub(super) mod tests {
 
     /// A `.bmp` of `width` × `height` at `bits`, rows as given (already
     /// padded), with a 40-byte header and `palette` (BGRA entries).
-    pub(in crate::code::picture) fn file(
+    pub(in crate::shared::picture) fn file(
         width: i32,
         height: i32,
         bits: u16,
@@ -216,7 +216,7 @@ pub(super) mod tests {
         file
     }
 
-    pub(in crate::code::picture) fn info_header(
+    pub(in crate::shared::picture) fn info_header(
         width: i32,
         height: i32,
         bits: u16,

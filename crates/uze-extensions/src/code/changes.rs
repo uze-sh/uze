@@ -263,10 +263,11 @@ pub(super) fn read_diff(
     let binary = diff::is_binary(&output);
     // Only for a diff that moved: the one on screen already has its
     // picture, and this read is on a timer.
-    let picture = (binary && super::picture::is_picture(path) && !matches!(outcome, Ok(None)))
-        .then(|| host.read_bytes(&root.join(path)).ok())
-        .flatten()
-        .and_then(|bytes| super::picture::decode(path, &bytes));
+    let picture =
+        (binary && crate::shared::picture::is_picture(path) && !matches!(outcome, Ok(None)))
+            .then(|| host.read_bytes(&root.join(path)).ok())
+            .flatten()
+            .and_then(|bytes| crate::shared::picture::decode(path, &bytes));
     DiffRead {
         path: path.to_path_buf(),
         digest,
