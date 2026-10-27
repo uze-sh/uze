@@ -235,6 +235,7 @@ fn an_actions_envelope_toasts_says_its_notice_and_refreshes() {
         store: None,
         notify: None,
         sound: None,
+        timer: None,
     };
     let (_, outcomes) = ask_all(
         &mut engine,

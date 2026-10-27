@@ -44,6 +44,7 @@ mod events;
 mod fixture_check;
 mod media;
 mod notify;
+mod resident;
 mod time;
 mod trace;
 mod value;
@@ -71,6 +72,7 @@ pub use events::COALESCE;
 pub use fixture_check::{MissingField, TAB_COMBINATIONS_MAX, missing_fields};
 pub use media::{IMAGE_FILE_MAX, MEDIA_BYTES_MAX};
 pub use notify::{INTERVAL as NOTIFY_INTERVAL, PER_HOUR as NOTIFY_PER_HOUR};
+pub use resident::{INPUT_QUEUED, RENDERS_PER_SECOND};
 pub use trace::{Absence, DataState, Trace, TraceEntry, TraceNode};
 
 /// What a source answered: its data, or why there is none.
@@ -157,6 +159,14 @@ pub struct DeclaredExtension {
     /// what `{pref.<name>}` reads.
     preferences: serde_json::Value,
     recorded: Vec<RecordedAction>,
+    /// The resident sources' sessions, by source id.
+    residents: BTreeMap<String, resident::Session>,
+    /// Sessions closed since the last jobs: their `Stop`s to send, with
+    /// the checkout and number each was opened with.
+    closing: Vec<(String, PathBuf, u64)>,
+    /// How many times a view was drawn, which a render waits on: at most
+    /// one per frame.
+    frames: std::cell::Cell<u64>,
     /// The last build of each surface. Behind a cell because drawing asks
     /// through `&self`; the contract needs `Send`, never `Sync`.
     memo: RefCell<BTreeMap<String, Memo>>,
@@ -262,6 +272,9 @@ impl DeclaredExtension {
             locale: locale.into(),
             preferences: serde_json::Value::Object(serde_json::Map::new()),
             recorded: Vec::new(),
+            residents: BTreeMap::new(),
+            closing: Vec::new(),
+            frames: std::cell::Cell::new(0),
             memo: RefCell::default(),
             builds: std::cell::Cell::new(0),
             media: media::Shelf::default(),
@@ -279,6 +292,7 @@ impl DeclaredExtension {
     pub fn replace(&mut self, compiled: CompiledExtension) {
         self.compiled = compiled;
         self.generation += 1;
+        self.close_residents();
         self.answer_event_sources();
         self.memo.get_mut().clear();
         self.media.clear();
@@ -302,6 +316,7 @@ impl DeclaredExtension {
     /// new answer instead of saying the old one.
     pub fn reconsider(&mut self) {
         self.asked.clear();
+        self.close_residents();
         for source in std::mem::take(&mut self.withheld).into_keys() {
             self.digests.remove(&source);
         }
@@ -884,7 +899,8 @@ impl DeclaredExtension {
             .compiled
             .manifest
             .source(&decl.source)
-            .is_some_and(|source| source.output == uze_contract::Output::View);
+            .is_some_and(|source| source.output == uze_contract::Output::View)
+            || self.is_resident(&decl.source);
         if composed {
             return match compose::compose(data, &self.compiled.manifest, &view.file) {
                 Ok(tree) => bind::build(&tree, &serde_json::Value::Null, env, lookup),
@@ -1024,6 +1040,7 @@ impl Extension for DeclaredExtension {
         let title = self.title(decl);
         let scroll = self.scroll.get(surface).copied().unwrap_or(0);
         let root = self.with_built(surface, space, |built| built.root.clone())?;
+        self.frames.set(self.frames.get() + 1);
         Some(View {
             title: vec![Span::new(title, Role::Muted)],
             caption: Vec::new(),
@@ -1049,6 +1066,7 @@ impl Extension for DeclaredExtension {
             return None;
         }
         let root = self.with_built(surface, Size::default(), |built| built.root.clone())?;
+        self.frames.set(self.frames.get() + 1);
         Some(Section {
             title: self.title(decl),
             caption: self.notices.get(surface).cloned().unwrap_or_default(),
@@ -1198,6 +1216,14 @@ impl Extension for DeclaredExtension {
         self.in_front = checkout.map(|checkout| checkout.root.clone());
     }
 
+    fn reads_raw_input(&self, surface: &str) -> bool {
+        self.reads_raw(surface)
+    }
+
+    fn raw_input(&mut self, surface: &str, input: crate::contract::RawInput) {
+        self.take_raw_input(surface, input);
+    }
+
     /// Each checkout a source declaring `refresh-on` is shown on, with
     /// what it declares.
     fn watches(&self) -> Vec<CheckoutEvent> {
@@ -1246,6 +1272,7 @@ impl Extension for DeclaredExtension {
             .cloned()
             .collect();
         self.due.extend(every);
+        self.pass_residents(pass.visible, pass.now);
         let asked: Vec<String> = self
             .due
             .iter()
@@ -1263,6 +1290,7 @@ impl Extension for DeclaredExtension {
     /// input, that a refresh asked again, or that was never asked.
     fn jobs(&mut self) -> Vec<Job> {
         let mut jobs = self.action_jobs();
+        jobs.extend(self.resident_jobs());
         for (source, checkout, surface) in self.shown_sources() {
             let local = self
                 .compiled
@@ -1271,7 +1299,9 @@ impl Extension for DeclaredExtension {
                 .is_some_and(|declared| {
                     matches!(
                         declared.kind,
-                        uze_contract::SourceKind::Events(_) | uze_contract::SourceKind::Agents
+                        uze_contract::SourceKind::Events(_)
+                            | uze_contract::SourceKind::Agents
+                            | uze_contract::SourceKind::Resident(_)
                     )
                 });
             if local {
@@ -1318,6 +1348,10 @@ impl Extension for DeclaredExtension {
                 self.media.absorb(*read);
                 return Outcome::Stay;
             }
+            Err(other) => other,
+        };
+        let answer = match answer.downcast::<resident::ResidentAnswer>() {
+            Ok(answered) => return self.absorb_resident(*answered),
             Err(other) => other,
         };
         let Ok(answered) = answer.downcast::<SourceAnswer>() else {
@@ -1426,3 +1460,6 @@ mod event_tests;
 
 #[cfg(test)]
 mod media_tests;
+
+#[cfg(test)]
+mod resident_tests;

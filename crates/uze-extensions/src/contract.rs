@@ -163,6 +163,19 @@ pub struct CheckoutEvent {
     pub event: uze_contract::EventName,
 }
 
+/// A key or the pointer, handed as it came to a focused surface that reads
+/// them: the resident tier's, the one exception to an extension knowing
+/// nothing of the keyboard. The host keeps its escape chord and its pause
+/// key, which never arrive here.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RawInput {
+    /// `key` spelled as the keymap spells it (`up`, `a`, `f5`, `space`),
+    /// `mods` among `ctrl`, `alt` and `shift`, in that order.
+    Key { key: String, mods: Vec<String> },
+    /// A press `x` columns and `y` rows from the surface's top left.
+    Pointer { x: u16, y: u16, button: String },
+}
+
 /// What the host saw on one pass of its loop.
 #[derive(Clone, Copy, Debug)]
 pub struct Pass<'a> {
@@ -288,6 +301,15 @@ pub trait Extension: Send {
 
     /// Text pasted while `surface` is typing.
     fn paste(&mut self, _surface: &str, _text: &str, _space: Size) {}
+
+    /// Whether `surface`, while focused, reads keys and the pointer raw
+    /// rather than as the host's commands.
+    fn reads_raw_input(&self, _surface: &str) -> bool {
+        false
+    }
+
+    /// A key or the pointer on a focused `surface` that reads them raw.
+    fn raw_input(&mut self, _surface: &str, _input: RawInput) {}
 
     /// The checkout in front of the viewer, told on every pass of the
     /// host's loop: what a section about the work in front reads from.
