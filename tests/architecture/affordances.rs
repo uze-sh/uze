@@ -284,6 +284,10 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     // A brake, pressed while an extension types where it should not: its
     // key over any pane, and the index's row, which lists it there.
     put(Action::PauseAgentWrites, Index);
+    put(
+        Action::ReviewExtensions,
+        Control("the Review button of the toast that offers a project's extensions"),
+    );
     // Taking work away is never one misclick from a pointer: the index
     // offers it for recent's selected row, and only where it applies.
     put(Action::DiscardTask, Index);

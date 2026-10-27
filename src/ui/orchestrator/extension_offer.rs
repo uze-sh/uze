@@ -88,6 +88,14 @@ impl WorkspaceModel {
         );
     }
 
+    /// Whether an extension is still offered somewhere, for the index.
+    pub(super) fn offers_waiting(&self) -> bool {
+        self.remembered
+            .extension_offers
+            .values()
+            .any(|offers| !offers.is_empty())
+    }
+
     /// Opens the question about the first extension still offered.
     pub(super) fn review_extensions(&mut self) {
         let Some((project, offer)) = self

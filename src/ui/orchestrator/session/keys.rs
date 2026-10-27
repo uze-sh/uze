@@ -116,6 +116,9 @@ impl Attach<'_> {
         if self.model.focused_cwd().is_some() {
             offered.extend(self.model.declared_view_doors());
         }
+        if self.model.offers_waiting() {
+            offered.push(Action::ReviewExtensions);
+        }
         offered
     }
 
@@ -491,6 +494,7 @@ impl Attach<'_> {
                 }
             }
             Action::ToggleRecent => self.open_recent(),
+            Action::ReviewExtensions => self.model.review_extensions(),
             _ => {}
         }
         Flow::Continue

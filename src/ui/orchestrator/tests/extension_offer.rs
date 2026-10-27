@@ -304,3 +304,16 @@ fn an_offer_names_the_rows_a_band_takes_over_each_agent() {
         "{screen}"
     );
 }
+
+#[test]
+fn the_review_is_reached_from_the_index_while_something_is_offered() {
+    let world = World::new("orchestrator-offer-index");
+    let mut model = agent_session_in(world.project.to_str().unwrap());
+    let offers = world.offers();
+    assert!(!offers.is_empty());
+    assert!(!model.offers_waiting());
+    model.extensions_offered(world.project.clone(), offers);
+    assert!(model.offers_waiting(), "the index lists the review");
+    model.review_extensions();
+    assert!(model.extension_offer.is_some(), "and it opens the question");
+}

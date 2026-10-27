@@ -714,6 +714,9 @@ mod tests {
                 // the cursor.
                 "isolate-agent",
                 "isolate-agent-at-commit",
+                // Offered by its toast and the index only while a project
+                // offers something: rare, and never a reflex.
+                "review-extensions",
                 // The same, and the menu is also what names the harness
                 // the agent continues in.
                 "switch-harness",
