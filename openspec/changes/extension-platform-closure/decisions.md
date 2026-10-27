@@ -577,3 +577,13 @@
 - decided:  The `Notification` hook of the reporter's settings carries `"matcher": "permission_prompt"`: Claude's hook reference lists the notification types a `Notification` matcher selects (`permission_prompt`, `idle_prompt`, `auth_success`, `elicitation_dialog`, …), so Claude itself runs the hook only for a permission prompt and every other notification reports nothing. Read from code.claude.com/docs/en/hooks on 2026-10-27; the latest Claude Code is the only one supported.
 - rejected: Reading `notification_type` (or the `message` text) from the hook's input in `uze agent report`: the CLI names no harness, and the matcher keeps the other notifications from starting a process at all.
 - blast:    `uze-integrations::claude::runtime`.
+
+## D168 — UZE never replaces an operator's own Codex `notify`
+
+- status:   pending
+- task:     review finding 9
+- commit:
+- trigger:  The Codex reporter launched every agent with `-c notify=[…uze agent report turn.finished]`, which replaces the `notify` the operator set in `~/.codex/config.toml`: their own notification program stopped running in every agent UZE launched.
+- decided:  Codex runs one `notify`, so the reporter contributes nothing when `config.toml` (at the integration's `config_toml_path`) sets a top-level `notify`, and also when the file exists and does not parse, since it may hold one. That agent then reports nothing, and the workspace reads its turns from its pane, as for any agent with no reporter. With no file, or a file that sets no `notify`, the reporter is as before.
+- rejected: Chaining the operator's program from `uze agent report`: UZE would run the operator's command line on their behalf with a payload it does not own, and break it the day Codex changes the argument it passes. A `notify` set only in a profile is not looked for: a launch names no profile UZE could know.
+- blast:    `uze-integrations::codex`.
