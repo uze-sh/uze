@@ -96,6 +96,7 @@ fn compiled() -> CompiledExtension {
                 confirm: Some("Archive {item.name}?".to_owned()),
                 does: uze_contract::Does::Script("archive.rhai".to_owned()),
             }],
+            exec: Vec::new(),
         },
         views: BTreeMap::from([("board.kdl".to_owned(), view)]),
     }

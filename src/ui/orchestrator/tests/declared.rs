@@ -206,6 +206,7 @@ fn compiled() -> CompiledExtension {
                 uze_contract::SourceKind::Fixture("fixtures/board.json".to_owned()),
             )],
             actions: Vec::new(),
+            exec: Vec::new(),
         },
         views: BTreeMap::new(),
     }

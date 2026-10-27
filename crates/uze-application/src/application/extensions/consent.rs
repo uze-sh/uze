@@ -105,11 +105,14 @@ fn needs_consent(manifest: &Manifest) -> bool {
 }
 
 fn wanted(manifest: &Manifest) -> BTreeSet<Grant> {
-    manifest.wants.iter().copied().collect()
+    manifest.wants.iter().cloned().collect()
 }
 
 fn spelled(grants: &BTreeSet<Grant>) -> BTreeSet<String> {
-    grants.iter().map(|grant| grant.name().to_owned()).collect()
+    grants
+        .iter()
+        .map(|grant| grant.name().into_owned())
+        .collect()
 }
 
 fn refusal(reason: impl Into<String>) -> UzeError {

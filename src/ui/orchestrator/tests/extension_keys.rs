@@ -140,6 +140,7 @@ fn compiled(plugin: &str) -> CompiledExtension {
                 action("quit", Some("ctrl-q")),
                 action("archive", None),
             ],
+            exec: Vec::new(),
         },
         views: BTreeMap::new(),
     }

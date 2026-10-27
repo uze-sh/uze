@@ -95,7 +95,14 @@ impl Extensions<'_> {
         let plugin = plugin_name(plugin_dir);
         extension::discover(plugin_dir)
             .into_iter()
-            .map(|found| check_one(identity(&plugin, &found.id), &found.dir, &Overlay::new()))
+            .map(|found| {
+                check_one(
+                    identity(&plugin, &found.id),
+                    &found.dir,
+                    &Overlay::new(),
+                    &self.harness_programs(),
+                )
+            })
             .collect()
     }
 
@@ -112,7 +119,23 @@ impl Extensions<'_> {
             .and_then(Path::parent)
             .map(plugin_name)
             .unwrap_or_default();
-        check_one(identity(&plugin, &id), dir, overlay)
+        check_one(
+            identity(&plugin, &id),
+            dir,
+            overlay,
+            &self.harness_programs(),
+        )
+    }
+
+    /// The programs a harness is started by: no extension is granted one,
+    /// since running an agent's harness from a surface would run it as the
+    /// operator, outside the workspace that owns its panes.
+    pub fn harness_programs(&self) -> Vec<&'static str> {
+        self.0
+            .integrations
+            .iter()
+            .map(|integration| integration.shim_name())
+            .collect()
     }
 }
 
@@ -144,7 +167,12 @@ fn identity(plugin: &str, id: &str) -> Identity {
     }
 }
 
-fn check_one(identity: Identity, dir: &Path, overlay: &Overlay) -> CheckedExtension {
+fn check_one(
+    identity: Identity,
+    dir: &Path,
+    overlay: &Overlay,
+    harnesses: &[&str],
+) -> CheckedExtension {
     let mut checked = CheckedExtension {
         id: identity.id.clone(),
         dir: dir.to_path_buf(),
@@ -184,6 +212,9 @@ fn check_one(identity: Identity, dir: &Path, overlay: &Overlay) -> CheckedExtens
             checked
                 .errors
                 .extend(scripts_call_only_what_is_granted(&compiled, &text_of));
+            checked
+                .errors
+                .extend(no_harness_is_granted(&compiled, harnesses));
             checked.compiled = Some(compiled);
         }
         Err(diagnostics) => checked.errors.extend(diagnostics),
@@ -214,6 +245,22 @@ fn check_one(identity: Identity, dir: &Path, overlay: &Overlay) -> CheckedExtens
     checked
 }
 
+/// Each `exec:` grant naming a harness's own program, refused.
+fn no_harness_is_granted(compiled: &CompiledExtension, harnesses: &[&str]) -> Vec<Diagnostic> {
+    compiled
+        .manifest
+        .programs()
+        .filter(|program| harnesses.contains(program))
+        .map(|program| {
+            Diagnostic::whole(
+                extension::MANIFEST_FILE,
+                format!("`exec:{program}` is never granted: it starts an agent's harness outside the workspace"),
+                Some(format!("remove \"exec:{program}\" from `wants`")),
+            )
+        })
+        .collect()
+}
+
 /// Each host function a script of `compiled` names that the manifest's
 /// grants do not register, located at its first call: the engine would
 /// refuse it at the first run, and the author should hear it from the
@@ -223,7 +270,7 @@ fn scripts_call_only_what_is_granted(
     text_of: &dyn Fn(&str) -> Option<String>,
 ) -> Vec<Diagnostic> {
     let manifest = &compiled.manifest;
-    let grants: uze_script::Grants = manifest.wants.iter().copied().collect();
+    let grants: uze_script::Grants = manifest.wants.iter().cloned().collect();
     let mut scripts: Vec<&str> = manifest
         .sources
         .iter()
@@ -459,6 +506,29 @@ source "board" { fixture "fixtures/board.json"; }
         fs::write(plugin.join("extensions/board/extension.kdl"), granted).unwrap();
         let checked = app.extensions().check(&plugin);
         assert!(checked[0].is_clean(), "{:?}", checked[0].errors);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_harness_is_never_a_program_an_extension_runs() {
+        let root = uze_testkit::temp::scratch("extensions-check-harness");
+        let manifest = MANIFEST.replace(
+            "source \"board\" { fixture \"fixtures/board.json\"; }",
+            "wants \"exec:claude\"\nsource \"board\" { run \"claude\" \"-p\"; }",
+        );
+        let plugin = plugin_with(&root, &manifest, "{}");
+        let checked = super::check_one(
+            super::identity("greet", "board"),
+            &plugin.join("extensions/board"),
+            &super::Overlay::new(),
+            &["claude", "codex"],
+        );
+        let errors: Vec<String> = checked.errors.iter().map(ToString::to_string).collect();
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(
+            errors[0].contains("`exec:claude` is never granted"),
+            "{errors:?}"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

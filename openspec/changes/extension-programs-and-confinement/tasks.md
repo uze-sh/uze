@@ -1,9 +1,9 @@
 ## 1. Manifest and check
 
-- [ ] 1.1 `uze-contract`: `Grant::{Exec(ProgramName), Store, StoreGlobal}` (P8), `Does::Run(Program)`, `SourceKind::Run(Program)` with `Program { argv, timeout }`, `Output::{Json, Lines(fields)}` on a source, `ExecDecl { name, reads }`, `Envelope.store`, `input store`; tests
-- [ ] 1.2 `uze-core` decoder: `run` with `timeout`, `output`/`fields`, `exec "<name>" { reads … }`, `wants "exec:<name>" "store" "store:global"`, `input … store=#true` (parent 22.5)
-- [ ] 1.3 The check: argv shape (no shell string), a relative program inside the extension, a bare name needing `exec:`, a shebang needing its interpreter's grant, `exec:uze` refused, `{field}` after `--` or warned, `every` under 30 s warned for a program source, `exec` reads only for a wanted program, `timeout` at most 10 s, `run` no longer refused; the scaffold teaches `run` (parent 5.8, 22.5, 25.5)
-- [ ] 1.4 `uze-application`: a harness's own name refused as an `exec:` by asking the integration registry
+- [x] 1.1 `uze-contract`: `Grant::{Exec(ProgramName), Store, StoreGlobal}` (P8), `Does::Run(Program)`, `SourceKind::Run(Program)` with `Program { argv, timeout }`, `Output::{Json, Lines(fields)}` on a source, `ExecDecl { name, reads }`, `Envelope.store`, `input store`; tests
+- [x] 1.2 `uze-core` decoder: `run` with `timeout`, `output`/`fields`, `exec "<name>" { reads … }`, `wants "exec:<name>" "store" "store:global"`, `input … store=#true` (parent 22.5)
+- [x] 1.3 The check: argv shape (no shell string), a relative program inside the extension, a bare name needing `exec:`, a shebang needing its interpreter's grant, `exec:uze` refused, `{field}` after `--` or warned, `every` under 30 s warned for a program source, `exec` reads only for a wanted program, `timeout` at most 10 s, `run` no longer refused; the scaffold teaches `run` (parent 5.8, 22.5, 25.5)
+- [x] 1.4 `uze-application`: a harness's own name refused as an `exec:` by asking the integration registry
 
 ## 2. Confinement in `uze-platform`
 

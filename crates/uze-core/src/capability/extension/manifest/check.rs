@@ -2,7 +2,9 @@
 //! every one is read: the sources and surfaces they name, the grants what
 //! they do needs, and the limits on what would run.
 
-use uze_contract::{Does, EVERY_FLOOR};
+use std::time::Duration;
+
+use uze_contract::{Does, EVERY_FLOOR, Grant, Manifest, Program, SourceKind};
 
 use super::Decoded;
 use crate::capability::extension::document::Report;
@@ -11,6 +13,108 @@ pub fn references(decoded: &Decoded, report: &mut Report<'_>) {
     surfaces_read_declared_sources(decoded, report);
     sources_run_what_this_build_runs(decoded, report);
     actions_name_what_is_declared(decoded, report);
+    programs_are_granted(decoded, report);
+}
+
+/// The shortest interval a source answered by a program is asked at: each
+/// answer is a process, where a script's is a call.
+pub const PROGRAM_EVERY_FLOOR: Duration = Duration::from_secs(30);
+
+/// The programs no extension may be granted, whatever it says: UZE itself,
+/// whose every verb would run as the operator.
+const NEVER_GRANTED: &[&str] = &["uze"];
+
+fn programs_are_granted(decoded: &Decoded, report: &mut Report<'_>) {
+    let manifest = &decoded.manifest;
+    for grant in &manifest.wants {
+        if let Some(program) = grant.program()
+            && NEVER_GRANTED.contains(&program)
+        {
+            report.whole(
+                format!("`{grant}` is never granted: it would run UZE itself as you"),
+                Some(format!("remove \"{grant}\" from `wants`")),
+            );
+        }
+    }
+    let sources = manifest
+        .sources
+        .iter()
+        .zip(&decoded.source_places)
+        .filter_map(|(source, places)| match &source.kind {
+            SourceKind::Run(program) => {
+                Some((format!("the source `{}`", source.id), program, places.kind))
+            }
+            _ => None,
+        });
+    let actions = manifest
+        .actions
+        .iter()
+        .zip(&decoded.action_places)
+        .filter_map(|(action, places)| match &action.does {
+            Does::Run(program) => {
+                Some((format!("the action `{}`", action.id), program, places.does))
+            }
+            _ => None,
+        });
+    for (who, program, at) in sources.chain(actions) {
+        program_is_granted(manifest, &who, program, at, report);
+        substituted_values_follow_a_double_dash(&who, program, at, report);
+    }
+    for (decl, at) in manifest.exec.iter().zip(&decoded.exec_places) {
+        if !manifest.wants(&Grant::Exec(decl.name.clone())) {
+            report.at(
+                *at,
+                format!(
+                    "`exec \"{}\"` names a program the manifest does not want",
+                    decl.name
+                ),
+                Some(format!("add \"exec:{}\" to `wants`", decl.name)),
+            );
+        }
+    }
+}
+
+fn program_is_granted(
+    manifest: &Manifest,
+    who: &str,
+    program: &Program,
+    at: usize,
+    report: &mut Report<'_>,
+) {
+    if program.is_packaged() {
+        return;
+    }
+    let grant = Grant::Exec(program.program().to_owned());
+    if !manifest.wants(&grant) {
+        report.at(
+            at,
+            format!("{who} runs `{}`, which needs `{grant}`", program.program()),
+            Some(format!("add \"{grant}\" to `wants`")),
+        );
+    }
+}
+
+/// A value substituted into an argv is one whole argument, and one that
+/// begins with `-` would be read as a flag: an argument that begins with a
+/// `{field}` is written after `--`.
+fn substituted_values_follow_a_double_dash(
+    who: &str,
+    program: &Program,
+    at: usize,
+    report: &mut Report<'_>,
+) {
+    let mut after_dashes = false;
+    for arg in program.argv.iter().skip(1) {
+        if arg == "--" {
+            after_dashes = true;
+        } else if arg.starts_with('{') && !after_dashes {
+            report.at(
+                at,
+                format!("{who} passes `{arg}` as an argument before `--`, where a value beginning with `-` would be a flag"),
+                Some(format!("write \"--\" before \"{arg}\"")),
+            );
+        }
+    }
 }
 
 fn surfaces_read_declared_sources(decoded: &Decoded, report: &mut Report<'_>) {
@@ -43,23 +147,30 @@ fn surfaces_read_declared_sources(decoded: &Decoded, report: &mut Report<'_>) {
 
 fn sources_run_what_this_build_runs(decoded: &Decoded, report: &mut Report<'_>) {
     for (source, places) in decoded.manifest.sources.iter().zip(&decoded.source_places) {
-        if matches!(source.kind, uze_contract::SourceKind::Run(_)) {
-            report.at(
-                places.kind,
-                "programs arrive in a later change (change 5)",
-                Some("answer the source with `script \"….rhai\"`".to_owned()),
-            );
-        }
+        let runs = matches!(source.kind, SourceKind::Run(_));
+        let floor = if runs {
+            PROGRAM_EVERY_FLOOR
+        } else {
+            EVERY_FLOOR
+        };
         if let (Some(every), Some(every_at)) = (source.every, places.every)
-            && every < EVERY_FLOOR
+            && every < floor
         {
             report.at(
                 every_at,
                 format!(
-                    "`every` is at least {}s, so a source is not asked more often than that",
-                    EVERY_FLOOR.as_secs()
+                    "`every` is at least {}s{}, so a source is not asked more often than that",
+                    floor.as_secs(),
+                    if runs { " for a program" } else { "" },
                 ),
-                Some(format!("write `every \"{}s\"`", EVERY_FLOOR.as_secs())),
+                Some(format!("write `every \"{}s\"`", floor.as_secs())),
+            );
+        }
+        if !runs && let Some(output_at) = places.output {
+            report.at(
+                output_at,
+                "`output` says how a program's output is read, and this source runs no program",
+                Some("remove `output`".to_owned()),
             );
         }
     }
@@ -121,7 +232,7 @@ fn actions_name_what_is_declared(decoded: &Decoded, report: &mut Report<'_>) {
             _ => {}
         }
         if let Some(grant) = action.does.needs()
-            && !manifest.wants(grant)
+            && !manifest.wants(&grant)
         {
             report.at(
                 places.does,

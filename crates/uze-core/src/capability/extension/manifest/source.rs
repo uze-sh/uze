@@ -8,23 +8,39 @@
 //!     every "10s"
 //!     refresh-on "paths.changed" ".planning"
 //! }
+//! source "gpu" {
+//!     run "nvidia-smi" "--query-gpu=name,utilization.gpu" "--format=csv,noheader,nounits"
+//!     output "lines" separator=","
+//!     fields "name" "load"
+//!     store
+//! }
 //! ```
 
 use std::collections::BTreeMap;
 use std::time::Duration;
 
 use kdl::{KdlDocument, KdlNode, KdlValue};
-use uze_contract::{Clean, EventName, SourceDecl, SourceKind};
+use uze_contract::{Clean, EventName, Output, SourceDecl, SourceKind};
 
 use super::{declared_id, is_relative_inside, relative_file, string_args, template, text};
 use crate::capability::extension::document::{
     Place, Report, entries, nearest, refuse_extra, spelled,
 };
 
-const CHILDREN: &[&str] = &["script", "run", "fixture", "input", "every", "refresh-on"];
+const CHILDREN: &[&str] = &[
+    "script",
+    "run",
+    "fixture",
+    "input",
+    "every",
+    "refresh-on",
+    "output",
+    "fields",
+    "store",
+];
 /// What later changes add inside a source, with the change that brings
 /// each.
-const LATER: &[(&str, u32)] = &[("deliver", 6), ("output", 5)];
+const LATER: &[(&str, u32)] = &[("deliver", 6)];
 /// The events a later change brings, by prefix.
 const LATER_EVENTS: &[(&str, u32)] = &[("agent.", 6)];
 const ANSWER_IT: &str = "answer it with `script \"….rhai\"` or `fixture \"….json\"`";
@@ -35,6 +51,8 @@ pub struct Places {
     pub kind: usize,
     /// Its `every`, when it declares one.
     pub every: Option<usize>,
+    /// Its `output`, when it declares one.
+    pub output: Option<usize>,
 }
 
 pub fn decode(node: &KdlNode, report: &mut Report<'_>) -> Option<(SourceDecl, Places)> {
@@ -46,6 +64,9 @@ pub fn decode(node: &KdlNode, report: &mut Report<'_>) -> Option<(SourceDecl, Pl
     let mut input = None;
     let mut every = None;
     let mut refresh_on: Vec<EventName> = Vec::new();
+    let mut output: Option<(String, char, usize)> = None;
+    let mut fields: Option<Vec<String>> = None;
+    let mut with_store = false;
     let children = node.children().map(KdlDocument::nodes).unwrap_or_default();
     for child in children {
         let name = child.name().value();
@@ -67,6 +88,33 @@ pub fn decode(node: &KdlNode, report: &mut Report<'_>) -> Option<(SourceDecl, Pl
             "every" if every.is_some() => twice(child, report),
             "every" => {
                 every = Some(self::every(child, report).map(|every| (every, child.offset())))
+            }
+            "output" if output.is_some() => twice(child, report),
+            "output" => {
+                output = self::output(child, report)
+                    .map(|(mode, separator)| (mode, separator, child.offset()));
+            }
+            "fields" if fields.is_some() => twice(child, report),
+            "fields" => {
+                fields = Some(
+                    string_args(child, report)
+                        .into_iter()
+                        .filter(|(field, at)| {
+                            let named = uze_contract::binding::is_field_name(field);
+                            if !named {
+                                report.at(*at, format!("`{field}` is not a field name"), None);
+                            }
+                            named
+                        })
+                        .map(|(field, _)| field)
+                        .collect(),
+                );
+            }
+            "store" if with_store => twice(child, report),
+            "store" => {
+                let parts = entries(child, report);
+                refuse_extra(child, &parts, 0, &[], false, report);
+                with_store = true;
             }
             "refresh-on" => {
                 if let Some(event) = event(child, report) {
@@ -103,7 +151,32 @@ pub fn decode(node: &KdlNode, report: &mut Report<'_>) -> Option<(SourceDecl, Pl
     }
     let (kind, kind_at) = kind?;
     let every = every.flatten();
+    let output_at = output.as_ref().map(|(_, _, at)| *at);
+    let output = match (output, fields) {
+        (Some((mode, separator, _)), Some(fields)) if mode == "lines" => {
+            Output::Lines { fields, separator }
+        }
+        (Some((mode, _, at)), None) if mode == "lines" => {
+            report.at(
+                at,
+                "`output \"lines\"` names the fields of a line",
+                Some("add `fields \"name\" \"status\"`".to_owned()),
+            );
+            return None;
+        }
+        (_, Some(_)) => {
+            report.on(
+                node,
+                "`fields` names the parts of a line, for `output \"lines\"`",
+                Some("add `output \"lines\"`, or remove `fields`".to_owned()),
+            );
+            return None;
+        }
+        _ => Output::Json,
+    };
     let mut source = SourceDecl::new(id?, kind);
+    source.output = output;
+    source.with_store = with_store;
     source.input = input.unwrap_or_default();
     source.every = every.map(|(every, _)| every);
     source.refresh_on = refresh_on;
@@ -112,6 +185,7 @@ pub fn decode(node: &KdlNode, report: &mut Report<'_>) -> Option<(SourceDecl, Pl
         Places {
             kind: kind_at,
             every: every.map(|(_, at)| at),
+            output: output_at,
         },
     ))
 }
@@ -133,14 +207,44 @@ fn answer(child: &KdlNode, report: &mut Report<'_>) -> Option<SourceKind> {
         "fixture" => text(child, report)
             .filter(|file| relative_file(file, "json", at, report))
             .map(SourceKind::Fixture),
-        _ => {
-            let argv: Vec<String> = string_args(child, report)
-                .into_iter()
-                .map(|(arg, _)| arg)
-                .collect();
-            (!argv.is_empty()).then_some(SourceKind::Run(argv))
+        _ => super::program(child, report).map(SourceKind::Run),
+    }
+}
+
+/// `output "json"`, or `output "lines"` with an optional one-character
+/// `separator=","` for a program that prints CSV.
+fn output(child: &KdlNode, report: &mut Report<'_>) -> Option<(String, char)> {
+    let parts = entries(child, report);
+    refuse_extra(child, &parts, 1, &["separator"], false, report);
+    let mode = super::string_arg(child, parts.args.first().copied(), report)?;
+    let mut separator = Output::TAB;
+    if let Some(entry) = super::prop(&parts, "separator") {
+        let written = super::string_prop("separator", entry, report)?;
+        let mut chars = written.chars();
+        match (chars.next(), chars.next()) {
+            (Some(ch), None) if mode == "lines" && !ch.is_alphanumeric() => separator = ch,
+            _ => {
+                report.on(
+                    entry,
+                    "`separator` is one character that is not a letter or a digit, for `lines`",
+                    Some("write `separator=\",\"`, or leave it out for a tab".to_owned()),
+                );
+                return None;
+            }
         }
     }
+    if Output::NAMES.contains(&mode.as_str()) {
+        return Some((mode, separator));
+    }
+    report.on(
+        child,
+        format!("there is no output `{mode}`"),
+        Some(match nearest(&mode, Output::NAMES) {
+            Some(near) => format!("did you mean `{near}`?"),
+            None => format!("an output is one of {}", Output::NAMES.join(", ")),
+        }),
+    );
+    None
 }
 
 /// `input name="text" …`: what the source is asked with, each value text

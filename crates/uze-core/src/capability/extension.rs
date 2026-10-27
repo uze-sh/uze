@@ -18,6 +18,7 @@ mod document;
 mod loaded;
 pub mod locate;
 mod manifest;
+pub mod program;
 mod test_file;
 mod view;
 
@@ -142,6 +143,8 @@ trait Files {
     fn text(&self, file: &str) -> Result<String, Diagnostic>;
     /// Whether `file` is one of the extension's files, or why not.
     fn holds(&self, file: &str) -> Result<(), String>;
+    /// The first [`program::SHEBANG_MAX`] bytes of `file`, held.
+    fn head(&self, file: &str) -> Option<Vec<u8>>;
 }
 
 /// The extension's directory, with an editor's unsaved text over it.
@@ -166,6 +169,26 @@ impl Files for OnDisk<'_> {
             Err("is not a file".to_owned())
         }
     }
+
+    fn head(&self, file: &str) -> Option<Vec<u8>> {
+        if let Some(text) = self.overlay.get(file) {
+            return Some(
+                text.as_bytes()
+                    .iter()
+                    .take(program::SHEBANG_MAX)
+                    .copied()
+                    .collect(),
+            );
+        }
+        let path = inside(self.dir, file).ok()?;
+        let mut head = Vec::with_capacity(program::SHEBANG_MAX);
+        std::io::Read::read_to_end(
+            &mut std::io::Read::take(std::fs::File::open(path).ok()?, program::SHEBANG_MAX as u64),
+            &mut head,
+        )
+        .ok()?;
+        Some(head)
+    }
 }
 
 impl Files for Loaded {
@@ -180,6 +203,11 @@ impl Files for Loaded {
         self.bytes(file)
             .map(|_| ())
             .ok_or_else(|| "does not exist in the extension's directory".to_owned())
+    }
+
+    fn head(&self, file: &str) -> Option<Vec<u8>> {
+        self.bytes(file)
+            .map(|bytes| bytes.iter().take(program::SHEBANG_MAX).copied().collect())
     }
 }
 
@@ -219,6 +247,8 @@ fn compile_from(
     for (what, file, at) in decoded.files() {
         if let Err(why) = files.holds(file) {
             report.at(at, format!("the {what} `{file}` {why}"), None);
+        } else if what == "program" {
+            interpreter_is_granted(&decoded.manifest, files, file, at, &mut report);
         }
     }
     let mut diagnostics = report.into_diagnostics();
@@ -231,6 +261,34 @@ fn compile_from(
         manifest: decoded.manifest,
         views,
     })
+}
+
+/// A packaged script runs under its interpreter's `exec:` grant, so the
+/// manifest wants it.
+fn interpreter_is_granted(
+    manifest: &uze_contract::Manifest,
+    files: &impl Files,
+    file: &str,
+    at: usize,
+    report: &mut Report<'_>,
+) {
+    let Some(head) = files.head(file) else {
+        return;
+    };
+    match program::packaged(&head) {
+        Ok(program::Packaged::Script { interpreter, .. }) => {
+            let grant = uze_contract::Grant::Exec(interpreter.clone());
+            if !manifest.wants(&grant) {
+                report.at(
+                    at,
+                    format!("the program `{file}` is a script run by `{interpreter}`, which needs `{grant}`"),
+                    Some(format!("add \"{grant}\" to `wants`")),
+                );
+            }
+        }
+        Ok(program::Packaged::Native) => {}
+        Err(why) => report.at(at, format!("the program `{file}`: {why}"), None),
+    }
 }
 
 fn compile_view(

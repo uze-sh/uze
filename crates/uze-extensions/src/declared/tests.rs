@@ -168,6 +168,7 @@ pub(super) fn extension(view: CompiledView) -> CompiledExtension {
                 SourceKind::Fixture("fixtures/board.json".to_owned()),
             )],
             actions: Vec::new(),
+            exec: Vec::new(),
         },
         views: BTreeMap::from([("board.kdl".to_owned(), view)]),
     }

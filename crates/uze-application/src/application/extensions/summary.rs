@@ -128,6 +128,7 @@ mod tests {
                 wants: Vec::new(),
                 sources: Vec::new(),
                 actions: Vec::new(),
+                exec: Vec::new(),
             },
             views: BTreeMap::new(),
         };

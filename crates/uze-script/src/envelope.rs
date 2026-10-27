@@ -42,7 +42,27 @@ pub(crate) fn from_answer(answer: &Dynamic) -> Result<Envelope, ScriptError> {
         refresh: strings(map.get("refresh"), "refresh")?,
         toast: text(map.get("toast"), "toast")?,
         notice: text(map.get("notice"), "notice")?,
+        store: store(map.get("store"))?,
     })
+}
+
+/// `store`: a map whose keys replace the store's, `()` removing one.
+fn store(
+    member: Option<&Dynamic>,
+) -> Result<Option<serde_json::Map<String, serde_json::Value>>, ScriptError> {
+    let Some(member) = member else {
+        return Ok(None);
+    };
+    let wrong = || ScriptError::Envelope("`store` is not a map".to_owned());
+    if member.read_lock::<Map>().is_none() {
+        return Err(wrong());
+    }
+    match value::to_json(member)
+        .map_err(|crossing| ScriptError::Envelope(format!("`store` is {crossing}")))?
+    {
+        serde_json::Value::Object(patch) => Ok(Some(patch)),
+        _ => Err(wrong()),
+    }
 }
 
 fn text(member: Option<&Dynamic>, name: &str) -> Result<Option<String>, ScriptError> {

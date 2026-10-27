@@ -19,7 +19,8 @@ use std::collections::BTreeSet;
 use kdl::{KdlDocument, KdlEntry, KdlNode, KdlValue};
 use uze_contract::binding::parse_text;
 use uze_contract::{
-    Clean, Does, Manifest, PROTOCOL, RESERVED_IDS, Slot, SourceKind, SurfaceDecl, is_valid_id,
+    Clean, Does, ExecDecl, Manifest, PROTOCOL, Program, RESERVED_IDS, Slot, SourceKind,
+    SurfaceDecl, is_program_name, is_valid_id,
 };
 
 use super::document::{Place, Report, accepts, entries, nearest, refuse_extra, spelled};
@@ -33,6 +34,7 @@ const NODES: &[&str] = &[
     "surface",
     "source",
     "action",
+    "exec",
 ];
 /// What later changes of `add-extension-platform` add to a manifest, with
 /// the change that brings each.
@@ -50,6 +52,8 @@ pub struct Decoded {
     pub source_places: Vec<source::Places>,
     /// Parallel to `manifest.actions`.
     pub action_places: Vec<action::Places>,
+    /// Parallel to `manifest.exec`: where each `exec` was written.
+    pub exec_places: Vec<usize>,
 }
 
 impl Decoded {
@@ -65,7 +69,9 @@ impl Decoded {
             .filter_map(|(source, places)| match &source.kind {
                 SourceKind::Fixture(file) => Some(("fixture", file.as_str(), places.kind)),
                 SourceKind::Script(file) => Some(("script", file.as_str(), places.kind)),
-                SourceKind::Run(_) => None,
+                SourceKind::Run(program) => {
+                    packaged(program).map(|file| ("program", file, places.kind))
+                }
             });
         let actions = self
             .manifest
@@ -74,6 +80,7 @@ impl Decoded {
             .zip(&self.action_places)
             .filter_map(|(action, places)| match &action.does {
                 Does::Script(file) => Some(("script", file.as_str(), places.does)),
+                Does::Run(program) => packaged(program).map(|file| ("program", file, places.does)),
                 _ => None,
             });
         sources.chain(actions).collect()
@@ -95,10 +102,12 @@ pub fn decode(document: &KdlDocument, dir_id: &str, report: &mut Report<'_>) -> 
             surfaces: Vec::new(),
             sources: Vec::new(),
             actions: Vec::new(),
+            exec: Vec::new(),
         },
         surface_places: Vec::new(),
         source_places: Vec::new(),
         action_places: Vec::new(),
+        exec_places: Vec::new(),
     };
     let mut seen = BTreeSet::new();
     for node in document.nodes() {
@@ -145,6 +154,25 @@ pub fn decode(document: &KdlDocument, dir_id: &str, report: &mut Report<'_>) -> 
                 if let Some((action, places)) = action::decode(node, report) {
                     decoded.manifest.actions.push(action);
                     decoded.action_places.push(places);
+                }
+            }
+            "exec" => {
+                if let Some(decl) = exec(node, report) {
+                    if decoded
+                        .manifest
+                        .exec
+                        .iter()
+                        .any(|seen| seen.name == decl.name)
+                    {
+                        report.on(
+                            node,
+                            format!("`exec \"{}\"` is declared twice", decl.name),
+                            Some("list every path it reads in one `exec`".to_owned()),
+                        );
+                    } else {
+                        decoded.manifest.exec.push(decl);
+                        decoded.exec_places.push(node.offset());
+                    }
                 }
             }
             other => unknown(node, other, report),
@@ -405,6 +433,140 @@ fn template(text: &str, offset: usize, report: &mut Report<'_>) -> bool {
             false
         }
     }
+}
+
+/// The file inside the extension a packaged program names, without its
+/// leading `./`.
+pub fn packaged(program: &Program) -> Option<&str> {
+    program
+        .is_packaged()
+        .then(|| program.program().trim_start_matches("./"))
+}
+
+/// What in a program's first element says it was written as a shell
+/// command rather than an argv.
+const SHELL: &[char] = &[
+    ' ', '\t', '|', '&', ';', '<', '>', '$', '`', '(', ')', '*', '?',
+];
+
+/// `run "<program>" "<arg>" … timeout="5s"`: an argv, its first element a
+/// path inside the extension (`./bin/meter`) or a program's name an
+/// `exec:` grant covers, each later one a whole argument with `{field}`
+/// references.
+fn program(node: &KdlNode, report: &mut Report<'_>) -> Option<Program> {
+    let parts = entries(node, report);
+    refuse_extra(node, &parts, usize::MAX, &["timeout"], false, report);
+    let mut argv = Vec::new();
+    for arg in &parts.args {
+        let text = string_arg(node, Some(arg), report)?;
+        if !argv.is_empty() && !template(&text, arg.offset(), report) {
+            return None;
+        }
+        argv.push(text);
+    }
+    let Some(first) = argv.first() else {
+        report.on(
+            node,
+            "`run` names a program",
+            Some(
+                "write `run \"./bin/meter\"` or `run \"nvidia-smi\" \"--query-gpu=name\"`"
+                    .to_owned(),
+            ),
+        );
+        return None;
+    };
+    if first.contains(SHELL) {
+        report.on(
+            parts.args[0],
+            format!("`{first}` is a shell command: a program is an argv array"),
+            Some("write the program and each argument as strings of their own, with no pipe or redirect".to_owned()),
+        );
+        return None;
+    }
+    let mut program = Program::new(argv);
+    if program.is_packaged() {
+        let file = packaged(&program).unwrap_or_default();
+        if !is_relative_inside(file) {
+            report.on(
+                parts.args[0],
+                format!(
+                    "`{}` is not a path inside the extension's directory",
+                    program.program()
+                ),
+                Some("write `./` and a relative path with `/`, without `..`".to_owned()),
+            );
+            return None;
+        }
+    } else if !is_program_name(program.program()) {
+        report.on(
+            parts.args[0],
+            format!("`{}` is not a program's name", program.program()),
+            Some("name the program as `exec:` grants it, such as `nvidia-smi`".to_owned()),
+        );
+        return None;
+    }
+    if let Some(entry) = prop(&parts, "timeout") {
+        let written = string_prop("timeout", entry, report)?;
+        match source::duration(&written) {
+            Some(limit) if limit.is_zero() || limit > uze_contract::PROGRAM_TIME_LIMIT => {
+                report.on(
+                    entry,
+                    format!(
+                        "a program runs for at most {}s",
+                        uze_contract::PROGRAM_TIME_LIMIT.as_secs()
+                    ),
+                    Some("lower it, or leave it out for the host's limit".to_owned()),
+                );
+                return None;
+            }
+            Some(limit) => program.timeout = Some(limit),
+            None => {
+                report.on(
+                    entry,
+                    format!("`{written}` is not a duration"),
+                    Some("write a whole number and a unit, such as `timeout=\"5s\"`".to_owned()),
+                );
+                return None;
+            }
+        }
+    }
+    Some(program)
+}
+
+/// `exec "nvidia-smi" { reads "/dev/nvidiactl" "/dev/dxg" }`: the absolute
+/// paths a granted program reads beyond the host's own.
+fn exec(node: &KdlNode, report: &mut Report<'_>) -> Option<ExecDecl> {
+    let parts = entries(node, report);
+    refuse_extra(node, &parts, 1, &[], true, report);
+    let name = string_arg(node, parts.args.first().copied(), report)?;
+    if !is_program_name(&name) {
+        report.on(node, format!("`{name}` is not a program's name"), None);
+        return None;
+    }
+    let mut reads = Vec::new();
+    for child in node.children().map(KdlDocument::nodes).unwrap_or_default() {
+        if child.name().value() != "reads" {
+            unknown_child(child, "an `exec`", &["reads"], report);
+            continue;
+        }
+        for (path, at) in string_args(child, report) {
+            let absolute = std::path::Path::new(&path).is_absolute()
+                && !path.split('/').any(|part| part == "..");
+            if absolute {
+                reads.push(path);
+            } else {
+                report.at(
+                    at,
+                    format!("`{path}` is not an absolute path"),
+                    Some(
+                        "write the device or directory the program reads, such as `/dev/nvidiactl`"
+                            .to_owned(),
+                    ),
+                );
+            }
+        }
+    }
+    Some(ExecDecl { name, reads })
 }
 
 /// Whether `path` is relative and stays beneath where it is resolved from:

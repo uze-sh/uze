@@ -99,7 +99,7 @@ impl DeclaredExtension {
             return Err(refused(&label, "select a row first"));
         }
         Ok(match &declared.does {
-            Does::Script(_) => Run::Script {
+            Does::Script(_) | Does::Run(_) => Run::Script {
                 action: declared.id.clone(),
                 label,
                 input: serde_json::json!({ "item": item }),
@@ -432,9 +432,10 @@ impl DeclaredExtension {
 /// input is its own to read, so a script that asks nothing about the row
 /// runs on none.
 fn reads_the_item(declared: &ActionDecl) -> bool {
-    let done = match &declared.does {
-        Does::Clipboard(template) | Does::OpenPath(template) => Some(template),
-        Does::Script(_) | Does::Refresh(_) | Does::Open(_) => None,
+    let done: Vec<&String> = match &declared.does {
+        Does::Clipboard(template) | Does::OpenPath(template) => vec![template],
+        Does::Run(program) => program.argv.iter().skip(1).collect(),
+        Does::Script(_) | Does::Refresh(_) | Does::Open(_) => Vec::new(),
     };
     done.into_iter()
         .chain(&declared.confirm)

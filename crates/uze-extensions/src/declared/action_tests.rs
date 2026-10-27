@@ -232,6 +232,7 @@ fn an_actions_envelope_toasts_says_its_notice_and_refreshes() {
         refresh: vec![SOURCE.to_owned()],
         toast: Some("Archived \u{1b}[31mauth".to_owned()),
         notice: Some("1 archived".to_owned()),
+        store: None,
     };
     let (_, outcomes) = ask_all(
         &mut engine,

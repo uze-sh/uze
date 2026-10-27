@@ -33,7 +33,7 @@ pub fn ungranted_calls(source: &str, grants: &Grants) -> Vec<(String, Grant)> {
     let named = host_functions_of(source);
     HOST_FUNCTIONS
         .iter()
-        .filter_map(|(name, grant)| Some((*name, (*grant)?)))
+        .filter_map(|(name, grant)| Some((*name, grant.clone()?)))
         .filter(|(name, grant)| named.contains(*name) && !grants.contains(grant))
         .map(|(name, grant)| (name.to_owned(), grant))
         .collect()

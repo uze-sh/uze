@@ -24,6 +24,8 @@ pub struct Manifest {
     pub surfaces: Vec<SurfaceDecl>,
     pub sources: Vec<SourceDecl>,
     pub actions: Vec<ActionDecl>,
+    /// What a granted program reads beyond the host's own paths, by name.
+    pub exec: Vec<ExecDecl>,
 }
 
 impl Manifest {
@@ -39,9 +41,50 @@ impl Manifest {
         self.actions.iter().find(|action| action.id == id)
     }
 
-    pub fn wants(&self, grant: Grant) -> bool {
-        self.wants.contains(&grant)
+    pub fn wants(&self, grant: &Grant) -> bool {
+        self.wants.contains(grant)
     }
+
+    /// The programs a bare name may run, as `wants` grants them.
+    pub fn programs(&self) -> impl Iterator<Item = &str> {
+        self.wants.iter().filter_map(Grant::program)
+    }
+
+    /// The paths `program` reads that its `exec` declaration names.
+    pub fn reads_of(&self, program: &str) -> &[String] {
+        self.exec
+            .iter()
+            .find(|decl| decl.name == program)
+            .map_or(&[], |decl| decl.reads.as_slice())
+    }
+
+    /// Whether the extension keeps a store, and where.
+    pub fn store(&self) -> Option<StoreScope> {
+        if self.wants.contains(&Grant::StoreGlobal) {
+            Some(StoreScope::Global)
+        } else if self.wants.contains(&Grant::Store) {
+            Some(StoreScope::Project)
+        } else {
+            None
+        }
+    }
+}
+
+/// Where an extension's store is kept.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum StoreScope {
+    /// One per project the extension is enabled in.
+    Project,
+    /// One for the machine, consented to on its own.
+    Global,
+}
+
+/// The paths a granted program reads that the host would not otherwise
+/// let it: a device, a driver's directory. Listed on the consent screen.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ExecDecl {
+    pub name: String,
+    pub reads: Vec<String>,
 }
 
 /// Where a surface is drawn. The host owns its geometry.
@@ -103,6 +146,10 @@ pub struct SourceDecl {
     pub every: Option<Duration>,
     /// What else asks it again.
     pub refresh_on: Vec<EventName>,
+    /// How a program's standard output is read.
+    pub output: Output,
+    /// Whether the extension's store is part of what it is asked with.
+    pub with_store: bool,
 }
 
 impl SourceDecl {
@@ -115,6 +162,8 @@ impl SourceDecl {
             input: BTreeMap::new(),
             every: None,
             refresh_on: Vec::new(),
+            output: Output::Json,
+            with_store: false,
         }
     }
 
@@ -141,9 +190,8 @@ impl SourceDecl {
 pub enum SourceKind {
     /// A Rhai file whose `answer(input, context)` returns the envelope.
     Script(String),
-    /// A program and its arguments. Decoded so the check can name the
-    /// change that brings programs; no manifest that holds one is hosted.
-    Run(Vec<String>),
+    /// A program the host runs, confined where the machine can.
+    Run(Program),
     /// A JSON file whose contents are the source's data.
     Fixture(String),
 }
@@ -151,6 +199,65 @@ pub enum SourceKind {
 impl SourceKind {
     /// How a manifest spells each kind.
     pub const NAMES: &'static [&'static str] = &["script", "run", "fixture"];
+}
+
+/// The longest a program may run, and what it runs for when its
+/// declaration says nothing.
+pub const PROGRAM_TIME_LIMIT: Duration = Duration::from_secs(10);
+
+/// A program as a manifest declares it: an argv whose first element is a
+/// path inside the extension or a name an `exec:` grant covers, each later
+/// element a whole argument in which `{field}` is substituted.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Program {
+    pub argv: Vec<String>,
+    /// Lower than [`PROGRAM_TIME_LIMIT`] when the manifest says so.
+    pub timeout: Option<Duration>,
+}
+
+impl Program {
+    pub fn new(argv: Vec<String>) -> Self {
+        Self {
+            argv,
+            timeout: None,
+        }
+    }
+
+    pub fn time_limit(&self) -> Duration {
+        self.timeout
+            .map_or(PROGRAM_TIME_LIMIT, |limit| limit.min(PROGRAM_TIME_LIMIT))
+    }
+
+    /// The program's first element: `./bin/x` or `nvidia-smi`.
+    pub fn program(&self) -> &str {
+        self.argv.first().map_or("", String::as_str)
+    }
+
+    /// Whether it names a file inside the extension rather than a program
+    /// an `exec:` grant covers.
+    pub fn is_packaged(&self) -> bool {
+        self.program().contains('/')
+    }
+}
+
+/// How a program's standard output becomes a source's data.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum Output {
+    /// One JSON value, or an envelope around one.
+    #[default]
+    Json,
+    /// One item per line, its fields named in order and split at
+    /// `separator`, a tab unless the declaration names another, each
+    /// trimmed of the spaces around it.
+    Lines {
+        fields: Vec<String>,
+        separator: char,
+    },
+}
+
+impl Output {
+    pub const NAMES: &'static [&'static str] = &["json", "lines"];
+    pub const TAB: char = '\t';
 }
 
 /// A reason, other than time, to ask a source again.
@@ -208,19 +315,22 @@ pub enum Does {
     OpenPath(String),
     /// Opens this surface of the same extension.
     Open(String),
+    /// Runs a program, confined where the machine can, and applies the
+    /// envelope it answers.
+    Run(Program),
 }
 
 impl Does {
     /// How a manifest spells each, as the node inside an `action`.
     pub const NAMES: &'static [&'static str] =
-        &["script", "refresh", "clipboard", "open-path", "open"];
+        &["script", "refresh", "clipboard", "open-path", "open", "run"];
 
     /// The grant it cannot run without, when it needs one of its own.
     pub fn needs(&self) -> Option<Grant> {
         match self {
             Self::Clipboard(_) => Some(Grant::Clipboard),
             Self::OpenPath(_) => Some(Grant::OpenPath),
-            Self::Script(_) | Self::Refresh(_) | Self::Open(_) => None,
+            Self::Script(_) | Self::Refresh(_) | Self::Open(_) | Self::Run(_) => None,
         }
     }
 }
@@ -228,7 +338,7 @@ impl Does {
 /// What an extension may reach beyond drawing. Only the grants this build
 /// enforces exist here; the decoder names the change that brings any
 /// other.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum Grant {
     /// Reading files beneath the checkout the surface is on.
     ReadCheckout,
@@ -236,27 +346,70 @@ pub enum Grant {
     Clipboard,
     /// Opening a file inside the checkout, on a gesture.
     OpenPath,
+    /// Keeping a store per project.
+    Store,
+    /// Keeping one store for the machine, across projects.
+    StoreGlobal,
+    /// Running the program of this name, at the path pinned when the
+    /// extension was enabled.
+    Exec(String),
 }
 
 impl Grant {
-    pub const ALL: &'static [Grant] = &[Self::ReadCheckout, Self::Clipboard, Self::OpenPath];
+    /// The grants named by a fixed word; `exec:<name>` is the one family.
+    pub const FIXED: &'static [Grant] = &[
+        Self::ReadCheckout,
+        Self::Clipboard,
+        Self::OpenPath,
+        Self::Store,
+        Self::StoreGlobal,
+    ];
+    pub const EXEC: &'static str = "exec:";
 
     pub fn parse(name: &str) -> Option<Self> {
-        Self::ALL.iter().copied().find(|grant| grant.name() == name)
+        if let Some(program) = name.strip_prefix(Self::EXEC) {
+            return is_program_name(program).then(|| Self::Exec(program.to_owned()));
+        }
+        Self::FIXED
+            .iter()
+            .find(|grant| grant.name() == name)
+            .cloned()
     }
 
-    pub fn name(self) -> &'static str {
-        match self {
+    pub fn name(&self) -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(match self {
             Self::ReadCheckout => "read:checkout",
             Self::Clipboard => "clipboard",
             Self::OpenPath => "open-path",
+            Self::Store => "store",
+            Self::StoreGlobal => "store:global",
+            Self::Exec(program) => return format!("{}{program}", Self::EXEC).into(),
+        })
+    }
+
+    /// The program an `exec:` grant covers.
+    pub fn program(&self) -> Option<&str> {
+        match self {
+            Self::Exec(program) => Some(program),
+            _ => None,
         }
     }
 }
 
+/// A program's name as `exec:` spells it: a file name a search path can
+/// hold, never a path.
+pub fn is_program_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && !name.starts_with(['.', '-'])
+        && name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-' | '+'))
+}
+
 impl std::fmt::Display for Grant {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.name())
+        f.write_str(&self.name())
     }
 }
 
@@ -364,13 +517,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_grant_is_one_of_the_three_this_build_enforces() {
-        for grant in Grant::ALL {
-            assert_eq!(Grant::parse(grant.name()), Some(*grant));
+    fn a_grant_is_one_this_build_enforces() {
+        for grant in Grant::FIXED {
+            assert_eq!(Grant::parse(&grant.name()), Some(grant.clone()));
         }
-        for later in ["net", "exec:gh", "write:checkout", "open_path", "Clipboard"] {
+        assert_eq!(Grant::parse("exec:gh"), Some(Grant::Exec("gh".into())));
+        assert_eq!(Grant::Exec("nvidia-smi".into()).name(), "exec:nvidia-smi");
+        for later in [
+            "net",
+            "write:checkout",
+            "open_path",
+            "Clipboard",
+            "exec:",
+            "exec:../gh",
+            "exec:/usr/bin/gh",
+            "exec:-x",
+            "exec:a b",
+        ] {
             assert_eq!(Grant::parse(later), None, "{later}");
         }
+    }
+
+    #[test]
+    fn a_program_runs_for_at_most_the_host_limit() {
+        let mut program = Program::new(vec!["nvidia-smi".into()]);
+        assert_eq!(program.time_limit(), PROGRAM_TIME_LIMIT);
+        assert!(!program.is_packaged());
+        program.timeout = Some(Duration::from_secs(60));
+        assert_eq!(program.time_limit(), PROGRAM_TIME_LIMIT);
+        program.timeout = Some(Duration::from_secs(2));
+        assert_eq!(program.time_limit(), Duration::from_secs(2));
+        assert!(Program::new(vec!["./bin/meter".into()]).is_packaged());
     }
 
     #[test]

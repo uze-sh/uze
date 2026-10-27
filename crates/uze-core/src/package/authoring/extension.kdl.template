@@ -23,3 +23,17 @@ source "live" {
     input title="This week"
     every "30s"
 }
+
+// When a script cannot answer, a program can: an argv the host runs once
+// per question, never through a shell, confined to reading the checkout
+// where this machine can. A bare name runs only under its `exec:` grant,
+// pinned to the path found when the extension is enabled; a value put in
+// from `input` goes after `--`, so it can never be read as a flag.
+//
+// wants "exec:git"
+// source "recent" {
+//     run "git" "log" "--format=%h%x09%s" "-n" "5"
+//     output "lines"
+//     fields "hash" "subject"
+//     every "60s"
+// }

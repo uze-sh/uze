@@ -56,11 +56,13 @@ pub struct Envelope {
     pub refresh: Vec<String>,
     pub toast: Option<String>,
     pub notice: Option<String>,
+    /// Keys of the extension's store to replace, `null` removing one.
+    pub store: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 impl Envelope {
-    /// The members a script's answer may hold.
-    pub const MEMBERS: &'static [&'static str] = &["data", "refresh", "toast", "notice"];
+    /// The members an answer may hold.
+    pub const MEMBERS: &'static [&'static str] = &["data", "refresh", "toast", "notice", "store"];
 
     /// An envelope holding `data` alone, as a fixture answers.
     pub fn data(data: serde_json::Value) -> Self {

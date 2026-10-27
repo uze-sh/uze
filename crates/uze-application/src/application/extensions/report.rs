@@ -122,6 +122,13 @@ pub fn grant_meaning(grant: &str) -> &'static str {
         Some(uze_contract::Grant::ReadCheckout) => "reads the files of the checkout in front",
         Some(uze_contract::Grant::Clipboard) => "copies text you choose to the clipboard",
         Some(uze_contract::Grant::OpenPath) => "opens a file of the checkout in its program",
+        Some(uze_contract::Grant::Store) => {
+            "keeps what it remembers for this project in UZE's state"
+        }
+        Some(uze_contract::Grant::StoreGlobal) => {
+            "keeps what it remembers in UZE's state, shared by every project"
+        }
+        Some(uze_contract::Grant::Exec(_)) => "runs this program on your machine",
         None => "a grant this build does not know",
     }
 }
@@ -215,7 +222,7 @@ impl Extensions<'_> {
                 report.grants = manifest
                     .wants
                     .iter()
-                    .map(|grant| grant.name().to_owned())
+                    .map(|grant| grant.name().into_owned())
                     .collect::<BTreeSet<_>>()
                     .into_iter()
                     .collect();
@@ -228,7 +235,7 @@ impl Extensions<'_> {
                     Ok(ExtensionState::Held { new_grants }) => {
                         report.new_grants = new_grants
                             .iter()
-                            .map(|grant| grant.name().to_owned())
+                            .map(|grant| grant.name().into_owned())
                             .collect();
                         ExtensionCondition::Held
                     }

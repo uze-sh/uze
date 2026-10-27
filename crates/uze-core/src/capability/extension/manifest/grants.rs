@@ -12,9 +12,6 @@ use crate::capability::extension::document::{Report, nearest};
 /// The grants later changes bring, by name or by prefix (`exec:` stands
 /// for every `exec:<program>`), with the change that brings each.
 const LATER: &[(&str, u32)] = &[
-    ("exec:", 5),
-    ("exec", 5),
-    ("store", 5),
     ("agent:", 6),
     ("notify", 6),
     ("resident", 7),
@@ -47,6 +44,25 @@ fn grant(name: &str, offset: usize, report: &mut Report<'_>) -> Option<Grant> {
     if let Some(grant) = Grant::parse(name) {
         return Some(grant);
     }
+    if let Some(program) = name.strip_prefix(Grant::EXEC) {
+        report.at(
+            offset,
+            format!("`{program}` is not a program's name"),
+            Some(
+                "write `exec:` and the name the program is run by, such as `exec:nvidia-smi`"
+                    .to_owned(),
+            ),
+        );
+        return None;
+    }
+    if name == "exec" {
+        report.at(
+            offset,
+            "`exec` names the program it grants",
+            Some("write `exec:<program>`, such as `exec:nvidia-smi`".to_owned()),
+        );
+        return None;
+    }
     if name == "write:checkout" {
         report.at(
             offset,
@@ -63,7 +79,11 @@ fn grant(name: &str, offset: usize, report: &mut Report<'_>) -> Option<Grant> {
         );
         return None;
     }
-    let names: Vec<&str> = Grant::ALL.iter().map(|grant| grant.name()).collect();
+    let names: Vec<String> = Grant::FIXED
+        .iter()
+        .map(|grant| grant.name().into_owned())
+        .collect();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
     report.at(
         offset,
         format!("there is no grant `{name}`"),
@@ -89,9 +109,10 @@ pub fn later(name: &str) -> Option<u32> {
 }
 
 fn offered() -> String {
-    let names: Vec<String> = Grant::ALL
+    let names: Vec<String> = Grant::FIXED
         .iter()
         .map(|grant| format!("`{grant}`"))
+        .chain(["`exec:<program>`".to_owned()])
         .collect();
     format!("this version offers {}", names.join(", "))
 }

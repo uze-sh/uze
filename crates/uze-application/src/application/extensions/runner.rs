@@ -149,7 +149,7 @@ impl ExtensionRunner {
             Ok(state) => return Answer::withheld(withheld_because(&state)),
             Err(error) => return Answer::withheld(error.to_string()),
         }
-        let grants: Grants = load.compiled.manifest.wants.iter().copied().collect();
+        let grants: Grants = load.compiled.manifest.wants.iter().cloned().collect();
         let asked = Asked {
             identity: identity.clone(),
             asking: question.asking,
@@ -215,7 +215,7 @@ impl ExtensionRunner {
             Err(refused) => return Some(Answer::withheld(refused.reason())),
         };
         let input = serde_json::to_value(&declared.input).unwrap_or_default();
-        let grants: Grants = compiled.manifest.wants.iter().copied().collect();
+        let grants: Grants = compiled.manifest.wants.iter().cloned().collect();
         let asked = Asked {
             identity: identity.clone(),
             asking: Asking::Source,
@@ -302,7 +302,10 @@ fn withheld_because(state: &ExtensionState) -> String {
         ExtensionState::NeedsConsent { .. } => "needs consent".to_owned(),
         ExtensionState::NeedsEnabling => "needs enabling in this project".to_owned(),
         ExtensionState::Held { new_grants } => {
-            let grants: Vec<&str> = new_grants.iter().map(|grant| grant.name()).collect();
+            let grants: Vec<String> = new_grants
+                .iter()
+                .map(|grant| grant.name().into_owned())
+                .collect();
             format!(
                 "held: its update wants {}, which nobody accepted",
                 grants.join(", ")

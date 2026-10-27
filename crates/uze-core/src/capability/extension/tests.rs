@@ -1030,3 +1030,40 @@ fn a_loaded_extension_missing_a_file_says_so() {
         "{errors:?}"
     );
 }
+
+#[test]
+fn a_packaged_script_needs_its_interpreters_grant_and_must_exist() {
+    let manifest = |wants: &str| {
+        MANIFEST.replace(
+            "source \"board\" { fixture \"fixtures/board.json\"; }",
+            &format!("{wants}\nsource \"board\" {{ run \"./bin/meter\"; }}"),
+        )
+    };
+    let compile_with = |wants: &str, meter: &str| {
+        let manifest = manifest(wants);
+        let mut files = gsd_files(&manifest, BOARD).to_vec();
+        if !meter.is_empty() {
+            files.push(("bin/meter", meter));
+        }
+        let dir = plugin("extension-program", &[("gsd-band", &files)]);
+        compile_in(dir.path(), "gsd-band")
+    };
+    let refused = compile_with("", "#!/usr/bin/env python3\nprint(1)\n").unwrap_err();
+    assert!(
+        refused[0]
+            .message
+            .contains("is a script run by `python3`, which needs `exec:python3`"),
+        "{refused:?}"
+    );
+    compile_with(
+        "wants \"exec:python3\"",
+        "#!/usr/bin/env python3\nprint(1)\n",
+    )
+    .expect("granted interpreter");
+    compile_with("", "\x7fELF").expect("a program of its own needs no grant");
+    let missing = compile_with("", "").unwrap_err();
+    assert!(
+        missing[0].message.contains("the program `bin/meter`"),
+        "{missing:?}"
+    );
+}

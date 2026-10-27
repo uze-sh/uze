@@ -249,18 +249,165 @@ fn a_source_is_answered_by_exactly_one_thing() {
     assert_eq!(not_rhai, "`board.js` is not a `.rhai` file");
 }
 
+/// GSD with its fixture replaced by `answer`, wanting `wants`, plus `extra`
+/// top-level nodes.
+fn running(answer: &str, wants: &str, extra: &str) -> String {
+    GSD.replace(
+        "source \"board\" { fixture \"fixtures/board.json\"; }",
+        &format!("{wants}\nsource \"board\" {{\n    {answer}\n}}\n{extra}"),
+    )
+}
+
 #[test]
-fn a_program_is_decoded_and_refused_naming_its_change() {
-    let diagnostics = refusals(&GSD.replace(
-        "fixture \"fixtures/board.json\"",
-        "run \"./bin/meter\" \"--json\"",
+fn a_program_is_an_argv_with_an_optional_lower_time_limit() {
+    let manifest = decoded(&running(
+        r#"run "./bin/meter" "--json" timeout="5s""#,
+        "",
+        "",
     ));
-    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
-    assert_eq!(
-        diagnostics[0].message,
-        "programs arrive in a later change (change 5)"
+    let SourceKind::Run(program) = &manifest.source("board").unwrap().kind else {
+        panic!("not a program");
+    };
+    assert_eq!(program.argv, ["./bin/meter", "--json"]);
+    assert_eq!(program.timeout, Some(std::time::Duration::from_secs(5)));
+    assert!(
+        first_message(&running(r#"run "./bin/meter" timeout="1m""#, "", ""))
+            .contains("a program runs for at most 10s")
     );
-    assert_eq!(diagnostics[0].line, 8);
+}
+
+#[test]
+fn a_shell_string_or_a_path_out_of_the_extension_is_refused() {
+    assert!(
+        first_message(&running(r#"run "openspec list --json | jq .""#, "", ""))
+            .contains("a program is an argv array")
+    );
+    for outside in ["../bin/tool", "./../bin/tool", "/usr/bin/tool"] {
+        assert!(
+            first_message(&running(&format!("run \"{outside}\""), "", ""))
+                .contains("is not a path inside the extension's directory"),
+            "{outside}"
+        );
+    }
+}
+
+#[test]
+fn a_bare_program_needs_its_exec_grant_and_uze_is_never_granted() {
+    let source = r#"run "nvidia-smi" "--query-gpu=name""#;
+    assert_eq!(
+        first_message(&running(source, "", "")),
+        "the source `board` runs `nvidia-smi`, which needs `exec:nvidia-smi`"
+    );
+    let manifest = decoded(&running(source, r#"wants "exec:nvidia-smi""#, ""));
+    assert_eq!(manifest.programs().collect::<Vec<_>>(), ["nvidia-smi"]);
+    assert!(
+        first_message(&running(
+            r#"run "uze" "install""#,
+            r#"wants "exec:uze""#,
+            ""
+        ))
+        .contains("`exec:uze` is never granted")
+    );
+}
+
+#[test]
+fn a_substituted_value_follows_a_double_dash() {
+    let before = refusals(&running(r#"run "./bin/archive" "{name}""#, "", ""));
+    assert!(before[0].message.contains("before `--`"), "{before:?}");
+    decoded(&running(r#"run "./bin/archive" "--" "{name}""#, "", ""));
+    decoded(&running(r#"run "./bin/archive" "--name={name}""#, "", ""));
+}
+
+#[test]
+fn a_program_source_is_asked_at_most_every_thirty_seconds() {
+    let every = |every: &str| {
+        running(
+            &format!("run \"./bin/meter\"\n    every \"{every}\""),
+            "",
+            "",
+        )
+    };
+    assert!(first_message(&every("10s")).contains("`every` is at least 30s for a program"));
+    decoded(&every("30s"));
+}
+
+#[test]
+fn lines_name_their_fields_and_only_a_program_has_an_output() {
+    let manifest = decoded(&running(
+        "run \"./bin/meter\"\n    output \"lines\" separator=\",\"\n    fields \"name\" \"load\"\n    store",
+        "",
+        "",
+    ));
+    let source = manifest.source("board").unwrap();
+    assert_eq!(
+        source.output,
+        uze_contract::Output::Lines {
+            fields: vec!["name".into(), "load".into()],
+            separator: ','
+        }
+    );
+    assert!(source.with_store);
+    assert!(
+        first_message(&running(
+            "run \"./bin/meter\"\n    output \"lines\"",
+            "",
+            ""
+        ))
+        .contains("names the fields of a line")
+    );
+    assert!(
+        first_message(&running(
+            "script \"board.rhai\"\n    output \"json\"",
+            "",
+            ""
+        ))
+        .contains("this source runs no program")
+    );
+    assert_eq!(
+        first_message(&running("run \"./bin/meter\"\n    output \"csv\"", "", "")),
+        "there is no output `csv`"
+    );
+}
+
+#[test]
+fn an_exec_names_what_a_wanted_program_reads() {
+    let manifest = decoded(&running(
+        r#"run "nvidia-smi""#,
+        r#"wants "exec:nvidia-smi""#,
+        r#"exec "nvidia-smi" { reads "/dev/nvidiactl" "/dev/dxg"; }"#,
+    ));
+    assert_eq!(
+        manifest.reads_of("nvidia-smi"),
+        ["/dev/nvidiactl", "/dev/dxg"]
+    );
+    assert!(
+        first_message(&running(
+            r#"script "board.rhai""#,
+            "",
+            r#"exec "gh" { reads "/dev/null"; }"#
+        ))
+        .contains("names a program the manifest does not want")
+    );
+    assert!(
+        first_message(&running(
+            r#"run "nvidia-smi""#,
+            r#"wants "exec:nvidia-smi""#,
+            r#"exec "nvidia-smi" { reads "dev/x"; }"#,
+        ))
+        .contains("is not an absolute path")
+    );
+}
+
+#[test]
+fn an_action_runs_a_program() {
+    let manifest = decoded(&GSD.replace(
+        "source \"board\"",
+        "action \"go\" label=\"Go\" on=\"board\" { run \"./bin/go\" \"--\" \"{name}\"; }\nsource \"board\"",
+    ));
+    let uze_contract::Does::Run(program) = &manifest.action("go").unwrap().does else {
+        panic!("not a program");
+    };
+    assert_eq!(program.argv, ["./bin/go", "--", "{name}"]);
 }
 
 #[test]
@@ -337,12 +484,20 @@ fn only_the_grants_this_version_enforces_are_accepted() {
             &format!("wants {grants}\nsource \"board\""),
         )
     };
-    decoded(&wanting("\"read:checkout\" \"clipboard\" \"open-path\""));
+    decoded(&wanting(
+        "\"read:checkout\" \"clipboard\" \"open-path\" \"store\" \"store:global\" \"exec:gh\"",
+    ));
+    assert_eq!(
+        the_message(&wanting("\"exec:../gh\"")),
+        "`../gh` is not a program's name"
+    );
+    assert_eq!(
+        the_message(&wanting("\"exec\"")),
+        "`exec` names the program it grants"
+    );
     for (grant, change) in [
         ("net", 8),
         ("secret", 8),
-        ("exec:gh", 5),
-        ("store", 5),
         ("agent:prompt", 6),
         ("notify", 6),
         ("resident", 7),

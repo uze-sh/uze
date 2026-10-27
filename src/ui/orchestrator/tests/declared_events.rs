@@ -54,6 +54,7 @@ fn compiled(every: Option<Duration>, refresh_on: Vec<EventName>) -> CompiledExte
             wants: Vec::new(),
             sources: vec![source],
             actions: Vec::new(),
+            exec: Vec::new(),
         },
         views: BTreeMap::from([("band.kdl".to_owned(), view)]),
     }

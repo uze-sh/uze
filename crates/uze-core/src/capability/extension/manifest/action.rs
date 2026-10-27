@@ -136,6 +136,7 @@ fn what(child: &KdlNode, report: &mut Report<'_>) -> Option<(Does, Vec<usize>)> 
                     Vec::new(),
                 )
             }),
+        "run" => super::program(child, report).map(|program| (Does::Run(program), Vec::new())),
         "open-path" => text(child, report)
             .filter(|path| template(path, at, report))
             .map(|path| {
