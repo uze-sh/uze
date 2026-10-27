@@ -1,184 +1,135 @@
 {
  "harness": "antigravity",
- "harness_version": "1.3.5",
- "recorded_at": "2026-10-14",
+ "harness_version": "1.4.8",
+ "recorded_at": "2026-10-27",
  "tools": {
   "ask_question": [
-   "questions",
-   "toolAction",
-   "toolSummary"
+   "questions"
   ],
   "call_mcp_tool": [
    "Arguments",
    "ServerName",
-   "ToolName",
-   "toolAction",
-   "toolSummary"
+   "ToolName"
   ],
   "define_subagent": [
-   "description",
-   "enable_mcp_tools",
-   "enable_subagent_tools",
-   "enable_write_tools",
-   "name",
-   "system_prompt",
-   "toolAction",
-   "toolSummary"
+   "Description",
+   "EnableMCPTools",
+   "EnableSubagentTools",
+   "EnableWriteTools",
+   "Name",
+   "SystemPrompt"
+  ],
+  "edit_file": [
+   "ArtifactMetadata",
+   "Path",
+   "Replacement",
+   "Target"
   ],
   "generate_image": [
    "AspectRatio",
    "ImageName",
    "ImagePaths",
-   "Prompt",
-   "toolAction",
-   "toolSummary"
+   "Prompt"
   ],
   "invoke_subagent": [
-   "Subagents",
-   "toolAction",
-   "toolSummary"
+   "Model",
+   "Prompt",
+   "Role",
+   "TypeName",
+   "Workspace"
   ],
   "list_resources": [
-   "ServerName",
-   "toolAction",
-   "toolSummary"
+   "ServerName"
   ],
   "manage_subagents": [
    "Action",
-   "ConversationIds",
-   "toolAction",
-   "toolSummary"
+   "ConversationIds"
   ],
   "manage_task": [
    "Action",
    "Input",
-   "TaskId",
-   "toolAction",
-   "toolSummary"
+   "TaskId"
+  ],
+  "read_file": [
+   "ByteOffset",
+   "EndLine",
+   "Path",
+   "StartLine"
   ],
   "read_resource": [
    "ServerName",
-   "Uri",
-   "toolAction",
-   "toolSummary"
+   "Uri"
   ],
   "read_url_content": [
-   "Url",
-   "toolAction",
-   "toolSummary"
-  ],
-  "replace_file_content": [
-   "AllowMultiple",
-   "Description",
-   "EndLine",
-   "Instruction",
-   "ReplacementContent",
-   "StartLine",
-   "TargetContent",
-   "TargetFile",
-   "TargetLintErrorIds",
-   "toolAction",
-   "toolSummary"
+   "Url"
   ],
   "run_command": [
    "CommandLine",
-   "Cwd",
    "IsDaemon",
-   "RequestedTerminalID",
-   "RunPersistent",
    "WaitMsBeforeAsync",
-   "toolAction",
    "toolSummary"
   ],
   "schedule": [
    "CronExpression",
    "DurationSeconds",
+   "ExactTiming",
    "IsDaemon",
    "MaxIterations",
    "Prompt",
-   "TimerCondition",
-   "toolAction",
-   "toolSummary"
+   "TimerCondition"
   ],
   "search_web": [
    "domain",
-   "query",
-   "toolAction",
-   "toolSummary"
+   "query"
   ],
   "send_message": [
    "Message",
-   "Recipient",
-   "toolAction",
-   "toolSummary"
+   "Recipient"
   ],
   "view_file": [
    "AbsolutePath",
    "ContentOffset",
    "EndLine",
-   "StartLine",
-   "toolAction",
-   "toolSummary"
+   "StartLine"
   ],
-  "write_to_file": [
+  "write_file": [
    "Append",
    "ArtifactMetadata",
-   "CodeContent",
-   "Description",
+   "Content",
    "Overwrite",
-   "TargetFile",
-   "toolAction",
-   "toolSummary"
+   "Path"
   ]
  },
  "hook_tools": {
-  "invoke_subagent": [
-   "Subagents",
-   "toolAction",
-   "toolSummary"
+  "edit_file": [
+   "Path",
+   "Replacement",
+   "Target"
   ],
-  "replace_file_content": [
-   "AllowMultiple",
-   "Description",
-   "EndLine",
-   "Instruction",
-   "ReplacementContent",
-   "StartLine",
-   "TargetContent",
-   "TargetFile",
-   "toolAction",
-   "toolSummary"
+  "invoke_subagent": [
+   "Prompt",
+   "Role",
+   "TypeName"
+  ],
+  "read_file": [
+   "Path"
   ],
   "run_command": [
    "CommandLine",
-   "Cwd",
    "WaitMsBeforeAsync",
-   "toolAction",
    "toolSummary"
   ],
   "search_web": [
-   "query",
-   "toolAction",
-   "toolSummary"
+   "query"
   ],
   "send_message": [
    "Message",
-   "Recipient",
-   "toolAction",
-   "toolSummary"
+   "Recipient"
   ],
-  "view_file": [
-   "AbsolutePath",
-   "toolAction",
-   "toolSummary"
-  ],
-  "write_to_file": [
-   "CodeContent",
-   "Description",
+  "write_file": [
+   "Content",
    "Overwrite",
-   "TargetFile",
-   "toolAction",
-   "toolSummary"
+   "Path"
   ]
  }
 }

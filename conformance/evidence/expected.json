@@ -56,7 +56,8 @@
       "versions": [
         "1.2.17",
         "1.3.3",
-        "1.4.4"
+        "1.4.4",
+        "1.4.8"
       ],
       "observed_at": "2026-10-05"
     },
@@ -145,7 +146,8 @@
       "measurement": "typing `/compact` answers `Unknown command: /compact` and the next turn's request still carries the first turn's prompt",
       "versions": [
         "1.4.2",
-        "1.4.4"
+        "1.4.4",
+        "1.4.8"
       ],
       "observed_at": "2026-10-19"
     },
@@ -157,19 +159,8 @@
       "measurement": "the post-tool guard ran on the marked command, and its reason never reached the conversation",
       "versions": [
         "1.4.3",
-        "1.4.4"
-      ],
-      "observed_at": "2026-10-20"
-    },
-    {
-      "harness": "antigravity",
-      "check": "hooks-api-key-mode-runs-no-hook",
-      "suite": "hooks > api-key",
-      "reason": "The same vendor-format control hook that denies in the vertical's signed-in session runs nothing under GEMINI_API_KEY: google-antigravity/antigravity-cli#893, fixed in 1.1.25 and back on 1.4.3. The declaration fails the day the hook fires under an API key again.",
-      "measurement": "the hook loaded but never ran under GEMINI_API_KEY, and the command ran",
-      "versions": [
-        "1.4.3",
-        "1.4.4"
+        "1.4.4",
+        "1.4.8"
       ],
       "observed_at": "2026-10-20"
     }

@@ -97,10 +97,11 @@ STRUCT_PATH = os.environ.get("PROVIDER_STRUCT", "/tmp/agy-provider-struct.json")
 RESP_SSE = os.environ.get("PROVIDER_RESP", "")
 MODE = os.environ.get("PROVIDER_MODE", "static")
 # Arguments are scripted in the shape the tool declares to the model
-# (`parametersJsonSchema`, PascalCase plus the `toolSummary`/`toolAction`
-# pair every AGY tool requires): the harness validates a call against that
-# schema before any hook runs or any tool executes, and rejects the rest as
-# "invalid arguments" — a turn that settles with no hook and no tool.
+# (`parametersJsonSchema`, PascalCase; 1.4.7 dropped the `toolAction` every
+# tool carried and kept `toolSummary` on `run_command` alone): the harness
+# validates a call against that schema before any hook runs or any tool
+# executes, and rejects the rest as "additional properties … not allowed" —
+# a turn that settles with no hook and no tool.
 #
 # `ServerName` is the name the harness gives the server at load time, not
 # the one the plugin declares: since 1.2.2 a server bundled in a plugin is
@@ -112,7 +113,7 @@ MODE = os.environ.get("PROVIDER_MODE", "static")
 FC_ARGS = json.loads(
     os.environ.get(
         "FC_ARGS",
-        '{"ServerName":"uze-mcp-conformance_uze-conformance","ToolName":"uze_conformance","Arguments":{},"toolSummary":"Conformance proof","toolAction":"Calling MCP tool"}',
+        '{"ServerName":"uze-mcp-conformance_uze-conformance","ToolName":"uze_conformance","Arguments":{}}',
     )
 )
 FINAL_TEXT = os.environ.get("FINAL_TEXT", "UZE_CONFORMANCE_PASS")

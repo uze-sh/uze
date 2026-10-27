@@ -824,8 +824,7 @@
       "stdout": {
         "decision": "allow",
         "overwrite": {
-          "CommandLine": "echo rewritten",
-          "Cwd": "/repo"
+          "CommandLine": "echo rewritten"
         }
       },
       "stderr": ""

@@ -153,8 +153,6 @@ def run(cfg, prov_ip):
             "ServerName": f"{PLUGIN}_{SERVER}",
             "ToolName": TOOL,
             "Arguments": {},
-            "toolSummary": "Remote proof",
-            "toolAction": "Calling MCP tool",
         }
         prov_ip = common.start_provider(
             cfg, "toolcall", {"FC_ARGS": json.dumps(args), "MCP_PROOF": PROOF}

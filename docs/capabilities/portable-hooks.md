@@ -205,9 +205,9 @@ compatibility verdicts.
 | Alias | Fields | Claude Code | Codex | Antigravity CLI | OpenCode |
 |---|---|---|---|---|---|
 | `shell` | `HOOK_COMMAND` | `Bash` / `command` | `Bash` / `command` | `run_command` / `CommandLine` | `shell` / `command` |
-| `file.read` | `HOOK_PATH` | `Read` / `file_path` | — | `view_file` / `AbsolutePath` | `read` / `path` |
-| `file.write` | `HOOK_PATH` | `Write` / `file_path` | — ¹ | `write_to_file` / `TargetFile` | `write` / `path` |
-| `file.edit` | `HOOK_PATH` | `Edit` / `file_path` | — ¹ | `replace_file_content` / `TargetFile` | `edit` / `path` |
+| `file.read` | `HOOK_PATH` | `Read` / `file_path` | — | `read_file` / `Path` | `read` / `path` |
+| `file.write` | `HOOK_PATH` | `Write` / `file_path` | — ¹ | `write_file` / `Path` | `write` / `path` |
+| `file.edit` | `HOOK_PATH` | `Edit` / `file_path` | — ¹ | `edit_file` / `Path` | `edit` / `path` |
 | `search.files` | `HOOK_QUERY` | `Grep` / `pattern` ² | — | — | `grep` / `pattern` |
 | `search.web` | `HOOK_QUERY` | `WebSearch` / `query` | — | `search_web` / `query` | `websearch` / `query` |
 | `agent.spawn` | — | `Agent` | `collaborationspawn_agent` | `invoke_subagent` | `subagent` |
@@ -216,7 +216,7 @@ compatibility verdicts.
 Every name is measured, never recalled: it is the name and the input
 field a real call reached a hook with, recorded by the Conformance Lab's
 census (`conformance/evidence/tools/<harness>.json`, Claude Code 2.1.290,
-codex-cli 0.160.1, Antigravity 1.3.3, OpenCode 2.0.23), and
+codex-cli 0.160.1, Antigravity 1.4.8, OpenCode 2.0.23), and
 `cargo test` fails on a table entry a later census contradicts. A
 `native:<tool>` matcher bypasses the table entirely: the handler receives
 `HOOK_TOOL_NATIVE` and `HOOK_INPUT`, with `HOOK_TOOL` empty. A group whose

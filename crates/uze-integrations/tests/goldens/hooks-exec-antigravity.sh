@@ -100,9 +100,9 @@ portable_fields() {
   HOOK_TOOL= HOOK_COMMAND= HOOK_PATH= HOOK_QUERY=
   case "$HOOK_TOOL_NATIVE" in                     # the portable vocabulary
     run_command) HOOK_TOOL=shell; HOOK_COMMAND=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.CommandLine // empty'); ;;
-    view_file) HOOK_TOOL=file.read; HOOK_PATH=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.AbsolutePath // empty'); ;;
-    write_to_file) HOOK_TOOL=file.write; HOOK_PATH=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.TargetFile // empty'); ;;
-    replace_file_content) HOOK_TOOL=file.edit; HOOK_PATH=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.TargetFile // empty'); ;;
+    read_file) HOOK_TOOL=file.read; HOOK_PATH=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.Path // empty'); ;;
+    write_file) HOOK_TOOL=file.write; HOOK_PATH=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.Path // empty'); ;;
+    edit_file) HOOK_TOOL=file.edit; HOOK_PATH=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.Path // empty'); ;;
     search_web) HOOK_TOOL=search.web; HOOK_QUERY=$(printf '%s' "$HOOK_INPUT" | "$JQ" -r '.query // empty'); ;;
     invoke_subagent) HOOK_TOOL=agent.spawn; ;;
     send_message) HOOK_TOOL=agent.message; ;;

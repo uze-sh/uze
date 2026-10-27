@@ -9,7 +9,7 @@ so the synthetic provider's capture is the evidence. What a model then does
 with the text is not measured here.
 
 Each world is one headless `agy --print` turn, signed in, whose provider
-scripts a `view_file` per path in `READS`, in order. Each rule's body
+scripts a `read_file` per path in `READS`, in order. Each rule's body
 carries its own marker; the judge records, per marker, the first model
 request carrying it, how many reads had returned by then, and where it sat
 (`systemInstruction`, a user-role step, a function response).
@@ -216,27 +216,16 @@ def _prelude(rules, reads):
 def _reads(reads, write=None):
     calls = [
         {
-            "name": "view_file",
-            "args": {
-                "AbsolutePath": f"{PROJECT}/{rel}",
-                "toolSummary": "Lab read",
-                "toolAction": "Reading file",
-            },
+            "name": "read_file",
+            "args": {"Path": f"{PROJECT}/{rel}"},
         }
         for rel in reads
     ]
     if write:
         calls.append(
             {
-                "name": "write_to_file",
-                "args": {
-                    "TargetFile": f"{PROJECT}/{write}",
-                    "CodeContent": "lab",
-                    "Description": "lab",
-                    "Overwrite": True,
-                    "toolSummary": "Lab write",
-                    "toolAction": "Writing file",
-                },
+                "name": "write_file",
+                "args": {"Path": f"{PROJECT}/{write}", "Content": "lab", "Overwrite": True},
             }
         )
     return calls

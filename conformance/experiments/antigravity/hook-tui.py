@@ -52,8 +52,7 @@ from harnesses.antigravity.scenarios import (
 from shared import common
 
 ARGS = (
-    '{"CommandLine":"echo API secrets","Cwd":"/work","WaitMsBeforeAsync":2000,'
-    '"toolSummary":"Command execution","toolAction":"Running command"}'
+    '{"CommandLine":"echo API secrets","WaitMsBeforeAsync":2000,"toolSummary":"Command execution"}'
 )
 GLOBAL_HOOKS = "/work/home/.gemini/config/hooks.json"
 VENDOR_HOOK = (

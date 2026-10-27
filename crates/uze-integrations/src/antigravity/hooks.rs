@@ -84,9 +84,11 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
 
 /// Measured, never recalled: every native name and field here is the one a
 /// Lab census saw a call reach a hook with (`hook_tools` in
-/// `conformance/evidence/tools/antigravity.json`, 1.3.3), and
+/// `conformance/evidence/tools/antigravity.json`, 1.4.8), and
 /// `hooks::measured_tests` fails on any that a later census contradicts.
-/// 1.3.3 offers no `grep_search`, so `search.files` stays unbound.
+/// 1.4.7 renamed the file tools to `read_file`, `write_file` and `edit_file`,
+/// each naming its file `Path`; no build offers a file search since 1.3.3, so
+/// `search.files` stays unbound.
 const TOOLS: &[ToolBinding] = &[
     ToolBinding {
         alias: "shell",
@@ -96,21 +98,21 @@ const TOOLS: &[ToolBinding] = &[
     },
     ToolBinding {
         alias: "file.read",
-        native_tool: Some("view_file"),
+        native_tool: Some("read_file"),
         also_matches: &[],
-        fields: &[("path", "AbsolutePath")],
+        fields: &[("path", "Path")],
     },
     ToolBinding {
         alias: "file.write",
-        native_tool: Some("write_to_file"),
+        native_tool: Some("write_file"),
         also_matches: &[],
-        fields: &[("path", "TargetFile")],
+        fields: &[("path", "Path")],
     },
     ToolBinding {
         alias: "file.edit",
-        native_tool: Some("replace_file_content"),
+        native_tool: Some("edit_file"),
         also_matches: &[],
-        fields: &[("path", "TargetFile")],
+        fields: &[("path", "Path")],
     },
     ToolBinding {
         alias: "search.files",

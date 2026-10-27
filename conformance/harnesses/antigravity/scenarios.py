@@ -408,8 +408,7 @@ def phase_tui(cfg, prov_ip):
 
 
 RUN_COMMAND_ARGS = (
-    '{"CommandLine":"%s","Cwd":"/work","WaitMsBeforeAsync":2000,'
-    '"toolSummary":"Command execution","toolAction":"Running command"}'
+    '{"CommandLine":"%s","WaitMsBeforeAsync":2000,"toolSummary":"Command execution"}'
 )
 
 #: A deny hook in the vendor's own file format at the vendor's own shared
@@ -624,7 +623,9 @@ def phase_hooks_api_key_mode(cfg, prov_ip):
     under the API key again. It is a declaration again, registered for the
     versions it was measured on, so the regression stays on the report
     without holding every pull request hostage to a vendor release — and
-    the build that fixes it escalates the declaration once more.
+    the build that fixes it escalates the declaration once more. 1.4.8 ran
+    the hook under the API key again (2026-10-27), and the mode is asserted
+    again.
     """
     outcome = hook_turn(
         cfg,
@@ -638,19 +639,15 @@ def phase_hooks_api_key_mode(cfg, prov_ip):
     if outcome is None:
         return
     executes = bool(outcome["markers"].get("blocked by protect-env"))
-    # 1.4.3 brought #893 back, and it is carried as a declaration again,
-    # registered for that version alone: the run keeps measuring, and the
-    # build that runs the hook again escalates it back to an assertion.
-    declare(
-        "hooks-api-key-mode-runs-no-hook",
-        not executes,
-        "Antigravity loads a vendor-format hook under GEMINI_API_KEY and "
-        "never runs it, while the same hook denies signed in "
-        "(google-antigravity/antigravity-cli#893, back on 1.4.3)",
-        "the hook loaded but never ran under GEMINI_API_KEY"
+    check(
+        "hooks-api-key-mode-hook-executes",
+        executes,
+        "the vendor-format deny hook fires under GEMINI_API_KEY as it does "
+        "signed in (`blocked by protect-env` reached the conversation)"
+        if executes
+        else "the hook loaded but never ran under GEMINI_API_KEY"
         + (" — the permission prompt surfaced instead" if outcome["prompted"] else "")
-        if not executes
-        else "the vendor-format deny hook fired under GEMINI_API_KEY",
+        + " (google-antigravity/antigravity-cli#893 is back)",
     )
 
 

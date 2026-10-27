@@ -188,19 +188,13 @@ timeout 240 agy --print {shlex.quote(prompt)} --dangerously-skip-permissions \\
         return label.replace(":", "_")
 
     def dispatch(self, label, prompt):
-        """agy dispatches with `invoke_subagent`, naming the agent in a
-        `Subagents[].TypeName`; the schema also requires a role, a prompt
-        and the tool summary/action every agy tool carries."""
+        """agy dispatches with `invoke_subagent`, naming the agent in its
+        `TypeName` beside the role and prompt the schema requires; 1.4.7
+        flattened the `Subagents` list into one agent per call."""
         args = {
-            "Subagents": [
-                {
-                    "TypeName": label,
-                    "Role": "Lab Dispatch",
-                    "Prompt": "Run your checks.",
-                }
-            ],
-            "toolSummary": "Lab dispatch",
-            "toolAction": "Dispatching agent",
+            "TypeName": label,
+            "Role": "Lab Dispatch",
+            "Prompt": "Run your checks.",
         }
         return "toolcall", {"TOOL_NAME": "invoke_subagent", "FC_ARGS": json.dumps(args)}
 
