@@ -1186,7 +1186,7 @@ fn a_gauge_turns_at_its_thresholds_and_a_chart_scales_to_its_largest() {
                 .prop("kind", "bar")
                 .item(),
         ],
-        json!({ "history": [1, 4, 8, -3, "x"] }),
+        json!({ "history": [1, 4, 8, -3, "0"] }),
     );
     let NodeKind::Chart {
         kind,
@@ -1200,6 +1200,30 @@ fn a_gauge_turns_at_its_thresholds_and_a_chart_scales_to_its_largest() {
     assert_eq!(kind, view::ChartKind::Bar);
     assert_eq!(levels, [125, 500, 1000, 0, 0]);
     assert_eq!(height, 4, "the default height of bars");
+}
+
+#[test]
+fn a_chart_of_values_that_are_not_numbers_says_so() {
+    let chart = |series| {
+        let extension = hosted(
+            vec![n(NodeName::Chart).prop("series", "{history}").item()],
+            json!({ "history": series }),
+        );
+        tree(&extension).children[0].kind.clone()
+    };
+    let NodeKind::Notice { text, role } = chart(json!([1, "high", null, 3])) else {
+        panic!("a notice, not a chart reading the strings as zero");
+    };
+    assert_eq!(text, "Chart: 2 of 4 values are not numbers");
+    assert_eq!(role, Role::Warning);
+    assert!(matches!(
+        chart(json!("1,2,3")),
+        NodeKind::Notice { ref text, .. } if text.contains("not a list")
+    ));
+    assert!(
+        matches!(chart(json!(null)), NodeKind::Chart { ref levels, .. } if levels.is_empty()),
+        "data that has not arrived is an empty chart, not a notice"
+    );
 }
 
 #[test]

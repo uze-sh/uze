@@ -1132,18 +1132,35 @@ const BARS_MAX: u16 = 24;
 
 /// A chart's series as thousandths of its largest value: negative and
 /// non-numeric values draw as nothing.
+/// A chart whose data is not numbers says so: drawing what could not be
+/// read as zero would show a fall that never happened.
+fn chart_notice(text: &str) -> NodeKind {
+    NodeKind::Notice {
+        text: Clean::label(text).into_string(),
+        role: Role::Warning,
+    }
+}
+
 fn chart<'a>(builder: &Builder<'a>, node: &'a Compiled, scopes: &Scopes<'a>) -> NodeKind {
     let series = builder.prop(node, scopes, "series");
-    let values: Vec<f64> = series
-        .as_deref()
-        .and_then(Value::as_array)
-        .map(|list| {
-            list.iter()
-                .take(CHART_MAX)
-                .map(|value| as_number(value).unwrap_or(0.0).max(0.0))
+    let values: Vec<f64> = match series.as_deref() {
+        None | Some(Value::Null) => Vec::new(),
+        Some(Value::Array(list)) => {
+            let read: Vec<Option<f64>> = list.iter().take(CHART_MAX).map(as_number).collect();
+            let unread = read.iter().filter(|value| value.is_none()).count();
+            if unread > 0 {
+                return chart_notice(&format!(
+                    "Chart: {unread} of {} values are not numbers",
+                    read.len()
+                ));
+            }
+            read.into_iter()
+                .flatten()
+                .map(|value| value.max(0.0))
                 .collect()
-        })
-        .unwrap_or_default();
+        }
+        Some(_) => return chart_notice("Chart: its series is not a list of numbers"),
+    };
     let top = values.iter().copied().fold(0.0_f64, f64::max);
     let levels = values
         .iter()
