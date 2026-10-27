@@ -354,6 +354,12 @@ impl Attach<'_> {
             let Some((pane, harness_in_front)) =
                 tab.map(|tab| (tab.pane.id, agent_for_tab(&self.identities, tab).is_some()))
             else {
+                self.model.raise_toast(
+                    ToastKind::Told,
+                    "not sent",
+                    format!("{by}: {}: that agent is no longer open", write.label),
+                    None,
+                );
                 continue;
             };
             if let Some(reason) = self.model.write_refusal(&write, pane, harness_in_front) {

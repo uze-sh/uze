@@ -338,3 +338,31 @@ fn a_skill_that_is_not_namespaced_is_refused_before_it_is_shown() {
         "a plugin's skill is asked"
     );
 }
+
+#[test]
+fn an_allowed_prompt_whose_agent_is_gone_is_said_not_dropped_silently() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-gone"));
+    let mut driven = driven(launched_agent(), &home);
+    driven
+        .attach
+        .model
+        .ask_of_agent(Owner::Builtin("probe"), prompt("Review PLAN.md"));
+    driven.frame();
+    driven.attach.model.answer_agent_write(true);
+    // Its tab is a shell again: the agent exited before it was typed.
+    first_tab_mut(&mut driven.attach.model).env.clear();
+    driven.pump();
+    assert!(typed(&driven.sent()).is_empty());
+    let toasts = &driven.attach.model.remembered.toasts;
+    assert!(
+        toasts.iter().any(|toast| toast.text == "not sent"
+            && toast.detail.contains("probe")
+            && toast.detail.contains("Review")
+            && toast.detail.contains("no longer open")),
+        "said, attributed: {:?}",
+        toasts
+            .iter()
+            .map(|toast| (&toast.text, &toast.detail))
+            .collect::<Vec<_>>()
+    );
+}
