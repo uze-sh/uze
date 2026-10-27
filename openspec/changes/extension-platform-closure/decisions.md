@@ -319,3 +319,13 @@
 - decided:  Recorded, not changed: whether a subagent with no pane is "in use" is the workspace's design question (`checkout::Presence`), not the extension platform's. Work continued in the agent's own checkout, committed fix by fix.
 - rejected: Fixing the reconciliation from this change.
 - blast:    None here; a UZE workspace issue for the operator.
+
+## D120 — Below Landlock ABI 6, a confined program signals only itself and its own group
+
+- status:   pending
+- task:     review finding
+- commit:
+- trigger:  The signal filter let every non-negative target through, so on a kernel without Landlock signal scoping a confined program could `kill` any process of the user by its id.
+- decided:  `kill`, `tkill`, `tgkill`, `rt_sigqueueinfo` and `rt_tgsigqueueinfo` accept as first argument only 0, the program's own pid (the helper's, known before `execve` and kept by it) and the negated own group. A child or a thread of the program, having an id of its own, is reached through the group; a child's `raise` (which targets its own pid) is refused there, an accepted cost on kernels without scoping.
+- rejected: Tracking the program's children by id: a filter is fixed when installed and cannot learn ids born later.
+- blast:    `uze-platform::confine::linux::{seccomp, linux}`.

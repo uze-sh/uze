@@ -60,6 +60,7 @@ fn confine(confinement: &Confinement) -> io::Result<()> {
     seccomp::install(&seccomp::Policy {
         network: confinement.network,
         limit_signals: Scope::from_all(abi).is_empty(),
+        own_pid: std::process::id() as libc::pid_t,
         // SAFETY: `getpgrp` has no preconditions and cannot fail.
         own_group: unsafe { libc::getpgrp() },
     })

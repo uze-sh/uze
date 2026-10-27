@@ -17,6 +17,8 @@ pub(super) struct Policy {
     /// Landlock scopes signals on ABI 6 and later; below it the filter
     /// limits them, as far as an argument check can.
     pub limit_signals: bool,
+    /// The program's own process id: the helper's, which `execve` keeps.
+    pub own_pid: libc::pid_t,
     /// The process group the program is ended by, which it may signal.
     pub own_group: libc::pid_t,
 }
@@ -28,7 +30,6 @@ pub(super) struct Policy {
 const BPF_LD_W_ABS: u16 = 0x20;
 const BPF_JMP_JEQ_K: u16 = 0x05 | 0x10;
 const BPF_JMP_JGE_K: u16 = 0x05 | 0x30;
-const BPF_JMP_JSET_K: u16 = 0x05 | 0x40;
 const BPF_RET_K: u16 = 0x06;
 
 const RET_KILL_PROCESS: u32 = 0x8000_0000;
@@ -49,7 +50,6 @@ const OFFSET_ARG0_LOW: u32 = 16;
 /// x86-64's audit architecture: refused, so no call escapes the table below
 /// by being spelled another way.
 const X32_SYSCALL_BIT: u32 = 0x4000_0000;
-const SIGN_BIT: u32 = 0x8000_0000;
 
 #[cfg(target_arch = "x86_64")]
 const AUDIT_ARCH: Option<u32> = Some(0xc000_003e);
@@ -85,8 +85,8 @@ const REFUSED_WITHOUT_NETWORK: &[libc::c_long] = &[
     libc::SYS_setsockopt,
 ];
 
-/// Limited to non-negative targets or the program's own group when
-/// signals are not scoped by Landlock.
+/// Limited to the program itself or its own group when signals are not
+/// scoped by Landlock.
 const SIGNALLING: &[libc::c_long] = &[
     libc::SYS_kill,
     libc::SYS_tkill,
@@ -168,7 +168,7 @@ fn program(arch: u32, policy: &Policy) -> Vec<libc::sock_filter> {
     if policy.limit_signals {
         refused.push(libc::SYS_pidfd_send_signal);
         for &call in SIGNALLING {
-            program.extend(signal_target_limited(call, policy.own_group));
+            program.extend(signal_target_limited(call, policy));
         }
     }
     program.extend(first_argument_one_of(
@@ -200,15 +200,17 @@ fn first_argument_one_of(call: libc::c_long, allowed: &[u32]) -> Vec<libc::sock_
     block
 }
 
-/// `call` may target a process by a non-negative id (0, itself, a child it
-/// started) or the program's own group, never another group or every
-/// process (`-1`).
-fn signal_target_limited(call: libc::c_long, own_group: libc::pid_t) -> Vec<libc::sock_filter> {
+/// `call` may target only 0 (its own group, by the kernel's reading), the
+/// program itself or the program's own group, never another process, another
+/// group or every process (`-1`). A thread the program starts, or a child,
+/// has an id of its own and is reached through the group.
+fn signal_target_limited(call: libc::c_long, policy: &Policy) -> Vec<libc::sock_filter> {
     vec![
-        jump(BPF_JMP_JEQ_K, call as u32, 0, 5),
+        jump(BPF_JMP_JEQ_K, call as u32, 0, 6),
         load(OFFSET_ARG0_LOW),
-        jump(BPF_JMP_JSET_K, SIGN_BIT, 0, 2),
-        jump(BPF_JMP_JEQ_K, own_group.wrapping_neg() as u32, 1, 0),
+        jump(BPF_JMP_JEQ_K, 0, 3, 0),
+        jump(BPF_JMP_JEQ_K, policy.own_pid as u32, 2, 0),
+        jump(BPF_JMP_JEQ_K, policy.own_group.wrapping_neg() as u32, 1, 0),
         ret(RET_ERRNO | libc::EPERM as u32),
         ret(RET_ALLOW),
     ]
@@ -246,6 +248,7 @@ mod tests {
         Policy {
             network,
             limit_signals,
+            own_pid: 4300,
             own_group: 4242,
         }
     }
@@ -272,7 +275,6 @@ mod tests {
                     let taken = match code {
                         BPF_JMP_JEQ_K => accumulator == instruction.k,
                         BPF_JMP_JGE_K => accumulator >= instruction.k,
-                        BPF_JMP_JSET_K => accumulator & instruction.k != 0,
                         other => panic!("unexpected instruction {other:#x}"),
                     };
                     let offset = if taken {
@@ -342,17 +344,17 @@ mod tests {
     }
 
     #[test]
-    fn unscoped_signals_reach_no_other_group_and_not_everyone() {
+    fn unscoped_signals_reach_only_the_program_and_its_own_group() {
         let program = program(ARCH, &policy(false, true));
         let kill = libc::SYS_kill as u32;
-        for target in [0i32, 1, 77, 4242, -4242] {
+        for target in [0i32, 4300, -4242] {
             assert_eq!(
                 verdict(&program, ARCH, kill, target as u32),
                 RET_ALLOW,
                 "{target}"
             );
         }
-        for target in [-1i32, -77] {
+        for target in [-1i32, -77, 1, 77, 4242] {
             assert_eq!(
                 verdict(&program, ARCH, kill, target as u32),
                 EPERM,
@@ -372,7 +374,7 @@ mod tests {
         assert_eq!(smallest, 6 + 6 + 5 + 2 * ALWAYS_REFUSED.len() + 1);
         assert_eq!(
             largest,
-            6 + 6 * SIGNALLING.len()
+            6 + 7 * SIGNALLING.len()
                 + 5
                 + 2 * (ALWAYS_REFUSED.len() + REFUSED_WITHOUT_NETWORK.len() + 1)
                 + 1
