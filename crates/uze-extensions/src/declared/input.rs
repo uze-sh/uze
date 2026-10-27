@@ -230,7 +230,7 @@ impl DeclaredExtension {
                 "{} reads none of the form: its `with` names no `form.<id>`",
                 Clean::label(&declared.label)
             );
-            return Outcome::Notice(Span::new(said, Role::Warning));
+            return Outcome::Notice(Span::clean(Clean::label(&said), Role::Warning));
         }
         self.act_with(surface, &action, item, Value::Object(read))
     }

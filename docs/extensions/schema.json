@@ -105,7 +105,8 @@
               "view": "board.kdl",
               "band": null,
               "source": "items",
-              "title": null
+              "title": null,
+              "applies_when": null
             }
           ],
           "sources": [
@@ -133,7 +134,8 @@
               "output": "Json",
               "with_store": false,
               "with_preferences": false,
-              "deliver": "Latest"
+              "deliver": "Latest",
+              "applies_when": null
             }
           ],
           "actions": [
@@ -150,7 +152,9 @@
               "confirm": "Copy {text}?",
               "does": {
                 "Clipboard": "{text}"
-              }
+              },
+              "with": [],
+              "then": null
             }
           ],
           "exec": [],
@@ -170,7 +174,8 @@
               "view": "count.kdl",
               "band": null,
               "source": "items",
-              "title": null
+              "title": null,
+              "applies_when": null
             }
           ],
           "sources": [
@@ -185,7 +190,8 @@
               "output": "Json",
               "with_store": false,
               "with_preferences": false,
-              "deliver": "Latest"
+              "deliver": "Latest",
+              "applies_when": null
             }
           ],
           "actions": [],
@@ -208,7 +214,8 @@
               "view": "crew.kdl",
               "band": null,
               "source": "agents",
-              "title": null
+              "title": null,
+              "applies_when": null
             }
           ],
           "sources": [
@@ -225,7 +232,8 @@
               "output": "Json",
               "with_store": false,
               "with_preferences": false,
-              "deliver": "Latest"
+              "deliver": "Latest",
+              "applies_when": null
             }
           ],
           "actions": [
@@ -246,7 +254,9 @@
                     "Named": "{id}"
                   }
                 }
-              }
+              },
+              "with": [],
+              "then": null
             }
           ],
           "exec": [],
@@ -270,7 +280,8 @@
               "view": "last.kdl",
               "band": null,
               "source": "log",
-              "title": null
+              "title": null,
+              "applies_when": null
             }
           ],
           "sources": [
@@ -307,7 +318,8 @@
               },
               "with_store": false,
               "with_preferences": false,
-              "deliver": "Latest"
+              "deliver": "Latest",
+              "applies_when": null
             }
           ],
           "actions": [],
@@ -338,7 +350,8 @@
                 "place": "Bottom"
               },
               "source": "seen",
-              "title": null
+              "title": null,
+              "applies_when": null
             }
           ],
           "sources": [
@@ -353,7 +366,8 @@
               "output": "Json",
               "with_store": false,
               "with_preferences": false,
-              "deliver": "Each"
+              "deliver": "Each",
+              "applies_when": null
             }
           ],
           "actions": [
@@ -381,7 +395,9 @@
                   "target": "Own",
                   "auto": null
                 }
-              }
+              },
+              "with": [],
+              "then": null
             }
           ],
           "exec": [],
@@ -404,7 +420,8 @@
               "view": "game.kdl",
               "band": null,
               "source": "board",
-              "title": null
+              "title": null,
+              "applies_when": null
             },
             {
               "id": "score",
@@ -412,7 +429,8 @@
               "view": "score.kdl",
               "band": null,
               "source": "board",
-              "title": null
+              "title": null,
+              "applies_when": null
             }
           ],
           "sources": [
@@ -427,7 +445,8 @@
               "output": "Json",
               "with_store": true,
               "with_preferences": false,
-              "deliver": "Latest"
+              "deliver": "Latest",
+              "applies_when": null
             }
           ],
           "actions": [
@@ -444,7 +463,9 @@
               "confirm": null,
               "does": {
                 "Open": "game"
-              }
+              },
+              "with": [],
+              "then": null
             }
           ],
           "exec": [],
@@ -607,6 +628,14 @@
             "null"
           ],
           "description": "What the host titles the surface with; the extension's name when\nabsent."
+        },
+        "applies_when": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A path inside the checkout the surface needs, as written\n(`applies-when=\".planning\"`): while the checkout it is about has\nnone there, the surface is neither offered nor drawn.",
+          "default": null
         }
       },
       "required": [
@@ -727,6 +756,14 @@
         "deliver": {
           "$ref": "#/$defs/Deliver",
           "description": "How events that ask it again are handed over."
+        },
+        "applies_when": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A path inside the checkout the source needs: while the checkout it\nwould be asked about has none there, it is not asked.",
+          "default": null
         }
       },
       "required": [
@@ -1017,6 +1054,26 @@
         },
         "does": {
           "$ref": "#/$defs/Does"
+        },
+        "with": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The host-held values it reads beside its item, as written:\n`ui.<id>`, `form.<id>` or `form.*` (D24). Only these reach it.",
+          "default": []
+        },
+        "then": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Then"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What a `run` or a `script` does with its answer once it arrives: a\nprompt typed into an agent, shown first, on the gesture that ran it\nand never unattended (D16, D24).",
+          "default": null
         }
       },
       "required": [
@@ -1303,6 +1360,22 @@
         "values"
       ],
       "description": "An unattended prompt: what event sends it, and the closed set its one\nargument is taken from, when it has one."
+    },
+    "Then": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "$ref": "#/$defs/PromptText"
+        },
+        "target": {
+          "$ref": "#/$defs/AgentTarget"
+        }
+      },
+      "required": [
+        "prompt",
+        "target"
+      ],
+      "description": "The second step of a two-step action: a prompt whose `{answer.*}`\nreferences read what the first step answered."
     },
     "ExecDecl": {
       "type": "object",
@@ -1702,6 +1775,15 @@
               },
               {
                 "$ref": "#/$defs/SpriteNode"
+              },
+              {
+                "$ref": "#/$defs/SelectNode"
+              },
+              {
+                "$ref": "#/$defs/FieldNode"
+              },
+              {
+                "$ref": "#/$defs/FormNode"
               }
             ]
           }
@@ -1831,6 +1913,15 @@
               },
               {
                 "$ref": "#/$defs/SpriteNode"
+              },
+              {
+                "$ref": "#/$defs/SelectNode"
+              },
+              {
+                "$ref": "#/$defs/FieldNode"
+              },
+              {
+                "$ref": "#/$defs/FormNode"
               }
             ]
           }
@@ -2203,7 +2294,7 @@
       "additionalProperties": false
     },
     "ListNode": {
-      "description": "Rows repeated over `each`; with an `id`, the host holds which one is selected.",
+      "description": "Rows repeated over `each`; with an `id`, the host holds which one is selected; `filter=\"ui.<id>\"` keeps the rows whose fields hold what a `Field` has typed.",
       "type": "object",
       "properties": {
         "type": {
@@ -2223,6 +2314,10 @@
                 "boolean"
               ],
               "description": "What to draw when there are no rows."
+            },
+            "filter": {
+              "type": "string",
+              "description": "`ui.<id>` of a `Field`: keep only the rows whose fields hold its text."
             },
             "grow": {
               "type": "boolean",
@@ -2320,6 +2415,15 @@
               },
               {
                 "$ref": "#/$defs/SpriteNode"
+              },
+              {
+                "$ref": "#/$defs/SelectNode"
+              },
+              {
+                "$ref": "#/$defs/FieldNode"
+              },
+              {
+                "$ref": "#/$defs/FormNode"
               }
             ]
           }
@@ -2507,7 +2611,7 @@
           "properties": {
             "value": {
               "type": "string",
-              "description": "What `show` compares the tab's choice with."
+              "description": "What `show` compares the choice with, and what a chosen one is held as."
             },
             "grow": {
               "type": "boolean",
@@ -3384,6 +3488,15 @@
               },
               {
                 "$ref": "#/$defs/SpriteNode"
+              },
+              {
+                "$ref": "#/$defs/SelectNode"
+              },
+              {
+                "$ref": "#/$defs/FieldNode"
+              },
+              {
+                "$ref": "#/$defs/FormNode"
               }
             ]
           }
@@ -3536,6 +3649,320 @@
       ],
       "additionalProperties": false
     },
+    "SelectNode": {
+      "description": "One of its `Choice`s, held by the host as `ui.<id>`, stepped with its arrows or Enter; the first until one is chosen.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Select"
+        },
+        "args": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          ],
+          "items": false,
+          "minItems": 0
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "The name the host keeps this node's state under, as `ui.<id>`."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ChoiceNode"
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "ChoiceNode": {
+      "description": "One option of a `Select`: its label, and the `value` held when chosen.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Choice"
+        },
+        "args": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          ],
+          "items": false,
+          "minItems": 1
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "type": "string",
+              "description": "What `show` compares the choice with, and what a chosen one is held as."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "args"
+      ],
+      "additionalProperties": false
+    },
+    "FieldNode": {
+      "description": "A line of text the host holds as `ui.<id>` while the operator types into it; `placeholder` stands in while it is empty.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Field"
+        },
+        "args": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          ],
+          "items": false,
+          "minItems": 0
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "The name the host keeps this node's state under, as `ui.<id>`."
+            },
+            "placeholder": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ],
+              "description": "What the field says while nothing is typed."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "FormNode": {
+      "description": "Its `Field`s and `Select`s, and a button (`submit`) running `action` with them as `form.<id>`, cleaned like any item.",
+      "type": "object",
+      "dependentSchemas": {
+        "item": {
+          "required": [
+            "props"
+          ],
+          "properties": {
+            "props": {
+              "required": [
+                "action"
+              ]
+            }
+          }
+        }
+      },
+      "properties": {
+        "type": {
+          "const": "Form"
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "description": "The action a press records, by name."
+            },
+            "submit": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ],
+              "description": "The form's button label; `Send` when it names none."
+            },
+            "item": {
+              "description": "What the action receives: a field, or `{.}` for the whole item."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        },
+        "item": {
+          "description": "What the named action receives when it runs."
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/StackNode"
+              },
+              {
+                "$ref": "#/$defs/RowNode"
+              },
+              {
+                "$ref": "#/$defs/TextNode"
+              },
+              {
+                "$ref": "#/$defs/BadgeNode"
+              },
+              {
+                "$ref": "#/$defs/MarksNode"
+              },
+              {
+                "$ref": "#/$defs/PipsNode"
+              },
+              {
+                "$ref": "#/$defs/ProgressNode"
+              },
+              {
+                "$ref": "#/$defs/ListNode"
+              },
+              {
+                "$ref": "#/$defs/TableNode"
+              },
+              {
+                "$ref": "#/$defs/TabsNode"
+              },
+              {
+                "$ref": "#/$defs/ToggleNode"
+              },
+              {
+                "$ref": "#/$defs/ButtonNode"
+              },
+              {
+                "$ref": "#/$defs/ActivityNode"
+              },
+              {
+                "$ref": "#/$defs/ElapsedNode"
+              },
+              {
+                "$ref": "#/$defs/LogNode"
+              },
+              {
+                "$ref": "#/$defs/RuleNode"
+              },
+              {
+                "$ref": "#/$defs/DetailsNode"
+              },
+              {
+                "$ref": "#/$defs/MarkdownNode"
+              },
+              {
+                "$ref": "#/$defs/CodeNode"
+              },
+              {
+                "$ref": "#/$defs/GaugeNode"
+              },
+              {
+                "$ref": "#/$defs/ChartNode"
+              },
+              {
+                "$ref": "#/$defs/StatNode"
+              },
+              {
+                "$ref": "#/$defs/KbdNode"
+              },
+              {
+                "$ref": "#/$defs/GridNode"
+              },
+              {
+                "$ref": "#/$defs/CellsNode"
+              },
+              {
+                "$ref": "#/$defs/ImageNode"
+              },
+              {
+                "$ref": "#/$defs/SpriteNode"
+              },
+              {
+                "$ref": "#/$defs/SelectNode"
+              },
+              {
+                "$ref": "#/$defs/FieldNode"
+              },
+              {
+                "$ref": "#/$defs/FormNode"
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
     "CatalogNode": {
       "description": "A node of the catalog, as a composed answer writes it: `type`, then its `args`, `props` and `children`. Every value is a literal; `{x}` in a composed tree is text.",
       "oneOf": [
@@ -3631,6 +4058,18 @@
         },
         {
           "$ref": "#/$defs/SpriteNode"
+        },
+        {
+          "$ref": "#/$defs/SelectNode"
+        },
+        {
+          "$ref": "#/$defs/ChoiceNode"
+        },
+        {
+          "$ref": "#/$defs/FieldNode"
+        },
+        {
+          "$ref": "#/$defs/FormNode"
         }
       ]
     },

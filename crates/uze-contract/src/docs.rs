@@ -423,6 +423,7 @@ fn surface(id: &str, slot: Slot, source: &str) -> SurfaceDecl {
         band: None,
         source: source.into(),
         title: None,
+        applies_when: None,
     }
 }
 
@@ -434,6 +435,8 @@ fn action(id: &str, label: &str, on: &str, does: Does) -> ActionDecl {
         key: None,
         confirm: None,
         does,
+        with: Vec::new(),
+        then: None,
     }
 }
 
@@ -721,8 +724,10 @@ pub fn reference() -> String {
     );
     line(
         "A source also takes `input name=\"<template>\"…`, `every \"<n>s|m|h\"` (at least \
-         5s), `refresh-on \"<event>\" <paths…>`, `output`, `deliver`, `store` and \
-         `preferences`.",
+         5s), `refresh-on \"<event>\" <paths…>`, `output`, `deliver`, `store`, \
+         `preferences` and `applies-when \"<path>\"`: a source whose path the checkout \
+         lacks is never asked. A surface takes the same as a property, \
+         `applies-when=\"<path>\"`, and is then offered only in a checkout that has it.",
     );
     line("");
     expect_names("output", Output::NAMES, OUTPUTS.iter().map(|row| row.0));
@@ -783,7 +788,11 @@ pub fn reference() -> String {
     line(&format!(
         "An action is `action \"<id>\" label=… on=\"<surface>\" key=… confirm=… {{ <does> }}`. \
          `key` is a suggestion, modifiers joined by `-` ({}) before a printable character or \
-         one of {}. An action with `confirm`, and one that reaches an agent, needs a modifier.",
+         one of {}. An action with `confirm`, and one that reaches an agent, needs a modifier. \
+         Inside its block, `with \"ui.<id>\" \"form.<id>\" \"form.*\"` names the UI state and \
+         form fields its input receives, and after a `run` or `script`, \
+         `then {{ agent-prompt \"…{{answer.<field>}}…\" target=… }}` types a prompt filled from \
+         the first step's answer, on a gesture only, under `agent:prompt`.",
         code_list(KeySuggestion::MODIFIERS.iter().copied()),
         code_list(KeySuggestion::NAMED.iter().copied())
     ));

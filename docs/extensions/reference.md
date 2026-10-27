@@ -33,7 +33,7 @@ Owner: `crates/uze-contract` (`src/docs.rs`). A change to the contract changes t
 | `agents` | `agents` | The workspace's own: every agent of the open spaces, under `agent:observe`. |
 | `resident` | `resident "x.rhai"` | A Rhai file kept running while a surface showing it is open, under `resident`: `start`, `event`, `input`, `render`, `stop`. |
 
-A source also takes `input name="<template>"…`, `every "<n>s|m|h"` (at least 5s), `refresh-on "<event>" <paths…>`, `output`, `deliver`, `store` and `preferences`.
+A source also takes `input name="<template>"…`, `every "<n>s|m|h"` (at least 5s), `refresh-on "<event>" <paths…>`, `output`, `deliver`, `store`, `preferences` and `applies-when "<path>"`: a source whose path the checkout lacks is never asked. A surface takes the same as a property, `applies-when="<path>"`, and is then offered only in a checkout that has it.
 
 ### `output`
 
@@ -96,7 +96,7 @@ A source also takes `input name="<template>"…`, `every "<n>s|m|h"` (at least 5
 | `agent-restart` | `agent-restart target="self"` | Starts an agent's harness on a new conversation, always asked; under `agent:restart`. |
 | `focus-agent` | `focus-agent target="{id}"` | Puts an agent's pane in front; under `agent:observe`. |
 
-An action is `action "<id>" label=… on="<surface>" key=… confirm=… { <does> }`. `key` is a suggestion, modifiers joined by `-` (`ctrl`, `alt`, `shift`) before a printable character or one of `enter`, `esc`, `tab`, `space`, `backspace`, `delete`, `insert`, `up`, `down`, `left`, `right`, `home`, `end`, `pageup`, `pagedown`, `f1`, `f2`, `f3`, `f4`, `f5`, `f6`, `f7`, `f8`, `f9`, `f10`, `f11`, `f12`. An action with `confirm`, and one that reaches an agent, needs a modifier.
+An action is `action "<id>" label=… on="<surface>" key=… confirm=… { <does> }`. `key` is a suggestion, modifiers joined by `-` (`ctrl`, `alt`, `shift`) before a printable character or one of `enter`, `esc`, `tab`, `space`, `backspace`, `delete`, `insert`, `up`, `down`, `left`, `right`, `home`, `end`, `pageup`, `pagedown`, `f1`, `f2`, `f3`, `f4`, `f5`, `f6`, `f7`, `f8`, `f9`, `f10`, `f11`, `f12`. An action with `confirm`, and one that reaches an agent, needs a modifier. Inside its block, `with "ui.<id>" "form.<id>" "form.*"` names the UI state and form fields its input receives, and after a `run` or `script`, `then { agent-prompt "…{answer.<field>}…" target=… }` types a prompt filled from the first step's answer, on a gesture only, under `agent:prompt`.
 
 ## The envelope
 
@@ -142,7 +142,7 @@ A view names these nodes, PascalCase. A property's value is a literal, a `{field
 
 Its children one under another, `gap` rows apart.
 
-- Holds: `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`.
+- Holds: `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
 | property | value | what |
 |---|---|---|
@@ -152,7 +152,7 @@ Its children one under another, `gap` rows apart.
 
 Its children side by side, `gap` columns apart; `grow` children share what is left, the rest are placed by `align`.
 
-- Holds: `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`.
+- Holds: `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
 | property | value | what |
 |---|---|---|
@@ -235,14 +235,15 @@ One segment of a `Progress`: as wide as its `weight`, filled to its `ratio`, in 
 
 ### `List`
 
-Rows repeated over `each`; with an `id`, the host holds which one is selected.
+Rows repeated over `each`; with an `id`, the host holds which one is selected; `filter="ui.<id>"` keeps the rows whose fields hold what a `Field` has typed.
 
-- Holds: `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`.
+- Holds: `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
 | property | value | what |
 |---|---|---|
 | `id` | name | The name the host keeps this node's state under, as `ui.<id>`. |
 | `empty` | text | What to draw when there are no rows. |
+| `filter` | name | `ui.<id>` of a `Field`: keep only the rows whose fields hold its text. |
 
 ### `Table`
 
@@ -274,7 +275,7 @@ One choice of a `Tabs`: its label, and the `value` `show` compares with.
 
 | property | value | what |
 |---|---|---|
-| `value` | name | What `show` compares the tab's choice with. |
+| `value` | name | What `show` compares the choice with, and what a chosen one is held as. |
 
 ### `Toggle`
 
@@ -428,7 +429,7 @@ A key, drawn as the workspace draws its own keys.
 
 Its children as tiles, in as many columns as fit their `min-width`, row by row.
 
-- Holds: `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`.
+- Holds: `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
 | property | value | what |
 |---|---|---|
@@ -468,6 +469,52 @@ A declared sprite playing `state` (or its fallback), on the host's clock.
 |---|---|---|
 | `state` | text | The state to play: one of the sprite's, or its fallback otherwise. |
 | `height` | count | How many rows it takes: a chart's bars, a picture's or a sprite's height. |
+
+### `Select`
+
+One of its `Choice`s, held by the host as `ui.<id>`, stepped with its arrows or Enter; the first until one is chosen.
+
+- Arguments: text, optional.
+- Holds: `Choice`.
+
+| property | value | what |
+|---|---|---|
+| `id` | name | The name the host keeps this node's state under, as `ui.<id>`. |
+
+### `Choice`
+
+One option of a `Select`: its label, and the `value` held when chosen.
+
+- Arguments: text.
+- Holds no other node.
+
+| property | value | what |
+|---|---|---|
+| `value` | name | What `show` compares the choice with, and what a chosen one is held as. |
+
+### `Field`
+
+A line of text the host holds as `ui.<id>` while the operator types into it; `placeholder` stands in while it is empty.
+
+- Arguments: text, optional.
+- Holds no other node.
+
+| property | value | what |
+|---|---|---|
+| `id` | name | The name the host keeps this node's state under, as `ui.<id>`. |
+| `placeholder` | text | What the field says while nothing is typed. |
+
+### `Form`
+
+Its `Field`s and `Select`s, and a button (`submit`) running `action` with them as `form.<id>`, cleaned like any item.
+
+- Holds: `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
+
+| property | value | what |
+|---|---|---|
+| `action` | name | The action a press records, by name. |
+| `submit` | text | The form's button label; `Send` when it names none. |
+| `item` | any value | What the action receives: a field, or `{.}` for the whole item. |
 
 ### Roles
 

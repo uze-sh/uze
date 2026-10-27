@@ -683,6 +683,7 @@ impl ActionDecl {
 /// The second step of a two-step action: a prompt whose `{answer.*}`
 /// references read what the first step answered.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Then {
     pub prompt: PromptText,
     pub target: AgentTarget,
