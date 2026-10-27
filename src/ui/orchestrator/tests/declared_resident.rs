@@ -237,7 +237,15 @@ fn a_focused_resident_view_reads_up_and_esc_lets_go_of_it() {
     driven.press_key(key("esc"));
     assert!(driven.attach.model.action_index.is_none());
     driven.press_key(key("f8"));
+    assert!(
+        driven.attach.model.remembered.declared.bridge.writes.paused,
+        "F8 pauses the extensions"
+    );
     driven.press_key(key("f8"));
+    assert!(
+        !driven.attach.model.remembered.declared.bridge.writes.paused,
+        "and F8 again lets them go"
+    );
     run(&mut driven, &host);
     assert_eq!(inputs(&host).len(), 2, "F8 stays the host's too");
 
@@ -384,4 +392,47 @@ fn a_question_over_a_resident_overlay_takes_its_keys_and_clicks() {
         "nothing meant for the question reached the overlay: {:?}",
         inputs(&host)
     );
+}
+
+/// F8 over the overlay in front pauses every write: a prompt asked then
+/// is refused before it is shown, and nothing reaches the agent.
+fn f8_pauses_over(driven: &mut Driven<'_>, host: &Session) {
+    driven.press_key(key("f8"));
+    assert!(
+        driven.attach.model.remembered.declared.bridge.writes.paused,
+        "F8 pauses over the overlay"
+    );
+    assert!(
+        driven.attach.model.overlay_slot().is_some(),
+        "and leaves it standing"
+    );
+    driven
+        .attach
+        .model
+        .ask_of_agent(Owner::Builtin("probe"), prompt("Review PLAN.md"));
+    assert!(driven.attach.model.agent_write.is_none(), "not even asked");
+    driven.pump();
+    assert!(typed(&driven.sent()).is_empty());
+    run(driven, host);
+    assert!(inputs(host).is_empty(), "F8 never reaches the overlay");
+    driven.press_key(key("f8"));
+    assert!(!driven.attach.model.remembered.declared.bridge.writes.paused);
+}
+
+#[test]
+fn f8_pauses_over_a_plain_overlay() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("overlay-pause"));
+    let mut driven = overlaid(&home, false);
+    let host = Session::default();
+    f8_pauses_over(&mut driven, &host);
+}
+
+#[test]
+fn f8_pauses_over_a_focused_resident_overlay() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("resident-overlay-pause"));
+    let mut driven = overlaid(&home, true);
+    let host = Session::default();
+    run(&mut driven, &host);
+    assert!(driven.attach.model.raw_input_slot().is_some());
+    f8_pauses_over(&mut driven, &host);
 }

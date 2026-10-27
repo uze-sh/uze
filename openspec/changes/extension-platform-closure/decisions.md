@@ -459,3 +459,12 @@
 - decided:  The shelf has an `epoch` that only `clear` bumps; each read's job carries the epoch it was asked in, and `absorb` drops an answer from another epoch before matching the key. The new read stays out and its own answer is taken.
 - rejected: Reusing `generation`: it moves on every absorb and refusal, so a read would be dropped for a change that did not forget it.
 - blast:    `declared/media.rs` (`Shelf::{epoch, clear, next, absorb}`, `MediaAnswer`, `read`); `declared/media_tests.rs`.
+## D180 — The pause key is looked up before anything in front, never bound in `Global`
+
+- status:   pending
+- task:     review finding 3 (F8 over an overlay)
+- commit:
+- trigger:  F8 was bound in `Scope::Surfaces`, which a declared overlay's sealing `Scope::Declared` and every host question cut off, and `perform` routed the overlay before the pause; over an overlay, resident or plain, F8 did nothing.
+- decided:  The workspace client resolves every chord against `[Global, Workspace, Surfaces]` first, as if nothing stood in front, and a chord meaning `PauseAgentWrites` is performed before the resident surface, the docked drawer or any scope routing; `perform` handles the pause in its first block beside Quit. The binding stays in `Surfaces`, so a keys.json rebinding still moves it. A question open when F8 is pressed stays open; only the writes are held.
+- rejected: Binding F8 in `Scope::Global`: Global is live in management too, whose index would offer a pause that does nothing there. A scope of its own pushed over every seal: one action does not need a new keyboard.
+- blast:    `src/ui/orchestrator/session/keys.rs`; `tests/declared_resident.rs`.

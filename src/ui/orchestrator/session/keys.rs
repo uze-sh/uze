@@ -150,6 +150,9 @@ impl Attach<'_> {
         let Some(chord) = crate::ui::keys::chord_of(key) else {
             return Flow::Continue;
         };
+        if is_the_pause(chord) {
+            return self.act(Action::PauseAgentWrites, viewport);
+        }
         if let Some(flow) = self.resident_key(chord) {
             return flow;
         }
@@ -311,6 +314,14 @@ impl Attach<'_> {
                 let _ = send_request(&mut self.stream, &ClientRequest::Detach);
                 return Flow::Exit(WorkspaceExit::Quit);
             }
+            // The brake works wherever it is pressed, whatever stands in
+            // front: it is an extension's writes it stops, and an
+            // extension's surface or a question about one must never
+            // swallow it.
+            Action::PauseAgentWrites => {
+                self.model.toggle_agent_writes();
+                return Flow::Continue;
+            }
             Action::OpenActionIndex if self.model.action_index.is_none() => {
                 self.model.action_index = Some(ActionIndexOverlay {
                     scopes: self.scopes(),
@@ -405,12 +416,6 @@ impl Attach<'_> {
         // over each other: one of them in front must not swallow it.
         if action == Action::OpenSpaceOverview {
             self.toggle_space_overview();
-            return Flow::Continue;
-        }
-        // The brake works wherever it is pressed: over a surface as over
-        // the pane, since it is the surface's extension it stops.
-        if action == Action::PauseAgentWrites {
-            self.model.toggle_agent_writes();
             return Flow::Continue;
         }
         // A declared view's door, from the index: it opens over whatever
@@ -600,6 +605,19 @@ impl Attach<'_> {
         };
         self.land_on_tab(target, columns, rows);
     }
+}
+
+/// Where the pause's chord is looked up: where the keymap binds it, read
+/// as if nothing stood in front, so no surface, overlay or question that
+/// seals the keyboard can take it from the host.
+const PAUSE_STACK: [Scope; 3] = [Scope::Global, Scope::Workspace, Scope::Surfaces];
+
+/// Whether `chord` is the pause, wherever it is pressed.
+fn is_the_pause(chord: Chord) -> bool {
+    matches!(
+        uze_keys::active().resolve(chord, &PAUSE_STACK),
+        Resolution::Act(Action::PauseAgentWrites)
+    )
 }
 
 impl Attach<'_> {
