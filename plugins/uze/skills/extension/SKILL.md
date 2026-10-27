@@ -86,8 +86,9 @@ action "copy" label="Copy" on="board" key="ctrl-y" confirm="Copy {text}?" {
 - **`key`** spells modifiers joined by `-`: `ctrl-r`, `ctrl-shift-r`,
   `f5`. It is a suggestion: a key the workspace or the operator already
   holds keeps theirs, and the operator can rebind it. An action with
-  `confirm` needs a modifier in its key, so a stray keystroke never
-  reaches its question. A copy longer than one line or 256 bytes asks
+  `confirm`, and one that reaches an agent (`agent-prompt`,
+  `agent-restart`, `focus-agent`), needs a modifier in its key, so a
+  stray keystroke never reaches its question or an agent. A copy longer than one line or 256 bytes asks
   first even without `confirm`.
 - **`wants`** is written once, with every grant as an argument.
 

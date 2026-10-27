@@ -558,6 +558,36 @@ fn a_confirmed_action_needs_a_modifier_on_its_key() {
 }
 
 #[test]
+fn an_action_that_reaches_an_agent_needs_a_modifier_on_its_key() {
+    let with = |wants: &str, does: &str, key: &str| {
+        GSD.replace(
+            "source \"board\"",
+            &format!("wants \"{wants}\"\nsource \"board\""),
+        ) + &format!("action \"go\" label=\"Go\" on=\"board\" key=\"{key}\" {{ {does}; }}\n")
+    };
+    for (wants, does) in [
+        ("agent:prompt", r#"agent-prompt "Continue" target="self""#),
+        ("agent:restart", r#"agent-restart target="self""#),
+        ("agent:observe", r#"focus-agent target="self""#),
+    ] {
+        decoded(&with(wants, does, "ctrl-g"));
+        let bare = refusals(&with(wants, does, "g"));
+        assert_eq!(bare.len(), 1, "{does}: {bare:?}");
+        assert!(
+            bare[0]
+                .message
+                .contains("reaches an agent, so its key needs a modifier"),
+            "{}",
+            bare[0]
+        );
+        assert_eq!(
+            bare[0].suggestion.as_deref(),
+            Some("write `key=\"ctrl-g\"`")
+        );
+    }
+}
+
+#[test]
 fn an_action_names_only_what_is_declared() {
     let action = |on: &str, does: &str| {
         format!("{GSD}action \"go\" label=\"Go\" on=\"{on}\" {{ {does}; }}\n")

@@ -236,6 +236,19 @@ fn sources_run_what_this_build_runs(decoded: &Decoded, report: &mut Report<'_>) 
     }
 }
 
+/// Why an action's key may not be a bare letter, when it may not: one
+/// stray keystroke must not be what asks before it runs or what reaches an
+/// agent (A4, R-U7).
+fn needs_a_modifier(action: &uze_contract::ActionDecl) -> Option<&'static str> {
+    match &action.does {
+        _ if action.confirm.is_some() => Some("asks before it runs"),
+        Does::AgentPrompt { .. } | Does::AgentRestart { .. } | Does::FocusAgent { .. } => {
+            Some("reaches an agent")
+        }
+        _ => None,
+    }
+}
+
 fn actions_name_what_is_declared(decoded: &Decoded, report: &mut Report<'_>) {
     let manifest = &decoded.manifest;
     let surfaces = ids(manifest.surfaces.iter().map(|surface| &surface.id));
@@ -251,14 +264,14 @@ fn actions_name_what_is_declared(decoded: &Decoded, report: &mut Report<'_>) {
                 declared(&surfaces, "surfaces"),
             );
         }
-        if action.confirm.is_some()
+        if let Some(why) = needs_a_modifier(action)
             && let (Some(key), Some(key_at)) = (&action.key, places.key)
             && key.is_bare()
         {
             report.at(
                 key_at,
                 format!(
-                    "the action `{}` asks before it runs, so its key needs a modifier, not a bare `{key}`",
+                    "the action `{}` {why}, so its key needs a modifier, not a bare `{key}`",
                     action.id
                 ),
                 Some(format!("write `key=\"ctrl-{key}\"`")),
