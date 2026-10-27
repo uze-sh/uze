@@ -409,3 +409,13 @@
 - decided:  `make check` ran on the tip (`be0d5afa`): green but the three known environment failures (`opencode::project_agents::…the_section_registers_exactly…`, two `foreground_status_*`); `cargo deny`, `make attributions-check`, `make artifacts`, ruff and `openspec validate --all --strict` (77/77) green. The hand proof is `run5.sh` (kept with the progress page's sources): its automatic steps pass (doctor says confined, install leaves both extensions disabled, status names each pin); its checklist a–e is for the operator.
 - rejected: Holding change 6 until the hand proof: the operator review comes at the end.
 - blast:    None.
+
+## D42 — The hand proof driven in the real TUI, on 2026-10-28
+
+- status:   pending
+- task:     9.5
+- commit:
+- trigger:  `run5.sh`'s checklist a–e waited for the operator; the operator asked the run not to wait.
+- decided:  Driven through a detached tmux, every automatic check passing before and after: a and b (GPU asks `store` alone, then a programs step naming `nvidia-smi · /usr/lib/wsl/lib/nvidia-smi` and the devices it reads; Lines' first step is the programs step, `sh · /usr/bin/dash`, "can run anything"); c and d (the sidebar's meter and the view read this machine's RTX 4060 Ti, confined: load, 2322 / 8188 MiB, 49 °C, the history; Lines counts NOTES.md and README.md); e (the drawer lists the pinned program, the devices and "confined: reads the checkout, writes only a scratch folder, no network"; Resolve again answers "GPU's programs are found"). Found and fixed on the way: a management reading in flight while the workspace allowed GPU painted "Needs consent" over it (bridge D49). The script itself had to create its home once copied (`fakehome/.gitconfig`).
+- rejected: None.
+- blast:    None.
