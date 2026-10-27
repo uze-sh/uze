@@ -282,6 +282,15 @@ impl UzeHome {
             .join("reports.jsonl")
     }
 
+    /// The lock every append to agent `agent`'s journal holds, so a cut
+    /// down to its newest half never drops a report appended meanwhile.
+    pub fn agent_reports_lock_path(&self, agent: &str) -> PathBuf {
+        self.runtime_dir()
+            .join("agents")
+            .join(agent)
+            .join("reports.lock")
+    }
+
     /// The scratch directory one program run of an extension may write,
     /// created before it and removed after it: generated, since losing it
     /// costs nothing, and named here so the run's `TMPDIR` is never the

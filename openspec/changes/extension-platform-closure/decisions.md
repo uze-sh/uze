@@ -547,3 +547,13 @@
 - decided:  `reports::read_from` takes and returns a `Cursor { offset, last }`, `last` being the last report delivered. When the offset is past the end, the journal is read from its start and only what follows the last occurrence of `last` is delivered; when `last` is not in what was kept, it was in the half cut away, so everything kept is new. The bridge keeps a cursor per agent instead of an offset (`AgentReportCursor` re-exported by `uze-application`). A report is compared whole (event, stamp, tool, path, call, outcome), so two reports in one millisecond are told apart unless they are identical in every field.
 - rejected: A "since" stamp alone (`at` and `event`): reports share a millisecond, so a stamp drops a report or delivers one twice. Detecting the cut by the file's identity: it needs an inode concept per platform for what the last report already says.
 - blast:    `uze-workspace::reports`, `uze-application` `reports_since`, `src/ui/orchestrator/declared/{bridge,events}.rs`, `src/ui/orchestrator/reads.rs`.
+
+## D165 — Every append to an agent's journal holds the journal's lock
+
+- status:   pending
+- task:     review finding 6
+- commit:
+- trigger:  Cutting a journal to its newest half read it and renamed the half over it with no lock, while other processes of the same pane appended with `O_APPEND`: a report appended between the read and the rename went into the file the rename replaced, and was lost.
+- decided:  `reports::append` holds `file_lock::Held` (the lock the consent record's writer uses, two seconds of patience) on `UzeHome::agent_reports_lock_path(agent)`, `runtime/agents/<agent>/reports.lock`, for the whole append and any cut. The lock is generated, beside the journal it guards. The reader takes no lock: a cut publishes by rename, so it reads whole lines of one file or the other, and D164 resumes it after a cut. `two_writers_lose_no_report_to_a_cut` reproduced the loss (holes in one writer's sequence) before the lock, and passes with it.
+- rejected: Appending without a cut and trimming only from the reader: the journal is a bound for a pane any process can write to, and nothing would hold it to that bound with no client open.
+- blast:    `uze-core::machine::home`, `uze-workspace::reports`.

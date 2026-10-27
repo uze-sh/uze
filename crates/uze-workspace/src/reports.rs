@@ -19,6 +19,8 @@ pub const REPORTS_MAX: usize = 256;
 pub const REPORTS_BYTES: u64 = 64 << 10;
 /// The most of one field a report keeps.
 const FIELD_MAX: usize = 256;
+/// How long an append waits for another to finish.
+const LOCK_PATIENCE: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// The events an agent may report, as `uze agent report` spells them.
 pub const EVENTS: &[&str] = &[
@@ -73,7 +75,10 @@ impl Report {
 }
 
 /// Appends `report` to the journal of `agent`, keeping it inside its
-/// bounds. Refused for an event that is not one of [`EVENTS`].
+/// bounds. Refused for an event that is not one of [`EVENTS`]. Held under
+/// the journal's lock: a cut reads the journal and renames its newest half
+/// over it, and a report another process appended in between would land
+/// in the file the rename replaced.
 pub fn append(home: &UzeHome, agent: &str, report: Report) -> Result<()> {
     if !EVENTS.contains(&report.event.as_str()) {
         return Err(UzeError::AgentWork(format!(
@@ -90,6 +95,8 @@ pub fn append(home: &UzeHome, agent: &str, report: Report) -> Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(written)?;
     }
+    let _held =
+        crate::file_lock::Held::acquire(&home.agent_reports_lock_path(agent), LOCK_PATIENCE)?;
     let mut line = serde_json::to_vec(&report.bounded()).expect("a report serializes");
     line.push(b'\n');
     let mut file = std::fs::OpenOptions::new()
@@ -251,6 +258,42 @@ mod tests {
             !after_cut.is_empty(),
             "an offset past the end reads from the start"
         );
+    }
+
+    #[test]
+    fn two_writers_lose_no_report_to_a_cut() {
+        let root = uze_testkit::temp::scratch("agent-reports-writers");
+        let home = UzeHome::at(root.join("uze"));
+        const EACH: u64 = 1_500;
+        std::thread::scope(|scope| {
+            for writer in ["a", "b"] {
+                let home = &home;
+                scope.spawn(move || {
+                    for at in 0..EACH {
+                        let report = Report {
+                            at,
+                            tool: Some(writer.to_owned()),
+                            ..report("tool.finished")
+                        };
+                        append(home, "a1", report).unwrap();
+                    }
+                });
+            }
+        });
+        let (kept, _) = read_from(&home, "a1", &Cursor::default());
+        for writer in ["a", "b"] {
+            let stamps: Vec<u64> = kept
+                .iter()
+                .filter(|report| report.tool.as_deref() == Some(writer))
+                .map(|report| report.at)
+                .collect();
+            let first = EACH - stamps.len() as u64;
+            assert_eq!(
+                stamps,
+                (first..EACH).collect::<Vec<_>>(),
+                "what {writer} appended is kept without a hole"
+            );
+        }
     }
 
     #[test]
