@@ -1258,8 +1258,11 @@ class Checker:
             except json.JSONDecodeError as error:
                 return False, f"{path}: not JSON ({error})"
             values += resolve_json(document, spec.get("at", ""))
+        # A path UZE recorded is spelled as the host spells it (`C:\\…` on
+        # Windows); a journey's placeholders spell it with forward slashes.
         readable = [
-            value if isinstance(value, str) else json.dumps(value) for value in values
+            machine.spell_value(value) if isinstance(value, str) else json.dumps(value)
+            for value in values
         ]
         where = f"{pattern} at {spec.get('at', '.')!r}"
         if "count" in spec and len(values) != spec["count"]:

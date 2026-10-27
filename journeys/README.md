@@ -328,6 +328,7 @@ python journeys/journey.py run journeys/suites --tag gate
 | keys and clicks | `tmux send-keys` | the same tmux key names, written as the sequences a terminal sends; clicks as SGR reports, which ConPTY turns into the app's mouse events |
 | the process table | `/proc`, `ps`, `lsof` | `psutil` |
 | a `shell:` step | `/bin/sh` with a terminal nobody answers | Git's MSYS bash by absolute path (`C:\Program Files\Git\usr\bin\bash.exe`, or `JOURNEY_BASH`), the world's `PATH` first and Git's POSIX tools after it, stdin closed, the tree ended at the deadline |
+| a recorded path a `json` check reads | as written | a drive path UZE wrote with backslashes (`C:\\…`) compared with forward slashes, as the placeholders spell it |
 
 Placeholders spell paths with forward slashes, which Git Bash and every
 Windows program read, and the world's `PATH` is its own `bin`, the binary

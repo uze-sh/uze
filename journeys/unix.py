@@ -43,6 +43,11 @@ def spell(path: Path | str) -> str:
     return str(path)
 
 
+def spell_value(value: str) -> str:
+    """A recorded string as a journey compares it: as written, here."""
+    return value
+
+
 def host_path(path: str) -> str:
     """`path` as this filesystem holds it: as written, here."""
     return path
