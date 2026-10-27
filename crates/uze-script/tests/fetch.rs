@@ -93,3 +93,17 @@ fn without_a_net_grant_there_is_no_fetch() {
     );
     assert!(uze_script::ungranted_calls(source, &github()).is_empty());
 }
+
+#[test]
+fn an_answer_asks_the_host_a_bounded_number_of_times() {
+    let (envelope, forge) = run(
+        r#"fn answer(input, context) {
+            for n in 0..40 { fetch("https://api.github.com/"); }
+            #{ data: () }
+        }"#,
+        &github(),
+    );
+    let refused = envelope.unwrap_err();
+    assert!(refused.contains("16 calls"), "{refused}");
+    assert_eq!(forge.asked.lock().unwrap().len(), 16);
+}

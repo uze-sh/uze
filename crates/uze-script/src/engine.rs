@@ -49,6 +49,11 @@ pub(crate) struct Limits {
     /// The trace is for the inspector, not a log: bounded in both ways.
     pub trace_lines: usize,
     pub trace_line_bytes: usize,
+    /// The host's programs and requests are timed on their own limits, not
+    /// the deadline; these keep one answer from holding a pool lane for
+    /// many of them in turn.
+    pub host_calls: u64,
+    pub host_waiting: Duration,
 }
 
 pub(crate) const LIMITS: Limits = Limits {
@@ -63,6 +68,8 @@ pub(crate) const LIMITS: Limits = Limits {
     script_size: 256 << 10,
     trace_lines: 200,
     trace_line_bytes: 1024,
+    host_calls: 16,
+    host_waiting: Duration::from_secs(60),
 };
 
 /// Arithmetic, logic, strings, arrays, maps, ranges and maths. Left out:
@@ -119,6 +126,8 @@ pub(crate) struct CallClock {
     /// Milliseconds a granted program took: its own time limit's, not the
     /// script's (P10).
     waiting: AtomicU64,
+    /// Programs run and requests made by the call.
+    host_calls: AtomicU64,
 }
 
 impl CallClock {
@@ -126,6 +135,7 @@ impl CallClock {
         Arc::new(Self {
             started: Mutex::new(Instant::now()),
             waiting: AtomicU64::new(0),
+            host_calls: AtomicU64::new(0),
         })
     }
 
@@ -136,6 +146,34 @@ impl CallClock {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Instant::now();
         self.waiting.store(0, Ordering::Relaxed);
+        self.host_calls.store(0, Ordering::Relaxed);
+    }
+
+    /// Times `ask`, a program or a request the host answers, against the
+    /// call's bounds: refused once the call has made [`Limits::host_calls`]
+    /// of them or waited [`Limits::host_waiting`] on them.
+    fn host<T>(
+        &self,
+        limits: &Limits,
+        ask: impl FnOnce() -> T,
+    ) -> Result<T, Box<rhai::EvalAltResult>> {
+        if self.host_calls.fetch_add(1, Ordering::Relaxed) >= limits.host_calls {
+            return Err(failure(format!(
+                "an answer asks the host at most {} calls of `run_program` and `fetch`",
+                limits.host_calls
+            )));
+        }
+        let waited = Duration::from_millis(self.waiting.load(Ordering::Relaxed));
+        if waited >= limits.host_waiting {
+            return Err(failure(format!(
+                "an answer waits on `run_program` and `fetch` at most {} s in all",
+                limits.host_waiting.as_secs()
+            )));
+        }
+        let started = Instant::now();
+        let answer = ask();
+        self.waited(started.elapsed());
+        Ok(answer)
     }
 
     fn spent(&self) -> Duration {
@@ -239,10 +277,9 @@ fn register_host(
                         })
                     })
                     .collect::<Result<Vec<String>, _>>()?;
-                let started = Instant::now();
-                let reply = runner.run_program(name, &args);
-                clock.waited(started.elapsed());
-                let reply = reply.map_err(|error| failure(error.0))?;
+                let reply = clock
+                    .host(&LIMITS, || runner.run_program(name, &args))?
+                    .map_err(|error| failure(error.0))?;
                 let mut map = Map::new();
                 map.insert(
                     "code".into(),
@@ -261,9 +298,7 @@ fn register_host(
         let fetch = move |url: &str, options: Map| -> Result<Map, Box<rhai::EvalAltResult>> {
             let request = crate::fetch::FetchRequest::read(url, &options, &granted)
                 .map_err(|error| failure(error.0))?;
-            let started = Instant::now();
-            let reply = fetcher.fetch(&request);
-            waited.waited(started.elapsed());
+            let reply = waited.host(&LIMITS, || fetcher.fetch(&request))?;
             Ok(crate::fetch::reply_map(
                 reply.map_err(|error| failure(error.0))?,
             ))
@@ -306,4 +341,51 @@ fn register_host(
     engine.register_fn("clock", move || -> rhai::INT {
         rhai::INT::try_from(reach.clock().as_millis()).unwrap_or(rhai::INT::MAX)
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::reach::{Entry, ReachError};
+
+    struct Answering;
+
+    impl Reach for Answering {
+        fn read_checkout(&self, _: &CheckoutPath) -> Result<String, ReachError> {
+            Err(ReachError("no checkout".to_owned()))
+        }
+
+        fn list_checkout(&self, _: &CheckoutPath) -> Result<Vec<Entry>, ReachError> {
+            Ok(Vec::new())
+        }
+
+        fn fetch(
+            &self,
+            _: &crate::fetch::FetchRequest,
+        ) -> Result<crate::fetch::FetchReply, ReachError> {
+            Ok(crate::fetch::FetchReply {
+                status: 200,
+                body: String::new(),
+            })
+        }
+    }
+
+    #[test]
+    fn a_call_that_waited_its_ceiling_on_the_host_asks_no_more() {
+        let grants = Grants::from([Grant::Net("api.github.com".into())]);
+        let clock = CallClock::new();
+        let engine = running(
+            &grants,
+            Arc::new(Answering),
+            Arc::new(Mutex::new(Trace::default())),
+            Arc::clone(&clock),
+        );
+        let fetch = r#"fetch("https://api.github.com/").status"#;
+        assert_eq!(engine.eval::<rhai::INT>(fetch).unwrap(), 200);
+        clock.waited(LIMITS.host_waiting);
+        let refused = engine.eval::<rhai::INT>(fetch).unwrap_err().to_string();
+        assert!(refused.contains("at most 60 s"), "{refused}");
+        clock.restart();
+        assert_eq!(engine.eval::<rhai::INT>(fetch).unwrap(), 200);
+    }
 }

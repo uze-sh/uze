@@ -349,3 +349,13 @@
 - decided:  After `end_survivors`, the writer and the readers are joined until a shared deadline one second away; a reader still blocked is left behind, and what it had read (kept in a buffer the run shares with it) is the run's output, judged by the exit status as before. A reader left behind ends when the descendant closes the pipe.
 - rejected: Closing the pipes from the host to wake the readers: a blocked `read` on Unix is not woken by closing another handle, and the readers own their ends.
 - blast:    `uze-core::machine::extension_program`.
+
+## D123 — One call of a script asks the host at most 16 times and waits at most 60 s
+
+- status:   pending
+- task:     review finding
+- commit:
+- trigger:  Time spent in `run_program` and `fetch` is taken off the script's deadline, and nothing bounded how many it made, so one answer could hold a pool lane for hours.
+- decided:  `CallClock` counts the host calls of the call running now; the 17th, or any made once 60 s were spent waiting on the host, fails naming the bound. Both reset with the call (`restart`), so a resident session gets them per call. The ceiling is checked before a call: one program or request still runs to its own limit.
+- rejected: Cutting a call short at the ceiling: a program is ended only by its runner's own time limit.
+- blast:    `uze-script::engine`.
