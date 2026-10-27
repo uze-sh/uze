@@ -487,11 +487,18 @@ impl Attach<'_> {
             .engines
             .keys()
             .any(|owner| owner.declared().is_some());
-        if !due || !hosting {
+        let writing = declared
+            .costs_writing
+            .as_ref()
+            .is_some_and(|writer| !writer.is_finished());
+        if !due || !hosting || writing {
             return;
         }
         self.model.remembered.declared.costs_written_at = Some(now);
-        spawn_extension_costs(self.home, self.model.measured_costs());
+        self.model.remembered.declared.costs_writing = Some(spawn_extension_costs(
+            self.home,
+            self.model.measured_costs(),
+        ));
     }
 }
 

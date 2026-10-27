@@ -779,6 +779,25 @@ impl Driven<'_> {
         self.attach.pump(&self.events)
     }
 
+    /// Waits out what the pumps left writing under the home: the task
+    /// evaluations still out and the costs write. Nothing new is asked
+    /// meanwhile, so a test that removes its home after this removes a
+    /// tree no thread of the client is still writing into.
+    pub(super) fn settle(&mut self) {
+        let deadline = Instant::now() + std::time::Duration::from_secs(60);
+        while !self.attach.model.remembered.task_eval_pending.is_empty() {
+            assert!(
+                Instant::now() < deadline,
+                "a task evaluation never answered"
+            );
+            self.attach.absorb_task_evaluations();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        if let Some(writer) = self.attach.model.remembered.declared.costs_writing.take() {
+            writer.join().expect("the costs write ended");
+        }
+    }
+
     /// The terminal server exiting under the client.
     pub(super) fn runtime_gone(&mut self) {
         self.events_sender = None;

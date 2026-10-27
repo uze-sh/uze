@@ -2214,6 +2214,7 @@ fn a_linked_extensions_inspector_lists_its_runs_and_reruns_with_edited_input() {
     assert!(shown(&rows, "put state's input back"), "{rows:#?}");
     assert_eq!(driven.attach.model.remembered.declared.runner.runs(), 2);
 
+    driven.settle();
     std::fs::remove_dir_all(root).unwrap();
     std::fs::remove_dir_all(checkout).unwrap();
 }
@@ -2265,11 +2266,16 @@ fn a_linked_extensions_author_switches_fixtures_emits_resizes_and_records() {
     let row = drawn(&driven.attach.model, WorkspaceHit::InspectorTool(record));
     driven.press(row.x, row.y);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
-    let recorded = band.join("fixtures/session.json");
-    while !recorded.exists() && std::time::Instant::now() < deadline {
+    let told = |driven: &Driven<'_>| {
+        let toasts = &driven.attach.model.remembered.toasts;
+        toasts.iter().any(|toast| toast.text == "events recorded")
+    };
+    while !told(&driven) && std::time::Instant::now() < deadline {
         let _ = driven.pump();
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
+    assert!(told(&driven), "the recording was never told");
+    let recorded = band.join("fixtures/session.json");
     let events: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&recorded).unwrap()).unwrap();
     assert_eq!(events[0]["synthetic"], serde_json::json!(true), "{events}");
@@ -2281,6 +2287,7 @@ fn a_linked_extensions_author_switches_fixtures_emits_resizes_and_records() {
         None,
         "the author's size goes with the inspector"
     );
+    driven.settle();
     std::fs::remove_dir_all(root).unwrap();
     std::fs::remove_dir_all(checkout).unwrap();
 }

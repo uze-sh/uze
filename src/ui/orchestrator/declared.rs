@@ -457,6 +457,9 @@ pub(super) struct HostedExtensions {
     pub(super) bridge: Bridge,
     /// When what they cost was last written for `uze doctor`.
     pub(super) costs_written_at: Option<Instant>,
+    /// The write of what they cost still under way, if one is: the next
+    /// waits for it rather than racing it to the same file.
+    pub(super) costs_writing: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Default for HostedExtensions {
@@ -483,6 +486,7 @@ impl Default for HostedExtensions {
             watching: Watching::default(),
             bridge: Bridge::default(),
             costs_written_at: None,
+            costs_writing: None,
         };
         for (id, engine) in builtins() {
             let owner = Owner::Builtin(id);

@@ -203,7 +203,10 @@ impl Extensions<'_> {
         if std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.file_type().is_symlink()) {
             return Err(format!("{fixture}: not a path inside the extension"));
         }
-        std::fs::write(&path, payload).map_err(|error| format!("{fixture}: {error}"))?;
+        // Replaced whole: the extension's own watch recompiles on the
+        // save, and a half-written fixture is one it would read.
+        uze_core::persistence::write_atomic_unsynced(&path, &payload)
+            .map_err(|error| format!("{fixture}: {error}"))?;
         Ok(path)
     }
 }

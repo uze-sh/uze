@@ -1884,9 +1884,12 @@ pub(super) fn spawn_inspector_record(
 
 /// Writing what the declared extensions cost, for `uze doctor`.
 ///
-/// Fire-and-forget: a generated file another process reads, which the
-/// next pass writes again.
-pub(super) fn spawn_extension_costs(home: &UzeHome, costs: uze_application::MeasuredCosts) {
+/// Answers nothing: a generated file another process reads, which the
+/// next pass writes again. The handle only says when it is done.
+pub(super) fn spawn_extension_costs(
+    home: &UzeHome,
+    costs: uze_application::MeasuredCosts,
+) -> thread::JoinHandle<()> {
     let home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
@@ -1899,5 +1902,5 @@ pub(super) fn spawn_extension_costs(home: &UzeHome, costs: uze_application::Meas
             },
             (),
         );
-    });
+    })
 }
