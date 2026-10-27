@@ -49,6 +49,10 @@ pub(crate) struct Clock {
 
 impl Clock {
     pub(crate) fn now() -> Self {
+        #[cfg(test)]
+        if let Some(now_ms) = STOPPED_AT.with(std::cell::Cell::get) {
+            return Self { now_ms };
+        }
         let now_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|since| u64::try_from(since.as_millis()).unwrap_or(u64::MAX))
@@ -59,6 +63,22 @@ impl Clock {
     fn tick(self) -> usize {
         usize::try_from(self.now_ms / ACTIVITY_FRAME_MS).unwrap_or(usize::MAX)
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    static STOPPED_AT: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+}
+
+/// Runs `draw` with the clock every tree is drawn from stopped at
+/// `now_ms`, on this thread alone: a frame drawn through the whole client
+/// at an instant a test chooses.
+#[cfg(test)]
+pub(crate) fn stopped_at<T>(now_ms: u64, draw: impl FnOnce() -> T) -> T {
+    let before = STOPPED_AT.with(|stopped| stopped.replace(Some(now_ms)));
+    let drawn = draw();
+    STOPPED_AT.with(|stopped| stopped.set(before));
+    drawn
 }
 
 /// What the host knows while drawing a tree, and the tree may not hold.

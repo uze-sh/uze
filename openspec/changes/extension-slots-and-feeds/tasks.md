@@ -26,13 +26,13 @@
 ## 5. Notify and sound
 
 - [x] 5.1 `uze_platform::notify`: desktop tool by path, OSC 9 by `TERM_PROGRAM`, the bell; one implementation per platform; unit tests over the choice (parent 14.10)
-- [ ] 5.2 The envelope's `notify` and `sound` applied from the frame loop under `notify`, attributed, rate-limited (1 per 10 s, 30 per hour per extension), the excess counted in the notice
+- [x] 5.2 The envelope's `notify` and `sound` applied from the frame loop under `notify`, attributed, rate-limited (1 per 10 s, 30 per hour per extension), the excess counted in the notice
 
 ## 6. Events delivered
 
 - [x] 6.1 `input.event` for a source asked by an event; `deliver "each"` with its window bound and `dropped`
 - [x] 6.2 The `events` source: the last N events of the extension, in memory
-- [ ] 6.3 A TestBackend test that `Activity`, `Elapsed` and segmented `Progress` move while no run happens (parent 13.5)
+- [x] 6.3 A TestBackend test that `Activity`, `Elapsed` and segmented `Progress` move while no run happens (parent 13.5)
 
 ## 7. Proof and docs
 

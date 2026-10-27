@@ -219,3 +219,43 @@
 - decided:  `ExtensionReport::band_rows` is the sum of its bands' rows, `None` without one, and both consent steps (the Extensions screen's and the workspace's offer) add the line after the grants. An extension that runs nothing asks no consent, so its band is said only on the Extensions screen's surface list (`· band, N rows`).
 - rejected: A consent step for a fixtures-only extension with a band: consent is about what runs, and a band runs nothing.
 - blast:    `uze-application::extensions::report`, `src/ui/{overlay,model}.rs`, `orchestrator/extension_offer.rs`.
+
+## D30 — The declared engine gates and rates a notification as the answer lands; the host takes it only under `notify`
+
+- status:   pending
+- task:     5.2
+- commit:   b82150b7
+- trigger:  S6 has the host apply `notify` and `sound` under the grant and within a rate, and counts the excess in the surface's notice, which only the engine keeps.
+- decided:  `DeclaredExtension::apply` hands the envelope to `ask_to_notify`: without `notify` in the manifest it says so in the notice of the surfaces the answer was about; with it, `Rate::admit` lets it through on the host's clock of the last pass (one every 10 s, 30 in any hour), else counts it. What goes through waits for `Extension::notifications`, a new method with a default that hands nothing. The frame loop takes them after the clipboard (`take_notifications`), dropping whatever an engine whose `Hosted::may_notify` is false asked, and sends each through `send_notification`. Neither the script's envelope decoder nor the manifest check refuses `notify` without the grant: it is enforced here, twice. A request and its cue count as one against the rate; with no clock yet, nothing is counted as sent, so nothing goes.
+- rejected: A rate kept by the host per owner: the count belongs in a notice only the engine holds, and a second contract method would carry it back.
+- blast:    `uze-extensions::{contract::Notify, declared/notify.rs}`, `orchestrator/declared/notify.rs`, `orchestrator.rs` (the frame loop).
+
+## D31 — A notification reads `id · plugin@marketplace: title`, and a cue is one bell
+
+- status:   pending
+- task:     5.2
+- commit:   b82150b7
+- trigger:  S6 asks the title to begin with the extension's attribution and every cue to be the bell.
+- decided:  The title is led as every third party's word is (`attributed`): the attribution, a colon, the extension's title, or the attribution alone when the title is empty. `uze_platform::notify::route` decides the way out with `TERM_PROGRAM` read once before the loop: the desktop's tool is spawned on a thread of its own with nothing reaching the terminal, OSC 9 or the bell is written between frames. A cue rings the bell unless the notification already fell back to it, so one answer never rings twice.
+- rejected: Distinct sounds per cue: the host plays no audio file (S6, D20).
+- blast:    `orchestrator/declared/notify.rs`.
+
+## D32 — What was dropped is counted since the last one sent, after the answer's own notice
+
+- status:   pending
+- task:     5.2
+- commit:   b82150b7
+- trigger:  S6 counts the excess in the surface's notice, and the answer may carry a notice of its own.
+- decided:  The notice says `N notifications dropped: at most 1 every 10 s and 30 an hour`, counting from the last notification that went out, in the warning role; an answer's own notice stays first, ` · ` before the count. A request without the grant says `not notified: needs the notify grant`. An answer that asks nothing clears it, as it clears any notice.
+- rejected: A toast per drop: a burst would be a flood of toasts, which the design system forbids.
+- blast:    `uze-extensions::declared/notify.rs`.
+
+## D33 — A segmented `Progress` is drawn as answered; what moves on its own is `Activity` and `Elapsed`
+
+- status:   pending
+- task:     6.3
+- commit:
+- trigger:  Parent 13.5 and the design speak of segmented `progress` transitions driven by the host's clock; the renderer keeps nothing between frames.
+- decided:  No transition is added. A bar moves when its answer does, and the test proves it holds still while the activity mark and the elapsed time move, with no run between two frames, and that such a frame asks the loop for the next one (`marquee`). The renderer already moved both from the clock it is handed; the test drives the whole client's frame with that clock stopped at a chosen instant (`tree::stopped_at`, test-only), on its own thread.
+- rejected: Easing a bar from its last fill to its new one: state across frames that the renderer refuses by design, or a wall clock in the engine, for a motion of a fraction of a second.
+- blast:    `src/ui/extension_view/tree.rs`, `orchestrator/tests/declared_motion.rs`.
