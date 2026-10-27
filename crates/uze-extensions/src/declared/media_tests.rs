@@ -343,3 +343,34 @@ fn a_picture_of_a_surface_gone_from_view_is_released() {
         "its build no longer holds the picture"
     );
 }
+
+#[test]
+fn a_read_from_before_a_new_compile_is_never_taken_as_the_new_ones() {
+    let mut engine = hosted(vec![n(NodeName::Image).arg("a.png").item()], json!({}));
+    let file = |side| Showing {
+        files: BTreeMap::from([("a.png".to_owned(), png(side, side, [9, 9, 9, 255]))]),
+    };
+    tree(&engine);
+    let before = engine.jobs();
+    assert_eq!(before.len(), 1);
+    engine.replace(engine.compiled().clone());
+    tree(&engine);
+    let after = engine.jobs();
+    assert_eq!(after.len(), 1, "the new compile reads it again");
+
+    for job in before {
+        engine.absorb((job.run)(&file(1)));
+    }
+    let key = media::MediaKey::Image("a.png".to_owned());
+    assert!(
+        engine.media.get(&key).is_none(),
+        "the old compile's read landed late and is dropped"
+    );
+    for job in after {
+        engine.absorb((job.run)(&file(2)));
+    }
+    let NodeKind::Image { picture, .. } = image(&engine) else {
+        unreachable!()
+    };
+    assert_eq!(picture.map(|picture| picture.width), Some(2));
+}

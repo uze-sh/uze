@@ -74,6 +74,10 @@ pub(super) struct Shelf {
     stale: BTreeSet<MediaKey>,
     /// The read out, at most one.
     reading: Option<MediaKey>,
+    /// Bumped by [`Shelf::clear`] and carried by each read, so a read
+    /// asked before a clear and landing after a new read of the same key
+    /// started is never taken as the new one's.
+    epoch: u64,
     /// Bumped whenever what is held changes, so a build of the old shelf
     /// is never served.
     pub generation: u64,
@@ -83,6 +87,7 @@ pub(super) struct Shelf {
 pub(super) struct MediaAnswer {
     key: MediaKey,
     held: Held,
+    epoch: u64,
 }
 
 /// What a build reads off the shelf.
@@ -106,6 +111,7 @@ impl Shelf {
         self.held.clear();
         self.stale.clear();
         self.reading = None;
+        self.epoch += 1;
         self.generation += 1;
     }
 
@@ -155,12 +161,12 @@ impl Shelf {
                 .sum(),
         );
         self.reading = Some(key.clone());
-        Some(read(identity.clone(), key, sprites, room))
+        Some(read(identity.clone(), key, sprites, room, self.epoch))
     }
 
     /// Takes a read's answer; one for a read no longer out is dropped.
     pub fn absorb(&mut self, answer: MediaAnswer) {
-        if self.reading.as_ref() != Some(&answer.key) {
+        if answer.epoch != self.epoch || self.reading.as_ref() != Some(&answer.key) {
             return;
         }
         self.reading = None;
@@ -219,7 +225,7 @@ fn refused_format(file: &str) -> Option<String> {
 
 /// The job that reads `key` through the host and decodes it within `room`
 /// bytes, cutting a sheet into its frames.
-fn read(identity: Identity, key: MediaKey, sprites: &[SpriteDecl], room: usize) -> Job {
+fn read(identity: Identity, key: MediaKey, sprites: &[SpriteDecl], room: usize, epoch: u64) -> Job {
     let sprite = match &key {
         MediaKey::Sheet(id) => sprites.iter().find(|sprite| sprite.id == *id).cloned(),
         MediaKey::Image(_) => None,
@@ -236,12 +242,13 @@ fn read(identity: Identity, key: MediaKey, sprites: &[SpriteDecl], room: usize) 
                 Ok(bytes) => decoded(&name, &bytes, room, sprite.as_ref()),
                 Err(why) => Held::Refused(why),
             };
-            Opaque::new(MediaAnswer { key, held })
+            Opaque::new(MediaAnswer { key, held, epoch })
         }),
         fallback: Box::new(move || {
             Opaque::new(MediaAnswer {
                 key: fallback_key,
                 held: Held::Refused("the picture could not be read".to_owned()),
+                epoch,
             })
         }),
     }
@@ -420,6 +427,7 @@ mod tests {
         shelf.absorb(MediaAnswer {
             key: MediaKey::Image("a.png".to_owned()),
             held: Held::Refused("gone".to_owned()),
+            epoch: 0,
         });
         assert!(shelf.get(&MediaKey::Image("a.png".to_owned())).is_some());
         let only_b: BTreeSet<MediaKey> = [MediaKey::Image("b.png".to_owned())].into();

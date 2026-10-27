@@ -444,3 +444,13 @@
 - decided:  The engine keeps the surfaces of the last `Pass` (`in_view`). Before asking for pictures, `jobs` lets go of every build out of view that names a picture, and gathers the wanted pictures from the builds left, so the shelf releases what no surface in view draws. A build out of view that names no picture is kept, so a section drawn folded every frame is not rebuilt each pass. Before any pass (a host that never passes, tests) every build counts as in view.
 - rejected: Dropping every memo out of view: a folded section's header is drawn each frame and would be rebuilt after every pass for nothing.
 - blast:    `declared.rs` (`in_view`, `pass`, `jobs`, `pictures_in_view`); `declared/media_tests.rs`.
+
+## D146 — A picture read carries the shelf's epoch, and one from before a clear is dropped
+
+- status:   pending
+- task:     review finding
+- commit:
+- trigger:  `Shelf::clear` (on `replace`) forgot the read in flight, but its answer could land after a new read of the same key started, and was taken as the new one's: the old compile's picture drawn for the new.
+- decided:  The shelf has an `epoch` that only `clear` bumps; each read's job carries the epoch it was asked in, and `absorb` drops an answer from another epoch before matching the key. The new read stays out and its own answer is taken.
+- rejected: Reusing `generation`: it moves on every absorb and refusal, so a read would be dropped for a change that did not forget it.
+- blast:    `declared/media.rs` (`Shelf::{epoch, clear, next, absorb}`, `MediaAnswer`, `read`); `declared/media_tests.rs`.
