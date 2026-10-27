@@ -389,3 +389,23 @@
 - decided:  `every_fixture_plugins_extensions_check_clean` runs the real binary's check over each `tests/_fixtures/canonical/*` with an `extensions/` directory, tests and snapshots included, and requires `gpu` and `gsd` among them.
 - rejected: A separate CI job: the packages suite already runs on every change to these paths.
 - blast:    `tests/packages/authoring.rs`.
+
+## D40 — The journey's extension also wants `clipboard`, so both consent steps are walked
+
+- status:   pending
+- task:     9.4
+- commit:   be0d5afa
+- trigger:  An extension whose only grant is `exec:sh` opens the offer straight on the programs step (D34), so a journey with it would never show the grants step before it.
+- decided:  Journey 17's `lines` extension wants `exec:sh` and `clipboard` (with a "Copy count" action it never runs): the offer's first step lists `clipboard`, the second `sh · /…`. It gates on the titles' shared prefix "Allow these programs to run", since a container may or may not confine; this one did (`programs ✓ confined by Landlock ABI 7 and seccomp`, `enforced_at_accept: true`). Passed twice, 13.9 s.
+- rejected: Two journeys, one per path: the single-step offer is covered by the TUI test.
+- blast:    `journeys/suites/04-workspace/17-a-program-extension-the-operator-allows.yml`.
+
+## D41 — Change 5 is closed by the gates; the hand proof waits for the operator
+
+- status:   pending
+- task:     9.5
+- commit:
+- trigger:  9.5 asks for `make check` and "the hand proof script", and the operator asked to review everything at the end rather than validate each change as it lands.
+- decided:  `make check` ran on the tip (`be0d5afa`): green but the three known environment failures (`opencode::project_agents::…the_section_registers_exactly…`, two `foreground_status_*`); `cargo deny`, `make attributions-check`, `make artifacts`, ruff and `openspec validate --all --strict` (77/77) green. The hand proof is `run5.sh` (kept with the progress page's sources): its automatic steps pass (doctor says confined, install leaves both extensions disabled, status names each pin); its checklist a–e is for the operator.
+- rejected: Holding change 6 until the hand proof: the operator review comes at the end.
+- blast:    None.
