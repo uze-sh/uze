@@ -288,3 +288,13 @@
 - decided:  `make check` passes on the branch rebased onto `main` (`f5a7972e`) but for the three failures known to this machine's environment (opencode's `bun` shim, two `foreground_status_*` in `uze-terminal`); `openspec validate --all --strict` passes. The proof script (`run6.sh`, kept with the plan's artifact, shared by 6a and 6b) rebuilds a world from the branch's `deck` and `bridge` fixtures; its automatic part passes (install disabled, nothing allowed unasked, both plugins check clean, a report from outside an agent refused with exit 0). Its checklist a–i in the real TUI is the operator's.
 - rejected: Waiting for the operator to close the task: the run is unattended.
 - blast:    None.
+
+## D45 — An unattended prompt is 512 bytes at most
+
+- status:   pending
+- task:     4.4
+- commit:
+- trigger:  The parent's *Product decisions owed* bounds each unattended prompt at 512 bytes; D17 left it out.
+- decided:  `ask_of_agent` refuses an unattended prompt over 512 bytes with an attributed notice; one sent on a gesture is shown first and has no bound of its own.
+- rejected: Cutting it: a cut prompt says something its author did not write.
+- blast:    `declared/agent.rs`.

@@ -29,6 +29,9 @@ const UNATTENDED_EVERY: Duration = Duration::from_secs(10);
 /// The characters a prompt may not lead with: each is a harness's own
 /// command syntax, which only a skill's spelling may use.
 const COMMAND_LEADS: &[char] = &['!', '/', '#', '@', '$'];
+/// The longest prompt sent with nobody pressing anything (*Product
+/// decisions owed*, the unattended prompt rate).
+const UNATTENDED_MAX: usize = 512;
 
 /// A write the operator saw and allowed, or an unattended one allowed
 /// before, waiting for the session to type it.
@@ -188,6 +191,9 @@ impl WorkspaceModel {
         let skill = matches!(request.what, AgentAsk::Skill { .. });
         if let Err(reason) = strictly_text(&text, skill) {
             return refuse(self, reason);
+        }
+        if request.unattended && text.len() > UNATTENDED_MAX {
+            return refuse(self, "a prompt sent on its own is 512 bytes at most");
         }
         let write = Write {
             owner: owner.clone(),
