@@ -5,8 +5,8 @@
 
 use super::support::*;
 use super::{
-    ExtensionAnswer, ExtensionWatch, ExtensionWatchRead, HostedExtensions, LoadedExtension,
-    WorkspaceModel,
+    EngineAnswer, ExtensionAnswer, ExtensionWatch, ExtensionWatchRead, HostedExtensions,
+    LoadedExtension, WorkspaceModel,
 };
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -139,8 +139,8 @@ fn save(file: &Path, seconds: u64) {
 fn asked(
     model: &mut WorkspaceModel,
     home: &UzeHome,
-    sender: &std::sync::mpsc::Sender<super::super::EngineAnswer>,
-    answers: &std::sync::mpsc::Receiver<super::super::EngineAnswer>,
+    sender: &std::sync::mpsc::Sender<EngineAnswer>,
+    answers: &std::sync::mpsc::Receiver<EngineAnswer>,
     now: Instant,
 ) -> usize {
     let handed = model.schedule_engine_jobs_at(home, sender, now);
