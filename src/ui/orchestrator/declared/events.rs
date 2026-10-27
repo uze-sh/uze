@@ -21,7 +21,8 @@ pub(in crate::ui::orchestrator) struct ExtensionWatch {
     pub(in crate::ui::orchestrator) paths: Vec<(PathBuf, String)>,
     /// Agents' journals, from where each was last read; `None` for a
     /// first read.
-    pub(in crate::ui::orchestrator) journals: Vec<(String, Option<u64>)>,
+    pub(in crate::ui::orchestrator) journals:
+        Vec<(String, Option<uze_application::AgentReportCursor>)>,
 }
 
 /// What the watch read for the extensions.
@@ -31,10 +32,13 @@ pub(in crate::ui::orchestrator) struct ExtensionWatchRead {
     /// tree.
     pub(in crate::ui::orchestrator) checkouts: Vec<(PathBuf, Option<u64>)>,
     pub(in crate::ui::orchestrator) paths: Vec<((PathBuf, String), u64)>,
-    /// Each journal's reports since its offset (`None` on a first read,
+    /// Each journal's reports since its cursor (`None` on a first read,
     /// which only sets it) and where it is read from next.
-    pub(in crate::ui::orchestrator) reports:
-        Vec<(String, Option<Vec<uze_application::AgentReport>>, u64)>,
+    pub(in crate::ui::orchestrator) reports: Vec<(
+        String,
+        Option<Vec<uze_application::AgentReport>>,
+        uze_application::AgentReportCursor,
+    )>,
 }
 
 /// What the last read found, and what happened since the last pass.

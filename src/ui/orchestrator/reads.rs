@@ -724,10 +724,10 @@ pub(super) fn spawn_checkout_watch(
                             .collect();
                         let reports = journals
                             .into_iter()
-                            .map(|(agent, offset)| {
-                                let (reports, next) =
-                                    workspace.reports_since(&agent, offset.unwrap_or(0));
-                                (agent, offset.map(|_| reports), next)
+                            .map(|(agent, cursor)| {
+                                let (reports, next) = workspace
+                                    .reports_since(&agent, &cursor.clone().unwrap_or_default());
+                                (agent, cursor.map(|_| reports), next)
                             })
                             .collect();
                         (stamps, declaration, watched, reports)

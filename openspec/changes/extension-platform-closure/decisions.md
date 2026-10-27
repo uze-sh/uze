@@ -537,3 +537,13 @@
 - decided:  `consent(identity, shown, asker)` takes the digest of the files the operator was shown and refuses, recording nothing, with "<extension> changed while you were asked; ask again" when the files now digest otherwise. `ExtensionReport` carries the digest it was read from (`digest`, not serialized, so `--json` output is unchanged); the CLI's install question passes its report's, the workspace's offer passes the offer's, and the Extensions screen's consent passes the standing's through `ExtensionHere::shown`. `Extensions::digest` gives the digest now, for a caller that shows the extension from there (tests).
 - rejected: Passing the grant set alone: same grants with new code is exactly what an unconfined acceptance must not take unseen, and the digest covers grants, reads and packaged programs at once.
 - blast:    `uze-application::extensions::{consent,report}`, `src/cli/extensions.rs`, `src/ui/{model,worker,orchestrator/reads}.rs`, every test that consents.
+
+## D164 — A journal reader resumes after the last report it delivered when the journal was cut beneath it
+
+- status:   pending
+- task:     review finding 5
+- commit:
+- trigger:  After a journal was cut to its newest half, a reader whose offset lay past the new end read it again from byte 0 and delivered the kept half a second time: every observing extension saw the same `agent.*` events twice.
+- decided:  `reports::read_from` takes and returns a `Cursor { offset, last }`, `last` being the last report delivered. When the offset is past the end, the journal is read from its start and only what follows the last occurrence of `last` is delivered; when `last` is not in what was kept, it was in the half cut away, so everything kept is new. The bridge keeps a cursor per agent instead of an offset (`AgentReportCursor` re-exported by `uze-application`). A report is compared whole (event, stamp, tool, path, call, outcome), so two reports in one millisecond are told apart unless they are identical in every field.
+- rejected: A "since" stamp alone (`at` and `event`): reports share a millisecond, so a stamp drops a report or delivers one twice. Detecting the cut by the file's identity: it needs an inode concept per platform for what the last report already says.
+- blast:    `uze-workspace::reports`, `uze-application` `reports_since`, `src/ui/orchestrator/declared/{bridge,events}.rs`, `src/ui/orchestrator/reads.rs`.

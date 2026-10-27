@@ -113,7 +113,8 @@ fn lines_over(path: &std::path::Path) -> bool {
 }
 
 /// Rewrites the journal with its newest half, whole lines only. A reader
-/// whose offset now lies past the end reads it again from the start.
+/// whose offset now lies past the end reads it again from the start, past
+/// the last report it delivered.
 fn keep_newest_half(path: &std::path::Path) -> std::io::Result<()> {
     let bytes = std::fs::read(path)?;
     let lines: Vec<&[u8]> = bytes.split_inclusive(|byte| *byte == b'\n').collect();
@@ -121,33 +122,60 @@ fn keep_newest_half(path: &std::path::Path) -> std::io::Result<()> {
     crate::persistence::write_atomic(path, &kept).map_err(std::io::Error::other)
 }
 
-/// The reports `agent` appended since `offset` (a byte position this
-/// returned before), and the offset to read from next. A journal shorter
-/// than `offset` was cut down, and is read from its start.
-pub fn read_from(home: &UzeHome, agent: &str, offset: u64) -> (Vec<Report>, u64) {
+/// Where a reader of one journal stands: the byte it reads from next, and
+/// the last report it delivered, which is what it resumes after when the
+/// journal was cut down beneath it.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Cursor {
+    pub offset: u64,
+    pub last: Option<Report>,
+}
+
+/// The reports `agent` appended since `cursor` (one this returned before,
+/// or the default for a first read), and the cursor to read from next. A
+/// journal shorter than the cursor's offset was cut down: it is read from
+/// its start, and only what follows the last report delivered is new (all
+/// of it, when that report was among the half cut away).
+pub fn read_from(home: &UzeHome, agent: &str, cursor: &Cursor) -> (Vec<Report>, Cursor) {
     let path = home.agent_reports_path(agent);
     let Ok(mut file) = std::fs::File::open(&path) else {
-        return (Vec::new(), 0);
+        return (Vec::new(), Cursor::default());
     };
     let size = file.metadata().map(|metadata| metadata.len()).unwrap_or(0);
-    let from = if offset > size { 0 } else { offset };
+    let cut = cursor.offset > size;
+    let from = if cut { 0 } else { cursor.offset };
+    let unread = |offset| Cursor {
+        offset,
+        last: cursor.last.clone(),
+    };
     let mut tail = Vec::new();
     if file.seek(SeekFrom::Start(from)).is_err()
         || file.take(REPORTS_BYTES).read_to_end(&mut tail).is_err()
     {
-        return (Vec::new(), from);
+        return (Vec::new(), unread(from));
     }
     // A line still being written is read next time, whole.
     let complete = tail
         .iter()
         .rposition(|byte| *byte == b'\n')
         .map_or(0, |at| at + 1);
-    let reports = tail[..complete]
+    let mut reports: Vec<Report> = tail[..complete]
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .filter_map(|line| serde_json::from_slice(line).ok())
         .collect();
-    (reports, from + complete as u64)
+    if cut && let Some(last) = &cursor.last {
+        let delivered = reports
+            .iter()
+            .rposition(|report| report == last)
+            .map_or(0, |at| at + 1);
+        reports.drain(..delivered);
+    }
+    let next = Cursor {
+        offset: from + complete as u64,
+        last: reports.last().cloned().or_else(|| cursor.last.clone()),
+    };
+    (reports, next)
 }
 
 #[cfg(test)]
@@ -166,7 +194,10 @@ mod tests {
     fn reports_are_read_from_where_the_reader_stopped() {
         let root = uze_testkit::temp::scratch("agent-reports");
         let home = UzeHome::at(root.join("uze"));
-        assert_eq!(read_from(&home, "a1", 0), (Vec::new(), 0));
+        assert_eq!(
+            read_from(&home, "a1", &Cursor::default()),
+            (Vec::new(), Cursor::default())
+        );
         append(&home, "a1", report("turn.started")).unwrap();
         append(
             &home,
@@ -177,7 +208,7 @@ mod tests {
             },
         )
         .unwrap();
-        let (first, offset) = read_from(&home, "a1", 0);
+        let (first, cursor) = read_from(&home, "a1", &Cursor::default());
         assert_eq!(first.len(), 2);
         assert_eq!(
             first[1].tool.as_deref(),
@@ -185,7 +216,7 @@ mod tests {
             "no control characters"
         );
         append(&home, "a1", report("turn.finished")).unwrap();
-        let (next, _) = read_from(&home, "a1", offset);
+        let (next, _) = read_from(&home, "a1", &cursor);
         assert_eq!(next, [report("turn.finished")]);
         assert!(append(&home, "a1", report("rm -rf")).is_err());
     }
@@ -205,13 +236,50 @@ mod tests {
             )
             .unwrap();
         }
-        let (kept, _) = read_from(&home, "a1", 0);
+        let (kept, _) = read_from(&home, "a1", &Cursor::default());
         assert!(kept.len() <= REPORTS_MAX, "{}", kept.len());
         assert_eq!(kept.last().unwrap().at, 1_999);
-        let (after_cut, _) = read_from(&home, "a1", u64::MAX);
+        let (after_cut, _) = read_from(
+            &home,
+            "a1",
+            &Cursor {
+                offset: u64::MAX,
+                last: None,
+            },
+        );
         assert!(
             !after_cut.is_empty(),
             "an offset past the end reads from the start"
         );
+    }
+
+    #[test]
+    fn a_reader_the_journal_was_cut_beneath_delivers_only_what_is_new() {
+        let root = uze_testkit::temp::scratch("agent-reports-cut");
+        let home = UzeHome::at(root.join("uze"));
+        let at = |at| Report {
+            at,
+            ..report("tool.finished")
+        };
+        let mut delivered = Vec::new();
+        let mut cursor = Cursor::default();
+        for stamp in 0..600 {
+            append(&home, "a1", at(stamp)).unwrap();
+            if stamp % 7 == 0 {
+                let (read, next) = read_from(&home, "a1", &cursor);
+                delivered.extend(read.into_iter().map(|report| report.at));
+                cursor = next;
+            }
+        }
+        let (read, _) = read_from(&home, "a1", &cursor);
+        delivered.extend(read.into_iter().map(|report| report.at));
+        let mut sorted = delivered.clone();
+        sorted.dedup();
+        assert_eq!(sorted, delivered, "nothing was delivered twice");
+        assert!(
+            delivered.windows(2).all(|pair| pair[0] < pair[1]),
+            "in the order reported"
+        );
+        assert_eq!(delivered.last(), Some(&599));
     }
 }

@@ -16,7 +16,7 @@ impl Workspace<'_> {
 }
 
 impl Workspace<'_> {
-    /// The reports agent `agent` appended since `offset`, and where to read
+    /// The reports agent `agent` appended since `cursor`, and where to read
     /// from next: what the client turns into the extensions' `agent.*`
     /// events. At `trace`: it is asked every second for every agent while
     /// an extension observes them.
@@ -24,8 +24,11 @@ impl Workspace<'_> {
     pub fn reports_since(
         &self,
         agent: &str,
-        offset: u64,
-    ) -> (Vec<uze_workspace::reports::Report>, u64) {
-        uze_workspace::reports::read_from(&self.0.home, agent, offset)
+        cursor: &uze_workspace::reports::Cursor,
+    ) -> (
+        Vec<uze_workspace::reports::Report>,
+        uze_workspace::reports::Cursor,
+    ) {
+        uze_workspace::reports::read_from(&self.0.home, agent, cursor)
     }
 }

@@ -111,6 +111,7 @@ pub use uze_workspace::{
     notifications::{Chime, WrittenChime},
     project_labels::{ProjectLabels, directory_name},
     prompt_history::{PromptAge, PromptClock, PromptEntry, PromptOrigin},
+    reports::Cursor as AgentReportCursor,
     reports::Report as AgentReport,
     worktree::{CompletionBehavior, PolicyStep, isolated_checkout},
 };

@@ -30,8 +30,9 @@ pub(in crate::ui::orchestrator) struct BridgedAgent {
 /// What the bridge keeps between reads.
 #[derive(Default)]
 pub(in crate::ui::orchestrator) struct Bridge {
-    /// Where each agent's journal is read from next.
-    offsets: BTreeMap<String, u64>,
+    /// Where each agent's journal is read from next, and the last report
+    /// it delivered, which a journal cut down beneath it resumes after.
+    offsets: BTreeMap<String, uze_application::AgentReportCursor>,
     /// The agents a report came from this session: their turns are not
     /// read from paint while their journal is.
     reporting: BTreeSet<String>,
@@ -92,14 +93,16 @@ impl WorkspaceModel {
             .is_some_and(|project| self.enabled_in(owner, project))
     }
 
-    /// The journals the next watch reads: each agent's, from its offset,
+    /// The journals the next watch reads: each agent's, from its cursor,
     /// or `None` for one never read, whose first read only sets it.
-    pub(in crate::ui::orchestrator) fn journals_to_read(&self) -> Vec<(String, Option<u64>)> {
+    pub(in crate::ui::orchestrator) fn journals_to_read(
+        &self,
+    ) -> Vec<(String, Option<uze_application::AgentReportCursor>)> {
         let bridge = &self.remembered.declared.bridge;
         self.journals_read_of(&bridge.agents)
             .into_iter()
             .map(|id| {
-                let offset = bridge.offsets.get(&id).copied();
+                let offset = bridge.offsets.get(&id).cloned();
                 (id, offset)
             })
             .collect()
@@ -169,11 +172,15 @@ impl WorkspaceModel {
     /// Takes what the journals held since the last read.
     pub(in crate::ui::orchestrator) fn absorb_reports(
         &mut self,
-        read: Vec<(String, Option<Vec<uze_application::AgentReport>>, u64)>,
+        read: Vec<(
+            String,
+            Option<Vec<uze_application::AgentReport>>,
+            uze_application::AgentReportCursor,
+        )>,
     ) {
         let bridge = &mut self.remembered.declared.bridge;
-        for (id, reports, offset) in read {
-            bridge.offsets.insert(id.clone(), offset);
+        for (id, reports, cursor) in read {
+            bridge.offsets.insert(id.clone(), cursor);
             let Some(reports) = reports else {
                 continue;
             };

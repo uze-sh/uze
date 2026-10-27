@@ -335,15 +335,16 @@ fn an_agents_report_asks_the_source_of_an_extension_observing_agents() {
         [("a1".to_owned(), None)],
         "a journal never read is read first only to set its offset"
     );
+    let cursor = |offset| uze_application::AgentReportCursor { offset, last: None };
     let read = |reports, offset| ExtensionWatchRead {
         checkouts: Vec::new(),
         paths: Vec::new(),
-        reports: vec![("a1".to_owned(), reports, offset)],
+        reports: vec![("a1".to_owned(), reports, cursor(offset))],
     };
     model.absorb_extension_watch(read(None, 40));
     assert_eq!(
         model.extension_watch().journals,
-        [("a1".to_owned(), Some(40))]
+        [("a1".to_owned(), Some(cursor(40)))]
     );
     let read_once = start + Duration::from_secs(1);
     assert_eq!(asked(&mut model, &home, &sender, &answers, read_once), 0);
@@ -450,7 +451,11 @@ fn journal_read(
     ExtensionWatchRead {
         checkouts: Vec::new(),
         paths: Vec::new(),
-        reports: vec![("a1".to_owned(), reports, offset)],
+        reports: vec![(
+            "a1".to_owned(),
+            reports,
+            uze_application::AgentReportCursor { offset, last: None },
+        )],
     }
 }
 
@@ -502,7 +507,13 @@ fn resuming_observation_reads_an_agents_journal_from_its_end() {
     model.absorb_extension_watch(journal_read(None, 40));
     assert_eq!(
         model.extension_watch().journals,
-        [("a1".to_owned(), Some(40))]
+        [(
+            "a1".to_owned(),
+            Some(uze_application::AgentReportCursor {
+                offset: 40,
+                last: None
+            })
+        )]
     );
 
     observe(&mut model, &root, false);
