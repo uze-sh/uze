@@ -60,6 +60,13 @@ a harness reads (ADR-041).
   of the keyboard': a focused resident surface receives raw keys and
   pointer, except the host's escape chord and the pause key, which never
   reach it and cannot be rebound.
+- A request leaves only through `fetch`: `uze-script` checks the URL
+  (https, a granted host, port 443), `uze-application`'s
+  `extensions/fetch.rs` checks it again and starts the system's `curl`
+  through the program runner (`program::curl`), with the method, headers,
+  body and any secret on its stdin, never in argv or the environment. A
+  secret is read only there, from `uze_platform::secrets`, and scrubbed from
+  every answer.
 - An extension reaches an agent only through the bridge
   (`src/ui/orchestrator/declared/{bridge,agent}.rs`): it is told what
   agents did through `Extension::agent_events`/`agents` under

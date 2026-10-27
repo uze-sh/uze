@@ -439,9 +439,36 @@ history.push(load);
 | `agent:prompt:auto` | `agent-prompt … when=`, fixed text, allowed per agent for a day |
 | `agent:restart` | `agent-restart`, always asked; not available yet |
 | `resident` | a `resident` source: its script kept running while shown, `timer`, and raw keys and pointer while focused |
+| `net:<host>` | `fetch` to that one host, over HTTPS, and `secret` preferences sent to it |
 
-Later grants are refused by the check naming the change that brings them:
-`net`, `secret`, `edit:checkout`.
+### Reaching a host
+
+```kdl
+wants "net:api.github.com"
+preferences {
+    secret "token" label="GitHub token"
+}
+```
+
+```rhai
+let runs = fetch(`https://api.github.com/repos/${repo}/actions/runs?branch=${branch}`,
+    #{ secret: "token", header: "Authorization", scheme: "Bearer" });
+if runs.status != 200 { return #{ notice: `GitHub said ${runs.status}` }; }
+#{ data: runs.json.workflow_runs }
+```
+
+- `fetch(url, options)` exists only with a `net:` grant, reaches only
+  `https://` on a granted host, follows no redirect and answers
+  `#{ status, body, json }` (`json` when the body is JSON). Options:
+  `method` (`GET` or `POST`), `headers`, `body`, and `secret`.
+- A `secret` preference is typed once on the Extensions screen into a
+  masked field and kept in the system's keychain. Nothing reads it back:
+  `{pref.*}` and `input.preferences` never hold it, and a script names it
+  only in `fetch`'s `secret` option, which sends it as a header. Its value
+  is replaced with `[secret]` in every answer, and a run that sent one keeps
+  no store and sends no notification.
+
+`edit:checkout` is refused: no extension writes the checkout.
 There is no `write:checkout`, and `exec:uze` and a harness's own program
 are never granted. Ask for the fewest grants that do the job: each one is
 what the operator is asked about.

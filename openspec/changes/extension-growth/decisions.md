@@ -159,3 +159,13 @@
 - decided:  Not built. The entry that would bring it is one whose action an agent or a shell should run without the TUI, such as `ci-status`'s "re-run the failed job" asked from a terminal; it would bring S11's direction (piped stdio, sanitised output on a TTY, `--raw` only off one) and consent, enablement and confinement for CLI runs.
 - rejected: A `uze ext` leaf with no command behind it.
 - blast:    None.
+
+## D17 — Change 4's consent scenario keeps saying `net` arrives later
+
+- status:   pending
+- task:     4.1
+- commit:
+- trigger:  `extension-manifest-and-scripts/specs/extension-consent/spec.md` has "a manifest that wants `net` fails saying it arrives in a later change", which this change makes untrue of the code.
+- decided:  Left as written: that delta describes the version change 4 shipped, and no change is archived yet (the operator's instruction). When the changes are archived in order, this change's `extension-net` spec is what the consolidated spec says of `net`.
+- rejected: Editing an earlier change's delta to describe a later state: its review would no longer match what it shipped.
+- blast:    None now; archive order matters.

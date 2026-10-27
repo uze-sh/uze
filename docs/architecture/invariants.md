@@ -3184,6 +3184,20 @@ reach it and cannot be rebound for it.
 > `crates/uze-extensions/src/declared/resident_tests.rs::renders_wait_for_a_drawn_frame_and_the_rate`
 > `src/ui/orchestrator/tests/declared_resident.rs::a_focused_resident_view_reads_up_and_esc_lets_go_of_it`
 
+### A request reaches only a granted host, and a secret is used, never read
+
+`fetch` reaches only `https://` on a host a `net:` grant names, follows no
+redirect, and runs the system's `curl` through the program runner. A
+secret preference lives in the keychain, reaches `curl` only on its stdin,
+is never handed to a view, a script or an agent, and is scrubbed from every
+answer.
+
+> `crates/uze-script/src/fetch.rs::tests::only_https_to_a_granted_host_is_asked`
+> `crates/uze-script/src/fetch.rs::tests::a_secret_is_named_never_given`
+> `crates/uze-application/src/application/extensions/fetch.rs::tests::the_secret_goes_on_stdin_and_comes_back_scrubbed`
+> `crates/uze-application/src/application/extensions/fetch.rs::tests::an_unset_secret_or_an_ungranted_host_requests_nothing`
+> `crates/uze-workspace/src/extensions/secrets.rs::tests::a_secret_is_kept_apart_from_the_preferences_and_leaves_with_its_plugin`
+
 ## Harness conformance (`assert-one-capability-contract`)
 
 ### Every harness answers the same questions
