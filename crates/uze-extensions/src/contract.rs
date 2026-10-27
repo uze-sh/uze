@@ -120,6 +120,16 @@ pub struct AgentHappened {
     pub detail: serde_json::Value,
 }
 
+/// What an answer asked to tell the operator outside the frame, under
+/// `notify`: a notification, a cue, or both, already let through the
+/// extension's rate. The title is the extension's own; the host leads it
+/// with the extension's attribution.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Notify {
+    pub notification: Option<uze_contract::Notification>,
+    pub sound: Option<uze_contract::Sound>,
+}
+
 /// How a full-frame surface is entered: by one of the doors it offers, or
 /// sent to a path another surface pointed at.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -253,6 +263,13 @@ pub trait Extension: Send {
     /// What the extension asks of the host on its own, outside any
     /// gesture: an unattended prompt its agent events sent. Taken once.
     fn requests(&mut self) -> Vec<Outcome> {
+        Vec::new()
+    }
+
+    /// What its answers asked to tell the operator outside the frame since
+    /// the last time the host asked, each within the extension's rate.
+    /// Taken once.
+    fn notifications(&mut self) -> Vec<Notify> {
         Vec::new()
     }
 

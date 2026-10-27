@@ -626,6 +626,9 @@ pub(crate) fn attach_workspace(
     // frame (see the drain at the end of the loop).
     let mut held: Option<Event> = None;
     let mut painter = crate::ui::graphics::Painter::default();
+    // Which terminal this is decides how a notification is shown in it,
+    // and it does not change while the client runs.
+    let term_program = std::env::var("TERM_PROGRAM").ok();
     let outcome: Result<WorkspaceExit> = (|| loop {
         if let Flow::Exit(exit) = attach.pump(&receiver) {
             return Ok(exit);
@@ -706,6 +709,14 @@ pub(crate) fn attach_workspace(
         }
         if let Some(text) = attach.model.clipboard.take() {
             terminal.emit(&selection::osc52(&text));
+        }
+        for outgoing in attach.model.take_notifications() {
+            send_notification(
+                &outgoing,
+                term_program.as_deref(),
+                &mut |bytes| terminal.emit(bytes),
+                &mut spawn_desktop,
+            );
         }
         // Everything already waiting is handled before the next frame: a
         // burst of keys or wheel ticks is one frame, not one per event.

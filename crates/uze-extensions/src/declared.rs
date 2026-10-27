@@ -12,13 +12,16 @@
 //! - `trace`: the inspector's account of a build.
 //! - `time`: the instant an `Elapsed` counts from.
 //! - `events`: what asks a source again beside its surfaces.
+//! - `notify`: what an answer asks to tell the operator outside the frame.
 //!
 //! What a source answers arrives one way: the engine asks the host, through
 //! a [`Job`], to answer the source with its input about the checkout the
 //! surface showing it is on, and takes the answer only while it is the
 //! latest question asked of that source. What an answer says beside its
 //! data is applied as it arrives: the sources it names are asked again,
-//! its notice is said on the surfaces showing it, its toast is the host's.
+//! its notice is said on the surfaces showing it, its toast is the host's,
+//! and its notification and cue are the host's to send, under `notify`
+//! and within the extension's rate.
 //! A source is also asked again on its `every` while a surface showing it
 //! is in view, and for the events its `refresh-on` names, which the host
 //! watches because [`Extension::watches`] says so; an event while nothing
@@ -39,6 +42,7 @@ pub fn validate_composed(
 }
 mod events;
 mod fixture_check;
+mod notify;
 mod time;
 mod trace;
 mod value;
@@ -64,6 +68,7 @@ pub use bind::NODE_CAP;
 use bind::{Act, Built};
 pub use events::COALESCE;
 pub use fixture_check::{MissingField, TAB_COMBINATIONS_MAX, missing_fields};
+pub use notify::{INTERVAL as NOTIFY_INTERVAL, PER_HOUR as NOTIFY_PER_HOUR};
 pub use trace::{Absence, DataState, Trace, TraceEntry, TraceNode};
 
 /// What a source answered: its data, or why there is none.
@@ -125,6 +130,10 @@ pub struct DeclaredExtension {
     agents: serde_json::Value,
     /// Prompts its agent events sent, waiting for the host to take.
     unattended: Vec<crate::contract::AgentRequest>,
+    /// Notifications let through, waiting for the host to take.
+    outgoing: Vec<crate::contract::Notify>,
+    /// How many notifications went out lately, and how many were held back.
+    rate: notify::Rate,
     /// The number of the last question each source answered.
     answered: BTreeMap<String, u64>,
     /// The events this extension saw, newest first, at most
@@ -234,6 +243,8 @@ impl DeclaredExtension {
             answered: BTreeMap::new(),
             agents: serde_json::Value::Array(Vec::new()),
             unattended: Vec::new(),
+            outgoing: Vec::new(),
+            rate: notify::Rate::default(),
             delivery: events::Delivery::default(),
             log: std::collections::VecDeque::new(),
             laid_out: BTreeMap::new(),
@@ -1107,6 +1118,10 @@ impl Extension for DeclaredExtension {
         for source in sources {
             self.set_data(source, Ok(self.agents.clone()));
         }
+    }
+
+    fn notifications(&mut self) -> Vec<crate::contract::Notify> {
+        self.take_outgoing()
     }
 
     fn requests(&mut self) -> Vec<Outcome> {

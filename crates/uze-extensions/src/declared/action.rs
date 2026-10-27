@@ -460,7 +460,8 @@ impl DeclaredExtension {
     }
 
     /// What an envelope says beside its data: the sources to ask again,
-    /// the notice the `surfaces` showing it say, and the toast. A source
+    /// the notice the `surfaces` showing it say, a notification or a cue,
+    /// and the toast. A source
     /// that answered (`from`) is never asked again by its own answer.
     pub(super) fn apply(
         &mut self,
@@ -475,6 +476,7 @@ impl DeclaredExtension {
                 self.notices.insert(surface.clone(), said.clone());
             }
         }
+        self.ask_to_notify(envelope, surfaces);
         match &envelope.toast {
             Some(toast) => Outcome::Toast(Clean::label(toast).into_string()),
             None => Outcome::Stay,

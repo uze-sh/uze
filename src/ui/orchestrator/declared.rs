@@ -32,12 +32,14 @@ mod bridge;
 mod doors;
 mod drawer;
 mod events;
+mod notify;
 mod overlay;
 mod status;
 pub(super) use agent::*;
 pub(super) use bridge::*;
 pub(super) use drawer::*;
 pub(super) use events::*;
+pub(super) use notify::*;
 pub(super) use status::*;
 
 /// The host's number for a slot, handed out once and never reused, so a
@@ -112,6 +114,12 @@ pub(super) trait Hosted: Extension {
         Outcome::Stay
     }
 
+    /// Whether what it asks to notify may reach the operator: only a
+    /// declared extension whose manifest holds `notify`.
+    fn may_notify(&self) -> bool {
+        false
+    }
+
     /// The code surface, for the tests to look into.
     #[cfg(test)]
     fn code_view(&self) -> Option<&code::CodeView> {
@@ -143,6 +151,10 @@ impl Hosted for DeclaredExtension {
 
     fn press(&mut self, surface: &str, action: &str) -> Outcome {
         DeclaredExtension::press(self, surface, action)
+    }
+
+    fn may_notify(&self) -> bool {
+        self.compiled().manifest.wants(&uze_contract::Grant::Notify)
     }
 
     fn inspect(&self, surface: &str) -> Inspection {
