@@ -33,7 +33,7 @@ mod value;
 
 pub use envelope::Envelope;
 pub use error::{Limit, Location, ScriptError};
-pub use reach::{CheckoutPath, Entry, EntryKind, Grant, Grants, Reach, ReachError};
+pub use reach::{CheckoutPath, Entry, EntryKind, Grant, Grants, ProgramReply, Reach, ReachError};
 pub use scan::{host_functions_of, ungranted_calls};
 pub use script::{Answered, Script, ScriptCache};
 pub use trace::{Trace, TraceKind, TraceLine};

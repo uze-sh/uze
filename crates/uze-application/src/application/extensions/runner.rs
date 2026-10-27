@@ -22,10 +22,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use uze_contract::{
-    Answer, Asking, Does, Envelope, Identity, Output, Program, Question, SourceKind,
+    Answer, Asking, Does, Envelope, Identity, Output, Program, Question, SourceKind, StoreScope,
 };
 use uze_core::capability::extension::Loaded;
 use uze_script::{Grants, ScriptCache};
+use uze_workspace::extensions::store::{self, StoreOf};
 
 use super::{CheckoutReach, ExtensionCheckout, ExtensionState, NotACheckout};
 use crate::application::services::Extensions;
@@ -65,6 +66,7 @@ enum Answerer<'a> {
     Program {
         program: &'a Program,
         output: &'a Output,
+        with_store: bool,
     },
 }
 
@@ -159,6 +161,7 @@ impl ExtensionRunner {
                     SourceKind::Run(program) => Answerer::Program {
                         program,
                         output: &source.output,
+                        with_store: source.with_store,
                     },
                     SourceKind::Script(file) => Answerer::Script(file),
                 }
@@ -172,6 +175,7 @@ impl ExtensionRunner {
                     Does::Run(program) => Answerer::Program {
                         program,
                         output: &Output::Json,
+                        with_store: false,
                     },
                     _ => {
                         return failed(format!(
@@ -204,36 +208,142 @@ impl ExtensionRunner {
             input: input_digest(&question.input),
             files: load.digest.clone(),
         };
+        let plugin = format!("{}@{}", identity.plugin, identity.marketplace);
+        let store_of = manifest.store().map(|scope| StoreOf {
+            plugin: &plugin,
+            id: &identity.id,
+            project: (scope == StoreScope::Project).then_some(project.as_path()),
+        });
+        let home = &extensions.0.home;
+        let read_store = || {
+            store_of
+                .as_ref()
+                .map(|of| serde_json::Value::Object(store::read(home, of)))
+        };
+        let keep = |envelope: Envelope| keep_store(home, store_of.as_ref(), envelope);
+        let consent = extensions.consent_record(identity);
+        let ask_program = |program: &Program,
+                           output: &Output,
+                           store: Option<&serde_json::Value>,
+                           literal: bool| {
+            let reads: Vec<String> = if program.is_packaged() {
+                Vec::new()
+            } else {
+                manifest.reads_of(program.program()).to_vec()
+            };
+            let ask = super::program::Asked {
+                home,
+                extension_dir: &installed.dir,
+                files: Some(&files),
+                program,
+                output,
+                reads: &reads,
+                asking: question.asking,
+                declaration: &question.declaration,
+                extension: &identity.id,
+                checkout: &checkout,
+                input: &question.input,
+                store,
+                consent: consent.as_ref(),
+                helper: self.helper.as_deref(),
+                literal,
+            };
+            if literal {
+                Err(super::program::reply(&ask))
+            } else {
+                Ok(super::program::answer(&ask))
+            }
+        };
         match answerer {
             Answerer::Script(script) => {
-                self.run_script(asked, &files, script, &grants, &question.input)
+                let mut reach = CheckoutReach::new(checkout.root.clone());
+                if let Some(store) = read_store() {
+                    reach = reach.with_store(store);
+                }
+                if manifest.programs().next().is_some() {
+                    reach = reach.with_programs(self.programs_for(
+                        home,
+                        &installed.dir,
+                        manifest,
+                        identity,
+                        &checkout,
+                        consent.clone(),
+                    ));
+                }
+                self.run_script(
+                    asked,
+                    &files,
+                    script,
+                    &grants,
+                    &question.input,
+                    Arc::new(reach),
+                    &keep,
+                )
             }
-            Answerer::Program { program, output } => {
-                let consent = extensions.consent_record(identity);
-                let reads: Vec<String> = if program.is_packaged() {
-                    Vec::new()
-                } else {
-                    manifest.reads_of(program.program()).to_vec()
-                };
-                let ask = super::program::Asked {
-                    home: &extensions.0.home,
-                    extension_dir: &installed.dir,
-                    files: &files,
-                    program,
-                    output,
-                    reads: &reads,
-                    asking: question.asking,
-                    declaration: &question.declaration,
-                    extension: &identity.id,
-                    checkout: &checkout,
-                    input: &question.input,
-                    store: None,
-                    consent: consent.as_ref(),
-                    helper: self.helper.as_deref(),
-                };
-                self.remembered_or(asked, || super::program::answer(&ask))
-            }
+            Answerer::Program {
+                program,
+                output,
+                with_store,
+            } => self.remembered_or(asked, || {
+                let store = with_store.then(read_store).flatten();
+                match ask_program(program, output, store.as_ref(), false) {
+                    Ok(Answer::Answered { envelope, trace }) => Answer::Answered {
+                        envelope: keep(envelope),
+                        trace,
+                    },
+                    Ok(other) => other,
+                    Err(_) => unreachable!("a declaration's program answers"),
+                }
+            }),
         }
+    }
+
+    /// What runs the programs a script of `identity` calls `run_program`
+    /// with: the same pinning, environment, bounds and confinement as a
+    /// `run` source, with the script's arguments taken as they are.
+    fn programs_for(
+        &self,
+        home: &uze_core::UzeHome,
+        extension_dir: &std::path::Path,
+        manifest: &uze_contract::Manifest,
+        identity: &Identity,
+        checkout: &ExtensionCheckout,
+        consent: Option<super::ExtensionConsent>,
+    ) -> super::reach::RunsPrograms {
+        let home = home.clone();
+        let extension_dir = extension_dir.to_path_buf();
+        let reads: std::collections::BTreeMap<String, Vec<String>> = manifest
+            .programs()
+            .map(|name| (name.to_owned(), manifest.reads_of(name).to_vec()))
+            .collect();
+        let id = identity.id.clone();
+        let checkout = checkout.clone();
+        let helper = self.helper.clone();
+        Arc::new(move |name: &str, args: &[String]| {
+            let program = Program::new(
+                std::iter::once(name.to_owned())
+                    .chain(args.iter().cloned())
+                    .collect(),
+            );
+            let ask = super::program::Asked {
+                home: &home,
+                extension_dir: &extension_dir,
+                files: None,
+                program: &program,
+                output: &Output::Json,
+                reads: reads.get(name).map_or(&[], Vec::as_slice),
+                asking: Asking::Source,
+                declaration: "run_program",
+                extension: &id,
+                checkout: &checkout,
+                input: &serde_json::Value::Null,
+                store: None,
+                consent: consent.as_ref(),
+                helper: helper.as_deref(),
+                literal: true,
+            };
+            super::program::reply(&ask)
+        })
     }
 
     /// What a source asked as `asked` answered this session, or what
@@ -278,14 +388,20 @@ impl ExtensionRunner {
         source: &str,
         checkout: &Path,
     ) -> Option<Answer> {
-        self.rehearse_over(dir, identity, source, checkout, |path| {
-            extensions.checkout(path)
-        })
+        self.rehearse_over(
+            &extensions.0.home,
+            dir,
+            identity,
+            source,
+            checkout,
+            |path| extensions.checkout(path),
+        )
     }
 
     /// [`Self::rehearse`], with the checkout resolved by `resolve`.
     pub(crate) fn rehearse_over(
         &self,
+        home: &uze_core::UzeHome,
         dir: &Path,
         identity: &Identity,
         source: &str,
@@ -308,14 +424,28 @@ impl ExtensionRunner {
                 }
             };
         let declared = compiled.manifest.source(source)?;
-        let SourceKind::Script(file) = &declared.kind else {
-            return None;
-        };
         let checkout = match resolve(checkout) {
             Ok(checkout) => checkout,
             Err(refused) => return Some(Answer::withheld(refused.reason())),
         };
         let input = serde_json::to_value(&declared.input).unwrap_or_default();
+        let file = match &declared.kind {
+            SourceKind::Script(file) => file,
+            SourceKind::Fixture(_) => return None,
+            SourceKind::Run(program) => {
+                return Some(self.rehearse_program(
+                    home,
+                    dir,
+                    &files,
+                    &compiled.manifest,
+                    identity,
+                    declared,
+                    program,
+                    &checkout,
+                    &input,
+                ));
+            }
+        };
         let grants: Grants = compiled.manifest.wants.iter().cloned().collect();
         let asked = Asked {
             identity: identity.clone(),
@@ -325,9 +455,87 @@ impl ExtensionRunner {
             input: input_digest(&input),
             files: files.digest().to_owned(),
         };
-        Some(self.run_script(asked, &files, file, &grants, &input))
+        // A check rehearses what the author wrote; it keeps nothing.
+        let reach = Arc::new(CheckoutReach::new(checkout.root.clone()));
+        Some(
+            self.run_script(asked, &files, file, &grants, &input, reach, &|envelope| {
+                Envelope {
+                    store: None,
+                    ..envelope
+                }
+            }),
+        )
     }
 
+    /// A program source rehearsed as a check runs it: its programs
+    /// resolved now, and run only where this machine confines them, since
+    /// nobody consented to running them as the author (S12).
+    #[allow(clippy::too_many_arguments)]
+    fn rehearse_program(
+        &self,
+        home: &uze_core::UzeHome,
+        dir: &Path,
+        files: &Loaded,
+        manifest: &uze_contract::Manifest,
+        identity: &Identity,
+        declared: &uze_contract::SourceDecl,
+        program: &Program,
+        checkout: &ExtensionCheckout,
+        input: &serde_json::Value,
+    ) -> Answer {
+        if self.helper.is_none() {
+            return Answer::withheld(
+                "this machine does not confine programs, so a check runs none; its recorded \
+                 answers stand in",
+            );
+        }
+        let pins = super::consent::resolve_programs(manifest, home);
+        let rehearsed = super::ExtensionConsent {
+            exec_paths: Some(
+                pins.iter()
+                    .filter_map(|pin| Some((pin.name.clone(), pin.path.clone()?)))
+                    .collect(),
+            ),
+            enforced_at_accept: Some(true),
+            ..super::ExtensionConsent::default()
+        };
+        let reads: Vec<String> = if program.is_packaged() {
+            Vec::new()
+        } else {
+            manifest.reads_of(program.program()).to_vec()
+        };
+        let ask = super::program::Asked {
+            home,
+            extension_dir: dir,
+            files: Some(files),
+            program,
+            output: &declared.output,
+            reads: &reads,
+            asking: Asking::Source,
+            declaration: &declared.id,
+            extension: &identity.id,
+            checkout,
+            input,
+            store: None,
+            consent: Some(&rehearsed),
+            helper: self.helper.as_deref(),
+            literal: false,
+        };
+        let answer = super::program::answer(&ask);
+        match answer {
+            // A check keeps nothing.
+            Answer::Answered { envelope, trace } => Answer::Answered {
+                envelope: Envelope {
+                    store: None,
+                    ..envelope
+                },
+                trace,
+            },
+            other => other,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn run_script(
         &self,
         asked: Asked,
@@ -335,6 +543,8 @@ impl ExtensionRunner {
         file: &str,
         grants: &Grants,
         input: &serde_json::Value,
+        reach: Arc<dyn uze_script::Reach>,
+        keep: &dyn Fn(Envelope) -> Envelope,
     ) -> Answer {
         let remembered = Asked {
             asking: Asking::Source,
@@ -365,7 +575,6 @@ impl ExtensionRunner {
             "extension": asked.identity.id,
             declared: asked.declaration,
         });
-        let reach = Arc::new(CheckoutReach::new(asked.checkout.clone()));
         self.runs.fetch_add(1, Ordering::Relaxed);
         let answered = script.answer(input, &context, grants, reach);
         let trace = answered
@@ -376,6 +585,7 @@ impl ExtensionRunner {
             .collect();
         match answered.outcome {
             Ok(envelope) => {
+                let envelope = keep(envelope);
                 if asked.asking != Asking::Action {
                     lock(&self.answered).insert(remembered, envelope.clone());
                 }
@@ -387,6 +597,31 @@ impl ExtensionRunner {
             },
         }
     }
+}
+
+/// Applies an answer's store patch, as answers arrive, where the extension
+/// keeps a store; says in the answer's notice why one was not kept.
+fn keep_store(
+    home: &uze_core::UzeHome,
+    of: Option<&StoreOf<'_>>,
+    mut envelope: Envelope,
+) -> Envelope {
+    let Some(patch) = envelope.store.take() else {
+        return envelope;
+    };
+    let unkept = match of {
+        None => Some("it asked to keep something, and does not want `store`".to_owned()),
+        Some(of) => store::patch(home, of, &patch)
+            .err()
+            .map(|error| error.to_string()),
+    };
+    if let Some(why) = unkept {
+        envelope.notice = Some(match envelope.notice.take() {
+            Some(notice) => format!("{notice} · {why}"),
+            None => why,
+        });
+    }
+    envelope
 }
 
 fn failed(reason: impl Into<String>) -> Answer {
@@ -822,9 +1057,14 @@ pub(super) mod tests {
         let world = World::new("runner-rehearse");
         let runner = ExtensionRunner::new();
         let rehearse = |source: &str, checkout: &Path| {
-            runner.rehearse_over(&world.band, &world.band(), source, checkout, |path| {
-                extension_checkout(path, &world.around)
-            })
+            runner.rehearse_over(
+                &world.app.home,
+                &world.band,
+                &world.band(),
+                source,
+                checkout,
+                |path| extension_checkout(path, &world.around),
+            )
         };
         assert_eq!(
             data(rehearse("state", &world.checkout).unwrap()),

@@ -99,14 +99,48 @@ pub trait Reach: Send + Sync {
     fn clock(&self) -> Duration {
         uze_platform::clock::since_epoch()
     }
+
+    /// What the extension's store holds now, as JSON.
+    fn store(&self) -> Result<serde_json::Value, ReachError> {
+        Err(ReachError("this extension keeps no store".to_owned()))
+    }
+
+    /// Runs the program `name` an `exec:` grant covers with `args`, under
+    /// the same pinning, bounds and confinement as a `run` source.
+    fn run_program(&self, name: &str, args: &[String]) -> Result<ProgramReply, ReachError> {
+        let _ = args;
+        Err(ReachError(format!(
+            "`{name}` is not a program this extension may run"
+        )))
+    }
+}
+
+/// How a program `run_program` started ended.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ProgramReply {
+    /// Its exit code, absent when it was ended by a signal or a bound.
+    pub code: Option<i64>,
+    pub stdout: String,
+    pub stderr: String,
 }
 
 /// The host functions, and the grant each needs (`None`: always there).
+/// `run_program`'s grant is the `exec:` of the program it is called with,
+/// so it is named apart, in [`RUN_PROGRAM`].
 pub(crate) const HOST_FUNCTIONS: &[(&str, Option<Grant>)] = &[
     ("read_checkout", Some(Grant::ReadCheckout)),
     ("list_checkout", Some(Grant::ReadCheckout)),
+    ("store", Some(Grant::Store)),
     ("clock", None),
 ];
+
+/// The host function that runs a granted program.
+pub(crate) const RUN_PROGRAM: &str = "run_program";
+
+/// Whether `grants` hold what `grant` asks: `store:global` is a store too.
+pub(crate) fn holds(grants: &Grants, grant: &Grant) -> bool {
+    grants.contains(grant) || (*grant == Grant::Store && grants.contains(&Grant::StoreGlobal))
+}
 
 #[cfg(test)]
 mod tests {

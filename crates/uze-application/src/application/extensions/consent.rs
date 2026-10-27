@@ -351,8 +351,12 @@ impl Extensions<'_> {
     }
 
     /// Forgets what was accepted for every extension of the plugin
-    /// `plugin@marketplace`, as it leaves the machine.
+    /// `plugin@marketplace`, and what they kept, as it leaves the machine.
     pub(crate) fn forget_plugin(&self, plugin: &str, marketplace: &str) -> Result<Vec<String>> {
+        uze_workspace::extensions::store::forget_plugin(
+            &self.0.home,
+            &format!("{plugin}@{marketplace}"),
+        )?;
         consent::forget_plugin(&self.0.home, plugin, marketplace)
     }
 

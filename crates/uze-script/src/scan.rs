@@ -34,7 +34,7 @@ pub fn ungranted_calls(source: &str, grants: &Grants) -> Vec<(String, Grant)> {
     HOST_FUNCTIONS
         .iter()
         .filter_map(|(name, grant)| Some((*name, grant.clone()?)))
-        .filter(|(name, grant)| named.contains(*name) && !grants.contains(grant))
+        .filter(|(name, grant)| named.contains(*name) && !crate::reach::holds(grants, grant))
         .map(|(name, grant)| (name.to_owned(), grant))
         .collect()
 }

@@ -118,7 +118,8 @@ pub(crate) fn answering(
     let limits = LIMITS;
     let mut engine = raw(&limits);
     primitives::register(&mut engine, &limits);
-    register_host(&mut engine, grants, reach);
+    let waiting = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    register_host(&mut engine, grants, reach, Arc::clone(&waiting));
 
     let printed = Arc::clone(&trace);
     engine.on_print(move |text| record(&printed, TraceKind::Print, text, None));
@@ -130,7 +131,10 @@ pub(crate) fn answering(
     engine.on_progress(move |operations| {
         // The clock is read every 256 operations: a few nanoseconds each,
         // and still within a fraction of a millisecond of the deadline.
-        (operations % 256 == 0 && started.elapsed() > limits.deadline)
+        // What a granted program took is its own time limit's, not the
+        // script's (P10).
+        let waited = Duration::from_millis(waiting.load(std::sync::atomic::Ordering::Relaxed));
+        (operations % 256 == 0 && started.elapsed().saturating_sub(waited) > limits.deadline)
             .then(|| Dynamic::from("deadline"))
     });
     engine
@@ -145,7 +149,61 @@ fn record(trace: &Mutex<Trace>, kind: TraceKind, text: &str, line: Option<usize>
 
 /// Each host function exists only when its grant was given; `clock` is
 /// always there.
-fn register_host(engine: &mut Engine, grants: &Grants, reach: Arc<dyn Reach>) {
+fn register_host(
+    engine: &mut Engine,
+    grants: &Grants,
+    reach: Arc<dyn Reach>,
+    waiting: Arc<std::sync::atomic::AtomicU64>,
+) {
+    if crate::reach::holds(grants, &Grant::Store) {
+        let keeper = Arc::clone(&reach);
+        engine.register_fn(
+            "store",
+            move || -> Result<Dynamic, Box<rhai::EvalAltResult>> {
+                let store = keeper.store().map_err(|error| failure(error.0))?;
+                crate::value::to_dynamic(&store)
+                    .map_err(|crossing| failure(format!("the store is {crossing}")))
+            },
+        );
+    }
+    if grants.iter().any(|grant| grant.program().is_some()) {
+        let runner = Arc::clone(&reach);
+        let granted: Vec<String> = grants
+            .iter()
+            .filter_map(|grant| grant.program().map(str::to_owned))
+            .collect();
+        engine.register_fn(
+            crate::reach::RUN_PROGRAM,
+            move |name: &str, args: Array| -> Result<Map, Box<rhai::EvalAltResult>> {
+                if !granted.iter().any(|program| program == name) {
+                    return Err(failure(format!(
+                        "`{name}` is not a program this extension holds `exec:{name}` for"
+                    )));
+                }
+                let args = args
+                    .into_iter()
+                    .map(|arg| {
+                        arg.into_string().map_err(|kind| {
+                            failure(format!("an argument is a `{kind}`, not a string"))
+                        })
+                    })
+                    .collect::<Result<Vec<String>, _>>()?;
+                let started = Instant::now();
+                let reply = runner.run_program(name, &args);
+                let took = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+                waiting.fetch_add(took, std::sync::atomic::Ordering::Relaxed);
+                let reply = reply.map_err(|error| failure(error.0))?;
+                let mut map = Map::new();
+                map.insert(
+                    "code".into(),
+                    reply.code.map_or(Dynamic::UNIT, Dynamic::from),
+                );
+                map.insert("stdout".into(), Dynamic::from(reply.stdout));
+                map.insert("stderr".into(), Dynamic::from(reply.stderr));
+                Ok(map)
+            },
+        );
+    }
     if grants.contains(&Grant::ReadCheckout) {
         let reader = Arc::clone(&reach);
         engine.register_fn(

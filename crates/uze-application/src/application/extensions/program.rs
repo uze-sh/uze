@@ -63,7 +63,9 @@ static RUNS: AtomicU64 = AtomicU64::new(0);
 pub(super) struct Asked<'a> {
     pub home: &'a UzeHome,
     pub extension_dir: &'a Path,
-    pub files: &'a Loaded,
+    /// The consented compile's bytes, for a packaged program; a script's
+    /// `run_program` names only programs an `exec:` grant covers.
+    pub files: Option<&'a Loaded>,
     pub program: &'a Program,
     pub output: &'a Output,
     pub reads: &'a [String],
@@ -76,23 +78,70 @@ pub(super) struct Asked<'a> {
     pub consent: Option<&'a ExtensionConsent>,
     /// The confinement helper, when this runner confines.
     pub helper: Option<&'a Path>,
+    /// Whether the arguments are a script's own, taken as they are, rather
+    /// than a declaration's, with `{field}` substituted.
+    pub literal: bool,
 }
 
 /// Runs what `asked` declares and reads its answer as its output mode
 /// says.
 pub(super) fn answer(asked: &Asked<'_>) -> Answer {
+    match ran(asked) {
+        Ok(ended) => outcome(asked, ended),
+        Err(not_run) => not_run.into(),
+    }
+}
+
+/// What a script's `run_program` call gets back: the program's code and
+/// both streams, or why it did not run.
+pub(super) fn reply(asked: &Asked<'_>) -> Result<uze_script::ProgramReply, uze_script::ReachError> {
+    let name = asked.program.program();
+    let refused = |reason: String| uze_script::ReachError(format!("`{name}`: {reason}"));
+    let ended = ran(asked).map_err(|not_run| match not_run {
+        NotRun::Withheld(reason) | NotRun::Failed(reason) => refused(reason),
+    })?;
+    let reply = |code: Option<i64>, stdout: String, stderr: String| uze_script::ProgramReply {
+        code,
+        stdout,
+        stderr,
+    };
+    match ended {
+        ProgramOutcome::Answered { stdout } => Ok(reply(
+            Some(0),
+            String::from_utf8_lossy(&stdout).into_owned(),
+            String::new(),
+        )),
+        ProgramOutcome::Refused { reason } => Ok(reply(
+            Some(i64::from(extension_program::REFUSED_EXIT)),
+            String::new(),
+            reason,
+        )),
+        ProgramOutcome::Failed { reason } => Ok(reply(None, String::new(), reason)),
+        ProgramOutcome::TimedOut { limit } => {
+            Err(refused(format!("timed out after {}s", limit.as_secs_f32())))
+        }
+        ProgramOutcome::Flooded { stream, bound } => Err(refused(format!(
+            "wrote more than {} KiB on {stream}",
+            bound / 1024
+        ))),
+        ProgramOutcome::Unenforced { reason } => Err(refused(format!(
+            "its confinement did not apply ({reason}); nothing ran"
+        ))),
+        ProgramOutcome::NotStarted { reason } => Err(refused(format!("did not start: {reason}"))),
+    }
+}
+
+/// Lays the run out, runs it and takes its directory away again.
+fn ran(asked: &Asked<'_>) -> Result<ProgramOutcome, NotRun> {
     let run = format!(
         "{}-{}",
         std::process::id(),
         RUNS.fetch_add(1, Ordering::Relaxed)
     );
     let dir = asked.home.extension_scratch_dir(&run);
-    let answer = match prepare(asked, &dir) {
-        Ok(prepared) => outcome(asked, extension_program::run(&prepared)),
-        Err(not_run) => not_run.into(),
-    };
+    let ended = prepare(asked, &dir).map(|prepared| extension_program::run(&prepared));
     let _ = std::fs::remove_dir_all(&dir);
-    answer
+    ended
 }
 
 fn failed(reason: impl Into<String>) -> Answer {
@@ -161,12 +210,16 @@ fn prepare(asked: &Asked<'_>, dir: &Path) -> Result<ProgramRun, NotRun> {
         Asking::Action => asked.input.get("item").cloned().unwrap_or_default(),
         Asking::Source | Asking::Refresh => asked.input.clone(),
     };
-    let rest = substitute_all(&asked.program.argv[1..], &scope).map_err(withheld)?;
+    let rest = if asked.literal {
+        asked.program.argv[1..].to_vec()
+    } else {
+        substitute_all(&asked.program.argv[1..], &scope).map_err(withheld)?
+    };
     let (executable, mut args, executes_from) = if asked.program.is_packaged() {
         let file = asked.program.program().trim_start_matches("./");
         let bytes = asked
             .files
-            .bytes(file)
+            .and_then(|files| files.bytes(file))
             .ok_or_else(|| not_started(format!("the program `{file}` is not in the extension")))?;
         let copy = bin.join(file.rsplit('/').next().unwrap_or(file));
         std::fs::write(&copy, bytes)

@@ -217,6 +217,22 @@ impl UzeHome {
         self.state_dir().join("extensions").join("store")
     }
 
+    /// Every store of the plugin `plugin@marketplace`'s extensions: what is
+    /// removed with the plugin.
+    pub fn extension_plugin_stores_dir(&self, plugin: &str) -> PathBuf {
+        self.extension_stores_dir().join(plugin)
+    }
+
+    /// The store of extension `id` of `plugin@marketplace`, for the
+    /// project whose id is `project`, or the machine-wide one without it.
+    pub fn extension_store_path(&self, plugin: &str, id: &str, project: Option<&str>) -> PathBuf {
+        let dir = self.extension_plugin_stores_dir(plugin).join(id);
+        match project {
+            Some(project) => dir.join(format!("{project}.json")),
+            None => dir.join("global.json"),
+        }
+    }
+
     /// The scratch directory one program run of an extension may write,
     /// created before it and removed after it: generated, since losing it
     /// costs nothing, and named here so the run's `TMPDIR` is never the
@@ -829,6 +845,7 @@ mod tests {
             home.prompt_history_path("abc"),
             home.extensions_record_path(),
             home.extension_stores_dir(),
+            home.extension_store_path("gsd@market", "gsd-band", Some("abc")),
         ];
         for record in records {
             assert!(

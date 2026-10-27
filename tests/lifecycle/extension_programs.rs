@@ -19,12 +19,27 @@ const MANIFEST: &str = r#"protocol 1
 id "probe"
 name "Probe"
 description "Tries one reach at a time"
-wants "exec:sh"
+wants "exec:sh" "store"
 surface "board" slot="view" view="board.kdl" source="probe"
 source "probe" {
     run "./bin/probe" "--" "{do}" "{arg}" timeout="2s"
     output "lines"
     fields "line"
+}
+source "history" { script "history.rhai"; }
+source "kept" {
+    run "./bin/probe" "--" "stdin" ""
+    store
+}
+"#;
+
+/// Counts its answers in the store and asks a granted program for a line,
+/// passing it a `{literal}` argument a script's call never substitutes.
+const HISTORY: &str = r#"fn answer(input, context) {
+    let kept = store();
+    let seen = if "count" in kept { kept.count } else { 0 };
+    let ran = run_program("sh", ["-c", "printf %s \"$1\"", "sh", "{literal}"]);
+    #{ data: #{ count: seen + 1, said: ran.stdout, code: ran.code }, store: #{ count: seen + 1 } }
 }
 "#;
 
@@ -40,6 +55,7 @@ case "$2" in
     hang) sleep 30 & echo "$!" > "$3.pid"; wait ;;
     flood) yes flood ;;
     escape) setsid sleep 30 && echo escaped ;;
+    stdin) cat ;;
     fill) head -c 100000000 /dev/zero > "$TMPDIR/fill" && echo filled ;;
     socket) python3 -I -c 'import socket; socket.socket()' && echo opened ;;
     unix) python3 -I -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1])' "$3" && echo connected ;;
@@ -73,6 +89,7 @@ impl World {
         )
         .unwrap();
         fs::write(extension.join("bin/probe"), PROBE).unwrap();
+        fs::write(extension.join("history.rhai"), HISTORY).unwrap();
         let market = env.root().join("market");
         let manifest = serde_json::json!({
             "name": MARKET,
@@ -131,13 +148,21 @@ impl World {
     }
 
     fn ask(&self, runner: &ExtensionRunner, what: &str, arg: &str) -> Answer {
+        self.source(
+            runner,
+            "probe",
+            serde_json::json!({ "do": what, "arg": arg }),
+        )
+    }
+
+    fn source(&self, runner: &ExtensionRunner, source: &str, input: serde_json::Value) -> Answer {
         runner.answer(
             &self.app.extensions(),
             &Question {
                 identity: self.probe.clone(),
-                declaration: "probe".to_owned(),
+                declaration: source.to_owned(),
                 asking: Asking::Refresh,
-                input: serde_json::json!({ "do": what, "arg": arg }),
+                input,
                 checkout: Some(self.checkout.clone()),
             },
         )
@@ -307,6 +332,33 @@ fn a_flood_of_output_or_of_scratch_is_cut_off() {
         reason.contains("File size limit exceeded") || reason.contains("signal: 25"),
         "{reason}"
     );
+}
+
+/// A script keeps what it counted in its store and runs a granted
+/// program with its arguments as written; a program that names `store`
+/// is handed the store on its input.
+#[test]
+fn answers_keep_a_store_and_a_script_runs_a_granted_program() {
+    let world = World::new("store");
+    let Some(runner) = confining() else { return };
+    let data = |answer: Answer| match answer {
+        Answer::Answered { envelope, .. } => envelope.data,
+        other => panic!("not answered: {other:?}"),
+    };
+    let first = data(world.source(&runner, "history", serde_json::json!({})));
+    assert_eq!(first["count"], 1);
+    assert_eq!(
+        first["said"], "{literal}",
+        "a script's argument is taken as written"
+    );
+    assert_eq!(first["code"], 0);
+    assert_eq!(
+        data(world.source(&runner, "history", serde_json::json!({})))["count"],
+        2
+    );
+    let handed = data(world.source(&runner, "kept", serde_json::json!({})));
+    assert_eq!(handed["store"], serde_json::json!({ "count": 2 }));
+    assert_eq!(handed["context"]["source"], "kept");
 }
 
 #[test]

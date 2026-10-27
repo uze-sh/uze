@@ -1,5 +1,7 @@
 //! `read:checkout` answered over one checkout: what a script's
-//! `read_checkout` and `list_checkout` reach, and no further.
+//! `read_checkout` and `list_checkout` reach, and no further; and, when
+//! the extension holds them, its store as it was when the script began and
+//! the programs its `exec:` grants cover.
 //!
 //! `uze-script` has already refused an absolute path and a `..`. What is
 //! left is the filesystem's half: a link inside the checkout may point
@@ -9,8 +11,14 @@
 
 use std::io::Read as _;
 use std::path::PathBuf;
+use std::sync::Arc;
 
-use uze_script::{CheckoutPath, Entry, EntryKind, Reach, ReachError};
+use uze_script::{CheckoutPath, Entry, EntryKind, ProgramReply, Reach, ReachError};
+
+/// What runs a granted program for a script, as the runner runs a `run`
+/// source.
+pub type RunsPrograms =
+    Arc<dyn Fn(&str, &[String]) -> Result<ProgramReply, ReachError> + Send + Sync>;
 
 /// The most of one file a script is handed: the engine's own bound on a
 /// string, so a read never hands over what the script could not hold.
@@ -21,15 +29,43 @@ pub const CHECKOUT_READ_LIMIT: u64 = 1024 * 1024;
 pub const CHECKOUT_LIST_LIMIT: usize = 10_000;
 
 /// A checkout's files, as a script under `read:checkout` may reach them.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct CheckoutReach {
     /// Canonical, as [`super::ExtensionCheckout`] resolved it.
     root: PathBuf,
+    store: Option<serde_json::Value>,
+    programs: Option<RunsPrograms>,
+}
+
+impl std::fmt::Debug for CheckoutReach {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CheckoutReach")
+            .field("root", &self.root)
+            .field("store", &self.store.is_some())
+            .field("programs", &self.programs.is_some())
+            .finish()
+    }
 }
 
 impl CheckoutReach {
     pub fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self {
+            root,
+            store: None,
+            programs: None,
+        }
+    }
+
+    /// The store the script reads with `store()`.
+    pub fn with_store(mut self, store: serde_json::Value) -> Self {
+        self.store = Some(store);
+        self
+    }
+
+    /// What runs the programs the script asks for with `run_program`.
+    pub fn with_programs(mut self, programs: RunsPrograms) -> Self {
+        self.programs = Some(programs);
+        self
     }
 
     /// Where `path` lands once its links are followed, refused when that
@@ -53,6 +89,19 @@ impl CheckoutReach {
 }
 
 impl Reach for CheckoutReach {
+    fn store(&self) -> Result<serde_json::Value, ReachError> {
+        self.store
+            .clone()
+            .ok_or_else(|| ReachError("this extension keeps no store".to_owned()))
+    }
+
+    fn run_program(&self, name: &str, args: &[String]) -> Result<ProgramReply, ReachError> {
+        match &self.programs {
+            Some(programs) => programs(name, args),
+            None => Err(ReachError(format!("`{name}` is not run here"))),
+        }
+    }
+
     fn read_checkout(&self, path: &CheckoutPath) -> Result<String, ReachError> {
         let asked = path.as_str();
         let landed = self.resolve(path)?;

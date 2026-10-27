@@ -279,3 +279,53 @@
 - decided:  `tests/lifecycle/extension_programs.rs` installs a packaged `sh` probe from a staged marketplace, consents and enables it, and asks it through `ExtensionRunner::confining_through(Some(CARGO_BIN_EXE_uze))` over a checkout under `CARGO_TARGET_TMPDIR`. Nine tests: secrets absent, writes into `.git/hooks`, `README.md`, outside and `$UZE_HOME` denied, reads of a key outside and another `/proc/<pid>/environ` denied, a signal to the test process refused, `socket()` and a Unix socket refused, `setsid` refused, a hang timed out, stdout flood and scratch fill cut off, a helper exiting 125 running nothing. Each skips, saying why, where the machine does not confine. Running it found `commit_everything_in` committing into the surrounding checkout; fixed in the testkit.
 - rejected: Mocking the kernel: the promise is about the kernel.
 - blast:    One suite file.
+
+## D29 — One store file per extension and project, under `state/extensions/store/<plugin@marketplace>/<id>/`
+
+- status:   pending
+- task:     6.1
+- commit:
+- trigger:  D18 fixes the scope (per identity and project, or global) and the bound, not the layout or the tier.
+- decided:  A record (`uze_document::Shaped`, shape 1): `<project id>.json` (the short hash ADR-055 names projects by) or `global.json`, each `{schema_version, store}`, written atomically under a lock beside it, at most 1 MiB as written. Removing the plugin removes `<plugin@marketplace>/` whole, with its consents. An unreadable store reads as empty.
+- rejected: Keys inside `state/extensions.json`: every patch would rewrite every extension's consent under one lock.
+- blast:    `UzeHome::{extension_stores_dir, extension_plugin_stores_dir, extension_store_path}`, `uze-workspace::extensions::store`.
+
+## D30 — A patch nobody may keep, or one over the bound, becomes the answer's notice
+
+- status:   pending
+- task:     6.2
+- commit:
+- trigger:  The spec drops a request without its grant "named in the surface's notice", and refuses an oversized patch, without saying where an answer's other members go.
+- decided:  The runner applies `store` only from a fresh answer (never a remembered one), before the answer reaches the engine. An extension without `store`/`store:global` gets its notice extended with "it asked to keep something, and does not want `store`"; an oversized patch with the bound. `data`, `toast` and `refresh` still apply. A check (`--run`) keeps nothing.
+- rejected: Failing the answer: a meter that cannot keep history can still draw its reading.
+- blast:    `runner::keep_store`.
+
+## D31 — A script's `run_program` arguments are taken as written, and its wait is not the script's time
+
+- status:   pending
+- task:     7.1
+- commit:
+- trigger:  A declaration's `{field}` is substituted; a script builds its own arguments, so substituting them again would let data become syntax. And the script's 100 ms deadline would end any real program.
+- decided:  `run_program(name, args)` exists only when the extension holds some `exec:` grant, refuses a name it does not hold, runs through the same program runner (pinned path, environment, bounds, confinement) with the arguments verbatim, and returns `#{ code, stdout, stderr }` (`code` is `()` after a signal; a time-out, flood or unenforced confinement throws). The time spent in the call is subtracted from the script's deadline; the program has its own 10 s.
+- rejected: A deadline that grows for the whole answer: a script could loop after the call for as long as the program took.
+- blast:    `uze-script::{reach::ProgramReply, engine::register_host}`, `runner::programs_for`.
+
+## D32 — `check --run` runs a program only where this machine confines, resolving its programs now
+
+- status:   pending
+- task:     7.2
+- commit:
+- trigger:  S12: a check runs what an author is writing without consent; a script is confined by the engine, a program only by the OS.
+- decided:  With a confining helper, `rehearse` runs a `run` source with its `exec:` names resolved on the spot (nothing recorded) and as confined as an enabled run, keeping no store. Without one it withholds: "this machine does not confine programs, so a check runs none; its recorded answers stand in".
+- rejected: `--checkout <path>` to run unconfined on purpose: the operator can enable the extension on that checkout instead, with the "runs as you" step.
+- blast:    `runner::rehearse_program`.
+
+## D33 — A program source that is handed the store is remembered like any other
+
+- status:   pending
+- task:     6.2
+- commit:
+- trigger:  The session cache keys an answer by its input; a source that also reads the store would answer from a stale store when asked again with the same input.
+- decided:  Left as it is: a source that reads its store is a meter refreshed by `every` or an event, and both ask with `Refresh`, which runs again. Only a plain reopen within the session is served from memory.
+- rejected: Keying by the store's digest: every patch would be a new question for every source of the extension.
+- blast:    A store-reading source opened twice without a refresh shows its first answer.

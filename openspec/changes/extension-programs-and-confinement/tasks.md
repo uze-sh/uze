@@ -35,14 +35,14 @@
 
 ## 6. The store
 
-- [ ] 6.1 `state/extensions/store/` in `UzeHome` (state tier), one file per (identity key, project id) or per identity for `store:global`, 1 MiB, removed with the plugin (parent 5.9)
-- [ ] 6.2 Envelope patches applied in arrival order in the runner, an oversized patch refused with a notice; `store` in a program's input when declared
-- [ ] 6.3 `store()` in `uze-script` under `store`/`store:global`
+- [x] 6.1 `state/extensions/store/` in `UzeHome` (state tier), one file per (identity key, project id) or per identity for `store:global`, 1 MiB, removed with the plugin (parent 5.9)
+- [x] 6.2 Envelope patches applied in arrival order in the runner, an oversized patch refused with a notice; `store` in a program's input when declared
+- [x] 6.3 `store()` in `uze-script` under `store`/`store:global`
 
 ## 7. `run_program`
 
-- [ ] 7.1 `run_program(name, args)` in `uze-script` through a reach the runner hands it, under `exec:<name>`, with the script's deadline paused for the call (P10) (parent 5.10)
-- [ ] 7.2 `uze agent plugin check --run` runs a program only where confinement is enforced, else says so and uses recorded answers (parent 5.10)
+- [x] 7.1 `run_program(name, args)` in `uze-script` through a reach the runner hands it, under `exec:<name>`, with the script's deadline paused for the call (P10) (parent 5.10)
+- [x] 7.2 `uze agent plugin check --run` runs a program only where confinement is enforced, else says so and uses recorded answers (parent 5.10)
 
 ## 8. Surfaces
 
