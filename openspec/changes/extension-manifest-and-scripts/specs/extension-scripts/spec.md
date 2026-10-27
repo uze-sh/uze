@@ -101,3 +101,12 @@ answer.
 #### Scenario: A look-alike is named
 - **WHEN** an extension named "Code" draws a view
 - **THEN** the view's strip says `code-look · acme@github`, not "Code"
+
+### Requirement: Rhai is highlighted in UZE's own editor
+The code surface's editor and preview, and fenced `rhai` blocks in
+Markdown, SHALL highlight Rhai with the same syntax theme as every other
+language.
+
+#### Scenario: A script is coloured while it is edited
+- **WHEN** the operator opens an extension's `board.rhai` in the code surface
+- **THEN** keywords, strings, the code inside a back-tick string's `${…}`, object maps, numbers and comments are coloured, as a `.rs` file would be

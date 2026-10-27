@@ -1686,6 +1686,7 @@ fn every_language_fixture_is_read_as_its_own_language() {
         ("protobuf.proto", "Protocol Buffer"),
         ("python.py", "Python"),
         ("r.r", "R"),
+        ("rhai.rhai", "Rhai"),
         ("ruby.rb", "Ruby"),
         ("rust.rs", "Rust"),
         ("scala.scala", "Scala"),

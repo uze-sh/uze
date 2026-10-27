@@ -40,8 +40,10 @@ fn bundled() -> &'static SyntaxSet {
 /// used what `fancy-regex` cannot compile, and onig is C, which this crate
 /// keeps out of the tree. Each is the upstream file with its licence
 /// beside it in `grammars/`, except KDL, which `two-face` lacks and whose
-/// community grammar needs Oniguruma and Sublime's `extends`: UZE wrote
-/// that one, since an extension's views are KDL.
+/// community grammar needs Oniguruma and Sublime's `extends`, and Rhai,
+/// which `two-face` lacks and whose community grammars are TextMate's:
+/// UZE wrote those two, since an extension's views are KDL and its
+/// scripts Rhai.
 ///
 /// A set of their own rather than added to [`bundled`]: adding one
 /// relinks every grammar in the dump, half a second before the first line
@@ -61,6 +63,7 @@ fn vendored() -> &'static SyntaxSet {
 const VENDORED_SOURCES: &[&str] = &[
     include_str!("../../grammars/PowerShell.sublime-syntax"),
     include_str!("../../grammars/KDL.sublime-syntax"),
+    include_str!("../../grammars/Rhai.sublime-syntax"),
 ];
 
 fn vendored_definitions() -> impl Iterator<Item = SyntaxDefinition> {
@@ -602,5 +605,207 @@ Stack gap=1 {
             colour_of("Text"),
             "a commented node is not a node"
         );
+    }
+
+    const RHAI_SAMPLE: &str = r###"/// The board's answer.
+fn answer(input, context) {
+    let state = read_checkout(".planning/STATE.md");
+    const LIMIT = 0x1F_ff;
+    let shown = `${state.len()} of ${ #{ n: LIMIT }.n } lines`;
+    /* outer /* inner */ still */
+    for line in 0..=10 { if line == () { break; } }
+    let next = |x| x + 1.5e3;
+    let raw = #"no \n escape"#;
+    let ch = 'x';
+    input?.title ?? this.title;
+    #{ data: #{ lines: state.split("\n").len(), done: true }, mask: 0b1_0 }
+}
+"###;
+
+    #[test]
+    fn a_rhai_file_resolves_to_the_vendored_rhai_grammar() {
+        for path in ["board.rhai", "state.rhai", "gsd-band/board.rhai"] {
+            assert_eq!(syntax_for(Path::new(path), None).name, "Rhai", "{path}");
+        }
+    }
+
+    #[test]
+    fn a_rhai_fence_is_read_with_the_rhai_grammar() {
+        let mut highlighter = highlighter_for_language("rhai", FALLBACK_SYNTAX_THEME);
+        let spans = line(
+            &mut highlighter,
+            "let x = #{ a: \"hi\" };",
+            FALLBACK_SYNTAX_THEME,
+        );
+        assert!(spans.len() > 1, "a rhai fence is coloured: {spans:?}");
+    }
+
+    #[test]
+    fn a_rhai_script_is_scoped_piece_by_piece() {
+        let pieces = scoped("board.rhai", RHAI_SAMPLE);
+        let expectations = [
+            ("The board's answer.", "comment.line.documentation"),
+            ("fn", "storage.type.function"),
+            ("answer", "entity.name.function"),
+            ("let", "storage.type"),
+            ("const", "storage.type"),
+            ("read_checkout", "variable.function"),
+            (".planning/STATE.md", "string.quoted.double"),
+            ("0x1F_ff", "constant.numeric.integer.hexadecimal"),
+            (" of ", "string.quoted.other.template"),
+            ("${", "punctuation.section.interpolation.begin"),
+            ("#{", "punctuation.section.mapping.begin"),
+            ("n", "entity.other.attribute-name"),
+            ("still", "comment.block"),
+            ("for", "keyword.control"),
+            ("in", "keyword.control"),
+            ("..=", "keyword.operator.range"),
+            ("10", "constant.numeric"),
+            ("()", "constant.language.unit"),
+            ("break", "keyword.control"),
+            ("x", "variable.parameter"),
+            ("1.5e3", "constant.numeric.decimal"),
+            ("no \\n escape", "string.quoted.double.raw"),
+            ("'x'", "constant.character"),
+            ("?.", "punctuation.accessor"),
+            ("??", "keyword.operator.null-coalescing"),
+            ("this", "variable.language.this"),
+            ("split", "variable.function.method"),
+            ("\\n", "constant.character.escape"),
+            ("data", "entity.other.attribute-name"),
+            ("true", "constant.language.boolean"),
+            ("0b1_0", "constant.numeric.integer.binary"),
+        ];
+        for (needle, scope) in expectations {
+            let scopes = scope_of(&pieces, needle);
+            assert!(
+                scopes.contains(scope),
+                "{needle:?} is {scopes:?}, not {scope}"
+            );
+        }
+    }
+
+    /// Inside `${ … }` the text is code again, not the string around it,
+    /// and the string resumes after the `}` that closes it, however many
+    /// braces the code opened.
+    #[test]
+    fn a_rhai_interpolation_reads_code_inside_a_template_string() {
+        let pieces = scoped("board.rhai", RHAI_SAMPLE);
+        let interpolated = |needle: &str| {
+            pieces
+                .iter()
+                .find(|(scopes, piece)| piece == needle && scopes.contains("meta.interpolation"))
+                .map(|(scopes, _)| scopes.as_str())
+                .unwrap_or_else(|| panic!("{needle:?} is not interpolated in {pieces:#?}"))
+        };
+        for needle in ["state", "len", "LIMIT"] {
+            assert!(
+                !interpolated(needle).contains("string"),
+                "{needle:?} inside ${{…}} is code"
+            );
+        }
+        assert!(scope_of(&pieces, " lines").contains("string.quoted.other.template"));
+        assert!(
+            !scope_of(&pieces, "/*").contains("string"),
+            "the template string ends at its back-tick"
+        );
+    }
+
+    /// A `|` between two operands is an operator, and the parentheses of a
+    /// call are not the unit value.
+    #[test]
+    fn a_rhai_bitwise_or_and_an_empty_call_are_not_mistaken() {
+        let pieces = scoped("edge.rhai", "let m = a | b | c;\nlet t = now();\n");
+        assert!(
+            !scope_of(&pieces, "b").contains("variable.parameter"),
+            "{pieces:#?}"
+        );
+        assert!(
+            !scope_of(&pieces, "(").contains("constant.language.unit"),
+            "{pieces:#?}"
+        );
+    }
+
+    /// Scopes the theme has no colour for would still draw as plain text,
+    /// so each kind of piece is checked against the colour it is drawn in.
+    #[test]
+    fn a_rhai_script_is_coloured_apart_from_plain_text() {
+        let coloured = lines(
+            RHAI_SAMPLE,
+            Path::new("board.rhai"),
+            FALLBACK_SYNTAX_THEME,
+            100,
+        );
+        let colour_of = |needle: &str| {
+            coloured
+                .iter()
+                .flatten()
+                .find(|(_, piece)| piece.contains(needle))
+                .map(|(colour, _)| *colour)
+                .unwrap_or_else(|| panic!("{needle:?} was not drawn"))
+        };
+        let foreground = plain(FALLBACK_SYNTAX_THEME, "")[0].0;
+        let kinds = [
+            ("keyword", "let"),
+            ("function name", "answer"),
+            ("string", ".planning/STATE.md"),
+            ("template string", " of "),
+            ("number", "0x1F_ff"),
+            ("comment", "still"),
+            ("doc comment", "The board's answer."),
+            ("map key", "data"),
+        ];
+        for (kind, needle) in kinds {
+            assert_ne!(colour_of(needle), foreground, "a {kind} is coloured");
+        }
+        assert_ne!(
+            colour_of("let"),
+            colour_of(".planning/STATE.md"),
+            "a keyword is not a string"
+        );
+        assert_ne!(
+            colour_of("still"),
+            colour_of("0x1F_ff"),
+            "a comment is not a number"
+        );
+    }
+
+    /// The scripts extensions ship are read end to end: a pattern that
+    /// fails on one of their lines would turn the rest of the file plain.
+    #[test]
+    fn every_line_of_a_shipped_extension_script_parses_as_rhai() {
+        let scripts = [
+            (
+                "board.rhai",
+                include_str!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../uze-core/src/package/authoring/board.rhai"
+                )),
+            ),
+            (
+                "state.rhai",
+                include_str!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../../tests/_fixtures/canonical/gsd/extensions/gsd-band/state.rhai"
+                )),
+            ),
+        ];
+        for (name, text) in scripts {
+            let path = Path::new(name);
+            assert_eq!(syntax_for(path, text.lines().next()).name, "Rhai");
+            let pieces = scoped(name, text);
+            assert!(
+                pieces
+                    .iter()
+                    .any(|(scopes, _)| scopes.contains("entity.name.function")),
+                "{name} names its function"
+            );
+            assert!(
+                pieces
+                    .iter()
+                    .any(|(scopes, _)| scopes.contains("meta.mapping")),
+                "{name} answers a map"
+            );
+        }
     }
 }

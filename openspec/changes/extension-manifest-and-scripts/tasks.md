@@ -57,3 +57,4 @@
 - [x] 8.4 A minimal `uze:extension` Skill (manifest, a script, grants, the check loop) and the hand-off from `uze:author` (parent 11.1, 11.2)
 - [x] 8.5 A journey: install a plugin from a non-linked marketplace, consent, enable, open, act by key and pointer
 - [x] 8.6 The proof by hand for the operator: the change-4 plugin and `gsd-band`'s board from `board.rhai` with `paths.changed` and `every` (parent 12.2) (run by the operator on 2026-10-26 with `try/run.sh`: offer, consent, script data, the board following `.planning`, actions)
+- [x] 8.7 Highlight Rhai in the code surface with a grammar of UZE's own beside `KDL.sublime-syntax`: `.rhai` files and `rhai` fences, tested on the shipped scripts
