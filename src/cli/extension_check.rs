@@ -96,8 +96,27 @@ pub(crate) fn rehearse_scripts(
             };
             let answered = match answer {
                 Answer::Answered { envelope, .. } => {
-                    extension.fixtures.insert(source.id.clone(), envelope.data);
-                    true
+                    let composed = source.output == uze_contract::Output::View;
+                    match composed
+                        .then(|| {
+                            uze_extensions::declared::validate_composed(
+                                &envelope.data,
+                                &compiled.manifest,
+                            )
+                        })
+                        .transpose()
+                    {
+                        Err(why) => {
+                            extension
+                                .errors
+                                .push(failed(format!("its tree is refused: {why}")));
+                            false
+                        }
+                        Ok(_) => {
+                            extension.fixtures.insert(source.id.clone(), envelope.data);
+                            true
+                        }
+                    }
                 }
                 Answer::Failed { reason, .. } => {
                     extension.errors.push(failed(reason));

@@ -12,9 +12,9 @@
 
 ## 3. Compose
 
-- [ ] 3.1 The tree decoder in `uze-extensions::declared`: JSON → the engine's built `View`, against the catalog's `NodeSpec`s and the node cap, every string cleaned, failures by path (parent 13.3)
-- [ ] 3.2 Interactive composed nodes bound to declared actions with their `item`; the 300 ms re-layout guard; memoized per (answer digest, size)
-- [ ] 3.3 `output "view"` in the runner for scripts and programs, and in the check (`--run` validates the tree)
+- [x] 3.1 The tree decoder in `uze-extensions::declared`: JSON → the engine's built `View`, against the catalog's `NodeSpec`s and the node cap, every string cleaned, failures by path (parent 13.3)
+- [x] 3.2 Interactive composed nodes bound to declared actions with their `item`; the 300 ms re-layout guard; memoized per (answer digest, size)
+- [x] 3.3 `output "view"` in the runner for scripts and programs, and in the check (`--run` validates the tree)
 
 ## 4. Slots
 

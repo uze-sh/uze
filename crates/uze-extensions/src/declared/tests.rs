@@ -1387,3 +1387,66 @@ fn a_template_brought_tab_leaves_the_others_checked() {
         "{missing:#?}"
     );
 }
+
+/// A composed source's answer is the surface: drawn in place of its view
+/// file, which draws only while it has not answered; a click within 300 ms
+/// of a new tree is held back, and one after it acts.
+#[test]
+fn a_composed_answer_draws_itself_and_holds_back_a_hasty_click() {
+    let mut compiled = extension(compiled_view(
+        vec![n(NodeName::Text).arg("Waiting for the board").item()],
+        Vec::new(),
+        Vec::new(),
+    ));
+    compiled.manifest.sources[0].output = uze_contract::Output::View;
+    compiled.manifest.actions.push(uze_contract::ActionDecl {
+        id: "archive".to_owned(),
+        label: "Archive".to_owned(),
+        on: VIEW.to_owned(),
+        key: None,
+        confirm: None,
+        does: uze_contract::Does::Clipboard("{name}".to_owned()),
+    });
+    let mut extension = DeclaredExtension::new(compiled, "en");
+    let start = Instant::now();
+    extension.pass(&Pass {
+        now: start,
+        visible: &[],
+        happened: &[],
+    });
+    extension.set_data(
+        SOURCE,
+        Ok(json!({"type": "Stack", "children": [
+            {"type": "Text", "args": ["3 open"]},
+            {"type": "Button", "args": ["Archive"], "props": {"action": "archive"}, "item": {"name": "auth"}}
+        ]})),
+    );
+    let root = tree(&extension);
+    assert_eq!(texts(&root), ["3 open"]);
+    let button = nodes(&root)
+        .into_iter()
+        .find(|node| matches!(node.kind, NodeKind::Button { .. }))
+        .expect("the composed button is drawn")
+        .id;
+    assert_eq!(
+        extension.hit(VIEW, act(button, NodeAct::Press), SPACE),
+        Outcome::Stay,
+        "a click as the tree lands is held back"
+    );
+    extension.pass(&Pass {
+        now: start + std::time::Duration::from_millis(400),
+        visible: &[],
+        happened: &[],
+    });
+    let copied = extension.hit(VIEW, act(button, NodeAct::Press), SPACE);
+    assert!(
+        format!("{copied:?}").contains("auth"),
+        "the action ran on its item: {copied:?}"
+    );
+
+    extension.set_data(SOURCE, Ok(json!({"type": "iframe"})));
+    let NodeKind::Notice { text, .. } = tree(&extension).kind else {
+        panic!("a refused tree draws a notice");
+    };
+    assert!(text.contains("a node the catalog does not have"), "{text}");
+}

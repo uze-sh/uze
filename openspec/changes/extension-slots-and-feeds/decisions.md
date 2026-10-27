@@ -59,3 +59,33 @@
 - decided:  The declared discovery job reads `Extensions::preferences` for each found extension beside its consent record (`ExtensionAnswer::preferences`); the host keeps them on `HostedExtension` and calls `configure` on a change and on every engine it builds. A source declaring `preferences` is asked with `input.preferences` as admitted now, which is also part of its question's digest. Setting a preference raises `plugins_changed`, so the next pass reads them again.
 - rejected: A watch on the preferences file: one more poll for what changes only when the operator sets it, from this client.
 - blast:    `src/ui/orchestrator/{reads,declared,answers}.rs`, `runner.rs`.
+
+## D7 — A composed surface keeps its view file, drawn until its source answers
+
+- status:   pending
+- task:     3.1
+- commit:
+- trigger:  S5 builds a surface from the tree its source answers, while every surface still names `view=`, which the decoder requires.
+- decided:  A surface whose source declares `output "view"` keeps its view file: it is what draws while the source has not answered (or is withheld), and the composed tree replaces it once it has. A tree that does not validate draws a notice naming the first wrong node by path. The tree becomes a compiled view of literals only, built by the same binder, so `{…}` in a composed string is text, never a reference.
+- rejected: An optional `view=` for composed surfaces: a second surface shape for the check, the LSP and the docs to tell apart.
+- blast:    `uze-extensions::declared::{compose, build}`.
+
+## D8 — Composed nodes take only `grow` and `min-width` of the common properties
+
+- status:   pending
+- task:     3.1
+- commit:
+- trigger:  `COMMON_PROPS` includes `each`, `when`, `unless`, `show` and `show-any`, which bind against data.
+- decided:  A composed node may carry `grow` and `min-width`; the binding ones are refused ("does not take"), since a composed tree already holds every value. Its `item` is accepted only beside an `action` naming a declared action. The node cap is the binder's, 2,000.
+- rejected: Accepting `show`/`each` against the answer's own values: an expression language through the back door.
+- blast:    `compose::COMPOSED_COMMON`.
+
+## D9 — A click on a composed surface within 300 ms of a new tree is dropped, measured on the host's clock
+
+- status:   pending
+- task:     3.2
+- commit:
+- trigger:  D15 asks to ignore clicks within 300 ms of a re-layout; the engine draws through `&self` and does not know when a frame was laid out.
+- decided:  The engine stamps a source's answer with the host's clock (`Pass::now`) whenever its digest changes, and a node hit on a surface of a composed source within 300 ms of that stamp is `Stay`. Keys are not held back: a key acts on the selection, not on what is under the pointer.
+- rejected: Holding back every surface's clicks: a bound view's nodes do not move under the pointer the way a program's tree may.
+- blast:    `DeclaredExtension::{set_data, just_laid_out, hit}`.

@@ -26,6 +26,17 @@
 
 mod action;
 mod bind;
+mod compose;
+
+/// Whether `tree`, a composed source's answer, is one the workspace would
+/// draw for `manifest`, or the first reason it is not: what `uze agent
+/// plugin check --run` says of a composed source.
+pub fn validate_composed(
+    tree: &serde_json::Value,
+    manifest: &uze_contract::Manifest,
+) -> Result<(), String> {
+    compose::compose(tree, manifest, "").map(drop)
+}
 mod events;
 mod fixture_check;
 mod time;
@@ -105,6 +116,9 @@ pub struct DeclaredExtension {
     /// The host's clock at its last pass, which a question is stamped
     /// with; `None` until a host counts time.
     now: Option<Instant>,
+    /// When each source's answer last changed, on the host's clock: what a
+    /// click on a composed surface is held back by.
+    laid_out: BTreeMap<String, Instant>,
     /// Events gathered for their window to close.
     window: events::Window,
     /// Sources an event or their `every` asked again, asked once a surface
@@ -149,6 +163,10 @@ struct SourceAnswer {
     number: u64,
     answer: Answer,
 }
+
+/// How long after a composed answer changed a click on its surface is
+/// ignored.
+const RELAYOUT_GUARD: std::time::Duration = std::time::Duration::from_millis(300);
 
 /// What a source's job answers when its thread stopped before answering.
 const STOPPED: &str = "the question stopped before it was answered";
@@ -196,6 +214,7 @@ impl DeclaredExtension {
             queued: Vec::new(),
             notices: BTreeMap::new(),
             now: None,
+            laid_out: BTreeMap::new(),
             window: events::Window::default(),
             due: BTreeSet::new(),
             questions: 0,
@@ -249,8 +268,33 @@ impl DeclaredExtension {
     pub fn set_data(&mut self, source: impl Into<String>, data: SourceData) {
         let source = source.into();
         self.withheld.remove(&source);
-        self.digests.insert(source.clone(), digest(&data));
+        let digest = digest(&data);
+        if self.digests.insert(source.clone(), digest) != Some(digest)
+            && let Some(now) = self.now
+        {
+            self.laid_out.insert(source.clone(), now);
+        }
         self.data.insert(source, data);
+    }
+
+    /// Whether a click on `surface` lands within [`RELAYOUT_GUARD`] of its
+    /// composed source answering a new tree: what was under the pointer
+    /// may not be what the operator aimed at (D15).
+    fn just_laid_out(&self, surface: &str) -> bool {
+        let Some(decl) = self.compiled.manifest.surface(surface) else {
+            return false;
+        };
+        let composed = self
+            .compiled
+            .manifest
+            .source(&decl.source)
+            .is_some_and(|source| source.output == uze_contract::Output::View);
+        composed
+            && self
+                .laid_out
+                .get(&decl.source)
+                .zip(self.now)
+                .is_some_and(|(at, now)| now.saturating_duration_since(*at) < RELAYOUT_GUARD)
     }
 
     /// `source` has no data because the host would not ask it, and
@@ -588,7 +632,13 @@ impl DeclaredExtension {
             .surface(surface)
             .map(|decl| decl.slot)
         {
-            Some(uze_contract::Slot::View | uze_contract::Slot::Drawer) => space,
+            Some(
+                uze_contract::Slot::View
+                | uze_contract::Slot::Drawer
+                | uze_contract::Slot::Status
+                | uze_contract::Slot::Band
+                | uze_contract::Slot::Overlay,
+            ) => space,
             _ => Size::default(),
         }
     }
@@ -662,6 +712,19 @@ impl DeclaredExtension {
             locale: &self.locale,
             preferences: &self.preferences,
         };
+        // A composed source answered the tree itself: its view file is
+        // what draws while it has not, and the tree replaces it once it has.
+        let composed = self
+            .compiled
+            .manifest
+            .source(&decl.source)
+            .is_some_and(|source| source.output == uze_contract::Output::View);
+        if composed {
+            return match compose::compose(data, &self.compiled.manifest, &view.file) {
+                Ok(tree) => bind::build(&tree, &serde_json::Value::Null, env),
+                Err(why) => Built::notice(view, &why, Role::Danger),
+            };
+        }
         bind::build(view, data, env)
     }
 
@@ -846,6 +909,9 @@ impl Extension for DeclaredExtension {
     fn hit(&mut self, surface: &str, hit: ViewHit, space: Size) -> Outcome {
         if let Some(outcome) = self.hit_while_asking(surface, &hit) {
             return outcome;
+        }
+        if matches!(hit, ViewHit::Node { .. }) && self.just_laid_out(surface) {
+            return Outcome::Stay;
         }
         let space = self.space_for(surface, space);
         match hit {
