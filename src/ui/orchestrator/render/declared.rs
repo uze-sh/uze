@@ -13,8 +13,17 @@ pub(super) fn declared_split(model: &WorkspaceModel, pane: Rect) -> (Rect, Optio
         return (pane, None);
     }
     let width = widget::drawer::width(model.overview_drawer_width, pane.width);
-    let surface = Rect::new(pane.x, pane.y, pane.width - width, pane.height);
-    let drawer = Rect::new(surface.right(), pane.y, width, pane.height);
+    let room = Rect::new(pane.x, pane.y, pane.width - width, pane.height);
+    let drawer = Rect::new(room.right(), pane.y, width, pane.height);
+    // The size the author tries the surface at, within the room it has.
+    let surface = match model.inspected_size() {
+        Some((columns, rows)) => Rect {
+            width: room.width.min(columns),
+            height: room.height.min(rows),
+            ..room
+        },
+        None => room,
+    };
     (surface, Some(drawer))
 }
 
@@ -336,33 +345,57 @@ fn render_inspector(
             theme::fg(Token::TextBright),
         )),
     ];
-    let mut group = |heading: &str, rows: Vec<String>, empty: &str| {
-        lines.push(Line::default());
-        lines.push(Line::from(Span::styled(
-            heading.to_owned(),
-            theme::fg(Token::TextSecondary),
-        )));
-        if rows.is_empty() {
+    // Lines a click answers on, and the one the edit's keys stand on.
+    let mut targets: Vec<(usize, WorkspaceHit)> = Vec::new();
+    let mut keys_row = None;
+    let tools = model.inspector_tools();
+    if !tools.is_empty() {
+        heading(&mut lines, "author");
+        let selected = model
+            .inspector_holds_keys()
+            .then(|| model.inspector.selected.min(tools.len() - 1));
+        for (index, tool) in tools.iter().enumerate() {
+            let hit = WorkspaceHit::InspectorTool(index);
+            let style = if selected == Some(index) {
+                theme::on(Token::TextBright, Token::SurfaceSelected)
+            } else if model.pointer_on(hit) == widget::ChipState::Resting {
+                theme::fg(Token::TextSecondary)
+            } else {
+                theme::fg(Token::TextBright)
+            };
+            targets.push((lines.len(), hit));
             lines.push(Line::from(Span::styled(
-                empty.to_owned(),
-                theme::fg(Token::TextMuted),
+                text::elide(&model.tool_label(tool), measure),
+                style,
             )));
+            if let (InspectorTool::Rerun(source), Some((editing, buffer))) =
+                (tool, &model.inspector.edit)
+                && source == editing
+            {
+                let mut field = vec![Span::raw("  ")];
+                field.extend(rename_spans_within(buffer, measure.saturating_sub(2)));
+                lines.push(Line::from(field));
+                keys_row = Some(lines.len());
+                lines.push(Line::default());
+            }
         }
-        for row in rows {
-            lines.push(Line::from(Span::styled(
-                text::elide(&row, measure),
-                theme::fg(Token::TextPrimary),
-            )));
-        }
-    };
+    }
     let nodes_heading = if inspection.traced {
         "nodes"
     } else {
         "nodes · why absent is not traced yet"
     };
-    group(nodes_heading, inspection.nodes, "no view compiled");
-    group("data", inspection.data, "no data");
     group(
+        &mut lines,
+        measure,
+        nodes_heading,
+        inspection.nodes,
+        "no view compiled",
+    );
+    group(&mut lines, measure, "data", inspection.data, "no data");
+    group(
+        &mut lines,
+        measure,
         "ui state",
         inspection
             .ui
@@ -371,21 +404,118 @@ fn render_inspector(
             .collect(),
         "nothing chosen yet",
     );
-    group("recorded actions", inspection.recorded, "nothing pressed");
-    group("errors", errors.to_vec(), "none");
-    draw_scrolled(frame, inner, lines, model);
+    group(
+        &mut lines,
+        measure,
+        "recorded actions",
+        inspection.recorded,
+        "nothing pressed",
+    );
+    group(
+        &mut lines,
+        measure,
+        "runs",
+        inspection.runs,
+        "nothing asked yet",
+    );
+    group(
+        &mut lines,
+        measure,
+        "events",
+        inspection.events,
+        "none seen",
+    );
+    group(
+        &mut lines,
+        measure,
+        "grants",
+        inspection.grants,
+        "wants nothing",
+    );
+    group(
+        &mut lines,
+        measure,
+        "cost",
+        inspection.cost,
+        "nothing measured",
+    );
+    group(&mut lines, measure, "errors", errors.to_vec(), "none");
+    let (first, visible) = draw_scrolled(frame, inner, lines, model);
+    let row_of = |line: usize| {
+        (line >= first && line < first + visible)
+            .then(|| Rect::new(inner.x, inner.y + (line - first) as u16, inner.width, 1))
+    };
+    for (line, hit) in targets {
+        if let Some(rect) = row_of(line) {
+            hits.push((rect, hit));
+        }
+    }
+    if let Some(rect) = keys_row.and_then(row_of) {
+        let scopes = [
+            uze_keys::Scope::Global,
+            uze_keys::Scope::Workspace,
+            uze_keys::Scope::Rename,
+        ];
+        let keys = crate::ui::widget::hint::Hints::new(&scopes)
+            .named(Action::Activate, "rerun")
+            .named(Action::Dismiss, "cancel")
+            .hovered(model.hovered_hint())
+            .render(
+                frame,
+                Rect {
+                    x: rect.x + 2,
+                    width: rect.width.saturating_sub(2),
+                    ..rect
+                },
+            );
+        hits.extend(hint_targets(keys));
+    }
     hits.push((inner, WorkspaceHit::Inspector));
+}
+
+/// A group's heading, with a line of air above it.
+fn heading(lines: &mut Vec<Line<'static>>, heading: &str) {
+    lines.push(Line::default());
+    lines.push(Line::from(Span::styled(
+        heading.to_owned(),
+        theme::fg(Token::TextSecondary),
+    )));
+}
+
+/// One of the inspector's groups: its heading, then a row a line, or what
+/// it says when there are none.
+fn group(
+    lines: &mut Vec<Line<'static>>,
+    measure: usize,
+    name: &str,
+    rows: Vec<String>,
+    empty: &str,
+) {
+    heading(lines, name);
+    if rows.is_empty() {
+        lines.push(Line::from(Span::styled(
+            empty.to_owned(),
+            theme::fg(Token::TextMuted),
+        )));
+    }
+    for row in rows {
+        lines.push(Line::from(Span::styled(
+            text::elide(&row, measure),
+            theme::fg(Token::TextPrimary),
+        )));
+    }
 }
 
 /// The inspector's lines from where it is scrolled, settled so its last
 /// line stops at its foot, with a handle in the drawer's right margin when
-/// they do not all fit — as the overview's drawer draws its text.
+/// they do not all fit — as the overview's drawer draws its text. Answers
+/// the first line shown and how many fit.
 fn draw_scrolled(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     lines: Vec<Line<'static>>,
     model: &WorkspaceModel,
-) {
+) -> (usize, usize) {
     let visible = usize::from(area.height);
     let first = usize::from(model.inspector_scroll.get()).min(lines.len().saturating_sub(visible));
     model
@@ -403,6 +533,7 @@ fn draw_scrolled(
     }
     let shown: Vec<_> = lines.into_iter().skip(first).take(visible).collect();
     frame.render_widget(Paragraph::new(shown), area);
+    (first, visible)
 }
 
 /// The rows a plugin's section gives the strip naming whose it is, over its

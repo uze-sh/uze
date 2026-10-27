@@ -333,6 +333,7 @@ impl WorkspaceModel {
             self.open_slot = None;
             self.open_root = None;
             self.inspecting = false;
+            self.reset_inspector();
         }
         self.register_extension_keys();
         changed

@@ -955,8 +955,11 @@ pub(super) enum WorkspaceHit {
     /// the section, and a click on it does nothing.
     OverviewDrawer,
     /// The inspector beside a declared view: the wheel scrolls it rather
-    /// than the view, and a click on it does nothing.
+    /// than the view, and a click on it lends it the moves.
     Inspector,
+    /// One of the inspector's tools, by its place among
+    /// `WorkspaceModel::inspector_tools`.
+    InspectorTool(usize),
     /// The overview's question about the project's commands.
     OverviewReview,
     /// Dropping the overview's workspace edits `agents.yaml` refused.
@@ -1510,6 +1513,9 @@ struct Channels {
     extension_stamps: Answers<StampsAnswer>,
     /// What hosted engines' jobs answered, each for the slot that asked.
     engine_answers: Answers<EngineAnswer>,
+    /// A fixture the inspector switched a source to, and a session's
+    /// events it recorded.
+    inspector: Answers<InspectorAnswer>,
     /// Keeping each project's `AGENTS.md` workspace section in step.
     retired_regions: Answers<RetiredRegionsNotice>,
     /// Bringing each project's target in line with its remote.
@@ -1945,6 +1951,8 @@ struct WorkspaceModel {
     open_root: Option<PathBuf>,
     /// Whether the inspector stands beside it.
     inspecting: bool,
+    /// Where the author is in the inspector.
+    inspector: InspectorState,
     /// The width a plugin's docked drawer was dragged to, kept for the
     /// rest of the run. Apart from the overview's drawer width because the
     /// inspector, which shares that one, can stand open beside it.

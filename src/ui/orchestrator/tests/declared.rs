@@ -2023,3 +2023,274 @@ fn a_section_asks_again_once_its_extension_is_enabled_or_disabled() {
     std::fs::remove_dir_all(root).unwrap();
     std::fs::remove_dir_all(checkout).unwrap();
 }
+
+/// The real `gsd-band`, linked, consented to and enabled, with a section
+/// drawn from its `state` script, and its board open with the inspector
+/// opened by its key.
+fn inspecting_the_linked_band(label: &str) -> (Driven<'static>, PathBuf, PathBuf, PathBuf) {
+    let root = uze_testkit::temp::scratch(label);
+    let home: &'static uze_application::UzeHome =
+        Box::leak(Box::new(uze_application::UzeHome::at(root.join("uze"))));
+    let band = the_gsd_band_installed(&root, home)
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let manifest = band.join("extension.kdl");
+    let declared = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(
+        &manifest,
+        declared.replace(
+            "source \"milestone\" {",
+            "surface \"lines\" slot=\"section\" view=\"lines.kdl\" source=\"state\" title=\"State\"\n\n\
+             source \"milestone\" {",
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        band.join("lines.kdl"),
+        "Stack {\n    Text \"{lines} lines of state\"\n}\n",
+    )
+    .unwrap();
+    let checkout = checkout_outside_the_temporary_directory(label);
+    std::fs::write(checkout.join(".planning/STATE.md"), "a\nb\nc\nd").unwrap();
+    let app = uze_application::UzeApplication::new(home.clone(), Vec::new());
+    let identity = ExtensionIdentity {
+        marketplace: "studio".to_owned(),
+        plugin: "gsd".to_owned(),
+        id: "gsd-band".to_owned(),
+    };
+    app.extensions()
+        .consent(&identity, uze_application::Asker::Operator)
+        .unwrap();
+    app.extensions()
+        .enable(
+            &identity,
+            &uze_application::project_root_of(&checkout),
+            uze_application::Asker::Operator,
+        )
+        .unwrap();
+
+    let mut model = agent_session_in(&checkout.display().to_string());
+    model.remembered.declared.discovered_at = Some(std::time::Instant::now());
+    answered(
+        &mut model,
+        home,
+        super::ExtensionJob::Discover(Default::default()),
+    );
+    let area = ratatui::layout::Rect::new(0, 0, 160, 50);
+    let rows = drawn_once_answered(&mut model, home, area, "4 lines of state");
+    assert!(shown(&rows, "4 lines of state"), "{rows:#?}");
+    let slot = view_slot(&model);
+    super::open_surface(&mut model, slot);
+    let mut driven = driven(model, home);
+    driven.area = area;
+    driven.press_key(key_event(uze_keys::Chord::parse("i").unwrap()));
+    assert!(driven.attach.model.inspecting);
+    assert!(driven.attach.model.inspector_holds_keys(), "opened last");
+    driven.frame();
+    (driven, root, checkout, band)
+}
+
+/// Pumps the attach, as its loop does, until `wanted` is drawn.
+fn pumped_until(driven: &mut Driven<'_>, wanted: &str) -> Vec<String> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    loop {
+        let _ = driven.pump();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let rows = frame_rows_at(&mut driven.attach.model, driven.area);
+        if shown(&rows, wanted) || std::time::Instant::now() > deadline {
+            return rows;
+        }
+    }
+}
+
+fn tool(driven: &Driven<'_>, wanted: &super::InspectorTool) -> usize {
+    driven
+        .attach
+        .model
+        .inspector_tools()
+        .iter()
+        .position(|tool| tool == wanted)
+        .unwrap_or_else(|| panic!("{wanted:?} is not offered"))
+}
+
+/// The inspector of a linked extension lists its runs, events, grants
+/// and cost, and its author reruns a source with edited input: the rerun
+/// goes through the runner like any question, and is listed with the
+/// input it was asked with (D25, D28).
+#[test]
+fn a_linked_extensions_inspector_lists_its_runs_and_reruns_with_edited_input() {
+    let (mut driven, root, checkout, _) = inspecting_the_linked_band("declared-inspector-rerun");
+    let rows = frame_rows_at(&mut driven.attach.model, driven.area);
+    for wanted in [
+        "author",
+        "rerun state with input…",
+        "feed state from fixtures/state.json",
+        "emit paths.changed .planning",
+        "size · the room it has",
+        "record session events",
+    ] {
+        assert!(shown(&rows, wanted), "{wanted}: {rows:#?}");
+    }
+    let inspection = driven.attach.model.inspection().unwrap();
+    let listed = |lines: &[String], wanted: &str| lines.iter().any(|line| line.contains(wanted));
+    assert!(
+        listed(&inspection.runs, "source state"),
+        "{:?}",
+        inspection.runs
+    );
+    assert!(
+        listed(&inspection.runs, "answered"),
+        "{:?}",
+        inspection.runs
+    );
+    assert!(
+        listed(&inspection.runs, "source milestone"),
+        "{:?}",
+        inspection.runs
+    );
+    assert_eq!(inspection.grants, ["read:checkout"]);
+    assert!(
+        listed(&inspection.cost, "runs/min · p95"),
+        "{:?}",
+        inspection.cost
+    );
+
+    let rerun = tool(&driven, &super::InspectorTool::Rerun("state".to_owned()));
+    let row = drawn(&driven.attach.model, WorkspaceHit::InspectorTool(rerun));
+    driven.press(row.x, row.y);
+    let (source, buffer) = driven
+        .attach
+        .model
+        .inspector
+        .edit
+        .as_ref()
+        .expect("editing");
+    assert_eq!(source, "state");
+    assert!(buffer.text().starts_with('{'), "{}", buffer.text());
+    driven.frame();
+    let cancel = drawn(
+        &driven.attach.model,
+        WorkspaceHit::HintAction(uze_keys::Action::Dismiss),
+    );
+    assert!(cancel.y > row.y, "its keys stand under the field");
+
+    driven.attach.model.inspector.edit = Some((
+        "state".to_owned(),
+        super::RenameBuffer::new(r#"{"phase":"7""#.to_owned()),
+    ));
+    driven.press_key(key_event(uze_keys::Chord::parse("}").unwrap()));
+    assert_eq!(
+        driven
+            .attach
+            .model
+            .inspector
+            .edit
+            .as_ref()
+            .unwrap()
+            .1
+            .text(),
+        r#"{"phase":"7"}"#,
+        "typing lands in the field"
+    );
+    driven.frame();
+    let rerun_hint = drawn(
+        &driven.attach.model,
+        WorkspaceHit::HintAction(uze_keys::Action::Activate),
+    );
+    driven.press(rerun_hint.x, rerun_hint.y);
+    assert!(driven.attach.model.inspector.edit.is_none(), "asked");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while driven.attach.model.remembered.declared.runner.runs() < 2
+        && std::time::Instant::now() < deadline
+    {
+        let _ = driven.pump();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let runs = driven.attach.model.inspection().unwrap().runs;
+    assert!(runs[0].starts_with("refresh state"), "{runs:?}");
+    assert!(runs[1].contains(r#"input {"phase":"7"}"#), "{runs:?}");
+    let rows = frame_rows_at(&mut driven.attach.model, driven.area);
+    assert!(shown(&rows, "put state's input back"), "{rows:#?}");
+    assert_eq!(driven.attach.model.remembered.declared.runner.runs(), 2);
+
+    std::fs::remove_dir_all(root).unwrap();
+    std::fs::remove_dir_all(checkout).unwrap();
+}
+
+/// The author's other tools: a source fed by its fixture and back, a
+/// synthetic event, another size and theme, and a session's events
+/// recorded into a fixture; the keys walk them as the pointer does.
+#[test]
+fn a_linked_extensions_author_switches_fixtures_emits_resizes_and_records() {
+    let (mut driven, root, checkout, band) = inspecting_the_linked_band("declared-inspector-tools");
+    std::fs::write(band.join("fixtures/state.json"), r#"{ "lines": 42 }"#).unwrap();
+    let feed = tool(&driven, &super::InspectorTool::Fixture("state".to_owned()));
+    let row = drawn(&driven.attach.model, WorkspaceHit::InspectorTool(feed));
+    driven.press(row.x, row.y);
+    let rows = pumped_until(&mut driven, "42 lines of state");
+    assert!(shown(&rows, "42 lines of state"), "{rows:#?}");
+    assert!(shown(&rows, "feed state live"), "{rows:#?}");
+    let row = drawn(&driven.attach.model, WorkspaceHit::InspectorTool(feed));
+    driven.press(row.x, row.y);
+    let rows = pumped_until(&mut driven, "4 lines of state");
+    assert!(shown(&rows, "4 lines of state"), "{rows:#?}");
+
+    let emit = tool(
+        &driven,
+        &super::InspectorTool::Emit(uze_contract::EventName::PathsChanged {
+            paths: vec![".planning".to_owned()],
+        }),
+    );
+    let row = drawn(&driven.attach.model, WorkspaceHit::InspectorTool(emit));
+    driven.press(row.x, row.y);
+    let events = driven.attach.model.inspection().unwrap().events;
+    assert_eq!(events[0], "paths.changed .planning · synthetic");
+
+    // The keys walk the tools from where the click left them.
+    let size = tool(&driven, &super::InspectorTool::Size);
+    for _ in emit..size {
+        driven.press_key(key_event(uze_keys::Chord::parse("down").unwrap()));
+    }
+    driven.press_key(key_event(uze_keys::Chord::parse("enter").unwrap()));
+    assert_eq!(driven.attach.model.inspected_size(), Some((80, 24)));
+    driven.press_key(key_event(uze_keys::Chord::parse("down").unwrap()));
+    driven.press_key(key_event(uze_keys::Chord::parse("enter").unwrap()));
+    assert_eq!(driven.attach.model.inspected_theme(), Some("dark"));
+    let rows = frame_rows_at(&mut driven.attach.model, driven.area);
+    assert!(shown(&rows, "size · 80 by 24"), "{rows:#?}");
+    assert!(shown(&rows, "theme · dark"), "{rows:#?}");
+
+    let record = tool(&driven, &super::InspectorTool::Record);
+    let row = drawn(&driven.attach.model, WorkspaceHit::InspectorTool(record));
+    driven.press(row.x, row.y);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    let recorded = band.join("fixtures/session.json");
+    while !recorded.exists() && std::time::Instant::now() < deadline {
+        let _ = driven.pump();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let events: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&recorded).unwrap()).unwrap();
+    assert_eq!(events[0]["synthetic"], serde_json::json!(true), "{events}");
+
+    driven.press_key(key_event(uze_keys::Chord::parse("esc").unwrap()));
+    assert!(!driven.attach.model.inspecting);
+    assert_eq!(
+        driven.attach.model.inspected_size(),
+        None,
+        "the author's size goes with the inspector"
+    );
+    std::fs::remove_dir_all(root).unwrap();
+    std::fs::remove_dir_all(checkout).unwrap();
+}
+
+/// An extension from a marketplace that is not linked offers its author
+/// nothing to provoke: the inspector only reads it.
+#[test]
+fn an_installed_extensions_inspector_offers_no_tools() {
+    let mut driven = inspector_open();
+    assert!(driven.attach.model.inspector_tools().is_empty());
+    let rows = frame_rows_at(&mut driven.attach.model, driven.area);
+    assert!(!shown(&rows, "author"), "{rows:#?}");
+}

@@ -168,6 +168,7 @@ impl Attach<'_> {
             Some(
                 WorkspaceHit::HintAction(_)
                     | WorkspaceHit::Inspector
+                    | WorkspaceHit::InspectorTool(_)
                     | WorkspaceHit::ResizeOverviewDrawer
             )
         );
@@ -178,6 +179,18 @@ impl Attach<'_> {
                 || self.on_content_scrollbar(mouse.column, mouse.row)
                 || over.is_some_and(|hit| self.model.is_open_surfaces(hit)));
         self.hand_recent_the_keys_or_not(mouse.column, layout.sidebar, over);
+        // A click in the inspector lends it the moves; one on the view
+        // gives them back.
+        if self.model.inspecting {
+            if matches!(
+                over,
+                Some(WorkspaceHit::Inspector | WorkspaceHit::InspectorTool(_))
+            ) {
+                self.model.inspector.keys = true;
+            } else if on_surface {
+                self.model.inspector.keys = false;
+            }
+        }
         match mouse {
             _ if self.model.approval.is_some() => {
                 self.approval_press(mouse.column, mouse.row);
@@ -241,6 +254,15 @@ impl Attach<'_> {
                 // outside the thing being edited discards it rather
                 // than silently confirming or acting on the click.
                 self.model.renaming = None;
+                self.model.dirty = true;
+            }
+            // A source's input being edited: its keys' hints are pressed,
+            // and any other click puts the edit away, as a rename's does.
+            _ if self.model.inspector.edit.is_some() => {
+                if let Some(WorkspaceHit::HintAction(action)) = over {
+                    return self.act(action, viewport);
+                }
+                self.model.inspector.edit = None;
                 self.model.dirty = true;
             }
             _ if self.model.directory_step.is_some() => {
@@ -1055,7 +1077,10 @@ impl Attach<'_> {
                     });
             }
             _ if self.model.inspecting
-                && self.model.hit_at(mouse.column, mouse.row) == Some(WorkspaceHit::Inspector) =>
+                && matches!(
+                    self.model.hit_at(mouse.column, mouse.row),
+                    Some(WorkspaceHit::Inspector | WorkspaceHit::InspectorTool(_))
+                ) =>
             {
                 self.model.scroll_inspector(match mouse.kind {
                     MouseEventKind::ScrollUp => -crate::ui::input::PREVIEW_WHEEL,
@@ -1423,6 +1448,7 @@ impl Attach<'_> {
             | WorkspaceHit::OverviewQuestionBody
             | WorkspaceHit::OverviewIssuesBody => {}
             WorkspaceHit::OverviewDrawer | WorkspaceHit::Inspector => {}
+            WorkspaceHit::InspectorTool(index) => self.run_inspector_tool(index),
             WorkspaceHit::OverviewIssues => self.model.set_space_issues(true),
             WorkspaceHit::ContextMenuAction(_) | WorkspaceHit::ContextSubmenuAction(_) => {
                 // Only reachable while the context menu is

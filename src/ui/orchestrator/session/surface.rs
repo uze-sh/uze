@@ -358,6 +358,18 @@ impl Attach<'_> {
             Action::ToggleInspector => self.model.toggle_inspector(),
             Action::Extension(id) => self.model.press_declared_action(id),
             Action::Dismiss if self.model.inspecting => self.model.toggle_inspector(),
+            Action::SelectNext if self.model.inspector_holds_keys() => {
+                self.model.move_inspector_tool(true);
+            }
+            Action::SelectPrevious if self.model.inspector_holds_keys() => {
+                self.model.move_inspector_tool(false);
+            }
+            Action::Activate
+                if self.model.inspector_holds_keys()
+                    && !self.model.inspector_tools().is_empty() =>
+            {
+                self.run_inspector_tool(self.model.inspector.selected);
+            }
             Action::ScrollPageDown if self.model.inspecting => self.model.page_inspector(true),
             Action::ScrollPageUp if self.model.inspecting => self.model.page_inspector(false),
             _ => {

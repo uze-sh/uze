@@ -787,6 +787,9 @@ impl Attach<'_> {
         while let Ok(answer) = self.channels.engine_answers.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_engine_answer(answer);
         }
+        while let Ok(answer) = self.channels.inspector.receiver.try_recv() {
+            self.model.absorb_inspector(answer);
+        }
     }
 
     /// Asks whatever those same surfaces now show and have not read.
@@ -801,6 +804,7 @@ impl Attach<'_> {
         let _ = self
             .model
             .schedule_engine_jobs(self.home, &self.channels.engine_answers.sender);
+        self.schedule_extension_costs();
     }
 
     /// Advances the activity spinner while anything it animates is on

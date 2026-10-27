@@ -269,7 +269,13 @@ pub(super) fn render(
     let slot = render_tab_strip(frame, layout.tab_strip, model, identities, leading, hits);
     let question = match &open {
         Some(open) => {
-            let question = render_extension(frame, surface_area, model, open, hits, metrics);
+            // The theme the author tries the surface in, on it alone.
+            let question = match model.inspected_theme() {
+                Some(name) => theme::drawn_in(name, || {
+                    render_extension(frame, surface_area, model, open, hits, metrics)
+                }),
+                None => render_extension(frame, surface_area, model, open, hits, metrics),
+            };
             render_extension_navigation(frame, slot, surface_area, open, hits);
             render_declared_overlays(frame, surface_area, inspector_area, model, hits);
             question

@@ -66,6 +66,12 @@ impl Attach<'_> {
                 }
                 self.model.dirty = true;
             }
+            _ if self.model.inspector.edit.is_some() => {
+                if let Some((_, buffer)) = self.model.inspector.edit.as_mut() {
+                    buffer.insert_str(text.trim_end_matches(['\r', '\n']));
+                }
+                self.model.dirty = true;
+            }
             _ if self.model.open_typing() => {
                 let space = self.surface_space();
                 self.model.paste_into_open(&text, space);

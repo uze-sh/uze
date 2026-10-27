@@ -50,6 +50,9 @@ impl Attach<'_> {
             Scope::RecentFilter
         } else if self.model.recent.has_keys() {
             Scope::Recent
+        } else if self.model.inspector.edit.is_some() {
+            // A source's input being edited takes text as a name does.
+            Scope::Rename
         } else if self.model.open_typing() {
             // A file or a new name taking text seals everything behind
             // it, the same way the action index does: nothing else may
@@ -219,6 +222,8 @@ impl Attach<'_> {
             step.picker.typed(character);
         } else if let Some((_, buffer)) = self.model.renaming.as_mut() {
             buffer.insert(character);
+        } else if let Some((_, buffer)) = self.model.inspector.edit.as_mut() {
+            buffer.insert(character);
         } else if self.model.recent.has_keys() && self.model.recent.filtering {
             self.model.recent.filter.push(character);
         } else if let Some(overview) = self
@@ -367,6 +372,10 @@ impl Attach<'_> {
         }
         if self.model.renaming.is_some() {
             self.rename_action(action);
+            return Flow::Continue;
+        }
+        if self.model.inspector.edit.is_some() {
+            self.inspector_edit_action(action);
             return Flow::Continue;
         }
         if self.model.agent_picker.is_some() {

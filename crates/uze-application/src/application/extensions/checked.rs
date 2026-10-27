@@ -146,7 +146,71 @@ impl Extensions<'_> {
     pub fn fixture(&self, dir: &Path, fixture: &str) -> Result<serde_json::Value, Diagnostic> {
         fixture_data(dir, fixture, &Overlay::new())
     }
+
+    /// Writes `data` as the fixture `fixture` of `identity`, which the
+    /// author of a linked extension asked for from its inspector: the one
+    /// file the workspace writes into an extension, never into one from a
+    /// marketplace that is not linked, and never outside its `fixtures/`.
+    /// Answers the file written.
+    #[tracing::instrument(
+        name = "extensions.record_fixture",
+        skip_all,
+        fields(fixture),
+        err(Display)
+    )]
+    pub fn record_fixture(
+        &self,
+        identity: &Identity,
+        fixture: &str,
+        data: &serde_json::Value,
+    ) -> Result<PathBuf, String> {
+        let Some(installed) = self
+            .installed()
+            .into_iter()
+            .find(|installed| installed.identity == *identity)
+        else {
+            return Err(format!("no installed plugin carries {identity}"));
+        };
+        if !installed.linked {
+            return Err("only a linked extension's fixtures are written".to_owned());
+        }
+        let relative = Path::new(fixture);
+        let inside_fixtures = relative.starts_with(FIXTURES_DIR)
+            && relative
+                .components()
+                .all(|component| matches!(component, std::path::Component::Normal(_)));
+        if !inside_fixtures
+            || relative
+                .extension()
+                .is_none_or(|extension| extension != "json")
+        {
+            return Err(format!("{fixture}: not a JSON file under {FIXTURES_DIR}/"));
+        }
+        let payload = serde_json::to_vec_pretty(data).unwrap_or_default();
+        if payload.len() as u64 > super::FIXTURE_LIMIT {
+            return Err(format!("{fixture}: larger than 1 MiB"));
+        }
+        let fixtures = installed.dir.join(FIXTURES_DIR);
+        std::fs::create_dir_all(&fixtures).map_err(|error| format!("{fixture}: {error}"))?;
+        let inside = match (fixtures.canonicalize(), installed.dir.canonicalize()) {
+            (Ok(fixtures), Ok(root)) => fixtures.starts_with(root),
+            _ => false,
+        };
+        if !inside {
+            return Err(format!("{fixture}: not a path inside the extension"));
+        }
+        let path = installed.dir.join(relative);
+        if std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.file_type().is_symlink()) {
+            return Err(format!("{fixture}: not a path inside the extension"));
+        }
+        std::fs::write(&path, payload).map_err(|error| format!("{fixture}: {error}"))?;
+        Ok(path)
+    }
 }
+
+/// Where an extension keeps its fixtures, and the one place the workspace
+/// writes one.
+const FIXTURES_DIR: &str = "fixtures";
 
 fn plugin_name(plugin_dir: &Path) -> String {
     uze_core::store::read_plugin_manifest(plugin_dir)
@@ -543,5 +607,37 @@ source "board" { fixture "fixtures/board.json"; }
         let app = UzeApplication::new(UzeHome::at(root.join("home")), Vec::new());
         assert!(app.extensions().check(&root.join("greet")).is_empty());
         fs::remove_dir_all(root).unwrap();
+    }
+
+    /// The author's recording lands in the linked extension's own
+    /// `fixtures/`, and nowhere else.
+    #[test]
+    fn a_recording_is_written_only_under_a_linked_extensions_fixtures() {
+        let world = crate::application::extensions::runner::tests::World::new("record-fixture");
+        let extensions = world.app.extensions();
+        let events = serde_json::json!([{ "name": "checkout.changed", "synthetic": true }]);
+        let written = extensions
+            .record_fixture(&world.band(), "fixtures/session.json", &events)
+            .unwrap();
+        assert_eq!(written, world.band.join("fixtures/session.json"));
+        assert_eq!(
+            extensions
+                .fixture(&world.band, "fixtures/session.json")
+                .unwrap(),
+            events
+        );
+        for refused in [
+            "state.rhai",
+            "fixtures/../escape.json",
+            "fixtures/notes.txt",
+        ] {
+            assert!(
+                extensions
+                    .record_fixture(&world.band(), refused, &events)
+                    .is_err(),
+                "{refused}"
+            );
+        }
+        assert!(!world.band.join("escape.json").exists());
     }
 }

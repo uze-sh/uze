@@ -311,6 +311,17 @@ pub(crate) fn token_of(color: Color) -> Option<Token> {
         .copied()
 }
 
+/// Runs `draw` in the bundled theme `name` on this thread alone, or in the
+/// one in force when there is none of that name: what lets the inspector
+/// show a plugin's surface in another theme than the workspace's while the
+/// rest of the frame keeps it.
+pub(crate) fn drawn_in<R>(name: &str, draw: impl FnOnce() -> R) -> R {
+    match uze_theme::builtin(name) {
+        Some(theme) => uze_theme::with_active(theme.clone(), draw),
+        None => draw(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

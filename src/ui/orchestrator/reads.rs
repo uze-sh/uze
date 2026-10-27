@@ -1808,3 +1808,96 @@ pub(super) fn spawn_engine_jobs(
         }
     }
 }
+
+/// What the inspector asked off the frame, carrying what it asked about.
+pub(super) enum InspectorAnswer {
+    /// A source's fixture, read to feed it.
+    Fixture {
+        extension: uze_application::ExtensionIdentity,
+        source: String,
+        data: std::result::Result<serde_json::Value, String>,
+    },
+    /// A session's events, written into the linked extension's fixtures.
+    Recorded {
+        written: std::result::Result<PathBuf, String>,
+    },
+}
+
+/// Reading the fixture a linked extension's source is switched to, from
+/// inside its directory and bounded, as the workspace reads every fixture.
+pub(super) fn spawn_inspector_fixture(
+    home: &UzeHome,
+    extension: uze_application::ExtensionIdentity,
+    dir: PathBuf,
+    source: String,
+    sender: mpsc::Sender<InspectorAnswer>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _pass = crate::telemetry::background_pass!("tui.inspector_fixture", parent: &parent);
+        let fixture = super::declared::fixture_of(&source);
+        let data = answered_or(
+            || match tui_application(home) {
+                Ok(app) => app
+                    .extensions()
+                    .fixture(&dir, &fixture)
+                    .map_err(|diagnostic| diagnostic.to_string()),
+                Err(error) => Err(format!("the workspace's application cannot start: {error}")),
+            },
+            Err(format!("{fixture} could not be read")),
+        );
+        let _ = sender.send(InspectorAnswer::Fixture {
+            extension,
+            source,
+            data,
+        });
+    });
+}
+
+/// Writing a session's events into the linked extension's fixtures, as
+/// its author asked: the one file the workspace writes into an extension.
+pub(super) fn spawn_inspector_record(
+    home: &UzeHome,
+    extension: uze_application::ExtensionIdentity,
+    events: serde_json::Value,
+    sender: mpsc::Sender<InspectorAnswer>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _pass = crate::telemetry::background_pass!("tui.inspector_record", parent: &parent);
+        let written = answered_or(
+            || match tui_application(home) {
+                Ok(app) => app.extensions().record_fixture(
+                    &extension,
+                    super::declared::RECORDED_FIXTURE,
+                    &events,
+                ),
+                Err(error) => Err(format!("the workspace's application cannot start: {error}")),
+            },
+            Err("the recording stopped before it was written".to_owned()),
+        );
+        let _ = sender.send(InspectorAnswer::Recorded { written });
+    });
+}
+
+/// Writing what the declared extensions cost, for `uze doctor`.
+///
+/// Fire-and-forget: a generated file another process reads, which the
+/// next pass writes again.
+pub(super) fn spawn_extension_costs(home: &UzeHome, costs: uze_application::MeasuredCosts) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _pass = crate::telemetry::background_pass!("tui.extension_costs", parent: &parent);
+        answered_or(
+            || {
+                if let Ok(app) = tui_application(home) {
+                    let _ = app.extensions().write_costs(&costs);
+                }
+            },
+            (),
+        );
+    });
+}

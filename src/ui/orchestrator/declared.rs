@@ -32,6 +32,7 @@ mod bridge;
 mod doors;
 mod drawer;
 mod events;
+mod inspector;
 mod notify;
 mod overlay;
 mod raw;
@@ -40,6 +41,7 @@ pub(super) use agent::*;
 pub(super) use bridge::*;
 pub(super) use drawer::*;
 pub(super) use events::*;
+pub(super) use inspector::*;
 pub(super) use notify::*;
 pub(super) use raw::raw_key;
 pub(super) use status::*;
@@ -122,6 +124,16 @@ pub(super) trait Hosted: Extension {
         false
     }
 
+    /// The declared engine it is, for the inspector's account of it and
+    /// its author's tools. None by default: a built-in is not inspected.
+    fn declared(&self) -> Option<&DeclaredExtension> {
+        None
+    }
+
+    fn declared_mut(&mut self) -> Option<&mut DeclaredExtension> {
+        None
+    }
+
     /// The code surface, for the tests to look into.
     #[cfg(test)]
     fn code_view(&self) -> Option<&code::CodeView> {
@@ -157,6 +169,14 @@ impl Hosted for DeclaredExtension {
 
     fn may_notify(&self) -> bool {
         self.compiled().manifest.wants(&uze_contract::Grant::Notify)
+    }
+
+    fn declared(&self) -> Option<&DeclaredExtension> {
+        Some(self)
+    }
+
+    fn declared_mut(&mut self) -> Option<&mut DeclaredExtension> {
+        Some(self)
     }
 
     fn inspect(&self, surface: &str) -> Inspection {
@@ -213,6 +233,7 @@ impl Hosted for DeclaredExtension {
             recorded: trace
                 .map(|trace| trace.recorded.iter().map(recorded_line).collect())
                 .unwrap_or_default(),
+            ..Inspection::default()
         }
     }
 }
@@ -306,6 +327,15 @@ pub(super) struct Inspection {
     pub(super) ui: Vec<(String, String)>,
     /// What a pressed button would have run, and with what.
     pub(super) recorded: Vec<String>,
+    /// What the runner answered for it, newest first, two lines a run.
+    pub(super) runs: Vec<String>,
+    /// The events it saw, newest first.
+    pub(super) events: Vec<String>,
+    /// What it wants, whether its programs are confined, and what was not
+    /// asked and why.
+    pub(super) grants: Vec<String>,
+    /// Its runs per minute, p95 and memory, and what is over target.
+    pub(super) cost: Vec<String>,
 }
 
 /// Builds the engine a slot is answered by, for the operator's language.
@@ -425,6 +455,8 @@ pub(super) struct HostedExtensions {
     pub(super) watching: Watching,
     /// What the workspace's agents did, for the extensions observing them.
     pub(super) bridge: Bridge,
+    /// When what they cost was last written for `uze doctor`.
+    pub(super) costs_written_at: Option<Instant>,
 }
 
 impl Default for HostedExtensions {
@@ -450,6 +482,7 @@ impl Default for HostedExtensions {
             keys: BTreeMap::new(),
             watching: Watching::default(),
             bridge: Bridge::default(),
+            costs_written_at: None,
         };
         for (id, engine) in builtins() {
             let owner = Owner::Builtin(id);
@@ -1059,6 +1092,7 @@ impl WorkspaceModel {
             return;
         };
         self.inspecting = false;
+        self.reset_inspector();
         self.open_notice = None;
         let root = self.open_root.take();
         let declared = &mut self.remembered.declared;
@@ -1395,6 +1429,10 @@ impl WorkspaceModel {
         {
             self.inspecting = !self.inspecting;
             self.inspector_scroll.set(0);
+            self.reset_inspector();
+            // Opened last, it holds the moves until a click lands on the
+            // view: the keys reach its tools as the pointer does.
+            self.inspector.keys = self.inspecting;
             self.dirty = true;
         }
     }
@@ -1424,6 +1462,7 @@ impl WorkspaceModel {
             .map(|engine| engine.inspect(&slot.surface.id))
             .unwrap_or_default();
         inspection.data.truncate(INSPECTED_DATA_LINES);
+        self.inspect_extension(&mut inspection);
         Some(inspection)
     }
 }
