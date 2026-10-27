@@ -12,9 +12,9 @@
 
 ## 3. Input in views
 
-- [ ] 3.1 `applies-when` on surfaces and sources (6.5)
-- [ ] 3.2 Host-held `select` and `field`, local `filter`, `with` on actions, and a `Form` node delivering `form.<id>` (22.4)
-- [ ] 3.3 Two-step actions: a `run`'s answer filling an `agent-prompt`, gesture only (22.6)
+- [x] 3.1 `applies-when` on surfaces and sources (6.5) — D20
+- [x] 3.2 Host-held `select` and `field`, local `filter`, `with` on actions, and a `Form` node delivering `form.<id>` (22.4) — D21, D22
+- [x] 3.3 Two-step actions: a `run`'s answer filling an `agent-prompt`, gesture only (22.6) — D23
 
 ## 4. Inspector and budget
 
