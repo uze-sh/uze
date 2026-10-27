@@ -31,6 +31,14 @@ a harness reads (ADR-041).
 - `Host` grants every capability, including the five that write
   (`write_file`, `delete_file`, `delete_dir`, `rename_path`,
   `restore_to_head`), whose only caller is `code/request.rs`.
+- A picture a declared extension draws is asked by identity and name
+  (`Host::media`, called only from `declared/media.rs`), never by path:
+  the host reads the installed extension's own files, or what its
+  programs left in their scratch, kept under `runtime/extensions/pictures/`
+  (generated: the next run writes them again). The bytes are bounded
+  before they are decoded and the pixels while they are, by
+  `shared/picture.rs`, off the drawing thread; an extension never names a
+  file of a checkout through an image.
 - A declared extension's logic is a Rhai script in `uze-script`, the only
   crate that names `rhai`; `uze-extensions` and `src/ui` never do. The
   declared engine asks the host for an answer by declaration id

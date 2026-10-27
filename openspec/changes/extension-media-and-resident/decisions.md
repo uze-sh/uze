@@ -194,7 +194,7 @@
 
 - status:   pending
 - task:     4.1
-- commit:
+- commit:   9d9a813f
 - trigger:  The task leaves one plugin or three to the implementer.
 - decided:  `tests/_fixtures/canonical/media` carries `pets`, `screen` and `snake`, as `bridge` carries the bridge's: one plugin the fixture gate (`every_fixture_plugins_extensions_check_clean`) checks, one marketplace entry a test stages. The journey stages only `snake`'s files, inline, since a container mounts only `journeys/` and a PNG cannot be written as YAML text.
 - rejected: Three plugins: three manifests and three gate entries for no difference a reader of the gallery sees.
@@ -204,7 +204,7 @@
 
 - status:   pending
 - task:     4.1
-- commit:
+- commit:   9d9a813f
 - trigger:  "a packaged `sh` program writing a PNG, or a script-side fixture if programs can't run in tests".
 - decided:  `bin/shot` is a `#!/bin/sh` program (`exec:sh`) standing in for `adb exec-out screencap -p`: it writes a 36×64 home screen, embedded as octal escapes, into `$TMPDIR/shot.png` with the `printf` builtin alone, so nothing else needs a grant or the confinement's leave, and answers `{device, screen}`. The lifecycle suite installs `media`, consents, enables and asks the source through the confining runner, then reads `scratch:shot.png` back through `ExtensionRunner::media` (`the_screen_program_leaves_a_picture_its_views_read_from_scratch`, skipped where the machine does not confine, as the GPU meter's is). Its `.test.kdl` gives the source a fixture; a test reads no picture, so the image draws its `alt`.
 - rejected: A script-side fixture: it would prove nothing of a run's scratch being kept for its views (D11).
@@ -214,7 +214,7 @@
 
 - status:   pending
 - task:     4.1
-- commit:
+- commit:   9d9a813f
 - trigger:  A plugin check runs no script and keeps no session, and a journey has to score without guessing where the food is.
 - decided:  The board is 20×10, two columns a square; the snake waits for an arrow, its first meal sits three squares above its head, so the first `up` scores, and the next come from a fixed linear congruential sequence. A tick is 150 ms (`timer`, asked again from `event` while it plays); a new best is written to the store from the `event` that made it (D22), and `start` reads the last best (D29). `crates/uze-script/tests/media_fixtures.rs` plays it through `Resident` (the first frame, a score, the wall, a replay, 200 ticks of turns), and holds `fixtures/start.json`, the tree the `.test.kdl` gives its source, equal to what the script's first `render` answers.
 - rejected: Food from `clock()`: a journey could not know where to steer, and a test could not hold the fixture to the script.
@@ -224,7 +224,7 @@
 
 - status:   pending
 - task:     4.1
-- commit:
+- commit:   9d9a813f
 - trigger:  "a band over each agent's pane, a `Sprite` whose state follows the agent's state": a band is one tree drawn over every pane, and nothing binds it to the agent of the pane it stands over.
 - decided:  The band lists the `agents` source with `each`, a `Sprite "pet" state="{state}"` beside each agent's label, so every pane shows every agent's pet; the sheet's states are the agents' (`ready`, `working`, `done`, the fallback `ready`). The store keeps the pet's name, how often it was fed and when (a `feed` action's script), and a `kennel` section shows it `content` for ten minutes after a meal and `hungry` after, two more states of the same sheet. Its 64×32 sheet holds eight 16-pixel frames (291 bytes).
 - rejected: A per-pane binding (`context.agent` in a band): new engine behaviour the gallery would invent for itself; it is a change of the band's, if the gallery shows it is wanted.
@@ -234,8 +234,18 @@
 
 - status:   pending
 - task:     5.2
-- commit:
+- commit:   09534512
 - trigger:  "Esc lets go" changes nothing the screen draws, and a journey asserts only on the machine.
 - decided:  `20-a-resident-game-played-with-raw-keys` (gate) installs `media`, enables `snake` from the workspace's offer, opens it from the action index and presses Up: the first meal scores, and the store holds `best: 1` (the machine check). The game then runs into the wall; after Esc, space (which would start it again) leaves it over, so the click aimed at "game over" still finds its target; that click takes the keys back, space starts it again, and Esc, Esc put the view away. The store keeps the best across the replay. Run twice in Docker, green both times.
 - rejected: Asserting the release on the screen: a journey's screen text is a gate, and the release is proven by what the keys did not do.
 - blast:    `journeys/suites/04-workspace/20-a-resident-game-played-with-raw-keys.yml`.
+
+## D45 — The pictures directory is said in the extensions rule, not in `persistence-tiers`
+
+- status:   pending
+- task:     5.1
+- commit:
+- trigger:  "`Host::media` and the pictures directory … if the rule or `persistence-tiers` needs it".
+- decided:  `persistence-tiers` states tiers by what deleting costs and lists no path of the generated tier; `runtime/extensions/pictures/` is named in `UzeHome` and is generated (D11), so that rule is unchanged. The extensions rule gains one bullet: a picture is asked by identity and name through `Host::media`, from `declared/media.rs` alone, and read from the extension's files or its programs' kept scratch, bounded before and while decoding. Two invariants join `docs/architecture/invariants.md` (an image's bounds and sources; a resident script's bounds and the chords it never reads), and the resident view's test now presses F8 as well as F1, which the second invariant claims. `containers.mmd` says the script engine keeps a resident session, and the application keeps a program's pictures in `runtime/` and reads them back for an `Image`. The `uze:extension` skill teaches the media nodes, the sprite declaration and the resident tier with a counter whose script was run through a `Resident` session before it was written down.
+- rejected: A row for the pictures in `persistence-tiers`: the rule names tiers, and a path listed there would be the one generated path it lists.
+- blast:    `.agents/rules/extensions.md`, `docs/architecture/{invariants.md, containers.mmd}`, `plugins/uze/skills/{extension,author}/SKILL.md`, `src/ui/orchestrator/tests/declared_resident.rs`.

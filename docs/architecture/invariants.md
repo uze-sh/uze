@@ -3152,6 +3152,38 @@ project's instructions and the bridge are the only writers into a pane.
 > `src/ui/orchestrator/tests/agent_writes.rs::a_paused_workspace_takes_no_prompt_and_a_command_character_is_refused`
 > `tests/architecture/layering.rs::only_the_bridge_and_the_instructions_type_into_an_agent`
 
+### An image is bounded before and after it is decoded, and read only from the extension or its scratch
+
+An `Image` or a sprite's sheet is a name, never a path: one that leaves
+the extension (absolute, `..`, a backslash) or its scratch is refused
+before the host is asked. The host reads the installed extension's own
+files, or the pictures its program left in its scratch, no further than
+8 MiB; a header asking past the 32 MiB of pixels one extension may hold is
+refused before anything is allocated, naming the bound; one read is out
+per extension at a time, off the drawing thread.
+
+> `crates/uze-extensions/src/declared/media.rs::tests::a_name_leaving_the_extension_or_its_scratch_is_never_read`
+> `crates/uze-extensions/src/declared/media.rs::tests::a_file_over_its_bound_is_refused_before_it_is_decoded`
+> `crates/uze-extensions/src/declared/media.rs::tests::a_decode_past_what_the_extension_has_left_is_refused_naming_the_bound`
+> `crates/uze-extensions/src/declared/media_tests.rs::an_oversized_image_says_its_bound_and_nothing_is_decoded`
+> `crates/uze-extensions/src/declared/media_tests.rs::images_are_read_one_at_a_time`
+> `tests/lifecycle/extension_programs.rs::the_screen_program_leaves_a_picture_its_views_read_from_scratch`
+
+### A resident script is stopped at its bounds and never reads the host's chords
+
+Every call into a resident session has the script engine's operations
+bound and deadline of its own; the first call that fails stops the
+session and its surface names why, and a render asked again only once a
+frame was drawn, at most 30 a second. A focused resident surface reads
+raw keys and the pointer, but Esc (which lets go of it), F1 and F8 never
+reach it and cannot be rebound for it.
+
+> `crates/uze-script/tests/resident.rs::a_runaway_render_is_stopped_at_its_bound_and_the_session_with_it`
+> `crates/uze-script/tests/resident.rs::each_call_has_its_own_budget`
+> `crates/uze-extensions/src/declared/resident_tests.rs::a_breach_stops_the_session_and_the_surface_names_the_bound`
+> `crates/uze-extensions/src/declared/resident_tests.rs::renders_wait_for_a_drawn_frame_and_the_rate`
+> `src/ui/orchestrator/tests/declared_resident.rs::a_focused_resident_view_reads_up_and_esc_lets_go_of_it`
+
 ## Harness conformance (`assert-one-capability-contract`)
 
 ### Every harness answers the same questions

@@ -2,7 +2,7 @@
 name: extension
 # Who finds this skill: the moment someone wants a surface of their own in
 # the workspace, not the moment they want a plugin (that is `uze:author`).
-description: Writing a declared extension a plugin carries — the `extension.kdl` manifest (surfaces, sources, actions, grants), a Rhai script or a program that answers a source, `exec:` grants and how a program is pinned and confined, the extension's store, the check loop with `.test.kdl` tests, and the consent and per-project enabling code needs before it runs. Use when adding an extension to a plugin, writing or debugging an extension's script or program, a source, an action or a key, when `uze agent plugin check` refuses an extension, or when an extension draws "needs consent", "needs enabling in this project" or "`<program>` not found".
+description: Writing a declared extension a plugin carries — the `extension.kdl` manifest (surfaces, sources, actions, grants), a Rhai script or a program that answers a source, a resident script that keeps its state and reads raw keys (a game), cells, images and sprites, `exec:` grants and how a program is pinned and confined, the extension's store, the check loop with `.test.kdl` tests, and the consent and per-project enabling code needs before it runs. Use when adding an extension to a plugin, writing or debugging an extension's script or program, a source, an action or a key, when `uze agent plugin check` refuses an extension, or when an extension draws "needs consent", "needs enabling in this project" or "`<program>` not found".
 invoke:
   model: true
   user: true
@@ -122,6 +122,51 @@ as its default.
   `Button` names a declared `action` and carries its own `item`. Nothing
   in a composed tree is a reference: `{x}` there is text.
 
+### Cells, images and sprites
+
+Beyond text and the shapes it composes, a view may draw a grid, a picture
+and a sprite. The workspace decodes, fits and writes each; an extension
+never sends a colour or a byte for the terminal.
+
+```kdl
+// extension.kdl: a sheet of equal frames packaged with the extension,
+// and the states that play them.
+sprite "pet" sheet="pet.png" frame="16x16" columns=4 fallback="ready" {
+    state "ready" frames="0-1" fps=2
+    state "working" frames="2-5" fps=8
+    state "done" frames="6-7" fps=2 loop=#false
+}
+```
+
+```kdl
+// A view.
+Row gap=1 each="." {
+    Sprite "pet" state="{state}" height=2
+    Text "{label}"
+}
+Image "scratch:shot.png" alt="The device's screen" height=8
+Cells rows="{board}" regions="{targets}"
+```
+
+- **`Cells`**: `rows` is a list of rows, each a string or a list of
+  `{ch, role}` (one character, one of the roles); a role it does not know,
+  a colour value among them, draws as the default. `regions` is a list of
+  `{x, y, w, h, action, item}`: a click inside one runs that declared
+  action on its item, as a `Button` does. At most 200 rows of 400 cells.
+- **`Image "<name>"`**: a PNG, JPEG or GIF inside the extension
+  (`"shots/home.png"`), or `"scratch:<file>"`, one its program wrote at the
+  top of its `TMPDIR`, kept when the run ends and read again after each of
+  the source's answers. Nothing outside the extension or that scratch is
+  read; a file over 8 MiB, or past the 32 MiB of pixels an extension's
+  pictures may hold, is refused and the image's first row says which.
+  `height` is in rows (8 when left out); `alt` is said while it is read and
+  where the terminal draws no images.
+- **`Sprite "<id>"`**: plays the state `state` names, or the fallback, on
+  the workspace's clock, with no run behind it. The check measures the
+  sheet: its frame size divides it, `columns` fit across it, and every
+  state's frames (`0-3,6`) exist. `fps` is 1 to 30; `loop=#false` holds
+  the last frame.
+
 ### The agents
 
 With `agent:observe`, an extension sees the workspace's agents:
@@ -208,6 +253,88 @@ fn answer(input, context) {
 - What a source's script answered is remembered for the session by its
   input and checkout; `every`, `refresh-on` and a `refresh` action ask
   past it. An action's script runs on every gesture.
+
+## A resident script
+
+A game, or anything that keeps state between frames and reads keys as they
+come, is a **resident** source: its script keeps running while a surface
+showing it is in view, and is stopped when none is.
+
+```kdl
+wants "resident" "store"
+
+surface "game" slot="view" view="game.kdl" source="board" title="Counter"
+
+source "board" { resident "counter.rhai"; }
+```
+
+```rhai
+// counter.rhai: up and down count, every second a tick blinks a dot, and
+// the highest count is kept in the store.
+fn start(context) {
+    this.count = 0;
+    this.best = store().best ?? 0;
+    this.on = false;
+    timer(1000);
+    true
+}
+
+fn event(event) {
+    this.on = !this.on;
+    timer(1000);
+    true
+}
+
+fn input(input) {
+    switch input.key {
+        "up" => { this.count += 1; }
+        "down" => { this.count -= 1; }
+        _ => { return false; }
+    }
+    if this.count > this.best {
+        this.best = this.count;
+        return #{ redraw: true, store: #{ best: this.best } };
+    }
+    true
+}
+
+fn render(size) {
+    #{ type: "Row", props: #{ gap: 2 }, children: [
+        #{ type: "Text", args: [`${this.count}`], props: #{ strong: true } },
+        #{ type: "Text", args: [`best ${this.best}`], props: #{ role: "muted" } },
+        #{ type: "Text", args: [if this.on { "●" } else { "○" }], props: #{ role: "accent" } },
+    ] }
+}
+```
+
+- What it keeps, it keeps on **`this`**, one map every call shares; a
+  function sees nothing outside itself, so a constant is a function
+  (`fn width() { 20 }`).
+- **`render(size)`** (`#{ width, height }`) is the one it must define: it
+  answers a tree of catalog nodes, as a composed answer does, and the
+  surface's view file draws until the first. It is asked only after a call
+  answered a redraw, at most once a drawn frame and 30 times a second; a
+  render still running keeps the last frame.
+- **`start(context)`** (`slot`, `size`, `locale`, `checkout`),
+  **`event(event)`**, **`input(input)`** and **`stop()`** are optional.
+  `start`, `event` and `input` answer `true` or `false` (redraw or not), or
+  a map with `redraw` beside the envelope's `store`, `toast`, `notice`,
+  `notify` and `refresh`.
+- **`timer(ms)`** asks for one `event(#{ name: "timer" })`, `ms` later and
+  never sooner than 34 ms; ask again from `event` to keep ticking.
+- While the surface is focused, **`input`** gets every key as
+  `#{ key, mods }`, spelled as the keymap spells it (`"up"`, `"a"`,
+  `"space"`, `mods: ["ctrl"]`), and a press as `#{ x, y, button }`,
+  relative to the surface. **Esc** lets go of it (the next Esc closes it)
+  and a press takes it back; F1 and F8 stay the workspace's. None of the
+  three ever reaches the script.
+- `store()` is the store as the session started; what a call keeps is
+  written at once. Each call has the script bounds of its own; the first
+  that fails, a bound or a thrown error, stops the session, and the
+  surface says why.
+- A test runs no script and keeps no session: give the source a frame
+  (`given "board" fixture="fixtures/frame.json"`, the tree `render`
+  answers) and test what it draws.
 
 ## A program
 
@@ -311,9 +438,10 @@ history.push(load);
 | `agent:prompt` | `agent-prompt` on a gesture, shown first |
 | `agent:prompt:auto` | `agent-prompt … when=`, fixed text, allowed per agent for a day |
 | `agent:restart` | `agent-restart`, always asked; not available yet |
+| `resident` | a `resident` source: its script kept running while shown, `timer`, and raw keys and pointer while focused |
 
 Later grants are refused by the check naming the change that brings them:
-`resident`, and `net`, `secret`, `edit:checkout`.
+`net`, `secret`, `edit:checkout`.
 There is no `write:checkout`, and `exec:uze` and a harness's own program
 are never granted. Ask for the fewest grants that do the job: each one is
 what the operator is asked about.

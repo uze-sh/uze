@@ -198,6 +198,10 @@ fn a_focused_resident_view_reads_up_and_esc_lets_go_of_it() {
     );
     driven.press_key(key("esc"));
     assert!(driven.attach.model.action_index.is_none());
+    driven.press_key(key("f8"));
+    driven.press_key(key("f8"));
+    run(&mut driven, &host);
+    assert_eq!(inputs(&host).len(), 2, "F8 stays the host's too");
 
     driven.press_key(key("esc"));
     assert!(
