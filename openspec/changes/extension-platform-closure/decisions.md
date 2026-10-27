@@ -16,7 +16,7 @@
 - task:     1.2
 - commit:   8029f089
 - trigger:  "A notice" did not say whether a series with some numbers draws them, skips the rest, or draws nothing.
-- decided:  Any value of the first 64 that is not a number (a numeric string still is) replaces the chart with a `Warning` notice, `Chart: <n> of <m> values are not numbers`; a `series` that is present and not a list says so too. An absent or null `series` is still an empty chart: the data has not arrived.
+- decided:  Any value of the first 512 (`CHART_MAX`) that is not a number (a numeric string still is) replaces the chart with a `Warning` notice, `Chart: <n> of <m> values are not numbers`; a `series` that is present and not a list says so too. An absent or null `series` is still an empty chart: the data has not arrived.
 - rejected: Dropping the unreadable values: the bars shift left and the chart lies about time.
 - blast:    `crates/uze-extensions/src/declared/bind.rs::chart`.
 
