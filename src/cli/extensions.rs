@@ -123,7 +123,13 @@ pub(crate) fn ask_about_extensions(app: &UzeApplication, plugins: &[String]) {
         .extensions()
         .reports(Some(&project))
         .into_iter()
-        .filter(|report| plugins.contains(&report.plugin_id()))
+        .filter(|report| {
+            // An install of what the project declares names each plugin
+            // as its lock does, bare; one of a single plugin qualifies it.
+            plugins
+                .iter()
+                .any(|plugin| *plugin == report.plugin_id() || *plugin == report.plugin)
+        })
         .filter(|report| report.condition.awaits_the_operator())
         .collect();
     if waiting.is_empty() {

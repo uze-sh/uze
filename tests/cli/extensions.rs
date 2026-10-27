@@ -120,6 +120,28 @@ fn an_install_off_a_terminal_leaves_a_script_extension_disabled_and_says_where_t
 }
 
 #[test]
+fn an_install_of_what_the_project_declares_says_the_same() {
+    let world = World::new("cli-extensions-install-declared", str::to_owned);
+    std::fs::write(
+        world.project.join("agents.yaml"),
+        format!(
+            "marketplaces:\n  studio:\n    path: {}\n    plugins: [gsd]\n",
+            world.root.join("market").display()
+        ),
+    )
+    .unwrap();
+    let installed = world.uze(&world.project, &["install"]);
+    assert!(installed.status.success(), "{}", stderr(&installed));
+    let said = format!("{}{}", stdout(&installed), stderr(&installed));
+    assert!(
+        said.contains(&format!(
+            "{BAND} installed disabled; enable it from the workspace"
+        )),
+        "{said}"
+    );
+}
+
+#[test]
 fn status_and_inspect_report_each_extension_and_its_state() {
     let world = World::new("cli-extensions-status", str::to_owned);
     world.installed();
