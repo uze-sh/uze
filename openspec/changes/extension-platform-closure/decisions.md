@@ -359,3 +359,13 @@
 - decided:  `CallClock` counts the host calls of the call running now; the 17th, or any made once 60 s were spent waiting on the host, fails naming the bound. Both reset with the call (`restart`), so a resident session gets them per call. The ceiling is checked before a call: one program or request still runs to its own limit.
 - rejected: Cutting a call short at the ceiling: a program is ended only by its runner's own time limit.
 - blast:    `uze-script::engine`.
+
+## D124 — A general runner is known by a wider list, without case or `.exe`
+
+- status:   pending
+- task:     review finding
+- commit:
+- trigger:  `is_general_runner` missed `ksh`, `awk`, `busybox`, `pwsh`, `cmd`, `java`, `npm`, `cargo`, `go`, `uv`, `find` and others, and `Bash.exe` or `PWSH` passed as ordinary programs, so consent did not warn that the grant runs anything.
+- decided:  The list names shells and argument-forwarders, interpreters, package managers and builders, and what runs a program elsewhere or as someone else; the name is lower-cased and a trailing `.exe` removed before comparing, and the versioned families (`python3.12`, `tclsh8.6`) widen to `pypy`, `tclsh`, `wish`, `java`. The list stays a warning, never a refusal, so naming too much costs only a louder consent.
+- rejected: Recognising a runner by what it does at run time: the consent screen speaks before anything runs.
+- blast:    `uze-core::capability::extension::program`; consent's `runs_anything`.

@@ -10,22 +10,145 @@ use uze_contract::{Envelope, Output};
 /// The programs that run whatever they are handed: granting one is
 /// granting any code as the operator, and the consent step says so (D6).
 pub const GENERAL_RUNNERS: &[&str] = &[
-    "sh", "bash", "zsh", "dash", "fish", "env", "xargs", "python", "python3", "node", "deno",
-    "bun", "ruby", "perl", "php", "lua", "npx", "uvx", "pipx", "docker", "podman", "ssh", "git",
-    "make", "sudo", "doas",
+    // Shells and what hands its arguments to another program.
+    "sh",
+    "bash",
+    "zsh",
+    "dash",
+    "ash",
+    "ksh",
+    "mksh",
+    "csh",
+    "tcsh",
+    "fish",
+    "nu",
+    "elvish",
+    "xonsh",
+    "busybox",
+    "toybox",
+    "env",
+    "xargs",
+    "find",
+    "nohup",
+    "nice",
+    "timeout",
+    "time",
+    "watch",
+    "parallel",
+    "script",
+    "expect",
+    "setsid",
+    "su",
+    "sudo",
+    "doas",
+    "pkexec",
+    "runas",
+    "start",
+    "open",
+    "xdg-open",
+    "cmd",
+    "pwsh",
+    "powershell",
+    "wsl",
+    "osascript",
+    "cscript",
+    "wscript",
+    "mshta",
+    "rundll32",
+    "wmic",
+    // Interpreters and the tools that run a project's code.
+    "awk",
+    "gawk",
+    "mawk",
+    "nawk",
+    "sed",
+    "python",
+    "pypy",
+    "ipython",
+    "node",
+    "nodejs",
+    "deno",
+    "bun",
+    "ruby",
+    "irb",
+    "perl",
+    "php",
+    "lua",
+    "luajit",
+    "tclsh",
+    "wish",
+    "java",
+    "jshell",
+    "kotlin",
+    "scala",
+    "groovy",
+    "dotnet",
+    "rscript",
+    "julia",
+    "erl",
+    "elixir",
+    "guile",
+    "racket",
+    "sbcl",
+    "ghci",
+    "runghc",
+    "swift",
+    "vim",
+    "nvim",
+    "emacs",
+    // Package managers and builders, which run what a project declares.
+    "npm",
+    "npx",
+    "pnpm",
+    "yarn",
+    "uv",
+    "uvx",
+    "pip",
+    "pip3",
+    "pipx",
+    "poetry",
+    "pdm",
+    "hatch",
+    "conda",
+    "gem",
+    "bundle",
+    "rake",
+    "composer",
+    "cargo",
+    "go",
+    "gradle",
+    "mvn",
+    "ant",
+    "make",
+    "gmake",
+    "cmake",
+    "ninja",
+    "just",
+    "task",
+    // What runs a program elsewhere, or as someone else.
+    "docker",
+    "podman",
+    "nerdctl",
+    "kubectl",
+    "ssh",
+    "git",
 ];
 
-/// Whether `program` runs whatever it is handed. `python3.12` is a
-/// `python`.
+/// Whether `program` runs whatever it is handed: compared without case
+/// and without a trailing `.exe`, and `python3.12` is a `python`.
 pub fn is_general_runner(program: &str) -> bool {
+    let program = program.to_ascii_lowercase();
+    let program = program.strip_suffix(".exe").unwrap_or(&program);
     GENERAL_RUNNERS.contains(&program)
-        || ["python", "ruby", "perl", "node", "php", "lua"]
-            .iter()
-            .any(|family| {
-                program.strip_prefix(family).is_some_and(|version| {
-                    version.chars().all(|ch| ch.is_ascii_digit() || ch == '.')
-                })
-            })
+        || [
+            "python", "pypy", "ruby", "perl", "node", "php", "lua", "tclsh", "wish", "java",
+        ]
+        .iter()
+        .any(|family| {
+            program
+                .strip_prefix(family)
+                .is_some_and(|version| version.chars().all(|ch| ch.is_ascii_digit() || ch == '.'))
+        })
 }
 
 /// A program's standard output read as its declaration says: in `json`
@@ -242,10 +365,51 @@ mod tests {
 
     #[test]
     fn a_runner_is_known_by_its_family() {
-        for runner in ["sh", "python3", "python3.12", "node", "git", "docker"] {
+        for runner in [
+            "sh",
+            "python3",
+            "python3.12",
+            "node",
+            "git",
+            "docker",
+            "ksh",
+            "awk",
+            "gawk",
+            "mawk",
+            "busybox",
+            "tclsh",
+            "tclsh8.6",
+            "osascript",
+            "pwsh",
+            "powershell.exe",
+            "CMD.EXE",
+            "cmd",
+            "java",
+            "npm",
+            "npx",
+            "cargo",
+            "go",
+            "uv",
+            "find",
+            "xargs",
+            "env",
+            "make",
+            "Bash.exe",
+            "python3.exe",
+            "Python.EXE",
+            "nodejs",
+            "wsl.exe",
+        ] {
             assert!(is_general_runner(runner), "{runner}");
         }
-        for program in ["nvidia-smi", "gh", "openspec", "pythonic"] {
+        for program in [
+            "nvidia-smi",
+            "gh",
+            "openspec",
+            "pythonic",
+            "gh.exe",
+            "goimports",
+        ] {
             assert!(!is_general_runner(program), "{program}");
         }
     }
