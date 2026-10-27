@@ -162,8 +162,13 @@ pub(crate) fn ask_about_extensions(app: &UzeApplication, plugins: &[String]) {
     if waiting.is_empty() {
         return;
     }
-    let may_ask = asker() == uze_application::Asker::Operator && prompt::interactive();
+    let may_ask = prompt::interactive();
+    let from_an_agent = asker() == uze_application::Asker::AgentPane;
     for report in &waiting {
+        if from_an_agent {
+            say_an_agent_cannot(report);
+            continue;
+        }
         if !may_ask || report.condition == ExtensionCondition::Held {
             say_what_waits(report);
             continue;
@@ -172,6 +177,22 @@ pub(crate) fn ask_about_extensions(app: &UzeApplication, plugins: &[String]) {
             progress::warn(&error.to_string());
         }
     }
+}
+
+/// The line an install run from an agent's pane ends with for one
+/// extension: what waits, and why it is not asked here.
+fn say_an_agent_cannot(report: &ExtensionReport) {
+    let state = match report.condition {
+        ExtensionCondition::Held => {
+            format!("is held: its update wants {}", report.new_grants.join(", "))
+        }
+        _ => "installed disabled".to_owned(),
+    };
+    progress::warn(&format!(
+        "{} {state}; an agent cannot enable an extension, so the operator does, from the \
+         workspace",
+        report.attribution()
+    ));
 }
 
 /// The line a non-interactive install ends with for one extension.

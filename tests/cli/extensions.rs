@@ -50,15 +50,28 @@ impl World {
     }
 
     fn uze(&self, cwd: &Path, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_uze"))
+        self.command(cwd, args).output().unwrap()
+    }
+
+    /// `uze` run from inside an agent's pane: carrying the stamp the
+    /// agent's launch did.
+    fn uze_as_an_agent(&self, cwd: &Path, args: &[&str]) -> Output {
+        self.command(cwd, args)
+            .env(uze_terminal::launch::AGENT_IDENTITY_VARIABLE, "a1")
+            .output()
+            .unwrap()
+    }
+
+    fn command(&self, cwd: &Path, args: &[&str]) -> Command {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_uze"));
+        command
             .current_dir(cwd)
             .env("UZE_HOME", self.root.join("uze"))
             .isolated_home(&self.root)
             .not_launched_by_uze()
             .env("PATH", uze_testkit::process::system_path())
-            .args(args)
-            .output()
-            .unwrap()
+            .args(args);
+        command
     }
 
     fn installed(&self) -> Output {
@@ -138,6 +151,24 @@ fn an_install_of_what_the_project_declares_says_the_same() {
             "{BAND} installed disabled; enable it from the workspace"
         )),
         "{said}"
+    );
+}
+
+#[test]
+fn an_install_from_an_agents_pane_says_an_agent_cannot_enable_it() {
+    let world = World::new("cli-extensions-install-agent", str::to_owned);
+    let installed = world.uze_as_an_agent(&world.project, &["install", "gsd@studio"]);
+    assert!(installed.status.success(), "{}", stderr(&installed));
+    let said = format!("{}{}", stdout(&installed), stderr(&installed));
+    assert!(
+        said.contains(&format!(
+            "{BAND} installed disabled; an agent cannot enable an extension"
+        )),
+        "{said}"
+    );
+    assert!(
+        !world.root.join("uze/state/extensions.json").exists(),
+        "nothing was consented to"
     );
 }
 
