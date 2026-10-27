@@ -59,6 +59,8 @@ pub struct ExtensionRunner {
     runs: AtomicU64,
     /// What it answered for each extension, for the inspector.
     book: Mutex<RunBook>,
+    /// The installed extensions as last listed, and when.
+    listing: Mutex<Option<(std::time::Instant, Vec<super::InstalledExtension>)>>,
     /// The resident sources running now, by extension and source: each
     /// opened by its `Start` and closed by its `Stop`, its first failure or
     /// the operator's consent changing.
@@ -118,6 +120,7 @@ impl ExtensionRunner {
             scripts: Mutex::default(),
             runs: AtomicU64::default(),
             book: Mutex::default(),
+            listing: Mutex::default(),
             residents: Mutex::default(),
             helper,
         }
@@ -133,6 +136,7 @@ impl ExtensionRunner {
     /// the operator allowed it changed, so nothing it answered before
     /// stands for what it would answer now.
     pub fn forget(&self, identity: &Identity) {
+        *lock(&self.listing) = None;
         lock(&self.answered).retain(|asked, _| asked.identity != *identity);
         lock(&self.residents).retain(|(running, _), _| running != identity);
     }
@@ -215,6 +219,30 @@ impl ExtensionRunner {
         answer
     }
 
+    /// Where `identity` is installed, from a listing at most
+    /// [`LISTING_KEPT`] old: listing every installed plugin is most of
+    /// what a question costs, and a burst of questions (D28's storm) asks
+    /// it dozens of times for the same answer. What runs is still read and
+    /// judged against the operator's record on every question.
+    fn installed(
+        &self,
+        extensions: &Extensions<'_>,
+        identity: &Identity,
+    ) -> Option<super::InstalledExtension> {
+        let mut listing = lock(&self.listing);
+        let now = std::time::Instant::now();
+        let fresh = listing
+            .as_ref()
+            .is_some_and(|(at, _)| now.saturating_duration_since(*at) < LISTING_KEPT);
+        if !fresh {
+            *listing = Some((now, extensions.installed()));
+        }
+        listing
+            .as_ref()
+            .and_then(|(_, installed)| installed.iter().find(|one| one.identity == *identity))
+            .cloned()
+    }
+
     /// What it answered for `identity` this session, newest first.
     pub fn runs_of(&self, identity: &Identity) -> Vec<ExtensionRun> {
         lock(&self.book).runs(identity)
@@ -264,11 +292,7 @@ impl ExtensionRunner {
             return self.call_resident(question, call);
         }
         let identity = &question.identity;
-        let Some(installed) = extensions
-            .installed()
-            .into_iter()
-            .find(|installed| installed.identity == *identity)
-        else {
+        let Some(installed) = self.installed(extensions, identity) else {
             return Answer::withheld(format!("no installed plugin carries {identity}"));
         };
         let (load, files) = match extensions.load_with_files(&installed) {
@@ -1039,6 +1063,11 @@ fn withheld_because(state: &ExtensionState) -> String {
         ExtensionState::FixturesOnly | ExtensionState::Enabled => "runs nothing".to_owned(),
     }
 }
+
+/// How long a listing of the installed extensions answers questions: no
+/// longer than the workspace takes to notice an install from another
+/// terminal (it looks every five seconds), and long enough to cover a burst.
+const LISTING_KEPT: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// What the current question was told while it was answered, on the
 /// thread answering it.

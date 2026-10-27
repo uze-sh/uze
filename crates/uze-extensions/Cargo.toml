@@ -41,5 +41,8 @@ image-webp = "0.2"
 zune-jpeg = { version = "0.5", default-features = false, features = ["std", "x86", "neon"] }
 
 [dev-dependencies]
+# The budget test compiles the gallery's extensions as the host does, to
+# bind their views (`tests/budget.rs`).
+uze-core = { path = "../uze-core" }
 uze-git = { path = "../uze-git" }
 uze-testkit = { path = "../uze-testkit" }

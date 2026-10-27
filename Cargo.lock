@@ -3636,6 +3636,7 @@ dependencies = [
  "two-face",
  "unicode-width 0.2.2",
  "uze-contract",
+ "uze-core",
  "uze-git",
  "uze-testkit",
  "zune-jpeg",
