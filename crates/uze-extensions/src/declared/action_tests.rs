@@ -328,6 +328,82 @@ fn a_key_runs_the_action_on_the_selected_row() {
     );
 }
 
+/// A list of two rows, nothing selected, offering `actions` on the view.
+fn list_without_a_selection(actions: Vec<ActionDecl>) -> DeclaredExtension {
+    let view = compiled_view(
+        vec![
+            n(NodeName::List)
+                .literal("id", json!("rows"))
+                .each("rows")
+                .child(n(NodeName::Text).arg("{name}"))
+                .item(),
+        ],
+        Vec::new(),
+        Vec::new(),
+    );
+    let mut compiled = extension(view);
+    compiled.manifest.actions = actions;
+    let mut engine = DeclaredExtension::new(compiled, "en");
+    engine.set_data(
+        SOURCE,
+        Ok(json!({ "rows": [{ "name": "auth", "path": "src/auth.rs" }] })),
+    );
+    engine.open(VIEW, &checkout("/work/a"));
+    tree(&engine);
+    engine
+}
+
+#[test]
+fn a_key_on_no_row_runs_nothing_that_reads_the_row() {
+    let select_first = Outcome::Failed {
+        title: "Go did not run".to_owned(),
+        detail: "select a row first".to_owned(),
+    };
+    for does in [
+        Does::Clipboard("{item.name}".to_owned()),
+        Does::Clipboard("{name}".to_owned()),
+        Does::OpenPath("{item.path}".to_owned()),
+    ] {
+        let mut engine = list_without_a_selection(vec![action("go", does.clone())]);
+        assert_eq!(engine.press(VIEW, "go"), select_first, "{does:?}");
+    }
+
+    let mut archive = action("go", Does::Script("go.rhai".to_owned()));
+    archive.confirm = Some("Archive {item.name}?".to_owned());
+    let mut engine = list_without_a_selection(vec![archive]);
+    assert_eq!(engine.press(VIEW, "go"), select_first);
+    assert!(engine.asking(VIEW).is_none(), "nothing is asked");
+    let (asked, _) = ask_all(&mut engine, answered(json!({ "rows": [] })));
+    assert!(
+        asked
+            .iter()
+            .all(|question| question.asking != Asking::Action),
+        "nothing runs: {asked:?}"
+    );
+
+    let mut engine =
+        list_without_a_selection(vec![action("go", Does::Script("go.rhai".to_owned()))]);
+    assert!(
+        matches!(engine.press(VIEW, "go"), Outcome::Notice(_)),
+        "a script that names no row runs on none"
+    );
+}
+
+#[test]
+fn a_copy_of_nothing_never_reaches_the_clipboard() {
+    let mut engine = list_without_a_selection(vec![action(
+        "go",
+        Does::Clipboard("{ui.missing}".to_owned()),
+    )]);
+    assert_eq!(
+        engine.press(VIEW, "go"),
+        Outcome::Failed {
+            title: "Go did not run".to_owned(),
+            detail: "there is nothing to copy".to_owned(),
+        }
+    );
+}
+
 #[test]
 fn a_sources_input_resolves_its_references_and_a_change_asks_again() {
     let view = compiled_view(

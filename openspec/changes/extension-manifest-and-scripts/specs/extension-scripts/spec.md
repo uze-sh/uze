@@ -64,6 +64,10 @@ inside the checkout.
 - **WHEN** an action copies `{item.hash}`
 - **THEN** the toast shows the copied text, and a text over one line or 256 bytes asks first
 
+#### Scenario: A key pressed on no row
+- **WHEN** an action that copies or opens `{item.path}`, or asks `Archive {item.name}?`, is pressed by its key with no row selected
+- **THEN** nothing runs and a toast says to select a row first, and a copy whose text resolves empty never reaches the clipboard
+
 ### Requirement: Events refresh sources, bounded by the host
 A source MAY declare `every` (at least 5 seconds) and `refresh-on` with
 `paths.changed` (paths beneath the checkout) or `checkout.changed`. The

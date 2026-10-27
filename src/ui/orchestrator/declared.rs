@@ -1051,6 +1051,11 @@ impl WorkspaceModel {
     /// Text a surface asked to have copied: on the clipboard, and said,
     /// attributed to the surface in `slot` when it is a third party's.
     pub(super) fn copy_answered_by(&mut self, text: String, slot: Option<SlotId>) {
+        // The engine refuses a copy of nothing; whatever else hands one
+        // over still never empties the operator's clipboard.
+        if text.trim().is_empty() {
+            return;
+        }
         let said = self.attributed(slot, text.clone());
         self.raise_toast(ToastKind::Done, "copied", said, None);
         self.clipboard = Some(text);

@@ -95,6 +95,9 @@ impl DeclaredExtension {
     /// asked.
     fn resolve(&self, surface: &str, declared: &ActionDecl, item: &Value) -> Result<Run, Outcome> {
         let label = Clean::label(&declared.label).into_string();
+        if item.is_null() && reads_the_item(declared) {
+            return Err(refused(&label, "select a row first"));
+        }
         Ok(match &declared.does {
             Does::Script(_) => Run::Script {
                 action: declared.id.clone(),
@@ -104,8 +107,11 @@ impl DeclaredExtension {
             },
             Does::Refresh(sources) => Run::Refresh(sources.clone()),
             Does::Clipboard(template) => {
-                let text = self.resolve_text(surface, template, item);
-                Run::Copy(Clean::text(&text).into_string())
+                let text = Clean::text(&self.resolve_text(surface, template, item)).into_string();
+                if text.trim().is_empty() {
+                    return Err(refused(&label, "there is nothing to copy"));
+                }
+                Run::Copy(text)
             }
             Does::OpenPath(template) => {
                 let written = self.resolve_text(surface, template, item);
@@ -419,6 +425,33 @@ impl DeclaredExtension {
             .cloned()
             .or_else(|| self.in_front.clone())
     }
+}
+
+/// Whether what `declared` resolves (what it copies or opens, and the
+/// question it asks first) reads the item it is pressed on. A script's
+/// input is its own to read, so a script that asks nothing about the row
+/// runs on none.
+fn reads_the_item(declared: &ActionDecl) -> bool {
+    let done = match &declared.does {
+        Does::Clipboard(template) | Does::OpenPath(template) => Some(template),
+        Does::Script(_) | Does::Refresh(_) | Does::Open(_) => None,
+    };
+    done.into_iter()
+        .chain(&declared.confirm)
+        .any(|template| template_reads_the_item(template))
+}
+
+fn template_reads_the_item(template: &str) -> bool {
+    use uze_contract::binding::{Scope, TextPart};
+    let Ok(parts) = uze_contract::binding::parse_text(template) else {
+        return false;
+    };
+    parts.iter().any(|part| match part {
+        TextPart::Ref(path) | TextPart::Lookup { path, .. } => {
+            matches!(path.scope, Scope::Item | Scope::Parent)
+        }
+        TextPart::Literal(_) | TextPart::Label { .. } => false,
+    })
 }
 
 /// A refusal said as a toast: the gesture did nothing, and why.

@@ -418,6 +418,15 @@ fn switching_a_tab_runs_nothing() {
 }
 
 #[test]
+fn a_copy_of_nothing_never_reaches_the_clipboard() {
+    let mut model = hosting_the_board();
+    let slot = view_slot(&model);
+    model.copy_answered_by(" \n".to_owned(), Some(slot));
+    assert_eq!(model.clipboard, None);
+    assert!(model.toast_stack().is_empty(), "nothing was copied to say");
+}
+
+#[test]
 fn a_view_that_asks_for_a_copy_or_a_path_gets_the_clipboard_or_the_code_surface() {
     let mut model = hosting_the_board();
     let slot = view_slot(&model);

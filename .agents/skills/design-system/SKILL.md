@@ -191,6 +191,10 @@ Toasts:
   their maximum.
 - Appear only for something that happened. Never raise a toast for a
   no-op, a save, or an error flood at startup.
+- A gesture with nothing to act on runs nothing and says so in a toast
+  that names what is missing (`Copy hash did not run` · `select a row
+  first`). It never acts on emptiness: a copy of empty text never reaches
+  the clipboard.
 
 **Timing:**
 - The first frame is right. Nothing visibly settles, flickers, or shows one
