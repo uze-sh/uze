@@ -7,12 +7,18 @@
 //! override can make text read backwards; zero-width and tag characters can
 //! carry words nobody sees. So [`Clean`] is built only here, and the engine
 //! builds what it hands the host only from [`Clean`] strings (D7, S14).
+//!
+//! A length is counted in the cells a terminal gives each character, not in
+//! characters or bytes: a bound in characters lets a wide script take twice
+//! the room a label was given.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+use unicode_width::UnicodeWidthChar;
 
-/// The longest a one-line label may be, in characters.
+/// The widest a one-line label may be, in terminal cells.
 pub const LABEL_MAX: usize = 256;
-/// The longest a block of text (a log line, a message) may be, in characters.
+/// The widest a block of text (a log line, a message) may be, in terminal
+/// cells, a line break counting as one.
 pub const TEXT_MAX: usize = 4096;
 /// How many combining marks may stack on one base character before the rest
 /// are dropped: enough for every script that needs them, too few to smear a
@@ -20,8 +26,19 @@ pub const TEXT_MAX: usize = 4096;
 const COMBINING_MAX: usize = 2;
 
 /// A string stripped of everything a terminal would act on, and bounded.
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+///
+/// There is no way to make one but [`Clean::label`], [`Clean::text`] and
+/// [`Deserialize`], which cleans what it reads as [`Clean::text`]: a
+/// `Clean` read from an answer or a manifest is as clean as one made here.
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq, Serialize)]
 pub struct Clean(String);
+
+impl<'de> Deserialize<'de> for Clean {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = std::borrow::Cow::<'de, str>::deserialize(deserializer)?;
+        Ok(Self::text(&raw))
+    }
+}
 
 impl Clean {
     /// A one-line label: line breaks become spaces.
@@ -32,6 +49,17 @@ impl Clean {
     /// Text that may span lines: `\n` is kept, every other break becomes one.
     pub fn text(source: &str) -> Self {
         Self(clean(source, true, TEXT_MAX))
+    }
+
+    /// The same text with its line breaks read as spaces: a paragraph the
+    /// host wraps to the room it has, still bounded as text.
+    pub fn one_line(self) -> Self {
+        Self(self.0.replace('\n', " "))
+    }
+
+    /// Its lines, each as clean as the whole.
+    pub fn lines(&self) -> impl Iterator<Item = Clean> + '_ {
+        self.0.split('\n').map(|line| Self(line.to_owned()))
     }
 
     pub fn as_str(&self) -> &str {
@@ -57,11 +85,15 @@ impl AsRef<str> for Clean {
 
 fn clean(source: &str, multiline: bool, max: usize) -> String {
     let mut out = String::with_capacity(source.len().min(max * 4));
-    let mut kept = 0;
+    let mut cells = 0;
     let mut combining = 0;
     let mut chars = source.chars().peekable();
     while let Some(ch) = chars.next() {
-        if kept >= max {
+        let width = match ch {
+            '\n' | '\r' | '\u{2028}' | '\u{2029}' | '\u{85}' | '\t' => 1,
+            ch => ch.width().unwrap_or(0),
+        };
+        if cells + width > max {
             break;
         }
         match ch {
@@ -96,7 +128,7 @@ fn clean(source: &str, multiline: bool, max: usize) -> String {
             ch => out.push(ch),
         }
         combining = 0;
-        kept += 1;
+        cells += width;
     }
     out
 }
@@ -216,6 +248,35 @@ mod tests {
             Clean::label(&"x".repeat(LABEL_MAX * 2)).as_str().len(),
             LABEL_MAX
         );
+    }
+
+    #[test]
+    fn length_is_bounded_in_the_cells_a_terminal_gives_it() {
+        let wide = Clean::label(&"日".repeat(LABEL_MAX));
+        assert_eq!(wide.as_str().chars().count(), LABEL_MAX / 2);
+        let mixed = Clean::label(&format!("{}日", "x".repeat(LABEL_MAX - 1)));
+        assert_eq!(
+            mixed.as_str(),
+            "x".repeat(LABEL_MAX - 1),
+            "a wide character that would overflow by a cell is left out whole"
+        );
+        let text = Clean::text(&"ab\n".repeat(TEXT_MAX));
+        assert_eq!(text.as_str().chars().count(), TEXT_MAX);
+    }
+
+    #[test]
+    fn what_is_deserialized_is_cleaned() {
+        let read: Clean =
+            serde_json::from_str(r#""\u001b]52;c;ZXZpbA==\u0007a\u202eb\r\nc""#).unwrap();
+        assert_eq!(read.as_str(), "ab\nc");
+        let long: Clean =
+            serde_json::from_value(serde_json::json!("x".repeat(TEXT_MAX + 9))).unwrap();
+        assert_eq!(long.as_str().len(), TEXT_MAX);
+        assert!(
+            serde_json::from_str::<Clean>("3").is_err(),
+            "only a string is text"
+        );
+        assert_eq!(serde_json::to_value(&read).unwrap(), "ab\nc");
     }
 
     #[test]

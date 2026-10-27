@@ -79,8 +79,8 @@ impl DeclaredExtension {
             declared: declared.is_some(),
         });
         let Some(declared) = declared else {
-            let said = format!("{} recorded, not run", Clean::label(action));
-            return Outcome::Notice(Span::new(said, Role::Muted));
+            let said = Clean::label(&format!("{action} recorded, not run"));
+            return Outcome::Notice(Span::clean(said, Role::Muted));
         };
         let run = match self.resolve(surface, &declared, &item) {
             Ok(run) => run,
@@ -327,7 +327,7 @@ impl DeclaredExtension {
                     input,
                     checkout,
                 });
-                Outcome::Notice(Span::new(said, Role::Muted))
+                Outcome::Notice(Span::clean(Clean::label(&said), Role::Muted))
             }
             Run::Refresh(sources) => {
                 self.refresh(&sources, None);
@@ -471,7 +471,7 @@ impl DeclaredExtension {
     ) -> Outcome {
         self.refresh(&envelope.refresh, from);
         if let Some(notice) = &envelope.notice {
-            let said = Span::new(Clean::label(notice).into_string(), Role::Info);
+            let said = Span::clean(Clean::label(notice), Role::Info);
             for surface in surfaces {
                 self.notices.insert(surface.clone(), said.clone());
             }

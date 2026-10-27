@@ -445,18 +445,20 @@ impl<'a> Builder<'a> {
     }
 
     fn label(&self, node: &'a Compiled, scopes: &[&'a Value]) -> String {
+        self.clean_label(node, scopes).into_string()
+    }
+
+    fn clean_label(&self, node: &'a Compiled, scopes: &[&'a Value]) -> Clean {
         let text = self.arg(node, scopes, 0).map(|value| scalar_text(&value));
-        Clean::label(&text.unwrap_or_default()).into_string()
+        Clean::label(&text.unwrap_or_default())
     }
 
     /// A `Text` that wraps is a paragraph, not a label: it is bounded as a
     /// block of text rather than cut at a label's length, and its breaks
     /// read as spaces, since the host wraps it to the room it has.
-    fn paragraph(&self, node: &'a Compiled, scopes: &[&'a Value]) -> String {
+    fn paragraph(&self, node: &'a Compiled, scopes: &[&'a Value]) -> Clean {
         let text = self.arg(node, scopes, 0).map(|value| scalar_text(&value));
-        Clean::text(&text.unwrap_or_default())
-            .as_str()
-            .replace('\n', " ")
+        Clean::text(&text.unwrap_or_default()).one_line()
     }
 
     /// A block of text that keeps its lines: Markdown or code, bounded as
@@ -651,10 +653,10 @@ fn leaf<'a>(
         NodeName::Text => {
             let truncate = builder.flag_prop(node, scopes, "truncate");
             let said = match truncate {
-                true => builder.label(node, scopes),
+                true => builder.clean_label(node, scopes),
                 false => builder.paragraph(node, scopes),
             };
-            let mut span = view::Span::new(said, builder.role_prop(node, scopes));
+            let mut span = view::Span::clean(said, builder.role_prop(node, scopes));
             span.bold = builder.flag_prop(node, scopes, "strong");
             NodeKind::Text {
                 spans: vec![span],
@@ -1213,8 +1215,8 @@ const LOG_MAX: usize = 500;
 fn log_lines(value: &Value) -> Vec<view::Span> {
     let mut lines = Vec::new();
     let mut push = |text: &str, role: Role| {
-        for line in Clean::text(text).as_str().split('\n') {
-            lines.push(view::Span::new(line, role));
+        for line in Clean::text(text).lines() {
+            lines.push(view::Span::clean(line, role));
         }
     };
     match value {

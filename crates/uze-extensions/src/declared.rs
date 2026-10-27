@@ -791,8 +791,12 @@ impl DeclaredExtension {
     }
 
     fn title(&self, decl: &SurfaceDecl) -> String {
+        self.clean_title(decl).into_string()
+    }
+
+    fn clean_title(&self, decl: &SurfaceDecl) -> Clean {
         let title = decl.title.as_ref().unwrap_or(&self.compiled.manifest.name);
-        Clean::label(title).into_string()
+        Clean::label(title)
     }
 
     /// A section has no size of its own to bind against; the host lays it
@@ -1037,12 +1041,12 @@ impl Extension for DeclaredExtension {
         if decl.slot == uze_contract::Slot::Section {
             return None;
         }
-        let title = self.title(decl);
+        let title = self.clean_title(decl);
         let scroll = self.scroll.get(surface).copied().unwrap_or(0);
         let root = self.with_built(surface, space, |built| built.root.clone())?;
         self.frames.set(self.frames.get() + 1);
         Some(View {
-            title: vec![Span::new(title, Role::Muted)],
+            title: vec![Span::clean(title, Role::Muted)],
             caption: Vec::new(),
             navigator: None,
             content: Content::Tree {

@@ -104,8 +104,10 @@ impl DeclaredExtension {
                 Some(own) if !own.text.is_empty() => format!("{} · {said}", own.text),
                 _ => said.clone(),
             };
-            self.notices
-                .insert(surface.clone(), Span::new(text, Role::Warning));
+            self.notices.insert(
+                surface.clone(),
+                Span::clean(Clean::label(&text), Role::Warning),
+            );
         }
     }
 

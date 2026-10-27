@@ -2978,8 +2978,13 @@ the data a script or a fixture answered, an envelope's notice and toast,
 the reason the runner gives for a failure, which quotes the script. Each
 reaches a `Span`, a badge, a title or a toast through
 `uze_contract::Clean` where the engine takes it, so a terminal control or
-a bidi override is drawn inert rather than performed.
+a bidi override is drawn inert rather than performed. A `view::Span` is
+made there only by `Span::clean`, which takes a `Clean`; a `Clean` is made
+only by cleaning, its `Deserialize` included, and is bounded in the cells
+a terminal gives it.
 
+> `tests/architecture/layering.rs::the_declared_engine_builds_spans_only_through_clean`
+> `crates/uze-contract/src/clean.rs::tests::what_is_deserialized_is_cleaned`
 > `crates/uze-extensions/src/declared/tests.rs::an_escape_sequence_in_data_is_drawn_inert`
 > `crates/uze-extensions/src/declared/source_tests.rs::a_reason_the_host_gives_is_drawn_inert`
 > `crates/uze-extensions/src/declared/action_tests.rs::an_actions_envelope_toasts_says_its_notice_and_refreshes`

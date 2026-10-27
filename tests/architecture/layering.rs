@@ -1768,6 +1768,61 @@ fn only_the_declared_engine_asks_a_source() {
     );
 }
 
+/// What a declared extension says reaches the terminal only through
+/// `Clean` (`add-extension-platform` D7, S14): the declared engine makes a
+/// `view::Span` with `Span::clean`, which takes nothing but a `Clean`, and
+/// never with `Span::new`, a struct literal, or by writing a span's text
+/// afterwards. A built-in extension's text is the host's own and keeps
+/// `Span::new`.
+#[test]
+fn the_declared_engine_builds_spans_only_through_clean() {
+    let root = repository_root();
+    let mut failures = Vec::new();
+    let mut cleaned = 0;
+    for (path, source) in &production_sources(&root.join("crates/uze-extensions/src")) {
+        let relative = path
+            .strip_prefix(&root)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let declared = relative == "crates/uze-extensions/src/declared.rs"
+            || relative.starts_with("crates/uze-extensions/src/declared/");
+        if !declared {
+            continue;
+        }
+        for line in source
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+        {
+            cleaned += line.matches("Span::clean(").count();
+            // The contract's `Span` is where a node was written in a view
+            // file, `Span { offset, len }`, and carries no text.
+            let literal = line.contains("Span {") && !line.contains("offset");
+            let rewritten = [
+                ".text =",
+                ".text.push",
+                ".text.insert",
+                ".text.replace_range",
+            ]
+            .iter()
+            .any(|write| line.contains(write));
+            if line.contains("Span::new(") || literal || rewritten {
+                failures.push(format!("  {relative}: {}", line.trim()));
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "the declared engine builds a `view::Span` only with `Span::clean(Clean, role)`, \
+         so what an extension says is sanitized by type (D7):\n{}",
+        failures.join("\n")
+    );
+    assert!(
+        cleaned > 0,
+        "the declared engine makes no span through `Span::clean`; the scan is reading the wrong files"
+    );
+}
+
 /// An extension's program is started from one place, and confined from
 /// one (`extension-programs-and-confinement`, task 5.4): the runner in
 /// `uze-core`'s `machine::extension_program` is the only code that starts

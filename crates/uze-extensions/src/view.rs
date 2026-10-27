@@ -87,6 +87,9 @@ pub struct Span {
 }
 
 impl Span {
+    /// A span of text the host or a built-in extension owns. What a declared
+    /// extension says is made a span only through [`Span::clean`], which the
+    /// architecture suite holds the declared engine to (D7, S14).
     pub fn new(text: impl Into<String>, role: Role) -> Self {
         Self {
             text: text.into(),
@@ -96,6 +99,13 @@ impl Span {
             bold: false,
             italic: false,
         }
+    }
+
+    /// A span of text that passed through [`uze_contract::Clean`]: the one
+    /// way the declared engine makes a span, so nothing an extension supplied
+    /// reaches the terminal raw.
+    pub fn clean(text: uze_contract::Clean, role: Role) -> Self {
+        Self::new(text.into_string(), role)
     }
 
     pub fn bold(mut self) -> Self {

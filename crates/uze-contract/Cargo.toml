@@ -13,3 +13,7 @@ serde = { version = "1", features = ["derive"] }
 # An extension's data is JSON from its fixture (and, later, its script), so
 # the contract names the one value type every side already shares.
 serde_json = { version = "1", features = ["preserve_order"] }
+# `Clean` bounds what an extension says by the cells it takes on screen, as
+# the host measures it; already in the tree through the client and the
+# theme.
+unicode-width = "0.2"
