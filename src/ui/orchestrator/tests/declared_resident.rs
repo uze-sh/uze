@@ -2,7 +2,9 @@
 //! dispatch every key takes, until Esc lets go of it; F1 stays the host's.
 
 use super::support::*;
-use super::{EngineAnswer, ExtensionAnswer, HostedExtensions, LoadedExtension, Owner};
+use super::{
+    EngineAnswer, ExtensionAnswer, HostedExtensions, LoadedExtension, Owner, WorkspaceHit,
+};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -24,6 +26,11 @@ fn identity() -> ExtensionIdentity {
 
 /// A view showing a resident source.
 fn compiled() -> CompiledExtension {
+    compiled_as(uze_contract::Slot::View, true)
+}
+
+/// The game in `slot`, its source resident or a plain fixture.
+fn compiled_as(slot: uze_contract::Slot, resident: bool) -> CompiledExtension {
     let view = uze_contract::CompiledView {
         file: "game.kdl".to_owned(),
         items: Vec::new(),
@@ -40,7 +47,7 @@ fn compiled() -> CompiledExtension {
             surfaces: vec![uze_contract::SurfaceDecl {
                 band: None,
                 id: "game".to_owned(),
-                slot: uze_contract::Slot::View,
+                slot,
                 view: "game.kdl".to_owned(),
                 source: "board".to_owned(),
                 title: None,
@@ -49,7 +56,11 @@ fn compiled() -> CompiledExtension {
             wants: vec![uze_contract::Grant::Resident],
             sources: vec![uze_contract::SourceDecl::new(
                 "board",
-                uze_contract::SourceKind::Resident("game.rhai".to_owned()),
+                if resident {
+                    uze_contract::SourceKind::Resident("game.rhai".to_owned())
+                } else {
+                    uze_contract::SourceKind::Fixture("board.json".to_owned())
+                },
             )],
             actions: Vec::new(),
             exec: Vec::new(),
@@ -103,6 +114,30 @@ impl uze_extensions::Host for Session {
 
 /// The resident view open in the pane, drawn.
 fn playing(home: &UzeHome) -> Driven<'_> {
+    hosting(home, compiled())
+}
+
+/// The game as an overlay over the pane, beside the agent `a1`, drawn.
+fn overlaid(home: &UzeHome, resident: bool) -> Driven<'_> {
+    let mut driven = hosting(home, compiled_as(uze_contract::Slot::Overlay, resident));
+    let model = &mut driven.attach.model;
+    launch_agent_a1(model);
+    let slot = model
+        .remembered
+        .declared
+        .slots
+        .iter()
+        .find(|slot| slot.surface.id == "game")
+        .expect("hosted")
+        .id;
+    model.open_overlay(slot);
+    assert!(model.overlay_slot().is_some(), "the overlay stands");
+    driven.frame();
+    driven
+}
+
+/// `compiled` hosted, its view open in the pane when it is one.
+fn hosting(home: &UzeHome, compiled: CompiledExtension) -> Driven<'_> {
     let mut model = agent_session_in(ROOT);
     model.remembered.declared = HostedExtensions {
         discovered_at: Some(Instant::now()),
@@ -122,12 +157,14 @@ fn playing(home: &UzeHome) -> Driven<'_> {
         loaded: vec![LoadedExtension {
             installed,
             stamp: 1,
-            compiled: Ok(compiled()),
+            compiled: Ok(compiled),
             data: BTreeMap::new(),
         }],
     }));
-    let slot = model.declared_views().next().expect("the view").id;
-    super::open_surface(&mut model, slot);
+    let view = model.declared_views().next().map(|slot| slot.id);
+    if let Some(slot) = view {
+        super::open_surface(&mut model, slot);
+    }
     let mut driven = driven(model, home).on_a_roomy_terminal();
     driven.frame();
     driven
@@ -298,4 +335,53 @@ fn the_question_is_answered_by_keyboard_over_a_declared_view() {
     assert_eq!(sent.len(), 1, "{sent:?}");
     run(&mut driven, &host);
     assert!(inputs(&host).is_empty(), "the view behind heard nothing");
+}
+
+#[test]
+fn a_question_over_a_resident_overlay_takes_its_keys_and_clicks() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("resident-overlay-question"));
+    let mut driven = overlaid(&home, true);
+    let host = Session::default();
+    run(&mut driven, &host);
+    assert!(
+        driven.attach.model.raw_input_slot().is_some(),
+        "the overlay reads raw keys"
+    );
+
+    driven
+        .attach
+        .model
+        .ask_of_agent(Owner::Builtin("probe"), prompt("Review PLAN.md"));
+    driven.press_key(key("right"));
+    driven.press_key(key("enter"));
+    assert!(
+        driven.attach.model.agent_write.is_none(),
+        "Enter answers it"
+    );
+    driven.pump();
+    assert_eq!(typed(&driven.sent()).len(), 1);
+
+    driven
+        .attach
+        .model
+        .ask_of_agent(Owner::Builtin("probe"), prompt("And then"));
+    driven.frame();
+    let cancel = driven.hit(|hit| *hit == WorkspaceHit::AgentWriteAnswer(false));
+    let overlay = driven.attach.model.overlay_area.get();
+    assert!(
+        overlay.contains(ratatui::layout::Position::new(cancel.x, cancel.y)),
+        "the answer stands over the overlay: {cancel:?} in {overlay:?}"
+    );
+    driven.press(cancel.x, cancel.y);
+    assert!(
+        driven.attach.model.agent_write.is_none(),
+        "the click answers it"
+    );
+    run(&mut driven, &host);
+    run(&mut driven, &host);
+    assert!(
+        inputs(&host).is_empty(),
+        "nothing meant for the question reached the overlay: {:?}",
+        inputs(&host)
+    );
 }

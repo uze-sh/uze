@@ -36,16 +36,24 @@ impl WorkspaceModel {
         self.resident_slot().filter(|_| !self.resident_released)
     }
 
-    /// What stands over an overlay and takes its keys first.
+    /// What stands over an overlay and takes its keys first: every
+    /// question, popup and modal the host draws above it.
     fn anything_over_the_overlay(&self) -> bool {
         self.action_index.is_some()
             || self.release_notes.is_some()
             || self.approval.is_some()
             || self.extension_offer.is_some()
+            || self.agent_write.is_some()
             || self.interrupt.is_some()
             || self.proposal.is_some()
             || self.asks_overview_question()
             || self.shows_space_issues()
+            || self.manage.is_some()
+            || self.directory_step.is_some()
+            || self.agent_picker.is_some()
+            || self.context_menu.is_some()
+            || self.status_catalog.is_some()
+            || self.commit_detail_open()
     }
 
     /// Esc on a focused resident surface: its keys are the host's again.
