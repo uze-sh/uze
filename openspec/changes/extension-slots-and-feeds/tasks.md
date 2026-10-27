@@ -25,7 +25,7 @@
 
 ## 5. Notify and sound
 
-- [ ] 5.1 `uze_platform::notify`: desktop tool by path, OSC 9 by `TERM_PROGRAM`, the bell; one implementation per platform; unit tests over the choice (parent 14.10)
+- [x] 5.1 `uze_platform::notify`: desktop tool by path, OSC 9 by `TERM_PROGRAM`, the bell; one implementation per platform; unit tests over the choice (parent 14.10)
 - [ ] 5.2 The envelope's `notify` and `sound` applied from the frame loop under `notify`, attributed, rate-limited (1 per 10 s, 30 per hour per extension), the excess counted in the notice
 
 ## 6. Events delivered

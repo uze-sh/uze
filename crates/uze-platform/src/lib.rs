@@ -23,6 +23,7 @@ pub mod locale;
 pub mod lock;
 pub mod machine;
 pub mod mounts;
+pub mod notify;
 pub mod path;
 pub mod probe;
 pub mod process;
