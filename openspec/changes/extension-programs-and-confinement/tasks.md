@@ -17,8 +17,8 @@
 
 - [x] 3.1 `capability::extension::program::run`: argv resolved by the caller, `argv[0]` the program's name, cwd the checkout, an allowlisted environment with `TMPDIR` on the scratch, `GIT_CONFIG_PARAMETERS` and `GIT_CONFIG_NOSYSTEM=1`, `UZE_IN_<NAME>`, one JSON stdin, stdout 1 MiB and stderr 64 KiB bounded, the time limit with the group killed twice, through the helper when a `Confinement` is given; outcome `Answered(bytes) | Refused(reason) | Failed(reason, tail) | Unenforced` (parent 5.1)
 - [x] 3.2 Argv substitution: `{field}` whole, refused after no `--` when the value begins with `-` (parent 22.5)
-- [ ] 3.3 `exec:` resolution: `harness_search_path()`, `realpath`, refusals under the project, `$UZE_HOME`, tmp and `/mnt/*`; the general runners list; the shebang's interpreter (P12)
-- [ ] 3.4 The `lines` decoder and the `json` decoder with the envelope
+- [x] 3.3 `exec:` resolution: `harness_search_path()`, `realpath`, refusals under the project, `$UZE_HOME`, tmp and `/mnt/*`; the general runners list; the shebang's interpreter (P12)
+- [x] 3.4 The `lines` decoder and the `json` decoder with the envelope
 
 ## 4. Pinning and consent
 

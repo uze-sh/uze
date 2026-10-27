@@ -161,6 +161,62 @@ pub fn input_variable(name: &str) -> String {
     format!("UZE_IN_{}", name.to_ascii_uppercase().replace('-', "_"))
 }
 
+/// Why a program's name could not be pinned.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Unresolved {
+    /// No directory of the search path holds it.
+    NotFound,
+    /// It resolved only beneath a place an extension could have planted
+    /// it: the project, UZE's own home, a temporary directory.
+    Refused { found: PathBuf, beneath: PathBuf },
+}
+
+impl std::fmt::Display for Unresolved {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound => f.write_str("not found"),
+            Self::Refused { found, beneath } => write!(
+                f,
+                "found only at {}, beneath {}, where an extension could have put it",
+                found.display(),
+                beneath.display()
+            ),
+        }
+    }
+}
+
+/// Pins `name` to the real path of the first executable that holds it on
+/// `search`, the host's own search path, refusing one whose real path lies
+/// beneath any of `refused` (canonicalised here), so a link in `PATH`
+/// cannot point the grant into the checkout (S3, S7). The first refused
+/// find is kept to say why when nothing else is found.
+pub fn resolve(name: &str, search: &[PathBuf], refused: &[PathBuf]) -> Result<PathBuf, Unresolved> {
+    let refused: Vec<PathBuf> = refused
+        .iter()
+        .map(|root| std::fs::canonicalize(root).unwrap_or_else(|_| root.clone()))
+        .collect();
+    let mut first_refusal = None;
+    for dir in search.iter().filter(|dir| dir.is_absolute()) {
+        for candidate in uze_platform::executable::candidates(dir, name) {
+            if !uze_platform::executable::is_executable(&candidate) {
+                continue;
+            }
+            let Ok(found) = std::fs::canonicalize(&candidate) else {
+                continue;
+            };
+            if let Some(beneath) = refused.iter().find(|root| found.starts_with(root)) {
+                first_refusal.get_or_insert(Unresolved::Refused {
+                    found: found.clone(),
+                    beneath: beneath.clone(),
+                });
+                continue;
+            }
+            return Ok(found);
+        }
+    }
+    Err(first_refusal.unwrap_or(Unresolved::NotFound))
+}
+
 /// Substitutes every `{field}` of `arg` from `scope`, each value whole.
 /// A reference to anything but the item (`ui.`, `context.`, `^.`) or to a
 /// field `scope` lacks is refused, as is a value beginning with `-` that
@@ -566,6 +622,40 @@ mod tests {
                 stdout: b"NOTES.md".to_vec()
             }
         );
+    }
+
+    #[test]
+    fn a_program_is_pinned_to_its_real_path_and_never_beneath_the_project() {
+        let root = std::env::temp_dir().join(format!("uze-resolve-{}", std::process::id()));
+        let project = root.join("project");
+        let bin = root.join("bin");
+        std::fs::create_dir_all(project.join("node_modules/.bin")).unwrap();
+        std::fs::create_dir_all(&bin).unwrap();
+        let planted = project.join("node_modules/.bin/uze-planted-gh");
+        std::fs::write(&planted, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(
+            &planted,
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(&planted, bin.join("uze-planted-gh")).unwrap();
+        let search = vec![
+            project.join("node_modules/.bin"),
+            bin.clone(),
+            PathBuf::from("/bin"),
+        ];
+        let refused =
+            resolve("uze-planted-gh", &search, std::slice::from_ref(&project)).unwrap_err();
+        assert!(matches!(refused, Unresolved::Refused { .. }), "{refused}");
+        assert_eq!(
+            resolve("sh", &search, std::slice::from_ref(&project)),
+            Ok(std::fs::canonicalize("/bin/sh").unwrap())
+        );
+        assert_eq!(
+            resolve("no-such-program", &search, &[]),
+            Err(Unresolved::NotFound)
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
