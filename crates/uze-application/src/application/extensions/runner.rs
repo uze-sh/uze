@@ -455,8 +455,25 @@ impl ExtensionRunner {
             input: input_digest(&input),
             files: files.digest().to_owned(),
         };
-        // A check rehearses what the author wrote; it keeps nothing.
-        let reach = Arc::new(CheckoutReach::new(checkout.root.clone()));
+        // A check rehearses what the author wrote; it keeps nothing, and
+        // starts from an empty store. The programs it calls run only where
+        // this machine confines them, resolved now (S12).
+        let manifest = &compiled.manifest;
+        let mut reach = CheckoutReach::new(checkout.root.clone());
+        if manifest.store().is_some() {
+            reach = reach.with_store(serde_json::json!({}));
+        }
+        if manifest.programs().next().is_some() && self.helper.is_some() {
+            reach = reach.with_programs(self.programs_for(
+                home,
+                dir,
+                manifest,
+                identity,
+                &checkout,
+                Some(rehearsed_consent(manifest, home)),
+            ));
+        }
+        let reach = Arc::new(reach);
         Some(
             self.run_script(asked, &files, file, &grants, &input, reach, &|envelope| {
                 Envelope {
@@ -489,16 +506,7 @@ impl ExtensionRunner {
                  answers stand in",
             );
         }
-        let pins = super::consent::resolve_programs(manifest, home);
-        let rehearsed = super::ExtensionConsent {
-            exec_paths: Some(
-                pins.iter()
-                    .filter_map(|pin| Some((pin.name.clone(), pin.path.clone()?)))
-                    .collect(),
-            ),
-            enforced_at_accept: Some(true),
-            ..super::ExtensionConsent::default()
-        };
+        let rehearsed = rehearsed_consent(manifest, home);
         let reads: Vec<String> = if program.is_packaged() {
             Vec::new()
         } else {
@@ -596,6 +604,24 @@ impl ExtensionRunner {
                 trace,
             },
         }
+    }
+}
+
+/// What a check runs a program under: its programs resolved now, as
+/// confined as an enabled run, recorded nowhere.
+fn rehearsed_consent(
+    manifest: &uze_contract::Manifest,
+    home: &uze_core::UzeHome,
+) -> super::ExtensionConsent {
+    let pins = super::consent::resolve_programs(manifest, home);
+    super::ExtensionConsent {
+        exec_paths: Some(
+            pins.iter()
+                .filter_map(|pin| Some((pin.name.clone(), pin.path.clone()?)))
+                .collect(),
+        ),
+        enforced_at_accept: Some(true),
+        ..super::ExtensionConsent::default()
     }
 }
 

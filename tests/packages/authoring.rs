@@ -1194,3 +1194,31 @@ fn an_extension_directory_name_reaches_the_terminal_cleaned() {
     );
     let _ = fs::remove_dir_all(root);
 }
+
+/// Every fixture plugin that declares extensions checks clean, its tests
+/// and snapshots included: a snapshot a catalog change left behind fails
+/// here, not in an author's hands.
+#[test]
+fn every_fixture_plugins_extensions_check_clean() {
+    let root = uze_testkit::temp::scratch("check-fixture-extensions");
+    let canonical = uze_testkit::fixtures::canonical("gsd")
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let mut checked = Vec::new();
+    for entry in fs::read_dir(&canonical).unwrap() {
+        let plugin = entry.unwrap().path();
+        if !plugin.join("extensions").is_dir() {
+            continue;
+        }
+        let (clean, text) = check(&root, &plugin);
+        assert!(clean, "{}: {text}", plugin.display());
+        checked.push(plugin.file_name().unwrap().to_string_lossy().into_owned());
+    }
+    checked.sort();
+    assert!(
+        checked.iter().any(|name| name == "gpu") && checked.iter().any(|name| name == "gsd"),
+        "{checked:?}"
+    );
+    let _ = fs::remove_dir_all(root);
+}

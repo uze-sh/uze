@@ -382,3 +382,90 @@ fn a_helper_that_cannot_confine_runs_nothing() {
         other => panic!("ran anyway: {other:?}"),
     }
 }
+
+/// The `gpu-meter` reference extension, installed, allowed and enabled,
+/// reads the real `nvidia-smi` this machine has, confined, and keeps its
+/// readings in its store (task 9.2). Skipped, saying why, where the
+/// machine has no `nvidia-smi` or does not confine.
+#[test]
+fn the_gpu_meter_reads_the_real_gpu_confined_and_keeps_its_history() {
+    if uze_platform::executable::on_path("nvidia-smi").is_none() {
+        eprintln!("skipped: this machine has no nvidia-smi");
+        return;
+    }
+    let Some(runner) = confining() else { return };
+    let env = TestEnvironment::isolated();
+    let market = env.root().join("market");
+    let manifest = serde_json::json!({
+        "name": MARKET,
+        "plugins": [{ "name": "gpu", "source": "./plugins/gpu", "description": "GPU." }],
+    });
+    uze_testkit::marketplace::stage(
+        &market,
+        &manifest.to_string(),
+        &[("gpu".to_owned(), uze_testkit::fixtures::canonical("gpu"))],
+    );
+    let app = UzeApplication::new(UzeHome::at(&env.uze_home), Vec::new());
+    app.marketplace()
+        .add(&market.display().to_string())
+        .unwrap();
+    app.marketplace()
+        .install_plugin(&format!("gpu@{MARKET}"), &AlwaysTrust)
+        .unwrap();
+    let meter = app
+        .extensions()
+        .installed()
+        .into_iter()
+        .find(|extension| extension.identity.id == "gpu-meter")
+        .expect("the meter is installed")
+        .identity;
+    let pins = app.extensions().programs_to_pin(&meter).unwrap();
+    assert!(pins[0].path.is_some(), "nvidia-smi is pinned: {pins:?}");
+    let checkout = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("extension-programs-gpu-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&checkout);
+    fs::create_dir_all(&checkout).unwrap();
+    fs::write(checkout.join("README.md"), "# gpu\n").unwrap();
+    uze_testkit::git::commit_everything_in(&checkout);
+    app.extensions().consent(&meter, Asker::Operator).unwrap();
+    app.extensions()
+        .enable(
+            &meter,
+            &uze_application::project_root_of(&checkout),
+            Asker::Operator,
+        )
+        .unwrap();
+    let ask = || {
+        runner.answer(
+            &app.extensions(),
+            &Question {
+                identity: meter.clone(),
+                declaration: "gpu".to_owned(),
+                asking: Asking::Refresh,
+                input: serde_json::json!({}),
+                checkout: Some(checkout.clone()),
+            },
+        )
+    };
+    let reading = |answer: Answer| match answer {
+        Answer::Answered { envelope, .. } => envelope.data,
+        other => panic!("the meter did not read the GPU: {other:?}"),
+    };
+    let first = reading(ask());
+    assert!(
+        first["name"].as_str().is_some_and(|name| !name.is_empty()),
+        "{first}"
+    );
+    assert!(
+        first["memory"].as_str().unwrap().ends_with("MiB"),
+        "{first}"
+    );
+    assert_eq!(first["history"].as_array().unwrap().len(), 1);
+    let second = reading(ask());
+    assert_eq!(
+        second["history"].as_array().unwrap().len(),
+        2,
+        "kept in its store"
+    );
+    let _ = fs::remove_dir_all(&checkout);
+}

@@ -359,3 +359,33 @@
 - decided:  `DoctorReport.program_confinement { confined, summary }` and a `programs` row beside home, store and plugins (`✓ confined by Landlock ABI 7 and seccomp`, or `! run as you: …`), a row and not a warning, since it is a property of the machine. `uze status` adds, under an extension with programs, one row per program (`nvidia-smi /usr/lib/wsl/lib/nvidia-smi`, or `! gh not found`) and "its programs run confined" or "run as you".
 - rejected: A doctor warning on every machine without confinement: it would warn on every Windows machine whether or not any extension runs a program.
 - blast:    `read_models::ProgramConfinement`, `src/cli/status.rs`, `src/cli/extensions.rs`.
+
+## D37 — `gpu-meter` reads `nvidia-smi` from a script with `run_program`, not from a `run` source
+
+- status:   pending
+- task:     9.1
+- commit:
+- trigger:  The proof was planned as a program source with `output: lines`, but a program source may not be asked more often than every 30 s (D4), and a meter refreshing every ten seconds is the point of one.
+- decided:  `gpu-meter`'s `gpu` source is `gpu.rhai`, asked every 10 s, which calls `run_program("nvidia-smi", …)`, parses its CSV line, keeps the last 30 load readings in its store and answers a view of two `Gauge`s, three `Stat`s and a bar `Chart`, and a section of a `Gauge` and a sparkline. Its `exec` declares the WSL and Linux NVIDIA devices; the ones a machine lacks are left out of the confinement. The `lines` output is proven by the probe's tests instead.
+- rejected: Lowering the program floor for this one entry: the floor is about process cost, which a meter does not change.
+- blast:    `tests/_fixtures/canonical/gpu/`.
+
+## D38 — A check rehearses a script with an empty store and programs resolved on the spot
+
+- status:   pending
+- task:     9.2
+- commit:
+- trigger:  `check --run` gave a script a bare checkout reach, so `gpu.rhai` could neither read its store nor call `run_program`.
+- decided:  A rehearsed script that wants `store` reads `#{}`, and one that names programs gets them through the same confined runner as a rehearsed `run` source (D32), its programs resolved now and recorded nowhere; on a machine that does not confine it gets none. Proven here: `uze agent plugin check tests/_fixtures/canonical/gpu --run` answers `gpu` from the real RTX 4060 Ti.
+- rejected: Leaving scripts that call programs unrehearsable.
+- blast:    `runner::rehearse_over`.
+
+## D39 — Every fixture plugin's extensions are checked by the packages suite
+
+- status:   pending
+- task:     9.2
+- commit:
+- trigger:  Change 4 found the `gsd` snapshot stale only by hand: nothing in CI ran `uze agent plugin check` over the fixture plugins.
+- decided:  `every_fixture_plugins_extensions_check_clean` runs the real binary's check over each `tests/_fixtures/canonical/*` with an `extensions/` directory, tests and snapshots included, and requires `gpu` and `gsd` among them.
+- rejected: A separate CI job: the packages suite already runs on every change to these paths.
+- blast:    `tests/packages/authoring.rs`.

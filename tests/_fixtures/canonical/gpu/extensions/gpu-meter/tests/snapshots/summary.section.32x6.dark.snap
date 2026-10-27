@@ -1,0 +1,19 @@
+# uze snapshot · protocol 1 · section 32x6 · dark
+ gpu-meter · gpu@local
+ ▾ GPU
+ load █▊──────────────────   9%
+ ▁▁▁▄██▆▂▁
+ 1926 / 8188 MiB · 56°C
+
+---
+ aaaaaaaaa a aaaaaaaaa
+ b bbb
+ bbbb ccdddddddddddddddddd   cc
+ ccccccccc
+ dddd d dddd ddd d dddd
+
+---
+a text.muted
+b text.secondary
+c text.bright
+d text.faint

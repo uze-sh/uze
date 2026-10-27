@@ -1,0 +1,13 @@
+// The full view: the GPU's name, its three meters, and the load's history.
+Stack gap=1 {
+    Text "{name}" strong=#true
+    Gauge "load" ratio="{load_ratio}" warning=0.7 danger=0.9
+    Gauge "memory" ratio="{memory_ratio}" warning=0.8 danger=0.95
+    Grid min-width=20 {
+        Stat "{load}%" "load"
+        Stat "{memory}" "memory"
+        Stat "{temperature}" "temperature"
+    }
+    Rule "load, last readings"
+    Chart series="{history}" kind="bar" height=4
+}

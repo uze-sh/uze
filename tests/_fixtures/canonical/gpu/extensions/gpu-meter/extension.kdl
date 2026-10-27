@@ -1,0 +1,25 @@
+// The GPU this machine has, read from `nvidia-smi` every ten seconds while
+// a surface showing it is visible. The script runs the program through
+// `run_program`, under `exec:nvidia-smi`, pinned when the extension is
+// allowed and confined where the machine confines; it keeps the last
+// thirty readings in the extension's store to draw their history.
+protocol 1
+id "gpu-meter"
+name "GPU"
+description "The GPU's load, memory and temperature, and their recent history"
+
+wants "exec:nvidia-smi" "store"
+
+// The devices and driver files `nvidia-smi` speaks to, on Linux and under
+// WSL. A path this machine does not have is left out of the confinement.
+exec "nvidia-smi" {
+    reads "/dev/dxg" "/dev/nvidiactl" "/dev/nvidia0" "/dev/nvidia-uvm" "/proc/driver/nvidia"
+}
+
+surface "meter" slot="view" view="meter.kdl" source="gpu" title="GPU"
+surface "summary" slot="section" view="summary.kdl" source="gpu" title="GPU"
+
+source "gpu" {
+    script "gpu.rhai"
+    every "10s"
+}
