@@ -14,6 +14,7 @@ fn launched_agent() -> super::WorkspaceModel {
         uze_terminal::launch::AGENT_IDENTITY_VARIABLE.to_owned(),
         "a1".to_owned(),
     )];
+    model.note_space_projects(&identities_fixture());
     let agents = super::bridged_agents(&model, &identities_fixture());
     model.see_agents(agents);
     model

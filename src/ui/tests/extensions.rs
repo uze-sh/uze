@@ -764,3 +764,19 @@ fn consenting_to_a_band_says_the_rows_it_takes_over_each_agent() {
         "{screen}"
     );
 }
+
+#[test]
+fn a_reopened_extensions_screen_still_lists_the_plugins_extensions() {
+    let layout = uze_application::ManagementLayout::default();
+    let mut first = TuiModel::recall(None, &layout);
+    first.refreshed(crate::ui::model::RefreshData {
+        declared_extensions: vec![declared(&[])],
+        ..Default::default()
+    });
+    let again = TuiModel::recall(Some(first.remember()), &layout);
+    assert_eq!(
+        again.declared_extensions.len(),
+        1,
+        "a reopening inside the resolution's life asks nothing again, so it keeps what it read"
+    );
+}

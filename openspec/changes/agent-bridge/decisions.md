@@ -260,12 +260,22 @@
 - rejected: Gating on the toast's reason: it is not drawn at the toast's width.
 - blast:    `journeys/suites/04-workspace/19-an-extension-prompts-an-agent-only-when-it-is-idle.yml`.
 
-## D42 — Found by the journey, not decided: an `agent:observe` extension is handed the agents before it is allowed
+## D42 — An extension sees and reaches only the agents of projects it is enabled in
 
 - status:   pending
 - task:     5.3
 - commit:
-- trigger:  In the bridge journey, `agents-hud`'s status row drew `· agent 1` in the sidebar's header before the operator reviewed or allowed it, with no `state/extensions.json` on disk.
-- decided:  Not changed here; recorded for the bridge's owner. `agents_observed`/`tell_agents` (`declared/bridge.rs`) choose observers by `observes_agents` (what the manifest wants) and `offers_declared` (the operator's switch), never by consent or `enabled_in`, and `declared_statuses` (`declared/status.rs`) draws a row by the switch alone, while a band is judged by the record (`enabled_in`, D23 of `extension-slots-and-feeds`). The fix wants a rule for which project an observer of every space's agents must be enabled in.
-- rejected: Asserting the row's absence before consent in the journey: it would fail today, and the rule it should hold is not decided.
-- blast:    `src/ui/orchestrator/declared/{bridge,status}.rs`.
+- trigger:  The bridge journey found `agents-hud`'s status row drawing `· agent 1` before the operator had allowed anything: observers were chosen by what the manifest wants and the operator's switch, never by consent.
+- decided:  `reaches_agent_in(owner, checkout)`: a declared extension sees an agent (in its `agents` source, its `agent.*` events, the journals read for it) and may prompt or focus it only when the agent's checkout belongs to a project the extension is enabled in (`enabled_in`, as a band is judged, D23 of slots); one that runs nothing is on wherever its switch is. A status row stands only when its extension is enabled in the project of the checkout in front. A built-in owner is never refused.
+- rejected: Enabled in any project at all: an extension enabled in one project would see the agents of every other.
+- blast:    `src/ui/orchestrator/declared/{bridge,agent,status}.rs`.
+
+## D43 — The Extensions screen keeps the plugins' extensions across openings; a standing may be up to 30 s old
+
+- status:   pending
+- task:     5.3
+- commit:
+- trigger:  The journey found a reopened management modal listing only the built-ins, and deck "Needs consent" right after the workspace enabled it.
+- decided:  `Remembered` carries the declared extensions, their standings and the project they were judged for, so a reopening inside `RESOLUTION_STANDS_FOR` draws what the last refresh read. A standing changed from the workspace's offer is seen at the next resolution (30 s at most, or `F5`), as every other machine fact the modal shows.
+- rejected: Invalidating the modal's memory from the workspace's offer: a second path into the management state for one screen.
+- blast:    `src/ui/model.rs`.

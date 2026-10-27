@@ -62,7 +62,7 @@ impl WorkspaceModel {
     /// Whether the operator's record has `owner` enabled in `project`, as
     /// the last discovery read it. One that runs nothing is on wherever
     /// its switch is.
-    fn enabled_in(&self, owner: &Owner, project: &Path) -> bool {
+    pub(in crate::ui::orchestrator) fn enabled_in(&self, owner: &Owner, project: &Path) -> bool {
         let Some(extension) = owner
             .declared()
             .and_then(|identity| self.remembered.declared.extensions.get(identity))

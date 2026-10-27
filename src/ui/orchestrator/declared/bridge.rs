@@ -64,28 +64,47 @@ impl Bridge {
 }
 
 impl WorkspaceModel {
-    /// Whether any enabled extension observes the agents.
-    pub(in crate::ui::orchestrator) fn agents_observed(&self) -> bool {
+    /// The extensions switched on that hold `agent:observe`.
+    fn observers(&self) -> Vec<Owner> {
         self.remembered
             .declared
             .extensions
             .iter()
-            .any(|(identity, extension)| {
-                extension.observes_agents
-                    && self.offers_declared(&Owner::Declared(identity.clone()))
-            })
+            .filter(|(_, extension)| extension.observes_agents)
+            .map(|(identity, _)| Owner::Declared(identity.clone()))
+            .filter(|owner| self.offers_declared(owner))
+            .collect()
+    }
+
+    /// Whether `owner` may see or reach the agent standing in `checkout`:
+    /// only one of a project the operator enabled it in (D42). An agent is
+    /// the workspace's, but what it does is its project's.
+    pub(in crate::ui::orchestrator) fn reaches_agent_in(
+        &self,
+        owner: &Owner,
+        checkout: &Path,
+    ) -> bool {
+        if owner.declared().is_none() {
+            return true;
+        }
+        self.projects
+            .get(checkout)
+            .is_some_and(|project| self.enabled_in(owner, project))
     }
 
     /// The journals the next watch reads: each agent's, from its offset,
     /// or `None` for one never read, whose first read only sets it.
     pub(in crate::ui::orchestrator) fn journals_to_read(&self) -> Vec<(String, Option<u64>)> {
-        if !self.agents_observed() {
-            return Vec::new();
-        }
+        let observers = self.observers();
         let bridge = &self.remembered.declared.bridge;
         bridge
             .agents
             .iter()
+            .filter(|agent| {
+                observers
+                    .iter()
+                    .any(|owner| self.reaches_agent_in(owner, &agent.checkout))
+            })
             .map(|agent| (agent.id.clone(), bridge.offsets.get(&agent.id).copied()))
             .collect()
     }
@@ -160,13 +179,14 @@ impl WorkspaceModel {
         }
     }
 
-    /// The agents as an `agents` source answers them.
-    fn agents_value(&self) -> serde_json::Value {
+    /// The agents `owner` may see, as an `agents` source answers them.
+    fn agents_value(&self, owner: &Owner) -> serde_json::Value {
         let bridge = &self.remembered.declared.bridge;
         serde_json::Value::Array(
             bridge
                 .agents
                 .iter()
+                .filter(|agent| self.reaches_agent_in(owner, &agent.checkout))
                 .map(|agent| {
                     let state = match self.agent_tab_status(agent.pane, false) {
                         AgentTabStatus::Working => "working",
@@ -192,27 +212,20 @@ impl WorkspaceModel {
     /// and follows the prompts its events sent.
     pub(in crate::ui::orchestrator) fn tell_agents(&mut self, now: Instant) {
         let happened = std::mem::take(&mut self.remembered.declared.bridge.happened);
-        if !self.agents_observed() {
-            return;
-        }
-        let value = self.agents_value();
-        let observers: Vec<Owner> = self
-            .remembered
-            .declared
-            .extensions
-            .iter()
-            .filter(|(_, extension)| extension.observes_agents)
-            .map(|(identity, _)| Owner::Declared(identity.clone()))
-            .filter(|owner| self.offers_declared(owner))
-            .collect();
         let mut requests = Vec::new();
-        for owner in observers {
+        for owner in self.observers() {
+            let value = self.agents_value(&owner);
+            let seen: Vec<AgentHappened> = happened
+                .iter()
+                .filter(|event| self.reaches_agent_in(&owner, &event.checkout))
+                .cloned()
+                .collect();
             let asking = owner.clone();
             let Some(engine) = self.remembered.declared.engines.get_mut(&owner) else {
                 continue;
             };
-            if !happened.is_empty() {
-                engine.agent_events(&happened, now);
+            if !seen.is_empty() {
+                engine.agent_events(&seen, now);
             }
             engine.agents(&value);
             requests.extend(

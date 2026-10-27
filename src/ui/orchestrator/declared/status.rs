@@ -24,6 +24,9 @@ impl WorkspaceModel {
     /// declares them. An answer with nothing to draw takes no row.
     pub(in crate::ui::orchestrator) fn declared_statuses(&self, width: u16) -> Vec<(SlotId, View)> {
         let declared = &self.remembered.declared;
+        // A row is about the checkout in front, so it stands only where
+        // its extension is enabled, as a band does.
+        let in_front = self.project_of_pane(self.focused_pane());
         let shown: Vec<&HostedSlot> = declared
             .slots
             .iter()
@@ -31,6 +34,9 @@ impl WorkspaceModel {
                 slot.surface.slot == SurfaceSlot::Status
                     && slot.owner.declared().is_some()
                     && self.offers_declared(&slot.owner)
+                    && in_front
+                        .as_ref()
+                        .is_some_and(|project| self.enabled_in(&slot.owner, project))
             })
             .collect();
         let mut owners: Vec<String> = Vec::new();

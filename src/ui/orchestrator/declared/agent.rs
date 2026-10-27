@@ -161,6 +161,9 @@ impl WorkspaceModel {
         else {
             return refuse(self, "that agent is not open");
         };
+        if !self.reaches_agent_in(&owner, &seen.checkout) {
+            return refuse(self, "it is not enabled in that agent's project");
+        }
         let text = match &request.what {
             AgentAsk::Focus => {
                 let tab = self

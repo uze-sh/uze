@@ -938,6 +938,12 @@ pub(crate) struct Remembered {
     pub(crate) extension_screen: ListScreen,
     pub(crate) harness_screen: ListScreen,
     pub(crate) profiles_selected: usize,
+    /// The plugins' extensions and where they stand, as the last refresh
+    /// read them: a reopening inside [`super::management::RESOLUTION_STANDS_FOR`]
+    /// asks nothing again, so without these it listed only the built-ins.
+    pub(crate) declared_extensions: Vec<DeclaredExtensionSummary>,
+    pub(crate) extension_standings: Vec<uze_application::ExtensionReport>,
+    pub(crate) extension_project: Option<PathBuf>,
 }
 
 /// Which asked mutation an answer is for. An answer is paired with its
@@ -991,6 +997,10 @@ impl TuiModel {
     /// left behind. `None` is the first visit of the process, which has
     /// nothing resolved yet.
     pub(crate) fn recall(remembered: Option<Remembered>, layout: &ManagementLayout) -> Self {
+        let mut remembered = remembered.unwrap_or_default();
+        let declared_extensions = std::mem::take(&mut remembered.declared_extensions);
+        let extension_standings = std::mem::take(&mut remembered.extension_standings);
+        let extension_project = remembered.extension_project.take();
         let mut model = Self {
             route: layout
                 .route
@@ -1017,7 +1027,7 @@ impl TuiModel {
             status_expires_at: None,
             mutations: VecDeque::new(),
             maintenance_in_flight: false,
-            remembered: remembered.unwrap_or_default(),
+            remembered,
             plugin_detail: None,
             marketplace_detail: None,
             inspection_in_flight: None,
@@ -1033,9 +1043,9 @@ impl TuiModel {
             extensions: uze_extensions::registry::ExtensionRegistry::builtin()
                 .all()
                 .to_vec(),
-            declared_extensions: Vec::new(),
-            extension_standings: Vec::new(),
-            extension_project: None,
+            declared_extensions,
+            extension_standings,
+            extension_project,
             disabled_extensions: super::extension_switch::disabled(),
             profile_panel: ProfilePanel::List,
             profile_editor_selected: 0,
@@ -1092,6 +1102,9 @@ impl TuiModel {
     pub(crate) fn remember(self) -> Remembered {
         Remembered {
             plugin_pane: self.plugin_pane,
+            declared_extensions: self.declared_extensions,
+            extension_standings: self.extension_standings,
+            extension_project: self.extension_project,
             ..self.remembered
         }
     }

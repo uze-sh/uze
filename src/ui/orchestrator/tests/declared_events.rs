@@ -262,7 +262,8 @@ fn an_extension_without_refresh_on_has_nothing_watched() {
 }
 
 /// The agent the session placed in `root`, as the bridge sees it.
-fn the_agent(model: &WorkspaceModel) -> super::BridgedAgent {
+fn the_agent(model: &mut WorkspaceModel) -> super::BridgedAgent {
+    model.note_space_projects(&identities_fixture());
     let tab = model.tabs().next().unwrap();
     super::BridgedAgent {
         id: "a1".to_owned(),
@@ -295,7 +296,18 @@ fn an_agents_report_asks_the_source_of_an_extension_observing_agents() {
     let start = Instant::now();
     assert_eq!(model.schedule_engine_jobs_at(&home, &sender, start), 1);
 
-    let agent = the_agent(&model);
+    let agent = the_agent(&mut model);
+    let project = model.projects.get(&root).cloned().expect("its project");
+    model
+        .remembered
+        .declared
+        .extensions
+        .get_mut(&identity())
+        .expect("hosted")
+        .record = Some(Some(uze_application::ExtensionConsent {
+        enabled_in: [project].into(),
+        ..Default::default()
+    }));
     model.see_agents(vec![agent]);
     assert_eq!(
         model.extension_watch().journals,
@@ -325,10 +337,48 @@ fn an_agents_report_asks_the_source_of_an_extension_observing_agents() {
     );
 
     let mut blind = hosting(&root, compiled(None, vec![finished]));
-    let agent = the_agent(&blind);
+    let agent = the_agent(&mut blind);
     blind.see_agents(vec![agent]);
     assert!(
         blind.extension_watch().journals.is_empty(),
         "no journal is read for an extension without agent:observe"
+    );
+}
+
+#[test]
+fn an_observer_not_enabled_in_the_agents_project_sees_nothing_of_it() {
+    let root = PathBuf::from("/repo");
+    let finished = EventName::Agent(uze_contract::AgentEvent::TurnFinished);
+    let mut observing = compiled(None, vec![finished]);
+    observing.manifest.wants = vec![uze_contract::Grant::AgentObserve];
+    let mut model = hosting(&root, observing);
+    model
+        .remembered
+        .declared
+        .extensions
+        .get_mut(&identity())
+        .expect("hosted")
+        .per_project = true;
+    let agent = the_agent(&mut model);
+    model.see_agents(vec![agent]);
+    assert!(
+        model.extension_watch().journals.is_empty(),
+        "allowed nowhere, it observes no one and no journal is read for it"
+    );
+    let project = model.projects.get(&root).cloned().expect("its project");
+    model
+        .remembered
+        .declared
+        .extensions
+        .get_mut(&identity())
+        .expect("hosted")
+        .record = Some(Some(uze_application::ExtensionConsent {
+        enabled_in: [project].into(),
+        ..Default::default()
+    }));
+    assert_eq!(
+        model.extension_watch().journals,
+        [("a1".to_owned(), None)],
+        "enabled in its project, it does"
     );
 }
