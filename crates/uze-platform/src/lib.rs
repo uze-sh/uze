@@ -8,6 +8,7 @@
 //! that cannot answer says *unknown*, never *no*.
 
 pub mod clock;
+pub mod confine;
 pub mod cpu;
 pub mod desktop;
 pub mod endpoint;
