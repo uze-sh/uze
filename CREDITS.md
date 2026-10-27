@@ -138,7 +138,7 @@ accepts, which is why the table sums to more than the number of crates.
 
 | Licence | Crates |
 | --- | --- |
-| Apache License 2.0 (`Apache-2.0`) | 225 |
+| Apache License 2.0 (`Apache-2.0`) | 228 |
 | MIT License (`MIT`) | 82 |
 | Unicode License v3 (`Unicode-3.0`) | 19 |
 | Creative Commons Zero v1.0 Universal (`CC0-1.0`) | 1 |
@@ -223,6 +223,8 @@ accepts, which is why the table sums to more than the number of crates.
 | `dyn-clone` | 1.0.20 | MIT OR Apache-2.0 |
 | `either` | 1.18.0 | MIT OR Apache-2.0 |
 | `encode_unicode` | 1.0.0 | Apache-2.0 OR MIT |
+| `enumflags2` | 0.7.12 | MIT OR Apache-2.0 |
+| `enumflags2_derive` | 0.7.12 | MIT OR Apache-2.0 |
 | `equivalent` | 1.0.2 | Apache-2.0 OR MIT |
 | `errno` | 0.3.14 | MIT OR Apache-2.0 |
 | `fancy-regex` | 0.16.2 | MIT |
@@ -277,6 +279,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `junction` | 1.4.2 | MIT |
 | `kasuari` | 0.4.12 | MIT OR Apache-2.0 |
 | `kdl` | 6.7.1 | Apache-2.0 |
+| `landlock` | 0.4.7 | MIT OR Apache-2.0 |
 | `lazy_static` | 1.5.0 | MIT OR Apache-2.0 |
 | `libc` | 0.2.191 | MIT OR Apache-2.0 |
 | `libm` | 0.2.16 | MIT |
@@ -667,7 +670,7 @@ accepts, which is why the table sums to more than the number of crates.
       same "printed page" as the copyright notice for easier
       identification within third-party archives.
 
-   Copyright 2021 Jacob Pratt
+   Copyright 2020 Mickaël Salaün
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
