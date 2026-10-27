@@ -1,14 +1,14 @@
 ## 1. Hygiene
 
-- [ ] 1.1 Release notes render through `shared::markdown` (umbrella 2.1)
-- [ ] 1.2 A chart given non-numeric data draws a notice, tested (2.5)
-- [ ] 1.3 `Clean`: display cells by `unicode-width`, sanitizing `Deserialize`, `view::Span` built only from clean text, and the architecture test (3.3b, 6.6)
-- [ ] 1.4 The check refuses a bare-letter key on an agent action (8.2)
+- [x] 1.1 Release notes render through `shared::markdown` (umbrella 2.1)
+- [x] 1.2 A chart given non-numeric data draws a notice, tested (2.5)
+- [x] 1.3 `Clean`: display cells by `unicode-width`, sanitizing `Deserialize`, `view::Span` built only from clean text, and the architecture test (3.3b, 6.6)
+- [x] 1.4 The check refuses a bare-letter key on an agent action (8.2)
 
 ## 2. Schema and reference
 
-- [ ] 2.1 JSON Schema of the manifest and compose wire via `schemars` behind a feature, `docs/extensions/schema.json`, worked examples per slot and feed, a drift test (3.5, 19.1)
-- [ ] 2.2 The protocol and catalog reference page, linked to the schema (11.3)
+- [x] 2.1 JSON Schema of the manifest and compose wire via `schemars` behind a feature, `docs/extensions/schema.json`, worked examples per slot and feed, a drift test (3.5, 19.1)
+- [x] 2.2 The protocol and catalog reference page, linked to the schema (11.3)
 
 ## 3. Input in views
 
