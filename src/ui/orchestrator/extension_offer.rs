@@ -20,6 +20,34 @@ pub(super) struct ExtensionOfferDialog {
     pub(super) named: String,
     pub(super) offer: ExtensionReport,
     pub(super) on_allow: bool,
+    /// Asking about its programs, the step after its other grants.
+    pub(super) programs_step: bool,
+}
+
+impl ExtensionOfferDialog {
+    /// Whether allowing asks for consent rather than only enabling.
+    fn consents(&self) -> bool {
+        self.offer.condition != ExtensionCondition::NeedsEnabling
+    }
+
+    /// The grants asked about on the first step: every one but the
+    /// programs, which have a step of their own.
+    fn grants(&self) -> Vec<&String> {
+        let grants = if self.offer.condition == ExtensionCondition::Held {
+            &self.offer.new_grants
+        } else {
+            &self.offer.grants
+        };
+        grants
+            .iter()
+            .filter(|grant| !grant.starts_with("exec:"))
+            .collect()
+    }
+
+    /// Whether allowing this step still owes the programs' step.
+    fn owes_programs(&self) -> bool {
+        self.consents() && !self.programs_step && !self.offer.programs.is_empty()
+    }
 }
 
 /// What answering did: enabled, or the offer put away, or why neither.
@@ -70,12 +98,16 @@ impl WorkspaceModel {
         else {
             return;
         };
-        self.extension_offer = Some(ExtensionOfferDialog {
+        let mut dialog = ExtensionOfferDialog {
             named: self.project_named(&project),
             project,
             offer,
             on_allow: false,
-        });
+            programs_step: false,
+        };
+        // Nothing but programs to ask about: their step is the first.
+        dialog.programs_step = dialog.owes_programs() && dialog.grants().is_empty();
+        self.extension_offer = Some(dialog);
         self.dirty = true;
     }
 
@@ -85,8 +117,16 @@ impl WorkspaceModel {
         &mut self,
         allow: bool,
     ) -> Option<(PathBuf, ExtensionReport, bool)> {
-        let dialog = self.extension_offer.take()?;
         self.dirty = true;
+        if allow
+            && let Some(open) = self.extension_offer.as_mut()
+            && open.owes_programs()
+        {
+            open.programs_step = true;
+            open.on_allow = false;
+            return None;
+        }
+        let dialog = self.extension_offer.take()?;
         if let Some(offers) = self.remembered.extension_offers.get_mut(&dialog.project) {
             offers.retain(|offer| offer.identity() != dialog.offer.identity());
         }
@@ -185,7 +225,29 @@ pub(super) fn render_extension_offer(
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
     let offer = &open.offer;
-    let consent = offer.condition != ExtensionCondition::NeedsEnabling;
+    let consent = open.consents();
+    if open.programs_step {
+        let confined = offer.confined.unwrap_or(false);
+        let title = if confined {
+            "Allow these programs to run, confined?"
+        } else {
+            "Allow these programs to run as you?"
+        };
+        return render_offer_dialog(
+            frame,
+            area,
+            open,
+            if confined {
+                Tone::Caution
+            } else {
+                Tone::Danger
+            },
+            title,
+            crate::ui::overlay::programs_lines(&offer.programs, confined),
+            "Allow and enable",
+            hits,
+        );
+    }
     let mut body = vec![match offer.condition {
         ExtensionCondition::Held => {
             "Its update wants more than you allowed. Nothing of it runs until you allow it:"
@@ -201,11 +263,7 @@ pub(super) fn render_extension_offer(
             open.named
         ),
     }];
-    let grants = if offer.condition == ExtensionCondition::Held {
-        &offer.new_grants
-    } else {
-        &offer.grants
-    };
+    let grants = open.grants();
     if grants.is_empty() {
         body.push("nothing beyond drawing what its script answers".to_owned());
     }
@@ -214,21 +272,46 @@ pub(super) fn render_extension_offer(
             .iter()
             .map(|grant| format!("{grant} · {}", uze_application::grant_meaning(grant))),
     );
-    crate::ui::widget::scrim::render(frame, area);
     let title = format!("Enable {} in {}?", offer.name, open.named);
+    render_offer_dialog(
+        frame,
+        area,
+        open,
+        Tone::Caution,
+        &title,
+        body,
+        if consent {
+            "Allow and enable"
+        } else {
+            "Enable"
+        },
+        hits,
+    );
+}
+
+/// One step of the offer, drawn as every dialog here is, with its answers
+/// registered before everything it covers.
+#[allow(clippy::too_many_arguments)]
+fn render_offer_dialog(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    open: &ExtensionOfferDialog,
+    tone: Tone,
+    title: &str,
+    body: Vec<String>,
+    confirm: &str,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) {
+    crate::ui::widget::scrim::render(frame, area);
     let answers = dialog::render(
         frame,
         area,
         &Dialog {
-            tone: Tone::Caution,
-            title: &title,
-            subject: Some(Line::from(offer.attribution())),
+            tone,
+            title,
+            subject: Some(Line::from(open.offer.attribution())),
             body,
-            confirm: Some(if consent {
-                "Allow and enable"
-            } else {
-                "Enable"
-            }),
+            confirm: Some(confirm),
             focus: Some(if open.on_allow { 1 } else { CANCEL }),
             field: None,
         },

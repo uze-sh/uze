@@ -289,6 +289,7 @@ impl TuiModel {
             }
             Action::EnableExtension => self.switch_selected_extension(true),
             Action::DisableExtension => self.switch_selected_extension(false),
+            Action::ResolvePrograms => self.resolve_selected_programs(),
             Action::AddMarketplace => {
                 self.overlay = Overlay::AddMarketplace(String::new());
                 Intent::None

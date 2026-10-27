@@ -156,10 +156,27 @@ pub(crate) fn render_doctor(report: &DoctorReport) -> String {
             format!("{} {}", progress::error_icon(), progress::label("blocked"))
         }
     };
+    // What an extension's program reaches here: confined, or the
+    // operator's own reach, said before anything of it runs.
+    let confinement = &report.program_confinement;
+    let programs = if confinement.confined {
+        format!(
+            "{} {}",
+            progress::success_icon(),
+            progress::label(&confinement.summary)
+        )
+    } else {
+        format!(
+            "{} {}",
+            progress::warning_icon(),
+            progress::label(format!("run as you: {}", confinement.summary))
+        )
+    };
     let mut text = progress::aligned_rows(vec![
         vec![progress::label("home"), progress::path(&report.uze_home)],
         vec![progress::label("store"), store],
         vec![progress::label("plugins"), report.plugins.len().to_string()],
+        vec![progress::label("programs"), programs],
     ]);
     text.push_str("\n\n");
     // One row per agent: what it runs, whether it is set up, and how much

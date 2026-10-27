@@ -231,14 +231,21 @@ pub fn declared_extension_offers(
     } else {
         ActionOffer::unavailable(Action::DisableExtension, "not enabled in this project")
     };
-    vec![
+    // Programs were pinned when it was allowed; one installed since, or
+    // moved, is found again only when the operator asks.
+    let resolve = (!standing.programs.is_empty()
+        && !matches!(standing.condition, Condition::NeedsConsent))
+    .then(|| ActionOffer::available(Action::ResolvePrograms));
+    let mut offers = vec![
         enable,
         disable,
         ActionOffer::unavailable(
             Action::InstallPlugin,
             "it comes with its plugin; there is nothing to install",
         ),
-    ]
+    ];
+    offers.extend(resolve);
+    offers
 }
 
 /// What can be done to one line of the Keys screen. A free function for

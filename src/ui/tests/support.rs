@@ -98,6 +98,7 @@ pub(super) fn model_with_data() -> TuiModel {
         seen_at: None,
     }];
     model.remembered.doctor = Some(DoctorReport {
+        program_confinement: Default::default(),
         uze_home: PathBuf::from("/home/uze"),
         store: StoreHealth::Ready,
         plugins: model.remembered.plugins.clone(),

@@ -202,6 +202,8 @@ actions! {
         "Disable",
         "Take the selected extension out of the workspace: its keys, its buttons and \
          its entries in the index";
+    ResolvePrograms => "resolve-programs", false,
+        "Resolve again", "Find the selected extension's programs again on this machine";
 
     // --- Management, things done to a project ---------------------------
     InstallProjectEnvironment => "install-project-environment", false,

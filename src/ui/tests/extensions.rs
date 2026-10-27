@@ -526,3 +526,56 @@ fn enabling_with_no_project_in_front_says_where_it_is_enabled() {
     let screen = screen_of(&model);
     assert!(screen.contains("open an agent in one"), "{screen}");
 }
+
+/// A consented extension's drawer lists its programs where they were
+/// pinned, says whether they run confined, and offers to find a missing
+/// one again; its button asks what its index row does.
+#[test]
+fn the_drawer_lists_pinned_programs_and_resolves_them_again_on_a_click() {
+    let mut standing = standing(uze_application::ExtensionCondition::NeedsEnabling);
+    standing.grants.push("exec:nvidia-smi".to_owned());
+    standing.programs = vec![uze_application::ProgramPin {
+        name: "nvidia-smi".to_owned(),
+        path: None,
+        unresolved: Some("`nvidia-smi` not found".to_owned()),
+        runs_anything: false,
+        reads: vec!["/dev/dxg".to_owned()],
+    }];
+    standing.confined = Some(true);
+    let mut model = standing_in_a_project(standing);
+    let screen = screen_of(&model);
+    assert!(screen.contains("programs"), "{screen}");
+    assert!(
+        screen.contains("nvidia-smi · `nvidia-smi` not found"),
+        "{screen}"
+    );
+    assert!(screen.contains("reads /dev/dxg"), "{screen}");
+    assert!(screen.contains("confined: reads the checkout"), "{screen}");
+    assert!(screen.contains("Resolve again"), "{screen}");
+    let (_, hits) = super::support::drawn_at(&model, 220, 44);
+    let resolve = hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::ResolvePrograms))
+        .map(|(rect, _)| *rect)
+        .expect("Resolve again is a button");
+    model.hits = hits;
+    let clicked = model.apply_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: resolve.x,
+            row: resolve.y,
+            modifiers: KeyModifiers::NONE,
+        },
+        Rect::new(0, 0, 220, 44),
+    );
+    let expected = Intent::ResolvePrograms {
+        identity: declared(&[]).identity,
+        name: "GSD".to_owned(),
+    };
+    assert_eq!(clicked, expected);
+    assert_eq!(
+        model.resolve_selected_programs(),
+        expected,
+        "the click is the action"
+    );
+}

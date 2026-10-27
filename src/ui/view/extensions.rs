@@ -398,6 +398,44 @@ fn standing_lines(standing: &ExtensionReport, project: Option<&Path>) -> Vec<Lin
             ]));
         }
     }
+    if !standing.programs.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(super::section_label("programs"));
+        for program in &standing.programs {
+            let (found, token) = match &program.path {
+                Some(path) => (path.display().to_string(), Token::TextMuted),
+                None => (
+                    program
+                        .unresolved
+                        .clone()
+                        .unwrap_or_else(|| "not found".to_owned()),
+                    Token::StateWarning,
+                ),
+            };
+            lines.push(Line::from(vec![
+                Span::styled(program.name.clone(), theme::fg(Token::TextPrimary)),
+                Span::styled(format!(" · {found}"), theme::fg(token)),
+            ]));
+            if !program.reads.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    format!("reads {}", program.reads.join(", ")),
+                    theme::fg(Token::TextMuted),
+                )));
+            }
+        }
+        let (confinement, token) = if standing.confined == Some(true) {
+            (
+                "confined: reads the checkout, writes only a scratch folder, no network",
+                Token::TextMuted,
+            )
+        } else {
+            (
+                "runs as you: this machine cannot confine programs",
+                Token::StateWarning,
+            )
+        };
+        lines.push(Line::from(Span::styled(confinement, theme::fg(token))));
+    }
     let mut said = Vec::new();
     if standing.condition == Condition::Held {
         said.push((

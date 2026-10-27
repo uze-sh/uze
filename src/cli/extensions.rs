@@ -60,6 +60,26 @@ pub(crate) fn render_extension_standings(
                 progress::label(format!("runs nothing here: {reason}"))
             )));
         }
+        for program in &report.programs {
+            rows.push(below(match &program.path {
+                Some(path) => format!("{} {}", program.name, progress::path(path)),
+                None => format!(
+                    "{} {} {}",
+                    progress::warning_icon(),
+                    program.name,
+                    progress::label(program.unresolved.as_deref().unwrap_or("not found"))
+                ),
+            }));
+        }
+        match report.confined {
+            Some(true) => rows.push(below(progress::label("its programs run confined"))),
+            Some(false) => rows.push(below(format!(
+                "{} {}",
+                progress::warning_icon(),
+                progress::label("its programs run as you: this machine cannot confine them")
+            ))),
+            None => {}
+        }
     }
     let mut text = progress::report_section("Extensions");
     text.push_str(&progress::aligned_rows(rows));

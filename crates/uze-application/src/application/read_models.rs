@@ -1378,6 +1378,28 @@ pub struct DoctorReport {
     pub ssh_missing: bool,
     /// What else about this machine keeps UZE from working as it should.
     pub machine_concerns: Vec<MachineConcern>,
+    /// Whether an extension's programs run confined on this machine.
+    pub program_confinement: ProgramConfinement,
+}
+
+/// Whether this machine confines the programs extensions run, and how,
+/// right by right.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct ProgramConfinement {
+    pub confined: bool,
+    /// `confined by Landlock ABI 7 and seccomp`, or why not.
+    pub summary: String,
+}
+
+impl ProgramConfinement {
+    /// This machine's, now.
+    pub fn of_this_machine() -> Self {
+        let availability = uze_platform::confine::availability();
+        Self {
+            confined: availability.is_available(),
+            summary: availability.summary(),
+        }
+    }
 }
 
 /// One thing about the machine a person should know (see

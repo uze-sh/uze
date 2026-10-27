@@ -460,6 +460,20 @@ fn extension_grants_body(
 /// Each program an extension runs, where it was found, and what running
 /// it means on this machine: the second step of allowing an extension.
 fn programs_body(step: &crate::ui::model::ProgramsStep) -> Vec<String> {
+    programs_lines(&step.programs, step.confined)
+}
+
+/// [`programs_body`] for the programs `programs`, confined or not: what
+/// every consent step for programs says, on the Extensions screen and in
+/// the workspace's offer alike.
+pub(crate) fn programs_lines(
+    programs: &[uze_application::ProgramPin],
+    confined: bool,
+) -> Vec<String> {
+    let step = crate::ui::model::ProgramsStep {
+        programs: programs.to_vec(),
+        confined,
+    };
     let mut body = vec![if step.confined {
         "Each runs confined: it reads this checkout and its own files, writes only a scratch \
          folder UZE removes, and reaches no network."

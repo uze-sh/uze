@@ -46,9 +46,9 @@
 
 ## 8. Surfaces
 
-- [ ] 8.1 The read model: the machine's availability per right, and per extension its pinned programs, "confined" or "runs as you", missing programs
-- [ ] 8.2 The Extensions screen: confinement in the drawer, pinned paths, "Resolve again"; the consent dialog's program step (design-system checklist)
-- [ ] 8.3 `uze doctor` and `uze status` lines for confinement (parent 5.5)
+- [x] 8.1 The read model: the machine's availability per right, and per extension its pinned programs, "confined" or "runs as you", missing programs
+- [x] 8.2 The Extensions screen: confinement in the drawer, pinned paths, "Resolve again"; the consent dialog's program step (design-system checklist)
+- [x] 8.3 `uze doctor` and `uze status` lines for confinement (parent 5.5)
 
 ## 9. Proof and docs
 

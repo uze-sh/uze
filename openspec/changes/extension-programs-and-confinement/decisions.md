@@ -329,3 +329,33 @@
 - decided:  Left as it is: a source that reads its store is a meter refreshed by `every` or an event, and both ask with `Refresh`, which runs again. Only a plain reopen within the session is served from memory.
 - rejected: Keying by the store's digest: every patch would be a new question for every source of the extension.
 - blast:    A store-reading source opened twice without a refresh shows its first answer.
+
+## D34 — The workspace's offer asks about programs on a step of its own, too
+
+- status:   pending
+- task:     8.2
+- commit:
+- trigger:  Change 4's offer dialog (the "Review" toast) consents and enables from the workspace itself, beside the Extensions screen's dialog; D22 only covered the screen and `uze install`.
+- decided:  `ExtensionOfferDialog` carries `programs_step`: allowing the grants of an extension with programs turns the dialog into the programs step (same title, body and tone as the screen's), focus back on Cancel; only allowing that answers the offer. An offer whose grants are all programs opens on that step. The body is one function, `overlay::programs_lines`, used by both.
+- rejected: Sending the operator from the offer to the Extensions screen for programs: two places to answer one question.
+- blast:    `src/ui/orchestrator/extension_offer.rs`.
+
+## D35 — "Resolve again" is an offer of its own, with no key
+
+- status:   pending
+- task:     8.2
+- commit:
+- trigger:  D6 puts "Resolve again" on the Extensions screen without saying whether it is a key.
+- decided:  `Action::ResolvePrograms` ("Resolve again"), offered on a declared extension with programs that was consented to, as a drawer button and an index row, with no default chord (it is rare: after installing a program). It calls `Extensions::resolve_again` off the frame and says "<name>'s programs are found" or "<name> still misses gh". The drawer's "programs" section lists each pin (or why not), the devices it reads and "confined" or "runs as you".
+- rejected: Resolving on every open of the screen: a program that appears in `PATH` would be pinned without the operator seeing it.
+- blast:    `uze-keys` action, `offers::declared_extension_offers`, `worker::resolve_programs`.
+
+## D36 — `uze doctor` gives programs a row; `uze status` lists each extension's pins
+
+- status:   pending
+- task:     8.3
+- commit:
+- trigger:  The spec asks `uze doctor`, `uze status` and the Extensions screen to say whether the machine confines.
+- decided:  `DoctorReport.program_confinement { confined, summary }` and a `programs` row beside home, store and plugins (`✓ confined by Landlock ABI 7 and seccomp`, or `! run as you: …`), a row and not a warning, since it is a property of the machine. `uze status` adds, under an extension with programs, one row per program (`nvidia-smi /usr/lib/wsl/lib/nvidia-smi`, or `! gh not found`) and "its programs run confined" or "run as you".
+- rejected: A doctor warning on every machine without confinement: it would warn on every Windows machine whether or not any extension runs a program.
+- blast:    `read_models::ProgramConfinement`, `src/cli/status.rs`, `src/cli/extensions.rs`.

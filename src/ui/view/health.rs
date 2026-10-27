@@ -144,6 +144,7 @@ mod tests {
     fn overview_alerts_classify_conflicts_as_high_and_missing_as_low() {
         use uze_application::application::{ManagedStateSummary, PackageManagedState};
         let doctor = DoctorReport {
+            program_confinement: Default::default(),
             uze_home: PathBuf::from("/home"),
             store: uze_application::application::StoreHealth::Ready,
             plugins: Vec::new(),

@@ -63,6 +63,11 @@ pub(crate) enum Intent {
     /// Consent to a declared extension, enable it in a project, or disable
     /// it there: the operator's answer on the Extensions screen.
     ExtensionHere(super::model::ExtensionHere),
+    /// Pin a declared extension's programs again, where they are now.
+    ResolvePrograms {
+        identity: uze_application::ExtensionIdentity,
+        name: String,
+    },
     /// Read the themes and the glyph sets the Settings screen chooses
     /// from. Sent on arriving there rather than per frame, so the list
     /// cannot change under the cursor between two frames.
@@ -135,6 +140,7 @@ impl Intent {
             Self::SelectChime(_) => "select_chime",
             Self::SwitchExtension { .. } => "switch_extension",
             Self::ExtensionHere(_) => "extension_here",
+            Self::ResolvePrograms { .. } => "resolve_programs",
             Self::LoadSettings => "load_settings",
             Self::SelectTheme(_) => "select_theme",
             Self::Refresh => "refresh",
@@ -280,6 +286,12 @@ pub(crate) fn dispatch(
             spawn_mutation(Mutation::asked(model, doing, home, sender), move |app| {
                 extension_here(app, &here)
             });
+        }
+        Intent::ResolvePrograms { identity, name } => {
+            spawn_mutation(
+                Mutation::asked(model, format!("Finding {name}'s programs…"), home, sender),
+                move |app| resolve_programs(app, &identity, &name),
+            );
         }
         Intent::LoadSettings => load_settings(home, model),
         Intent::PersistKeymap => persist_keymap(home, model),
@@ -1594,6 +1606,29 @@ fn extension_here(app: &UzeApplication, here: &super::model::ExtensionHere) -> R
     Ok(message)
 }
 
+/// Pins a declared extension's programs where they are found now, and
+/// says what was found and what still is not.
+fn resolve_programs(
+    app: &UzeApplication,
+    identity: &uze_application::ExtensionIdentity,
+    name: &str,
+) -> Result<String> {
+    let pins = app
+        .extensions()
+        .resolve_again(identity, crate::asker::asker())?;
+    crate::ui::extension_switch::plugins_changed();
+    let missing: Vec<&str> = pins
+        .iter()
+        .filter(|pin| pin.path.is_none())
+        .map(|pin| pin.name.as_str())
+        .collect();
+    Ok(if missing.is_empty() {
+        format!("{name}'s programs are found")
+    } else {
+        format!("{name} still misses {}", missing.join(", "))
+    })
+}
+
 fn select_theme(home: &UzeHome, id: &str) -> std::result::Result<(), String> {
     let application = tui_application(home.clone()).map_err(|error| error.to_string())?;
     crate::theme::select(&application, home, id)
@@ -1747,6 +1782,7 @@ mod tests {
     fn refreshed_with_repair() -> RefreshData {
         RefreshData {
             doctor: Some(DoctorReport {
+                program_confinement: Default::default(),
                 uze_home: PathBuf::from("/home/uze"),
                 store: StoreHealth::Ready,
                 plugins: Vec::new(),

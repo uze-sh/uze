@@ -247,6 +247,7 @@ impl Health<'_> {
                         if uze_core::acquisition::forge::reached_over_ssh(url))
                 })
                 && !uze_core::acquisition::git::ssh_available(),
+            program_confinement: super::read_models::ProgramConfinement::of_this_machine(),
             machine_concerns: uze_platform::machine::concerns()
                 .into_iter()
                 .map(|concern| MachineConcern {

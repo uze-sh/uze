@@ -198,6 +198,7 @@ fn attachment_health_is_never_unknown_after_a_refresh() {
     let mut model = model_with_plugins(&["one"]);
     model.route = Route::Plugins;
     model.remembered.doctor = Some(DoctorReport {
+        program_confinement: Default::default(),
         uze_home: PathBuf::from("/home"),
         store: uze_application::application::StoreHealth::Ready,
         plugins: vec![plugin("one")],

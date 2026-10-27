@@ -30,9 +30,7 @@ pub struct StoreOf<'a> {
 
 impl StoreOf<'_> {
     fn path(&self, home: &UzeHome) -> PathBuf {
-        let project = self
-            .project
-            .map(uze_core::harness_runtime::project_id_for);
+        let project = self.project.map(uze_core::harness_runtime::project_id_for);
         home.extension_store_path(self.plugin, self.id, project.as_deref())
     }
 }

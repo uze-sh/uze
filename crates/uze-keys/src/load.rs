@@ -693,6 +693,8 @@ mod tests {
                 // Enter switches an extension whichever way it is not.
                 "enable-extension",
                 "disable-extension",
+                // Rare: after installing a program an extension wants.
+                "resolve-programs",
                 "install-project-environment",
                 // Rare, and project-wide rather than about the harness the
                 // keyboard is on: the index lists both on that screen.

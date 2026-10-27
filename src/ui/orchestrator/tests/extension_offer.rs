@@ -236,3 +236,51 @@ fn a_client_started_in_an_agents_pane_cannot_enable_an_extension() {
         uze_application::ExtensionState::NeedsConsent { .. }
     ));
 }
+
+/// An offer of an extension that runs programs asks about them on a step
+/// of its own once its other grants are allowed, and only allowing that
+/// step answers the offer.
+#[test]
+fn an_offer_asks_about_programs_on_their_own_step() {
+    let world = World::new("offer-programs");
+    let mut offers = world.offers();
+    offers[0].grants.push("exec:nvidia-smi".to_owned());
+    offers[0].programs = vec![uze_application::ProgramPin {
+        name: "nvidia-smi".to_owned(),
+        path: Some(PathBuf::from("/usr/lib/wsl/lib/nvidia-smi")),
+        unresolved: None,
+        runs_anything: false,
+        reads: vec!["/dev/dxg".to_owned()],
+    }];
+    offers[0].confined = Some(true);
+    let mut driven = driven(WorkspaceModel::default(), &world.home).on_a_roomy_terminal();
+    driven
+        .attach
+        .model
+        .extensions_offered(world.project.clone(), offers);
+    driven.attach.model.review_extensions();
+    let grants = frame_rows(&mut driven.attach.model).join("\n");
+    assert!(grants.contains("Enable GSD in"), "{grants}");
+    assert!(
+        !grants.contains("exec:nvidia-smi"),
+        "programs wait: {grants}"
+    );
+    driven.attach.model.answer_extension_offer(true);
+    let programs = frame_rows(&mut driven.attach.model).join("\n");
+    assert!(
+        driven.attach.model.extension_offer.is_some(),
+        "allowing the grants is not the answer yet"
+    );
+    assert!(
+        programs.contains("Allow these programs to run, confined?"),
+        "{programs}"
+    );
+    assert!(
+        programs.contains("nvidia-smi · /usr/lib/wsl/lib/nvidia-smi"),
+        "{programs}"
+    );
+    assert!(
+        driven.attach.model.answer_extension_offer(true).is_some(),
+        "allowing the programs answers the offer"
+    );
+}

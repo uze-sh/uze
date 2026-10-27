@@ -1428,6 +1428,26 @@ impl TuiModel {
         }
     }
 
+    /// Finding the selected extension's programs again, when that is
+    /// offered: after the operator installed one it wants.
+    pub(crate) fn resolve_selected_programs(&mut self) -> crate::ui::worker::Intent {
+        use crate::ui::worker::Intent;
+        let Some(extension) = self.selected_extension() else {
+            return Intent::None;
+        };
+        let offered = self
+            .extension_offers(extension)
+            .into_iter()
+            .any(|offer| offer.is_available() && offer.action == uze_keys::Action::ResolvePrograms);
+        let Some(standing) = self.standing_in_a_project(extension).filter(|_| offered) else {
+            return Intent::None;
+        };
+        Intent::ResolvePrograms {
+            identity: standing.identity(),
+            name: extension.name().to_owned(),
+        }
+    }
+
     pub(crate) fn extension_visible_indices(&self) -> Vec<usize> {
         let needle = self
             .remembered
