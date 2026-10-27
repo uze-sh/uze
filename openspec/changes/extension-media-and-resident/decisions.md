@@ -189,3 +189,43 @@
 - decided:  `store()` answers what the store held when the session started; what its calls keep is written at once, and read by `store()` from the next session on. A resident script keeps what it is playing on `this`.
 - rejected: Reading the store on every call: a file read per call at thirty a second.
 - blast:    `uze-application::extensions::runner::start_resident`.
+
+## D40 — The gallery is one plugin, `media`, with three extensions
+
+- status:   pending
+- task:     4.1
+- commit:
+- trigger:  The task leaves one plugin or three to the implementer.
+- decided:  `tests/_fixtures/canonical/media` carries `pets`, `screen` and `snake`, as `bridge` carries the bridge's: one plugin the fixture gate (`every_fixture_plugins_extensions_check_clean`) checks, one marketplace entry a test stages. The journey stages only `snake`'s files, inline, since a container mounts only `journeys/` and a PNG cannot be written as YAML text.
+- rejected: Three plugins: three manifests and three gate entries for no difference a reader of the gallery sees.
+- blast:    `tests/_fixtures/canonical/media/`, `tests/packages/authoring.rs`.
+
+## D41 — `screen`'s program is real, writes its PNG with the shell's own `printf`, and is proven confined
+
+- status:   pending
+- task:     4.1
+- commit:
+- trigger:  "a packaged `sh` program writing a PNG, or a script-side fixture if programs can't run in tests".
+- decided:  `bin/shot` is a `#!/bin/sh` program (`exec:sh`) standing in for `adb exec-out screencap -p`: it writes a 36×64 home screen, embedded as octal escapes, into `$TMPDIR/shot.png` with the `printf` builtin alone, so nothing else needs a grant or the confinement's leave, and answers `{device, screen}`. The lifecycle suite installs `media`, consents, enables and asks the source through the confining runner, then reads `scratch:shot.png` back through `ExtensionRunner::media` (`the_screen_program_leaves_a_picture_its_views_read_from_scratch`, skipped where the machine does not confine, as the GPU meter's is). Its `.test.kdl` gives the source a fixture; a test reads no picture, so the image draws its `alt`.
+- rejected: A script-side fixture: it would prove nothing of a run's scratch being kept for its views (D11).
+- blast:    `media/extensions/screen/`, `tests/lifecycle/extension_programs.rs`.
+
+## D42 — `snake` plays the same game every time, and its test draws the frame its script answers
+
+- status:   pending
+- task:     4.1
+- commit:
+- trigger:  A plugin check runs no script and keeps no session, and a journey has to score without guessing where the food is.
+- decided:  The board is 20×10, two columns a square; the snake waits for an arrow, its first meal sits three squares above its head, so the first `up` scores, and the next come from a fixed linear congruential sequence. A tick is 150 ms (`timer`, asked again from `event` while it plays); a new best is written to the store from the `event` that made it (D22), and `start` reads the last best (D29). `crates/uze-script/tests/media_fixtures.rs` plays it through `Resident` (the first frame, a score, the wall, a replay, 200 ticks of turns), and holds `fixtures/start.json`, the tree the `.test.kdl` gives its source, equal to what the script's first `render` answers.
+- rejected: Food from `clock()`: a journey could not know where to steer, and a test could not hold the fixture to the script.
+- blast:    `media/extensions/snake/`, `crates/uze-script/tests/media_fixtures.rs`.
+
+## D43 — `pets`' band draws every agent's pet, each playing its own agent's state
+
+- status:   pending
+- task:     4.1
+- commit:
+- trigger:  "a band over each agent's pane, a `Sprite` whose state follows the agent's state": a band is one tree drawn over every pane, and nothing binds it to the agent of the pane it stands over.
+- decided:  The band lists the `agents` source with `each`, a `Sprite "pet" state="{state}"` beside each agent's label, so every pane shows every agent's pet; the sheet's states are the agents' (`ready`, `working`, `done`, the fallback `ready`). The store keeps the pet's name, how often it was fed and when (a `feed` action's script), and a `kennel` section shows it `content` for ten minutes after a meal and `hungry` after, two more states of the same sheet. Its 64×32 sheet holds eight 16-pixel frames (291 bytes).
+- rejected: A per-pane binding (`context.agent` in a band): new engine behaviour the gallery would invent for itself; it is a change of the band's, if the gallery shows it is wanted.
+- blast:    `media/extensions/pets/`.

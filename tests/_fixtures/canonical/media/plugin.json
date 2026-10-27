@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "media",
+  "version": "1.0.0",
+  "description": "The media and resident reference extensions: a pet over each agent moving as it works, a device's screen a program takes, and snake, played with the arrow keys."
+}

@@ -1,0 +1,27 @@
+test "the band draws a pet for each agent, beside the agent it follows" {
+    surface "pack"
+    given "crew" fixture="fixtures/agents.json"
+    size 60 2
+    expect-text "fix/branch-naming"
+    expect-text "docs/skill"
+    expect-text "working"
+    snapshot "pack"
+}
+
+test "no agent open says so" {
+    surface "pack"
+    given "crew" json="[]"
+    size 60 2
+    expect-text "No agents"
+}
+
+test "the kennel names the pet and feeds it" {
+    surface "kennel"
+    given "kennel" fixture="fixtures/kennel.json"
+    size 32 5
+    expect-text "Pixel"
+    expect-text "content, fed 3 times"
+    press-button "Feed"
+    expect-action "feed"
+    snapshot "kennel"
+}

@@ -1,0 +1,11 @@
+// Every agent's pet, moving as its agent works, with the agent it follows.
+Row gap=2 {
+    Row gap=1 each="." {
+        Sprite "pet" state="{state}" height=2
+        Stack {
+            Text "{label}" truncate=#true
+            Text "{state}" role="muted"
+        }
+    }
+    Text "No agents" role="faint" unless="."
+}

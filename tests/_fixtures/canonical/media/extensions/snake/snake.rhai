@@ -1,0 +1,182 @@
+// The `board` source, resident: the game lives on `this` between calls.
+// The board is 20 by 10; the snake starts heading right, waits for an
+// arrow, and moves one square a tick. The first meal sits straight above
+// its head, so the first `up` always scores; the next ones come from a
+// fixed sequence, so a game replays the same way.
+
+fn width() { 20 }
+fn height() { 10 }
+fn tick() { 150 }
+
+fn start(context) {
+    let kept = store();
+    this.best = kept.best ?? 0;
+    this.seed = 7;
+    this.reset();
+    true
+}
+
+fn reset() {
+    this.body = [#{ x: 3, y: 5 }, #{ x: 4, y: 5 }, #{ x: 5, y: 5 }];
+    this.heading = "right";
+    this.turn = "right";
+    this.food = #{ x: 5, y: 2 };
+    this.score = 0;
+    this.state = "waiting";
+}
+
+fn direction(key) {
+    switch key {
+        "up" | "w" | "k" => "up",
+        "down" | "s" | "j" => "down",
+        "left" | "a" | "h" => "left",
+        "right" | "d" | "l" => "right",
+        _ => ()
+    }
+}
+
+fn opposite(one, other) {
+    (one == "up" && other == "down") || (one == "down" && other == "up")
+        || (one == "left" && other == "right") || (one == "right" && other == "left")
+}
+
+fn input(input) {
+    if input.key == () {
+        return false;
+    }
+    let wanted = direction(input.key);
+    if this.state == "over" {
+        if input.key == "space" || input.key == "enter" {
+            this.reset();
+            return true;
+        }
+        return false;
+    }
+    if wanted == () || opposite(wanted, this.heading) {
+        return false;
+    }
+    this.turn = wanted;
+    if this.state == "waiting" {
+        this.state = "playing";
+        timer(tick());
+        return true;
+    }
+    false
+}
+
+fn event(event) {
+    if event.name != "timer" || this.state != "playing" {
+        return false;
+    }
+    let ate = this.step();
+    if this.state == "playing" {
+        timer(tick());
+    }
+    if ate && this.score > this.best {
+        this.best = this.score;
+        return #{ redraw: true, store: #{ best: this.best } };
+    }
+    true
+}
+
+// One square forward: false when it ran into a wall or itself, which
+// ends the game, and whether it ate otherwise.
+fn step() {
+    this.heading = this.turn;
+    let head = this.body[this.body.len() - 1];
+    let next = #{ x: head.x, y: head.y };
+    switch this.heading {
+        "up" => { next.y -= 1; }
+        "down" => { next.y += 1; }
+        "left" => { next.x -= 1; }
+        _ => { next.x += 1; }
+    }
+    let outside = next.x < 0 || next.y < 0 || next.x >= width() || next.y >= height();
+    if outside || this.covers(next) {
+        this.state = "over";
+        return false;
+    }
+    this.body.push(next);
+    if next.x == this.food.x && next.y == this.food.y {
+        this.score += 1;
+        this.place_food();
+        return true;
+    }
+    this.body.remove(0);
+    false
+}
+
+fn covers(square) {
+    for part in this.body {
+        if part.x == square.x && part.y == square.y {
+            return true;
+        }
+    }
+    false
+}
+
+// The next meal: the next square of a fixed sequence the snake is not on.
+fn place_food() {
+    let tries = 0;
+    loop {
+        this.seed = (this.seed * 1103515245 + 12345) % 2147483648;
+        let square = #{ x: this.seed % width(), y: (this.seed / 32) % height() };
+        tries += 1;
+        if !this.covers(square) || tries > 64 {
+            this.food = square;
+            return;
+        }
+    }
+}
+
+fn said() {
+    switch this.state {
+        "waiting" => "an arrow starts · esc lets go",
+        "over" => "game over · space plays again",
+        _ => "arrows steer · esc lets go",
+    }
+}
+
+fn cell(ch, role) { #{ ch: ch, role: role } }
+
+fn render(size) {
+    let rows = [];
+    let edge = [cell("┌", "faint")];
+    for x in 0..width() { edge.push(cell("─", "faint")); edge.push(cell("─", "faint")); }
+    edge.push(cell("┐", "faint"));
+    rows.push(edge);
+    let head = this.body[this.body.len() - 1];
+    for y in 0..height() {
+        let row = [cell("│", "faint")];
+        for x in 0..width() {
+            let square = #{ x: x, y: y };
+            if x == head.x && y == head.y {
+                let role = if this.state == "over" { "danger" } else { "accent" };
+                row.push(cell("█", role)); row.push(cell("█", role));
+            } else if this.covers(square) {
+                row.push(cell("█", "success")); row.push(cell("█", "success"));
+            } else if x == this.food.x && y == this.food.y {
+                row.push(cell("●", "warning")); row.push(" ");
+            } else {
+                row.push(" "); row.push(" ");
+            }
+        }
+        row.push(cell("│", "faint"));
+        rows.push(row);
+    }
+    let foot = [cell("└", "faint")];
+    for x in 0..width() { foot.push(cell("─", "faint")); foot.push(cell("─", "faint")); }
+    foot.push(cell("┘", "faint"));
+    rows.push(foot);
+    #{
+        type: "Stack",
+        children: [
+            #{ type: "Row", props: #{ gap: 2 }, children: [
+                #{ type: "Text", args: [`score ${this.score}`], props: #{ strong: true } },
+                #{ type: "Text", args: [`best ${this.best}`], props: #{ role: "muted" } },
+                #{ type: "Text", args: [this.said()], props: #{ role: "faint" } },
+            ] },
+            #{ type: "Cells", props: #{ rows: rows } },
+        ],
+    }
+}

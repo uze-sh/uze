@@ -1,0 +1,22 @@
+// A device's screen in the sidebar, taken by a packaged program every half
+// minute and opened at full size in a card over the frame. The program
+// writes the picture into its scratch; the views name it `scratch:shot.png`,
+// and nothing outside the extension or that scratch is ever read.
+protocol 1
+id "screen"
+name "Screen"
+description "A device's screen, taken every half minute"
+
+wants "exec:sh"
+
+surface "shot" slot="section" view="shot.kdl" source="screen" title="Screen"
+surface "full" slot="overlay" view="full.kdl" source="screen" title="Screen"
+
+source "screen" {
+    run "./bin/shot" timeout="5s"
+    every "30s"
+}
+
+action "enlarge" label="Full size" on="shot" {
+    open "full"
+}

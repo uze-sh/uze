@@ -1,0 +1,28 @@
+{
+  "type": "Stack",
+  "children": [
+    {
+      "type": "Row",
+      "props": {"gap": 2},
+      "children": [
+        {"type": "Text", "args": ["score 0"], "props": {"strong": true}},
+        {"type": "Text", "args": ["best 4"], "props": {"role": "muted"}},
+        {"type": "Text", "args": ["an arrow starts · esc lets go"], "props": {"role": "faint"}}
+      ]
+    },
+    {"type": "Cells", "props": {"rows": [
+      [{"ch":"┌","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"┐","role":"faint"}],
+      [{"ch":"│","role":"faint"}," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ",{"ch":"│","role":"faint"}],
+      [{"ch":"│","role":"faint"}," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ",{"ch":"│","role":"faint"}],
+      [{"ch":"│","role":"faint"}," "," "," "," "," "," "," "," "," "," ",{"ch":"●","role":"warning"}," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ",{"ch":"│","role":"faint"}],
+      [{"ch":"│","role":"faint"}," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ",{"ch":"│","role":"faint"}],
+      [{"ch":"│","role":"faint"}," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ",{"ch":"│","role":"faint"}],
+      [{"ch":"│","role":"faint"}," "," "," "," "," "," ",{"ch":"█","role":"success"},{"ch":"█","role":"success"},{"ch":"█","role":"success"},{"ch":"█","role":"success"},{"ch":"█","role":"accent"},{"ch":"█","role":"accent"}," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ",{"ch":"│","role":"faint"}],
+      [{"ch":"│","role":"faint"}," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ",{"ch":"│","role":"faint"}],
+      [{"ch":"│","role":"faint"}," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ",{"ch":"│","role":"faint"}],
+      [{"ch":"│","role":"faint"}," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ",{"ch":"│","role":"faint"}],
+      [{"ch":"│","role":"faint"}," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ",{"ch":"│","role":"faint"}],
+      [{"ch":"└","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"─","role":"faint"},{"ch":"┘","role":"faint"}]
+    ]}}
+  ]
+}

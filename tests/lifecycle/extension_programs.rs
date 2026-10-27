@@ -469,3 +469,116 @@ fn the_gpu_meter_reads_the_real_gpu_confined_and_keeps_its_history() {
     );
     let _ = fs::remove_dir_all(&checkout);
 }
+
+/// The `media` reference plugin, installed from a marketplace nobody
+/// links, and the identity of its extension `id`.
+fn media_installed(env: &TestEnvironment, id: &str) -> (UzeApplication, ExtensionIdentity) {
+    let market = env.root().join("market");
+    let manifest = serde_json::json!({
+        "name": MARKET,
+        "plugins": [{ "name": "media", "source": "./plugins/media", "description": "Media." }],
+    });
+    uze_testkit::marketplace::stage(
+        &market,
+        &manifest.to_string(),
+        &[(
+            "media".to_owned(),
+            uze_testkit::fixtures::canonical("media"),
+        )],
+    );
+    let app = UzeApplication::new(UzeHome::at(&env.uze_home), Vec::new());
+    app.marketplace()
+        .add(&market.display().to_string())
+        .unwrap();
+    app.marketplace()
+        .install_plugin(&format!("media@{MARKET}"), &AlwaysTrust)
+        .unwrap();
+    let identity = app
+        .extensions()
+        .installed()
+        .into_iter()
+        .find(|extension| extension.identity.id == id)
+        .unwrap_or_else(|| panic!("{id} is installed"))
+        .identity;
+    (app, identity)
+}
+
+/// The width and height a PNG's header says.
+fn png_size(bytes: &[u8]) -> (u32, u32) {
+    assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"), "a PNG");
+    let side = |at: usize| u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap());
+    (side(16), side(20))
+}
+
+/// `pets`' sprite sheet is read from the installed extension's files, by
+/// its name, as the declared engine asks for it.
+#[test]
+fn the_pets_sheet_is_read_from_the_extension_it_ships_in() {
+    let env = TestEnvironment::isolated();
+    let (app, pets) = media_installed(&env, "pets");
+    let sheet = ExtensionRunner::new()
+        .media(&app.extensions(), &pets, "pet.png")
+        .unwrap();
+    assert_eq!(png_size(&sheet), (64, 32), "eight 16-pixel frames");
+    assert!(
+        ExtensionRunner::new()
+            .media(&app.extensions(), &pets, "scratch:shot.png")
+            .is_err(),
+        "no program of its own ran, so its scratch holds nothing"
+    );
+}
+
+/// `screen`'s packaged `sh` program, allowed and enabled, runs confined,
+/// answers which device it took, and leaves its picture where the views'
+/// `scratch:shot.png` reads it (task 4.1). Skipped, saying why, where the
+/// machine does not confine.
+#[test]
+fn the_screen_program_leaves_a_picture_its_views_read_from_scratch() {
+    let Some(runner) = confining() else { return };
+    let env = TestEnvironment::isolated();
+    let (app, screen) = media_installed(&env, "screen");
+    let pins = app.extensions().programs_to_pin(&screen).unwrap();
+    assert!(pins[0].path.is_some(), "sh is pinned: {pins:?}");
+    let checkout = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("extension-programs-screen-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&checkout);
+    fs::create_dir_all(&checkout).unwrap();
+    fs::write(checkout.join("README.md"), "# screen\n").unwrap();
+    uze_testkit::git::commit_everything_in(&checkout);
+    app.extensions().consent(&screen, Asker::Operator).unwrap();
+    app.extensions()
+        .enable(
+            &screen,
+            &uze_application::project_root_of(&checkout),
+            Asker::Operator,
+        )
+        .unwrap();
+    assert!(
+        runner
+            .media(&app.extensions(), &screen, "scratch:shot.png")
+            .is_err(),
+        "nothing is there before the program ran"
+    );
+    let answer = runner.answer(
+        &app.extensions(),
+        &Question {
+            identity: screen.clone(),
+            declaration: "screen".to_owned(),
+            asking: Asking::Refresh,
+            input: serde_json::json!({}),
+            checkout: Some(checkout.clone()),
+        },
+    );
+    match answer {
+        Answer::Answered { envelope, .. } => assert_eq!(
+            envelope.data,
+            serde_json::json!({ "device": "emulator-5554", "screen": "home" })
+        ),
+        other => panic!("the program did not answer: {other:?}"),
+    }
+    let shot = runner
+        .media(&app.extensions(), &screen, "scratch:shot.png")
+        .unwrap();
+    assert_eq!(png_size(&shot), (36, 64), "the phone's screen it wrote");
+    let _ = fs::remove_dir_all(&checkout);
+}

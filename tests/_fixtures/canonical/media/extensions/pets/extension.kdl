@@ -1,0 +1,37 @@
+// A pet over each agent's pane, playing the agent's state from a sheet of
+// frames the extension ships; its name and when it was last fed kept in
+// the store, and shown, with a button that feeds it, in a sidebar section.
+protocol 1
+id "pets"
+name "Pets"
+description "A pet for every agent, moving as the agent works"
+
+wants "agent:observe" "store"
+
+// Eight 16-pixel frames in four columns: two at rest, four hopping, two
+// content. Each agent state plays its own; one the sheet does not name
+// plays `ready`.
+sprite "pet" sheet="pet.png" frame="16x16" columns=4 fallback="ready" {
+    state "ready" frames="0-1" fps=2
+    state "working" frames="2-5" fps=8
+    state "done" frames="6-7" fps=2 loop=#false
+    state "content" frames="6-7" fps=2
+    state "hungry" frames="0-1" fps=1
+}
+
+surface "pack" slot="band" rows=2 place="bottom" view="pack.kdl" source="crew" title="Pets"
+surface "kennel" slot="section" view="kennel.kdl" source="kennel" title="Pet"
+
+source "crew" {
+    agents
+    refresh-on "agent.turn.started"
+    refresh-on "agent.turn.finished"
+}
+
+source "kennel" {
+    script "kennel.rhai"
+}
+
+action "feed" label="Feed" on="kennel" {
+    script "feed.rhai"
+}

@@ -18,7 +18,7 @@
 
 ## 4. Gallery
 
-- [ ] 4.1 Fixtures `pets` (band, sprite by agent state, store), `screen` (section, image on `every` from a program's scratch, `open` to an overlay), `snake` (view, resident, cells, raw keys, timer, store), each with tests
+- [x] 4.1 Fixtures `pets` (band, sprite by agent state, store), `screen` (section, image on `every` from a program's scratch, `open` to an overlay), `snake` (view, resident, cells, raw keys, timer, store), each with tests
 
 ## 5. Proof and docs
 

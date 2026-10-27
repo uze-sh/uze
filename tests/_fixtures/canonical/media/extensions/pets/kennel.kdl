@@ -1,0 +1,9 @@
+// The pet, its name and its mood, and the button that feeds it.
+Row gap=1 {
+    Sprite "pet" state="{mood}" height=2
+    Stack grow=#true {
+        Text "{name}" strong=#true
+        Text "{said}" role="muted"
+    }
+    Button "Feed" action="feed"
+}
