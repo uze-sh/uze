@@ -53,7 +53,8 @@ pub(crate) struct Rehearsal {
 /// What `--run` ran, by extension id.
 pub(crate) type Rehearsals = BTreeMap<String, Vec<Rehearsal>>;
 
-/// Runs every script source of every extension that compiled against the
+/// Runs every script source, and every program source where this machine
+/// confines programs, of every extension that compiled against the
 /// checkout `checkout` sits in, and takes what each answered as that
 /// source's data in place of its fixture: what the views are bound to and
 /// what a test draws unless it gives the source data of its own. A script
@@ -71,9 +72,12 @@ pub(crate) fn rehearse_scripts(
             continue;
         };
         for source in &compiled.manifest.sources {
-            let SourceKind::Script(script) = &source.kind else {
-                continue;
+            let (script, program) = match &source.kind {
+                SourceKind::Script(script) => (script.clone(), false),
+                SourceKind::Run(program) => (program.program().to_owned(), true),
+                SourceKind::Fixture(_) => continue,
             };
+            let script = &script;
             let Some(answer) = runner.rehearse(
                 &app.extensions(),
                 &extension.dir,
@@ -97,6 +101,12 @@ pub(crate) fn rehearse_scripts(
                 }
                 Answer::Failed { reason, .. } => {
                     extension.errors.push(failed(reason));
+                    false
+                }
+                // A program a machine that confines none could not run is
+                // not the extension's fault: its recorded answers stand in.
+                Answer::Withheld { reason } if program => {
+                    extension.warnings.push(failed(reason));
                     false
                 }
                 Answer::Withheld { reason } => {
