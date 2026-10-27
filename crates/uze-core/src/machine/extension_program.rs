@@ -16,8 +16,8 @@ use std::ffi::OsString;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, ExitStatus, Stdio};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -29,6 +29,9 @@ pub const STDOUT_MAX: usize = 1 << 20;
 pub const STDERR_MAX: usize = 64 << 10;
 /// How much of standard error a failure quotes.
 pub const STDERR_TAIL: usize = 512;
+/// How long, once a program has ended, its streams are read for what a
+/// descendant outside its group still holds open.
+const PIPES_GRACE: Duration = Duration::from_secs(1);
 /// The exit code a refusal is answered with, as hooks use it.
 pub const REFUSED_EXIT: i32 = 3;
 /// The exit code the confinement helper leaves when it could not apply
@@ -347,11 +350,14 @@ pub fn run(run: &ProgramRun) -> ProgramOutcome {
             }
         }
     };
-    // What its descendants left holding the pipes is ended with them.
+    // What its descendants left holding the pipes is ended with them; one
+    // that left the group (or a run with nothing to keep it in one) is
+    // waited for only `PIPES_GRACE`, and what was read by then is the answer.
     tree.end_survivors();
-    let _ = writer.join();
-    let (stdout, stdout_over) = stdout.join().unwrap_or_default();
-    let (stderr, stderr_over) = stderr.join().unwrap_or_default();
+    let grace = Instant::now() + PIPES_GRACE;
+    let _ = join_by(writer, grace);
+    let (stdout, stdout_over) = stdout.collect(grace);
+    let (stderr, stderr_over) = stderr.collect(grace);
     let stderr = String::from_utf8_lossy(&stderr).into_owned();
     match ended {
         Ended::TimedOut => ProgramOutcome::TimedOut {
@@ -442,6 +448,38 @@ fn signal_of(status: ExitStatus) -> String {
     format!("it was ended ({status})")
 }
 
+/// Joins `handle` if it ends by `deadline`, else leaves it to end on its
+/// own, blocked on a pipe no one in the run holds any more.
+fn join_by<T>(handle: thread::JoinHandle<T>, deadline: Instant) -> Option<T> {
+    while !handle.is_finished() {
+        if Instant::now() >= deadline {
+            return None;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    handle.join().ok()
+}
+
+/// A stream read on a thread into a buffer the run can take whether or
+/// not the thread has ended.
+struct BoundedReader {
+    handle: thread::JoinHandle<()>,
+    read: Arc<Mutex<(Vec<u8>, bool)>>,
+}
+
+impl BoundedReader {
+    /// What was read, and whether the bound was passed, once the stream
+    /// closes or `deadline` passes, whichever is first.
+    fn collect(self, deadline: Instant) -> (Vec<u8>, bool) {
+        let _ = join_by(self.handle, deadline);
+        let mut read = self
+            .read
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        std::mem::take(&mut *read)
+    }
+}
+
 /// Reads `stream` on a thread, keeping at most `cap` bytes. Past it, the
 /// reader raises `flooded` and stops reading, so the run is ended instead
 /// of drained: the host never holds more than the bound, and a program
@@ -450,25 +488,29 @@ fn bounded_reader(
     mut stream: impl Read + Send + 'static,
     cap: usize,
     flooded: Arc<AtomicBool>,
-) -> thread::JoinHandle<(Vec<u8>, bool)> {
-    thread::spawn(move || {
-        let mut kept = Vec::new();
+) -> BoundedReader {
+    let read = Arc::new(Mutex::new((Vec::new(), false)));
+    let shared = read.clone();
+    let handle = thread::spawn(move || {
         let mut buffer = [0u8; 8192];
         loop {
             match stream.read(&mut buffer) {
-                Ok(0) => return (kept, false),
-                Ok(read) => {
-                    if kept.len() + read > cap {
+                Ok(0) => return,
+                Ok(count) => {
+                    let mut read = shared.lock().unwrap_or_else(|poison| poison.into_inner());
+                    if read.0.len() + count > cap {
+                        read.1 = true;
                         flooded.store(true, Ordering::Relaxed);
-                        return (kept, true);
+                        return;
                     }
-                    kept.extend_from_slice(&buffer[..read]);
+                    read.0.extend_from_slice(&buffer[..count]);
                 }
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-                Err(_) => return (kept, false),
+                Err(_) => return,
             }
         }
-    })
+    });
+    BoundedReader { handle, read }
 }
 
 // The tests run `/bin/sh` scripts, which only a Unix has.
@@ -551,6 +593,28 @@ mod tests {
             uze_platform::process::alive(child),
             Some(false),
             "the background child survived"
+        );
+    }
+
+    #[test]
+    fn a_descendant_that_left_the_group_holding_the_pipes_does_not_hold_the_run() {
+        if !Path::new("/usr/bin/setsid").exists() && !Path::new("/bin/setsid").exists() {
+            return;
+        }
+        let started = Instant::now();
+        assert_eq!(
+            sh(
+                "echo done; (setsid sleep 30 &); exit 0",
+                Duration::from_secs(10)
+            ),
+            ProgramOutcome::Answered {
+                stdout: b"done\n".to_vec()
+            }
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "it waited on the descendant: {:?}",
+            started.elapsed()
         );
     }
 

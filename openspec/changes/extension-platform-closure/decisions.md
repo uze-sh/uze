@@ -339,3 +339,13 @@
 - decided:  The three calls join the calls refused in every mode; `bind` stays allowed with network (a client may bind a local address, and Landlock denies a TCP bind where it can).
 - rejected: Refusing `bind` too: it would refuse an outgoing UDP socket bound before sending.
 - blast:    `uze-platform::confine::linux::seccomp`.
+
+## D122 — A run's streams are waited for one second after it ends
+
+- status:   pending
+- task:     review finding
+- commit:
+- trigger:  After the program ended, the stdin writer and both readers were joined with no deadline; a descendant that left the group (macOS, an unconfined run) holding the pipes kept `run` waiting as long as it lived.
+- decided:  After `end_survivors`, the writer and the readers are joined until a shared deadline one second away; a reader still blocked is left behind, and what it had read (kept in a buffer the run shares with it) is the run's output, judged by the exit status as before. A reader left behind ends when the descendant closes the pipe.
+- rejected: Closing the pipes from the host to wake the readers: a blocked `read` on Unix is not woken by closing another handle, and the readers own their ends.
+- blast:    `uze-core::machine::extension_program`.
