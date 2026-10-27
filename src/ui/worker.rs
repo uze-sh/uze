@@ -1622,7 +1622,11 @@ fn extension_here(app: &UzeApplication, here: &super::model::ExtensionHere) -> R
     let extensions = app.extensions();
     let asker = crate::asker::asker();
     if here.consent {
-        extensions.consent(&here.identity, asker)?;
+        extensions.consent(
+            &here.identity,
+            here.shown.as_deref().unwrap_or_default(),
+            asker,
+        )?;
     }
     let project = here.project.file_name().map_or_else(
         || here.project.display().to_string(),

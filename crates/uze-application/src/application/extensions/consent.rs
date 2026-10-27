@@ -384,12 +384,20 @@ impl Extensions<'_> {
     }
 
     /// Records that the operator accepted what `identity` wants, for the
-    /// files it has now. Refused from an agent's pane, and for an
-    /// extension with nothing to consent to.
+    /// files whose digest they were shown (`shown`, an
+    /// [`ExtensionReport`](super::ExtensionReport)'s `digest`). Refused
+    /// from an agent's pane, for an extension with nothing to consent to,
+    /// and when its files changed while the operator was asked: what they
+    /// accepted is not what would run.
     #[tracing::instrument(name = "extensions.consent", skip_all, fields(extension = %identity), err)]
-    pub fn consent(&self, identity: &Identity, asker: Asker) -> Result<Consented> {
+    pub fn consent(&self, identity: &Identity, shown: &str, asker: Asker) -> Result<Consented> {
         refuse_an_agent(asker, "consent to")?;
         let load = self.load_identity(identity)?;
+        if load.digest != shown {
+            return Err(refusal(format!(
+                "{identity} changed while you were asked; ask again"
+            )));
+        }
         let manifest = &load.compiled.manifest;
         if !needs_consent(manifest) {
             return Err(refusal(format!(
@@ -415,6 +423,12 @@ impl Extensions<'_> {
             digest: recorded.accepted_digest,
             accepted_at: recorded.accepted_at,
         })
+    }
+
+    /// The digest of `identity`'s files now: what a surface that shows the
+    /// extension from here hands back to [`Self::consent`].
+    pub fn digest(&self, identity: &Identity) -> Result<String> {
+        Ok(self.load_identity(identity)?.digest)
     }
 
     /// The programs `identity` wants, each as it would be pinned now: what

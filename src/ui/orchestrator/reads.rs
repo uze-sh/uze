@@ -323,7 +323,11 @@ pub(super) fn spawn_extension_offer_answer(
                     extensions.enable(&identity, &project, asker).map(drop)
                 } else {
                     extensions
-                        .consent(&identity, asker)
+                        .consent(
+                            &identity,
+                            offer.digest.as_deref().unwrap_or_default(),
+                            asker,
+                        )
                         .and_then(|_| extensions.enable(&identity, &project, asker))
                         .map(drop)
                 };

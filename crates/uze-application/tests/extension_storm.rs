@@ -95,7 +95,11 @@ fn fifteen_bands(scratch: &Path, checkout: &Path) -> (UzeApplication, Vec<Extens
                 id: "gsd-band".to_owned(),
             };
             app.extensions()
-                .consent(&identity, Asker::Operator)
+                .consent(
+                    &identity,
+                    &app.extensions().digest(&identity).unwrap(),
+                    Asker::Operator,
+                )
                 .unwrap();
             app.extensions()
                 .enable(&identity, &project, Asker::Operator)

@@ -127,7 +127,11 @@ impl World {
             .expect("the probe is installed")
             .identity;
         app.extensions()
-            .consent(&probe, Asker::Operator)
+            .consent(
+                &probe,
+                &app.extensions().digest(&probe).unwrap(),
+                Asker::Operator,
+            )
             .expect("the operator consents");
         // Enabled in the project the runner finds the checkout in, as the
         // workspace enables it.
@@ -462,7 +466,13 @@ fn the_gpu_meter_reads_the_real_gpu_confined_and_keeps_its_history() {
     fs::create_dir_all(&checkout).unwrap();
     fs::write(checkout.join("README.md"), "# gpu\n").unwrap();
     uze_testkit::git::commit_everything_in(&checkout);
-    app.extensions().consent(&meter, Asker::Operator).unwrap();
+    app.extensions()
+        .consent(
+            &meter,
+            &app.extensions().digest(&meter).unwrap(),
+            Asker::Operator,
+        )
+        .unwrap();
     app.extensions()
         .enable(
             &meter,
@@ -580,7 +590,13 @@ fn the_screen_program_leaves_a_picture_its_views_read_from_scratch() {
     fs::create_dir_all(&checkout).unwrap();
     fs::write(checkout.join("README.md"), "# screen\n").unwrap();
     uze_testkit::git::commit_everything_in(&checkout);
-    app.extensions().consent(&screen, Asker::Operator).unwrap();
+    app.extensions()
+        .consent(
+            &screen,
+            &app.extensions().digest(&screen).unwrap(),
+            Asker::Operator,
+        )
+        .unwrap();
     app.extensions()
         .enable(
             &screen,

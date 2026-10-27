@@ -568,6 +568,9 @@ pub(crate) struct ExtensionHere {
     pub(crate) enable: bool,
     /// Also turn on the machine's switch, which was off.
     pub(crate) switch_on: bool,
+    /// The digest of the files the operator was shown, which consent
+    /// covers and nothing else.
+    pub(crate) shown: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1471,6 +1474,7 @@ impl TuiModel {
             consent: false,
             enable: enabled,
             switch_on: enabled && !switched_on,
+            shown: standing.digest.clone(),
         };
         match standing.condition {
             Condition::NeedsConsent | Condition::Held if enabled => {

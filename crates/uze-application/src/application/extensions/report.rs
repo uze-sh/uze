@@ -103,6 +103,11 @@ pub struct ExtensionReport {
     /// declares any: what enabling it costs every agent of the project.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub band_rows: Option<u8>,
+    /// The digest of the files this report was read from, when they
+    /// compile: what a surface showing it hands to
+    /// [`Extensions::consent`], so consent covers what was shown.
+    #[serde(skip)]
+    pub digest: Option<String>,
 }
 
 /// One preference as the Extensions screen lists and edits it.
@@ -333,6 +338,7 @@ impl Extensions<'_> {
                     confined: None,
                     preferences: Vec::new(),
                     band_rows: None,
+                    digest: None,
                 };
                 let load = match self.load(&installed) {
                     Ok(load) => load,
@@ -349,6 +355,7 @@ impl Extensions<'_> {
                     report.name = Clean::label(&manifest.name).into_string();
                 }
                 report.band_rows = band_rows(manifest);
+                report.digest = Some(load.digest.clone());
                 report.grants = manifest
                     .wants
                     .iter()
@@ -548,7 +555,11 @@ mod tests {
         world
             .app
             .extensions()
-            .consent(&world.band(), Asker::Operator)
+            .consent(
+                &world.band(),
+                &world.app.extensions().digest(&world.band()).unwrap(),
+                Asker::Operator,
+            )
             .unwrap();
         assert_eq!(
             report_of(&world, Some(&world.checkout)).condition,

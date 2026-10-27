@@ -86,7 +86,15 @@ fn a_fixtures_only_extension_needs_no_consent() {
     let here = project(&env, "a");
 
     assert_eq!(state(&app, &panel, &here), ExtensionState::FixturesOnly);
-    assert!(app.extensions().consent(&panel, Asker::Operator).is_err());
+    assert!(
+        app.extensions()
+            .consent(
+                &panel,
+                &app.extensions().digest(&panel).unwrap(),
+                Asker::Operator
+            )
+            .is_err()
+    );
     assert!(
         app.extensions()
             .enable(&panel, &here, Asker::Operator)
@@ -114,7 +122,11 @@ fn a_script_runs_only_once_consented_to_and_enabled_in_its_project() {
 
     let consented = app
         .extensions()
-        .consent(&band, Asker::Operator)
+        .consent(
+            &band,
+            &app.extensions().digest(&band).unwrap(),
+            Asker::Operator,
+        )
         .expect("the operator consents");
     assert_eq!(consented.grants, [Grant::ReadCheckout].into());
     assert!(consented.digest.starts_with("sha256:"));
@@ -147,7 +159,11 @@ fn an_agents_pane_can_neither_consent_nor_enable() {
 
     let refused = app
         .extensions()
-        .consent(&band, Asker::AgentPane)
+        .consent(
+            &band,
+            &app.extensions().digest(&band).unwrap(),
+            Asker::AgentPane,
+        )
         .expect_err("an agent cannot consent");
     assert!(refused.to_string().contains("an agent cannot"), "{refused}");
     assert!(matches!(
@@ -155,7 +171,13 @@ fn an_agents_pane_can_neither_consent_nor_enable() {
         ExtensionState::NeedsConsent { .. }
     ));
 
-    app.extensions().consent(&band, Asker::Operator).unwrap();
+    app.extensions()
+        .consent(
+            &band,
+            &app.extensions().digest(&band).unwrap(),
+            Asker::Operator,
+        )
+        .unwrap();
     assert!(
         app.extensions()
             .enable(&band, &here, Asker::AgentPane)
@@ -171,7 +193,13 @@ fn an_update_is_held_by_a_new_grant_and_applied_under_the_same_or_fewer() {
     let band = the(&app, "gsd-band").identity;
     let here = project(&env, "a");
     let home = UzeHome::at(&env.uze_home);
-    app.extensions().consent(&band, Asker::Operator).unwrap();
+    app.extensions()
+        .consent(
+            &band,
+            &app.extensions().digest(&band).unwrap(),
+            Asker::Operator,
+        )
+        .unwrap();
     app.extensions()
         .enable(&band, &here, Asker::Operator)
         .unwrap();
@@ -212,7 +240,13 @@ fn an_update_is_held_by_a_new_grant_and_applied_under_the_same_or_fewer() {
     );
     assert_eq!(digest(), same_grants, "nothing was applied");
 
-    app.extensions().consent(&band, Asker::Operator).unwrap();
+    app.extensions()
+        .consent(
+            &band,
+            &app.extensions().digest(&band).unwrap(),
+            Asker::Operator,
+        )
+        .unwrap();
     assert_eq!(
         state(&app, &band, &here),
         ExtensionState::Enabled,
@@ -248,7 +282,13 @@ fn an_update_that_widens_what_a_program_reads_is_held() {
     let band = the(&app, "gsd-band").identity;
     let here = project(&env, "a");
     sh_reads(&band_dir, "\"/etc/gsd\"");
-    app.extensions().consent(&band, Asker::Operator).unwrap();
+    app.extensions()
+        .consent(
+            &band,
+            &app.extensions().digest(&band).unwrap(),
+            Asker::Operator,
+        )
+        .unwrap();
     app.extensions()
         .enable(&band, &here, Asker::Operator)
         .unwrap();
@@ -316,7 +356,13 @@ fn a_packaged_program_is_listed_for_consent_and_an_update_adding_one_is_held() {
     );
     assert!(report.confined.is_some(), "and says how it would run");
 
-    app.extensions().consent(&band, Asker::Operator).unwrap();
+    app.extensions()
+        .consent(
+            &band,
+            &app.extensions().digest(&band).unwrap(),
+            Asker::Operator,
+        )
+        .unwrap();
     app.extensions()
         .enable(&band, &here, Asker::Operator)
         .unwrap();
@@ -343,12 +389,49 @@ fn a_packaged_program_is_listed_for_consent_and_an_update_adding_one_is_held() {
 }
 
 #[test]
+fn consent_to_files_that_changed_while_the_operator_was_asked_is_refused() {
+    let env = TestEnvironment::isolated();
+    let (app, band_dir) = installed_from_a_linked_marketplace(&env);
+    let band = the(&app, "gsd-band").identity;
+    let shown = app
+        .extensions()
+        .reports(None)
+        .into_iter()
+        .find(|report| report.id == "gsd-band")
+        .and_then(|report| report.digest)
+        .expect("a report carries the digest it was read from");
+
+    wants(&band_dir, "\"read:checkout\" \"clipboard\"");
+    let refused = app
+        .extensions()
+        .consent(&band, &shown, Asker::Operator)
+        .expect_err("what the operator saw is not what would run");
+    assert!(
+        refused
+            .to_string()
+            .contains("changed while you were asked; ask again"),
+        "{refused}"
+    );
+    assert_eq!(
+        app.extensions().consent_record(&band),
+        None,
+        "nothing was accepted"
+    );
+}
+
+#[test]
 fn removing_the_plugin_forgets_its_extensions() {
     let env = TestEnvironment::isolated();
     let (app, _) = installed_from_a_linked_marketplace(&env);
     let band = the(&app, "gsd-band").identity;
     let home = UzeHome::at(&env.uze_home);
-    app.extensions().consent(&band, Asker::Operator).unwrap();
+    app.extensions()
+        .consent(
+            &band,
+            &app.extensions().digest(&band).unwrap(),
+            Asker::Operator,
+        )
+        .unwrap();
     assert!(uze_workspace::extensions::consent::consent(&home, &consent_key(&band)).is_some());
 
     let removed = app.plugins().remove("gsd").expect("the plugin is removed");

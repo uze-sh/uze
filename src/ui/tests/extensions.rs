@@ -284,6 +284,7 @@ fn standing(condition: uze_application::ExtensionCondition) -> uze_application::
         confined: None,
         preferences: Vec::new(),
         band_rows: None,
+        digest: Some("sha256:shown".to_owned()),
     }
 }
 
@@ -312,6 +313,7 @@ fn here(consent: bool, enable: bool) -> Intent {
         consent,
         enable,
         switch_on: false,
+        shown: Some("sha256:shown".to_owned()),
     })
 }
 

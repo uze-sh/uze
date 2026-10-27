@@ -249,7 +249,13 @@ fn ask_about(
                 return Ok(());
             }
         }
-        extensions.consent(&identity, uze_application::Asker::Operator)?;
+        // What was shown above is what is accepted: a change since is
+        // refused, never accepted unseen.
+        extensions.consent(
+            &identity,
+            report.digest.as_deref().unwrap_or_default(),
+            uze_application::Asker::Operator,
+        )?;
     }
     let enable = progress::uninterrupted(|| {
         prompt::confirm(&format!("Enable it in {}?", progress::path(project)), true)

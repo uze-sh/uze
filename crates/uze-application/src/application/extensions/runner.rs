@@ -1176,7 +1176,13 @@ pub(super) mod tests {
 
         pub(crate) fn enabled(&self) {
             let extensions = self.app.extensions();
-            extensions.consent(&self.band(), Asker::Operator).unwrap();
+            extensions
+                .consent(
+                    &self.band(),
+                    &extensions.digest(&self.band()).unwrap(),
+                    Asker::Operator,
+                )
+                .unwrap();
             extensions
                 .enable(&self.band(), &self.checkout, Asker::Operator)
                 .unwrap();
@@ -1213,7 +1219,11 @@ pub(super) mod tests {
         world
             .app
             .extensions()
-            .consent(&world.band(), Asker::Operator)
+            .consent(
+                &world.band(),
+                &world.app.extensions().digest(&world.band()).unwrap(),
+                Asker::Operator,
+            )
             .unwrap();
         assert_eq!(
             withheld(world.ask(&runner, &question)),
@@ -1552,7 +1562,11 @@ pub(super) mod tests {
         world
             .app
             .extensions()
-            .consent(&world.band(), Asker::Operator)
+            .consent(
+                &world.band(),
+                &world.app.extensions().digest(&world.band()).unwrap(),
+                Asker::Operator,
+            )
             .unwrap();
         assert_eq!(
             data(world.ask(&runner, &question)),

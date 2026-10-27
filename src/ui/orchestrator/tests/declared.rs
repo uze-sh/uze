@@ -1918,7 +1918,11 @@ fn a_section_is_drawn_from_a_script_that_reads_the_checkout_once_enabled() {
     };
     let extensions = app.extensions();
     extensions
-        .consent(&identity, uze_application::Asker::Operator)
+        .consent(
+            &identity,
+            &extensions.digest(&identity).unwrap(),
+            uze_application::Asker::Operator,
+        )
         .unwrap();
     let installed: Vec<InstalledExtension> = model
         .remembered
@@ -2002,7 +2006,11 @@ fn a_section_asks_again_once_its_extension_is_enabled_or_disabled() {
     let project = uze_application::project_root_of(&checkout);
     let extensions = app.extensions();
     extensions
-        .consent(&identity, uze_application::Asker::Operator)
+        .consent(
+            &identity,
+            &extensions.digest(&identity).unwrap(),
+            uze_application::Asker::Operator,
+        )
         .unwrap();
     extensions
         .enable(&identity, &project, uze_application::Asker::Operator)
@@ -2060,7 +2068,11 @@ fn inspecting_the_linked_band(label: &str) -> (Driven<'static>, PathBuf, PathBuf
         id: "gsd-band".to_owned(),
     };
     app.extensions()
-        .consent(&identity, uze_application::Asker::Operator)
+        .consent(
+            &identity,
+            &app.extensions().digest(&identity).unwrap(),
+            uze_application::Asker::Operator,
+        )
         .unwrap();
     app.extensions()
         .enable(
