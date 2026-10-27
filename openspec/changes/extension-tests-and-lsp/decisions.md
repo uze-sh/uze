@@ -58,7 +58,7 @@
 - rejected: `lsp-types` (three new crates from one maintainer for typed shapes of six messages); hand-writing the framing too (rust-lang already maintains it).
 - blast:    Switching to `lsp-types` later means replacing the `json!` shapes with its structs, in one module.
 
-## D-hand — The validation by hand is driven by a script, on 2026-10-28
+## D7 — The validation by hand is driven by a script, on 2026-10-28
 
 - status:   pending
 - task:     6.1
