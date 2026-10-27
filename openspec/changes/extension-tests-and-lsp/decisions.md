@@ -57,3 +57,13 @@
 - decided:  `lsp-server` 0.10 for the framing and the initialize handshake; the six messages the server speaks (initialize's capabilities, open, change, close, publishDiagnostics, completion, hover) as `serde_json` values in `src/cli/lsp/`.
 - rejected: `lsp-types` (three new crates from one maintainer for typed shapes of six messages); hand-writing the framing too (rust-lang already maintains it).
 - blast:    Switching to `lsp-types` later means replacing the `json!` shapes with its structs, in one module.
+
+## D-hand — The validation by hand is driven by a script, on 2026-10-28
+
+- status:   pending
+- task:     6.1
+- commit:
+- trigger:  The task waits for the operator's validation by hand; the operator asked the run not to wait for them.
+- decided:  Done in an isolated home on a copy of `gpu`: a wrong `expect-text` fails the check and passes once fixed; changed fixture data makes three snapshots differ, `--update-snapshots` writes them (a test whose other expectation fails is not written until it passes), and the check is clean after. The language server is driven over stdio by a JSON-RPC client the way an editor speaks it: `initialize` advertises completion, hover and sync; a typo (`wantz`) gets "did you mean `wants`?" and a missing `exec:` grant, both cleared on the fix; hover on a grant explains it; completion lists the catalog's nodes; `shutdown`/`exit` end it with code 0. The operator's own editor is not exercised.
+- rejected: Leaving the task open: the run is unattended, and what an editor sends is the protocol, which the client sends.
+- blast:    None; the operator may still try it in their editor.

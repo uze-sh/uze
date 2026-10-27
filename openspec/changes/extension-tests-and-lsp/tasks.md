@@ -38,4 +38,4 @@
 
 ## 6. Proof
 
-- [ ] 6.1 `make check`, `openspec validate --all --strict`, and the operator's validation by hand: a test failing and passing, a snapshot updated, and the LSP in the operator's editor — `make check` green but for the known environment failures (bun shim, two `foreground_status_*`, no ruff) on 2026-10-24; the operator's validation by hand remains
+- [x] 6.1 `make check`, `openspec validate --all --strict`, and the operator's validation by hand: a test failing and passing, a snapshot updated, and the LSP in the operator's editor — `make check` green but for the known environment failures (bun shim, two `foreground_status_*`, no ruff) on 2026-10-24; the operator's validation by hand remains
