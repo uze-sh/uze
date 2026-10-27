@@ -273,6 +273,26 @@ pub(crate) enum AgentAction {
         #[command(subcommand)]
         action: AgentPluginAction,
     },
+    /// Say what this agent is doing, for the workspace to draw: a turn
+    /// started or finished, a tool called, an approval asked. Only for an
+    /// agent `uze workspace` launched; it never fails a harness's hook
+    Report {
+        /// One of session.started, turn.started, turn.finished,
+        /// tool.started, tool.finished, approval.asked, approval.resolved
+        event: String,
+        /// The tool called, for a tool event
+        #[arg(long)]
+        tool: Option<String>,
+        /// The path the tool worked on, when it has one
+        #[arg(long)]
+        path: Option<String>,
+        /// The harness's id for the call, pairing its start and end
+        #[arg(long)]
+        call: Option<String>,
+        /// How it ended: ok, error, denied
+        #[arg(long)]
+        outcome: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]

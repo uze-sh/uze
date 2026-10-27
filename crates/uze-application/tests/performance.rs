@@ -413,6 +413,23 @@ fn the_agent_surface_meets_the_budget() {
             })
             .ok()
     });
+    // Every hook of a harness runs it: refused here, by the same claim
+    // read a report takes before its one appended line.
+    world.within_budget("agent report", |app| {
+        app.workspace()
+            .report(
+                uze_workspace::conversation::Claim {
+                    id: "budget",
+                    key: "budget",
+                    cwd: &world.project,
+                },
+                uze_workspace::reports::Report {
+                    event: "turn.finished".to_owned(),
+                    ..Default::default()
+                },
+            )
+            .ok()
+    });
 }
 
 /// `uze agent memory` writes one small file under a lock and reads the

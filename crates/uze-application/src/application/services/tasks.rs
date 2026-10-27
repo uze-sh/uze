@@ -30,6 +30,7 @@ mod evaluation;
 mod naming;
 mod occupancy;
 mod placement;
+mod reporting;
 mod repository;
 mod switch;
 mod views;

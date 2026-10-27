@@ -29,6 +29,7 @@ pub mod landing;
 pub mod notifications;
 pub mod project_labels;
 pub mod prompt_history;
+pub mod reports;
 pub mod task;
 pub mod worktree;
 

@@ -253,6 +253,16 @@ impl UzeHome {
             .join(plugin)
     }
 
+    /// What the agent `agent` reported about itself through `uze agent
+    /// report`, newest last, bounded: generated, since a report is a claim
+    /// about now and losing it costs nothing.
+    pub fn agent_reports_path(&self, agent: &str) -> PathBuf {
+        self.runtime_dir()
+            .join("agents")
+            .join(agent)
+            .join("reports.jsonl")
+    }
+
     /// The scratch directory one program run of an extension may write,
     /// created before it and removed after it: generated, since losing it
     /// costs nothing, and named here so the run's `TMPDIR` is never the
@@ -895,6 +905,7 @@ mod tests {
             home.generated_attachments_dir("claude"),
             home.runtime_project_dir("abc"),
             home.extension_scratch_dir("1"),
+            home.agent_reports_path("abc"),
         ] {
             assert!(
                 rebuildable.iter().any(|tier| rebuilt.starts_with(tier)),

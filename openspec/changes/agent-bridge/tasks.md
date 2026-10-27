@@ -1,8 +1,8 @@
 ## 1. Reporting
 
-- [ ] 1.1 `UzeHome::agent_reports_path(id)` (generated tier) and `uze-workspace`'s journal: append bounded (256 lines, 64 KiB), read from an offset (B1)
-- [ ] 1.2 `uze agent report <event> [--tool --path --call --outcome]`, verified by the launch claim, exit 0 always; classified in `command_performance.rs`; hidden like every `uze agent` verb (parent 14.1)
-- [ ] 1.3 ADR-056 amended with the commit that creates `uze agent report` (R-A1)
+- [x] 1.1 `UzeHome::agent_reports_path(id)` (generated tier) and `uze-workspace`'s journal: append bounded (256 lines, 64 KiB), read from an offset (B1)
+- [x] 1.2 `uze agent report <event> [--tool --path --call --outcome]`, verified by the launch claim, exit 0 always; classified in `command_performance.rs`; hidden like every `uze agent` verb (parent 14.1)
+- [x] 1.3 ADR-056 amended with the commit that creates `uze agent report` (R-A1)
 
 ## 2. Delivery per launch
 

@@ -14,6 +14,47 @@ pub(crate) fn run_agent(app: &UzeApplication, action: AgentAction) -> Result<()>
         AgentAction::Context { action } => run_context(app, action),
         AgentAction::Market { action } => run_agent_market(app, action),
         AgentAction::Plugin { action } => run_agent_plugin(app, action),
+        AgentAction::Report {
+            event,
+            tool,
+            path,
+            call,
+            outcome,
+        } => {
+            report_about_self(
+                app,
+                uze_application::AgentReport {
+                    event,
+                    at: u64::try_from(uze_platform::clock::since_epoch().as_millis())
+                        .unwrap_or(u64::MAX),
+                    tool,
+                    path,
+                    call,
+                    outcome,
+                },
+            );
+            Ok(())
+        }
+    }
+}
+
+/// Appends a report about this agent, saying on stderr why one was not
+/// taken and exiting well either way: a harness runs this from its hooks,
+/// and a turn is never held up by what UZE could not record.
+fn report_about_self(app: &UzeApplication, report: uze_application::AgentReport) {
+    let taken = launched_agent(uze_application::UzeError::AgentWork).and_then(|(id, key)| {
+        let cwd = cwd()?;
+        app.workspace().report(
+            uze_application::Claim {
+                id: &id,
+                key: &key,
+                cwd: &cwd,
+            },
+            report,
+        )
+    });
+    if let Err(error) = taken {
+        eprintln!("uze agent report: {error}");
     }
 }
 
