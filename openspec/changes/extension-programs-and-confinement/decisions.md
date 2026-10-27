@@ -109,3 +109,83 @@
 - decided:  `LANG`, `LANGUAGE`, `LC_*`, `TERM`, `COLORTERM`, `NO_COLOR`, `TZ`, `PATH`, `HOME`, `USER`, `LOGNAME` are inherited; `TMPDIR` is the scratch directory; each flat input is also `UZE_IN_<NAME>` (upper case, `-` as `_`); Git gets `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_TERMINAL_PROMPT=0` and `GIT_CONFIG_COUNT` pairs disarming `core.fsmonitor`, `core.hooksPath`, `core.sshCommand` and `credential.helper`, with `safe.directory` set to the checkout. Nothing else from UZE's environment reaches it.
 - rejected: Only `PATH` and `HOME`: CLIs that print dates or need a user name break for no gain, and none of these hold a credential.
 - blast:    A program that needs another variable cannot have it; a later change adds declared environment if a gallery entry needs it.
+
+## D12 — `landlock` 0.4.7 reviewed and taken
+
+- status:   pending
+- task:     2.1
+- commit:   2ab73594
+- trigger:  D6 names the crate and asks for the dependency review before it is taken.
+- decided:  Taken as a Linux-only target dependency of `uze-platform`. Publisher: one crates.io owner, `l0kod` (Mickaël Salaün, author and kernel maintainer of the Landlock LSM), repository `landlock-lsm/rust-landlock`. MIT OR Apache-2.0, `build = false`, no C. New in the lock: `landlock`, `enumflags2` 0.7.12, `enumflags2_derive` 0.7.12 (MIT OR Apache-2.0, no build script); `libc`, `thiserror` 2 and `syn` 2 were already there. `unsafe`: about 38 sites in `landlock` (the syscall wrappers) and about 20 in `enumflags2`. `cargo deny check` passes; `CREDITS.md` regenerated. `serde` with derive joins `uze-platform` for the helper's JSON argument.
+- rejected: Raw `landlock_*` syscalls over `libc`: the ruleset and ABI-compatibility logic is what the crate is for, and its publisher is the LSM's own maintainer.
+- blast:    Removing it means writing the ruleset by hand in `confine/linux.rs`.
+
+## D13 — Without seccomp the machine does not confine, whatever Landlock says
+
+- status:   pending
+- task:     2.2
+- commit:   a9350e58
+- trigger:  `Availability` is per right, but D6 promises no network and Landlock alone cannot refuse a Unix socket or `socket()` itself.
+- decided:  `Availability::of_linux` reports the machine unavailable when the seccomp probe fails, even with Landlock present, so the "runs as you" step applies. Landlock's ABI is probed with `landlock_create_ruleset(NULL, 0, VERSION)`, seccomp with `SECCOMP_GET_ACTION_AVAIL`.
+- rejected: Reporting Landlock alone as confinement: the consent screen would promise no network it could not keep.
+- blast:    `crates/uze-platform/src/confine.rs`.
+
+## D14 — Every filesystem right the ABI knows is handled, under `HardRequirement`
+
+- status:   pending
+- task:     2.3
+- commit:   a9350e58
+- trigger:  D5's "read, write, execute" leaves the exact Landlock rights per kind of path open.
+- decided:  `read` gets ReadFile and ReadDir; `read_execute` adds Execute; `write` adds WriteFile, Remove*, MakeDir, MakeReg, MakeFifo, MakeSym, Refer and Truncate (as the ABI has them), never Execute, MakeSock, MakeChar, MakeBlock or IoctlDev. A file grant (`/dev/null`) is trimmed to the file rights. A grant path that does not exist fails the run with 125, so the caller lists only paths that exist. TCP: without network, bind and connect are handled and no port is allowed; with network (change 8) only bind is handled. At ABI ≥ 6 abstract sockets and signals are scoped.
+- rejected: Skipping a missing path silently: a typo in a grant would be a grant nobody sees.
+- blast:    The runner filters optional system prefixes (`/nix/store`, `/snap`) to those present.
+
+## D15 — Signals below Landlock ABI 6 may reach positive pids; groups other than its own are refused
+
+- status:   pending
+- task:     2.3
+- commit:   a9350e58
+- trigger:  D6 limits signals to "the program's own group or itself" below ABI 6, but shells signal their children by positive pid, which a filter cannot tell from any other pid of the user.
+- decided:  Below ABI 6, `kill`, `tkill`, `tgkill`, `rt_sigqueueinfo` and `rt_tgsigqueueinfo` are allowed for targets ≥ 0 and for `-getpgrp()`; any other negative target, `-1` included, is EPERM. `pidfd_send_signal` is refused outright. At ABI ≥ 6, the default here, Landlock's signal scoping closes the positive-pid gap.
+- rejected: Refusing every positive pid: `sh` could not end its own background jobs.
+- blast:    On kernels before 6.12 a program can signal another process of the same user by pid; the consent screen's per-right line names "signal scoping" as unenforced there.
+
+## D16 — `setsid` and `setpgid` are refused, so no descendant leaves the group
+
+- status:   pending
+- task:     2.3
+- commit:   a9350e58
+- trigger:  D6 contains a fork bomb with `PR_SET_CHILD_SUBREAPER` in the helper, but the helper `execve`s into the program, and the runner kills by process group.
+- decided:  The seccomp filter refuses `setsid` and `setpgid` with EPERM. Every descendant stays in the group the runner created, and the runner's double group kill reaches all of them; no subreaper is set. The x32 ABI is refused too, since it shares x86-64's audit arch.
+- rejected: A subreaper helper that waits instead of `execve`ing: it doubles the processes per run and makes the program's exit code second-hand.
+- blast:    A program that daemonizes cannot; none an extension needs should.
+
+## D17 — The `__confine` helper is parsed before anything else in `main`
+
+- status:   pending
+- task:     2.5
+- commit:   26fa6cbb
+- trigger:  A hidden clap command runs after the self-update sweep, the shim check, `UzeHome` and telemetry, any of which would read or write state the confined program must not see the helper touch.
+- decided:  `main` checks for `__confine` first and hands over to `uze_platform::confine::enter`; on failure it prints `uze __confine: not confined: <reason>` and exits 125. The clap variant exists only for the help and the performance classification (`JustifiedSlow`).
+- rejected: Routing through clap's `run`.
+- blast:    `src/main.rs`, `src/cli/confine.rs`.
+
+## D18 — macOS denies `process-exec` outside `read_execute` and allows `file-read-metadata` everywhere
+
+- status:   pending
+- task:     2.4
+- commit:   a9350e58
+- trigger:  D6's profile sketch does not say whether `stat` outside the grants is allowed, and Landlock does not restrict it.
+- decided:  The generated profile allows `file-read-metadata` everywhere, as Landlock does, `process-exec` only beneath `read_execute`, fixed dyld and system read paths, and a small `mach-lookup` list. DNS, TLS and configd services arrive only with network. Paths that are not UTF-8 or not absolute are refused. If `sandbox-exec` itself fails, its own exit code reaches the runner rather than 125: a known gap, listed for the macOS CI job.
+- rejected: Denying metadata outside the grants: many tools `stat` their way up a tree and would fail where Linux lets them.
+- blast:    `crates/uze-platform/src/confine/seatbelt.rs`.
+
+## D19 — Rhai is highlighted with a grammar of UZE's own
+
+- status:   pending
+- task:     (operator's request, 2026-10-27)
+- commit:   8218145f
+- trigger:  The operator asked for Rhai highlighting beside KDL. The community grammars are TextMate grammars for Oniguruma, not Sublime syntaxes syntect loads with fancy-regex.
+- decided:  `crates/uze-extensions/grammars/Rhai.sublime-syntax`, with no `extends` and no class intersections. `.rhai` files and `rhai` fences resolve to it. Two fixed-length lookbehinds tell a closure's `|` and the unit `()` apart, and a double-quoted string ends at its line unless the line ends in `\`. Map keys are scoped like KDL properties. The requirement went into `extension-manifest-and-scripts`'s `extension-scripts` spec, beside the scripts it is for.
+- rejected: Vendoring a TextMate grammar through a converter: it needs Oniguruma features syntect refuses.
+- blast:    Odd spacing before a closure's `|` is read as an operator.

@@ -7,11 +7,11 @@
 
 ## 2. Confinement in `uze-platform`
 
-- [ ] 2.1 Dependency review for `landlock` 0.4.7 (publisher, repository, no C, `cargo deny check`, `cargo tree`), recorded in decisions.md (parent 5.3)
-- [ ] 2.2 `uze_platform::confine`: `Confinement` (read, read-execute, write paths, network, rlimits), `Availability` per right, `availability()`, `enter(&Confinement, argv) -> io::Error`, one implementation per platform behind `mod linux; mod macos; mod unavailable;`
-- [ ] 2.3 Linux: Landlock ruleset (P5) with `HardRequirement` for what was promised, then the seccomp filter over `libc` (P4: sockets, socketpair non-Unix, network calls, `io_uring_*`, `ptrace`, `process_vm_*`, `setsid`, `setpgid`, signals outside the group below ABI 6, the arch prologue), then rlimits (CPU twice the limit, FSIZE 64 MiB, NOFILE 256, AS 2 GiB), `no_new_privs`, then `execve`; exit 125 when anything fails to apply (parent 5.2, 5.2b, 5.2c)
-- [ ] 2.4 macOS: the generated `sandbox-exec` profile (`deny default`, reads and writes as on Linux, `deny network*`, `signal (target same-sandbox)`, `process-fork`) executed through `/usr/bin/sandbox-exec`, with unit tests over the profile text; "unavailable" elsewhere, Windows included (P7) (parent 5.4)
-- [ ] 2.5 The hidden `uze __confine '<json>' -- <argv>` command calling `enter`, classified in `command_performance.rs`
+- [x] 2.1 Dependency review for `landlock` 0.4.7 (publisher, repository, no C, `cargo deny check`, `cargo tree`), recorded in decisions.md (parent 5.3)
+- [x] 2.2 `uze_platform::confine`: `Confinement` (read, read-execute, write paths, network, rlimits), `Availability` per right, `availability()`, `enter(&Confinement, argv) -> io::Error`, one implementation per platform behind `mod linux; mod macos; mod unavailable;`
+- [x] 2.3 Linux: Landlock ruleset (P5) with `HardRequirement` for what was promised, then the seccomp filter over `libc` (P4: sockets, socketpair non-Unix, network calls, `io_uring_*`, `ptrace`, `process_vm_*`, `setsid`, `setpgid`, signals outside the group below ABI 6, the arch prologue), then rlimits (CPU twice the limit, FSIZE 64 MiB, NOFILE 256, AS 2 GiB), `no_new_privs`, then `execve`; exit 125 when anything fails to apply (parent 5.2, 5.2b, 5.2c)
+- [x] 2.4 macOS: the generated `sandbox-exec` profile (`deny default`, reads and writes as on Linux, `deny network*`, `signal (target same-sandbox)`, `process-fork`) executed through `/usr/bin/sandbox-exec`, with unit tests over the profile text; "unavailable" elsewhere, Windows included (P7) (parent 5.4)
+- [x] 2.5 The hidden `uze __confine '<json>' -- <argv>` command calling `enter`, classified in `command_performance.rs`
 
 ## 3. The program runner in `uze-core`
 

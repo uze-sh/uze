@@ -380,18 +380,10 @@ fn with_tail(what: String, stderr: &str) -> String {
     format!("{what}: {}", &trimmed[start..])
 }
 
-#[cfg(unix)]
+/// What ended a program that left no exit code: the platform's own words
+/// for it, `signal: 11 (SIGSEGV)` on Unix.
 fn signal_of(status: ExitStatus) -> String {
-    use std::os::unix::process::ExitStatusExt;
-    status.signal().map_or_else(
-        || "it ended".to_owned(),
-        |signal| format!("it was killed by signal {signal}"),
-    )
-}
-
-#[cfg(not(unix))]
-fn signal_of(_: ExitStatus) -> String {
-    "it ended".to_owned()
+    format!("it was ended ({status})")
 }
 
 /// Reads `stream` on a thread, keeping at most `cap` bytes. Past it, the
@@ -423,6 +415,7 @@ fn bounded_reader(
     })
 }
 
+// The tests run `/bin/sh` scripts, which only a Unix has.
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
@@ -471,7 +464,7 @@ mod tests {
         let ProgramOutcome::Failed { reason } = sh("kill -SEGV $$", Duration::from_secs(5)) else {
             panic!("not a failure");
         };
-        assert!(reason.contains("signal 11"), "{reason}");
+        assert!(reason.contains("signal: 11"), "{reason}");
         // 125 is the helper's own only when a helper ran.
         assert!(matches!(
             sh("exit 125", Duration::from_secs(5)),
