@@ -619,7 +619,7 @@ impl DeclaredExtension {
     /// Whether what `surface` draws was answered about another checkout
     /// than the one an action on it runs on: the checkout in front changed
     /// and its own answer has not landed, so an item drawn is the old one's.
-    fn rows_of_another_checkout(&self, surface: &str) -> bool {
+    pub(super) fn rows_of_another_checkout(&self, surface: &str) -> bool {
         let Some(decl) = self.compiled.manifest.surface(surface) else {
             return false;
         };

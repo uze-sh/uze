@@ -404,3 +404,13 @@
 - decided:  The engine remembers the checkout each source's data was answered about (`answered_for`), and an action pressed on an item, on a surface whose data was answered about another checkout than the one the action would run on, is refused with "the rows are still the previous checkout's". The old rows stay drawn: the operator sees the frame they had, and the action works again once the new answer lands. Data no checkout answered (a fixture, events, agents) is never refused.
 - rejected: Dropping the data when the checkout changes: every switch would flash "Waiting for data" on every section, and a view open on its own checkout would have to be told apart.
 - blast:    `declared.rs` (`answered_for`, `absorb`, `set_data`); `declared/action.rs` (`resolve`, `rows_of_another_checkout`); `declared/action_tests.rs`.
+
+## D142 — A source's input reads the item the operator chose, taken when the selection moves
+
+- status:   pending
+- task:     review finding
+- commit:
+- trigger:  A source whose `input` reads `{item…}` read the selected row of its own list at each frame; the row index survives answers, so an answer renaming that row fed the next question, which asked again without end.
+- decided:  The engine keeps the item of each surface's selected row as it was drawn when the selection moved to that row (`chosen`), taken before a source is asked, and the input reads that. An answer redrawing the row under the same index changes nothing; a new row chosen reads the row as drawn then. Rows still answered about another checkout (D141) give no item. An action pressed still reads the row drawn now.
+- rejected: Refusing, in the check, an input that reads the item of its own source's list: a surface shows only its own source, so that refuses every input reading an item, the master-detail shape the input exists for.
+- blast:    `declared.rs` (`chosen`, `capture_selection`, `input_of`, `jobs`, `open`, `close`, `replace`); `declared/source_tests.rs`.

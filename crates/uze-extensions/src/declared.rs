@@ -159,6 +159,10 @@ pub struct DeclaredExtension {
     due: BTreeSet<String>,
     /// How many questions were asked, numbering each.
     questions: u64,
+    /// The row selected in each surface's first list and its item as it was
+    /// drawn when the operator chose it: what a source's input reads, so
+    /// an answer renaming that row never feeds the next question.
+    chosen: BTreeMap<String, (usize, serde_json::Value)>,
     /// `ui.<id>` values, by surface then id.
     ui: BTreeMap<String, BTreeMap<String, String>>,
     /// The first row shown, by surface.
@@ -281,6 +285,7 @@ impl DeclaredExtension {
             window: events::Window::default(),
             due: BTreeSet::new(),
             questions: 0,
+            chosen: BTreeMap::new(),
             ui: BTreeMap::new(),
             scroll: BTreeMap::new(),
             locale: locale.into(),
@@ -313,6 +318,7 @@ impl DeclaredExtension {
         self.memo.get_mut().clear();
         self.media.clear();
         self.asked.clear();
+        self.chosen.clear();
         let surfaces: Vec<String> = self.ui.keys().cloned().collect();
         for surface in surfaces {
             let ids = self
@@ -409,13 +415,18 @@ impl DeclaredExtension {
 
     /// The input `source` is asked with on `surface`: what it declares,
     /// each `{field}` resolved as a view's text is (D23), against the item
-    /// selected there, `ui.*` and `context.*`. A lone reference keeps its
+    /// chosen there, `ui.*` and `context.*`. A lone reference keeps its
     /// type; one to nothing is `null`.
     fn input_of(&self, source: &str, surface: &str) -> serde_json::Value {
         let Some(declared) = self.compiled.manifest.source(source) else {
             return serde_json::Value::Object(serde_json::Map::new());
         };
-        let item = action::template_scope(&self.selected_item(surface));
+        let chosen = self
+            .chosen
+            .get(surface)
+            .map(|(_, item)| item.clone())
+            .unwrap_or_default();
+        let item = action::template_scope(&chosen);
         serde_json::Value::Object(
             declared
                 .input
@@ -490,6 +501,33 @@ impl DeclaredExtension {
                 ..
             }) => items.get(row).cloned().unwrap_or_default(),
             _ => serde_json::Value::Null,
+        }
+    }
+
+    /// Takes the item of the row selected in `surface`'s first list when
+    /// the selection moved to another row since it was last taken, never
+    /// because an answer redrew the row under it: a source reading the
+    /// selection of its own list would otherwise ask again on each of its
+    /// answers. Rows still answered about another checkout give none.
+    fn capture_selection(&mut self, surface: &str) {
+        if self.rows_of_another_checkout(surface) {
+            self.chosen.remove(surface);
+            return;
+        }
+        let space = self.last_space(surface);
+        let first = self.first_act(surface, space, |act| matches!(act, Act::List { .. }));
+        let Some(Act::List {
+            selected: Some(row),
+            items,
+            ..
+        }) = first
+        else {
+            self.chosen.remove(surface);
+            return;
+        };
+        if self.chosen.get(surface).map(|(at, _)| *at) != Some(row) {
+            let item = items.get(row).cloned().unwrap_or_default();
+            self.chosen.insert(surface.to_owned(), (row, item));
         }
     }
 
@@ -1247,6 +1285,7 @@ impl Extension for DeclaredExtension {
             return;
         };
         self.asked.remove(&decl.source);
+        self.chosen.remove(surface);
         self.opened
             .insert(surface.to_owned(), checkout.root.clone());
     }
@@ -1254,6 +1293,7 @@ impl Extension for DeclaredExtension {
     /// A question standing on it goes unanswered, so nothing runs.
     fn close(&mut self, surface: &str) {
         self.opened.remove(surface);
+        self.chosen.remove(surface);
         // What it drew no longer asks for its pictures.
         self.memo.get_mut().remove(surface);
         self.pending.take_if(|pending| pending.surface == surface);
@@ -1380,6 +1420,7 @@ impl Extension for DeclaredExtension {
             if local || self.authoring.fixtured.contains(&source) {
                 continue;
             }
+            self.capture_selection(&surface);
             let input = self.input_now(&source, &surface);
             let current = self
                 .asked

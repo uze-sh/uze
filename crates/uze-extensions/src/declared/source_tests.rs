@@ -323,3 +323,62 @@ fn a_source_that_does_not_read_the_preferences_is_not_asked_again() {
     engine.configure(&json!({ "detail": false }));
     assert!(engine.jobs().is_empty());
 }
+
+/// One round of the host: every question the engine asks now, answered
+/// with rows named for `round`; the inputs asked with.
+fn round(engine: &mut DeclaredExtension, round: usize) -> Vec<serde_json::Value> {
+    let rows = json!({ "rows": [
+        { "name": format!("r{round}-a") },
+        { "name": format!("r{round}-b") },
+    ] });
+    let host = Answering::with(answered(rows));
+    ask_all(engine, &host);
+    tree(engine);
+    host.asked
+        .into_inner()
+        .into_iter()
+        .map(|question| question.input)
+        .collect()
+}
+
+#[test]
+fn an_input_reading_its_own_lists_selection_is_not_fed_its_next_answer() {
+    let view = compiled_view(
+        vec![
+            n(NodeName::List)
+                .literal("id", json!("rows"))
+                .each("rows")
+                .child(n(NodeName::Text).arg("{name}"))
+                .item(),
+        ],
+        Vec::new(),
+        Vec::new(),
+    );
+    let mut compiled = extension(view);
+    compiled.manifest.sources[0].input = [("pick".to_owned(), "{item.name}".to_owned())]
+        .into_iter()
+        .collect();
+    let mut engine = DeclaredExtension::new(compiled, "en");
+    engine.open(VIEW, &checkout("/work/a"));
+    assert_eq!(round(&mut engine, 1), [json!({ "pick": null })]);
+    let list = super::tests::first(&tree(&engine), |kind| matches!(kind, NodeKind::List { .. }));
+    let select = |row| super::tests::act(list.id, crate::view::NodeAct::Row(row));
+    engine.hit(VIEW, select(0), super::tests::SPACE);
+    assert_eq!(
+        round(&mut engine, 2),
+        [json!({ "pick": "r1-a" })],
+        "the row the operator chose"
+    );
+    for again in 3..6 {
+        assert!(
+            round(&mut engine, again).is_empty(),
+            "an answer renaming the selected row asks nothing again"
+        );
+    }
+    engine.hit(VIEW, select(1), super::tests::SPACE);
+    assert_eq!(
+        round(&mut engine, 6),
+        [json!({ "pick": "r2-b" })],
+        "a new choice reads the row as drawn"
+    );
+}
