@@ -329,3 +329,13 @@
 - decided:  `kill`, `tkill`, `tgkill`, `rt_sigqueueinfo` and `rt_tgsigqueueinfo` accept as first argument only 0, the program's own pid (the helper's, known before `execve` and kept by it) and the negated own group. A child or a thread of the program, having an id of its own, is reached through the group; a child's `raise` (which targets its own pid) is refused there, an accepted cost on kernels without scoping.
 - rejected: Tracking the program's children by id: a filter is fixed when installed and cannot learn ids born later.
 - blast:    `uze-platform::confine::linux::{seccomp, linux}`.
+
+## D121 — No confinement mode listens or accepts
+
+- status:   pending
+- task:     review finding
+- commit:
+- trigger:  With network granted the filter allowed `listen`, `accept` and `accept4`, though `Confinement::network` promises no listening port, and Landlock below ABI 4 does not deny binding.
+- decided:  The three calls join the calls refused in every mode; `bind` stays allowed with network (a client may bind a local address, and Landlock denies a TCP bind where it can).
+- rejected: Refusing `bind` too: it would refuse an outgoing UDP socket bound before sending.
+- blast:    `uze-platform::confine::linux::seccomp`.

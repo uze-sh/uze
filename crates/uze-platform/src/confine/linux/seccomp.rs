@@ -4,8 +4,8 @@
 //! Landlock confines paths, not sockets: this filter is what keeps a program
 //! without network off it (no `socket` of any family), what keeps one with
 //! network to the Internet families (never a Unix socket such as an agent's
-//! or Docker's), and what refuses `ptrace`, `process_vm_*`, `io_uring` and
-//! leaving the process group the runner ends. A refused call fails with
+//! or Docker's), and what refuses listening on a port, `ptrace`,
+//! `process_vm_*`, `io_uring` and leaving the process group the runner ends. A refused call fails with
 //! `EPERM`; a call from another architecture's ABI ends the process.
 
 use std::io;
@@ -58,8 +58,12 @@ const AUDIT_ARCH: Option<u32> = Some(0xc000_00b7);
 #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
 const AUDIT_ARCH: Option<u32> = None;
 
-/// Refused in every mode.
+/// Refused in every mode: with network a program reaches out, and never
+/// listens on a port of its own.
 const ALWAYS_REFUSED: &[libc::c_long] = &[
+    libc::SYS_listen,
+    libc::SYS_accept,
+    libc::SYS_accept4,
     libc::SYS_io_uring_setup,
     libc::SYS_io_uring_enter,
     libc::SYS_io_uring_register,
@@ -75,9 +79,6 @@ const REFUSED_WITHOUT_NETWORK: &[libc::c_long] = &[
     libc::SYS_socket,
     libc::SYS_connect,
     libc::SYS_bind,
-    libc::SYS_listen,
-    libc::SYS_accept,
-    libc::SYS_accept4,
     libc::SYS_sendto,
     libc::SYS_sendmmsg,
     libc::SYS_recvmmsg,
@@ -341,6 +342,16 @@ mod tests {
             RET_ALLOW
         );
         assert_eq!(verdict(&program, ARCH, libc::SYS_ptrace as u32, 0), EPERM);
+    }
+
+    #[test]
+    fn no_mode_listens_or_accepts() {
+        for network in [false, true] {
+            let program = program(ARCH, &policy(network, false));
+            for call in [libc::SYS_listen, libc::SYS_accept, libc::SYS_accept4] {
+                assert_eq!(verdict(&program, ARCH, call as u32, 3), EPERM, "{call}");
+            }
+        }
     }
 
     #[test]
