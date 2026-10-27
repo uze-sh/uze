@@ -229,3 +229,13 @@
 - decided:  The band lists the `agents` source with `each`, a `Sprite "pet" state="{state}"` beside each agent's label, so every pane shows every agent's pet; the sheet's states are the agents' (`ready`, `working`, `done`, the fallback `ready`). The store keeps the pet's name, how often it was fed and when (a `feed` action's script), and a `kennel` section shows it `content` for ten minutes after a meal and `hungry` after, two more states of the same sheet. Its 64×32 sheet holds eight 16-pixel frames (291 bytes).
 - rejected: A per-pane binding (`context.agent` in a band): new engine behaviour the gallery would invent for itself; it is a change of the band's, if the gallery shows it is wanted.
 - blast:    `media/extensions/pets/`.
+
+## D44 — The journey tells that Esc let go by a key the game would have read
+
+- status:   pending
+- task:     5.2
+- commit:
+- trigger:  "Esc lets go" changes nothing the screen draws, and a journey asserts only on the machine.
+- decided:  `20-a-resident-game-played-with-raw-keys` (gate) installs `media`, enables `snake` from the workspace's offer, opens it from the action index and presses Up: the first meal scores, and the store holds `best: 1` (the machine check). The game then runs into the wall; after Esc, space (which would start it again) leaves it over, so the click aimed at "game over" still finds its target; that click takes the keys back, space starts it again, and Esc, Esc put the view away. The store keeps the best across the replay. Run twice in Docker, green both times.
+- rejected: Asserting the release on the screen: a journey's screen text is a gate, and the release is proven by what the keys did not do.
+- blast:    `journeys/suites/04-workspace/20-a-resident-game-played-with-raw-keys.yml`.

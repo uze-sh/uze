@@ -23,5 +23,5 @@
 ## 5. Proof and docs
 
 - [ ] 5.1 The extensions rule, invariants, diagrams, the `uze:extension` skill
-- [ ] 5.2 A journey: `snake` played with raw keys, and its score kept
+- [x] 5.2 A journey: `snake` played with raw keys, and its score kept
 - [ ] 5.3 `make check`, `openspec validate --all --strict`, and the hand proof script

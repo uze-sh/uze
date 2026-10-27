@@ -1,0 +1,363 @@
+journey: snake, a resident extension, is played with the arrow keys in a view of its own, Esc lets go of it, and its best score is kept in its store
+tags: [gate, tui, workspace]
+about: |
+  The operator's side of the resident tier: `snake`, from the media
+  gallery's reference plugin, keeps its game in a script that stays
+  running while its view is open. Installed without a terminal it is
+  disabled; the workspace offers it, the operator allows its `resident`
+  and `store` grants and enables it, opens it from the action index, and
+  steers it with the arrow keys, which reach the game raw. The first `up`
+  eats the meal straight above the snake's head, and the new best score is
+  written to the extension's store as it happens. Esc lets go of the
+  game, and the next Esc puts the view away.
+
+  The machine is what each scene checks: the consent record in
+  `state/extensions.json` and the store under
+  `state/extensions/store/media@studio/snake/`. The screen only gates each
+  gesture.
+
+world:
+  project: demo-app
+  commits:
+    - message: "chore: initial commit"
+      files:
+        README.md: "# demo-app\n"
+  # `tests/_fixtures/canonical/media`'s `snake`, staged as a marketplace's
+  # plugin: a container mounts only `journeys/`, so its files are carried
+  # here.
+  files:
+    market/marketplace.json: |
+      {
+        "name": "studio",
+        "description": "A marketplace this journey stages and installs from its clone.",
+        "plugins": [
+          { "name": "media", "source": "./plugins/media", "description": "The media gallery's reference extensions." }
+        ]
+      }
+    market/plugins/media/plugin.json: |
+      {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "media",
+        "version": "1.0.0",
+        "description": "The media gallery's snake, played with the arrow keys."
+      }
+    market/plugins/media/extensions/snake/extension.kdl: |
+      // Snake, in a view of its own: a resident script keeps the game on `this`
+      // while the view is open, reads the arrow keys raw while it is focused,
+      // moves on its own `timer`, draws the board as `Cells` and keeps the best
+      // score in the store. Esc lets go of the keys, a second Esc closes it.
+      protocol 1
+      id "snake"
+      name "Snake"
+      description "Snake, steered with the arrow keys, its best score kept"
+
+      wants "resident" "store"
+
+      surface "game" slot="view" view="game.kdl" source="board" title="Snake"
+
+      source "board" {
+          resident "snake.rhai"
+      }
+    market/plugins/media/extensions/snake/game.kdl: |
+      // What the view draws until the game's first frame.
+      Text "Starting the game…" role="faint"
+    market/plugins/media/extensions/snake/snake.rhai: |
+      // The `board` source, resident: the game lives on `this` between calls.
+      // The board is 20 by 10; the snake starts heading right, waits for an
+      // arrow, and moves one square a tick. The first meal sits straight above
+      // its head, so the first `up` always scores; the next ones come from a
+      // fixed sequence, so a game replays the same way.
+
+      fn width() { 20 }
+      fn height() { 10 }
+      fn tick() { 150 }
+
+      fn start(context) {
+          let kept = store();
+          this.best = kept.best ?? 0;
+          this.seed = 7;
+          this.reset();
+          true
+      }
+
+      fn reset() {
+          this.body = [#{ x: 3, y: 5 }, #{ x: 4, y: 5 }, #{ x: 5, y: 5 }];
+          this.heading = "right";
+          this.turn = "right";
+          this.food = #{ x: 5, y: 2 };
+          this.score = 0;
+          this.state = "waiting";
+      }
+
+      fn direction(key) {
+          switch key {
+              "up" | "w" | "k" => "up",
+              "down" | "s" | "j" => "down",
+              "left" | "a" | "h" => "left",
+              "right" | "d" | "l" => "right",
+              _ => ()
+          }
+      }
+
+      fn opposite(one, other) {
+          (one == "up" && other == "down") || (one == "down" && other == "up")
+              || (one == "left" && other == "right") || (one == "right" && other == "left")
+      }
+
+      fn input(input) {
+          if input.key == () {
+              return false;
+          }
+          let wanted = direction(input.key);
+          if this.state == "over" {
+              if input.key == "space" || input.key == "enter" {
+                  this.reset();
+                  return true;
+              }
+              return false;
+          }
+          if wanted == () || opposite(wanted, this.heading) {
+              return false;
+          }
+          this.turn = wanted;
+          if this.state == "waiting" {
+              this.state = "playing";
+              timer(tick());
+              return true;
+          }
+          false
+      }
+
+      fn event(event) {
+          if event.name != "timer" || this.state != "playing" {
+              return false;
+          }
+          let ate = this.step();
+          if this.state == "playing" {
+              timer(tick());
+          }
+          if ate && this.score > this.best {
+              this.best = this.score;
+              return #{ redraw: true, store: #{ best: this.best } };
+          }
+          true
+      }
+
+      // One square forward: false when it ran into a wall or itself, which
+      // ends the game, and whether it ate otherwise.
+      fn step() {
+          this.heading = this.turn;
+          let head = this.body[this.body.len() - 1];
+          let next = #{ x: head.x, y: head.y };
+          switch this.heading {
+              "up" => { next.y -= 1; }
+              "down" => { next.y += 1; }
+              "left" => { next.x -= 1; }
+              _ => { next.x += 1; }
+          }
+          let outside = next.x < 0 || next.y < 0 || next.x >= width() || next.y >= height();
+          if outside || this.covers(next) {
+              this.state = "over";
+              return false;
+          }
+          this.body.push(next);
+          if next.x == this.food.x && next.y == this.food.y {
+              this.score += 1;
+              this.place_food();
+              return true;
+          }
+          this.body.remove(0);
+          false
+      }
+
+      fn covers(square) {
+          for part in this.body {
+              if part.x == square.x && part.y == square.y {
+                  return true;
+              }
+          }
+          false
+      }
+
+      // The next meal: the next square of a fixed sequence the snake is not on.
+      fn place_food() {
+          let tries = 0;
+          loop {
+              this.seed = (this.seed * 1103515245 + 12345) % 2147483648;
+              let square = #{ x: this.seed % width(), y: (this.seed / 32) % height() };
+              tries += 1;
+              if !this.covers(square) || tries > 64 {
+                  this.food = square;
+                  return;
+              }
+          }
+      }
+
+      fn said() {
+          switch this.state {
+              "waiting" => "an arrow starts · esc lets go",
+              "over" => "game over · space plays again",
+              _ => "arrows steer · esc lets go",
+          }
+      }
+
+      fn cell(ch, role) { #{ ch: ch, role: role } }
+
+      fn render(size) {
+          let rows = [];
+          let edge = [cell("┌", "faint")];
+          for x in 0..width() { edge.push(cell("─", "faint")); edge.push(cell("─", "faint")); }
+          edge.push(cell("┐", "faint"));
+          rows.push(edge);
+          let head = this.body[this.body.len() - 1];
+          for y in 0..height() {
+              let row = [cell("│", "faint")];
+              for x in 0..width() {
+                  let square = #{ x: x, y: y };
+                  if x == head.x && y == head.y {
+                      let role = if this.state == "over" { "danger" } else { "accent" };
+                      row.push(cell("█", role)); row.push(cell("█", role));
+                  } else if this.covers(square) {
+                      row.push(cell("█", "success")); row.push(cell("█", "success"));
+                  } else if x == this.food.x && y == this.food.y {
+                      row.push(cell("●", "warning")); row.push(" ");
+                  } else {
+                      row.push(" "); row.push(" ");
+                  }
+              }
+              row.push(cell("│", "faint"));
+              rows.push(row);
+          }
+          let foot = [cell("└", "faint")];
+          for x in 0..width() { foot.push(cell("─", "faint")); foot.push(cell("─", "faint")); }
+          foot.push(cell("┘", "faint"));
+          rows.push(foot);
+          #{
+              type: "Stack",
+              children: [
+                  #{ type: "Row", props: #{ gap: 2 }, children: [
+                      #{ type: "Text", args: [`score ${this.score}`], props: #{ strong: true } },
+                      #{ type: "Text", args: [`best ${this.best}`], props: #{ role: "muted" } },
+                      #{ type: "Text", args: [this.said()], props: #{ role: "faint" } },
+                  ] },
+                  #{ type: "Cells", props: #{ rows: rows } },
+              ],
+          }
+      }
+
+scenes:
+  - scene: a plugin installed from a marketplace's clone leaves its game disabled
+    when:
+      - shell: "{uze} market add {world}/market"
+        say: register the marketplace, linked to nothing
+      - shell: "cd {project} && {uze} install media@studio > {world}/install.log 2>&1"
+        say: add the plugin to the project, with nobody at a terminal to answer
+    then:
+      - file: "{uze_home}/store/plugins/studio/media/extensions/snake/snake.rhai"
+        contains: "fn render(size)"
+        about: the game's script was installed from the clone, into the Store
+      - file: "{uze_home}/state/extensions.json"
+        exists: false
+        about: nobody consented to anything, and nothing was enabled
+
+  - scene: and then the workspace offers it, and the operator allows its grants and enables it in the project
+    when:
+      - open: ["{uze}", "workspace"]
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - click: "new"
+        say: open the new-agent popup from the space's row
+        in: sidebar
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
+        say: place an agent on the project
+        expect: "Snake runs nothing there yet"
+        expect_timeout: 90
+      - click: "Review"
+        say: review the extension the project offers
+        expect: "Enable Snake in demo-app"
+        expect_timeout: 10
+      - click: "Allow and enable"
+        say: allow its grants and enable it here
+        expect: "extension enabled"
+        expect_timeout: 10
+    then:
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.media@studio/snake.accepted_grants.*
+        count: 2
+        includes: ["resident", "store"]
+        about: the consent holds exactly the grants it wants, the resident tier among them
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.media@studio/snake.enabled_in.*
+        equals: "{project}"
+        count: 1
+        about: and it is enabled in this project, and in no other
+      - dir: "{uze_home}/state/extensions/store/media@studio/snake"
+        exists: false
+        about: nothing has been played, so nothing is kept
+
+  - scene: and then the operator opens the game and steers it up with the arrow key, and the score it makes is kept as the best
+    when:
+      - key: "F1"
+        say: open the action index
+        expect: "type to narrow"
+        expect_timeout: 10
+      - type: "Open Snake"
+        say: open the game's view
+        expect: "an arrow starts"
+        expect_timeout: 20
+      - key: "Up"
+        say: steer the snake up, at the meal straight above its head
+        expect: 'score 1 +best 1'
+        expect_timeout: 10
+      - wait: file
+        until: "{uze_home}/state/extensions/store/media@studio/snake/*.json"
+        timeout: 10
+        say: the new best is written as it is made
+    then:
+      - json: "{uze_home}/state/extensions/store/media@studio/snake/*.json"
+        at: store.best
+        equals: "1"
+        count: 1
+        about: the extension's store, for this project, holds the best score the arrow key made
+
+  # The snake runs on into the top wall after its meal: the game is over
+  # whatever the keys do, so what reaches it next is told by whether space
+  # starts it again.
+  - scene: and then Esc lets go of the game, which no longer reads the keys until a click on it takes them back, and the next Esc puts its view away
+    when:
+      - wait: screen
+        until: "game over · space plays again"
+        in: pane
+        timeout: 10
+        say: the snake runs on into the wall
+      - key: "Escape"
+        say: let go of the game's keys
+        expect: "game over"
+        expect_timeout: 5
+        pause: 1.0
+      - key: "Space"
+        say: press space, which the game would read as playing again
+        expect: "game over"
+        expect_timeout: 5
+        pause: 1.0
+      - click: "game over"
+        say: the game is still over, and a click on it takes its keys back
+        in: pane
+        expect: "game over"
+        expect_timeout: 5
+      - key: "Space"
+        say: press space again, which the game now reads
+        expect: 'score 0 +best 1 +an arrow starts'
+        expect_timeout: 10
+      - key: ["Escape", "Escape"]
+        say: let go of it, and put the view away, as a docked drawer's second Esc does
+        expect: 'Claude Code v9\.9\.9 \(fake\)'
+        expect_timeout: 10
+    then:
+      - json: "{uze_home}/state/extensions/store/media@studio/snake/*.json"
+        at: store.best
+        equals: "1"
+        count: 1
+        about: a game played again and left keeps the best score the first one made
