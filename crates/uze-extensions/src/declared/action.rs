@@ -18,6 +18,11 @@ use crate::view::{Command, Confirm, Role, Span, ViewHit};
 /// The longest text copied on one gesture without asking first, in bytes.
 pub const COPY_UNASKED_MAX: usize = 256;
 
+/// The most gestures kept for the inspector, newest last: each holds its
+/// whole item, so an extension pressed all day would otherwise grow without
+/// bound.
+pub const RECORDED_MAX: usize = 64;
+
 /// A gesture's action, resolved against its item and ready to run.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum Run {
@@ -95,6 +100,8 @@ impl DeclaredExtension {
             item: item.clone(),
             declared: declared.is_some(),
         });
+        let over = self.recorded.len().saturating_sub(RECORDED_MAX);
+        self.recorded.drain(..over);
         let Some(declared) = declared else {
             let said = Clean::label(&format!("{action} recorded, not run"));
             return Outcome::Notice(Span::clean(said, Role::Muted));

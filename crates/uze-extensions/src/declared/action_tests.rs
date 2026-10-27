@@ -497,3 +497,18 @@ fn an_action_on_rows_answered_for_the_previous_checkout_is_refused() {
         Outcome::Copy("billing".to_owned())
     );
 }
+
+#[test]
+fn the_actions_recorded_are_the_newest_few() {
+    let mut engine = board(vec![action("go", Does::Refresh(vec![SOURCE.to_owned()]))]);
+    for _ in 0..RECORDED_MAX + 10 {
+        press(&mut engine, 0);
+    }
+    press(&mut engine, 1);
+    let recorded = engine.recorded();
+    assert_eq!(recorded.len(), RECORDED_MAX);
+    assert_eq!(
+        recorded.last().map(|last| &last.item["name"]),
+        Some(&json!("../up"))
+    );
+}

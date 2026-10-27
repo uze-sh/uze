@@ -424,3 +424,13 @@
 - decided:  `with_extensions` checks each EVERYWHERE door against the doors earlier tables bound; the later one is offered without a key, and `extension_problems` says which chord opens both and which is dropped. "First" is the order the tables are registered in.
 - rejected: Dropping both: an extension that worked would lose its door when another is installed.
 - blast:    `uze-keys` `keymap.rs` (`with_extensions`); `extension.rs` tests.
+
+## D144 — The inspector keeps the newest 64 gestures
+
+- status:   pending
+- task:     review finding
+- commit:
+- trigger:  `recorded` grew by one entry per press, each with its whole item, for the life of the workspace (and was carried across rebuilds by `memory`).
+- decided:  `RECORDED_MAX` = 64, as the runner keeps the last 64 questions it answered per extension; the oldest go first on a press and on restoring a memory.
+- rejected: A byte budget: the items are already bounded by the data a source may answer, and a count is what the inspector shows.
+- blast:    `declared/action.rs` (`RECORDED_MAX`, `act_with`); `declared.rs` (`restore_memory`); `declared/action_tests.rs`.

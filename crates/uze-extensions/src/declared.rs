@@ -67,8 +67,8 @@ use crate::view::{
     Command, Content, Layout, NodeAct, Role, ScrollDirection, ScrollTarget, Section, Size, Span,
     View, ViewHit,
 };
-pub use action::COPY_UNASKED_MAX;
 use action::{ActionAnswer, Pending, Queued};
+pub use action::{COPY_UNASKED_MAX, RECORDED_MAX};
 pub use applies::RECHECK as APPLIES_RECHECK;
 pub use authoring::fake_agents;
 pub use bind::NODE_CAP;
@@ -1543,7 +1543,9 @@ impl Extension for DeclaredExtension {
 
     fn restore_memory(&mut self, memory: Opaque) {
         if let Some(memory) = memory.downcast::<Memory>() {
+            let over = memory.recorded.len().saturating_sub(RECORDED_MAX);
             self.recorded = memory.recorded;
+            self.recorded.drain(..over);
         }
     }
 }
