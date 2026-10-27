@@ -1,0 +1,177 @@
+journey: a program extension from a marketplace's clone runs once the operator allows its programs on a step of their own and enables it in the project
+tags: [gate, tui, workspace]
+about: |
+  The operator's side of an extension that runs a program: its plugin comes
+  from a marketplace UZE cloned into its Store, and its source is answered
+  by a `sh` script packaged with it, so it wants `exec:sh`. Installing it
+  without a terminal leaves it disabled. The workspace opened on the
+  project offers it; the operator allows its grants, and then, on a second
+  question of their own, its programs, each named with the path it was
+  found at; its view opens drawn from what the program answered off the
+  checkout.
+
+  The machine is what each scene checks: the consent record in
+  `state/extensions.json` with `exec:sh` allowed, `sh` pinned to an
+  absolute path that exists, whether confinement held recorded, and the
+  project enabled; the checkout the program read and never wrote; and no
+  scratch folder of a run left behind. Whether this machine confines is
+  the title's last words, and the journey asks only what holds on both.
+
+world:
+  project: demo-app
+  commits:
+    - message: "chore: initial commit"
+      files:
+        README.md: "# demo-app\n"
+  files:
+    market/marketplace.json: |
+      {
+        "name": "studio",
+        "description": "A marketplace this journey stages and installs from its clone.",
+        "plugins": [
+          { "name": "lines", "source": "./plugins/lines", "description": "How many lines the checkout's README has." }
+        ]
+      }
+    market/plugins/lines/plugin.json: |
+      {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "lines",
+        "version": "1.0.0",
+        "description": "How many lines the checkout's README has, counted by a packaged program."
+      }
+    market/plugins/lines/extensions/lines/extension.kdl: |
+      protocol 1
+      id "lines"
+      name "Lines"
+      description "How many lines the checkout's README has, counted by a program"
+
+      wants "exec:sh" "clipboard"
+
+      surface "board" slot="view" view="board.kdl" source="count" title="Lines"
+
+      source "count" {
+          run "./bin/count" "--" "README.md"
+          output "lines"
+          fields "file" "lines"
+      }
+
+      action "copy-count" label="Copy count" on="board" {
+          clipboard "{file} has {lines} lines"
+      }
+    # A packaged script runs as its `#!` interpreter, which is why the
+    # manifest wants `exec:sh`. Its argv is `-- README.md`: the file is `$2`.
+    market/plugins/lines/extensions/lines/bin/count: |
+      #!/bin/sh
+      printf '%s\t%s\n' "$2" "$(wc -l < "$2" | tr -d ' ')"
+    market/plugins/lines/extensions/lines/board.kdl: |
+      List each="." {
+          Text "{file} has {lines} lines"
+      }
+    market/plugins/lines/extensions/lines/fixtures/count.json: |
+      [ { "file": "FIXTURE.md", "lines": "7" } ]
+
+scenes:
+  - scene: a plugin installed from a marketplace's clone leaves its program extension disabled
+    when:
+      - shell: "{uze} market add {world}/market"
+        say: register the marketplace, linked to nothing
+      - shell: "cd {project} && {uze} install lines@studio > {world}/install.log 2>&1"
+        say: add the plugin to the project, with nobody at a terminal to answer
+    then:
+      - file: "{uze_home}/store/plugins/studio/lines/extensions/lines/bin/count"
+        contains: "wc -l"
+        about: the extension's program was installed from the clone, into the Store
+      - file: "{uze_home}/state/extensions.json"
+        exists: false
+        about: nobody consented to anything, and nothing was enabled
+      - file: "{world}/install.log"
+        contains: "lines@studio installed disabled"
+        about: and the install said so
+
+  - scene: and then the workspace offers it, and the operator allows its grants and then its programs, on a step of their own
+    when:
+      - open: ["{uze}", "workspace"]
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - click: "new"
+        say: open the new-agent popup from the space's row
+        in: sidebar
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
+        say: place an agent on the project
+        expect: "Lines runs nothing there yet"
+        expect_timeout: 90
+      - click: "Review"
+        say: review the extension the project offers
+        expect: "Enable Lines in demo-app"
+        expect_timeout: 10
+      - wait: screen
+        until: "clipboard"
+        timeout: 5
+        say: the first question shows the grants that are not programs
+      - click: "Allow and enable"
+        say: allow its grants
+        expect: "Allow these programs to run"
+        expect_timeout: 10
+      # Confined or as the operator is this machine's answer, not the
+      # journey's: the title ends one way or the other.
+      - wait: screen
+        until: 'sh · /'
+        timeout: 5
+        say: the second question names the program with the path it was found at
+      - click: "Allow and enable"
+        say: allow its programs and enable it here
+        expect: "extension enabled"
+        expect_timeout: 10
+    then:
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.lines@studio/lines.accepted_grants.*
+        count: 2
+        includes: ["exec:sh", "clipboard"]
+        about: the consent holds exactly the grants the two questions showed
+      - cmd:
+          run: |
+            {python} -I -c "
+            import json, os, sys
+            record = json.load(open('{uze_home}/state/extensions.json'))
+            pinned = record['extensions']['lines@studio/lines']['exec_paths']['sh']
+            print(pinned)
+            sys.exit(0 if os.path.isabs(pinned) and os.access(pinned, os.X_OK) else 1)
+            "
+        about: sh is pinned to an absolute path of a program that is there, so no run searches PATH again
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.lines@studio/lines.enforced_at_accept
+        exists: true
+        about: whether this machine confined it when it was allowed is recorded with the consent
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.lines@studio/lines.enabled_in.*
+        equals: "{project}"
+        count: 1
+        about: and it is enabled in this project, and in no other
+      - capture:
+          name: before-the-program
+          tree: ["{project}"]
+          except: ["demo-app/.git/*", "demo-app/.worktrees/*/.git"]
+
+  - scene: and then its view opens from the action index, drawn from what its program counted in the checkout
+    when:
+      - key: "F1"
+        say: open the action index
+        expect: "type to narrow"
+        expect_timeout: 10
+      - type: "Open Lines"
+        say: choose the extension's view
+        expect: "README.md has 1 lines"
+        expect_timeout: 20
+    then:
+      - tree: ["{project}"]
+        except: ["demo-app/.git/*", "demo-app/.worktrees/*/.git"]
+        same_as: before-the-program
+        about: the program read the checkout and wrote nothing into it
+      - file: "{project}/README.md"
+        contains: "# demo-app"
+        about: the file it counted is the file as committed
+      - dir: "{uze_home}/runtime/extensions/scratch/*"
+        exists: false
+        about: no run left its scratch folder behind
