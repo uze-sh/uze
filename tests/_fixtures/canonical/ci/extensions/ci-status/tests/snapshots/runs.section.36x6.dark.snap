@@ -1,0 +1,22 @@
+# uze snapshot · protocol 1 · section 36x6 · dark
+ ci-status · ci@local
+ ▾ CI
+ hiukky/uze · main
+  passed    CI                #412
+  running   Journeys           #97
+  failed    CI                #411
+---
+ aaaaaaaaa a aaaaaaaa
+ b bb
+ cccccccccc c cccc
+  dddddd    ee                cccc
+  fffffff   eeeeeeee           ccc
+  gggggg    ee                cccc
+---
+a text.muted
+b text.secondary
+c text.faint
+d state.success
+e text.bright
+f state.warning
+g state.danger

@@ -1,0 +1,8 @@
+{
+  "total_count": 3,
+  "workflow_runs": [
+    { "name": "CI", "run_number": 412, "status": "completed", "conclusion": "success", "head_branch": "main" },
+    { "name": "Journeys", "run_number": 97, "status": "in_progress", "conclusion": null, "head_branch": "main" },
+    { "name": "CI", "run_number": 411, "status": "completed", "conclusion": "failure", "head_branch": "main" }
+  ]
+}

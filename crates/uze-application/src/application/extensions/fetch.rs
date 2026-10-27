@@ -417,6 +417,62 @@ mod tests {
         assert!(!world.fetcher.tainted.load(Ordering::Relaxed));
     }
 
+    /// The `ci-status` gallery entry's script, answered over a checkout of
+    /// a GitHub repository by a `curl` that replies with a recorded answer
+    /// of the API.
+    #[test]
+    fn the_ci_status_script_reads_a_recorded_answer() {
+        let extension = uze_testkit::fixtures::canonical("ci").join("extensions/ci-status");
+        let recorded =
+            std::fs::read_to_string(extension.join("fixtures/github-runs.json")).unwrap();
+        let world = World::new("fetch-ci-status", &format!("{}\n200", recorded.trim()));
+        uze_workspace::extensions::secrets::store(
+            &world.fetcher.home,
+            "ci@studio",
+            "ci-status",
+            "token",
+            "ghp_TOKEN",
+        )
+        .unwrap();
+        let checkout = world.root.join("checkout");
+        std::fs::create_dir_all(checkout.join(".git")).unwrap();
+        std::fs::write(checkout.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::write(
+            checkout.join(".git/config"),
+            "[remote \"origin\"]\n\turl = git@github.com:hiukky/uze.git\n",
+        )
+        .unwrap();
+        let reach =
+            super::super::CheckoutReach::new(uze_platform::path::canonical(&checkout).unwrap())
+                .with_fetcher(world.fetcher.clone());
+        let script = std::fs::read(extension.join("runs.rhai")).unwrap();
+        let grants: uze_script::Grants = [
+            uze_contract::Grant::ReadCheckout,
+            uze_contract::Grant::Net("api.github.com".into()),
+        ]
+        .into();
+        let answered = uze_script::Script::compile(&script).unwrap().answer(
+            &serde_json::json!({ "preferences": { "repo": "" } }),
+            &serde_json::json!({}),
+            &grants,
+            Arc::new(reach),
+        );
+        let data = answered.outcome.unwrap().data;
+        assert_eq!(data["repo"], "hiukky/uze");
+        assert_eq!(data["branch"], "main");
+        assert_eq!(data["last"]["state"], "success");
+        assert_eq!(data["runs"][1]["state"], "in_progress");
+        assert_eq!(
+            world.read("args").lines().last(),
+            Some("https://api.github.com/repos/hiukky/uze/actions/runs?branch=main&per_page=5")
+        );
+        assert!(
+            world
+                .read("stdin")
+                .contains("Authorization: Bearer ghp_TOKEN")
+        );
+    }
+
     #[test]
     fn a_value_is_quoted_so_it_cannot_add_an_option() {
         assert_eq!(quoted("a\"b\\c\nurl = x"), "\"a\\\"b\\\\c\\nurl = x\"");

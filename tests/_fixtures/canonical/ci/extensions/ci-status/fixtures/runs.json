@@ -1,0 +1,10 @@
+{
+  "repo": "hiukky/uze",
+  "branch": "main",
+  "last": { "name": "CI", "number": 412, "state": "success" },
+  "runs": [
+    { "name": "CI", "number": 412, "state": "success" },
+    { "name": "Journeys", "number": 97, "state": "in_progress" },
+    { "name": "CI", "number": 411, "state": "failure" }
+  ]
+}

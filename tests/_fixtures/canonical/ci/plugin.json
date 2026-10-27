@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "ci",
+  "version": "1.0.0",
+  "description": "The ci-status reference extension: the checkout's branch's last CI runs, read from GitHub's API with the operator's token, which it names and never holds."
+}
