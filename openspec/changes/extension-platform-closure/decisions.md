@@ -139,3 +139,84 @@
 - decided:  Binding is measured per gallery view in `uze-extensions`' own `tests/budget.rs`, the fastest of 41 fresh builds against 1 ms (the heaviest, `snake`, binds in about 0.4 ms unoptimized); sections are skipped, since they bind against no space a build can be made fresh by. Memory is `approximate_bytes` under 1 MiB for every gallery extension. The storm (`uze-application/tests/extension_storm.rs`) asserts exactly fifteen runs for 75 questions and the fastest of three storms under 50 ms optimized, 200 ms unoptimized, where the per-question SHA-256 of the extension's files is several times slower.
 - rejected: Medians: they move with load; a release-only test: the gates never run it.
 - blast:    `crates/uze-extensions/tests/budget.rs` (with `uze-core` as a dev-dependency), `crates/uze-application/tests/extension_storm.rs`.
+
+## D60 — From an agent's pane, `uze install` says an agent cannot enable an extension; the journey drives it with the agent's own stamp
+
+- status:   pending
+- task:     5.1
+- commit:   b8026a4a, 7a0837f9
+- trigger:  12.3 asks for a journey where `uze`, run from an agent's pane, refuses to consent to or enable an extension and says why. The only CLI path that asks either question is the end of `uze install`, and from an agent's pane it printed what any pipe gets ("installed disabled; enable it from the workspace"): nothing said why. No CLI verb consents or enables; a nested `uze workspace` in a pane opens a space in the running uze rather than a client.
+- decided:  When `asker()` reads an agent's stamp (`UZE_AGENT` or `UZE_AGENT_KEY`), `ask_about_extensions` never asks, terminal or not, and each waiting extension's line says "<ext> installed disabled; an agent cannot enable an extension, so the operator does, from the workspace" (a held one: "<ext> is held: its update wants …; …"). Journey 21 places an agent from the workspace, then runs the install from a shell carrying the two variables read off that agent's process (`inherit`), and checks the Store and `agents.yaml` written, the line, and `state/extensions.json` absent. Held by `an_install_from_an_agents_pane_says_an_agent_cannot_enable_it` in `tests/cli/extensions.rs`.
+- rejected: A `uze extension enable` verb whose only use would be to be refused. Driving the workspace client started with the stamp: no pane can start one (the nested `uze workspace` opens a space instead), and `a_client_started_in_an_agents_pane_cannot_enable_an_extension` already holds that path.
+- not proven: the client-side refusal (left to that test); an agent running the install through a harness's tool rather than a shell, which reaches the same `asker()`.
+- blast:    `src/cli/extensions.rs`, `tests/cli/extensions.rs`, `journeys/suites/04-workspace/21-an-agent-cannot-enable-an-extension.yml`.
+
+## D61 — The held update is proven by a record only the new script writes; the question reaches the operator on the next opening
+
+- status:   pending
+- task:     5.1
+- commit:   7a0837f9
+- trigger:  12.3 asks that, after `uze update`, a widened extension does not run its new code until the operator allows the new grant, checked on the record and on what is drawn and asked. A script that does not run leaves no trace of its own, and the workspace offers a project's extensions once a session.
+- decided:  Journey 22's second release keeps `{ ran: "release two" }` in the extension's store, which wants the `store` grant nobody accepted: the store directory is absent while it is held, and present with that record once it is allowed, so "the new code ran" is read off the disk. The consent's `accepted_grants` and `accepted_digest` are compared with a copy taken before the update (same digest, one grant), `uze status` is the subject that names it held. The question is reached by leaving the workspace (ctrl+q) and opening it again: the offer says the extension runs nothing there, and its dialog shows only the new grant ("Its update wants more than you allowed"). Allowed, the row draws the second release's answer and the project stays enabled without being asked again.
+- observed: in the workspace left open across the update, the status row keeps showing the first release's last answer; nothing of the second ran (the store says so), but the row does not say it is held until the workspace asks again. Left as found; a held extension's surfaces saying so in a running session would be a change of its own.
+- not proven: the Extensions screen's "Held" row and its consent (held by `src/ui/tests/extensions.rs`); a held program extension's pins.
+- blast:    `journeys/suites/04-workspace/22-an-update-that-wants-more-is-held.yml`.
+
+## D62 — A section's answers are its own: they follow the chrome's path, never the view open in the pane
+
+- status:   pending
+- task:     5.2
+- commit:   58ab8167, efab58f0
+- trigger:  Journey 26 (plan-review) pressed "Ask for a review" in the sidebar section and nothing happened: `hit_surface` handed a section's outcome to `follow_surface`, which asks of the agent, toasts and attributes through `slot_in_pane()`, the view open in the pane, so with no view open an `agent-prompt` from a section was dropped without a word (and a copy or a failure was attributed to whatever view was open).
+- decided:  A slot that is not the open view (a section, once drawers, overlays and chrome are handled before it) follows `follow_chrome(id, …)`: an agent request is asked of the agent as the section's owner, a toast and a copy are attributed to the section, a close is nothing. Held by `a_sections_button_asks_of_the_agent_rather_than_of_the_open_view`.
+- rejected: Teaching `follow_surface` about sections: it is the open view's path, and a second meaning of "the slot" in it is how this was missed.
+- blast:    `src/ui/orchestrator/declared.rs`, `src/ui/orchestrator/tests/declared_actions.rs`.
+
+## D63 — An image whose bottom is the screen's last row stays in half blocks
+
+- status:   pending
+- task:     5.2
+- commit:   c6878578, efab58f0
+- trigger:  Journey 27 (pets) found the frame smeared upward a row at a time: the container's tmux speaks Sixel, the pets band sits at the bottom of the pane on the screen's last rows, and a Sixel image leaves the cursor on the row under it, so every frame of the sprite scrolled the whole screen. Any terminal that scrolls after a Sixel image at the bottom would do the same.
+- decided:  `render_fitted` places no pixels for a picture whose cells end on the screen's last row; that picture keeps its half blocks. Held by `a_picture_on_the_screens_last_row_stays_in_half_blocks`.
+- rejected: Turning Sixel scrolling off (DECSDM): its meaning is inverted between terminals. Moving bands off the last row: a layout change for a terminal quirk.
+- blast:    `src/ui/extension_view/picture.rs`.
+
+## D64 — The gallery's journeys: one file per entry, each staging its own extension inline
+
+- status:   pending
+- task:     5.2
+- commit:   efab58f0
+- trigger:  20.2 asks for a journey per gallery entry still without one: gpu-meter, gsd-next, chimes, jump, plan-review, pets, screen.
+- decided:  Seven files, 23–29 in `04-workspace`, each the shape of journeys 16–20: the entry's fixture files copied inline as a marketplace's plugin carrying that extension alone (the container mounts only `journeys/`, and one extension is one offer), installed disabled, allowed and enabled from the workspace's offer, then its own claim. Each claim is independent of the others, and a run stops at its first failure, so none shares a file. `pets`' sheet is binary: a first-scene shell step writes it from base64 and publishes it as a second commit of the marketplace. `gsd-next`'s band is fed by its fixture and still waits for consent, since its action wants `agent:prompt`; its button types `/gsd:execute-phase 12`, the stand-in Claude's spelling of the skill, read back from the conversation the stand-in records.
+- blast:    `journeys/suites/04-workspace/2{3..9}-*.yml`.
+
+## D65 — gpu-meter is proven where there is no nvidia-smi; its reading is left to its own tests
+
+- status:   pending
+- task:     5.2
+- commit:   efab58f0
+- trigger:  A journey's machine has no GPU, and a stand-in `nvidia-smi` cannot be pinned there: a program under the temporary directory, where every world lives, is refused a pin (`unpinnable`).
+- decided:  Journey 29 first checks the world finds no `nvidia-smi`, then proves what such a machine meets: the programs step names it as "`nvidia-smi` not found", allowing it anyway records `exec:nvidia-smi` and `store` with no `exec_paths` pin, the section says "`nvidia-smi` not found; resolve it again on the Extensions screen", and no store (no history) is written.
+- not proven: a reading, its meters and history, the `warn-at` preference, `nvidia-smi` confined with its `reads` (held by the extension's own tests against `fixtures/gpu.json`). On a machine whose search path has `nvidia-smi` the journey fails its first scene rather than proving something else.
+- blast:    `journeys/suites/04-workspace/29-a-meter-whose-program-this-machine-lacks.yml`.
+
+## D66 — chimes' bell is read off the bytes the app wrote to its terminal
+
+- status:   pending
+- task:     5.2
+- commit:   efab58f0
+- trigger:  20.2 expected the bell itself not to be observable, only the status row.
+- decided:  Every cue is the terminal's bell (`send_notification`), and `open`'s `tap` keeps every byte the app writes, so journey 24 counts the BELs standing outside OSC sequences (which may end with the same byte) with a small script staged in the world: none before the turn, exactly one after the one turn that finished. The workspace's own chime is silent on a machine that never chose one (`config.toml` absent, checked), so the bell is the extension's.
+- not proven: that anybody hears it (the terminal's business); the `attention` cue and notification on `agent.approval.asked`, which the stand-in never raises.
+- blast:    `journeys/suites/04-workspace/24-a-finished-turn-rings-the-chime.yml`.
+
+## D67 — jump, pets and screen: what their journeys read, and what the screen alone tells
+
+- status:   pending
+- task:     5.2
+- commit:   efab58f0
+- trigger:  Which agent is in front, a sprite's frames and a picture's pixels are on no disk.
+- decided:  jump (25): each of two isolated agents is sent a line only it shows, and the gate after ctrl+g is the chosen agent's line with the picker's header gone; a list's first row is selected as the picker opens, so ctrl+g takes the first agent and Down then ctrl+g the second. pets (27): the gates read the agent's label and state written beside the sprite (ready, working, then done or ready), the checks read the store (`name` Pixel, then `fed` 1 after Feed). screen (28): opened 60 rows tall so the section has room for its picture; the gates wait for its half blocks (the container's tmux speaks Sixel, so pixels are sent over them, and are not read); the checks read the pinned `sh`, the picture kept under `runtime/extensions/pictures/media@studio/screen/shot.png`, no scratch left, nothing in the checkout.
+- not proven: Enter on a picker row (Enter activates a focused input, D21, and does not press a row's button); a row's Go by pointer (exercised while probing, not kept as a scene); which sprite frame plays; the picture's colours or size in pixels.
+- blast:    `journeys/suites/04-workspace/{25,27,28}-*.yml`.
