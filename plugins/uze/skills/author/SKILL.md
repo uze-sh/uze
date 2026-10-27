@@ -230,6 +230,7 @@ test "the notes tab shows the notes" {
     size 100 30                           // default: the slot's size
     theme "light"                         // default: dark
     locale "pt"                           // default: en
+    now 1761570125000                     // ms since the epoch an Elapsed counts to; default: 0
     click "Notes"                         // a tab, a row: what draws this text
     press "down"                          // a key, as the keymap spells it
     press-button "refresh"

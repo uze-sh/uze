@@ -63,7 +63,11 @@ pub fn run_tests(app: &UzeApplication, checked: &CheckedExtension, update: bool)
     };
     for (file, tests) in &checked.tests {
         for test in &tests.tests {
-            match run_one(app, checked, compiled, file, test, update, &mut run.written) {
+            let now_ms = test.world.now_ms.unwrap_or(0);
+            let ran = crate::ui::extension_view::tree::stopped_at(now_ms, || {
+                run_one(app, checked, compiled, file, test, update, &mut run.written)
+            });
+            match ran {
                 Ok(()) => run.passed += 1,
                 Err(failure) => run.failures.push(failure),
             }
@@ -530,10 +534,11 @@ impl Stage {
             let index = row[..byte].chars().count();
             let x = *columns.get(index)?;
             let y = u16::try_from(y).ok()?;
+            // The first hit drawn under the cell, as the workspace resolves
+            // a click: a button inside a list's row is the button's.
             return drawn
                 .hits
                 .iter()
-                .rev()
                 .find(|(rect, _)| rect.contains(ratatui::layout::Position { x, y }))
                 .map(|(_, hit)| *hit);
         }

@@ -37,6 +37,9 @@ pub(in crate::ui::orchestrator) struct Bridge {
     reporting: BTreeSet<String>,
     /// Whether each agent was working at the last look.
     working: BTreeMap<String, bool>,
+    /// When each working agent's turn began, in milliseconds since the
+    /// epoch: the `since` an `Elapsed` counts from.
+    turn_began: BTreeMap<String, u64>,
     /// The agents as last seen.
     agents: Vec<BridgedAgent>,
     /// What happened since the engines were last told.
@@ -119,6 +122,9 @@ impl WorkspaceModel {
         bridge
             .offsets
             .retain(|id, _| agents.iter().any(|agent| &agent.id == id));
+        bridge
+            .turn_began
+            .retain(|id, _| agents.iter().any(|agent| &agent.id == id));
         bridge.agents = agents;
         for event in &painted {
             note_turn(bridge, event);
@@ -174,6 +180,7 @@ impl WorkspaceModel {
                         "space": agent.space,
                         "checkout": agent.checkout.display().to_string(),
                         "state": state,
+                        "since": bridge.turn_began.get(&agent.id),
                         "reports": bridge.reporting.contains(&agent.id),
                     })
                 })
@@ -232,6 +239,12 @@ fn note_turn(bridge: &mut Bridge, event: &AgentHappened) {
         AgentEvent::TurnStarted => {
             *bridge.turns.entry(event.agent.clone()).or_default() += 1;
             bridge.awaiting_approval.remove(&event.agent);
+            let at = event.detail["at"].as_u64().unwrap_or_else(epoch_ms);
+            bridge.turn_began.insert(event.agent.clone(), at);
+        }
+        AgentEvent::TurnFinished => {
+            bridge.turn_began.remove(&event.agent);
+            bridge.awaiting_approval.remove(&event.agent);
         }
         AgentEvent::ApprovalAsked => {
             bridge.awaiting_approval.insert(event.agent.clone());
@@ -240,6 +253,12 @@ fn note_turn(bridge: &mut Bridge, event: &AgentHappened) {
             bridge.awaiting_approval.remove(&event.agent);
         }
     }
+}
+
+/// Now, in milliseconds since the epoch: when a turn read from the paint
+/// began, which no report dated.
+fn epoch_ms() -> u64 {
+    u64::try_from(uze_platform::clock::since_epoch().as_millis()).unwrap_or(u64::MAX)
 }
 
 /// `report` of `agent` as an event, or `None` for one no event names.
@@ -349,5 +368,35 @@ mod tests {
             ..report("x", "y")
         };
         assert!(happened_of(&agent(), unknown).is_none());
+    }
+
+    #[test]
+    fn a_turn_is_dated_from_its_report_until_it_finishes() {
+        let mut bridge = Bridge::default();
+        let turn = |event, detail| AgentHappened {
+            event,
+            agent: "a1".into(),
+            harness: "harness".into(),
+            checkout: PathBuf::from("/work/uze"),
+            detail,
+        };
+        note_turn(
+            &mut bridge,
+            &turn(AgentEvent::TurnStarted, serde_json::json!({ "at": 7 })),
+        );
+        assert_eq!(bridge.turn_began.get("a1"), Some(&7));
+        note_turn(
+            &mut bridge,
+            &turn(AgentEvent::TurnFinished, serde_json::json!({ "at": 9 })),
+        );
+        assert!(bridge.turn_began.is_empty());
+        note_turn(
+            &mut bridge,
+            &turn(
+                AgentEvent::TurnStarted,
+                serde_json::json!({ "source": "paint" }),
+            ),
+        );
+        assert!(bridge.turn_began["a1"] > 7, "a painted turn is dated now");
     }
 }

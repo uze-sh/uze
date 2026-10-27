@@ -25,7 +25,7 @@ pub struct TestDecl {
 
 /// What the surface is drawn in. Whatever a test leaves unsaid takes the
 /// stated default: the source's own fixture, the slot's size, the dark
-/// theme and `en`.
+/// theme, `en` and the epoch.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct World {
     pub surface: String,
@@ -34,6 +34,11 @@ pub struct World {
     pub size: Option<(u16, u16)>,
     pub theme: Option<ThemeName>,
     pub locale: Option<String>,
+    /// The instant the surface is drawn at, in milliseconds since the
+    /// epoch: what an `Elapsed` counts to and an `Activity` turns by. The
+    /// epoch when unsaid, so a snapshot never moves with the clock.
+    #[serde(default)]
+    pub now_ms: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -121,6 +126,10 @@ pub const STEPS: &[(&str, &str)] = &[
     ("size", "The columns and rows the surface is drawn in."),
     ("theme", "`dark` or `light`."),
     ("locale", "The locale lookups are read in, such as `pt`."),
+    (
+        "now",
+        "The instant drawn at, in milliseconds since the epoch: what `Elapsed` counts to.",
+    ),
     ("expect-text", "The text is drawn somewhere on the surface."),
     (
         "expect-no-text",

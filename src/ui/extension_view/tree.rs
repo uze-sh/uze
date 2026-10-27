@@ -49,7 +49,6 @@ pub(crate) struct Clock {
 
 impl Clock {
     pub(crate) fn now() -> Self {
-        #[cfg(test)]
         if let Some(now_ms) = STOPPED_AT.with(std::cell::Cell::get) {
             return Self { now_ms };
         }
@@ -65,15 +64,14 @@ impl Clock {
     }
 }
 
-#[cfg(test)]
 thread_local! {
     static STOPPED_AT: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
 }
 
 /// Runs `draw` with the clock every tree is drawn from stopped at
 /// `now_ms`, on this thread alone: a frame drawn through the whole client
-/// at an instant a test chooses.
-#[cfg(test)]
+/// at an instant a test chooses, and an extension's test drawn at its
+/// `now`, so what a clock moves never drifts in a snapshot.
 pub(crate) fn stopped_at<T>(now_ms: u64, draw: impl FnOnce() -> T) -> T {
     let before = STOPPED_AT.with(|stopped| stopped.replace(Some(now_ms)));
     let drawn = draw();

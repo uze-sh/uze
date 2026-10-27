@@ -766,6 +766,7 @@ const A_TEST: &str = r##"test "the next step is offered" {
     size 46 40
     theme "light"
     locale "pt"
+    now 1761570125000
     expect-text "Fases"
     click "Activity"
     press "down"
@@ -786,6 +787,7 @@ fn a_test_file_decodes_its_world_and_steps_in_order() {
     assert_eq!(test.world.size, Some((46, 40)));
     assert_eq!(test.world.theme, Some(uze_contract::ThemeName::Light));
     assert_eq!(test.world.locale.as_deref(), Some("pt"));
+    assert_eq!(test.world.now_ms, Some(1_761_570_125_000));
     assert_eq!(test.world.given.len(), 2);
     assert_eq!(
         test.world.given[1].data,
@@ -814,6 +816,25 @@ fn a_test_file_decodes_its_world_and_steps_in_order() {
             ExpectNoText("Deploy".into()),
             Snapshot("panel".into()),
         ]
+    );
+}
+
+#[test]
+fn now_is_milliseconds_since_the_epoch_said_once() {
+    let refused = super::decode_test(
+        "tests/a.test.kdl",
+        "test \"a\" {\n    surface \"x\"\n    now \"today\"\n}\ntest \"b\" {\n    surface \"x\"\n    now 1\n    now 2\n}\n",
+    )
+    .expect_err("refused");
+    let said: Vec<String> = refused.iter().map(ToString::to_string).collect();
+    assert!(
+        said.iter()
+            .any(|line| line.contains("`now` takes the milliseconds since the epoch")),
+        "{said:?}"
+    );
+    assert!(
+        said.iter().any(|line| line.contains("`now` is said twice")),
+        "{said:?}"
     );
 }
 

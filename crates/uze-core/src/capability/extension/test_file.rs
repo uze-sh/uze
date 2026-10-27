@@ -77,7 +77,7 @@ fn test(node: &KdlNode, report: &mut Report<'_>) -> Option<TestDecl> {
     };
     for step in body.nodes() {
         let directive = step.name().value();
-        let once = matches!(directive, "surface" | "size" | "theme" | "locale");
+        let once = matches!(directive, "surface" | "size" | "theme" | "locale" | "now");
         if once && !said.insert(directive) {
             report.on(
                 step,
@@ -109,6 +109,7 @@ fn test(node: &KdlNode, report: &mut Report<'_>) -> Option<TestDecl> {
                 });
             }
             "locale" => world.locale = one_string(step, report),
+            "now" => world.now_ms = now(step, report),
             "expect-text" => push(
                 &mut steps,
                 span,
@@ -281,6 +282,23 @@ fn size(node: &KdlNode, report: &mut Report<'_>) -> Option<(u16, u16)> {
             None
         }
     }
+}
+
+fn now(node: &KdlNode, report: &mut Report<'_>) -> Option<u64> {
+    let parts = entries(node, report);
+    refuse_extra(node, &parts, 1, &[], false, report);
+    let at = match parts.args.first().map(|entry| entry.value()) {
+        Some(KdlValue::Integer(ms)) => u64::try_from(*ms).ok(),
+        _ => None,
+    };
+    if at.is_none() {
+        report.on(
+            node,
+            "`now` takes the milliseconds since the epoch",
+            Some("write `now 1761570125000`, as an `agents` source's `since` reads".to_owned()),
+        );
+    }
+    at
 }
 
 fn absent(node: &KdlNode, report: &mut Report<'_>) -> Option<StepKind> {
