@@ -163,6 +163,61 @@
         "1.4.8"
       ],
       "observed_at": "2026-10-20"
+    },
+    {
+      "harness": "antigravity",
+      "check": "rules-glob-reaches-model",
+      "suite": "rules > rules-glob-reaches-model",
+      "reason": "Antigravity attaches no `trigger: glob` rule since 1.4.7 renamed its file tools: 1.4.6 appends the rule to `view_file`'s result, 1.4.8 appends none to `read_file`'s or after `write_file` (google-antigravity/antigravity-cli#1349). The declaration fails the day a glob rule reaches the model again.",
+      "measurement": "the turn settled after the matching write returned, and no request carried the glob rule's body",
+      "versions": [
+        "1.4.8"
+      ],
+      "observed_at": "2026-10-27"
+    },
+    {
+      "harness": "antigravity",
+      "check": "rules-glob-control-never-triggers",
+      "suite": "rules > rules-glob-control-never-triggers",
+      "reason": "Antigravity attaches no `trigger: glob` rule since 1.4.7 renamed its file tools: 1.4.6 appends the rule to `view_file`'s result, 1.4.8 appends none to `read_file`'s or after `write_file` (google-antigravity/antigravity-cli#1349). The declaration fails the day a glob rule reaches the model again.",
+      "measurement": "no glob rule reached the model at all, so its early arrival is unobservable while the rule is missing",
+      "versions": [
+        "1.4.8"
+      ],
+      "observed_at": "2026-10-27"
+    },
+    {
+      "harness": "antigravity",
+      "check": "rules-plugin-fires-where-declared",
+      "suite": "rules > rules-plugin-fires-where-declared",
+      "reason": "Antigravity attaches no `trigger: glob` rule since 1.4.7 renamed its file tools: 1.4.6 appends the rule to `view_file`'s result, 1.4.8 appends none to `read_file`'s or after `write_file` (google-antigravity/antigravity-cli#1349). The declaration fails the day a glob rule reaches the model again.",
+      "measurement": "the plugin's glob rule is copied into the declaring checkout, and no request after the matching write carried it",
+      "versions": [
+        "1.4.8"
+      ],
+      "observed_at": "2026-10-27"
+    },
+    {
+      "harness": "antigravity",
+      "check": "rules-plugin-reaches-model-once",
+      "suite": "rules > rules-plugin-reaches-model-once",
+      "reason": "Antigravity attaches no `trigger: glob` rule since 1.4.7 renamed its file tools: 1.4.6 appends the rule to `view_file`'s result, 1.4.8 appends none to `read_file`'s or after `write_file` (google-antigravity/antigravity-cli#1349). The declaration fails the day a glob rule reaches the model again.",
+      "measurement": "the plugin's glob rule never reached the model, so its count is unobservable while the rule is missing",
+      "versions": [
+        "1.4.8"
+      ],
+      "observed_at": "2026-10-27"
+    },
+    {
+      "harness": "antigravity",
+      "check": "rules-plugin-never-where-undeclared",
+      "suite": "rules > rules-plugin-never-where-undeclared",
+      "reason": "Antigravity attaches no `trigger: glob` rule since 1.4.7 renamed its file tools: 1.4.6 appends the rule to `view_file`'s result, 1.4.8 appends none to `read_file`'s or after `write_file` (google-antigravity/antigravity-cli#1349). The declaration fails the day a glob rule reaches the model again.",
+      "measurement": "the plugin's glob rule never reached the model, so a leak into the undeclaring checkout is unobservable while the rule is missing",
+      "versions": [
+        "1.4.8"
+      ],
+      "observed_at": "2026-10-27"
     }
   ]
 }

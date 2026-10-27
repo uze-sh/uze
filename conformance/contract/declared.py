@@ -15,6 +15,10 @@ on this version (`gate.py`).
 
 from shared.common import check, check_absence, declare
 
+#: Each declined presence this run measured, by its claim: True when the
+#: capability was missing, as the declaration says.
+_missing = {}
+
 
 def presence(bindings, name, prop, observed, detail, measured=True):
     """A capability that must be there: `observed` is whether it was.
@@ -27,6 +31,7 @@ def presence(bindings, name, prop, observed, detail, measured=True):
     if reason is None:
         check(name, measured and observed, detail)
         return
+    _missing[prop] = measured and not observed
     declare(
         name,
         (not observed) if measured else None,
@@ -41,10 +46,21 @@ def absence(bindings, name, prop, violated, *, settled, proof, detail):
     The absence is only evidence once the turn settled and `proof` showed
     the surface was populated (`check_absence`). Declined, the limitation
     holds when the behaviour happened, under the same two conditions.
+    Declined through a presence this run measured missing, the surface can
+    never be populated: it holds on a settled turn, and escalates with that
+    presence the day the capability arrives.
     """
     reason = bindings.unsupported(prop)
     if reason is None:
         check_absence(name, not violated, settled, proof=proof, detail=detail)
+        return
+    if not proof and _missing.get(prop):
+        declare(
+            name,
+            True if settled else None,
+            f"{bindings.harness} cannot: {reason}",
+            f"{detail} (unobservable while `{prop}` is missing)",
+        )
         return
     declare(
         name,

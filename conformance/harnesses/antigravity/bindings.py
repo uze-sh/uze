@@ -173,6 +173,15 @@ timeout 240 agy --print {shlex.quote(prompt)} --dangerously-skip-permissions \\
                 "reason to the model (measured on 1.4.3; until 1.4.2 it "
                 "arrived only as the error an unreadable hook output caused)"
             )
+        if prop in ("rules-glob-reaches-model", "rules-plugin-fires-where-declared"):
+            # Measured with no UZE in the loop (`experiments/antigravity/rules`):
+            # 1.4.6 appends a matching glob rule to `view_file`'s result, 1.4.8
+            # appends none to `read_file`'s, nor after a `write_file`.
+            return (
+                "Antigravity attaches no `trigger: glob` rule since 1.4.7 renamed "
+                "its file tools: the rule never reaches the model after a matching "
+                "read or write (google-antigravity/antigravity-cli#1349)"
+            )
         if prop == "agent-vendor-fields-block-model":
             return (
                 "Antigravity drops an agent that carries `model` (measured on "
