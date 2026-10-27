@@ -212,7 +212,7 @@ the language server's hover:
 - data: `List`, `Table`, `Details`/`Entry`
 - measures: `Progress`/`Segment`, `Gauge`, `Chart`, `Pips`, `Stat`
 - status: `Badge`, `Marks`/`Mark`, `Activity`, `Elapsed`
-- input: `Toggle`, `Button` (runs the declared action its `action` names; see `uze:extension`)
+- input: `Toggle`, `Button` (runs the declared action its `action` names), `Select`/`Choice`, `Field`, `Form` (values held as `ui.<id>`, a form sending `form.<id>`; see `uze:extension`)
 - media: `Cells`, `Image`, `Sprite` (a grid in roles, a picture, a declared sprite; see `uze:extension`)
 
 Colour is always a role (`muted`, `warning`, `{tone:state}`), never a

@@ -98,6 +98,10 @@ const SOURCE_NODES: &[(&str, &str)] = &[
         "refresh-on",
         "What asks it again: `\"paths.changed\" \"<path>\"` or `\"checkout.changed\"`.",
     ),
+    (
+        "applies-when",
+        "A path the checkout must hold for it to be asked: `applies-when \".planning\"`.",
+    ),
 ];
 const ACTION_PROPS: &[(&str, &str)] = &[
     ("label", "What the footer and menus call it."),
@@ -121,6 +125,14 @@ const ACTION_NODES: &[(&str, &str)] = &[
         "run",
         "A program it runs, as an argv, confined where the machine can.",
     ),
+    (
+        "with",
+        "The UI and form values it reads: `with \"ui.sort\" \"form.*\"`.",
+    ),
+    (
+        "then",
+        "What its run's answer is for: `then { agent-prompt \"Review {answer.file}\" target=\"self\"; }`.",
+    ),
 ];
 const SURFACE_PROPS: &[(&str, &str)] = &[
     (
@@ -138,6 +150,10 @@ const SURFACE_PROPS: &[(&str, &str)] = &[
     ("view", "The view file it draws, relative to the extension."),
     ("source", "The source its data comes from."),
     ("title", "What the host titles it with."),
+    (
+        "applies-when",
+        "A path the checkout must hold for it to be offered: `applies-when=\".planning\"`.",
+    ),
 ];
 const DIRECTIVES: &[(&str, &str)] = &[
     (

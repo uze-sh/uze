@@ -91,6 +91,38 @@ action "copy" label="Copy" on="board" key="ctrl-y" confirm="Copy {text}?" {
   stray keystroke never reaches its question or an agent. A copy longer than one line or 256 bytes asks
   first even without `confirm`.
 - **`wants`** is written once, with every grant as an argument.
+- **`applies-when`**: a surface (`applies-when=".planning"`) or a source
+  (`applies-when ".planning/STATE.md"` inside its block) for the
+  checkouts holding that path only. A surface that does not apply is not
+  offered or drawn there; a source that does not apply is never asked, and
+  says so on its surfaces. Checked a while after the checkout changes, so
+  a path an agent creates shows up on its own.
+
+### Input in a view
+
+```kdl
+Select "Sort" id="sort" { Choice "Newest" value="new"; Choice "Oldest" value="old"; }
+Field "Filter" id="query" placeholder="name"
+List each="items" filter="ui.query" { Text "{text}"; }
+Form action="comment" submit="Comment" item="{.}" {
+    Field "Comment" id="comment"
+}
+```
+
+- `Select` holds one of its `Choice`s as `ui.<id>` (its first until one is
+  chosen), stepped with its arrows or Enter; `show="ui.sort=old"` names a
+  `value` it declares.
+- `Field` is a line of text held as `ui.<id>`: a click (or Enter on it)
+  types into it, Esc stops typing, Tab moves to the next input. A list's
+  `filter="ui.<id>"` keeps the rows whose fields hold what was typed.
+- `Form` draws its fields and a button; Enter in one of its fields or a
+  click on the button runs `action` with `form.<id>` of each field, cleaned
+  like any item. ←→ move focus between a view's inputs.
+- An action reads what it names in `with`, and nothing else:
+  `with "ui.sort" "form.*"` (or `"form.comment"`) puts `ui` and `form` in a
+  script's `input` and a program's stdin, and `{form.comment}` in its
+  templates. A form sent to an action whose `with` names none of its
+  fields runs nothing and says so.
 
 ### Preferences
 
@@ -206,6 +238,12 @@ action "jump" label="Jump" on="crew-view" key="alt-j" { open "picker"; }
 - `when="agent.turn.finished"` sends a fixed prompt on that event, with
   `agent:prompt:auto`: its text may hold no `{field}`, the operator allows
   it once per agent for a day, and F8 pauses every extension's writes.
+- **Two steps**: a `run` or `script` may say what its answer is for with
+  `then { agent-prompt "Review {answer.file}" target="self"; }`. The
+  prompt reads the answer as `answer.*` (and the item, `form.*`), needs
+  `agent:prompt`, is sent only on the gesture that ran the action, and is
+  shown first like any prompt; `when=` is refused there, since its text is
+  not fixed.
 - `focus-agent` puts the agent in front. An `open` action naming an
   overlay with a `key` opens it from anywhere, over the agent's pane too,
   so that key must be a function key or carry ctrl or alt.
