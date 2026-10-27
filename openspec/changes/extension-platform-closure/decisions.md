@@ -414,3 +414,13 @@
 - decided:  The engine keeps the item of each surface's selected row as it was drawn when the selection moved to that row (`chosen`), taken before a source is asked, and the input reads that. An answer redrawing the row under the same index changes nothing; a new row chosen reads the row as drawn then. Rows still answered about another checkout (D141) give no item. An action pressed still reads the row drawn now.
 - rejected: Refusing, in the check, an input that reads the item of its own source's list: a surface shows only its own source, so that refuses every input reading an item, the master-detail shape the input exists for.
 - blast:    `declared.rs` (`chosen`, `capture_selection`, `input_of`, `jobs`, `open`, `close`, `replace`); `declared/source_tests.rs`.
+
+## D143 — Two extensions' doors live everywhere on one chord: the first table keeps it
+
+- status:   pending
+- task:     review finding
+- commit:
+- trigger:  `bind_table` checked a chord against the actions of one table only, so two extensions offering an EVERYWHERE door on the same chord both kept it, and `everywhere_at` answered whichever owner sorts first, silently.
+- decided:  `with_extensions` checks each EVERYWHERE door against the doors earlier tables bound; the later one is offered without a key, and `extension_problems` says which chord opens both and which is dropped. "First" is the order the tables are registered in.
+- rejected: Dropping both: an extension that worked would lose its door when another is installed.
+- blast:    `uze-keys` `keymap.rs` (`with_extensions`); `extension.rs` tests.

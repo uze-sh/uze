@@ -343,13 +343,37 @@ impl Keymap {
     /// Never refuses. What cannot be bound is dropped, one binding at a
     /// time, and said in [`Keymap::extension_problems`]: a suggestion the
     /// host already holds, a chord two actions of one surface reach, a
-    /// name the operator wrote for an extension not registered.
+    /// chord two extensions' doors live everywhere both take (the first
+    /// table keeps it), a name the operator wrote for an extension not
+    /// registered.
     pub fn with_extensions(&self, tables: Vec<ExtensionTable>) -> Keymap {
         let mut keymap = self.clone();
         let mut problems = Vec::new();
         let mut bound = BTreeMap::new();
+        // A door live everywhere has no surface in front to tell two
+        // extensions apart, so its chord is the first table's to take.
+        let mut everywhere: Vec<Bound> = Vec::new();
         for table in &tables {
-            let actions = self.bind_table(table, &mut problems);
+            let mut actions = self.bind_table(table, &mut problems);
+            for door in actions
+                .iter_mut()
+                .filter(|bound| bound.surface == extension::EVERYWHERE)
+            {
+                let Some(chord) = door.chord else { continue };
+                match everywhere.iter().find(|first| first.chord == Some(chord)) {
+                    Some(first) => {
+                        problems.push(Problem::warning(format!(
+                            "`{chord}` opens both `{}` and `{}` from anywhere; `{}` is offered \
+                             without a key",
+                            extension::name(first.action),
+                            extension::name(door.action),
+                            extension::name(door.action),
+                        )));
+                        door.chord = None;
+                    }
+                    None => everywhere.push(door.clone()),
+                }
+            }
             bound.insert(table.owner.clone(), actions);
         }
         for id in self.extensions.written.keys() {

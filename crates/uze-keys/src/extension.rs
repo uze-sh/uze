@@ -291,6 +291,40 @@ mod tests {
     }
 
     #[test]
+    fn two_extensions_doors_on_one_chord_leave_it_to_the_first() {
+        let first = "jump@studio/jump";
+        let second = "leap@studio/leap";
+        let keymap = default_keymap().with_extensions(vec![
+            table(
+                first,
+                vec![offered(first, "open:picker", EVERYWHERE, Some("alt+j"))],
+            ),
+            table(
+                second,
+                vec![offered(second, "open:picker", EVERYWHERE, Some("alt+j"))],
+            ),
+        ]);
+        assert_eq!(
+            keymap.resolve_for(chord("alt+j"), &OPEN, None),
+            act(first, "open:picker")
+        );
+        let said: Vec<&str> = keymap
+            .extension_problems()
+            .iter()
+            .map(|problem| problem.message.as_str())
+            .collect();
+        assert_eq!(said.len(), 1, "{said:?}");
+        assert!(
+            said[0].contains(&action_name(first, "open:picker")),
+            "{said:?}"
+        );
+        assert!(
+            said[0].contains(&action_name(second, "open:picker")),
+            "{said:?}"
+        );
+    }
+
+    #[test]
     fn a_free_suggestion_answers_only_while_its_surface_is_in_front() {
         let owner = "gsd@luizfbalves/gsd-band";
         let keymap = default_keymap().with_extensions(vec![table(
