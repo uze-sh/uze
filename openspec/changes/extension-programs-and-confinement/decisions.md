@@ -79,3 +79,33 @@
 - decided:  Compiling reads the first 256 bytes of each packaged program (`Files::head`). `#!/path/name args` or `#!/usr/bin/env name args` names `name`, which must be wanted as `exec:<name>`. `env` with options (`-S`, `VAR=`) is refused. Anything without `#!` is a native program of the extension's own, compiled without a grant and disclosed at consent as "ships a program of its own".
 - rejected: Executing packaged scripts directly and letting the kernel read `#!`: `env` would search `PATH` at run time, defeating the pinning.
 - blast:    `uze-core::capability::extension::program::packaged`, used again by the runner.
+
+## D9 — A run past its output bound is ended, not drained
+
+- status:   pending
+- task:     3.1
+- commit:
+- trigger:  `machine::subprocess::read_bounded` keeps reading past its cap so a chatty child is not stalled, while the spec says a program past its output bound is stopped and counted a failure.
+- decided:  `extension_program` reads each stream on a thread up to its bound (stdout 1 MiB, stderr 64 KiB); the first byte past it raises a flag and closes the pipe, and the run's whole group is ended twice. A program that died of the closed pipe before the flag was seen still reports `Flooded`, naming the stream.
+- rejected: Reusing `read_bounded`: it would let a program write forever until its deadline.
+- blast:    `crates/uze-core/src/machine/extension_program.rs`.
+
+## D10 — `argv[0]` is the pinned path, not the program's name
+
+- status:   pending
+- task:     3.1
+- commit:
+- trigger:  The parent's 5.1 asks for `argv[0] = name`; the confinement helper executes the path it is given, with that path as `argv[0]`.
+- decided:  A program sees its absolute pinned path as `argv[0]`, confined or not. A CLI that dispatches on its name still sees its own file name.
+- rejected: A helper flag carrying `argv[0]`: one more argument parsed before confinement, for a nicety.
+- blast:    A multi-call binary (`busybox`) pinned by a link would see the link's target name; it would be granted by that name.
+
+## D11 — The environment keeps the locale, terminal, `PATH`, `HOME`, `USER` and `LOGNAME`
+
+- status:   pending
+- task:     3.1
+- commit:
+- trigger:  The spec lists "locale, terminal, `PATH`, `HOME`, and the contract's variables" without saying whether `USER`, `TZ` or `NO_COLOR` count.
+- decided:  `LANG`, `LANGUAGE`, `LC_*`, `TERM`, `COLORTERM`, `NO_COLOR`, `TZ`, `PATH`, `HOME`, `USER`, `LOGNAME` are inherited; `TMPDIR` is the scratch directory; each flat input is also `UZE_IN_<NAME>` (upper case, `-` as `_`); Git gets `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_TERMINAL_PROMPT=0` and `GIT_CONFIG_COUNT` pairs disarming `core.fsmonitor`, `core.hooksPath`, `core.sshCommand` and `credential.helper`, with `safe.directory` set to the checkout. Nothing else from UZE's environment reaches it.
+- rejected: Only `PATH` and `HOME`: CLIs that print dates or need a user name break for no gain, and none of these hold a credential.
+- blast:    A program that needs another variable cannot have it; a later change adds declared environment if a gallery entry needs it.
