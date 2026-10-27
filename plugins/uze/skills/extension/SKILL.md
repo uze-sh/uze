@@ -53,10 +53,19 @@ action "copy" label="Copy" on="board" key="ctrl-y" confirm="Copy {text}?" {
 }
 ```
 
-- **`surface "<id>" slot=… view=… source=… title=…`**: `slot` is `view`
-  or `section`; `view` is a view file of catalog nodes bound to the
-  source's data with `{field}` (the node list is in `uze:author`, *What a
-  view can draw*, and in the language server's hover).
+- **`surface "<id>" slot=… view=… source=… title=…`**: `view` is a view
+  file of catalog nodes bound to the source's data with `{field}` (the
+  node list is in `uze:author`, *What a view can draw*, and in the language
+  server's hover). `slot` is where it is drawn:
+
+  | slot | where |
+  |---|---|
+  | `view` | the full frame, opened from the tab strip |
+  | `section` | a block of the sidebar |
+  | `drawer` | a panel beside the agent's pane |
+  | `status` | one row of the sidebar's header, folded to it |
+  | `band` | `rows=1`…`6` along the `place="top"` (or `"bottom"`) of each agent's pane, taken before the pane is sized, so no answer resizes the agent |
+  | `overlay` | a card over the frame, opened by an `open` action, closed by Esc |
 - **`source "<id>" { … }`**: exactly one of `script "x.rhai"` or
   `fixture "fixtures/x.json"`. `input name="<template>" …` is what the
   script is asked with, text only. `every "<n>s|m|h"` asks again on a
@@ -82,6 +91,37 @@ action "copy" label="Copy" on="board" key="ctrl-y" confirm="Copy {text}?" {
   first even without `confirm`.
 - **`wants`** is written once, with every grant as an argument.
 
+### Preferences
+
+```kdl
+preferences {
+    number "warn-at" label="Warn at load (%)" default=70 min=1 max=100
+    toggle "detail" label="Show each phase's name" default=#true
+    choice "unit" "MiB" "GiB" label="Memory unit" default="MiB"
+    text "title" label="Title" default="GPU"
+}
+```
+
+The operator sets them on the Extensions screen. A view reads
+`{pref.warn-at}`; a source that writes `preferences` inside its block is
+asked with `input.preferences`. A value the declaration may not hold reads
+as its default.
+
+### Events and composed answers
+
+- `deliver "latest"` (the default) or `"each"` inside a source says how
+  the events of its `refresh-on` reach it: `input.event`
+  (`{name, paths, checkout}`) holds the last of a burst, or each in turn,
+  16 at most per burst, the next one saying how many were `dropped`.
+- `source "log" { events 50; }` is answered by the workspace itself: the
+  last events the extension saw, newest first.
+- `output "view"` makes a source **composed**: its `data` is a tree of
+  catalog nodes, `{"type": "Stack", "args": [...], "props": {...},
+  "children": [...]}`, which the workspace validates and draws in place of
+  the surface's view file (that file draws until the source answers). A
+  `Button` names a declared `action` and carries its own `item`. Nothing
+  in a composed tree is a reference: `{x}` there is text.
+
 ## A script
 
 A source's script is a Rhai file defining `fn answer(input, context)`. It
@@ -105,6 +145,10 @@ fn answer(input, context) {
 }
 ```
 
+- The envelope may also ask for `notify: #{ title, body }` and
+  `sound: "done" | "attention" | "error"`, under the `notify` grant: the
+  workspace notifies through the desktop or the terminal, attributed to the
+  extension and at most once every 10 seconds.
 - `input` is the source's declared `input`, templates resolved; an
   action's script is asked with `#{ item: <the item acted on> }`, or a
   null item when none was.
@@ -220,9 +264,10 @@ history.push(load);
 | `open-path` | an `open-path` action |
 | `exec:<program>` | running that program, pinned and confined as above; `sh`, `python3`, `node`, `git` and the like are named to the operator as able to run anything |
 | `store` · `store:global` | the extension's store, per project or for the machine |
+| `notify` | a notification and a sound an answer asks for, rate-limited |
 
 Later grants are refused by the check naming the change that brings them:
-`agent:*` and `notify`, `resident`, and `net`, `secret`, `edit:checkout`.
+`agent:*`, `resident`, and `net`, `secret`, `edit:checkout`.
 There is no `write:checkout`, and `exec:uze` and a harness's own program
 are never granted. Ask for the fewest grants that do the job: each one is
 what the operator is asked about.
