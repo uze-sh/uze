@@ -51,19 +51,69 @@ pub(crate) fn run_agent(app: &UzeApplication, action: AgentAction) -> Result<()>
     }
 }
 
+/// The most of a hook's input read. A `PostToolUse` carries the tool's
+/// whole response, which can be large; past this the prefix still names
+/// the tool and its path.
+const HOOK_INPUT_MAX: u64 = 8 << 20;
+
 /// What the harness said about the event, as JSON: from standard input
-/// when `from_stdin`, else from `payload`; nothing when neither reads as
-/// JSON. Bounded: a hook's input is a description, never a transcript.
+/// when `from_stdin`, else from `payload`; nothing when neither says
+/// anything. Bounded: a hook's input is a description, never a transcript.
 fn described_event(from_stdin: bool, payload: Option<&str>) -> serde_json::Value {
-    use std::io::Read as _;
-    let text = if from_stdin {
-        let mut text = String::new();
-        let _ = std::io::stdin().take(64 << 10).read_to_string(&mut text);
-        text
+    if from_stdin {
+        described_from(std::io::stdin())
     } else {
-        payload.unwrap_or_default().to_owned()
-    };
-    serde_json::from_str(&text).unwrap_or_default()
+        described_by(payload.unwrap_or_default())
+    }
+}
+
+/// What `input` describes, reading no more than [`HOOK_INPUT_MAX`].
+fn described_from(input: impl std::io::Read) -> serde_json::Value {
+    use std::io::Read as _;
+    let mut bytes = Vec::new();
+    let _ = input.take(HOOK_INPUT_MAX).read_to_end(&mut bytes);
+    described_by(&String::from_utf8_lossy(&bytes))
+}
+
+/// `text` as JSON or, when it does not read as JSON (cut at the bound),
+/// the fields a report keeps, each found in it as a key and its string.
+fn described_by(text: &str) -> serde_json::Value {
+    if let Ok(described) = serde_json::from_str(text) {
+        return described;
+    }
+    let mut described = serde_json::Map::new();
+    for key in ["tool_name", "tool_use_id", "call_id"] {
+        if let Some(value) = string_of_key(text, key) {
+            described.insert(key.to_owned(), value.into());
+        }
+    }
+    let input: serde_json::Map<String, serde_json::Value> = ["file_path", "path"]
+        .into_iter()
+        .filter_map(|key| Some((key.to_owned(), string_of_key(text, key)?.into())))
+        .collect();
+    if !input.is_empty() {
+        described.insert("tool_input".to_owned(), input.into());
+    }
+    serde_json::Value::Object(described)
+}
+
+/// The string the first `"key":` in `text` holds, skipping the key's name
+/// quoted inside another string.
+fn string_of_key(text: &str, key: &str) -> Option<String> {
+    let quoted = format!("\"{key}\"");
+    text.match_indices(&quoted).find_map(|(at, _)| {
+        if text[..at].ends_with('\\') {
+            return None;
+        }
+        let value = text[at + quoted.len()..]
+            .trim_start()
+            .strip_prefix(':')?
+            .trim_start();
+        serde_json::Deserializer::from_str(value)
+            .into_iter::<String>()
+            .next()?
+            .ok()
+    })
 }
 
 /// The text at `path` inside `described`, when there is one.
@@ -1264,6 +1314,61 @@ mod tests {
             secret_looking: None,
             similar: Some("reply-in-ptbr"),
         }
+    }
+
+    /// A `PostToolUse` input whose `tool_response` is `response_bytes`
+    /// long, with the call's id after it, as Claude Code orders them.
+    fn post_tool_use(response_bytes: usize) -> String {
+        serde_json::json!({
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Read",
+            "tool_input": { "file_path": "/work/acme/src/main.rs" },
+            "tool_response": { "content": "x".repeat(response_bytes) },
+            "tool_use_id": "toolu_01",
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn a_hook_input_with_a_large_tool_response_keeps_its_tool_and_call() {
+        let described = described_from(std::io::Cursor::new(post_tool_use(1 << 20)));
+        assert_eq!(
+            field_at(&described, &["tool_name"]).as_deref(),
+            Some("Read")
+        );
+        assert_eq!(
+            field_at(&described, &["tool_use_id"]).as_deref(),
+            Some("toolu_01")
+        );
+        assert_eq!(
+            field_at(&described, &["tool_input", "file_path"]).as_deref(),
+            Some("/work/acme/src/main.rs")
+        );
+    }
+
+    #[test]
+    fn a_hook_input_cut_at_the_bound_keeps_what_its_prefix_says() {
+        let whole = post_tool_use(1 << 20);
+        let described = described_by(&whole[..whole.len() / 2]);
+        assert_eq!(
+            field_at(&described, &["tool_name"]).as_deref(),
+            Some("Read")
+        );
+        assert_eq!(
+            field_at(&described, &["tool_input", "file_path"]).as_deref(),
+            Some("/work/acme/src/main.rs")
+        );
+        assert_eq!(
+            field_at(&described, &["tool_use_id"]),
+            None,
+            "what was cut away is not guessed"
+        );
+        let quoted = r#"{"tool_response": "say \"tool_name\": \"Evil\"", "tool_name": "Bash""#;
+        assert_eq!(
+            field_at(&described_by(quoted), &["tool_name"]).as_deref(),
+            Some("Bash"),
+            "a key quoted inside a string is no key"
+        );
     }
 
     #[test]

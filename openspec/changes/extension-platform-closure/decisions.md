@@ -557,3 +557,13 @@
 - decided:  `reports::append` holds `file_lock::Held` (the lock the consent record's writer uses, two seconds of patience) on `UzeHome::agent_reports_lock_path(agent)`, `runtime/agents/<agent>/reports.lock`, for the whole append and any cut. The lock is generated, beside the journal it guards. The reader takes no lock: a cut publishes by rename, so it reads whole lines of one file or the other, and D164 resumes it after a cut. `two_writers_lose_no_report_to_a_cut` reproduced the loss (holes in one writer's sequence) before the lock, and passes with it.
 - rejected: Appending without a cut and trimming only from the reader: the journal is a bound for a pane any process can write to, and nothing would hold it to that bound with no client open.
 - blast:    `uze-core::machine::home`, `uze-workspace::reports`.
+
+## D166 — A hook's input is read up to 8 MiB, and a cut one still names its tool
+
+- status:   pending
+- task:     review finding 7
+- commit:
+- trigger:  `uze agent report --hook-input` read at most 64 KiB of standard input, so a `PostToolUse` whose `tool_response` was larger did not parse and the report lost its tool, its path and its call id.
+- decided:  Both remedies. The bound is 8 MiB (`HOOK_INPUT_MAX`), still bounded. Input that does not read as JSON (cut at the bound, or cut by the harness) is scanned: the first `"tool_name"`, `"tool_use_id"`, `"call_id"`, `"file_path"` and `"path"` keys outside a string give their string values, `file_path`/`path` under `tool_input` as a whole input has them. What the cut removed is not guessed: a call id after an 8 MiB response is lost, and the report keeps its tool and path. Invalid UTF-8 at the cut is read lossily rather than failing the whole read.
+- rejected: Reading standard input unbounded: a hook runs on every tool call, and the report keeps four short fields.
+- blast:    `src/cli/agent.rs`.
