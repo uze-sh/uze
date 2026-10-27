@@ -239,3 +239,33 @@
 - decided:  `tests/_fixtures/canonical/bridge` holds `agents-hud`, `flightdeck`, `chimes`, `jump`, `plan-review` and `gsd-next`, the GSD band's next-step button as its own band so `gsd` stays untouched. `flightdeck` lists the `events` source's reports rather than pairing calls into durations under `deliver "each"`; `jump`'s picker runs `go` by a button or `ctrl+g`, since a declared list has no row activation and Enter stays the host's; `plan-review` is a section of the plan's open steps with one review prompt, there being no `form` node. The scripts' answers (`chime.rhai` on an event, `plan.rhai` on a plan) are proved in `uze-script/tests/bridge_fixtures.rs`, as a plugin check runs no script against an event.
 - rejected: Changing `gsd-band`'s fixtures; a picker filtered as typed and Enter to accept, which are host work of their own.
 - blast:    `tests/_fixtures/canonical/bridge/**`, `every_fixture_plugins_extensions_check_clean`, `crates/uze-script/tests/bridge_fixtures.rs`.
+
+## D40 — The stand-in records each line typed into a conversation as a turn, and paints a turn when asked to work
+
+- status:   pending
+- task:     5.3
+- commit:   9364c6db
+- trigger:  Task 5.3 needs an agent that is busy for a while and a witness of what reached it; the journeys' stand-in reports nothing through `uze agent report`, echoed what it read and recorded none of it.
+- decided:  A `ConversationSession` stand-in appends each line it reads to its transcript as Claude Code writes a typed turn (`{"type":"user","message":{"role":"user","content":…}}`), and a line `work for <n> seconds` paints a spinner four times a second for that long, the beat the client reads a turn from (D11). The journey checks the transcript, which is the agent's record, not UZE's.
+- rejected: A journey staging its own stand-in (the journey rule: stand-ins come from `uze-testkit` only); writing to the agent's terminal from a `shell` step (Linux only, and not the harness painting); reading `/proc/<pid>/io` (counts bytes, not text).
+- blast:    `uze-testkit::fake_harness` (`hold_the_terminal`, `Action` docs). Only journeys launch interactive stand-ins.
+
+## D41 — The bridge journey reads turns from paint only, gates the refusal on the agent's state, and leaves the skill and unattended prompts out
+
+- status:   pending
+- task:     5.3
+- commit:
+- trigger:  The proof of 5.3 is a journey; what it can reach is what the stand-in does and what the screen gates.
+- decided:  `journeys/suites/04-workspace/19-…` stages `agents-hud` and `flightdeck` (a copy of `bridge`'s, a container mounts only `journeys/`), enables both from the offer, asks the agent for a painted turn, gates on the row counting it, presses `Ask` while the deck says `working` (refused: the transcript holds no prompt) and again once it says `ready` (typed: the transcript holds exactly the shown text). Not proven there: a turn reported through `uze agent report` (the stand-in has no hooks), the `gsd-next` skill prompt in a harness's spelling, unattended prompts and the rates, and the refusal's reason: the toast cuts its detail after the action's label, so `agent is busy` is not on screen to gate on, and the gate is the deck's `working` instead. That the row redrew is a gate only; nothing on disk says it.
+- rejected: Gating on the toast's reason: it is not drawn at the toast's width.
+- blast:    `journeys/suites/04-workspace/19-an-extension-prompts-an-agent-only-when-it-is-idle.yml`.
+
+## D42 — Found by the journey, not decided: an `agent:observe` extension is handed the agents before it is allowed
+
+- status:   pending
+- task:     5.3
+- commit:
+- trigger:  In the bridge journey, `agents-hud`'s status row drew `· agent 1` in the sidebar's header before the operator reviewed or allowed it, with no `state/extensions.json` on disk.
+- decided:  Not changed here; recorded for the bridge's owner. `agents_observed`/`tell_agents` (`declared/bridge.rs`) choose observers by `observes_agents` (what the manifest wants) and `offers_declared` (the operator's switch), never by consent or `enabled_in`, and `declared_statuses` (`declared/status.rs`) draws a row by the switch alone, while a band is judged by the record (`enabled_in`, D23 of `extension-slots-and-feeds`). The fix wants a rule for which project an observer of every space's agents must be enabled in.
+- rejected: Asserting the row's absence before consent in the journey: it would fail today, and the rule it should hold is not decided.
+- blast:    `src/ui/orchestrator/declared/{bridge,status}.rs`.

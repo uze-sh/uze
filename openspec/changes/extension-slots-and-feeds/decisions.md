@@ -259,3 +259,23 @@
 - decided:  No transition is added. A bar moves when its answer does, and the test proves it holds still while the activity mark and the elapsed time move, with no run between two frames, and that such a frame asks the loop for the next one (`marquee`). The renderer already moved both from the clock it is handed; the test drives the whole client's frame with that clock stopped at a chosen instant (`tree::stopped_at`, test-only), on its own thread.
 - rejected: Easing a bar from its last fill to its new one: state across frames that the renderer refuses by design, or a wall clock in the engine, for a motion of a fraction of a second.
 - blast:    `src/ui/extension_view/tree.rs`, `orchestrator/tests/declared_motion.rs`.
+
+## D40 — A source that reads the preferences is asked again when one changes, by the engine forgetting its question
+
+- status:   pending
+- task:     7.3
+- commit:   fcbf6259
+- trigger:  The slots journey turned `deck`'s `detail` off and the band and the status row kept naming the phases: the runner adds `input.preferences` as it asks (D6), so the question the engine remembers (`asked`) never changed with a setting, and nothing asked again.
+- decided:  `DeclaredExtension::configure`, when the admitted preferences change, forgets the question of every source declaring `preferences`; the next pass asks it, and the runner hands the new setting. A source that does not read them is not asked again.
+- rejected: Putting the preferences into the engine's own input of the question: they would ride twice, once from the engine and once from the runner, which reads the record as written.
+- blast:    `uze-extensions::declared.rs` (`configure`), `declared/source_tests.rs`.
+
+## D41 — The slots journey proves `deck`'s band, row and toggle; a number preference and the overlay and notification are not in it
+
+- status:   pending
+- task:     7.3
+- commit:
+- trigger:  Task 7.3 names a band, a status row and a preference; `gpu` carries the number preference but answers from `nvidia-smi`, which no journey world has.
+- decided:  `journeys/suites/04-workspace/18-…` stages `deck` (a copy of the fixture: a container mounts only `journeys/`), enables it from the offer, gates on the band over the agent and the row in the sidebar's header naming the phases, turns `detail` off in the Extensions screen's preferences editor, and reads `state/extensions/preferences/deck@studio/deck.json` and the checkout the script never wrote. What the band and the row draw is a gate, never a check: nothing on disk says it. A number preference typed through the host's prompt, the picker overlay and the `done` notification are left to the client's own tests.
+- rejected: Pointing the journey at `tests/_fixtures/canonical/deck` through `{repo}`: the Docker run cannot reach it, so the copy can drift from the fixture, which the extension check still proves.
+- blast:    `journeys/suites/04-workspace/18-a-band-and-a-status-row-a-preference-redraws.yml`.

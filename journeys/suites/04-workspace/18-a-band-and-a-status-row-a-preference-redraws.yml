@@ -1,0 +1,293 @@
+journey: an extension's band over the agent and its row in the sidebar appear once the operator enables it, and a preference they change redraws both
+tags: [gate, tui, workspace]
+about: |
+  The operator's side of an extension that draws in the workspace's chrome
+  rather than in a view of its own: `deck`, the slots' reference plugin,
+  composes a two-row band over each agent's pane and a row in the
+  sidebar's header from the checkout's `.planning/phases`, and declares a
+  toggle preference that says whether the band names each phase. Installed
+  without a terminal it is disabled; the workspace offers it, the operator
+  enables it, both appear, and turning the preference off in the
+  Extensions screen redraws them without the names.
+
+  The machine is what each scene checks: the consent record in
+  `state/extensions.json`, the preference record under
+  `state/extensions/preferences/deck@studio/deck.json`, and the checkout
+  the script read and never wrote. The screen only gates each gesture.
+
+world:
+  project: demo-app
+  commits:
+    - message: "chore: initial commit"
+      files:
+        README.md: "# demo-app\n"
+    - message: "docs: plan the milestone"
+      files:
+        .planning/phases/09-alpha/01-PLAN.md: "# Plan\n"
+        .planning/phases/09-alpha/01-SUMMARY.md: "# Summary\n"
+        .planning/phases/10-beta/01-PLAN.md: "# Plan\n"
+        .planning/phases/10-beta/02-PLAN.md: "# Plan\n"
+        NOTES.md: "- [ ] Ship the band\n"
+  # `tests/_fixtures/canonical/deck`, staged as a marketplace's plugin: a
+  # container mounts only `journeys/`, so the fixture is carried here.
+  files:
+    market/marketplace.json: |
+      {
+        "name": "studio",
+        "description": "A marketplace this journey stages and installs from its clone.",
+        "plugins": [
+          { "name": "deck", "source": "./plugins/deck", "description": "The slots' reference extension." }
+        ]
+      }
+    market/plugins/deck/plugin.json: |
+      {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "deck",
+        "version": "1.0.0",
+        "description": "The deck reference extension: a composed band over each agent's pane, a status row, an overlay picker, an events log and a notification."
+      }
+    market/plugins/deck/extensions/deck/extension.kdl: |
+      protocol 1
+      id "deck"
+      name "Deck"
+      description "The checkout's phases over each agent, its notes in a picker, and what changed"
+
+      wants "read:checkout" "clipboard" "notify"
+
+      surface "phases" slot="band" rows=2 place="top" view="waiting.kdl" source="phases" title="Phases"
+      surface "count" slot="status" view="count.kdl" source="phases" title="Phases"
+      surface "log" slot="view" view="log.kdl" source="changes" title="Deck"
+      surface "picker" slot="overlay" view="picker.kdl" source="notes" title="Notes"
+
+      preferences {
+          toggle "detail" label="Show each phase's name" default=#true
+      }
+
+      source "phases" {
+          script "phases.rhai"
+          output "view"
+          preferences
+          refresh-on "paths.changed" ".planning"
+      }
+
+      source "notes" {
+          script "notes.rhai"
+          input file="NOTES.md"
+      }
+
+      source "changes" { events 20; }
+
+      action "pick" label="Pick a note" on="log" key="ctrl-p" {
+          open "picker"
+      }
+
+      action "copy-note" label="Copy" on="picker" {
+          clipboard "{text}"
+      }
+
+      action "done" label="Say done" on="log" {
+          script "done.rhai"
+      }
+    market/plugins/deck/extensions/deck/waiting.kdl: |
+      Text "Reading the phases…" role="faint"
+    market/plugins/deck/extensions/deck/count.kdl: |
+      Text "Phases" role="faint"
+    market/plugins/deck/extensions/deck/log.kdl: |
+      Stack gap=1 {
+          Row gap=2 {
+              Text "What changed" strong=#true grow=#true
+              Button "Pick a note" action="pick"
+              Button "Say done" action="done"
+          }
+          List each="." {
+              Text "{name} {paths}"
+          }
+          Text "Nothing changed yet" role="faint" unless="."
+      }
+    market/plugins/deck/extensions/deck/picker.kdl: |
+      List each="items" {
+          Row gap=2 {
+              Text "{text}" grow=#true
+              Button "Copy" action="copy-note" item="{.}"
+          }
+      }
+    market/plugins/deck/extensions/deck/done.rhai: |
+      fn answer(input, context) {
+          #{
+              data: (),
+              notify: #{ title: "Deck", body: "The phases are up to date" },
+              sound: "done",
+          }
+      }
+    market/plugins/deck/extensions/deck/notes.rhai: |
+      fn answer(input, context) {
+          let open = [];
+          for line in lines(read_checkout(input.file)) {
+              if line.starts_with("- [ ] ") {
+                  open.push(#{ text: line.sub_string(6) });
+              }
+          }
+          #{ data: #{ items: open } }
+      }
+    market/plugins/deck/extensions/deck/phases.rhai: |
+      // A row of the milestone's phases, each a segment weighted by its
+      // plans and filled by how many are summarized; named when the
+      // `detail` preference says so.
+      fn answer(input, context) {
+          let phases = [];
+          for entry in list_checkout(".planning/phases") {
+              if entry.kind == "dir" {
+                  let plans = 0;
+                  let done = 0;
+                  for file in list_checkout(`.planning/phases/${entry.name}`) {
+                      if file.name.ends_with("-PLAN.md") { plans += 1; }
+                      if file.name.ends_with("-SUMMARY.md") { done += 1; }
+                  }
+                  phases.push(#{ name: entry.name, plans: plans, done: done });
+              }
+          }
+          let segments = [];
+          for phase in phases {
+              let ratio = if phase.plans == 0 { 0.0 } else { phase.done.to_float() / phase.plans.to_float() };
+              segments.push(#{
+                  type: "Segment",
+                  props: #{ weight: if phase.plans == 0 { 1 } else { phase.plans }, ratio: ratio,
+                            role: if ratio >= 1.0 { "success" } else { "accent" } },
+              });
+          }
+          let label = if input.preferences.detail {
+              let names = [];
+              for phase in phases { names.push(phase.name); }
+              `${phases.len()} phases · ${names}`
+          } else {
+              `${phases.len()} phases`
+          };
+          #{ data: #{ type: "Stack", children: [
+              #{ type: "Text", args: [label], props: #{ role: "muted" } },
+              #{ type: "Progress", children: segments },
+          ] } }
+      }
+
+scenes:
+  - scene: a plugin installed from a marketplace's clone leaves its band and row disabled
+    when:
+      - shell: "{uze} market add {world}/market"
+        say: register the marketplace, linked to nothing
+      - shell: "cd {project} && {uze} install deck@studio > {world}/install.log 2>&1"
+        say: add the plugin to the project, with nobody at a terminal to answer
+    then:
+      - file: "{uze_home}/store/plugins/studio/deck/extensions/deck/phases.rhai"
+        contains: "input.preferences.detail"
+        about: the extension's script was installed from the clone, into the Store
+      - file: "{uze_home}/state/extensions.json"
+        exists: false
+        about: nobody consented to anything, and nothing was enabled
+      - dir: "{uze_home}/state/extensions/preferences/*"
+        exists: false
+        about: and nobody set a preference
+
+  - scene: and then the workspace offers it, and once enabled its band stands over the agent and its row in the sidebar, both naming the phases
+    when:
+      - open: ["{uze}", "workspace"]
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - click: "new"
+        say: open the new-agent popup from the space's row
+        in: sidebar
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
+        say: place an agent on the project
+        expect: "Deck runs nothing there yet"
+        expect_timeout: 90
+      - click: "Review"
+        say: review the extension the project offers
+        expect: "Enable Deck in demo-app"
+        expect_timeout: 10
+      - click: "Allow and enable"
+        say: allow its grants and enable it here
+        expect: "extension enabled"
+        expect_timeout: 10
+      - wait: screen
+        until: '2 phases · \["09-alpha", "10-beta"\]'
+        in: pane
+        timeout: 20
+        say: the band over the agent's pane names both phases
+      - wait: screen
+        until: '2 phases · '
+        in: sidebar
+        timeout: 20
+        say: and the row in the sidebar's header draws the same answer
+    then:
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.deck@studio/deck.accepted_grants.*
+        count: 3
+        includes: ["read:checkout", "clipboard", "notify"]
+        about: the consent holds exactly the grants it wants
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.deck@studio/deck.enabled_in.*
+        equals: "{project}"
+        count: 1
+        about: and it is enabled in this project, and in no other
+      - dir: "{uze_home}/state/extensions/preferences/*"
+        exists: false
+        about: the band names the phases by the preference's default, with nothing recorded
+      - capture:
+          name: before-the-preference
+          tree: ["{project}"]
+          except: ["demo-app/.git/*", "demo-app/.worktrees/*/.git"]
+
+  - scene: and then the operator turns the preference off in the Extensions screen, and the band and the row are drawn without the names
+    when:
+      - click: "="
+        say: cross to the management modal by the sidebar's own control
+        in: sidebar
+        expect: Marketplace
+        expect_timeout: 20
+        pause: 1.0
+      - click: "Extensions"
+        say: open its Extensions screen from its tab, the first match from the top
+        expect: "from plugins"
+        expect_timeout: 20
+        pause: 1.0
+      # The card's own line: the tab strip's `Deck` chip sits above it,
+      # outside the modal.
+      - click: "deck · deck@studio"
+        say: choose the extension, which its drawer then describes
+        expect: "Show each phase's name · on"
+        expect_timeout: 10
+      - click: "Preferences"
+        say: open its preferences from the drawer's button
+        expect: "Show each phase's name  on"
+        expect_timeout: 10
+      - key: "Enter"
+        say: turn the toggle off
+        expect: "Show each phase's name  off"
+        expect_timeout: 10
+      - wait: file
+        until: "{uze_home}/state/extensions/preferences/deck@studio/deck.json"
+        timeout: 10
+        say: the answer is written before the modal is put away
+      - key: ["Escape", "Escape"]
+        say: back to the workspace
+        expect: "first steps"
+        expect_timeout: 10
+      - wait: screen
+        until: '2 phases\s+deck'
+        in: pane
+        timeout: 20
+        say: the band is drawn again, without the names
+      - wait: screen
+        until: '2 phases {5,}'
+        in: sidebar
+        timeout: 20
+        say: and so is the row in the sidebar's header
+    then:
+      - json: "{uze_home}/state/extensions/preferences/deck@studio/deck.json"
+        at: values.detail
+        equals: "false"
+        about: the operator's answer is recorded, for this extension only
+      - tree: ["{project}"]
+        except: ["demo-app/.git/*", "demo-app/.worktrees/*/.git"]
+        same_as: before-the-preference
+        about: the script read the checkout again and wrote nothing into it

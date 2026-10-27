@@ -29,5 +29,5 @@
 
 - [x] 5.1 Fixtures: `agents-hud`, `flightdeck`, `chimes`, `jump`, `plan-review`, and `gsd-band`'s next-step button, each with tests
 - [x] 5.2 The extensions rule, invariants, diagrams, the `uze:extension` skill
-- [ ] 5.3 A journey: an agent's turn refreshes a status row, and a prompt is refused while it works and sent once it is idle
+- [x] 5.3 A journey: an agent's turn refreshes a status row, and a prompt is refused while it works and sent once it is idle
 - [ ] 5.4 `make check`, `openspec validate --all --strict`, the hand proof script
