@@ -301,3 +301,40 @@ fn a_prompt_taller_than_the_frame_cannot_be_allowed_until_it_is_read_whole() {
     driven.pump();
     assert_eq!(typed(&driven.sent()).len(), 1);
 }
+
+fn skill(name: &str) -> AgentRequest {
+    AgentRequest {
+        what: AgentAsk::Skill {
+            skill: name.to_owned(),
+            args: vec!["12".to_owned()],
+        },
+        agent: None,
+        action: "run".to_owned(),
+        label: "Run".to_owned(),
+        unattended: false,
+    }
+}
+
+#[test]
+fn a_skill_that_is_not_namespaced_is_refused_before_it_is_shown() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-skill"));
+    let mut driven = driven(launched_agent(), &home);
+    for builtin in ["clear", "compact", "gsd:run phase", "a:b:c", ":clear"] {
+        driven
+            .attach
+            .model
+            .ask_of_agent(Owner::Builtin("probe"), skill(builtin));
+        assert!(
+            driven.attach.model.agent_write.is_none(),
+            "`{builtin}` is not a skill"
+        );
+    }
+    driven
+        .attach
+        .model
+        .ask_of_agent(Owner::Builtin("probe"), skill("gsd:execute-phase"));
+    assert!(
+        driven.attach.model.agent_write.is_some(),
+        "a plugin's skill is asked"
+    );
+}

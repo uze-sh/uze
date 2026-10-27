@@ -488,3 +488,13 @@
 - decided:  Every prompt (attended or not) over 2048 bytes is refused with an attributed notice before anything is shown. The question is not made scrollable: `dialog::fits` says whether the frame shows the dialog whole, the question records it on every frame, and while it does not, the dialog says how long the prompt is and to make the terminal taller, offers no way to allow, and an allow (key or call) leaves it open. Esc still declines; once the frame has room the text appears whole and may be allowed.
 - rejected: A scrollable body: an allow reachable before the end was scrolled to is the same hole, and proving the end was read needs state the widget does not keep. Refusing outright at ask time: the frame's height is not known there, and a resize makes a refused prompt readable.
 - blast:    `src/ui/orchestrator/declared/agent.rs`; `src/ui/widget/dialog.rs` (`fits`, the layout split out of `render_with`).
+
+## D183 — A skill an extension types is a plugin's, named `<plugin>:<skill>`; a harness's built-in commands are out of reach
+
+- status:   pending
+- task:     review finding 6 (SECURITY)
+- commit:
+- trigger:  `agent-prompt skill=` skipped the command-character check (rightly, since the harness's skill prefix leads the typed text) and nothing checked the name, so `skill="clear"` typed `/clear`, a harness's own command.
+- decided:  Built-in harness commands are not skills, and an extension cannot reach them. A skill is named as plugins name theirs, `<plugin>:<skill>`, each part ASCII letters, digits, `-` and `_` (`uze_contract::manifest::is_skill_name`). The manifest decoder refuses any other name, and the host refuses it again before showing the prompt, since a request reaches it from an engine and not only from a decoded manifest.
+- rejected: A list of each harness's built-in commands to refuse: it goes stale with every release and names harnesses outside `uze-integrations`. Allowing an un-namespaced user skill: it cannot be told apart from a built-in command.
+- blast:    `uze-contract` (`manifest::is_skill_name`, the generated reference's spelling), `uze-core`'s manifest decoder, `src/ui/orchestrator/declared/agent.rs`, the extension skill's docs.

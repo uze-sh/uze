@@ -598,6 +598,22 @@ pub enum PromptText {
     Skill { skill: String, args: Vec<String> },
 }
 
+/// Whether `name` is a skill as a plugin names it, `<plugin>:<skill>`,
+/// each part letters, digits, `-` and `_`. A harness's built-in commands
+/// (`clear`, `compact`) are not skills, and this is what keeps an
+/// extension from typing one: what an `agent-prompt skill=` reaches is a
+/// plugin's skill and nothing else.
+pub fn is_skill_name(name: &str) -> bool {
+    let part = |part: &str| {
+        !part.is_empty()
+            && part
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'))
+    };
+    name.split_once(':')
+        .is_some_and(|(plugin, skill)| part(plugin) && part(skill))
+}
+
 /// An unattended prompt: what event sends it, and the closed set its one
 /// argument is taken from, when it has one.
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]

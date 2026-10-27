@@ -1017,3 +1017,32 @@ fn a_second_step_is_a_gesture_prompt_after_a_run_under_its_grant() {
         "{unread:?}"
     );
 }
+
+#[test]
+fn a_skill_is_named_as_a_plugin_names_it_and_never_as_a_harness_command() {
+    let with = |skill: &str| {
+        GSD.replace(
+            "source \"board\"",
+            &format!(
+                "wants \"agent:prompt\"\naction \"go\" label=\"Go\" on=\"board\" {{ agent-prompt skill=\"{skill}\" target=\"self\"; }}\nsource \"board\""
+            ),
+        )
+    };
+    for builtin in [
+        "clear",
+        "compact",
+        "/clear",
+        "gsd:",
+        ":clear",
+        "gsd:run phase",
+        "gsd:x/y",
+        "a:b:c",
+    ] {
+        assert!(
+            first_message(&with(builtin)).contains("is not a skill"),
+            "`{builtin}` is refused"
+        );
+    }
+    decoded(&with("gsd:execute-phase"));
+    decoded(&with("my_plugin:Run-2"));
+}

@@ -92,7 +92,7 @@ A source also takes `input name="<template>"…`, `every "<n>s|m|h"` (at least 5
 | `open-path` | `open-path "<template>"` | Opens a file inside the checkout; under `open-path`. |
 | `open` | `open "<surface>"` | Opens another surface of the extension; an overlay's `open` key must be a function key or carry ctrl or alt. |
 | `run` | `run "<program>" "<arg>"…` | Runs a program, confined where the machine can, and applies the envelope it answers. |
-| `agent-prompt` | `agent-prompt "<text>" target="self"` or `skill="<skill>"` | Types a prompt into an agent, shown first and never queued; under `agent:prompt`, or `agent:prompt:auto` with `when=`. |
+| `agent-prompt` | `agent-prompt "<text>" target="self"` or `skill="<plugin>:<skill>"` | Types a prompt into an agent, shown first and never queued; under `agent:prompt`, or `agent:prompt:auto` with `when=`. |
 | `agent-restart` | `agent-restart target="self"` | Starts an agent's harness on a new conversation, always asked; under `agent:restart`. |
 | `focus-agent` | `focus-agent target="{id}"` | Puts an agent's pane in front; under `agent:observe`. |
 

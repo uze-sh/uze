@@ -289,7 +289,24 @@ fn agent_prompt(child: &KdlNode, report: &mut Report<'_>) -> Option<Does> {
             return None;
         }
     }
-    let skill = prop(&parts, "skill").and_then(|entry| string_prop("skill", entry, report));
+    let skill = match prop(&parts, "skill") {
+        None => None,
+        Some(entry) => {
+            let skill = string_prop("skill", entry, report)?;
+            if !uze_contract::manifest::is_skill_name(&skill) {
+                report.on(
+                    entry,
+                    format!("`{skill}` is not a skill: a skill is named `<plugin>:<skill>`"),
+                    Some(
+                        "a harness's own commands are not skills, and an extension cannot type one"
+                            .to_owned(),
+                    ),
+                );
+                return None;
+            }
+            Some(skill)
+        }
+    };
     let prompt = match skill {
         Some(skill) => uze_contract::PromptText::Skill { skill, args },
         None => {

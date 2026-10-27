@@ -228,8 +228,9 @@ action "jump" label="Jump" on="crew-view" key="alt-j" { open "picker"; }
   `harness`, and what the harness reported (`tool`, a `path` inside the
   agent's checkout, `call`, `outcome`). A harness that reports nothing
   still has its turns, read from its pane.
-- `agent-prompt` types text (or, with `skill=`, the harness's own way of
-  invoking that skill) into the agent `target` names: `"self"` for the
+- `agent-prompt` types text (or, with `skill="<plugin>:<skill>"`, the
+  harness's own way of invoking that plugin's skill; a harness's built-in
+  commands are not skills and cannot be reached) into the agent `target` names: `"self"` for the
   agent in front or the band's, `"{id}"` for one from the `agents` source.
   The workspace shows the exact text first, types it only into an agent
   that is ready, and refuses it otherwise: nothing is queued. One a turn,

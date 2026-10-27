@@ -194,6 +194,11 @@ impl WorkspaceModel {
                 );
             }
             AgentAsk::Prompt { text } => text.clone(),
+            // Checked again here: a built-in command spelled as a skill
+            // (`clear`) would be typed as the harness's own (D183).
+            AgentAsk::Skill { skill, .. } if !uze_contract::manifest::is_skill_name(skill) => {
+                return refuse(self, "it names no plugin's skill");
+            }
             AgentAsk::Skill { skill, args } => match seen.skill_prefix {
                 Some(prefix) => uze_application::skill_invocation(prefix, skill, args),
                 None => return refuse(self, "its harness has no way to invoke a skill by name"),

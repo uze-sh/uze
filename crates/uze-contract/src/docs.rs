@@ -613,7 +613,7 @@ const DOES: &[(&str, &str, &str)] = &[
     ),
     (
         "agent-prompt",
-        "`agent-prompt \"<text>\" target=\"self\"` or `skill=\"<skill>\"`",
+        "`agent-prompt \"<text>\" target=\"self\"` or `skill=\"<plugin>:<skill>\"`",
         "Types a prompt into an agent, shown first and never queued; under `agent:prompt`, \
          or `agent:prompt:auto` with `when=`.",
     ),
