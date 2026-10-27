@@ -351,6 +351,35 @@ impl WorkspaceModel {
     /// agent works in and each agent's own — that no evaluation has
     /// answered for yet.
     pub(super) fn unread_named_directories(&self, identities: &[AgentIdentity]) -> Vec<PathBuf> {
+        self.named_directories(identities)
+            .into_iter()
+            .filter(|cwd| {
+                let key = evaluation_key(cwd);
+                !self.remembered.evaluated.contains(&key)
+                    && !self.remembered.task_eval_pending.contains(&key)
+            })
+            .collect()
+    }
+
+    /// The directories the sidebar names that no space has opened in yet
+    /// this session, now counted as opened: where a project's offers and
+    /// its `AGENTS.md` are read. Apart from what is unread, because a
+    /// shell standing in a project gets it evaluated before any agent
+    /// makes it a space's project, and the space still opens there.
+    pub(super) fn newly_opened_directories(
+        &mut self,
+        identities: &[AgentIdentity],
+    ) -> Vec<PathBuf> {
+        let named = self.named_directories(identities);
+        named
+            .into_iter()
+            .filter(|cwd| self.remembered.opened.insert(evaluation_key(cwd)))
+            .collect()
+    }
+
+    /// Every directory the sidebar names a branch for, once each by the
+    /// repository it is evaluated as.
+    fn named_directories(&self, identities: &[AgentIdentity]) -> Vec<PathBuf> {
         let Some(session) = &self.session else {
             return Vec::new();
         };
@@ -362,12 +391,7 @@ impl WorkspaceModel {
                     .into_iter()
                     .map(|tab| tab.pane.cwd.clone())
             }))
-            .filter(|cwd| {
-                let key = evaluation_key(cwd);
-                !self.remembered.evaluated.contains(&key)
-                    && !self.remembered.task_eval_pending.contains(&key)
-                    && seen.insert(key)
-            })
+            .filter(|cwd| seen.insert(evaluation_key(cwd)))
             .collect()
     }
 }

@@ -1608,6 +1608,10 @@ struct Remembered {
     /// whatever it found — a directory that is no repository is answered
     /// too, and must not be asked again on every frame.
     evaluated: BTreeSet<PathBuf>,
+    /// The directories a space has opened in this session, by the
+    /// repository each is evaluated as: read once for what a project asks
+    /// where it opens, whether or not an evaluation reached it first.
+    opened: BTreeSet<PathBuf>,
     /// Shell tabs told to take an agent label, and the label each was
     /// told, until the session confirms it — so two updates arriving
     /// before the rename lands do not ask twice.

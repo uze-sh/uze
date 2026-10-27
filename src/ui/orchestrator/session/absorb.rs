@@ -348,24 +348,25 @@ impl Attach<'_> {
         }
         // A directory first seen is where a space opens: its project's
         // `AGENTS.md` is brought in step before any agent there reads it.
+        let opened = self.model.newly_opened_directories(&self.identities);
         spawn_unspelled_gates(
             self.home,
-            unread.clone(),
+            opened.clone(),
             self.channels.unspelled_gates.sender.clone(),
         );
         spawn_commands_awaiting(
             self.home,
-            unread.clone(),
+            opened.clone(),
             self.channels.commands_awaiting.sender.clone(),
         );
         spawn_extension_offers(
             self.home,
-            unread.clone(),
+            opened.clone(),
             self.channels.extension_offers.sender.clone(),
         );
         spawn_retired_region_check(
             self.home,
-            unread,
+            opened,
             self.channels.retired_regions.sender.clone(),
         );
         if self

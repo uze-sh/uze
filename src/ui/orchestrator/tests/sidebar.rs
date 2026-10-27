@@ -724,6 +724,28 @@ fn every_directory_the_sidebar_names_is_read_once() {
     );
 }
 
+/// A space opens where its agents stand once a session, even in a
+/// project a shell there already had evaluated: that is where the
+/// project's offers are read, and an evaluation answered first used to
+/// keep them from ever being asked.
+#[test]
+fn a_directory_opens_once_whether_or_not_it_was_evaluated_first() {
+    let mut model = three_spaces();
+    model.remembered.evaluated.insert(PathBuf::from("/one"));
+    let mut opened = model.newly_opened_directories(&identities_fixture());
+    opened.sort();
+    assert_eq!(
+        opened,
+        ["/one", "/three", "/two"].map(PathBuf::from).to_vec()
+    );
+    assert!(
+        model
+            .newly_opened_directories(&identities_fixture())
+            .is_empty(),
+        "each opens once a session"
+    );
+}
+
 /// A question asked while the same repository's read is in flight is
 /// kept, not dropped: that read may have started before the push the
 /// second question is about, and its answer would stand as the last
