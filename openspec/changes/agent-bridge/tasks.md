@@ -13,13 +13,13 @@
 ## 3. Events and the agents source
 
 - [ ] 3.1 The client's one-second watch reads each agent's journal from its offset and normalizes reports into `agent.*` events with ids, times, outcomes, scrubbed tool names and checkout-relative paths; the paint heuristic's turn start and end where no report came (parent 14.3)
-- [ ] 3.2 `EventName::Agent*` in `uze-contract`, `refresh-on "agent.…"` in the decoder and check under `agent:observe`
+- [x] 3.2 `EventName::Agent*` in `uze-contract`, `refresh-on "agent.…"` in the decoder and check under `agent:observe`
 - [ ] 3.3 `SourceKind::Agents` and `Extension::agents(&Value)`; the engine answers it; the host hands the activity model's agents across open spaces each pass (parent 14.4)
 
 ## 4. Actions
 
 - [ ] 4.1 `IntegrationPort::skill_invocation(skill, args)` beside `invocation_prefix`, and each integration's native skills (parent 14.5)
-- [ ] 4.2 `Does::{AgentPrompt { text | skill, args, target }, AgentRestart { target }, FocusAgent { target }}` in the contract, decoder and check; grants `agent:observe`, `agent:prompt`, `agent:prompt:auto`, `agent:restart`
+- [x] 4.2 `Does::{AgentPrompt { text | skill, args, target }, AgentRestart { target }, FocusAgent { target }}` in the contract, decoder and check; grants `agent:observe`, `agent:prompt`, `agent:prompt:auto`, `agent:restart`
 - [ ] 4.3 The host writes through `submit_notice` behind `may_submit`, with the strict filter and byte equality with what was shown; refused unless Ready, foreground and no approval pending; never queued (parent 14.6)
 - [ ] 4.4 The rates and the pause key (B5) (parent 14.7); `agent:prompt:auto`'s record per project and agent, 24 h, revoked by a digest change
 - [ ] 4.5 `focus-agent` and a global key opening an overlay

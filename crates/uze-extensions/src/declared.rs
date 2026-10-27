@@ -121,6 +121,10 @@ pub struct DeclaredExtension {
     laid_out: BTreeMap<String, Instant>,
     /// The events waiting for the sources they ask again.
     delivery: events::Delivery,
+    /// The workspace's agents as last handed over, for `agents` sources.
+    agents: serde_json::Value,
+    /// Prompts its agent events sent, waiting for the host to take.
+    unattended: Vec<crate::contract::AgentRequest>,
     /// The number of the last question each source answered.
     answered: BTreeMap<String, u64>,
     /// The events this extension saw, newest first, at most
@@ -228,6 +232,8 @@ impl DeclaredExtension {
             notices: BTreeMap::new(),
             now: None,
             answered: BTreeMap::new(),
+            agents: serde_json::Value::Array(Vec::new()),
+            unattended: Vec::new(),
             delivery: events::Delivery::default(),
             log: std::collections::VecDeque::new(),
             laid_out: BTreeMap::new(),
@@ -548,6 +554,78 @@ impl DeclaredExtension {
                 self.window.add(source, now);
             }
         }
+        self.answer_event_sources();
+    }
+
+    /// What the workspace's agents did: logged, handed to each source whose
+    /// `refresh-on` names it (on any checkout: an agent is the workspace's,
+    /// not the surface's), and the unattended prompts it sends queued for
+    /// the host, each aimed at the agent that did it.
+    fn take_agent_events(&mut self, happened: &[crate::contract::AgentHappened], now: Instant) {
+        for event in happened {
+            let mut value = serde_json::json!({
+                "name": event.event.name(),
+                "agent": event.agent,
+                "harness": event.harness,
+                "checkout": event.checkout.display().to_string(),
+            });
+            if let (serde_json::Value::Object(fields), serde_json::Value::Object(detail)) =
+                (&mut value, &event.detail)
+            {
+                for (key, detail) in detail {
+                    fields.entry(key.clone()).or_insert_with(|| detail.clone());
+                }
+            }
+            self.log.push_front(value.clone());
+            let named = uze_contract::EventName::Agent(event.event);
+            let reasons: Vec<(String, bool)> = self
+                .compiled
+                .manifest
+                .sources
+                .iter()
+                .filter(|source| source.refresh_on.contains(&named))
+                .map(|source| {
+                    (
+                        source.id.clone(),
+                        source.deliver == uze_contract::Deliver::Each,
+                    )
+                })
+                .collect();
+            for (source, each) in reasons {
+                self.delivery.keep(&source, value.clone(), each);
+                self.window.add(source, now);
+            }
+            let prompts: Vec<crate::contract::AgentRequest> = self
+                .compiled
+                .manifest
+                .actions
+                .iter()
+                .filter_map(|action| match &action.does {
+                    uze_contract::Does::AgentPrompt {
+                        prompt,
+                        auto: Some(auto),
+                        ..
+                    } if auto.on == event.event => Some(crate::contract::AgentRequest {
+                        what: match prompt {
+                            uze_contract::PromptText::Text(text) => {
+                                crate::contract::AgentAsk::Prompt { text: text.clone() }
+                            }
+                            uze_contract::PromptText::Skill { skill, args } => {
+                                crate::contract::AgentAsk::Skill {
+                                    skill: skill.clone(),
+                                    args: args.clone(),
+                                }
+                            }
+                        },
+                        agent: Some(event.agent.clone()),
+                        label: Clean::label(&action.label).into_string(),
+                    }),
+                    _ => None,
+                })
+                .collect();
+            self.unattended.extend(prompts);
+        }
+        self.log.truncate(usize::from(uze_contract::EVENTS_MAX));
         self.answer_event_sources();
     }
 
@@ -1008,6 +1086,35 @@ impl Extension for DeclaredExtension {
 
     /// Its source is asked again: what the operator allowed may have
     /// changed since it was last asked.
+    fn agent_events(&mut self, happened: &[crate::contract::AgentHappened], now: Instant) {
+        self.take_agent_events(happened, now);
+    }
+
+    fn agents(&mut self, agents: &serde_json::Value) {
+        if *agents == self.agents {
+            return;
+        }
+        self.agents = agents.clone();
+        let sources: Vec<String> = self
+            .compiled
+            .manifest
+            .sources
+            .iter()
+            .filter(|source| matches!(source.kind, uze_contract::SourceKind::Agents))
+            .map(|source| source.id.clone())
+            .collect();
+        for source in sources {
+            self.set_data(source, Ok(self.agents.clone()));
+        }
+    }
+
+    fn requests(&mut self) -> Vec<Outcome> {
+        std::mem::take(&mut self.unattended)
+            .into_iter()
+            .map(Outcome::Agent)
+            .collect()
+    }
+
     fn configure(&mut self, preferences: &serde_json::Value) {
         let admitted: serde_json::Map<String, serde_json::Value> = self
             .compiled
@@ -1115,7 +1222,10 @@ impl Extension for DeclaredExtension {
                 .manifest
                 .source(&source)
                 .is_some_and(|declared| {
-                    matches!(declared.kind, uze_contract::SourceKind::Events(_))
+                    matches!(
+                        declared.kind,
+                        uze_contract::SourceKind::Events(_) | uze_contract::SourceKind::Agents
+                    )
                 });
             if local {
                 continue;

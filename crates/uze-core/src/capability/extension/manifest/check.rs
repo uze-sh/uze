@@ -147,6 +147,21 @@ fn surfaces_read_declared_sources(decoded: &Decoded, report: &mut Report<'_>) {
 
 fn sources_run_what_this_build_runs(decoded: &Decoded, report: &mut Report<'_>) {
     for (source, places) in decoded.manifest.sources.iter().zip(&decoded.source_places) {
+        let observes = matches!(source.kind, SourceKind::Agents)
+            || source
+                .refresh_on
+                .iter()
+                .any(|event| matches!(event, uze_contract::EventName::Agent(_)));
+        if observes && !decoded.manifest.wants(&Grant::AgentObserve) {
+            report.at(
+                places.kind,
+                format!(
+                    "the source `{}` reads the workspace's agents, which needs `agent:observe`",
+                    source.id
+                ),
+                Some("add \"agent:observe\" to `wants`".to_owned()),
+            );
+        }
         let runs = matches!(source.kind, SourceKind::Run(_));
         let floor = if runs {
             PROGRAM_EVERY_FLOOR

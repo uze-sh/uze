@@ -73,7 +73,7 @@ impl Decoded {
                 SourceKind::Run(program) => {
                     packaged(program).map(|file| ("program", file, places.kind))
                 }
-                SourceKind::Events(_) => None,
+                SourceKind::Events(_) | SourceKind::Agents => None,
             });
         let actions = self
             .manifest

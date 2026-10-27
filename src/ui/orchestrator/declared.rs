@@ -26,6 +26,7 @@ use uze_extensions::declared::{
 };
 use uze_extensions::view::{Command, Role, ScrollTarget, Section, SectionRow, Size, View};
 
+mod agent;
 mod doors;
 mod drawer;
 mod events;
@@ -1016,6 +1017,7 @@ impl WorkspaceModel {
     pub(super) fn follow_surface(&mut self, outcome: Outcome) {
         match outcome {
             Outcome::Stay => {}
+            Outcome::Agent(request) => self.ask_of_agent(request),
             Outcome::Close => self.close_surface(),
             Outcome::Notice(span) => self.open_notice = Some(span),
             Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),

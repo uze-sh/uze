@@ -59,3 +59,33 @@
 - decided:  Unit tests cover the generated settings (quoting, matchers, the commands) and the CLI's refusal path; whether Claude merges a `--settings` file's hooks with the operator's and Codex honours `-c notify=` on this version is left to the conformance lab (`conformance/`), recorded as unproven until then.
 - rejected: Claiming them proven from the docs.
 - blast:    A harness that ignores the flag reports nothing; turns still come from the paint heuristic.
+
+## D7 — An agent event reaches every source naming it, whatever checkout is in front
+
+- status:   pending
+- task:     3.2
+- commit:
+- trigger:  A `paths.changed` or `checkout.changed` event asks a source only for the checkout it happened on; an agent is the workspace's, and a HUD is about every agent.
+- decided:  `EventName::Agent(AgentEvent)` is delivered through `Extension::agent_events`, apart from the checkout watch, to every source whose `refresh-on` names it, with `input.event` carrying `name`, `agent`, `harness`, `checkout` and the report's detail (`tool`, `path`, `call`, `outcome`). The extension's `events` log keeps them like any other.
+- rejected: Filtering by the checkout in front: a band about agent B would not hear B finish while A is in front.
+- blast:    `uze-extensions::declared`, `contract::Extension`.
+
+## D8 — An unattended prompt is fixed text, decided in the decoder, aimed at the agent that fired it
+
+- status:   pending
+- task:     4.2
+- commit:
+- trigger:  D16 forbids an unattended prompt from carrying anything an answer, an event or the repository wrote.
+- decided:  `agent-prompt … when="agent.<event>"` needs `agent:prompt:auto` and is refused by the decoder when its text or a skill argument holds a `{field}`; the engine queues it on that event, aimed at the agent the event names, and the host takes it through `Extension::requests()`. The parent's "closed set its argument is taken from" is left as `AutoPrompt.values`, empty until an extension needs one.
+- rejected: Checking the fixedness at run time: a manifest that can never send its prompt should not install.
+- blast:    `uze-contract::{AutoPrompt, PromptText}`, the decoder's `agent_prompt`.
+
+## D9 — The engine resolves an agent action into a request and never asks first; the host shows it
+
+- status:   pending
+- task:     4.2
+- commit:
+- trigger:  The engine's own question (confirm) would show the prompt, and then the host must show it again before typing it (byte equality with what was shown).
+- decided:  `Outcome::Agent(AgentRequest { what: Prompt{text} | Skill{skill,args} | Restart | Focus, agent, label })`, with the text cleaned and resolved against the item; `question_for` returns none for it, and the host owns the one confirmation. Until 4.3 lands the host refuses every request with a toast naming it: nothing types into an agent before the bridge's guards exist.
+- rejected: Letting `confirm=` stand for the bridge's showing: the engine's question is drawn in the extension's own view, which an extension controls.
+- blast:    `contract::{Outcome, AgentRequest, AgentAsk}`, `src/ui/orchestrator/declared/agent.rs`.

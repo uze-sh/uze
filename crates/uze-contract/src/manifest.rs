@@ -298,7 +298,10 @@ impl SourceDecl {
     pub fn fixture(&self) -> Option<&str> {
         match &self.kind {
             SourceKind::Fixture(file) => Some(file),
-            SourceKind::Script(_) | SourceKind::Run(_) | SourceKind::Events(_) => None,
+            SourceKind::Script(_)
+            | SourceKind::Run(_)
+            | SourceKind::Events(_)
+            | SourceKind::Agents => None,
         }
     }
 
@@ -306,7 +309,10 @@ impl SourceDecl {
     pub fn script(&self) -> Option<&str> {
         match &self.kind {
             SourceKind::Script(file) => Some(file),
-            SourceKind::Fixture(_) | SourceKind::Run(_) | SourceKind::Events(_) => None,
+            SourceKind::Fixture(_)
+            | SourceKind::Run(_)
+            | SourceKind::Events(_)
+            | SourceKind::Agents => None,
         }
     }
 }
@@ -323,11 +329,14 @@ pub enum SourceKind {
     Fixture(String),
     /// The host's own: the last this many events the extension may see.
     Events(u16),
+    /// The host's own: every agent of the workspace's open spaces, under
+    /// `agent:observe`.
+    Agents,
 }
 
 impl SourceKind {
     /// How a manifest spells each kind.
-    pub const NAMES: &'static [&'static str] = &["script", "run", "fixture", "events"];
+    pub const NAMES: &'static [&'static str] = &["script", "run", "fixture", "events", "agents"];
 }
 
 /// The most events an `events` source keeps.
@@ -402,6 +411,57 @@ pub enum EventName {
     PathsChanged { paths: Vec<String> },
     /// The checkout's branch, head or working tree changed.
     CheckoutChanged,
+    /// An agent of the workspace did something, as it reported or as the
+    /// workspace saw it paint. Needs `agent:observe`.
+    Agent(AgentEvent),
+}
+
+/// What an agent may be seen doing (`agent-bridge`).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub enum AgentEvent {
+    SessionStarted,
+    TurnStarted,
+    TurnFinished,
+    ToolStarted,
+    ToolFinished,
+    ApprovalAsked,
+    ApprovalResolved,
+}
+
+impl AgentEvent {
+    pub const ALL: &'static [AgentEvent] = &[
+        Self::SessionStarted,
+        Self::TurnStarted,
+        Self::TurnFinished,
+        Self::ToolStarted,
+        Self::ToolFinished,
+        Self::ApprovalAsked,
+        Self::ApprovalResolved,
+    ];
+
+    /// As a manifest's `refresh-on` spells it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::SessionStarted => "agent.session.started",
+            Self::TurnStarted => "agent.turn.started",
+            Self::TurnFinished => "agent.turn.finished",
+            Self::ToolStarted => "agent.tool.started",
+            Self::ToolFinished => "agent.tool.finished",
+            Self::ApprovalAsked => "agent.approval.asked",
+            Self::ApprovalResolved => "agent.approval.resolved",
+        }
+    }
+
+    /// `name` as a manifest or a report spells it: with or without the
+    /// `agent.` an agent's own report leaves out.
+    pub fn parse(name: &str) -> Option<Self> {
+        let full = if name.starts_with("agent.") {
+            name.to_owned()
+        } else {
+            format!("agent.{name}")
+        };
+        Self::ALL.iter().copied().find(|event| event.name() == full)
+    }
 }
 
 impl EventName {
@@ -413,8 +473,40 @@ impl EventName {
         match self {
             Self::PathsChanged { .. } => Self::PATHS_CHANGED,
             Self::CheckoutChanged => Self::CHECKOUT_CHANGED,
+            Self::Agent(event) => event.name(),
         }
     }
+}
+
+/// Who an agent action is aimed at.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum AgentTarget {
+    /// The agent the surface stands for: a band's pane's, or the agent the
+    /// selected item names.
+    Own,
+    /// The agent whose id this `{field}` template resolves to, from the
+    /// `agents` source.
+    Named(String),
+}
+
+/// What an agent prompt types.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum PromptText {
+    /// Text, with `{field}` references resolved against the item when the
+    /// operator presses it; fixed when unattended.
+    Text(String),
+    /// A skill the agent's harness knows, spelled by its integration, with
+    /// its arguments.
+    Skill { skill: String, args: Vec<String> },
+}
+
+/// An unattended prompt: what event sends it, and the closed set its one
+/// argument is taken from, when it has one.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AutoPrompt {
+    pub on: AgentEvent,
+    /// The values `{arg}` may take; empty for a prompt with none.
+    pub values: Vec<String>,
 }
 
 /// Something an extension offers the operator to do on one of its
@@ -452,18 +544,42 @@ pub enum Does {
     /// Runs a program, confined where the machine can, and applies the
     /// envelope it answers.
     Run(Program),
+    /// Types a prompt into an agent, shown first; never queued.
+    AgentPrompt {
+        prompt: PromptText,
+        target: AgentTarget,
+        /// Sent on an agent event rather than a gesture.
+        auto: Option<AutoPrompt>,
+    },
+    /// Starts an agent's harness on a new conversation; always confirmed.
+    AgentRestart { target: AgentTarget },
+    /// Puts an agent's pane in front.
+    FocusAgent { target: AgentTarget },
 }
 
 impl Does {
     /// How a manifest spells each, as the node inside an `action`.
-    pub const NAMES: &'static [&'static str] =
-        &["script", "refresh", "clipboard", "open-path", "open", "run"];
+    pub const NAMES: &'static [&'static str] = &[
+        "script",
+        "refresh",
+        "clipboard",
+        "open-path",
+        "open",
+        "run",
+        "agent-prompt",
+        "agent-restart",
+        "focus-agent",
+    ];
 
     /// The grant it cannot run without, when it needs one of its own.
     pub fn needs(&self) -> Option<Grant> {
         match self {
             Self::Clipboard(_) => Some(Grant::Clipboard),
             Self::OpenPath(_) => Some(Grant::OpenPath),
+            Self::AgentPrompt { auto: Some(_), .. } => Some(Grant::AgentPromptAuto),
+            Self::AgentPrompt { .. } => Some(Grant::AgentPrompt),
+            Self::AgentRestart { .. } => Some(Grant::AgentRestart),
+            Self::FocusAgent { .. } => Some(Grant::AgentObserve),
             Self::Script(_) | Self::Refresh(_) | Self::Open(_) | Self::Run(_) => None,
         }
     }
@@ -486,6 +602,14 @@ pub enum Grant {
     StoreGlobal,
     /// Notifying the operator and sounding a cue, rate-limited.
     Notify,
+    /// Seeing the workspace's agents and what they do.
+    AgentObserve,
+    /// Typing a prompt into an agent, on the operator's gesture.
+    AgentPrompt,
+    /// Typing a fixed prompt into an agent on its events, unattended.
+    AgentPromptAuto,
+    /// Starting an agent's harness on a new conversation.
+    AgentRestart,
     /// Running the program of this name, at the path pinned when the
     /// extension was enabled.
     Exec(String),
@@ -500,6 +624,10 @@ impl Grant {
         Self::Store,
         Self::StoreGlobal,
         Self::Notify,
+        Self::AgentObserve,
+        Self::AgentPrompt,
+        Self::AgentPromptAuto,
+        Self::AgentRestart,
     ];
     pub const EXEC: &'static str = "exec:";
 
@@ -521,6 +649,10 @@ impl Grant {
             Self::Store => "store",
             Self::StoreGlobal => "store:global",
             Self::Notify => "notify",
+            Self::AgentObserve => "agent:observe",
+            Self::AgentPrompt => "agent:prompt",
+            Self::AgentPromptAuto => "agent:prompt:auto",
+            Self::AgentRestart => "agent:restart",
             Self::Exec(program) => return format!("{}{program}", Self::EXEC).into(),
         })
     }

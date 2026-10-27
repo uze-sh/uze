@@ -29,6 +29,10 @@ pub(super) fn event_value(happened: &CheckoutEvent) -> serde_json::Value {
             "name": EventName::CHECKOUT_CHANGED,
             "checkout": happened.checkout.display().to_string(),
         }),
+        EventName::Agent(event) => serde_json::json!({
+            "name": event.name(),
+            "checkout": happened.checkout.display().to_string(),
+        }),
     }
 }
 
@@ -121,6 +125,7 @@ impl Window {
 pub(super) fn is_reason(declared: &EventName, happened: &EventName) -> bool {
     match (declared, happened) {
         (EventName::CheckoutChanged, EventName::CheckoutChanged) => true,
+        (EventName::Agent(declared), EventName::Agent(happened)) => declared == happened,
         (
             EventName::PathsChanged { paths: declared },
             EventName::PathsChanged { paths: changed },
@@ -140,6 +145,8 @@ pub(super) fn merged(
         match event {
             EventName::CheckoutChanged => entry.0 = true,
             EventName::PathsChanged { paths } => entry.1.extend(paths),
+            // An agent's event is the bridge's to deliver, not a watch's.
+            EventName::Agent(_) => {}
         }
     }
     let mut events = Vec::new();

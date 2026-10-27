@@ -12,7 +12,6 @@ use crate::capability::extension::document::{Report, nearest};
 /// The grants later changes bring, by name or by prefix (`exec:` stands
 /// for every `exec:<program>`), with the change that brings each.
 const LATER: &[(&str, u32)] = &[
-    ("agent:", 6),
     ("resident", 7),
     ("net", 8),
     ("secret", 8),

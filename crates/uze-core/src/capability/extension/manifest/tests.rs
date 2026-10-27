@@ -226,7 +226,7 @@ fn a_source_is_answered_by_exactly_one_thing() {
     ));
     assert_eq!(
         two,
-        "a source is answered by one of `script`, `run`, `fixture` or `events`"
+        "a source is answered by one of `script`, `run`, `fixture`, `events` or `agents`"
     );
     let none =
         first_message(&GSD.replace("{ fixture \"fixtures/board.json\"; }", "{ every \"10s\"; }"));
@@ -449,7 +449,7 @@ fn an_event_is_one_this_version_watches() {
     );
     assert_eq!(
         the_message(&with("\"agent.finished\"")),
-        "`agent.finished` arrives in a later change (change 6)"
+        "there is no event `agent.finished`"
     );
     let typo = refusals(&with("\"path.changed\" \"x\""));
     assert_eq!(
@@ -502,7 +502,6 @@ fn only_the_grants_this_version_enforces_are_accepted() {
     for (grant, change) in [
         ("net", 8),
         ("secret", 8),
-        ("agent:prompt", 6),
         ("resident", 7),
         ("edit:checkout", 8),
     ] {
@@ -736,4 +735,65 @@ fn a_source_may_be_the_events_it_saw_delivered_each() {
         .contains("`events` keeps 1 to 200")
     );
     decoded(&GSD.replace("source \"board\"", "wants \"notify\"\nsource \"board\""));
+}
+
+#[test]
+fn agent_events_actions_and_the_agents_source_need_their_grants() {
+    let with = |wants: &str, rest: &str| {
+        GSD.replace(
+            "source \"board\"",
+            &format!("{wants}\n{rest}\nsource \"board\""),
+        )
+    };
+    let observing = r#"source "crew" { agents; refresh-on "agent.turn.finished"; }"#;
+    assert!(first_message(&with("", observing)).contains("which needs `agent:observe`"));
+    let manifest = decoded(&with(r#"wants "agent:observe""#, observing));
+    let crew = manifest.source("crew").unwrap();
+    assert_eq!(crew.kind, SourceKind::Agents);
+    assert_eq!(
+        crew.refresh_on,
+        [uze_contract::EventName::Agent(
+            uze_contract::AgentEvent::TurnFinished
+        )]
+    );
+
+    let prompt = r#"action "next" label="Run phase {number}" on="board" { agent-prompt skill="gsd:execute-phase" "{number}" target="self"; }"#;
+    assert!(first_message(&with("", prompt)).contains("needs `agent:prompt`"));
+    let manifest = decoded(&with(r#"wants "agent:prompt""#, prompt));
+    let uze_contract::Does::AgentPrompt {
+        prompt,
+        target,
+        auto,
+    } = &manifest.action("next").unwrap().does
+    else {
+        panic!("a prompt");
+    };
+    assert_eq!(
+        prompt,
+        &uze_contract::PromptText::Skill {
+            skill: "gsd:execute-phase".into(),
+            args: vec!["{number}".into()]
+        }
+    );
+    assert_eq!(target, &uze_contract::AgentTarget::Own);
+    assert!(auto.is_none());
+
+    let unattended = r#"action "nudge" label="Nudge" on="board" { agent-prompt "Continue with {number}" target="self" when="agent.turn.finished"; }"#;
+    assert!(
+        first_message(&with(r#"wants "agent:prompt:auto""#, unattended))
+            .contains("a prompt sent unattended is fixed")
+    );
+    let fixed = unattended.replace("Continue with {number}", "Continue");
+    let manifest = decoded(&with(r#"wants "agent:prompt:auto""#, &fixed));
+    assert!(matches!(
+        manifest.action("nudge").unwrap().does,
+        uze_contract::Does::AgentPrompt { auto: Some(_), .. }
+    ));
+    assert!(
+        first_message(&with(
+            r#"wants "agent:observe""#,
+            r#"action "go" label="Go" on="board" { focus-agent target="agent-3"; }"#
+        ))
+        .contains("is not an agent")
+    );
 }

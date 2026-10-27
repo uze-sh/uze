@@ -111,6 +111,121 @@ pub fn decode(node: &KdlNode, report: &mut Report<'_>) -> Option<(ActionDecl, Pl
     ))
 }
 
+/// `target="self"`, or a `{field}` naming an agent's id from the `agents`
+/// source.
+fn target(
+    node: &KdlNode,
+    parts: &crate::capability::extension::document::Entries<'_>,
+    report: &mut Report<'_>,
+) -> Option<uze_contract::AgentTarget> {
+    let Some(entry) = prop(parts, "target") else {
+        report.on(
+            node,
+            "an agent action names its `target`",
+            Some(
+                "write `target=\"self\"`, or `target=\"{id}\"` from the `agents` source".to_owned(),
+            ),
+        );
+        return None;
+    };
+    let written = string_prop("target", entry, report)?;
+    if written == "self" {
+        return Some(uze_contract::AgentTarget::Own);
+    }
+    if !written.starts_with('{') || !template(&written, entry.offset(), report) {
+        report.on(
+            entry,
+            format!(
+                "`{written}` is not an agent: write `self`, or a `{{field}}` holding an agent's id"
+            ),
+            None,
+        );
+        return None;
+    }
+    Some(uze_contract::AgentTarget::Named(written))
+}
+
+/// `agent-prompt "text" target=…`, or `agent-prompt skill="…" "<arg>" …
+/// target=…`, and `when="agent.turn.finished"` for one sent unattended,
+/// whose text and arguments are then fixed: nothing an answer, an event or
+/// the repository says becomes a prompt (D16).
+fn agent_prompt(child: &KdlNode, report: &mut Report<'_>) -> Option<Does> {
+    let parts = entries(child, report);
+    refuse_extra(
+        child,
+        &parts,
+        usize::MAX,
+        &["target", "skill", "when"],
+        false,
+        report,
+    );
+    let target = target(child, &parts, report)?;
+    let args: Vec<String> = parts
+        .args
+        .iter()
+        .filter_map(|arg| super::string_arg(child, Some(arg), report))
+        .collect();
+    for (arg, entry) in args.iter().zip(&parts.args) {
+        if !template(arg, entry.offset(), report) {
+            return None;
+        }
+    }
+    let skill = prop(&parts, "skill").and_then(|entry| string_prop("skill", entry, report));
+    let prompt = match skill {
+        Some(skill) => uze_contract::PromptText::Skill { skill, args },
+        None => {
+            let [text] = args.as_slice() else {
+                report.on(
+                    child,
+                    "`agent-prompt` types one text, or a `skill=` with its arguments",
+                    Some("write `agent-prompt \"Review PLAN.md\" target=\"self\"`".to_owned()),
+                );
+                return None;
+            };
+            if text.trim().is_empty() {
+                report.on(child, "an agent prompt says something", None);
+                return None;
+            }
+            uze_contract::PromptText::Text(text.clone())
+        }
+    };
+    let auto = match prop(&parts, "when") {
+        None => None,
+        Some(entry) => {
+            let written = string_prop("when", entry, report)?;
+            let Some(on) =
+                uze_contract::AgentEvent::parse(&written).filter(|_| written.starts_with("agent."))
+            else {
+                report.on(entry, format!("`{written}` is not an agent event"), None);
+                return None;
+            };
+            let fixed = match &prompt {
+                uze_contract::PromptText::Text(text) => !text.contains('{'),
+                uze_contract::PromptText::Skill { args, .. } => {
+                    args.iter().all(|arg| !arg.contains('{'))
+                }
+            };
+            if !fixed {
+                report.on(
+                    entry,
+                    "a prompt sent unattended is fixed: it may not read a `{field}`",
+                    Some("write its text out, or send it on a gesture instead".to_owned()),
+                );
+                return None;
+            }
+            Some(uze_contract::AutoPrompt {
+                on,
+                values: Vec::new(),
+            })
+        }
+    };
+    Some(Does::AgentPrompt {
+        prompt,
+        target,
+        auto,
+    })
+}
+
 fn what(child: &KdlNode, report: &mut Report<'_>) -> Option<(Does, Vec<usize>)> {
     let at = child.offset();
     match child.name().value() {
@@ -137,6 +252,20 @@ fn what(child: &KdlNode, report: &mut Report<'_>) -> Option<(Does, Vec<usize>)> 
                 )
             }),
         "run" => super::program(child, report).map(|program| (Does::Run(program), Vec::new())),
+        "agent-prompt" => agent_prompt(child, report).map(|does| (does, Vec::new())),
+        "agent-restart" | "focus-agent" => {
+            let parts = entries(child, report);
+            refuse_extra(child, &parts, 0, &["target"], false, report);
+            let target = target(child, &parts, report)?;
+            Some((
+                if child.name().value() == "agent-restart" {
+                    Does::AgentRestart { target }
+                } else {
+                    Does::FocusAgent { target }
+                },
+                Vec::new(),
+            ))
+        }
         "open-path" => text(child, report)
             .filter(|path| template(path, at, report))
             .map(|path| {

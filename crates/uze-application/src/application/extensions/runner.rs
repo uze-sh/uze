@@ -164,9 +164,9 @@ impl ExtensionRunner {
                         with_store: source.with_store,
                     },
                     SourceKind::Script(file) => Answerer::Script(file),
-                    SourceKind::Events(_) => {
+                    SourceKind::Events(_) | SourceKind::Agents => {
                         return failed(format!(
-                            "the source `{}` is answered by the workspace, from the events it saw",
+                            "the source `{}` is answered by the workspace, from what it sees",
                             question.declaration
                         ));
                     }
@@ -469,7 +469,7 @@ impl ExtensionRunner {
         }
         let file = match &declared.kind {
             SourceKind::Script(file) => file,
-            SourceKind::Fixture(_) | SourceKind::Events(_) => return None,
+            SourceKind::Fixture(_) | SourceKind::Events(_) | SourceKind::Agents => return None,
             SourceKind::Run(program) => {
                 return Some(self.rehearse_program(
                     home,

@@ -40,12 +40,13 @@ const CHILDREN: &[&str] = &[
     "preferences",
     "deliver",
     "events",
+    "agents",
 ];
 /// What later changes add inside a source, with the change that brings
 /// each.
 const LATER: &[(&str, u32)] = &[];
 /// The events a later change brings, by prefix.
-const LATER_EVENTS: &[(&str, u32)] = &[("agent.", 6)];
+const LATER_EVENTS: &[(&str, u32)] = &[];
 const ANSWER_IT: &str = "answer it with `script \"….rhai\"` or `fixture \"….json\"`";
 
 /// Where a source's parts were written.
@@ -97,12 +98,12 @@ pub fn decode(node: &KdlNode, report: &mut Report<'_>) -> Option<(SourceDecl, Pl
                     }
                 });
             }
-            "script" | "run" | "fixture" | "events" => {
+            "script" | "run" | "fixture" | "events" | "agents" => {
                 kinds_written += 1;
                 if kinds_written > 1 {
                     report.on(
                         child,
-                        "a source is answered by one of `script`, `run`, `fixture` or `events`",
+                        "a source is answered by one of `script`, `run`, `fixture`, `events` or `agents`",
                         Some("keep one".to_owned()),
                     );
                     continue;
@@ -236,6 +237,11 @@ fn answer(child: &KdlNode, report: &mut Report<'_>) -> Option<SourceKind> {
         "fixture" => text(child, report)
             .filter(|file| relative_file(file, "json", at, report))
             .map(SourceKind::Fixture),
+        "agents" => {
+            let parts = entries(child, report);
+            refuse_extra(child, &parts, 0, &[], false, report);
+            Some(SourceKind::Agents)
+        }
         "events" => {
             let parts = entries(child, report);
             refuse_extra(child, &parts, 1, &[], false, report);
@@ -405,6 +411,18 @@ fn event(child: &KdlNode, report: &mut Report<'_>) -> Option<EventName> {
                 );
             }
             Some(EventName::CheckoutChanged)
+        }
+        other
+            if uze_contract::AgentEvent::parse(other).is_some() && other.starts_with("agent.") =>
+        {
+            for (extra, extra_at) in rest {
+                report.at(
+                    extra_at,
+                    format!("`{other}` takes no paths"),
+                    Some(format!("remove \"{extra}\"")),
+                );
+            }
+            uze_contract::AgentEvent::parse(other).map(EventName::Agent)
         }
         other => {
             if let Some((_, change)) = LATER_EVENTS

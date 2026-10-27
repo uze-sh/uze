@@ -254,3 +254,76 @@ fn an_events_source_answers_what_the_extension_saw_without_asking_the_host() {
     );
     assert_eq!(seen[0]["checkout"], "/work/c");
 }
+
+fn happened(event: uze_contract::AgentEvent, agent: &str) -> crate::contract::AgentHappened {
+    crate::contract::AgentHappened {
+        event,
+        agent: agent.to_owned(),
+        harness: "claude-code".to_owned(),
+        checkout: PathBuf::from("/work/b"),
+        detail: json!({ "tool": "Bash" }),
+    }
+}
+
+#[test]
+fn an_agents_event_asks_its_source_on_any_checkout_and_sends_an_unattended_prompt() {
+    use uze_contract::{AgentEvent, AgentTarget, Does, EventName, PromptText};
+    let start = Instant::now();
+    let mut engine = board(None, vec![EventName::Agent(AgentEvent::TurnFinished)]);
+    engine
+        .compiled
+        .manifest
+        .actions
+        .push(uze_contract::ActionDecl {
+            id: "nudge".to_owned(),
+            label: "Nudge".to_owned(),
+            on: VIEW.to_owned(),
+            key: None,
+            confirm: None,
+            does: Does::AgentPrompt {
+                prompt: PromptText::Text("Continue".to_owned()),
+                target: AgentTarget::Own,
+                auto: Some(uze_contract::AutoPrompt {
+                    on: AgentEvent::TurnFinished,
+                    values: Vec::new(),
+                }),
+            },
+        });
+    engine.focus(Some(&checkout("/work/a")));
+    events_asked(&mut engine, start, &[]);
+    engine.agent_events(&[happened(AgentEvent::ToolStarted, "a1")], start);
+    assert!(
+        engine.requests().is_empty(),
+        "only the event it waits for sends it"
+    );
+    engine.agent_events(&[happened(AgentEvent::TurnFinished, "a1")], start);
+    let asked = events_asked(&mut engine, start + COALESCE, &[]);
+    assert_eq!(asked.len(), 1, "an agent on another checkout still asks it");
+    assert_eq!(asked[0]["name"], "agent.turn.finished");
+    assert_eq!(asked[0]["agent"], "a1");
+    assert_eq!(asked[0]["tool"], "Bash");
+    let sent = engine.requests();
+    let [Outcome::Agent(request)] = sent.as_slice() else {
+        panic!("one unattended prompt: {sent:?}");
+    };
+    assert_eq!(
+        request.agent.as_deref(),
+        Some("a1"),
+        "aimed at the agent that finished"
+    );
+    assert!(engine.requests().is_empty(), "taken once");
+}
+
+#[test]
+fn an_agents_source_is_answered_by_the_workspace_and_never_asked() {
+    let start = Instant::now();
+    let mut engine = board(None, Vec::new());
+    engine.compiled.manifest.sources[0].kind = uze_contract::SourceKind::Agents;
+    engine.focus(Some(&checkout("/work/a")));
+    assert!(events_asked(&mut engine, start, &[]).is_empty());
+    engine.agents(&json!([{ "id": "a1", "state": "working" }]));
+    assert_eq!(
+        engine.data(super::tests::SOURCE).cloned(),
+        Some(Ok(json!([{ "id": "a1", "state": "working" }])))
+    );
+}

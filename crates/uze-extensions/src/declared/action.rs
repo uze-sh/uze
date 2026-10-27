@@ -35,6 +35,8 @@ pub(super) enum Run {
         target: PathBuf,
     },
     Open(String),
+    /// Hand the host something to do to an agent, which it shows first.
+    Agent(crate::contract::AgentRequest),
 }
 
 /// An action waiting on the operator's answer, drawn as its view's
@@ -130,7 +132,69 @@ impl DeclaredExtension {
                 }
             }
             Does::Open(target) => Run::Open(target.clone()),
+            Does::AgentPrompt { prompt, target, .. } => {
+                let what = match prompt {
+                    uze_contract::PromptText::Text(text) => {
+                        let text =
+                            Clean::text(&self.resolve_text(surface, text, item)).into_string();
+                        if text.trim().is_empty() {
+                            return Err(refused(&label, "there is nothing to say"));
+                        }
+                        crate::contract::AgentAsk::Prompt { text }
+                    }
+                    uze_contract::PromptText::Skill { skill, args } => {
+                        crate::contract::AgentAsk::Skill {
+                            skill: skill.clone(),
+                            args: args
+                                .iter()
+                                .map(|arg| {
+                                    Clean::label(&self.resolve_text(surface, arg, item))
+                                        .into_string()
+                                })
+                                .collect(),
+                        }
+                    }
+                };
+                Run::Agent(self.agent_request(surface, what, target, item, label)?)
+            }
+            Does::AgentRestart { target } => Run::Agent(self.agent_request(
+                surface,
+                crate::contract::AgentAsk::Restart,
+                target,
+                item,
+                label,
+            )?),
+            Does::FocusAgent { target } => Run::Agent(self.agent_request(
+                surface,
+                crate::contract::AgentAsk::Focus,
+                target,
+                item,
+                label,
+            )?),
         })
+    }
+
+    /// `what`, aimed at the agent `target` names: the surface's own, or the
+    /// one whose id the template resolves to against `item`.
+    fn agent_request(
+        &self,
+        surface: &str,
+        what: crate::contract::AgentAsk,
+        target: &uze_contract::AgentTarget,
+        item: &Value,
+        label: String,
+    ) -> Result<crate::contract::AgentRequest, Outcome> {
+        let agent = match target {
+            uze_contract::AgentTarget::Own => None,
+            uze_contract::AgentTarget::Named(template) => {
+                let id = self.resolve_text(surface, template, item);
+                if id.trim().is_empty() {
+                    return Err(refused(&label, "it names no agent"));
+                }
+                Some(id)
+            }
+        };
+        Ok(crate::contract::AgentRequest { what, agent, label })
     }
 
     /// The question asked before `run`, when `declared` asks one or what
@@ -142,6 +206,11 @@ impl DeclaredExtension {
         item: &Value,
         run: &Run,
     ) -> Option<Confirm> {
+        // What is typed into an agent is shown by the host, which also
+        // confirms a restart: asking here too would ask twice.
+        if matches!(run, Run::Agent(_)) {
+            return None;
+        }
         let title = match (&declared.confirm, run) {
             (Some(question), _) => self.resolve_text(surface, question, item),
             (None, Run::Copy(text)) if text.lines().count() > 1 => {
@@ -176,6 +245,7 @@ impl DeclaredExtension {
                 target.strip_prefix(project).unwrap_or(target).display()
             ),
             (Run::Open(surface), _) => format!("Opens {}", self.surface_title(surface)),
+            (Run::Agent(request), _) => request.label.clone(),
             (Run::Script { .. }, _) => String::new(),
         };
         Clean::label(&said).into_string()
@@ -261,6 +331,7 @@ impl DeclaredExtension {
             Run::Copy(text) => Outcome::Copy(text),
             Run::OpenPath { project, target } => Outcome::OpenPath { project, target },
             Run::Open(target) => Outcome::Show(target),
+            Run::Agent(request) => Outcome::Agent(request),
         }
     }
 
@@ -435,6 +506,23 @@ fn reads_the_item(declared: &ActionDecl) -> bool {
     let done: Vec<&String> = match &declared.does {
         Does::Clipboard(template) | Does::OpenPath(template) => vec![template],
         Does::Run(program) => program.argv.iter().skip(1).collect(),
+        Does::AgentPrompt { prompt, target, .. } => {
+            let mut read: Vec<&String> = match prompt {
+                uze_contract::PromptText::Text(text) => vec![text],
+                uze_contract::PromptText::Skill { args, .. } => args.iter().collect(),
+            };
+            if let uze_contract::AgentTarget::Named(template) = target {
+                read.push(template);
+            }
+            read
+        }
+        Does::AgentRestart {
+            target: uze_contract::AgentTarget::Named(template),
+        }
+        | Does::FocusAgent {
+            target: uze_contract::AgentTarget::Named(template),
+        } => vec![template],
+        Does::AgentRestart { .. } | Does::FocusAgent { .. } => Vec::new(),
         Does::Script(_) | Does::Refresh(_) | Does::Open(_) => Vec::new(),
     };
     done.into_iter()

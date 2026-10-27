@@ -199,6 +199,16 @@ pub fn grant_meaning(grant: &str) -> &'static str {
             "keeps what it remembers in UZE's state, shared by every project"
         }
         Some(uze_contract::Grant::Exec(_)) => "runs this program on your machine",
+        Some(uze_contract::Grant::AgentObserve) => "sees the workspace's agents and what they do",
+        Some(uze_contract::Grant::AgentPrompt) => {
+            "types a prompt into an agent when you press it, shown to you first"
+        }
+        Some(uze_contract::Grant::AgentPromptAuto) => {
+            "types its fixed prompt into an agent on its own, a few times an hour at most"
+        }
+        Some(uze_contract::Grant::AgentRestart) => {
+            "starts an agent on a new conversation, after asking you"
+        }
         Some(uze_contract::Grant::Notify) => {
             "notifies you and sounds a cue, a few times a minute at most"
         }

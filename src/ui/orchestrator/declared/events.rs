@@ -72,6 +72,8 @@ impl WorkspaceModel {
                             .map(|path| (watch.checkout.clone(), path)),
                     );
                 }
+                // The bridge delivers an agent's events, not the watch.
+                EventName::Agent(_) => {}
             }
         }
         ExtensionWatch {

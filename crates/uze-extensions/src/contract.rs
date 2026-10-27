@@ -79,6 +79,43 @@ pub enum Outcome {
         title: String,
         detail: String,
     },
+    /// Do this to an agent, through the host: shown first, refused rather
+    /// than queued, limited (`agent-bridge`).
+    Agent(AgentRequest),
+}
+
+/// What an extension asks the host to do to an agent.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AgentRequest {
+    pub what: AgentAsk,
+    /// The agent's id; `None` for the one the surface stands for.
+    pub agent: Option<String>,
+    /// The action's label, as the confirmation and the notice say it.
+    pub label: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AgentAsk {
+    /// Type `text`, as resolved, after showing it.
+    Prompt { text: String },
+    /// Type the harness's own invocation of `skill` with `args`.
+    Skill { skill: String, args: Vec<String> },
+    /// Start the harness on a new conversation, always confirmed.
+    Restart,
+    /// Put the agent's pane in front.
+    Focus,
+}
+
+/// Something an agent of the workspace did, as the host learned it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AgentHappened {
+    pub event: uze_contract::AgentEvent,
+    pub agent: String,
+    pub harness: String,
+    pub checkout: PathBuf,
+    /// What else the event says: the tool, a checkout-relative path, the
+    /// call's id, its outcome, when.
+    pub detail: serde_json::Value,
 }
 
 /// How a full-frame surface is entered: by one of the doors it offers, or
@@ -202,6 +239,20 @@ pub trait Extension: Send {
     /// The operator's preferences for this extension changed, or were
     /// first read: what its surfaces read as `{pref.<name>}` from now on.
     fn configure(&mut self, _preferences: &serde_json::Value) {}
+
+    /// What the workspace's agents did since the last pass, handed only to
+    /// an extension holding `agent:observe`.
+    fn agent_events(&mut self, _happened: &[AgentHappened], _now: Instant) {}
+
+    /// The workspace's agents as they stand now, for an `agents` source,
+    /// handed only to an extension holding `agent:observe`.
+    fn agents(&mut self, _agents: &serde_json::Value) {}
+
+    /// What the extension asks of the host on its own, outside any
+    /// gesture: an unattended prompt its agent events sent. Taken once.
+    fn requests(&mut self) -> Vec<Outcome> {
+        Vec::new()
+    }
 
     /// `entry` was used on `surface`: before it opens, it says how it
     /// opens; while it stands, a door pressed again may close it or show
