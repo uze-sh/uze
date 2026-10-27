@@ -25,7 +25,15 @@ request carrying it, how many reads had returned by then, and where it sat
   `<plugin>@<market>--<rule>.md`.
 
 Run: python3 conformance/lab.py --harness antigravity --experiment antigravity/rules
-Env: RULES_WORLDS=glob,anchored,anchor,edge
+Env: RULES_WORLDS=glob,anchored,anchor,edge; RULES_TOOLS=1.4.6 scripts the
+file tools as builds up to 1.4.6 declared them (`view_file`,
+`write_to_file`), to run the same worlds on an image pinned to one of them.
+
+Finding (2026-10-27, `glob` world, signed in): on 1.4.6 the reads of
+`x/y/z.dsx`, `top.zro`, `nest/x.bare` and `abs/a.txt` return with their
+rule's body appended to the tool's output; on 1.4.8, the same reads through
+`read_file` return none, for every rule. The renamed file tools of 1.4.7
+attach no glob rule.
 """
 
 import json
@@ -38,6 +46,7 @@ from harnesses.antigravity.bindings import AntigravityBindings
 from shared import capture, common
 
 PROJECT = "/work/rules-project"
+LEGACY_TOOLS = os.environ.get("RULES_TOOLS") == "1.4.6"
 PROMPT = "UZE_RULES_TURN read the files I name"
 WORLDS = [
     w
@@ -213,21 +222,42 @@ def _prelude(rules, reads):
     return "\n".join(lines)
 
 
-def _reads(reads, write=None):
-    calls = [
-        {
-            "name": "read_file",
-            "args": {"Path": f"{PROJECT}/{rel}"},
+def _read(path):
+    if LEGACY_TOOLS:
+        return {
+            "name": "view_file",
+            "args": {
+                "AbsolutePath": path,
+                "toolSummary": "Lab read",
+                "toolAction": "Reading file",
+            },
         }
-        for rel in reads
-    ]
+    return {"name": "read_file", "args": {"Path": path}}
+
+
+def _write(path):
+    if LEGACY_TOOLS:
+        return {
+            "name": "write_to_file",
+            "args": {
+                "TargetFile": path,
+                "CodeContent": "lab",
+                "Description": "lab",
+                "Overwrite": True,
+                "toolSummary": "Lab write",
+                "toolAction": "Writing file",
+            },
+        }
+    return {
+        "name": "write_file",
+        "args": {"Path": path, "Content": "lab", "Overwrite": True},
+    }
+
+
+def _reads(reads, write=None):
+    calls = [_read(f"{PROJECT}/{rel}") for rel in reads]
     if write:
-        calls.append(
-            {
-                "name": "write_file",
-                "args": {"Path": f"{PROJECT}/{write}", "Content": "lab", "Overwrite": True},
-            }
-        )
+        calls.append(_write(f"{PROJECT}/{write}"))
     return calls
 
 

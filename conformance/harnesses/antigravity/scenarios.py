@@ -32,7 +32,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 import shared.common as common
 from shared.common import (
     check,
-    declare,
     describe,
     docker_base,
     make_screen,
