@@ -369,3 +369,13 @@
 - decided:  The list names shells and argument-forwarders, interpreters, package managers and builders, and what runs a program elsewhere or as someone else; the name is lower-cased and a trailing `.exe` removed before comparing, and the versioned families (`python3.12`, `tclsh8.6`) widen to `pypy`, `tclsh`, `wish`, `java`. The list stays a warning, never a refusal, so naming too much costs only a louder consent.
 - rejected: Recognising a runner by what it does at run time: the consent screen speaks before anything runs.
 - blast:    `uze-core::capability::extension::program`; consent's `runs_anything`.
+
+## D125 — At most four zero-width characters follow a base, and a cell costs at most 16 bytes
+
+- status:   pending
+- task:     review finding
+- commit:
+- trigger:  Only combining marks of five blocks were capped; any other character that takes no cell (Hebrew points, Arabic harakat, variation selectors) stacked without bound and added no width, so a `Clean` string was unbounded in bytes.
+- decided:  Every character that takes no cell counts towards a run that a base character resets; past four in a run the rest are dropped, and the five blocks keep their own cap of two. The output also stops before passing `max × 16` bytes (a four-byte base and three four-byte marks per cell).
+- rejected: Dropping every zero-width character outside the five blocks: scripts such as Hebrew and Arabic need them.
+- blast:    `uze-contract::clean`.

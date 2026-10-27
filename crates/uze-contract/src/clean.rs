@@ -24,6 +24,12 @@ pub const TEXT_MAX: usize = 4096;
 /// are dropped: enough for every script that needs them, too few to smear a
 /// row.
 const COMBINING_MAX: usize = 2;
+/// How many characters that take no cell, of any block, may follow one
+/// base character: a combining mark of a script outside the blocks above,
+/// a variation selector. Past it they would add bytes and no width.
+const ZERO_WIDTH_MAX: usize = 4;
+/// The most bytes a cell may cost: a base of four and three marks.
+const BYTES_PER_CELL: usize = 16;
 
 /// A string stripped of everything a terminal would act on, and bounded.
 ///
@@ -87,13 +93,15 @@ fn clean(source: &str, multiline: bool, max: usize) -> String {
     let mut out = String::with_capacity(source.len().min(max * 4));
     let mut cells = 0;
     let mut combining = 0;
+    let mut zero_width = 0;
+    let bytes = max * BYTES_PER_CELL;
     let mut chars = source.chars().peekable();
     while let Some(ch) = chars.next() {
         let width = match ch {
             '\n' | '\r' | '\u{2028}' | '\u{2029}' | '\u{85}' | '\t' => 1,
             ch => ch.width().unwrap_or(0),
         };
-        if cells + width > max {
+        if cells + width > max || out.len() + ch.len_utf8() > bytes {
             break;
         }
         match ch {
@@ -117,17 +125,18 @@ fn clean(source: &str, multiline: bool, max: usize) -> String {
             }
             '\t' => out.push(' '),
             ch if ch.is_control() || is_invisible(ch) => continue,
-            ch if is_combining(ch) => {
-                combining += 1;
-                if combining > COMBINING_MAX {
-                    continue;
+            ch if width == 0 => {
+                zero_width += 1;
+                combining += usize::from(is_combining(ch));
+                if zero_width <= ZERO_WIDTH_MAX && combining <= COMBINING_MAX {
+                    out.push(ch);
                 }
-                out.push(ch);
                 continue;
             }
             ch => out.push(ch),
         }
         combining = 0;
+        zero_width = 0;
         cells += width;
     }
     out
@@ -248,6 +257,22 @@ mod tests {
             Clean::label(&"x".repeat(LABEL_MAX * 2)).as_str().len(),
             LABEL_MAX
         );
+    }
+
+    #[test]
+    fn zero_width_characters_of_any_block_are_capped_and_bytes_bounded() {
+        for mark in ['\u{591}', '\u{64b}', '\u{fe0f}', '\u{e01ef}'] {
+            let stacked = format!("a{}", mark.to_string().repeat(100_000));
+            let cleaned = Clean::text(&stacked);
+            assert_eq!(
+                cleaned.as_str().chars().count(),
+                1 + ZERO_WIDTH_MAX,
+                "{mark:?}"
+            );
+        }
+        let heavy = format!("{}\u{591}\u{592}\u{593}\u{594}", "\u{10000}").repeat(TEXT_MAX);
+        assert!(Clean::text(&heavy).as_str().len() <= TEXT_MAX * BYTES_PER_CELL);
+        assert_eq!(Clean::label("שָׁלוֹם").as_str(), "שָׁלוֹם");
     }
 
     #[test]
