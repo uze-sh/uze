@@ -240,7 +240,7 @@ impl WorkspaceModel {
         }
         for (owner, request) in requests {
             if let Outcome::Agent(request) = request {
-                self.ask_of_agent(owner, request);
+                self.ask_of_agent(owner, *request);
             }
         }
     }

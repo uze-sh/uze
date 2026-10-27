@@ -272,7 +272,7 @@ impl WorkspaceModel {
             // answered: it stands on the gesture that ran it, and the
             // bridge shows it and guards it as any prompt from a gesture.
             Outcome::Agent(request) if !request.unattended => {
-                self.ask_of_agent(answer.extension.clone(), request);
+                self.ask_of_agent(answer.extension.clone(), *request);
             }
             Outcome::Notice(span)
                 if self

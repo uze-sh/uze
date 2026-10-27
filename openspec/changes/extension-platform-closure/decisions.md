@@ -468,3 +468,13 @@
 - decided:  The workspace client resolves every chord against `[Global, Workspace, Surfaces]` first, as if nothing stood in front, and a chord meaning `PauseAgentWrites` is performed before the resident surface, the docked drawer or any scope routing; `perform` handles the pause in its first block beside Quit. The binding stays in `Surfaces`, so a keys.json rebinding still moves it. A question open when F8 is pressed stays open; only the writes are held.
 - rejected: Binding F8 in `Scope::Global`: Global is live in management too, whose index would offer a pause that does nothing there. A scope of its own pushed over every seal: one action does not need a new keyboard.
 - blast:    `src/ui/orchestrator/session/keys.rs`; `tests/declared_resident.rs`.
+
+## D181 — An unattended allowance is given to one action, not to the extension
+
+- status:   pending
+- task:     review finding 4 (SECURITY)
+- commit:
+- trigger:  The 24-hour allowance to prompt an agent unattended was keyed by (extension, agent): once one `when=` prompt was allowed, every other auto-prompt of that extension, whatever its text, was typed unseen.
+- decided:  `AgentRequest` carries the id of the action that asks, and the allowance is keyed by (extension, agent, action id). The question names the action ("Only <label>, to <agent>, on its events…"). The allowance lives only in memory (extension-agent-bridge D16), so no persisted format changes.
+- rejected: Keying by the prompt's text: an action whose text is templated would ask on every event. Keying by the label: two actions may share one.
+- blast:    `uze-extensions` `contract::AgentRequest` (new `action` field; `Outcome::Agent` now boxes it, which the larger request needs under clippy's `result_large_err`) and `declared/action.rs`; `src/ui/orchestrator/declared/agent.rs` and the five places that hand a request to `ask_of_agent`.

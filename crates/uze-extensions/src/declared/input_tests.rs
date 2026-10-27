@@ -333,14 +333,15 @@ fn a_two_step_action_fills_its_prompt_from_the_answer_on_the_gesture() {
     assert_eq!(asked[0].declaration, "review");
     assert_eq!(
         outcomes,
-        vec![Outcome::Agent(AgentRequest {
+        vec![Outcome::Agent(Box::new(AgentRequest {
             what: AgentAsk::Prompt {
                 text: "Review src/auth.rs".into()
             },
             agent: None,
+            action: "review".into(),
             label: "Review next".into(),
             unattended: false,
-        })]
+        }))]
     );
     assert!(
         engine.requests().is_empty(),

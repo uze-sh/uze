@@ -247,7 +247,7 @@ impl WorkspaceModel {
             Outcome::Stay => {}
             Outcome::Agent(request) => {
                 if let Some(owner) = self.open_drawer_slot().map(|slot| slot.owner.clone()) {
-                    self.ask_of_agent(owner, request);
+                    self.ask_of_agent(owner, *request);
                 }
             }
             Outcome::Close => self.close_drawer(),

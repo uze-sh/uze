@@ -729,6 +729,7 @@ impl DeclaredExtension {
                             }
                         },
                         agent: Some(event.agent.clone()),
+                        action: action.id.clone(),
                         label: Clean::label(&action.label).into_string(),
                         unattended: true,
                     }),
@@ -1270,7 +1271,7 @@ impl Extension for DeclaredExtension {
     fn requests(&mut self) -> Vec<Outcome> {
         std::mem::take(&mut self.unattended)
             .into_iter()
-            .map(Outcome::Agent)
+            .map(|request| Outcome::Agent(Box::new(request)))
             .collect()
     }
 

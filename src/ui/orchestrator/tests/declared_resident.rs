@@ -306,6 +306,7 @@ fn prompt(text: &str) -> uze_extensions::contract::AgentRequest {
             text: text.to_owned(),
         },
         agent: None,
+        action: "review".to_owned(),
         label: "Review".to_owned(),
         unattended: false,
     }

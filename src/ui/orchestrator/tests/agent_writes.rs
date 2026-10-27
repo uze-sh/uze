@@ -19,6 +19,7 @@ fn prompt(text: &str) -> AgentRequest {
             text: text.to_owned(),
         },
         agent: None,
+        action: "review".to_owned(),
         label: "Review".to_owned(),
         unattended: false,
     }
@@ -175,4 +176,49 @@ fn the_question_is_answered_by_keyboard_over_the_code_surface() {
         driven.attach.model.open_slot.is_some(),
         "the surface stays where it was"
     );
+}
+
+/// An unattended prompt of the extension's action `action`.
+fn on_its_own(action: &str, text: &str) -> AgentRequest {
+    AgentRequest {
+        what: AgentAsk::Prompt {
+            text: text.to_owned(),
+        },
+        agent: Some("a1".to_owned()),
+        action: action.to_owned(),
+        label: action.to_owned(),
+        unattended: true,
+    }
+}
+
+#[test]
+fn allowing_one_unattended_prompt_allows_that_action_alone() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-unattended"));
+    let mut driven = driven(launched_agent(), &home);
+    let model = &mut driven.attach.model;
+    model.ask_of_agent(Owner::Builtin("probe"), on_its_own("review", "Review"));
+    assert!(model.agent_write.is_some(), "the first is asked");
+    model.answer_agent_write(true);
+    assert!(model.agent_write.is_none());
+
+    model.ask_of_agent(
+        Owner::Builtin("probe"),
+        on_its_own("deploy", "Ship it to production"),
+    );
+    assert!(
+        model.agent_write.is_some(),
+        "another action of the same extension still asks"
+    );
+    assert!(
+        model.remembered.declared.bridge.writes.allowed.len() == 1,
+        "only the allowed one waits to be typed"
+    );
+    model.answer_agent_write(false);
+
+    model.ask_of_agent(Owner::Builtin("probe"), on_its_own("review", "Review"));
+    assert!(
+        model.agent_write.is_none(),
+        "the allowed action is not asked again"
+    );
+    assert_eq!(model.remembered.declared.bridge.writes.allowed.len(), 2);
 }

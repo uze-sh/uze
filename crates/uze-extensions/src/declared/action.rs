@@ -70,6 +70,7 @@ pub(super) struct Queued {
 /// The host's answer to an action's script.
 pub(super) struct ActionAnswer {
     surface: String,
+    action: String,
     label: String,
     answer: Answer,
     then: Option<(Then, Value)>,
@@ -194,13 +195,14 @@ impl DeclaredExtension {
                         }
                     }
                 };
-                Run::Agent(self.agent_request(surface, what, target, scope, label)?)
+                Run::Agent(self.agent_request(surface, what, target, scope, &declared.id, label)?)
             }
             Does::AgentRestart { target } => Run::Agent(self.agent_request(
                 surface,
                 crate::contract::AgentAsk::Restart,
                 target,
                 scope,
+                &declared.id,
                 label,
             )?),
             Does::FocusAgent { target } => Run::Agent(self.agent_request(
@@ -208,6 +210,7 @@ impl DeclaredExtension {
                 crate::contract::AgentAsk::Focus,
                 target,
                 scope,
+                &declared.id,
                 label,
             )?),
         })
@@ -221,6 +224,7 @@ impl DeclaredExtension {
         what: crate::contract::AgentAsk,
         target: &uze_contract::AgentTarget,
         scope: &Value,
+        action: &str,
         label: String,
     ) -> Result<crate::contract::AgentRequest, Outcome> {
         let agent = match target {
@@ -236,6 +240,7 @@ impl DeclaredExtension {
         Ok(crate::contract::AgentRequest {
             what,
             agent,
+            action: action.to_owned(),
             label,
             unattended: false,
         })
@@ -377,7 +382,7 @@ impl DeclaredExtension {
             Run::Copy(text) => Outcome::Copy(text),
             Run::OpenPath { project, target } => Outcome::OpenPath { project, target },
             Run::Open(target) => Outcome::Show(target),
-            Run::Agent(request) => Outcome::Agent(request),
+            Run::Agent(request) => Outcome::Agent(Box::new(request)),
         }
     }
 
@@ -444,6 +449,8 @@ impl DeclaredExtension {
         std::mem::take(&mut self.queued)
             .into_iter()
             .map(|queued| {
+                let action = queued.action.clone();
+                let stopped_action = action.clone();
                 let question = Question {
                     identity: identity.clone(),
                     declaration: queued.action,
@@ -457,6 +464,7 @@ impl DeclaredExtension {
                     run: Box::new(move |host| {
                         Opaque::new(ActionAnswer {
                             surface,
+                            action,
                             label,
                             answer: host.answer(question),
                             then,
@@ -465,6 +473,7 @@ impl DeclaredExtension {
                     fallback: Box::new(move || {
                         Opaque::new(ActionAnswer {
                             surface: stopped_surface,
+                            action: stopped_action,
                             label: stopped_label,
                             answer: Answer::Failed {
                                 reason: super::STOPPED.to_owned(),
@@ -483,6 +492,7 @@ impl DeclaredExtension {
     pub(super) fn absorb_action(&mut self, answered: ActionAnswer) -> Outcome {
         let ActionAnswer {
             surface,
+            action,
             label,
             answer,
             then,
@@ -493,7 +503,7 @@ impl DeclaredExtension {
                 let applied = self.apply(&envelope, std::slice::from_ref(&surface), None);
                 match then {
                     Some((then, scope)) => {
-                        self.second_step(&surface, &label, &then, scope, &envelope.data)
+                        self.second_step(&surface, &action, &label, &then, scope, &envelope.data)
                     }
                     None => applied,
                 }
@@ -516,6 +526,7 @@ impl DeclaredExtension {
     fn second_step(
         &self,
         surface: &str,
+        action: &str,
         label: &str,
         then: &Then,
         mut scope: Value,
@@ -542,8 +553,15 @@ impl DeclaredExtension {
                     .collect(),
             },
         };
-        match self.agent_request(surface, what, &then.target, &scope, label.to_owned()) {
-            Ok(request) => Outcome::Agent(request),
+        match self.agent_request(
+            surface,
+            what,
+            &then.target,
+            &scope,
+            action,
+            label.to_owned(),
+        ) {
+            Ok(request) => Outcome::Agent(Box::new(request)),
             Err(outcome) => outcome,
         }
     }

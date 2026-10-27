@@ -110,7 +110,7 @@ impl WorkspaceModel {
                 // card it was chosen on gives way to it.
                 let focus = matches!(request.what, uze_extensions::contract::AgentAsk::Focus);
                 if let Some(owner) = self.overlay_slot().map(|slot| slot.owner.clone()) {
-                    self.ask_of_agent(owner, request);
+                    self.ask_of_agent(owner, *request);
                 }
                 if focus {
                     self.close_overlay();

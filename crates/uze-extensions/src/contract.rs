@@ -81,7 +81,7 @@ pub enum Outcome {
     },
     /// Do this to an agent, through the host: shown first, refused rather
     /// than queued, limited (`extension-agent-bridge`).
-    Agent(AgentRequest),
+    Agent(Box<AgentRequest>),
 }
 
 /// What an extension asks the host to do to an agent.
@@ -90,6 +90,9 @@ pub struct AgentRequest {
     pub what: AgentAsk,
     /// The agent's id; `None` for the one the surface stands for.
     pub agent: Option<String>,
+    /// The id of the extension's action that asks: what an allowance to
+    /// prompt unattended is given to.
+    pub action: String,
     /// The action's label, as the confirmation and the notice say it.
     pub label: String,
     /// Sent by an agent's event rather than a gesture.

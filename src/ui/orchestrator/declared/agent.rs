@@ -5,8 +5,9 @@
 //! refused with the reason.
 //!
 //! An unattended prompt (sent by an agent's event) is asked about once
-//! per extension and agent; once allowed, it is typed for 24 hours without
-//! asking, under the same guards and tighter rates. The pause key holds
+//! per extension, agent and action; once allowed, that action's prompts are
+//! typed for 24 hours without asking, under the same guards and tighter
+//! rates. The pause key holds
 //! every write and resets every count.
 
 use std::collections::VecDeque;
@@ -17,7 +18,8 @@ use crate::ui::orchestrator::*;
 use crate::ui::widget::ToastKind;
 use crate::ui::widget::dialog::{self, CANCEL, Dialog, Tone};
 
-/// How long allowing an extension's unattended prompts to an agent lasts.
+/// How long allowing an extension's action to prompt an agent unattended
+/// lasts.
 const UNATTENDED_FOR: Duration = Duration::from_secs(24 * 60 * 60);
 /// One write per extension and agent this often.
 const PAIR_EVERY: Duration = Duration::from_secs(60);
@@ -39,6 +41,8 @@ const UNATTENDED_MAX: usize = 512;
 pub(in crate::ui::orchestrator) struct Write {
     pub(in crate::ui::orchestrator) owner: Owner,
     pub(in crate::ui::orchestrator) agent: String,
+    /// The extension's action that asks.
+    pub(in crate::ui::orchestrator) action: String,
     pub(in crate::ui::orchestrator) text: String,
     pub(in crate::ui::orchestrator) label: String,
     pub(in crate::ui::orchestrator) unattended: bool,
@@ -50,8 +54,9 @@ pub(in crate::ui::orchestrator) struct Writes {
     pub(in crate::ui::orchestrator) paused: bool,
     /// Allowed, waiting for the session.
     pub(in crate::ui::orchestrator) allowed: Vec<Write>,
-    /// Until when each extension may prompt each agent unattended.
-    unattended_until: BTreeMap<(Owner, String), Instant>,
+    /// Until when each extension's action may prompt each agent
+    /// unattended: allowing one action allows no other (D181).
+    unattended_until: BTreeMap<(Owner, String, String), Instant>,
     rates: Rates,
 }
 
@@ -198,6 +203,7 @@ impl WorkspaceModel {
         let write = Write {
             owner: owner.clone(),
             agent: agent.clone(),
+            action: request.action.clone(),
             text,
             label: request.label.clone(),
             unattended: request.unattended,
@@ -206,7 +212,7 @@ impl WorkspaceModel {
         if request.unattended
             && writes
                 .unattended_until
-                .get(&(owner, agent))
+                .get(&(owner, agent, request.action.clone()))
                 .is_some_and(|until| Instant::now() < *until)
         {
             writes.allowed.push(write);
@@ -242,7 +248,11 @@ impl WorkspaceModel {
         let writes = &mut self.remembered.declared.bridge.writes;
         if dialog.write.unattended {
             writes.unattended_until.insert(
-                (dialog.write.owner.clone(), dialog.write.agent.clone()),
+                (
+                    dialog.write.owner.clone(),
+                    dialog.write.agent.clone(),
+                    dialog.write.action.clone(),
+                ),
                 Instant::now() + UNATTENDED_FOR,
             );
         }
@@ -408,7 +418,10 @@ pub(in crate::ui::orchestrator) fn render_agent_write(
         (
             format!("Let {} prompt this agent on its own?", open.write.label),
             vec![
-                format!("To {}, on its events, for a day, typing:", open.agent_label),
+                format!(
+                    "Only {}, to {}, on its events, for a day, typing:",
+                    open.write.label, open.agent_label
+                ),
                 open.write.text.clone(),
                 "A few times an hour at most. F8 pauses every extension.".to_owned(),
             ],

@@ -1120,7 +1120,7 @@ impl WorkspaceModel {
             Outcome::Stay => {}
             Outcome::Agent(request) => {
                 if let Some(owner) = self.slot_in_pane().map(|slot| slot.owner.clone()) {
-                    self.ask_of_agent(owner, request);
+                    self.ask_of_agent(owner, *request);
                 }
             }
             Outcome::Close => self.close_surface(),
@@ -1160,7 +1160,7 @@ impl WorkspaceModel {
                     .slot(id)
                     .map(|slot| slot.owner.clone())
                 {
-                    self.ask_of_agent(owner, request);
+                    self.ask_of_agent(owner, *request);
                 }
             }
             Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
