@@ -274,3 +274,52 @@ fn what_the_operator_allowed_changing_asks_every_shown_source_again() {
     );
     assert_eq!(texts(&tree(&engine)), ["2"]);
 }
+
+/// The host adds the preferences to the question as it asks it, so a
+/// change of them is a new question only the engine can know to ask.
+#[test]
+fn a_source_that_reads_the_preferences_is_asked_again_when_one_changes() {
+    let mut engine = board();
+    let mut compiled = engine.compiled().clone();
+    compiled.manifest.preferences = vec![uze_contract::PreferenceDecl {
+        name: "detail".to_owned(),
+        label: "Detail".to_owned(),
+        kind: uze_contract::PreferenceKind::Toggle,
+        default: json!(true),
+    }];
+    compiled.manifest.sources[0].with_preferences = true;
+    engine.replace(compiled);
+    engine.configure(&json!({}));
+    engine.focus(Some(&checkout("/work/a")));
+    let host = Answering::with(answered(json!({ "count": 1 })));
+    ask_all(&mut engine, &host);
+    assert!(engine.jobs().is_empty(), "asked once");
+
+    engine.configure(&json!({ "detail": true }));
+    assert!(
+        engine.jobs().is_empty(),
+        "the same setting is the same question"
+    );
+    engine.configure(&json!({ "detail": false }));
+    assert_eq!(engine.jobs().len(), 1, "a different setting asks again");
+}
+
+#[test]
+fn a_source_that_does_not_read_the_preferences_is_not_asked_again() {
+    let mut engine = board();
+    let mut compiled = engine.compiled().clone();
+    compiled.manifest.preferences = vec![uze_contract::PreferenceDecl {
+        name: "detail".to_owned(),
+        label: "Detail".to_owned(),
+        kind: uze_contract::PreferenceKind::Toggle,
+        default: json!(true),
+    }];
+    engine.replace(compiled);
+    engine.focus(Some(&checkout("/work/a")));
+    ask_all(
+        &mut engine,
+        &Answering::with(answered(json!({ "count": 1 }))),
+    );
+    engine.configure(&json!({ "detail": false }));
+    assert!(engine.jobs().is_empty());
+}

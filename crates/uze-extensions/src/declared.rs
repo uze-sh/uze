@@ -1144,6 +1144,14 @@ impl Extension for DeclaredExtension {
             self.preferences = admitted;
             // What a build read is no longer what it would read.
             self.generation += 1;
+            // The host adds the preferences to a source's input as it asks,
+            // so the question remembered here never changes with them: a
+            // source that reads them is asked again by forgetting it.
+            for source in &self.compiled.manifest.sources {
+                if source.with_preferences {
+                    self.asked.remove(&source.id);
+                }
+            }
         }
     }
 
