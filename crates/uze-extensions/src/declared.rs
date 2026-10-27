@@ -117,6 +117,9 @@ pub struct DeclaredExtension {
     /// The first row shown, by surface.
     scroll: BTreeMap<String, usize>,
     locale: String,
+    /// The operator's preferences, each admitted against its declaration:
+    /// what `{pref.<name>}` reads.
+    preferences: serde_json::Value,
     recorded: Vec<RecordedAction>,
     /// The last build of each surface. Behind a cell because drawing asks
     /// through `&self`; the contract needs `Send`, never `Sync`.
@@ -199,6 +202,7 @@ impl DeclaredExtension {
             ui: BTreeMap::new(),
             scroll: BTreeMap::new(),
             locale: locale.into(),
+            preferences: serde_json::Value::Object(serde_json::Map::new()),
             recorded: Vec::new(),
             memo: RefCell::default(),
             builds: std::cell::Cell::new(0),
@@ -336,6 +340,7 @@ impl DeclaredExtension {
             context: &context,
             lookups: view.map_or(&[], |view| view.lookups.as_slice()),
             locale: &self.locale,
+            preferences: &self.preferences,
         };
         env.bind(&[scope], &binding)
             .map(std::borrow::Cow::into_owned)
@@ -655,6 +660,7 @@ impl DeclaredExtension {
             context: &context,
             lookups: &view.lookups,
             locale: &self.locale,
+            preferences: &self.preferences,
         };
         bind::build(view, data, env)
     }
@@ -763,6 +769,14 @@ impl Extension for DeclaredExtension {
                     uze_contract::Slot::View => SurfaceSlot::View,
                     uze_contract::Slot::Section => SurfaceSlot::Section,
                     uze_contract::Slot::Drawer => SurfaceSlot::Drawer,
+                    uze_contract::Slot::Status => SurfaceSlot::Status,
+                    uze_contract::Slot::Band => SurfaceSlot::Band {
+                        rows: surface.band.map_or(1, |band| band.rows),
+                        bottom: surface
+                            .band
+                            .is_some_and(|band| band.place == uze_contract::BandPlace::Bottom),
+                    },
+                    uze_contract::Slot::Overlay => SurfaceSlot::Overlay,
                 },
                 title: self.title(surface),
             })
@@ -869,6 +883,22 @@ impl Extension for DeclaredExtension {
 
     /// Its source is asked again: what the operator allowed may have
     /// changed since it was last asked.
+    fn configure(&mut self, preferences: &serde_json::Value) {
+        let admitted: serde_json::Map<String, serde_json::Value> = self
+            .compiled
+            .manifest
+            .preferences
+            .iter()
+            .map(|decl| (decl.name.clone(), decl.admit(preferences.get(&decl.name))))
+            .collect();
+        let admitted = serde_json::Value::Object(admitted);
+        if admitted != self.preferences {
+            self.preferences = admitted;
+            // What a build read is no longer what it would read.
+            self.generation += 1;
+        }
+    }
+
     fn open(&mut self, surface: &str, checkout: &Checkout) {
         let Some(decl) = self.compiled.manifest.surface(surface) else {
             return;

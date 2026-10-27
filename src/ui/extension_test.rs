@@ -31,9 +31,11 @@ use uze_theme::Token;
 /// The size a test draws a surface at when it says none.
 fn default_size(slot: Slot) -> (u16, u16) {
     match slot {
-        Slot::View => (100, 30),
+        Slot::View | Slot::Overlay => (100, 30),
         Slot::Section => (30, 16),
         Slot::Drawer => (46, 30),
+        Slot::Status => (30, 1),
+        Slot::Band => (100, 2),
     }
 }
 
@@ -422,7 +424,19 @@ impl Stage {
                                 render_docked(frame, &view, content, None, &mut hits);
                             }
                         }
-                        Slot::View => {
+                        // A row of the header or a band over a pane: drawn
+                        // whole into its rows, attributed where the host
+                        // draws it rather than in a strip of its own.
+                        Slot::Status | Slot::Band => {
+                            let space = Size {
+                                width: area.width,
+                                height: area.height,
+                            };
+                            if let Some(view) = self.engine.view(&self.surface, space) {
+                                render_docked(frame, &view, area, None, &mut hits);
+                            }
+                        }
+                        Slot::View | Slot::Overlay => {
                             let content = render_attribution(frame, area, &said);
                             let space = Size {
                                 width: content.width,

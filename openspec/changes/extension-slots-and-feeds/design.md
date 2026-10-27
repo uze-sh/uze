@@ -135,7 +135,7 @@ fields:
 preferences {
     number "warn-at" label="Warn at load (%)" default=70 min=1 max=100
     toggle "fahrenheit" label="Show °F" default=#false
-    choice "unit" label="Memory unit" default="MiB" values="MiB" "GiB"
+    choice "unit" "MiB" "GiB" label="Memory unit" default="MiB"
     text "title" label="Title" default="GPU"
 }
 ```

@@ -36,7 +36,8 @@ pub fn answer_of(output: &Output, stdout: &[u8]) -> Result<Envelope, String> {
     let text = std::str::from_utf8(stdout)
         .map_err(|_| "it answered something that is not text".to_owned())?;
     match output {
-        Output::Json => {
+        // A composed tree is JSON too; the engine validates its nodes.
+        Output::Json | Output::View => {
             let value: serde_json::Value = serde_json::from_str(text)
                 .map_err(|error| format!("it answered something that is not JSON ({error})"))?;
             envelope_of(value)
@@ -99,8 +100,27 @@ fn envelope_of(value: serde_json::Value) -> Result<Envelope, String> {
     let notice = text(&mut object, "notice")?;
     let store = match object.remove("store") {
         None | Some(serde_json::Value::Null) => None,
-        Some(serde_json::Value::Object(patch)) => Some(patch),
+        Some(serde_json::Value::Object(patch)) => Some(Box::new(patch)),
         Some(_) => return Err("its `store` is not an object".to_owned()),
+    };
+    let notify = match object.remove("notify") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(value) => Some(
+            serde_json::from_value::<Box<uze_contract::Notification>>(value)
+                .map_err(|_| "its `notify` is not `{title, body}`".to_owned())?,
+        ),
+    };
+    let sound = match object.remove("sound") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::String(cue)) => {
+            Some(uze_contract::Sound::parse(&cue).ok_or_else(|| {
+                format!(
+                    "its `sound` is `{cue}`, not one of {}",
+                    uze_contract::Sound::NAMES.join(", ")
+                )
+            })?)
+        }
+        Some(_) => return Err("its `sound` is not a cue's name".to_owned()),
     };
     Ok(Envelope {
         data: object.remove("data").unwrap_or_default(),
@@ -108,6 +128,8 @@ fn envelope_of(value: serde_json::Value) -> Result<Envelope, String> {
         toast,
         notice,
         store,
+        notify,
+        sound,
     })
 }
 

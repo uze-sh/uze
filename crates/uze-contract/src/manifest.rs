@@ -26,6 +26,8 @@ pub struct Manifest {
     pub actions: Vec<ActionDecl>,
     /// What a granted program reads beyond the host's own paths, by name.
     pub exec: Vec<ExecDecl>,
+    /// The settings the operator edits, in the order written.
+    pub preferences: Vec<PreferenceDecl>,
 }
 
 impl Manifest {
@@ -56,6 +58,12 @@ impl Manifest {
             .iter()
             .find(|decl| decl.name == program)
             .map_or(&[], |decl| decl.reads.as_slice())
+    }
+
+    pub fn preference(&self, name: &str) -> Option<&PreferenceDecl> {
+        self.preferences
+            .iter()
+            .find(|preference| preference.name == name)
     }
 
     /// Whether the extension keeps a store, and where.
@@ -97,16 +105,26 @@ pub enum Slot {
     /// A panel docked along the right of the agent area, opened by a
     /// gesture and laid beside the pane rather than over it.
     Drawer,
+    /// One row of the sidebar's header.
+    Status,
+    /// Rows reserved along the top or bottom of each agent's pane.
+    Band,
+    /// A modal card over the frame, opened by a gesture.
+    Overlay,
 }
 
 impl Slot {
-    pub const NAMES: &'static [&'static str] = &["view", "section", "drawer"];
+    pub const NAMES: &'static [&'static str] =
+        &["view", "section", "drawer", "status", "band", "overlay"];
 
     pub fn parse(name: &str) -> Option<Self> {
         match name {
             "view" => Some(Self::View),
             "section" => Some(Self::Section),
             "drawer" => Some(Self::Drawer),
+            "status" => Some(Self::Status),
+            "band" => Some(Self::Band),
+            "overlay" => Some(Self::Overlay),
             _ => None,
         }
     }
@@ -116,6 +134,92 @@ impl Slot {
             Self::View => "view",
             Self::Section => "section",
             Self::Drawer => "drawer",
+            Self::Status => "status",
+            Self::Band => "band",
+            Self::Overlay => "overlay",
+        }
+    }
+}
+
+/// The most rows a band may take from an agent's pane.
+pub const BAND_ROWS_MAX: u8 = 6;
+
+/// Where a band stands on its pane, and how many rows it takes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BandDecl {
+    pub rows: u8,
+    pub place: BandPlace,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum BandPlace {
+    #[default]
+    Top,
+    Bottom,
+}
+
+impl BandPlace {
+    pub const NAMES: &'static [&'static str] = &["top", "bottom"];
+
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "top" => Some(Self::Top),
+            "bottom" => Some(Self::Bottom),
+            _ => None,
+        }
+    }
+}
+
+/// A setting an extension declares and the operator edits.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PreferenceDecl {
+    pub name: String,
+    /// What the Extensions screen calls it.
+    pub label: String,
+    pub kind: PreferenceKind,
+    /// What it holds until the operator says otherwise.
+    pub default: serde_json::Value,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum PreferenceKind {
+    Text,
+    /// Bounds are whole numbers; a value between them may have a fraction.
+    Number {
+        min: Option<i64>,
+        max: Option<i64>,
+    },
+    Toggle,
+    Choice {
+        values: Vec<String>,
+    },
+}
+
+impl PreferenceKind {
+    pub const NAMES: &'static [&'static str] = &["text", "number", "toggle", "choice"];
+}
+
+impl PreferenceDecl {
+    /// `value` when it is one this preference may hold, else its default.
+    pub fn admit(&self, value: Option<&serde_json::Value>) -> serde_json::Value {
+        value
+            .filter(|value| self.holds(value))
+            .cloned()
+            .unwrap_or_else(|| self.default.clone())
+    }
+
+    /// Whether `value` is one this preference may hold.
+    pub fn holds(&self, value: &serde_json::Value) -> bool {
+        match &self.kind {
+            PreferenceKind::Text => value.is_string(),
+            PreferenceKind::Number { min, max } => value.as_f64().is_some_and(|number| {
+                min.is_none_or(|min| number >= min as f64)
+                    && max.is_none_or(|max| number <= max as f64)
+            }),
+            PreferenceKind::Toggle => value.is_boolean(),
+            PreferenceKind::Choice { values } => value
+                .as_str()
+                .is_some_and(|chosen| values.iter().any(|value| value == chosen)),
         }
     }
 }
@@ -126,6 +230,8 @@ pub struct SurfaceDecl {
     pub slot: Slot,
     /// The view file, relative to the extension's directory.
     pub view: String,
+    /// A band's rows and place; `None` for every other slot.
+    pub band: Option<BandDecl>,
     /// The source whose data the view is bound to.
     pub source: String,
     /// What the host titles the surface with; the extension's name when
@@ -150,6 +256,25 @@ pub struct SourceDecl {
     pub output: Output,
     /// Whether the extension's store is part of what it is asked with.
     pub with_store: bool,
+    /// Whether the extension's preferences are part of what it is asked
+    /// with.
+    pub with_preferences: bool,
+    /// How events that ask it again are handed over.
+    pub deliver: Deliver,
+}
+
+/// How events that ask a source again reach it.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum Deliver {
+    /// Coalesced in a short window: it is asked once, with the last.
+    #[default]
+    Latest,
+    /// Asked once per event, in order, a bounded number per window.
+    Each,
+}
+
+impl Deliver {
+    pub const NAMES: &'static [&'static str] = &["latest", "each"];
 }
 
 impl SourceDecl {
@@ -164,6 +289,8 @@ impl SourceDecl {
             refresh_on: Vec::new(),
             output: Output::Json,
             with_store: false,
+            with_preferences: false,
+            deliver: Deliver::Latest,
         }
     }
 
@@ -171,7 +298,7 @@ impl SourceDecl {
     pub fn fixture(&self) -> Option<&str> {
         match &self.kind {
             SourceKind::Fixture(file) => Some(file),
-            SourceKind::Script(_) | SourceKind::Run(_) => None,
+            SourceKind::Script(_) | SourceKind::Run(_) | SourceKind::Events(_) => None,
         }
     }
 
@@ -179,7 +306,7 @@ impl SourceDecl {
     pub fn script(&self) -> Option<&str> {
         match &self.kind {
             SourceKind::Script(file) => Some(file),
-            SourceKind::Fixture(_) | SourceKind::Run(_) => None,
+            SourceKind::Fixture(_) | SourceKind::Run(_) | SourceKind::Events(_) => None,
         }
     }
 }
@@ -194,12 +321,17 @@ pub enum SourceKind {
     Run(Program),
     /// A JSON file whose contents are the source's data.
     Fixture(String),
+    /// The host's own: the last this many events the extension may see.
+    Events(u16),
 }
 
 impl SourceKind {
     /// How a manifest spells each kind.
-    pub const NAMES: &'static [&'static str] = &["script", "run", "fixture"];
+    pub const NAMES: &'static [&'static str] = &["script", "run", "fixture", "events"];
 }
+
+/// The most events an `events` source keeps.
+pub const EVENTS_MAX: u16 = 200;
 
 /// The longest a program may run, and what it runs for when its
 /// declaration says nothing.
@@ -246,6 +378,8 @@ pub enum Output {
     /// One JSON value, or an envelope around one.
     #[default]
     Json,
+    /// A tree of catalog nodes the host validates and draws.
+    View,
     /// One item per line, its fields named in order and split at
     /// `separator`, a tab unless the declaration names another, each
     /// trimmed of the spaces around it.
@@ -256,7 +390,7 @@ pub enum Output {
 }
 
 impl Output {
-    pub const NAMES: &'static [&'static str] = &["json", "lines"];
+    pub const NAMES: &'static [&'static str] = &["json", "lines", "view"];
     pub const TAB: char = '\t';
 }
 
@@ -350,6 +484,8 @@ pub enum Grant {
     Store,
     /// Keeping one store for the machine, across projects.
     StoreGlobal,
+    /// Notifying the operator and sounding a cue, rate-limited.
+    Notify,
     /// Running the program of this name, at the path pinned when the
     /// extension was enabled.
     Exec(String),
@@ -363,6 +499,7 @@ impl Grant {
         Self::OpenPath,
         Self::Store,
         Self::StoreGlobal,
+        Self::Notify,
     ];
     pub const EXEC: &'static str = "exec:";
 
@@ -383,6 +520,7 @@ impl Grant {
             Self::OpenPath => "open-path",
             Self::Store => "store",
             Self::StoreGlobal => "store:global",
+            Self::Notify => "notify",
             Self::Exec(program) => return format!("{}{program}", Self::EXEC).into(),
         })
     }

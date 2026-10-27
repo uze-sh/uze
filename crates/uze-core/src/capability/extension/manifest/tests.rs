@@ -79,14 +79,14 @@ fn a_reserved_or_malformed_id_is_refused() {
 fn a_surface_is_checked_property_by_property() {
     let diagnostics = refusals(&GSD.replace(
         r#"surface "board" slot="view" view="board.kdl" source="board""#,
-        r#"surface "board" slot="band" view="../board.kdl" source="board" colour="red""#,
+        r#"surface "board" slot="bnad" view="../board.kdl" source="board" colour="red""#,
     ));
     let messages: Vec<&str> = diagnostics.iter().map(|d| d.message.as_str()).collect();
     assert_eq!(
         messages,
         vec![
             "`surface` has no property `colour`",
-            "this version has no slot `band`",
+            "this version has no slot `bnad`",
             "`../board.kdl` is not a path inside the extension's directory",
         ]
     );
@@ -120,11 +120,6 @@ fn a_missing_part_and_a_repeated_one_are_named() {
 
 #[test]
 fn later_nodes_and_the_wrong_case_are_told_apart() {
-    let later = refusals(&format!("{GSD}preferences {{ }}\n"));
-    assert_eq!(
-        later[0].message,
-        "`preferences` arrives in a later change (change 6)"
-    );
     let case = refusals(&format!("{GSD}Surface \"x\"\n"));
     assert_eq!(
         case[0].suggestion.as_deref(),
@@ -231,7 +226,7 @@ fn a_source_is_answered_by_exactly_one_thing() {
     ));
     assert_eq!(
         two,
-        "a source is answered by one of `script`, `run` or `fixture`"
+        "a source is answered by one of `script`, `run`, `fixture` or `events`"
     );
     let none =
         first_message(&GSD.replace("{ fixture \"fixtures/board.json\"; }", "{ every \"10s\"; }"));
@@ -499,7 +494,6 @@ fn only_the_grants_this_version_enforces_are_accepted() {
         ("net", 8),
         ("secret", 8),
         ("agent:prompt", 6),
-        ("notify", 6),
         ("resident", 7),
         ("edit:checkout", 8),
     ] {
@@ -622,4 +616,115 @@ fn an_id_is_at_most_thirty_two_characters_and_timeline_is_reserved() {
     );
     let timeline = refusals(&GSD.replace("\"gsd-band\"", "\"timeline\""));
     assert!(timeline[0].message.contains("`timeline` is reserved"));
+}
+
+#[test]
+fn a_band_says_its_rows_and_place_and_nothing_else_does() {
+    let with_surface = |surface: &str| {
+        GSD.replace(
+            r#"surface "summary" slot="section" view="board.kdl" source="board" title="GSD""#,
+            surface,
+        )
+    };
+    let manifest = decoded(&with_surface(
+        r#"surface "summary" slot="band" view="board.kdl" source="board" rows=2 place="bottom""#,
+    ));
+    let band = manifest.surface("summary").unwrap().band.unwrap();
+    assert_eq!(
+        (band.rows, band.place),
+        (2, uze_contract::BandPlace::Bottom)
+    );
+    assert!(
+        first_message(&with_surface(
+            r#"surface "summary" slot="band" view="board.kdl" source="board""#
+        ))
+        .contains("a band names how many rows it takes")
+    );
+    assert!(
+        first_message(&with_surface(
+            r#"surface "summary" slot="band" view="board.kdl" source="board" rows=9"#
+        ))
+        .contains("a band takes 1 to 6 rows")
+    );
+    assert!(
+        first_message(&with_surface(
+            r#"surface "summary" slot="section" view="board.kdl" source="board" rows=2"#
+        ))
+        .contains("only a band takes `rows` and `place`")
+    );
+    for slot in ["status", "overlay"] {
+        let manifest = decoded(&with_surface(&format!(
+            r#"surface "summary" slot="{slot}" view="board.kdl" source="board""#
+        )));
+        assert_eq!(manifest.surface("summary").unwrap().slot.name(), slot);
+    }
+}
+
+#[test]
+fn preferences_are_typed_with_a_default_they_may_hold() {
+    let manifest = decoded(&format!(
+        "{GSD}preferences {{\n    number \"warn-at\" label=\"Warn at\" default=70 min=1 max=100\n    toggle \"fahrenheit\" default=#false\n    choice \"unit\" \"MiB\" \"GiB\" default=\"MiB\"\n    text \"title\" default=\"GPU\"\n}}\n"
+    ));
+    let names: Vec<&str> = manifest
+        .preferences
+        .iter()
+        .map(|p| p.name.as_str())
+        .collect();
+    assert_eq!(names, ["warn-at", "fahrenheit", "unit", "title"]);
+    let warn = manifest.preference("warn-at").unwrap();
+    assert_eq!(warn.label, "Warn at");
+    assert_eq!(
+        warn.admit(Some(&serde_json::json!(50))),
+        serde_json::json!(50)
+    );
+    assert_eq!(
+        warn.admit(Some(&serde_json::json!(500))),
+        serde_json::json!(70)
+    );
+    assert_eq!(
+        warn.admit(Some(&serde_json::json!("50"))),
+        serde_json::json!(70)
+    );
+    let unit = manifest.preference("unit").unwrap();
+    assert_eq!(
+        unit.admit(Some(&serde_json::json!("TiB"))),
+        serde_json::json!("MiB")
+    );
+    assert!(
+        first_message(&format!(
+            "{GSD}preferences {{ choice \"unit\" \"MiB\" default=\"TiB\"; }}\n"
+        ))
+        .contains("is not a value it may hold")
+    );
+    assert!(
+        first_message(&format!("{GSD}preferences {{ toggle \"on\"; }}\n"))
+            .contains("says its `default`")
+    );
+}
+
+#[test]
+fn a_source_may_be_the_events_it_saw_delivered_each() {
+    let manifest = decoded(&GSD.replace(
+        "source \"board\" { fixture \"fixtures/board.json\"; }",
+        "source \"board\" {\n    fixture \"fixtures/board.json\"\n    refresh-on \"paths.changed\" \".planning\"\n    deliver \"each\"\n    preferences\n}\nsource \"log\" { events 50; }",
+    ));
+    let board = manifest.source("board").unwrap();
+    assert_eq!(board.deliver, uze_contract::Deliver::Each);
+    assert!(board.with_preferences);
+    assert_eq!(manifest.source("log").unwrap().kind, SourceKind::Events(50));
+    assert!(
+        first_message(&GSD.replace(
+            "source \"board\" { fixture \"fixtures/board.json\"; }",
+            "source \"board\" { fixture \"fixtures/board.json\"; deliver \"each\"; }",
+        ))
+        .contains("no event refreshes it")
+    );
+    assert!(
+        first_message(&GSD.replace(
+            "source \"board\" { fixture \"fixtures/board.json\"; }",
+            "source \"board\" { events 1000; }",
+        ))
+        .contains("`events` keeps 1 to 200")
+    );
+    decoded(&GSD.replace("source \"board\"", "wants \"notify\"\nsource \"board\""));
 }

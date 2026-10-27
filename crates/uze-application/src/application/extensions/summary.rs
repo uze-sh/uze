@@ -24,6 +24,13 @@ pub struct DeclaredExtensionSummary {
     pub sections: Vec<String>,
     /// The titles of the drawers it docks beside the agent's pane.
     pub drawers: Vec<String>,
+    /// The titles of the rows it draws in the sidebar's header.
+    pub statuses: Vec<String>,
+    /// The titles of the bands it lays over each agent's pane, with the
+    /// rows each takes.
+    pub bands: Vec<(String, u8)>,
+    /// The titles of the overlays it opens over the frame.
+    pub overlays: Vec<String>,
     /// What its last compile said was wrong, one problem a line. Empty
     /// when it compiled.
     pub errors: Vec<String>,
@@ -58,6 +65,9 @@ fn summarize(
         views: Vec::new(),
         sections: Vec::new(),
         drawers: Vec::new(),
+        statuses: Vec::new(),
+        bands: Vec::new(),
+        overlays: Vec::new(),
         errors: Vec::new(),
     };
     match compiled {
@@ -73,6 +83,11 @@ fn summarize(
                     Slot::View => summary.views.push(title),
                     Slot::Section => summary.sections.push(title),
                     Slot::Drawer => summary.drawers.push(title),
+                    Slot::Status => summary.statuses.push(title),
+                    Slot::Band => summary
+                        .bands
+                        .push((title, surface.band.map_or(1, |band| band.rows))),
+                    Slot::Overlay => summary.overlays.push(title),
                 }
             }
         }
@@ -108,6 +123,7 @@ mod tests {
     #[test]
     fn a_compiled_extension_says_what_it_offers() {
         let surface = |id: &str, slot, title: Option<&str>| uze_contract::SurfaceDecl {
+            band: None,
             id: id.to_owned(),
             slot,
             view: format!("{id}.kdl"),
@@ -129,6 +145,7 @@ mod tests {
                 sources: Vec::new(),
                 actions: Vec::new(),
                 exec: Vec::new(),
+                preferences: Vec::new(),
             },
             views: BTreeMap::new(),
         };

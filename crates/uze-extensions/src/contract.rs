@@ -25,6 +25,13 @@ pub enum SurfaceSlot {
     Section,
     /// A panel docked along the right of the agent area, beside the pane.
     Drawer,
+    /// One row of the sidebar's header.
+    Status,
+    /// `rows` reserved along the top, or the `bottom`, of each agent's
+    /// pane, taken before the pane's terminal is sized.
+    Band { rows: u8, bottom: bool },
+    /// A modal card over the frame, opened by a gesture.
+    Overlay,
 }
 
 /// One surface an extension offers.
@@ -191,6 +198,10 @@ pub trait Extension: Send {
     /// `surface` is opening full-frame on `checkout`, before any place is
     /// handed back to it.
     fn open(&mut self, _surface: &str, _checkout: &Checkout) {}
+
+    /// The operator's preferences for this extension changed, or were
+    /// first read: what its surfaces read as `{pref.<name>}` from now on.
+    fn configure(&mut self, _preferences: &serde_json::Value) {}
 
     /// `entry` was used on `surface`: before it opens, it says how it
     /// opens; while it stands, a door pressed again may close it or show

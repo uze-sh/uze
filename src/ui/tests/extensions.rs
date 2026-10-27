@@ -124,6 +124,9 @@ fn declared(errors: &[&str]) -> uze_application::DeclaredExtensionSummary {
         views: vec!["Board".to_owned()],
         sections: vec!["Band".to_owned()],
         drawers: Vec::new(),
+        statuses: Vec::new(),
+        bands: Vec::new(),
+        overlays: Vec::new(),
         errors: errors.iter().map(|error| (*error).to_owned()).collect(),
     }
 }

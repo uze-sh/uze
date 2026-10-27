@@ -37,10 +37,13 @@ const CHILDREN: &[&str] = &[
     "output",
     "fields",
     "store",
+    "preferences",
+    "deliver",
+    "events",
 ];
 /// What later changes add inside a source, with the change that brings
 /// each.
-const LATER: &[(&str, u32)] = &[("deliver", 6)];
+const LATER: &[(&str, u32)] = &[];
 /// The events a later change brings, by prefix.
 const LATER_EVENTS: &[(&str, u32)] = &[("agent.", 6)];
 const ANSWER_IT: &str = "answer it with `script \"….rhai\"` or `fixture \"….json\"`";
@@ -67,16 +70,39 @@ pub fn decode(node: &KdlNode, report: &mut Report<'_>) -> Option<(SourceDecl, Pl
     let mut output: Option<(String, char, usize)> = None;
     let mut fields: Option<Vec<String>> = None;
     let mut with_store = false;
+    let mut with_preferences = false;
+    let mut deliver: Option<uze_contract::Deliver> = None;
     let children = node.children().map(KdlDocument::nodes).unwrap_or_default();
     for child in children {
         let name = child.name().value();
         match name {
-            "script" | "run" | "fixture" => {
+            "preferences" if with_preferences => twice(child, report),
+            "preferences" => {
+                let parts = entries(child, report);
+                refuse_extra(child, &parts, 0, &[], false, report);
+                with_preferences = true;
+            }
+            "deliver" if deliver.is_some() => twice(child, report),
+            "deliver" => {
+                deliver = text(child, report).and_then(|written| match written.as_str() {
+                    "latest" => Some(uze_contract::Deliver::Latest),
+                    "each" => Some(uze_contract::Deliver::Each),
+                    other => {
+                        report.on(
+                            child,
+                            format!("events are delivered `latest` or `each`, not `{other}`"),
+                            None,
+                        );
+                        None
+                    }
+                });
+            }
+            "script" | "run" | "fixture" | "events" => {
                 kinds_written += 1;
                 if kinds_written > 1 {
                     report.on(
                         child,
-                        "a source is answered by one of `script`, `run` or `fixture`",
+                        "a source is answered by one of `script`, `run`, `fixture` or `events`",
                         Some("keep one".to_owned()),
                     );
                     continue;
@@ -177,6 +203,8 @@ pub fn decode(node: &KdlNode, report: &mut Report<'_>) -> Option<(SourceDecl, Pl
     let mut source = SourceDecl::new(id?, kind);
     source.output = output;
     source.with_store = with_store;
+    source.with_preferences = with_preferences;
+    source.deliver = deliver.unwrap_or_default();
     source.input = input.unwrap_or_default();
     source.every = every.map(|(every, _)| every);
     source.refresh_on = refresh_on;
@@ -207,6 +235,29 @@ fn answer(child: &KdlNode, report: &mut Report<'_>) -> Option<SourceKind> {
         "fixture" => text(child, report)
             .filter(|file| relative_file(file, "json", at, report))
             .map(SourceKind::Fixture),
+        "events" => {
+            let parts = entries(child, report);
+            refuse_extra(child, &parts, 1, &[], false, report);
+            let count = parts.args.first().map(|arg| arg.value());
+            match count {
+                Some(KdlValue::Integer(count))
+                    if (1..=i128::from(uze_contract::EVENTS_MAX)).contains(count) =>
+                {
+                    Some(SourceKind::Events(*count as u16))
+                }
+                _ => {
+                    report.on(
+                        child,
+                        format!(
+                            "`events` keeps 1 to {} of the last events",
+                            uze_contract::EVENTS_MAX
+                        ),
+                        Some("write `events 50`".to_owned()),
+                    );
+                    None
+                }
+            }
+        }
         _ => super::program(child, report).map(SourceKind::Run),
     }
 }

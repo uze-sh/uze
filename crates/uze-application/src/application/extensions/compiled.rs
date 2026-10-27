@@ -289,6 +289,7 @@ mod tests {
                 )],
                 actions: Vec::new(),
                 exec: Vec::new(),
+                preferences: Vec::new(),
             },
             views: BTreeMap::new(),
         }

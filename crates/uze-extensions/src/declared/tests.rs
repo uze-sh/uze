@@ -144,6 +144,7 @@ pub(super) fn compiled_view(
 /// One extension with the view on a `view` surface and a `section`.
 pub(super) fn extension(view: CompiledView) -> CompiledExtension {
     let surface = |id: &str, slot| SurfaceDecl {
+        band: None,
         id: id.to_owned(),
         slot,
         view: "board.kdl".to_owned(),
@@ -169,6 +170,7 @@ pub(super) fn extension(view: CompiledView) -> CompiledExtension {
             )],
             actions: Vec::new(),
             exec: Vec::new(),
+            preferences: Vec::new(),
         },
         views: BTreeMap::from([("board.kdl".to_owned(), view)]),
     }

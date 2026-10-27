@@ -136,6 +136,9 @@ pub fn grant_meaning(grant: &str) -> &'static str {
             "keeps what it remembers in UZE's state, shared by every project"
         }
         Some(uze_contract::Grant::Exec(_)) => "runs this program on your machine",
+        Some(uze_contract::Grant::Notify) => {
+            "notifies you and sounds a cue, a few times a minute at most"
+        }
         None => "a grant this build does not know",
     }
 }

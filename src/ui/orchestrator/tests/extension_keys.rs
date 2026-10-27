@@ -123,6 +123,7 @@ fn compiled(plugin: &str) -> CompiledExtension {
             name: "Keyed".to_owned(),
             description: String::new(),
             surfaces: vec![uze_contract::SurfaceDecl {
+                band: None,
                 id: "board".to_owned(),
                 slot: uze_contract::Slot::View,
                 view: "board.kdl".to_owned(),
@@ -141,6 +142,7 @@ fn compiled(plugin: &str) -> CompiledExtension {
                 action("archive", None),
             ],
             exec: Vec::new(),
+            preferences: Vec::new(),
         },
         views: BTreeMap::new(),
     }

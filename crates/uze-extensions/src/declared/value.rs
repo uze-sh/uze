@@ -22,6 +22,7 @@ pub(super) struct Env<'a> {
     pub context: &'a Value,
     pub lookups: &'a [Lookup],
     pub locale: &'a str,
+    pub preferences: &'a Value,
 }
 
 /// The items in scope, outermost first: the whole data, then one per
@@ -38,6 +39,7 @@ impl<'a> Env<'a> {
                 walk(parent, &path.segments).map(Cow::Borrowed)
             }
             Scope::Context => walk(self.context, &path.segments).map(Cow::Borrowed),
+            Scope::Pref => walk(self.preferences, &path.segments).map(Cow::Borrowed),
             Scope::Ui => self
                 .ui
                 .get(&path.segments.join("."))
@@ -131,6 +133,7 @@ pub(super) fn path_text(path: &Path) -> String {
         Scope::Parent => format!("^.{fields}"),
         Scope::Ui => format!("ui.{fields}"),
         Scope::Context => format!("context.{fields}"),
+        Scope::Pref => format!("pref.{fields}"),
     }
 }
 

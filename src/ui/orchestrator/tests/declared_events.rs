@@ -45,6 +45,7 @@ fn compiled(every: Option<Duration>, refresh_on: Vec<EventName>) -> CompiledExte
             name: "GSD".to_owned(),
             description: String::new(),
             surfaces: vec![uze_contract::SurfaceDecl {
+                band: None,
                 id: "band".to_owned(),
                 slot: uze_contract::Slot::Section,
                 view: "band.kdl".to_owned(),
@@ -55,6 +56,7 @@ fn compiled(every: Option<Duration>, refresh_on: Vec<EventName>) -> CompiledExte
             sources: vec![source],
             actions: Vec::new(),
             exec: Vec::new(),
+            preferences: Vec::new(),
         },
         views: BTreeMap::from([("band.kdl".to_owned(), view)]),
     }

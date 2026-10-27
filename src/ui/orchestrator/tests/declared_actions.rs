@@ -66,6 +66,7 @@ fn compiled() -> CompiledExtension {
         lookups: Vec::new(),
     };
     let surface = |id: &str, slot| uze_contract::SurfaceDecl {
+        band: None,
         id: id.to_owned(),
         slot,
         view: "board.kdl".to_owned(),
@@ -97,6 +98,7 @@ fn compiled() -> CompiledExtension {
                 does: uze_contract::Does::Script("archive.rhai".to_owned()),
             }],
             exec: Vec::new(),
+            preferences: Vec::new(),
         },
         views: BTreeMap::from([("board.kdl".to_owned(), view)]),
     }

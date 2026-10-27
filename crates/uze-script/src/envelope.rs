@@ -43,13 +43,48 @@ pub(crate) fn from_answer(answer: &Dynamic) -> Result<Envelope, ScriptError> {
         toast: text(map.get("toast"), "toast")?,
         notice: text(map.get("notice"), "notice")?,
         store: store(map.get("store"))?,
+        notify: notify(map.get("notify"))?,
+        sound: sound(map.get("sound"))?,
     })
+}
+
+/// `notify`: `#{ title, body }`, both text.
+fn notify(
+    member: Option<&Dynamic>,
+) -> Result<Option<Box<uze_contract::Notification>>, ScriptError> {
+    let Some(member) = member else {
+        return Ok(None);
+    };
+    let wrong = || ScriptError::Envelope("`notify` is not `#{ title, body }`".to_owned());
+    let map = member.read_lock::<Map>().ok_or_else(wrong)?;
+    let field = |name: &str| -> Result<String, ScriptError> {
+        map.get(name)
+            .and_then(|value| value.clone().into_string().ok())
+            .ok_or_else(wrong)
+    };
+    Ok(Some(Box::new(uze_contract::Notification {
+        title: field("title")?,
+        body: field("body")?,
+    })))
+}
+
+/// `sound`: the name of one of [`uze_contract::Sound::NAMES`].
+fn sound(member: Option<&Dynamic>) -> Result<Option<uze_contract::Sound>, ScriptError> {
+    match text(member, "sound")? {
+        None => Ok(None),
+        Some(cue) => uze_contract::Sound::parse(&cue).map(Some).ok_or_else(|| {
+            ScriptError::Envelope(format!(
+                "`sound` is `{cue}`, not one of {}",
+                uze_contract::Sound::NAMES.join(", ")
+            ))
+        }),
+    }
 }
 
 /// `store`: a map whose keys replace the store's, `()` removing one.
 fn store(
     member: Option<&Dynamic>,
-) -> Result<Option<serde_json::Map<String, serde_json::Value>>, ScriptError> {
+) -> Result<Option<Box<serde_json::Map<String, serde_json::Value>>>, ScriptError> {
     let Some(member) = member else {
         return Ok(None);
     };
@@ -60,7 +95,7 @@ fn store(
     match value::to_json(member)
         .map_err(|crossing| ScriptError::Envelope(format!("`store` is {crossing}")))?
     {
-        serde_json::Value::Object(patch) => Ok(Some(patch)),
+        serde_json::Value::Object(patch) => Ok(Some(Box::new(patch))),
         _ => Err(wrong()),
     }
 }

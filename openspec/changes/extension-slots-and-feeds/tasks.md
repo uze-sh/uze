@@ -1,8 +1,8 @@
 ## 1. Manifest and check
 
-- [ ] 1.1 `uze-contract`: `Slot::{Status, Band, Overlay}` with a band's `rows` (1–6) and `place`; `Output::View`; `Envelope::{notify, sound}`; `Grant::Notify`; `PreferenceDecl { name, label, kind: Text | Number { min, max } | Toggle | Choice { values }, default }`; `Deliver::{Latest, Each}` on a `refresh-on`; the `events` source kind; tests
-- [ ] 1.2 `uze-core` decoder and check: the slots and their properties, `preferences { … }` (refused until now as "arrives in change 6"), `output "view"`, `deliver`, `events <n>`, `notify` accepted; an `open` action naming an overlay; a band's rows out of range refused; `{pref.<name>}` in a view checked against the declared names
-- [ ] 1.3 The binding scope `pref` in `uze-contract::binding` and the engine (parent 14.11)
+- [x] 1.1 `uze-contract`: `Slot::{Status, Band, Overlay}` with a band's `rows` (1–6) and `place`; `Output::View`; `Envelope::{notify, sound}`; `Grant::Notify`; `PreferenceDecl { name, label, kind: Text | Number { min, max } | Toggle | Choice { values }, default }`; `Deliver::{Latest, Each}` on a `refresh-on`; the `events` source kind; tests
+- [x] 1.2 `uze-core` decoder and check: the slots and their properties, `preferences { … }` (refused until now as "arrives in change 6"), `output "view"`, `deliver`, `events <n>`, `notify` accepted; an `open` action naming an overlay; a band's rows out of range refused; `{pref.<name>}` in a view checked against the declared names
+- [x] 1.3 The binding scope `pref` in `uze-contract::binding` and the engine (parent 14.11)
 
 ## 2. Preferences
 

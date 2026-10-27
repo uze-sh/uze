@@ -36,11 +36,12 @@ pub use catalog::{NodeName, PropKind, RoleName};
 pub use clean::Clean;
 pub use compiled::{CompiledExtension, CompiledView, Item, Lookup, Node, Span};
 pub use manifest::{
-    ActionDecl, Does, EVERY_FLOOR, EventName, ExecDecl, Grant, KeySuggestion, Manifest, Output,
-    PROGRAM_TIME_LIMIT, Program, Slot, SourceDecl, SourceKind, StoreScope, SurfaceDecl,
+    ActionDecl, BAND_ROWS_MAX, BandDecl, BandPlace, Deliver, Does, EVENTS_MAX, EVERY_FLOOR,
+    EventName, ExecDecl, Grant, KeySuggestion, Manifest, Output, PROGRAM_TIME_LIMIT,
+    PreferenceDecl, PreferenceKind, Program, Slot, SourceDecl, SourceKind, StoreScope, SurfaceDecl,
     is_program_name,
 };
-pub use question::{Answer, Asking, Envelope, Question};
+pub use question::{Answer, Asking, Envelope, Notification, Question, Sound};
 pub use testing::{Given, GivenData, Step, StepKind, TestDecl, TestFile, ThemeName, World};
 
 /// The extension protocol this build speaks. A manifest declaring another

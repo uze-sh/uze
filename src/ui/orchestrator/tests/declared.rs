@@ -183,6 +183,7 @@ fn installed() -> InstalledExtension {
 
 fn compiled() -> CompiledExtension {
     let surface = |id: &str, slot| uze_contract::SurfaceDecl {
+        band: None,
         id: id.to_owned(),
         slot,
         view: format!("{id}.kdl"),
@@ -207,6 +208,7 @@ fn compiled() -> CompiledExtension {
             )],
             actions: Vec::new(),
             exec: Vec::new(),
+            preferences: Vec::new(),
         },
         views: BTreeMap::new(),
     }
@@ -1100,6 +1102,7 @@ fn hosting_the_drawer() -> WorkspaceModel {
         .manifest
         .surfaces
         .push(uze_contract::SurfaceDecl {
+            band: None,
             id: "side".to_owned(),
             slot: uze_contract::Slot::Drawer,
             view: "side.kdl".to_owned(),

@@ -35,11 +35,12 @@ const NODES: &[&str] = &[
     "source",
     "action",
     "exec",
+    "preferences",
 ];
 /// What later changes of `add-extension-platform` add to a manifest, with
 /// the change that brings each.
-const LATER: &[(&str, u32)] = &[("preferences", 6)];
-const SURFACE_PROPS: &[&str] = &["slot", "view", "source", "title"];
+const LATER: &[(&str, u32)] = &[];
+const SURFACE_PROPS: &[&str] = &["slot", "view", "source", "title", "rows", "place"];
 
 /// A manifest, and where in its file each declaration was written, for
 /// what the rest of the check says about them.
@@ -72,6 +73,7 @@ impl Decoded {
                 SourceKind::Run(program) => {
                     packaged(program).map(|file| ("program", file, places.kind))
                 }
+                SourceKind::Events(_) => None,
             });
         let actions = self
             .manifest
@@ -103,6 +105,7 @@ pub fn decode(document: &KdlDocument, dir_id: &str, report: &mut Report<'_>) -> 
             sources: Vec::new(),
             actions: Vec::new(),
             exec: Vec::new(),
+            preferences: Vec::new(),
         },
         surface_places: Vec::new(),
         source_places: Vec::new(),
@@ -112,7 +115,10 @@ pub fn decode(document: &KdlDocument, dir_id: &str, report: &mut Report<'_>) -> 
     let mut seen = BTreeSet::new();
     for node in document.nodes() {
         let name = node.name().value();
-        let scalar = matches!(name, "protocol" | "id" | "name" | "description" | "wants");
+        let scalar = matches!(
+            name,
+            "protocol" | "id" | "name" | "description" | "wants" | "preferences"
+        );
         if scalar && !seen.insert(name) {
             report.on(
                 node,
@@ -156,6 +162,7 @@ pub fn decode(document: &KdlDocument, dir_id: &str, report: &mut Report<'_>) -> 
                     decoded.action_places.push(places);
                 }
             }
+            "preferences" => decoded.manifest.preferences = preferences(node, report),
             "exec" => {
                 if let Some(decl) = exec(node, report) {
                     if decoded
@@ -370,6 +377,7 @@ fn surface(node: &KdlNode, report: &mut Report<'_>) -> Option<(SurfaceDecl, (usi
     });
     let view = view.filter(|(view, offset)| relative_file(view, "kdl", *offset, report));
     let source = source.filter(|(source, offset)| referred_id(source, "source", *offset, report));
+    let band = band(node, &parts, slot?, report);
     let ((view, view_at), (source, source_at)) = (view?, source?);
     Some((
         SurfaceDecl {
@@ -378,9 +386,193 @@ fn surface(node: &KdlNode, report: &mut Report<'_>) -> Option<(SurfaceDecl, (usi
             view,
             source,
             title: title.map(|title| Clean::label(&title).into_string()),
+            band: band?,
         },
         (view_at, source_at),
     ))
+}
+
+/// A band's `rows=` (1 to 6) and `place=` (`top` or `bottom`); refused on
+/// any other slot. `Some(None)` for a surface that is no band.
+fn band(
+    node: &KdlNode,
+    parts: &super::document::Entries<'_>,
+    slot: Slot,
+    report: &mut Report<'_>,
+) -> Option<Option<uze_contract::BandDecl>> {
+    let rows = prop(parts, "rows");
+    let place = prop(parts, "place");
+    if slot != Slot::Band {
+        for entry in [rows, place].into_iter().flatten() {
+            report.on(
+                entry,
+                "only a band takes `rows` and `place`",
+                Some("remove it, or write `slot=\"band\"`".to_owned()),
+            );
+        }
+        return Some(None);
+    }
+    let Some(rows_entry) = rows else {
+        report.on(
+            node,
+            "a band names how many rows it takes",
+            Some(format!(
+                "add `rows=2` (1 to {})",
+                uze_contract::BAND_ROWS_MAX
+            )),
+        );
+        return None;
+    };
+    let counted = match rows_entry.value() {
+        KdlValue::Integer(rows) => u8::try_from(*rows).ok(),
+        _ => None,
+    }
+    .filter(|rows| (1..=uze_contract::BAND_ROWS_MAX).contains(rows));
+    let Some(rows) = counted else {
+        report.on(
+            rows_entry,
+            format!("a band takes 1 to {} rows", uze_contract::BAND_ROWS_MAX),
+            Some("write a whole number, such as `rows=2`".to_owned()),
+        );
+        return None;
+    };
+    let place = match place {
+        None => uze_contract::BandPlace::Top,
+        Some(entry) => {
+            let written = string_prop("place", entry, report)?;
+            let Some(place) = uze_contract::BandPlace::parse(&written) else {
+                report.on(
+                    entry,
+                    format!("a band is placed `top` or `bottom`, not `{written}`"),
+                    None,
+                );
+                return None;
+            };
+            place
+        }
+    };
+    Some(Some(uze_contract::BandDecl { rows, place }))
+}
+
+/// `preferences { number "warn-at" label="…" default=70 min=1 max=100; … }`.
+fn preferences(node: &KdlNode, report: &mut Report<'_>) -> Vec<uze_contract::PreferenceDecl> {
+    use uze_contract::{PreferenceDecl, PreferenceKind};
+    let parts = entries(node, report);
+    refuse_extra(node, &parts, 0, &[], true, report);
+    let mut declared: Vec<PreferenceDecl> = Vec::new();
+    for child in node.children().map(KdlDocument::nodes).unwrap_or_default() {
+        let kind_name = child.name().value();
+        if !PreferenceKind::NAMES.contains(&kind_name) {
+            unknown_child(child, "`preferences`", PreferenceKind::NAMES, report);
+            continue;
+        }
+        let parts = entries(child, report);
+        let allowed: &[&str] = match kind_name {
+            "number" => &["label", "default", "min", "max"],
+            _ => &["label", "default"],
+        };
+        let max_args = if kind_name == "choice" { usize::MAX } else { 1 };
+        refuse_extra(child, &parts, max_args, allowed, false, report);
+        let Some(name) = declared_id(child, parts.args.first().copied(), report) else {
+            continue;
+        };
+        if declared.iter().any(|seen| seen.name == name) {
+            report.on(
+                child,
+                format!("the preference `{name}` is declared twice"),
+                None,
+            );
+            continue;
+        }
+        let label = prop(&parts, "label")
+            .and_then(|entry| string_prop("label", entry, report))
+            .unwrap_or_else(|| name.clone());
+        let integer = |key: &str, report: &mut Report<'_>| {
+            prop(&parts, key).and_then(|entry| match entry.value() {
+                KdlValue::Integer(number) => i64::try_from(*number).ok(),
+                other => {
+                    report.on(
+                        entry,
+                        format!("`{key}` is a whole number, not {}", spelled(other)),
+                        None,
+                    );
+                    None
+                }
+            })
+        };
+        let kind = match kind_name {
+            "text" => PreferenceKind::Text,
+            "toggle" => PreferenceKind::Toggle,
+            "number" => PreferenceKind::Number {
+                min: integer("min", report),
+                max: integer("max", report),
+            },
+            _ => {
+                let values: Vec<String> = parts
+                    .args
+                    .iter()
+                    .skip(1)
+                    .filter_map(|arg| string_arg(child, Some(arg), report))
+                    .collect();
+                if values.is_empty() {
+                    report.on(
+                        child,
+                        format!("the choice `{name}` names the values it offers"),
+                        Some(format!("write `choice \"{name}\" \"one\" \"other\"`")),
+                    );
+                    continue;
+                }
+                PreferenceKind::Choice { values }
+            }
+        };
+        let Some(default_entry) = prop(&parts, "default") else {
+            report.on(
+                child,
+                format!("the preference `{name}` says its `default`"),
+                None,
+            );
+            continue;
+        };
+        let default = match (default_entry.value(), &kind) {
+            (KdlValue::String(text), PreferenceKind::Text | PreferenceKind::Choice { .. }) => {
+                serde_json::Value::String(text.clone())
+            }
+            (KdlValue::Bool(flag), PreferenceKind::Toggle) => serde_json::Value::Bool(*flag),
+            (KdlValue::Integer(number), PreferenceKind::Number { .. }) => {
+                serde_json::Value::from(i64::try_from(*number).unwrap_or_default())
+            }
+            (KdlValue::Float(number), PreferenceKind::Number { .. }) => {
+                serde_json::Value::from(*number)
+            }
+            (other, _) => {
+                report.on(
+                    default_entry,
+                    format!(
+                        "the default of a `{kind_name}` cannot be {}",
+                        spelled(other)
+                    ),
+                    None,
+                );
+                continue;
+            }
+        };
+        let decl = PreferenceDecl {
+            name,
+            label: Clean::label(&label).into_string(),
+            kind,
+            default: default.clone(),
+        };
+        if !decl.holds(&default) {
+            report.on(
+                default_entry,
+                format!("the default of `{}` is not a value it may hold", decl.name),
+                None,
+            );
+            continue;
+        }
+        declared.push(decl);
+    }
+    declared
 }
 
 /// A surface's, a source's or an action's own id, its first argument.

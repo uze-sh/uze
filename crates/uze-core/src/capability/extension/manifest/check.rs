@@ -166,7 +166,20 @@ fn sources_run_what_this_build_runs(decoded: &Decoded, report: &mut Report<'_>) 
                 Some(format!("write `every \"{}s\"`", floor.as_secs())),
             );
         }
-        if !runs && let Some(output_at) = places.output {
+        if source.deliver == uze_contract::Deliver::Each && source.refresh_on.is_empty() {
+            report.at(
+                places.kind,
+                format!(
+                    "the source `{}` is delivered `each` event, and no event refreshes it",
+                    source.id
+                ),
+                Some("add a `refresh-on`, or remove `deliver`".to_owned()),
+            );
+        }
+        if !runs
+            && source.output != uze_contract::Output::View
+            && let Some(output_at) = places.output
+        {
             report.at(
                 output_at,
                 "`output` says how a program's output is read, and this source runs no program",

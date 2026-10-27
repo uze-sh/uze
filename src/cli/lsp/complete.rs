@@ -56,12 +56,39 @@ const MANIFEST_NODES: &[(&str, &str)] = &[
     ),
     (
         "wants",
-        "What the extension reaches beyond drawing: `read:checkout`, `clipboard`, `open-path`.",
+        "What the extension reaches beyond drawing: `read:checkout`, `clipboard`, `open-path`, `exec:<program>`, `store`, `store:global`, `notify`.",
+    ),
+    (
+        "exec",
+        "What a granted program reads beyond the host's paths: `exec \"nvidia-smi\" { reads \"/dev/dxg\"; }`.",
+    ),
+    (
+        "preferences",
+        "Settings the operator edits: `preferences { number \"warn-at\" default=70 min=1 max=100; }`.",
     ),
 ];
 const SOURCE_NODES: &[(&str, &str)] = &[
     ("script", "A Rhai file whose `answer` returns the data."),
+    (
+        "run",
+        "A program it runs, as an argv: `run \"./bin/meter\" \"--\" \"{field}\"`.",
+    ),
     ("fixture", "A JSON file the source is fed by."),
+    ("events", "The last events the extension saw: `events 50`."),
+    (
+        "output",
+        "How a program's output is read: `\"json\"`, `\"lines\"` or `\"view\"`.",
+    ),
+    ("fields", "The fields of a line, for `output \"lines\"`."),
+    ("store", "Hand the extension's store to it on its input."),
+    (
+        "preferences",
+        "Hand the extension's preferences to it on its input.",
+    ),
+    (
+        "deliver",
+        "How the events that ask it again reach it: `\"latest\"` or `\"each\"`.",
+    ),
     ("input", "What it is asked with: `input name=\"{field}\"`."),
     (
         "every",
@@ -90,9 +117,24 @@ const ACTION_NODES: &[(&str, &str)] = &[
     ),
     ("open-path", "The file inside the checkout it opens."),
     ("open", "The surface of this extension it opens."),
+    (
+        "run",
+        "A program it runs, as an argv, confined where the machine can.",
+    ),
 ];
 const SURFACE_PROPS: &[(&str, &str)] = &[
-    ("slot", "Where it is drawn: `view`, `section` or `drawer`."),
+    (
+        "slot",
+        "Where it is drawn: `view`, `section`, `drawer`, `status`, `band` or `overlay`.",
+    ),
+    (
+        "rows",
+        "How many rows a band takes from each agent's pane, 1 to 6.",
+    ),
+    (
+        "place",
+        "Where a band stands on the pane: `top` or `bottom`.",
+    ),
     ("view", "The view file it draws, relative to the extension."),
     ("source", "The source its data comes from."),
     ("title", "What the host titles it with."),
@@ -465,7 +507,10 @@ mod tests {
         let steps = at_cursor(FileKind::Test, "test \"a\" {\n    expect-|", &Value::Null);
         assert!(steps.contains(&"expect-text".to_owned()), "{steps:?}");
         let slots = at_cursor(FileKind::Manifest, "surface \"b\" slot=\"|", &Value::Null);
-        assert_eq!(slots, ["view", "section", "drawer"]);
+        assert_eq!(
+            slots,
+            ["view", "section", "drawer", "status", "band", "overlay"]
+        );
         let answers = at_cursor(FileKind::Manifest, "source \"b\" {\n    s|", &Value::Null);
         assert!(answers.contains(&"script".to_owned()), "{answers:?}");
         let does = at_cursor(FileKind::Manifest, "action \"r\" {\n    r|", &Value::Null);

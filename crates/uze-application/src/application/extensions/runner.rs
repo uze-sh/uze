@@ -164,6 +164,12 @@ impl ExtensionRunner {
                         with_store: source.with_store,
                     },
                     SourceKind::Script(file) => Answerer::Script(file),
+                    SourceKind::Events(_) => {
+                        return failed(format!(
+                            "the source `{}` is answered by the workspace, from the events it saw",
+                            question.declaration
+                        ));
+                    }
                 }
             }
             Asking::Action => {
@@ -431,7 +437,7 @@ impl ExtensionRunner {
         let input = serde_json::to_value(&declared.input).unwrap_or_default();
         let file = match &declared.kind {
             SourceKind::Script(file) => file,
-            SourceKind::Fixture(_) => return None,
+            SourceKind::Fixture(_) | SourceKind::Events(_) => return None,
             SourceKind::Run(program) => {
                 return Some(self.rehearse_program(
                     home,

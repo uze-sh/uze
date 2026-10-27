@@ -233,6 +233,8 @@ fn an_actions_envelope_toasts_says_its_notice_and_refreshes() {
         toast: Some("Archived \u{1b}[31mauth".to_owned()),
         notice: Some("1 archived".to_owned()),
         store: None,
+        notify: None,
+        sound: None,
     };
     let (_, outcomes) = ask_all(
         &mut engine,

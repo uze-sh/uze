@@ -719,6 +719,14 @@ fn surfaces_of(compiled: &CompiledExtension) -> Vec<SurfaceInfo> {
                 uze_contract::Slot::View => SurfaceSlot::View,
                 uze_contract::Slot::Section => SurfaceSlot::Section,
                 uze_contract::Slot::Drawer => SurfaceSlot::Drawer,
+                uze_contract::Slot::Status => SurfaceSlot::Status,
+                uze_contract::Slot::Band => SurfaceSlot::Band {
+                    rows: surface.band.map_or(1, |band| band.rows),
+                    bottom: surface
+                        .band
+                        .is_some_and(|band| band.place == uze_contract::BandPlace::Bottom),
+                },
+                uze_contract::Slot::Overlay => SurfaceSlot::Overlay,
             },
             title: surface
                 .title

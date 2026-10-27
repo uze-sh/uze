@@ -19,6 +19,9 @@ pub enum Scope {
     Ui,
     /// What the host says about where the surface is drawn. `{context.size}`.
     Context,
+    /// A preference the extension declares, as the operator set it.
+    /// `{pref.warn-at}`.
+    Pref,
 }
 
 /// A reference into data: a scope and the fields walked from it. No
@@ -47,6 +50,8 @@ impl Path {
             (Scope::Ui, rest)
         } else if let Some(rest) = source.strip_prefix("context.") {
             (Scope::Context, rest)
+        } else if let Some(rest) = source.strip_prefix("pref.") {
+            (Scope::Pref, rest)
         } else {
             (Scope::Item, source)
         };

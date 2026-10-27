@@ -57,12 +57,49 @@ pub struct Envelope {
     pub toast: Option<String>,
     pub notice: Option<String>,
     /// Keys of the extension's store to replace, `null` removing one.
-    pub store: Option<serde_json::Map<String, serde_json::Value>>,
+    pub store: Option<Box<serde_json::Map<String, serde_json::Value>>>,
+    /// A notification the operator is to get, under `notify`.
+    pub notify: Option<Box<Notification>>,
+    /// A cue to sound, under `notify`.
+    pub sound: Option<Sound>,
+}
+
+/// What a notification says; the host puts the extension's attribution
+/// before its title.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Notification {
+    pub title: String,
+    pub body: String,
+}
+
+/// The cues an answer may ask for. The host sounds each as the
+/// terminal's bell.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Sound {
+    Done,
+    Attention,
+    Error,
+}
+
+impl Sound {
+    pub const NAMES: &'static [&'static str] = &["done", "attention", "error"];
+
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "done" => Some(Self::Done),
+            "attention" => Some(Self::Attention),
+            "error" => Some(Self::Error),
+            _ => None,
+        }
+    }
 }
 
 impl Envelope {
     /// The members an answer may hold.
-    pub const MEMBERS: &'static [&'static str] = &["data", "refresh", "toast", "notice", "store"];
+    pub const MEMBERS: &'static [&'static str] = &[
+        "data", "refresh", "toast", "notice", "store", "notify", "sound",
+    ];
 
     /// An envelope holding `data` alone, as a fixture answers.
     pub fn data(data: serde_json::Value) -> Self {
