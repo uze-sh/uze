@@ -145,7 +145,10 @@ fn config(request: &FetchRequest, secret: Option<(&str, String)>) -> String {
         ));
     }
     if let Some(body) = &request.body {
-        lines.push(format!("data-binary = {}", quoted(body)));
+        // `data-raw`, never `data-binary`: curl reads a body that begins
+        // with `@` from the file it names, and a script granted only `net:`
+        // must not post a file the curl process can read.
+        lines.push(format!("data-raw = {}", quoted(body)));
     }
     lines.push(String::new());
     lines.join("\n")
@@ -476,6 +479,16 @@ mod tests {
                 .read("stdin")
                 .contains("Authorization: Bearer ghp_TOKEN")
         );
+    }
+
+    #[test]
+    fn a_body_naming_a_file_is_sent_as_it_is_written() {
+        let mut posted = request("https://api.github.com/x", false);
+        posted.method = uze_script::FetchMethod::Post;
+        posted.body = Some("@/etc/passwd".into());
+        let config = config(&posted, None);
+        assert!(config.contains("data-raw = \"@/etc/passwd\""), "{config}");
+        assert!(!config.contains("data-binary"), "{config}");
     }
 
     #[test]

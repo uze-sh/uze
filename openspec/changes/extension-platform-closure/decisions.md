@@ -498,3 +498,12 @@
 - decided:  Built-in harness commands are not skills, and an extension cannot reach them. A skill is named as plugins name theirs, `<plugin>:<skill>`, each part ASCII letters, digits, `-` and `_` (`uze_contract::manifest::is_skill_name`). The manifest decoder refuses any other name, and the host refuses it again before showing the prompt, since a request reaches it from an engine and not only from a decoded manifest.
 - rejected: A list of each harness's built-in commands to refuse: it goes stale with every release and names harnesses outside `uze-integrations`. Allowing an un-namespaced user skill: it cannot be told apart from a built-in command.
 - blast:    `uze-contract` (`manifest::is_skill_name`, the generated reference's spelling), `uze-core`'s manifest decoder, `src/ui/orchestrator/declared/agent.rs`, the extension skill's docs.
+## D160 — A fetched body is handed to curl as `data-raw`
+
+- status:   pending
+- task:     review finding 1
+- commit:
+- trigger:  The body went to curl as `data-binary`, which reads a body beginning with `@` from the file it names: a script granted only `net:` could post any file the curl process reads, unconfined where nothing confines.
+- decided:  The body line of curl's configuration is `data-raw`, which curl never reads as a file name; the test pins that a body of `@/etc/passwd` is written literally.
+- rejected: Refusing bodies that begin with `@`: a legitimate body may, and `data-raw` removes the meaning rather than one spelling of it.
+- blast:    `uze-application::extensions::fetch`.
