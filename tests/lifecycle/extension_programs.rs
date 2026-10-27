@@ -200,7 +200,27 @@ fn lines(answer: &Answer) -> Vec<String> {
             .iter()
             .map(|item| item["line"].as_str().unwrap_or_default().to_owned())
             .collect(),
-        other => panic!("not answered: {other:?}"),
+        other => panic!("not answered: {other:?}{}", sandbox_denials()),
+    }
+}
+
+/// What Seatbelt refused in the last minute, where the system log can be
+/// asked: a program it ended says nothing else of why.
+fn sandbox_denials() -> String {
+    let log = std::path::Path::new("/usr/bin/log");
+    if !log.is_file() {
+        return String::new();
+    }
+    let shown = std::process::Command::new(log)
+        .args(["show", "--last", "1m", "--style", "compact"])
+        .args([
+            "--predicate",
+            "sender == \"Sandbox\" OR eventMessage CONTAINS \"deny\"",
+        ])
+        .output();
+    match shown {
+        Ok(output) => format!("\nSeatbelt:\n{}", String::from_utf8_lossy(&output.stdout)),
+        Err(error) => format!("\nSeatbelt's log could not be read: {error}"),
     }
 }
 

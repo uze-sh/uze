@@ -10,12 +10,14 @@ use std::{io, path::Path};
 
 use super::Confinement;
 
+/// Mapped executable by the dynamic loader of every program: the system's
+/// libraries and the shared cache. Seatbelt asks `file-map-executable`
+/// apart from reading, and dyld aborts a program refused it.
+const SYSTEM_EXECUTABLE: &[&str] = &["/usr/lib", "/System", "/Library/Apple"];
+
 /// Read by the dynamic loader and the C library of every program.
 const SYSTEM_READ: &[&str] = &[
-    "/usr/lib",
     "/usr/share/icu",
-    "/System",
-    "/Library/Apple",
     "/private/var/db/dyld",
     "/private/var/db/timezone",
     "/dev/null",
@@ -61,6 +63,9 @@ pub(super) fn profile(confinement: &Confinement) -> io::Result<String> {
             quoted(service)
         ));
     }
+    for path in SYSTEM_EXECUTABLE {
+        profile.push_str(&rule("file-read* file-map-executable", Path::new(path))?);
+    }
     for path in SYSTEM_READ {
         profile.push_str(&rule("file-read*", Path::new(path))?);
     }
@@ -68,7 +73,7 @@ pub(super) fn profile(confinement: &Confinement) -> io::Result<String> {
         profile.push_str(&rule("file-read*", path)?);
     }
     for path in &confinement.read_execute {
-        profile.push_str(&rule("file-read* process-exec", path)?);
+        profile.push_str(&rule("file-read* file-map-executable process-exec", path)?);
     }
     for path in &confinement.write {
         profile.push_str(&rule("file-read* file-write*", path)?);
@@ -146,7 +151,11 @@ mod tests {
         let profile = profile(&confinement(false)).unwrap();
         assert!(profile.starts_with("(version 1)\n(deny default)\n"));
         assert!(profile.contains("(allow file-read* (subpath \"/repo\"))"));
-        assert!(profile.contains("(allow file-read* process-exec (subpath \"/usr/bin\"))"));
+        assert!(profile.contains(
+            "(allow file-read* file-map-executable process-exec (subpath \"/usr/bin\"))"
+        ));
+        assert!(profile.contains("(allow file-read* file-map-executable (subpath \"/System\"))"));
+        assert!(profile.contains("(allow file-read* (subpath \"/repo\"))"));
         assert!(profile.contains("(allow file-read* file-write* (subpath \"/tmp/run\"))"));
         assert!(profile.contains("(allow signal (target same-sandbox))"));
         assert!(profile.contains("(deny network*)"));
