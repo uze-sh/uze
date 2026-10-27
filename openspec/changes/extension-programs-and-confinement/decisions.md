@@ -189,3 +189,33 @@
 - decided:  `crates/uze-extensions/grammars/Rhai.sublime-syntax`, with no `extends` and no class intersections. `.rhai` files and `rhai` fences resolve to it. Two fixed-length lookbehinds tell a closure's `|` and the unit `()` apart, and a double-quoted string ends at its line unless the line ends in `\`. Map keys are scoped like KDL properties. The requirement went into `extension-manifest-and-scripts`'s `extension-scripts` spec, beside the scripts it is for.
 - rejected: Vendoring a TextMate grammar through a converter: it needs Oniguruma features syntect refuses.
 - blast:    Odd spacing before a closure's `|` is read as an operator.
+
+## D20 — Programs are pinned at consent, per machine; the project is refused at run
+
+- status:   pending
+- task:     4.1
+- commit:
+- trigger:  D6 pins `exec:` "at enable time", but consent is per machine and enabling per project (change 4's D41), and the pinned path cannot depend on which project enabled it.
+- decided:  `consent` resolves every `exec:` name once and records `exec_paths` with `enforced_at_accept`, refusing a resolution beneath `$UZE_HOME` or the system temporary directory. A pinned path beneath the checkout a run is asked for is refused by the runner at that run. A name not found is absent from `exec_paths` and its source says "`<name>` not found" until the operator presses "Resolve again", which re-pins without asking consent again (it is the operator's gesture, and the screen shows the new path).
+- rejected: Pinning per project: one extension would run a different `gh` in each project for the same consent.
+- blast:    `Extensions::{consent, resolve_again, pinned_programs, programs_to_pin}`.
+
+## D21 — Accepted unconfined, any new digest asks again; accepted confined, losing confinement asks again
+
+- status:   pending
+- task:     4.1, 4.3
+- commit:
+- trigger:  D6 re-asks an unconfined extension "by digest on every update" and refuses a run whose confinement no longer applies; change 4's update rule applies any same-grant update silently.
+- decided:  `consent::judge` returns `Unconsented` for a changed digest when `enforced_at_accept` is `false`. `judged` returns `NeedsConsent` when the record says `true` and the machine no longer confines. Either way the projects it was enabled in stay recorded, so consenting again is the only step.
+- rejected: A new state "needs consent again": the screens already say "needs consent", and the reason is in the record.
+- blast:    `uze-workspace::extensions::consent::judge`, `uze-application` `judged`.
+
+## D22 — The programs step is a second dialog, and nothing is recorded until both are allowed
+
+- status:   pending
+- task:     4.2
+- commit:
+- trigger:  The spec asks `exec:` grants "after the other grants", without saying whether it is one dialog with two parts or two dialogs.
+- decided:  Allowing the grants dialog opens `Confirmation::AllowPrograms` with each program's pinned path, the devices it reads, "can run anything" for a general runner, and the fixed "runs as you" text where unconfined (titled "…run as you?", danger tone). Only accepting it records consent and enables. An extension whose only grants are programs opens straight on that step. `uze install` asks the same two questions in order. The `exec:` grants are left out of the first list.
+- rejected: One dialog listing both: an operator who reads "reads the checkout" and presses Allow would also have agreed to a program running as them.
+- blast:    `src/ui/model.rs` (`ProgramsStep`), `src/ui/overlay.rs`, `src/cli/extensions.rs`.

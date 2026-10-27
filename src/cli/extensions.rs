@@ -179,6 +179,25 @@ fn ask_about(
             say_what_waits(report);
             return Ok(());
         }
+        // Its programs are a question of their own, asked after the rest.
+        if !report.programs.is_empty() {
+            let confined = report.confined.unwrap_or(false);
+            let allowed = progress::uninterrupted(|| {
+                eprint!("{}", programs_evidence(report, confined));
+                prompt::confirm(
+                    if confined {
+                        "Allow these programs to run, confined?"
+                    } else {
+                        "Allow these programs to run as you?"
+                    },
+                    false,
+                )
+            });
+            if allowed != Some(true) {
+                say_what_waits(report);
+                return Ok(());
+            }
+        }
         extensions.consent(&identity, uze_application::Asker::Operator)?;
     }
     let enable = progress::uninterrupted(|| {
@@ -195,6 +214,47 @@ fn ask_about(
         progress::path(project)
     ));
     Ok(())
+}
+
+/// What the programs question is about: each program, where it was found,
+/// and what running it means on this machine.
+fn programs_evidence(report: &ExtensionReport, confined: bool) -> String {
+    let mut text = format!(
+        "\n  {} {}\n\n",
+        progress::warning_icon(),
+        progress::label(if confined {
+            "runs these programs confined: reading this checkout and its own files, writing only \
+             a scratch folder, reaching no network"
+        } else {
+            "This machine cannot confine programs. Each runs as you, with everything you can \
+             reach: your files, your keys, the network."
+        })
+    );
+    let rows = report
+        .programs
+        .iter()
+        .map(|program| {
+            let found = match &program.path {
+                Some(path) => progress::path(path),
+                None => progress::label(program.unresolved.as_deref().unwrap_or("not found")),
+            };
+            let mut notes = Vec::new();
+            if program.runs_anything {
+                notes.push("can run anything".to_owned());
+            }
+            if !program.reads.is_empty() {
+                notes.push(format!("reads {}", program.reads.join(", ")));
+            }
+            vec![
+                program.name.clone(),
+                found,
+                progress::label(notes.join(" · ")),
+            ]
+        })
+        .collect();
+    text.push_str(&progress::aligned_rows(rows));
+    text.push_str("\n\n");
+    text
 }
 
 /// What the consent question is about, above it on the stream it is asked
@@ -217,6 +277,7 @@ fn consent_evidence(report: &ExtensionReport) -> String {
         report
             .grants
             .iter()
+            .filter(|grant| !grant.starts_with("exec:"))
             .map(|grant| {
                 vec![
                     grant.clone(),

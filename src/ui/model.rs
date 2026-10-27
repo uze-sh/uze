@@ -491,6 +491,16 @@ pub(crate) enum Confirmation {
         grants: Vec<String>,
         /// What a held update wants beyond what was accepted.
         new_grants: Vec<String>,
+        /// The programs it runs, asked on a step of their own once these
+        /// grants are allowed.
+        programs: Option<ProgramsStep>,
+    },
+    /// The `exec:` grants of an extension being allowed, after the rest:
+    /// each program with where it was pinned, and whether it runs confined.
+    AllowPrograms {
+        here: ExtensionHere,
+        attribution: String,
+        step: ProgramsStep,
     },
     RemovePlugin(String),
     RemoveMarketplace(String),
@@ -515,6 +525,23 @@ pub(crate) enum Confirmation {
 }
 
 /// A declared extension switched in one project: consented to first when
+/// The programs a consent step asks about.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ProgramsStep {
+    pub(crate) programs: Vec<uze_application::ProgramPin>,
+    pub(crate) confined: bool,
+}
+
+impl ProgramsStep {
+    /// The step `standing` owes, when it runs programs.
+    pub(crate) fn of(standing: &uze_application::ExtensionReport) -> Option<Self> {
+        (!standing.programs.is_empty()).then(|| Self {
+            programs: standing.programs.clone(),
+            confined: standing.confined.unwrap_or(false),
+        })
+    }
+}
+
 /// `consent`, then enabled or disabled there.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ExtensionHere {
@@ -1355,16 +1382,44 @@ impl TuiModel {
         };
         match standing.condition {
             Condition::NeedsConsent | Condition::Held if enabled => {
-                self.overlay = Overlay::Confirm {
-                    kind: Confirmation::EnableExtension {
-                        here: ExtensionHere {
-                            consent: true,
-                            ..here
-                        },
+                let here = ExtensionHere {
+                    consent: true,
+                    ..here
+                };
+                let programs = ProgramsStep::of(&standing);
+                let is_program = |grant: &String| grant.starts_with("exec:");
+                let asked: Vec<String> = if standing.new_grants.is_empty() {
+                    standing.grants.clone()
+                } else {
+                    standing.new_grants.clone()
+                };
+                let kind = match programs {
+                    // Nothing to ask before the programs: their step is the first.
+                    Some(step) if asked.iter().all(is_program) => Confirmation::AllowPrograms {
+                        here,
                         attribution: standing.attribution(),
-                        grants: standing.grants.clone(),
-                        new_grants: standing.new_grants.clone(),
+                        step,
                     },
+                    programs => Confirmation::EnableExtension {
+                        here,
+                        attribution: standing.attribution(),
+                        grants: standing
+                            .grants
+                            .iter()
+                            .filter(|grant| !is_program(grant))
+                            .cloned()
+                            .collect(),
+                        new_grants: standing
+                            .new_grants
+                            .iter()
+                            .filter(|grant| !is_program(grant))
+                            .cloned()
+                            .collect(),
+                        programs,
+                    },
+                };
+                self.overlay = Overlay::Confirm {
+                    kind,
                     focus: Some(1),
                 };
                 Intent::None

@@ -277,6 +277,8 @@ fn standing(condition: uze_application::ExtensionCondition) -> uze_application::
         checkout_refused: None,
         offer_declined: false,
         errors: Vec::new(),
+        programs: Vec::new(),
+        confined: None,
     }
 }
 
@@ -347,6 +349,62 @@ fn enabling_an_unconsented_extension_asks_with_its_grants_first() {
     );
     assert!(screen.contains("Allow and enable"), "{screen}");
     assert_eq!(model.apply_key(enter), here(true, true));
+}
+
+/// An extension that runs programs asks about them on a step of their own,
+/// after its other grants, with each pinned path; nothing is recorded
+/// until both are allowed.
+#[test]
+fn programs_are_asked_on_their_own_step_after_the_grants() {
+    let mut standing = standing(uze_application::ExtensionCondition::NeedsConsent);
+    standing.grants.push("exec:nvidia-smi".to_owned());
+    standing.programs = vec![uze_application::ProgramPin {
+        name: "nvidia-smi".to_owned(),
+        path: Some(std::path::PathBuf::from("/usr/lib/wsl/lib/nvidia-smi")),
+        unresolved: None,
+        runs_anything: false,
+        reads: vec!["/dev/dxg".to_owned()],
+    }];
+    standing.confined = Some(true);
+    let mut model = standing_in_a_project(standing.clone());
+    let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(model.apply_key(enter), Intent::None);
+    let grants = screen_of(&model);
+    assert!(grants.contains("Allow this extension to run?"), "{grants}");
+    assert!(
+        !grants.contains("Allow these programs"),
+        "programs wait for their step: {grants}"
+    );
+    assert_eq!(model.apply_key(enter), Intent::None, "nothing recorded yet");
+    let programs = screen_of(&model);
+    assert!(
+        programs.contains("Allow these programs to run, confined?"),
+        "{programs}"
+    );
+    assert!(
+        programs.contains("nvidia-smi · /usr/lib/wsl/lib/nvidia-smi"),
+        "{programs}"
+    );
+    assert!(programs.contains("it also reads /dev/dxg"), "{programs}");
+    assert_eq!(model.apply_key(enter), here(true, true));
+
+    standing.confined = Some(false);
+    standing.grants = vec!["exec:nvidia-smi".to_owned()];
+    let mut model = standing_in_a_project(standing);
+    assert_eq!(model.apply_key(enter), Intent::None);
+    let unconfined = screen_of(&model);
+    assert!(
+        unconfined.contains("Allow these programs to run as you?"),
+        "{unconfined}"
+    );
+    assert!(
+        unconfined.contains("This machine cannot confine programs."),
+        "{unconfined}"
+    );
+    assert!(
+        unconfined.contains("runs as you, with everything you can"),
+        "{unconfined}"
+    );
 }
 
 /// The dialog's Allow button is its Enter.

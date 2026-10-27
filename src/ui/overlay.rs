@@ -457,16 +457,74 @@ fn extension_grants_body(
     body
 }
 
+/// Each program an extension runs, where it was found, and what running
+/// it means on this machine: the second step of allowing an extension.
+fn programs_body(step: &crate::ui::model::ProgramsStep) -> Vec<String> {
+    let mut body = vec![if step.confined {
+        "Each runs confined: it reads this checkout and its own files, writes only a scratch \
+         folder UZE removes, and reaches no network."
+            .to_owned()
+    } else {
+        "This machine cannot confine programs.".to_owned()
+    }];
+    for program in &step.programs {
+        let name = &program.name;
+        body.push(match &program.path {
+            Some(path) => format!("{name} · {}", path.display()),
+            None => format!(
+                "{name} · {}",
+                program.unresolved.as_deref().unwrap_or("not found")
+            ),
+        });
+        if !step.confined {
+            body.push(format!(
+                "`{name}` runs as you, with everything you can reach: your files, your keys, the \
+                 network."
+            ));
+        } else if program.runs_anything {
+            body.push(format!(
+                "`{name}` can run anything, the same as running any code as you, inside what it \
+                 is confined to."
+            ));
+        }
+        if !program.reads.is_empty() {
+            body.push(format!("it also reads {}", program.reads.join(", ")));
+        }
+    }
+    body
+}
+
 impl Confirmation {
     /// Whether this only explains, with one way out and nothing to agree to.
     fn is_notice(&self) -> bool {
         matches!(self, Self::ProtectedPlugin(_))
     }
 
-    /// What agreeing asks for.
-    fn intent(self, model: &TuiModel) -> Intent {
+    /// What agreeing asks for. Allowing an extension's grants asks about
+    /// its programs next, on a step of their own, before anything is
+    /// recorded: one answer for the two would be agreeing to what was not
+    /// shown.
+    fn intent(self, model: &mut TuiModel) -> Intent {
         match self {
-            Self::EnableExtension { here, .. } => Intent::ExtensionHere(here),
+            Self::EnableExtension {
+                here,
+                attribution,
+                programs: Some(step),
+                ..
+            } => {
+                model.overlay = Overlay::Confirm {
+                    kind: Self::AllowPrograms {
+                        here,
+                        attribution,
+                        step,
+                    },
+                    focus: Some(1),
+                };
+                Intent::None
+            }
+            Self::EnableExtension { here, .. } | Self::AllowPrograms { here, .. } => {
+                Intent::ExtensionHere(here)
+            }
             Self::RemovePlugin(id) => Intent::Remove(id),
             Self::RemoveMarketplace(name) => Intent::RemoveMarketplace(name),
             Self::UpdatePlugin(id) => Intent::Update(id, TrustGrant::Ask),
@@ -502,11 +560,32 @@ impl Confirmation {
         };
         let named = |id: &str| Some(Line::from(id.to_owned()));
         match self {
+            Self::AllowPrograms {
+                attribution, step, ..
+            } => Dialog {
+                body: programs_body(step),
+                ..dialog(
+                    if step.confined {
+                        Tone::Caution
+                    } else {
+                        Tone::Danger
+                    },
+                    if step.confined {
+                        "Allow these programs to run, confined?"
+                    } else {
+                        "Allow these programs to run as you?"
+                    },
+                    named(attribution),
+                    "",
+                    Some("Allow and enable"),
+                )
+            },
             Self::EnableExtension {
                 here,
                 attribution,
                 grants,
                 new_grants,
+                ..
             } => Dialog {
                 body: extension_grants_body(here, grants, new_grants),
                 ..dialog(

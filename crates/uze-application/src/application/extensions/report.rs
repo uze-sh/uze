@@ -11,7 +11,7 @@ use serde::Serialize;
 use uze_contract::{Clean, Identity};
 use uze_workspace::extensions::consent;
 
-use super::{ExtensionCheckout, ExtensionState, NotACheckout, consent_key};
+use super::{ExtensionCheckout, ExtensionState, NotACheckout, ProgramPin, consent_key};
 use crate::application::services::Extensions;
 
 /// Where an extension stands, as one word a report prints.
@@ -87,6 +87,13 @@ pub struct ExtensionReport {
     /// What its last compile said was wrong, one problem a line.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub errors: Vec<String>,
+    /// Each program its `exec:` grants name: pinned where it was
+    /// consented to, as it would be pinned where it was not.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub programs: Vec<ProgramPin>,
+    /// Whether those programs run confined, when it has any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confined: Option<bool>,
 }
 
 impl ExtensionReport {
@@ -204,6 +211,8 @@ impl Extensions<'_> {
                         consent::offer_declined(&self.0.home, &key, project)
                     }),
                     errors: Vec::new(),
+                    programs: Vec::new(),
+                    confined: None,
                 };
                 let load = match self.load(&installed) {
                     Ok(load) => load,
@@ -251,7 +260,26 @@ impl Extensions<'_> {
                         ExtensionCondition::Broken
                     }
                 };
-                if let Some(recorded) = consent::consent(&self.0.home, &key) {
+                let recorded = consent::consent(&self.0.home, &key);
+                if manifest.programs().next().is_some() {
+                    let consented = recorded
+                        .as_ref()
+                        .is_some_and(|consent| consent.exec_paths.is_some())
+                        && report.condition != ExtensionCondition::NeedsConsent;
+                    report.programs = if consented {
+                        self.pinned_programs(&identity).unwrap_or_default()
+                    } else {
+                        super::consent::resolve_programs(manifest, &self.0.home)
+                    };
+                    let confines = super::confinement().is_available();
+                    report.confined = Some(match &recorded {
+                        Some(consent) if consented => {
+                            consent.enforced_at_accept == Some(true) && confines
+                        }
+                        _ => confines,
+                    });
+                }
+                if let Some(recorded) = recorded {
                     report.enabled_in = recorded.enabled_in.into_iter().collect();
                     report.updated_at = recorded.updated_at;
                 }

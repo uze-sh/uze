@@ -22,8 +22,8 @@
 
 ## 4. Pinning and consent
 
-- [ ] 4.1 Consent fills `exec_paths` and `enforced_at_accept` from `availability()`; a name not found pinned as missing; `resolve_again(identity)`; an unenforced record re-asked on every digest change (parent 5.5b)
-- [ ] 4.2 The consent step for programs: asked after the rest, with each pinned path, each device read, the runners' "can run anything", and the fixed "runs as you" text; on the TUI dialog and `uze install`'s terminal question
+- [x] 4.1 Consent fills `exec_paths` and `enforced_at_accept` from `availability()`; a name not found pinned as missing; `resolve_again(identity)`; an unenforced record re-asked on every digest change (parent 5.5b)
+- [x] 4.2 The consent step for programs: asked after the rest, with each pinned path, each device read, the runners' "can run anything", and the fixed "runs as you" text; on the TUI dialog and `uze install`'s terminal question
 - [ ] 4.3 A run refused when the record says enforced and the platform no longer enforces, or the helper returned 125; the standing shows "needs consent again"
 
 ## 5. The runner answers programs

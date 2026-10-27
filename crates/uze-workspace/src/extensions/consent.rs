@@ -41,12 +41,13 @@ pub struct Consent {
     /// The projects it runs in, each by its canonical root, as a
     /// project's approved commands name it (ADR-055).
     pub enabled_in: BTreeSet<PathBuf>,
-    /// Each `exec:` program as it was resolved when accepted. Filled by
-    /// the change that brings programs; absent until then.
+    /// Each `exec:` program as it was resolved when accepted, by name: the
+    /// real path a run executes. A name not found is absent, and runs
+    /// nothing until the operator resolves it again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exec_paths: Option<BTreeMap<String, PathBuf>>,
     /// Whether the machine confined programs when they were accepted.
-    /// Filled with `exec_paths`.
+    /// Filled with `exec_paths`; `false` asks again on every update.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enforced_at_accept: Option<bool>,
 }
@@ -55,6 +56,19 @@ impl Consent {
     pub fn enabled_in(&self, project: &Path) -> bool {
         self.enabled_in.contains(&canonical(project))
     }
+
+    /// Whether programs were accepted to run as the operator, unconfined.
+    pub fn accepted_unconfined(&self) -> bool {
+        self.enforced_at_accept == Some(false)
+    }
+}
+
+/// The programs an acceptance pinned, and whether this machine confined
+/// them when it did.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Pinned {
+    pub paths: BTreeMap<String, PathBuf>,
+    pub enforced: bool,
 }
 
 /// The key an extension's consent is recorded under.
@@ -92,6 +106,10 @@ pub fn judge(consent: Option<&Consent>, grants: &BTreeSet<String>, digest: &str)
         Judgement::Held { new_grants }
     } else if consent.accepted_digest == digest {
         Judgement::Current
+    } else if consent.accepted_unconfined() {
+        // What ran as the operator was what they saw; new files are new
+        // code running as them, asked again whatever its grants (D6).
+        Judgement::Unconsented
     } else {
         Judgement::Updated
     }
@@ -120,6 +138,7 @@ pub fn accept(
     grants: &BTreeSet<String>,
     digest: &str,
     now: u64,
+    pinned: Option<Pinned>,
 ) -> Result<Consent> {
     rewrite(home, |extensions| {
         let consent = extensions.entry(key.to_owned()).or_default();
@@ -127,7 +146,26 @@ pub fn accept(
         consent.accepted_digest = digest.to_owned();
         consent.accepted_at = now;
         consent.updated_at = None;
+        consent.exec_paths = pinned.as_ref().map(|pinned| pinned.paths.clone());
+        consent.enforced_at_accept = pinned.map(|pinned| pinned.enforced);
         Ok(consent.clone())
+    })
+}
+
+/// Records `paths` as where the programs `key` was accepted for resolve
+/// now, leaving the acceptance itself as it was. `None` when nothing was
+/// accepted for `key`.
+pub fn repin(
+    home: &UzeHome,
+    key: &str,
+    paths: BTreeMap<String, PathBuf>,
+) -> Result<Option<Consent>> {
+    rewrite(home, |extensions| {
+        let Some(consent) = extensions.get_mut(key) else {
+            return Ok(None);
+        };
+        consent.exec_paths = Some(paths);
+        Ok(Some(consent.clone()))
     })
 }
 
@@ -335,6 +373,60 @@ mod tests {
     const BAND: &str = "gsd@acme/gsd-band";
 
     #[test]
+    fn programs_accepted_unconfined_are_asked_again_on_any_update() {
+        let (home, _) = home("consent-unconfined");
+        let pinned = Pinned {
+            paths: BTreeMap::from([(
+                "nvidia-smi".to_owned(),
+                PathBuf::from("/usr/bin/nvidia-smi"),
+            )]),
+            enforced: false,
+        };
+        let wanted = grants(&["exec:nvidia-smi"]);
+        let accepted = accept(&home, BAND, &wanted, "sha256:a", 1, Some(pinned)).unwrap();
+        assert_eq!(accepted.enforced_at_accept, Some(false));
+        assert_eq!(
+            judge(Some(&accepted), &wanted, "sha256:a"),
+            Judgement::Current
+        );
+        assert_eq!(
+            judge(Some(&accepted), &wanted, "sha256:b"),
+            Judgement::Unconsented
+        );
+        let confined = accept(
+            &home,
+            BAND,
+            &wanted,
+            "sha256:a",
+            2,
+            Some(Pinned {
+                enforced: true,
+                ..Pinned::default()
+            }),
+        )
+        .unwrap();
+        assert_eq!(
+            judge(Some(&confined), &wanted, "sha256:b"),
+            Judgement::Updated
+        );
+        let repinned = repin(
+            &home,
+            BAND,
+            BTreeMap::from([(
+                "nvidia-smi".to_owned(),
+                PathBuf::from("/opt/bin/nvidia-smi"),
+            )]),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            repinned.exec_paths.unwrap()["nvidia-smi"],
+            PathBuf::from("/opt/bin/nvidia-smi")
+        );
+        assert_eq!(repinned.accepted_at, 2);
+    }
+
+    #[test]
     fn a_machine_that_never_answered_consents_to_nothing() {
         let (home, _) = home("consent-none");
         assert!(consents(&home).is_empty());
@@ -347,7 +439,15 @@ mod tests {
     #[test]
     fn consent_is_recorded_by_identity_with_its_grants_and_digest() {
         let (home, project) = home("consent-record");
-        let accepted = accept(&home, BAND, &grants(&["read:checkout"]), "sha256:a", 7).unwrap();
+        let accepted = accept(
+            &home,
+            BAND,
+            &grants(&["read:checkout"]),
+            "sha256:a",
+            7,
+            None,
+        )
+        .unwrap();
         assert_eq!(accepted.accepted_at, 7);
         assert!(enable(&home, BAND, &project).unwrap());
         assert!(!enable(&home, BAND, &project).unwrap(), "already enabled");
@@ -370,7 +470,15 @@ mod tests {
     #[test]
     fn a_same_named_extension_of_another_plugin_is_a_stranger() {
         let (home, project) = home("consent-stranger");
-        accept(&home, BAND, &grants(&["read:checkout"]), "sha256:a", 1).unwrap();
+        accept(
+            &home,
+            BAND,
+            &grants(&["read:checkout"]),
+            "sha256:a",
+            1,
+            None,
+        )
+        .unwrap();
         enable(&home, BAND, &project).unwrap();
         for stranger in [
             identity_key("evil", "acme", "gsd-band"),
@@ -386,7 +494,7 @@ mod tests {
         let (home, project) = home("consent-per-project");
         let other = project.parent().unwrap().join("other");
         std::fs::create_dir_all(&other).unwrap();
-        accept(&home, BAND, &grants(&[]), "sha256:a", 1).unwrap();
+        accept(&home, BAND, &grants(&[]), "sha256:a", 1, None).unwrap();
         enable(&home, BAND, &project).unwrap();
 
         let recorded = consent(&home, BAND).unwrap();
@@ -441,6 +549,7 @@ mod tests {
             &grants(&["read:checkout", "clipboard"]),
             "sha256:a",
             1,
+            None,
         )
         .unwrap();
         enable(&home, BAND, &project).unwrap();
@@ -474,7 +583,7 @@ mod tests {
         let notes = identity_key("gsd", "acme", "notes");
         let other = identity_key("gsd-extra", "acme", "gsd-band");
         for key in [BAND, notes.as_str(), other.as_str()] {
-            accept(&home, key, &grants(&[]), "sha256:a", 1).unwrap();
+            accept(&home, key, &grants(&[]), "sha256:a", 1, None).unwrap();
         }
         let forgotten = forget_plugin(&home, "gsd", "acme").unwrap();
         assert_eq!(forgotten, [BAND.to_owned(), notes.clone()]);
@@ -493,7 +602,7 @@ mod tests {
         std::fs::write(home.extensions_record_path(), b"{ not json").unwrap();
         assert!(consents(&home).is_empty());
 
-        accept(&home, BAND, &grants(&[]), "sha256:a", 1).unwrap();
+        accept(&home, BAND, &grants(&[]), "sha256:a", 1, None).unwrap();
         assert!(consent(&home, BAND).is_some());
         let kept = std::fs::read_dir(home.state_dir())
             .unwrap()
@@ -517,7 +626,7 @@ mod tests {
         let newer = br#"{"schema_version": 2, "extensions": {}}"#;
         std::fs::write(home.extensions_record_path(), newer).unwrap();
 
-        assert!(accept(&home, BAND, &grants(&[]), "sha256:a", 1).is_err());
+        assert!(accept(&home, BAND, &grants(&[]), "sha256:a", 1, None).is_err());
         assert_eq!(
             std::fs::read(home.extensions_record_path()).unwrap(),
             newer.to_vec()
@@ -527,7 +636,15 @@ mod tests {
     #[test]
     fn an_applied_update_carries_its_date_until_the_operator_answers_again() {
         let (home, _) = home("consent-updated-at");
-        accept(&home, BAND, &grants(&["read:checkout"]), "sha256:a", 1).unwrap();
+        accept(
+            &home,
+            BAND,
+            &grants(&["read:checkout"]),
+            "sha256:a",
+            1,
+            None,
+        )
+        .unwrap();
         assert_eq!(consent(&home, BAND).unwrap().updated_at, None);
 
         let applied = apply_update(&home, BAND, &grants(&["read:checkout"]), "sha256:b", 9)
@@ -535,7 +652,15 @@ mod tests {
             .unwrap();
         assert_eq!(applied.updated_at, Some(9));
 
-        accept(&home, BAND, &grants(&["read:checkout"]), "sha256:b", 12).unwrap();
+        accept(
+            &home,
+            BAND,
+            &grants(&["read:checkout"]),
+            "sha256:b",
+            12,
+            None,
+        )
+        .unwrap();
         assert_eq!(consent(&home, BAND).unwrap().updated_at, None);
     }
 

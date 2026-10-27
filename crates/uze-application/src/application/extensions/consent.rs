@@ -7,12 +7,14 @@
 //! that wants no new grant is applied as it is judged, recording the new
 //! digest and its date; one that wants more holds the extension.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use uze_contract::{Does, Grant, Identity, Manifest, SourceKind};
+use uze_core::capability::extension::program::is_general_runner;
+use uze_core::machine::extension_program::{self, Unresolved};
 use uze_core::{Result, UzeError};
-use uze_workspace::extensions::consent::{self, Judgement};
+use uze_workspace::extensions::consent::{self, Judgement, Pinned};
 
 pub use uze_workspace::extensions::consent::Consent as ExtensionConsent;
 
@@ -101,7 +103,61 @@ fn needs_consent(manifest: &Manifest) -> bool {
         || manifest
             .actions
             .iter()
-            .any(|action| matches!(action.does, Does::Script(_)))
+            .any(|action| matches!(action.does, Does::Script(_) | Does::Run(_)))
+}
+
+/// One program an extension's `exec:` grants name, as the consent step
+/// and the Extensions screen show it.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct ProgramPin {
+    pub name: String,
+    /// The real path a run executes, when it was found.
+    pub path: Option<PathBuf>,
+    /// Why it was not pinned, when it was not.
+    pub unresolved: Option<String>,
+    /// Whether it runs whatever it is handed (`sh`, `python3`, `git`).
+    pub runs_anything: bool,
+    /// What it reads beyond the host's own paths, as its `exec` declares.
+    pub reads: Vec<String>,
+}
+
+/// Whether this machine confines programs, right by right.
+pub fn confinement() -> uze_platform::confine::Availability {
+    uze_platform::confine::availability()
+}
+
+/// The places an `exec:` name may not be pinned beneath: where an
+/// extension or an agent could have put a program of the same name.
+fn unpinnable(home: &uze_core::UzeHome) -> Vec<PathBuf> {
+    vec![home.root().to_path_buf(), std::env::temp_dir()]
+}
+
+/// Each program `manifest` names, resolved now on the host's search path.
+pub(super) fn resolve_programs(manifest: &Manifest, home: &uze_core::UzeHome) -> Vec<ProgramPin> {
+    let search = uze_core::harness_runtime::harness_search_path();
+    let refused = unpinnable(home);
+    manifest
+        .programs()
+        .map(|name| {
+            let resolved = extension_program::resolve(name, &search, &refused);
+            ProgramPin {
+                name: name.to_owned(),
+                unresolved: resolved.as_ref().err().map(|why| match why {
+                    Unresolved::NotFound => format!("`{name}` not found"),
+                    refused => format!("`{name}` {refused}"),
+                }),
+                path: resolved.ok(),
+                runs_anything: is_general_runner(name),
+                reads: manifest.reads_of(name).to_vec(),
+            }
+        })
+        .collect()
+}
+
+fn pinned_paths(pins: &[ProgramPin]) -> BTreeMap<String, PathBuf> {
+    pins.iter()
+        .filter_map(|pin| Some((pin.name.clone(), pin.path.clone()?)))
+        .collect()
 }
 
 fn wanted(manifest: &Manifest) -> BTreeSet<Grant> {
@@ -188,12 +244,17 @@ impl Extensions<'_> {
             )));
         }
         let grants = wanted(manifest);
+        let pinned = (manifest.programs().next().is_some()).then(|| Pinned {
+            paths: pinned_paths(&resolve_programs(manifest, &self.0.home)),
+            enforced: confinement().is_available(),
+        });
         let recorded = consent::accept(
             &self.0.home,
             &consent_key(identity),
             &spelled(&grants),
             &load.digest,
             now(),
+            pinned,
         )?;
         Ok(Consented {
             identity: identity.clone(),
@@ -201,6 +262,52 @@ impl Extensions<'_> {
             digest: recorded.accepted_digest,
             accepted_at: recorded.accepted_at,
         })
+    }
+
+    /// The programs `identity` wants, each as it would be pinned now: what
+    /// the consent step shows before the operator accepts.
+    pub fn programs_to_pin(&self, identity: &Identity) -> Result<Vec<ProgramPin>> {
+        let load = self.load_identity(identity)?;
+        Ok(resolve_programs(&load.compiled.manifest, &self.0.home))
+    }
+
+    /// The programs `identity` wants, each with the path its consent
+    /// pinned, or why it has none.
+    pub fn pinned_programs(&self, identity: &Identity) -> Result<Vec<ProgramPin>> {
+        let load = self.load_identity(identity)?;
+        let manifest = &load.compiled.manifest;
+        let recorded = self
+            .consent_record(identity)
+            .and_then(|consent| consent.exec_paths);
+        Ok(manifest
+            .programs()
+            .map(|name| {
+                let path = recorded.as_ref().and_then(|paths| paths.get(name).cloned());
+                ProgramPin {
+                    name: name.to_owned(),
+                    unresolved: path.is_none().then(|| format!("`{name}` not found")),
+                    path,
+                    runs_anything: is_general_runner(name),
+                    reads: manifest.reads_of(name).to_vec(),
+                }
+            })
+            .collect())
+    }
+
+    /// Resolves `identity`'s programs again, as the operator asked on the
+    /// Extensions screen, and records where they are now. Refused from an
+    /// agent's pane, and before consent.
+    #[tracing::instrument(name = "extensions.resolve_again", skip_all, fields(extension = %identity), err)]
+    pub fn resolve_again(&self, identity: &Identity, asker: Asker) -> Result<Vec<ProgramPin>> {
+        refuse_an_agent(asker, "resolve the programs of")?;
+        let load = self.load_identity(identity)?;
+        let pins = resolve_programs(&load.compiled.manifest, &self.0.home);
+        consent::repin(&self.0.home, &consent_key(identity), pinned_paths(&pins))?.ok_or_else(|| {
+            refusal(format!(
+                "{identity} has not been consented to on this machine; its programs are pinned when it is"
+            ))
+        })?;
+        Ok(pins)
     }
 
     /// Switches `identity` on in the project rooted at `project`. Refused
@@ -272,6 +379,16 @@ impl Extensions<'_> {
         let key = consent_key(&load.compiled.identity);
         let grants = wanted(manifest);
         let recorded = consent::consent(&self.0.home, &key);
+        // Accepted as confined on a machine that no longer confines: what
+        // the operator agreed to is not what would run (S18).
+        let confinement_lost = manifest.programs().next().is_some()
+            && recorded
+                .as_ref()
+                .is_some_and(|consent| consent.enforced_at_accept == Some(true))
+            && !confinement().is_available();
+        if confinement_lost {
+            return Ok(ExtensionState::NeedsConsent { grants });
+        }
         let enabled_here = match consent::judge(recorded.as_ref(), &spelled(&grants), &load.digest)
         {
             Judgement::Unconsented => return Ok(ExtensionState::NeedsConsent { grants }),
