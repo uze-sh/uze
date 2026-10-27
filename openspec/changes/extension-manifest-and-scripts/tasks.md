@@ -55,5 +55,5 @@
 - [x] 8.2 `invariants.md` entries of parent 11.4, each naming its test
 - [x] 8.3 `uze-script` in `crate-layering.mmd` and `containers.mmd`; `make artifacts`
 - [x] 8.4 A minimal `uze:extension` Skill (manifest, a script, grants, the check loop) and the hand-off from `uze:author` (parent 11.1, 11.2)
-- [ ] 8.5 A journey: install a plugin from a non-linked marketplace, consent, enable, open, act by key and pointer
+- [x] 8.5 A journey: install a plugin from a non-linked marketplace, consent, enable, open, act by key and pointer
 - [ ] 8.6 The proof by hand for the operator: the change-4 plugin and `gsd-band`'s board from `board.rhai` with `paths.changed` and `every` (parent 12.2)

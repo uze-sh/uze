@@ -457,3 +457,43 @@ the fixed release is in the lock.
 - decided:  Each view of a declared extension that is switched on is offered without a key in the index as `Action::Extension` interned as `ext.<plugin>@<marketplace>/<id>.open:<surface>`, labelled `Open <title>` and described with its attribution; no manifest id holds a colon, so it never meets a declared action, and no table binds it. Choosing it opens the view over whatever stands in the pane. Confirmation dialogs of a third party's surface carry the attribution beside their subject, and its `Failed` and `Copy` toasts lead with it (`id · plugin@marketplace: …`); the clipboard gets the text alone. The strip on the surface itself stays task 5.3's.
 - rejected: A row kind of its own in the index: two vocabularies for one list. Attributing in the toast's title: titles are the host's short words.
 - blast:    `jump` and global keys for views (change 6) can bind these names.
+
+## D46 — A journey's world keeps a temporary directory of its own on Unix
+
+- status:   pending
+- task:     8.5
+- commit:   24494769
+- trigger:  The journey's project lives under `/tmp/uze-journeys`, and an extension refuses to read a checkout inside the temporary directory (D11), so every script extension in a journey said its checkout was refused.
+- decided:  `journeys/unix.py` gives the world `TMPDIR=<world>/tmp`, created with it, as `windows.py` already gives `TEMP`/`TMP`. The hand proof exports `TMPDIR` the same way, since its world is under `/tmp` too.
+- rejected: Moving the worlds out of `/tmp`: the default is shared with CI and the Docker image. Relaxing the refusal for a journey: the product would be proved with a rule it does not have.
+- blast:    A shell gesture's `mktemp` writes beneath the world, and goes with it.
+
+## D47 — A space opens in a directory once a session, apart from its evaluation
+
+- status:   pending
+- task:     8.5
+- commit:   9dc40662
+- trigger:  The journey's offer never came: `uze workspace` opens with a shell in the project, the shell going quiet evaluates it, and the reads made where a space opens (the extension offers, commands awaiting, gates, retired regions) took only directories no evaluation had answered, so a project whose shell stood there first was never asked about.
+- decided:  `WorkspaceModel::newly_opened_directories` hands those four reads each directory the sidebar names once a session, remembered in `Remembered::opened` by evaluation key, whether or not an evaluation reached it first; what is evaluated keeps its own `unread_named_directories`.
+- rejected: Asking the offers on every evaluation: they are said once a session (D42) and would be read on every quiet pane.
+- blast:    Commands awaiting approval, unspelled gates and the retired-region check are now also asked for a project a shell opened first, which they were meant to be.
+
+## D48 — On a declared surface the arrows move between a question's answers
+
+- status:   pending
+- task:     8.5
+- commit:   65769bb1
+- trigger:  A declared action's confirmation could not be answered with → (nothing bound it in `Scope::Declared`, and its footer named no way to the confirm button), and its subject repeated the attribution beside itself (`notes · notes@studio  notes · notes@studio`).
+- decided:  `Scope::Declared` binds `left`/`right` to `FocusPrevious`/`FocusNext`, which a standing question reads as moving between its answers and nothing else on a declared surface reads; the footer then says `right <confirm>`. `render_confirm` draws the attribution alone when the subject already is it.
+- rejected: Pushing `Scope::Confirm` while a question stands: the scopes are built without the surface's view, and the surface's own keys already reach the question.
+- blast:    `left`/`right` are the workspace's on a declared surface: an extension suggesting either keeps the workspace's.
+
+## D49 — An install of what the project declares says what waits, as one of a single plugin does
+
+- status:   pending
+- task:     8.6
+- commit:   31a60625
+- trigger:  Preparing the hand proof, `uze install` with no argument installed both declared plugins and said nothing of their extensions: the report names a declared plugin bare (`proof`), and the question matched only `plugin@marketplace`.
+- decided:  `ask_about_extensions` takes a plugin named either way; `an_install_of_what_the_project_declares_says_the_same` holds it.
+- rejected: Qualifying the names in `InstallReport`: its JSON is a published shape and prints each name as the lock keys it.
+- blast:    Two marketplaces holding a plugin of one name are both asked about after a declared install that installed either.
