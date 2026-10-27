@@ -214,6 +214,10 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
         );
     }
 
+    // A plugin's status rows stand under the rule rather than above it,
+    // so the rule keeps meeting the tab strip's own along one line.
+    metrics.marquee |= super::declared::render_status_rows(frame, &mut rows, model, hits);
+
     let Some(session) = &model.session else {
         return;
     };

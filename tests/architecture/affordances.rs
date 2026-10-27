@@ -306,11 +306,17 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     );
     put(
         Action::MoveItemUp,
-        Control("the up hint along the overview's foot, on a list's entry"),
+        Control(
+            "the up hint along the overview's foot, on a list's entry, and the Move up \
+             button in the drawer of an extension that draws a status row",
+        ),
     );
     put(
         Action::MoveItemDown,
-        Control("the down hint along the overview's foot, on a list's entry"),
+        Control(
+            "the down hint along the overview's foot, on a list's entry, and the Move \
+             down button in the drawer of an extension that draws a status row",
+        ),
     );
     put(
         Action::DiscardChanges,

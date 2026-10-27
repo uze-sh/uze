@@ -27,11 +27,15 @@ use uze_extensions::declared::{
 use uze_extensions::view::{Command, Role, ScrollTarget, Section, SectionRow, Size, View};
 
 mod agent;
+mod band;
 mod doors;
 mod drawer;
 mod events;
+mod overlay;
+mod status;
 pub(super) use drawer::*;
 pub(super) use events::*;
+pub(super) use status::*;
 
 /// The host's number for a slot, handed out once and never reused, so a
 /// hit drawn on one frame cannot land on another slot after a reload.
@@ -317,6 +321,19 @@ impl HostedSlot {
     pub(super) fn is_drawer(&self) -> bool {
         self.surface.slot == SurfaceSlot::Drawer
     }
+
+    pub(super) fn is_overlay(&self) -> bool {
+        self.surface.slot == SurfaceSlot::Overlay
+    }
+
+    /// A status row or a band: drawn in the host's own chrome, with no
+    /// place of its own to close or to say a notice in.
+    pub(super) fn is_chrome(&self) -> bool {
+        matches!(
+            self.surface.slot,
+            SurfaceSlot::Status | SurfaceSlot::Band { .. }
+        )
+    }
 }
 
 /// One extension an installed plugin carries, as last read.
@@ -335,6 +352,9 @@ pub(super) struct HostedExtension {
     /// Its preferences as the last discovery read them, handed to every
     /// engine of it built since.
     pub(super) preferences: Option<serde_json::Value>,
+    /// Whether its last compile runs or reaches anything, so it is enabled
+    /// project by project rather than wherever its switch is.
+    pub(super) per_project: bool,
 }
 
 /// Every declared extension the client hosts, and the slots their surfaces
@@ -584,6 +604,7 @@ impl HostedExtensions {
                 errors: Vec::new(),
                 record: None,
                 preferences: None,
+                per_project: false,
             });
         entry.installed = loaded.installed;
         entry.stamp = loaded.stamp;
@@ -595,6 +616,7 @@ impl HostedExtensions {
         }
         match loaded.compiled {
             Ok(compiled) => {
+                entry.per_project = uze_application::enabled_per_project(&compiled);
                 entry.errors = loaded
                     .data
                     .values()
@@ -830,7 +852,7 @@ impl WorkspaceModel {
     /// The declared extension and surface in front of the keyboard: its
     /// owner as the keymap names it, and the surface's id.
     pub(super) fn declared_front(&self) -> Option<(String, String)> {
-        let slot = self.slot_in_pane()?;
+        let slot = self.overlay_slot().or_else(|| self.slot_in_pane())?;
         let identity = slot.owner.declared()?;
         Some((
             crate::keymap::extension_owner(identity),
@@ -853,7 +875,9 @@ impl WorkspaceModel {
     /// Hands the surface in front one of its declared actions, asked for
     /// by a key, a footer hint or the index.
     pub(super) fn press_declared_action(&mut self, action: uze_keys::ExtensionActionId) {
-        let (Some(id), Some((owner, _))) = (self.open_slot, self.declared_front()) else {
+        let overlay = self.overlay_slot().map(|slot| slot.id);
+        let (Some(id), Some((owner, _))) = (overlay.or(self.open_slot), self.declared_front())
+        else {
             return;
         };
         if uze_keys::extension::owner(action) != owner {
@@ -866,7 +890,10 @@ impl WorkspaceModel {
             .slot_engine_mut(id)
             .map(|(surface, engine)| engine.press(&surface, &local))
             .unwrap_or(Outcome::Stay);
-        self.follow_surface(outcome);
+        match overlay {
+            Some(_) => self.follow_overlay(outcome),
+            None => self.follow_surface(outcome),
+        }
     }
 
     /// The spec summary's slot and what it draws for the checkout in front,
@@ -1043,6 +1070,32 @@ impl WorkspaceModel {
         self.dirty = true;
     }
 
+    /// What a status row's or a band's engine answered, followed: what it
+    /// copies or says is attributed to it, and it has nothing to close.
+    pub(super) fn follow_chrome(&mut self, id: SlotId, outcome: Outcome) {
+        match outcome {
+            Outcome::Stay | Outcome::Close | Outcome::Notice(_) | Outcome::OpenCommit { .. } => {}
+            Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
+            Outcome::Copy(text) => self.copy_answered_by(text, Some(id)),
+            Outcome::Toast(text) => {
+                if let Some(owner) = self
+                    .remembered
+                    .declared
+                    .slot(id)
+                    .map(|slot| slot.owner.clone())
+                {
+                    self.say_told(&owner, text);
+                }
+            }
+            Outcome::Show(surface) => self.show_surface(id, &surface),
+            Outcome::Failed { title, detail } => {
+                let detail = self.attributed(Some(id), detail);
+                self.say_failed(&title, detail);
+            }
+        }
+        self.dirty = true;
+    }
+
     /// Opens the full-frame `surface` of the extension slot `from` belongs
     /// to, as one of its surfaces asked.
     pub(super) fn show_surface(&mut self, from: SlotId, surface: &str) {
@@ -1053,10 +1106,19 @@ impl WorkspaceModel {
         let shown = declared
             .slots
             .iter()
-            .find(|slot| slot.owner == owner && slot.surface.id == surface && slot.is_view())
-            .map(|slot| slot.id);
-        if let Some(id) = shown {
-            open_surface(self, id);
+            .find(|slot| {
+                slot.owner == owner
+                    && slot.surface.id == surface
+                    && (slot.is_view() || slot.is_overlay())
+            })
+            .map(|slot| (slot.id, slot.is_overlay()));
+        match shown {
+            Some((id, true)) => self.open_overlay(id),
+            Some((id, false)) => {
+                self.close_overlay();
+                open_surface(self, id);
+            }
+            None => {}
         }
     }
 
@@ -1157,6 +1219,19 @@ impl WorkspaceModel {
         }
         if self.open_drawer() == Some(id) {
             self.follow_drawer(outcome);
+            return;
+        }
+        if self.open_overlay == Some(id) {
+            self.follow_overlay(outcome);
+            return;
+        }
+        if self
+            .remembered
+            .declared
+            .slot(id)
+            .is_some_and(HostedSlot::is_chrome)
+        {
+            self.follow_chrome(id, outcome);
             return;
         }
         // A section is part of the sidebar: it has no "close" of its own.

@@ -62,6 +62,8 @@ mod selection;
 #[cfg(test)]
 mod sidebar;
 #[cfg(test)]
+mod slots;
+#[cfg(test)]
 mod status;
 #[cfg(test)]
 mod strip;

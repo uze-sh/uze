@@ -97,6 +97,10 @@ pub struct ExtensionReport {
     /// Each preference it declares, at its value now.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub preferences: Vec<PreferenceRow>,
+    /// The rows its bands take over each agent's pane, together, when it
+    /// declares any: what enabling it costs every agent of the project.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub band_rows: Option<u8>,
 }
 
 /// One preference as the Extensions screen lists and edits it.
@@ -157,6 +161,17 @@ impl PreferenceRow {
             _ => None,
         }
     }
+}
+
+/// The rows `manifest`'s bands take over each agent's pane, together;
+/// `None` when it declares none.
+fn band_rows(manifest: &uze_contract::Manifest) -> Option<u8> {
+    let rows = manifest
+        .surfaces
+        .iter()
+        .filter_map(|surface| surface.band)
+        .fold(0u8, |rows, band| rows.saturating_add(band.rows));
+    (rows > 0).then_some(rows)
 }
 
 impl ExtensionReport {
@@ -290,6 +305,7 @@ impl Extensions<'_> {
                     programs: Vec::new(),
                     confined: None,
                     preferences: Vec::new(),
+                    band_rows: None,
                 };
                 let load = match self.load(&installed) {
                     Ok(load) => load,
@@ -305,6 +321,7 @@ impl Extensions<'_> {
                 if !manifest.name.trim().is_empty() {
                     report.name = Clean::label(&manifest.name).into_string();
                 }
+                report.band_rows = band_rows(manifest);
                 report.grants = manifest
                     .wants
                     .iter()
@@ -601,5 +618,43 @@ mod tests {
         declare_the_plugin(&world);
         world.enabled();
         assert!(offered(&world).is_empty());
+    }
+
+    #[test]
+    fn the_rows_a_manifests_bands_take_are_summed_and_none_without_a_band() {
+        let surface = |slot, band| uze_contract::SurfaceDecl {
+            id: "s".to_owned(),
+            slot,
+            view: "s.kdl".to_owned(),
+            source: "s".to_owned(),
+            title: None,
+            band,
+        };
+        let band = |rows| {
+            Some(uze_contract::BandDecl {
+                rows,
+                place: uze_contract::BandPlace::Top,
+            })
+        };
+        let mut manifest = uze_contract::Manifest {
+            protocol: 1,
+            id: "gsd-band".to_owned(),
+            name: "GSD".to_owned(),
+            description: String::new(),
+            surfaces: vec![surface(uze_contract::Slot::View, None)],
+            wants: Vec::new(),
+            sources: Vec::new(),
+            actions: Vec::new(),
+            exec: Vec::new(),
+            preferences: Vec::new(),
+        };
+        assert_eq!(band_rows(&manifest), None);
+        manifest
+            .surfaces
+            .push(surface(uze_contract::Slot::Band, band(2)));
+        manifest
+            .surfaces
+            .push(surface(uze_contract::Slot::Band, band(4)));
+        assert_eq!(band_rows(&manifest), Some(6));
     }
 }

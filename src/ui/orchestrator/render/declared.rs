@@ -1,6 +1,7 @@
 //! What the host draws around a plugin's view: the error over its last
-//! good draw, the inspector beside it, and a plugin's drawer docked beside
-//! the pane.
+//! good draw, the inspector beside it, a plugin's drawer docked beside
+//! the pane, its status rows in the sidebar's header, its bands over the
+//! agent's pane and its overlay over the frame.
 
 use super::*;
 use crate::ui::extension_view::{SECTION_AIR, SECTION_CHROME};
@@ -104,6 +105,204 @@ pub(super) fn render_declared_drawer(
     }));
     hits.push((area, WorkspaceHit::DockBody));
     animates
+}
+
+/// The status rows, one under another from where `rows` stands, each
+/// inset as the header's own name is and folded to what is left of the
+/// column. Answers whether anything in them moves with the clock.
+pub(super) fn render_status_rows(
+    frame: &mut ratatui::Frame<'_>,
+    rows: &mut crate::ui::Rows,
+    model: &WorkspaceModel,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) -> bool {
+    let width = rows.width.saturating_sub(1 + TRAILING_PAD);
+    let mut animates = false;
+    for (slot, view) in model.declared_statuses(width) {
+        let Some(row) = rows.next(1) else {
+            break;
+        };
+        let rect = Rect::new(row.x + 1, row.y, width, 1);
+        animates |= render_docked_slot(frame, rect, model, slot, &view, hits);
+    }
+    animates
+}
+
+/// A band in the rows the layout took for it: its extension's id, muted,
+/// against the right end of its first row, where the host keeps the
+/// column it needs so nothing the band draws can cover it, and the band's
+/// view in the rest. A band with nothing to draw leaves its rows blank.
+/// Answers whether anything in it moves with the clock.
+pub(super) fn render_band(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    model: &WorkspaceModel,
+    slot: SlotId,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) -> bool {
+    let Some(id) = model
+        .remembered
+        .declared
+        .slot(slot)
+        .and_then(|slot| slot.owner.declared())
+        .map(|identity| identity.id.clone())
+    else {
+        return false;
+    };
+    let mark = text::elide(&id, usize::from(area.width / 2));
+    let mark_width = u16::try_from(text::columns(&mark)).unwrap_or(u16::MAX);
+    let content = Rect {
+        width: area.width.saturating_sub(mark_width + 1),
+        ..area
+    };
+    frame.render_widget(
+        Paragraph::new(Span::styled(mark, theme::fg(Token::TextMuted))),
+        Rect::new(content.right() + 1, area.y, mark_width, 1),
+    );
+    let space = uze_extensions::view::Size {
+        width: content.width,
+        height: content.height,
+    };
+    match model.band_view(slot, space) {
+        Some(view) => render_docked_slot(frame, content, model, slot, &view, hits),
+        None => false,
+    }
+}
+
+/// The share of the frame an overlay's card takes each way, in percent.
+const OVERLAY_SHARE: u16 = 70;
+/// The fewest columns and rows an overlay's card is given, the frame
+/// allowing.
+const OVERLAY_MIN: (u16, u16) = (40, 10);
+
+/// Where an overlay's card stands on `frame`: centred, at
+/// [`OVERLAY_SHARE`] of it each way and never under [`OVERLAY_MIN`]
+/// where the frame has that much.
+pub(in crate::ui::orchestrator) fn overlay_card(frame: Rect) -> Rect {
+    let share = |whole: u16, least: u16| {
+        let part =
+            u16::try_from(u32::from(whole) * u32::from(OVERLAY_SHARE) / 100).unwrap_or(whole);
+        part.max(least).min(whole)
+    };
+    let width = share(frame.width, OVERLAY_MIN.0);
+    let height = share(frame.height, OVERLAY_MIN.1);
+    Rect::new(
+        frame.x + (frame.width - width) / 2,
+        frame.y + (frame.height - height) / 2,
+        width,
+        height,
+    )
+}
+
+/// The overlay standing over the frame: the scrim, a floating card with
+/// the mark that closes it, the strip naming whose it is across its top,
+/// where nothing it draws can cover it, and its view under that. Its hits
+/// go ahead of everything drawn before it. Answers whether anything in it
+/// moves with the clock.
+pub(super) fn render_overlay(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    model: &WorkspaceModel,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) -> bool {
+    let Some(slot) = model.overlay_slot() else {
+        return false;
+    };
+    widget::scrim::render(frame, area);
+    let card = overlay_card(area);
+    frame.render_widget(ratatui::widgets::Clear, card);
+    let inner = Surface::card().render(frame, card);
+    let close = theme::glyph(Symbol::MarkClose);
+    let close_width = theme::width(Symbol::MarkClose);
+    let close_rect = Rect::new(
+        card.right().saturating_sub(1 + TRAILING_PAD + close_width),
+        card.y,
+        close_width,
+        1,
+    );
+    frame.render_widget(
+        Paragraph::new(Span::styled(
+            close,
+            theme::fg(widget::mark::close_tone(chip_state(
+                model,
+                WorkspaceHit::CloseOverlay,
+            ))),
+        )),
+        close_rect,
+    );
+    let content = match slot.owner.declared() {
+        Some(identity) => crate::ui::extension_view::tree::render_attribution(
+            frame,
+            inner,
+            &crate::ui::extension_view::tree::attribution(identity),
+        ),
+        None => inner,
+    };
+    let space = crate::ui::extension_view::content_space(content, model.navigator_width);
+    model.slot_spaces.borrow_mut().insert(slot.id, space);
+    let Some(view) = model.overlay_view(space) else {
+        return false;
+    };
+    let mut view_hits = Vec::new();
+    let drawn = crate::ui::extension_view::render(
+        frame,
+        &view,
+        content,
+        crate::ui::extension_view::NavigatorFrame::default(),
+        crate::ui::extension_view::FooterKeys {
+            scope: uze_keys::Scope::Declared,
+            hovered: model.hovered_hint(),
+            host: &[],
+        },
+        None,
+        &mut view_hits,
+    );
+    let tag = slot.id;
+    let mut targets: Vec<(Rect, WorkspaceHit)> = vec![(close_rect, WorkspaceHit::CloseOverlay)];
+    targets.extend(view_hits.into_iter().map(|(rect, hit)| {
+        (
+            rect,
+            WorkspaceHit::Extension(ExtensionHit { slot: tag, hit }),
+        )
+    }));
+    targets.extend(hint_targets(drawn.hints.clone()));
+    targets.push((card, WorkspaceHit::OverlayBody));
+    hits.splice(0..0, targets);
+    drawn.marquee
+}
+
+/// What a status row or a band draws in `area`, its hits tagged with its
+/// slot and the room it had kept for the click that reaches it.
+fn render_docked_slot(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    model: &WorkspaceModel,
+    slot: SlotId,
+    view: &uze_extensions::view::View,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) -> bool {
+    model.slot_spaces.borrow_mut().insert(
+        slot,
+        uze_extensions::view::Size {
+            width: area.width,
+            height: area.height,
+        },
+    );
+    let hovered = match model.hovered {
+        Some(WorkspaceHit::Extension(ExtensionHit { slot: hovered, hit })) if hovered == slot => {
+            Some(hit)
+        }
+        _ => None,
+    };
+    let mut view_hits = Vec::new();
+    let docked =
+        crate::ui::extension_view::render_docked(frame, view, area, hovered, &mut view_hits);
+    hits.extend(
+        view_hits
+            .into_iter()
+            .map(|(rect, hit)| (rect, WorkspaceHit::Extension(ExtensionHit { slot, hit }))),
+    );
+    docked.animates
 }
 
 fn error_title(count: usize) -> String {

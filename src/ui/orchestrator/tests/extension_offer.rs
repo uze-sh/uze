@@ -284,3 +284,23 @@ fn an_offer_asks_about_programs_on_their_own_step() {
         "allowing the programs answers the offer"
     );
 }
+
+/// What a band costs is said beside the grants: every agent of the
+/// project gives up its rows.
+#[test]
+fn an_offer_names_the_rows_a_band_takes_over_each_agent() {
+    let world = World::new("offer-band");
+    let mut offers = world.offers();
+    offers[0].band_rows = Some(2);
+    let mut driven = driven(WorkspaceModel::default(), &world.home);
+    driven
+        .attach
+        .model
+        .extensions_offered(world.project.clone(), offers);
+    driven.attach.model.review_extensions();
+    let screen = frame_rows(&mut driven.attach.model).join("\n");
+    assert!(
+        screen.contains("draws 2 rows over each agent's pane"),
+        "{screen}"
+    );
+}

@@ -272,6 +272,7 @@ pub(super) fn render_extension_offer(
             .iter()
             .map(|grant| format!("{grant} · {}", uze_application::grant_meaning(grant))),
     );
+    body.extend(offer.band_rows.map(crate::ui::overlay::band_rows_said));
     let title = format!("Enable {} in {}?", offer.name, open.named);
     render_offer_dialog(
         frame,

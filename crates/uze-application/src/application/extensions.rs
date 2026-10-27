@@ -29,7 +29,7 @@ pub use checkout::{ExtensionCheckout, NotACheckout};
 pub use compiled::{ExtensionLoad, FIXTURE_LIMIT, SourceData, extension_stamp};
 pub use consent::{
     Asker, Consented, ExtensionConsent, ExtensionStanding, ExtensionState, ProgramPin, Switched,
-    confinement, consent_key,
+    confinement, consent_key, enabled_per_project,
 };
 pub use installed::InstalledExtension;
 use reach::CheckoutReach;

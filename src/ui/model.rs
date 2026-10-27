@@ -508,6 +508,8 @@ pub(crate) enum Confirmation {
         /// The programs it runs, asked on a step of their own once these
         /// grants are allowed.
         programs: Option<ProgramsStep>,
+        /// The rows its bands take over each agent's pane, when it has any.
+        band_rows: Option<u8>,
     },
     /// The `exec:` grants of an extension being allowed, after the rest:
     /// each program with where it was pinned, and whether it runs confined.
@@ -749,6 +751,9 @@ pub(crate) struct TuiModel {
     /// rather than a position, so a refresh that reorders the groups or a
     /// removal that shortens them cannot move the reader somewhere else.
     pub(crate) plugin_market: Option<String>,
+    /// The order of the extensions whose rows stand in the workspace
+    /// sidebar's header, as Move up and Move down left it.
+    pub(crate) status_order: Vec<String>,
     /// Whether the keyboard is on that marketplace's heading or among its
     /// plugins.
     pub(crate) plugin_pane: PluginPane,
@@ -1019,6 +1024,7 @@ impl TuiModel {
             selection_moved_at: None,
             filtering: false,
             plugin_market: layout.plugin_market.clone(),
+            status_order: layout.status_order.clone(),
             plugin_pane: PluginPane::default(),
             expanded_plugins: BTreeSet::new(),
             plugin_resources: BTreeMap::new(),
@@ -1078,6 +1084,7 @@ impl TuiModel {
             drawer_width: self.drawer_width,
             profile_columns_width: self.profile_columns_width,
             plugin_market: self.plugin_market.clone(),
+            status_order: self.status_order.clone(),
         }
     }
 
@@ -1328,13 +1335,65 @@ impl TuiModel {
                 uze_application::application::offers::extension_offers(switched_on)
             }
             ExtensionEntry::Declared(summary) => {
-                uze_application::application::offers::declared_extension_offers(
+                let mut offers = uze_application::application::offers::declared_extension_offers(
                     switched_on,
                     self.extension_standing(&summary.identity),
                     self.extension_project.is_some(),
-                )
+                );
+                if !summary.statuses.is_empty() {
+                    let keys = self.status_keys();
+                    let (up, down) = super::status_order::can_move(
+                        &self.status_order,
+                        keys.iter().map(String::as_str),
+                        &extension.id(),
+                    );
+                    offers.extend(uze_application::application::offers::status_order_offers(
+                        up, down,
+                    ));
+                }
+                offers
             }
         }
+    }
+
+    /// The extensions that draw a row in the sidebar's header, in the
+    /// order they were found: by identity, as the workspace hosts them.
+    pub(crate) fn status_keys(&self) -> Vec<String> {
+        let mut drawing: Vec<&DeclaredExtensionSummary> = self
+            .declared_extensions
+            .iter()
+            .filter(|summary| !summary.statuses.is_empty())
+            .collect();
+        drawing.sort_by(|one, other| one.identity.cmp(&other.identity));
+        drawing
+            .into_iter()
+            .map(|summary| super::extension_switch::declared_id(&summary.identity))
+            .collect()
+    }
+
+    /// Moves the selected extension's row in the sidebar's header one
+    /// place, when that is offered. The workspace draws the new order on
+    /// its next frame, and the layout keeps it.
+    pub(crate) fn move_selected_status(&mut self, up: bool) -> crate::ui::worker::Intent {
+        let Some(key) = self
+            .selected_extension()
+            .filter(|extension| {
+                matches!(extension, ExtensionEntry::Declared(summary) if !summary.statuses.is_empty())
+            })
+            .map(|extension| extension.id())
+        else {
+            return crate::ui::worker::Intent::None;
+        };
+        let keys = self.status_keys();
+        if let Some(order) = super::status_order::moved(
+            &self.status_order,
+            keys.iter().map(String::as_str),
+            &key,
+            up,
+        ) {
+            self.status_order = order;
+        }
+        crate::ui::worker::Intent::None
     }
 
     /// Whether `extension` runs code and nothing says which project it is
@@ -1430,6 +1489,7 @@ impl TuiModel {
                             .cloned()
                             .collect(),
                         programs,
+                        band_rows: standing.band_rows,
                     },
                 };
                 self.overlay = Overlay::Confirm {

@@ -93,6 +93,13 @@ pub fn consent_key(identity: &Identity) -> String {
     consent::identity_key(&identity.plugin, &identity.marketplace, &identity.id)
 }
 
+/// Whether `compiled` is enabled project by project, after consent: it
+/// runs or reaches something beyond drawing its fixtures. One that does
+/// not is on wherever its switch is.
+pub fn enabled_per_project(compiled: &uze_contract::CompiledExtension) -> bool {
+    needs_consent(&compiled.manifest)
+}
+
 /// Whether `manifest` runs anything or reaches anything beyond drawing.
 fn needs_consent(manifest: &Manifest) -> bool {
     !manifest.wants.is_empty()

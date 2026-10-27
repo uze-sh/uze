@@ -21,6 +21,8 @@ mod sidebar;
 mod space_overview;
 mod tab_strip;
 
+#[cfg(test)]
+pub(super) use declared::overlay_card;
 use declared::*;
 pub(super) use pane::*;
 pub(super) use popups::*;
@@ -54,10 +56,15 @@ pub(super) fn blank_cell() -> RenderCell {
 pub(super) struct WorkspaceLayout {
     pub(super) sidebar: Rect,
     pub(super) tab_strip: Rect,
+    /// What the pane's terminal is sized to: the agent area, less a
+    /// docked drawer's column and the rows bands take along its edges.
     pub(super) pane: Rect,
     /// The column a plugin's drawer is docked in, its gap included, when
     /// one is open and fits: beside the pane, never over it.
     pub(super) drawer: Option<Rect>,
+    /// The rows each band asked for took, by its slot: along the pane's
+    /// top or bottom, never over it.
+    pub(super) bands: Vec<(SlotId, Rect)>,
 }
 
 /// A drawer docked beside the pane, as the layout is asked for one: the
@@ -66,6 +73,26 @@ pub(super) struct WorkspaceLayout {
 pub(super) struct Dock {
     pub(super) width: Option<u16>,
 }
+
+/// Rows a band asks to have along the pane's top, or its `bottom`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct BandRows {
+    pub(super) slot: SlotId,
+    pub(super) rows: u16,
+    pub(super) bottom: bool,
+}
+
+/// What the layout takes from the agent area before the pane is sized: a
+/// docked drawer's column and the bands' rows.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(super) struct Reserved {
+    pub(super) dock: Option<Dock>,
+    pub(super) bands: Vec<BandRows>,
+}
+
+/// The fewest rows the pane keeps under its bands: a band that would
+/// leave it fewer is not laid out, so a short window keeps its agent.
+pub(super) const PANE_MIN_ROWS: u16 = 6;
 
 /// The one source of truth for workspace geometry — both the renderer and
 /// the input loop's resize/CreateTab sizing call this, so the PTY dimensions
@@ -78,15 +105,19 @@ pub(super) struct Dock {
 /// itself (see [`render_sidebar`]), and this client never shows the help
 /// toolbar — that stays exclusive to the management modal.
 ///
-/// `dock` is the drawer open beside the pane, if any. The pane gives up its
-/// width and the gap before it, so the PTY is sized to what stays visible
-/// and no cell an agent draws is covered; the size changes when a drawer
-/// opens, closes or is dragged, never because of what one answers.
+/// `reserved.dock` is the drawer open beside the pane, if any. The pane
+/// gives up its width and the gap before it, so the PTY is sized to what
+/// stays visible and no cell an agent draws is covered; the size changes
+/// when a drawer opens, closes or is dragged, never because of what one
+/// answers. `reserved.bands` are the rows bands declare, taken off the
+/// pane's top and bottom the same way and for the same reason: what a band
+/// answers never reaches the pane's size, only whether it stands there.
 pub(super) fn compute_layout(
     frame_area: Rect,
     sidebar_width_override: Option<u16>,
-    dock: Option<Dock>,
+    reserved: Reserved,
 ) -> WorkspaceLayout {
+    let dock = reserved.dock;
     let (sidebar, column) = crate::ui::sidebar_and_column(frame_area, sidebar_width_override);
     let content_rows = Layout::default()
         .direction(Direction::Vertical)
@@ -126,12 +157,36 @@ pub(super) fn compute_layout(
         }
         None => (area, None),
     };
+    let (pane, bands) = take_bands(pane, &reserved.bands);
     WorkspaceLayout {
         sidebar,
         tab_strip: content_rows[0],
         pane,
         drawer,
+        bands,
     }
+}
+
+/// `pane` less the rows of each band in turn, top ones from its top down
+/// and bottom ones from its bottom up, while it keeps [`PANE_MIN_ROWS`].
+fn take_bands(mut pane: Rect, asked: &[BandRows]) -> (Rect, Vec<(SlotId, Rect)>) {
+    let mut taken = Vec::new();
+    for band in asked {
+        if pane.height < band.rows.saturating_add(PANE_MIN_ROWS) {
+            continue;
+        }
+        let rect = if band.bottom {
+            Rect::new(pane.x, pane.bottom() - band.rows, pane.width, band.rows)
+        } else {
+            Rect::new(pane.x, pane.y, pane.width, band.rows)
+        };
+        pane.height -= band.rows;
+        if !band.bottom {
+            pane.y += band.rows;
+        }
+        taken.push((band.slot, rect));
+    }
+    (pane, taken)
 }
 
 /// What a frame measured that the next event needs back.
@@ -180,7 +235,7 @@ pub(super) fn render(
     metrics: &mut FrameMetrics,
 ) {
     widget::root(frame, frame.area());
-    let layout = compute_layout(frame.area(), model.sidebar_width, model.dock());
+    let layout = compute_layout(frame.area(), model.sidebar_width, model.reserved());
     render_sidebar(frame, layout.sidebar, model, identities, hits, metrics);
     // The sidebar's own hairline right border doubles as a drag handle —
     // it sits just past `inner` (which `render_sidebar` never draws into),
@@ -234,6 +289,14 @@ pub(super) fn render(
     };
     if let Some(area) = layout.drawer {
         metrics.marquee |= render_declared_drawer(frame, area, model, hits);
+    }
+    for (slot, area) in &layout.bands {
+        metrics.marquee |= render_band(frame, *area, model, *slot, hits);
+    }
+    // A plugin's overlay, over everything the workspace drew and under
+    // the client's own questions and popups.
+    if model.overlay_slot().is_some() {
+        metrics.marquee |= render_overlay(frame, frame.area(), model, hits);
     }
     // Drawn last so it sits on top of the pane — same ordering the
     // management modal's dialogs use in its own `render`. Anchored to

@@ -443,7 +443,7 @@ pub(crate) fn attach_workspace(
     let geometry = compute_layout(
         Rect::new(0, 0, size.width, size.height),
         layout.sidebar.width,
-        None,
+        render::Reserved::default(),
     );
     let (columns, rows) = (geometry.pane.width, geometry.pane.height);
 
@@ -634,7 +634,7 @@ pub(crate) fn attach_workspace(
         let geometry = compute_layout(
             Rect::new(0, 0, size.width, size.height),
             attach.model.sidebar_width,
-            attach.model.dock(),
+            attach.model.reserved(),
         );
         let viewport = Viewport {
             size,
@@ -914,6 +914,11 @@ pub(super) enum WorkspaceHit {
     /// The docked drawer itself, behind what it drew: a click there lends
     /// it the navigation keys and does nothing else.
     DockBody,
+    /// A plugin's overlay itself, behind what it drew: a click there keeps
+    /// it open and does nothing else.
+    OverlayBody,
+    /// The mark that closes a plugin's overlay.
+    CloseOverlay,
     /// The tab strip's overview button, before the three: the space's
     /// overview, lit while it stands in the pane.
     OpenOverview,
@@ -1825,6 +1830,9 @@ struct WorkspaceModel {
     /// The directory of the agent whose context is in front, read again
     /// with the session: what everything about a project is drawn for.
     agent_in_front: Option<PathBuf>,
+    /// That agent's tab: the one pane a band is laid over while it is the
+    /// tab selected.
+    agent_tab_in_front: Option<TabId>,
     /// Whether the sidebar's first-steps section is folded to its header.
     first_steps_collapsed: bool,
     /// Whether the sidebar's spec section is open. Folded until asked,
@@ -1928,6 +1936,16 @@ struct WorkspaceModel {
     inspector_rows: std::cell::Cell<u16>,
     /// What its engine last asked to say at the end of its footer.
     open_notice: Option<uze_extensions::view::Span>,
+    /// The overlay a declared extension opened over the frame, by its
+    /// slot: modal while it stands, and put away by Esc or a click
+    /// outside it.
+    open_overlay: Option<SlotId>,
+    /// What the overlay's engine last asked to say at the end of its
+    /// footer.
+    overlay_notice: Option<uze_extensions::view::Span>,
+    /// The room each status row, band and overlay had on the last frame:
+    /// what its engine is told it has when a click reaches it.
+    slot_spaces: std::cell::RefCell<BTreeMap<SlotId, uze_extensions::view::Size>>,
     /// The tab the open surface stands in for. It is drawn where that
     /// tab's pane is, about that tab's checkout, so a different tab coming
     /// to the front — however it got there — puts it away rather than
@@ -2357,6 +2375,7 @@ impl WorkspaceModel {
             && self.release_notes.is_none()
             && self.manage.is_none()
             && !self.commit_detail_open()
+            && self.open_overlay.is_none()
     }
 
     /// Takes hold of the foot of the sidebar by the section header at

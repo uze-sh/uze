@@ -173,6 +173,9 @@ impl Attach<'_> {
             _ if self.model.shows_space_issues() => {
                 self.space_issues_press(mouse.column, mouse.row);
             }
+            _ if self.model.open_overlay.is_some() && self.model.action_index.is_none() => {
+                return self.overlay_press(mouse.column, mouse.row, viewport);
+            }
             _ if self.model.release_notes.is_some() && self.model.action_index.is_none() => {
                 if !matches!(
                     self.model.hit_at(mouse.column, mouse.row),
@@ -1433,6 +1436,9 @@ impl Attach<'_> {
                 self.model.dock_focused = true;
                 self.model.dirty = true;
             }
+            // Only reachable while the overlay is open, which the guarded
+            // arm in `press` answers first.
+            WorkspaceHit::OverlayBody | WorkspaceHit::CloseOverlay => {}
             WorkspaceHit::OpenOverview => return self.act(Action::OpenSpaceOverview, viewport),
             WorkspaceHit::OverviewSection(index) => {
                 return self.act(Action::SelectSection(index as u8 + 1), viewport);
@@ -1589,11 +1595,14 @@ impl Attach<'_> {
             }
             // A declared section's: its header folds it, and everything
             // else is the engine's. The open view's are answered above.
+            // A status row's and a band's are told the room they were
+            // drawn in.
             WorkspaceHit::Extension(ExtensionHit { slot, hit }) => {
-                let space = uze_extensions::view::Size {
+                let drawn = self.model.slot_spaces.borrow().get(&slot).copied();
+                let space = drawn.unwrap_or(uze_extensions::view::Size {
                     width: layout.sidebar.width,
                     height: 1,
-                };
+                });
                 self.model.hit_surface(slot, hit, space);
             }
             WorkspaceHit::OpenManage => self.open_manage(),
@@ -1629,7 +1638,7 @@ impl Attach<'_> {
     /// width with no drawer beside it.
     pub(super) fn agent_room(&self, viewport: &Viewport) -> u16 {
         let frame = Rect::new(0, 0, viewport.size.width, viewport.size.height);
-        compute_layout(frame, self.model.sidebar_width, None)
+        compute_layout(frame, self.model.sidebar_width, render::Reserved::default())
             .pane
             .width
     }

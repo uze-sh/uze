@@ -42,7 +42,7 @@ fn drag_across_the_first_word(driven: &mut Driven<'_>, modifiers: crossterm::eve
     let pane = compute_layout(
         driven.area,
         driven.attach.model.sidebar_width,
-        driven.attach.model.dock(),
+        driven.attach.model.reserved(),
     )
     .pane;
     for (column, kind) in [
@@ -55,7 +55,7 @@ fn drag_across_the_first_word(driven: &mut Driven<'_>, modifiers: crossterm::eve
         let layout = compute_layout(
             driven.area,
             driven.attach.model.sidebar_width,
-            driven.attach.model.dock(),
+            driven.attach.model.reserved(),
         );
         let viewport = Viewport {
             size: ratatui::layout::Size::new(driven.area.width, driven.area.height),
@@ -357,7 +357,7 @@ fn a_click_still_reaches_a_program_that_owns_the_mouse() {
     let pane = compute_layout(
         driven.area,
         driven.attach.model.sidebar_width,
-        driven.attach.model.dock(),
+        driven.attach.model.reserved(),
     )
     .pane;
 
@@ -411,7 +411,7 @@ fn a_drag_past_the_top_of_a_full_screen_program_scrolls_it_with_the_wheel() {
     let pane = compute_layout(
         driven.area,
         driven.attach.model.sidebar_width,
-        driven.attach.model.dock(),
+        driven.attach.model.reserved(),
     )
     .pane;
 

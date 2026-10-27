@@ -283,6 +283,7 @@ fn standing(condition: uze_application::ExtensionCondition) -> uze_application::
         programs: Vec::new(),
         confined: None,
         preferences: Vec::new(),
+        band_rows: None,
     }
 }
 
@@ -672,5 +673,94 @@ fn clicking_a_preference_row_is_pressing_enter_on_it() {
     assert_eq!(
         clicked,
         set("fahrenheit", "Show °F", serde_json::json!(true))
+    );
+}
+
+/// Two extensions drawing a row in the workspace sidebar's header, the
+/// one found second selected: `gpu-meter` sorts before `gsd-band`.
+fn two_status_rows() -> TuiModel {
+    let mut first = declared(&[]);
+    first.statuses = vec!["Load".to_owned()];
+    let mut second = declared(&[]);
+    second.identity.id = "gpu-meter".to_owned();
+    second.name = "GPU".to_owned();
+    second.statuses = vec!["GPU".to_owned()];
+    let mut model = listing_a_declared_extension(&[]);
+    model.declared_extensions = vec![first, second];
+    model.remembered.extension_screen.selected = model.extensions.len();
+    model
+}
+
+fn offered_button(model: &TuiModel, action: uze_keys::Action) -> Option<Rect> {
+    let (_, hits) = super::support::drawn_at(model, 220, 44);
+    hits.iter()
+        .find(|(_, hit)| *hit == Hit::OfferedAction(action))
+        .map(|(rect, _)| *rect)
+}
+
+/// Move up and Move down order the rows the workspace draws in its
+/// sidebar's header; a click on either is the action, and the order is
+/// what the layout keeps.
+#[test]
+fn moving_a_status_row_orders_the_sidebars_header_and_a_click_is_the_action() {
+    let mut model = two_status_rows();
+    let screen = screen_of(&model);
+    assert!(screen.contains("Load · status row"), "{screen}");
+    assert!(screen.contains("its row in the sidebar"), "{screen}");
+    let selected = model.selected_extension().expect("a selection").id();
+    assert_eq!(selected, "gsd-band · gsd@market");
+    assert!(
+        offered_button(&model, uze_keys::Action::MoveItemDown).is_none(),
+        "already the last"
+    );
+    let up = offered_button(&model, uze_keys::Action::MoveItemUp).expect("Move up is a button");
+    let (_, hits) = super::support::drawn_at(&model, 220, 44);
+    model.hits = hits;
+    let clicked = model.apply_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: up.x,
+            row: up.y,
+            modifiers: KeyModifiers::NONE,
+        },
+        Rect::new(0, 0, 220, 44),
+    );
+    assert_eq!(clicked, Intent::None);
+    let moved = vec![
+        "gsd-band · gsd@market".to_owned(),
+        "gpu-meter · gsd@market".to_owned(),
+    ];
+    assert_eq!(model.status_order, moved);
+    assert_eq!(model.management_layout().status_order, moved, "kept");
+    assert!(
+        offered_button(&model, uze_keys::Action::MoveItemUp).is_none(),
+        "now the first"
+    );
+
+    model.move_selected_status(false);
+    assert_eq!(
+        model.status_order,
+        vec![
+            "gpu-meter · gsd@market".to_owned(),
+            "gsd-band · gsd@market".to_owned(),
+        ],
+        "Move down, as the key would"
+    );
+}
+
+/// Allowing an extension that lays a band over each agent says what that
+/// costs, beside its grants.
+#[test]
+fn consenting_to_a_band_says_the_rows_it_takes_over_each_agent() {
+    let mut standing = standing(uze_application::ExtensionCondition::NeedsConsent);
+    standing.band_rows = Some(3);
+    let mut model = standing_in_a_project(standing);
+    let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(model.apply_key(enter), Intent::None);
+    let screen = screen_of(&model);
+    assert!(screen.contains("Allow this extension to run?"), "{screen}");
+    assert!(
+        screen.contains("draws 3 rows over each agent's pane"),
+        "{screen}"
     );
 }

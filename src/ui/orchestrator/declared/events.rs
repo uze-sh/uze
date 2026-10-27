@@ -146,22 +146,28 @@ impl WorkspaceModel {
     }
 
     /// Each extension's surfaces in view: the view standing in the pane,
-    /// every unfolded section (the sidebar is always drawn) while a
-    /// checkout is in front for it to be about, and the open drawer.
+    /// every unfolded section and every status row (the sidebar is always
+    /// drawn) while a checkout is in front for them to be about, the open
+    /// drawer, the bands over the pane and the overlay over the frame.
     pub(in crate::ui::orchestrator) fn surfaces_in_view(&self) -> BTreeMap<Owner, Vec<String>> {
         let in_front = self.focused_cwd().is_some();
-        let sections = self.remembered.declared.slots.iter().filter(|slot| {
+        let sidebar = self.remembered.declared.slots.iter().filter(|slot| {
             in_front
-                && slot.surface.slot == SurfaceSlot::Section
-                && !slot.collapsed
+                && match slot.surface.slot {
+                    SurfaceSlot::Section => !slot.collapsed,
+                    SurfaceSlot::Status => true,
+                    _ => false,
+                }
                 && self.offers_declared(&slot.owner)
         });
         let mut visible: BTreeMap<Owner, Vec<String>> = BTreeMap::new();
         for slot in self
             .slot_in_pane()
             .into_iter()
-            .chain(sections)
+            .chain(sidebar)
             .chain(self.open_drawer_slot())
+            .chain(self.bands_in_front())
+            .chain(self.overlay_slot())
         {
             visible
                 .entry(slot.owner.clone())

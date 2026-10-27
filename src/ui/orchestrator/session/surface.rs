@@ -370,3 +370,49 @@ impl Attach<'_> {
         self.model.dirty = true;
     }
 }
+
+impl Attach<'_> {
+    /// A plugin's overlay, holding every key: Esc puts it away, its
+    /// declared actions are its own, and every other key is a command its
+    /// engine answers.
+    pub(super) fn overlay_action(&mut self, action: Action) {
+        match action {
+            Action::Dismiss => self.model.close_overlay(),
+            Action::Extension(id) => self.model.press_declared_action(id),
+            _ => {
+                if let Some(command) = crate::ui::extension_view::command_for(action) {
+                    self.model.tell_overlay(command);
+                }
+            }
+        }
+        self.model.dirty = true;
+    }
+
+    /// A press while a plugin's overlay stands: what it drew is its
+    /// engine's, its footer's keys are pressed, its mark closes it, and a
+    /// press anywhere outside it puts it away without reaching what is
+    /// under it.
+    pub(super) fn overlay_press(&mut self, column: u16, row: u16, viewport: &Viewport) -> Flow {
+        match self.model.hit_at(column, row) {
+            Some(WorkspaceHit::Extension(ExtensionHit { slot, hit }))
+                if self.model.open_overlay == Some(slot) =>
+            {
+                let space = self.model.overlay_space();
+                self.model.hit_surface(slot, hit, space);
+            }
+            Some(WorkspaceHit::HintAction(action)) => return self.act(action, viewport),
+            Some(WorkspaceHit::OverlayBody) => {
+                let space = self.model.overlay_space();
+                if let Some(id) = self.model.open_overlay
+                    && let Some((surface, engine)) =
+                        self.model.remembered.declared.slot_engine_mut(id)
+                {
+                    engine.missed(&surface, space);
+                }
+            }
+            _ => self.model.close_overlay(),
+        }
+        self.model.dirty = true;
+        Flow::Continue
+    }
+}

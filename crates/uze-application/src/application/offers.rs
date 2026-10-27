@@ -251,6 +251,23 @@ pub fn declared_extension_offers(
     offers
 }
 
+/// Moving a declared extension's row in the sidebar's header one place,
+/// up and down, as far as the operator's order lets it go each way.
+pub fn status_order_offers(can_move_up: bool, can_move_down: bool) -> Vec<ActionOffer> {
+    vec![
+        if can_move_up {
+            ActionOffer::available(Action::MoveItemUp)
+        } else {
+            ActionOffer::unavailable(Action::MoveItemUp, "its row is already the first")
+        },
+        if can_move_down {
+            ActionOffer::available(Action::MoveItemDown)
+        } else {
+            ActionOffer::unavailable(Action::MoveItemDown, "its row is already the last")
+        },
+    ]
+}
+
 /// What can be done to one line of the Keys screen. A free function for
 /// the same reason as [`extension_offers`]: the line is the keymap's, and
 /// all this needs to know about it is whether the operator changed it.

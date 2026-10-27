@@ -1,6 +1,7 @@
-//! A declared extension's views as entries of the action index: the
-//! pointer's way to them is their button on the tab strip, and the
-//! keyboard's is the index, as for every surface the host ships.
+//! A declared extension's views and overlays as entries of the action
+//! index: the pointer's way to a view is its button on the tab strip, and
+//! the keyboard's is the index, as for every surface the host ships; an
+//! overlay's is the index, or an `open` action naming it.
 //!
 //! Each view is one interned extension action, `open:<surface>`, under its
 //! extension's owner. No manifest id holds a colon, so the name never meets
@@ -20,7 +21,9 @@ impl WorkspaceModel {
             .declared
             .slots
             .iter()
-            .filter(|slot| slot.is_view() && self.offers_declared(&slot.owner))
+            .filter(|slot| {
+                (slot.is_view() || slot.is_overlay()) && self.offers_declared(&slot.owner)
+            })
             .filter_map(|slot| {
                 let identity = slot.owner.declared()?;
                 let name = uze_keys::extension::action_name(
@@ -53,15 +56,20 @@ impl WorkspaceModel {
         };
         let owner = uze_keys::extension::owner(action);
         let door = self.remembered.declared.slots.iter().find(|slot| {
-            slot.is_view()
+            (slot.is_view() || slot.is_overlay())
                 && slot.surface.id == surface
                 && slot
                     .owner
                     .declared()
                     .is_some_and(|identity| crate::keymap::extension_owner(identity) == owner)
         });
-        if let Some(id) = door.map(|slot| slot.id) {
-            open_surface(self, id);
+        match door.map(|slot| (slot.id, slot.is_overlay())) {
+            Some((id, true)) => self.open_overlay(id),
+            Some((id, false)) => {
+                self.close_overlay();
+                open_surface(self, id);
+            }
+            None => {}
         }
         true
     }

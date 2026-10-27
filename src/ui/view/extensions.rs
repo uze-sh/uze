@@ -366,18 +366,66 @@ fn declared_surfaces(summary: &uze_application::DeclaredExtensionSummary) -> (Ve
                 .iter()
                 .map(|title| format!("{title} · drawer")),
         )
+        .chain(
+            summary
+                .statuses
+                .iter()
+                .map(|title| format!("{title} · status row")),
+        )
+        .chain(summary.bands.iter().map(|(title, rows)| match rows {
+            1 => format!("{title} · band, 1 row"),
+            rows => format!("{title} · band, {rows} rows"),
+        }))
+        .chain(
+            summary
+                .overlays
+                .iter()
+                .map(|title| format!("{title} · overlay")),
+        )
         .collect();
     let no_button = summary.views.is_empty() && summary.drawers.is_empty();
     let usage = match (no_button, summary.sections.is_empty()) {
         (false, false) => "Its button in the workspace's tab strip, and its section in the sidebar",
         (false, true) => "Its button in the workspace's tab strip",
         (true, false) => "Its section in the workspace's sidebar",
-        (true, true) => "Nothing to open until it compiles",
+        (true, true) => "",
+    };
+    let mut usage: Vec<String> = Some(usage.to_owned())
+        .filter(|usage| !usage.is_empty())
+        .into_iter()
+        .collect();
+    if !summary.statuses.is_empty() {
+        usage.push("its row in the sidebar's header".to_owned());
+    }
+    if !summary.bands.is_empty() {
+        usage.push("its band over each agent's pane".to_owned());
+    }
+    if !summary.overlays.is_empty() {
+        usage.push("Open, in the action index".to_owned());
+    }
+    let usage = match usage.split_first() {
+        None => "Nothing to open until it compiles".to_owned(),
+        Some((first, rest)) => {
+            let mut said = capitalised(first);
+            for part in rest {
+                said.push_str(" · ");
+                said.push_str(part);
+            }
+            said
+        }
     };
     if surfaces.is_empty() {
-        (vec!["none yet".to_owned()], usage.to_owned())
+        (vec!["none yet".to_owned()], usage)
     } else {
-        (surfaces, usage.to_owned())
+        (surfaces, usage)
+    }
+}
+
+fn capitalised(text: &str) -> String {
+    let mut characters = text.chars();
+    match characters.next() {
+        Some(first) => first.to_uppercase().chain(characters).collect(),
+        None => String::new(),
     }
 }
 

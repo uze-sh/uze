@@ -67,6 +67,7 @@ mod overlay;
 mod release_notes;
 mod root_picker;
 mod selection;
+mod status_order;
 pub(crate) mod theme;
 
 use crate::ui::widget::{TRAILING_PAD, row, text};

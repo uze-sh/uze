@@ -1089,7 +1089,7 @@ fn the_inspector_is_resized_by_its_rule_and_fits_the_frame() {
     let layout = super::compute_layout(
         driven.area,
         driven.attach.model.sidebar_width,
-        driven.attach.model.dock(),
+        driven.attach.model.reserved(),
     );
     assert!(layout.pane.right() - rule.x <= layout.pane.width / 2 + 1);
 }
@@ -1154,7 +1154,7 @@ fn drawer_said(model: &WorkspaceModel) -> String {
 
 fn layout_of(driven: &Driven<'_>) -> super::WorkspaceLayout {
     let model = &driven.attach.model;
-    super::compute_layout(driven.area, model.sidebar_width, model.dock())
+    super::compute_layout(driven.area, model.sidebar_width, model.reserved())
 }
 
 #[test]
@@ -1434,7 +1434,7 @@ fn the_drawer_is_drawn_raised_beside_a_live_pane() {
     let slot = drawer_slot(&model);
     model.toggle_drawer(slot, 200);
     let area = ratatui::layout::Rect::new(0, 0, 120, 40);
-    let layout = super::compute_layout(area, model.sidebar_width, model.dock());
+    let layout = super::compute_layout(area, model.sidebar_width, model.reserved());
     let drawer = layout.drawer.unwrap();
     let mut terminal =
         ratatui::Terminal::new(ratatui::backend::TestBackend::new(area.width, area.height))

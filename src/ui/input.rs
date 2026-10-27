@@ -295,6 +295,12 @@ impl TuiModel {
             Action::DisableExtension => self.switch_selected_extension(false),
             Action::ResolvePrograms => self.resolve_selected_programs(),
             Action::EditPreferences => self.edit_selected_preferences(),
+            Action::MoveItemUp if self.route == Route::Extensions => {
+                self.move_selected_status(true)
+            }
+            Action::MoveItemDown if self.route == Route::Extensions => {
+                self.move_selected_status(false)
+            }
             Action::AddMarketplace => {
                 self.overlay = Overlay::AddMarketplace(String::new());
                 Intent::None

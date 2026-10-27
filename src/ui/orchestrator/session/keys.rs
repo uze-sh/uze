@@ -32,6 +32,12 @@ impl Attach<'_> {
             scopes.push(Scope::Confirm);
             return scopes;
         }
+        // A plugin's overlay is modal: what it declares and the moves every
+        // declared surface answers, and nothing behind it.
+        if self.model.open_overlay.is_some() {
+            scopes.push(Scope::Declared);
+            return scopes;
+        }
         let surface = if self.model.directory_step.is_some() {
             Scope::RootPicker
         } else if self.model.renaming.is_some() {
@@ -339,6 +345,10 @@ impl Attach<'_> {
         }
         if self.model.shows_space_issues() {
             self.space_issues_action(action);
+            return Flow::Continue;
+        }
+        if self.model.open_overlay.is_some() {
+            self.overlay_action(action);
             return Flow::Continue;
         }
         if self.model.directory_step.is_some() {

@@ -234,7 +234,7 @@ pub(super) fn full_frame_at(model: &mut WorkspaceModel, area: Rect) -> Workspace
     }
     model.absorb_manage_frame(metrics.manage);
     model.absorb_overview_frame(metrics.overview);
-    compute_layout(area, model.sidebar_width, model.dock())
+    compute_layout(area, model.sidebar_width, model.reserved())
 }
 
 /// The whole frame as text, row by row — for asserting not just that
@@ -737,7 +737,7 @@ impl Driven<'_> {
         let layout = compute_layout(
             area,
             self.attach.model.sidebar_width,
-            self.attach.model.dock(),
+            self.attach.model.reserved(),
         );
         let viewport = Viewport {
             size: ratatui::layout::Size::new(area.width, area.height),
@@ -755,7 +755,7 @@ impl Driven<'_> {
         let layout = compute_layout(
             area,
             self.attach.model.sidebar_width,
-            self.attach.model.dock(),
+            self.attach.model.reserved(),
         );
         let viewport = Viewport {
             size: ratatui::layout::Size::new(area.width, area.height),

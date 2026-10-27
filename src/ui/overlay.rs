@@ -547,6 +547,7 @@ fn extension_grants_body(
     here: &crate::ui::model::ExtensionHere,
     grants: &[String],
     new_grants: &[String],
+    band_rows: Option<u8>,
 ) -> Vec<String> {
     let project = here.project.file_name().map_or_else(
         || here.project.display().to_string(),
@@ -573,7 +574,17 @@ fn extension_grants_body(
             .iter()
             .map(|grant| format!("{grant} · {}", uze_application::grant_meaning(grant))),
     );
+    body.extend(band_rows.map(band_rows_said));
     body
+}
+
+/// What a band costs every agent of the project, as a consent step says
+/// it beside the grants.
+pub(crate) fn band_rows_said(rows: u8) -> String {
+    match rows {
+        1 => "draws 1 row over each agent's pane".to_owned(),
+        rows => format!("draws {rows} rows over each agent's pane"),
+    }
 }
 
 /// Each program an extension runs, where it was found, and what running
@@ -718,9 +729,10 @@ impl Confirmation {
                 attribution,
                 grants,
                 new_grants,
+                band_rows,
                 ..
             } => Dialog {
-                body: extension_grants_body(here, grants, new_grants),
+                body: extension_grants_body(here, grants, new_grants, *band_rows),
                 ..dialog(
                     Tone::Caution,
                     if new_grants.is_empty() {

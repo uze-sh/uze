@@ -58,7 +58,9 @@ impl WorkspaceModel {
         );
         self.space_projects = space_projects;
         self.latest_projects = latest_projects;
-        self.agent_in_front = context_agent(self, identities)
+        self.agent_tab_in_front = context_agent(self, identities);
+        self.agent_in_front = self
+            .agent_tab_in_front
             .and_then(|agent| self.tab(agent))
             .map(|tab| named_checkout(&tab.pane.cwd));
     }
