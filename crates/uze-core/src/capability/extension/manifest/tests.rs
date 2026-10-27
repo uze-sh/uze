@@ -392,14 +392,18 @@ fn an_exec_names_what_a_wanted_program_reads() {
         ))
         .contains("names a program the manifest does not want")
     );
-    assert!(
-        first_message(&running(
-            r#"run "nvidia-smi""#,
-            r#"wants "exec:nvidia-smi""#,
-            r#"exec "nvidia-smi" { reads "dev/x"; }"#,
-        ))
-        .contains("is not an absolute path")
-    );
+    // Judged as the POSIX paths a confinement reads, whatever the host.
+    for refused in ["dev/x", r"C:\\Windows", "/dev/../etc"] {
+        assert!(
+            first_message(&running(
+                r#"run "nvidia-smi""#,
+                r#"wants "exec:nvidia-smi""#,
+                &format!(r#"exec "nvidia-smi" {{ reads "{refused}"; }}"#),
+            ))
+            .contains("is not an absolute path"),
+            "{refused}"
+        );
+    }
 }
 
 #[test]

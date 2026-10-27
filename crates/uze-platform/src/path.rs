@@ -48,6 +48,17 @@ pub fn is_within(path: &Path, root: &Path) -> bool {
             .is_some_and(|rest| rest.starts_with(std::path::MAIN_SEPARATOR))
 }
 
+/// The part of `path` beneath `root`, when [`is_within`] says it lies
+/// there: `C:/Users/A/proj/src` under `c:\users\a\proj` is `src`. `root`
+/// itself is the empty path. Spelling only; no link is followed.
+pub fn relative_within(path: &Path, root: &Path) -> Option<PathBuf> {
+    if !is_within(path, root) {
+        return None;
+    }
+    let depth = strip_verbatim(root).components().count();
+    Some(strip_verbatim(path).components().skip(depth).collect())
+}
+
 /// Where `path` lands once every link on the way is followed, spelled
 /// canonically, for a path that need not exist yet: a dangling link still
 /// says where a write through it would go, and a missing tail is joined
@@ -169,6 +180,18 @@ mod tests {
         assert!(is_within(Path::new("/work/project/a/b"), root));
         assert!(!is_within(Path::new("/work/project-two"), root));
         assert!(!is_within(Path::new("/work"), root));
+        assert_eq!(
+            relative_within(Path::new("/work/project/a/b"), root),
+            Some(Path::new("a").join("b"))
+        );
+        assert_eq!(
+            relative_within(Path::new("/work/project"), root),
+            Some(PathBuf::new())
+        );
+        assert_eq!(
+            relative_within(Path::new("/work/project-two/a"), root),
+            None
+        );
     }
 
     #[test]
@@ -217,6 +240,17 @@ mod tests {
             Path::new(r"\\?\c:\users\a\proj")
         ));
         assert!(is_within(Path::new(r"C:\anything"), Path::new(r"C:\")));
+        assert_eq!(
+            relative_within(
+                Path::new("C:/Users/A/proj/src/main.rs"),
+                Path::new(r"\\?\c:\users\a\proj")
+            ),
+            Some(PathBuf::from(r"src\main.rs"))
+        );
+        assert_eq!(
+            relative_within(Path::new(r"C:\anything"), Path::new(r"C:\")),
+            Some(PathBuf::from("anything"))
+        );
     }
 
     #[cfg(unix)]

@@ -94,7 +94,8 @@ fn rule(operations: &str, path: &Path) -> io::Result<String> {
             format!("cannot grant {}: not UTF-8", path.display()),
         ));
     };
-    if !path.is_absolute() {
+    // macOS's absolute, judged the same wherever the profile is built.
+    if !text.starts_with('/') {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!("cannot grant {text}: not an absolute path"),
@@ -186,5 +187,7 @@ mod tests {
         let mut relative = confinement(false);
         relative.write = vec!["scratch".into()];
         assert!(profile(&relative).is_err());
+        relative.write = vec![r"C:\scratch".into()];
+        assert!(profile(&relative).is_err(), "macOS's absolute, on any host");
     }
 }

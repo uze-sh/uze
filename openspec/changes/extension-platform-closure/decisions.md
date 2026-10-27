@@ -230,3 +230,32 @@
 - decided:  The umbrella's 17 open tasks are ticked, each pointing at the group of this change that delivered it; `extension-platform` has 0 open tasks. Every step of `make check` passes in one run (56 test suites) with PATH free of the machine's broken `mise` `bun` shim and the two `foreground_status_*` tests of `uze-terminal` skipped by name: both fail identically on `main` (`f5a7972e`) and this work does not touch their code. `openspec validate --all --strict` passes (81).
 - rejected: Fixing the two `uze-terminal` tests here: they belong to the terminal runtime, not to the extension platform.
 - blast:    None.
+
+## D80 — A manifest's `reads` and a Seatbelt profile's paths are POSIX paths, judged the same on every host
+
+- status:   pending
+- task:     PR #309 (Windows tests)
+- commit:
+- trigger:  On Windows, `exec … { reads "/dev/nvidiactl" }` was refused as "not an absolute path", because `Path::is_absolute` asks the host, and `/dev/…` is not absolute there. `uze extension check` failed the gallery's `gpu-meter` (5 problems), the two `uze-extensions` budget tests failed to compile the gallery, and `an_exec_names_what_a_wanted_program_reads` failed. The Seatbelt profile, pure text built and tested on every platform, refused `/usr/lib` the same way.
+- decided:  A `reads` path is absolute when it starts with `/` and has no `..`; a Seatbelt path when it starts with `/`. Both are read only by Landlock and Seatbelt, on Linux and macOS, so a manifest checks the same wherever it is checked and a plugin's author on Windows is told what a Linux user's confinement will be given. `gpu-meter`'s fixture is unchanged: on Windows its program runs unconfined (`confine::availability()` is unavailable, its consent records `enforced: false` and the operator is shown so), and its `reads` mean nothing there, which is not a fault of the manifest. A Windows spelling (`C:\Windows`) is refused on every host.
+- rejected: Skipping the check of `reads` on Windows: the same manifest would pass on one machine and fail on another. Gating the Seatbelt tests to macOS: the module is compiled everywhere so that its string building is tested on every CI runner.
+- blast:    `crates/uze-core/src/capability/extension/manifest.rs::exec`, `crates/uze-platform/src/confine/seatbelt.rs::rule`.
+
+## D81 — D28's storm clock holds where it was measured; elsewhere a one-second backstop, the run count the claim
+
+- status:   pending
+- task:     PR #309 (Windows tests)
+- commit:
+- trigger:  On the x86-64 Windows runner the fastest of three unoptimized storms took 216.9 ms (of 216.9, 345.9, 277.1 ms) against D44's 200 ms; the Arm runner passed. The cost is the per-question digest's reads, which the platform's filesystem charges for.
+- decided:  `MEASURED_ON = ["linux", "macos"]`, matched as data against `uze_platform::target::OS`: there the storm keeps D44's 50 ms optimized and 200 ms unoptimized; anywhere else it is held to 1 s, still catching a storm an order of magnitude slower, while the exact claim (15 runs for 75 questions) holds everywhere. The binding and memory budgets (`uze-extensions/tests/budget.rs`) are unchanged: on Windows they failed compiling `gpu-meter` (D80), before measuring anything, so no Windows number argues for moving them; should one fail on its clock, it takes the same table. `uze-script`'s `each_call_has_its_own_budget` failed on its first call on the x86-64 runner, the whole run ending at 0.11 s: the 100 ms deadline, not the operation bound, which a sixth of the bound per call reaches in an unoptimized build there. It now spends about a thirtieth of the bound per call over 48 calls, still past the bound in total (250 000 iterations in one call already stop at it), so it tests what it names on any machine.
+- rejected: A generous ceiling everywhere: it would stop the Linux gate catching a 4x regression. A clock calibrated against an unshared storm on the same machine: the digest is paid by both, so the ratio says little about sharing.
+- blast:    `crates/uze-application/tests/extension_storm.rs`, `crates/uze-script/tests/resident.rs`.
+
+## D82 — A harness's reported path is placed in the checkout by the platform's rules, and carried with `/`
+
+- status:   pending
+- task:     PR #309 (Windows tests)
+- commit:
+- trigger:  The bridge kept a report's path when `Path::is_absolute` and `strip_prefix` placed it inside the checkout: on Windows a `C:/…` or differently cased spelling of the checkout, or a rooted `\etc`, was misjudged, and the kept path carried `\`.
+- decided:  `uze_platform::path::relative_within` (spelling only, on `is_within`'s rules: case, separators and the verbatim prefix on Windows) gives the part under the checkout of an anchored path (`is_anchored`); a relative one is kept as written; either is kept only when every part is a plain name, and an event carries its parts joined with `/` on every platform. The test builds its checkout from the temporary directory, so it is an absolute path on whatever runs it.
+- blast:    `crates/uze-platform/src/path.rs`, `src/ui/orchestrator/declared/bridge.rs::inside_checkout`.

@@ -323,23 +323,33 @@ fn scrubbed_tool(tool: &str) -> String {
 
 /// `path` relative to `checkout` when it names something inside it, and
 /// nothing otherwise: an event never carries a path outside the agent's
-/// checkout.
+/// checkout. A harness reports the platform's spelling (`C:\…` on
+/// Windows); the event carries `/` between parts on every platform.
 fn inside_checkout(checkout: &Path, path: &str) -> Option<String> {
     let path = Path::new(path);
-    let relative = if path.is_absolute() {
-        path.strip_prefix(checkout).ok()?.to_path_buf()
+    let relative = if uze_platform::path::is_anchored(path) {
+        uze_platform::path::relative_within(path, checkout)?
     } else {
         path.to_path_buf()
     };
-    let inside = relative
+    let parts = relative
         .components()
-        .all(|component| matches!(component, std::path::Component::Normal(_)));
-    (inside && !relative.as_os_str().is_empty()).then(|| relative.to_string_lossy().into_owned())
+        .map(|component| match component {
+            std::path::Component::Normal(part) => Some(part.to_string_lossy()),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    (!parts.is_empty()).then(|| parts.join("/"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A checkout spelled as this platform spells an absolute path.
+    fn checkout() -> PathBuf {
+        std::env::temp_dir().join("work").join("uze")
+    }
 
     fn agent() -> BridgedAgent {
         BridgedAgent {
@@ -347,7 +357,7 @@ mod tests {
             harness: "harness".into(),
             label: "fix".into(),
             space: "uze".into(),
-            checkout: PathBuf::from("/work/uze"),
+            checkout: checkout(),
             pane: PaneId(1),
             skill_prefix: Some("/"),
         }
@@ -366,13 +376,34 @@ mod tests {
 
     #[test]
     fn a_report_keeps_only_a_path_inside_the_checkout_and_a_scrubbed_tool() {
-        let inside = happened_of(&agent(), report("Edit", "/work/uze/src/main.rs")).unwrap();
+        let edited = checkout().join("src").join("main.rs");
+        let inside = happened_of(&agent(), report("Edit", &edited.display().to_string())).unwrap();
         assert_eq!(inside.event, AgentEvent::ToolStarted);
         assert_eq!(inside.detail["path"], "src/main.rs");
         assert_eq!(inside.detail["tool"], "Edit");
         assert_eq!(inside.detail["call"], "c1");
-        let outside = happened_of(&agent(), report("Bash $(rm -rf ~)", "/etc/passwd")).unwrap();
+        let relative = happened_of(&agent(), report("Edit", "src/main.rs")).unwrap();
+        assert_eq!(relative.detail["path"], "src/main.rs");
+        let elsewhere = checkout().with_file_name("uze-two").join("secret");
+        let outside = happened_of(
+            &agent(),
+            report("Bash $(rm -rf ~)", &elsewhere.display().to_string()),
+        )
+        .unwrap();
         assert!(outside.detail.get("path").is_none());
+        let climbing_out = checkout().join("..").join("other");
+        assert!(
+            happened_of(
+                &agent(),
+                report("Read", &climbing_out.display().to_string())
+            )
+            .unwrap()
+            .detail
+            .get("path")
+            .is_none()
+        );
+        let root = happened_of(&agent(), report("Read", "/etc/passwd")).unwrap();
+        assert!(root.detail.get("path").is_none(), "rooted, outside");
         assert_eq!(outside.detail["tool"], "Bashrm-rf");
         let climbing = happened_of(&agent(), report("Read", "../other/secret")).unwrap();
         assert!(climbing.detail.get("path").is_none());

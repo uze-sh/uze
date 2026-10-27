@@ -95,14 +95,17 @@ fn a_runaway_render_is_stopped_at_its_bound_and_the_session_with_it() {
 
 #[test]
 fn each_call_has_its_own_budget() {
-    // About a sixth of the operation bound per call: a session counting
-    // across calls would stop before the last.
+    // About a thirtieth of the operation bound per call, so that each call
+    // ends far inside the deadline on a slow machine's unoptimized build
+    // too: a session counting across the 48 calls would stop before the
+    // last.
     let (resident, _) = started(
-        "fn event(event) { let i = 0; while i < 40000 { i += 1; } true }
+        "fn event(event) { let i = 0; while i < 8000 { i += 1; } true }
          fn render(size) { #{ type: \"text\", args: [\"x\"] } }",
     );
-    for _ in 0..12 {
-        assert!(resident.event(&json!({"name": "timer"})).outcome.is_ok());
+    for call in 0..48 {
+        let outcome = resident.event(&json!({"name": "timer"})).outcome;
+        assert!(outcome.is_ok(), "call {call}: {outcome:?}");
     }
 }
 

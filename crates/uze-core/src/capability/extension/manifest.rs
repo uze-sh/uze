@@ -778,7 +778,10 @@ fn program(node: &KdlNode, report: &mut Report<'_>) -> Option<Program> {
 }
 
 /// `exec "nvidia-smi" { reads "/dev/nvidiactl" "/dev/dxg" }`: the absolute
-/// paths a granted program reads beyond the host's own.
+/// paths a granted program reads beyond the host's own. They are written
+/// for the confinements that read them, Landlock and Seatbelt, so they are
+/// judged as the POSIX paths those see on every host a manifest is checked
+/// on, never by the host's own idea of absolute.
 fn exec(node: &KdlNode, report: &mut Report<'_>) -> Option<ExecDecl> {
     let parts = entries(node, report);
     refuse_extra(node, &parts, 1, &[], true, report);
@@ -794,8 +797,7 @@ fn exec(node: &KdlNode, report: &mut Report<'_>) -> Option<ExecDecl> {
             continue;
         }
         for (path, at) in string_args(child, report) {
-            let absolute = std::path::Path::new(&path).is_absolute()
-                && !path.split('/').any(|part| part == "..");
+            let absolute = path.starts_with('/') && !path.split('/').any(|part| part == "..");
             if absolute {
                 reads.push(path);
             } else {
