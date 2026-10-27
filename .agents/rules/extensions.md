@@ -48,6 +48,10 @@ a harness reads (ADR-041).
   `uze-extensions` names a chord. An overlay's door may be live
   everywhere (`uze_keys::extension::EVERYWHERE`), and then only on a
   function key or a chord with ctrl or alt.
+- The resident tier is the one exception to 'an extension knows nothing
+  of the keyboard': a focused resident surface receives raw keys and
+  pointer, except the host's escape chord and the pause key, which never
+  reach it and cannot be rebound.
 - An extension reaches an agent only through the bridge
   (`src/ui/orchestrator/declared/{bridge,agent}.rs`): it is told what
   agents did through `Extension::agent_events`/`agents` under

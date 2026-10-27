@@ -98,6 +98,27 @@ impl Attach<'_> {
         );
     }
 
+    /// A press inside a resident surface's content is its, relative to
+    /// it, and takes the surface back if Esc had let go of it. Answers
+    /// whether the surface took it.
+    fn resident_press(&mut self, column: u16, row: u16) -> bool {
+        let Some(id) = self.model.resident_slot() else {
+            return false;
+        };
+        let area = self.model.raw_area(id);
+        if !area.contains(Position::new(column, row)) {
+            return false;
+        }
+        let input = uze_extensions::contract::RawInput::Pointer {
+            x: column - area.x,
+            y: row - area.y,
+            button: "left".to_owned(),
+        };
+        self.model.give_raw_input(id, input);
+        self.model.dirty = true;
+        true
+    }
+
     /// A left button going down.
     ///
     /// Guards first, in the same modal-precedence order the keyboard has:
@@ -107,6 +128,9 @@ impl Attach<'_> {
     pub(super) fn press(&mut self, mouse: MouseEvent, viewport: &Viewport) -> Flow {
         let Viewport { ref layout, .. } = *viewport;
         self.drop_selection();
+        if self.resident_press(mouse.column, mouse.row) {
+            return Flow::Continue;
+        }
         // An open extension answers only for the places it is drawn in: the
         // sidebar and the rest of the bar are still the chrome's. Those
         // places are the pane and one column more — the content's groove

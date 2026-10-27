@@ -100,6 +100,9 @@ pub(crate) struct Rendered {
     /// pane's width and below its height belonged to no tile at all, and
     /// everything else belonged to the wrong one.
     pub(crate) content_space: uze_extensions::view::Size,
+    /// Where that room is on the frame: what the pointer is told relative
+    /// to on a surface that reads it raw.
+    pub(crate) content_area: Rect,
     /// Every row of text drawn, with the character in each of its cells:
     /// what a press is resolved against to start a selection, and a drag
     /// to extend one. Empty for a [`Medium::Drawing`], which is pointed
@@ -226,6 +229,7 @@ fn render_surface(
         let hovered = held.sliding.map(|(hit, _)| hit);
         let mut rendered = render_board(frame, view, area, keys, hovered, selection, hits);
         rendered.content_space = board_space(area);
+        rendered.content_area = geometry::board_rows(area).1;
         return rendered;
     }
     // A view with no list — nothing found, or nothing to find — is one
@@ -344,6 +348,7 @@ fn render_surface(
         width: content_area.width,
         height: content_area.height,
     };
+    rendered.content_area = content_area;
     rendered
 }
 

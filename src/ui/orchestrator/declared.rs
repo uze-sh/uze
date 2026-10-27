@@ -34,12 +34,14 @@ mod drawer;
 mod events;
 mod notify;
 mod overlay;
+mod raw;
 mod status;
 pub(super) use agent::*;
 pub(super) use bridge::*;
 pub(super) use drawer::*;
 pub(super) use events::*;
 pub(super) use notify::*;
+pub(super) use raw::raw_key;
 pub(super) use status::*;
 
 /// The host's number for a slot, handed out once and never reused, so a
@@ -1482,6 +1484,7 @@ pub(super) fn open_surface_on(model: &mut WorkspaceModel, id: SlotId, root: Path
         }
     }
     model.open_slot = Some(id);
+    model.resident_released = false;
     model.open_root = Some(root);
     model.navigator_scroll = extension_view::NavigatorScroll::default();
     model.dirty = true;

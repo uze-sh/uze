@@ -34,6 +34,8 @@ mod declared_motion;
 #[cfg(test)]
 mod declared_notify;
 #[cfg(test)]
+mod declared_resident;
+#[cfg(test)]
 mod delivery;
 #[cfg(test)]
 mod drawing;

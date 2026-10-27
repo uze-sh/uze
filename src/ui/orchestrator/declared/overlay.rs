@@ -41,6 +41,7 @@ impl WorkspaceModel {
             engine.open(&surface, &checkout);
         }
         self.open_overlay = Some(id);
+        self.resident_released = false;
         self.overlay_notice = None;
         self.dirty = true;
     }

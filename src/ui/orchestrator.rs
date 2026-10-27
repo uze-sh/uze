@@ -1983,6 +1983,13 @@ struct WorkspaceModel {
     /// What the overlay's engine last asked to say at the end of its
     /// footer.
     overlay_notice: Option<uze_extensions::view::Span>,
+    /// The focused resident surface was let go of with Esc: its keys and
+    /// the pointer are the host's again until it is pressed on or opened
+    /// anew.
+    resident_released: bool,
+    /// Where the overlay's content stood on the last frame: what a press
+    /// on a resident overlay is told relative to.
+    overlay_area: std::cell::Cell<Rect>,
     /// The room each status row, band and overlay had on the last frame:
     /// what its engine is told it has when a click reaches it.
     slot_spaces: std::cell::RefCell<BTreeMap<SlotId, uze_extensions::view::Size>>,

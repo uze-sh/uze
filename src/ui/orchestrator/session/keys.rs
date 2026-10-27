@@ -143,6 +143,9 @@ impl Attach<'_> {
         let Some(chord) = crate::ui::keys::chord_of(key) else {
             return Flow::Continue;
         };
+        if let Some(flow) = self.resident_key(chord) {
+            return flow;
+        }
         if let Some(flow) = self.drawer_key(chord) {
             return flow;
         }
@@ -580,6 +583,19 @@ impl Attach<'_> {
 }
 
 impl Attach<'_> {
+    /// A key a focused resident surface reads raw, before anything else
+    /// hears it: every key but Esc, which lets go of the surface, and F1
+    /// and F8, which stay the host's. `None` hands the key on.
+    fn resident_key(&mut self, chord: Chord) -> Option<Flow> {
+        let id = self.model.raw_input_slot()?;
+        match chord.key {
+            uze_keys::Key::F(1 | 8) => return None,
+            uze_keys::Key::Esc => self.model.release_resident(),
+            _ => self.model.give_raw_input(id, raw_key(chord)),
+        }
+        Some(Flow::Continue)
+    }
+
     /// A key the docked drawer answers before anything else: one of the
     /// navigation keys while a click in it lent it them, or the second
     /// Esc after the first gave them back, which closes it. `None` hands

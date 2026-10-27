@@ -260,6 +260,7 @@ pub(super) fn render_overlay(
             &mut view_hits,
         )
     });
+    model.overlay_area.set(drawn.content_area);
     let tag = slot.id;
     let mut targets: Vec<(Rect, WorkspaceHit)> = vec![(close_rect, WorkspaceHit::CloseOverlay)];
     targets.extend(view_hits.into_iter().map(|(rect, hit)| {
