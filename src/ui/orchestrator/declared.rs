@@ -1075,6 +1075,7 @@ impl WorkspaceModel {
     pub(super) fn follow_chrome(&mut self, id: SlotId, outcome: Outcome) {
         match outcome {
             Outcome::Stay | Outcome::Close | Outcome::Notice(_) | Outcome::OpenCommit { .. } => {}
+            Outcome::Agent(request) => self.ask_of_agent(request),
             Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
             Outcome::Copy(text) => self.copy_answered_by(text, Some(id)),
             Outcome::Toast(text) => {

@@ -104,6 +104,7 @@ impl WorkspaceModel {
         let id = self.open_overlay;
         match outcome {
             Outcome::Stay | Outcome::OpenCommit { .. } => {}
+            Outcome::Agent(request) => self.ask_of_agent(request),
             Outcome::Close => self.close_overlay(),
             Outcome::Notice(span) => self.overlay_notice = Some(span),
             Outcome::OpenPath { project, target } => {
