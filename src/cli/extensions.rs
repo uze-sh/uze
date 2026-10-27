@@ -63,6 +63,9 @@ pub(crate) fn render_extension_standings(
         for program in &report.programs {
             rows.push(below(match &program.path {
                 Some(path) => format!("{} {}", program.name, progress::path(path)),
+                None if program.packaged => {
+                    format!("{} {}", program.name, progress::label(PACKAGED))
+                }
                 None => format!(
                     "{} {} {}",
                     progress::warning_icon(),
@@ -264,6 +267,9 @@ fn ask_about(
     Ok(())
 }
 
+/// Where a program packaged with the extension is, as a row says it.
+const PACKAGED: &str = "packaged with it";
+
 /// What the programs question is about: each program, where it was found,
 /// and what running it means on this machine.
 fn programs_evidence(report: &ExtensionReport, confined: bool) -> String {
@@ -284,6 +290,7 @@ fn programs_evidence(report: &ExtensionReport, confined: bool) -> String {
         .map(|program| {
             let found = match &program.path {
                 Some(path) => progress::path(path),
+                None if program.packaged => progress::label(PACKAGED),
                 None => progress::label(program.unresolved.as_deref().unwrap_or("not found")),
             };
             let mut notes = Vec::new();

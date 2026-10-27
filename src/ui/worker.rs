@@ -1653,7 +1653,7 @@ fn resolve_programs(
     crate::ui::extension_switch::plugins_changed();
     let missing: Vec<&str> = pins
         .iter()
-        .filter(|pin| pin.path.is_none())
+        .filter(|pin| pin.path.is_none() && !pin.packaged)
         .map(|pin| pin.name.as_str())
         .collect();
     Ok(if missing.is_empty() {

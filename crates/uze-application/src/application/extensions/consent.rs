@@ -149,6 +149,38 @@ pub struct ProgramPin {
     pub runs_anything: bool,
     /// What it reads beyond the host's own paths, as its `exec` declares.
     pub reads: Vec<String>,
+    /// Whether it is a file packaged with the extension (`./bin/meter`),
+    /// run from the consented bytes and never pinned: its `name` is all
+    /// there is to say about where it is.
+    pub packaged: bool,
+}
+
+impl ProgramPin {
+    /// A program packaged with the extension, by the file it names.
+    fn packaged(file: &str) -> Self {
+        Self {
+            name: format!("./{file}"),
+            path: None,
+            unresolved: None,
+            runs_anything: false,
+            reads: Vec::new(),
+            packaged: true,
+        }
+    }
+}
+
+/// Whether `manifest` runs any program: one an `exec:` grant names, or one
+/// packaged with it, which no grant names.
+pub(super) fn runs_programs(manifest: &Manifest) -> bool {
+    manifest.programs().next().is_some() || !manifest.packaged_programs().is_empty()
+}
+
+/// Each program packaged with `manifest`, as the consent step lists it.
+fn packaged_pins(manifest: &Manifest) -> impl Iterator<Item = ProgramPin> + '_ {
+    manifest
+        .packaged_programs()
+        .into_iter()
+        .map(ProgramPin::packaged)
 }
 
 /// `plugin@marketplace`, as the stores and preferences are kept under.
@@ -228,13 +260,16 @@ pub(super) fn resolve_programs(manifest: &Manifest, home: &uze_core::UzeHome) ->
                 path: resolved.ok(),
                 runs_anything: is_general_runner(name),
                 reads: manifest.reads_of(name).to_vec(),
+                packaged: false,
             }
         })
+        .chain(packaged_pins(manifest))
         .collect()
 }
 
 fn pinned_paths(pins: &[ProgramPin]) -> BTreeMap<String, PathBuf> {
     pins.iter()
+        .filter(|pin| !pin.packaged)
         .filter_map(|pin| Some((pin.name.clone(), pin.path.clone()?)))
         .collect()
 }
@@ -258,7 +293,17 @@ fn wants_of(manifest: &Manifest) -> Wants {
                 )
             })
             .collect(),
+        packaged: manifest
+            .packaged_programs()
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
     }
+}
+
+/// Each packaged program nobody accepted, as a held update says it.
+fn widened_packaged(new_packaged: &BTreeSet<String>) -> impl Iterator<Item = String> + '_ {
+    new_packaged.iter().map(|file| format!("run ./{file}"))
 }
 
 /// Each program's new reads, as a held update says them.
@@ -352,7 +397,7 @@ impl Extensions<'_> {
             )));
         }
         let grants = wanted(manifest);
-        let pinned = (manifest.programs().next().is_some()).then(|| Pinned {
+        let pinned = runs_programs(manifest).then(|| Pinned {
             paths: pinned_paths(&resolve_programs(manifest, &self.0.home)),
             enforced: confinement().is_available(),
         });
@@ -444,8 +489,10 @@ impl Extensions<'_> {
                     path,
                     runs_anything: is_general_runner(name),
                     reads: manifest.reads_of(name).to_vec(),
+                    packaged: false,
                 }
             })
+            .chain(packaged_pins(manifest))
             .collect())
     }
 
@@ -548,7 +595,7 @@ impl Extensions<'_> {
         let recorded = consent::consent(&self.0.home, &key);
         // Accepted as confined on a machine that no longer confines: what
         // the operator agreed to is not what would run (S18).
-        let confinement_lost = manifest.programs().next().is_some()
+        let confinement_lost = runs_programs(manifest)
             && recorded
                 .as_ref()
                 .is_some_and(|consent| consent.enforced_at_accept == Some(true))
@@ -562,13 +609,17 @@ impl Extensions<'_> {
             Judgement::Held {
                 new_grants,
                 new_reads,
+                new_packaged,
             } => {
                 return Ok(ExtensionState::Held {
                     new_grants: new_grants
                         .iter()
                         .filter_map(|name| Grant::parse(name))
                         .collect(),
-                    widened: widened_reads(&new_reads),
+                    widened: widened_reads(&new_reads)
+                        .into_iter()
+                        .chain(widened_packaged(&new_packaged))
+                        .collect(),
                 });
             }
             Judgement::Current => recorded.is_some_and(|consent| consent.enabled_in(project)),

@@ -369,6 +369,7 @@ fn programs_are_asked_on_their_own_step_after_the_grants() {
         unresolved: None,
         runs_anything: false,
         reads: vec!["/dev/dxg".to_owned()],
+        packaged: false,
     }];
     standing.confined = Some(true);
     let mut model = standing_in_a_project(standing.clone());
@@ -545,6 +546,7 @@ fn the_drawer_lists_pinned_programs_and_resolves_them_again_on_a_click() {
         unresolved: Some("`nvidia-smi` not found".to_owned()),
         runs_anything: false,
         reads: vec!["/dev/dxg".to_owned()],
+        packaged: false,
     }];
     standing.confined = Some(true);
     let mut model = standing_in_a_project(standing);

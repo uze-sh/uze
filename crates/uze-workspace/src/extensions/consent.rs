@@ -55,6 +55,11 @@ pub struct Consent {
     /// the next update that declares any asks once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accepted_reads: Option<BTreeMap<String, BTreeSet<String>>>,
+    /// The programs packaged with it that were accepted, by the file each
+    /// names. Absent in a record written before they were kept, which
+    /// accepted none, so the next update that runs any asks once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accepted_packaged: Option<BTreeSet<String>>,
 }
 
 impl Consent {
@@ -84,6 +89,9 @@ pub struct Wants {
     pub grants: BTreeSet<String>,
     /// Only programs that declare a read are named.
     pub reads: BTreeMap<String, BTreeSet<String>>,
+    /// The programs packaged with it that it runs, by file: what no grant
+    /// names, so the set is what an update is judged by.
+    pub packaged: BTreeSet<String>,
 }
 
 impl Wants {
@@ -117,6 +125,8 @@ pub enum Judgement {
         new_grants: BTreeSet<String>,
         /// The paths each program would read beyond what was accepted.
         new_reads: BTreeMap<String, BTreeSet<String>>,
+        /// The packaged programs it would run that nobody accepted.
+        new_packaged: BTreeSet<String>,
     },
 }
 
@@ -135,15 +145,29 @@ pub fn judge(consent: Option<&Consent>, wants: &Wants, digest: &str) -> Judgemen
         .collect();
     // The same files read what they read when they were accepted, so only
     // new files are compared: a record that kept no reads asks once.
-    let new_reads = if consent.accepted_digest == digest {
-        BTreeMap::new()
+    let (new_reads, new_packaged) = if consent.accepted_digest == digest {
+        (BTreeMap::new(), BTreeSet::new())
     } else {
-        reads_beyond(consent.accepted_reads.as_ref(), &wants.reads)
+        (
+            reads_beyond(consent.accepted_reads.as_ref(), &wants.reads),
+            wants
+                .packaged
+                .iter()
+                .filter(|file| {
+                    !consent
+                        .accepted_packaged
+                        .as_ref()
+                        .is_some_and(|accepted| accepted.contains(*file))
+                })
+                .cloned()
+                .collect(),
+        )
     };
-    if !new_grants.is_empty() || !new_reads.is_empty() {
+    if !new_grants.is_empty() || !new_reads.is_empty() || !new_packaged.is_empty() {
         Judgement::Held {
             new_grants,
             new_reads,
+            new_packaged,
         }
     } else if consent.accepted_digest == digest {
         Judgement::Current
@@ -204,6 +228,7 @@ pub fn accept(
         let consent = extensions.entry(key.to_owned()).or_default();
         consent.accepted_grants = wants.grants.clone();
         consent.accepted_reads = Some(wants.reads.clone());
+        consent.accepted_packaged = Some(wants.packaged.clone());
         consent.accepted_digest = digest.to_owned();
         consent.accepted_at = now;
         consent.updated_at = None;
@@ -252,6 +277,7 @@ pub fn apply_update(
         }
         consent.accepted_grants = wants.grants.clone();
         consent.accepted_reads = Some(wants.reads.clone());
+        consent.accepted_packaged = Some(wants.packaged.clone());
         consent.accepted_digest = digest.to_owned();
         consent.accepted_at = now;
         consent.updated_at = Some(now);
@@ -603,6 +629,7 @@ mod tests {
             Judgement::Held {
                 new_grants: names(&["open-path"]),
                 new_reads: BTreeMap::new(),
+                new_packaged: BTreeSet::new(),
             },
             "a widening is held, naming only what is new"
         );
@@ -649,6 +676,7 @@ mod tests {
         Wants {
             grants: names(&[&format!("exec:{program}")]),
             reads: BTreeMap::from([(program.to_owned(), names(paths))]),
+            ..Wants::default()
         }
     }
 
@@ -673,6 +701,7 @@ mod tests {
             Judgement::Held {
                 new_grants: BTreeSet::new(),
                 new_reads: BTreeMap::from([("sh".to_owned(), names(&["/home/op/.ssh"]))]),
+                new_packaged: BTreeSet::new(),
             },
             "a widened read holds the update, naming only what is new"
         );
@@ -728,6 +757,49 @@ mod tests {
             judge(Some(&before), &grants(&["exec:sh"]), "sha256:b"),
             Judgement::Updated,
             "an update that reads nothing asks nothing"
+        );
+    }
+
+    fn packaging(files: &[&str]) -> Wants {
+        Wants {
+            packaged: names(files),
+            ..Wants::default()
+        }
+    }
+
+    #[test]
+    fn an_update_that_adds_a_packaged_program_is_held() {
+        let (home, _) = home("consent-packaged");
+        let accepted =
+            accept(&home, BAND, &packaging(&["bin/meter"]), "sha256:a", 1, None).unwrap();
+        assert_eq!(
+            judge(
+                Some(&accepted),
+                &packaging(&["bin/meter", "bin/upload"]),
+                "sha256:b"
+            ),
+            Judgement::Held {
+                new_grants: BTreeSet::new(),
+                new_reads: BTreeMap::new(),
+                new_packaged: names(&["bin/upload"]),
+            },
+            "a program no grant names is still new reach"
+        );
+        assert_eq!(
+            judge(Some(&accepted), &packaging(&["bin/meter"]), "sha256:b"),
+            Judgement::Updated,
+            "new bytes of the same program apply, as a script's do"
+        );
+        let before = Consent {
+            accepted_digest: "sha256:a".to_owned(),
+            ..Consent::default()
+        };
+        assert!(
+            matches!(
+                judge(Some(&before), &packaging(&["bin/meter"]), "sha256:b"),
+                Judgement::Held { .. }
+            ),
+            "a record that kept none asks once"
         );
     }
 

@@ -452,6 +452,7 @@ fn standing_lines(standing: &ExtensionReport, project: Option<&Path>) -> Vec<Lin
         for program in &standing.programs {
             let (found, token) = match &program.path {
                 Some(path) => (path.display().to_string(), Token::TextMuted),
+                None if program.packaged => ("packaged with it".to_owned(), Token::TextMuted),
                 None => (
                     program
                         .unresolved

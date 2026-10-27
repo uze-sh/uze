@@ -227,7 +227,7 @@ impl WorkspaceModel {
         inspection.events = engine.events_seen().take(LISTED).map(event_line).collect();
         let manifest = &engine.compiled().manifest;
         let mut grants: Vec<String> = manifest.wants.iter().map(ToString::to_string).collect();
-        if manifest.programs().next().is_some() {
+        if manifest.programs().next().is_some() || !manifest.packaged_programs().is_empty() {
             grants.push(
                 if runner.confines() {
                     "its programs run confined"

@@ -251,6 +251,7 @@ fn an_offer_asks_about_programs_on_their_own_step() {
         unresolved: None,
         runs_anything: false,
         reads: vec!["/dev/dxg".to_owned()],
+        packaged: false,
     }];
     offers[0].confined = Some(true);
     let mut driven = driven(WorkspaceModel::default(), &world.home).on_a_roomy_terminal();

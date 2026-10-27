@@ -642,6 +642,7 @@ pub(crate) fn programs_lines(
         let name = &program.name;
         body.push(match &program.path {
             Some(path) => format!("{name} · {}", path.display()),
+            None if program.packaged => format!("{name} · packaged with it"),
             None => format!(
                 "{name} · {}",
                 program.unresolved.as_deref().unwrap_or("not found")

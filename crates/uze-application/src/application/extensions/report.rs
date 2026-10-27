@@ -88,8 +88,9 @@ pub struct ExtensionReport {
     /// What its last compile said was wrong, one problem a line.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub errors: Vec<String>,
-    /// Each program its `exec:` grants name: pinned where it was
-    /// consented to, as it would be pinned where it was not.
+    /// Each program its `exec:` grants name, pinned where it was consented
+    /// to and as it would be pinned where it was not, then each program
+    /// packaged with it.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub programs: Vec<ProgramPin>,
     /// Whether those programs run confined, when it has any.
@@ -413,7 +414,7 @@ impl Extensions<'_> {
                     })
                     .collect();
                 let recorded = consent::consent(&self.0.home, &key);
-                if manifest.programs().next().is_some() {
+                if super::consent::runs_programs(manifest) {
                     let consented = recorded
                         .as_ref()
                         .is_some_and(|consent| consent.exec_paths.is_some())

@@ -276,6 +276,72 @@ fn an_update_that_widens_what_a_program_reads_is_held() {
     );
 }
 
+/// Adds a source to the band that runs `file`, a native program packaged
+/// with it, which no grant names.
+fn packaged_program(band: &Path, source: &str, file: &str) {
+    fs::create_dir_all(band.join("bin")).unwrap();
+    fs::write(band.join(file), b"\x7fELF\x02\x01").unwrap();
+    let manifest = band.join("extension.kdl");
+    let text = fs::read_to_string(&manifest).unwrap();
+    fs::write(
+        manifest,
+        format!("{text}source \"{source}\" {{\n    run \"./{file}\"\n}}\n"),
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_packaged_program_is_listed_for_consent_and_an_update_adding_one_is_held() {
+    let env = TestEnvironment::isolated();
+    let (app, band_dir) = installed_from_a_linked_marketplace(&env);
+    let band = the(&app, "gsd-band").identity;
+    let here = project(&env, "a");
+    packaged_program(&band_dir, "meter", "bin/meter");
+
+    let report = app
+        .extensions()
+        .reports(Some(&here))
+        .into_iter()
+        .find(|report| report.id == "gsd-band")
+        .unwrap();
+    let listed: Vec<(&str, bool)> = report
+        .programs
+        .iter()
+        .map(|program| (program.name.as_str(), program.packaged))
+        .collect();
+    assert_eq!(
+        listed,
+        [("./bin/meter", true)],
+        "the consent question lists it"
+    );
+    assert!(report.confined.is_some(), "and says how it would run");
+
+    app.extensions().consent(&band, Asker::Operator).unwrap();
+    app.extensions()
+        .enable(&band, &here, Asker::Operator)
+        .unwrap();
+    assert!(
+        uze_workspace::extensions::consent::consent(
+            &UzeHome::at(&env.uze_home),
+            &consent_key(&band)
+        )
+        .unwrap()
+        .enforced_at_accept
+        .is_some(),
+        "whether it was accepted confined is recorded, so an unconfined one is asked again"
+    );
+
+    packaged_program(&band_dir, "upload", "bin/upload");
+    assert_eq!(
+        state(&app, &band, &here),
+        ExtensionState::Held {
+            new_grants: Default::default(),
+            widened: vec!["run ./bin/upload".to_owned()],
+        },
+        "a program nobody accepted holds the update, though it wants no grant"
+    );
+}
+
 #[test]
 fn removing_the_plugin_forgets_its_extensions() {
     let env = TestEnvironment::isolated();

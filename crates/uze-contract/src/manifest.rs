@@ -5,7 +5,7 @@
 //! manifest says what would run; whether anything does is the consent
 //! record's, so nothing here runs or reaches anything by being declared.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -87,6 +87,25 @@ impl Manifest {
     /// The programs a bare name may run, as `wants` grants them.
     pub fn programs(&self) -> impl Iterator<Item = &str> {
         self.wants.iter().filter_map(Grant::program)
+    }
+
+    /// The programs packaged with the extension that its sources and
+    /// actions run (`run "./bin/meter"`), by the file each names, without
+    /// its leading `./`. No grant names them: consent does.
+    pub fn packaged_programs(&self) -> BTreeSet<&str> {
+        let sources = self.sources.iter().filter_map(|source| match &source.kind {
+            SourceKind::Run(program) => Some(program),
+            _ => None,
+        });
+        let actions = self.actions.iter().filter_map(|action| match &action.does {
+            Does::Run(program) => Some(program),
+            _ => None,
+        });
+        sources
+            .chain(actions)
+            .filter(|program| program.is_packaged())
+            .map(|program| program.program().trim_start_matches("./"))
+            .collect()
     }
 
     /// The hosts `fetch` may reach, as `wants` grants them.
