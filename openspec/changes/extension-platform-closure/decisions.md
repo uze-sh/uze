@@ -394,3 +394,13 @@
 - decided:  `pass` leaves a due source due while its question is out (`question_out`: asked, and that number not yet answered), and asks it on the first pass after the answer lands, as `deliver each` already waited on `awaiting`.
 - rejected: Taking any answer newer than the shown one: two questions about different inputs would race to the frame.
 - blast:    `declared.rs` (`pass`, `question_out`); `declared/event_tests.rs`.
+
+## D141 — An action on rows answered for another checkout is refused until the new answer lands
+
+- status:   pending
+- task:     review finding
+- commit:
+- trigger:  After the checkout in front changed, a section kept drawing the old checkout's rows until its new answer; an action pressed meanwhile resolved its item from the old rows and ran on the new checkout.
+- decided:  The engine remembers the checkout each source's data was answered about (`answered_for`), and an action pressed on an item, on a surface whose data was answered about another checkout than the one the action would run on, is refused with "the rows are still the previous checkout's". The old rows stay drawn: the operator sees the frame they had, and the action works again once the new answer lands. Data no checkout answered (a fixture, events, agents) is never refused.
+- rejected: Dropping the data when the checkout changes: every switch would flash "Waiting for data" on every section, and a view open on its own checkout would have to be told apart.
+- blast:    `declared.rs` (`answered_for`, `absorb`, `set_data`); `declared/action.rs` (`resolve`, `rows_of_another_checkout`); `declared/action_tests.rs`.

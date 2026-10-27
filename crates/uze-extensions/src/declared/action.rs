@@ -124,6 +124,12 @@ impl DeclaredExtension {
         if item.is_null() && reads_the_item(declared) {
             return Err(refused(&label, "select a row first"));
         }
+        if !item.is_null() && self.rows_of_another_checkout(surface) {
+            return Err(refused(
+                &label,
+                "the rows are still the previous checkout's",
+            ));
+        }
         Ok(match &declared.does {
             Does::Script(_) | Does::Run(_) => Run::Script {
                 action: declared.id.clone(),
@@ -608,6 +614,17 @@ impl DeclaredExtension {
             self.asked.remove(source);
             self.stale.insert(source.clone());
         }
+    }
+
+    /// Whether what `surface` draws was answered about another checkout
+    /// than the one an action on it runs on: the checkout in front changed
+    /// and its own answer has not landed, so an item drawn is the old one's.
+    fn rows_of_another_checkout(&self, surface: &str) -> bool {
+        let Some(decl) = self.compiled.manifest.surface(surface) else {
+            return false;
+        };
+        let about = self.answered_for.get(&decl.source);
+        about.is_some_and(|about| self.checkout_of(surface).as_ref() != Some(about))
     }
 
     /// The checkout `surface` is about: the one an open view was opened

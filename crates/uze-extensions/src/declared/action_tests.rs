@@ -444,3 +444,56 @@ fn a_sources_input_resolves_its_references_and_a_change_asks_again() {
     assert_eq!(asked.len(), 1, "a new input is a new question");
     assert_eq!(asked[0].input["tab"], "done");
 }
+
+#[test]
+fn an_action_on_rows_answered_for_the_previous_checkout_is_refused() {
+    let view = compiled_view(
+        vec![
+            n(NodeName::List)
+                .literal("id", json!("rows"))
+                .each("rows")
+                .child(n(NodeName::Text).arg("{name}"))
+                .item(),
+        ],
+        Vec::new(),
+        Vec::new(),
+    );
+    let mut compiled = extension(view);
+    let mut go = action("go", Does::Clipboard("{item.name}".to_owned()));
+    go.on = SECTION.to_owned();
+    compiled.manifest.actions = vec![go];
+    let mut engine = DeclaredExtension::new(compiled, "en");
+    engine.focus(Some(&checkout("/work/a")));
+    ask_all(
+        &mut engine,
+        answered(json!({ "rows": [{ "name": "auth" }] })),
+    );
+    let section = engine.section(SECTION, false).expect("a section");
+    let list = first(&section.tree.expect("a tree"), |kind| {
+        matches!(kind, NodeKind::List { .. })
+    });
+    engine.hit(SECTION, act(list.id, NodeAct::Row(0)), SPACE);
+    assert_eq!(
+        engine.press(SECTION, "go"),
+        Outcome::Copy("auth".to_owned())
+    );
+
+    engine.focus(Some(&checkout("/work/b")));
+    assert_eq!(
+        engine.press(SECTION, "go"),
+        Outcome::Failed {
+            title: "Go did not run".to_owned(),
+            detail: "the rows are still the previous checkout's".to_owned(),
+        },
+        "the row drawn is /work/a's, the action would run on /work/b"
+    );
+    ask_all(
+        &mut engine,
+        answered(json!({ "rows": [{ "name": "billing" }] })),
+    );
+    engine.section(SECTION, false);
+    assert_eq!(
+        engine.press(SECTION, "go"),
+        Outcome::Copy("billing".to_owned())
+    );
+}

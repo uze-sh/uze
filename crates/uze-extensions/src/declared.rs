@@ -111,6 +111,9 @@ pub struct DeclaredExtension {
     /// A digest of each source's data, taken once when it arrives rather
     /// than on every frame that asks whether it changed.
     digests: BTreeMap<String, u64>,
+    /// The checkout each source's data was answered about, by source id;
+    /// none for data no checkout answered (a fixture, events, agents).
+    answered_for: BTreeMap<String, PathBuf>,
     /// The checkout in front, which a section and a drawer are about.
     in_front: Option<PathBuf>,
     /// The checkout each open view is about, by surface.
@@ -257,6 +260,7 @@ impl DeclaredExtension {
             data: BTreeMap::new(),
             withheld: BTreeMap::new(),
             digests: BTreeMap::new(),
+            answered_for: BTreeMap::new(),
             in_front: None,
             opened: BTreeMap::new(),
             asked: BTreeMap::new(),
@@ -337,6 +341,7 @@ impl DeclaredExtension {
     pub fn set_data(&mut self, source: impl Into<String>, data: SourceData) {
         let source = source.into();
         self.withheld.remove(&source);
+        self.answered_for.remove(&source);
         let digest = digest(&data);
         if self.digests.insert(source.clone(), digest) != Some(digest)
             && let Some(now) = self.now
@@ -1439,11 +1444,13 @@ impl Extension for DeclaredExtension {
             return Outcome::Stay;
         }
         let by_answer = asked.by_answer;
+        let about = asked.checkout.clone();
         let source = answered.source;
         self.answered.insert(source.clone(), answered.number);
         match answered.answer {
             Answer::Answered { envelope, .. } => {
                 self.set_data(source.clone(), Ok(envelope.data.clone()));
+                self.answered_for.insert(source.clone(), about);
                 // What its program wrote may be a new picture.
                 self.media.stale_scratch();
                 let surfaces = self.surfaces_showing(&source);
@@ -1460,7 +1467,8 @@ impl Extension for DeclaredExtension {
                 self.apply(&asks, &surfaces, Some(&source))
             }
             Answer::Failed { reason, .. } => {
-                self.set_data(source, Err(reason));
+                self.set_data(source.clone(), Err(reason));
+                self.answered_for.insert(source, about);
                 Outcome::Stay
             }
             Answer::Withheld { reason } => {
