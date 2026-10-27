@@ -1,6 +1,6 @@
 //! The engine a declared extension's script runs in.
 //!
-//! An extension's logic is a Rhai script (`add-extension-platform` D19,
+//! An extension's logic is a Rhai script (`extension-platform` D19,
 //! D27): `fn answer(input, context)` returns an [`Envelope`]. This crate is
 //! the only one that names `rhai`, and it reaches nothing of the machine:
 //! the engine is built raw, bounded in operations, depth, sizes and wall

@@ -3,7 +3,7 @@
 
 use rhai::{EvalAltResult, ParseError, ParseErrorType, Position};
 
-/// A bound the engine holds a script to (`add-extension-platform` D19, D28).
+/// A bound the engine holds a script to (`extension-platform` D19, D28).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Limit {
     /// More operations than one answer may take.

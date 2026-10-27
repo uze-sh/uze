@@ -95,7 +95,7 @@ else. A delivery that cannot write a wrapper has nothing honest to attach,
 and an entry running a second implementation is a hook the author did not
 write.
 
-Amended (agent-bridge): what UZE needs only inside its own workspace, the
+Amended (extension-agent-bridge): what UZE needs only inside its own workspace, the
 reporter that tells the client about turns, tools and approvals, is not a
 portable hook. A delivered hook runs in every session of the harness, UZE
 or not; the reporter rides each launch through

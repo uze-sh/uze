@@ -1,4 +1,4 @@
-//! The envelope a script answers with (`add-extension-platform` D4, change
+//! The envelope a script answers with (`extension-platform` D4, change
 //! 4's members): `data`, and optionally `refresh`, `toast` and `notice`.
 //! Anything else fails the answer: a member a later change brings must not
 //! be silently dropped by a build that does not know it yet.

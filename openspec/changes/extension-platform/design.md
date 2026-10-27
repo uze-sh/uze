@@ -154,7 +154,7 @@ fixed path, which is what `discover` does.
 ### D2. The generic contract: `Extension` plus opaque jobs
 
 Rewritten 2026-10-26 to describe what `extension-view-engine` and
-`generic-extension-host` built (A1–A3 resolved). The host speaks to every
+`extension-generic-host` built (A1–A3 resolved). The host speaks to every
 extension, built-in or declared, through `contract::Extension` alone
 (`crates/uze-extensions/src/contract.rs`), by the slot a surface stands in
 (`src/ui/orchestrator/declared.rs`).
@@ -1490,8 +1490,8 @@ them is historical, and the triage table is the current state.
 ### Triage (2026-10-26)
 
 Changes: 1 `extension-view-engine`, 2 `extension-tests-and-lsp`, 3
-`generic-extension-host`, 4 `extension-manifest-and-scripts`, 5
-`extension-programs-and-confinement`, 6 `agent-bridge`, 7
+`extension-generic-host`, 4 `extension-manifest-and-scripts`, 5
+`extension-programs-and-confinement`, 6 `extension-agent-bridge`, 7
 `extension-media-and-resident`, 8 growth; "out" is a capability D11 or D17
 removed; "done" is already built.
 
@@ -1609,7 +1609,7 @@ migrating the built-ins later moves them onto it rather than rewriting it.
 2. **extension-tests-and-lsp**: tests in `uze agent plugin check` with
    recorded answers and cell snapshots, and `uze agent plugin lsp` (D26). Visual extensions can be written
    and tested end to end.
-3. **generic-extension-host**: group 1, with `code`, `architect` and `spec`
+3. **extension-generic-host**: group 1, with `code`, `architect` and `spec`
    moved onto the path split 1 laid, the per-extension fields, channels and
    hit variants removed, and the invariant and AGENTS.md edits for
    `ExtensionHit`, with no new behaviour.
@@ -1663,7 +1663,7 @@ migrating the built-ins later moves them onto it rather than rewriting it.
    scripts, and `--run` for programs in the check. Proof: `gpu-meter`.
    Windows's restricted token is its own later change
    (`extension-confinement-windows`).
-6. **agent-bridge**: `uze agent report` and its journal (ADR-056 and
+6. **extension-agent-bridge**: `uze agent report` and its journal (ADR-056 and
    ADR-040 amended), the `agent.*` events with `deliver: each` and the
    `events` source, the `agents` source, the `status`, `band`, `overlay`
    and `notify` slots, `uze_platform::notify`, preferences, compose (the

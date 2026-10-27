@@ -1,6 +1,6 @@
 ## Context
 
-This change carries out D16 of `add-extension-platform/design.md` (the agent
+This change carries out D16 of `extension-platform/design.md` (the agent
 bridge), with the rates decided in its *Product decisions owed* (0.2.4) and
 the amendments of 0.9 and R-A1. It is the second half of change 6, after
 `extension-slots-and-feeds` (whose D1 records the split).

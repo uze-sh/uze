@@ -1,7 +1,7 @@
 //! An extension's directory read once into memory, and the digest of
 //! exactly those bytes.
 //!
-//! Consent is given over a digest (`add-extension-platform` D5), so what
+//! Consent is given over a digest (`extension-platform` D5), so what
 //! compiles and runs has to be what was digested: a second read of disk
 //! could find a file swapped in between. The directory is read whole,
 //! bounded, and everything after works from what this holds.

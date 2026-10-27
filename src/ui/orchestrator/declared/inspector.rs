@@ -1,5 +1,5 @@
 //! What the inspector beside a declared view says of its extension beyond
-//! how the view was drawn (`add-extension-platform` D25, D28): its runs,
+//! how the view was drawn (`extension-platform` D25, D28): its runs,
 //! the events it saw, its grants and what it costs, for every extension;
 //! and, for the author of a linked one, the tools that provoke what has
 //! not happened yet: a source asked again with edited input or fed by its

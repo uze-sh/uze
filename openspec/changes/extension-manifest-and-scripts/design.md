@@ -1,6 +1,6 @@
 ## Context
 
-The platform's design lives in `add-extension-platform/design.md`; this
+The platform's design lives in `extension-platform/design.md`; this
 change carries out its change 4 (*Proposed split*) and cites its
 decisions by number rather than restating them: D2 (the contract as
 built), D3 (`Host::answer`), D4 (the session cache), D5 (consent), D7

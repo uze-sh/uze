@@ -1,6 +1,6 @@
 //! D28's storm: one `agent.turn.finished` reaching 15 extensions on 5
 //! agents of one checkout, answered under 50 ms because the answers are
-//! shared (`add-extension-platform` D28).
+//! shared (`extension-platform` D28).
 //!
 //! Its own test target, for the reason `performance.rs` gives: a clock
 //! inside a lib-test binary measures its siblings too. The storm is what

@@ -1,4 +1,4 @@
-//! What an extension asks to do to an agent (`agent-bridge`, B5): taken by
+//! What an extension asks to do to an agent (`extension-agent-bridge`, B5): taken by
 //! the host, which shows a prompt before typing it, writes only through
 //! `submit_notice` into a ready agent whose harness holds its pane, and
 //! limits how often. Nothing is queued: a write that may not happen now is

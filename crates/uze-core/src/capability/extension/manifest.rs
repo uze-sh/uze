@@ -39,7 +39,7 @@ const NODES: &[&str] = &[
     "preferences",
     "sprite",
 ];
-/// What later changes of `add-extension-platform` add to a manifest, with
+/// What later changes of `extension-platform` add to a manifest, with
 /// the change that brings each.
 const LATER: &[(&str, u32)] = &[];
 const SURFACE_PROPS: &[&str] = &[

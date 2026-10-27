@@ -14,7 +14,7 @@ publish = false
 uze-contract = { path = "../uze-contract" }
 # The clock a script reads when the host does not answer one of its own.
 uze-platform = { path = "../uze-platform" }
-# The scripting engine (`add-extension-platform` D19, D27). rhaiscript,
+# The scripting engine (`extension-platform` D19, D27). rhaiscript,
 # MIT OR Apache-2.0, pure Rust. No default features: `ahash/runtime-rng` is
 # dropped (hash keys protect nothing here), and `sync` is required because a
 # job runs on the extension pool. `unchecked`, `internals` and `debugging`

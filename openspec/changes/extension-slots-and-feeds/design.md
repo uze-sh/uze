@@ -1,6 +1,6 @@
 ## Context
 
-The platform's design is in `add-extension-platform/design.md`. This change
+The platform's design is in `extension-platform/design.md`. This change
 carries out the half of its change 6 that needs no agent, citing these
 decisions there:
 
@@ -41,7 +41,7 @@ What exists after change 5:
 - `uze agent report`, `agent.*` events, the `agents` source,
   `agent.prompt` and `agent.restart`, `focus_agent`, global keys, and the
   `jump`, `flightdeck`, `agents-hud` and `chimes` entries that need them.
-  These are `agent-bridge`, the second half of change 6.
+  These are `extension-agent-bridge`, the second half of change 6.
 - `secret` preferences (change 8).
 - Media and the resident tier (change 7).
 
@@ -50,7 +50,7 @@ What exists after change 5:
 ### S1. Change 6 is two changes
 
 `extension-slots-and-feeds` brings the host's new places and channels.
-`agent-bridge` brings everything that crosses into or out of an agent's
+`extension-agent-bridge` brings everything that crosses into or out of an agent's
 pane. The first runs no code an agent can see and changes no integration.
 The second amends three ADRs and every integration. Reviewed apart, each
 is one question.

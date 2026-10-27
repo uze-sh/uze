@@ -1,5 +1,5 @@
 //! The one place a declared extension's source is answered
-//! (`add-extension-platform` D3, D4).
+//! (`extension-platform` D3, D4).
 //!
 //! An extension's engine asks a question (its identity, a source id, the
 //! input and the checkout) and never says what runs. The runner reads the

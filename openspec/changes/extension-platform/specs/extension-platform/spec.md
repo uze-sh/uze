@@ -14,7 +14,7 @@ no change to the workspace client's code. The built-in `code` and `architect`
 extensions SHALL be hosted through that contract with no change an operator
 can observe.
 
-> **Review findings** (design.md, *Triage*): A1, A2, A3, resolved by `generic-extension-host`.
+> **Review findings** (design.md, *Triage*): A1, A2, A3, resolved by `extension-generic-host`.
 
 #### Scenario: The built-ins behave as before
 - **WHEN** the operator opens the code surface and the architect surface after the change

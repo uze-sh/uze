@@ -1,6 +1,6 @@
 ## Context
 
-The platform's design is in `add-extension-platform/design.md`. This change
+The platform's design is in `extension-platform/design.md`. This change
 carries out change 5 of its *Proposed split* and cites decisions there by
 number rather than restating them:
 

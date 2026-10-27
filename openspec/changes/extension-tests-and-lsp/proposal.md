@@ -3,7 +3,7 @@
 An extension author can now draw a view from a fixture and watch it redraw
 on save, but cannot prove it still draws right after the next edit, and
 writes KDL with no completion, hover or inline errors. This is change 2 of
-`add-extension-platform`'s split (D26). It closes the loop for visual
+`extension-platform`'s split (D26). It closes the loop for visual
 extensions and runs no code a plugin ships, like change 1.
 
 ## What Changes

@@ -102,7 +102,7 @@ pub fn extension_table(compiled: &CompiledExtension) -> ExtensionTable {
 
 /// The door of each overlay an `open` action with a key names, offered on
 /// every surface and over the pane: the key opens the overlay from
-/// anywhere (`agent-bridge`'s `jump`). Its words are the ones the index
+/// anywhere (`extension-agent-bridge`'s `jump`). Its words are the ones the index
 /// gives the door.
 fn overlay_doors<'a>(
     compiled: &'a CompiledExtension,

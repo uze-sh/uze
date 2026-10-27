@@ -1,6 +1,6 @@
 //! The checkout an extension may read: a Git worktree root, canonical,
 //! and never a directory whose reading would reach far more than one
-//! project (`add-extension-platform` D6).
+//! project (`extension-platform` D6).
 //!
 //! A dotfiles repository in `~` is a Git worktree, and so is a repository
 //! someone made at `/`; `read:checkout` over either would be a grant over

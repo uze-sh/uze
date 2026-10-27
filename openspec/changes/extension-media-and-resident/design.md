@@ -1,6 +1,6 @@
 ## Context
 
-The platform's design is `add-extension-platform/design.md`: D13 (tiers),
+The platform's design is `extension-platform/design.md`: D13 (tiers),
 D15 (catalog), D19 (the resident tier), D20 (gallery), D28 (budget), and
 the second review's R-A8 (several images per frame) and R-S12 (a
 per-extension memory budget).

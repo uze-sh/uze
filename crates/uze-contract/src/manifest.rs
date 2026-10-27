@@ -511,7 +511,7 @@ pub enum EventName {
     Agent(AgentEvent),
 }
 
-/// What an agent may be seen doing (`agent-bridge`).
+/// What an agent may be seen doing (`extension-agent-bridge`).
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum AgentEvent {

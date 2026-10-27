@@ -1755,7 +1755,7 @@ pub(super) struct EngineAnswer {
 }
 
 /// The one pool every extension whose jobs run one at a time shares, for
-/// the whole client (`add-extension-platform` D28).
+/// the whole client (`extension-platform` D28).
 static EXTENSION_POOL: std::sync::LazyLock<super::lanes::LanePool<super::declared::Owner>> =
     std::sync::LazyLock::new(|| super::lanes::LanePool::new(super::lanes::POOL_THREADS));
 

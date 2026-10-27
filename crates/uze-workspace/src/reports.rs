@@ -1,4 +1,4 @@
-//! What an agent UZE launched reports about itself (`agent-bridge`): a
+//! What an agent UZE launched reports about itself (`extension-agent-bridge`): a
 //! bounded journal per agent, appended by `uze agent report` from inside
 //! the agent's pane and read by the workspace client from where it last
 //! stopped.

@@ -1,8 +1,8 @@
 ## Why
 
-Reconciling `add-extension-platform`'s task list with its nine split
+Reconciling `extension-platform`'s task list with its nine split
 changes left 17 tasks that no change delivered and no decision dropped
-(`add-extension-platform/tasks.md`, each marked "open: …"). They are the
+(`extension-platform/tasks.md`, each marked "open: …"). They are the
 platform's own promises: hygiene the sanitizer and catalog owe, the
 schema and reference an author reads, the UI state and actions a view
 needs to take input, the inspector's authoring tools, the performance

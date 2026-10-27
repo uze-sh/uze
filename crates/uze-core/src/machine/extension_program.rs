@@ -1,5 +1,5 @@
 //! The one place a declared extension's program is run
-//! (`add-extension-platform` D4, D6; `extension-programs-and-confinement`).
+//! (`extension-platform` D4, D6; `extension-programs-and-confinement`).
 //!
 //! The caller hands over a program already resolved: the pinned or
 //! packaged path, its arguments with every `{field}` substituted, the

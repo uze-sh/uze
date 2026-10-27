@@ -18,10 +18,10 @@ depending on `uze-contract` and `uze-platform` only, whose engine is built
 raw and reaches only the host functions the extension's grants register
 (`read:checkout` registers `read_checkout` and `list_checkout`, beneath the
 checkout and following no link). A program (argv) is not run yet: when it
-arrives (change 5 of `add-extension-platform`) it is run by the OS-confined
+arrives (change 5 of `extension-platform`) it is run by the OS-confined
 runner where the platform confines it, and consent says where it does not.
 Dynamic libraries and native resident interpreters stay ruled out. The
-"second concrete use case" is the gallery of `add-extension-platform` D20.
+"second concrete use case" is the gallery of `extension-platform` D20.
 Extension state (today the grants record, `state/extensions.json`, named in
 `UzeHome`; later the store and the preferences) lives under `UzeHome` and is
 written by `uze-application` on the extension's behalf: an extension still

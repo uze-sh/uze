@@ -1,5 +1,5 @@
 //! What the declared extensions cost the workspace that last measured
-//! them, kept where `uze doctor` reads it (`add-extension-platform` D28).
+//! them, kept where `uze doctor` reads it (`extension-platform` D28).
 //!
 //! Runs per minute and p95 exist only in a running workspace's runner,
 //! and memory only in its engines; the workspace writes what it measured

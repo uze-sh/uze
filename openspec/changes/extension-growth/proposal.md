@@ -1,7 +1,7 @@
 ## Why
 
 The plan's last change grows the platform only where a gallery entry needs
-it (`add-extension-platform`, *Proposed split*, 8). None of the ten
+it (`extension-platform`, *Proposed split*, 8). None of the ten
 reference extensions needs the network, a secret or a write to the
 checkout, so this change adds one entry that does and the least it takes:
 

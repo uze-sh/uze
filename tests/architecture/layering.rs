@@ -1647,7 +1647,7 @@ fn dependency_names(manifest: &str) -> Vec<String> {
 }
 
 /// A script engine runs third-party code inside UZE's process, so exactly
-/// one crate holds it (`add-extension-platform` D19): `uze-script`, which
+/// one crate holds it (`extension-platform` D19): `uze-script`, which
 /// builds the engine raw and bounded. A second crate naming `rhai` could
 /// build one without those bounds, or hand a script a function no grant
 /// registers. And `uze-script` reaches only the leaves it was given, so the
@@ -1708,7 +1708,7 @@ fn only_uze_script_names_the_script_engine() {
 }
 
 /// A declared extension's question reaches the runner from one place: the
-/// declared engine (`add-extension-platform` D3). `Host::answer` is the
+/// declared engine (`extension-platform` D3). `Host::answer` is the
 /// grant to answer *a declaration of this extension*, and a built-in, which
 /// has no manifest, has no declaration to name; the client passes a
 /// question through and never makes one up.
@@ -1769,7 +1769,7 @@ fn only_the_declared_engine_asks_a_source() {
 }
 
 /// What a declared extension says reaches the terminal only through
-/// `Clean` (`add-extension-platform` D7, S14): the declared engine makes a
+/// `Clean` (`extension-platform` D7, S14): the declared engine makes a
 /// `view::Span` with `Span::clean`, which takes nothing but a `Clean`, and
 /// never with `Span::new`, a struct literal, or by writing a span's text
 /// afterwards. A built-in extension's text is the host's own and keeps

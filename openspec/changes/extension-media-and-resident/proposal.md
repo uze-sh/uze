@@ -10,7 +10,7 @@ built, because the catalog only draws text and the shapes it composes:
 - `snake` is a game: it keeps state between frames, reads raw keys and
   draws a grid every tick.
 
-This change is change 7 of `add-extension-platform`'s split (*Proposed
+This change is change 7 of `extension-platform`'s split (*Proposed
 split*): the media and the resident tier (D13, D19, R-A8, R-S12).
 
 ## What Changes

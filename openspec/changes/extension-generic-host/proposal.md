@@ -4,7 +4,7 @@ The workspace hosts its three built-in extensions (`code`, `architect`,
 `spec`) through about 590 hand-wired sites: model fields, channels, typed
 `spawn_*`/`absorb_*` pairs, per-extension hit variants, places and
 renders. Declared extensions already go through one generic path. This is
-change 3 of `add-extension-platform`'s split: move the built-ins onto that
+change 3 of `extension-platform`'s split: move the built-ins onto that
 path, so a new extension, built-in or declared, costs no orchestrator code,
 and the contract the declared engine implements is proven by the hardest
 extensions UZE has.

@@ -11,7 +11,7 @@
 //! Plain data and pure functions only. No I/O, no UZE crate, no rendering
 //! library and no KDL parser: what arrives here has already been parsed, and
 //! the client that links this crate must never be able to parse a document
-//! a third party wrote (see `add-extension-platform`, D22).
+//! a third party wrote (see `extension-platform`, D22).
 //!
 //! - [`manifest`]: what an `extension.kdl` declares.
 //! - [`compiled`]: a view after it was checked, ready to bind.

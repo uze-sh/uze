@@ -1,6 +1,6 @@
 ## Context
 
-Change 2 of `add-extension-platform`'s split; its decision there is D26.
+Change 2 of `extension-platform`'s split; its decision there is D26.
 What change 1 (`archive/2026-10-24-extension-view-engine`) left to build on:
 
 - `uze-core` `capability/extension/` holds the only KDL decoder, the

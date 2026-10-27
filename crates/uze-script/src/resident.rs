@@ -1,5 +1,5 @@
 //! A resident script: one that keeps its state for as long as a surface
-//! showing it is open (`add-extension-platform` D19,
+//! showing it is open (`extension-platform` D19,
 //! `extension-media-and-resident` M4).
 //!
 //! A session lives on a thread of its own, holding the engine, the

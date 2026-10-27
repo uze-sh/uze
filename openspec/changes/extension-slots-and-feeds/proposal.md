@@ -13,7 +13,7 @@ out most of what the gallery recreates:
 Each needs a place to stand, a way to say something outside its surface,
 or an answer shaped by its own logic rather than by a view file.
 
-This change is the first half of change 6 of `add-extension-platform`'s
+This change is the first half of change 6 of `extension-platform`'s
 split (*Proposed split*). It brings everything of change 6 that needs no
 word from an agent:
 
@@ -23,7 +23,7 @@ word from an agent:
 - preferences;
 - events delivered to a source, one at a time or the latest.
 
-The agent bridge is the second half, `agent-bridge`: `uze agent report`,
+The agent bridge is the second half, `extension-agent-bridge`: `uze agent report`,
 the `agent.*` events, the `agents` source and the agent actions. Splitting
 here keeps one reviewable change about the host's chrome and one about
 what crosses into an agent's pane (decisions.md, D1).

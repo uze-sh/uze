@@ -1,5 +1,5 @@
 //! What a declared extension asks the host, and what the host answers
-//! (`add-extension-platform` D3, D4).
+//! (`extension-platform` D3, D4).
 //!
 //! A question names a declaration of one extension and the input it is
 //! asked with, never a program or a script's text: the host finds what
@@ -43,7 +43,7 @@ pub enum Asking {
     /// An action whose `does` is a script, run on a gesture and never
     /// remembered.
     Action,
-    /// One call into a resident source's session (`add-extension-platform`
+    /// One call into a resident source's session (`extension-platform`
     /// D19): never remembered, and answered by the session the source's
     /// `Start` opened.
     Resident(ResidentCall),

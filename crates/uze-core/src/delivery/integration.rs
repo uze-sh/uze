@@ -477,7 +477,7 @@ pub trait IntegrationPort: Send + Sync {
     /// What this one launch carries so its harness tells the workspace
     /// what the agent is doing, by running `uze agent report` from the
     /// harness's own events: never a hook delivered to every session of
-    /// the harness, only this launch's (ADR-040, amended by agent-bridge).
+    /// the harness, only this launch's (ADR-040, amended by extension-agent-bridge).
     /// `None` where the harness has no such event to run it from; the
     /// workspace then reads turns from what the pane paints.
     fn reporter(&self, _ctx: &ReporterContext) -> Option<ContextContribution> {

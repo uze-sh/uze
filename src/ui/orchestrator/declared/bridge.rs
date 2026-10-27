@@ -1,5 +1,5 @@
 //! What the workspace's agents did, told to the extensions that hold
-//! `agent:observe` (`agent-bridge`).
+//! `agent:observe` (`extension-agent-bridge`).
 //!
 //! Each agent's journal is read from where the last read stopped, on the
 //! checkout watch's one-second clock and only while an enabled extension

@@ -4,7 +4,7 @@ A declared extension can answer from a Rhai script, which the engine
 confines on every platform. It cannot yet read a GPU, ask `gh` about a pull
 request or list what `openspec` knows, because each of those needs a
 program, and a program runs with everything its user can reach. This is
-change 5 of `add-extension-platform`'s split (*Proposed split*, D4, D6,
+change 5 of `extension-platform`'s split (*Proposed split*, D4, D6,
 D18, D27). It lets an extension run a program the operator consented to, by
 an argv rebuilt from the manifest they accepted, at a path pinned when they
 enabled it. On Linux and macOS the operating system confines that program

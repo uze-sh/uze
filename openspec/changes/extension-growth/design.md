@@ -1,6 +1,6 @@
 ## Context
 
-`add-extension-platform/design.md`: D18 (preferences, secrets), D19
+`extension-platform/design.md`: D18 (preferences, secrets), D19
 (`fetch` over `curl`, no TLS crate), *Product decisions owed* (`edit:checkout`
 by gesture, only if needed), R-S8 (secrets never reach an agent).
 

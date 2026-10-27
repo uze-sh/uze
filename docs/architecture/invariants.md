@@ -446,7 +446,7 @@ the installed one did not have asks again.
 
 Trust (may these bytes be installed) is still never persisted. Consent to
 run an extension's code is a different question, answered per grant set and
-recorded in `state/extensions.json` (ADR-041, `add-extension-platform` D5):
+recorded in `state/extensions.json` (ADR-041, `extension-platform` D5):
 that record is what lets a widened update be held.
 
 > `crates/uze-workspace/src/extensions/consent.rs::tests::consent_is_recorded_by_identity_with_its_grants_and_digest`

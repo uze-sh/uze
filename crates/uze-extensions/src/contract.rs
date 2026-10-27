@@ -1,7 +1,7 @@
 //! The one contract the host speaks to every extension through.
 //!
 //! The declared engine implemented it first (`extension-view-engine`), and
-//! the built-ins move onto it one at a time (`generic-extension-host`). It
+//! the built-ins move onto it one at a time (`extension-generic-host`). It
 //! carries what the orchestrator did on their behalf when each was wired
 //! by hand (A1): which jobs may run together, what a job answers when its
 //! thread dies, what happens to an answer whose surface has closed, state
@@ -80,7 +80,7 @@ pub enum Outcome {
         detail: String,
     },
     /// Do this to an agent, through the host: shown first, refused rather
-    /// than queued, limited (`agent-bridge`).
+    /// than queued, limited (`extension-agent-bridge`).
     Agent(AgentRequest),
 }
 

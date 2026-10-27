@@ -1,5 +1,5 @@
 //! D28's budget for binding and memory, held over the gallery
-//! (`add-extension-platform` D28): binding a compiled view to its data
+//! (`extension-platform` D28): binding a compiled view to its data
 //! under 1 ms per surface, and under 1 MiB held per loaded extension.
 //!
 //! Its own test target, so its clock measures the binder and not the

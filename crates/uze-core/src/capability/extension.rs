@@ -3,7 +3,7 @@
 //!
 //! The only place UZE reads an extension's documents. A manifest or a view
 //! is a third party's KDL, and the parser recurses without a limit, so it is
-//! read here alone, behind the bounds of `add-extension-platform` D22, and
+//! read here alone, behind the bounds of `extension-platform` D22, and
 //! never by the workspace client, which draws what this compiled.
 //!
 //! - [`bounded`]: the size cap, the nesting scan and the timed parse.

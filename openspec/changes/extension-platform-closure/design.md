@@ -1,6 +1,6 @@
 ## Context
 
-The open tasks of `add-extension-platform` after its split changes, each
+The open tasks of `extension-platform` after its split changes, each
 named by its umbrella number. The decisions they follow are the
 umbrella's (D7 sanitizer, D15 catalog, D21 schema, D22–D24 binding and UI
 state, D25–D26 authoring, D28 budget).

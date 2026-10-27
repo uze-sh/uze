@@ -1,4 +1,4 @@
-//! The engine, built raw (`add-extension-platform` D19): only the packages
+//! The engine, built raw (`extension-platform` D19): only the packages
 //! chosen here, no module can be loaded, no `eval`, no undeclared variable,
 //! and every bound set before a script runs.
 //!

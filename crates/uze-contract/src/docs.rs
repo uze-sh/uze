@@ -1,6 +1,6 @@
 //! What an author reads beside the `uze:extension` Skill, generated from
 //! this crate so it cannot say something the contract does not
-//! (`add-extension-platform` D21, `extension-platform-closure` 2.1–2.2).
+//! (`extension-platform` D21, `extension-platform-closure` 2.1–2.2).
 //!
 //! - [`schema`]: the JSON Schema of a manifest as decoded and of a composed
 //!   answer, with a worked example per slot and per source kind.

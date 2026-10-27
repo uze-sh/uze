@@ -1,6 +1,6 @@
 //! Where each declared extension stands with the operator in a project:
 //! whether it needs consent, enabling, or nothing at all, and the three
-//! answers that move it (`add-extension-platform` D5).
+//! answers that move it (`extension-platform` D5).
 //!
 //! What a state is judged against is what one load of the extension read:
 //! its grants from that compile, its digest from those bytes. An update

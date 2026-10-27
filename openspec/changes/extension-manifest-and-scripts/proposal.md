@@ -1,7 +1,7 @@
 ## Why
 
 Declared extensions draw from fixtures and record their actions: nothing a
-plugin ships runs. This is change 4 of `add-extension-platform`'s split,
+plugin ships runs. This is change 4 of `extension-platform`'s split,
 the least that runs a third-party plugin end to end: a source answered by a
 Rhai script, an action that does something, events that refresh a surface,
 and the consent that has to come before any of it. Scripts run confined by

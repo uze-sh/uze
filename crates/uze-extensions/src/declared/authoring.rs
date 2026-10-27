@@ -1,5 +1,5 @@
 //! What the inspector asks of an engine for the author of a linked
-//! extension, and what it reads of any (`add-extension-platform` D25,
+//! extension, and what it reads of any (`extension-platform` D25,
 //! D28): a source asked again with edited input, a source fed by its
 //! fixture instead of what answers it, a synthetic event, fake agents,
 //! the events it saw, and what it holds.

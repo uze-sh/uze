@@ -13,7 +13,7 @@ fresh start. The gallery needs exactly that:
 - `jump` focuses an agent from a picker;
 - `gsd-band` and `plan-review` give the agent its next prompt.
 
-This is the second half of change 6 of `add-extension-platform`'s split
+This is the second half of change 6 of `extension-platform`'s split
 (D16), after `extension-slots-and-feeds`. A pane may now *report about
 itself* through a verified, bounded journal. The workspace turns those
 reports into `agent.*` events and an `agents` source. An extension may then

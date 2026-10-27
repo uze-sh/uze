@@ -958,7 +958,7 @@
         "ApprovalAsked",
         "ApprovalResolved"
       ],
-      "description": "What an agent may be seen doing (`agent-bridge`)."
+      "description": "What an agent may be seen doing (`extension-agent-bridge`)."
     },
     "Output": {
       "oneOf": [

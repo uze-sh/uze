@@ -1,6 +1,6 @@
 ## Why
 
-Protocol 1 ships 18 of the roughly 40 nodes `add-extension-platform`
+Protocol 1 ships 18 of the roughly 40 nodes `extension-platform`
 maps (D15). Ten ports of community tools, drawn while writing the catalog
 page, each wanted a node that is not there: a chart or a gauge for usage
 and system meters, key/value details, Markdown for a plan, code for a

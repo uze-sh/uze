@@ -1,5 +1,5 @@
 //! What the runner did for each extension this session, kept for the
-//! inspector and `uze doctor` (`add-extension-platform` D25, D28).
+//! inspector and `uze doctor` (`extension-platform` D25, D28).
 //!
 //! Every question the runner answers is noted with what it was asked, how
 //! long it took and how it ended; a run is one that executed a script or a

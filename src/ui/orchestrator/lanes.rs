@@ -1,4 +1,4 @@
-//! The pool extension jobs run on (`add-extension-platform` D28): a fixed
+//! The pool extension jobs run on (`extension-platform` D28): a fixed
 //! number of threads for the whole client, and one lane per extension, so
 //! an extension's jobs run one at a time and in the order asked, and a
 //! burst of questions never takes more of the machine than the pool has.

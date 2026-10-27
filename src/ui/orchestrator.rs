@@ -1931,7 +1931,7 @@ struct WorkspaceModel {
     /// `extension_offer`). Seals the client like the approval does.
     extension_offer: Option<ExtensionOfferDialog>,
     /// A prompt an extension would type into an agent, shown first
-    /// (`agent-bridge`). Seals the client like the offer does.
+    /// (`extension-agent-bridge`). Seals the client like the offer does.
     agent_write: Option<AgentWriteDialog>,
     /// The agent's tab an extension asked to put in front.
     agent_focus: Option<TabId>,

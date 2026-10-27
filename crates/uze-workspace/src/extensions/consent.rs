@@ -1,6 +1,6 @@
 //! The operator's consent to the extensions plugins declare: which grants
 //! they accepted for which code, and the projects each extension is
-//! enabled in (`add-extension-platform` D5).
+//! enabled in (`extension-platform` D5).
 //!
 //! One record for the machine, `state/extensions.json`, keyed by the
 //! extension's identity `plugin@marketplace/id`: consent is given once per

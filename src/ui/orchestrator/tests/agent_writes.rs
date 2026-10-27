@@ -1,4 +1,4 @@
-//! An extension typing into an agent (`agent-bridge`, B5): shown first,
+//! An extension typing into an agent (`extension-agent-bridge`, B5): shown first,
 //! typed only once allowed, limited, and held by the pause key.
 
 use super::support::*;

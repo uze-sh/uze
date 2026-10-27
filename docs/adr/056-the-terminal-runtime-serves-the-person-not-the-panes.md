@@ -49,7 +49,7 @@ person.** It uses both layers, each covering the other's escape:
   (`SpaceOpened`), which is what a `uze` typed into a pane needs. It is
   shown no snapshot, given no input, and cannot stop the runtime, even when
   it offers the key.
-  Amended (agent-bridge): a pane may also *report about itself*. `uze agent
+  Amended (extension-agent-bridge): a pane may also *report about itself*. `uze agent
   report <event>`, verified by the agent's launch key, appends to a bounded
   per-agent journal under `UzeHome` that the workspace client polls; the
   runtime still serves the pane no snapshot, no input and no stop, and a
