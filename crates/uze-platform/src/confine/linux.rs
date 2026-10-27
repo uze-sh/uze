@@ -102,10 +102,12 @@ fn restrict_paths(confinement: &Confinement, abi: ABI) -> io::Result<()> {
     let read = AccessFs::ReadFile | AccessFs::ReadDir;
     let read_execute = read | AccessFs::Execute;
     let write = read | (writing() & handled);
+    let device = read | ((AccessFs::WriteFile | AccessFs::IoctlDev) & handled);
     let grants = [
         (&confinement.read, read),
         (&confinement.read_execute, read_execute),
         (&confinement.write, write),
+        (&confinement.devices, device),
     ];
     let mut created = ruleset.create().map_err(landlock_error)?;
     for (paths, rights) in grants {

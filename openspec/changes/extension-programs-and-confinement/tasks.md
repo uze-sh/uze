@@ -24,14 +24,14 @@
 
 - [x] 4.1 Consent fills `exec_paths` and `enforced_at_accept` from `availability()`; a name not found pinned as missing; `resolve_again(identity)`; an unenforced record re-asked on every digest change (parent 5.5b)
 - [x] 4.2 The consent step for programs: asked after the rest, with each pinned path, each device read, the runners' "can run anything", and the fixed "runs as you" text; on the TUI dialog and `uze install`'s terminal question
-- [ ] 4.3 A run refused when the record says enforced and the platform no longer enforces, or the helper returned 125; the standing shows "needs consent again"
+- [x] 4.3 A run refused when the record says enforced and the platform no longer enforces, or the helper returned 125; the standing shows "needs consent again"
 
 ## 5. The runner answers programs
 
-- [ ] 5.1 `ExtensionRunner`: `SourceKind::Run` and `Does::Run` answered through the program runner, with the `Confinement` built from the checkout, its Git common dir, the extension's Store directory, the scratch under `UzeHome` (P6), the pinned directories and declared reads
-- [ ] 5.2 The scratch directory named in `UzeHome`'s runtime tier, removed after each run
-- [ ] 5.3 Tests over the real kernel (parent 5.6): a token absent, writes into the checkout, `~` and `$UZE_HOME` denied, reads of `~/.ssh` and another `/proc/<pid>` denied, a Unix and a TCP socket denied, a signal to the client refused, a hang killed with its children, a fork bomb gone, an output and a scratch flood cut off, a link escaping refused, a changed `PATH` running the pinned path, a failed confinement refusing the run; skipped and named where Landlock is absent
-- [ ] 5.4 Architecture rule: the program runner is the only spawn of extension programs and only it starts `__confine`; only `__confine` calls `uze_platform::confine::enter` (parent 5.7)
+- [x] 5.1 `ExtensionRunner`: `SourceKind::Run` and `Does::Run` answered through the program runner, with the `Confinement` built from the checkout, its Git common dir, the extension's Store directory, the scratch under `UzeHome` (P6), the pinned directories and declared reads
+- [x] 5.2 The scratch directory named in `UzeHome`'s runtime tier, removed after each run
+- [x] 5.3 Tests over the real kernel (parent 5.6): a token absent, writes into the checkout, `~` and `$UZE_HOME` denied, reads of `~/.ssh` and another `/proc/<pid>` denied, a Unix and a TCP socket denied, a signal to the client refused, a hang killed with its children, a fork bomb gone, an output and a scratch flood cut off, a link escaping refused, a changed `PATH` running the pinned path, a failed confinement refusing the run; skipped and named where Landlock is absent
+- [x] 5.4 Architecture rule: the program runner is the only spawn of extension programs and only it starts `__confine`; only `__confine` calls `uze_platform::confine::enter` (parent 5.7)
 
 ## 6. The store
 

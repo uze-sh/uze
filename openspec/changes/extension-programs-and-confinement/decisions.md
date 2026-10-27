@@ -219,3 +219,63 @@
 - decided:  Allowing the grants dialog opens `Confirmation::AllowPrograms` with each program's pinned path, the devices it reads, "can run anything" for a general runner, and the fixed "runs as you" text where unconfined (titled "…run as you?", danger tone). Only accepting it records consent and enables. An extension whose only grants are programs opens straight on that step. `uze install` asks the same two questions in order. The `exec:` grants are left out of the first list.
 - rejected: One dialog listing both: an operator who reads "reads the checkout" and presses Allow would also have agreed to a program running as them.
 - blast:    `src/ui/model.rs` (`ProgramsStep`), `src/ui/overlay.rs`, `src/cli/extensions.rs`.
+
+## D23 — A packaged program runs from a copy of the loaded bytes, in the run's own directory
+
+- status:   pending
+- task:     5.1
+- commit:
+- trigger:  The plan executes "the program the declaration names", but the files on disk can change between the load whose digest was accepted and the run, especially for a linked extension.
+- decided:  Each run gets `runtime/extensions/scratch/<pid>-<n>/` with `tmp/` (its `TMPDIR`, writable) and `bin/` (read and execute). A packaged program is written into `bin/` from the `Loaded` bytes of the consented compile and made runnable; a packaged script runs as its pinned interpreter with that copy as argument. The directory is removed after every run.
+- rejected: Executing from the extension's Store directory: what ran could differ from what was digested.
+- blast:    `uze-application::extensions::program::prepare`.
+
+## D24 — An `exec` `reads` path under `/dev/` is a device: read, write and `ioctl`
+
+- status:   pending
+- task:     5.1
+- commit:
+- trigger:  The proof's `nvidia-smi` cannot initialize NVML under Landlock ABI ≥ 5 with `/dev/dxg` only readable: it needs `ioctl` and write on the device (tried on this machine: "Failed to initialize NVML" without, the GPU's line with).
+- decided:  `Confinement` gains `devices`, granted read, `WriteFile` and `IoctlDev` (Seatbelt: `file-read* file-write-data file-ioctl`), never make or remove. A `reads` path beginning with `/dev/` goes there; any other stays read-only.
+- rejected: A separate `devices` node in the manifest: the operator reads one list of what the program reaches, and `/dev/` already says device.
+- blast:    `uze-platform::confine::{Confinement, linux, seatbelt}`, the consent text lists them as reads.
+
+## D25 — A source that refuses fails, an action that refuses is a notice
+
+- status:   pending
+- task:     5.1
+- commit:
+- trigger:  The spec says exit 3 is "a refusal whose reason is the surface's notice", but a source that refuses has no data, and `Answer` has no notice-without-data for a source.
+- decided:  An action's exit 3 answers an envelope whose `notice` is the reason (nothing refreshed). A source's exit 3 is `Failed` with "`<program>` refused: <reason>", which the surface draws as its failure line.
+- rejected: An empty envelope with a notice for sources: it would draw an empty board as if the program had answered nothing.
+- blast:    `program::outcome`.
+
+## D26 — The confinement helper is this binary, and the runner's default confines
+
+- status:   pending
+- task:     5.1
+- commit:
+- trigger:  The runner needs the helper's path, and `ExtensionRunner` was `Default`, which the workspace builds with `Arc::default()`: a default that ran programs unconfined would be the easy mistake.
+- decided:  `ExtensionRunner::new()` and its `Default` use `std::env::current_exe()` as the helper when the machine confines. `confining_through(helper)` names one explicitly (the tests pass `CARGO_BIN_EXE_uze`, or a broken helper). A runner with no helper refuses a run whose record says it was accepted confined.
+- rejected: A helper path in `UzeHome` or the config: the helper must be the binary whose code the operator trusted.
+- blast:    `runner.rs`.
+
+## D27 — A helper that could not confine withholds that run; the record is left alone
+
+- status:   pending
+- task:     4.3, 5.1
+- commit:
+- trigger:  The spec says an extension whose confinement failed "SHALL show as needing consent again"; the helper's 125 can also mean a single run's grant path vanished, which is not the machine losing confinement.
+- decided:  A run that comes back 125 is withheld, "its confinement did not apply (<reason>); nothing ran", and nothing else changes. Losing confinement for real (the machine stops offering it) is judged by `availability()` on every judgement and does put the extension back to needing consent (D21).
+- rejected: Rewriting `enforced_at_accept` on one failed run: a transient failure would silently move an extension towards running as the operator.
+- blast:    `program::outcome`; the spec's wording is met by availability, not by the run.
+
+## D28 — Programs are tested on the real kernel, from a checkout under Cargo's `target/tmp`
+
+- status:   pending
+- task:     5.3
+- commit:
+- trigger:  The checkout rule refuses the system temporary directory, where the test environments live, and the program tests must run real confinement.
+- decided:  `tests/lifecycle/extension_programs.rs` installs a packaged `sh` probe from a staged marketplace, consents and enables it, and asks it through `ExtensionRunner::confining_through(Some(CARGO_BIN_EXE_uze))` over a checkout under `CARGO_TARGET_TMPDIR`. Nine tests: secrets absent, writes into `.git/hooks`, `README.md`, outside and `$UZE_HOME` denied, reads of a key outside and another `/proc/<pid>/environ` denied, a signal to the test process refused, `socket()` and a Unix socket refused, `setsid` refused, a hang timed out, stdout flood and scratch fill cut off, a helper exiting 125 running nothing. Each skips, saying why, where the machine does not confine. Running it found `commit_everything_in` committing into the surrounding checkout; fixed in the testkit.
+- rejected: Mocking the kernel: the promise is about the kernel.
+- blast:    One suite file.

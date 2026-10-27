@@ -17,6 +17,7 @@ mod checkout;
 mod compiled;
 mod consent;
 mod installed;
+mod program;
 mod reach;
 mod report;
 mod runner;

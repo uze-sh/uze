@@ -1055,7 +1055,7 @@ fn check_reports_what_a_manifest_may_not_run_yet() {
         "`every` is at least 5s",
         "`net` arrives in a later change (change 8)",
         "`write:checkout` does not exist",
-        "programs arrive in a later change (change 5)",
+        "the program `bin/meter`",
         "its key needs a modifier, not a bare `w`",
     ] {
         assert!(output.contains(said), "{said}: {output}");

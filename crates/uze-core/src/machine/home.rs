@@ -209,6 +209,25 @@ impl UzeHome {
         self.state_dir().join("extensions.json")
     }
 
+    /// What each declared extension keeps between answers, one document
+    /// per extension and project (or per extension, for a machine-wide
+    /// store), under `<identity key>/`. A record: what an extension
+    /// remembered is not observed again. Removed with its plugin.
+    pub fn extension_stores_dir(&self) -> PathBuf {
+        self.state_dir().join("extensions").join("store")
+    }
+
+    /// The scratch directory one program run of an extension may write,
+    /// created before it and removed after it: generated, since losing it
+    /// costs nothing, and named here so the run's `TMPDIR` is never the
+    /// operator's shared tmp, where a pinned program may not live.
+    pub fn extension_scratch_dir(&self, run: &str) -> PathBuf {
+        self.runtime_dir()
+            .join("extensions")
+            .join("scratch")
+            .join(run)
+    }
+
     /// The guard every read-modify-write of the extensions record takes:
     /// the workspace and a terminal both answer for it. A lock, not a
     /// record.
@@ -808,6 +827,8 @@ mod tests {
             home.tasks_path("abc"),
             home.conversation_path("abc", "def"),
             home.prompt_history_path("abc"),
+            home.extensions_record_path(),
+            home.extension_stores_dir(),
         ];
         for record in records {
             assert!(
@@ -835,6 +856,7 @@ mod tests {
             home.logs_dir(),
             home.generated_attachments_dir("claude"),
             home.runtime_project_dir("abc"),
+            home.extension_scratch_dir("1"),
         ] {
             assert!(
                 rebuildable.iter().any(|tier| rebuilt.starts_with(tier)),

@@ -73,6 +73,9 @@ pub(super) fn profile(confinement: &Confinement) -> io::Result<String> {
     for path in &confinement.write {
         profile.push_str(&rule("file-read* file-write*", path)?);
     }
+    for path in &confinement.devices {
+        profile.push_str(&rule("file-read* file-write-data file-ioctl", path)?);
+    }
     if confinement.network {
         profile.push_str(
             "(allow network-outbound (remote tcp))\n\
@@ -131,6 +134,7 @@ mod tests {
             read: vec!["/repo".into()],
             read_execute: vec!["/usr/bin".into()],
             write: vec!["/tmp/run".into(), "/dev/null".into()],
+            devices: Vec::new(),
             network,
             limits: Limits::with_cpu_seconds(10),
         }

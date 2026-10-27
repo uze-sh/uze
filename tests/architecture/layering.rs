@@ -1768,6 +1768,67 @@ fn only_the_declared_engine_asks_a_source() {
     );
 }
 
+/// An extension's program is started from one place, and confined from
+/// one (`extension-programs-and-confinement`, task 5.4): the runner in
+/// `uze-core`'s `machine::extension_program` is the only code that starts
+/// the `__confine` helper, and the helper's own command the only caller of
+/// `uze_platform::confine::enter`. A second spawn of an extension program
+/// would be one that consent, pinning and the bounds never see.
+#[test]
+fn only_the_program_runner_starts_an_extension_program() {
+    let root = repository_root();
+    let mut failures = Vec::new();
+    let mut files = Vec::new();
+    for dir in ["src", "crates"] {
+        collect_rust_files(&root.join(dir), &mut files);
+    }
+    for file in files {
+        let relative = file
+            .strip_prefix(&root)
+            .unwrap_or(&file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        if relative.contains("/tests/") || relative.starts_with("crates/uze-testkit/") {
+            continue;
+        }
+        let source = strip_test_modules(&fs::read_to_string(&file).unwrap_or_default());
+        let code: Vec<&str> = source
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect();
+        let names = |needle: &str| code.iter().any(|line| line.contains(needle));
+        let runner = relative == "crates/uze-core/src/machine/extension_program.rs";
+        // The helper's own command, where `main` hands over to it, and the
+        // grammar that names it for the help.
+        let helper = relative == "src/cli/confine.rs"
+            || relative == "src/main.rs"
+            || relative == "src/cli/grammar.rs"
+            || relative == "src/command_performance.rs";
+        if names("\"__confine\"") && !runner && !helper {
+            failures.push(format!("  {relative} starts the confinement helper"));
+        }
+        let platform = relative.starts_with("crates/uze-platform/src/confine");
+        if (names("confine::enter(") || names("confine::enter;"))
+            && relative != "src/cli/confine.rs"
+            && !platform
+        {
+            failures.push(format!("  {relative} enters a confinement"));
+        }
+        if names("uze_core::machine::extension_program::run(") || names("extension_program::run(") {
+            let sanctioned =
+                relative == "crates/uze-application/src/application/extensions/program.rs";
+            if !sanctioned && !runner {
+                failures.push(format!("  {relative} runs an extension program"));
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "only the program runner starts an extension's program, and only through `__confine`:\n{}",
+        failures.join("\n")
+    );
+}
+
 /// The project's `AGENTS.md` is the operator's: no UZE operation creates,
 /// changes or appends to it, except the cleanup that takes out the regions
 /// earlier releases wrote there. A production file that names the file and

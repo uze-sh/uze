@@ -21,7 +21,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use uze_contract::{Answer, Asking, Does, Envelope, Identity, Question, SourceKind};
+use uze_contract::{
+    Answer, Asking, Does, Envelope, Identity, Output, Program, Question, SourceKind,
+};
 use uze_core::capability::extension::Loaded;
 use uze_script::{Grants, ScriptCache};
 
@@ -43,17 +45,55 @@ struct Asked {
     files: String,
 }
 
-/// Answers declared extensions' questions for one session.
-#[derive(Debug, Default)]
+/// Answers declared extensions' questions for one session. Its default
+/// confines, as [`ExtensionRunner::new`] does: a runner built without
+/// saying so never runs a program unconfined.
+#[derive(Debug)]
 pub struct ExtensionRunner {
     answered: Mutex<HashMap<Asked, Envelope>>,
     scripts: Mutex<ScriptCache>,
     runs: AtomicU64,
+    /// The program that confines an extension's programs: this binary,
+    /// where this machine confines. `None` runs them unconfined, which
+    /// only an extension accepted to run as the operator may.
+    helper: Option<PathBuf>,
+}
+
+/// What answers a question, found in the compile that was consented to.
+enum Answerer<'a> {
+    Script(&'a str),
+    Program {
+        program: &'a Program,
+        output: &'a Output,
+    },
+}
+
+impl Default for ExtensionRunner {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ExtensionRunner {
+    /// A runner for this session, confining programs through this very
+    /// binary's `__confine` where the machine can.
     pub fn new() -> Self {
-        Self::default()
+        let helper = super::confinement()
+            .is_available()
+            .then(std::env::current_exe)
+            .and_then(Result::ok);
+        Self::confining_through(helper)
+    }
+
+    /// A runner whose programs are confined by `helper`, or run
+    /// unconfined when it is `None`.
+    pub fn confining_through(helper: Option<PathBuf>) -> Self {
+        Self {
+            answered: Mutex::default(),
+            scripts: Mutex::default(),
+            runs: AtomicU64::default(),
+            helper,
+        }
     }
 
     /// How many times a script ran this session: a remembered answer is
@@ -100,9 +140,10 @@ impl ExtensionRunner {
                 return Answer::withheld(format!("it does not compile: {first}"));
             }
         };
-        let script = match question.asking {
+        let manifest = &load.compiled.manifest;
+        let answerer = match question.asking {
             Asking::Source | Asking::Refresh => {
-                let Some(source) = load.compiled.manifest.source(&question.declaration) else {
+                let Some(source) = manifest.source(&question.declaration) else {
                     return failed(format!("it declares no source `{}`", question.declaration));
                 };
                 match &source.kind {
@@ -115,21 +156,26 @@ impl ExtensionRunner {
                             Err(reason) => failed(reason),
                         };
                     }
-                    SourceKind::Run(_) => {
-                        return Answer::withheld("programs arrive with a later change (change 5)");
-                    }
-                    SourceKind::Script(file) => file,
+                    SourceKind::Run(program) => Answerer::Program {
+                        program,
+                        output: &source.output,
+                    },
+                    SourceKind::Script(file) => Answerer::Script(file),
                 }
             }
             Asking::Action => {
-                let Some(action) = load.compiled.manifest.action(&question.declaration) else {
+                let Some(action) = manifest.action(&question.declaration) else {
                     return failed(format!("it declares no action `{}`", question.declaration));
                 };
                 match &action.does {
-                    Does::Script(file) => file,
+                    Does::Script(file) => Answerer::Script(file),
+                    Does::Run(program) => Answerer::Program {
+                        program,
+                        output: &Output::Json,
+                    },
                     _ => {
                         return failed(format!(
-                            "the action `{}` runs no script",
+                            "the action `{}` runs nothing the host answers",
                             question.declaration
                         ));
                     }
@@ -149,7 +195,7 @@ impl ExtensionRunner {
             Ok(state) => return Answer::withheld(withheld_because(&state)),
             Err(error) => return Answer::withheld(error.to_string()),
         }
-        let grants: Grants = load.compiled.manifest.wants.iter().cloned().collect();
+        let grants: Grants = manifest.wants.iter().cloned().collect();
         let asked = Asked {
             identity: identity.clone(),
             asking: question.asking,
@@ -158,7 +204,62 @@ impl ExtensionRunner {
             input: input_digest(&question.input),
             files: load.digest.clone(),
         };
-        self.run_script(asked, &files, script, &grants, &question.input)
+        match answerer {
+            Answerer::Script(script) => {
+                self.run_script(asked, &files, script, &grants, &question.input)
+            }
+            Answerer::Program { program, output } => {
+                let consent = extensions.consent_record(identity);
+                let reads: Vec<String> = if program.is_packaged() {
+                    Vec::new()
+                } else {
+                    manifest.reads_of(program.program()).to_vec()
+                };
+                let ask = super::program::Asked {
+                    home: &extensions.0.home,
+                    extension_dir: &installed.dir,
+                    files: &files,
+                    program,
+                    output,
+                    reads: &reads,
+                    asking: question.asking,
+                    declaration: &question.declaration,
+                    extension: &identity.id,
+                    checkout: &checkout,
+                    input: &question.input,
+                    store: None,
+                    consent: consent.as_ref(),
+                    helper: self.helper.as_deref(),
+                };
+                self.remembered_or(asked, || super::program::answer(&ask))
+            }
+        }
+    }
+
+    /// What a source asked as `asked` answered this session, or what
+    /// `run` answers now, remembered when it is a source's: an action is
+    /// run on every gesture.
+    fn remembered_or(&self, asked: Asked, run: impl FnOnce() -> Answer) -> Answer {
+        let remembered = Asked {
+            asking: Asking::Source,
+            ..asked.clone()
+        };
+        if asked.asking == Asking::Source
+            && let Some(envelope) = lock(&self.answered).get(&remembered)
+        {
+            return Answer::Answered {
+                envelope: envelope.clone(),
+                trace: Vec::new(),
+            };
+        }
+        self.runs.fetch_add(1, Ordering::Relaxed);
+        let answer = run();
+        if asked.asking != Asking::Action
+            && let Answer::Answered { envelope, .. } = &answer
+        {
+            lock(&self.answered).insert(remembered, envelope.clone());
+        }
+        answer
     }
 
     /// Runs the script that answers `source` of the extension in `dir`,
@@ -586,7 +687,7 @@ pub(super) mod tests {
         };
         assert!(matches!(
             world.ask(&runner, &refresh_action),
-            Answer::Failed { reason, .. } if reason.contains("runs no script")
+            Answer::Failed { reason, .. } if reason.contains("runs nothing the host answers")
         ));
         world
             .app

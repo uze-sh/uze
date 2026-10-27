@@ -35,6 +35,11 @@ pub struct Confinement {
     /// Read, write, create, remove and truncate beneath, never execute.
     /// `/dev/null` is the caller's to list.
     pub write: Vec<PathBuf>,
+    /// Devices a program speaks to: read, write and `ioctl` on each, never
+    /// create or remove. A GPU's control node (`/dev/nvidiactl`,
+    /// `/dev/dxg`) is what one declares.
+    #[serde(default)]
+    pub devices: Vec<PathBuf>,
     /// Whether the program may open an Internet socket (`AF_INET`,
     /// `AF_INET6`) and connect it. Without it no socket opens at all; with
     /// it, still no Unix socket and no listening TCP port.
@@ -253,6 +258,7 @@ mod tests {
             read: vec!["/r".into()],
             read_execute: vec!["/usr".into()],
             write: vec!["/dev/null".into()],
+            devices: Vec::new(),
             network: false,
             limits: Limits::with_cpu_seconds(20),
         };
@@ -280,6 +286,7 @@ mod tests {
             read: vec![],
             read_execute: vec![],
             write: vec![],
+            devices: Vec::new(),
             network: false,
             limits: Limits::with_cpu_seconds(1),
         };

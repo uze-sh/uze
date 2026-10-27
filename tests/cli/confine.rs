@@ -38,6 +38,7 @@ fn confinement(read: &[&Path], write: &[&Path], network: bool) -> Confinement {
             .map(|path| path.to_path_buf())
             .chain([PathBuf::from("/dev/null")])
             .collect(),
+        devices: Vec::new(),
         network,
         limits: Limits::with_cpu_seconds(20),
     }
