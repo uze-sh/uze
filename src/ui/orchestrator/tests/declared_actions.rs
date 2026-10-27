@@ -109,6 +109,10 @@ fn compiled() -> CompiledExtension {
 }
 
 fn hosting() -> WorkspaceModel {
+    hosting_compiled(compiled())
+}
+
+fn hosting_compiled(compiled: CompiledExtension) -> WorkspaceModel {
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
     model.remembered.declared = HostedExtensions {
@@ -129,7 +133,7 @@ fn hosting() -> WorkspaceModel {
         loaded: vec![LoadedExtension {
             installed,
             stamp: 1,
-            compiled: Ok(compiled()),
+            compiled: Ok(compiled),
             data: BTreeMap::from([(
                 "board".to_owned(),
                 Ok(serde_json::json!({ "phase": { "name": "auth" } })),
@@ -254,4 +258,51 @@ fn an_answered_actions_script_is_handed_to_the_host() {
         1,
         "the action's script is asked of the host"
     );
+}
+
+/// A section's button that asks to type into an agent: its answer is the
+/// section's own, so it reaches the host's question (or its refusal),
+/// never the view that happens to be open in the pane.
+#[test]
+fn a_sections_button_asks_of_the_agent_rather_than_of_the_open_view() {
+    let mut compiled = compiled();
+    compiled.manifest.wants = vec![uze_contract::Grant::AgentPrompt];
+    compiled.manifest.actions = vec![uze_contract::ActionDecl {
+        id: "archive".to_owned(),
+        label: "Ask for a review".to_owned(),
+        on: "band".to_owned(),
+        key: None,
+        confirm: None,
+        does: uze_contract::Does::AgentPrompt {
+            prompt: uze_contract::PromptText::Text("Review PLAN.md".to_owned()),
+            target: uze_contract::AgentTarget::Own,
+            auto: None,
+        },
+        with: Vec::new(),
+        then: None,
+    }];
+    let mut model = hosting_compiled(compiled);
+    let area = ratatui::layout::Rect::new(0, 0, 120, 40);
+    full_frame_at(&mut model, area);
+    let (slot, button) = model
+        .hits
+        .iter()
+        .find_map(|(_, hit)| match hit {
+            WorkspaceHit::Extension(ExtensionHit {
+                slot,
+                hit:
+                    hit @ ViewHit::Node {
+                        act: NodeAct::Press,
+                        ..
+                    },
+            }) => Some((*slot, *hit)),
+            _ => None,
+        })
+        .expect("the section's button is drawn");
+    assert_ne!(model.open_slot, Some(slot), "a section, not the open view");
+    let space = model.surface_frame.content_space;
+    model.hit_surface(slot, button, space);
+    let said = format!("{:?}", model.toast_stack());
+    assert!(said.contains("not sent"), "{said}");
+    assert!(said.contains("Ask for a review"), "{said}");
 }

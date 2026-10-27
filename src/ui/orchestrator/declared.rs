@@ -1318,9 +1318,13 @@ impl WorkspaceModel {
             self.follow_chrome(id, outcome);
             return;
         }
-        // A section is part of the sidebar: it has no "close" of its own.
-        if self.open_slot == Some(id) || outcome != Outcome::Close {
+        // A section is part of the sidebar, as a band is of the chrome:
+        // what it answers is its own, asked of the agent in front, and it
+        // has no "close" of its own.
+        if self.open_slot == Some(id) {
             self.follow_surface(outcome);
+        } else {
+            self.follow_chrome(id, outcome);
         }
         self.dirty = true;
     }
