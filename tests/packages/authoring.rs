@@ -1217,7 +1217,7 @@ fn every_fixture_plugins_extensions_check_clean() {
     }
     checked.sort();
     assert!(
-        ["deck", "gpu", "gsd"]
+        ["bridge", "deck", "gpu", "gsd"]
             .iter()
             .all(|name| checked.iter().any(|checked| checked == name)),
         "{checked:?}"

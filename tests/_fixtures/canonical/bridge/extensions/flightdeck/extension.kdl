@@ -1,0 +1,24 @@
+// Every agent of the open spaces on one board, each focused or asked
+// where it stands from its row; and the tool calls they reported.
+protocol 1
+id "flightdeck"
+name "Flight deck"
+description "Every agent on one board, and the tool calls they report"
+
+wants "agent:observe" "agent:prompt"
+
+surface "deck" slot="view" view="deck.kdl" source="crew" title="Flight deck"
+surface "calls" slot="section" view="calls.kdl" source="calls" title="Tool calls"
+
+source "crew" { agents; }
+
+// What the agents reported, newest first.
+source "calls" { events 30; }
+
+action "focus" label="Focus" on="deck" key="ctrl-g" {
+    focus-agent target="{id}"
+}
+
+action "ask" label="Ask where it stands" on="deck" {
+    agent-prompt "Say in two lines where you are and what comes next" target="{id}"
+}

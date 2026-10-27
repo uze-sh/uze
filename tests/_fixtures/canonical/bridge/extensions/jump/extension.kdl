@@ -1,0 +1,20 @@
+// A picker of every agent across the open spaces, opened from anywhere by
+// its key; the one chosen is focused.
+protocol 1
+id "jump"
+name "Jump"
+description "Jump to any agent, in any space, from anywhere"
+
+wants "agent:observe"
+
+surface "picker" slot="overlay" view="picker.kdl" source="crew" title="Jump to an agent"
+
+source "crew" { agents; }
+
+action "open" label="Jump to an agent" on="picker" key="alt-j" {
+    open "picker"
+}
+
+action "go" label="Go" on="picker" key="ctrl-g" {
+    focus-agent target="{id}"
+}

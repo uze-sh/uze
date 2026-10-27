@@ -1,0 +1,26 @@
+test "the row draws both agents, the working one with its turn's time" {
+    surface "row"
+    given "crew" fixture="fixtures/agents.json"
+    now 1761570125000
+    size 60 1
+    expect-text "fix/branch-naming"
+    expect-text "docs/extension-skill"
+    expect-text "2m05s"
+    snapshot "row"
+}
+
+test "the section says how each agent stands" {
+    surface "crew"
+    given "crew" fixture="fixtures/agents.json"
+    now 1761570125000
+    size 30 6
+    expect-text "working"
+    expect-text "ready"
+    snapshot "crew"
+}
+
+test "no agent open says so" {
+    surface "crew"
+    given "crew" json="[]"
+    expect-text "No agents"
+}

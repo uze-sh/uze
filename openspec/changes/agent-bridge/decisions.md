@@ -199,3 +199,43 @@
 - decided:  `only_the_bridge_and_the_instructions_type_into_an_agent`: `.submit_notice(` is called only from `session/absorb.rs` (the project's instructions) and `declared/agent.rs` (the bridge), and `uze-extensions` never names `ClientRequest`. ADR-059 is amended with the refuse-never-queue rule for extensions.
 - rejected: Making `submit_notice` private to one module: the two writers live in two modules on purpose.
 - blast:    `tests/architecture/layering.rs`, ADR-059.
+
+## D30 — The `agents` source answers `since`, when the agent's turn began
+
+- status:   pending
+- task:     5.1
+- commit:
+- trigger:  The spec's `agents` source carries "when its turn began", and `agents-hud` draws the working agent's elapsed turn; the source answered no time.
+- decided:  The bridge keeps each agent's turn start, in milliseconds since the epoch, from the `turn.started` report's `at` or, for a turn read from the paint, the moment it was seen; a finished turn clears it. Each agent answers `since` (null while no turn runs), what `Elapsed since="{since}"` counts from and `Activity busy="{since}"` turns on.
+- rejected: A `busy` flag beside `state`: `since` already says it, and a view tests presence, not equality.
+- blast:    `src/ui/orchestrator/declared/bridge.rs` (`Bridge::turn_began`, `note_turn`, `agents_value`).
+
+## D31 — A test draws at a stopped clock, `now <ms>`, the epoch when unsaid
+
+- status:   pending
+- task:     5.1
+- commit:
+- trigger:  An `Elapsed` or a busy `Activity` drew from the machine's clock in `uze agent plugin check`, so their snapshots moved on every run.
+- decided:  `.test.kdl` grows `now <milliseconds since the epoch>`, said once, in the units an `agents` source's `since` and an event's `at` use. The runner draws every test through the clock the client's own tests already stop (`tree::stopped_at`, no longer test-only), at `now` or the epoch.
+- rejected: An RFC 3339 `now`: the decoder lives in `uze-core`, which has no date parser, and the data it is compared with is milliseconds.
+- blast:    `uze-contract::testing::{World::now_ms, STEPS}`, `test_file.rs`, `src/ui/extension_test.rs`, `src/ui/extension_view/tree.rs`, the `uze:author` skill's test vocabulary.
+
+## D32 — A test's click lands on the first hit drawn under it, as the workspace's does
+
+- status:   pending
+- task:     5.1
+- commit:
+- trigger:  `flightdeck`'s and `jump`'s per-row buttons recorded nothing under `press-button`: the runner took the last hit under the cell, the list's row, while the workspace's `hit_at` takes the first, the button.
+- decided:  `Stage::hit_on` resolves to the first hit containing the cell, like `WorkspaceModel::hit_at`; a button inside a list's row is pressed, not the row selected.
+- rejected: Registering a list row's hit before its children: the workspace already agrees with itself; only the runner disagreed.
+- blast:    `src/ui/extension_test.rs`.
+
+## D33 — The bridge's gallery is one fixture plugin, `bridge`, and each reference is cut to what the platform can say today
+
+- status:   pending
+- task:     5.1
+- commit:
+- trigger:  Six references to prove, `gsd`'s fixtures backing many tests, and nodes or gestures the design names that the catalog does not have.
+- decided:  `tests/_fixtures/canonical/bridge` holds `agents-hud`, `flightdeck`, `chimes`, `jump`, `plan-review` and `gsd-next`, the GSD band's next-step button as its own band so `gsd` stays untouched. `flightdeck` lists the `events` source's reports rather than pairing calls into durations under `deliver "each"`; `jump`'s picker runs `go` by a button or `ctrl+g`, since a declared list has no row activation and Enter stays the host's; `plan-review` is a section of the plan's open steps with one review prompt, there being no `form` node. The scripts' answers (`chime.rhai` on an event, `plan.rhai` on a plan) are proved in `uze-script/tests/bridge_fixtures.rs`, as a plugin check runs no script against an event.
+- rejected: Changing `gsd-band`'s fixtures; a picker filtered as typed and Enter to accept, which are host work of their own.
+- blast:    `tests/_fixtures/canonical/bridge/**`, `every_fixture_plugins_extensions_check_clean`, `crates/uze-script/tests/bridge_fixtures.rs`.

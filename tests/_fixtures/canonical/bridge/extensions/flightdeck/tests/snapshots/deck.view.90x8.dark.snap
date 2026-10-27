@@ -1,0 +1,27 @@
+# uze snapshot · protocol 1 · view 90x8 · dark
+ flightdeck · bridge@local
+
+   ⠙  fix/branch-naming                uze       claude    working     Focus      Ask
+   ·  docs/extension-skill             site      codex     ready       Focus      Ask
+
+
+
+esc close  ·  ctrl+g focus  ·  i inspector
+---
+ aaaaaaaaaa a aaaaaaaaaaaa
+
+   b  ccccccccccccccccc                aaa       aaaaaa    ddddddd     eeeee      eee
+   f  cccccccccccccccccccc             aaaa      aaaaa     ggggg       eeeee      eee
+
+
+
+hhh aaaaa  f  hhhhhh aaaaa  f  h aaaaaaaaa
+---
+a text.muted
+b state.in-flight
+c text.bright
+d state.warning
+e text.secondary
+f text.faint
+g state.info
+h accent

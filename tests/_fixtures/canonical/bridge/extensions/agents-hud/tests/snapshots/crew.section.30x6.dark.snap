@@ -1,0 +1,22 @@
+# uze snapshot · protocol 1 · section 30x6 · dark
+ agents-hud · bridge@local
+ ▾ Agents
+  ⠙ fix/branch-naming 2m05s
+  uze                working
+  · docs/extension-skill
+  site                 ready
+---
+ aaaaaaaaaa a aaaaaaaaaaaa
+ b bbbbbb
+  c ddddddddddddddddd aaaaa
+  aaa                eeeeeee
+  f dddddddddddddddddddd
+  aaaa                 ggggg
+---
+a text.muted
+b text.secondary
+c state.in-flight
+d text.bright
+e state.warning
+f text.faint
+g state.info

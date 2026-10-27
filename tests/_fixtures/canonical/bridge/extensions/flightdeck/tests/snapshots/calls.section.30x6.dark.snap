@@ -1,0 +1,19 @@
+# uze snapshot · protocol 1 · section 30x6 · dark
+ flightdeck · bridge@local
+ ▾ Tool calls
+  Edit finished           ok
+  Edit started
+  turn started
+
+---
+ aaaaaaaaaa a aaaaaaaaaaaa
+ b bbbb bbbbb
+  cccc aaaaaaaa           dd
+  cccc aaaaaaa
+  aaaa aaaaaaa
+
+---
+a text.muted
+b text.secondary
+c text.bright
+d text.faint

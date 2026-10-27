@@ -1,0 +1,16 @@
+// One mark per agent, its label in its state's colour, and the running
+// turn's time.
+lookup "tone" default="muted" {
+    working "warning"
+    done "success"
+    ready "info"
+}
+
+Row gap=2 {
+    Row gap=1 each="." {
+        Activity busy="{since}"
+        Text "{label}" role="{tone:state}" truncate=#true
+        Elapsed since="{since}" role="muted" when="since"
+    }
+    Text "No agents" role="faint" unless="."
+}

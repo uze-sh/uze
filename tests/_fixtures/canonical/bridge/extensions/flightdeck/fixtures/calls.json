@@ -1,0 +1,8 @@
+[
+  { "name": "agent.tool.finished", "agent": "a1", "harness": "claude", "checkout": "/work/uze/.worktrees/a1",
+    "tool": "Edit", "path": "src/main.rs", "call": "c2", "outcome": "ok", "at": 1761570120000 },
+  { "name": "agent.tool.started", "agent": "a1", "harness": "claude", "checkout": "/work/uze/.worktrees/a1",
+    "tool": "Edit", "path": "src/main.rs", "call": "c2", "at": 1761570118000 },
+  { "name": "agent.turn.started", "agent": "a1", "harness": "claude", "checkout": "/work/uze/.worktrees/a1",
+    "at": 1761570000000 }
+]

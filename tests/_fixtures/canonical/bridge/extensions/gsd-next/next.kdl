@@ -1,0 +1,7 @@
+// The milestone and its next phase, with the button that runs it.
+Row gap=2 align="center" {
+    Text "{milestone}" strong=#true
+    Text "{next.number} · {next.name}" role="muted" truncate=#true grow=#true when="next"
+    Text "Every phase is done" role="faint" grow=#true unless="next"
+    Button "Run phase {next.number}" action="run" item="{next}" when="next"
+}

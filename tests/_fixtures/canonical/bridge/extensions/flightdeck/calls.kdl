@@ -1,0 +1,18 @@
+// The tool calls and turns the agents reported, newest first.
+lookup "event" default="" {
+    "agent.tool.started" "started"
+    "agent.tool.finished" "finished"
+    "agent.turn.started" "turn started"
+    "agent.turn.finished" "turn finished"
+    "agent.approval.asked" "asks approval"
+    "agent.approval.resolved" "approved"
+    "agent.session.started" "session started"
+}
+
+List each="." empty="No calls yet" {
+    Row gap=1 {
+        Text "{tool}" strong=#true when="tool"
+        Text "{event:name}" role="muted" truncate=#true grow=#true
+        Text "{outcome}" role="faint" when="outcome"
+    }
+}
