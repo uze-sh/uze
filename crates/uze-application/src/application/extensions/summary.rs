@@ -146,6 +146,7 @@ mod tests {
                 actions: Vec::new(),
                 exec: Vec::new(),
                 preferences: Vec::new(),
+                sprites: Vec::new(),
             },
             views: BTreeMap::new(),
         };

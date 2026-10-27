@@ -28,9 +28,43 @@ pub struct Manifest {
     pub exec: Vec<ExecDecl>,
     /// The settings the operator edits, in the order written.
     pub preferences: Vec<PreferenceDecl>,
+    /// The frame sheets its `Sprite` nodes play.
+    pub sprites: Vec<SpriteDecl>,
+}
+
+/// A sheet of equal frames and the states that play them
+/// (`extension-media-and-resident`).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SpriteDecl {
+    pub id: String,
+    /// A PNG inside the extension.
+    pub sheet: String,
+    /// One frame's size, in pixels.
+    pub frame: (u32, u32),
+    /// Frames in a row of the sheet.
+    pub columns: u32,
+    pub states: Vec<SpriteState>,
+    /// The state played when the bound one is none of these.
+    pub fallback: String,
+}
+
+/// One animation of a sprite: frame indices into the sheet, read left to
+/// right and top to bottom.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SpriteState {
+    pub name: String,
+    pub frames: Vec<u32>,
+    /// Frames a second, 1 to 30.
+    pub fps: u32,
+    /// Whether it starts over at its end, or holds its last frame.
+    pub looped: bool,
 }
 
 impl Manifest {
+    pub fn sprite(&self, id: &str) -> Option<&SpriteDecl> {
+        self.sprites.iter().find(|sprite| sprite.id == id)
+    }
+
     pub fn surface(&self, id: &str) -> Option<&SurfaceDecl> {
         self.surfaces.iter().find(|surface| surface.id == id)
     }
@@ -301,7 +335,8 @@ impl SourceDecl {
             SourceKind::Script(_)
             | SourceKind::Run(_)
             | SourceKind::Events(_)
-            | SourceKind::Agents => None,
+            | SourceKind::Agents
+            | SourceKind::Resident(_) => None,
         }
     }
 
@@ -312,7 +347,16 @@ impl SourceDecl {
             SourceKind::Fixture(_)
             | SourceKind::Run(_)
             | SourceKind::Events(_)
-            | SourceKind::Agents => None,
+            | SourceKind::Agents
+            | SourceKind::Resident(_) => None,
+        }
+    }
+
+    /// The Rhai file kept alive for the source, when it is resident.
+    pub fn resident(&self) -> Option<&str> {
+        match &self.kind {
+            SourceKind::Resident(file) => Some(file),
+            _ => None,
         }
     }
 }
@@ -332,11 +376,15 @@ pub enum SourceKind {
     /// The host's own: every agent of the workspace's open spaces, under
     /// `agent:observe`.
     Agents,
+    /// A Rhai file kept alive while a surface showing it is open, under
+    /// `resident`: `start`, `event`, `input`, `render`, `stop`.
+    Resident(String),
 }
 
 impl SourceKind {
     /// How a manifest spells each kind.
-    pub const NAMES: &'static [&'static str] = &["script", "run", "fixture", "events", "agents"];
+    pub const NAMES: &'static [&'static str] =
+        &["script", "run", "fixture", "events", "agents", "resident"];
 }
 
 /// The most events an `events` source keeps.
@@ -610,6 +658,9 @@ pub enum Grant {
     AgentPromptAuto,
     /// Starting an agent's harness on a new conversation.
     AgentRestart,
+    /// Keeping a script alive while its surface is open, reading raw keys
+    /// when focused.
+    Resident,
     /// Running the program of this name, at the path pinned when the
     /// extension was enabled.
     Exec(String),
@@ -628,6 +679,7 @@ impl Grant {
         Self::AgentPrompt,
         Self::AgentPromptAuto,
         Self::AgentRestart,
+        Self::Resident,
     ];
     pub const EXEC: &'static str = "exec:";
 
@@ -653,6 +705,7 @@ impl Grant {
             Self::AgentPrompt => "agent:prompt",
             Self::AgentPromptAuto => "agent:prompt:auto",
             Self::AgentRestart => "agent:restart",
+            Self::Resident => "resident",
             Self::Exec(program) => return format!("{}{program}", Self::EXEC).into(),
         })
     }

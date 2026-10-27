@@ -251,6 +251,11 @@ fn compile_from(
             interpreter_is_granted(&decoded.manifest, files, file, at, &mut report);
         }
     }
+    for (sprite, at) in decoded.manifest.sprites.iter().zip(&decoded.sprite_places) {
+        if files.holds(&sprite.sheet).is_ok() {
+            sheet_holds_its_frames(sprite, files, *at, &mut report);
+        }
+    }
     let mut diagnostics = report.into_diagnostics();
     diagnostics.extend(view_diagnostics);
     if !diagnostics.is_empty() {
@@ -261,6 +266,66 @@ fn compile_from(
         manifest: decoded.manifest,
         views,
     })
+}
+
+/// A sprite's frames divide its sheet, its columns fit across it, and
+/// every state names frames the sheet holds.
+fn sheet_holds_its_frames(
+    sprite: &uze_contract::SpriteDecl,
+    files: &impl Files,
+    at: usize,
+    report: &mut Report<'_>,
+) {
+    let Some((width, height)) = files
+        .head(&sprite.sheet)
+        .as_deref()
+        .and_then(manifest::sprite::png_size)
+    else {
+        report.at(
+            at,
+            format!("the sprite sheet `{}` is not a PNG", sprite.sheet),
+            None,
+        );
+        return;
+    };
+    let (frame_width, frame_height) = sprite.frame;
+    if width % frame_width != 0 || height % frame_height != 0 {
+        report.at(
+            at,
+            format!(
+                "`{}` is {width}x{height}, which {frame_width}x{frame_height} frames do not divide",
+                sprite.sheet
+            ),
+            None,
+        );
+        return;
+    }
+    if sprite.columns > width / frame_width {
+        report.at(
+            at,
+            format!(
+                "`{}` holds {} columns of frames, not {}",
+                sprite.sheet,
+                width / frame_width,
+                sprite.columns
+            ),
+            None,
+        );
+        return;
+    }
+    let held = sprite.columns * (height / frame_height);
+    for state in &sprite.states {
+        if let Some(beyond) = state.frames.iter().find(|frame| **frame >= held) {
+            report.at(
+                at,
+                format!(
+                    "the state `{}` plays frame {beyond}, and `{}` holds {held}",
+                    state.name, sprite.sheet
+                ),
+                None,
+            );
+        }
+    }
 }
 
 /// A packaged script runs under its interpreter's `exec:` grant, so the

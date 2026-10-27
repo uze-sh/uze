@@ -797,3 +797,40 @@ fn agent_events_actions_and_the_agents_source_need_their_grants() {
         .contains("is not an agent")
     );
 }
+
+#[test]
+fn a_sprite_and_a_resident_source_are_declared_and_checked() {
+    let with = |rest: &str| GSD.replace("source \"board\"", &format!("{rest}\nsource \"board\""));
+    let sprite = r#"sprite "pet" sheet="pet.png" frame="32x32" columns=4 fallback="idle" {
+    state "idle" frames="0-3" fps=4
+    state "working" frames="4,5,6,7" fps=12 loop=#false
+}"#;
+    let manifest = decoded(&with(sprite));
+    let pet = manifest.sprite("pet").expect("declared");
+    assert_eq!(pet.frame, (32, 32));
+    assert_eq!(pet.states[1].frames, [4, 5, 6, 7]);
+    assert!(!pet.states[1].looped);
+    assert!(
+        first_message(&with(
+            &sprite.replace(r#"fallback="idle""#, r#"fallback="asleep""#)
+        ))
+        .contains("the fallback `asleep` is none of its states")
+    );
+    assert!(first_message(&with(&sprite.replace("32x32", "big"))).contains("is not a frame size"));
+    assert!(
+        first_message(&with(&sprite.replace("fps=12", "fps=60")))
+            .contains("`fps` is a whole number from 1 to 30")
+    );
+    assert!(
+        first_message(&with(&sprite.replace("pet.png", "../pet.png")))
+            .contains("is not a path inside the extension's directory")
+    );
+
+    let resident = r#"source "game" { resident "game.rhai"; }"#;
+    assert!(first_message(&with(resident)).contains("which needs `resident`"));
+    let manifest = decoded(&with(&format!("wants \"resident\"\n{resident}")));
+    assert_eq!(
+        manifest.source("game").unwrap().kind,
+        SourceKind::Resident("game.rhai".to_owned())
+    );
+}

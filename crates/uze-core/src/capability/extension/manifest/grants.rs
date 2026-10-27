@@ -11,12 +11,7 @@ use crate::capability::extension::document::{Report, nearest};
 
 /// The grants later changes bring, by name or by prefix (`exec:` stands
 /// for every `exec:<program>`), with the change that brings each.
-const LATER: &[(&str, u32)] = &[
-    ("resident", 7),
-    ("net", 8),
-    ("secret", 8),
-    ("edit:checkout", 8),
-];
+const LATER: &[(&str, u32)] = &[("net", 8), ("secret", 8), ("edit:checkout", 8)];
 
 /// The grants `node` names, each one this build offers, in order.
 pub fn wants(node: &KdlNode, report: &mut Report<'_>) -> Vec<Grant> {

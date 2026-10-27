@@ -57,6 +57,7 @@ fn compiled(wants: Vec<uze_contract::Grant>) -> CompiledExtension {
             actions: Vec::new(),
             exec: Vec::new(),
             preferences: Vec::new(),
+            sprites: Vec::new(),
         },
         views: BTreeMap::from([("meter.kdl".to_owned(), view)]),
     }

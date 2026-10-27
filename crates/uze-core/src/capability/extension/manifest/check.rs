@@ -162,6 +162,18 @@ fn sources_run_what_this_build_runs(decoded: &Decoded, report: &mut Report<'_>) 
                 Some("add \"agent:observe\" to `wants`".to_owned()),
             );
         }
+        if matches!(source.kind, SourceKind::Resident(_))
+            && !decoded.manifest.wants(&Grant::Resident)
+        {
+            report.at(
+                places.kind,
+                format!(
+                    "the source `{}` keeps its script alive, which needs `resident`",
+                    source.id
+                ),
+                Some("add \"resident\" to `wants`".to_owned()),
+            );
+        }
         let runs = matches!(source.kind, SourceKind::Run(_));
         let floor = if runs {
             PROGRAM_EVERY_FLOOR

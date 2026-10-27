@@ -1,7 +1,7 @@
 ## 1. Contract and check
 
-- [ ] 1.1 `uze-contract`: `NodeName::{Cells, Image, Sprite}` with their props; `SpriteDecl { id, sheet, frame, columns, states, fallback }`; `SourceKind::Resident(file)`; `Grant::Resident`; tests
-- [ ] 1.2 `uze-core` decoder and check: cells and regions bound to declared actions; an image path inside the extension or `scratch:`; a sprite's sheet inside the extension, frames dividing it, states naming frames that exist; `resident` under its grant and only for scripts
+- [x] 1.1 `uze-contract`: `NodeName::{Cells, Image, Sprite}` with their props; `SpriteDecl { id, sheet, frame, columns, states, fallback }`; `SourceKind::Resident(file)`; `Grant::Resident`; tests
+- [x] 1.2 `uze-core` decoder and check: cells and regions bound to declared actions; an image path inside the extension or `scratch:`; a sprite's sheet inside the extension, frames dividing it, states naming frames that exist; `resident` under its grant and only for scripts
 
 ## 2. Media in the host
 

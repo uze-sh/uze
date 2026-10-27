@@ -75,7 +75,10 @@ pub(crate) fn rehearse_scripts(
             let (script, program) = match &source.kind {
                 SourceKind::Script(script) => (script.clone(), false),
                 SourceKind::Run(program) => (program.program().to_owned(), true),
-                SourceKind::Fixture(_) | SourceKind::Events(_) | SourceKind::Agents => continue,
+                SourceKind::Fixture(_)
+                | SourceKind::Events(_)
+                | SourceKind::Agents
+                | SourceKind::Resident(_) => continue,
             };
             let script = &script;
             let Some(answer) = runner.rehearse(

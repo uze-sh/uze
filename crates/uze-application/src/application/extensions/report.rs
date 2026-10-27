@@ -214,6 +214,9 @@ pub fn grant_meaning(grant: &str) -> &'static str {
             "keeps what it remembers in UZE's state, shared by every project"
         }
         Some(uze_contract::Grant::Exec(_)) => "runs this program on your machine",
+        Some(uze_contract::Grant::Resident) => {
+            "keeps its script running while its surface is open, reading your keys when focused"
+        }
         Some(uze_contract::Grant::AgentObserve) => "sees the workspace's agents and what they do",
         Some(uze_contract::Grant::AgentPrompt) => {
             "types a prompt into an agent when you press it, shown to you first"
@@ -647,6 +650,7 @@ mod tests {
             actions: Vec::new(),
             exec: Vec::new(),
             preferences: Vec::new(),
+            sprites: Vec::new(),
         };
         assert_eq!(band_rows(&manifest), None);
         manifest

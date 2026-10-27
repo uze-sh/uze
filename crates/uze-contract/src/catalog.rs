@@ -40,6 +40,9 @@ pub enum NodeName {
     Stat,
     Kbd,
     Grid,
+    Cells,
+    Image,
+    Sprite,
 }
 
 /// What a property's value must be once bound.
@@ -119,6 +122,9 @@ const ANY: &[NodeName] = &[
     NodeName::Stat,
     NodeName::Kbd,
     NodeName::Grid,
+    NodeName::Cells,
+    NodeName::Image,
+    NodeName::Sprite,
 ];
 
 const CHART_KIND: PropKind = PropKind::Word(&["sparkline", "bar"]);
@@ -347,6 +353,27 @@ pub const CATALOG: &[NodeSpec] = &[
         props: &[("gap", PropKind::Count)],
         children: Some(ANY),
     },
+    NodeSpec {
+        name: NodeName::Cells,
+        args: &[],
+        required_args: 0,
+        props: &[("rows", PropKind::Value), ("regions", PropKind::Value)],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Image,
+        args: &[PropKind::Text],
+        required_args: 1,
+        props: &[("alt", PropKind::Text), ("height", PropKind::Count)],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Sprite,
+        args: &[PropKind::Identity],
+        required_args: 1,
+        props: &[("state", PropKind::Text), ("height", PropKind::Count)],
+        children: None,
+    },
 ];
 
 impl NodeName {
@@ -388,6 +415,9 @@ impl NodeName {
             Self::Stat => "Stat",
             Self::Kbd => "Kbd",
             Self::Grid => "Grid",
+            Self::Cells => "Cells",
+            Self::Image => "Image",
+            Self::Sprite => "Sprite",
         }
     }
 
@@ -474,6 +504,18 @@ impl NodeName {
             Self::Kbd => "A key, drawn as the workspace draws its own keys.",
             Self::Grid => {
                 "Its children as tiles, in as many columns as fit their `min-width`, row by row."
+            }
+            Self::Cells => {
+                "A grid of characters, `rows` a list of rows of `{ch, role}` (or plain text), \
+                 with `regions` (`{x, y, w, h, action, item}`) running a declared action when \
+                 clicked. Colour comes from roles only."
+            }
+            Self::Image => {
+                "A picture: a PNG, JPEG or GIF inside the extension, or `scratch:<name>` its \
+                 program wrote, fitted to `height` rows; `alt` where the terminal draws none."
+            }
+            Self::Sprite => {
+                "A declared sprite playing `state` (or its fallback), on the host's clock."
             }
         }
     }
@@ -595,7 +637,11 @@ pub fn prop_doc(prop: &str) -> Option<&'static str> {
         "danger" => "The ratio from which the gauge is drawn in the `danger` role.",
         "series" => "A list field of numbers.",
         "kind" => "`sparkline` (one row) or `bar` (columns `height` rows tall).",
-        "height" => "How many rows the bars take.",
+        "height" => "How many rows it takes: a chart's bars, a picture's or a sprite's height.",
+        "rows" => "A list of rows, each a list of `{ch, role}` cells or a plain string.",
+        "regions" => "A list of `{x, y, w, h, action, item}`: a click inside runs `action` with `item`.",
+        "alt" => "What stands in for the picture where the terminal draws none.",
+        "state" => "The state to play: one of the sprite's, or its fallback otherwise.",
         "delta" => "A change beside the figure, such as `+12%`, in `role`.",
         _ => return None,
     })

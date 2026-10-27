@@ -41,6 +41,7 @@ const CHILDREN: &[&str] = &[
     "deliver",
     "events",
     "agents",
+    "resident",
 ];
 /// What later changes add inside a source, with the change that brings
 /// each.
@@ -98,12 +99,12 @@ pub fn decode(node: &KdlNode, report: &mut Report<'_>) -> Option<(SourceDecl, Pl
                     }
                 });
             }
-            "script" | "run" | "fixture" | "events" | "agents" => {
+            "script" | "run" | "fixture" | "events" | "agents" | "resident" => {
                 kinds_written += 1;
                 if kinds_written > 1 {
                     report.on(
                         child,
-                        "a source is answered by one of `script`, `run`, `fixture`, `events` or `agents`",
+                        "a source is answered by one of `script`, `run`, `fixture`, `events`, `agents` or `resident`",
                         Some("keep one".to_owned()),
                     );
                     continue;
@@ -237,6 +238,9 @@ fn answer(child: &KdlNode, report: &mut Report<'_>) -> Option<SourceKind> {
         "fixture" => text(child, report)
             .filter(|file| relative_file(file, "json", at, report))
             .map(SourceKind::Fixture),
+        "resident" => text(child, report)
+            .filter(|file| relative_file(file, "rhai", at, report))
+            .map(SourceKind::Resident),
         "agents" => {
             let parts = entries(child, report);
             refuse_extra(child, &parts, 0, &[], false, report);

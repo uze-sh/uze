@@ -209,6 +209,7 @@ fn compiled() -> CompiledExtension {
             actions: Vec::new(),
             exec: Vec::new(),
             preferences: Vec::new(),
+            sprites: Vec::new(),
         },
         views: BTreeMap::new(),
     }

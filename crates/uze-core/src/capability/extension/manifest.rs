@@ -13,6 +13,7 @@ mod action;
 mod check;
 mod grants;
 mod source;
+pub mod sprite;
 
 use std::collections::BTreeSet;
 
@@ -36,6 +37,7 @@ const NODES: &[&str] = &[
     "action",
     "exec",
     "preferences",
+    "sprite",
 ];
 /// What later changes of `add-extension-platform` add to a manifest, with
 /// the change that brings each.
@@ -55,6 +57,8 @@ pub struct Decoded {
     pub action_places: Vec<action::Places>,
     /// Parallel to `manifest.exec`: where each `exec` was written.
     pub exec_places: Vec<usize>,
+    /// Parallel to `manifest.sprites`: where each `sprite` was written.
+    pub sprite_places: Vec<usize>,
 }
 
 impl Decoded {
@@ -73,6 +77,7 @@ impl Decoded {
                 SourceKind::Run(program) => {
                     packaged(program).map(|file| ("program", file, places.kind))
                 }
+                SourceKind::Resident(file) => Some(("script", file.as_str(), places.kind)),
                 SourceKind::Events(_) | SourceKind::Agents => None,
             });
         let actions = self
@@ -85,7 +90,13 @@ impl Decoded {
                 Does::Run(program) => packaged(program).map(|file| ("program", file, places.does)),
                 _ => None,
             });
-        sources.chain(actions).collect()
+        let sheets = self
+            .manifest
+            .sprites
+            .iter()
+            .zip(&self.sprite_places)
+            .map(|(sprite, at)| ("sprite sheet", sprite.sheet.as_str(), *at));
+        sources.chain(actions).chain(sheets).collect()
     }
 }
 
@@ -106,11 +117,13 @@ pub fn decode(document: &KdlDocument, dir_id: &str, report: &mut Report<'_>) -> 
             actions: Vec::new(),
             exec: Vec::new(),
             preferences: Vec::new(),
+            sprites: Vec::new(),
         },
         surface_places: Vec::new(),
         source_places: Vec::new(),
         action_places: Vec::new(),
         exec_places: Vec::new(),
+        sprite_places: Vec::new(),
     };
     let mut seen = BTreeSet::new();
     for node in document.nodes() {
@@ -163,6 +176,20 @@ pub fn decode(document: &KdlDocument, dir_id: &str, report: &mut Report<'_>) -> 
                 }
             }
             "preferences" => decoded.manifest.preferences = preferences(node, report),
+            "sprite" => {
+                if let Some(sprite) = sprite::decode(node, report) {
+                    if decoded.manifest.sprite(&sprite.id).is_some() {
+                        report.on(
+                            node,
+                            format!("the sprite `{}` is declared twice", sprite.id),
+                            None,
+                        );
+                    } else {
+                        decoded.sprite_places.push(node.offset());
+                        decoded.manifest.sprites.push(sprite);
+                    }
+                }
+            }
             "exec" => {
                 if let Some(decl) = exec(node, report) {
                     if decoded

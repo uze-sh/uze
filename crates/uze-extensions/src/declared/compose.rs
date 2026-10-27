@@ -244,6 +244,7 @@ mod tests {
             }],
             exec: Vec::new(),
             preferences: Vec::new(),
+            sprites: Vec::new(),
         }
     }
 

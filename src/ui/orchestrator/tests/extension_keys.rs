@@ -143,6 +143,7 @@ fn compiled(plugin: &str) -> CompiledExtension {
             ],
             exec: Vec::new(),
             preferences: Vec::new(),
+            sprites: Vec::new(),
         },
         views: BTreeMap::new(),
     }
