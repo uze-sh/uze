@@ -259,6 +259,9 @@ impl Keymap {
         if let Some(action) = front.and_then(|front| self.extension_at(front, chord, scopes)) {
             return Resolution::Act(Action::Extension(action));
         }
+        if let Some(action) = self.everywhere_at(chord, scopes) {
+            return Resolution::Act(Action::Extension(action));
+        }
         self.resolve(chord, scopes)
     }
 
@@ -277,6 +280,21 @@ impl Keymap {
             .get(front.owner)?
             .iter()
             .find(|bound| bound.surface == front.surface && bound.chord == Some(chord))
+            .map(|bound| bound.action)
+    }
+
+    /// The door bound to `chord` that is live everywhere the surfaces'
+    /// doors are, unless a key of the host's answers it there first.
+    fn everywhere_at(&self, chord: Chord, scopes: &[Scope]) -> Option<ExtensionActionId> {
+        let reachable = Keymap::reachable(scopes);
+        if !reachable.contains(&Scope::Surfaces) || self.host_takes(chord, &reachable) {
+            return None;
+        }
+        self.extensions
+            .bound
+            .values()
+            .flatten()
+            .find(|bound| bound.surface == extension::EVERYWHERE && bound.chord == Some(chord))
             .map(|bound| bound.action)
     }
 
@@ -356,6 +374,22 @@ impl Keymap {
                 Some(written) => self.written_chord(&name, written, problems),
                 None => self.suggested_chord(&name, offered.suggested.as_ref(), problems),
             };
+            // Live over an agent's pane, a door may not take what the
+            // agent reads as typing: a function key, or ctrl or alt.
+            let chord = chord.filter(|chord| {
+                let everywhere = offered.surface == extension::EVERYWHERE;
+                let typed = !chord.mods.ctrl
+                    && !chord.mods.alt
+                    && !matches!(chord.key, crate::chord::Key::F(_));
+                if everywhere && typed {
+                    problems.push(Problem::warning(format!(
+                        "`{chord}` for `{name}` would be typing in an agent's pane; a key that \
+                         opens from anywhere is a function key or carries ctrl or alt"
+                    )));
+                    return false;
+                }
+                true
+            });
             let taken = chord.and_then(|chord| {
                 actions
                     .iter()

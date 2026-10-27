@@ -180,6 +180,14 @@ pub struct Front<'a> {
     pub surface: &'a str,
 }
 
+/// The surface an action is offered on when it is live over the pane and
+/// every surface alike: an overlay's door, reached from anywhere.
+pub const EVERYWHERE: &str = "*";
+
+/// What a door's name ends with, after the extension's own: `open:` and
+/// the surface it opens.
+pub const DOOR: &str = "open:";
+
 /// One action an extension offers the keyboard.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Offered {
@@ -243,6 +251,43 @@ mod tests {
     fn written(json: &str) -> Keymap {
         let file: KeymapFile = serde_json::from_str(json).expect("a keymap file");
         load::resolve(&file).expect("it loads").keymap
+    }
+
+    #[test]
+    fn an_overlay_door_opens_from_over_the_pane_but_never_takes_a_typed_key() {
+        let owner = "jump@studio/jump";
+        let keymap = default_keymap().with_extensions(vec![table(
+            owner,
+            vec![
+                offered(owner, "open:picker", EVERYWHERE, Some("alt+j")),
+                offered(owner, "open:other", EVERYWHERE, Some("j")),
+            ],
+        )]);
+        let over_the_pane = [
+            Scope::Global,
+            Scope::Workspace,
+            Scope::Pane,
+            Scope::Surfaces,
+        ];
+        assert_eq!(
+            keymap.resolve_for(chord("alt+j"), &over_the_pane, None),
+            act(owner, "open:picker")
+        );
+        assert_eq!(
+            keymap.resolve_for(chord("j"), &over_the_pane, None),
+            Resolution::Fallthrough,
+            "a bare letter stays the agent's"
+        );
+        assert!(
+            keymap.extension_problems()[0]
+                .message
+                .contains("would be typing in an agent's pane")
+        );
+        assert_eq!(
+            keymap.resolve_for(chord("alt+j"), &[Scope::Global, Scope::Confirm], None),
+            Resolution::Fallthrough,
+            "a question seals it out"
+        );
     }
 
     #[test]

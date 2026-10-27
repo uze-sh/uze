@@ -179,3 +179,23 @@
 - decided:  The manifest accepts `agent-restart` under `agent:restart`, and the host refuses it with a notice saying it is not available yet. `focus-agent` selects the agent's tab.
 - rejected: Killing the pane and launching anew from the extension path: a lifecycle operation built for one caller.
 - blast:    `declared/agent.rs::ask_of_agent`.
+
+## D19 — A key that opens an overlay from anywhere is its `open` action's key, held to a function key, ctrl or alt
+
+- status:   pending
+- task:     4.5
+- commit:
+- trigger:  `jump` opens a picker over whatever is in front; an extension's keys were live only while one of its surfaces was.
+- decided:  An `open` action naming an overlay and suggesting a key also offers the overlay's door (`ext.…/open:<overlay>`, the index's own entry) on `EVERYWHERE` (`*`); the keymap resolves such a door after the surface in front and the host's keys, wherever the surfaces' doors are live (over the pane too), and a question seals it out. A door's key that is neither a function key nor carries ctrl or alt is dropped with a warning in `uze doctor`: over an agent's pane it would steal typing.
+- rejected: A `global=true` flag in the manifest: the overlay's `open` action already says what the key is for.
+- blast:    `uze-keys::{extension::EVERYWHERE, keymap::everywhere_at}`, `src/keymap.rs::overlay_doors`.
+
+## D20 — The bridge's architecture rule names the two writers into a pane
+
+- status:   pending
+- task:     4.6
+- commit:
+- trigger:  Parent 14.8: agent actions from an extension go only through the bridge.
+- decided:  `only_the_bridge_and_the_instructions_type_into_an_agent`: `.submit_notice(` is called only from `session/absorb.rs` (the project's instructions) and `declared/agent.rs` (the bridge), and `uze-extensions` never names `ClientRequest`. ADR-059 is amended with the refuse-never-queue rule for extensions.
+- rejected: Making `submit_notice` private to one module: the two writers live in two modules on purpose.
+- blast:    `tests/architecture/layering.rs`, ADR-059.

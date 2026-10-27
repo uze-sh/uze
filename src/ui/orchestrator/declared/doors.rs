@@ -11,7 +11,7 @@
 use super::*;
 
 /// What a view's door is named after its owner.
-const OPEN: &str = "open:";
+const OPEN: &str = uze_keys::extension::DOOR;
 
 impl WorkspaceModel {
     /// The index entry of every view a declared extension that is switched

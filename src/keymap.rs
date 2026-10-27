@@ -95,8 +95,38 @@ pub fn extension_table(compiled: &CompiledExtension) -> ExtensionTable {
                 suggested: action.key.as_ref().map(suggested_chord),
             }
         })
+        .chain(overlay_doors(compiled, &owner))
         .collect();
     ExtensionTable { owner, offered }
+}
+
+/// The door of each overlay an `open` action with a key names, offered on
+/// every surface and over the pane: the key opens the overlay from
+/// anywhere (`agent-bridge`'s `jump`). Its words are the ones the index
+/// gives the door.
+fn overlay_doors<'a>(
+    compiled: &'a CompiledExtension,
+    owner: &'a str,
+) -> impl Iterator<Item = Offered> + 'a {
+    compiled.manifest.actions.iter().filter_map(move |action| {
+        let uze_contract::Does::Open(target) = &action.does else {
+            return None;
+        };
+        let key = action.key.as_ref()?;
+        let surface = compiled.manifest.surface(target)?;
+        if surface.slot != uze_contract::Slot::Overlay {
+            return None;
+        }
+        let door = extension::intern(&extension::action_name(
+            owner,
+            &format!("{}{target}", extension::DOOR),
+        ));
+        Some(Offered {
+            action: door,
+            surface: extension::EVERYWHERE.to_owned(),
+            suggested: Some(suggested_chord(key)),
+        })
+    })
 }
 
 /// What the keymap in force says about the installed extensions' keys:

@@ -22,8 +22,8 @@
 - [x] 4.2 `Does::{AgentPrompt { text | skill, args, target }, AgentRestart { target }, FocusAgent { target }}` in the contract, decoder and check; grants `agent:observe`, `agent:prompt`, `agent:prompt:auto`, `agent:restart`
 - [x] 4.3 The host writes through `submit_notice` behind `may_submit`, with the strict filter and byte equality with what was shown; refused unless Ready, foreground and no approval pending; never queued (parent 14.6)
 - [x] 4.4 The rates and the pause key (B5) (parent 14.7); `agent:prompt:auto`'s record per project and agent, 24 h, revoked by a digest change
-- [ ] 4.5 `focus-agent` and a global key opening an overlay
-- [ ] 4.6 ADR-059 amended with `agent.prompt`'s commit; the architecture rule that agent actions from an extension go only through the bridge (parent 14.8, 14.9)
+- [x] 4.5 `focus-agent` and a global key opening an overlay
+- [x] 4.6 ADR-059 amended with `agent.prompt`'s commit; the architecture rule that agent actions from an extension go only through the bridge (parent 14.8, 14.9)
 
 ## 5. Gallery and docs
 

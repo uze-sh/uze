@@ -1904,3 +1904,44 @@ fn a_retired_region_cleanup_is_the_only_writer_of_agents_md() {
          says so by naming what it writes, not the file it read."
     );
 }
+
+/// Agent-bridge (ADR-059, amended): what UZE types into an agent's pane on
+/// its own goes through `submit_notice`, whose callers are the project's
+/// instructions and the extension bridge, each behind `may_submit`; an
+/// extension reaches an agent only by asking the bridge.
+#[test]
+fn only_the_bridge_and_the_instructions_type_into_an_agent() {
+    let root = repository_root();
+    let mut files = Vec::new();
+    collect_rust_files(&root.join("src"), &mut files);
+    collect_rust_files(&root.join("crates/uze-extensions/src"), &mut files);
+    let mut failures = Vec::new();
+    for file in files {
+        let relative = file
+            .strip_prefix(&root)
+            .unwrap_or(&file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        if relative.contains("/tests/") {
+            continue;
+        }
+        let source = strip_test_modules(&fs::read_to_string(&file).unwrap_or_default());
+        let calls = source
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .any(|line| line.contains(".submit_notice("));
+        let sanctioned = relative == "src/ui/orchestrator/session/absorb.rs"
+            || relative == "src/ui/orchestrator/declared/agent.rs";
+        if calls && !sanctioned {
+            failures.push(format!("  {relative} types into a pane"));
+        }
+        if relative.starts_with("crates/uze-extensions/") && source.contains("ClientRequest") {
+            failures.push(format!("  {relative} speaks to the terminal server"));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "only the project's instructions and the extension bridge type into an agent:\n{}",
+        failures.join("\n")
+    );
+}
