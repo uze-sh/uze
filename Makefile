@@ -5,7 +5,7 @@ UZE_BIN ?= target/debug/uze
 RELEASE_BIN ?= target/release/uze
 INSTALL_ARGS ?= --force
 
-.PHONY: help build release install playground-plugin playground-windows playground-linux playground-linux-down run test test-acceptance test-conformance test-installer harness-matrix check ci fmt lint deny msrv web audit secrets installer attributions attributions-check coverage version clean changelog release-notes lab-image lab-run lab-all lab-evidence lab-sandbox lab-experiment lab-matrix lab-replay python-fmt python-lint
+.PHONY: help build release install playground-plugin playground-windows playground-linux playground-linux-down run test test-acceptance test-conformance test-installer harness-matrix extension-docs check ci fmt lint deny msrv web audit secrets installer attributions attributions-check coverage version clean changelog release-notes lab-image lab-run lab-all lab-evidence lab-sandbox lab-experiment lab-matrix lab-replay python-fmt python-lint
 
 help: ## Show the available local-development targets.
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-12s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -64,6 +64,9 @@ test-installer: ## Exercise install.sh offline against a synthetic release (Linu
 
 harness-matrix: ## Regenerate the docs harness matrix (used by lefthook's --check).
 	$(CARGO) run --quiet --bin uze-harness-matrix
+
+extension-docs: ## Regenerate docs/extensions/ (the extension schema and reference) from uze-contract.
+	$(CARGO) run --quiet -p uze-contract --features schema --example extension-docs
 
 observe: ## Start the local Jaeger (UI on :16686, OTLP on :4318) and print the endpoint to trace against.
 	@docker compose up -d

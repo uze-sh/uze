@@ -20,6 +20,8 @@
 //! - [`clean`]: the one way a string an extension supplied becomes drawable.
 //! - [`question`]: what an extension asks the host, and the answer.
 //! - [`testing`]: what an extension's test file declares.
+//! - `docs` (feature `schema`): the schema and reference written to
+//!   `docs/extensions/`.
 
 #![forbid(unsafe_code)]
 
@@ -27,6 +29,8 @@ pub mod binding;
 pub mod catalog;
 pub mod clean;
 pub mod compiled;
+#[cfg(feature = "schema")]
+pub mod docs;
 pub mod manifest;
 pub mod question;
 pub mod testing;

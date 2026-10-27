@@ -94,6 +94,11 @@ pub const COMMON_PROPS: &[(&str, PropKind)] = &[
     ("min-width", PropKind::Count),
 ];
 
+/// The common properties a composed node may carry: how it shares a row.
+/// What decides whether a bound node is drawn (`each`, `when`, …) has no
+/// meaning where every value is already there.
+pub const COMPOSED_PROPS: &[&str] = &["grow", "min-width"];
+
 const ALIGN: PropKind = PropKind::Word(&["start", "center", "end"]);
 
 /// Any node a container may hold.

@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 /// The shortest interval `every` may ask a source to be refreshed at.
 pub const EVERY_FLOOR: Duration = Duration::from_secs(5);
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Manifest {
     pub protocol: u32,
@@ -34,6 +35,7 @@ pub struct Manifest {
 
 /// A sheet of equal frames and the states that play them
 /// (`extension-media-and-resident`).
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SpriteDecl {
     pub id: String,
@@ -50,6 +52,7 @@ pub struct SpriteDecl {
 
 /// One animation of a sprite: frame indices into the sheet, read left to
 /// right and top to bottom.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SpriteState {
     pub name: String,
@@ -128,6 +131,7 @@ pub enum StoreScope {
 
 /// The paths a granted program reads that the host would not otherwise
 /// let it: a device, a driver's directory. Listed on the consent screen.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ExecDecl {
     pub name: String,
@@ -135,6 +139,7 @@ pub struct ExecDecl {
 }
 
 /// Where a surface is drawn. The host owns its geometry.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Slot {
     /// The full frame, opened like the built-in surfaces.
@@ -184,12 +189,14 @@ impl Slot {
 pub const BAND_ROWS_MAX: u8 = 6;
 
 /// Where a band stands on its pane, and how many rows it takes.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BandDecl {
     pub rows: u8,
     pub place: BandPlace,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub enum BandPlace {
     #[default]
@@ -210,6 +217,7 @@ impl BandPlace {
 }
 
 /// A setting an extension declares and the operator edits.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PreferenceDecl {
     pub name: String,
@@ -220,6 +228,7 @@ pub struct PreferenceDecl {
     pub default: serde_json::Value,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum PreferenceKind {
     Text,
@@ -279,6 +288,7 @@ impl PreferenceDecl {
     }
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SurfaceDecl {
     pub id: String,
@@ -294,6 +304,7 @@ pub struct SurfaceDecl {
     pub title: Option<String>,
 }
 
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceDecl {
     pub id: String,
@@ -319,6 +330,7 @@ pub struct SourceDecl {
 }
 
 /// How events that ask a source again reach it.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Deliver {
     /// Coalesced in a short window: it is asked once, with the last.
@@ -384,6 +396,7 @@ impl SourceDecl {
 
 /// Who answers a source. Every file is relative to the extension's
 /// directory.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum SourceKind {
     /// A Rhai file whose `answer(input, context)` returns the envelope.
@@ -418,6 +431,7 @@ pub const PROGRAM_TIME_LIMIT: Duration = Duration::from_secs(10);
 /// A program as a manifest declares it: an argv whose first element is a
 /// path inside the extension or a name an `exec:` grant covers, each later
 /// element a whole argument in which `{field}` is substituted.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Program {
     pub argv: Vec<String>,
@@ -451,6 +465,7 @@ impl Program {
 }
 
 /// How a program's standard output becomes a source's data.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Output {
     /// One JSON value, or an envelope around one.
@@ -473,6 +488,7 @@ impl Output {
 }
 
 /// A reason, other than time, to ask a source again.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum EventName {
     /// A file beneath one of these paths, relative to the checkout,
@@ -486,6 +502,7 @@ pub enum EventName {
 }
 
 /// What an agent may be seen doing (`agent-bridge`).
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum AgentEvent {
     SessionStarted,
@@ -548,6 +565,7 @@ impl EventName {
 }
 
 /// Who an agent action is aimed at.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum AgentTarget {
     /// The agent the surface stands for: a band's pane's, or the agent the
@@ -559,6 +577,7 @@ pub enum AgentTarget {
 }
 
 /// What an agent prompt types.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum PromptText {
     /// Text, with `{field}` references resolved against the item when the
@@ -571,6 +590,7 @@ pub enum PromptText {
 
 /// An unattended prompt: what event sends it, and the closed set its one
 /// argument is taken from, when it has one.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AutoPrompt {
     pub on: AgentEvent,
@@ -580,6 +600,7 @@ pub struct AutoPrompt {
 
 /// Something an extension offers the operator to do on one of its
 /// surfaces.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ActionDecl {
     pub id: String,
@@ -596,6 +617,7 @@ pub struct ActionDecl {
 }
 
 /// What an action does when it runs.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Does {
     /// Runs this Rhai file's `answer`, relative to the extension's
@@ -657,6 +679,7 @@ impl Does {
 /// What an extension may reach beyond drawing. Only the grants this build
 /// enforces exist here; the decoder names the change that brings any
 /// other.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum Grant {
     /// Reading files beneath the checkout the surface is on.
@@ -794,6 +817,7 @@ impl std::fmt::Display for Grant {
 /// A chord as a manifest suggests one: `ctrl-r`, `alt-shift-x`, `f5`, `d`.
 /// Modifiers lowercase, joined to the key by `-`; the key a single
 /// printable character or one of [`KeySuggestion::NAMED`].
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct KeySuggestion {
     pub ctrl: bool,

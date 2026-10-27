@@ -1401,7 +1401,7 @@ fn collect_rust_files(directory: &std::path::Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-fn repository_root() -> PathBuf {
+pub(crate) fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 

@@ -70,11 +70,13 @@ pub enum ResidentCall {
 /// What a source answered: `data`, and optionally the sources to ask
 /// again, a toast and a notice. The strings are the extension's own and
 /// pass through [`crate::Clean`] where the host draws them.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Envelope {
     /// What the source's views bind.
     pub data: serde_json::Value,
     /// Source ids to ask again.
+    #[serde(default)]
     pub refresh: Vec<String>,
     pub toast: Option<String>,
     pub notice: Option<String>,
@@ -88,11 +90,13 @@ pub struct Envelope {
     /// tick, already held to the host's rate. Set by the engine from the
     /// script's `timer(ms)`, never a member an answer may hold.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schema", schemars(skip))]
     pub timer: Option<u64>,
 }
 
 /// What a notification says; the host puts the extension's attribution
 /// before its title.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Notification {
     pub title: String,
@@ -101,6 +105,7 @@ pub struct Notification {
 
 /// The cues an answer may ask for. The host sounds each as the
 /// terminal's bell.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Sound {

@@ -13,15 +13,10 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 use uze_contract::binding::Binding;
-use uze_contract::catalog::{COMMON_PROPS, NodeName, PropKind, RoleName};
+use uze_contract::catalog::{COMMON_PROPS, COMPOSED_PROPS, NodeName, PropKind, RoleName};
 use uze_contract::{Clean, CompiledView, Item, Manifest, Node, Span};
 
 use super::bind::NODE_CAP;
-
-/// The common properties a composed node may carry: how it shares a row.
-/// What decides whether a bound node is drawn (`each`, `when`, …) has no
-/// meaning where every value is already there.
-const COMPOSED_COMMON: &[&str] = &["grow", "min-width"];
 
 /// The view `tree` composes, for the manifest `manifest`, or why not.
 pub(crate) fn compose(
@@ -97,7 +92,7 @@ fn node(value: &Value, manifest: &Manifest, at: &str, count: &mut usize) -> Resu
                 .or_else(|| {
                     COMMON_PROPS
                         .iter()
-                        .find(|(name, _)| name == prop && COMPOSED_COMMON.contains(name))
+                        .find(|(name, _)| name == prop && COMPOSED_PROPS.contains(name))
                         .map(|(_, kind)| *kind)
                 })
                 .ok_or_else(|| {

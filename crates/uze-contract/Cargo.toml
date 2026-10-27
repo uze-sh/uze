@@ -17,3 +17,15 @@ serde_json = { version = "1", features = ["preserve_order"] }
 # the host measures it; already in the tree through the client and the
 # theme.
 unicode-width = "0.2"
+# The JSON Schema of the manifest and of a composed answer
+# (`docs/extensions/schema.json`). Already in the tree for the MCP fixture;
+# a feature so it reaches no shipped build: only the `extension-docs`
+# example that writes the file and the root suite's drift test turn it on.
+schemars = { version = "1", optional = true }
+
+[features]
+schema = ["dep:schemars"]
+
+[[example]]
+name = "extension-docs"
+required-features = ["schema"]

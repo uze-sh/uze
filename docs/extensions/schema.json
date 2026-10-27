@@ -1,0 +1,3748 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UZE extension contract",
+  "description": "A declared extension's manifest as UZE decodes it from `extension.kdl`, and the answer a composed source gives. Protocol 1. Generated from the uze-contract crate by `cargo run --quiet -p uze-contract --features schema --example extension-docs`; do not edit.",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/Manifest"
+    },
+    {
+      "$ref": "#/$defs/ComposedAnswer"
+    }
+  ],
+  "$defs": {
+    "Manifest": {
+      "type": "object",
+      "properties": {
+        "protocol": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "wants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Grant"
+          },
+          "description": "What the extension asks to reach, in the order written."
+        },
+        "surfaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SurfaceDecl"
+          }
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SourceDecl"
+          }
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ActionDecl"
+          }
+        },
+        "exec": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ExecDecl"
+          },
+          "description": "What a granted program reads beyond the host's own paths, by name."
+        },
+        "preferences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PreferenceDecl"
+          },
+          "description": "The settings the operator edits, in the order written."
+        },
+        "sprites": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SpriteDecl"
+          },
+          "description": "The frame sheets its `Sprite` nodes play."
+        }
+      },
+      "required": [
+        "protocol",
+        "id",
+        "name",
+        "description",
+        "wants",
+        "surfaces",
+        "sources",
+        "actions",
+        "exec",
+        "preferences",
+        "sprites"
+      ],
+      "examples": [
+        {
+          "protocol": 1,
+          "id": "notes",
+          "name": "Notes",
+          "description": "A `view` slot fed by a `script` source",
+          "wants": [
+            "ReadCheckout",
+            "Clipboard"
+          ],
+          "surfaces": [
+            {
+              "id": "board",
+              "slot": "View",
+              "view": "board.kdl",
+              "band": null,
+              "source": "items",
+              "title": null
+            }
+          ],
+          "sources": [
+            {
+              "id": "items",
+              "kind": {
+                "Script": "items.rhai"
+              },
+              "input": {
+                "file": "NOTES.md"
+              },
+              "every": {
+                "secs": 30,
+                "nanos": 0
+              },
+              "refresh_on": [
+                {
+                  "PathsChanged": {
+                    "paths": [
+                      "NOTES.md"
+                    ]
+                  }
+                }
+              ],
+              "output": "Json",
+              "with_store": false,
+              "with_preferences": false,
+              "deliver": "Latest"
+            }
+          ],
+          "actions": [
+            {
+              "id": "copy",
+              "label": "Copy",
+              "on": "board",
+              "key": {
+                "ctrl": true,
+                "alt": false,
+                "shift": false,
+                "key": "y"
+              },
+              "confirm": "Copy {text}?",
+              "does": {
+                "Clipboard": "{text}"
+              }
+            }
+          ],
+          "exec": [],
+          "preferences": [],
+          "sprites": []
+        },
+        {
+          "protocol": 1,
+          "id": "notes-count",
+          "name": "Notes",
+          "description": "A `section` slot fed by a `fixture` source",
+          "wants": [],
+          "surfaces": [
+            {
+              "id": "count",
+              "slot": "Section",
+              "view": "count.kdl",
+              "band": null,
+              "source": "items",
+              "title": null
+            }
+          ],
+          "sources": [
+            {
+              "id": "items",
+              "kind": {
+                "Fixture": "fixtures/items.json"
+              },
+              "input": {},
+              "every": null,
+              "refresh_on": [],
+              "output": "Json",
+              "with_store": false,
+              "with_preferences": false,
+              "deliver": "Latest"
+            }
+          ],
+          "actions": [],
+          "exec": [],
+          "preferences": [],
+          "sprites": []
+        },
+        {
+          "protocol": 1,
+          "id": "crew",
+          "name": "Crew",
+          "description": "A `drawer` slot fed by the `agents` source",
+          "wants": [
+            "AgentObserve"
+          ],
+          "surfaces": [
+            {
+              "id": "crew",
+              "slot": "Drawer",
+              "view": "crew.kdl",
+              "band": null,
+              "source": "agents",
+              "title": null
+            }
+          ],
+          "sources": [
+            {
+              "id": "agents",
+              "kind": "Agents",
+              "input": {},
+              "every": null,
+              "refresh_on": [
+                {
+                  "Agent": "TurnFinished"
+                }
+              ],
+              "output": "Json",
+              "with_store": false,
+              "with_preferences": false,
+              "deliver": "Latest"
+            }
+          ],
+          "actions": [
+            {
+              "id": "go",
+              "label": "Go to agent",
+              "on": "crew",
+              "key": {
+                "ctrl": false,
+                "alt": true,
+                "shift": false,
+                "key": "g"
+              },
+              "confirm": null,
+              "does": {
+                "FocusAgent": {
+                  "target": {
+                    "Named": "{id}"
+                  }
+                }
+              }
+            }
+          ],
+          "exec": [],
+          "preferences": [],
+          "sprites": []
+        },
+        {
+          "protocol": 1,
+          "id": "last-commit",
+          "name": "Last commit",
+          "description": "A `status` slot fed by a `run` source read as lines",
+          "wants": [
+            {
+              "Exec": "git"
+            }
+          ],
+          "surfaces": [
+            {
+              "id": "last",
+              "slot": "Status",
+              "view": "last.kdl",
+              "band": null,
+              "source": "log",
+              "title": null
+            }
+          ],
+          "sources": [
+            {
+              "id": "log",
+              "kind": {
+                "Run": {
+                  "argv": [
+                    "git",
+                    "log",
+                    "--format=%h%x09%s",
+                    "-n",
+                    "1"
+                  ],
+                  "timeout": {
+                    "secs": 5,
+                    "nanos": 0
+                  }
+                }
+              },
+              "input": {},
+              "every": null,
+              "refresh_on": [
+                "CheckoutChanged"
+              ],
+              "output": {
+                "Lines": {
+                  "fields": [
+                    "hash",
+                    "subject"
+                  ],
+                  "separator": "\t"
+                }
+              },
+              "with_store": false,
+              "with_preferences": false,
+              "deliver": "Latest"
+            }
+          ],
+          "actions": [],
+          "exec": [
+            {
+              "name": "git",
+              "reads": []
+            }
+          ],
+          "preferences": [],
+          "sprites": []
+        },
+        {
+          "protocol": 1,
+          "id": "trail",
+          "name": "Trail",
+          "description": "A `band` slot fed by an `events` source",
+          "wants": [
+            "AgentPrompt"
+          ],
+          "surfaces": [
+            {
+              "id": "trail",
+              "slot": "Band",
+              "view": "trail.kdl",
+              "band": {
+                "rows": 2,
+                "place": "Bottom"
+              },
+              "source": "seen",
+              "title": null
+            }
+          ],
+          "sources": [
+            {
+              "id": "seen",
+              "kind": {
+                "Events": 20
+              },
+              "input": {},
+              "every": null,
+              "refresh_on": [],
+              "output": "Json",
+              "with_store": false,
+              "with_preferences": false,
+              "deliver": "Each"
+            }
+          ],
+          "actions": [
+            {
+              "id": "next",
+              "label": "Run phase {number}",
+              "on": "trail",
+              "key": {
+                "ctrl": true,
+                "alt": false,
+                "shift": false,
+                "key": "n"
+              },
+              "confirm": null,
+              "does": {
+                "AgentPrompt": {
+                  "prompt": {
+                    "Skill": {
+                      "skill": "gsd:execute-phase",
+                      "args": [
+                        "{number}"
+                      ]
+                    }
+                  },
+                  "target": "Own",
+                  "auto": null
+                }
+              }
+            }
+          ],
+          "exec": [],
+          "preferences": [],
+          "sprites": []
+        },
+        {
+          "protocol": 1,
+          "id": "counter",
+          "name": "Counter",
+          "description": "An `overlay` slot fed by a `resident` source",
+          "wants": [
+            "Resident",
+            "Store"
+          ],
+          "surfaces": [
+            {
+              "id": "game",
+              "slot": "Overlay",
+              "view": "game.kdl",
+              "band": null,
+              "source": "board",
+              "title": null
+            },
+            {
+              "id": "score",
+              "slot": "Section",
+              "view": "score.kdl",
+              "band": null,
+              "source": "board",
+              "title": null
+            }
+          ],
+          "sources": [
+            {
+              "id": "board",
+              "kind": {
+                "Resident": "counter.rhai"
+              },
+              "input": {},
+              "every": null,
+              "refresh_on": [],
+              "output": "Json",
+              "with_store": true,
+              "with_preferences": false,
+              "deliver": "Latest"
+            }
+          ],
+          "actions": [
+            {
+              "id": "play",
+              "label": "Play",
+              "on": "score",
+              "key": {
+                "ctrl": false,
+                "alt": false,
+                "shift": false,
+                "key": "f6"
+              },
+              "confirm": null,
+              "does": {
+                "Open": "game"
+              }
+            }
+          ],
+          "exec": [],
+          "preferences": [
+            {
+              "name": "speed",
+              "label": "Speed",
+              "kind": {
+                "Number": {
+                  "min": 1,
+                  "max": 10
+                }
+              },
+              "default": 5
+            }
+          ],
+          "sprites": [
+            {
+              "id": "pet",
+              "sheet": "pet.png",
+              "frame": [
+                16,
+                16
+              ],
+              "columns": 4,
+              "states": [
+                {
+                  "name": "ready",
+                  "frames": [
+                    0,
+                    1
+                  ],
+                  "fps": 2,
+                  "looped": true
+                }
+              ],
+              "fallback": "ready"
+            }
+          ]
+        }
+      ]
+    },
+    "Grant": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "ReadCheckout",
+          "description": "Reading files beneath the checkout the surface is on."
+        },
+        {
+          "type": "string",
+          "const": "Clipboard",
+          "description": "Writing text to the clipboard, on a gesture."
+        },
+        {
+          "type": "string",
+          "const": "OpenPath",
+          "description": "Opening a file inside the checkout, on a gesture."
+        },
+        {
+          "type": "string",
+          "const": "Store",
+          "description": "Keeping a store per project."
+        },
+        {
+          "type": "string",
+          "const": "StoreGlobal",
+          "description": "Keeping one store for the machine, across projects."
+        },
+        {
+          "type": "string",
+          "const": "Notify",
+          "description": "Notifying the operator and sounding a cue, rate-limited."
+        },
+        {
+          "type": "string",
+          "const": "AgentObserve",
+          "description": "Seeing the workspace's agents and what they do."
+        },
+        {
+          "type": "string",
+          "const": "AgentPrompt",
+          "description": "Typing a prompt into an agent, on the operator's gesture."
+        },
+        {
+          "type": "string",
+          "const": "AgentPromptAuto",
+          "description": "Typing a fixed prompt into an agent on its events, unattended."
+        },
+        {
+          "type": "string",
+          "const": "AgentRestart",
+          "description": "Starting an agent's harness on a new conversation."
+        },
+        {
+          "type": "string",
+          "const": "Resident",
+          "description": "Keeping a script alive while its surface is open, reading raw keys\nwhen focused."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Exec": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "Exec"
+          ],
+          "additionalProperties": false,
+          "description": "Running the program of this name, at the path pinned when the\nextension was enabled."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Net": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "Net"
+          ],
+          "additionalProperties": false,
+          "description": "Requesting `https://` URLs of this host, and no other, through\n`fetch`."
+        }
+      ],
+      "description": "What an extension may reach beyond drawing. Only the grants this build\nenforces exist here; the decoder names the change that brings any\nother."
+    },
+    "SurfaceDecl": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "slot": {
+          "$ref": "#/$defs/Slot"
+        },
+        "view": {
+          "type": "string",
+          "description": "The view file, relative to the extension's directory."
+        },
+        "band": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BandDecl"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A band's rows and place; `None` for every other slot."
+        },
+        "source": {
+          "type": "string",
+          "description": "The source whose data the view is bound to."
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "What the host titles the surface with; the extension's name when\nabsent."
+        }
+      },
+      "required": [
+        "id",
+        "slot",
+        "view",
+        "source"
+      ]
+    },
+    "Slot": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "View",
+          "description": "The full frame, opened like the built-in surfaces."
+        },
+        {
+          "type": "string",
+          "const": "Section",
+          "description": "A collapsible block of the workspace sidebar."
+        },
+        {
+          "type": "string",
+          "const": "Drawer",
+          "description": "A panel docked along the right of the agent area, opened by a\ngesture and laid beside the pane rather than over it."
+        },
+        {
+          "type": "string",
+          "const": "Status",
+          "description": "One row of the sidebar's header."
+        },
+        {
+          "type": "string",
+          "const": "Band",
+          "description": "Rows reserved along the top or bottom of each agent's pane."
+        },
+        {
+          "type": "string",
+          "const": "Overlay",
+          "description": "A modal card over the frame, opened by a gesture."
+        }
+      ],
+      "description": "Where a surface is drawn. The host owns its geometry."
+    },
+    "BandDecl": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "place": {
+          "$ref": "#/$defs/BandPlace"
+        }
+      },
+      "required": [
+        "rows",
+        "place"
+      ],
+      "description": "Where a band stands on its pane, and how many rows it takes."
+    },
+    "BandPlace": {
+      "type": "string",
+      "enum": [
+        "Top",
+        "Bottom"
+      ]
+    },
+    "SourceDecl": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/SourceKind",
+          "description": "Who answers the source."
+        },
+        "input": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "What the answer is asked with, by name: text in which `{field}`\nrefers to a value the host resolves when it asks."
+        },
+        "every": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Duration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How often the source is asked again while a surface showing it is\nvisible; never under [`EVERY_FLOOR`]."
+        },
+        "refresh_on": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EventName"
+          },
+          "description": "What else asks it again."
+        },
+        "output": {
+          "$ref": "#/$defs/Output",
+          "description": "How a program's standard output is read."
+        },
+        "with_store": {
+          "type": "boolean",
+          "description": "Whether the extension's store is part of what it is asked with."
+        },
+        "with_preferences": {
+          "type": "boolean",
+          "description": "Whether the extension's preferences are part of what it is asked\nwith."
+        },
+        "deliver": {
+          "$ref": "#/$defs/Deliver",
+          "description": "How events that ask it again are handed over."
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "input",
+        "refresh_on",
+        "output",
+        "with_store",
+        "with_preferences",
+        "deliver"
+      ]
+    },
+    "SourceKind": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "Script": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "Script"
+          ],
+          "additionalProperties": false,
+          "description": "A Rhai file whose `answer(input, context)` returns the envelope."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Run": {
+              "$ref": "#/$defs/Program"
+            }
+          },
+          "required": [
+            "Run"
+          ],
+          "additionalProperties": false,
+          "description": "A program the host runs, confined where the machine can."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Fixture": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "Fixture"
+          ],
+          "additionalProperties": false,
+          "description": "A JSON file whose contents are the source's data."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Events": {
+              "type": "integer",
+              "format": "uint16",
+              "minimum": 0,
+              "maximum": 65535
+            }
+          },
+          "required": [
+            "Events"
+          ],
+          "additionalProperties": false,
+          "description": "The host's own: the last this many events the extension may see."
+        },
+        {
+          "type": "string",
+          "const": "Agents",
+          "description": "The host's own: every agent of the workspace's open spaces, under\n`agent:observe`."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Resident": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "Resident"
+          ],
+          "additionalProperties": false,
+          "description": "A Rhai file kept alive while a surface showing it is open, under\n`resident`: `start`, `event`, `input`, `render`, `stop`."
+        }
+      ],
+      "description": "Who answers a source. Every file is relative to the extension's\ndirectory."
+    },
+    "Program": {
+      "type": "object",
+      "properties": {
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeout": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Duration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Lower than [`PROGRAM_TIME_LIMIT`] when the manifest says so."
+        }
+      },
+      "required": [
+        "argv"
+      ],
+      "description": "A program as a manifest declares it: an argv whose first element is a\npath inside the extension or a name an `exec:` grant covers, each later\nelement a whole argument in which `{field}` is substituted."
+    },
+    "Duration": {
+      "type": "object",
+      "required": [
+        "secs",
+        "nanos"
+      ],
+      "properties": {
+        "secs": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "nanos": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      }
+    },
+    "EventName": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "PathsChanged": {
+              "type": "object",
+              "properties": {
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "paths"
+              ]
+            }
+          },
+          "required": [
+            "PathsChanged"
+          ],
+          "additionalProperties": false,
+          "description": "A file beneath one of these paths, relative to the checkout,\nchanged."
+        },
+        {
+          "type": "string",
+          "const": "CheckoutChanged",
+          "description": "The checkout's branch, head or working tree changed."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Agent": {
+              "$ref": "#/$defs/AgentEvent"
+            }
+          },
+          "required": [
+            "Agent"
+          ],
+          "additionalProperties": false,
+          "description": "An agent of the workspace did something, as it reported or as the\nworkspace saw it paint. Needs `agent:observe`."
+        }
+      ],
+      "description": "A reason, other than time, to ask a source again."
+    },
+    "AgentEvent": {
+      "type": "string",
+      "enum": [
+        "SessionStarted",
+        "TurnStarted",
+        "TurnFinished",
+        "ToolStarted",
+        "ToolFinished",
+        "ApprovalAsked",
+        "ApprovalResolved"
+      ],
+      "description": "What an agent may be seen doing (`agent-bridge`)."
+    },
+    "Output": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "Json",
+          "description": "One JSON value, or an envelope around one."
+        },
+        {
+          "type": "string",
+          "const": "View",
+          "description": "A tree of catalog nodes the host validates and draws."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Lines": {
+              "type": "object",
+              "properties": {
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "separator": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1
+                }
+              },
+              "required": [
+                "fields",
+                "separator"
+              ]
+            }
+          },
+          "required": [
+            "Lines"
+          ],
+          "additionalProperties": false,
+          "description": "One item per line, its fields named in order and split at\n`separator`, a tab unless the declaration names another, each\ntrimmed of the spaces around it."
+        }
+      ],
+      "description": "How a program's standard output becomes a source's data."
+    },
+    "Deliver": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "Latest",
+          "description": "Coalesced in a short window: it is asked once, with the last."
+        },
+        {
+          "type": "string",
+          "const": "Each",
+          "description": "Asked once per event, in order, a bounded number per window."
+        }
+      ],
+      "description": "How events that ask a source again reach it."
+    },
+    "ActionDecl": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string",
+          "description": "What the footer, the action index and a menu call it."
+        },
+        "on": {
+          "type": "string",
+          "description": "The surface it is offered on."
+        },
+        "key": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KeySuggestion"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The chord the extension suggests; bound only where it is free."
+        },
+        "confirm": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The question asked before it runs, with `{field}` references to the\nitem it runs on. An action without one runs on the gesture."
+        },
+        "does": {
+          "$ref": "#/$defs/Does"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "on",
+        "does"
+      ],
+      "description": "Something an extension offers the operator to do on one of its\nsurfaces."
+    },
+    "KeySuggestion": {
+      "type": "object",
+      "properties": {
+        "ctrl": {
+          "type": "boolean"
+        },
+        "alt": {
+          "type": "boolean"
+        },
+        "shift": {
+          "type": "boolean"
+        },
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ctrl",
+        "alt",
+        "shift",
+        "key"
+      ],
+      "description": "A chord as a manifest suggests one: `ctrl-r`, `alt-shift-x`, `f5`, `d`.\nModifiers lowercase, joined to the key by `-`; the key a single\nprintable character or one of [`KeySuggestion::NAMED`]."
+    },
+    "Does": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "Script": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "Script"
+          ],
+          "additionalProperties": false,
+          "description": "Runs this Rhai file's `answer`, relative to the extension's\ndirectory, and applies its envelope."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Refresh": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "Refresh"
+          ],
+          "additionalProperties": false,
+          "description": "Asks these sources again."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Clipboard": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "Clipboard"
+          ],
+          "additionalProperties": false,
+          "description": "Copies this text, with `{field}` references, to the clipboard."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "OpenPath": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "OpenPath"
+          ],
+          "additionalProperties": false,
+          "description": "Opens the file at this path, with `{field}` references, inside the\ncheckout."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Open": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "Open"
+          ],
+          "additionalProperties": false,
+          "description": "Opens this surface of the same extension."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Run": {
+              "$ref": "#/$defs/Program"
+            }
+          },
+          "required": [
+            "Run"
+          ],
+          "additionalProperties": false,
+          "description": "Runs a program, confined where the machine can, and applies the\nenvelope it answers."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "AgentPrompt": {
+              "type": "object",
+              "properties": {
+                "prompt": {
+                  "$ref": "#/$defs/PromptText"
+                },
+                "target": {
+                  "$ref": "#/$defs/AgentTarget"
+                },
+                "auto": {
+                  "description": "Sent on an agent event rather than a gesture.",
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/AutoPrompt"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "prompt",
+                "target"
+              ]
+            }
+          },
+          "required": [
+            "AgentPrompt"
+          ],
+          "additionalProperties": false,
+          "description": "Types a prompt into an agent, shown first; never queued."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "AgentRestart": {
+              "type": "object",
+              "properties": {
+                "target": {
+                  "$ref": "#/$defs/AgentTarget"
+                }
+              },
+              "required": [
+                "target"
+              ]
+            }
+          },
+          "required": [
+            "AgentRestart"
+          ],
+          "additionalProperties": false,
+          "description": "Starts an agent's harness on a new conversation; always confirmed."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "FocusAgent": {
+              "type": "object",
+              "properties": {
+                "target": {
+                  "$ref": "#/$defs/AgentTarget"
+                }
+              },
+              "required": [
+                "target"
+              ]
+            }
+          },
+          "required": [
+            "FocusAgent"
+          ],
+          "additionalProperties": false,
+          "description": "Puts an agent's pane in front."
+        }
+      ],
+      "description": "What an action does when it runs."
+    },
+    "PromptText": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "Text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "Text"
+          ],
+          "additionalProperties": false,
+          "description": "Text, with `{field}` references resolved against the item when the\noperator presses it; fixed when unattended."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Skill": {
+              "type": "object",
+              "properties": {
+                "skill": {
+                  "type": "string"
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "skill",
+                "args"
+              ]
+            }
+          },
+          "required": [
+            "Skill"
+          ],
+          "additionalProperties": false,
+          "description": "A skill the agent's harness knows, spelled by its integration, with\nits arguments."
+        }
+      ],
+      "description": "What an agent prompt types."
+    },
+    "AgentTarget": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "Own",
+          "description": "The agent the surface stands for: a band's pane's, or the agent the\nselected item names."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Named": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "Named"
+          ],
+          "additionalProperties": false,
+          "description": "The agent whose id this `{field}` template resolves to, from the\n`agents` source."
+        }
+      ],
+      "description": "Who an agent action is aimed at."
+    },
+    "AutoPrompt": {
+      "type": "object",
+      "properties": {
+        "on": {
+          "$ref": "#/$defs/AgentEvent"
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The values `{arg}` may take; empty for a prompt with none."
+        }
+      },
+      "required": [
+        "on",
+        "values"
+      ],
+      "description": "An unattended prompt: what event sends it, and the closed set its one\nargument is taken from, when it has one."
+    },
+    "ExecDecl": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "reads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "reads"
+      ],
+      "description": "The paths a granted program reads that the host would not otherwise\nlet it: a device, a driver's directory. Listed on the consent screen."
+    },
+    "PreferenceDecl": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string",
+          "description": "What the Extensions screen calls it."
+        },
+        "kind": {
+          "$ref": "#/$defs/PreferenceKind"
+        },
+        "default": {
+          "description": "What it holds until the operator says otherwise."
+        }
+      },
+      "required": [
+        "name",
+        "label",
+        "kind",
+        "default"
+      ],
+      "description": "A setting an extension declares and the operator edits."
+    },
+    "PreferenceKind": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "Text",
+            "Toggle"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "Secret",
+          "description": "Kept in the operating system's keychain, never shown again, never\nread by `{pref.*}` nor handed to a script: only `fetch`'s `secret`\noption places it, in a request's header."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Number": {
+              "type": "object",
+              "properties": {
+                "min": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "int64"
+                },
+                "max": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "int64"
+                }
+              }
+            }
+          },
+          "required": [
+            "Number"
+          ],
+          "additionalProperties": false,
+          "description": "Bounds are whole numbers; a value between them may have a fraction."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Choice": {
+              "type": "object",
+              "properties": {
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "values"
+              ]
+            }
+          },
+          "required": [
+            "Choice"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "SpriteDecl": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "sheet": {
+          "type": "string",
+          "description": "A PNG inside the extension."
+        },
+        "frame": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          ],
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "One frame's size, in pixels."
+        },
+        "columns": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "description": "Frames in a row of the sheet."
+        },
+        "states": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SpriteState"
+          }
+        },
+        "fallback": {
+          "type": "string",
+          "description": "The state played when the bound one is none of these."
+        }
+      },
+      "required": [
+        "id",
+        "sheet",
+        "frame",
+        "columns",
+        "states",
+        "fallback"
+      ],
+      "description": "A sheet of equal frames and the states that play them\n(`extension-media-and-resident`)."
+    },
+    "SpriteState": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "frames": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        },
+        "fps": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "description": "Frames a second, 1 to 30."
+        },
+        "looped": {
+          "type": "boolean",
+          "description": "Whether it starts over at its end, or holds its last frame."
+        }
+      },
+      "required": [
+        "name",
+        "frames",
+        "fps",
+        "looped"
+      ],
+      "description": "One animation of a sprite: frame indices into the sheet, read left to\nright and top to bottom."
+    },
+    "Envelope": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "description": "What the source's views bind."
+        },
+        "refresh": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Source ids to ask again.",
+          "default": []
+        },
+        "toast": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notice": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "store": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true,
+          "description": "Keys of the extension's store to replace, `null` removing one."
+        },
+        "notify": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Notification"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A notification the operator is to get, under `notify`."
+        },
+        "sound": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sound"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A cue to sound, under `notify`."
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "description": "What a source answered: `data`, and optionally the sources to ask\nagain, a toast and a notice. The strings are the extension's own and\npass through [`crate::Clean`] where the host draws them."
+    },
+    "Notification": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "body"
+      ],
+      "description": "What a notification says; the host puts the extension's attribution\nbefore its title."
+    },
+    "Sound": {
+      "type": "string",
+      "enum": [
+        "done",
+        "attention",
+        "error"
+      ],
+      "description": "The cues an answer may ask for. The host sounds each as the\nterminal's bell."
+    },
+    "StackNode": {
+      "description": "Its children one under another, `gap` rows apart.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Stack"
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "gap": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Rows (in a `Stack`) or columns (in a `Row`) between children."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/StackNode"
+              },
+              {
+                "$ref": "#/$defs/RowNode"
+              },
+              {
+                "$ref": "#/$defs/TextNode"
+              },
+              {
+                "$ref": "#/$defs/BadgeNode"
+              },
+              {
+                "$ref": "#/$defs/MarksNode"
+              },
+              {
+                "$ref": "#/$defs/PipsNode"
+              },
+              {
+                "$ref": "#/$defs/ProgressNode"
+              },
+              {
+                "$ref": "#/$defs/ListNode"
+              },
+              {
+                "$ref": "#/$defs/TableNode"
+              },
+              {
+                "$ref": "#/$defs/TabsNode"
+              },
+              {
+                "$ref": "#/$defs/ToggleNode"
+              },
+              {
+                "$ref": "#/$defs/ButtonNode"
+              },
+              {
+                "$ref": "#/$defs/ActivityNode"
+              },
+              {
+                "$ref": "#/$defs/ElapsedNode"
+              },
+              {
+                "$ref": "#/$defs/LogNode"
+              },
+              {
+                "$ref": "#/$defs/RuleNode"
+              },
+              {
+                "$ref": "#/$defs/DetailsNode"
+              },
+              {
+                "$ref": "#/$defs/MarkdownNode"
+              },
+              {
+                "$ref": "#/$defs/CodeNode"
+              },
+              {
+                "$ref": "#/$defs/GaugeNode"
+              },
+              {
+                "$ref": "#/$defs/ChartNode"
+              },
+              {
+                "$ref": "#/$defs/StatNode"
+              },
+              {
+                "$ref": "#/$defs/KbdNode"
+              },
+              {
+                "$ref": "#/$defs/GridNode"
+              },
+              {
+                "$ref": "#/$defs/CellsNode"
+              },
+              {
+                "$ref": "#/$defs/ImageNode"
+              },
+              {
+                "$ref": "#/$defs/SpriteNode"
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "RowNode": {
+      "description": "Its children side by side, `gap` columns apart; `grow` children share what is left, the rest are placed by `align`.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Row"
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "gap": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Rows (in a `Stack`) or columns (in a `Row`) between children."
+            },
+            "align": {
+              "enum": [
+                "start",
+                "center",
+                "end"
+              ],
+              "description": "Where a row with nothing that grows sits: `start`, `center` or `end`."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/StackNode"
+              },
+              {
+                "$ref": "#/$defs/RowNode"
+              },
+              {
+                "$ref": "#/$defs/TextNode"
+              },
+              {
+                "$ref": "#/$defs/BadgeNode"
+              },
+              {
+                "$ref": "#/$defs/MarksNode"
+              },
+              {
+                "$ref": "#/$defs/PipsNode"
+              },
+              {
+                "$ref": "#/$defs/ProgressNode"
+              },
+              {
+                "$ref": "#/$defs/ListNode"
+              },
+              {
+                "$ref": "#/$defs/TableNode"
+              },
+              {
+                "$ref": "#/$defs/TabsNode"
+              },
+              {
+                "$ref": "#/$defs/ToggleNode"
+              },
+              {
+                "$ref": "#/$defs/ButtonNode"
+              },
+              {
+                "$ref": "#/$defs/ActivityNode"
+              },
+              {
+                "$ref": "#/$defs/ElapsedNode"
+              },
+              {
+                "$ref": "#/$defs/LogNode"
+              },
+              {
+                "$ref": "#/$defs/RuleNode"
+              },
+              {
+                "$ref": "#/$defs/DetailsNode"
+              },
+              {
+                "$ref": "#/$defs/MarkdownNode"
+              },
+              {
+                "$ref": "#/$defs/CodeNode"
+              },
+              {
+                "$ref": "#/$defs/GaugeNode"
+              },
+              {
+                "$ref": "#/$defs/ChartNode"
+              },
+              {
+                "$ref": "#/$defs/StatNode"
+              },
+              {
+                "$ref": "#/$defs/KbdNode"
+              },
+              {
+                "$ref": "#/$defs/GridNode"
+              },
+              {
+                "$ref": "#/$defs/CellsNode"
+              },
+              {
+                "$ref": "#/$defs/ImageNode"
+              },
+              {
+                "$ref": "#/$defs/SpriteNode"
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "TextNode": {
+      "description": "Text in a role, `strong` for emphasis; with `truncate` one line cut with an ellipsis, otherwise a paragraph that wraps.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Text"
+        },
+        "args": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          ],
+          "items": false,
+          "minItems": 1
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "role": {
+              "enum": [
+                "default",
+                "muted",
+                "secondary",
+                "bright",
+                "inactive",
+                "accent",
+                "dim",
+                "faint",
+                "info",
+                "success",
+                "warning",
+                "danger"
+              ],
+              "description": "The semantic colour, or `{table:field}` to look one up."
+            },
+            "strong": {
+              "type": "boolean",
+              "description": "Emphasis."
+            },
+            "truncate": {
+              "type": "boolean",
+              "description": "One line, cut with an ellipsis, instead of a paragraph that wraps."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "args"
+      ],
+      "additionalProperties": false
+    },
+    "BadgeNode": {
+      "description": "A short label on a ground of its role's colour.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Badge"
+        },
+        "args": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          ],
+          "items": false,
+          "minItems": 1
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "role": {
+              "enum": [
+                "default",
+                "muted",
+                "secondary",
+                "bright",
+                "inactive",
+                "accent",
+                "dim",
+                "faint",
+                "info",
+                "success",
+                "warning",
+                "danger"
+              ],
+              "description": "The semantic colour, or `{table:field}` to look one up."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "args"
+      ],
+      "additionalProperties": false
+    },
+    "MarksNode": {
+      "description": "Role-coloured marks in a row, one per `Mark`.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Marks"
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/MarkNode"
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "MarkNode": {
+      "description": "One mark of a `Marks`, in its role's colour.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Mark"
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "role": {
+              "enum": [
+                "default",
+                "muted",
+                "secondary",
+                "bright",
+                "inactive",
+                "accent",
+                "dim",
+                "faint",
+                "info",
+                "success",
+                "warning",
+                "danger"
+              ],
+              "description": "The semantic colour, or `{table:field}` to look one up."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "PipsNode": {
+      "description": "`done` of `total` as a row of filled and empty pips.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Pips"
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "done": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "How many pips are filled."
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "How many pips there are."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "ProgressNode": {
+      "description": "A bar: one fill at `ratio`, or one segment per `Segment`.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Progress"
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "ratio": {
+              "type": "number",
+              "description": "How full, from 0 to 1."
+            },
+            "role": {
+              "enum": [
+                "default",
+                "muted",
+                "secondary",
+                "bright",
+                "inactive",
+                "accent",
+                "dim",
+                "faint",
+                "info",
+                "success",
+                "warning",
+                "danger"
+              ],
+              "description": "The semantic colour, or `{table:field}` to look one up."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SegmentNode"
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "SegmentNode": {
+      "description": "One segment of a `Progress`: as wide as its `weight`, filled to its `ratio`, in its role.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Segment"
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "weight": {
+              "type": "number",
+              "description": "How wide, relative to the other segments."
+            },
+            "ratio": {
+              "type": "number",
+              "description": "How full, from 0 to 1."
+            },
+            "role": {
+              "enum": [
+                "default",
+                "muted",
+                "secondary",
+                "bright",
+                "inactive",
+                "accent",
+                "dim",
+                "faint",
+                "info",
+                "success",
+                "warning",
+                "danger"
+              ],
+              "description": "The semantic colour, or `{table:field}` to look one up."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "ListNode": {
+      "description": "Rows repeated over `each`; with an `id`, the host holds which one is selected.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "List"
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "The name the host keeps this node's state under, as `ui.<id>`."
+            },
+            "empty": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ],
+              "description": "What to draw when there are no rows."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/StackNode"
+              },
+              {
+                "$ref": "#/$defs/RowNode"
+              },
+              {
+                "$ref": "#/$defs/TextNode"
+              },
+              {
+                "$ref": "#/$defs/BadgeNode"
+              },
+              {
+                "$ref": "#/$defs/MarksNode"
+              },
+              {
+                "$ref": "#/$defs/PipsNode"
+              },
+              {
+                "$ref": "#/$defs/ProgressNode"
+              },
+              {
+                "$ref": "#/$defs/ListNode"
+              },
+              {
+                "$ref": "#/$defs/TableNode"
+              },
+              {
+                "$ref": "#/$defs/TabsNode"
+              },
+              {
+                "$ref": "#/$defs/ToggleNode"
+              },
+              {
+                "$ref": "#/$defs/ButtonNode"
+              },
+              {
+                "$ref": "#/$defs/ActivityNode"
+              },
+              {
+                "$ref": "#/$defs/ElapsedNode"
+              },
+              {
+                "$ref": "#/$defs/LogNode"
+              },
+              {
+                "$ref": "#/$defs/RuleNode"
+              },
+              {
+                "$ref": "#/$defs/DetailsNode"
+              },
+              {
+                "$ref": "#/$defs/MarkdownNode"
+              },
+              {
+                "$ref": "#/$defs/CodeNode"
+              },
+              {
+                "$ref": "#/$defs/GaugeNode"
+              },
+              {
+                "$ref": "#/$defs/ChartNode"
+              },
+              {
+                "$ref": "#/$defs/StatNode"
+              },
+              {
+                "$ref": "#/$defs/KbdNode"
+              },
+              {
+                "$ref": "#/$defs/GridNode"
+              },
+              {
+                "$ref": "#/$defs/CellsNode"
+              },
+              {
+                "$ref": "#/$defs/ImageNode"
+              },
+              {
+                "$ref": "#/$defs/SpriteNode"
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "TableNode": {
+      "description": "Named columns, one argument per heading; each child `Row` is a line whose children are its cells.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Table"
+        },
+        "args": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          ],
+          "items": false,
+          "minItems": 0
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "empty": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ],
+              "description": "What to draw when there are no rows."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/RowNode"
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "TabsNode": {
+      "description": "A choice the host holds as `ui.<id>`; `show=\"ui.<id>=<value>\"` picks what is drawn under it.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Tabs"
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "The name the host keeps this node's state under, as `ui.<id>`."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TabNode"
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "TabNode": {
+      "description": "One choice of a `Tabs`: its label, and the `value` `show` compares with.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Tab"
+        },
+        "args": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          ],
+          "items": false,
+          "minItems": 1
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "type": "string",
+              "description": "What `show` compares the tab's choice with."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "args"
+      ],
+      "additionalProperties": false
+    },
+    "ToggleNode": {
+      "description": "A switch the host holds as `ui.<id>`, `on` at first when given.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Toggle"
+        },
+        "args": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          ],
+          "items": false,
+          "minItems": 1
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "The name the host keeps this node's state under, as `ui.<id>`."
+            },
+            "on": {
+              "type": "boolean",
+              "description": "Whether the switch starts on."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "args"
+      ],
+      "additionalProperties": false
+    },
+    "ButtonNode": {
+      "description": "A label that records its `action` with its `item` when pressed.",
+      "type": "object",
+      "dependentSchemas": {
+        "item": {
+          "required": [
+            "props"
+          ],
+          "properties": {
+            "props": {
+              "required": [
+                "action"
+              ]
+            }
+          }
+        }
+      },
+      "properties": {
+        "type": {
+          "const": "Button"
+        },
+        "args": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          ],
+          "items": false,
+          "minItems": 1
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "description": "The action a press records, by name."
+            },
+            "item": {
+              "description": "What the action receives: a field, or `{.}` for the whole item."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        },
+        "item": {
+          "description": "What the named action receives when it runs."
+        }
+      },
+      "required": [
+        "type",
+        "args"
+      ],
+      "additionalProperties": false
+    },
+    "ActivityNode": {
+      "description": "A mark the host animates while `busy`.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Activity"
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "agent": {
+              "type": "string",
+              "description": "The agent whose activity this mark follows."
+            },
+            "busy": {
+              "type": "boolean",
+              "description": "Whether the mark is animated."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "ElapsedNode": {
+      "description": "The time since `since`, ticked by the host.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Elapsed"
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "since": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ],
+              "description": "A timestamp: milliseconds, or an RFC 3339 date."
+            },
+            "role": {
+              "enum": [
+                "default",
+                "muted",
+                "secondary",
+                "bright",
+                "inactive",
+                "accent",
+                "dim",
+                "faint",
+                "info",
+                "success",
+                "warning",
+                "danger"
+              ],
+              "description": "The semantic colour, or `{table:field}` to look one up."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "LogNode": {
+      "description": "Lines, each a string or an object with `text` and a `role`.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Log"
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "lines": {
+              "description": "A list field of lines, or one string of several."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "RuleNode": {
+      "description": "A hairline across the width, with its label when given.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Rule"
+        },
+        "args": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          ],
+          "items": false,
+          "minItems": 0
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "role": {
+              "enum": [
+                "default",
+                "muted",
+                "secondary",
+                "bright",
+                "inactive",
+                "accent",
+                "dim",
+                "faint",
+                "info",
+                "success",
+                "warning",
+                "danger"
+              ],
+              "description": "The semantic colour, or `{table:field}` to look one up."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "DetailsNode": {
+      "description": "Key/value pairs, one `Entry` each, with the keys in one aligned column.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Details"
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/EntryNode"
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "EntryNode": {
+      "description": "One pair of a `Details`: its key, then its value, in its role.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Entry"
+        },
+        "args": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          ],
+          "items": false,
+          "minItems": 2
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "role": {
+              "enum": [
+                "default",
+                "muted",
+                "secondary",
+                "bright",
+                "inactive",
+                "accent",
+                "dim",
+                "faint",
+                "info",
+                "success",
+                "warning",
+                "danger"
+              ],
+              "description": "The semantic colour, or `{table:field}` to look one up."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "args"
+      ],
+      "additionalProperties": false
+    },
+    "MarkdownNode": {
+      "description": "Text written in Markdown: headings, lists, quotes, emphasis and fenced code, wrapped.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Markdown"
+        },
+        "args": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          ],
+          "items": false,
+          "minItems": 1
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "args"
+      ],
+      "additionalProperties": false
+    },
+    "CodeNode": {
+      "description": "A block of code highlighted for its `language`, one row per line, cut rather than wrapped.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Code"
+        },
+        "args": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          ],
+          "items": false,
+          "minItems": 1
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "language": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ],
+              "description": "The language the code is highlighted for, such as `rust` or `json`."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "args"
+      ],
+      "additionalProperties": false
+    },
+    "GaugeNode": {
+      "description": "A labelled meter at `ratio`, in `role` until it reaches `warning` or `danger`.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Gauge"
+        },
+        "args": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          ],
+          "items": false,
+          "minItems": 0
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "ratio": {
+              "type": "number",
+              "description": "How full, from 0 to 1."
+            },
+            "role": {
+              "enum": [
+                "default",
+                "muted",
+                "secondary",
+                "bright",
+                "inactive",
+                "accent",
+                "dim",
+                "faint",
+                "info",
+                "success",
+                "warning",
+                "danger"
+              ],
+              "description": "The semantic colour, or `{table:field}` to look one up."
+            },
+            "warning": {
+              "type": "number",
+              "description": "The ratio from which the gauge is drawn in the `warning` role."
+            },
+            "danger": {
+              "type": "number",
+              "description": "The ratio from which the gauge is drawn in the `danger` role."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "ChartNode": {
+      "description": "A list of numbers (`series`) as one `sparkline` row or as `bar`s `height` rows tall.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Chart"
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "series": {
+              "description": "A list field of numbers."
+            },
+            "kind": {
+              "enum": [
+                "sparkline",
+                "bar"
+              ],
+              "description": "`sparkline` (one row) or `bar` (columns `height` rows tall)."
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "How many rows it takes: a chart's bars, a picture's or a sprite's height."
+            },
+            "role": {
+              "enum": [
+                "default",
+                "muted",
+                "secondary",
+                "bright",
+                "inactive",
+                "accent",
+                "dim",
+                "faint",
+                "info",
+                "success",
+                "warning",
+                "danger"
+              ],
+              "description": "The semantic colour, or `{table:field}` to look one up."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "StatNode": {
+      "description": "A figure and its label, with a `delta` in its role when given.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Stat"
+        },
+        "args": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          ],
+          "items": false,
+          "minItems": 2
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "delta": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ],
+              "description": "A change beside the figure, such as `+12%`, in `role`."
+            },
+            "role": {
+              "enum": [
+                "default",
+                "muted",
+                "secondary",
+                "bright",
+                "inactive",
+                "accent",
+                "dim",
+                "faint",
+                "info",
+                "success",
+                "warning",
+                "danger"
+              ],
+              "description": "The semantic colour, or `{table:field}` to look one up."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "args"
+      ],
+      "additionalProperties": false
+    },
+    "KbdNode": {
+      "description": "A key, drawn as the workspace draws its own keys.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Kbd"
+        },
+        "args": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          ],
+          "items": false,
+          "minItems": 1
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "args"
+      ],
+      "additionalProperties": false
+    },
+    "GridNode": {
+      "description": "Its children as tiles, in as many columns as fit their `min-width`, row by row.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Grid"
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "gap": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Rows (in a `Stack`) or columns (in a `Row`) between children."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/StackNode"
+              },
+              {
+                "$ref": "#/$defs/RowNode"
+              },
+              {
+                "$ref": "#/$defs/TextNode"
+              },
+              {
+                "$ref": "#/$defs/BadgeNode"
+              },
+              {
+                "$ref": "#/$defs/MarksNode"
+              },
+              {
+                "$ref": "#/$defs/PipsNode"
+              },
+              {
+                "$ref": "#/$defs/ProgressNode"
+              },
+              {
+                "$ref": "#/$defs/ListNode"
+              },
+              {
+                "$ref": "#/$defs/TableNode"
+              },
+              {
+                "$ref": "#/$defs/TabsNode"
+              },
+              {
+                "$ref": "#/$defs/ToggleNode"
+              },
+              {
+                "$ref": "#/$defs/ButtonNode"
+              },
+              {
+                "$ref": "#/$defs/ActivityNode"
+              },
+              {
+                "$ref": "#/$defs/ElapsedNode"
+              },
+              {
+                "$ref": "#/$defs/LogNode"
+              },
+              {
+                "$ref": "#/$defs/RuleNode"
+              },
+              {
+                "$ref": "#/$defs/DetailsNode"
+              },
+              {
+                "$ref": "#/$defs/MarkdownNode"
+              },
+              {
+                "$ref": "#/$defs/CodeNode"
+              },
+              {
+                "$ref": "#/$defs/GaugeNode"
+              },
+              {
+                "$ref": "#/$defs/ChartNode"
+              },
+              {
+                "$ref": "#/$defs/StatNode"
+              },
+              {
+                "$ref": "#/$defs/KbdNode"
+              },
+              {
+                "$ref": "#/$defs/GridNode"
+              },
+              {
+                "$ref": "#/$defs/CellsNode"
+              },
+              {
+                "$ref": "#/$defs/ImageNode"
+              },
+              {
+                "$ref": "#/$defs/SpriteNode"
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "CellsNode": {
+      "description": "A grid of characters, `rows` a list of rows of `{ch, role}` (or plain text), with `regions` (`{x, y, w, h, action, item}`) running a declared action when clicked. Colour comes from roles only.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Cells"
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "rows": {
+              "description": "A list of rows, each a list of `{ch, role}` cells or a plain string."
+            },
+            "regions": {
+              "description": "A list of `{x, y, w, h, action, item}`: a click inside runs `action` with `item`."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "ImageNode": {
+      "description": "A picture: a PNG, JPEG or GIF inside the extension, or `scratch:<name>` its program wrote, fitted to `height` rows; `alt` where the terminal draws none.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Image"
+        },
+        "args": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          ],
+          "items": false,
+          "minItems": 1
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "alt": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ],
+              "description": "What stands in for the picture where the terminal draws none."
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "How many rows it takes: a chart's bars, a picture's or a sprite's height."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "args"
+      ],
+      "additionalProperties": false
+    },
+    "SpriteNode": {
+      "description": "A declared sprite playing `state` (or its fallback), on the host's clock.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Sprite"
+        },
+        "args": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "string"
+            }
+          ],
+          "items": false,
+          "minItems": 1
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ],
+              "description": "The state to play: one of the sprite's, or its fallback otherwise."
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "How many rows it takes: a chart's bars, a picture's or a sprite's height."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "args"
+      ],
+      "additionalProperties": false
+    },
+    "CatalogNode": {
+      "description": "A node of the catalog, as a composed answer writes it: `type`, then its `args`, `props` and `children`. Every value is a literal; `{x}` in a composed tree is text.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/StackNode"
+        },
+        {
+          "$ref": "#/$defs/RowNode"
+        },
+        {
+          "$ref": "#/$defs/TextNode"
+        },
+        {
+          "$ref": "#/$defs/BadgeNode"
+        },
+        {
+          "$ref": "#/$defs/MarksNode"
+        },
+        {
+          "$ref": "#/$defs/MarkNode"
+        },
+        {
+          "$ref": "#/$defs/PipsNode"
+        },
+        {
+          "$ref": "#/$defs/ProgressNode"
+        },
+        {
+          "$ref": "#/$defs/SegmentNode"
+        },
+        {
+          "$ref": "#/$defs/ListNode"
+        },
+        {
+          "$ref": "#/$defs/TableNode"
+        },
+        {
+          "$ref": "#/$defs/TabsNode"
+        },
+        {
+          "$ref": "#/$defs/TabNode"
+        },
+        {
+          "$ref": "#/$defs/ToggleNode"
+        },
+        {
+          "$ref": "#/$defs/ButtonNode"
+        },
+        {
+          "$ref": "#/$defs/ActivityNode"
+        },
+        {
+          "$ref": "#/$defs/ElapsedNode"
+        },
+        {
+          "$ref": "#/$defs/LogNode"
+        },
+        {
+          "$ref": "#/$defs/RuleNode"
+        },
+        {
+          "$ref": "#/$defs/DetailsNode"
+        },
+        {
+          "$ref": "#/$defs/EntryNode"
+        },
+        {
+          "$ref": "#/$defs/MarkdownNode"
+        },
+        {
+          "$ref": "#/$defs/CodeNode"
+        },
+        {
+          "$ref": "#/$defs/GaugeNode"
+        },
+        {
+          "$ref": "#/$defs/ChartNode"
+        },
+        {
+          "$ref": "#/$defs/StatNode"
+        },
+        {
+          "$ref": "#/$defs/KbdNode"
+        },
+        {
+          "$ref": "#/$defs/GridNode"
+        },
+        {
+          "$ref": "#/$defs/CellsNode"
+        },
+        {
+          "$ref": "#/$defs/ImageNode"
+        },
+        {
+          "$ref": "#/$defs/SpriteNode"
+        }
+      ]
+    },
+    "ComposedAnswer": {
+      "description": "What a source with `output \"view\"` (or a resident script's `render`) answers: a tree of catalog nodes, alone or as the `data` of an envelope.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CatalogNode"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Envelope"
+            },
+            {
+              "properties": {
+                "data": {
+                  "$ref": "#/$defs/CatalogNode"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "examples": [
+        {
+          "type": "Stack",
+          "props": {
+            "gap": 1
+          },
+          "children": [
+            {
+              "type": "Text",
+              "args": [
+                "Phase 12 · Query"
+              ],
+              "props": {
+                "role": "bright",
+                "strong": true
+              }
+            },
+            {
+              "type": "Progress",
+              "props": {
+                "ratio": 0.4,
+                "role": "warning"
+              }
+            },
+            {
+              "type": "Row",
+              "props": {
+                "gap": 2
+              },
+              "children": [
+                {
+                  "type": "Badge",
+                  "args": [
+                    "running"
+                  ],
+                  "props": {
+                    "role": "info"
+                  }
+                },
+                {
+                  "type": "Button",
+                  "args": [
+                    "Next phase"
+                  ],
+                  "props": {
+                    "action": "next"
+                  },
+                  "item": {
+                    "number": 13
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "data": {
+            "type": "Row",
+            "children": [
+              {
+                "type": "Gauge",
+                "args": [
+                  "GPU"
+                ],
+                "props": {
+                  "ratio": 0.82,
+                  "warning": 0.7,
+                  "danger": 0.9
+                }
+              },
+              {
+                "type": "Chart",
+                "props": {
+                  "series": [
+                    3,
+                    5,
+                    8,
+                    13
+                  ],
+                  "kind": "sparkline"
+                }
+              }
+            ]
+          },
+          "notice": "sampled 2s ago",
+          "refresh": []
+        }
+      ]
+    }
+  }
+}
