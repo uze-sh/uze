@@ -158,6 +158,7 @@ fn surface(id: &str, slot: uze_contract::Slot) -> uze_contract::SurfaceDecl {
             uze_contract::Slot::Overlay => "Notes".to_owned(),
             _ => id.to_owned(),
         }),
+        applies_when: None,
     }
 }
 

@@ -51,6 +51,7 @@ fn compiled(every: Option<Duration>, refresh_on: Vec<EventName>) -> CompiledExte
                 view: "band.kdl".to_owned(),
                 source: "board".to_owned(),
                 title: None,
+                applies_when: None,
             }],
             wants: Vec::new(),
             sources: vec![source],

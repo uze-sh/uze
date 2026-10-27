@@ -21,9 +21,7 @@ impl WorkspaceModel {
             .declared
             .slots
             .iter()
-            .filter(|slot| {
-                (slot.is_view() || slot.is_overlay()) && self.offers_declared(&slot.owner)
-            })
+            .filter(|slot| (slot.is_view() || slot.is_overlay()) && self.offers_slot(slot))
             .filter_map(|slot| {
                 let identity = slot.owner.declared()?;
                 let name = uze_keys::extension::action_name(

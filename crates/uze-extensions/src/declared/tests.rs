@@ -150,6 +150,7 @@ pub(super) fn extension(view: CompiledView) -> CompiledExtension {
         view: "board.kdl".to_owned(),
         source: SOURCE.to_owned(),
         title: Some("GSD".to_owned()),
+        applies_when: None,
     };
     CompiledExtension {
         identity: Identity {
@@ -609,6 +610,8 @@ fn a_key_on_a_declared_action_runs_it_where_it_is_offered() {
         key: None,
         confirm: None,
         does: uze_contract::Does::Refresh(vec![SOURCE.to_owned()]),
+        with: Vec::new(),
+        then: None,
     }];
     let mut extension = DeclaredExtension::new(compiled, "en");
     assert_eq!(
@@ -1431,6 +1434,8 @@ fn a_composed_answer_draws_itself_and_holds_back_a_hasty_click() {
         key: None,
         confirm: None,
         does: uze_contract::Does::Clipboard("{name}".to_owned()),
+        with: Vec::new(),
+        then: None,
     });
     let mut extension = DeclaredExtension::new(compiled, "en");
     let start = Instant::now();

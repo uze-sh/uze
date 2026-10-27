@@ -129,6 +129,7 @@ mod tests {
             view: format!("{id}.kdl"),
             source: "board".to_owned(),
             title: title.map(str::to_owned),
+            applies_when: None,
         };
         let compiled = CompiledExtension {
             identity: installed().identity,

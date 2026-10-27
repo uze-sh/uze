@@ -459,7 +459,7 @@ Text "a" show="ui.tab=phases""#,
         r#"Tabs id="tab" { Tab "a" value="phases"; }
 Text "a" show="ui.tab=log""#,
     );
-    assert!(missing.message.contains("no tab `log`"), "{missing}");
+    assert!(missing.message.contains("no choice `log`"), "{missing}");
     assert!(
         view(
             r#"Toggle "Compact" id="compact"
@@ -1009,7 +1009,7 @@ Text "a" show="ui.tab=tasks""#
 Text "a" show="ui.tab=task""#,
     );
     assert!(
-        refused.message.contains("have no tab `task`"),
+        refused.message.contains("has no choice `task`"),
         "{refused:?}"
     );
 }
@@ -1086,5 +1086,71 @@ fn a_packaged_script_needs_its_interpreters_grant_and_must_exist() {
     assert!(
         missing[0].message.contains("the program `bin/meter`"),
         "{missing:?}"
+    );
+}
+
+#[test]
+fn a_select_holds_one_of_its_choices_and_show_names_one() {
+    assert!(
+        view(
+            r#"Select "Sort" id="sort" { Choice "Newest" value="new"; Choice "Oldest" value="old"; }
+Text "a" show="ui.sort=old""#
+        )
+        .is_ok()
+    );
+    let refused = the_one(
+        r#"Select id="sort" { Choice "Newest" value="new"; }
+Text "a" show="ui.sort=old""#,
+    );
+    assert!(refused.message.contains("no choice `old`"), "{refused}");
+    let misplaced = refused_one_of(r#"Choice "Newest""#);
+    assert!(misplaced.contains("Choice"), "{misplaced}");
+}
+
+fn refused_one_of(source: &str) -> String {
+    refused(source)
+        .iter()
+        .map(|diagnostic| diagnostic.message.clone())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn a_list_filters_by_a_field_the_view_declares() {
+    assert!(
+        view(
+            r#"Field "Filter" id="query" placeholder="name"
+List each="rows" filter="ui.query" { Text "{name}"; }"#
+        )
+        .is_ok()
+    );
+    let undeclared = the_one(r#"List each="rows" filter="ui.query" { Text "{name}"; }"#);
+    assert!(undeclared.message.contains("never set"), "{undeclared}");
+    let not_ui = the_one(
+        r#"Field id="query"
+List each="rows" filter="query" { Text "{name}"; }"#,
+    );
+    assert!(
+        not_ui.message.contains("names the UI value it filters by"),
+        "{not_ui}"
+    );
+}
+
+#[test]
+fn a_form_holds_fields_and_names_its_action() {
+    let compiled = view(
+        r#"Form action="comment" submit="Comment" item="{.}" {
+    Field "Comment" id="comment"
+    Select "Tone" id="tone" { Choice "Kind"; Choice "Blunt"; }
+}"#,
+    )
+    .expect("a form compiles");
+    let form = first_node(&compiled);
+    assert_eq!(form.name, NodeName::Form);
+    assert_eq!(form.children.len(), 2);
+    let interpolated = the_one(r#"Form action="{name}" { Field id="c"; }"#);
+    assert!(
+        interpolated.message.contains("action"),
+        "an action is identity, never data: {interpolated}"
     );
 }

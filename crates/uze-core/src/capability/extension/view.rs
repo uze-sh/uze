@@ -37,6 +37,7 @@ pub fn compile(document: &KdlDocument, file: &str, report: &mut Report<'_>) -> C
         templates: BTreeMap::new(),
         tables: Vec::new(),
         shows: Vec::new(),
+        filters: Vec::new(),
         states: BTreeMap::new(),
     };
     for node in document.nodes() {
@@ -119,6 +120,8 @@ struct Compiler<'r, 'a> {
     tables: Vec<(String, usize)>,
     /// Every `show` pair, and where.
     shows: Vec<(String, String, usize)>,
+    /// Every list's `filter`, by the id it names, and where.
+    filters: Vec<(String, usize)>,
     states: BTreeMap<String, State>,
 }
 
@@ -360,6 +363,24 @@ impl Compiler<'_, '_> {
         let Some(binding) = self.bind(prop_kind, entry, &format!("`{prop}`")) else {
             return false;
         };
+        if prop == "filter" {
+            let named = match &binding {
+                Binding::Literal(serde_json::Value::String(text)) => text
+                    .strip_prefix("ui.")
+                    .filter(|id| is_field_name(id))
+                    .map(str::to_owned),
+                _ => None,
+            };
+            let Some(id) = named else {
+                self.report.on(
+                    entry,
+                    "a list's `filter` names the UI value it filters by",
+                    Some("write `filter=\"ui.<id>\"`, the `id` of a `Field`".to_owned()),
+                );
+                return false;
+            };
+            self.filters.push((id, entry.offset()));
+        }
         if prop == "id"
             && !matches!(&binding, Binding::Literal(serde_json::Value::String(id)) if is_field_name(id))
         {
@@ -638,11 +659,11 @@ impl Compiler<'_, '_> {
         let Some(Binding::Literal(serde_json::Value::String(id))) = compiled.props.get("id") else {
             return;
         };
-        // A tab is chosen as its `value`, else as its label, which is how
+        // A tab or a choice is chosen as its `value`, else as its label, which is how
         // the engine holds it. A tab that names neither outright (its label
         // bound to data) or one a template brings leaves the choices open:
         // no `show` against them can be checked here.
-        let values = (kind == NodeName::Tabs)
+        let values = matches!(kind, NodeName::Tabs | NodeName::Select)
             .then(|| {
                 node.children()
                     .map(KdlDocument::nodes)
@@ -650,8 +671,10 @@ impl Compiler<'_, '_> {
                     .iter()
                     .map(
                         |tab| match (tab.name().value(), tab.get("value"), tab.get(0)) {
-                            ("Tab", Some(KdlValue::String(value)), _) => Some(value.clone()),
-                            ("Tab", None, Some(KdlValue::String(label)))
+                            ("Tab" | "Choice", Some(KdlValue::String(value)), _) => {
+                                Some(value.clone())
+                            }
+                            ("Tab" | "Choice", None, Some(KdlValue::String(label)))
                                 if !label.contains('{') =>
                             {
                                 Some(uze_contract::Clean::label(label).into_string())
@@ -858,6 +881,7 @@ impl Compiler<'_, '_> {
         self.refuse_misplaced_uses();
         self.refuse_unknown_tables();
         self.refuse_unknown_shows();
+        self.refuse_unknown_filters();
     }
 
     fn refuse_unknown_templates(&mut self) {
@@ -1076,6 +1100,23 @@ impl Compiler<'_, '_> {
         }
     }
 
+    fn refuse_unknown_filters(&mut self) {
+        for (id, offset) in &self.filters {
+            if !self.states.contains_key(id) {
+                self.report.at(
+                    *offset,
+                    format!(
+                        "no node in this view declares `id=\"{id}\"`, so `ui.{id}` is never set"
+                    ),
+                    Some(
+                        "declare it on a `Field`, such as `Field \"Filter\" id=\"query\"`"
+                            .to_owned(),
+                    ),
+                );
+            }
+        }
+    }
+
     fn refuse_unknown_shows(&mut self) {
         for (id, value, offset) in &self.shows {
             match self.states.get(id) {
@@ -1084,7 +1125,10 @@ impl Compiler<'_, '_> {
                     format!(
                         "no node in this view declares `id=\"{id}\"`, so `ui.{id}` is never set"
                     ),
-                    Some("declare it on a `Tabs`, a `Toggle` or a `List`".to_owned()),
+                    Some(
+                        "declare it on a `Tabs`, a `Select`, a `Field`, a `Toggle` or a `List`"
+                            .to_owned(),
+                    ),
                 ),
                 Some(State {
                     values: Some(values),
@@ -1092,8 +1136,8 @@ impl Compiler<'_, '_> {
                     let listed: Vec<&str> = values.iter().map(String::as_str).collect();
                     self.report.at(
                         *offset,
-                        format!("the tabs `{id}` have no tab `{value}`"),
-                        Some(format!("its tabs: {}", listed.join(", "))),
+                        format!("`{id}` has no choice `{value}`"),
+                        Some(format!("its choices: {}", listed.join(", "))),
                     );
                 }
                 Some(_) => {}

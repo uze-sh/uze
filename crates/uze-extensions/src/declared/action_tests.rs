@@ -19,6 +19,8 @@ fn action(id: &str, does: Does) -> ActionDecl {
         key: None,
         confirm: None,
         does,
+        with: Vec::new(),
+        then: None,
     }
 }
 

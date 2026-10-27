@@ -288,6 +288,8 @@ fn an_agents_event_asks_its_source_on_any_checkout_and_sends_an_unattended_promp
                     values: Vec::new(),
                 }),
             },
+            with: Vec::new(),
+            then: None,
         });
     engine.focus(Some(&checkout("/work/a")));
     events_asked(&mut engine, start, &[]);

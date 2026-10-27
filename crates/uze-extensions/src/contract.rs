@@ -293,6 +293,13 @@ pub trait Extension: Send {
         Outcome::Stay
     }
 
+    /// Whether `surface` applies where it would be drawn now: one that
+    /// does not is neither offered nor drawn. Every surface applies unless
+    /// its extension says otherwise.
+    fn applies(&self, _surface: &str) -> bool {
+        true
+    }
+
     /// Whether a letter pressed on `surface` is text rather than a
     /// shortcut: everything behind it is sealed while it is.
     fn typing(&self, _surface: &str) -> bool {

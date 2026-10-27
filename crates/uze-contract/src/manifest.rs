@@ -302,6 +302,11 @@ pub struct SurfaceDecl {
     /// What the host titles the surface with; the extension's name when
     /// absent.
     pub title: Option<String>,
+    /// A path inside the checkout the surface needs, as written
+    /// (`applies-when=".planning"`): while the checkout it is about has
+    /// none there, the surface is neither offered nor drawn.
+    #[serde(default)]
+    pub applies_when: Option<String>,
 }
 
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -327,6 +332,10 @@ pub struct SourceDecl {
     pub with_preferences: bool,
     /// How events that ask it again are handed over.
     pub deliver: Deliver,
+    /// A path inside the checkout the source needs: while the checkout it
+    /// would be asked about has none there, it is not asked.
+    #[serde(default)]
+    pub applies_when: Option<String>,
 }
 
 /// How events that ask a source again reach it.
@@ -358,6 +367,7 @@ impl SourceDecl {
             with_store: false,
             with_preferences: false,
             deliver: Deliver::Latest,
+            applies_when: None,
         }
     }
 
@@ -614,6 +624,68 @@ pub struct ActionDecl {
     /// item it runs on. An action without one runs on the gesture.
     pub confirm: Option<String>,
     pub does: Does,
+    /// The host-held values it reads beside its item, as written:
+    /// `ui.<id>`, `form.<id>` or `form.*` (D24). Only these reach it.
+    #[serde(default)]
+    pub with: Vec<String>,
+    /// What a `run` or a `script` does with its answer once it arrives: a
+    /// prompt typed into an agent, shown first, on the gesture that ran it
+    /// and never unattended (D16, D24).
+    #[serde(default)]
+    pub then: Option<Then>,
+}
+
+impl ActionDecl {
+    /// An action that does `does`, with nothing asked first, read beside
+    /// its item or done after.
+    pub fn new(
+        id: impl Into<String>,
+        label: impl Into<String>,
+        on: impl Into<String>,
+        does: Does,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+            on: on.into(),
+            key: None,
+            confirm: None,
+            does,
+            with: Vec::new(),
+            then: None,
+        }
+    }
+
+    /// Whether it reads the UI value `ui.<id>`.
+    pub fn reads_ui(&self, id: &str) -> bool {
+        self.with
+            .iter()
+            .any(|read| read.strip_prefix("ui.") == Some(id))
+    }
+
+    /// Whether it reads the form field `form.<id>`.
+    pub fn reads_form(&self, id: &str) -> bool {
+        self.with
+            .iter()
+            .any(|read| read == "form.*" || read.strip_prefix("form.") == Some(id))
+    }
+
+    /// Every grant it cannot run without: its own, and its second step's.
+    pub fn needs(&self) -> Vec<Grant> {
+        self.does
+            .needs()
+            .into_iter()
+            .chain(self.then.as_ref().map(|_| Grant::AgentPrompt))
+            .collect()
+    }
+}
+
+/// The second step of a two-step action: a prompt whose `{answer.*}`
+/// references read what the first step answered.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Then {
+    pub prompt: PromptText,
+    pub target: AgentTarget,
 }
 
 /// What an action does when it runs.

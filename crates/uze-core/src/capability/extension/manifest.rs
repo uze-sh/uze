@@ -42,7 +42,15 @@ const NODES: &[&str] = &[
 /// What later changes of `add-extension-platform` add to a manifest, with
 /// the change that brings each.
 const LATER: &[(&str, u32)] = &[];
-const SURFACE_PROPS: &[&str] = &["slot", "view", "source", "title", "rows", "place"];
+const SURFACE_PROPS: &[&str] = &[
+    "slot",
+    "view",
+    "source",
+    "title",
+    "rows",
+    "place",
+    "applies-when",
+];
 
 /// A manifest, and where in its file each declaration was written, for
 /// what the rest of the check says about them.
@@ -388,6 +396,12 @@ fn surface(node: &KdlNode, report: &mut Report<'_>) -> Option<(SurfaceDecl, (usi
     let view = required_prop(node, &parts, "view", report);
     let source = required_prop(node, &parts, "source", report);
     let title = prop(&parts, "title").and_then(|entry| string_prop("title", entry, report));
+    let applies_when = match prop(&parts, "applies-when") {
+        None => Some(None),
+        Some(entry) => string_prop("applies-when", entry, report)
+            .filter(|marker| applies_when(marker, entry.offset(), report))
+            .map(Some),
+    };
     let slot = slot.and_then(|(slot, offset)| {
         let parsed = Slot::parse(&slot);
         if parsed.is_none() {
@@ -414,6 +428,7 @@ fn surface(node: &KdlNode, report: &mut Report<'_>) -> Option<(SurfaceDecl, (usi
             source,
             title: title.map(|title| Clean::label(&title).into_string()),
             band: band?,
+            applies_when: applies_when?,
         },
         (view_at, source_at),
     ))
@@ -807,6 +822,20 @@ fn is_relative_inside(path: &str) -> bool {
         && std::path::Path::new(path)
             .components()
             .all(|part| matches!(part, std::path::Component::Normal(_)))
+}
+
+/// Whether `marker`, what `applies-when` names, is a path inside a
+/// checkout: relative, with `/`, never climbing out. Reports why not.
+pub fn applies_when(marker: &str, offset: usize, report: &mut Report<'_>) -> bool {
+    let inside = is_relative_inside(marker);
+    if !inside {
+        report.at(
+            offset,
+            format!("`{marker}` is not a path inside a checkout"),
+            Some("write the file or directory it needs, relative to the checkout: `applies-when=\".planning\"`".to_owned()),
+        );
+    }
+    inside
 }
 
 /// Whether `file` names a file inside the extension's directory with the

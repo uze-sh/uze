@@ -40,8 +40,10 @@ pub fn validate_composed(
 ) -> Result<(), String> {
     compose::compose(tree, manifest, "").map(drop)
 }
+mod applies;
 mod events;
 mod fixture_check;
+mod input;
 mod media;
 mod notify;
 mod resident;
@@ -66,10 +68,12 @@ use crate::view::{
 };
 pub use action::COPY_UNASKED_MAX;
 use action::{ActionAnswer, Pending, Queued};
+pub use applies::RECHECK as APPLIES_RECHECK;
 pub use bind::NODE_CAP;
 use bind::{Act, Built};
 pub use events::COALESCE;
 pub use fixture_check::{MissingField, TAB_COMBINATIONS_MAX, missing_fields};
+pub use input::FIELD_MAX;
 pub use media::{IMAGE_FILE_MAX, MEDIA_BYTES_MAX};
 pub use notify::{INTERVAL as NOTIFY_INTERVAL, PER_HOUR as NOTIFY_PER_HOUR};
 pub use resident::{INPUT_QUEUED, RENDERS_PER_SECOND};
@@ -175,6 +179,8 @@ pub struct DeclaredExtension {
     builds: std::cell::Cell<u64>,
     /// The pictures its views name, read one at a time.
     media: media::Shelf,
+    /// Whether each checkout has each path an `applies-when` names.
+    markers: applies::Markers,
 }
 
 /// A question asked of a source: about which checkout, with which input,
@@ -278,6 +284,7 @@ impl DeclaredExtension {
             memo: RefCell::default(),
             builds: std::cell::Cell::new(0),
             media: media::Shelf::default(),
+            markers: applies::Markers::default(),
         }
     }
 
@@ -448,10 +455,10 @@ impl DeclaredExtension {
             .unwrap_or(serde_json::Value::Null)
     }
 
-    /// `template` resolved to text against `item`.
-    fn resolve_text(&self, surface: &str, template: &str, item: &serde_json::Value) -> String {
-        let scope = action::template_scope(item);
-        value::scalar_text(&self.bind_template(surface, template, &scope))
+    /// `template` resolved to text against `scope`, an action's item with
+    /// what it reads beside it.
+    fn resolve_scoped(&self, surface: &str, template: &str, scope: &serde_json::Value) -> String {
+        value::scalar_text(&self.bind_template(surface, template, scope))
     }
 
     fn checkout_text(&self, surface: &str) -> Option<String> {
@@ -956,6 +963,15 @@ impl DeclaredExtension {
                 self.set_ui(surface, key, row.to_string());
                 Outcome::Stay
             }
+            (act @ Act::Select { .. }, NodeAct::Step { forward }) => {
+                self.step(surface, act, forward);
+                Outcome::Stay
+            }
+            (act @ Act::Field { .. }, NodeAct::Edit) => {
+                self.press_field(surface, act);
+                Outcome::Stay
+            }
+            (act @ Act::Form { .. }, NodeAct::Press) => self.submit(surface, act),
             _ => Outcome::Stay,
         }
     }
@@ -1041,6 +1057,11 @@ impl Extension for DeclaredExtension {
         if decl.slot == uze_contract::Slot::Section {
             return None;
         }
+        // A view already open stays drawn; every other slot is drawn only
+        // where it applies, as its door is offered.
+        if decl.slot != uze_contract::Slot::View && !self.surface_applies(surface) {
+            return None;
+        }
         let title = self.clean_title(decl);
         let scroll = self.scroll.get(surface).copied().unwrap_or(0);
         let root = self.with_built(surface, space, |built| built.root.clone())?;
@@ -1066,7 +1087,7 @@ impl Extension for DeclaredExtension {
 
     fn section(&self, surface: &str, collapsed: bool) -> Option<Section> {
         let (decl, _) = self.declaration(surface)?;
-        if decl.slot != uze_contract::Slot::Section {
+        if decl.slot != uze_contract::Slot::Section || !self.surface_applies(surface) {
             return None;
         }
         let root = self.with_built(surface, Size::default(), |built| built.root.clone())?;
@@ -1087,8 +1108,13 @@ impl Extension for DeclaredExtension {
             return outcome;
         }
         let space = self.space_for(surface, space);
+        if let Some(outcome) = self.command_while_editing(surface, &command, space) {
+            return outcome;
+        }
         match command {
             Command::Close => return Outcome::Close,
+            Command::FocusNext => self.focus_next(surface, space),
+            Command::Activate => return self.activate(surface, space),
             Command::NextView => self.cycle_tab(surface, space, true),
             Command::PreviousView => self.cycle_tab(surface, space, false),
             Command::SelectNext => self.move_selection(surface, space, true),
@@ -1106,6 +1132,17 @@ impl Extension for DeclaredExtension {
             return Outcome::Stay;
         }
         let space = self.space_for(surface, space);
+        // A press anywhere but the field typed into ends the typing, as a
+        // click away from any input does.
+        if !matches!(
+            hit,
+            ViewHit::Node {
+                act: NodeAct::Edit,
+                ..
+            }
+        ) {
+            self.stop_editing(surface);
+        }
         match hit {
             ViewHit::Close => Outcome::Close,
             ViewHit::Node { node, act } => match self.act(surface, space, node) {
@@ -1224,6 +1261,24 @@ impl Extension for DeclaredExtension {
         self.reads_raw(surface)
     }
 
+    /// While a field is typed into, a letter is text.
+    fn typing(&self, surface: &str) -> bool {
+        self.editing(surface, self.last_space(surface)).is_some()
+    }
+
+    fn paste(&mut self, surface: &str, text: &str, space: Size) {
+        let space = self.space_for(surface, space);
+        self.paste_into(surface, text, space);
+    }
+
+    fn missed(&mut self, surface: &str, _space: Size) {
+        self.stop_editing(surface);
+    }
+
+    fn applies(&self, surface: &str) -> bool {
+        self.surface_applies(surface)
+    }
+
     fn raw_input(&mut self, surface: &str, input: crate::contract::RawInput) {
         self.take_raw_input(surface, input);
     }
@@ -1295,7 +1350,11 @@ impl Extension for DeclaredExtension {
     fn jobs(&mut self) -> Vec<Job> {
         let mut jobs = self.action_jobs();
         jobs.extend(self.resident_jobs());
+        jobs.extend(self.marker_jobs());
         for (source, checkout, surface) in self.shown_sources() {
+            if !self.source_applies(&source, &checkout) {
+                continue;
+            }
             let local = self
                 .compiled
                 .manifest
@@ -1356,6 +1415,13 @@ impl Extension for DeclaredExtension {
         };
         let answer = match answer.downcast::<resident::ResidentAnswer>() {
             Ok(answered) => return self.absorb_resident(*answered),
+            Err(other) => other,
+        };
+        let answer = match answer.downcast::<applies::MarkerAnswer>() {
+            Ok(found) => {
+                self.absorb_marker(*found);
+                return Outcome::Stay;
+            }
             Err(other) => other,
         };
         let Ok(answered) = answer.downcast::<SourceAnswer>() else {
@@ -1467,3 +1533,9 @@ mod media_tests;
 
 #[cfg(test)]
 mod resident_tests;
+
+#[cfg(test)]
+mod input_tests;
+
+#[cfg(test)]
+mod applies_tests;

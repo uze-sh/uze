@@ -669,6 +669,7 @@ mod tests {
             source: "s".to_owned(),
             title: None,
             band,
+            applies_when: None,
         };
         let band = |rows| {
             Some(uze_contract::BandDecl {

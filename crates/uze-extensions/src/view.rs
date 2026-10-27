@@ -688,6 +688,28 @@ pub enum NodeKind {
         height: u16,
         refused: Option<String>,
     },
+    /// One of `options` chosen, stepped with its arrows
+    /// ([`NodeAct::Step`]) or with Enter while it has focus.
+    Select {
+        label: String,
+        options: Vec<String>,
+        chosen: usize,
+        focused: bool,
+    },
+    /// A line of text the host holds while the operator types into it
+    /// ([`NodeAct::Edit`] starts that).
+    Field {
+        label: String,
+        value: String,
+        placeholder: String,
+        focused: bool,
+        editing: bool,
+    },
+    /// Its children, then the button that sends them ([`NodeAct::Press`]).
+    Form {
+        submit: String,
+        focused: bool,
+    },
 }
 
 /// One character of a [`NodeKind::Cells`], in a role: never a colour.
@@ -777,6 +799,10 @@ pub enum NodeAct {
     Row(usize),
     /// A region of a [`NodeKind::Cells`], by its index.
     Region(usize),
+    /// A [`NodeKind::Select`] stepped to its next option, or back.
+    Step { forward: bool },
+    /// A [`NodeKind::Field`] taken to type into.
+    Edit,
 }
 
 /// An image as straight-alpha RGBA, row by row from the top-left.

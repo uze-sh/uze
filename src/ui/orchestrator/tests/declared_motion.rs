@@ -51,6 +51,7 @@ fn compiled() -> CompiledExtension {
                 view: "phase.kdl".to_owned(),
                 source: "phase".to_owned(),
                 title: None,
+                applies_when: None,
             }],
             wants: Vec::new(),
             sources: vec![source],

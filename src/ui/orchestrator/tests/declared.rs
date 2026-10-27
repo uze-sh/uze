@@ -189,6 +189,7 @@ fn compiled() -> CompiledExtension {
         view: format!("{id}.kdl"),
         source: "board".to_owned(),
         title: Some("Board".to_owned()),
+        applies_when: None,
     };
     CompiledExtension {
         identity: identity(),
@@ -1116,6 +1117,7 @@ fn hosting_the_drawer() -> WorkspaceModel {
             view: "side.kdl".to_owned(),
             source: "board".to_owned(),
             title: Some("Side".to_owned()),
+            applies_when: None,
         });
     assert!(model.absorb_extension_answer(ExtensionAnswer {
         preferences: BTreeMap::new(),

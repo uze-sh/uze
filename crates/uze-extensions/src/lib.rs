@@ -199,6 +199,26 @@ pub trait Host {
     /// never reads differently twice.
     fn list_dir(&self, path: &std::path::Path) -> Result<Vec<DirEntry>, String>;
 
+    /// Whether `root`, a checkout, has something at `relative`: what an
+    /// `applies-when` asks. One bit, from the listing of its parent, so
+    /// nothing of the file is read; a path that climbs out has nothing.
+    fn checkout_has(&self, root: &std::path::Path, relative: &std::path::Path) -> bool {
+        let inside = relative
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)));
+        let (Some(name), true) = (relative.file_name(), inside) else {
+            return false;
+        };
+        let parent = relative
+            .parent()
+            .map_or(root.to_path_buf(), |parent| root.join(parent));
+        self.list_dir(&parent).is_ok_and(|entries| {
+            entries
+                .iter()
+                .any(|entry| std::ffi::OsStr::new(&entry.name) == name)
+        })
+    }
+
     /// Replaces `path`'s contents. The file must already exist: this
     /// extension edits what a project has, and creating a path from a
     /// typed string is a separate grant nothing asks for yet.

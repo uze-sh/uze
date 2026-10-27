@@ -41,7 +41,7 @@ impl WorkspaceModel {
             .declared
             .slots
             .iter()
-            .filter(|slot| slot.is_drawer() && self.offers_declared(&slot.owner))
+            .filter(|slot| slot.is_drawer() && self.offers_slot(slot))
     }
 
     /// The drawer open in the space in front, while its extension is on.
@@ -50,7 +50,7 @@ impl WorkspaceModel {
         let id = *declared.drawers.get(&self.space_in_front()?)?;
         declared
             .slot(id)
-            .filter(|slot| slot.is_drawer() && self.offers_declared(&slot.owner))
+            .filter(|slot| slot.is_drawer() && self.offers_slot(slot))
     }
 
     pub(in crate::ui::orchestrator) fn open_drawer(&self) -> Option<SlotId> {

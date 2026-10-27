@@ -72,6 +72,7 @@ fn compiled() -> CompiledExtension {
         view: "board.kdl".to_owned(),
         source: "board".to_owned(),
         title: Some("Code".to_owned()),
+        applies_when: None,
     };
     CompiledExtension {
         identity: identity(),
@@ -96,6 +97,8 @@ fn compiled() -> CompiledExtension {
                 key: None,
                 confirm: Some("Archive {item.name}?".to_owned()),
                 does: uze_contract::Does::Script("archive.rhai".to_owned()),
+                with: Vec::new(),
+                then: None,
             }],
             exec: Vec::new(),
             preferences: Vec::new(),

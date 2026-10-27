@@ -111,6 +111,8 @@ fn action(id: &str, key: Option<&str>) -> uze_contract::ActionDecl {
         key: key.map(|key| uze_contract::KeySuggestion::parse(key).expect(key)),
         confirm: None,
         does: uze_contract::Does::Refresh(vec!["board".to_owned()]),
+        with: Vec::new(),
+        then: None,
     }
 }
 
@@ -129,6 +131,7 @@ fn compiled(plugin: &str) -> CompiledExtension {
                 view: "board.kdl".to_owned(),
                 source: "board".to_owned(),
                 title: Some("Keyed".to_owned()),
+                applies_when: None,
             }],
             wants: Vec::new(),
             sources: vec![uze_contract::SourceDecl::new(

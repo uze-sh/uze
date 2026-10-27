@@ -252,7 +252,8 @@ impl WorkspaceModel {
             self.selection = None;
         }
         // An answer arrives after its gesture, wherever the viewer is now:
-        // only what is said reaches them. A copy, a path or a surface to
+        // only what is said reaches them, and a two-step action's prompt,
+        // which the bridge shows first. A copy, a path or a surface to
         // open is a gesture's, never an answer's.
         use uze_extensions::contract::Outcome;
         // What the gesture said while it waited ("Say done…") is over once
@@ -267,6 +268,12 @@ impl WorkspaceModel {
         match outcome {
             Outcome::Failed { title, detail } => self.say_failed(&title, detail),
             Outcome::Toast(text) => self.say_told(&answer.extension, text),
+            // A two-step action's prompt, filled from what its first step
+            // answered: it stands on the gesture that ran it, and the
+            // bridge shows it and guards it as any prompt from a gesture.
+            Outcome::Agent(request) if !request.unattended => {
+                self.ask_of_agent(answer.extension.clone(), request);
+            }
             Outcome::Notice(span)
                 if self
                     .slot_in_pane()

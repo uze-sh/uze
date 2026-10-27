@@ -6,10 +6,20 @@
 //! action "archive" label="Archive" on="board" key="ctrl-d" confirm="Archive {name}?" {
 //!     script "archive.rhai"
 //! }
+//! action "review" label="Review next" on="board" {
+//!     run "./bin/next.sh"
+//!     with "ui.sort" "form.*"
+//!     then { agent-prompt "Review {answer.file}" target="self"; }
+//! }
 //! ```
+//!
+//! `with` names the host-held values the action reads beside its item
+//! (D24); `then` is the second step of a `run` or a `script`: a prompt
+//! whose `{answer.*}` reads what the first step answered, sent only on the
+//! gesture that ran it and shown first (D16).
 
 use kdl::{KdlDocument, KdlNode};
-use uze_contract::{ActionDecl, Clean, Does, KeySuggestion};
+use uze_contract::{ActionDecl, Clean, Does, KeySuggestion, Then};
 
 use super::{
     declared_id, prop, referred_id, relative_file, required_prop, string_args, string_prop,
@@ -60,9 +70,39 @@ pub fn decode(node: &KdlNode, report: &mut Report<'_>) -> Option<(ActionDecl, Pl
     });
     let mut does: Option<(Does, usize, Vec<usize>)> = None;
     let mut written = 0;
+    let mut with: Option<Vec<String>> = None;
+    let mut then: Option<(Option<Then>, usize)> = None;
     for child in node.children().map(KdlDocument::nodes).unwrap_or_default() {
+        match child.name().value() {
+            "with" if with.is_some() => {
+                report.on(
+                    child,
+                    "an action takes one `with`",
+                    Some("list every value in it".to_owned()),
+                );
+                continue;
+            }
+            "with" => {
+                with = Some(self::with(child, report));
+                continue;
+            }
+            "then" if then.is_some() => {
+                report.on(child, "an action takes one `then`", None);
+                continue;
+            }
+            "then" => {
+                then = Some((self::then(child, report), child.offset()));
+                continue;
+            }
+            _ => {}
+        }
         if !Does::NAMES.contains(&child.name().value()) {
-            super::unknown_child(child, "an action", Does::NAMES, report);
+            let known: Vec<&str> = Does::NAMES
+                .iter()
+                .copied()
+                .chain(["with", "then"])
+                .collect();
+            super::unknown_child(child, "an action", &known, report);
             continue;
         }
         written += 1;
@@ -91,6 +131,20 @@ pub fn decode(node: &KdlNode, report: &mut Report<'_>) -> Option<(ActionDecl, Pl
         );
     }
     let (does, does_at, targets) = does?;
+    let then = match then {
+        None => None,
+        Some((then, at)) => {
+            if !matches!(does, Does::Run(_) | Does::Script(_)) {
+                report.at(
+                    at,
+                    "only an action that runs something has a `then`: it reads what the run answered",
+                    Some("give it `run` or `script`, or send the prompt with `agent-prompt` alone".to_owned()),
+                );
+                return None;
+            }
+            Some(then?)
+        }
+    };
     let (label, _) = label?;
     let (on, on_at) = on?;
     Some((
@@ -101,6 +155,8 @@ pub fn decode(node: &KdlNode, report: &mut Report<'_>) -> Option<(ActionDecl, Pl
             key: key.as_ref().map(|(key, _)| key.clone()),
             confirm: confirm.map(|question| Clean::label(&question).into_string()),
             does,
+            with: with.unwrap_or_default(),
+            then,
         },
         Places {
             on: on_at,
@@ -109,6 +165,69 @@ pub fn decode(node: &KdlNode, report: &mut Report<'_>) -> Option<(ActionDecl, Pl
             targets,
         },
     ))
+}
+
+/// `with "ui.<id>" "form.<id>" "form.*"`: the host-held values an action
+/// reads beside its item, each named whole.
+fn with(child: &KdlNode, report: &mut Report<'_>) -> Vec<String> {
+    string_args(child, report)
+        .into_iter()
+        .filter(|(read, at)| {
+            let named = read == "form.*"
+                || read
+                    .strip_prefix("ui.")
+                    .or_else(|| read.strip_prefix("form."))
+                    .is_some_and(uze_contract::binding::is_field_name);
+            if !named {
+                report.at(
+                    *at,
+                    format!("`{read}` is not a value an action reads"),
+                    Some("write `ui.<id>`, `form.<id>` or `form.*`".to_owned()),
+                );
+            }
+            named
+        })
+        .map(|(read, _)| read)
+        .collect()
+}
+
+/// `then { agent-prompt "…{answer.field}…" target=… }`: one prompt, sent
+/// on the gesture that ran the action, never on an event.
+fn then(child: &KdlNode, report: &mut Report<'_>) -> Option<Then> {
+    let parts = entries(child, report);
+    refuse_extra(child, &parts, 0, &[], true, report);
+    let steps = child.children().map(KdlDocument::nodes).unwrap_or_default();
+    let [step] = steps else {
+        report.on(
+            child,
+            "`then` holds one `agent-prompt`",
+            Some(
+                "write `then { agent-prompt \"Review {answer.file}\" target=\"self\"; }`"
+                    .to_owned(),
+            ),
+        );
+        return None;
+    };
+    if step.name().value() != "agent-prompt" {
+        super::unknown_child(step, "`then`", &["agent-prompt"], report);
+        return None;
+    }
+    if let Some(entry) = step
+        .entries()
+        .iter()
+        .find(|entry| entry.name().map(kdl::KdlIdentifier::value) == Some("when"))
+    {
+        report.on(
+            entry,
+            "a prompt made from an answer is never sent unattended: its text is not fixed",
+            Some("remove `when`; it is sent on the gesture that runs the action".to_owned()),
+        );
+        return None;
+    }
+    match agent_prompt(step, report)? {
+        Does::AgentPrompt { prompt, target, .. } => Some(Then { prompt, target }),
+        _ => None,
+    }
 }
 
 /// `target="self"`, or a `{field}` naming an agent's id from the `agents`

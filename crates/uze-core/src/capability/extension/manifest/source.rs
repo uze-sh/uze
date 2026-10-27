@@ -42,6 +42,7 @@ const CHILDREN: &[&str] = &[
     "events",
     "agents",
     "resident",
+    "applies-when",
 ];
 /// What later changes add inside a source, with the change that brings
 /// each.
@@ -74,6 +75,7 @@ pub fn decode(node: &KdlNode, report: &mut Report<'_>) -> Option<(SourceDecl, Pl
     let mut with_store = false;
     let mut with_preferences = false;
     let mut deliver: Option<uze_contract::Deliver> = None;
+    let mut applies_when: Option<Option<String>> = None;
     let children = node.children().map(KdlDocument::nodes).unwrap_or_default();
     for child in children {
         let name = child.name().value();
@@ -83,6 +85,13 @@ pub fn decode(node: &KdlNode, report: &mut Report<'_>) -> Option<(SourceDecl, Pl
                 let parts = entries(child, report);
                 refuse_extra(child, &parts, 0, &[], false, report);
                 with_preferences = true;
+            }
+            "applies-when" if applies_when.is_some() => twice(child, report),
+            "applies-when" => {
+                applies_when = Some(
+                    text(child, report)
+                        .filter(|marker| super::applies_when(marker, child.offset(), report)),
+                );
             }
             "deliver" if deliver.is_some() => twice(child, report),
             "deliver" => {
@@ -211,6 +220,10 @@ pub fn decode(node: &KdlNode, report: &mut Report<'_>) -> Option<(SourceDecl, Pl
     source.input = input.unwrap_or_default();
     source.every = every.map(|(every, _)| every);
     source.refresh_on = refresh_on;
+    source.applies_when = match applies_when {
+        None => None,
+        Some(marker) => Some(marker?),
+    };
     Some((
         source,
         Places {

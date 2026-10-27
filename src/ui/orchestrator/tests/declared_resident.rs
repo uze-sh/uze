@@ -44,6 +44,7 @@ fn compiled() -> CompiledExtension {
                 view: "game.kdl".to_owned(),
                 source: "board".to_owned(),
                 title: None,
+                applies_when: None,
             }],
             wants: vec![uze_contract::Grant::Resident],
             sources: vec![uze_contract::SourceDecl::new(

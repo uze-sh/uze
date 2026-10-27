@@ -9,7 +9,7 @@
 use std::path::{Component, Path, PathBuf};
 
 use serde_json::Value;
-use uze_contract::{ActionDecl, Answer, Asking, Clean, Does, Envelope, Question};
+use uze_contract::{ActionDecl, Answer, Asking, Clean, Does, Envelope, Question, Then};
 
 use super::{DeclaredExtension, RecordedAction};
 use crate::contract::{Job, Opaque, Outcome};
@@ -27,6 +27,9 @@ pub(super) enum Run {
         label: String,
         input: Value,
         checkout: Option<PathBuf>,
+        /// Its second step, and the scope its templates read beside the
+        /// answer.
+        then: Option<(Then, Value)>,
     },
     Refresh(Vec<String>),
     Copy(String),
@@ -56,6 +59,7 @@ pub(super) struct Queued {
     pub label: String,
     pub input: Value,
     pub checkout: PathBuf,
+    pub then: Option<(Then, Value)>,
 }
 
 /// The host's answer to an action's script.
@@ -63,6 +67,7 @@ pub(super) struct ActionAnswer {
     surface: String,
     label: String,
     answer: Answer,
+    then: Option<(Then, Value)>,
 }
 
 impl DeclaredExtension {
@@ -71,6 +76,18 @@ impl DeclaredExtension {
     /// resolved, or asked about first. One the manifest does not declare
     /// is recorded and runs nothing.
     pub(super) fn act_on(&mut self, surface: &str, action: &str, item: Value) -> Outcome {
+        self.act_with(surface, action, item, Value::Null)
+    }
+
+    /// [`DeclaredExtension::act_on`], with the values a form sent, by
+    /// field id (`null` from anything but a form).
+    pub(super) fn act_with(
+        &mut self,
+        surface: &str,
+        action: &str,
+        item: Value,
+        form: Value,
+    ) -> Outcome {
         let declared = self.compiled.manifest.action(action).cloned();
         self.recorded.push(RecordedAction {
             surface: surface.to_owned(),
@@ -82,11 +99,12 @@ impl DeclaredExtension {
             let said = Clean::label(&format!("{action} recorded, not run"));
             return Outcome::Notice(Span::clean(said, Role::Muted));
         };
-        let run = match self.resolve(surface, &declared, &item) {
+        let scope = self.reading_scope(surface, &declared, &item, &form);
+        let run = match self.resolve(surface, &declared, &item, &scope) {
             Ok(run) => run,
             Err(outcome) => return outcome,
         };
-        match self.question_for(surface, &declared, &item, &run) {
+        match self.question_for(surface, &declared, &scope, &run) {
             Some(confirm) => self.ask_first(surface, &declared, run, confirm),
             None => self.execute(surface, run),
         }
@@ -95,7 +113,13 @@ impl DeclaredExtension {
     /// What `declared` would do on `item`, every template resolved. An
     /// `open-path` leaving the checkout is refused here, before anything is
     /// asked.
-    fn resolve(&self, surface: &str, declared: &ActionDecl, item: &Value) -> Result<Run, Outcome> {
+    fn resolve(
+        &self,
+        surface: &str,
+        declared: &ActionDecl,
+        item: &Value,
+        scope: &Value,
+    ) -> Result<Run, Outcome> {
         let label = Clean::label(&declared.label).into_string();
         if item.is_null() && reads_the_item(declared) {
             return Err(refused(&label, "select a row first"));
@@ -104,19 +128,21 @@ impl DeclaredExtension {
             Does::Script(_) | Does::Run(_) => Run::Script {
                 action: declared.id.clone(),
                 label,
-                input: serde_json::json!({ "item": item }),
+                input: action_input(item, scope),
                 checkout: self.checkout_of(surface),
+                then: declared.then.clone().map(|then| (then, scope.clone())),
             },
             Does::Refresh(sources) => Run::Refresh(sources.clone()),
             Does::Clipboard(template) => {
-                let text = Clean::text(&self.resolve_text(surface, template, item)).into_string();
+                let text =
+                    Clean::text(&self.resolve_scoped(surface, template, scope)).into_string();
                 if text.trim().is_empty() {
                     return Err(refused(&label, "there is nothing to copy"));
                 }
                 Run::Copy(text)
             }
             Does::OpenPath(template) => {
-                let written = self.resolve_text(surface, template, item);
+                let written = self.resolve_scoped(surface, template, scope);
                 let Some(project) = self.checkout_of(surface) else {
                     return Err(refused(&label, "no checkout is in front to open it in"));
                 };
@@ -136,7 +162,7 @@ impl DeclaredExtension {
                 let what = match prompt {
                     uze_contract::PromptText::Text(text) => {
                         let text =
-                            Clean::text(&self.resolve_text(surface, text, item)).into_string();
+                            Clean::text(&self.resolve_scoped(surface, text, scope)).into_string();
                         if text.trim().is_empty() {
                             return Err(refused(&label, "there is nothing to say"));
                         }
@@ -148,46 +174,46 @@ impl DeclaredExtension {
                             args: args
                                 .iter()
                                 .map(|arg| {
-                                    Clean::label(&self.resolve_text(surface, arg, item))
+                                    Clean::label(&self.resolve_scoped(surface, arg, scope))
                                         .into_string()
                                 })
                                 .collect(),
                         }
                     }
                 };
-                Run::Agent(self.agent_request(surface, what, target, item, label)?)
+                Run::Agent(self.agent_request(surface, what, target, scope, label)?)
             }
             Does::AgentRestart { target } => Run::Agent(self.agent_request(
                 surface,
                 crate::contract::AgentAsk::Restart,
                 target,
-                item,
+                scope,
                 label,
             )?),
             Does::FocusAgent { target } => Run::Agent(self.agent_request(
                 surface,
                 crate::contract::AgentAsk::Focus,
                 target,
-                item,
+                scope,
                 label,
             )?),
         })
     }
 
     /// `what`, aimed at the agent `target` names: the surface's own, or the
-    /// one whose id the template resolves to against `item`.
-    fn agent_request(
+    /// one whose id the template resolves to against `scope`.
+    pub(super) fn agent_request(
         &self,
         surface: &str,
         what: crate::contract::AgentAsk,
         target: &uze_contract::AgentTarget,
-        item: &Value,
+        scope: &Value,
         label: String,
     ) -> Result<crate::contract::AgentRequest, Outcome> {
         let agent = match target {
             uze_contract::AgentTarget::Own => None,
             uze_contract::AgentTarget::Named(template) => {
-                let id = self.resolve_text(surface, template, item);
+                let id = self.resolve_scoped(surface, template, scope);
                 if id.trim().is_empty() {
                     return Err(refused(&label, "it names no agent"));
                 }
@@ -208,7 +234,7 @@ impl DeclaredExtension {
         &self,
         surface: &str,
         declared: &ActionDecl,
-        item: &Value,
+        scope: &Value,
         run: &Run,
     ) -> Option<Confirm> {
         // What is typed into an agent is shown by the host, which also
@@ -217,7 +243,7 @@ impl DeclaredExtension {
             return None;
         }
         let title = match (&declared.confirm, run) {
-            (Some(question), _) => self.resolve_text(surface, question, item),
+            (Some(question), _) => self.resolve_scoped(surface, question, scope),
             (None, Run::Copy(text)) if text.lines().count() > 1 => {
                 format!("Copy {} lines?", text.lines().count())
             }
@@ -315,6 +341,7 @@ impl DeclaredExtension {
                 label,
                 input,
                 checkout,
+                then,
             } => {
                 let Some(checkout) = checkout else {
                     return refused(&label, "no checkout is in front to run it in");
@@ -326,6 +353,7 @@ impl DeclaredExtension {
                     label,
                     input,
                     checkout,
+                    then,
                 });
                 Outcome::Notice(Span::clean(Clean::label(&said), Role::Muted))
             }
@@ -410,7 +438,7 @@ impl DeclaredExtension {
                     input: queued.input,
                     checkout: Some(queued.checkout),
                 };
-                let (surface, label) = (queued.surface, queued.label);
+                let (surface, label, then) = (queued.surface, queued.label, queued.then);
                 let (stopped_surface, stopped_label) = (surface.clone(), label.clone());
                 Job {
                     run: Box::new(move |host| {
@@ -418,6 +446,7 @@ impl DeclaredExtension {
                             surface,
                             label,
                             answer: host.answer(question),
+                            then,
                         })
                     }),
                     fallback: Box::new(move || {
@@ -428,6 +457,7 @@ impl DeclaredExtension {
                                 reason: super::STOPPED.to_owned(),
                                 trace: Vec::new(),
                             },
+                            then: None,
                         })
                     }),
                 }
@@ -442,11 +472,18 @@ impl DeclaredExtension {
             surface,
             label,
             answer,
+            then,
         } = answered;
         self.notices.remove(&surface);
         match answer {
             Answer::Answered { envelope, .. } => {
-                self.apply(&envelope, std::slice::from_ref(&surface), None)
+                let applied = self.apply(&envelope, std::slice::from_ref(&surface), None);
+                match then {
+                    Some((then, scope)) => {
+                        self.second_step(&surface, &label, &then, scope, &envelope.data)
+                    }
+                    None => applied,
+                }
             }
             Answer::Failed { reason, .. } => Outcome::Failed {
                 title: Clean::label(&format!("{label} failed")).into_string(),
@@ -457,6 +494,84 @@ impl DeclaredExtension {
                 detail: Clean::label(&reason).into_string(),
             },
         }
+    }
+
+    /// The prompt a two-step action's answer fills: its `{answer.*}` read
+    /// from what the first step answered, cleaned, and handed to the host,
+    /// which shows it before anything is typed. It stands on the gesture
+    /// that ran the first step, so it is never unattended.
+    fn second_step(
+        &self,
+        surface: &str,
+        label: &str,
+        then: &Then,
+        mut scope: Value,
+        answer: &Value,
+    ) -> Outcome {
+        if let Value::Object(fields) = &mut scope {
+            fields.insert("answer".to_owned(), answer.clone());
+        }
+        let what = match &then.prompt {
+            uze_contract::PromptText::Text(text) => {
+                let text = Clean::text(&self.resolve_scoped(surface, text, &scope)).into_string();
+                if text.trim().is_empty() {
+                    return refused(label, "its answer left nothing to say");
+                }
+                crate::contract::AgentAsk::Prompt { text }
+            }
+            uze_contract::PromptText::Skill { skill, args } => crate::contract::AgentAsk::Skill {
+                skill: skill.clone(),
+                args: args
+                    .iter()
+                    .map(|arg| {
+                        Clean::label(&self.resolve_scoped(surface, arg, &scope)).into_string()
+                    })
+                    .collect(),
+            },
+        };
+        match self.agent_request(surface, what, &then.target, &scope, label.to_owned()) {
+            Ok(request) => Outcome::Agent(request),
+            Err(outcome) => outcome,
+        }
+    }
+
+    /// What an action's templates read: its item's fields (and `item`),
+    /// the form values it was sent, and the `ui.<id>` values its `with`
+    /// names, as `form` and `ui`.
+    fn reading_scope(
+        &self,
+        surface: &str,
+        declared: &ActionDecl,
+        item: &Value,
+        form: &Value,
+    ) -> Value {
+        let mut scope = template_scope(item);
+        let ui = self.ui_read(surface, declared);
+        if let Value::Object(fields) = &mut scope {
+            if !form.is_null() {
+                fields.insert("form".to_owned(), form.clone());
+            }
+            if !ui.is_empty() {
+                fields.insert("ui".to_owned(), Value::Object(ui));
+            }
+        }
+        scope
+    }
+
+    /// The `ui.<id>` values `declared` reads, as the view holds them.
+    fn ui_read(&self, surface: &str, declared: &ActionDecl) -> serde_json::Map<String, Value> {
+        let Some((_, view)) = self
+            .declaration(surface)
+            .or_else(|| self.declaration(&declared.on))
+        else {
+            return serde_json::Map::new();
+        };
+        let held = self.ui.get(surface).or_else(|| self.ui.get(&declared.on));
+        super::bind::effective_ui(view, held)
+            .into_iter()
+            .filter(|(id, _)| declared.reads_ui(id))
+            .map(|(id, value)| (id, Value::String(Clean::text(&value).into_string())))
+            .collect()
     }
 
     /// What an envelope says beside its data: the sources to ask again,
@@ -542,9 +657,16 @@ fn template_reads_the_item(template: &str) -> bool {
     let Ok(parts) = uze_contract::binding::parse_text(template) else {
         return false;
     };
+    // `form.*` and `answer.*` are read beside the item, never from it.
+    let beside = |path: &uze_contract::Path| {
+        matches!(
+            path.segments.first().map(String::as_str),
+            Some("form" | "answer")
+        )
+    };
     parts.iter().any(|part| match part {
         TextPart::Ref(path) | TextPart::Lookup { path, .. } => {
-            matches!(path.scope, Scope::Item | Scope::Parent)
+            matches!(path.scope, Scope::Item | Scope::Parent) && !beside(path)
         }
         TextPart::Literal(_) | TextPart::Label { .. } => false,
     })
@@ -573,6 +695,20 @@ pub(super) fn inside_checkout(written: &str) -> Option<PathBuf> {
         }
     }
     (!relative.as_os_str().is_empty()).then_some(relative)
+}
+
+/// What a script or a program is asked with: its item, and the form and
+/// UI values it reads, when there are any.
+fn action_input(item: &Value, scope: &Value) -> Value {
+    let mut input = serde_json::json!({ "item": item });
+    for read in ["form", "ui"] {
+        if let Some(value) = scope.get(read)
+            && let Value::Object(fields) = &mut input
+        {
+            fields.insert(read.to_owned(), value.clone());
+        }
+    }
+    input
 }
 
 /// What a template reads as its item: the item itself, with `item` naming

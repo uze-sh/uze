@@ -14,7 +14,7 @@ impl WorkspaceModel {
         self.remembered
             .declared
             .slot(self.open_overlay?)
-            .filter(|slot| slot.is_overlay() && self.offers_declared(&slot.owner))
+            .filter(|slot| slot.is_overlay() && self.offers_slot(slot))
     }
 
     /// Opens the overlay in slot `id` over whatever is on the frame,

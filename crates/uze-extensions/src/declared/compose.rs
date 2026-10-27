@@ -236,6 +236,8 @@ mod tests {
                 key: None,
                 confirm: Some("Archive {name}?".into()),
                 does: Does::Refresh(Vec::new()),
+                with: Vec::new(),
+                then: None,
             }],
             exec: Vec::new(),
             preferences: Vec::new(),

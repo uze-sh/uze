@@ -839,6 +839,17 @@ impl WorkspaceModel {
         self.offers_extension(&owner.switch_id())
     }
 
+    /// Whether `slot`'s extension is offered and its surface applies where
+    /// it would stand now (`applies-when`).
+    pub(super) fn offers_slot(&self, slot: &HostedSlot) -> bool {
+        self.offers_declared(&slot.owner)
+            && self
+                .remembered
+                .declared
+                .engine(&slot.owner)
+                .is_none_or(|engine| engine.applies(&slot.surface.id))
+    }
+
     /// Brings the keyboard in line with the declared extensions hosted
     /// now: each enabled one that offers an action has its table
     /// registered, and one disabled or gone has its table taken back.
@@ -971,7 +982,7 @@ impl WorkspaceModel {
     /// a built-in's has a door of its own.
     pub(super) fn declared_views(&self) -> impl Iterator<Item = &HostedSlot> {
         self.remembered.declared.slots.iter().filter(|slot| {
-            slot.is_view() && slot.owner.declared().is_some() && self.offers_declared(&slot.owner)
+            slot.is_view() && slot.owner.declared().is_some() && self.offers_slot(slot)
         })
     }
 

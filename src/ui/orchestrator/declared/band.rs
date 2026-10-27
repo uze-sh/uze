@@ -43,7 +43,7 @@ impl WorkspaceModel {
             .iter()
             .filter(|slot| {
                 matches!(slot.surface.slot, SurfaceSlot::Band { .. })
-                    && self.offers_declared(&slot.owner)
+                    && self.offers_slot(slot)
                     && self.enabled_in(&slot.owner, &project)
             })
             .collect()

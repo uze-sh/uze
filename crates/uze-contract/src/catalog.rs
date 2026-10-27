@@ -43,6 +43,10 @@ pub enum NodeName {
     Cells,
     Image,
     Sprite,
+    Select,
+    Choice,
+    Field,
+    Form,
 }
 
 /// What a property's value must be once bound.
@@ -130,6 +134,9 @@ const ANY: &[NodeName] = &[
     NodeName::Cells,
     NodeName::Image,
     NodeName::Sprite,
+    NodeName::Select,
+    NodeName::Field,
+    NodeName::Form,
 ];
 
 const CHART_KIND: PropKind = PropKind::Word(&["sparkline", "bar"]);
@@ -210,7 +217,11 @@ pub const CATALOG: &[NodeSpec] = &[
         name: NodeName::List,
         args: &[],
         required_args: 0,
-        props: &[("id", PropKind::Identity), ("empty", PropKind::Text)],
+        props: &[
+            ("id", PropKind::Identity),
+            ("empty", PropKind::Text),
+            ("filter", PropKind::Identity),
+        ],
         children: Some(ANY),
     },
     NodeSpec {
@@ -379,6 +390,38 @@ pub const CATALOG: &[NodeSpec] = &[
         props: &[("state", PropKind::Text), ("height", PropKind::Count)],
         children: None,
     },
+    NodeSpec {
+        name: NodeName::Select,
+        args: &[PropKind::Text],
+        required_args: 0,
+        props: &[("id", PropKind::Identity)],
+        children: Some(&[NodeName::Choice]),
+    },
+    NodeSpec {
+        name: NodeName::Choice,
+        args: &[PropKind::Text],
+        required_args: 1,
+        props: &[("value", PropKind::Identity)],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Field,
+        args: &[PropKind::Text],
+        required_args: 0,
+        props: &[("id", PropKind::Identity), ("placeholder", PropKind::Text)],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Form,
+        args: &[],
+        required_args: 0,
+        props: &[
+            ("action", PropKind::Identity),
+            ("submit", PropKind::Text),
+            ("item", PropKind::Value),
+        ],
+        children: Some(ANY),
+    },
 ];
 
 impl NodeName {
@@ -423,6 +466,10 @@ impl NodeName {
             Self::Cells => "Cells",
             Self::Image => "Image",
             Self::Sprite => "Sprite",
+            Self::Select => "Select",
+            Self::Choice => "Choice",
+            Self::Field => "Field",
+            Self::Form => "Form",
         }
     }
 
@@ -474,7 +521,8 @@ impl NodeName {
                 "One segment of a `Progress`: as wide as its `weight`, filled to its `ratio`, in its role."
             }
             Self::List => {
-                "Rows repeated over `each`; with an `id`, the host holds which one is selected."
+                "Rows repeated over `each`; with an `id`, the host holds which one is selected; \
+                 `filter=\"ui.<id>\"` keeps the rows whose fields hold what a `Field` has typed."
             }
             Self::Table => {
                 "Named columns, one argument per heading; each child `Row` is a line whose children are its cells."
@@ -521,6 +569,21 @@ impl NodeName {
             }
             Self::Sprite => {
                 "A declared sprite playing `state` (or its fallback), on the host's clock."
+            }
+            Self::Select => {
+                "One of its `Choice`s, held by the host as `ui.<id>`, stepped with its arrows \
+                 or Enter; the first until one is chosen."
+            }
+            Self::Choice => {
+                "One option of a `Select`: its label, and the `value` held when chosen."
+            }
+            Self::Field => {
+                "A line of text the host holds as `ui.<id>` while the operator types into it; \
+                 `placeholder` stands in while it is empty."
+            }
+            Self::Form => {
+                "Its `Field`s and `Select`s, and a button (`submit`) running `action` with \
+                 them as `form.<id>`, cleaned like any item."
             }
         }
     }
@@ -629,7 +692,10 @@ pub fn prop_doc(prop: &str) -> Option<&'static str> {
         "weight" => "How wide, relative to the other segments.",
         "id" => "The name the host keeps this node's state under, as `ui.<id>`.",
         "empty" => "What to draw when there are no rows.",
-        "value" => "What `show` compares the tab's choice with.",
+        "value" => "What `show` compares the choice with, and what a chosen one is held as.",
+        "filter" => "`ui.<id>` of a `Field`: keep only the rows whose fields hold its text.",
+        "placeholder" => "What the field says while nothing is typed.",
+        "submit" => "The form's button label; `Send` when it names none.",
         "on" => "Whether the switch starts on.",
         "action" => "The action a press records, by name.",
         "item" => "What the action receives: a field, or `{.}` for the whole item.",

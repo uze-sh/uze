@@ -304,9 +304,10 @@ fn actions_name_what_is_declared(decoded: &Decoded, report: &mut Report<'_>) {
             }
             _ => {}
         }
-        if let Some(grant) = action.does.needs()
-            && !manifest.wants(&grant)
-        {
+        for grant in action.needs() {
+            if manifest.wants(&grant) {
+                continue;
+            }
             report.at(
                 places.does,
                 format!(

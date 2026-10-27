@@ -905,3 +905,111 @@ fn a_sprite_and_a_resident_source_are_declared_and_checked() {
         SourceKind::Resident("game.rhai".to_owned())
     );
 }
+
+#[test]
+fn applies_when_names_a_path_inside_the_checkout() {
+    let marked = GSD
+        .replace(
+            r#"surface "board" slot="view" view="board.kdl" source="board""#,
+            r#"surface "board" slot="view" view="board.kdl" source="board" applies-when=".planning""#,
+        )
+        .replace(
+            r#"source "board" { fixture "fixtures/board.json"; }"#,
+            r#"source "board" { fixture "fixtures/board.json"; applies-when ".planning/STATE.md"; }"#,
+        );
+    let (decoded, diagnostics) = decode_text(&marked);
+    assert_eq!(diagnostics, vec![]);
+    let manifest = decoded.unwrap().manifest;
+    assert_eq!(
+        manifest.surface("board").unwrap().applies_when.as_deref(),
+        Some(".planning")
+    );
+    assert_eq!(manifest.surface("summary").unwrap().applies_when, None);
+    assert_eq!(
+        manifest.source("board").unwrap().applies_when.as_deref(),
+        Some(".planning/STATE.md")
+    );
+    for outside in ["../secrets", "/etc", ""] {
+        let refused = refusals(&GSD.replace(
+            r#"source="board" title="GSD""#,
+            &format!(r#"source="board" title="GSD" applies-when="{outside}""#),
+        ));
+        assert!(
+            refused[0].message.contains("not a path inside a checkout"),
+            "{outside}: {refused:?}"
+        );
+    }
+}
+
+#[test]
+fn an_action_reads_declared_ui_and_form_values_and_runs_then_prompts() {
+    let manifest = format!(
+        r#"{GSD}wants "agent:prompt"
+action "review" label="Review" on="board" {{
+    run "./bin/next.sh"
+    with "ui.sort" "form.*"
+    then {{ agent-prompt "Review {{answer.file}}" target="self"; }}
+}}
+"#
+    );
+    let (decoded, diagnostics) = decode_text(&manifest);
+    assert_eq!(diagnostics, vec![]);
+    let action = decoded.unwrap().manifest.actions.remove(0);
+    assert_eq!(action.with, vec!["ui.sort".to_owned(), "form.*".to_owned()]);
+    assert!(action.reads_ui("sort") && action.reads_form("comment"));
+    assert_eq!(
+        action.then,
+        Some(uze_contract::Then {
+            prompt: uze_contract::PromptText::Text("Review {answer.file}".into()),
+            target: uze_contract::AgentTarget::Own,
+        })
+    );
+}
+
+#[test]
+fn a_second_step_is_a_gesture_prompt_after_a_run_under_its_grant() {
+    let action = |does: &str, then: &str| {
+        format!(
+            "{GSD}action \"review\" label=\"Review\" on=\"board\" {{\n    {does}\n    then {{ {then} }}\n}}\n"
+        )
+    };
+    let after_refresh = refusals(&format!(
+        "wants \"agent:prompt\"\n{}",
+        action(
+            "refresh \"board\"",
+            "agent-prompt \"x {answer.a}\" target=\"self\";"
+        )
+    ));
+    assert!(
+        after_refresh[0]
+            .message
+            .contains("only an action that runs something"),
+        "{after_refresh:?}"
+    );
+    let unattended = refusals(&format!(
+        "wants \"agent:prompt\"\n{}",
+        action(
+            "script \"next.rhai\"",
+            "agent-prompt \"x\" target=\"self\" when=\"agent.turn.finished\";"
+        )
+    ));
+    assert!(
+        unattended[0].message.contains("never sent unattended"),
+        "{unattended:?}"
+    );
+    let ungranted = refusals(&action(
+        "script \"next.rhai\"",
+        "agent-prompt \"Review {answer.file}\" target=\"self\";",
+    ));
+    assert!(
+        ungranted[0].message.contains("needs `agent:prompt`"),
+        "{ungranted:?}"
+    );
+    let unread = refusals(&format!(
+        "{GSD}action \"a\" label=\"A\" on=\"board\" {{ refresh \"board\"; with \"store.x\"; }}\n"
+    ));
+    assert!(
+        unread[0].message.contains("not a value an action reads"),
+        "{unread:?}"
+    );
+}

@@ -48,6 +48,7 @@ fn compiled(wants: Vec<uze_contract::Grant>) -> CompiledExtension {
                 view: "meter.kdl".to_owned(),
                 source: "load".to_owned(),
                 title: None,
+                applies_when: None,
             }],
             wants,
             sources: vec![uze_contract::SourceDecl::new(
