@@ -118,6 +118,7 @@ fn read(watch: &ExtensionWatch) -> ExtensionWatchRead {
                 ((root.clone(), path.clone()), digest)
             })
             .collect(),
+        reports: Vec::new(),
     }
 }
 
@@ -213,6 +214,7 @@ fn a_checkout_whose_stamp_moved_asks_a_source_declaring_it() {
     let stamped = |stamp| ExtensionWatchRead {
         checkouts: vec![(root.clone(), Some(stamp))],
         paths: Vec::new(),
+        reports: Vec::new(),
     };
     model.absorb_extension_watch(stamped(1));
     model.absorb_extension_watch(stamped(1));
@@ -256,5 +258,76 @@ fn an_extension_without_refresh_on_has_nothing_watched() {
         watched.extension_watch(),
         ExtensionWatch::default(),
         "a switched-off extension is not watched"
+    );
+}
+
+/// The agent the session placed in `root`, as the bridge sees it.
+fn the_agent(model: &WorkspaceModel) -> super::BridgedAgent {
+    let tab = model.tabs().next().unwrap();
+    super::BridgedAgent {
+        id: "a1".to_owned(),
+        harness: "harness".to_owned(),
+        label: tab.label.clone(),
+        space: "repo".to_owned(),
+        checkout: PathBuf::from("/repo"),
+        pane: tab.pane.id,
+    }
+}
+
+fn turn_finished() -> uze_application::AgentReport {
+    uze_application::AgentReport {
+        event: "turn.finished".to_owned(),
+        at: 1,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn an_agents_report_asks_the_source_of_an_extension_observing_agents() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-bridge-home"));
+    let root = PathBuf::from("/repo");
+    let finished = EventName::Agent(uze_contract::AgentEvent::TurnFinished);
+    let mut observing = compiled(None, vec![finished.clone()]);
+    observing.manifest.wants = vec![uze_contract::Grant::AgentObserve];
+    let mut model = hosting(&root, observing);
+    let (sender, _answers) = std::sync::mpsc::channel();
+    let start = Instant::now();
+    assert_eq!(model.schedule_engine_jobs_at(&home, &sender, start), 1);
+
+    let agent = the_agent(&model);
+    model.see_agents(vec![agent]);
+    assert_eq!(
+        model.extension_watch().journals,
+        [("a1".to_owned(), None)],
+        "a journal never read is read first only to set its offset"
+    );
+    let read = |reports, offset| ExtensionWatchRead {
+        checkouts: Vec::new(),
+        paths: Vec::new(),
+        reports: vec![("a1".to_owned(), reports, offset)],
+    };
+    model.absorb_extension_watch(read(None, 40));
+    assert_eq!(
+        model.extension_watch().journals,
+        [("a1".to_owned(), Some(40))]
+    );
+    let read_once = start + Duration::from_secs(1);
+    assert_eq!(model.schedule_engine_jobs_at(&home, &sender, read_once), 0);
+
+    model.absorb_extension_watch(read(Some(vec![turn_finished()]), 80));
+    let reported = start + Duration::from_secs(2);
+    model.schedule_engine_jobs_at(&home, &sender, reported);
+    assert_eq!(
+        model.schedule_engine_jobs_at(&home, &sender, reported + COALESCE),
+        1,
+        "the agent's finished turn asks the source again"
+    );
+
+    let mut blind = hosting(&root, compiled(None, vec![finished]));
+    let agent = the_agent(&blind);
+    blind.see_agents(vec![agent]);
+    assert!(
+        blind.extension_watch().journals.is_empty(),
+        "no journal is read for an extension without agent:observe"
     );
 }

@@ -1336,6 +1336,27 @@ fn agent_contexts(model: &WorkspaceModel, identities: &[AgentIdentity]) -> Vec<L
         .collect()
 }
 
+/// Every agent UZE launched across the open spaces, as the extension
+/// bridge tells them.
+fn bridged_agents(model: &WorkspaceModel, identities: &[AgentIdentity]) -> Vec<BridgedAgent> {
+    model
+        .session
+        .iter()
+        .flat_map(|session| &session.workspace.spaces)
+        .flat_map(|space| space.tabs.iter().map(move |tab| (space, tab)))
+        .filter_map(|(space, tab)| {
+            Some(BridgedAgent {
+                harness: agent_for_tab(identities, tab)?.integration.to_owned(),
+                id: launched_agent_id(tab)?.to_owned(),
+                label: tab.label.clone(),
+                space: space.label.clone(),
+                checkout: named_checkout(&tab.pane.cwd),
+                pane: tab.pane.id,
+            })
+        })
+        .collect()
+}
+
 /// The agent a tab was launched for, as the server echoes the launch: the
 /// identity the client stamped when it created the tab. `None` for a
 /// shell, and for a tab whose agent exited and was respawned as one.

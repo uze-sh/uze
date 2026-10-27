@@ -692,7 +692,8 @@ pub(super) fn spawn_checkout_watch(
             },
             Vec::new(),
         );
-        let (stamps, declaration, watched) = answered_or(
+        let journals = extensions.journals;
+        let (stamps, declaration, watched, reports) = answered_or(
             || {
                 tui_application(home)
                     .map(|app| {
@@ -717,11 +718,19 @@ pub(super) fn spawn_checkout_watch(
                                 (root, stamp)
                             })
                             .collect();
-                        (stamps, declaration, watched)
+                        let reports = journals
+                            .into_iter()
+                            .map(|(agent, offset)| {
+                                let (reports, next) =
+                                    workspace.reports_since(&agent, offset.unwrap_or(0));
+                                (agent, offset.map(|_| reports), next)
+                            })
+                            .collect();
+                        (stamps, declaration, watched, reports)
                     })
                     .unwrap_or_default()
             },
-            (Vec::new(), None, Vec::new()),
+            (Vec::new(), None, Vec::new(), Vec::new()),
         );
         let _ = sender.send(StampResolution {
             stamps,
@@ -729,6 +738,7 @@ pub(super) fn spawn_checkout_watch(
             extensions: super::declared::ExtensionWatchRead {
                 checkouts: watched,
                 paths,
+                reports,
             },
         });
     });

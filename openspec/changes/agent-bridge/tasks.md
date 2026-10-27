@@ -12,9 +12,9 @@
 
 ## 3. Events and the agents source
 
-- [ ] 3.1 The client's one-second watch reads each agent's journal from its offset and normalizes reports into `agent.*` events with ids, times, outcomes, scrubbed tool names and checkout-relative paths; the paint heuristic's turn start and end where no report came (parent 14.3)
+- [x] 3.1 The client's one-second watch reads each agent's journal from its offset and normalizes reports into `agent.*` events with ids, times, outcomes, scrubbed tool names and checkout-relative paths; the paint heuristic's turn start and end where no report came (parent 14.3)
 - [x] 3.2 `EventName::Agent*` in `uze-contract`, `refresh-on "agent.…"` in the decoder and check under `agent:observe`
-- [ ] 3.3 `SourceKind::Agents` and `Extension::agents(&Value)`; the engine answers it; the host hands the activity model's agents across open spaces each pass (parent 14.4)
+- [x] 3.3 `SourceKind::Agents` and `Extension::agents(&Value)`; the engine answers it; the host hands the activity model's agents across open spaces each pass (parent 14.4)
 
 ## 4. Actions
 

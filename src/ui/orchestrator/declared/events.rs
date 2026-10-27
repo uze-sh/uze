@@ -19,6 +19,9 @@ pub(in crate::ui::orchestrator) struct ExtensionWatch {
     pub(in crate::ui::orchestrator) checkouts: Vec<PathBuf>,
     /// Paths beneath a checkout a source declared `paths.changed` for.
     pub(in crate::ui::orchestrator) paths: Vec<(PathBuf, String)>,
+    /// Agents' journals, from where each was last read; `None` for a
+    /// first read.
+    pub(in crate::ui::orchestrator) journals: Vec<(String, Option<u64>)>,
 }
 
 /// What the watch read for the extensions.
@@ -28,6 +31,10 @@ pub(in crate::ui::orchestrator) struct ExtensionWatchRead {
     /// tree.
     pub(in crate::ui::orchestrator) checkouts: Vec<(PathBuf, Option<u64>)>,
     pub(in crate::ui::orchestrator) paths: Vec<((PathBuf, String), u64)>,
+    /// Each journal's reports since its offset (`None` on a first read,
+    /// which only sets it) and where it is read from next.
+    pub(in crate::ui::orchestrator) reports:
+        Vec<(String, Option<Vec<uze_application::AgentReport>>, u64)>,
 }
 
 /// What the last read found, and what happened since the last pass.
@@ -79,6 +86,7 @@ impl WorkspaceModel {
         ExtensionWatch {
             checkouts: checkouts.into_iter().collect(),
             paths: paths.into_iter().collect(),
+            journals: self.journals_to_read(),
         }
     }
 
@@ -86,6 +94,7 @@ impl WorkspaceModel {
     /// every extension watching it, told on the next pass. A checkout or a
     /// path no longer read is forgotten, so coming back is a first read.
     pub(in crate::ui::orchestrator) fn absorb_extension_watch(&mut self, read: ExtensionWatchRead) {
+        self.absorb_reports(read.reports);
         let mut moved: Vec<CheckoutEvent> = Vec::new();
         let watching = &mut self.remembered.declared.watching;
         let read_stamps: BTreeSet<&PathBuf> = read.checkouts.iter().map(|(root, _)| root).collect();
@@ -180,6 +189,7 @@ impl WorkspaceModel {
     /// Tells every hosted engine this pass: the clock, its surfaces in
     /// view, and what happened to what it watches since the last one.
     pub(in crate::ui::orchestrator) fn pass_engines(&mut self, now: Instant) {
+        self.tell_agents(now);
         let visible = self.surfaces_in_view();
         let declared = &mut self.remembered.declared;
         let mut happened = std::mem::take(&mut declared.watching.happened);

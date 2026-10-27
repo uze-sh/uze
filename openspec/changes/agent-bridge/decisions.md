@@ -89,3 +89,43 @@
 - decided:  `Outcome::Agent(AgentRequest { what: Prompt{text} | Skill{skill,args} | Restart | Focus, agent, label })`, with the text cleaned and resolved against the item; `question_for` returns none for it, and the host owns the one confirmation. Until 4.3 lands the host refuses every request with a toast naming it: nothing types into an agent before the bridge's guards exist.
 - rejected: Letting `confirm=` stand for the bridge's showing: the engine's question is drawn in the extension's own view, which an extension controls.
 - blast:    `contract::{Outcome, AgentRequest, AgentAsk}`, `src/ui/orchestrator/declared/agent.rs`.
+
+## D10 — Journals ride the checkout watch, read only while an enabled extension observes
+
+- status:   pending
+- task:     3.1
+- commit:
+- trigger:  The client already reads every second off the drawing thread (`spawn_checkout_watch`); a second clock and a second thread for the journals would be the same cost twice.
+- decided:  `ExtensionWatch.journals` carries each agent's id and offset; the watch thread asks `Workspace::reports_since` (a `trace` span) and answers with the reports and the next offset. Nothing is read when no enabled extension holds `agent:observe`. A first read only sets the offset: what an agent did before the client looked is not an event. A journal halved under its bound is re-read from its start, which can deliver up to half of it again; accepted, since a report moves only what is drawn.
+- rejected: A file watcher per journal: another thread per agent for a one-second answer.
+- blast:    `src/ui/orchestrator/{reads.rs,declared/{events,bridge}.rs}`.
+
+## D11 — Paint stands in for the turns of an agent that has reported nothing this session
+
+- status:   pending
+- task:     3.1
+- commit:
+- trigger:  OpenCode and Antigravity have no reporter (D3), and a Claude Code or Codex agent launched before this release carries none either.
+- decided:  Each watch tick compares each agent's working state (the activity model's) with the last; a change is `agent.turn.started` or `agent.turn.finished` with `detail.source = "paint"`, until the first report from that agent arrives, after which only its reports count. The `agents` source says per agent whether it `reports`.
+- rejected: Merging both always: a harness that reports would be told twice per turn.
+- blast:    `declared/bridge.rs`.
+
+## D12 — An event carries a scrubbed tool name and only a path inside the agent's checkout
+
+- status:   pending
+- task:     3.1
+- commit:
+- trigger:  A report's fields come from anything running in the agent's pane.
+- decided:  The tool keeps `[A-Za-z0-9_:.-]`, 64 at most; a path is kept only when it names something inside the agent's checkout, made relative to it (an absolute path outside, or a relative one climbing out, is dropped). The call id and outcome are carried as the journal bounded them.
+- rejected: Passing the journal's fields through: an extension would learn paths outside the checkout it was consented for.
+- blast:    `declared/bridge.rs::happened_of`.
+
+## D13 — The `agents` source is every agent across the open spaces, handed each pass
+
+- status:   pending
+- task:     3.3
+- commit:
+- trigger:  The parent's 14.4: "the host hands the activity model's agents across open spaces each pass".
+- decided:  Each agent is `{id, harness, label, space, checkout, state: working|done|ready, reports}`; the engine answers its `agents` sources only when the value changed, so an unchanged workspace asks nothing again.
+- rejected: Per checkout: a HUD is about all of them.
+- blast:    `declared/bridge.rs::agents_value`, `Extension::agents`.

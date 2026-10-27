@@ -28,11 +28,13 @@ use uze_extensions::view::{Command, Role, ScrollTarget, Section, SectionRow, Siz
 
 mod agent;
 mod band;
+mod bridge;
 mod doors;
 mod drawer;
 mod events;
 mod overlay;
 mod status;
+pub(super) use bridge::*;
 pub(super) use drawer::*;
 pub(super) use events::*;
 pub(super) use status::*;
@@ -355,6 +357,9 @@ pub(super) struct HostedExtension {
     /// Whether its last compile runs or reaches anything, so it is enabled
     /// project by project rather than wherever its switch is.
     pub(super) per_project: bool,
+    /// Whether its last compile holds `agent:observe`: it is told what the
+    /// workspace's agents do.
+    pub(super) observes_agents: bool,
 }
 
 /// Every declared extension the client hosts, and the slots their surfaces
@@ -403,6 +408,8 @@ pub(super) struct HostedExtensions {
     /// What the checkout watch last read for the extensions, and what
     /// moved since the last pass.
     pub(super) watching: Watching,
+    /// What the workspace's agents did, for the extensions observing them.
+    pub(super) bridge: Bridge,
 }
 
 impl Default for HostedExtensions {
@@ -427,6 +434,7 @@ impl Default for HostedExtensions {
             runner: std::sync::Arc::default(),
             keys: BTreeMap::new(),
             watching: Watching::default(),
+            bridge: Bridge::default(),
         };
         for (id, engine) in builtins() {
             let owner = Owner::Builtin(id);
@@ -605,6 +613,7 @@ impl HostedExtensions {
                 record: None,
                 preferences: None,
                 per_project: false,
+                observes_agents: false,
             });
         entry.installed = loaded.installed;
         entry.stamp = loaded.stamp;
@@ -617,6 +626,7 @@ impl HostedExtensions {
         match loaded.compiled {
             Ok(compiled) => {
                 entry.per_project = uze_application::enabled_per_project(&compiled);
+                entry.observes_agents = compiled.manifest.wants(&uze_contract::Grant::AgentObserve);
                 entry.errors = loaded
                     .data
                     .values()

@@ -14,3 +14,18 @@ impl Workspace<'_> {
         uze_workspace::reports::append(&self.0.home, owner.agent.as_str(), report)
     }
 }
+
+impl Workspace<'_> {
+    /// The reports agent `agent` appended since `offset`, and where to read
+    /// from next: what the client turns into the extensions' `agent.*`
+    /// events. At `trace`: it is asked every second for every agent while
+    /// an extension observes them.
+    #[tracing::instrument(name = "workspace.reports_since", level = "trace", skip_all, fields(agent = %agent))]
+    pub fn reports_since(
+        &self,
+        agent: &str,
+        offset: u64,
+    ) -> (Vec<uze_workspace::reports::Report>, u64) {
+        uze_workspace::reports::read_from(&self.0.home, agent, offset)
+    }
+}

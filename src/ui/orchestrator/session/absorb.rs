@@ -428,6 +428,8 @@ impl Attach<'_> {
         {
             self.model.remembered.last_checkout_watch = Some(Instant::now());
             self.model.remembered.checkout_watch_pending = true;
+            let agents = bridged_agents(&self.model, &self.identities);
+            self.model.see_agents(agents);
             spawn_checkout_watch(
                 self.home,
                 self.model.watched_checkouts(),
