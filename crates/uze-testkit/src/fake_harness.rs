@@ -83,7 +83,9 @@ pub enum Action {
         vendor: MarketplaceVendor,
     },
     /// Hold the terminal the way an interactive agent session does: print
-    /// `banner`, then echo back whatever is typed until `/exit`.
+    /// `banner`, then echo back whatever is typed until `/exit`; a line
+    /// asking it to `work for <n> seconds` paints a spinner that long, the
+    /// beat a harness keeps while a turn runs.
     ///
     /// A harness binary is two things — a CLI its vendor's verbs are run
     /// through, and a session that occupies a pane — and a stand-in that
@@ -93,7 +95,8 @@ pub enum Action {
     /// A conversation the harness names on disk before holding the terminal:
     /// `--session-id <id>` writes the transcript at
     /// `<transcripts_root>/<cwd flattened>/<id>.jsonl`, `--resume <id>`
-    /// appends to the one already there.
+    /// appends to the one already there, and each line typed into it is a
+    /// `user` record there, as Claude Code records a turn.
     ///
     /// That file is the side effect UZE reads back — it is how a recorded
     /// conversation is proved to still exist, and how an agent that moved to
