@@ -100,6 +100,8 @@ pointer lands (`tests/architecture/affordances.rs`).
   `tinted`, `faded`, `scrimmed`.
 - Glyphs: `glyph`.
 - Content colour: `content`.
+- One surface in another bundled theme, the rest of the frame unchanged:
+  `drawn_in(name, || ...)` (the inspector's theme tool).
 
 Only the two adapters name a colour value. Only `theme.rs` writes a chrome
 glyph.

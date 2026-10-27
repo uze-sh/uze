@@ -18,9 +18,9 @@
 
 ## 4. Inspector and budget
 
-- [ ] 4.1 Runs, events, grants and cost in the inspector; rerun with edited input (23.3)
-- [ ] 4.2 On a linked extension: switch a source to its fixture, a synthetic event, size and theme, fake agents, record a session's events into a fixture (23.0, 23.4)
-- [ ] 4.3 D28's binding, memory and storm targets tested; runs per minute, p95 and memory in the inspector and `uze doctor` (25.6)
+- [x] 4.1 Runs, events, grants and cost in the inspector; rerun with edited input (23.3)
+- [x] 4.2 On a linked extension: switch a source to its fixture, a synthetic event, size and theme, fake agents, record a session's events into a fixture (23.0, 23.4)
+- [x] 4.3 D28's binding, memory and storm targets tested; runs per minute, p95 and memory in the inspector and `uze doctor` (25.6)
 
 ## 5. Journeys and closing
 

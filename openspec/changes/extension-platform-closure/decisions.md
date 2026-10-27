@@ -89,3 +89,53 @@
 - decided:  `action … { run "./bin/next.sh"; then { agent-prompt "Review {answer.file}" target="self"; } }`, allowed only after `run` or `script`; `when=` inside `then` is refused; it needs `agent:prompt` (`ActionDecl::needs`). When the first step answers, its envelope is applied and the prompt is resolved against the item, `form.*` and `answer.*` (the envelope's `data`), cleaned with `Clean::text`, and returned as `Outcome::Agent` with `unattended: false`; the host's answer path now forwards such a request to `ask_of_agent`, which shows it and applies every guard. An empty prompt or a failed first step sends nothing and says why. The envelope's toast gives way to the prompt.
 - rejected: A second does-node after the first: "an action does one thing" stays a simple rule. A prompt sent without showing it when the bridge's day-long allowance holds: that allowance is for fixed unattended text only.
 - blast:    `uze-contract` `Then`; `uze-core` action decoder and check; `declared/action.rs` (`second_step`); `src/ui/orchestrator/answers.rs`.
+
+## D40 — The runner keeps each extension's account in memory; `uze doctor` reads what a workspace wrote
+
+- status:   pending
+- task:     4.1, 4.3
+- commit:   fbe06723
+- trigger:  D25 and D28 ask for runs, runs per minute, p95 and memory per extension "in the inspector and `uze doctor`", but runs exist only in a running workspace's runner and `uze doctor` is another process.
+- decided:  `ExtensionRunner` notes every question it answers (declaration, asking, input as one cut line and an 8-character digest, duration, outcome, whether a script or program ran), the last 64 per extension, and its runs over five minutes; a run is one that executed, so a remembered answer or a fixture is listed but costs nothing. Runs per minute is over at least a minute. Memory is the engine's reckoning (`DeclaredExtension::approximate_bytes`: its compile, its data and events as JSON, its built nodes) plus what the runner remembers of its answers. The workspace writes every extension's cost to `runtime/extensions/costs.json` (generated) every 30 s while any is hosted, and `uze doctor` prints a runs/min · p95 · memory table with when it was measured, and a warning for each over D28's targets (p95 20 ms, 1 MiB).
+- rejected: `uze doctor` running the sources itself (side effects, and no rate to measure); a record under `state/` (nothing in it is the operator's).
+- blast:    `uze-application` `extensions/{runs,costs,runner}.rs`, `DoctorReport.extension_costs`, `UzeHome::extension_costs_path`, `src/cli/status.rs`.
+
+## D41 — A linked extension's fixture switch uses `fixtures/<source>.json`; the recording is `fixtures/session.json`
+
+- status:   pending
+- task:     4.2
+- commit:   4d5d78ae, f86cb218
+- trigger:  D25 lets the inspector switch "a source with both" a fixture and a script to its fixture, but the manifest gives a source one answerer (`fixture`, `script` or `run`); and "record a session's events into a fixture" names no file.
+- decided:  A script- or program-fed source is switched to the fixture named after it, `fixtures/<source>.json`, read off the drawing thread through the same bounded reader as every fixture; one that is missing says so in a toast. The engine then asks nothing for it until switched back. A session's events (the engine's log, oldest first, synthetic ones marked) are written to `fixtures/session.json` by `Extensions::record_fixture`, which writes only into a linked extension's own `fixtures/`, never through a symlink, and nothing else.
+- rejected: A `fixture` beside `script` in the manifest: a contract change owned by another group, for an authoring aid; asking the author for a file name: a dialog for one write.
+- blast:    `uze-extensions` `declared/authoring.rs`, `uze-application` `extensions/checked.rs`, `src/ui/orchestrator/declared/inspector.rs`.
+
+## D42 — The inspector holds the moves once opened or clicked; its tools are rows, its edit field is a rename's
+
+- status:   pending
+- task:     4.1, 4.2
+- commit:   f86cb218
+- trigger:  The tools need a keyboard path, and the inspector shared the view's keys (only Esc and the page keys reached it).
+- decided:  Opening the inspector by its key, or a click in it, lends it Up/Down/Enter: they walk its tools and run one, as a click on the row does; a click on the view gives them back. The tools are text rows under an `author` heading, muted at rest and bright under the pointer or the keys. "rerun <source> with input…" opens a field prefilled with the last input as JSON, typed through the rename scope (Enter reruns, Esc cancels, both also clickable hints under it); only a JSON object is accepted. The rerun is the engine's own refresh job, so the runner answers it under the same consent, and it stands until "put <source>'s input back". Size cycles 80 by 24, 60 by 16, 40 by 12 within the pane; theme cycles the bundled dark and light on the surface alone (`uze_theme::with_active`); both reset when the inspector closes. A synthetic event is delivered marked `"synthetic": true` and sends no agent prompt; fake agents are three fixed rows marked synthetic.
+- rejected: A new keymap action to focus the inspector: one more key for something a click and the open key already do.
+- blast:    `src/ui/orchestrator/{declared/inspector.rs,render/declared.rs,render.rs,session/*}`, `src/ui/theme.rs`.
+
+## D43 — The runner keeps its listing of installed extensions for a second
+
+- status:   pending
+- task:     4.3
+- commit:   56344813
+- trigger:  Holding D28's storm showed listing every installed plugin was most of a question's cost (8.5 ms of a question with fifteen plugins, unoptimized): the storm took 330 ms for fifteen shared runs.
+- decided:  `ExtensionRunner` answers where an extension is installed from a listing at most a second old, dropped whenever `forget` is called (a consent or enabling moved). Its files are still read, digested and judged against the record on every question, so a listing a second stale can only find files that are gone or no longer consented. The storm dropped to about 65 ms unoptimized.
+- rejected: Caching the read files or the digest: that is what consent is judged on.
+- blast:    `uze-application` `extensions/runner.rs`.
+
+## D44 — D28's clocks are held where they can be: fastest of many, the target itself, unoptimized slack only for the digest
+
+- status:   pending
+- task:     4.3
+- commit:   56344813
+- trigger:  D28's targets were measured in a release build; the gates run unoptimized on a loaded 4-vCPU VM.
+- decided:  Binding is measured per gallery view in `uze-extensions`' own `tests/budget.rs`, the fastest of 41 fresh builds against 1 ms (the heaviest, `snake`, binds in about 0.4 ms unoptimized); sections are skipped, since they bind against no space a build can be made fresh by. Memory is `approximate_bytes` under 1 MiB for every gallery extension. The storm (`uze-application/tests/extension_storm.rs`) asserts exactly fifteen runs for 75 questions and the fastest of three storms under 50 ms optimized, 200 ms unoptimized, where the per-question SHA-256 of the extension's files is several times slower.
+- rejected: Medians: they move with load; a release-only test: the gates never run it.
+- blast:    `crates/uze-extensions/tests/budget.rs` (with `uze-core` as a dev-dependency), `crates/uze-application/tests/extension_storm.rs`.
