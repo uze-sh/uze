@@ -216,3 +216,39 @@ fn an_action_that_asks_first_is_a_host_dialog_attributed_and_esc_runs_nothing() 
     assert!(!shown(&rows, "Archive auth?"), "{rows:#?}");
     assert_eq!(model.open_slot, Some(slot), "the view stays");
 }
+
+#[test]
+fn an_answered_actions_script_is_handed_to_the_host() {
+    let mut model = hosting();
+    let area = ratatui::layout::Rect::new(0, 0, 120, 40);
+    let slot = model.declared_views().next().expect("the view").id;
+    super::open_surface(&mut model, slot);
+    full_frame_at(&mut model, area);
+    let home = uze_core::UzeHome::at(uze_testkit::temp::scratch("orchestrator-action-handed"));
+    let (sender, _answers) = std::sync::mpsc::channel();
+    model.schedule_engine_jobs_at(&home, &sender, std::time::Instant::now());
+    let button = model
+        .hits
+        .iter()
+        .find_map(|(_, hit)| match hit {
+            WorkspaceHit::Extension(ExtensionHit {
+                slot: on,
+                hit:
+                    hit @ ViewHit::Node {
+                        act: NodeAct::Press,
+                        ..
+                    },
+            }) if *on == slot => Some(*hit),
+            _ => None,
+        })
+        .expect("the button is drawn");
+    let space = model.surface_frame.content_space;
+    model.hit_surface(slot, button, space);
+    full_frame_at(&mut model, area);
+    model.hit_surface(slot, ViewHit::Answer(true), space);
+    assert_eq!(
+        model.schedule_engine_jobs_at(&home, &sender, std::time::Instant::now()),
+        1,
+        "the action's script is asked of the host"
+    );
+}

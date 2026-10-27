@@ -255,6 +255,15 @@ impl WorkspaceModel {
         // only what is said reaches them. A copy, a path or a surface to
         // open is a gesture's, never an answer's.
         use uze_extensions::contract::Outcome;
+        // What the gesture said while it waited ("Say done…") is over once
+        // its extension answers: the answer says what there is to say.
+        if self
+            .slot_in_pane()
+            .is_some_and(|slot| slot.owner == answer.extension)
+            && !matches!(outcome, Outcome::Notice(_))
+        {
+            self.open_notice = None;
+        }
         match outcome {
             Outcome::Failed { title, detail } => self.say_failed(&title, detail),
             Outcome::Toast(text) => self.say_told(&answer.extension, text),

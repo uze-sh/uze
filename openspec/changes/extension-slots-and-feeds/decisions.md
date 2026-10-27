@@ -289,3 +289,13 @@
 - decided:  `make check` passes on the branch rebased onto `main` (`f5a7972e`) but for the three failures known to this machine's environment (opencode's `bun` shim, two `foreground_status_*` in `uze-terminal`); `openspec validate --all --strict` passes. The proof script (`run6.sh`, kept with the plan's artifact, shared by 6a and 6b) rebuilds a world from the branch's `deck` and `bridge` fixtures; its automatic part passes (install disabled, nothing allowed unasked, both plugins check clean, a report from outside an agent refused with exit 0). Its checklist a–i in the real TUI is the operator's.
 - rejected: Waiting for the operator to close the task: the run is unattended.
 - blast:    None.
+
+## D43 — Found driving the TUI by hand: a script action's waiting notice outlived its answer
+
+- status:   pending
+- task:     7.4
+- commit:
+- trigger:  Driving `run6.sh` item i in the real TUI: "Say done…" stayed in the view's foot after the action had run (its bell rang and a second press was counted as dropped), because the host kept the notice the gesture returned in `open_notice`, which only the engine's own notices clear.
+- decided:  An answer from the extension standing in the pane clears the notice its gesture left, unless the answer is itself a notice. `an_answered_actions_script_is_handed_to_the_host` holds that the script is asked at all.
+- rejected: Keying the waiting notice to the action: one more piece of state for a notice that any answer supersedes.
+- blast:    `src/ui/orchestrator/answers.rs::absorb_engine_answer`.
