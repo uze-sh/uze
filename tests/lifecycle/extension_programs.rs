@@ -204,6 +204,13 @@ fn lines(answer: &Answer) -> Vec<String> {
     }
 }
 
+/// Whether `reason` is the kernel refusing an access: Landlock answers
+/// `EACCES` ("Permission denied"), Seatbelt `EPERM` ("Operation not
+/// permitted").
+fn refused(reason: &str) -> bool {
+    reason.contains("Permission denied") || reason.contains("Operation not permitted")
+}
+
 fn failed(answer: &Answer) -> String {
     match answer {
         Answer::Failed { reason, .. } => reason.clone(),
@@ -245,11 +252,7 @@ fn a_confined_program_writes_nowhere_but_its_scratch() {
         UzeHome::at(&world.env.uze_home).state_dir().join("planted"),
     ] {
         let reason = failed(&world.ask(&runner, "write", &target.display().to_string()));
-        assert!(
-            reason.contains("Permission denied"),
-            "{}: {reason}",
-            target.display()
-        );
+        assert!(refused(&reason), "{}: {reason}", target.display());
     }
     assert!(!hook.exists());
     assert_eq!(
@@ -271,9 +274,14 @@ fn a_confined_program_reads_the_checkout_and_nothing_outside_it() {
         ["# project"]
     );
     let key = world.outside.join("id_ed25519").display().to_string();
-    assert!(failed(&world.ask(&runner, "read", &key)).contains("Permission denied"));
-    let environ = format!("/proc/{}/environ", std::process::id());
-    assert!(failed(&world.ask(&runner, "read", &environ)).contains("Permission denied"));
+    let refusal = failed(&world.ask(&runner, "read", &key));
+    assert!(refused(&refusal), "{refusal}");
+    // Where the kernel publishes another process's environment.
+    if Path::new("/proc/self/environ").exists() {
+        let environ = format!("/proc/{}/environ", std::process::id());
+        let refusal = failed(&world.ask(&runner, "read", &environ));
+        assert!(refused(&refusal), "{refusal}");
+    }
 }
 
 #[test]
@@ -318,6 +326,13 @@ fn a_hang_and_its_children_end_at_the_time_limit() {
 fn a_confined_program_cannot_leave_its_process_group() {
     let world = World::new("escape");
     let Some(runner) = confining() else { return };
+    // Leaving the group is refused by the syscall filter (seccomp); Seatbelt
+    // filters no system call, so on macOS a confined program can call
+    // `setsid` (extension-platform-closure D91).
+    if !uze_application::confinement().syscall_filter {
+        eprintln!("skipped: this machine's confinement filters no system call");
+        return;
+    }
     let reason = failed(&world.ask(&runner, "escape", ""));
     assert!(reason.contains("Operation not permitted"), "{reason}");
 }

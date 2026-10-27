@@ -259,3 +259,63 @@
 - trigger:  The bridge kept a report's path when `Path::is_absolute` and `strip_prefix` placed it inside the checkout: on Windows a `C:/…` or differently cased spelling of the checkout, or a rooted `\etc`, was misjudged, and the kept path carried `\`.
 - decided:  `uze_platform::path::relative_within` (spelling only, on `is_within`'s rules: case, separators and the verbatim prefix on Windows) gives the part under the checkout of an anchored path (`is_anchored`); a relative one is kept as written; either is kept only when every part is a plain name, and an event carries its parts joined with `/` on every platform. The test builds its checkout from the temporary directory, so it is an absolute path on whatever runs it.
 - blast:    `crates/uze-platform/src/path.rs`, `src/ui/orchestrator/declared/bridge.rs::inside_checkout`.
+
+## D90 — macOS bounds no program's memory, and says so
+
+- status:   pending
+- task:     CI on macOS
+- commit:
+- trigger:  Every confined run on the macOS runner failed with `uze __confine: not confined: Invalid argument (os error 22)`: `setrlimit(RLIMIT_AS, 2 GiB)` is refused by macOS, which will not set an address-space limit below what a process already maps.
+- decided:  `rlimit::apply` sets the address-space limit only on Linux; elsewhere it is skipped. `Availability` gains `memory` (true for Landlock and seccomp, false for Seatbelt and where nothing confines), and its summary names "a memory bound" among what a machine does not enforce, so `uze doctor` and the Extensions screen say it. CPU time, file size and open files stay bounded on macOS.
+- rejected: Skipping the limits on macOS altogether: three of the four still hold there.
+- blast:    `uze-platform::confine::{rlimit, macos}`, `Availability`.
+
+## D91 — On macOS a confined program can leave its process group
+
+- status:   pending
+- task:     CI on macOS
+- commit:
+- trigger:  The test that a confined program cannot leave the group the runner ends relies on seccomp refusing `setsid`; Seatbelt filters no system call.
+- decided:  The test runs where the confinement filters system calls (`Availability::syscall_filter`) and says why it is skipped elsewhere. Open for the operator: on macOS a program's children may outlive the run's time limit, since the runner ends a group they can leave; the wall-clock and CPU limits still end the program itself.
+- rejected: Claiming the guarantee on macOS without a mechanism behind it.
+- blast:    `tests/lifecycle/extension_programs.rs`; a product question.
+
+## D92 — Seatbelt is handed the paths the kernel resolves, and its refusal is EPERM
+
+- status:   pending
+- task:     CI on macOS
+- commit:
+- trigger:  On macOS `/var`, `/tmp` and `/etc` are links into `/private`, and Seatbelt matches resolved paths; Seatbelt refuses with `EPERM` where Landlock answers `EACCES`.
+- decided:  `confine::macos::enter` resolves every path of the confinement before building the profile (a missing one fails the run, as the contract already demands); the tests accept either refusal, and read another process's environment only where `/proc` publishes it.
+- rejected: Writing both spellings into the profile: a rule per alias, for a resolution the kernel already does.
+- blast:    `uze-platform::confine::macos`, `tests/lifecycle/extension_programs.rs`.
+
+## D93 — The macOS and Windows secret stores are not exercised by unit tests
+
+- status:   pending
+- task:     CI on macOS
+- commit:
+- trigger:  `fetch`'s secret test stored into the runner's login Keychain, which CI keeps locked (`security` exit 45), and would write a developer's own.
+- decided:  The test runs where a secret is kept in a file (Linux and other Unixes), as `uze-workspace`'s own secret test already does; the Keychain and Credential Manager paths stay unproven by tests (extension-growth D5).
+- rejected: A throwaway keychain created in the test: `security create-keychain` changes the user's search list.
+- blast:    `extensions/fetch.rs` tests.
+
+## D100 — Journeys compare a recorded Windows path with forward slashes, and the rest of this round's journey fixes
+
+- status:   pending
+- task:     CI journeys
+- commit:
+- trigger:  On Windows UZE records `C:\…` while a journey's placeholders spell `C:/…`, so every `enabled_in` check failed; journey 15 counted `costs.json` as a compiled view; journey 22's `sed -i` is refused by macOS `sed`; journeys 17 and 28 run packaged `#!/bin/sh` programs.
+- decided:  The runner's `json` check passes each string through `machine.spell_value` (forward slashes for a drive path on Windows, identity elsewhere). Journey 15 counts only digest-named files and leaves `costs.json`, which the workspace rewrites every 30 s, out of its tree comparison. Journey 22 writes through a temporary file. Journeys 17 and 28 are unsupported on Windows, where `sh` is not on the search path and the programs step rightly says so. Journeys 15 and 22 passed in Docker; what Windows and macOS prove is CI's to show.
+- rejected: Recording paths with forward slashes on Windows: the record is the host's spelling, read by the host.
+- blast:    `journeys/{journey,windows,unix}.py`, journeys 15, 17, 22, 28.
+
+## D101 — A subagent's checkout is released whenever the target fast-forwards
+
+- status:   pending
+- task:     process finding
+- commit:
+- trigger:  Four subagent checkouts were moved to a detached `main` mid-work, losing uncommitted edits, at the moments the operator's workspace ran `sync_target` and found `main` fast-forwarded: `checkout::slots` then reconciles every checkout, and a subagent of an agent running in another process leaves no pane in its directory.
+- decided:  Recorded, not changed: whether a subagent with no pane is "in use" is the workspace's design question (`checkout::Presence`), not the extension platform's. Work continued in the agent's own checkout, committed fix by fix.
+- rejected: Fixing the reconciliation from this change.
+- blast:    None here; a UZE workspace issue for the operator.

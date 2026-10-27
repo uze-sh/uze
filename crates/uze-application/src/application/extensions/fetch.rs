@@ -343,6 +343,10 @@ mod tests {
         }
     }
 
+    // Only where a secret is kept in a file: on macOS storing one writes the
+    // operator's own Keychain, which a CI runner keeps locked; on Windows the
+    // Credential Manager, likewise the machine's own.
+    #[cfg(all(unix, not(target_os = "macos")))]
     #[test]
     fn the_secret_goes_on_stdin_and_comes_back_scrubbed() {
         let world = World::new("fetch-secret", "{\"echo\":\"Bearer ghp_TOKEN\"}\n200");

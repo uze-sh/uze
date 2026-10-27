@@ -106,6 +106,9 @@ pub struct Availability {
     /// System calls are filtered (seccomp), which is what refuses sockets
     /// and `ptrace` on Linux.
     pub syscall_filter: bool,
+    /// The program's address space is bounded (`RLIMIT_AS`); macOS refuses
+    /// any bound below what a process already maps.
+    pub memory: bool,
 }
 
 impl Availability {
@@ -118,6 +121,7 @@ impl Availability {
             ioctl_dev: false,
             scoping: false,
             syscall_filter: false,
+            memory: false,
         }
     }
 
@@ -138,6 +142,7 @@ impl Availability {
             ioctl_dev: abi >= 5,
             scoping: abi >= 6,
             syscall_filter: true,
+            memory: true,
         }
     }
 
@@ -158,6 +163,7 @@ impl Availability {
             (self.tcp, "TCP"),
             (self.ioctl_dev, "device ioctl"),
             (self.scoping, "signal and abstract socket scoping"),
+            (self.memory, "a memory bound"),
         ]
         .into_iter()
         .filter_map(|(enforced, right)| (!enforced).then_some(right))

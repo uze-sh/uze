@@ -31,7 +31,20 @@ pub(super) fn apply(limits: &Limits) -> io::Result<()> {
     lower!(libc::RLIMIT_CPU, limits.cpu_seconds)?;
     lower!(libc::RLIMIT_FSIZE, limits.file_size)?;
     lower!(libc::RLIMIT_NOFILE, limits.open_files)?;
-    lower!(libc::RLIMIT_AS, limits.address_space)
+    address_space(limits.address_space)
+}
+
+#[cfg(target_os = "linux")]
+fn address_space(bytes: u64) -> io::Result<()> {
+    lower!(libc::RLIMIT_AS, bytes)
+}
+
+/// macOS refuses an address-space limit below what a process already maps
+/// (`EINVAL`), and a 64-bit process maps 4 GiB for its zero page alone: the
+/// memory bound is not enforced there, which `Availability::memory` says.
+#[cfg(not(target_os = "linux"))]
+fn address_space(_bytes: u64) -> io::Result<()> {
+    Ok(())
 }
 
 fn succeeded(status: libc::c_int) -> io::Result<()> {
