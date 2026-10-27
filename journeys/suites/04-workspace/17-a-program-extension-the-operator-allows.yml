@@ -1,5 +1,10 @@
 journey: a program extension from a marketplace's clone runs once the operator allows its programs on a step of their own and enables it in the project
 tags: [gate, tui, workspace]
+unsupported:
+  windows: |
+    Its program is a packaged `#!/bin/sh` script, and Windows has no `sh` on
+    the search path (Git for Windows adds only `Git\cmd`): the programs step
+    rightly says `sh` is not found, so nothing this journey asserts can run.
 about: |
   The operator's side of an extension that runs a program: its plugin comes
   from a marketplace UZE cloned into its Store, and its source is answered

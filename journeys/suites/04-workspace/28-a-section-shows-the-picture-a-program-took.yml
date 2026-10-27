@@ -1,5 +1,10 @@
 journey: screen's section shows the picture its program wrote into its scratch, once its program is allowed on a step of its own, and Full size opens it over the frame
 tags: [gate, tui, workspace]
+unsupported:
+  windows: |
+    Its program is a packaged `#!/bin/sh` script, and Windows has no `sh` on
+    the search path (Git for Windows adds only `Git\cmd`): the programs step
+    rightly says `sh` is not found, so nothing this journey asserts can run.
 about: |
   The operator's side of `screen`, from the media gallery: a packaged
   `sh` script stands in for a device's screenshot, writes a small PNG into
