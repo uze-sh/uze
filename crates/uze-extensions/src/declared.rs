@@ -710,11 +710,14 @@ impl DeclaredExtension {
 
     /// Whether `source`'s latest question is still out.
     fn awaiting(&self, source: &str) -> bool {
-        self.stale.contains(source)
-            || self
-                .asked
-                .get(source)
-                .is_some_and(|asked| self.answered.get(source) != Some(&asked.number))
+        self.stale.contains(source) || self.question_out(source)
+    }
+
+    /// Whether a question asked of `source` has not been answered yet.
+    fn question_out(&self, source: &str) -> bool {
+        self.asked
+            .get(source)
+            .is_some_and(|asked| self.answered.get(source) != Some(&asked.number))
     }
 
     /// The surfaces drawn from `source`.
@@ -1331,10 +1334,13 @@ impl Extension for DeclaredExtension {
             .collect();
         self.due.extend(every);
         self.pass_residents(pass.visible, pass.now);
+        // A source whose question is still out stays due: asking again
+        // now would drop the answer on its way, and a source slower than
+        // its `every` would never show one.
         let asked: Vec<String> = self
             .due
             .iter()
-            .filter(|source| in_view.contains(*source))
+            .filter(|source| in_view.contains(*source) && !self.question_out(source))
             .cloned()
             .collect();
         for source in &asked {

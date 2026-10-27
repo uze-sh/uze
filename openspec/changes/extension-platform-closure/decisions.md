@@ -321,6 +321,7 @@
 - blast:    None here; a UZE workspace issue for the operator.
 
 ## D120 — Below Landlock ABI 6, a confined program signals only itself and its own group
+## D140 — A source with a question out is not asked again by its `every` or an event window
 
 - status:   pending
 - task:     review finding
@@ -389,3 +390,7 @@
 - decided:  `UzeHome::extension_scratch_root` names the directory; the first run of each process (a `Once`, in `uze-application`'s program runner) removes every run directory beneath it not changed for an hour, far past the 10 s a program may run. A living process removes its own runs', so once per process is enough.
 - rejected: Naming `scratch` a swept tenant of `runtime/`: it lives beneath `extensions`, a kept tenant, and a sweep by `doctor` could take the directory of a run in flight in another process.
 - blast:    `uze-core::machine::home`, `uze-application::extensions::program`.
+- trigger:  A refresh from `every` or a closed event window forgot the question still out, and `absorb` drops every answer that is not the latest: a source answering more slowly than it is re-asked never showed data.
+- decided:  `pass` leaves a due source due while its question is out (`question_out`: asked, and that number not yet answered), and asks it on the first pass after the answer lands, as `deliver each` already waited on `awaiting`.
+- rejected: Taking any answer newer than the shown one: two questions about different inputs would race to the frame.
+- blast:    `declared.rs` (`pass`, `question_out`); `declared/event_tests.rs`.

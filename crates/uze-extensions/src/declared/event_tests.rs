@@ -329,3 +329,43 @@ fn an_agents_source_is_answered_by_the_workspace_and_never_asked() {
         Some(Ok(json!([{ "id": "a1", "state": "working" }])))
     );
 }
+
+#[test]
+fn a_source_slower_than_its_every_is_not_asked_again_until_it_answers() {
+    let start = Instant::now();
+    let mut engine = board(Some(Duration::from_secs(2)), Vec::new());
+    engine.focus(Some(&checkout("/work/a")));
+    let visible = [SECTION.to_owned()];
+    let at = |engine: &mut DeclaredExtension, now: Instant| {
+        engine.pass(&Pass {
+            now,
+            visible: &visible,
+            happened: &[],
+        });
+        engine.jobs()
+    };
+    let host = Answering::with(answered(json!({ "count": 1 })));
+    let first: Vec<Opaque> = at(&mut engine, start)
+        .into_iter()
+        .map(|job| (job.run)(&host))
+        .collect();
+    assert_eq!(first.len(), 1);
+    assert!(
+        at(&mut engine, start + Duration::from_secs(2)).is_empty(),
+        "the first question is still out"
+    );
+    for answer in first {
+        engine.absorb(answer);
+    }
+    assert_eq!(
+        engine.data(super::tests::SOURCE),
+        Some(&Ok(json!({ "count": 1 }))),
+        "the answer that took three seconds is shown"
+    );
+    let asked: Vec<Opaque> = at(&mut engine, start + Duration::from_secs(3))
+        .into_iter()
+        .map(|job| (job.run)(&host))
+        .collect();
+    assert_eq!(asked.len(), 1, "asked again once the answer landed");
+    assert_eq!(host.asked.borrow()[1].asking, Asking::Refresh);
+}
