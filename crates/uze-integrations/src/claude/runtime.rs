@@ -162,7 +162,8 @@ pub(super) fn runtime_contribution(ctx: &RuntimeContext) -> HarnessRuntimeContri
 
 /// Claude's hook events and the report each makes, with `--hook-input`
 /// reading the tool's name, path and call id from the JSON Claude hands a
-/// hook on stdin.
+/// hook on stdin. `Notification` reports only under
+/// [`APPROVAL_NOTIFICATION`].
 const REPORTED: &[(&str, &str)] = &[
     ("SessionStart", "session.started"),
     ("UserPromptSubmit", "turn.started"),
@@ -171,6 +172,11 @@ const REPORTED: &[(&str, &str)] = &[
     ("PostToolUse", "tool.finished"),
     ("Notification", "approval.asked"),
 ];
+
+/// The notification type of a permission prompt, as a `Notification`
+/// hook's matcher names it: Claude also notifies an idle prompt, an
+/// authentication and dialogs, none of which asks for an approval.
+const APPROVAL_NOTIFICATION: &str = "permission_prompt";
 
 /// The events [`reporter`] makes Claude report.
 pub(super) const REPORTED_EVENTS: &[&str] = &[
@@ -201,6 +207,8 @@ pub(super) fn reporter(
             });
             if hook.ends_with("ToolUse") {
                 entry["matcher"] = serde_json::json!("*");
+            } else if *hook == "Notification" {
+                entry["matcher"] = serde_json::json!(APPROVAL_NOTIFICATION);
             }
             ((*hook).to_owned(), serde_json::json!([entry]))
         })
@@ -661,6 +669,10 @@ mod reporter_tests {
             "'/opt/it'\\''s/uze' agent report turn.started --hook-input"
         );
         assert_eq!(settings["hooks"]["PreToolUse"][0]["matcher"], "*");
+        assert_eq!(
+            settings["hooks"]["Notification"][0]["matcher"], "permission_prompt",
+            "only a permission prompt is an approval asked; an idle prompt is none"
+        );
         assert!(settings["hooks"]["Stop"].is_array());
         let _ = std::fs::remove_dir_all(dir);
     }

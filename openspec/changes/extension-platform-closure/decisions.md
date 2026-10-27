@@ -567,3 +567,13 @@
 - decided:  Both remedies. The bound is 8 MiB (`HOOK_INPUT_MAX`), still bounded. Input that does not read as JSON (cut at the bound, or cut by the harness) is scanned: the first `"tool_name"`, `"tool_use_id"`, `"call_id"`, `"file_path"` and `"path"` keys outside a string give their string values, `file_path`/`path` under `tool_input` as a whole input has them. What the cut removed is not guessed: a call id after an 8 MiB response is lost, and the report keeps its tool and path. Invalid UTF-8 at the cut is read lossily rather than failing the whole read.
 - rejected: Reading standard input unbounded: a hook runs on every tool call, and the report keeps four short fields.
 - blast:    `src/cli/agent.rs`.
+
+## D167 — Claude reports an approval asked only for a permission prompt
+
+- status:   pending
+- task:     review finding 8
+- commit:
+- trigger:  The reporter ran `uze agent report approval.asked` on every Claude `Notification`, so an idle prompt ("Claude is waiting for your input"), an authentication or a dialog each told the extensions an approval was asked.
+- decided:  The `Notification` hook of the reporter's settings carries `"matcher": "permission_prompt"`: Claude's hook reference lists the notification types a `Notification` matcher selects (`permission_prompt`, `idle_prompt`, `auth_success`, `elicitation_dialog`, …), so Claude itself runs the hook only for a permission prompt and every other notification reports nothing. Read from code.claude.com/docs/en/hooks on 2026-10-27; the latest Claude Code is the only one supported.
+- rejected: Reading `notification_type` (or the `message` text) from the hook's input in `uze agent report`: the CLI names no harness, and the matcher keeps the other notifications from starting a process at all.
+- blast:    `uze-integrations::claude::runtime`.
