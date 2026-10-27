@@ -217,10 +217,15 @@ fn the_program_gets_exactly_its_environment_and_its_own_exit_status() {
         .output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        "FIRST=1\nSECOND=two words\n"
-    );
+    // A coverage build's profiling runtime sets its own variable in the
+    // helper's environment at startup; it is the instrumentation's, never
+    // the caller's, and no ordinary build has it.
+    let environment: String = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|line| !line.starts_with("__LLVM_PROFILE_"))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    assert_eq!(environment, "FIRST=1\nSECOND=two words\n");
 
     let status = shell(&confinement, "exit 7");
     assert_eq!(status.status.code(), Some(7));
