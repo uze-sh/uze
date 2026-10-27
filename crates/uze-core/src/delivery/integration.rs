@@ -260,6 +260,15 @@ pub struct AgentContext<'a> {
     pub session: Option<&'a SessionId>,
 }
 
+/// What a reporter is built from.
+pub struct ReporterContext<'a> {
+    /// The `uze` the harness's events run, by its absolute path.
+    pub uze: &'a Path,
+    /// The agent's own context directory, where a reporter may write what
+    /// the launch then names.
+    pub dir: &'a Path,
+}
+
 /// What a channel adds to one launch. Never the document's text: only paths
 /// reach the process's arguments or environment.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -463,6 +472,22 @@ pub trait IntegrationPort: Send + Sync {
     /// [`ContextChannel::FirstTurn`].
     fn deliver_context(&self, _home: &UzeHome, _ctx: &AgentContext) -> Result<ContextContribution> {
         Ok(ContextContribution::default())
+    }
+
+    /// What this one launch carries so its harness tells the workspace
+    /// what the agent is doing, by running `uze agent report` from the
+    /// harness's own events: never a hook delivered to every session of
+    /// the harness, only this launch's (ADR-040, amended by agent-bridge).
+    /// `None` where the harness has no such event to run it from; the
+    /// workspace then reads turns from what the pane paints.
+    fn reporter(&self, _ctx: &ReporterContext) -> Option<ContextContribution> {
+        None
+    }
+
+    /// The agent events this harness can report through [`Self::reporter`],
+    /// as `uze agent report` names them: what an extension can count on.
+    fn reported_events(&self) -> &'static [&'static str] {
+        &[]
     }
 
     /// The facts this harness keeps for `project_root` (and for the

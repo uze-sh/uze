@@ -228,6 +228,32 @@ impl IntegrationPort for CodexIntegration {
         runtime::projection_would_activate(ctx, &self.config_toml_path())
     }
 
+    /// Codex runs its `notify` program when a turn completes, with the
+    /// turn's JSON as its last argument; set for this launch alone with
+    /// `-c`, which overrides `config.toml` without writing it.
+    fn reporter(
+        &self,
+        ctx: &uze_core::integration::ReporterContext,
+    ) -> Option<uze_core::integration::ContextContribution> {
+        let notify = serde_json::json!([
+            ctx.uze.to_string_lossy(),
+            "agent",
+            "report",
+            "turn.finished"
+        ]);
+        Some(uze_core::integration::ContextContribution {
+            args: vec![
+                std::ffi::OsString::from("-c"),
+                std::ffi::OsString::from(format!("notify={notify}")),
+            ],
+            env: Vec::new(),
+        })
+    }
+
+    fn reported_events(&self) -> &'static [&'static str] {
+        &["turn.finished"]
+    }
+
     fn runtime_projects_project_context(&self) -> bool {
         true
     }

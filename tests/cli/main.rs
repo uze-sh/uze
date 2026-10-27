@@ -3,6 +3,7 @@
 //! commands. Project-scoped CLI semantics live in `workspace/` and
 //! `acceptance/`.
 
+mod agent_report;
 mod budget;
 // Landlock and seccomp are Linux's: the kernel the helper is proved
 // against; macOS's profile is proved as text in uze-platform.

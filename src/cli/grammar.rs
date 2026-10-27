@@ -292,6 +292,14 @@ pub(crate) enum AgentAction {
         /// How it ended: ok, error, denied
         #[arg(long)]
         outcome: Option<String>,
+        /// Read the harness's own description of the event, as JSON, from
+        /// standard input: the tool's name, path and call id are taken from
+        /// it
+        #[arg(long)]
+        hook_input: bool,
+        /// The harness's description of the event, as JSON, when it passes
+        /// one as an argument rather than on standard input
+        payload: Option<String>,
     },
 }
 

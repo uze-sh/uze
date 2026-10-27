@@ -408,6 +408,18 @@ fn give_context(
             plan.add_note(format!("this agent's context was not delivered ({error})"));
         }
     }
+    // The agent tells the workspace what it is doing through the uze that
+    // launched it: this launch only, never a hook of every session.
+    if let Ok(uze) = std::env::current_exe() {
+        let dir = agent_context::dir(home, &owner.project_root, agent);
+        if let Some(reporter) = integration.reporter(&uze_core::integration::ReporterContext {
+            uze: &uze,
+            dir: &dir,
+        }) {
+            plan.args.extend(reporter.args);
+            plan.env.extend(reporter.env);
+        }
+    }
 }
 
 /// The root of the checkout the agent was launched in, spelled the way the

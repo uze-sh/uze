@@ -234,6 +234,18 @@ impl IntegrationPort for ClaudeIntegration {
         uze_core::integration::SessionContinuity::Assigned
     }
 
+    /// Claude's hooks, through a `--settings` file this launch alone names.
+    fn reporter(
+        &self,
+        ctx: &uze_core::integration::ReporterContext,
+    ) -> Option<uze_core::integration::ContextContribution> {
+        runtime::reporter(ctx)
+    }
+
+    fn reported_events(&self) -> &'static [&'static str] {
+        runtime::REPORTED_EVENTS
+    }
+
     fn start_session_args(
         &self,
         session: &uze_core::session::SessionId,

@@ -20,22 +20,58 @@ pub(crate) fn run_agent(app: &UzeApplication, action: AgentAction) -> Result<()>
             path,
             call,
             outcome,
+            hook_input,
+            payload,
         } => {
+            let described = described_event(hook_input, payload.as_deref());
+            let field = |given: Option<String>, keys: &[&[&str]]| {
+                given.or_else(|| keys.iter().find_map(|key| field_at(&described, key)))
+            };
             report_about_self(
                 app,
                 uze_application::AgentReport {
                     event,
                     at: u64::try_from(uze_platform::clock::since_epoch().as_millis())
                         .unwrap_or(u64::MAX),
-                    tool,
-                    path,
-                    call,
+                    tool: field(tool, &[&["tool_name"], &["tool"]]),
+                    path: field(
+                        path,
+                        &[
+                            &["tool_input", "file_path"],
+                            &["tool_input", "path"],
+                            &["path"],
+                        ],
+                    ),
+                    call: field(call, &[&["tool_use_id"], &["call_id"]]),
                     outcome,
                 },
             );
             Ok(())
         }
     }
+}
+
+/// What the harness said about the event, as JSON: from standard input
+/// when `from_stdin`, else from `payload`; nothing when neither reads as
+/// JSON. Bounded: a hook's input is a description, never a transcript.
+fn described_event(from_stdin: bool, payload: Option<&str>) -> serde_json::Value {
+    use std::io::Read as _;
+    let text = if from_stdin {
+        let mut text = String::new();
+        let _ = std::io::stdin().take(64 << 10).read_to_string(&mut text);
+        text
+    } else {
+        payload.unwrap_or_default().to_owned()
+    };
+    serde_json::from_str(&text).unwrap_or_default()
+}
+
+/// The text at `path` inside `described`, when there is one.
+fn field_at(described: &serde_json::Value, path: &[&str]) -> Option<String> {
+    let value = path
+        .iter()
+        .try_fold(described, |value, key| value.get(key))?;
+    value.as_str().map(str::to_owned)
 }
 
 /// Appends a report about this agent, saying on stderr why one was not

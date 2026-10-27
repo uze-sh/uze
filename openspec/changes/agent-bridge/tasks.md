@@ -6,9 +6,9 @@
 
 ## 2. Delivery per launch
 
-- [ ] 2.1 The portable vocabulary grows turn start and approval asked/resolved where a harness offers them (`capability/hook.rs`) (parent 14.2)
-- [ ] 2.2 Each integration's `runtime_contribution` carries the reporter for what its harness can say, failing open; each names what it cannot (B3)
-- [ ] 2.3 ADR-040 amended with that commit
+- [x] 2.1 The portable vocabulary grows turn start and approval asked/resolved where a harness offers them (`capability/hook.rs`) (parent 14.2)
+- [x] 2.2 Each integration's `runtime_contribution` carries the reporter for what its harness can say, failing open; each names what it cannot (B3)
+- [x] 2.3 ADR-040 amended with that commit
 
 ## 3. Events and the agents source
 
