@@ -43,6 +43,28 @@ pub enum Asking {
     /// An action whose `does` is a script, run on a gesture and never
     /// remembered.
     Action,
+    /// One call into a resident source's session (`add-extension-platform`
+    /// D19): never remembered, and answered by the session the source's
+    /// `Start` opened.
+    Resident(ResidentCall),
+}
+
+/// The entry points of a resident script, as the engine calls them. The
+/// question's input carries what each is called with: the context, the
+/// event, the raw input or the size.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ResidentCall {
+    /// Open the session: `start(context)`.
+    Start,
+    /// `event(event)`: a timer's tick.
+    Event,
+    /// `input(input)`: a key or the pointer on its focused surface.
+    Input,
+    /// `render(size)`: the catalog tree to draw.
+    Render,
+    /// Close the session: `stop()`.
+    Stop,
 }
 
 /// What a source answered: `data`, and optionally the sources to ask
@@ -62,6 +84,11 @@ pub struct Envelope {
     pub notify: Option<Box<Notification>>,
     /// A cue to sound, under `notify`.
     pub sound: Option<Sound>,
+    /// The milliseconds after which a resident script asked for its next
+    /// tick, already held to the host's rate. Set by the engine from the
+    /// script's `timer(ms)`, never a member an answer may hold.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timer: Option<u64>,
 }
 
 /// What a notification says; the host puts the extension's attribution

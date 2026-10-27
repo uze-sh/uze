@@ -130,6 +130,7 @@ fn envelope_of(value: serde_json::Value) -> Result<Envelope, String> {
         store,
         notify,
         sound,
+        timer: None,
     })
 }
 

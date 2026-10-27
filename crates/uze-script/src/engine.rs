@@ -7,6 +7,7 @@
 //! the host functions its grants register, with nothing shared between two
 //! extensions on the pool.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
@@ -109,17 +110,70 @@ pub(crate) fn compiling() -> Engine {
     raw(&LIMITS)
 }
 
+/// When the call running now began, and how long it has waited on the
+/// host's programs: what the deadline is counted against. A per-question
+/// engine starts it once; a resident session restarts it before each call.
+#[derive(Debug)]
+pub(crate) struct CallClock {
+    started: Mutex<Instant>,
+    /// Milliseconds a granted program took: its own time limit's, not the
+    /// script's (P10).
+    waiting: AtomicU64,
+}
+
+impl CallClock {
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self {
+            started: Mutex::new(Instant::now()),
+            waiting: AtomicU64::new(0),
+        })
+    }
+
+    /// A new call begins now.
+    pub(crate) fn restart(&self) {
+        *self
+            .started
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Instant::now();
+        self.waiting.store(0, Ordering::Relaxed);
+    }
+
+    fn spent(&self) -> Duration {
+        let started = *self
+            .started
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let waited = Duration::from_millis(self.waiting.load(Ordering::Relaxed));
+        started.elapsed().saturating_sub(waited)
+    }
+
+    fn waited(&self, took: Duration) {
+        let took = u64::try_from(took.as_millis()).unwrap_or(u64::MAX);
+        self.waiting.fetch_add(took, Ordering::Relaxed);
+    }
+}
+
 /// The engine one answer runs in, its clock started.
 pub(crate) fn answering(
     grants: &Grants,
     reach: Arc<dyn Reach>,
     trace: Arc<Mutex<Trace>>,
 ) -> Engine {
+    running(grants, reach, trace, CallClock::new())
+}
+
+/// An engine whose every call is held to [`LIMITS`], counting its
+/// deadline on `clock`.
+pub(crate) fn running(
+    grants: &Grants,
+    reach: Arc<dyn Reach>,
+    trace: Arc<Mutex<Trace>>,
+    clock: Arc<CallClock>,
+) -> Engine {
     let limits = LIMITS;
     let mut engine = raw(&limits);
     primitives::register(&mut engine, &limits);
-    let waiting = Arc::new(std::sync::atomic::AtomicU64::new(0));
-    register_host(&mut engine, grants, reach, Arc::clone(&waiting));
+    register_host(&mut engine, grants, reach, Arc::clone(&clock));
 
     let printed = Arc::clone(&trace);
     engine.on_print(move |text| record(&printed, TraceKind::Print, text, None));
@@ -127,14 +181,10 @@ pub(crate) fn answering(
         record(&trace, TraceKind::Debug, text, position.line());
     });
 
-    let started = Instant::now();
     engine.on_progress(move |operations| {
         // The clock is read every 256 operations: a few nanoseconds each,
         // and still within a fraction of a millisecond of the deadline.
-        // What a granted program took is its own time limit's, not the
-        // script's (P10).
-        let waited = Duration::from_millis(waiting.load(std::sync::atomic::Ordering::Relaxed));
-        (operations % 256 == 0 && started.elapsed().saturating_sub(waited) > limits.deadline)
+        (operations % 256 == 0 && clock.spent() > limits.deadline)
             .then(|| Dynamic::from("deadline"))
     });
     engine
@@ -153,7 +203,7 @@ fn register_host(
     engine: &mut Engine,
     grants: &Grants,
     reach: Arc<dyn Reach>,
-    waiting: Arc<std::sync::atomic::AtomicU64>,
+    clock: Arc<CallClock>,
 ) {
     if crate::reach::holds(grants, &Grant::Store) {
         let keeper = Arc::clone(&reach);
@@ -190,8 +240,7 @@ fn register_host(
                     .collect::<Result<Vec<String>, _>>()?;
                 let started = Instant::now();
                 let reply = runner.run_program(name, &args);
-                let took = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
-                waiting.fetch_add(took, std::sync::atomic::Ordering::Relaxed);
+                clock.waited(started.elapsed());
                 let reply = reply.map_err(|error| failure(error.0))?;
                 let mut map = Map::new();
                 map.insert(

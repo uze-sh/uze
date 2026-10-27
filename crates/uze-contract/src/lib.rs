@@ -41,7 +41,7 @@ pub use manifest::{
     PROGRAM_TIME_LIMIT, PreferenceDecl, PreferenceKind, Program, PromptText, Slot, SourceDecl,
     SourceKind, SpriteDecl, SpriteState, StoreScope, SurfaceDecl, is_program_name,
 };
-pub use question::{Answer, Asking, Envelope, Notification, Question, Sound};
+pub use question::{Answer, Asking, Envelope, Notification, Question, ResidentCall, Sound};
 pub use testing::{Given, GivenData, Step, StepKind, TestDecl, TestFile, ThemeName, World};
 
 /// The extension protocol this build speaks. A manifest declaring another

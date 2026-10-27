@@ -131,6 +131,7 @@ pub(crate) const HOST_FUNCTIONS: &[(&str, Option<Grant>)] = &[
     ("read_checkout", Some(Grant::ReadCheckout)),
     ("list_checkout", Some(Grant::ReadCheckout)),
     ("store", Some(Grant::Store)),
+    ("timer", Some(Grant::Resident)),
     ("clock", None),
 ];
 

@@ -45,6 +45,7 @@ pub(crate) fn from_answer(answer: &Dynamic) -> Result<Envelope, ScriptError> {
         store: store(map.get("store"))?,
         notify: notify(map.get("notify"))?,
         sound: sound(map.get("sound"))?,
+        timer: None,
     })
 }
 
