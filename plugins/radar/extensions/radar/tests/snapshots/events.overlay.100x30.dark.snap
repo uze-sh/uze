@@ -28,7 +28,7 @@
 
 
 
-esc close  ·  i inspector
+esc close  ·  alt+r agent events  ·  i inspector
 ---
  aaaaa a aaaaaaaaaaa
 
@@ -59,7 +59,7 @@ esc close  ·  i inspector
 
 
 
-ccc aaaaa  b  c aaaaaaaaa
+ccc aaaaa  b  ccccc aaaaa aaaaaa  b  c aaaaaaaaa
 ---
 a text.muted
 b text.faint

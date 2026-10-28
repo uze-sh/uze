@@ -2,7 +2,7 @@ test "the top of the sidebar says the last notice and how long ago" {
     surface "notice"
     given "notice" fixture="fixtures/notice.json"
     now 1761570112000
-    expect-text "codex finished"
+    expect-text "codex done"
     expect-text "12s"
     snapshot "notice"
 }

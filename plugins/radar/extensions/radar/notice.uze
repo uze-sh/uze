@@ -18,14 +18,14 @@ fn answer(input, context) {
     let event = input.event;
     let prefs = input.preferences;
     if event.name == "agent.approval.asked" {
-        let said = #{ data: #{ said: "asks for approval", harness: event.harness, at: event.at, tone: "warning" } };
+        let said = #{ data: #{ said: "needs approval", harness: event.harness, at: event.at, tone: "warning" } };
         if prefs.approval {
             said.notify = #{ title: "Approval", body: `An agent in ${event.harness} asks for approval` };
             said.sound = "attention";
         }
         said
     } else {
-        let said = #{ data: #{ said: "finished", harness: event.harness, at: event.at, tone: "success" } };
+        let said = #{ data: #{ said: "done", harness: event.harness, at: event.at, tone: "success" } };
         if prefs.sound { said.sound = "done"; }
         said
     }
