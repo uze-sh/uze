@@ -163,7 +163,10 @@ on "cancel" must not save first.
 **Shortcuts:**
 - Keep them few: group actions behind a context menu (`alt+.`) rather than
   adding specific keys.
-- One modifier per family: extensions all use `alt`.
+- One modifier per family: extensions all use `alt`. Not every `alt` chord
+  reaches a terminal: GPU overlays take some before it sees them (NVIDIA:
+  `alt+z`, `alt+r`, `alt+f1`, `alt+f9`, `alt+f10`), so an example or a
+  built-in never suggests one of those.
 - Keyboard users must never lose a path.
 
 **What is UZE's and what is a plugin's:**
