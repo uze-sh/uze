@@ -18,9 +18,9 @@ preferences {
     toggle "approval" label="Notify when an agent asks for approval" default=#true
 }
 
-// In the bar: the state of every agent in one line; a click opens the
+// In the bar, on the right: the state of every agent in one line; a click opens the
 // drawer.
-surface "now" slot="bar" view="now.uze" source="watch" opens="events"
+surface "now" slot="bar" align="right" view="now.uze" source="watch" opens="events"
 
 // What the agents did, newest first: each tool and the file it touched.
 surface "events" slot="drawer" view="events.uze" source="events" title="Agent events"
