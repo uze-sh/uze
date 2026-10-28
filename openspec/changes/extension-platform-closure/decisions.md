@@ -777,3 +777,13 @@
 - decided:  `extension_switch::declared_id` is `consent_key`: `plugin@marketplace/id` in `config.toml`'s `[extensions]`, in `state/extensions.json` and in the client's layout (status row order). The attribution `id · plugin@marketplace` is only what a surface draws. A built-in keeps its bare id (`code`), which cannot collide: it has neither `@` nor `/`. No migration: the attribution key never reached `main` or a release. Follows the market's practice: one qualified id wherever settings, records and commands name a package (Claude Code's `plugin@marketplace` in `enabledPlugins`, VS Code's `publisher.name`, Homebrew's `user/tap/formula`).
 - rejected: A nested table (`[extensions."proof@proving"] notes = false`): still a quoted key, and a second shape for one id. The id alone (`notes`): two plugins may each ship one.
 - blast:    `src/ui/extension_switch.rs::declared_id`, tests keyed by it.
+
+## D206 — Writing an extension is the author Skill's reference; rules keep a Skill of their own
+
+- status:   pending
+- task:     operator question on the uze plugin's Skills
+- commit:
+- trigger:  The operator asked whether `uze:rules` and `uze:extension` are not capabilities of `uze:author`. Extension writing was split across two Skills that sent the reader to each other: the view catalog, tests and the language server in `uze:author`, the manifest, scripts, programs, grants and consent in `uze:extension`.
+- decided:  `uze:extension` becomes `plugins/uze/skills/author/references/extension.md`, with the three extension sections that were in `uze:author`'s SKILL.md moved beside it; SKILL.md keeps the plugin loop and points there when a plugin carries an extension, and its description takes the extension triggers (writing or debugging a script, program, source, action or key; a refused check; "needs consent", "`<program>` not found"). `uze:rules` stays a Skill: its subject is a project's own `.agents/rules/`, reached by people who author no plugin, and its one plugin section already points at `uze:author`. The uze plugin ships five Skills. `docs/extensions/reference.md` is regenerated to name the new place.
+- rejected: One SKILL.md holding both (41 KB loaded for anyone creating a plugin). Folding `uze:rules` in too: `uze:author` would trigger for "this instruction only applies to src/ui", which is no plugin at all.
+- blast:    `plugins/uze/skills/author/`, `crates/uze-contract/src/docs.rs`, `tests/projection/naming.rs`, `AGENTS.md`, `plugins/uze/README.md`, `docs/capabilities/uze-skill.md`.

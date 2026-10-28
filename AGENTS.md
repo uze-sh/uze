@@ -20,7 +20,7 @@ an `always_on` rule.
 
 This repository is itself the official uze marketplace: `marketplace.json` +
 `plugins/**` at the root, with `plugins/uze` (the `uze:init`, `uze:rules`, `uze:worktree`,
-`uze:architect`, `uze:author` and `uze:extension` Skills) as the one official plugin today.
+`uze:architect` and `uze:author` Skills) as the one official plugin today.
 
 ## Commands
 

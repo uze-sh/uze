@@ -1,12 +1,4 @@
----
-name: extension
-# Who finds this skill: the moment someone wants a surface of their own in
-# the workspace, not the moment they want a plugin (that is `uze:author`).
-description: Writing a declared extension a plugin carries — the `extension.kdl` manifest (surfaces, sources, actions, grants), a Rhai script or a program that answers a source, a resident script that keeps its state and reads raw keys (a game), cells, images and sprites, `exec:` grants and how a program is pinned and confined, the extension's store, the check loop with `.test.kdl` tests, and the consent and per-project enabling code needs before it runs. Use when adding an extension to a plugin, writing or debugging an extension's script or program, a source, an action or a key, when `uze agent plugin check` refuses an extension, or when an extension draws "needs consent", "needs enabling in this project" or "`<program>` not found".
-invoke:
-  model: true
-  user: true
----
+# Writing a declared extension
 
 An extension is a surface a plugin adds to the workspace: a full-frame
 `view` opened from the tab strip, or a `section` of the sidebar. It never
@@ -16,7 +8,7 @@ on it are **actions**; what its scripts may reach are **grants**, which
 the operator consents to before anything runs.
 
 The plugin itself (its marketplace, scaffold, install and update loop) is
-the `uze:author` Skill's subject. Start there when there is no plugin yet;
+`SKILL.md`'s subject, beside this file. When there is no plugin yet,
 `uze agent plugin create <name> --market <market> --extension <id>`
 scaffolds an extension with a fixture source and a script source that
 already pass the check.
@@ -55,7 +47,7 @@ action "copy" label="Copy" on="board" key="ctrl-y" confirm="Copy {text}?" {
 
 - **`surface "<id>" slot=… view=… source=… title=…`**: `view` is a view
   file of catalog nodes bound to the source's data with `{field}` (the
-  node list is in `uze:author`, *What a view can draw*, and in the language
+  node list is in *What a view can draw*, below, and in the language
   server's hover). `slot` is where it is drawn:
 
   | slot | where |
@@ -543,12 +535,73 @@ test "refresh is the action its key presses" {
 
 `press` spells a key the way the keymap does (`ctrl+r`), not the way the
 manifest suggests one. The rest of the test vocabulary, snapshots and
-`--update-snapshots` are in `uze:author`, *Test an extension*.
+`--update-snapshots` are in *Test an extension*, below.
 `uze agent plugin check --run` executes the scripts in the engine against
 a checkout, and the programs too where this machine confines them, their
 `exec:` names resolved on the spot; elsewhere their recorded answers
 stand in. Then `uze update <plugin> -m` puts the change in the
-workspace (`uze:author`, *Install and iterate*).
+workspace (`SKILL.md`, *Install and iterate*).
+
+## What a view can draw
+
+A view is built from the catalog's nodes, PascalCase, each documented in
+the language server's hover:
+
+- layout: `Stack`, `Row`, `Grid`, `Tabs`/`Tab`, `Rule`
+- text: `Text`, `Markdown`, `Code`, `Log`, `Kbd`
+- data: `List`, `Table`, `Details`/`Entry`
+- measures: `Progress`/`Segment`, `Gauge`, `Chart`, `Pips`, `Stat`
+- status: `Badge`, `Marks`/`Mark`, `Activity`, `Elapsed`
+- input: `Toggle`, `Button` (runs the declared action its `action` names), `Select`/`Choice`, `Field`, `Form` (values held as `ui.<id>`, a form sending `form.<id>`)
+- media: `Cells`, `Image`, `Sprite` (a grid in roles, a picture, a declared sprite)
+
+Colour is always a role (`muted`, `warning`, `{tone:state}`), never a
+value. `ui.` and `context.` are scopes: a fixture field named `context`
+is not reachable as `{context.…}`.
+
+## Test an extension
+
+Every `tests/*.test.kdl` runs in the check, which fails when one does. A
+test opens a surface in a world, then takes the steps an operator could:
+
+```kdl
+test "the notes tab shows the notes" {
+    surface "board"                       // by its id in extension.kdl
+    given "board" fixture="fixtures/empty.json"  // or json=#"{ … }"#
+    size 100 30                           // default: the slot's size
+    theme "light"                         // default: dark
+    locale "pt"                           // default: en
+    now 1761570125000                     // ms since the epoch an Elapsed counts to; default: 0
+    click "Notes"                         // a tab, a row: what draws this text
+    press "down"                          // a key, as the keymap spells it
+    press-button "refresh"
+    expect-text "A fixture is a sample"
+    expect-no-text "Nothing to do"
+    expect-absent "List" because="ui.tab=tasks"  // or a field a `when` missed
+    expect-action "refresh"               // with key=value of its item
+    snapshot "board"                      // the cells, as text and colour roles
+}
+```
+
+A failing step is said at its line with what was drawn. A snapshot lives
+at `tests/snapshots/<name>.<slot>.<width>x<height>.<theme>.snap`; after a
+change you meant, `uze agent plugin check <plugin> --update-snapshots`
+writes it again, and the diff is yours to review. Tests run nothing the
+plugin ships, so they pass the same on any machine.
+
+## Point your editor at the language server
+
+`uze agent plugin lsp` serves completion, hover and the check's own
+diagnostics for `extension.kdl`, views and tests, as you type:
+
+- **Helix** (`languages.toml`): `[language-server.uze] command = "uze"`,
+  `args = ["agent", "plugin", "lsp"]`, and `language-servers = ["uze"]`
+  on the `kdl` language.
+- **Neovim**: `vim.lsp.start({ name = "uze", cmd = { "uze", "agent",
+  "plugin", "lsp" }, root_dir = vim.fs.root(0, "extension.kdl") })` in an
+  autocommand for `*.kdl`.
+- **VS Code**: any generic LSP client extension, with the command
+  `uze agent plugin lsp` for the `kdl` language.
 
 ## Consent and enabling
 

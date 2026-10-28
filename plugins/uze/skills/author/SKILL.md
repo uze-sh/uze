@@ -3,7 +3,7 @@ name: author
 # Two lines deciding who finds this skill: the long text is what the model
 # matches an invocation against, so it names the moment the skill answers —
 # "create a plugin for me" — not what a scaffold is.
-description: Guides creating a uze plugin end to end — marketplace create or select, plugin scaffold, capability flags, check before install, install from the linked marketplace, iterate, publish by pushing. Use when someone asks to create, author or scaffold a plugin, or to set up their own marketplace of plugins.
+description: Guides creating a uze plugin end to end — marketplace create or select, plugin scaffold, capability flags, check before install, install from the linked marketplace, iterate, publish by pushing — and writing what it carries, a declared extension included (its `extension.kdl`, a Rhai script, a program, a resident script, grants, tests, consent). Use when someone asks to create, author or scaffold a plugin, set up a marketplace of plugins, add an extension to a plugin, write or debug an extension's script, program, source, action or key, when `uze agent plugin check` refuses an extension, or when one draws "needs consent", "needs enabling in this project" or "`<program>` not found".
 invoke:
   model: true
   user: true
@@ -107,10 +107,11 @@ each; `--mcp` adds an `mcp.json` and a working stdio server stub under
 `board.kdl` view both draw, the `fixtures/board.json` it is bound to, and
 `tests/board.test.kdl` with the snapshot its first test takes (the id is
 lowercase with single hyphens, and `code`, `architect`, `spec` and `uze`
-are taken). Writing the extension itself (its manifest, a script, its
-grants, its tests, and the consent it needs before it runs) is the
-`uze:extension` Skill's subject: follow it from here, and come back for
-check, install and update. There is no
+are taken). Writing the extension itself (its manifest, a script or a
+program, its grants, its tests, and the consent it needs before it runs)
+is in [references/extension.md](references/extension.md): read it when
+the plugin carries one, and come back here for check, install and
+update. There is no
 `--instructions`: a plugin's own `AGENTS.md` reaches no project, and the
 flag is refused naming an `always_on` rule. Every generated file carries commented field
 documentation. A file the plugin ships is named `${PLUGIN_ROOT}/…` in
@@ -201,67 +202,9 @@ workspace hosts it with; what is wrong is said under `extension <id>` as
 surface's view is then bound to its source's fixture, and a field the view
 names that the fixture lacks is a warning placed in the view: add the
 field to the fixture, or stop naming it.
-
-### What a view can draw
-
-A view is built from the catalog's nodes, PascalCase, each documented in
-the language server's hover:
-
-- layout: `Stack`, `Row`, `Grid`, `Tabs`/`Tab`, `Rule`
-- text: `Text`, `Markdown`, `Code`, `Log`, `Kbd`
-- data: `List`, `Table`, `Details`/`Entry`
-- measures: `Progress`/`Segment`, `Gauge`, `Chart`, `Pips`, `Stat`
-- status: `Badge`, `Marks`/`Mark`, `Activity`, `Elapsed`
-- input: `Toggle`, `Button` (runs the declared action its `action` names), `Select`/`Choice`, `Field`, `Form` (values held as `ui.<id>`, a form sending `form.<id>`; see `uze:extension`)
-- media: `Cells`, `Image`, `Sprite` (a grid in roles, a picture, a declared sprite; see `uze:extension`)
-
-Colour is always a role (`muted`, `warning`, `{tone:state}`), never a
-value. `ui.` and `context.` are scopes: a fixture field named `context`
-is not reachable as `{context.…}`.
-
-### Test an extension
-
-Every `tests/*.test.kdl` runs in the check, which fails when one does. A
-test opens a surface in a world, then takes the steps an operator could:
-
-```kdl
-test "the notes tab shows the notes" {
-    surface "board"                       // by its id in extension.kdl
-    given "board" fixture="fixtures/empty.json"  // or json=#"{ … }"#
-    size 100 30                           // default: the slot's size
-    theme "light"                         // default: dark
-    locale "pt"                           // default: en
-    now 1761570125000                     // ms since the epoch an Elapsed counts to; default: 0
-    click "Notes"                         // a tab, a row: what draws this text
-    press "down"                          // a key, as the keymap spells it
-    press-button "refresh"
-    expect-text "A fixture is a sample"
-    expect-no-text "Nothing to do"
-    expect-absent "List" because="ui.tab=tasks"  // or a field a `when` missed
-    expect-action "refresh"               // with key=value of its item
-    snapshot "board"                      // the cells, as text and colour roles
-}
-```
-
-A failing step is said at its line with what was drawn. A snapshot lives
-at `tests/snapshots/<name>.<slot>.<width>x<height>.<theme>.snap`; after a
-change you meant, `uze agent plugin check <plugin> --update-snapshots`
-writes it again, and the diff is yours to review. Tests run nothing the
-plugin ships, so they pass the same on any machine.
-
-### Point your editor at the language server
-
-`uze agent plugin lsp` serves completion, hover and the check's own
-diagnostics for `extension.kdl`, views and tests, as you type:
-
-- **Helix** (`languages.toml`): `[language-server.uze] command = "uze"`,
-  `args = ["agent", "plugin", "lsp"]`, and `language-servers = ["uze"]`
-  on the `kdl` language.
-- **Neovim**: `vim.lsp.start({ name = "uze", cmd = { "uze", "agent",
-  "plugin", "lsp" }, root_dir = vim.fs.root(0, "extension.kdl") })` in an
-  autocommand for `*.kdl`.
-- **VS Code**: any generic LSP client extension, with the command
-  `uze agent plugin lsp` for the `kdl` language.
+What a view can draw, how to test an extension and how to point an editor
+at the language server are in
+[references/extension.md](references/extension.md).
 
 A warning does not fail the check, but it is still yours to resolve: each
 one names the file and the one change that clears it. A marketplace

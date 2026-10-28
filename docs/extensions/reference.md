@@ -2,7 +2,7 @@
 
 <!-- Generated from the uze-contract crate by `cargo run --quiet -p uze-contract --features schema --example extension-docs`; do not edit. -->
 
-The exhaustive list of what a declared extension may write and answer: every slot, source kind, grant, event, action, envelope member and catalog node. It is generated from the contract the workspace checks against, so it says what the build accepts. To learn to write an extension, read the `uze:extension` Skill (`plugins/uze/skills/extension/SKILL.md`); the machine-readable form, with a worked manifest per slot and per source kind, is [`schema.json`](schema.json).
+The exhaustive list of what a declared extension may write and answer: every slot, source kind, grant, event, action, envelope member and catalog node. It is generated from the contract the workspace checks against, so it says what the build accepts. To learn to write an extension, read the `uze:author` Skill's extension reference (`plugins/uze/skills/author/references/extension.md`); the machine-readable form, with a worked manifest per slot and per source kind, is [`schema.json`](schema.json).
 
 Owner: `crates/uze-contract` (`src/docs.rs`). A change to the contract changes this page in the same commit, or the root suite's drift test fails.
 

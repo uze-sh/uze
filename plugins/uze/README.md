@@ -19,10 +19,10 @@ It ships six Skills:
   under `workspace.artifacts`: which view a change belongs in, how the architect
   surface lists it, and `uze agent artifacts check` as the proof it draws.
 - `skills/author/SKILL.md`: creating a plugin end to end, from choosing or
-  creating its marketplace to checking, installing and iterating on it.
-- `skills/extension/SKILL.md`: writing a declared extension a plugin
-  carries: its manifest, a Rhai script, its grants, its tests, and the
-  consent and per-project enabling a script needs before it runs.
+  creating its marketplace to checking, installing and iterating on it;
+  `references/extension.md` beside it covers writing a declared extension
+  the plugin carries: its manifest, a script or a program, its grants, its
+  tests, and the consent and enabling it needs before it runs.
 
 The plugin format (skills, agents, MCP servers, hooks, and the
 `${PLUGIN_ROOT}` placeholder) and what each harness receives are documented

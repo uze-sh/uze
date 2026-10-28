@@ -1,4 +1,4 @@
-//! What an author reads beside the `uze:extension` Skill, generated from
+//! What an author reads beside the `uze:author` Skill's extension reference, generated from
 //! this crate so it cannot say something the contract does not
 //! (`extension-platform` D21, `extension-platform-closure` 2.1–2.2).
 //!
@@ -679,8 +679,9 @@ pub fn reference() -> String {
         "The exhaustive list of what a declared extension may write and answer: every slot, \
          source kind, grant, event, action, envelope member and catalog node. It is generated \
          from the contract the workspace checks against, so it says what the build accepts. \
-         To learn to write an extension, read the `uze:extension` Skill \
-         (`plugins/uze/skills/extension/SKILL.md`); the machine-readable form, with a worked \
+         To learn to write an extension, read the `uze:author` Skill's extension reference \
+         (`plugins/uze/skills/author/references/extension.md`); the machine-readable form, \
+         with a worked \
          manifest per slot and per source kind, is [`schema.json`](schema.json).",
     );
     line("");
