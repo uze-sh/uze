@@ -127,6 +127,7 @@ scenes:
           cd {world}/market/plugins/release/extensions/release
           sed 's/^wants "read:checkout"$/wants "read:checkout" "store"/' extension.kdl > extension.kdl.next && mv extension.kdl.next extension.kdl
           cat > said.uze <<'EOF'
+          <script>
           fn answer(input, context) {
               let read = lines(read_checkout(input.file));
               #{
@@ -134,6 +135,7 @@ scenes:
                   store: #{ ran: "release two" },
               }
           }
+          </script>
           EOF
           cd {world}/market
           git add -A
