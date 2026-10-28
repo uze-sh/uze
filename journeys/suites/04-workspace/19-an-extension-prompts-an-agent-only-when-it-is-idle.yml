@@ -201,9 +201,11 @@ scenes:
         until: "agent:prompt"
         timeout: 5
         say: the second question says it may type into an agent
+      # The first answer's "extension enabled" may still stand: what only
+      # the second draws is the flight deck's own section.
       - click: "Allow and enable"
         say: allow the flight deck's grants
-        expect: "extension enabled"
+        expect: "No calls yet"
         expect_timeout: 10
     then:
       - json: "{uze_home}/state/extensions.json"
