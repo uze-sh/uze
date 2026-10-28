@@ -46,14 +46,13 @@ sandbox:
       git -C {fixtures}/uze-market add -A
       git -C {fixtures}/uze-market -c commit.gpgsign=false commit -q -m 'uze marketplace'
       {project}/target/release/uze market list | grep -q '^ *uze ' || {project}/target/release/uze market add {fixtures}/uze-market >/dev/null
-    # The examples, declared by the project and installed. `--trust`
-    # because worklog's MCP server runs python3, and a take has nobody to
-    # answer that prompt. The manifest is committed, as a project would: the
-    # base's reset cleans every untracked file before a take.
+    # The examples, declared by the project and installed. The manifest is
+    # committed, as a project would: the base's reset cleans every
+    # untracked file before a take.
     - |
       cd {fixtures}/demo-tasks
-      for plugin in milestone radar focus pulse worklog; do
-        {project}/target/release/uze install --trust "$plugin@uze" >/dev/null
+      for plugin in milestone radar focus pulse; do
+        {project}/target/release/uze install "$plugin@uze" >/dev/null
       done
       git add -A
       git -c commit.gpgsign=false -c user.name=ana -c user.email=ana@example.invalid \

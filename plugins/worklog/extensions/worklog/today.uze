@@ -1,8 +1,0 @@
-<view>
-// A line in the bar: how much of the month is logged.
-Row gap=1 {
-    Icon "clock" role="info"
-    Text "{total} of {target}"
-    Text "{pct}" role="muted"
-}
-</view>

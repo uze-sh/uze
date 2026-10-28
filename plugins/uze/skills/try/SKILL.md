@@ -1,6 +1,6 @@
 ---
 name: try
-description: Sets up a project to try uze's example plugins in — milestone, radar, focus, pulse, worklog — so the person sees what extensions do in the workspace without wiring anything of their own. Use when the person asks to try uze, to see example extensions or plugins, to set up a demo or playground project, or invokes /uze:try or $uze:try directly.
+description: Sets up a project to try uze's example plugins in — milestone, radar, focus, pulse — so the person sees what extensions do in the workspace without wiring anything of their own. Use when the person asks to try uze, to see example extensions or plugins, to set up a demo or playground project, or invokes /uze:try or $uze:try directly.
 invoke:
   model: true
   user: true
@@ -21,7 +21,6 @@ it. The person then opens the workspace.
 | `radar` | sidebar, `alt+r` | who is working and for how long; a sound or a notification when a turn ends |
 | `focus` | bar, drawer | a pomodoro, with the last seven days |
 | `pulse` | bar, view | a heatmap of twelve weeks of commits; click a day for its commits |
-| `worklog` | bar, drawer | hours logged per day, read from an MCP server the agents can call too |
 | `pingpong` | the harness | one of every capability a plugin delivers; its MCP server is built from a uze checkout |
 
 ## Steps
@@ -41,12 +40,10 @@ it. The person then opens the workspace.
    and an empty `agents.yaml`, touches nothing outside the directory, and
    prints its path.
 5. **Install the examples into it**, one command each, from inside the
-   directory: `uze install milestone@uze`, then `radar@uze`, `focus@uze`,
-   `pulse@uze` and `worklog@uze`; each is declared in its `agents.yaml`.
-   `worklog`'s MCP server runs `python3`; if an install refuses an
-   executable capability, say which and ask the person before adding
-   `--trust` to that one command. Leave `pingpong` out unless they ask: its
-   server is not in a release.
+   directory: `uze install milestone@uze`, then `radar@uze`, `focus@uze`
+   and `pulse@uze`; each is declared in its `agents.yaml`. Leave
+   `pingpong` out unless they ask: its server is not in a release, and its
+   hooks and MCP server ask the person to trust them.
 6. **Hand over.** The workspace is a terminal UI the person runs, never
    you. Tell them, in this order:
    - `cd <directory> && uze workspace`;
