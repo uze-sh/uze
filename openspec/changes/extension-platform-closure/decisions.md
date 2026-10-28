@@ -687,3 +687,13 @@
 - decided:  Each fixer moved to a `git clone --shared` in this job's temporary directory, on its own branch, and its commits were cherry-picked onto this branch; `decisions.md`, which every fixer appended to, was merged by keeping both sides and checked entry by entry.
 - rejected: Retrying in `uze agent work split` checkouts: the reset recurs whenever `main` moves.
 - blast:    None in the code.
+
+## D197 — Spec keeps its last read by checkout and draws it on reopening
+
+- status:   pending
+- task:     operator report
+- commit:
+- trigger:  The operator saw spec flash an empty frame on every opening. Measured on this repository: a read takes about 140 ms, 115 of them in `git log --name-only HEAD --not <target> <upstream>` over a branch 280 commits ahead; 20 ms without it. A single `git diff` from the merge base costs the same.
+- decided:  The extension keeps its last read by checkout; an opening draws it at once and reads again, and the fresh read lands with the viewer kept where they stood (`SpecView::refresh`: place, folds, scroll). Only a session's first opening waits.
+- rejected: Splitting the read in two (the catalog first, the marks of this checkout after): it shortens the first opening too, but every opening still flashes the marks in; a cache is the smaller change for the case reported. Recorded as the next step if the first opening is reported too.
+- blast:    `uze-extensions::spec::{extension, SpecView::refresh}`.
