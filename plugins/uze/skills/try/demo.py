@@ -5,7 +5,7 @@
 The directory must not exist yet, or be empty. It becomes a small Git
 repository, a tasks CLI, holding what each example reads:
 
-- twelve weeks of commits by three authors, for `pulse`'s heatmap;
+- twelve weeks of commits by three authors, for `contributions`' graph;
 - a milestone in `.planning/`, one phase done and the next one planned, for
   `milestone`, whose drawer then offers to execute it;
 - an `AGENTS.md`, so any harness opened there has something to read;

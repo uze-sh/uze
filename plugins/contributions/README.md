@@ -1,11 +1,12 @@
-# pulse
+# contributions
 
-The repository's pulse, read from git: today's commits and the last two
+A minimal contribution graph of the repository, as GitHub and GitLab draw
+one, read from git: today's commits and the last two
 weeks in the bar, and a heatmap of the last twelve weeks where every day is
 a click away from its commits.
 
 <p align="center">
-  <img src="../../web/public/examples/pulse.gif" alt="The pulse heatmap opens from the bar; a click on a day lists its commits" width="860" />
+  <img src="../../web/public/examples/contributions.gif" alt="The contribution graph opens from the bar; a click on a day lists its commits" width="860" />
 </p>
 
 | Where | What |
@@ -21,10 +22,10 @@ reads the same for a commit a week and for a hundred a day.
 
 ## How it is built
 
-- [`extension.kdl`](extensions/pulse/extension.kdl): a bar item that opens
+- [`extension.kdl`](extensions/contributions/extension.kdl): a bar item that opens
   a view, a source refreshed on `checkout.changed`, and an action a click
   on a day calls.
-- [`heatmap.uze`](extensions/pulse/heatmap.uze): the view, built on
+- [`heatmap.uze`](extensions/contributions/heatmap.uze): the view, built on
   `Cells` with a click region per day, and the script that reads one
   `git log`.
 

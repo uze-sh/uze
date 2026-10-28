@@ -1,5 +1,0 @@
-{
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "pulse",
-  "description": "The repository's pulse: a heatmap of the last twelve weeks of commits, day by day, read from git."
-}

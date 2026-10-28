@@ -1,17 +1,17 @@
-# pulse: a heatmap of the repository's commits, read from git. Published
-# for plugins/pulse/README.md.
+# contributions: the repository's contribution graph, read from git.
+# Published for plugins/contributions/README.md.
 #
-#   tui-record run .demo/examples/pulse
+#   tui-record run .demo/examples/contributions
 
 extends: ../_base.yml
 
 video:
-  title: uze — the pulse example
-  out: .demo/examples/pulse/pulse.gif
-  cast: '{root}/example-pulse.cast'
+  title: uze — the contributions example
+  out: .demo/examples/contributions/contributions.gif
+  cast: '{root}/example-contributions.cast'
   publish:
     - from: out
-      to: web/public/examples/pulse.gif
+      to: web/public/examples/contributions.gif
   # The heatmap open with a day chosen: the frame that says what it is.
   poster_when: 'commits in 12 weeks'
 

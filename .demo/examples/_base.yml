@@ -30,7 +30,7 @@ sandbox:
   provision:
     - mkdir -p {root}/tmp
     # The project `uze:try` makes, by the same script, so the demos show
-    # what a person trying uze sees: twelve weeks of commits for pulse and a
+    # what a person trying uze sees: twelve weeks of commits for contributions and a
     # milestone in .planning/ for milestone. Made again on every seed, so its
     # dates stay relative to the day the demos are recorded; the base's reset
     # rewinds it between takes like the other fixtures.
@@ -51,7 +51,7 @@ sandbox:
     # untracked file before a take.
     - |
       cd {fixtures}/demo-tasks
-      for plugin in milestone focus pulse; do
+      for plugin in milestone focus contributions; do
         {project}/target/release/uze install "$plugin@uze" >/dev/null
       done
       git add -A
@@ -67,7 +67,7 @@ sandbox:
     # Every take starts before the person consented to anything, so the
     # offer the workspace makes when an agent opens in the project is the
     # same on every take: what each extension may reach, then enabled. The
-    # stores go too: focus's sessions and pulse's chosen day.
+    # stores go too: focus's sessions and contributions' chosen day.
     - rm -f {home}/.uze/state/extensions.json
     - rm -rf {home}/.uze/state/extensions/store {home}/.uze/state/extensions/preferences
   patch_json:
@@ -97,7 +97,7 @@ macros:
       expect: Allow these programs to run, confined\?
       expect_timeout: 8
       pause: 1.2
-    # pulse runs git: a program is asked about on a step of its own.
+    # contributions runs git: a program is asked about on a step of its own.
     - say: and the one that runs a program, confined
       click: Allow and enable
       in: screen
