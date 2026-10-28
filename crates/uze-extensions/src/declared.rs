@@ -529,20 +529,31 @@ impl DeclaredExtension {
             return;
         }
         let space = self.last_space(surface);
-        let first = self.first_act(surface, space, |act| matches!(act, Act::List { .. }));
-        let Some(Act::List {
-            selected: Some(row),
-            items,
-            ..
-        }) = first
-        else {
+        // The row and its item only: the list itself is not copied each pass.
+        let selected = self
+            .with_built(surface, space, |built| {
+                match built
+                    .acts
+                    .values()
+                    .find(|act| matches!(act, Act::List { .. }))
+                {
+                    Some(Act::List {
+                        selected: Some(row),
+                        items,
+                        ..
+                    }) => Some((*row, items.get(*row).cloned())),
+                    _ => None,
+                }
+            })
+            .flatten();
+        let Some((row, item)) = selected else {
             self.chosen.remove(surface);
             return;
         };
         let gestures = self.ui.get(surface).cloned().unwrap_or_default();
         let taken = self.chosen.get(surface);
         if taken.is_none_or(|chosen| chosen.row != row || chosen.gestures != gestures) {
-            let item = items.get(row).cloned().unwrap_or_default();
+            let item = item.unwrap_or_default();
             self.chosen.insert(
                 surface.to_owned(),
                 Chosen {

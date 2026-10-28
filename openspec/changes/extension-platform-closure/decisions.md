@@ -697,3 +697,13 @@
 - decided:  The extension keeps its last read by checkout; an opening draws it at once and reads again, and the fresh read lands with the viewer kept where they stood (`SpecView::refresh`: place, folds, scroll). Only a session's first opening waits.
 - rejected: Splitting the read in two (the catalog first, the marks of this checkout after): it shortens the first opening too, but every opening still flashes the marks in; a cache is the smaller change for the case reported. Recorded as the next step if the first opening is reported too.
 - blast:    `uze-extensions::spec::{extension, SpecView::refresh}`.
+
+## D198 — The selection a source's input reads is taken without copying the list
+
+- status:   pending
+- task:     polish suspected performance
+- commit:
+- trigger:  The review suspected `jobs()` and a memoized `view()` of copying too much. Measured in release, a list of 1000 items of ~250 bytes: `jobs()` took 485 µs a call, nearly all of it `first_act` cloning the whole `Act::List` to read one row, once a host pass; `view()` on a memo hit took 84 µs.
+- decided:  `capture_selection` reads the selected row inside the build and copies that row alone: `jobs()` now takes 1.1 µs. `view()` is left as it is: 84 µs a frame is not worth an `Arc`-shared tree.
+- rejected: Sharing the built tree through `Arc` for `view()`: a change to every reader of the tree for a cost below a frame's noise.
+- blast:    `uze-extensions::declared::capture_selection`.
