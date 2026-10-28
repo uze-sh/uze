@@ -1,4 +1,4 @@
-# radar: what the agents are doing, at three heights. Published for
+# radar: the agents at a glance in the bar, and what they did in a drawer.
 # plugins/radar/README.md.
 #
 #   tui-record run .demo/examples/radar
@@ -20,31 +20,29 @@ video:
 beats:
   - use: open-and-enable
     with: {say: 'a project, and an agent on it', review_pause: 1.2}
-  - say: radar's section lists every agent, ready for now
+  - say: in the bar, the agents at a glance
     wait: screen
-    until: 'agent 1\s+ready'
+    until: 'idle'
     timeout: 15
     pause: 1.2
   - say: the agent is asked something
     type: Read tasks.py and AGENTS.md, then say in one line what this project is.
-    expect: 'working|\d+s'
+    expect: '1 working'
     expect_timeout: 15
     pause: 1.0
-  - say: while it works, the section counts its turn
-    # Its name changes on the way: the agent names its own work, so the
-    # proof is the spinner's elapsed time, not the label.
+  - say: while it works, the bar counts its turn
     wait: screen
-    until: '[⠁-⣿]\s+\S.*\d+s'
+    until: '1 working\s+\d+s'
     timeout: 20
     pause: 2.0
-  - say: when the turn ends, the notice at the top says so, with a sound
+  - say: when the turn ends, the bar says so, with a sound
     wait: screen
-    until: 'claude-code done'
+    until: 'idle\s+\d+s'
     timeout: 180
-    pause: 1.8
-  - say: the section's events open what the agents did
-    click: events
-    in: sidebar
+    pause: 1.4
+  - say: a click opens what the agent did, tool by tool
+    click: idle
+    in: pane
     occurrence: last
     expect: newest first
     expect_timeout: 8

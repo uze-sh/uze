@@ -1,9 +1,19 @@
 <view>
-// The last events, newest first: the tool and the file it touched, or
-// what happened to the turn.
+// What the agents did, newest first: a tool with the file it touched, or
+// what happened to a turn. A mark says how it went; the harness that did
+// it sits faint at the end.
+lookup "mark" default="info" {
+    "agent.tool.started" "play"
+    "agent.tool.finished" "check"
+    "agent.turn.started" "play"
+    "agent.turn.finished" "check"
+    "agent.approval.asked" "warning"
+    "agent.approval.resolved" "check"
+    "agent.session.started" "play"
+}
 lookup "tone" default="muted" {
-    "agent.tool.started" "dim"
-    "agent.tool.finished" "default"
+    "agent.tool.started" "faint"
+    "agent.tool.finished" "success"
     "agent.turn.started" "info"
     "agent.turn.finished" "success"
     "agent.approval.asked" "warning"
@@ -11,8 +21,6 @@ lookup "tone" default="muted" {
     "agent.session.started" "info"
 }
 lookup "said" default="" {
-    "agent.tool.started" "started"
-    "agent.tool.finished" "finished"
     "agent.turn.started" "turn started"
     "agent.turn.finished" "turn finished"
     "agent.approval.asked" "asks for approval"
@@ -21,17 +29,14 @@ lookup "said" default="" {
 }
 
 Stack gap=1 {
-    Row gap=1 {
-        Text "newest first" role="faint" grow=#true
-        Kbd "esc"
-        Text "closes" role="faint"
-    }
-    List each="." empty="no event yet: the agents have not done anything" {
-        Row gap=2 {
-            Text "{harness}" role="faint" min-width=7
-            Text "{tool}" role="{tone:name}" strong=#true min-width=6 when="tool"
-            Text "{said:name}" role="{tone:name}" min-width=17
+    Text "newest first" role="faint"
+    List each="." empty="nothing yet: the agents have not done anything" {
+        Row gap=1 {
+            Icon "{mark:name}" role="{tone:name}"
+            Text "{tool}" strong=#true min-width=5 when="tool"
             Text "{path}" role="info" truncate=#true grow=#true when="path"
+            Text "{said:name}" role="{tone:name}" grow=#true unless="path"
+            Text "{harness}" role="faint"
         }
     }
 }

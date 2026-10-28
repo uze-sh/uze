@@ -18,7 +18,7 @@ it. The person then opens the workspace.
 | Example | Where it shows | What it does |
 |---|---|---|
 | `milestone` | bar, drawer | a milestone in phases; plans or executes the next one through the agent |
-| `radar` | sidebar, and its `events` | who is working and for how long; a sound or a notification when a turn ends |
+| `radar` | bar, drawer | the agents at a glance: waiting on you, working and for how long, or idle; what they did, tool by tool |
 | `focus` | bar, drawer | a pomodoro, with the last seven days |
 | `pulse` | bar, view | a heatmap of twelve weeks of commits; click a day for its commits |
 | `pingpong` | the harness | one of every capability a plugin delivers; its MCP server is built from a uze checkout |

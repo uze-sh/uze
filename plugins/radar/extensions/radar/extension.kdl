@@ -1,47 +1,40 @@
-// Radar: what the workspace's agents are doing. A section lists every agent
-// and how long its turn has run, and opens the last events over
-// everything. A finished turn plays a sound, and an agent asking for approval
-// notifies, as the operator prefers: the sidebar shows that notice where it
-// shows a new release.
+// Radar: what the workspace's agents are doing, in one item of the bar:
+// one asking for approval, the ones working and for how long, or how long
+// they have been idle. A click opens the drawer of what they did, tool by
+// tool. A finished turn plays a sound, and an agent asking for approval
+// notifies, as the operator prefers.
+//
+// It lists no agent: the sidebar already does. What it adds is the state
+// of all of them at a glance, from anywhere, and what they touched.
 protocol 1
 id "radar"
 name "Radar"
-description "Who is working, for how long, and what just happened"
+description "The agents at a glance, and what they did"
 
-wants "agent:observe" "notify"
+wants "agent:observe" "notify" "store"
 
 preferences {
     toggle "sound" label="Play a sound when a turn ends" default=#true
     toggle "approval" label="Notify when an agent asks for approval" default=#true
 }
 
-// Draws nothing: a source is asked only while a surface shows it, and a
-// status row that answers nothing takes no room.
-surface "notice" slot="status" view="notice.uze" source="notice" title="Radar"
+// In the bar: the state of every agent in one line; a click opens the
+// drawer.
+surface "now" slot="bar" view="now.uze" source="watch" opens="events"
 
-// Every agent: working and for how long, or how it stopped.
-surface "agents" slot="section" view="agents.uze" source="crew" title="Agents"
-
-// The last events, over everything, opened from the section. No key is
-// suggested: every alt chord was someone's (the host's files on alt+e,
-// NVIDIA's overlay on alt+r, an image paste on alt+v); the person binds one
-// on the Keys screen if they want it.
-surface "events" slot="overlay" view="events.uze" source="events" title="Agent events"
-
-source "crew" { agents; }
+// What the agents did, newest first: each tool and the file it touched.
+surface "events" slot="drawer" view="events.uze" source="events" title="Agent events"
 
 source "events" { events 40; }
 
-// Asked once per event: the sound, the notification, and what the line at
-// the top says.
-source "notice" {
-    script "notice.uze"
+// Asked once per event: keeps which agents are working and which ask for
+// approval in the store, and answers the sound and the notification.
+source "watch" {
+    script "now.uze"
     deliver "each"
     preferences
+    refresh-on "agent.turn.started"
     refresh-on "agent.turn.finished"
     refresh-on "agent.approval.asked"
-}
-
-action "events" label="Agent events" on="agents" {
-    open "events"
+    refresh-on "agent.approval.resolved"
 }

@@ -1,0 +1,70 @@
+# uze snapshot · protocol 1 · drawer 46x30 · dark
+ ┌───────────────────────────────────────────┐
+ │ radar · radar@local                       │
+ │                                           │
+ │  newest first                             │
+ │                                           │
+ │   ▲ asks for approval            claude   │
+ │   ✓ Write store.py               claude   │
+ │   ▶ Bash                         claude   │
+ │   ✓ turn finished                 codex   │
+ │   ▶ turn started                 claude   │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ └───────────────────────────────────────────┘
+---
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ a bbbbb b bbbbbbbbbbb                       a
+ a                                           a
+ a  cccccc ccccc                             a
+ a                                           a
+ a   d dddd ddd dddddddd            cccccc   a
+ a   e fffff gggggggg               cccccc   a
+ a   c ffff                         cccccc   a
+ a   e eeee eeeeeeee                 ccccc   a
+ a   g gggg ggggggg                 cccccc   a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+---
+a border.default
+b text.muted
+c text.faint
+d state.warning
+e state.success
+f text.bright
+g state.info

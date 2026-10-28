@@ -1,31 +1,34 @@
-test "the status row draws nothing" {
-    surface "notice"
-    given "notice" fixture="fixtures/notice.json"
-    expect-no-text "done"
-}
-
-test "every agent says how long it has worked, or how it stopped" {
-    surface "agents"
-    given "crew" fixture="fixtures/crew.json"
+test "working, the bar counts the agents and the longest turn" {
+    surface "now"
+    given "watch" fixture="fixtures/working.json"
     now 1761570125000
-    expect-text "feat/tasks-file"
+    expect-text "2 working"
     expect-text "2m05s"
-    expect-text "done"
-    snapshot "agents"
+    snapshot "working"
 }
 
-test "events come newest first, with the tool and the file" {
+test "an agent waiting on you comes first" {
+    surface "now"
+    given "watch" fixture="fixtures/asking.json"
+    expect-text "1 awaiting approval"
+    expect-no-text "working"
+    snapshot "asking"
+}
+
+test "idle, the bar says for how long" {
+    surface "now"
+    given "watch" fixture="fixtures/idle.json"
+    now 1761570300000
+    expect-text "idle"
+    expect-text "5m00s"
+    snapshot "idle"
+}
+
+test "the drawer lists what the agents did, newest first" {
     surface "events"
     given "events" fixture="fixtures/events.json"
     expect-text "asks for approval"
     expect-text "Write"
     expect-text "store.py"
     snapshot "events"
-}
-
-test "the section opens the events" {
-    surface "agents"
-    given "crew" fixture="fixtures/crew.json"
-    press-button "events"
-    expect-action "events"
 }
