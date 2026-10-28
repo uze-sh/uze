@@ -1,7 +1,0 @@
-// The notes, each copied by its button.
-List each="items" {
-    Row gap=2 {
-        Text "{text}" grow=#true
-        Button "Copy" action="copy-note" item="{.}"
-    }
-}

@@ -8,10 +8,10 @@ description "The checkout's phases over each agent, its notes in a picker, and w
 
 wants "read:checkout" "clipboard" "notify"
 
-surface "phases" slot="band" rows=2 place="top" view="waiting.kdl" source="phases" title="Phases"
-surface "count" slot="status" view="count.kdl" source="phases" title="Phases"
-surface "log" slot="view" view="log.kdl" source="changes" title="Deck"
-surface "picker" slot="overlay" view="picker.kdl" source="notes" title="Notes"
+surface "phases" slot="band" rows=2 place="top" view="waiting.uze" source="phases" title="Phases"
+surface "count" slot="status" view="count.uze" source="phases" title="Phases"
+surface "log" slot="view" view="log.uze" source="changes" title="Deck"
+surface "picker" slot="overlay" view="picker.uze" source="notes" title="Notes"
 
 preferences {
     toggle "detail" label="Show each phase's name" default=#true
@@ -19,14 +19,14 @@ preferences {
 
 // One bar segment per phase, however many the milestone has: composed.
 source "phases" {
-    script "phases.rhai"
+    script "phases.uze"
     output "view"
     preferences
     refresh-on "paths.changed" ".planning"
 }
 
 source "notes" {
-    script "notes.rhai"
+    script "notes.uze"
     input file="NOTES.md"
 }
 
@@ -41,5 +41,5 @@ action "copy-note" label="Copy" on="picker" {
 }
 
 action "done" label="Say done" on="log" {
-    script "done.rhai"
+    script "done.uze"
 }

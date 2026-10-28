@@ -23,7 +23,9 @@ impl FileKind {
             Some(Self::Manifest)
         } else if relative.starts_with("tests/") && relative.ends_with(".test.kdl") {
             Some(Self::Test)
-        } else if relative.ends_with(".kdl") {
+        } else if uze_contract::component::is_component(relative) {
+            // A component: its `<view>` is answered as a view, by the
+            // block the cursor is in (`extension-components` D9).
             Some(Self::View)
         } else {
             None
@@ -48,7 +50,7 @@ const MANIFEST_NODES: &[(&str, &str)] = &[
     ),
     (
         "source",
-        "Where a surface's data comes from: `source \"<id>\" { script \"….rhai\"; }`.",
+        "Where a surface's data comes from: `source \"<id>\" { script \"….uze\"; }`.",
     ),
     (
         "action",
@@ -76,7 +78,10 @@ const MANIFEST_NODES: &[(&str, &str)] = &[
     ),
 ];
 const SOURCE_NODES: &[(&str, &str)] = &[
-    ("script", "A Rhai file whose `answer` returns the data."),
+    (
+        "script",
+        "A component whose `<script>` answers with `answer`.",
+    ),
     (
         "run",
         "A program it runs, as an argv: `run \"./bin/meter\" \"--\" \"{field}\"`.",
@@ -121,7 +126,10 @@ const ACTION_PROPS: &[(&str, &str)] = &[
     ("confirm", "The question asked before it runs."),
 ];
 const ACTION_NODES: &[(&str, &str)] = &[
-    ("script", "A Rhai file whose `answer` runs the action."),
+    (
+        "script",
+        "A component whose `<script>` runs the action with `answer`.",
+    ),
     ("refresh", "The sources it asks again."),
     (
         "clipboard",

@@ -260,7 +260,7 @@ fn examples() -> Vec<Manifest> {
                 refresh_on: vec![EventName::PathsChanged {
                     paths: vec!["NOTES.md".into()],
                 }],
-                ..SourceDecl::new("items", SourceKind::Script("items.rhai".into()))
+                ..SourceDecl::new("items", SourceKind::Script("items.uze".into()))
             }],
             actions: vec![ActionDecl {
                 key: KeySuggestion::parse("ctrl-y"),
@@ -369,7 +369,7 @@ fn examples() -> Vec<Manifest> {
             ],
             sources: vec![SourceDecl {
                 with_store: true,
-                ..SourceDecl::new("board", SourceKind::Resident("counter.rhai".into()))
+                ..SourceDecl::new("board", SourceKind::Resident("counter.uze".into()))
             }],
             actions: vec![ActionDecl {
                 key: KeySuggestion::parse("f6"),
@@ -481,8 +481,9 @@ const SLOTS: &[Slot] = &[
 const SOURCE_KINDS: &[(&str, &str, &str)] = &[
     (
         "script",
-        "`script \"x.rhai\"`",
-        "A Rhai file whose `answer(input, context)` returns the envelope.",
+        "`script \"x.uze\"`",
+        "A component whose `<script>` defines `answer(input, context)`, which returns the \
+         envelope.",
     ),
     (
         "run",
@@ -507,9 +508,9 @@ const SOURCE_KINDS: &[(&str, &str, &str)] = &[
     ),
     (
         "resident",
-        "`resident \"x.rhai\"`",
-        "A Rhai file kept running while a surface showing it is open, under `resident`: \
-         `start`, `event`, `input`, `render`, `stop`.",
+        "`resident \"x.uze\"`",
+        "A component whose `<script>` is kept running while a surface showing it is open, \
+         under `resident`: `start`, `event`, `input`, `render`, `stop`.",
     ),
 ];
 
@@ -601,8 +602,15 @@ fn agent_event_doc(event: AgentEvent) -> &'static str {
 const DOES: &[(&str, &str, &str)] = &[
     (
         "script",
-        "`script \"x.rhai\"`",
-        "Runs the file's `answer` and applies its envelope.",
+        "`script \"x.uze\"`",
+        "Runs the component's `answer` and applies its envelope.",
+    ),
+    (
+        "call",
+        "`call \"<fn>\" in=\"x.uze\"`",
+        "Runs `<fn>(input, context)` of the `<script>` of the surface the action is on, or of \
+         the component `in` names, and applies its envelope; never `answer` or a resident's \
+         entry.",
     ),
     (
         "refresh",

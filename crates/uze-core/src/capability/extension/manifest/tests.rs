@@ -6,8 +6,8 @@ protocol 1
 id "gsd-band"
 name "GSD band"
 description "O milestone GSD do checkout"
-surface "board" slot="view" view="board.kdl" source="board"
-surface "summary" slot="section" view="board.kdl" source="board" title="GSD"
+surface "board" slot="view" view="board.uze" source="board"
+surface "summary" slot="section" view="board.uze" source="board" title="GSD"
 source "board" { fixture "fixtures/board.json"; }
 "#;
 
@@ -35,7 +35,7 @@ fn the_gsd_band_manifest_decodes() {
     assert_eq!(manifest.surfaces.len(), 2);
     let summary = manifest.surface("summary").unwrap();
     assert_eq!(summary.slot, Slot::Section);
-    assert_eq!(summary.view, "board.kdl");
+    assert_eq!(summary.view, "board.uze");
     assert_eq!(summary.title.as_deref(), Some("GSD"));
     assert_eq!(manifest.surface("board").unwrap().title, None);
     assert_eq!(
@@ -78,8 +78,8 @@ fn a_reserved_or_malformed_id_is_refused() {
 #[test]
 fn a_surface_is_checked_property_by_property() {
     let diagnostics = refusals(&GSD.replace(
-        r#"surface "board" slot="view" view="board.kdl" source="board""#,
-        r#"surface "board" slot="bnad" view="../board.kdl" source="board" colour="red""#,
+        r#"surface "board" slot="view" view="board.uze" source="board""#,
+        r#"surface "board" slot="bnad" view="../board.uze" source="board" colour="red""#,
     ));
     let messages: Vec<&str> = diagnostics.iter().map(|d| d.message.as_str()).collect();
     assert_eq!(
@@ -87,7 +87,7 @@ fn a_surface_is_checked_property_by_property() {
         vec![
             "`surface` has no property `colour`",
             "this version has no slot `bnad`",
-            "`../board.kdl` is not a path inside the extension's directory",
+            "`../board.uze` is not a path inside the extension's directory",
         ]
     );
     let unknown = refusals(&GSD.replace(r#"source="board" title"#, r#"source="feed" title"#));
@@ -135,10 +135,10 @@ id "gsd-band"
 name "GSD band"
 description "O milestone GSD do checkout"
 wants "read:checkout" "clipboard"
-surface "board" slot="view" view="board.kdl" source="board"
-surface "log" slot="section" view="log.kdl" source="log"
+surface "board" slot="view" view="board.uze" source="board"
+surface "log" slot="section" view="log.uze" source="log"
 source "board" {
-    script "board.rhai"
+    script "board.uze"
     input phase="{phase}" dir=".planning"
     every "10s"
     refresh-on "paths.changed" ".planning" "docs/plan"
@@ -147,7 +147,7 @@ source "board" {
 source "log" { fixture "fixtures/log.json"; }
 action "refresh" label="Refresh" on="board" key="ctrl-r" { refresh "board" "log"; }
 action "archive" label="Archive" on="board" key="ctrl-d" confirm="Archive {name}?" {
-    script "archive.rhai"
+    script "archive.uze"
 }
 action "copy" label="Copy hash" on="log" { clipboard "{hash}"; }
 action "details" label="Details" on="log" { open "board"; }
@@ -179,7 +179,7 @@ fn the_full_manifest_decodes() {
     let manifest = decoded(FULL);
     assert_eq!(manifest.wants, vec![Grant::ReadCheckout, Grant::Clipboard]);
     let board = manifest.source("board").unwrap();
-    assert_eq!(board.kind, SourceKind::Script("board.rhai".into()));
+    assert_eq!(board.kind, SourceKind::Script("board.uze".into()));
     assert_eq!(board.input["phase"], "{phase}");
     assert_eq!(board.input["dir"], ".planning");
     assert_eq!(board.every, Some(Duration::from_secs(10)));
@@ -207,7 +207,7 @@ fn the_full_manifest_decodes() {
     );
     let archive = manifest.action("archive").unwrap();
     assert_eq!(archive.confirm.as_deref(), Some("Archive {name}?"));
-    assert_eq!(archive.does, Does::Script("archive.rhai".into()));
+    assert_eq!(archive.does, Does::Script("archive.uze".into()));
     assert_eq!(
         manifest.action("copy").unwrap().does,
         Does::Clipboard("{hash}".into())
@@ -222,7 +222,7 @@ fn the_full_manifest_decodes() {
 fn a_source_is_answered_by_exactly_one_thing() {
     let two = the_message(&GSD.replace(
         "{ fixture \"fixtures/board.json\"; }",
-        "{ fixture \"fixtures/board.json\"; script \"board.rhai\"; }",
+        "{ fixture \"fixtures/board.json\"; script \"board.uze\"; }",
     ));
     assert_eq!(
         two,
@@ -231,17 +231,24 @@ fn a_source_is_answered_by_exactly_one_thing() {
     let none =
         first_message(&GSD.replace("{ fixture \"fixtures/board.json\"; }", "{ every \"10s\"; }"));
     assert_eq!(none, "this source declares nothing to answer it");
-    let outside = first_message(&GSD.replace(
-        "fixture \"fixtures/board.json\"",
-        "script \"../board.rhai\"",
-    ));
+    let outside =
+        first_message(&GSD.replace("fixture \"fixtures/board.json\"", "script \"../board.uze\""));
     assert!(
         outside.contains("not a path inside the extension's directory"),
         "{outside}"
     );
-    let not_rhai =
+    let not_a_component =
         first_message(&GSD.replace("fixture \"fixtures/board.json\"", "script \"board.js\""));
-    assert_eq!(not_rhai, "`board.js` is not a `.rhai` file");
+    assert_eq!(not_a_component, "`board.js` is not a `.uze` file");
+    let loose =
+        decode_text(&GSD.replace("fixture \"fixtures/board.json\"", "script \"board.rhai\"")).1;
+    assert_eq!(
+        loose[0].suggestion.as_deref(),
+        Some(
+            "views and scripts live in components: move it into `board.uze` between \
+             `<script>` and `</script>`"
+        )
+    );
 }
 
 /// GSD with its fixture replaced by `answer`, wanting `wants`, plus `extra`
@@ -352,7 +359,7 @@ fn lines_name_their_fields_and_only_a_program_has_an_output() {
     );
     assert!(
         first_message(&running(
-            "script \"board.rhai\"\n    output \"json\"",
+            "script \"board.uze\"\n    output \"json\"",
             "",
             ""
         ))
@@ -363,7 +370,7 @@ fn lines_name_their_fields_and_only_a_program_has_an_output() {
         "there is no output `csv`"
     );
     let composed = decoded(&running(
-        "script \"board.rhai\"\n    output \"view\"",
+        "script \"board.uze\"\n    output \"view\"",
         "",
         "",
     ));
@@ -386,7 +393,7 @@ fn an_exec_names_what_a_wanted_program_reads() {
     );
     assert!(
         first_message(&running(
-            r#"script "board.rhai""#,
+            r#"script "board.uze""#,
             "",
             r#"exec "gh" { reads "/dev/null"; }"#
         ))
@@ -669,12 +676,12 @@ fn an_id_is_at_most_thirty_two_characters_and_timeline_is_reserved() {
 fn a_band_says_its_rows_and_place_and_nothing_else_does() {
     let with_surface = |surface: &str| {
         GSD.replace(
-            r#"surface "summary" slot="section" view="board.kdl" source="board" title="GSD""#,
+            r#"surface "summary" slot="section" view="board.uze" source="board" title="GSD""#,
             surface,
         )
     };
     let manifest = decoded(&with_surface(
-        r#"surface "summary" slot="band" view="board.kdl" source="board" rows=2 place="bottom""#,
+        r#"surface "summary" slot="band" view="board.uze" source="board" rows=2 place="bottom""#,
     ));
     let band = manifest.surface("summary").unwrap().band.unwrap();
     assert_eq!(
@@ -683,25 +690,25 @@ fn a_band_says_its_rows_and_place_and_nothing_else_does() {
     );
     assert!(
         first_message(&with_surface(
-            r#"surface "summary" slot="band" view="board.kdl" source="board""#
+            r#"surface "summary" slot="band" view="board.uze" source="board""#
         ))
         .contains("a band names how many rows it takes")
     );
     assert!(
         first_message(&with_surface(
-            r#"surface "summary" slot="band" view="board.kdl" source="board" rows=9"#
+            r#"surface "summary" slot="band" view="board.uze" source="board" rows=9"#
         ))
         .contains("a band takes 1 to 6 rows")
     );
     assert!(
         first_message(&with_surface(
-            r#"surface "summary" slot="section" view="board.kdl" source="board" rows=2"#
+            r#"surface "summary" slot="section" view="board.uze" source="board" rows=2"#
         ))
         .contains("only a band takes `rows` and `place`")
     );
     for slot in ["status", "overlay"] {
         let manifest = decoded(&with_surface(&format!(
-            r#"surface "summary" slot="{slot}" view="board.kdl" source="board""#
+            r#"surface "summary" slot="{slot}" view="board.uze" source="board""#
         )));
         assert_eq!(manifest.surface("summary").unwrap().slot.name(), slot);
     }
@@ -901,12 +908,12 @@ fn a_sprite_and_a_resident_source_are_declared_and_checked() {
             .contains("is not a path inside the extension's directory")
     );
 
-    let resident = r#"source "game" { resident "game.rhai"; }"#;
+    let resident = r#"source "game" { resident "game.uze"; }"#;
     assert!(first_message(&with(resident)).contains("which needs `resident`"));
     let manifest = decoded(&with(&format!("wants \"resident\"\n{resident}")));
     assert_eq!(
         manifest.source("game").unwrap().kind,
-        SourceKind::Resident("game.rhai".to_owned())
+        SourceKind::Resident("game.uze".to_owned())
     );
 }
 
@@ -914,8 +921,8 @@ fn a_sprite_and_a_resident_source_are_declared_and_checked() {
 fn applies_when_names_a_path_inside_the_checkout() {
     let marked = GSD
         .replace(
-            r#"surface "board" slot="view" view="board.kdl" source="board""#,
-            r#"surface "board" slot="view" view="board.kdl" source="board" applies-when=".planning""#,
+            r#"surface "board" slot="view" view="board.uze" source="board""#,
+            r#"surface "board" slot="view" view="board.uze" source="board" applies-when=".planning""#,
         )
         .replace(
             r#"source "board" { fixture "fixtures/board.json"; }"#,
@@ -993,7 +1000,7 @@ fn a_second_step_is_a_gesture_prompt_after_a_run_under_its_grant() {
     let unattended = refusals(&format!(
         "wants \"agent:prompt\"\n{}",
         action(
-            "script \"next.rhai\"",
+            "script \"next.uze\"",
             "agent-prompt \"x\" target=\"self\" when=\"agent.turn.finished\";"
         )
     ));
@@ -1002,7 +1009,7 @@ fn a_second_step_is_a_gesture_prompt_after_a_run_under_its_grant() {
         "{unattended:?}"
     );
     let ungranted = refusals(&action(
-        "script \"next.rhai\"",
+        "script \"next.uze\"",
         "agent-prompt \"Review {answer.file}\" target=\"self\";",
     ));
     assert!(
@@ -1115,5 +1122,57 @@ fn an_mcp_server_is_named_with_its_plugin_and_time_and_used_by_a_grant() {
     assert!(
         first_message(&with(&format!("{granted}\n{node}\n{node}")))
             .contains("`mcp \"rtc\"` is declared twice")
+    );
+}
+
+#[test]
+fn a_call_names_a_function_and_never_enters_a_resident() {
+    let with = |rest: &str| GSD.replace("source \"board\"", &format!("{rest}\nsource \"board\""));
+    let manifest = decoded(&with(
+        r#"action "prev" label="Prev" on="board" { call "prev"; }"#,
+    ));
+    assert_eq!(
+        manifest.action("prev").unwrap().does,
+        uze_contract::Does::Call {
+            function: "prev".into(),
+            file: None
+        }
+    );
+    assert_eq!(
+        manifest.script_of(manifest.action("prev").unwrap()),
+        Some(("board.uze", "prev")),
+        "without `in`, the component the surface draws"
+    );
+    let shared = decoded(&with(
+        r#"action "prev" label="Prev" on="board" { call "prev" in="sheet.uze"; }"#,
+    ));
+    assert_eq!(
+        shared.script_of(shared.action("prev").unwrap()),
+        Some(("sheet.uze", "prev"))
+    );
+
+    assert!(
+        first_message(&with(
+            r#"action "a" label="A" on="board" { call "answer"; }"#
+        ))
+        .contains("`answer` is an entry the host calls")
+    );
+    assert!(
+        first_message(&with(r#"action "a" label="A" on="board" { call "go!"; }"#))
+            .contains("`go!` is not a function's name")
+    );
+    assert!(
+        first_message(&with(
+            r#"action "a" label="A" on="board" { call "prev" in="sheet.rhai"; }"#
+        ))
+        .contains("`sheet.rhai` is not a `.uze` file")
+    );
+    let resident = with(
+        "wants \"resident\"\nsource \"game\" { resident \"board.uze\"; }\naction \"turn\" label=\"Turn\" on=\"board\" { call \"turn\"; }",
+    );
+    assert!(
+        first_message(&resident).contains("whose script runs as a resident"),
+        "{}",
+        first_message(&resident)
     );
 }

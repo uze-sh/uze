@@ -1,5 +1,5 @@
 //! The gallery's `gsd-band` board, compiled by hand from the blueprint's
-//! `board.kdl` and bound to its `fixtures/board.json`.
+//! `board.uze` and bound to its `fixtures/board.json`.
 
 use serde_json::{Value, json};
 use uze_contract::{CompiledView, Item, NodeName};

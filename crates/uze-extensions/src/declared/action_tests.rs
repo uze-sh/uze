@@ -47,7 +47,7 @@ fn board(actions: Vec<ActionDecl>) -> DeclaredExtension {
     compiled.manifest.actions = actions;
     compiled.manifest.sources.push(SourceDecl::new(
         "log",
-        SourceKind::Script("log.rhai".to_owned()),
+        SourceKind::Script("log.uze".to_owned()),
     ));
     let mut engine = DeclaredExtension::new(compiled, "en");
     engine.open(VIEW, &checkout("/work/a"));
@@ -130,7 +130,7 @@ fn an_answer_refreshes_another_source_and_never_itself_or_back() {
 
 #[test]
 fn a_confirmed_action_asks_with_its_arguments_attributed_and_runs_only_once_accepted() {
-    let mut go = action("go", Does::Script("archive.rhai".to_owned()));
+    let mut go = action("go", Does::Script("archive.uze".to_owned()));
     go.label = "Archive".to_owned();
     go.confirm = Some("Archive {item.name}?".to_owned());
     let mut engine = board(vec![go]);
@@ -143,7 +143,7 @@ fn a_confirmed_action_asks_with_its_arguments_attributed_and_runs_only_once_acce
         .expect("a question");
     assert_eq!(asked.title, "Archive auth?");
     assert_eq!(asked.subject, "gsd-band · gsd@luizfbalves");
-    assert!(asked.body.starts_with("Runs archive.rhai on "), "{asked:?}");
+    assert!(asked.body.starts_with("Runs archive.uze on "), "{asked:?}");
     assert!(asked.body.contains("\"auth\""), "{asked:?}");
     assert_eq!(asked.confirm, "Archive");
     assert!(!asked.on_confirm, "the keyboard starts on the way out");
@@ -195,12 +195,12 @@ fn a_confirmed_action_pressed_in_a_section_asks_in_its_view() {
 
 #[test]
 fn an_action_that_fails_or_may_not_run_says_why_in_a_toast() {
-    let mut engine = board(vec![action("go", Does::Script("go.rhai".to_owned()))]);
+    let mut engine = board(vec![action("go", Does::Script("go.uze".to_owned()))]);
     press(&mut engine, 0);
     let (_, outcomes) = ask_all(
         &mut engine,
         Answer::Failed {
-            reason: "go.rhai: the script crossed its deadline bound".to_owned(),
+            reason: "go.uze: the script crossed its deadline bound".to_owned(),
             trace: Vec::new(),
         },
     );
@@ -208,7 +208,7 @@ fn an_action_that_fails_or_may_not_run_says_why_in_a_toast() {
         outcomes,
         [Outcome::Failed {
             title: "Go failed".to_owned(),
-            detail: "go.rhai: the script crossed its deadline bound".to_owned(),
+            detail: "go.uze: the script crossed its deadline bound".to_owned(),
         }]
     );
     press(&mut engine, 0);
@@ -227,7 +227,7 @@ fn an_action_that_fails_or_may_not_run_says_why_in_a_toast() {
 
 #[test]
 fn an_actions_envelope_toasts_says_its_notice_and_refreshes() {
-    let mut engine = board(vec![action("go", Does::Script("go.rhai".to_owned()))]);
+    let mut engine = board(vec![action("go", Does::Script("go.uze".to_owned()))]);
     press(&mut engine, 0);
     let envelope = Envelope {
         data: Value::Null,
@@ -374,7 +374,7 @@ fn a_key_on_no_row_runs_nothing_that_reads_the_row() {
         assert_eq!(engine.press(VIEW, "go"), select_first, "{does:?}");
     }
 
-    let mut archive = action("go", Does::Script("go.rhai".to_owned()));
+    let mut archive = action("go", Does::Script("go.uze".to_owned()));
     archive.confirm = Some("Archive {item.name}?".to_owned());
     let mut engine = list_without_a_selection(vec![archive]);
     assert_eq!(engine.press(VIEW, "go"), select_first);
@@ -388,7 +388,7 @@ fn a_key_on_no_row_runs_nothing_that_reads_the_row() {
     );
 
     let mut engine =
-        list_without_a_selection(vec![action("go", Does::Script("go.rhai".to_owned()))]);
+        list_without_a_selection(vec![action("go", Does::Script("go.uze".to_owned()))]);
     assert!(
         matches!(engine.press(VIEW, "go"), Outcome::Notice(_)),
         "a script that names no row runs on none"

@@ -55,10 +55,10 @@ world:
 
       wants "read:checkout" "agent:prompt"
 
-      surface "plan" slot="section" view="plan.kdl" source="plan" title="Plan"
+      surface "plan" slot="section" view="plan.uze" source="plan" title="Plan"
 
       source "plan" {
-          script "plan.rhai"
+          script "plan.uze"
           input file="PLAN.md"
           refresh-on "paths.changed" "PLAN.md"
       }
@@ -66,7 +66,21 @@ world:
       action "review" label="Ask for a review" on="plan" {
           agent-prompt "Review {file} and say what you would change before going on" target="self"
       }
-    market/plugins/bridge/extensions/plan-review/plan.rhai: |
+    market/plugins/bridge/extensions/plan-review/plan.uze: |
+      <view>
+      Stack gap=1 {
+          Stack when="title" {
+              Text "{title}" strong=#true truncate=#true
+              List each="open" empty="Every step is done" {
+                  Text "{text}" truncate=#true
+              }
+              Button "Ask for a review" action="review" item="{.}"
+          }
+          Text "No plan yet" role="faint" unless="title"
+      }
+      </view>
+
+      <script>
       fn answer(input, context) {
           let present = false;
           for entry in list_checkout(".") {
@@ -83,17 +97,7 @@ world:
           }
           #{ data: #{ file: input.file, title: title, open: open, left: open.len() } }
       }
-    market/plugins/bridge/extensions/plan-review/plan.kdl: |
-      Stack gap=1 {
-          Stack when="title" {
-              Text "{title}" strong=#true truncate=#true
-              List each="open" empty="Every step is done" {
-                  Text "{text}" truncate=#true
-              }
-              Button "Ask for a review" action="review" item="{.}"
-          }
-          Text "No plan yet" role="faint" unless="title"
-      }
+      </script>
 
 scenes:
   - scene: a plugin installed from a marketplace's clone leaves its section disabled
@@ -103,7 +107,7 @@ scenes:
       - shell: "cd {project} && {uze} install bridge@studio > {world}/install.log 2>&1"
         say: add the plugin to the project, with nobody at a terminal to answer
     then:
-      - file: "{uze_home}/store/plugins/studio/bridge/extensions/plan-review/plan.rhai"
+      - file: "{uze_home}/store/plugins/studio/bridge/extensions/plan-review/plan.uze"
         contains: "read_checkout"
         about: the extension's script was installed from the clone, into the Store
       - file: "{uze_home}/state/extensions.json"

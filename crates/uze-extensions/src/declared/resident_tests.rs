@@ -101,7 +101,7 @@ fn game() -> DeclaredExtension {
     compiled.manifest.wants = vec![uze_contract::Grant::Resident];
     compiled.manifest.sources = vec![SourceDecl::new(
         SOURCE,
-        SourceKind::Resident("game.rhai".to_owned()),
+        SourceKind::Resident("game.uze".to_owned()),
     )];
     DeclaredExtension::new(compiled, "en")
 }
@@ -314,7 +314,7 @@ fn a_breach_stops_the_session_and_the_surface_names_the_bound() {
     assert_eq!(texts(&tree(&engine)), ["frame"]);
 
     *host.render.borrow_mut() = Answer::Failed {
-        reason: "game.rhai: the script crossed its operations bound at 3:5".to_owned(),
+        reason: "game.uze: the script crossed its operations bound at 3:5".to_owned(),
         trace: Vec::new(),
     };
     engine.raw_input(

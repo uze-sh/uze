@@ -54,24 +54,24 @@ world:
 
       wants "read:checkout" "clipboard" "notify"
 
-      surface "phases" slot="band" rows=2 place="top" view="waiting.kdl" source="phases" title="Phases"
-      surface "count" slot="status" view="count.kdl" source="phases" title="Phases"
-      surface "log" slot="view" view="log.kdl" source="changes" title="Deck"
-      surface "picker" slot="overlay" view="picker.kdl" source="notes" title="Notes"
+      surface "phases" slot="band" rows=2 place="top" view="waiting.uze" source="phases" title="Phases"
+      surface "count" slot="status" view="count.uze" source="phases" title="Phases"
+      surface "log" slot="view" view="log.uze" source="changes" title="Deck"
+      surface "picker" slot="overlay" view="picker.uze" source="notes" title="Notes"
 
       preferences {
           toggle "detail" label="Show each phase's name" default=#true
       }
 
       source "phases" {
-          script "phases.rhai"
+          script "phases.uze"
           output "view"
           preferences
           refresh-on "paths.changed" ".planning"
       }
 
       source "notes" {
-          script "notes.rhai"
+          script "notes.uze"
           input file="NOTES.md"
       }
 
@@ -86,13 +86,18 @@ world:
       }
 
       action "done" label="Say done" on="log" {
-          script "done.rhai"
+          script "done.uze"
       }
-    market/plugins/deck/extensions/deck/waiting.kdl: |
+    market/plugins/deck/extensions/deck/waiting.uze: |
+      <view>
       Text "Reading the phases…" role="faint"
-    market/plugins/deck/extensions/deck/count.kdl: |
+      </view>
+    market/plugins/deck/extensions/deck/count.uze: |
+      <view>
       Text "Phases" role="faint"
-    market/plugins/deck/extensions/deck/log.kdl: |
+      </view>
+    market/plugins/deck/extensions/deck/log.uze: |
+      <view>
       Stack gap=1 {
           Row gap=2 {
               Text "What changed" strong=#true grow=#true
@@ -104,14 +109,18 @@ world:
           }
           Text "Nothing changed yet" role="faint" unless="."
       }
-    market/plugins/deck/extensions/deck/picker.kdl: |
+      </view>
+    market/plugins/deck/extensions/deck/picker.uze: |
+      <view>
       List each="items" {
           Row gap=2 {
               Text "{text}" grow=#true
               Button "Copy" action="copy-note" item="{.}"
           }
       }
-    market/plugins/deck/extensions/deck/done.rhai: |
+      </view>
+    market/plugins/deck/extensions/deck/done.uze: |
+      <script>
       fn answer(input, context) {
           #{
               data: (),
@@ -119,7 +128,9 @@ world:
               sound: "done",
           }
       }
-    market/plugins/deck/extensions/deck/notes.rhai: |
+      </script>
+    market/plugins/deck/extensions/deck/notes.uze: |
+      <script>
       fn answer(input, context) {
           let open = [];
           for line in lines(read_checkout(input.file)) {
@@ -129,7 +140,9 @@ world:
           }
           #{ data: #{ items: open } }
       }
-    market/plugins/deck/extensions/deck/phases.rhai: |
+      </script>
+    market/plugins/deck/extensions/deck/phases.uze: |
+      <script>
       // A row of the milestone's phases, each a segment weighted by its
       // plans and filled by how many are summarized; named when the
       // `detail` preference says so.
@@ -167,6 +180,7 @@ world:
               #{ type: "Progress", children: segments },
           ] } }
       }
+      </script>
 
 scenes:
   - scene: a plugin installed from a marketplace's clone leaves its band and row disabled
@@ -176,7 +190,7 @@ scenes:
       - shell: "cd {project} && {uze} install deck@studio > {world}/install.log 2>&1"
         say: add the plugin to the project, with nobody at a terminal to answer
     then:
-      - file: "{uze_home}/store/plugins/studio/deck/extensions/deck/phases.rhai"
+      - file: "{uze_home}/store/plugins/studio/deck/extensions/deck/phases.uze"
         contains: "input.preferences.detail"
         about: the extension's script was installed from the clone, into the Store
       - file: "{uze_home}/state/extensions.json"

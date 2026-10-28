@@ -1,8 +1,0 @@
-// The screen, fitted to the sidebar, and the device it came from.
-Stack {
-    Image "scratch:shot.png" alt="The device's screen" height=8
-    Row gap=1 {
-        Text "{device}" role="muted" truncate=#true grow=#true
-        Button "Full size" action="enlarge"
-    }
-}

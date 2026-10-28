@@ -52,7 +52,7 @@ world:
 
       wants "exec:sh" "clipboard"
 
-      surface "board" slot="view" view="board.kdl" source="count" title="Lines"
+      surface "board" slot="view" view="board.uze" source="count" title="Lines"
 
       source "count" {
           run "./bin/count" "--" "README.md"
@@ -68,10 +68,12 @@ world:
     market/plugins/lines/extensions/lines/bin/count: |
       #!/bin/sh
       printf '%s\t%s\n' "$2" "$(wc -l < "$2" | tr -d ' ')"
-    market/plugins/lines/extensions/lines/board.kdl: |
+    market/plugins/lines/extensions/lines/board.uze: |
+      <view>
       List each="." {
           Text "{file} has {lines} lines"
       }
+      </view>
     market/plugins/lines/extensions/lines/fixtures/count.json: |
       [ { "file": "FIXTURE.md", "lines": "7" } ]
 

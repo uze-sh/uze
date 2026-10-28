@@ -1,8 +1,0 @@
-// The `done` action: tells the operator, and sounds the done cue.
-fn answer(input, context) {
-    #{
-        data: (),
-        notify: #{ title: "Deck", body: "The phases are up to date" },
-        sound: "done",
-    }
-}

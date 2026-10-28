@@ -4,7 +4,7 @@
 //! ```kdl
 //! action "refresh" label="Refresh" on="board" key="ctrl-r" { refresh "board"; }
 //! action "archive" label="Archive" on="board" key="ctrl-d" confirm="Archive {name}?" {
-//!     script "archive.rhai"
+//!     script "archive.uze"
 //! }
 //! action "review" label="Review next" on="board" {
 //!     run "./bin/next.sh"
@@ -134,11 +134,11 @@ pub fn decode(node: &KdlNode, report: &mut Report<'_>) -> Option<(ActionDecl, Pl
     let then = match then {
         None => None,
         Some((then, at)) => {
-            if !matches!(does, Does::Run(_) | Does::Script(_)) {
+            if !matches!(does, Does::Run(_) | Does::Script(_) | Does::Call { .. }) {
                 report.at(
                     at,
                     "only an action that runs something has a `then`: it reads what the run answered",
-                    Some("give it `run` or `script`, or send the prompt with `agent-prompt` alone".to_owned()),
+                    Some("give it `run`, `script` or `call`, or send the prompt with `agent-prompt` alone".to_owned()),
                 );
                 return None;
             }
@@ -362,12 +362,63 @@ fn agent_prompt(child: &KdlNode, report: &mut Report<'_>) -> Option<Does> {
     })
 }
 
+/// The names a `call` may not take: a source's entry, and a resident's,
+/// which run in a session a call never enters (`extension-components` D4).
+const NOT_CALLED: &[&str] = &["answer", "start", "event", "input", "render", "stop"];
+
+/// `call "prev"` or `call "prev" in="sheet.uze"`.
+fn call(child: &KdlNode, report: &mut Report<'_>) -> Option<Does> {
+    let parts = entries(child, report);
+    refuse_extra(child, &parts, 1, &["in"], false, report);
+    let function = super::string_arg(child, parts.args.first().copied(), report)?;
+    let is_name = function
+        .chars()
+        .next()
+        .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+        && function
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_');
+    if !is_name {
+        report.on(
+            child,
+            format!("`{function}` is not a function's name"),
+            None,
+        );
+        return None;
+    }
+    if NOT_CALLED.contains(&function.as_str()) {
+        report.on(
+            child,
+            format!("`{function}` is an entry the host calls, not one an action calls"),
+            Some("give the function the action runs a name of its own".to_owned()),
+        );
+        return None;
+    }
+    let file = match super::prop(&parts, "in") {
+        None => None,
+        Some(entry) => {
+            let file = super::string_prop("in", entry, report)?;
+            if !relative_file(
+                &file,
+                uze_contract::component::SUFFIX,
+                entry.offset(),
+                report,
+            ) {
+                return None;
+            }
+            Some(file)
+        }
+    };
+    Some(Does::Call { function, file })
+}
+
 fn what(child: &KdlNode, report: &mut Report<'_>) -> Option<(Does, Vec<usize>)> {
     let at = child.offset();
     match child.name().value() {
         "script" => text(child, report)
-            .filter(|file| relative_file(file, "rhai", at, report))
+            .filter(|file| relative_file(file, uze_contract::component::SUFFIX, at, report))
             .map(|file| (Does::Script(file), Vec::new())),
+        "call" => call(child, report).map(|does| (does, Vec::new())),
         "refresh" => {
             let ids: Vec<(String, usize)> = string_args(child, report)
                 .into_iter()

@@ -156,7 +156,7 @@ fn the_gsd_band_is_found_in_the_working_tree_compiled_once_and_drawn_from_its_fi
             .manifest
             .source("state")
             .and_then(|state| state.script()),
-        Some("state.rhai")
+        Some("state.uze")
     );
     assert!(
         !fixtures.contains_key("state"),
@@ -292,7 +292,7 @@ fn a_tab_switches_what_is_drawn_and_a_save_in_the_working_tree_is_what_compiles_
     assert!(engine.recorded().is_empty(), "nothing ran");
 
     // The author saves a change to the view in the working tree.
-    let view = band.dir.join("board.kdl");
+    let view = band.dir.join("board.uze");
     let before = extension_stamp(&band.dir);
     let source = fs::read_to_string(&view).unwrap();
     let edited = source.replace(r#"Text "{percent}%""#, r#"Text "{percent}% done""#);
@@ -338,10 +338,10 @@ fn a_tab_switches_what_is_drawn_and_a_save_in_the_working_tree_is_what_compiles_
         .iter()
         .find(|diagnostic| diagnostic.message.contains("Tabel"))
         .unwrap_or_else(|| panic!("{diagnostics:#?}"));
-    assert!(named.file.ends_with("board.kdl"), "{named:?}");
+    assert!(named.file.ends_with("board.uze"), "{named:?}");
     assert_eq!((named.line, named.column), (line, 9), "{named:?}");
     assert!(
-        named.to_string().contains(&format!("board.kdl:{line}:9:")),
+        named.to_string().contains(&format!("board.uze:{line}:9:")),
         "{named}"
     );
 }

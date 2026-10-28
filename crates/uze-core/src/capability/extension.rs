@@ -368,6 +368,7 @@ fn compile_view(
     icons: &[&str],
 ) -> Result<uze_contract::CompiledView, Vec<Diagnostic>> {
     let source = files.text(file).map_err(|refusal| vec![refusal])?;
+    let source = view_text(file, source)?;
     let mut report = Report::new(file, &source);
     let compiled =
         bounded::parse(&mut report).map(|document| view::compile(&document, file, &mut report));
@@ -378,6 +379,45 @@ fn compile_view(
         Some(view) if report.diagnostics().is_empty() => Ok(view),
         _ => Err(report.into_diagnostics()),
     }
+}
+
+/// The view `file` holds: a component's `<view>` with the rest of the file
+/// blanked, so every offset and span is the file's own
+/// (`extension-components` D2); any other file whole.
+fn view_text(file: &str, source: String) -> Result<String, Vec<Diagnostic>> {
+    use uze_contract::component::{BlockKind, Component, blanked};
+    if !uze_contract::component::is_component(file) {
+        return Ok(source);
+    }
+    let mut report = Report::new(file, &source);
+    let view = match Component::read(&source) {
+        Ok(component) => component.block(BlockKind::View),
+        Err(errors) => {
+            for error in errors {
+                report.at(error.offset, error.message, error.suggestion);
+            }
+            return Err(report.into_diagnostics());
+        }
+    };
+    let Some(view) = view else {
+        report.whole(
+            "holds no `<view>`".to_owned(),
+            Some("write the view between `<view>` and `</view>`".to_owned()),
+        );
+        return Err(report.into_diagnostics());
+    };
+    if view.len() > FILE_MAX {
+        report.at(
+            view.tag,
+            format!(
+                "its `<view>` is larger than the {} KiB a view may be",
+                FILE_MAX / 1024
+            ),
+            Some("split it into smaller components, or move data into a fixture".to_owned()),
+        );
+        return Err(report.into_diagnostics());
+    }
+    Ok(blanked(&source, view))
 }
 
 /// Every `Icon` a view names by a literal is one of the host's or one the

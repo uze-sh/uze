@@ -147,10 +147,12 @@ fn needs_consent(manifest: &Manifest) -> bool {
             .sources
             .iter()
             .any(|source| !matches!(source.kind, SourceKind::Fixture(_)))
-        || manifest
-            .actions
-            .iter()
-            .any(|action| matches!(action.does, Does::Script(_) | Does::Run(_)))
+        || manifest.actions.iter().any(|action| {
+            matches!(
+                action.does,
+                Does::Script(_) | Does::Call { .. } | Does::Run(_)
+            )
+        })
 }
 
 /// One program an extension's `exec:` grants name, as the consent step

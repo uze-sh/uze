@@ -10,8 +10,8 @@ description "The checkout's branch's last CI runs on GitHub"
 
 wants "read:checkout" "net:api.github.com"
 
-surface "runs" slot="section" view="runs.kdl" source="runs" title="CI"
-surface "last" slot="status" view="status.kdl" source="runs" title="CI"
+surface "runs" slot="section" view="runs.uze" source="runs" title="CI"
+surface "last" slot="status" view="status.uze" source="runs" title="CI"
 
 // The repository is read from the checkout's `origin` when it is GitHub's;
 // the operator names it here otherwise. The token reaches private
@@ -22,7 +22,7 @@ preferences {
 }
 
 source "runs" {
-    script "runs.rhai"
+    script "runs.uze"
     every "60s"
     preferences
 }

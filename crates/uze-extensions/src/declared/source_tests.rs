@@ -158,14 +158,14 @@ fn a_failed_or_stopped_script_is_said_on_the_surface() {
     let mut engine = board();
     engine.focus(Some(&checkout("/work/a")));
     let host = Answering::with(Answer::Failed {
-        reason: "board.rhai: the script crossed its deadline bound".to_owned(),
+        reason: "board.uze: the script crossed its deadline bound".to_owned(),
         trace: vec!["looking".to_owned()],
     });
     ask_all(&mut engine, &host);
     assert_eq!(
         tree(&engine).kind,
         NodeKind::Notice {
-            text: "board.rhai: the script crossed its deadline bound".to_owned(),
+            text: "board.uze: the script crossed its deadline bound".to_owned(),
             role: Role::Danger,
         }
     );
@@ -187,14 +187,14 @@ fn a_reason_the_host_gives_is_drawn_inert() {
     let mut engine = board();
     engine.focus(Some(&checkout("/work/a")));
     let host = Answering::with(Answer::Failed {
-        reason: "board.rhai: \u{1b}]52;c;ZXZpbA==\u{7}unknown \u{202e}name".to_owned(),
+        reason: "board.uze: \u{1b}]52;c;ZXZpbA==\u{7}unknown \u{202e}name".to_owned(),
         trace: Vec::new(),
     });
     ask_all(&mut engine, &host);
     assert_eq!(
         tree(&engine).kind,
         NodeKind::Notice {
-            text: "board.rhai: unknown name".to_owned(),
+            text: "board.uze: unknown name".to_owned(),
             role: Role::Danger,
         }
     );

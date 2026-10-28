@@ -47,7 +47,7 @@ world:
 
       wants "agent:prompt"
 
-      surface "next" slot="band" rows=1 place="bottom" view="next.kdl" source="milestone" title="Next step"
+      surface "next" slot="band" rows=1 place="bottom" view="next.uze" source="milestone" title="Next step"
 
       source "milestone" {
           fixture "fixtures/milestone.json"
@@ -56,13 +56,15 @@ world:
       action "run" label="Run the next phase" on="next" {
           agent-prompt skill="gsd:execute-phase" "{number}" target="self"
       }
-    market/plugins/bridge/extensions/gsd-next/next.kdl: |
+    market/plugins/bridge/extensions/gsd-next/next.uze: |
+      <view>
       Row gap=2 align="center" {
           Text "{milestone}" strong=#true
           Text "{next.number} · {next.name}" role="muted" truncate=#true grow=#true when="next"
           Text "Every phase is done" role="faint" grow=#true unless="next"
           Button "Run phase {next.number}" action="run" item="{next}" when="next"
       }
+      </view>
     market/plugins/bridge/extensions/gsd-next/fixtures/milestone.json: |
       { "milestone": "v1.2", "next": { "number": "12", "name": "Consulta de dados" } }
 

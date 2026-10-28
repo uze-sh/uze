@@ -48,15 +48,16 @@ world:
 
       wants "agent:observe"
 
-      surface "row" slot="status" view="row.kdl" source="crew" title="Agents"
-      surface "crew" slot="section" view="crew.kdl" source="crew" title="Agents"
+      surface "row" slot="status" view="row.uze" source="crew" title="Agents"
+      surface "crew" slot="section" view="crew.uze" source="crew" title="Agents"
 
       source "crew" {
           agents
           refresh-on "agent.turn.started"
           refresh-on "agent.turn.finished"
       }
-    market/plugins/bridge/extensions/agents-hud/row.kdl: |
+    market/plugins/bridge/extensions/agents-hud/row.uze: |
+      <view>
       lookup "tone" default="muted" {
           working "warning"
           done "success"
@@ -71,7 +72,9 @@ world:
           }
           Text "No agents" role="faint" unless="."
       }
-    market/plugins/bridge/extensions/agents-hud/crew.kdl: |
+      </view>
+    market/plugins/bridge/extensions/agents-hud/crew.uze: |
+      <view>
       lookup "tone" default="muted" {
           working "warning"
           done "success"
@@ -96,6 +99,7 @@ world:
               }
           }
       }
+      </view>
     market/plugins/bridge/extensions/flightdeck/extension.kdl: |
       protocol 1
       id "flightdeck"
@@ -104,8 +108,8 @@ world:
 
       wants "agent:observe" "agent:prompt"
 
-      surface "deck" slot="view" view="deck.kdl" source="crew" title="Flight deck"
-      surface "calls" slot="section" view="calls.kdl" source="calls" title="Tool calls"
+      surface "deck" slot="view" view="deck.uze" source="crew" title="Flight deck"
+      surface "calls" slot="section" view="calls.uze" source="calls" title="Tool calls"
 
       source "crew" { agents; }
 
@@ -118,7 +122,8 @@ world:
       action "ask" label="Ask where it stands" on="deck" {
           agent-prompt "Say in two lines where you are and what comes next" target="{id}"
       }
-    market/plugins/bridge/extensions/flightdeck/deck.kdl: |
+    market/plugins/bridge/extensions/flightdeck/deck.uze: |
+      <view>
       lookup "tone" default="muted" {
           working "warning"
           done "success"
@@ -141,7 +146,9 @@ world:
               Button "Ask" action="ask" item="{.}"
           }
       }
-    market/plugins/bridge/extensions/flightdeck/calls.kdl: |
+      </view>
+    market/plugins/bridge/extensions/flightdeck/calls.uze: |
+      <view>
       lookup "event" default="" {
           "agent.tool.started" "started"
           "agent.tool.finished" "finished"
@@ -159,6 +166,7 @@ world:
               Text "{outcome}" role="faint" when="outcome"
           }
       }
+      </view>
 
 scenes:
   - scene: a plugin installed from a marketplace's clone leaves its agent extensions disabled

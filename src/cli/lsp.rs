@@ -266,19 +266,21 @@ impl<'a> Server<'a> {
         let line = params["position"]["line"].as_u64().unwrap_or(0) as u32;
         let character = params["position"]["character"].as_u64().unwrap_or(0) as u32;
         let document = self.documents.get(uri);
-        let kind = document.and_then(|document| FileKind::of(&document.relative));
-        match (request.method.as_str(), document, kind) {
-            ("textDocument/completion", Some(document), Some(kind)) => {
-                let offset = position::offset_of(&document.text, line, character);
+        let at = document.and_then(|document| {
+            let offset = position::offset_of(&document.text, line, character);
+            let kind = FileKind::of(&document.relative)?;
+            Some((kind, answered_text(document, offset)?, offset))
+        });
+        match (request.method.as_str(), document, at) {
+            ("textDocument/completion", Some(document), Some((kind, text, offset))) => {
                 let fields = self.view_fields(document);
                 Response::new_ok(
                     request.id,
-                    complete::completions(kind, &document.text, offset, &fields),
+                    complete::completions(kind, &text, offset, &fields),
                 )
             }
-            ("textDocument/hover", Some(document), Some(kind)) => {
-                let offset = position::offset_of(&document.text, line, character);
-                let word = position::word_at(&document.text, offset);
+            ("textDocument/hover", Some(_), Some((kind, text, offset))) => {
+                let word = position::word_at(&text, offset);
                 let answer = complete::hover(kind, word)
                     .map(|said| json!({ "contents": { "kind": "markdown", "value": said } }))
                     .unwrap_or(Value::Null);
@@ -313,6 +315,22 @@ impl<'a> Server<'a> {
 
 /// The extension a file belongs to: the nearest directory above it that
 /// holds an `extension.kdl`, and the file's path inside it.
+/// The text a request at `offset` is answered against: a component's
+/// `<view>` with the rest blanked, every offset kept, when the cursor is in
+/// it, and nothing elsewhere in a component (its script is not answered
+/// yet); any other file whole.
+fn answered_text(document: &Document, offset: usize) -> Option<std::borrow::Cow<'_, str>> {
+    use uze_contract::component::{BlockKind, Component, blanked, is_component};
+    if !is_component(&document.relative) {
+        return Some(std::borrow::Cow::Borrowed(&document.text));
+    }
+    let view = Component::read(&document.text)
+        .ok()?
+        .block(BlockKind::View)
+        .filter(|view| (view.start..=view.end).contains(&offset))?;
+    Some(std::borrow::Cow::Owned(blanked(&document.text, view)))
+}
+
 fn extension_of(path: &Path) -> Option<(PathBuf, String)> {
     let mut dir = path.parent()?;
     loop {

@@ -28,25 +28,39 @@ pub const PARSE_LIMIT: Duration = Duration::from_secs(2);
 /// debug build, so the stack is never what refuses a file the scan let by.
 const PARSE_STACK: usize = 8 * 1024 * 1024;
 
-/// Reads `path`, refusing it past [`FILE_MAX`] without reading the rest.
+/// The most `file` may hold: a component's bound for a `.uze`, whose
+/// `<view>` is still held to [`FILE_MAX`] on its own; [`FILE_MAX`] for
+/// anything else read here.
+pub fn max_of(file: &str) -> usize {
+    if uze_contract::component::is_component(file) {
+        uze_contract::component::COMPONENT_MAX
+    } else {
+        FILE_MAX
+    }
+}
+
+/// Reads `path`, refusing it past [`max_of`] without reading the rest.
 /// `file` is how a diagnostic names it.
 pub fn read(path: &Path, file: &str) -> Result<String, Diagnostic> {
     let unreadable =
         |error: std::io::Error| Diagnostic::whole(file, format!("cannot be read: {error}"), None);
     let mut bytes = Vec::new();
     std::fs::File::open(path)
-        .and_then(|opened| opened.take(FILE_MAX as u64 + 1).read_to_end(&mut bytes))
+        .and_then(|opened| opened.take(max_of(file) as u64 + 1).read_to_end(&mut bytes))
         .map_err(unreadable)?;
     decoded(bytes, file)
 }
 
-/// `bytes` as the text of `file`, refused past [`FILE_MAX`] or when it is
+/// `bytes` as the text of `file`, refused past [`max_of`] or when it is
 /// not UTF-8, as a file on disk would be.
 pub fn decoded(bytes: Vec<u8>, file: &str) -> Result<String, Diagnostic> {
-    if bytes.len() > FILE_MAX {
+    if bytes.len() > max_of(file) {
         return Err(Diagnostic::whole(
             file,
-            format!("is larger than the {} KiB a file may be", FILE_MAX / 1024),
+            format!(
+                "is larger than the {} KiB a file may be",
+                max_of(file) / 1024
+            ),
             Some("split it into smaller views, or move data into a fixture".to_owned()),
         ));
     }
@@ -63,12 +77,15 @@ pub fn decoded(bytes: Vec<u8>, file: &str) -> Result<String, Diagnostic> {
 }
 
 /// Text an editor holds for `file`, in place of what is on disk, refused
-/// past [`FILE_MAX`] like a file would be.
+/// past [`max_of`] like a file would be.
 pub fn held(text: &str, file: &str) -> Result<String, Diagnostic> {
-    if text.len() > FILE_MAX {
+    if text.len() > max_of(file) {
         return Err(Diagnostic::whole(
             file,
-            format!("is larger than the {} KiB a file may be", FILE_MAX / 1024),
+            format!(
+                "is larger than the {} KiB a file may be",
+                max_of(file) / 1024
+            ),
             Some("split it into smaller views, or move data into a fixture".to_owned()),
         ));
     }
@@ -487,14 +504,14 @@ mod tests {
 
     #[test]
     fn a_v1_spelling_is_answered_with_its_v2_form() {
-        let mut report = Report::new("view.kdl", "Toggle \"x\" id=\"x\" on=true");
+        let mut report = Report::new("view.uze", "Toggle \"x\" id=\"x\" on=true");
         assert!(parse(&mut report).is_none());
         let diagnostic = &report.diagnostics()[0];
         assert_eq!((diagnostic.line, diagnostic.column), (1, 22));
         assert!(diagnostic.message.contains("#true"), "{diagnostic}");
         assert_eq!(diagnostic.suggestion.as_deref(), Some("write `#true`"));
 
-        let mut report = Report::new("view.kdl", "a null");
+        let mut report = Report::new("view.uze", "a null");
         parse(&mut report);
         assert!(report.diagnostics()[0].message.contains("#null"));
     }

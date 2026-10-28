@@ -57,8 +57,8 @@ world:
 
       wants "exec:sh"
 
-      surface "shot" slot="section" view="shot.kdl" source="screen" title="Screen"
-      surface "full" slot="overlay" view="full.kdl" source="screen" title="Screen"
+      surface "shot" slot="section" view="shot.uze" source="screen" title="Screen"
+      surface "full" slot="overlay" view="full.uze" source="screen" title="Screen"
 
       source "screen" {
           run "./bin/shot" timeout="5s"
@@ -68,12 +68,15 @@ world:
       action "enlarge" label="Full size" on="shot" {
           open "full"
       }
-    market/plugins/media/extensions/screen/full.kdl: |
+    market/plugins/media/extensions/screen/full.uze: |
+      <view>
       Stack {
           Text "{device} · {screen}" role="muted"
           Image "scratch:shot.png" alt="The device's screen" height=24
       }
-    market/plugins/media/extensions/screen/shot.kdl: |
+      </view>
+    market/plugins/media/extensions/screen/shot.uze: |
+      <view>
       Stack {
           Image "scratch:shot.png" alt="The device's screen" height=8
           Row gap=1 {
@@ -81,6 +84,7 @@ world:
               Button "Full size" action="enlarge"
           }
       }
+      </view>
     market/plugins/media/extensions/screen/bin/shot: |
       #!/bin/sh
       # Stands in for a device's screenshot: writes a small PNG of a home

@@ -32,7 +32,7 @@ fn compiled() -> CompiledExtension {
 /// The game in `slot`, its source resident or a plain fixture.
 fn compiled_as(slot: uze_contract::Slot, resident: bool) -> CompiledExtension {
     let view = uze_contract::CompiledView {
-        file: "game.kdl".to_owned(),
+        file: "game.uze".to_owned(),
         items: Vec::new(),
         templates: BTreeMap::new(),
         lookups: Vec::new(),
@@ -49,7 +49,7 @@ fn compiled_as(slot: uze_contract::Slot, resident: bool) -> CompiledExtension {
                 bar: None,
                 id: "game".to_owned(),
                 slot,
-                view: "game.kdl".to_owned(),
+                view: "game.uze".to_owned(),
                 source: "board".to_owned(),
                 title: None,
                 applies_when: None,
@@ -58,7 +58,7 @@ fn compiled_as(slot: uze_contract::Slot, resident: bool) -> CompiledExtension {
             sources: vec![uze_contract::SourceDecl::new(
                 "board",
                 if resident {
-                    uze_contract::SourceKind::Resident("game.rhai".to_owned())
+                    uze_contract::SourceKind::Resident("game.uze".to_owned())
                 } else {
                     uze_contract::SourceKind::Fixture("board.json".to_owned())
                 },
@@ -70,7 +70,7 @@ fn compiled_as(slot: uze_contract::Slot, resident: bool) -> CompiledExtension {
             icons: Vec::new(),
             mcp: Vec::new(),
         },
-        views: BTreeMap::from([("game.kdl".to_owned(), view)]),
+        views: BTreeMap::from([("game.uze".to_owned(), view)]),
     }
 }
 

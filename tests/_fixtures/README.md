@@ -33,10 +33,10 @@ old `packages/` set hard to reason about.
 - `workflow/` — `workflow` package with one Skill `review`; the
   invocation-policy carrier (its `SKILL.md` defines `invoke` blocks).
 - `gsd/` — `gsd` package carrying the `gsd-band` reference extension
-  (`extensions/gsd-band/`: a `board` view (`board.kdl`: the milestone's bar,
+  (`extensions/gsd-band/`: a `board` view (`board.uze`: the milestone's bar,
   a table of its six phases, the phase in progress and its activity) and a
-  compact `summary` section (`summary.kdl`), both fed by
-  `fixtures/milestone.json`; a `state` source answered by `state.rhai`
+  compact `summary` section (`summary.uze`), both fed by
+  `fixtures/milestone.json`; a `state` source answered by `state.uze`
   under `read:checkout`, and a `refresh` action, which nothing runs until
   scripts do). Installed from a
   linked marketplace by `tests/lifecycle/declared_extension.rs`, by the

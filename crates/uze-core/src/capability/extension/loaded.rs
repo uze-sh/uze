@@ -80,7 +80,7 @@ impl Loaded {
     }
 }
 
-/// `./views/a.kdl` and `views/a.kdl` are one file.
+/// `./views/a.uze` and `views/a.uze` are one file.
 fn normalized(file: &str) -> String {
     file.split('/')
         .filter(|part| !part.is_empty() && *part != ".")
@@ -147,7 +147,7 @@ mod tests {
         let dir = uze_testkit::temp::scratch(label);
         fs::create_dir_all(dir.join("views")).unwrap();
         fs::write(dir.join("extension.kdl"), "protocol 1\n").unwrap();
-        fs::write(dir.join("views/board.kdl"), "Text \"a\"").unwrap();
+        fs::write(dir.join("views/board.uze"), "Text \"a\"").unwrap();
         dir
     }
 
@@ -155,18 +155,18 @@ mod tests {
     fn the_digest_is_of_the_bytes_read() {
         let dir = extension("loaded-digest");
         let first = Loaded::read(&dir).unwrap();
-        assert_eq!(first.bytes("views/board.kdl"), Some(&b"Text \"a\""[..]));
+        assert_eq!(first.bytes("views/board.uze"), Some(&b"Text \"a\""[..]));
         assert_eq!(
-            first.bytes("./views/board.kdl"),
-            first.bytes("views/board.kdl")
+            first.bytes("./views/board.uze"),
+            first.bytes("views/board.uze")
         );
         assert_eq!(first.digest(), Loaded::read(&dir).unwrap().digest());
 
-        fs::write(dir.join("views/board.kdl"), "Text \"b\"").unwrap();
+        fs::write(dir.join("views/board.uze"), "Text \"b\"").unwrap();
         let saved = Loaded::read(&dir).unwrap();
         assert_ne!(first.digest(), saved.digest(), "a saved file moves it");
         assert_eq!(
-            first.bytes("views/board.kdl"),
+            first.bytes("views/board.uze"),
             Some(&b"Text \"a\""[..]),
             "what was read stays what was read"
         );
@@ -177,7 +177,7 @@ mod tests {
     fn a_directory_past_its_bounds_is_refused_whole() {
         let dir = extension("loaded-bounds");
         fs::create_dir_all(dir.join("a/b/c/d/e")).unwrap();
-        fs::write(dir.join("a/b/c/d/e/deep.kdl"), "").unwrap();
+        fs::write(dir.join("a/b/c/d/e/deep.uze"), "").unwrap();
         assert!(Loaded::read(&dir).is_err(), "too deep");
         fs::remove_dir_all(dir.join("a")).unwrap();
 
@@ -202,14 +202,14 @@ mod tests {
     #[test]
     fn a_link_is_neither_followed_nor_loaded() {
         let dir = extension("loaded-link");
-        let outside = dir.parent().unwrap().join("loaded-link-outside.kdl");
+        let outside = dir.parent().unwrap().join("loaded-link-outside.uze");
         fs::write(&outside, "secret").unwrap();
-        std::os::unix::fs::symlink(&outside, dir.join("views/linked.kdl")).unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join("views/linked.uze")).unwrap();
         let loaded = Loaded::read(&dir).unwrap();
-        assert_eq!(loaded.bytes("views/linked.kdl"), None);
+        assert_eq!(loaded.bytes("views/linked.uze"), None);
         assert_eq!(
             loaded.paths().collect::<Vec<_>>(),
-            ["extension.kdl", "views/board.kdl"]
+            ["extension.kdl", "views/board.uze"]
         );
         fs::remove_file(outside).unwrap();
         fs::remove_dir_all(dir).unwrap();

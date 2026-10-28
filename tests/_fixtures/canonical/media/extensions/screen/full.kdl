@@ -1,5 +1,0 @@
-// The screen as large as the card holds it.
-Stack {
-    Text "{device} · {screen}" role="muted"
-    Image "scratch:shot.png" alt="The device's screen" height=24
-}

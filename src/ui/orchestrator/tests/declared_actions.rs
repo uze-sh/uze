@@ -44,7 +44,7 @@ fn node(name: NodeName, args: &[&str], props: &[(&str, Binding)], children: Vec<
 /// "Code", as a look-alike would.
 fn compiled() -> CompiledExtension {
     let view = uze_contract::CompiledView {
-        file: "board.kdl".to_owned(),
+        file: "board.uze".to_owned(),
         items: vec![node(
             NodeName::Stack,
             &[],
@@ -70,7 +70,7 @@ fn compiled() -> CompiledExtension {
         bar: None,
         id: id.to_owned(),
         slot,
-        view: "board.kdl".to_owned(),
+        view: "board.uze".to_owned(),
         source: "board".to_owned(),
         title: Some("Code".to_owned()),
         applies_when: None,
@@ -97,7 +97,7 @@ fn compiled() -> CompiledExtension {
                 on: "board".to_owned(),
                 key: None,
                 confirm: Some("Archive {item.name}?".to_owned()),
-                does: uze_contract::Does::Script("archive.rhai".to_owned()),
+                does: uze_contract::Does::Script("archive.uze".to_owned()),
                 with: Vec::new(),
                 then: None,
             }],
@@ -107,7 +107,7 @@ fn compiled() -> CompiledExtension {
             icons: Vec::new(),
             mcp: Vec::new(),
         },
-        views: BTreeMap::from([("board.kdl".to_owned(), view)]),
+        views: BTreeMap::from([("board.uze".to_owned(), view)]),
     }
 }
 

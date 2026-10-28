@@ -52,10 +52,10 @@ world:
 
       wants "read:checkout" "clipboard"
 
-      surface "board" slot="view" view="board.kdl" source="items" title="Notes"
+      surface "board" slot="view" view="board.uze" source="items" title="Notes"
 
       source "items" {
-          script "items.rhai"
+          script "items.uze"
           input file="NOTES.md"
       }
 
@@ -66,7 +66,8 @@ world:
       action "copy-summary" label="Copy summary" on="board" {
           clipboard "{summary}"
       }
-    market/plugins/notes/extensions/notes/board.kdl: |
+    market/plugins/notes/extensions/notes/board.uze: |
+      <view>
       Stack gap=1 {
           Row gap=2 {
               Text "{summary}" strong=#true grow=#true
@@ -76,7 +77,9 @@ world:
               Text "{text}"
           }
       }
-    market/plugins/notes/extensions/notes/items.rhai: |
+      </view>
+    market/plugins/notes/extensions/notes/items.uze: |
+      <script>
       // The `items` source: every line of the notes file that opens with `- [ ] `.
       fn answer(input, context) {
           let open = [];
@@ -87,6 +90,7 @@ world:
           }
           #{ data: #{ items: open, summary: `${open.len()} open in ${input.file}` } }
       }
+      </script>
     market/plugins/notes/extensions/notes/fixtures/items.json: |
       { "summary": "1 open in the fixture", "items": [ { "text": "An item of the fixture" } ] }
 
@@ -102,7 +106,7 @@ scenes:
         at: marketplaces.studio.link
         exists: false
         about: the marketplace follows no working tree
-      - file: "{uze_home}/store/plugins/studio/notes/extensions/notes/items.rhai"
+      - file: "{uze_home}/store/plugins/studio/notes/extensions/notes/items.uze"
         contains: read_checkout
         about: the extension's script was installed from the clone, into the Store
       - file: "{project}/agents.yaml"

@@ -309,9 +309,13 @@ mod tests {
             path.join(level.to_string())
         });
         fs::create_dir_all(&deep).unwrap();
-        fs::write(root.join("board.kdl"), "Text \"a\"").unwrap();
+        fs::write(root.join("board.uze"), "<view>\nText \"a\"\n</view>\n").unwrap();
         let before = extension_stamp(&root);
-        fs::write(root.join("board.kdl"), "Text \"a longer view\"").unwrap();
+        fs::write(
+            root.join("board.uze"),
+            "<view>\nText \"a longer view\"\n</view>\n",
+        )
+        .unwrap();
         assert_ne!(extension_stamp(&root), before, "the save is seen");
         fs::remove_dir_all(root).unwrap();
     }

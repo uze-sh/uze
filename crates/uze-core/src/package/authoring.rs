@@ -443,16 +443,12 @@ fn write_extension_files(plugin_root: &Path, id: &str) -> Result<()> {
         include_str!("authoring/extension.kdl.template").replace("{EXTENSION_ID}", id),
     )?;
     write_file(
-        &extension.join("board.kdl"),
-        include_str!("authoring/board.kdl.template"),
+        &extension.join("board.uze"),
+        include_str!("authoring/board.uze.template"),
     )?;
     write_file(
         &fixtures.join("board.json"),
         include_str!("authoring/board.json"),
-    )?;
-    write_file(
-        &extension.join("board.rhai"),
-        include_str!("authoring/board.rhai"),
     )?;
     let tests = extension.join(crate::capability::extension::TESTS_DIR);
     create_dir(&tests)?;

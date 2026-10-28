@@ -9,8 +9,8 @@ description "Snake, steered with the arrow keys, its best score kept"
 
 wants "resident" "store"
 
-surface "game" slot="view" view="game.kdl" source="board" title="Snake"
+surface "game" slot="view" view="game.uze" source="board" title="Snake"
 
 source "board" {
-    resident "snake.rhai"
+    resident "snake.uze"
 }

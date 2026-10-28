@@ -50,7 +50,7 @@ world:
 
       wants "agent:observe"
 
-      surface "picker" slot="overlay" view="picker.kdl" source="crew" title="Jump to an agent"
+      surface "picker" slot="overlay" view="picker.uze" source="crew" title="Jump to an agent"
 
       source "crew" { agents; }
 
@@ -61,7 +61,8 @@ world:
       action "go" label="Go" on="picker" key="ctrl-g" {
           focus-agent target="{id}"
       }
-    market/plugins/bridge/extensions/jump/picker.kdl: |
+    market/plugins/bridge/extensions/jump/picker.uze: |
+      <view>
       List id="agents" each="." empty="No agents" {
           Row gap=2 {
               Text "{label}" truncate=#true grow=#true
@@ -69,6 +70,7 @@ world:
               Button "Go" action="go" item="{.}"
           }
       }
+      </view>
 
 scenes:
   - scene: a plugin installed from a marketplace's clone leaves its picker disabled

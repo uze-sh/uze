@@ -46,5 +46,5 @@ pub use reach::{
 };
 pub use resident::{Resident, ResidentScript, TIMER_FLOOR};
 pub use scan::{host_functions_of, ungranted_calls};
-pub use script::{Answered, Script, ScriptCache};
+pub use script::{Answered, Script, ScriptCache, script_of};
 pub use trace::{Trace, TraceKind, TraceLine};

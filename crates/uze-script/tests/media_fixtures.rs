@@ -42,8 +42,9 @@ impl Reach for Kept {
 }
 
 fn snake(store: Value) -> Resident {
-    let script = ResidentScript::compile(&std::fs::read(file("snake", "snake.rhai")).unwrap())
-        .expect("snake.rhai compiles as a resident script");
+    let component = std::fs::read(file("snake", "snake.uze")).unwrap();
+    let script = ResidentScript::compile(&uze_script::script_of("snake.uze", &component).unwrap())
+        .expect("snake.uze compiles as a resident script");
     let grants = Grants::from([Grant::Resident, Grant::Store]);
     let (game, started) = Resident::start(
         Arc::new(script),
@@ -181,14 +182,15 @@ fn snake_draws_within_its_bounds_at_every_tick_of_a_long_game() {
 }
 
 fn kennel_script(name: &str) -> Script {
-    Script::compile(&std::fs::read(file("pets", name)).unwrap()).unwrap()
+    let component = std::fs::read(file("pets", name)).unwrap();
+    Script::compile(&uze_script::script_of(name, &component).unwrap()).unwrap()
 }
 
 #[test]
 fn pets_feeds_the_pet_and_the_kennel_says_it_is_content() {
     let grants = Grants::from([Grant::Store]);
-    let kennel = kennel_script("kennel.rhai");
-    let feed = kennel_script("feed.rhai");
+    let kennel = kennel_script("kennel.uze");
+    let feed = kennel_script("feed.uze");
     let ask = |script: &Script, store: Value| {
         script
             .answer(&json!({}), &json!({}), &grants, Kept::holding(store))

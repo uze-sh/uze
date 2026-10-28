@@ -102,6 +102,42 @@ fn a_fixtures_only_extension_needs_no_consent() {
     );
 }
 
+/// A `call` runs Rhai as a `script` action does, so an extension whose
+/// only code is one needs consent all the same (`extension-components`
+/// D4): a manifest with fixtures, no grant and one `call` is never let by.
+#[test]
+fn a_call_needs_consent_as_a_script_does() {
+    let env = TestEnvironment::isolated();
+    let (app, band) = installed_from_a_linked_marketplace(&env);
+    let panel_dir = band.with_file_name("gsd-panel");
+    let panel = the(&app, "gsd-panel").identity;
+    let here = project(&env, "a");
+    assert_eq!(state(&app, &panel, &here), ExtensionState::FixturesOnly);
+
+    let manifest = panel_dir.join("extension.kdl");
+    let text = fs::read_to_string(&manifest).unwrap();
+    let surface = text
+        .lines()
+        .find_map(|line| line.strip_prefix("surface \""))
+        .and_then(|rest| rest.split('"').next())
+        .expect("the panel declares a surface")
+        .to_owned();
+    fs::write(
+        &manifest,
+        format!("{text}\naction \"poke\" label=\"Poke\" on=\"{surface}\" {{ call \"poke\"; }}\n"),
+    )
+    .unwrap();
+
+    assert!(
+        matches!(
+            state(&app, &panel, &here),
+            ExtensionState::NeedsConsent { .. }
+        ),
+        "{:?}",
+        state(&app, &panel, &here)
+    );
+}
+
 #[test]
 fn a_script_runs_only_once_consented_to_and_enabled_in_its_project() {
     let env = TestEnvironment::isolated();
@@ -211,7 +247,7 @@ fn an_update_is_held_by_a_new_grant_and_applied_under_the_same_or_fewer() {
     let accepted = digest();
 
     fs::write(
-        band_dir.join("state.rhai"),
+        band_dir.join("state.uze"),
         "fn answer(input, context) { #{} }\n",
     )
     .unwrap();
@@ -305,7 +341,7 @@ fn an_update_that_widens_what_a_program_reads_is_held() {
 
     sh_reads(&band_dir, "\"/etc/gsd\"");
     fs::write(
-        band_dir.join("state.rhai"),
+        band_dir.join("state.uze"),
         "fn answer(input, context) { #{} }\n",
     )
     .unwrap();

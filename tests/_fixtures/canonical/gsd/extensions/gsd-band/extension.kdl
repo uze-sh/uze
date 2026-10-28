@@ -5,15 +5,15 @@ description "The checkout's GSD milestone: every phase, where it stands, and wha
 
 wants "read:checkout"
 
-surface "board" slot="view" view="board.kdl" source="milestone" title="Milestone"
-surface "summary" slot="section" view="summary.kdl" source="milestone" title="GSD"
+surface "board" slot="view" view="board.uze" source="milestone" title="Milestone"
+surface "summary" slot="section" view="summary.uze" source="milestone" title="GSD"
 
 source "milestone" {
     fixture "fixtures/milestone.json"
 }
 
 source "state" {
-    script "state.rhai"
+    script "state.uze"
     every "10s"
     refresh-on "paths.changed" ".planning"
 }

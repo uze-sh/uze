@@ -13,7 +13,8 @@ use crate::reach::{Grants, Reach};
 use crate::trace::Trace;
 use crate::value;
 
-/// The function every script defines: `fn answer(input, context)`.
+/// The function a source's or a `script` action's script defines:
+/// `fn answer(input, context)`.
 const ENTRY: &str = "answer";
 
 /// A script's text, compiled. Compiling checks syntax and bounds only;
@@ -32,8 +33,10 @@ pub struct Answered {
 }
 
 impl Script {
-    /// Compile a script's bytes, refusing one that is not UTF-8, is larger
-    /// than the engine takes, or defines no `answer(input, context)`.
+    /// Compile a script's bytes, refusing one that is not UTF-8 or is
+    /// larger than the engine takes. Which functions it must define is its
+    /// role's to say (`extension-components` D5): [`Script::answer`] asks
+    /// for `answer`, [`Script::call`] for the function it names.
     pub fn compile(bytes: &[u8]) -> Result<Self, ScriptError> {
         if bytes.len() > LIMITS.script_size {
             return Err(ScriptError::Limit {
@@ -48,16 +51,14 @@ impl Script {
         let ast = engine::compiling()
             .compile(source)
             .map_err(|error| ScriptError::from_parse(&error))?;
-        let defines_entry = ast
-            .iter_functions()
-            .any(|function| function.name == ENTRY && function.params.len() == 2);
-        if !defines_entry {
-            return Err(ScriptError::Compile {
-                message: format!("it defines no `fn {ENTRY}(input, context)`"),
-                at: None,
-            });
-        }
         Ok(Self { ast })
+    }
+
+    /// Whether it defines `function` taking `params` parameters.
+    pub fn defines(&self, function: &str, params: usize) -> bool {
+        self.ast
+            .iter_functions()
+            .any(|defined| defined.name == function && defined.params.len() == params)
     }
 
     /// Ask the script: `answer(input, context)`, in an engine holding the
@@ -73,8 +74,28 @@ impl Script {
         grants: &Grants,
         reach: Arc<dyn Reach>,
     ) -> Answered {
+        self.call(ENTRY, input, context, grants, reach)
+    }
+
+    /// Ask the script's `function(input, context)`, as [`Script::answer`]
+    /// asks `answer`: what an action's `call` runs.
+    pub fn call(
+        &self,
+        function: &str,
+        input: &Value,
+        context: &Value,
+        grants: &Grants,
+        reach: Arc<dyn Reach>,
+    ) -> Answered {
         let trace = Arc::new(Mutex::new(Trace::default()));
-        let outcome = self.run(input, context, grants, reach, Arc::clone(&trace));
+        let outcome = if self.defines(function, 2) {
+            self.run(function, input, context, grants, reach, Arc::clone(&trace))
+        } else {
+            Err(ScriptError::Compile {
+                message: format!("it defines no `fn {function}(input, context)`"),
+                at: None,
+            })
+        };
         let trace = std::mem::take(
             &mut *trace
                 .lock()
@@ -85,6 +106,7 @@ impl Script {
 
     fn run(
         &self,
+        function: &str,
         input: &Value,
         context: &Value,
         grants: &Grants,
@@ -100,10 +122,45 @@ impl Script {
         let context = value::to_dynamic(context).map_err(crossing("context"))?;
         let engine = engine::answering(grants, reach, trace);
         let answer: Dynamic = engine
-            .call_fn(&mut Scope::new(), &self.ast, ENTRY, (input, context))
+            .call_fn(&mut Scope::new(), &self.ast, function, (input, context))
             .map_err(|error| ScriptError::from_eval(&error))?;
         envelope::from_answer(&answer)
     }
+}
+
+/// The script `file` holds: a component's `<script>` with the rest of the
+/// file blanked, so every position is the file's own
+/// (`extension-components` D2); any other file's bytes as they are.
+pub fn script_of(file: &str, bytes: &[u8]) -> Result<Vec<u8>, ScriptError> {
+    use uze_contract::component::{BlockKind, Component, blanked, is_component};
+    if !is_component(file) {
+        return Ok(bytes.to_vec());
+    }
+    let text = std::str::from_utf8(bytes).map_err(|error| ScriptError::Compile {
+        message: format!("not UTF-8: {error}"),
+        at: None,
+    })?;
+    let located = |offset: usize| {
+        let before = &text[..offset.min(text.len())];
+        Some(crate::Location {
+            line: before.matches('\n').count() + 1,
+            column: before.len() - before.rfind('\n').map_or(0, |at| at + 1) + 1,
+        })
+    };
+    let component = Component::read(text).map_err(|errors| {
+        let first = &errors[0];
+        ScriptError::Compile {
+            message: first.message.clone(),
+            at: located(first.offset),
+        }
+    })?;
+    let script = component
+        .block(BlockKind::Script)
+        .ok_or_else(|| ScriptError::Compile {
+            message: "it holds no `<script>`".to_owned(),
+            at: None,
+        })?;
+    Ok(blanked(text, script).into_bytes())
 }
 
 /// Scripts compiled on first use and kept by the digest of the bytes they

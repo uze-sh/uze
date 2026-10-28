@@ -14,7 +14,8 @@ fn extension(id: &str, script: &str) -> Script {
         .join("../../tests/_fixtures/canonical/bridge/extensions")
         .join(id)
         .join(script);
-    Script::compile(&std::fs::read(&path).unwrap()).unwrap()
+    let script = uze_script::script_of(script, &std::fs::read(&path).unwrap()).unwrap();
+    Script::compile(&script).unwrap()
 }
 
 /// A checkout holding a plan, or nothing at all.
@@ -63,7 +64,7 @@ fn event(name: &str) -> Value {
 
 #[test]
 fn chimes_sounds_a_turns_end_and_notifies_an_approval_asked() {
-    let chime = extension("chimes", "chime.rhai");
+    let chime = extension("chimes", "chime.uze");
     let quiet = answer(&chime, json!({}), Grants::new(), None);
     assert_eq!(quiet, json!({ "data": {}, "notify": null, "sound": null }));
 
@@ -82,7 +83,7 @@ fn chimes_sounds_a_turns_end_and_notifies_an_approval_asked() {
 
 #[test]
 fn plan_review_reads_the_plans_title_and_open_steps() {
-    let plan = extension("plan-review", "plan.rhai");
+    let plan = extension("plan-review", "plan.uze");
     let grants = Grants::from([Grant::ReadCheckout]);
     let input = json!({ "file": "PLAN.md" });
     let read = answer(

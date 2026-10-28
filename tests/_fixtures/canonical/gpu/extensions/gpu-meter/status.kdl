@@ -1,5 +1,0 @@
-// The sidebar header's row: the load as a meter, folded to the column.
-Row gap=1 {
-    Gauge "GPU" ratio="{load_ratio}" warning="{warn}" danger=0.95 grow=#true
-    Text "{temperature}" role="faint"
-}

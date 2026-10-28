@@ -96,7 +96,8 @@ impl std::fmt::Debug for Running {
 
 /// What answers a question, found in the compile that was consented to.
 enum Answerer<'a> {
-    Script(&'a str),
+    /// A component's script, and the function of it that answers.
+    Script(&'a str, &'a str),
     Resident(&'a str),
     Program {
         program: &'a Program,
@@ -350,7 +351,7 @@ impl ExtensionRunner {
                         output: &source.output,
                         with_store: source.with_store,
                     },
-                    SourceKind::Script(file) => Answerer::Script(file),
+                    SourceKind::Script(file) => Answerer::Script(file, "answer"),
                     SourceKind::Resident(file)
                         if matches!(question.asking, Asking::Resident(_)) =>
                     {
@@ -369,7 +370,15 @@ impl ExtensionRunner {
                     return failed(format!("it declares no action `{}`", question.declaration));
                 };
                 match &action.does {
-                    Does::Script(file) => Answerer::Script(file),
+                    Does::Script(_) | Does::Call { .. } => match manifest.script_of(action) {
+                        Some((file, function)) => Answerer::Script(file, function),
+                        None => {
+                            return failed(format!(
+                                "the action `{}` is on a surface it does not declare",
+                                question.declaration
+                            ));
+                        }
+                    },
                     Does::Run(program) => Answerer::Program {
                         program,
                         output: &Output::Json,
@@ -547,10 +556,11 @@ impl ExtensionRunner {
                     Box::new(keep),
                 )
             }
-            Answerer::Script(script) => self.run_script(
+            Answerer::Script(script, function) => self.run_script(
                 asked,
                 &files,
                 script,
+                function,
                 &grants,
                 &question.input,
                 Arc::new(reach()),
@@ -593,7 +603,11 @@ impl ExtensionRunner {
         let Some(bytes) = files.bytes(file) else {
             return failed(format!("{file}: not found"));
         };
-        let script = match ResidentScript::compile(bytes) {
+        let bytes = match uze_script::script_of(file, bytes) {
+            Ok(bytes) => bytes,
+            Err(error) => return failed(format!("{file}: {error}")),
+        };
+        let script = match ResidentScript::compile(&bytes) {
             Ok(script) => Arc::new(script),
             Err(error) => return failed(format!("{file}: {error}")),
         };
@@ -894,14 +908,19 @@ impl ExtensionRunner {
             ));
         }
         let reach = Arc::new(reach);
-        Some(
-            self.run_script(asked, &files, file, &grants, &input, reach, &|envelope| {
-                Envelope {
-                    store: None,
-                    ..envelope
-                }
-            }),
-        )
+        Some(self.run_script(
+            asked,
+            &files,
+            file,
+            "answer",
+            &grants,
+            &input,
+            reach,
+            &|envelope| Envelope {
+                store: None,
+                ..envelope
+            },
+        ))
     }
 
     /// A program source rehearsed as a check runs it: its programs
@@ -970,6 +989,7 @@ impl ExtensionRunner {
         asked: Asked,
         files: &Loaded,
         file: &str,
+        function: &str,
         grants: &Grants,
         input: &serde_json::Value,
         reach: Arc<dyn uze_script::Reach>,
@@ -990,7 +1010,12 @@ impl ExtensionRunner {
         let Some(bytes) = files.bytes(file) else {
             return failed(format!("{file}: not found"));
         };
-        let compiled = lock(&self.scripts).get_or_compile(&uze_core::digest::sha256(bytes), bytes);
+        let bytes = match uze_script::script_of(file, bytes) {
+            Ok(bytes) => bytes,
+            Err(error) => return failed(format!("{file}: {error}")),
+        };
+        let compiled =
+            lock(&self.scripts).get_or_compile(&uze_core::digest::sha256(&bytes), &bytes);
         let script = match compiled {
             Ok(script) => script,
             Err(error) => return failed(format!("{file}: {error}")),
@@ -1005,7 +1030,7 @@ impl ExtensionRunner {
             declared: asked.declaration,
         });
         self.count_run();
-        let answered = script.answer(input, &context, grants, reach);
+        let answered = script.call(function, input, &context, grants, reach);
         let trace = answered
             .trace
             .lines
@@ -1164,7 +1189,7 @@ pub(super) mod tests {
 
     /// The `gsd` fixture plugin installed from a marketplace linked to its
     /// working tree, and a checkout of a project whose state file its
-    /// `state.rhai` counts the lines of, in a world whose temporary
+    /// `state.uze` counts the lines of, in a world whose temporary
     /// directory is elsewhere.
     pub(crate) struct World {
         scratch: PathBuf,
@@ -1497,7 +1522,7 @@ pub(super) mod tests {
         );
         assert_eq!(runner.runs(), 2);
 
-        let script = world.band.join("state.rhai");
+        let script = world.band.join("state.uze");
         let text = fs::read_to_string(&script).unwrap();
         fs::write(&script, text.replace("lines:", "count:")).unwrap();
         assert_eq!(
@@ -1560,13 +1585,48 @@ pub(super) mod tests {
     }
 
     #[test]
+    fn a_call_runs_a_function_of_the_component_it_names() {
+        let world = World::new("runner-call");
+        fs::write(
+            world.band.join("state.uze"),
+            "<script>\nfn answer(input, context) { #{ data: #{ lines: 0 } } }\n\nfn count(input, context) {\n    #{ data: #{ counted: input.item ?? \"nothing\" } }\n}\n</script>\n",
+        )
+        .unwrap();
+        let manifest = world.band.join("extension.kdl");
+        let text = fs::read_to_string(&manifest).unwrap();
+        fs::write(
+            &manifest,
+            format!(
+                "{text}\naction \"count\" label=\"Count\" on=\"board\" {{\n    call \"count\" in=\"state.uze\"\n}}\naction \"absent\" label=\"Absent\" on=\"board\" {{\n    call \"absent\" in=\"state.uze\"\n}}\n"
+            ),
+        )
+        .unwrap();
+        world.enabled();
+        let runner = ExtensionRunner::new();
+        let call = |declaration: &str| Question {
+            declaration: declaration.to_owned(),
+            asking: Asking::Action,
+            input: serde_json::json!({ "item": "phase 2" }),
+            ..world.question("state")
+        };
+        assert_eq!(
+            data(world.ask(&runner, &call("count"))),
+            serde_json::json!({ "counted": "phase 2" })
+        );
+        assert!(matches!(
+            world.ask(&runner, &call("absent")),
+            Answer::Failed { reason, .. } if reason.contains("defines no `fn absent(input, context)`")
+        ));
+    }
+
+    #[test]
     fn a_refresh_runs_again_and_an_action_is_never_remembered() {
         let world = World::new("runner-action");
         let manifest = world.band.join("extension.kdl");
         let text = fs::read_to_string(&manifest).unwrap();
         fs::write(
             &manifest,
-            format!("{text}\naction \"count\" label=\"Count\" on=\"board\" {{\n    script \"state.rhai\"\n}}\n"),
+            format!("{text}\naction \"count\" label=\"Count\" on=\"board\" {{\n    script \"state.uze\"\n}}\n"),
         )
         .unwrap();
         world.enabled();
@@ -1630,10 +1690,14 @@ pub(super) mod tests {
         let manifest = world.band.join("extension.kdl");
         let text = fs::read_to_string(&manifest).unwrap().replace(
             "wants \"read:checkout\"",
-            "wants \"read:checkout\" \"resident\"\n\nsource \"game\" {\n    resident \"game.rhai\"\n}",
+            "wants \"read:checkout\" \"resident\"\n\nsource \"game\" {\n    resident \"game.uze\"\n}",
         );
         fs::write(&manifest, text).unwrap();
-        fs::write(world.band.join("game.rhai"), script).unwrap();
+        fs::write(
+            world.band.join("game.uze"),
+            format!("<script>\n{script}\n</script>\n"),
+        )
+        .unwrap();
     }
 
     fn resident(world: &World, call: ResidentCall, input: serde_json::Value) -> Question {
@@ -1701,7 +1765,7 @@ pub(super) mod tests {
             panic!("a runaway render fails");
         };
         assert!(
-            reason.starts_with("game.rhai: the script crossed its"),
+            reason.starts_with("game.uze: the script crossed its"),
             "{reason}"
         );
         assert!(reason.contains("bound"), "{reason}");
@@ -1721,8 +1785,8 @@ pub(super) mod tests {
         let world = World::new("runner-digest");
         world.enabled();
         fs::write(
-            world.band.join("state.rhai"),
-            "fn answer(input, context) { #{ data: #{ saved: true } } }\n",
+            world.band.join("state.uze"),
+            "<script>\nfn answer(input, context) { #{ data: #{ saved: true } } }\n</script>\n",
         )
         .unwrap();
         let runner = ExtensionRunner::new();
@@ -1846,15 +1910,15 @@ pub(super) mod tests {
         let world = World::new("runner-failing");
         world.enabled();
         fs::write(
-            world.band.join("state.rhai"),
-            "fn answer(input, context) { print(\"looking\"); loop {} }",
+            world.band.join("state.uze"),
+            "<script>\nfn answer(input, context) { print(\"looking\"); loop {} }\n</script>\n",
         )
         .unwrap();
         let runner = ExtensionRunner::new();
         // The update wants no new grant, so it is accepted as it is judged.
         match world.ask(&runner, &world.question("state")) {
             Answer::Failed { reason, trace } => {
-                assert!(reason.starts_with("state.rhai: "), "{reason}");
+                assert!(reason.starts_with("state.uze: "), "{reason}");
                 assert!(reason.contains("bound"), "{reason}");
                 assert_eq!(trace, ["looking"]);
             }

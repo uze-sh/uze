@@ -9,7 +9,7 @@ const MANIFEST: &str = r#"protocol 1
 id "board"
 name "Board"
 description "A board"
-surface "board" slot="view" view="board.kdl" source="board"
+surface "board" slot="view" view="board.uze" source="board"
 source "board" { fixture "fixtures/board.json"; }
 "#;
 
@@ -19,8 +19,8 @@ fn served(root: &Path) -> (Connection, std::thread::JoinHandle<()>, PathBuf) {
     std::fs::create_dir_all(extension.join("fixtures")).unwrap();
     std::fs::write(extension.join("extension.kdl"), MANIFEST).unwrap();
     std::fs::write(
-        extension.join("board.kdl"),
-        "Stack {\n    Text \"{title}\"\n}\n",
+        extension.join("board.uze"),
+        "<view>\nStack {\n    Text \"{title}\"\n}\n</view>\n",
     )
     .unwrap();
     std::fs::write(
@@ -99,12 +99,12 @@ fn an_editor_gets_the_checks_diagnostics_completion_and_hover() {
     assert_eq!(capabilities["capabilities"]["hoverProvider"], true);
     notify(&client, "initialized", json!({}));
 
-    let view = extension.join("board.kdl");
+    let view = extension.join("board.uze");
     let uri = uri_of(&view);
     notify(
         &client,
         "textDocument/didOpen",
-        json!({ "textDocument": { "uri": uri, "languageId": "kdl", "version": 1, "text": "Tabel {\n}\n" } }),
+        json!({ "textDocument": { "uri": uri, "languageId": "uze", "version": 1, "text": "<view>\nTabel {\n}\n</view>\n" } }),
     );
     let said = diagnostics_for(&client, &uri);
     assert!(
@@ -113,14 +113,14 @@ fn an_editor_gets_the_checks_diagnostics_completion_and_hover() {
                 .as_str()
                 .unwrap()
                 .contains("did you mean `Table`?")
-            && diagnostic["range"]["start"]["line"] == 0),
+            && diagnostic["range"]["start"]["line"] == 1),
         "{said:#?}"
     );
 
     notify(
         &client,
         "textDocument/didChange",
-        json!({ "textDocument": { "uri": uri, "version": 2 }, "contentChanges": [{ "text": "Stack {\n    Progress ratio=0.5\n    Text \"{title}\"\n}\n" }] }),
+        json!({ "textDocument": { "uri": uri, "version": 2 }, "contentChanges": [{ "text": "<view>\nStack {\n    Progress ratio=0.5\n    Text \"{title}\"\n}\n</view>\n\n<script>\nfn prev(input, context) { #{ data: () } }\n</script>\n" }] }),
     );
     let fixed = diagnostics_for(&client, &uri);
     assert!(fixed.iter().all(|d| d["severity"] != 1), "{fixed:#?}");
@@ -128,7 +128,7 @@ fn an_editor_gets_the_checks_diagnostics_completion_and_hover() {
         &client,
         2,
         "textDocument/completion",
-        json!({ "textDocument": { "uri": uri }, "position": { "line": 1, "character": 18 } }),
+        json!({ "textDocument": { "uri": uri }, "position": { "line": 2, "character": 18 } }),
     );
     let labels: Vec<&str> = offered
         .as_array()
@@ -144,7 +144,7 @@ fn an_editor_gets_the_checks_diagnostics_completion_and_hover() {
         &client,
         3,
         "textDocument/completion",
-        json!({ "textDocument": { "uri": uri }, "position": { "line": 2, "character": 11 } }),
+        json!({ "textDocument": { "uri": uri }, "position": { "line": 3, "character": 11 } }),
     );
     let labels: Vec<&str> = fields
         .as_array()
@@ -161,7 +161,7 @@ fn an_editor_gets_the_checks_diagnostics_completion_and_hover() {
         &client,
         4,
         "textDocument/hover",
-        json!({ "textDocument": { "uri": uri }, "position": { "line": 1, "character": 7 } }),
+        json!({ "textDocument": { "uri": uri }, "position": { "line": 2, "character": 7 } }),
     );
     assert!(
         hovered["contents"]["value"]
@@ -170,8 +170,17 @@ fn an_editor_gets_the_checks_diagnostics_completion_and_hover() {
             .contains("Progress"),
         "{hovered}"
     );
+    // Inside the `<script>` the server answers nothing yet: no view
+    // completion where Rhai is written.
+    let in_script = request(
+        &client,
+        5,
+        "textDocument/completion",
+        json!({ "textDocument": { "uri": uri }, "position": { "line": 8, "character": 4 } }),
+    );
+    assert_eq!(in_script, Value::Null, "{in_script}");
 
-    request(&client, 5, "shutdown", Value::Null);
+    request(&client, 6, "shutdown", Value::Null);
     notify(&client, "exit", Value::Null);
     thread.join().unwrap();
     let _ = std::fs::remove_dir_all(root);
@@ -179,12 +188,12 @@ fn an_editor_gets_the_checks_diagnostics_completion_and_hover() {
 
 #[test]
 fn a_uri_and_a_path_go_back_and_forth() {
-    let path = PathBuf::from("/tmp/a b/extensions/x/board.kdl");
+    let path = PathBuf::from("/tmp/a b/extensions/x/board.uze");
     let uri = uri_of(&path);
-    assert_eq!(uri, "file:///tmp/a%20b/extensions/x/board.kdl");
+    assert_eq!(uri, "file:///tmp/a%20b/extensions/x/board.uze");
     assert_eq!(path_of(&uri), Some(path));
     assert_eq!(
-        path_of("file:///C:/x/y.kdl"),
-        Some(PathBuf::from("C:/x/y.kdl"))
+        path_of("file:///C:/x/y.uze"),
+        Some(PathBuf::from("C:/x/y.uze"))
     );
 }

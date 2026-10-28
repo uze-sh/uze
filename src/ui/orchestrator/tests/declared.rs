@@ -514,7 +514,7 @@ fn an_error_keeps_the_last_draw_and_says_itself_over_it() {
     let slot = view_slot(&model);
     super::open_surface(&mut model, slot);
     model.absorb_extension_answer(recompiled(Err(vec![ExtensionDiagnostic {
-        file: "board.kdl".to_owned(),
+        file: "board.uze".to_owned(),
         line: 3,
         column: 5,
         message: "unknown node `Stak`".to_owned(),
@@ -529,7 +529,7 @@ fn an_error_keeps_the_last_draw_and_says_itself_over_it() {
     );
     assert!(
         rows.iter()
-            .any(|row| row.contains("board.kdl:3:5: unknown node `Stak`")),
+            .any(|row| row.contains("board.uze:3:5: unknown node `Stak`")),
         "with the error over it: {rows:#?}"
     );
 }
@@ -682,7 +682,7 @@ fn the_gsd_band_installed(root: &std::path::Path, home: &uze_application::UzeHom
     app.marketplace()
         .install_plugin("gsd@studio", &uze_application::AlwaysTrust)
         .unwrap();
-    market.join("plugins/gsd/extensions/gsd-band/board.kdl")
+    market.join("plugins/gsd/extensions/gsd-band/board.uze")
 }
 
 /// What the real job answers, waited for: the read runs on its own
@@ -1118,7 +1118,7 @@ fn hosting_the_drawer() -> WorkspaceModel {
             bar: None,
             id: "side".to_owned(),
             slot: uze_contract::Slot::Drawer,
-            view: "side.kdl".to_owned(),
+            view: "side.uze".to_owned(),
             source: "board".to_owned(),
             title: Some("Side".to_owned()),
             applies_when: None,
@@ -1886,14 +1886,14 @@ fn a_section_is_drawn_from_a_script_that_reads_the_checkout_once_enabled() {
         &manifest,
         declared.replace(
             "source \"milestone\" {",
-            "surface \"lines\" slot=\"section\" view=\"lines.kdl\" source=\"state\" title=\"State\"\n\n\
+            "surface \"lines\" slot=\"section\" view=\"lines.uze\" source=\"state\" title=\"State\"\n\n\
              source \"milestone\" {",
         ),
     )
     .unwrap();
     std::fs::write(
-        band.join("lines.kdl"),
-        "Stack {\n    Text \"{lines} lines of state\"\n}\n",
+        band.join("lines.uze"),
+        "<view>\nStack {\n    Text \"{lines} lines of state\"\n}\n</view>\n",
     )
     .unwrap();
     let checkout = checkout_outside_the_temporary_directory("declared-script");
@@ -1977,14 +1977,14 @@ fn a_section_asks_again_once_its_extension_is_enabled_or_disabled() {
         &manifest,
         declared.replace(
             "source \"milestone\" {",
-            "surface \"lines\" slot=\"section\" view=\"lines.kdl\" source=\"state\" title=\"State\"\n\n\
+            "surface \"lines\" slot=\"section\" view=\"lines.uze\" source=\"state\" title=\"State\"\n\n\
              source \"milestone\" {",
         ),
     )
     .unwrap();
     std::fs::write(
-        band.join("lines.kdl"),
-        "Stack {\n    Text \"{lines} lines of state\"\n}\n",
+        band.join("lines.uze"),
+        "<view>\nStack {\n    Text \"{lines} lines of state\"\n}\n</view>\n",
     )
     .unwrap();
     let checkout = checkout_outside_the_temporary_directory("declared-record");
@@ -2053,14 +2053,14 @@ fn inspecting_the_linked_band(label: &str) -> (Driven<'static>, PathBuf, PathBuf
         &manifest,
         declared.replace(
             "source \"milestone\" {",
-            "surface \"lines\" slot=\"section\" view=\"lines.kdl\" source=\"state\" title=\"State\"\n\n\
+            "surface \"lines\" slot=\"section\" view=\"lines.uze\" source=\"state\" title=\"State\"\n\n\
              source \"milestone\" {",
         ),
     )
     .unwrap();
     std::fs::write(
-        band.join("lines.kdl"),
-        "Stack {\n    Text \"{lines} lines of state\"\n}\n",
+        band.join("lines.uze"),
+        "<view>\nStack {\n    Text \"{lines} lines of state\"\n}\n</view>\n",
     )
     .unwrap();
     let checkout = checkout_outside_the_temporary_directory(label);

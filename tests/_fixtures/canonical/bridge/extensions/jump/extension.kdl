@@ -7,7 +7,7 @@ description "Jump to any agent, in any space, from anywhere"
 
 wants "agent:observe"
 
-surface "picker" slot="overlay" view="picker.kdl" source="crew" title="Jump to an agent"
+surface "picker" slot="overlay" view="picker.uze" source="crew" title="Jump to an agent"
 
 source "crew" { agents; }
 

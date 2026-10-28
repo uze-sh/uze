@@ -139,7 +139,7 @@ impl DeclaredExtension {
             ));
         }
         Ok(match &declared.does {
-            Does::Script(_) | Does::Run(_) => Run::Script {
+            Does::Script(_) | Does::Call { .. } | Does::Run(_) => Run::Script {
                 action: declared.id.clone(),
                 label,
                 input: action_input(item, scope),
@@ -283,10 +283,21 @@ impl DeclaredExtension {
     /// What `run` will do, as the question shows it.
     fn arguments(&self, declared: &ActionDecl, run: &Run) -> String {
         let said = match (run, &declared.does) {
-            (Run::Script { input, .. }, Does::Script(file)) => match &input["item"] {
-                Value::Null => format!("Runs {file}"),
-                item => format!("Runs {file} on {item}"),
-            },
+            (Run::Script { input, .. }, Does::Script(_) | Does::Call { .. }) => {
+                let ran = self
+                    .compiled
+                    .manifest
+                    .script_of(declared)
+                    .map(|(file, function)| match function {
+                        "answer" => file.to_owned(),
+                        function => format!("{function} in {file}"),
+                    })
+                    .unwrap_or_default();
+                match &input["item"] {
+                    Value::Null => format!("Runs {ran}"),
+                    item => format!("Runs {ran} on {item}"),
+                }
+            }
             (Run::Refresh(sources), _) => format!("Asks {} again", sources.join(", ")),
             (Run::Copy(text), _) => return Clean::text(text).into_string(),
             (Run::OpenPath { project, target }, _) => format!(
@@ -687,7 +698,7 @@ fn reads_the_item(declared: &ActionDecl) -> bool {
             target: uze_contract::AgentTarget::Named(template),
         } => vec![template],
         Does::AgentRestart { .. } | Does::FocusAgent { .. } => Vec::new(),
-        Does::Script(_) | Does::Refresh(_) | Does::Open(_) => Vec::new(),
+        Does::Script(_) | Does::Call { .. } | Does::Refresh(_) | Does::Open(_) => Vec::new(),
     };
     done.into_iter()
         .chain(&declared.confirm)

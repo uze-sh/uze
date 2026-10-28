@@ -27,12 +27,12 @@ Owner: `crates/uze-contract` (`src/docs.rs`). A change to the contract changes t
 
 | kind | written | answered by |
 |---|---|---|
-| `script` | `script "x.rhai"` | A Rhai file whose `answer(input, context)` returns the envelope. |
+| `script` | `script "x.uze"` | A component whose `<script>` defines `answer(input, context)`, which returns the envelope. |
 | `run` | `run "<program>" "<arg>"… timeout="5s"` | A program the workspace runs, pinned and confined where the machine can; its standard output is read as `output` says. |
 | `fixture` | `fixture "fixtures/x.json"` | A JSON file whose contents are the source's data. |
 | `events` | `events <n>` | The workspace's own: the last `n` events the extension saw, newest first. |
 | `agents` | `agents` | The workspace's own: every agent of the open spaces, under `agent:observe`. |
-| `resident` | `resident "x.rhai"` | A Rhai file kept running while a surface showing it is open, under `resident`: `start`, `event`, `input`, `render`, `stop`. |
+| `resident` | `resident "x.uze"` | A component whose `<script>` is kept running while a surface showing it is open, under `resident`: `start`, `event`, `input`, `render`, `stop`. |
 
 A source also takes `input name="<template>"…`, `every "<n>s|m|h"` (at least 5s), `refresh-on "<event>" <paths…>`, `output`, `deliver`, `store`, `preferences` and `applies-when "<path>"`: a source whose path the checkout lacks is never asked. A surface takes the same as a property, `applies-when="<path>"`, and is then offered only in a checkout that has it.
 
@@ -88,7 +88,8 @@ A source also takes `input name="<template>"…`, `every "<n>s|m|h"` (at least 5
 
 | does | written | what |
 |---|---|---|
-| `script` | `script "x.rhai"` | Runs the file's `answer` and applies its envelope. |
+| `script` | `script "x.uze"` | Runs the component's `answer` and applies its envelope. |
+| `call` | `call "<fn>" in="x.uze"` | Runs `<fn>(input, context)` of the `<script>` of the surface the action is on, or of the component `in` names, and applies its envelope; never `answer` or a resident's entry. |
 | `refresh` | `refresh "<source>"…` | Asks these sources again. |
 | `clipboard` | `clipboard "<template>"` | Copies the text to the clipboard; under `clipboard`. |
 | `open-path` | `open-path "<template>"` | Opens a file inside the checkout; under `open-path`. |

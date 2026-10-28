@@ -314,6 +314,26 @@ fn actions_name_what_is_declared(decoded: &Decoded, report: &mut Report<'_>) {
                 declared(&surfaces, "surfaces"),
             );
         }
+        if let Does::Call { function, .. } = &action.does
+            && let Some((file, _)) = manifest.script_of(action)
+            && manifest
+                .sources
+                .iter()
+                .any(|source| source.kind == SourceKind::Resident(file.to_owned()))
+        {
+            report.at(
+                places.does,
+                format!(
+                    "the action `{}` calls `{function}` in `{file}`, whose script runs as a resident",
+                    action.id
+                ),
+                Some(
+                    "a resident hears the operator through its own `input`; a call would run \
+                     outside its session"
+                        .to_owned(),
+                ),
+            );
+        }
         if let Some(why) = needs_a_modifier(action)
             && let (Some(key), Some(key_at)) = (&action.key, places.key)
             && key.is_bare()

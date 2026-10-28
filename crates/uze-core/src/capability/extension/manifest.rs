@@ -102,7 +102,10 @@ impl Decoded {
             .iter()
             .zip(&self.action_places)
             .filter_map(|(action, places)| match &action.does {
-                Does::Script(file) => Some(("script", file.as_str(), places.does)),
+                Does::Script(file)
+                | Does::Call {
+                    file: Some(file), ..
+                } => Some(("script", file.as_str(), places.does)),
                 Does::Run(program) => packaged(program).map(|file| ("program", file, places.does)),
                 _ => None,
             });
@@ -464,7 +467,9 @@ fn surface(node: &KdlNode, report: &mut Report<'_>) -> Option<(SurfaceDecl, (usi
         }
         parsed
     });
-    let view = view.filter(|(view, offset)| relative_file(view, "kdl", *offset, report));
+    let view = view.filter(|(view, offset)| {
+        relative_file(view, uze_contract::component::SUFFIX, *offset, report)
+    });
     let source = source.filter(|(source, offset)| referred_id(source, "source", *offset, report));
     let band = band(node, &parts, slot?, report);
     let bar = bar(&parts, slot?, report);
@@ -947,11 +952,27 @@ pub fn relative_file(file: &str, extension: &str, offset: usize, report: &mut Re
         report.at(
             offset,
             format!("`{file}` is not a `.{extension}` file"),
-            None,
+            component_instead(file, extension),
         );
         return false;
     }
     true
+}
+
+/// For a view or a script written as a file of its own, the component that
+/// holds it now (`extension-components` D3).
+fn component_instead(file: &str, wanted: &str) -> Option<String> {
+    if wanted != uze_contract::component::SUFFIX {
+        return None;
+    }
+    let (stem, block) = match file.strip_suffix(".kdl") {
+        Some(stem) => (stem, "view"),
+        None => (file.strip_suffix(".rhai")?, "script"),
+    };
+    Some(format!(
+        "views and scripts live in components: move it into `{stem}.uze` between `<{block}>` \
+         and `</{block}>`"
+    ))
 }
 
 fn unknown(node: &KdlNode, name: &str, report: &mut Report<'_>) {

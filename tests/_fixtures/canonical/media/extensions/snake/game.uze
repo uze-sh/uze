@@ -1,0 +1,4 @@
+<view>
+// What the view draws until the game's first frame.
+Text "Starting the game…" role="faint"
+</view>

@@ -55,20 +55,21 @@ world:
           reads "/dev/dxg" "/dev/nvidiactl" "/dev/nvidia0" "/dev/nvidia-uvm" "/proc/driver/nvidia"
       }
 
-      surface "meter" slot="view" view="meter.kdl" source="gpu" title="GPU"
-      surface "summary" slot="section" view="summary.kdl" source="gpu" title="GPU"
-      surface "load" slot="status" view="status.kdl" source="gpu" title="GPU"
+      surface "meter" slot="view" view="meter.uze" source="gpu" title="GPU"
+      surface "summary" slot="section" view="summary.uze" source="gpu" title="GPU"
+      surface "load" slot="status" view="status.uze" source="gpu" title="GPU"
 
       preferences {
           number "warn-at" label="Warn at load (%)" default=70 min=1 max=100
       }
 
       source "gpu" {
-          script "gpu.rhai"
+          script "gpu.uze"
           every "10s"
           preferences
       }
-    market/plugins/gpu/extensions/gpu-meter/meter.kdl: |
+    market/plugins/gpu/extensions/gpu-meter/meter.uze: |
+      <view>
       Stack gap=1 {
           Text "{name}" strong=#true
           Gauge "load" ratio="{load_ratio}" warning="{warn}" danger=0.9
@@ -81,18 +82,24 @@ world:
           Rule "load, last readings"
           Chart series="{history}" kind="bar" height=4
       }
-    market/plugins/gpu/extensions/gpu-meter/status.kdl: |
+      </view>
+    market/plugins/gpu/extensions/gpu-meter/status.uze: |
+      <view>
       Row gap=1 {
           Gauge "GPU" ratio="{load_ratio}" warning="{warn}" danger=0.95 grow=#true
           Text "{temperature}" role="faint"
       }
-    market/plugins/gpu/extensions/gpu-meter/summary.kdl: |
+      </view>
+    market/plugins/gpu/extensions/gpu-meter/summary.uze: |
+      <view>
       Stack {
           Gauge "load" ratio="{load_ratio}" warning="{warn}" danger=0.9
           Chart series="{history}" kind="sparkline"
           Text "{memory} · {temperature}" role="faint"
       }
-    market/plugins/gpu/extensions/gpu-meter/gpu.rhai: |
+      </view>
+    market/plugins/gpu/extensions/gpu-meter/gpu.uze: |
+      <script>
       fn field(parts, at) {
           let text = parts[at];
           text.trim();
@@ -135,6 +142,7 @@ world:
               store: #{ history: history },
           }
       }
+      </script>
     market/plugins/gpu/extensions/gpu-meter/fixtures/gpu.json: |
       {
         "name": "NVIDIA GeForce RTX 4060 Ti",
@@ -155,7 +163,7 @@ scenes:
       - shell: "cd {project} && {uze} install gpu@studio > {world}/install.log 2>&1"
         say: add the plugin to the project, with nobody at a terminal to answer
     then:
-      - file: "{uze_home}/store/plugins/studio/gpu/extensions/gpu-meter/gpu.rhai"
+      - file: "{uze_home}/store/plugins/studio/gpu/extensions/gpu-meter/gpu.uze"
         contains: "run_program"
         about: the extension's script was installed from the clone, into the Store
       - file: "{uze_home}/state/extensions.json"

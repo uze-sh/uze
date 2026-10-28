@@ -129,7 +129,7 @@ fn compiled(plugin: &str) -> CompiledExtension {
                 bar: None,
                 id: "board".to_owned(),
                 slot: uze_contract::Slot::View,
-                view: "board.kdl".to_owned(),
+                view: "board.uze".to_owned(),
                 source: "board".to_owned(),
                 title: Some("Keyed".to_owned()),
                 applies_when: None,

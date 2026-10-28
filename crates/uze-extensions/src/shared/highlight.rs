@@ -116,6 +116,9 @@ pub(crate) struct Highlighter {
     /// Whether it reads Markdown, whose fences may name a language only a
     /// vendored grammar knows.
     markdown: bool,
+    /// Whether it reads a component (`.uze`), whose blocks are read each in
+    /// its language between its tag lines (`extension-components` D7).
+    component: bool,
     /// The fence being read with a vendored grammar, while one is open.
     fence: Option<Box<Fence>>,
 }
@@ -134,9 +137,29 @@ impl Highlighter {
             lines: HighlightLines::new(grammar.syntax, theme(theme_name)),
             set: grammar.set,
             markdown: grammar.syntax.name == "Markdown",
+            component: false,
             fence: None,
         }
     }
+
+    /// A component's: its tag lines read as markup, each block as its
+    /// language.
+    fn component(theme_name: &str) -> Self {
+        let markup = find(|set| set.find_syntax_by_token("html")).unwrap_or_else(plain_text);
+        Self {
+            component: true,
+            ..Self::new(markup, theme_name)
+        }
+    }
+}
+
+/// The grammar a component's block of `kind` is read with.
+fn block_grammar(kind: uze_contract::component::BlockKind) -> Grammar {
+    let name = match kind {
+        uze_contract::component::BlockKind::View => "KDL",
+        uze_contract::component::BlockKind::Script => "Rhai",
+    };
+    find(|set| set.find_syntax_by_name(name)).unwrap_or_else(plain_text)
 }
 
 /// The marker and info string of a line opening a Markdown fence: up to
@@ -207,6 +230,12 @@ pub(crate) fn theme(name: &str) -> &'static Theme {
 /// `first_line` is the file's own, when there is one to hand — see
 /// [`grammar_for`].
 pub(crate) fn highlighter(path: &Path, first_line: Option<&str>, theme_name: &str) -> Highlighter {
+    let is_component = path
+        .to_str()
+        .is_some_and(uze_contract::component::is_component);
+    if is_component {
+        return Highlighter::component(theme_name);
+    }
     Highlighter::new(grammar_for(path, first_line), theme_name)
 }
 
@@ -365,6 +394,25 @@ pub(crate) fn line(
                     return opened;
                 }
             }
+        }
+    }
+    if highlighter.component {
+        // The block rule is the contract's, the one every reader of a
+        // component follows; a tag line is markup, what is between two a
+        // block in its language.
+        use uze_contract::component::{Tag, tag_of};
+        match (tag_of(text), &mut highlighter.fence) {
+            (Some(Tag::Open(kind)), None) => {
+                let opened = own_line(highlighter, text, theme_name);
+                highlighter.fence = Some(Box::new(Fence {
+                    marker: String::new(),
+                    inner: Highlighter::new(block_grammar(kind), theme_name),
+                }));
+                return opened;
+            }
+            (Some(Tag::Close(_)), Some(_)) => highlighter.fence = None,
+            (_, Some(fence)) => return line(&mut fence.inner, text, theme_name),
+            _ => {}
         }
     }
     own_line(highlighter, text, theme_name)
@@ -877,20 +925,28 @@ fn answer(input, context) {
     /// fails on one of their lines would turn the rest of the file plain.
     #[test]
     fn every_line_of_a_shipped_extension_script_parses_as_rhai() {
+        use uze_contract::component::{BlockKind, Component};
+        let script_of = |component: &'static str| {
+            let block = Component::read(component)
+                .unwrap()
+                .block(BlockKind::Script)
+                .unwrap();
+            &component[block.start..block.end]
+        };
         let scripts = [
             (
                 "board.rhai",
-                include_str!(concat!(
+                script_of(include_str!(concat!(
                     env!("CARGO_MANIFEST_DIR"),
-                    "/../uze-core/src/package/authoring/board.rhai"
-                )),
+                    "/../uze-core/src/package/authoring/board.uze.template"
+                ))),
             ),
             (
                 "state.rhai",
-                include_str!(concat!(
+                script_of(include_str!(concat!(
                     env!("CARGO_MANIFEST_DIR"),
-                    "/../../tests/_fixtures/canonical/gsd/extensions/gsd-band/state.rhai"
-                )),
+                    "/../../tests/_fixtures/canonical/gsd/extensions/gsd-band/state.uze"
+                ))),
             ),
         ];
         for (name, text) in scripts {
@@ -910,5 +966,42 @@ fn answer(input, context) {
                 "{name} answers a map"
             );
         }
+    }
+
+    /// A component reads its tag lines as markup and each block in its own
+    /// language, so a view's node and a script's keyword are each coloured
+    /// as their file would colour them alone.
+    #[test]
+    fn a_component_colours_each_block_in_its_language() {
+        let text = "// The board.\n<view>\nStack gap=1 {\n    Text \"{title}\"\n}\n</view>\n\n<script>\nfn prev(input, context) { let offset = 1; }\n</script>\n";
+        let mut highlighter = highlighter(Path::new("board.uze"), None, FALLBACK_SYNTAX_THEME);
+        let drawn: Vec<Vec<(crate::view::Rgb, String)>> = text
+            .lines()
+            .map(|text| line(&mut highlighter, text, FALLBACK_SYNTAX_THEME))
+            .collect();
+        let colour_of = |needle: &str| {
+            drawn
+                .iter()
+                .flatten()
+                .find(|(_, piece)| piece.contains(needle))
+                .map(|(colour, _)| *colour)
+                .unwrap_or_else(|| panic!("{needle:?} was not drawn"))
+        };
+        let mut alone = highlighter_for_language("kdl", FALLBACK_SYNTAX_THEME);
+        let stack_alone = line(&mut alone, "Stack gap=1 {", FALLBACK_SYNTAX_THEME)
+            .into_iter()
+            .find(|(_, piece)| piece.contains("Stack"))
+            .unwrap()
+            .0;
+        assert_eq!(colour_of("Stack"), stack_alone, "the view is read as KDL");
+        let mut alone = highlighter_for_language("rhai", FALLBACK_SYNTAX_THEME);
+        let let_alone = line(&mut alone, "let offset = 1;", FALLBACK_SYNTAX_THEME)
+            .into_iter()
+            .find(|(_, piece)| piece.contains("let"))
+            .unwrap()
+            .0;
+        assert_eq!(colour_of("let"), let_alone, "the script is read as Rhai");
+        let foreground = plain(FALLBACK_SYNTAX_THEME, "")[0].0;
+        assert_ne!(colour_of("view"), foreground, "a tag line is markup");
     }
 }

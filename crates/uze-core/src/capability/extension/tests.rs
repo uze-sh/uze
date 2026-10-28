@@ -12,8 +12,8 @@ protocol 1
 id "gsd-band"
 name "GSD band"
 description "O milestone GSD do checkout"
-surface "board" slot="view" view="board.kdl" source="board"
-surface "summary" slot="section" view="board.kdl" source="board" title="GSD"
+surface "board" slot="view" view="board.uze" source="board"
+surface "summary" slot="section" view="board.uze" source="board" title="GSD"
 source "board" { fixture "fixtures/board.json"; }
 "#;
 
@@ -74,23 +74,28 @@ fn identity(id: &str) -> Identity {
 }
 
 /// A plugin directory holding `extensions/<id>/` with `files`.
-fn plugin(label: &str, extensions: &[(&str, &[(&str, &str)])]) -> TempDir {
+fn plugin<T: AsRef<str>>(label: &str, extensions: &[(&str, &[(&str, T)])]) -> TempDir {
     let dir = TempDir::new(label);
     for (id, files) in extensions {
         for (file, text) in *files {
             let path = dir.join(EXTENSIONS_DIR).join(id).join(file);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, text).unwrap();
+            std::fs::write(path, text.as_ref()).unwrap();
         }
     }
     dir
 }
 
-fn gsd_files<'a>(manifest: &'a str, board: &'a str) -> [(&'static str, &'a str); 3] {
+/// `view` as a component holding it alone.
+fn as_view(view: &str) -> String {
+    format!("<view>\n{view}\n</view>\n")
+}
+
+fn gsd_files(manifest: &str, board: &str) -> [(&'static str, String); 3] {
     [
-        (MANIFEST_FILE, manifest),
-        ("board.kdl", board),
-        ("fixtures/board.json", "{}"),
+        (MANIFEST_FILE, manifest.to_owned()),
+        ("board.uze", as_view(board)),
+        ("fixtures/board.json", "{}".to_owned()),
     ]
 }
 
@@ -100,9 +105,9 @@ fn compile_in(dir: &Path, id: &str) -> Result<CompiledExtension, Vec<Diagnostic>
 
 /// Compiles `source` as a view, returning it or what is wrong with it.
 fn view(source: &str) -> Result<CompiledView, Vec<Diagnostic>> {
-    let mut report = Report::new("board.kdl", source);
+    let mut report = Report::new("board.uze", source);
     let compiled = bounded::parse(&mut report)
-        .map(|document| view::compile(&document, "board.kdl", &mut report));
+        .map(|document| view::compile(&document, "board.uze", &mut report));
     match compiled {
         Some(view) if report.diagnostics().is_empty() => Ok(view),
         _ => Err(report.into_diagnostics()),
@@ -174,7 +179,7 @@ fn the_gsd_band_compiles_into_both_surfaces() {
         Slot::Section
     );
 
-    assert_eq!(board.file, "board.kdl");
+    assert_eq!(board.file, "board.uze");
     assert_eq!(board.templates.len(), 1);
     assert_eq!(board.lookups.len(), 3);
     let stack = first_node(board);
@@ -628,7 +633,7 @@ fn every_file_of_an_extension_is_reported() {
     let files: Vec<&str> = diagnostics.iter().map(|d| d.file.as_str()).collect();
     assert_eq!(
         files,
-        vec![MANIFEST_FILE, "board.kdl", "board.kdl"],
+        vec![MANIFEST_FILE, "board.uze", "board.uze"],
         "{diagnostics:#?}"
     );
     assert!(diagnostics[0].message.contains("fixtures/missing.json"));
@@ -638,8 +643,8 @@ fn every_file_of_an_extension_is_reported() {
 #[test]
 fn a_surface_naming_a_missing_view_or_one_outside_is_refused() {
     let manifest = MANIFEST.replace(
-        "view=\"board.kdl\" source=\"board\" title",
-        "view=\"other.kdl\" source=\"board\" title",
+        "view=\"board.uze\" source=\"board\" title",
+        "view=\"other.uze\" source=\"board\" title",
     );
     let dir = plugin(
         "extension-missing-view",
@@ -650,7 +655,7 @@ fn a_surface_naming_a_missing_view_or_one_outside_is_refused() {
     assert!(
         diagnostics[0]
             .message
-            .contains("`other.kdl` does not exist")
+            .contains("`other.uze` does not exist")
     );
     assert_eq!(diagnostics[0].line, 7);
 }
@@ -658,8 +663,8 @@ fn a_surface_naming_a_missing_view_or_one_outside_is_refused() {
 #[test]
 fn a_script_must_be_a_file_inside_the_extension() {
     let manifest = format!(
-        "{}action \"archive\" label=\"Archive\" on=\"board\" {{ script \"archive.rhai\"; }}\n",
-        MANIFEST.replace("fixture \"fixtures/board.json\"", "script \"board.rhai\"")
+        "{}action \"archive\" label=\"Archive\" on=\"board\" {{ script \"archive.uze\"; }}\n",
+        MANIFEST.replace("fixture \"fixtures/board.json\"", "script \"board.uze\"")
     );
     let missing = plugin(
         "extension-missing-script",
@@ -669,22 +674,27 @@ fn a_script_must_be_a_file_inside_the_extension() {
     let messages: Vec<&str> = diagnostics.iter().map(|d| d.message.as_str()).collect();
     assert_eq!(
         messages,
-        vec![
-            "the script `board.rhai` does not exist in the extension's directory",
-            "the script `archive.rhai` does not exist in the extension's directory",
-        ]
+        // `board.uze` is there, holding the view; whether it holds a
+        // script is the check's to say, which compiles it.
+        vec!["the script `archive.uze` does not exist in the extension's directory"]
     );
     let present = plugin(
         "extension-present-script",
         &[(
             "gsd-band",
             &[
-                (MANIFEST_FILE, manifest.as_str()),
-                ("board.kdl", BOARD),
-                ("board.rhai", "fn answer(input, context) { #{ data: #{} } }"),
+                (MANIFEST_FILE, manifest.clone()),
                 (
-                    "archive.rhai",
-                    "fn answer(input, context) { #{ data: #{} } }",
+                    "board.uze",
+                    format!(
+                        "{}\n<script>\nfn answer(input, context) {{ #{{ data: #{{}} }} }}\n</script>\n",
+                        as_view(BOARD)
+                    ),
+                ),
+                (
+                    "archive.uze",
+                    "<script>\nfn answer(input, context) { #{ data: #{} } }\n</script>\n"
+                        .to_owned(),
                 ),
             ],
         )],
@@ -692,7 +702,7 @@ fn a_script_must_be_a_file_inside_the_extension() {
     let compiled = compile_in(present.path(), "gsd-band").unwrap();
     assert_eq!(
         compiled.manifest.source("board").unwrap().script(),
-        Some("board.rhai")
+        Some("board.uze")
     );
 }
 
@@ -705,9 +715,9 @@ fn a_view_linked_from_outside_the_extension_is_refused() {
         "extension-linked-view",
         &[("gsd-band", &gsd_files(MANIFEST, BOARD))],
     );
-    let outside = dir.join("outside.kdl");
-    std::fs::write(&outside, BOARD).unwrap();
-    let view = dir.join(EXTENSIONS_DIR).join("gsd-band").join("board.kdl");
+    let outside = dir.join("outside.uze");
+    std::fs::write(&outside, as_view(BOARD)).unwrap();
+    let view = dir.join(EXTENSIONS_DIR).join("gsd-band").join("board.uze");
     std::fs::remove_file(&view).unwrap();
     std::os::unix::fs::symlink(&outside, &view).unwrap();
     let diagnostics = compile_in(dir.path(), "gsd-band").unwrap_err();
@@ -726,7 +736,7 @@ fn a_nesting_bomb_in_a_view_is_refused_before_parsing() {
     );
     let diagnostics = compile_in(dir.path(), "gsd-band").unwrap_err();
     assert_eq!(diagnostics.len(), 1);
-    assert_eq!(diagnostics[0].file, "board.kdl");
+    assert_eq!(diagnostics[0].file, "board.uze");
     assert!(diagnostics[0].message.contains("deeper than the 32"));
 }
 
@@ -778,7 +788,7 @@ fn a_diagnostic_reads_as_file_line_column() {
     let diagnostic = the_one("stack {\n}");
     assert_eq!(
         diagnostic.to_string(),
-        "board.kdl:1:1: `stack` is not a catalog node: catalog nodes are PascalCase (write `Stack`)"
+        "board.uze:1:1: `stack` is not a catalog node: catalog nodes are PascalCase (write `Stack`)"
     );
 }
 
@@ -900,7 +910,7 @@ fn test_files_are_found_under_tests_by_their_suffix() {
     let root = std::env::temp_dir().join(format!("uze-test-files-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(root.join("tests")).unwrap();
-    for name in ["b.test.kdl", "a.test.kdl", "notes.md", "c.kdl"] {
+    for name in ["b.test.kdl", "a.test.kdl", "notes.md", "c.uze"] {
         std::fs::write(root.join("tests").join(name), "").unwrap();
     }
     assert_eq!(
@@ -913,9 +923,9 @@ fn test_files_are_found_under_tests_by_their_suffix() {
 #[test]
 fn a_misspelled_name_is_answered_with_the_nearest_one() {
     let view = |source: &str| -> Vec<String> {
-        let mut report = Report::new("board.kdl", source);
+        let mut report = Report::new("board.uze", source);
         let document = bounded::parse(&mut report).expect("parses");
-        view::compile(&document, "board.kdl", &mut report);
+        view::compile(&document, "board.uze", &mut report);
         report
             .into_diagnostics()
             .iter()
@@ -1048,7 +1058,7 @@ fn a_loaded_extension_compiles_from_its_bytes_alone() {
     );
     let extension = dir.join(EXTENSIONS_DIR).join("gsd-band");
     let loaded = Loaded::read(&extension).expect("within the bounds");
-    std::fs::write(extension.join("board.kdl"), "Stack {").unwrap();
+    std::fs::write(extension.join("board.uze"), "Stack {").unwrap();
     std::fs::remove_file(extension.join("fixtures/board.json")).unwrap();
 
     let from_memory = compile_loaded(identity("gsd-band"), &loaded).expect("it compiles");
@@ -1056,7 +1066,7 @@ fn a_loaded_extension_compiles_from_its_bytes_alone() {
         compile_in(dir.path(), "gsd-band").is_err(),
         "the disk now holds a broken view and no fixture"
     );
-    std::fs::write(extension.join("board.kdl"), BOARD).unwrap();
+    std::fs::write(extension.join("board.uze"), as_view(BOARD)).unwrap();
     std::fs::write(extension.join("fixtures/board.json"), "{}").unwrap();
     assert_eq!(Ok(from_memory), compile_in(dir.path(), "gsd-band"));
 }
@@ -1065,7 +1075,7 @@ fn a_loaded_extension_compiles_from_its_bytes_alone() {
 fn a_loaded_extension_missing_a_file_says_so() {
     let mut files = std::collections::BTreeMap::new();
     files.insert(MANIFEST_FILE.to_owned(), MANIFEST.as_bytes().to_vec());
-    files.insert("board.kdl".to_owned(), BOARD.as_bytes().to_vec());
+    files.insert("board.uze".to_owned(), as_view(BOARD).into_bytes());
     let errors = compile_loaded(identity("gsd-band"), &Loaded::from_files(files)).unwrap_err();
     assert!(
         errors
@@ -1087,7 +1097,7 @@ fn a_packaged_script_needs_its_interpreters_grant_and_must_exist() {
         let manifest = manifest(wants);
         let mut files = gsd_files(&manifest, BOARD).to_vec();
         if !meter.is_empty() {
-            files.push(("bin/meter", meter));
+            files.push(("bin/meter", meter.to_owned()));
         }
         let dir = plugin("extension-program", &[("gsd-band", &files)]);
         compile_in(dir.path(), "gsd-band")
@@ -1195,7 +1205,7 @@ fn an_icon_glyph_written_loose_is_refused_and_named_with_icon_instead() {
 fn an_icon_names_the_hosts_or_one_the_manifest_declares() {
     let manifest = |icons: &str| {
         format!(
-            "protocol 1\nid \"board\"\nname \"Board\"\ndescription \"A board.\"\n{icons}\nsurface \"board\" slot=\"view\" view=\"board.kdl\" source=\"board\"\nsource \"board\" {{ fixture \"fixtures/board.json\"; }}\n"
+            "protocol 1\nid \"board\"\nname \"Board\"\ndescription \"A board.\"\n{icons}\nsurface \"board\" slot=\"view\" view=\"board.uze\" source=\"board\"\nsource \"board\" {{ fixture \"fixtures/board.json\"; }}\n"
         )
     };
     let board = "Row {\n    Icon \"clock\"\n    Icon \"kennel\"\n    Icon \"{state}\"\n}";

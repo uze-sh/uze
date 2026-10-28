@@ -453,7 +453,11 @@ mod tests {
             uze_platform::path::canonical(&checkout).unwrap(),
         )
         .with_fetcher(world.fetcher.clone());
-        let script = std::fs::read(extension.join("runs.rhai")).unwrap();
+        let script = uze_script::script_of(
+            "runs.uze",
+            &std::fs::read(extension.join("runs.uze")).unwrap(),
+        )
+        .unwrap();
         let grants: uze_script::Grants = [
             uze_contract::Grant::ReadCheckout,
             uze_contract::Grant::Net("api.github.com".into()),

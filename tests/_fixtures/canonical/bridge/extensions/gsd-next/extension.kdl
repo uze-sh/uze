@@ -7,7 +7,7 @@ description "The milestone's next phase, run by the agent on a press"
 
 wants "agent:prompt"
 
-surface "next" slot="band" rows=1 place="bottom" view="next.kdl" source="milestone" title="Next step"
+surface "next" slot="band" rows=1 place="bottom" view="next.uze" source="milestone" title="Next step"
 
 source "milestone" {
     fixture "fixtures/milestone.json"

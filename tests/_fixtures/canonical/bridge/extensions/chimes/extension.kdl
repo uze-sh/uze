@@ -7,10 +7,10 @@ description "A sound when a turn ends, and a notification when an agent asks"
 
 wants "agent:observe" "notify"
 
-surface "last" slot="status" view="last.kdl" source="chime" title="Chimes"
+surface "last" slot="status" view="last.uze" source="chime" title="Chimes"
 
 source "chime" {
-    script "chime.rhai"
+    script "chime.uze"
     deliver "each"
     refresh-on "agent.turn.finished"
     refresh-on "agent.approval.asked"

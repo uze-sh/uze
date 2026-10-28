@@ -3,7 +3,7 @@ name: author
 # Two lines deciding who finds this skill: the long text is what the model
 # matches an invocation against, so it names the moment the skill answers —
 # "create a plugin for me" — not what a scaffold is.
-description: Guides creating a uze plugin end to end — marketplace create or select, plugin scaffold, capability flags, check before install, install from the linked marketplace, iterate, publish by pushing — and writing what it carries, a declared extension included (its `extension.kdl`, a Rhai script, a program, a resident script, grants, tests, consent). Use when someone asks to create, author or scaffold a plugin, set up a marketplace of plugins, add an extension to a plugin, write or debug an extension's script, program, source, action or key, when `uze agent plugin check` refuses an extension, or when one draws "needs consent", "needs enabling in this project" or "`<program>` not found".
+description: Guides creating a uze plugin end to end — marketplace create or select, plugin scaffold, capability flags, check before install, install from the linked marketplace, iterate, publish by pushing — and writing what it carries, a declared extension included (its `extension.kdl`, its `.uze` components of a view and a script, a program, a resident script, grants, tests, consent). Use when someone asks to create, author or scaffold a plugin, set up a marketplace of plugins, add an extension to a plugin, write or debug an extension's script, program, source, action or key, when `uze agent plugin check` refuses an extension, or when one draws "needs consent", "needs enabling in this project" or "`<program>` not found".
 invoke:
   model: true
   user: true
@@ -104,7 +104,7 @@ each; `--mcp` adds an `mcp.json` and a working stdio server stub under
 `--rules` adds `rules/` with one example rule (see below);
 `--extension <id>` adds a declared extension under `extensions/<id>/`: an
 `extension.kdl` declaring a `view` and a sidebar `section`, the
-`board.kdl` view both draw, the `fixtures/board.json` it is bound to, and
+`board.uze` component both draw (its `<view>`, and the `<script>` the live source runs), the `fixtures/board.json` it is bound to, and
 `tests/board.test.kdl` with the snapshot its first test takes (the id is
 lowercase with single hyphens, and `code`, `architect`, `spec` and `uze`
 are taken). Writing the extension itself (its manifest, a script or a

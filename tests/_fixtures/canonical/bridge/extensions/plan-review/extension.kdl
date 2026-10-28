@@ -7,10 +7,10 @@ description "The checkout's plan, and its review asked of the agent"
 
 wants "read:checkout" "agent:prompt"
 
-surface "plan" slot="section" view="plan.kdl" source="plan" title="Plan"
+surface "plan" slot="section" view="plan.uze" source="plan" title="Plan"
 
 source "plan" {
-    script "plan.rhai"
+    script "plan.uze"
     input file="PLAN.md"
     refresh-on "paths.changed" "PLAN.md"
 }

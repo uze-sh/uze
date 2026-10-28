@@ -46,19 +46,23 @@ world:
 
       wants "read:checkout"
 
-      surface "row" slot="status" view="row.kdl" source="said" title="Release"
+      surface "row" slot="status" view="row.uze" source="said" title="Release"
 
       source "said" {
-          script "said.rhai"
+          script "said.uze"
           input file="README.md"
       }
-    market/plugins/release/extensions/release/row.kdl: |
+    market/plugins/release/extensions/release/row.uze: |
+      <view>
       Text "{said}" role="muted"
-    market/plugins/release/extensions/release/said.rhai: |
+      </view>
+    market/plugins/release/extensions/release/said.uze: |
+      <script>
       fn answer(input, context) {
           let read = lines(read_checkout(input.file));
           #{ data: #{ said: `release one read ${read.len()}` } }
       }
+      </script>
 
 scenes:
   - scene: a plugin installed from a marketplace's clone leaves its extension disabled
@@ -68,7 +72,7 @@ scenes:
       - shell: "cd {project} && {uze} install release@studio > {world}/install.log 2>&1"
         say: add the plugin to the project, with nobody at a terminal to answer
     then:
-      - file: "{uze_home}/store/plugins/studio/release/extensions/release/said.rhai"
+      - file: "{uze_home}/store/plugins/studio/release/extensions/release/said.uze"
         contains: "release one"
         about: the first release's script was installed into the Store
       - file: "{uze_home}/state/extensions.json"
@@ -122,7 +126,7 @@ scenes:
           set -e
           cd {world}/market/plugins/release/extensions/release
           sed 's/^wants "read:checkout"$/wants "read:checkout" "store"/' extension.kdl > extension.kdl.next && mv extension.kdl.next extension.kdl
-          cat > said.rhai <<'EOF'
+          cat > said.uze <<'EOF'
           fn answer(input, context) {
               let read = lines(read_checkout(input.file));
               #{
@@ -138,7 +142,7 @@ scenes:
       - shell: "cd {project} && {uze} update > {world}/update.log 2>&1"
         say: the operator updates the project's plugins
     then:
-      - file: "{uze_home}/store/plugins/studio/release/extensions/release/said.rhai"
+      - file: "{uze_home}/store/plugins/studio/release/extensions/release/said.uze"
         contains: "release two"
         about: the second release is in the Store
       - json: "{uze_home}/state/extensions.json"

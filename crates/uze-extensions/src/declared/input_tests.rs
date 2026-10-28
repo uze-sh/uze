@@ -80,7 +80,7 @@ fn inputs(actions: Vec<ActionDecl>) -> DeclaredExtension {
 }
 
 fn script(id: &str, with: &[&str]) -> ActionDecl {
-    let mut action = ActionDecl::new(id, "Comment", VIEW, Does::Script("comment.rhai".into()));
+    let mut action = ActionDecl::new(id, "Comment", VIEW, Does::Script("comment.uze".into()));
     action.with = with.iter().map(|read| (*read).to_owned()).collect();
     action
 }

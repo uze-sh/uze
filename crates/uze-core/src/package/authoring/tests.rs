@@ -541,8 +541,8 @@ fn a_scaffolded_extension_compiles() -> Result<()> {
     assert_eq!(surfaces, ["board", "summary"]);
     assert!(found[0].dir.join("fixtures/board.json").is_file());
     let live = compiled.manifest.source("live").expect("a script source");
-    assert_eq!(live.script(), Some("board.rhai"));
-    assert!(found[0].dir.join("board.rhai").is_file());
+    assert_eq!(live.script(), Some("board.uze"));
+    assert!(found[0].dir.join("board.uze").is_file());
     fs::remove_dir_all(&root).expect("teardown");
     Ok(())
 }

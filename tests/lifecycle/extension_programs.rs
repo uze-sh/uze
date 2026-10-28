@@ -20,13 +20,13 @@ id "probe"
 name "Probe"
 description "Tries one reach at a time"
 wants "exec:sh" "store"
-surface "board" slot="view" view="board.kdl" source="probe"
+surface "board" slot="view" view="board.uze" source="probe"
 source "probe" {
     run "./bin/probe" "--" "{do}" "{arg}" timeout="2s"
     output "lines"
     fields "line"
 }
-source "history" { script "history.rhai"; }
+source "history" { script "history.uze"; }
 source "kept" {
     run "./bin/probe" "--" "stdin" ""
     store
@@ -84,12 +84,16 @@ impl World {
         .unwrap();
         fs::write(extension.join("extension.kdl"), MANIFEST).unwrap();
         fs::write(
-            extension.join("board.kdl"),
-            "Stack {\n    Text \"{line}\"\n}\n",
+            extension.join("board.uze"),
+            "<view>\nStack {\n    Text \"{line}\"\n}\n</view>\n",
         )
         .unwrap();
         fs::write(extension.join("bin/probe"), PROBE).unwrap();
-        fs::write(extension.join("history.rhai"), HISTORY).unwrap();
+        fs::write(
+            extension.join("history.uze"),
+            format!("<script>\n{HISTORY}\n</script>\n"),
+        )
+        .unwrap();
         let market = env.root().join("market");
         let manifest = serde_json::json!({
             "name": MARKET,

@@ -16,9 +16,9 @@ exec "nvidia-smi" {
     reads "/dev/dxg" "/dev/nvidiactl" "/dev/nvidia0" "/dev/nvidia-uvm" "/proc/driver/nvidia"
 }
 
-surface "meter" slot="view" view="meter.kdl" source="gpu" title="GPU"
-surface "summary" slot="section" view="summary.kdl" source="gpu" title="GPU"
-surface "load" slot="status" view="status.kdl" source="gpu" title="GPU"
+surface "meter" slot="view" view="meter.uze" source="gpu" title="GPU"
+surface "summary" slot="section" view="summary.uze" source="gpu" title="GPU"
+surface "load" slot="status" view="status.uze" source="gpu" title="GPU"
 
 // At what load its meters turn to a warning, which the operator sets on
 // the Extensions screen.
@@ -27,7 +27,7 @@ preferences {
 }
 
 source "gpu" {
-    script "gpu.rhai"
+    script "gpu.uze"
     every "10s"
     preferences
 }

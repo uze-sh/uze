@@ -7,8 +7,8 @@ description "Every agent's state and how long its turn has run"
 
 wants "agent:observe"
 
-surface "row" slot="status" view="row.kdl" source="crew" title="Agents"
-surface "crew" slot="section" view="crew.kdl" source="crew" title="Agents"
+surface "row" slot="status" view="row.uze" source="crew" title="Agents"
+surface "crew" slot="section" view="crew.uze" source="crew" title="Agents"
 
 // Answered by the workspace each pass; a turn's start and end ask again
 // at once.

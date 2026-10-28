@@ -131,7 +131,7 @@ pub(super) fn compiled_view(
     lookups: Vec<Lookup>,
 ) -> CompiledView {
     CompiledView {
-        file: "board.kdl".to_owned(),
+        file: "board.uze".to_owned(),
         items,
         templates: templates
             .into_iter()
@@ -148,7 +148,7 @@ pub(super) fn extension(view: CompiledView) -> CompiledExtension {
         bar: None,
         id: id.to_owned(),
         slot,
-        view: "board.kdl".to_owned(),
+        view: "board.uze".to_owned(),
         source: SOURCE.to_owned(),
         title: Some("GSD".to_owned()),
         applies_when: None,
@@ -177,7 +177,7 @@ pub(super) fn extension(view: CompiledView) -> CompiledExtension {
             icons: Vec::new(),
             mcp: Vec::new(),
         },
-        views: BTreeMap::from([("board.kdl".to_owned(), view)]),
+        views: BTreeMap::from([("board.uze".to_owned(), view)]),
     }
 }
 

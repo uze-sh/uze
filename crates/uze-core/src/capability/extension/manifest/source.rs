@@ -3,7 +3,7 @@
 //!
 //! ```kdl
 //! source "board" {
-//!     script "board.rhai"
+//!     script "board.uze"
 //!     input phase="{phase}"
 //!     every "10s"
 //!     refresh-on "paths.changed" ".planning"
@@ -246,13 +246,13 @@ fn answer(child: &KdlNode, report: &mut Report<'_>) -> Option<SourceKind> {
     let at = child.offset();
     match child.name().value() {
         "script" => text(child, report)
-            .filter(|file| relative_file(file, "rhai", at, report))
+            .filter(|file| relative_file(file, uze_contract::component::SUFFIX, at, report))
             .map(SourceKind::Script),
         "fixture" => text(child, report)
             .filter(|file| relative_file(file, "json", at, report))
             .map(SourceKind::Fixture),
         "resident" => text(child, report)
-            .filter(|file| relative_file(file, "rhai", at, report))
+            .filter(|file| relative_file(file, uze_contract::component::SUFFIX, at, report))
             .map(SourceKind::Resident),
         "agents" => {
             let parts = entries(child, report);

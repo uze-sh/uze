@@ -9,8 +9,8 @@ description "A device's screen, taken every half minute"
 
 wants "exec:sh"
 
-surface "shot" slot="section" view="shot.kdl" source="screen" title="Screen"
-surface "full" slot="overlay" view="full.kdl" source="screen" title="Screen"
+surface "shot" slot="section" view="shot.uze" source="screen" title="Screen"
+surface "full" slot="overlay" view="full.uze" source="screen" title="Screen"
 
 source "screen" {
     run "./bin/shot" timeout="5s"

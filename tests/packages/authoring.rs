@@ -684,9 +684,9 @@ fn a_scaffolded_extension_passes_its_own_check() {
     let extension = at.join("plugins/greet/extensions/board");
     for file in [
         "extension.kdl",
-        "board.kdl",
+        "board.uze",
         "fixtures/board.json",
-        "board.rhai",
+        "board.uze",
         "tests/board.test.kdl",
         "tests/snapshots/board.view.100x30.dark.snap",
     ] {
@@ -749,7 +749,7 @@ fn the_check_runs_a_script_against_a_checkout_with_run() {
 
     let (passed, output) = run(&checkout);
     assert!(passed, "{output}");
-    assert!(output.contains("board.rhai answered `live`"), "{output}");
+    assert!(output.contains("board.uze answered `live`"), "{output}");
     assert!(output.contains("3 tests passed"), "{output}");
 
     let (passed, output) = run(&root);
@@ -974,7 +974,7 @@ fn check_places_an_extensions_errors_and_what_its_fixture_lacks() {
     // What a warning does to the check alone, without the scaffold's tests,
     // which expect the field this renames.
     fs::remove_dir_all(plugin.join("extensions/board/tests")).unwrap();
-    let view = plugin.join("extensions/board/board.kdl");
+    let view = plugin.join("extensions/board/board.uze");
     let written = fs::read_to_string(&view).unwrap();
     fs::write(
         &view,
@@ -986,7 +986,7 @@ fn check_places_an_extensions_errors_and_what_its_fixture_lacks() {
     assert!(passed, "a warning does not fail the check: {output}");
     assert!(output.contains("extension board"), "{output}");
     assert!(
-        output.contains("board.kdl:24:9: `label` is not in the fixture fixtures/board.json"),
+        output.contains("board.uze:25:9: `label` is not in the fixture fixtures/board.json"),
         "{output}"
     );
 
@@ -998,7 +998,7 @@ fn check_places_an_extensions_errors_and_what_its_fixture_lacks() {
     let (passed, output) = check(&root, &plugin);
     assert!(!passed, "{output}");
     assert!(
-        output.contains("board.kdl:18:") && output.contains("no property `colour`"),
+        output.contains("board.uze:19:") && output.contains("no property `colour`"),
         "{output}"
     );
     assert!(output.contains("check failed (1 problem)"), "{output}");

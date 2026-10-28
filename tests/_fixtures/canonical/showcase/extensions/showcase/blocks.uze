@@ -1,0 +1,7 @@
+<view>
+Stack gap=1 {
+    Markdown "{plan}"
+    Rule "The change"
+    Code "{snippet}" language="rust"
+}
+</view>

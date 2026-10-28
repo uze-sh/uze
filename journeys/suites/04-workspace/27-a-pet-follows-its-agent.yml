@@ -57,8 +57,8 @@ world:
           state "hungry" frames="0-1" fps=1
       }
 
-      surface "pack" slot="band" rows=2 place="bottom" view="pack.kdl" source="crew" title="Pets"
-      surface "kennel" slot="section" view="kennel.kdl" source="kennel" title="Pet"
+      surface "pack" slot="band" rows=2 place="bottom" view="pack.uze" source="crew" title="Pets"
+      surface "kennel" slot="section" view="kennel.uze" source="kennel" title="Pet"
 
       source "crew" {
           agents
@@ -67,13 +67,14 @@ world:
       }
 
       source "kennel" {
-          script "kennel.rhai"
+          script "kennel.uze"
       }
 
       action "feed" label="Feed" on="kennel" {
-          script "feed.rhai"
+          script "feed.uze"
       }
-    market/plugins/media/extensions/pets/pack.kdl: |
+    market/plugins/media/extensions/pets/pack.uze: |
+      <view>
       Row gap=2 {
           Row gap=1 each="." {
               Sprite "pet" state="{state}" height=2
@@ -84,7 +85,9 @@ world:
           }
           Text "No agents" role="faint" unless="."
       }
-    market/plugins/media/extensions/pets/kennel.kdl: |
+      </view>
+    market/plugins/media/extensions/pets/kennel.uze: |
+      <view>
       Row gap=1 {
           Sprite "pet" state="{mood}" height=2
           Stack grow=#true {
@@ -93,7 +96,9 @@ world:
           }
           Button "Feed" action="feed"
       }
-    market/plugins/media/extensions/pets/kennel.rhai: |
+      </view>
+
+      <script>
       fn answer(input, context) {
           let content_for = 600000;
           let kept = store();
@@ -110,7 +115,9 @@ world:
               store: #{ name: name },
           }
       }
-    market/plugins/media/extensions/pets/feed.rhai: |
+      </script>
+    market/plugins/media/extensions/pets/feed.uze: |
+      <script>
       fn answer(input, context) {
           let kept = store();
           #{
@@ -119,6 +126,7 @@ world:
               refresh: ["kennel"],
           }
       }
+      </script>
 
 scenes:
   - scene: a plugin installed from a marketplace's clone leaves its pets disabled

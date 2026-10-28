@@ -214,8 +214,49 @@ fn a_compile_error_says_where() {
 }
 
 #[test]
-fn a_script_without_answer_does_not_compile() {
-    assert!(Script::compile(b"fn other(a) { a }").is_err());
+fn what_a_script_must_define_is_its_roles_to_ask() {
+    let script = Script::compile(b"fn prev(input, context) { #{ data: 1 } }").unwrap();
+    assert!(script.defines("prev", 2) && !script.defines("answer", 2));
+    let asked = script.answer(
+        &json!({}),
+        &json!({}),
+        &Grants::new(),
+        Arc::new(FakeCheckout {
+            read_delay: Duration::ZERO,
+        }),
+    );
+    let refused = asked.outcome.unwrap_err().to_string();
+    assert!(
+        refused.contains("defines no `fn answer(input, context)`"),
+        "{refused}"
+    );
+    let called = script.call(
+        "prev",
+        &json!({}),
+        &json!({}),
+        &Grants::new(),
+        Arc::new(FakeCheckout {
+            read_delay: Duration::ZERO,
+        }),
+    );
+    assert_eq!(called.outcome.unwrap().data, json!(1));
+}
+
+#[test]
+fn a_components_script_is_read_where_it_stands() {
+    let component = "<view>\nText \"a\"\n</view>\n\n<script>\nfn answer(input, context) {\n    oops(\n}\n</script>\n";
+    let script = uze_script::script_of("board.uze", component.as_bytes()).unwrap();
+    assert_eq!(script.len(), component.len());
+    let Err(ScriptError::Compile { at: Some(at), .. }) = Script::compile(&script) else {
+        panic!("a broken call does not compile");
+    };
+    assert_eq!(at.line, 8, "the line is the component's");
+    let no_script =
+        uze_script::script_of("board.uze", b"<view>\nText \"a\"\n</view>\n").unwrap_err();
+    assert!(
+        no_script.to_string().contains("holds no `<script>`"),
+        "{no_script}"
+    );
 }
 
 #[test]

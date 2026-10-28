@@ -49,7 +49,7 @@ fn compiled() -> CompiledExtension {
                 bar: None,
                 id: "phase".to_owned(),
                 slot: uze_contract::Slot::Status,
-                view: "phase.kdl".to_owned(),
+                view: "phase.uze".to_owned(),
                 source: "phase".to_owned(),
                 title: None,
                 applies_when: None,
@@ -65,9 +65,9 @@ fn compiled() -> CompiledExtension {
         },
         // Drawn until the source composes its own: nothing, here.
         views: BTreeMap::from([(
-            "phase.kdl".to_owned(),
+            "phase.uze".to_owned(),
             uze_contract::CompiledView {
-                file: "phase.kdl".to_owned(),
+                file: "phase.uze".to_owned(),
                 items: Vec::new(),
                 templates: BTreeMap::new(),
                 lookups: Vec::new(),

@@ -48,20 +48,23 @@ world:
 
       wants "agent:observe" "notify"
 
-      surface "last" slot="status" view="last.kdl" source="chime" title="Chimes"
+      surface "last" slot="status" view="last.uze" source="chime" title="Chimes"
 
       source "chime" {
-          script "chime.rhai"
+          script "chime.uze"
           deliver "each"
           refresh-on "agent.turn.finished"
           refresh-on "agent.approval.asked"
       }
-    market/plugins/bridge/extensions/chimes/last.kdl: |
+    market/plugins/bridge/extensions/chimes/last.uze: |
+      <view>
       Row gap=1 {
           Text "{said}" role="muted" when="said"
           Text "Quiet" role="faint" unless="said"
       }
-    market/plugins/bridge/extensions/chimes/chime.rhai: |
+      </view>
+    market/plugins/bridge/extensions/chimes/chime.uze: |
+      <script>
       fn answer(input, context) {
           if !("event" in input) {
               return #{ data: #{} };
@@ -80,6 +83,7 @@ world:
               }
           }
       }
+      </script>
     # Counts the bells the app wrote to its terminal that stand on their
     # own: an OSC sequence (a title, a clipboard write) may end with the
     # same byte, and that one is no bell.
@@ -107,7 +111,7 @@ scenes:
       - shell: "cd {project} && {uze} install bridge@studio > {world}/install.log 2>&1"
         say: add the plugin to the project, with nobody at a terminal to answer
     then:
-      - file: "{uze_home}/store/plugins/studio/bridge/extensions/chimes/chime.rhai"
+      - file: "{uze_home}/store/plugins/studio/bridge/extensions/chimes/chime.uze"
         contains: "turn finished"
         about: the extension's script was installed from the clone, into the Store
       - file: "{uze_home}/state/extensions.json"

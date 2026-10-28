@@ -19,8 +19,8 @@ sprite "pet" sheet="pet.png" frame="16x16" columns=4 fallback="ready" {
     state "hungry" frames="0-1" fps=1
 }
 
-surface "pack" slot="band" rows=2 place="bottom" view="pack.kdl" source="crew" title="Pets"
-surface "kennel" slot="section" view="kennel.kdl" source="kennel" title="Pet"
+surface "pack" slot="band" rows=2 place="bottom" view="pack.uze" source="crew" title="Pets"
+surface "kennel" slot="section" view="kennel.uze" source="kennel" title="Pet"
 
 source "crew" {
     agents
@@ -29,9 +29,9 @@ source "crew" {
 }
 
 source "kennel" {
-    script "kennel.rhai"
+    script "kennel.uze"
 }
 
 action "feed" label="Feed" on="kennel" {
-    script "feed.rhai"
+    script "feed.uze"
 }

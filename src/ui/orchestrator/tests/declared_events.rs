@@ -26,7 +26,7 @@ fn identity() -> ExtensionIdentity {
 /// A section showing a source that `every` and `refresh_on` ask again.
 fn compiled(every: Option<Duration>, refresh_on: Vec<EventName>) -> CompiledExtension {
     let view = uze_contract::CompiledView {
-        file: "band.kdl".to_owned(),
+        file: "band.uze".to_owned(),
         items: Vec::new(),
         templates: BTreeMap::new(),
         lookups: Vec::new(),
@@ -49,7 +49,7 @@ fn compiled(every: Option<Duration>, refresh_on: Vec<EventName>) -> CompiledExte
                 bar: None,
                 id: "band".to_owned(),
                 slot: uze_contract::Slot::Section,
-                view: "band.kdl".to_owned(),
+                view: "band.uze".to_owned(),
                 source: "board".to_owned(),
                 title: None,
                 applies_when: None,
@@ -63,7 +63,7 @@ fn compiled(every: Option<Duration>, refresh_on: Vec<EventName>) -> CompiledExte
             icons: Vec::new(),
             mcp: Vec::new(),
         },
-        views: BTreeMap::from([("band.kdl".to_owned(), view)]),
+        views: BTreeMap::from([("band.uze".to_owned(), view)]),
     }
 }
 

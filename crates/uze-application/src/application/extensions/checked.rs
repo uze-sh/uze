@@ -276,9 +276,10 @@ fn check_one(
                     checked.texts.insert(view.clone(), text);
                 }
             }
+            checked.errors.extend(scripts_hold_up(&compiled, &text_of));
             checked
-                .errors
-                .extend(scripts_call_only_what_is_granted(&compiled, &text_of));
+                .warnings
+                .extend(scripts_nothing_reaches(&compiled, &text_of));
             checked
                 .errors
                 .extend(no_harness_is_granted(&compiled, harnesses));
@@ -328,46 +329,125 @@ fn no_harness_is_granted(compiled: &CompiledExtension, harnesses: &[&str]) -> Ve
         .collect()
 }
 
-/// Each host function a script of `compiled` names that the manifest's
-/// grants do not register, located at its first call: the engine would
-/// refuse it at the first run, and the author should hear it from the
-/// check instead.
-fn scripts_call_only_what_is_granted(
-    compiled: &CompiledExtension,
-    text_of: &dyn Fn(&str) -> Option<String>,
-) -> Vec<Diagnostic> {
+/// What a script is asked to be: what it must define follows from it
+/// (`extension-components` D5).
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Role {
+    /// A source's or a `script` action's: `answer(input, context)`.
+    Answers,
+    /// A `call`'s: the named function.
+    Called(String),
+    /// A resident source's: its entry points.
+    Resident,
+}
+
+/// Every script `compiled` reaches, each with what it is asked to be: the
+/// sources', the actions' and the calls', and the residents'.
+fn reached_scripts(compiled: &CompiledExtension) -> Vec<(String, Role)> {
     let manifest = &compiled.manifest;
-    let grants: uze_script::Grants = manifest.wants.iter().cloned().collect();
-    let mut scripts: Vec<&str> = manifest
+    let mut reached: Vec<(String, Role)> = manifest
         .sources
         .iter()
         .filter_map(|source| match &source.kind {
-            uze_contract::SourceKind::Script(file) => Some(file.as_str()),
+            uze_contract::SourceKind::Script(file) => Some((file.clone(), Role::Answers)),
+            uze_contract::SourceKind::Resident(file) => Some((file.clone(), Role::Resident)),
             _ => None,
         })
-        .chain(
-            manifest
-                .actions
-                .iter()
-                .filter_map(|action| match &action.does {
-                    uze_contract::Does::Script(file) => Some(file.as_str()),
-                    _ => None,
-                }),
-        )
+        .chain(manifest.actions.iter().filter_map(|action| {
+            let (file, function) = manifest.script_of(action)?;
+            Some(match &action.does {
+                uze_contract::Does::Call { .. } => {
+                    (file.to_owned(), Role::Called(function.to_owned()))
+                }
+                _ => (file.to_owned(), Role::Answers),
+            })
+        }))
         .collect();
-    scripts.sort_unstable();
-    scripts.dedup();
+    reached.sort();
+    reached.dedup();
+    reached
+}
+
+/// Each script `compiled` reaches, compiled now: a syntax error, a function
+/// its role needs and it lacks, and each host function it names that the
+/// manifest's grants do not register, located where it is written. The
+/// engine would refuse each at the first run; the author should hear it
+/// from the check instead. Only a component's `<script>` is read, so a
+/// view's words are never taken for a call (`extension-components` D8).
+fn scripts_hold_up(
+    compiled: &CompiledExtension,
+    text_of: &dyn Fn(&str) -> Option<String>,
+) -> Vec<Diagnostic> {
+    let grants: uze_script::Grants = compiled.manifest.wants.iter().cloned().collect();
+    let reached = reached_scripts(compiled);
     let mut diagnostics = Vec::new();
-    for file in scripts {
+    let mut scanned = std::collections::BTreeSet::new();
+    for (file, role) in &reached {
         let Some(text) = text_of(file) else {
             continue;
         };
-        for (function, grant) in uze_script::ungranted_calls(&text, &grants) {
-            let offset = text
+        let at = |error: &uze_script::ScriptError| {
+            let (message, location) = match error {
+                uze_script::ScriptError::Compile { message, at } => (message.clone(), *at),
+                other => (other.to_string(), None),
+            };
+            Diagnostic {
+                file: file.clone(),
+                line: location.map_or(1, |at| at.line),
+                column: location.map_or(1, |at| at.column),
+                message,
+                suggestion: None,
+            }
+        };
+        let script = match uze_script::script_of(file, text.as_bytes()) {
+            Ok(bytes) => String::from_utf8(bytes).unwrap_or_default(),
+            Err(error) => {
+                diagnostics.push(at(&error));
+                continue;
+            }
+        };
+        let defines = match role {
+            Role::Resident => uze_script::ResidentScript::compile(script.as_bytes())
+                .map(|_| None)
+                .map_err(|error| at(&error)),
+            Role::Answers | Role::Called(_) => uze_script::Script::compile(script.as_bytes())
+                .map(|compiled| {
+                    let function = match role {
+                        Role::Called(function) => function.as_str(),
+                        _ => "answer",
+                    };
+                    (!compiled.defines(function, 2)).then(|| function.to_owned())
+                })
+                .map_err(|error| at(&error)),
+        };
+        match defines {
+            Err(diagnostic) => {
+                diagnostics.push(diagnostic);
+                continue;
+            }
+            Ok(Some(function)) => diagnostics.push(Diagnostic {
+                file: file.clone(),
+                line: 1,
+                column: 1,
+                message: format!("its script defines no `fn {function}(input, context)`"),
+                suggestion: Some(match role {
+                    Role::Called(_) => "define it, or call a function the script has".to_owned(),
+                    _ => {
+                        "a source's or a `script` action's script answers with `answer`".to_owned()
+                    }
+                }),
+            }),
+            Ok(None) => {}
+        }
+        if !scanned.insert(file.clone()) {
+            continue;
+        }
+        for (function, grant) in uze_script::ungranted_calls(&script, &grants) {
+            let offset = script
                 .find(&format!("{function}("))
-                .or_else(|| text.find(&function))
+                .or_else(|| script.find(&function))
                 .unwrap_or(0);
-            let (line, column) = line_and_column(&text, offset);
+            let (line, column) = line_and_column(&script, offset);
             // `fetch` is granted by a host of the author's choosing.
             let wanted = if grant == uze_script::ANY_HOST {
                 "net:<host>".to_owned()
@@ -375,7 +455,7 @@ fn scripts_call_only_what_is_granted(
                 grant.name().into_owned()
             };
             diagnostics.push(Diagnostic {
-                file: file.to_owned(),
+                file: file.clone(),
                 line,
                 column,
                 message: format!(
@@ -389,6 +469,45 @@ fn scripts_call_only_what_is_granted(
         }
     }
     diagnostics
+}
+
+/// Each component a surface draws whose `<script>` no source, action or
+/// call reaches: its author most likely believes it feeds the view.
+fn scripts_nothing_reaches(
+    compiled: &CompiledExtension,
+    text_of: &dyn Fn(&str) -> Option<String>,
+) -> Vec<Diagnostic> {
+    use uze_contract::component::{BlockKind, Component, is_component};
+    let reached: std::collections::BTreeSet<String> = reached_scripts(compiled)
+        .into_iter()
+        .map(|(file, _)| file)
+        .collect();
+    let mut drawn: Vec<&str> = compiled
+        .manifest
+        .surfaces
+        .iter()
+        .map(|surface| surface.view.as_str())
+        .collect();
+    drawn.sort_unstable();
+    drawn.dedup();
+    drawn
+        .into_iter()
+        .filter(|file| is_component(file) && !reached.contains(*file))
+        .filter_map(|file| {
+            let text = text_of(file)?;
+            let script = Component::read(&text).ok()?.block(BlockKind::Script)?;
+            let (line, column) = line_and_column(&text, script.tag);
+            Some(Diagnostic {
+                file: file.to_owned(),
+                line,
+                column,
+                message: "its `<script>` is run by no source, action or call".to_owned(),
+                suggestion: Some(format!(
+                    "name `{file}` in a source's `script`, or `call` one of its functions"
+                )),
+            })
+        })
+        .collect()
 }
 
 fn line_and_column(text: &str, offset: usize) -> (usize, usize) {
@@ -440,7 +559,7 @@ mod tests {
 id "board"
 name "Board"
 description "A board"
-surface "board" slot="view" view="board.kdl" source="board"
+surface "board" slot="view" view="board.uze" source="board"
 source "board" { fixture "fixtures/board.json"; }
 "#;
 
@@ -450,8 +569,8 @@ source "board" { fixture "fixtures/board.json"; }
         fs::create_dir_all(extension.join("fixtures")).unwrap();
         fs::write(extension.join("extension.kdl"), manifest).unwrap();
         fs::write(
-            extension.join("board.kdl"),
-            "Stack {\n    Text \"{title}\"\n}\n",
+            extension.join("board.uze"),
+            "<view>\nStack {\n    Text \"{title}\"\n}\n</view>\n",
         )
         .unwrap();
         fs::write(extension.join("fixtures/board.json"), fixture).unwrap();
@@ -473,7 +592,7 @@ source "board" { fixture "fixtures/board.json"; }
             board.fixtures["board"],
             serde_json::json!({"title": "Week"})
         );
-        assert_eq!(board.place("board.kdl", 12), Some((2, 5)), "the `Text`");
+        assert_eq!(board.place("board.uze", 19), Some((3, 5)), "the `Text`");
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -513,7 +632,10 @@ source "board" { fixture "fixtures/board.json"; }
         let app = UzeApplication::new(UzeHome::at(root.join("home")), Vec::new());
         let dir = plugin.join("extensions/board");
         let overlay = super::Overlay::from([
-            ("board.kdl".to_owned(), "Tabel {\n}\n".to_owned()),
+            (
+                "board.uze".to_owned(),
+                "<view>\nTabel {\n}\n</view>\n".to_owned(),
+            ),
             (
                 "tests/board.test.kdl".to_owned(),
                 "test \"a\" {\n    surface \"board\"\n    expect-text \"Week\"\n}\n".to_owned(),
@@ -524,7 +646,7 @@ source "board" { fixture "fixtures/board.json"; }
             checked
                 .errors
                 .iter()
-                .any(|error| error.file == "board.kdl" && error.message.contains("Tabel")),
+                .any(|error| error.file == "board.uze" && error.message.contains("Tabel")),
             "{:?}",
             checked.errors
         );
@@ -542,17 +664,91 @@ source "board" { fixture "fixtures/board.json"; }
     }
 
     #[test]
+    fn every_reached_script_is_compiled_and_one_nothing_runs_is_warned_of() {
+        let root = uze_testkit::temp::scratch("extensions-check-scripts");
+        let manifest = format!(
+            "{MANIFEST}\naction \"poke\" label=\"Poke\" on=\"board\" {{ call \"poke\"; }}\n"
+        );
+        let plugin = plugin_with(&root, &manifest, r#"{"title": "Week"}"#);
+        let component = plugin.join("extensions/board/board.uze");
+        let app = UzeApplication::new(UzeHome::at(root.join("home")), Vec::new());
+
+        // The surface's component has no script: the call has nothing to run.
+        let errors: Vec<String> = app.extensions().check(&plugin)[0]
+            .errors
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("holds no `<script>`")),
+            "{errors:?}"
+        );
+
+        // A script without the function, and a syntax error, each said.
+        fs::write(
+            &component,
+            "<view>\nText \"{title}\"\n</view>\n<script>\nfn other(input, context) { #{ data: () } }\n</script>\n",
+        )
+        .unwrap();
+        let errors: Vec<String> = app.extensions().check(&plugin)[0]
+            .errors
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("defines no `fn poke(input, context)`")),
+            "{errors:?}"
+        );
+        fs::write(
+            &component,
+            "<view>\nText \"{title}\"\n</view>\n<script>\nfn poke(input, context) { #{ data: ( }\n</script>\n",
+        )
+        .unwrap();
+        let errors: Vec<String> = app.extensions().check(&plugin)[0]
+            .errors
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert!(
+            errors.iter().any(|error| error.starts_with("board.uze:5:")),
+            "{errors:?}"
+        );
+
+        // A script nobody runs: no call, no source names it.
+        fs::write(component.with_file_name("extension.kdl"), MANIFEST).unwrap();
+        fs::write(
+            &component,
+            "<view>\nText \"{title}\"\n</view>\n<script>\nfn answer(input, context) { #{ data: () } }\n</script>\n",
+        )
+        .unwrap();
+        let checked = &app.extensions().check(&plugin)[0];
+        assert!(checked.is_clean(), "{:?}", checked.errors);
+        assert!(
+            checked
+                .warnings
+                .iter()
+                .any(|warning| warning.message.contains("run by no source, action or call")),
+            "{:?}",
+            checked.warnings
+        );
+    }
+
+    #[test]
     fn a_script_calling_a_function_its_grants_do_not_register_is_refused() {
         let root = uze_testkit::temp::scratch("extensions-check-ungranted");
         let manifest = MANIFEST.replace(
             "source \"board\" { fixture \"fixtures/board.json\"; }",
-            "source \"board\" { script \"board.rhai\"; }",
+            "source \"board\" { script \"board.uze\"; }",
         );
         let plugin = plugin_with(&root, &manifest, "{}");
-        let script = plugin.join("extensions/board/board.rhai");
+        let script = plugin.join("extensions/board/board.uze");
         fs::write(
             &script,
-            "// counts the plan\nfn answer(input, context) {\n    let text = read_checkout(\"PLAN.md\");\n    #{ data: #{ size: text.len() } }\n}\n",
+            "<view>\nStack {\n    Text \"{title}\"\n}\n</view>\n\n<script>\n// counts the plan\nfn answer(input, context) {\n    let text = read_checkout(\"PLAN.md\");\n    #{ data: #{ size: text.len() } }\n}\n</script>\n",
         )
         .unwrap();
         let app = UzeApplication::new(UzeHome::at(root.join("home")), Vec::new());
@@ -560,7 +756,7 @@ source "board" { fixture "fixtures/board.json"; }
         let checked = app.extensions().check(&plugin);
         let errors: Vec<String> = checked[0].errors.iter().map(ToString::to_string).collect();
         assert_eq!(errors.len(), 1, "{errors:?}");
-        assert!(errors[0].starts_with("board.rhai:3:16:"), "{errors:?}");
+        assert!(errors[0].starts_with("board.uze:10:16:"), "{errors:?}");
         assert!(
             errors[0].contains("`read_checkout` needs the `read:checkout` grant"),
             "{errors:?}"
@@ -629,11 +825,7 @@ source "board" { fixture "fixtures/board.json"; }
                 .unwrap(),
             events
         );
-        for refused in [
-            "state.rhai",
-            "fixtures/../escape.json",
-            "fixtures/notes.txt",
-        ] {
+        for refused in ["state.uze", "fixtures/../escape.json", "fixtures/notes.txt"] {
             assert!(
                 extensions
                     .record_fixture(&world.band(), refused, &events)

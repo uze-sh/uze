@@ -1,0 +1,27 @@
+<view>
+// Each agent on a line: what it works on, where, and how it stands.
+lookup "tone" default="muted" {
+    working "warning"
+    done "success"
+    ready "info"
+}
+lookup "state" default="" {
+    working "working"
+    done "done"
+    ready "ready"
+}
+
+List each="." empty="No agents" {
+    Stack {
+        Row gap=1 {
+            Activity busy="{since}"
+            Text "{label}" truncate=#true grow=#true
+            Elapsed since="{since}" role="muted" when="since"
+        }
+        Row gap=1 {
+            Text "{space}" role="muted" truncate=#true grow=#true
+            Text "{state:state}" role="{tone:state}"
+        }
+    }
+}
+</view>

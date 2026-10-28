@@ -36,13 +36,14 @@ world:
       name "GSD"
       description "The checkout's GSD milestone: every phase, where it stands, and what to run next"
 
-      surface "board" slot="view" view="board.kdl" source="milestone" title="Milestone"
-      surface "summary" slot="section" view="summary.kdl" source="milestone" title="GSD"
+      surface "board" slot="view" view="board.uze" source="milestone" title="Milestone"
+      surface "summary" slot="section" view="summary.uze" source="milestone" title="GSD"
 
       source "milestone" {
           fixture "fixtures/milestone.json"
       }
-    market/plugins/gsd/extensions/gsd-band/board.kdl: |
+    market/plugins/gsd/extensions/gsd-band/board.uze: |
+      <view>
       // The colour a phase's state is drawn in.
       lookup "tone" default="muted" {
           done "success"
@@ -138,7 +139,9 @@ world:
               Text "{t::quiet}" role="faint" unless="activity"
           }
       }
-    market/plugins/gsd/extensions/gsd-band/summary.kdl: |
+      </view>
+    market/plugins/gsd/extensions/gsd-band/summary.uze: |
+      <view>
       // The milestone at a glance, for the sidebar's narrow column.
       lookup "tone" default="muted" {
           done "success"
@@ -161,6 +164,7 @@ world:
               Text "{current.done}/{current.total}" role="muted"
           }
       }
+      </view>
     market/plugins/gsd/extensions/gsd-band/fixtures/milestone.json: |
       {
         "milestone": "v1.23",
@@ -299,7 +303,7 @@ scenes:
         at: marketplaces.studio.link
         equals: "{world}/market"
         about: the marketplace follows the author's working tree
-      - file: "{uze_home}/store/plugins/studio/gsd/extensions/gsd-band/board.kdl"
+      - file: "{uze_home}/store/plugins/studio/gsd/extensions/gsd-band/board.uze"
         contains: 'Text "{percent}%"'
         about: the extension's view was installed with the plugin
       - dir: "{uze_home}/runtime/extensions"
@@ -362,7 +366,7 @@ scenes:
   - scene: and then a save to the view in the working tree is what the board draws next
     when:
       - shell: |
-          {python} -c "import pathlib; p = pathlib.Path(r'{world}/market/plugins/gsd/extensions/gsd-band/board.kdl'); p.write_text(p.read_text(encoding='utf-8').replace('Text \"{percent}%\"', 'Text \"{percent}% done\"'), encoding='utf-8')"
+          {python} -c "import pathlib; p = pathlib.Path(r'{world}/market/plugins/gsd/extensions/gsd-band/board.uze'); p.write_text(p.read_text(encoding='utf-8').replace('Text \"{percent}%\"', 'Text \"{percent}% done\"'), encoding='utf-8')"
         say: the author saves a change to the board's view
       - wait: screen
         until: "65% done"
@@ -378,6 +382,6 @@ scenes:
       - file: "{uze_home}/runtime/extensions/????????????????.json"
         count: 2
         about: the save was compiled anew, beside the compile of the files it replaced
-      - file: "{uze_home}/store/plugins/studio/gsd/extensions/gsd-band/board.kdl"
+      - file: "{uze_home}/store/plugins/studio/gsd/extensions/gsd-band/board.uze"
         excludes: "% done"
         about: read from the working tree — the Store's copy was never reinstalled

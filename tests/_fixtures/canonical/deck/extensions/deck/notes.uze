@@ -1,0 +1,12 @@
+<script>
+// The `notes` source: every open item of the notes file.
+fn answer(input, context) {
+    let open = [];
+    for line in lines(read_checkout(input.file)) {
+        if line.starts_with("- [ ] ") {
+            open.push(#{ text: line.sub_string(6) });
+        }
+    }
+    #{ data: #{ items: open } }
+}
+</script>

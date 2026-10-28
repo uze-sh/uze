@@ -1,8 +1,0 @@
-// Every agent: what it works on, and the space it is in.
-List id="agents" each="." empty="No agents" {
-    Row gap=2 {
-        Text "{label}" truncate=#true grow=#true
-        Text "{space}" role="muted"
-        Button "Go" action="go" item="{.}"
-    }
-}

@@ -256,19 +256,19 @@ mod tests {
     /// moved across the boundary between a name and its contents does.
     #[test]
     fn files_in_memory_digest_by_their_paths_and_bytes() {
-        let digest = files_sha256([("b.kdl", &b"two"[..]), ("a.kdl", &b"one"[..])]);
+        let digest = files_sha256([("b.uze", &b"two"[..]), ("a.uze", &b"one"[..])]);
         assert_eq!(
             digest,
-            files_sha256([("a.kdl", &b"one"[..]), ("b.kdl", &b"two"[..])])
+            files_sha256([("a.uze", &b"one"[..]), ("b.uze", &b"two"[..])])
         );
         assert!(digest.starts_with("sha256:"));
         assert_ne!(
             digest,
-            files_sha256([("a.kdl", &b"one"[..]), ("b.kdl", &b"twO"[..])])
+            files_sha256([("a.uze", &b"one"[..]), ("b.uze", &b"twO"[..])])
         );
         assert_ne!(
             digest,
-            files_sha256([("a.kdl", &b"one"[..]), ("c.kdl", &b"two"[..])])
+            files_sha256([("a.uze", &b"one"[..]), ("c.uze", &b"two"[..])])
         );
         assert_ne!(
             files_sha256([("ab", &b"c"[..])]),

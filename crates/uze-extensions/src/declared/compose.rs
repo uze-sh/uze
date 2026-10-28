@@ -252,7 +252,7 @@ mod tests {
     }
 
     fn refused(tree: Value) -> String {
-        compose(&tree, &manifest(), "board.kdl").expect_err("refused")
+        compose(&tree, &manifest(), "board.uze").expect_err("refused")
     }
 
     #[test]
@@ -265,7 +265,7 @@ mod tests {
             ]},
             {"type": "Button", "args": ["Archive"], "props": {"action": "archive"}, "item": {"name": "auth"}}
         ]});
-        let view = compose(&tree, &manifest(), "board.kdl").unwrap();
+        let view = compose(&tree, &manifest(), "board.uze").unwrap();
         let Item::Node(root) = &view.items[0] else {
             panic!("a node")
         };

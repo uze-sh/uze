@@ -1,11 +1,14 @@
 # Writing a declared extension
 
 An extension is a surface a plugin adds to the workspace: a full-frame
-`view` opened from the tab strip, or a `section` of the sidebar. It never
-draws: it declares what it shows, and the workspace draws it. Its data
-comes from **sources**, a fixture, a Rhai script or a program; what a person can do
-on it are **actions**; what its scripts may reach are **grants**, which
-the operator consents to before anything runs.
+`view` opened from the bar under the agent area, a `section` of the
+sidebar, a drawer, a line in the bar. It never draws: it declares what it
+shows, and the workspace draws it. What it shows and the logic behind it
+live in **components**, `.uze` files holding a `<view>` (KDL) and a
+`<script>` (Rhai). Its data comes from **sources**, a fixture, a
+component's script or a program; what a person can do on it are
+**actions**; what its scripts may reach are **grants**, which the operator
+consents to before anything runs.
 
 The plugin itself (its marketplace, scaffold, install and update loop) is
 `SKILL.md`'s subject, beside this file. When there is no plugin yet,
@@ -26,11 +29,11 @@ description "The open items of the checkout's NOTES.md"
 
 wants "read:checkout" "clipboard"
 
-surface "board" slot="view" view="board.kdl" source="items" title="Notes"
-surface "count" slot="section" view="count.kdl" source="items" title="Notes"
+surface "board" slot="view" view="board.uze" source="items" title="Notes"
+surface "count" slot="section" view="count.uze" source="items" title="Notes"
 
 source "items" {
-    script "items.rhai"
+    script "board.uze"
     input file="NOTES.md"
     every "30s"
     refresh-on "paths.changed" "NOTES.md"
@@ -45,8 +48,9 @@ action "copy" label="Copy" on="board" key="ctrl-y" confirm="Copy {text}?" {
 }
 ```
 
-- **`surface "<id>" slot=… view=… source=… title=…`**: `view` is a view
-  file of catalog nodes bound to the source's data with `{field}` (the
+- **`surface "<id>" slot=… view=… source=… title=…`**: `view` is a
+  component whose `<view>` holds catalog nodes bound to the source's data
+  with `{field}` (the
   node list is in *What a view can draw*, below, and in the language
   server's hover). `slot` is where it is drawn:
 
@@ -66,8 +70,8 @@ action "copy" label="Copy" on="board" key="ctrl-y" confirm="Copy {text}?" {
   lowercase, as UZE's own controls are (`Button`, `Tab`, `Toggle`, a form's
   submit, a door), whatever the manifest or view writes, and a test's
   `click` finds it in either case. Everything else keeps your case.
-- **`source "<id>" { … }`**: exactly one of `script "x.rhai"` or
-  `fixture "fixtures/x.json"`. `input name="<template>" …` is what the
+- **`source "<id>" { … }`**: exactly one of `script "x.uze"` (its
+  `<script>`'s `answer` answers) or `fixture "fixtures/x.json"`. `input name="<template>" …` is what the
   script is asked with, text only. `every "<n>s|m|h"` asks again on a
   clock, at least `5s`, and only while a surface showing the source is in
   view. `refresh-on "<event>" <paths…>`, one line per event, asks again when
@@ -75,7 +79,8 @@ action "copy" label="Copy" on="board" key="ctrl-y" confirm="Copy {text}?" {
   checkout) or `checkout.changed` happens; events arriving together are
   asked about once.
 - **`action "<id>" label=… on="<surface>" key=… confirm=… { <does> }`**:
-  the block holds exactly one of `script "x.rhai"`, `refresh "<source>" …`,
+  the block holds exactly one of `script "x.uze"`, `call "<fn>"`,
+  `refresh "<source>" …`,
   `clipboard "<template>"`, `open-path "<template>"` (a path inside the
   checkout) or `open "<surface>"`. A `Button` whose `action` is the
   action's id runs it wherever it is drawn; `key` runs it while its `on`
@@ -97,6 +102,49 @@ action "copy" label="Copy" on="board" key="ctrl-y" confirm="Copy {text}?" {
   offered or drawn there; a source that does not apply is never asked, and
   says so on its surfaces. Checked a while after the checkout changes, so
   a path an agent creates shows up on its own.
+
+### Components
+
+A `.uze` file holds a `<view>` block, a `<script>` block, or both, each at
+most once. A tag stands alone on its line, unindented; outside the blocks
+only blank lines and `//` comments stand. Errors point at the line in the
+`.uze` file.
+
+```
+// board.uze
+<view>
+Stack gap=1 {
+    Text "{summary}" strong=#true
+    List each="items" { Text "{text}"; }
+    Button "Clear done" action="clear"
+}
+</view>
+
+<script>
+fn answer(input, context) {
+    let open = lines(read_checkout(input.file)).filter(|line| line.starts_with("- [ ] "));
+    #{ data: #{ items: open.map(|line| #{ text: line.sub_string(6) }), summary: `${open.len()} open` } }
+}
+
+fn clear(input, context) {
+    #{ data: (), refresh: ["items"] }
+}
+</script>
+```
+
+- A source's `script "board.uze"` runs its `answer(input, context)`.
+- An action's `call "<fn>"` runs `<fn>(input, context)` of the `<script>`
+  in the file of the surface the action is `on`; `call "<fn>" in="x.uze"`
+  names another component, such as the one holding a source two surfaces
+  share. A call needs consent as a script does, adds no grant, and may not
+  name `answer` nor a resident's entries.
+- Logic with no view of its own (a source two surfaces read) is a `.uze`
+  holding only `<script>`; a view with no logic, one holding only
+  `<view>`. A resident game's file holds its placeholder `<view>` and its
+  `<script>`.
+- The check compiles every script an extension reaches, so a syntax error
+  or a function a `call` names that does not exist fails it before any
+  run, and warns about a `<script>` nothing runs.
 
 ### Input in a view
 
@@ -303,13 +351,13 @@ showing it is in view, and is stopped when none is.
 ```kdl
 wants "resident" "store"
 
-surface "game" slot="view" view="game.kdl" source="board" title="Counter"
+surface "game" slot="view" view="game.uze" source="board" title="Counter"
 
-source "board" { resident "counter.rhai"; }
+source "board" { resident "game.uze"; }
 ```
 
 ```rhai
-// counter.rhai: up and down count, every second a tick blinks a dot, and
+// The `<script>` of game.uze: up and down count, every second a tick blinks a dot, and
 // the highest count is kept in the store.
 fn start(context) {
     this.count = 0;
@@ -692,16 +740,22 @@ plugin ships, so they pass the same on any machine.
 ## Point your editor at the language server
 
 `uze agent plugin lsp` serves completion, hover and the check's own
-diagnostics for `extension.kdl`, views and tests, as you type:
+diagnostics for `extension.kdl`, components and tests, as you type;
+inside a component's `<view>` it completes and hovers as in a view, and
+inside its `<script>` it answers nothing yet. Editors know no `.uze`
+language, so name one:
 
 - **Helix** (`languages.toml`): `[language-server.uze] command = "uze"`,
-  `args = ["agent", "plugin", "lsp"]`, and `language-servers = ["uze"]`
-  on the `kdl` language.
-- **Neovim**: `vim.lsp.start({ name = "uze", cmd = { "uze", "agent",
-  "plugin", "lsp" }, root_dir = vim.fs.root(0, "extension.kdl") })` in an
-  autocommand for `*.kdl`.
-- **VS Code**: any generic LSP client extension, with the command
-  `uze agent plugin lsp` for the `kdl` language.
+  `args = ["agent", "plugin", "lsp"]`, `language-servers = ["uze"]` on the
+  `kdl` language, and a `[[language]] name = "uze"`, `file-types =
+  ["uze"]`, `language-servers = ["uze"]`.
+- **Neovim**: `vim.filetype.add({ extension = { uze = "uze" } })`, then
+  `vim.lsp.start({ name = "uze", cmd = { "uze", "agent", "plugin", "lsp"
+  }, root_dir = vim.fs.root(0, "extension.kdl") })` in an autocommand for
+  `*.kdl` and `*.uze`.
+- **VS Code**: `"files.associations": { "*.uze": "uze" }`, and any generic
+  LSP client extension with the command `uze agent plugin lsp` for the
+  `kdl` and `uze` languages.
 
 ## Consent and enabling
 

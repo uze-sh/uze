@@ -29,7 +29,7 @@ fn identity() -> ExtensionIdentity {
 /// A section showing a source whose script answers, wanting `wants`.
 fn compiled(wants: Vec<uze_contract::Grant>) -> CompiledExtension {
     let view = uze_contract::CompiledView {
-        file: "meter.kdl".to_owned(),
+        file: "meter.uze".to_owned(),
         items: Vec::new(),
         templates: BTreeMap::new(),
         lookups: Vec::new(),
@@ -46,7 +46,7 @@ fn compiled(wants: Vec<uze_contract::Grant>) -> CompiledExtension {
                 bar: None,
                 id: "meter".to_owned(),
                 slot: uze_contract::Slot::Section,
-                view: "meter.kdl".to_owned(),
+                view: "meter.uze".to_owned(),
                 source: "load".to_owned(),
                 title: None,
                 applies_when: None,
@@ -54,7 +54,7 @@ fn compiled(wants: Vec<uze_contract::Grant>) -> CompiledExtension {
             wants,
             sources: vec![uze_contract::SourceDecl::new(
                 "load",
-                uze_contract::SourceKind::Script("load.rhai".to_owned()),
+                uze_contract::SourceKind::Script("load.uze".to_owned()),
             )],
             actions: Vec::new(),
             exec: Vec::new(),
@@ -63,7 +63,7 @@ fn compiled(wants: Vec<uze_contract::Grant>) -> CompiledExtension {
             icons: Vec::new(),
             mcp: Vec::new(),
         },
-        views: BTreeMap::from([("meter.kdl".to_owned(), view)]),
+        views: BTreeMap::from([("meter.uze".to_owned(), view)]),
     }
 }
 

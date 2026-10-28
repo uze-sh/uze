@@ -101,6 +101,27 @@ impl Manifest {
         self.actions.iter().find(|action| action.id == id)
     }
 
+    /// The component a script action runs, and the function it calls: a
+    /// `script`'s file and `answer`, or a `call`'s file — its own, or the
+    /// one its surface draws — and function. `None` for an action that
+    /// runs no script, or a `call` on a surface that is not declared.
+    pub fn script_of<'a>(&'a self, action: &'a ActionDecl) -> Option<(&'a str, &'a str)> {
+        match &action.does {
+            Does::Script(file) => Some((file, "answer")),
+            Does::Call {
+                function,
+                file: Some(file),
+            } => Some((file, function)),
+            Does::Call {
+                function,
+                file: None,
+            } => self
+                .surface(&action.on)
+                .map(|surface| (surface.view.as_str(), function.as_str())),
+            _ => None,
+        }
+    }
+
     pub fn wants(&self, grant: &Grant) -> bool {
         self.wants.contains(grant)
     }
@@ -809,9 +830,16 @@ pub struct Then {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Does {
-    /// Runs this Rhai file's `answer`, relative to the extension's
-    /// directory, and applies its envelope.
+    /// Runs the `answer` of this component's script, relative to the
+    /// extension's directory, and applies its envelope.
     Script(String),
+    /// Runs this function of a component's script and applies its envelope
+    /// as [`Does::Script`] does: of the component `file` names, or of the
+    /// one the action's surface draws (`extension-components` D4).
+    Call {
+        function: String,
+        file: Option<String>,
+    },
     /// Asks these sources again.
     Refresh(Vec<String>),
     /// Copies this text, with `{field}` references, to the clipboard.
@@ -841,6 +869,7 @@ impl Does {
     /// How a manifest spells each, as the node inside an `action`.
     pub const NAMES: &'static [&'static str] = &[
         "script",
+        "call",
         "refresh",
         "clipboard",
         "open-path",
@@ -860,7 +889,11 @@ impl Does {
             Self::AgentPrompt { .. } => Some(Grant::AgentPrompt),
             Self::AgentRestart { .. } => Some(Grant::AgentRestart),
             Self::FocusAgent { .. } => Some(Grant::AgentObserve),
-            Self::Script(_) | Self::Refresh(_) | Self::Open(_) | Self::Run(_) => None,
+            Self::Script(_)
+            | Self::Call { .. }
+            | Self::Refresh(_)
+            | Self::Open(_)
+            | Self::Run(_) => None,
         }
     }
 }
@@ -1241,8 +1274,8 @@ mod tests {
         let fixture = SourceDecl::new("board", SourceKind::Fixture("board.json".into()));
         assert_eq!(fixture.fixture(), Some("board.json"));
         assert_eq!(fixture.script(), None);
-        let script = SourceDecl::new("board", SourceKind::Script("board.rhai".into()));
-        assert_eq!(script.script(), Some("board.rhai"));
+        let script = SourceDecl::new("board", SourceKind::Script("board.uze".into()));
+        assert_eq!(script.script(), Some("board.uze"));
         assert_eq!(script.fixture(), None);
     }
 

@@ -130,7 +130,7 @@
             {
               "id": "items",
               "kind": {
-                "Script": "items.rhai"
+                "Script": "items.uze"
               },
               "input": {
                 "file": "NOTES.md"
@@ -470,7 +470,7 @@
             {
               "id": "board",
               "kind": {
-                "Resident": "counter.rhai"
+                "Resident": "counter.uze"
               },
               "input": {},
               "every": null,
@@ -1224,7 +1224,34 @@
             "Script"
           ],
           "additionalProperties": false,
-          "description": "Runs this Rhai file's `answer`, relative to the extension's\ndirectory, and applies its envelope."
+          "description": "Runs the `answer` of this component's script, relative to the\nextension's directory, and applies its envelope."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Call": {
+              "type": "object",
+              "properties": {
+                "function": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "function"
+              ]
+            }
+          },
+          "required": [
+            "Call"
+          ],
+          "additionalProperties": false,
+          "description": "Runs this function of a component's script and applies its envelope\nas [`Does::Script`] does: of the component `file` names, or of the\none the action's surface draws (`extension-components` D4)."
         },
         {
           "type": "object",

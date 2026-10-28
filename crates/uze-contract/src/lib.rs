@@ -29,6 +29,7 @@ pub mod binding;
 pub mod catalog;
 pub mod clean;
 pub mod compiled;
+pub mod component;
 #[cfg(feature = "schema")]
 pub mod docs;
 pub mod icons;

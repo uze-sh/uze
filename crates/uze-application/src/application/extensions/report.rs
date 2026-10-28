@@ -612,8 +612,8 @@ mod tests {
         let text = fs::read_to_string(&manifest).unwrap();
 
         fs::write(
-            world.band.join("state.rhai"),
-            "fn answer(i, c) { #{ data: #{} } }",
+            world.band.join("state.uze"),
+            "<script>\nfn answer(i, c) { #{ data: #{} } }\n</script>\n",
         )
         .unwrap();
         let updated = report_of(&world, Some(&world.checkout));
@@ -689,7 +689,7 @@ mod tests {
         let surface = |slot, band| uze_contract::SurfaceDecl {
             id: "s".to_owned(),
             slot,
-            view: "s.kdl".to_owned(),
+            view: "s.uze".to_owned(),
             source: "s".to_owned(),
             title: None,
             band,

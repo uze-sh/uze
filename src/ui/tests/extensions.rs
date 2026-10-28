@@ -172,7 +172,7 @@ fn a_declared_extension_is_listed_after_the_built_ins_with_whose_it_is() {
 #[test]
 fn a_declared_extension_that_failed_says_so_on_its_card_and_in_its_drawer() {
     let mut model = listing_a_declared_extension(&[
-        "board.kdl:3:5: unknown node `Stak`",
+        "board.uze:3:5: unknown node `Stak`",
         "extension.kdl:11:7: there is no grant `mcp:rtc/rtc_timesheet` (this version offers \
          `read:checkout`, `clipboard`, `open-path`, `store` and the families that end here)",
     ]);
