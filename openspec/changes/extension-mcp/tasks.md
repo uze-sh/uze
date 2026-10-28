@@ -11,7 +11,7 @@
 ## 3. Host
 
 - [x] 3.1 `uze-script`: `mcp(server, tool, args)` under the grant, `Reach::mcp`
-- [ ] 3.2 `uze-application`: the session pool (lazy start, idle end, restart after a failure), the reach, the consent's words
+- [x] 3.2 `uze-application`: the session pool (lazy start, idle end, restart after a failure), the reach, the consent's words
 
 ## 4. Proof and documentation
 

@@ -19,6 +19,7 @@ mod consent;
 mod costs;
 mod fetch;
 mod installed;
+mod mcp;
 mod program;
 mod reach;
 mod report;

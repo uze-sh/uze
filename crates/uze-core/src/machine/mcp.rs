@@ -504,6 +504,7 @@ mod tests {
         assert_eq!(result_value(&large), Err(McpError::TooLarge));
     }
 
+    // The server stand-in is a POSIX `sh` one-liner.
     #[cfg(unix)]
     #[test]
     fn a_server_that_dies_is_reported_with_its_last_words() {

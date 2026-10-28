@@ -77,6 +77,8 @@ pub struct ExtensionRunner {
     /// where this machine confines. `None` runs them unconfined, which
     /// only an extension accepted to run as the operator may.
     helper: Option<PathBuf>,
+    /// The MCP servers extensions call, live between their calls.
+    mcp: Arc<super::mcp::McpSessions>,
 }
 
 /// A resident session, and what applies its answers' store patches.
@@ -132,6 +134,7 @@ impl ExtensionRunner {
             listing: Mutex::default(),
             residents: Mutex::default(),
             helper,
+            mcp: Arc::default(),
         }
     }
 
@@ -481,6 +484,30 @@ impl ExtensionRunner {
             {
                 fetcher.tainted = Arc::clone(&tainted);
                 reach = reach.with_fetcher(fetcher);
+            }
+            if manifest
+                .wants
+                .iter()
+                .any(|grant| grant.mcp_tool().is_some())
+            {
+                let sessions = Arc::clone(&self.mcp);
+                let (home, identity, manifest, root) = (
+                    home.clone(),
+                    identity.clone(),
+                    manifest.clone(),
+                    checkout.root.clone(),
+                );
+                reach = reach.with_mcp(Arc::new(
+                    move |server: &str, tool: &str, arguments: &serde_json::Value| {
+                        let call = super::mcp::Call {
+                            home: &home,
+                            identity: &identity,
+                            manifest: &manifest,
+                            checkout: &root,
+                        };
+                        sessions.call(&call, server, tool, arguments)
+                    },
+                ));
             }
             if manifest.programs().next().is_some() {
                 reach = reach.with_programs(self.programs_for(

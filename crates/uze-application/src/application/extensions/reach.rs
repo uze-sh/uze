@@ -23,6 +23,11 @@ use uze_script::{
 pub type RunsPrograms =
     Arc<dyn Fn(&str, &[String]) -> Result<ProgramReply, ReachError> + Send + Sync>;
 
+/// What calls an MCP tool for a script (`extension-mcp`).
+pub type CallsMcp = Arc<
+    dyn Fn(&str, &str, &serde_json::Value) -> Result<serde_json::Value, ReachError> + Send + Sync,
+>;
+
 /// The most of one file a script is handed: the engine's own bound on a
 /// string, so a read never hands over what the script could not hold.
 pub const CHECKOUT_READ_LIMIT: u64 = 1024 * 1024;
@@ -39,6 +44,7 @@ pub struct CheckoutReach {
     store: Option<serde_json::Value>,
     programs: Option<RunsPrograms>,
     fetcher: Option<super::fetch::Fetcher>,
+    mcp: Option<CallsMcp>,
 }
 
 impl std::fmt::Debug for CheckoutReach {
@@ -48,6 +54,7 @@ impl std::fmt::Debug for CheckoutReach {
             .field("store", &self.store.is_some())
             .field("programs", &self.programs.is_some())
             .field("fetcher", &self.fetcher.is_some())
+            .field("mcp", &self.mcp.is_some())
             .finish()
     }
 }
@@ -59,7 +66,14 @@ impl CheckoutReach {
             store: None,
             programs: None,
             fetcher: None,
+            mcp: None,
         }
+    }
+
+    /// What calls the MCP tools the script asks for with `mcp`.
+    pub fn with_mcp(mut self, mcp: CallsMcp) -> Self {
+        self.mcp = Some(mcp);
+        self
     }
 
     /// What makes the requests the script asks for with `fetch`.
@@ -119,6 +133,20 @@ impl Reach for CheckoutReach {
             Some(fetcher) => fetcher.fetch(request),
             None => Err(ReachError(
                 "fetch: a check reaches no host; its recorded answers stand in".to_owned(),
+            )),
+        }
+    }
+
+    fn mcp(
+        &self,
+        server: &str,
+        tool: &str,
+        arguments: &serde_json::Value,
+    ) -> Result<serde_json::Value, ReachError> {
+        match &self.mcp {
+            Some(mcp) => mcp(server, tool, arguments),
+            None => Err(ReachError(
+                "mcp: a check starts no server; its recorded answers stand in".to_owned(),
             )),
         }
     }
