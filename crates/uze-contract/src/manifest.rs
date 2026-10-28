@@ -101,13 +101,11 @@ impl Manifest {
         self.actions.iter().find(|action| action.id == id)
     }
 
-    /// The component a script action runs, and the function it calls: a
-    /// `script`'s file and `answer`, or a `call`'s file — its own, or the
-    /// one its surface draws — and function. `None` for an action that
-    /// runs no script, or a `call` on a surface that is not declared.
+    /// The component a `call` runs, and the function it calls: its own
+    /// file, or the one its surface draws. `None` for an action that runs
+    /// no script, or a `call` on a surface that is not declared.
     pub fn script_of<'a>(&'a self, action: &'a ActionDecl) -> Option<(&'a str, &'a str)> {
         match &action.does {
-            Does::Script(file) => Some((file, "answer")),
             Does::Call {
                 function,
                 file: Some(file),
@@ -213,6 +211,10 @@ pub struct McpDecl {
     /// [`MCP_TIMEOUT`] when absent.
     pub timeout: Option<Duration>,
 }
+
+/// The function a source's script defines, which the host calls for the
+/// source's answer (`extension-components` D5, D10).
+pub const SOURCE_ENTRY: &str = "answer";
 
 /// How long a call to an MCP tool may take when its `mcp` node says
 /// nothing.
@@ -830,12 +832,9 @@ pub struct Then {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Does {
-    /// Runs the `answer` of this component's script, relative to the
-    /// extension's directory, and applies its envelope.
-    Script(String),
-    /// Runs this function of a component's script and applies its envelope
-    /// as [`Does::Script`] does: of the component `file` names, or of the
-    /// one the action's surface draws (`extension-components` D4).
+    /// Runs this function of a component's script and applies its
+    /// envelope: of the component `file` names, or of the one the action's
+    /// surface draws (`extension-components` D4, D10).
     Call {
         function: String,
         file: Option<String>,
@@ -868,7 +867,6 @@ pub enum Does {
 impl Does {
     /// How a manifest spells each, as the node inside an `action`.
     pub const NAMES: &'static [&'static str] = &[
-        "script",
         "call",
         "refresh",
         "clipboard",
@@ -889,11 +887,7 @@ impl Does {
             Self::AgentPrompt { .. } => Some(Grant::AgentPrompt),
             Self::AgentRestart { .. } => Some(Grant::AgentRestart),
             Self::FocusAgent { .. } => Some(Grant::AgentObserve),
-            Self::Script(_)
-            | Self::Call { .. }
-            | Self::Refresh(_)
-            | Self::Open(_)
-            | Self::Run(_) => None,
+            Self::Call { .. } | Self::Refresh(_) | Self::Open(_) | Self::Run(_) => None,
         }
     }
 }

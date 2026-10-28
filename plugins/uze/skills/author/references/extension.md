@@ -79,7 +79,8 @@ action "copy" label="Copy" on="board" key="ctrl-y" confirm="Copy {text}?" {
   checkout) or `checkout.changed` happens; events arriving together are
   asked about once.
 - **`action "<id>" label=… on="<surface>" key=… confirm=… { <does> }`**:
-  the block holds exactly one of `script "x.uze"`, `call "<fn>"`,
+  the block holds exactly one of `call "<fn>"` (a function of a
+  component's script: of the `on` surface's file, or `in="x.uze"`),
   `refresh "<source>" …`,
   `clipboard "<template>"`, `open-path "<template>"` (a path inside the
   checkout) or `open "<surface>"`. A `Button` whose `action` is the
@@ -287,7 +288,7 @@ action "jump" label="Jump" on="crew-view" key="alt-j" { open "picker"; }
 - `when="agent.turn.finished"` sends a fixed prompt on that event, with
   `agent:prompt:auto`: its text may hold no `{field}`, the operator allows
   it once per agent for a day, and F8 pauses every extension's writes.
-- **Two steps**: a `run` or `script` may say what its answer is for with
+- **Two steps**: a `run` or `call` may say what its answer is for with
   `then { agent-prompt "Review {answer.file}" target="self"; }`. The
   prompt reads the answer as `answer.*` (and the item, `form.*`), needs
   `agent:prompt`, is sent only on the gesture that ran the action, and is

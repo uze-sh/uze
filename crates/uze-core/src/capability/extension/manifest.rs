@@ -102,8 +102,7 @@ impl Decoded {
             .iter()
             .zip(&self.action_places)
             .filter_map(|(action, places)| match &action.does {
-                Does::Script(file)
-                | Does::Call {
+                Does::Call {
                     file: Some(file), ..
                 } => Some(("script", file.as_str(), places.does)),
                 Does::Run(program) => packaged(program).map(|file| ("program", file, places.does)),

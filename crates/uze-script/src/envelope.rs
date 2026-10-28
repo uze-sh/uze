@@ -13,13 +13,13 @@ use crate::value;
 
 pub use uze_contract::Envelope;
 
-/// The envelope `answer` returned, refusing anything that is not a map of
+/// The envelope `function` returned, refusing anything that is not a map of
 /// its members.
-pub(crate) fn from_answer(answer: &Dynamic) -> Result<Envelope, ScriptError> {
+pub(crate) fn from_answer(function: &str, answer: &Dynamic) -> Result<Envelope, ScriptError> {
     let refuse = |why: String| Err(ScriptError::Envelope(why));
     let Some(map) = answer.read_lock::<Map>() else {
         return refuse(format!(
-            "`answer` returned a `{}`, not a map with `data`",
+            "`{function}` returned a `{}`, not a map with `data`",
             answer.type_name()
         ));
     };

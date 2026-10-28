@@ -9,7 +9,7 @@
 - [x] 2.1 `view`, `script` and `resident` name `.uze` files; a `.kdl` view or `.rhai` script is refused, naming the `.uze` to write
 - [x] 2.2 `Does::Call { function, file }` decoded from `call "<fn>" in="<file>.uze"`; refused on a surface whose script a source runs `resident`, and for `answer` and the resident entry names
 - [x] 2.3 Every site that matches `Does::Script` handles `Call`: `needs_consent`, `then`, the confirm text, the declared engine's action paths, the runner
-- [x] 2.4 A script's role decides what it must define: `answer` for a source or a `script` action, the entries for a resident, the named function for a `call`
+- [x] 2.4 A script's role decides what it must define: `answer` for a source, the entries for a resident, the named function for a `call`
 
 ## 3. Check and tools
 

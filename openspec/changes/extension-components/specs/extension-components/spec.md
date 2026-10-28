@@ -23,7 +23,7 @@ reports SHALL be its line and column in the `.uze` file.
 
 ### Requirement: The manifest names components, never loose views or scripts
 A surface's `view` SHALL name a `.uze` file with a `<view>`; a source's
-`script` or `resident`, and an action's `script`, SHALL name a `.uze` file
+`script` or `resident`, and an action's `call … in=`, SHALL name a `.uze` file
 with a `<script>`. A `.kdl` view or `.rhai` script SHALL be refused, naming
 the `.uze` to write. `extension.kdl` and `tests/*.test.kdl` SHALL stay KDL.
 
@@ -31,19 +31,26 @@ the `.uze` to write. `extension.kdl` and `tests/*.test.kdl` SHALL stay KDL.
 - **WHEN** a surface declares `view="board.kdl"`
 - **THEN** the check refuses it, suggesting `board.uze` with a `<view>` block
 
-### Requirement: An action calls a function of a component's script
-An action SHALL `call "<function>"` to run that function, with
-`(input, context)`, of the `<script>` in the file of the surface it is
-`on`, or of the file `in=` names, applying its envelope as a script
-action's. A manifest with a `call` SHALL need consent as one with a
-`script` action does. The check SHALL refuse a `call` whose file has no
-`<script>` or no such function, a `call` into a script a source runs
-`resident`, and a call of `answer` or of a resident's entry points.
+### Requirement: An action runs code by calling a function
+An action that runs code SHALL `call "<function>"` to run that function,
+with `(input, context)`, of the `<script>` in the file of the surface it
+is `on`, or of the file `in=` names, applying the envelope it returns. An
+action SHALL NOT run a `script`; it is refused, suggesting `call`.
 
 #### Scenario: The month buttons of the timesheet
 - **WHEN** `action "prev" on="panel" { call "prev"; }` and `panel.uze`'s script defines `fn prev(input, context)`
 - **THEN** pressing the button runs `prev`, and its envelope's store and refresh apply
 
+#### Scenario: An action written with `script`
+- **WHEN** `action "archive" on="board" { script "archive.uze"; }`
+- **THEN** the check refuses it, suggesting `call "<fn>" in="archive.uze"`
+
+### Requirement: A call needs consent and is checked before it runs
+A manifest with a `call` SHALL need consent as one with a script source
+does. The check SHALL refuse a `call` whose file has no `<script>` or no
+such function, a `call` into a script a source runs `resident`, and a
+call of `answer` or of a resident's entry points.
+
 #### Scenario: A call without consent
 - **WHEN** an extension has only fixture sources, wants nothing, and one action with `call`
-- **THEN** it is not enabled until the operator consents, as with a `script` action
+- **THEN** it is not enabled until the operator consents, as with a script source

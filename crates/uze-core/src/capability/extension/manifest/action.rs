@@ -96,7 +96,8 @@ pub fn decode(node: &KdlNode, report: &mut Report<'_>) -> Option<(ActionDecl, Pl
             }
             _ => {}
         }
-        if !Does::NAMES.contains(&child.name().value()) {
+        // `script` is no action's: `what` refuses it, saying to `call`.
+        if !Does::NAMES.contains(&child.name().value()) && child.name().value() != "script" {
             let known: Vec<&str> = Does::NAMES
                 .iter()
                 .copied()
@@ -134,11 +135,11 @@ pub fn decode(node: &KdlNode, report: &mut Report<'_>) -> Option<(ActionDecl, Pl
     let then = match then {
         None => None,
         Some((then, at)) => {
-            if !matches!(does, Does::Run(_) | Does::Script(_) | Does::Call { .. }) {
+            if !matches!(does, Does::Run(_) | Does::Call { .. }) {
                 report.at(
                     at,
                     "only an action that runs something has a `then`: it reads what the run answered",
-                    Some("give it `run`, `script` or `call`, or send the prompt with `agent-prompt` alone".to_owned()),
+                    Some("give it `run` or `call`, or send the prompt with `agent-prompt` alone".to_owned()),
                 );
                 return None;
             }
@@ -364,7 +365,14 @@ fn agent_prompt(child: &KdlNode, report: &mut Report<'_>) -> Option<Does> {
 
 /// The names a `call` may not take: a source's entry, and a resident's,
 /// which run in a session a call never enters (`extension-components` D4).
-const NOT_CALLED: &[&str] = &["answer", "start", "event", "input", "render", "stop"];
+const NOT_CALLED: &[&str] = &[
+    uze_contract::SOURCE_ENTRY,
+    "start",
+    "event",
+    "input",
+    "render",
+    "stop",
+];
 
 /// `call "prev"` or `call "prev" in="sheet.uze"`.
 fn call(child: &KdlNode, report: &mut Report<'_>) -> Option<Does> {
@@ -415,9 +423,21 @@ fn call(child: &KdlNode, report: &mut Report<'_>) -> Option<Does> {
 fn what(child: &KdlNode, report: &mut Report<'_>) -> Option<(Does, Vec<usize>)> {
     let at = child.offset();
     match child.name().value() {
-        "script" => text(child, report)
-            .filter(|file| relative_file(file, uze_contract::component::SUFFIX, at, report))
-            .map(|file| (Does::Script(file), Vec::new())),
+        "script" => {
+            // One way to run an action's code: a named function
+            // (`extension-components` D10). A source's `answer` is asked
+            // again with `refresh`.
+            let named = text(child, report).unwrap_or_default();
+            report.at(
+                at,
+                "an action runs a function of a component with `call`, not `script`",
+                Some(format!(
+                    "write `call \"<fn>\" in=\"{named}\"` and name the function there; to ask a \
+                     source again, `refresh \"<source>\"`"
+                )),
+            );
+            None
+        }
         "call" => call(child, report).map(|does| (does, Vec::new())),
         "refresh" => {
             let ids: Vec<(String, usize)> = string_args(child, report)

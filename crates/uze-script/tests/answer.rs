@@ -240,6 +240,24 @@ fn what_a_script_must_define_is_its_roles_to_ask() {
         }),
     );
     assert_eq!(called.outcome.unwrap().data, json!(1));
+    let wrong = Script::compile(b"fn bad(input, context) { 42 }")
+        .unwrap()
+        .call(
+            "bad",
+            &json!({}),
+            &json!({}),
+            &Grants::new(),
+            Arc::new(FakeCheckout {
+                read_delay: Duration::ZERO,
+            }),
+        )
+        .outcome
+        .unwrap_err()
+        .to_string();
+    assert!(
+        wrong.contains("`bad` returned a"),
+        "the function called is named: {wrong}"
+    );
 }
 
 #[test]

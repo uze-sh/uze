@@ -97,7 +97,10 @@ fn compiled() -> CompiledExtension {
                 on: "board".to_owned(),
                 key: None,
                 confirm: Some("Archive {item.name}?".to_owned()),
-                does: uze_contract::Does::Script("archive.uze".to_owned()),
+                does: uze_contract::Does::Call {
+                    function: "archive".to_owned(),
+                    file: Some("archive.uze".to_owned()),
+                },
                 with: Vec::new(),
                 then: None,
             }],

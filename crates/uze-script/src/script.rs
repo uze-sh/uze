@@ -15,7 +15,7 @@ use crate::value;
 
 /// The function a source's or a `script` action's script defines:
 /// `fn answer(input, context)`.
-const ENTRY: &str = "answer";
+const ENTRY: &str = uze_contract::SOURCE_ENTRY;
 
 /// A script's text, compiled. Compiling checks syntax and bounds only;
 /// which host functions it may call is decided per answer by the grants.
@@ -124,7 +124,7 @@ impl Script {
         let answer: Dynamic = engine
             .call_fn(&mut Scope::new(), &self.ast, function, (input, context))
             .map_err(|error| ScriptError::from_eval(&error))?;
-        envelope::from_answer(&answer)
+        envelope::from_answer(function, &answer)
     }
 }
 

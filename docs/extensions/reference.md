@@ -88,8 +88,7 @@ A source also takes `input name="<template>"…`, `every "<n>s|m|h"` (at least 5
 
 | does | written | what |
 |---|---|---|
-| `script` | `script "x.uze"` | Runs the component's `answer` and applies its envelope. |
-| `call` | `call "<fn>" in="x.uze"` | Runs `<fn>(input, context)` of the `<script>` of the surface the action is on, or of the component `in` names, and applies its envelope; never `answer` or a resident's entry. |
+| `call` | `call "<fn>" in="x.uze"` | Runs `<fn>(input, context)` of the `<script>` of the surface the action is on, or of the component `in` names, and applies its envelope; never `answer`, which `refresh` asks again, nor a resident's entry. |
 | `refresh` | `refresh "<source>"…` | Asks these sources again. |
 | `clipboard` | `clipboard "<template>"` | Copies the text to the clipboard; under `clipboard`. |
 | `open-path` | `open-path "<template>"` | Opens a file inside the checkout; under `open-path`. |
@@ -99,7 +98,7 @@ A source also takes `input name="<template>"…`, `every "<n>s|m|h"` (at least 5
 | `agent-restart` | `agent-restart target="self"` | Starts an agent's harness on a new conversation, always asked; under `agent:restart`. |
 | `focus-agent` | `focus-agent target="{id}"` | Puts an agent's pane in front; under `agent:observe`. |
 
-An action is `action "<id>" label=… on="<surface>" key=… confirm=… { <does> }`. `key` is a suggestion, modifiers joined by `-` (`ctrl`, `alt`, `shift`) before a printable character or one of `enter`, `esc`, `tab`, `space`, `backspace`, `delete`, `insert`, `up`, `down`, `left`, `right`, `home`, `end`, `pageup`, `pagedown`, `f1`, `f2`, `f3`, `f4`, `f5`, `f6`, `f7`, `f8`, `f9`, `f10`, `f11`, `f12`. An action with `confirm`, and one that reaches an agent, needs a modifier. Inside its block, `with "ui.<id>" "form.<id>" "form.*"` names the UI state and form fields its input receives, and after a `run` or `script`, `then { agent-prompt "…{answer.<field>}…" target=… }` types a prompt filled from the first step's answer, on a gesture only, under `agent:prompt`.
+An action is `action "<id>" label=… on="<surface>" key=… confirm=… { <does> }`. `key` is a suggestion, modifiers joined by `-` (`ctrl`, `alt`, `shift`) before a printable character or one of `enter`, `esc`, `tab`, `space`, `backspace`, `delete`, `insert`, `up`, `down`, `left`, `right`, `home`, `end`, `pageup`, `pagedown`, `f1`, `f2`, `f3`, `f4`, `f5`, `f6`, `f7`, `f8`, `f9`, `f10`, `f11`, `f12`. An action with `confirm`, and one that reaches an agent, needs a modifier. Inside its block, `with "ui.<id>" "form.<id>" "form.*"` names the UI state and form fields its input receives, and after a `run` or `call`, `then { agent-prompt "…{answer.<field>}…" target=… }` types a prompt filled from the first step's answer, on a gesture only, under `agent:prompt`.
 
 ## The envelope
 

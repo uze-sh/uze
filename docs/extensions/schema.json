@@ -1216,19 +1216,6 @@
         {
           "type": "object",
           "properties": {
-            "Script": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "Script"
-          ],
-          "additionalProperties": false,
-          "description": "Runs the `answer` of this component's script, relative to the\nextension's directory, and applies its envelope."
-        },
-        {
-          "type": "object",
-          "properties": {
             "Call": {
               "type": "object",
               "properties": {
@@ -1251,7 +1238,7 @@
             "Call"
           ],
           "additionalProperties": false,
-          "description": "Runs this function of a component's script and applies its envelope\nas [`Does::Script`] does: of the component `file` names, or of the\none the action's surface draws (`extension-components` D4)."
+          "description": "Runs this function of a component's script and applies its\nenvelope: of the component `file` names, or of the one the action's\nsurface draws (`extension-components` D4, D10)."
         },
         {
           "type": "object",

@@ -14,7 +14,7 @@ already reads: KDL and Rhai.
   KDL a `.kdl` view held) and a `<script>` block (the Rhai a `.rhai` script
   held), each at most once, in either order.
 - **BREAKING** A surface's `view`, a source's `script` and `resident`, and
-  an action's `script` name `.uze` files; `.kdl` views and `.rhai` scripts
+  an action's `call … in=` name `.uze` files; `.kdl` views and `.rhai` scripts
   are refused, naming the `.uze` that replaces them.
 - An action may `call "<function>"`: a function of the `<script>` in the
   file of the surface the action is `on`, or of the file `in=` names,

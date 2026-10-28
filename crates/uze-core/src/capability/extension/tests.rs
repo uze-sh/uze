@@ -663,7 +663,7 @@ fn a_surface_naming_a_missing_view_or_one_outside_is_refused() {
 #[test]
 fn a_script_must_be_a_file_inside_the_extension() {
     let manifest = format!(
-        "{}action \"archive\" label=\"Archive\" on=\"board\" {{ script \"archive.uze\"; }}\n",
+        "{}action \"archive\" label=\"Archive\" on=\"board\" {{ call \"archive\" in=\"archive.uze\"; }}\n",
         MANIFEST.replace("fixture \"fixtures/board.json\"", "script \"board.uze\"")
     );
     let missing = plugin(

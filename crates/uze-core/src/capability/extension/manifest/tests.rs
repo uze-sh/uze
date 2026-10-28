@@ -147,7 +147,7 @@ source "board" {
 source "log" { fixture "fixtures/log.json"; }
 action "refresh" label="Refresh" on="board" key="ctrl-r" { refresh "board" "log"; }
 action "archive" label="Archive" on="board" key="ctrl-d" confirm="Archive {name}?" {
-    script "archive.uze"
+    call "archive" in="archive.uze"
 }
 action "copy" label="Copy hash" on="log" { clipboard "{hash}"; }
 action "details" label="Details" on="log" { open "board"; }
@@ -207,7 +207,13 @@ fn the_full_manifest_decodes() {
     );
     let archive = manifest.action("archive").unwrap();
     assert_eq!(archive.confirm.as_deref(), Some("Archive {name}?"));
-    assert_eq!(archive.does, Does::Script("archive.uze".into()));
+    assert_eq!(
+        archive.does,
+        Does::Call {
+            function: "archive".into(),
+            file: Some("archive.uze".into())
+        }
+    );
     assert_eq!(
         manifest.action("copy").unwrap().does,
         Does::Clipboard("{hash}".into())
@@ -1000,7 +1006,7 @@ fn a_second_step_is_a_gesture_prompt_after_a_run_under_its_grant() {
     let unattended = refusals(&format!(
         "wants \"agent:prompt\"\n{}",
         action(
-            "script \"next.uze\"",
+            "call \"next\" in=\"next.uze\"",
             "agent-prompt \"x\" target=\"self\" when=\"agent.turn.finished\";"
         )
     ));
@@ -1009,7 +1015,7 @@ fn a_second_step_is_a_gesture_prompt_after_a_run_under_its_grant() {
         "{unattended:?}"
     );
     let ungranted = refusals(&action(
-        "script \"next.uze\"",
+        "call \"next\" in=\"next.uze\"",
         "agent-prompt \"Review {answer.file}\" target=\"self\";",
     ));
     assert!(
@@ -1174,5 +1180,26 @@ fn a_call_names_a_function_and_never_enters_a_resident() {
         first_message(&resident).contains("whose script runs as a resident"),
         "{}",
         first_message(&resident)
+    );
+}
+
+#[test]
+fn an_action_runs_code_only_by_calling_a_function() {
+    let with = |rest: &str| GSD.replace("source \"board\"", &format!("{rest}\nsource \"board\""));
+    let refused = decode_text(&with(
+        r#"action "archive" label="Archive" on="board" { script "archive.uze"; }"#,
+    ))
+    .1;
+    assert_eq!(
+        refused[0].message,
+        "an action runs a function of a component with `call`, not `script`"
+    );
+    assert!(
+        refused[0]
+            .suggestion
+            .as_deref()
+            .unwrap()
+            .starts_with("write `call \"<fn>\" in=\"archive.uze\"`"),
+        "{refused:?}"
     );
 }

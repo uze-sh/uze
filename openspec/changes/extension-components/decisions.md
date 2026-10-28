@@ -36,7 +36,7 @@
 - task:     2.2, 2.3
 - commit:
 - trigger:  The timesheet's month buttons were two files of three lines. A review found that `needs_consent` matches `Script | Run` with `matches!`, so a new variant would run code without consent and still compile; and that a call into a resident's script would run without the session's `this`.
-- decided:  `action "<id>" on="<surface>" { call "<fn>" in="<file>.uze"; }` runs `<fn>(input, context)` of that file's `<script>`; without `in=`, of the file of the surface the action is `on`, so a function beside a shared source is reachable too. It applies its envelope as a `script` action does. `Does::Call { function, file }` is handled wherever `Does::Script` is: `needs_consent`, `then`, the confirm text, the declared engine's action paths and the runner. A `call` into a script some source runs `resident` is refused, and so are `answer` and the resident entry names. What the action may reach is still the manifest's grants.
+- decided:  `action "<id>" on="<surface>" { call "<fn>" in="<file>.uze"; }` runs `<fn>(input, context)` of that file's `<script>`; without `in=`, of the file of the surface the action is `on`, so a function beside a shared source is reachable too. It applies its envelope as a script's answer is applied. `Does::Call { function, file }` is handled in `needs_consent`, `then`, the confirm text, the declared engine's action paths and the runner (D10 made it the only script action). A `call` into a script some source runs `resident` is refused, and so are `answer` and the resident entry names. What the action may reach is still the manifest's grants.
 - rejected: Naming the file always (`call "panel.uze#prev"`): the surface already names it in the common case. Running a call inside a resident session: a second way to feed a session that its own `input` already is.
 - blast:    `uze-contract::Does::Call`, `consent.rs::needs_consent`, `manifest/action.rs`, `uze-extensions` `declared/action.rs`, the runner.
 
@@ -46,7 +46,7 @@
 - task:     2.4
 - commit:
 - trigger:  `Script::compile` refuses a script without `answer`, so a `<script>` holding only `prev` and `next` could never run. A source that feeds two surfaces has logic and no view of its own.
-- decided:  A script is compiled without an entry requirement; what it must define is checked by its role: `answer(input, context)` for a source or a `script` action, the resident entries for a `resident`, the named function for a `call`. A `.uze` may hold only `<script>`. A source may name the `.uze` of a surface whose script answers it. A resident surface still names a view, so a game's file holds its placeholder `<view>` and its `<script>`.
+- decided:  A script is compiled without an entry requirement; what it must define is checked by its role: `answer(input, context)` for a source, the resident entries for a `resident`, the named function for a `call`. A `.uze` may hold only `<script>`. A source may name the `.uze` of a surface whose script answers it. A resident surface still names a view, so a game's file holds its placeholder `<view>` and its `<script>`.
 - rejected: Keeping `.rhai` for script-only files: two suffixes for scripts again.
 - blast:    `uze-script/src/script.rs`, the runner's script cache.
 
@@ -89,3 +89,13 @@
 - decided:  A `.uze` file is a component: inside `<view>` it completes and hovers as a view, inside `<script>` it answers nothing yet, and the check's diagnostics are reported on it. The author reference shows how Helix, Neovim and VS Code associate `.uze` with the server; no editor package is written (D7).
 - rejected: Rhai completion inside `<script>`: a separate piece of work.
 - blast:    `src/cli/lsp/complete.rs`, `plugins/uze/skills/author/references/extension.md`.
+
+## D10 — `answer` stays a source's entry; an action only `call`s
+
+- status:   pending
+- task:     2.2, 2.3
+- commit:
+- trigger:  The operator asked whether `answer` was a fixed name and what other tools call it. Two independent reviews followed: one from the author's seat, one from the code. Both found `script` and `call` actions interchangeable in the code (one run path, one input, one `then`), no gallery extension or journey with a `script` action, and a `script` action able to run a resident's script outside its session, which the check refused only for `call`. They split on renaming `answer` to `load`.
+- decided:  `answer(input, context)` stays the function a source's script defines, named once as `uze_contract::SOURCE_ENTRY`. `answer` is the word the whole protocol uses for what a source returns — a program answers on stdout, `mcp()` answers the tool's result, `then` reads `answer.*` — and SvelteKit's `load` would promise a run-once function without side effects, where this one is asked again and returns store patches, toasts and refreshes. An action runs code only with `call "<fn>"`; `script` in an action is refused, suggesting `call`, and a source's answer is asked again with `refresh`. An envelope a call returns wrongly names the function that returned it.
+- rejected: `load` (rename): the wrong lifecycle and a second word for one idea. A source naming its function (`fn=`): two sources sharing a component tell themselves apart by their `input` today; added when an extension needs it. Keeping `script` actions: a second way to run the same thing, which named every action's function `answer`.
+- blast:    `uze-contract` (`Does`, `SOURCE_ENTRY`), `manifest/action.rs`, `consent.rs`, `checked.rs`, `runner.rs`, `declared/action.rs`, `envelope.rs`, docs, the LSP.

@@ -361,7 +361,7 @@ fn redraw_of(entry: &str, answer: &Dynamic) -> Result<Envelope, ScriptError> {
         )));
     }
     map.insert("data".into(), Dynamic::from_bool(redraw));
-    envelope::from_answer(&Dynamic::from_map(map))
+    envelope::from_answer(entry, &Dynamic::from_map(map))
 }
 
 fn redrawing(redraw: bool) -> Envelope {

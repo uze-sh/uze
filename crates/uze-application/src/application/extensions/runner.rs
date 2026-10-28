@@ -351,7 +351,7 @@ impl ExtensionRunner {
                         output: &source.output,
                         with_store: source.with_store,
                     },
-                    SourceKind::Script(file) => Answerer::Script(file, "answer"),
+                    SourceKind::Script(file) => Answerer::Script(file, uze_contract::SOURCE_ENTRY),
                     SourceKind::Resident(file)
                         if matches!(question.asking, Asking::Resident(_)) =>
                     {
@@ -370,7 +370,7 @@ impl ExtensionRunner {
                     return failed(format!("it declares no action `{}`", question.declaration));
                 };
                 match &action.does {
-                    Does::Script(_) | Does::Call { .. } => match manifest.script_of(action) {
+                    Does::Call { .. } => match manifest.script_of(action) {
                         Some((file, function)) => Answerer::Script(file, function),
                         None => {
                             return failed(format!(
@@ -912,7 +912,7 @@ impl ExtensionRunner {
             asked,
             &files,
             file,
-            "answer",
+            uze_contract::SOURCE_ENTRY,
             &grants,
             &input,
             reach,
@@ -1626,9 +1626,16 @@ pub(super) mod tests {
         let text = fs::read_to_string(&manifest).unwrap();
         fs::write(
             &manifest,
-            format!("{text}\naction \"count\" label=\"Count\" on=\"board\" {{\n    script \"state.uze\"\n}}\n"),
+            format!("{text}\naction \"count\" label=\"Count\" on=\"board\" {{\n    call \"count\" in=\"state.uze\"\n}}\n"),
         )
         .unwrap();
+        // The action counts as the source does, from the same component.
+        let state = world.band.join("state.uze");
+        let script = fs::read_to_string(&state).unwrap().replace(
+            "</script>",
+            "\nfn count(input, context) { answer(input, context) }\n</script>",
+        );
+        fs::write(&state, script).unwrap();
         world.enabled();
         let runner = ExtensionRunner::new();
         let question = world.question("state");

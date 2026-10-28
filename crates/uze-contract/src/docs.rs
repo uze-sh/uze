@@ -601,16 +601,11 @@ fn agent_event_doc(event: AgentEvent) -> &'static str {
 
 const DOES: &[(&str, &str, &str)] = &[
     (
-        "script",
-        "`script \"x.uze\"`",
-        "Runs the component's `answer` and applies its envelope.",
-    ),
-    (
         "call",
         "`call \"<fn>\" in=\"x.uze\"`",
         "Runs `<fn>(input, context)` of the `<script>` of the surface the action is on, or of \
-         the component `in` names, and applies its envelope; never `answer` or a resident's \
-         entry.",
+         the component `in` names, and applies its envelope; never `answer`, which `refresh` \
+         asks again, nor a resident's entry.",
     ),
     (
         "refresh",
@@ -822,7 +817,7 @@ pub fn reference() -> String {
          `key` is a suggestion, modifiers joined by `-` ({}) before a printable character or \
          one of {}. An action with `confirm`, and one that reaches an agent, needs a modifier. \
          Inside its block, `with \"ui.<id>\" \"form.<id>\" \"form.*\"` names the UI state and \
-         form fields its input receives, and after a `run` or `script`, \
+         form fields its input receives, and after a `run` or `call`, \
          `then {{ agent-prompt \"…{{answer.<field>}}…\" target=… }}` types a prompt filled from \
          the first step's answer, on a gesture only, under `agent:prompt`.",
         code_list(KeySuggestion::MODIFIERS.iter().copied()),

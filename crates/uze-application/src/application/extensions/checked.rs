@@ -333,7 +333,7 @@ fn no_harness_is_granted(compiled: &CompiledExtension, harnesses: &[&str]) -> Ve
 /// (`extension-components` D5).
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Role {
-    /// A source's or a `script` action's: `answer(input, context)`.
+    /// A source's: `answer(input, context)`.
     Answers,
     /// A `call`'s: the named function.
     Called(String),
@@ -355,12 +355,7 @@ fn reached_scripts(compiled: &CompiledExtension) -> Vec<(String, Role)> {
         })
         .chain(manifest.actions.iter().filter_map(|action| {
             let (file, function) = manifest.script_of(action)?;
-            Some(match &action.does {
-                uze_contract::Does::Call { .. } => {
-                    (file.to_owned(), Role::Called(function.to_owned()))
-                }
-                _ => (file.to_owned(), Role::Answers),
-            })
+            Some((file.to_owned(), Role::Called(function.to_owned())))
         }))
         .collect();
     reached.sort();
@@ -414,7 +409,7 @@ fn scripts_hold_up(
                 .map(|compiled| {
                     let function = match role {
                         Role::Called(function) => function.as_str(),
-                        _ => "answer",
+                        _ => uze_contract::SOURCE_ENTRY,
                     };
                     (!compiled.defines(function, 2)).then(|| function.to_owned())
                 })
@@ -432,9 +427,7 @@ fn scripts_hold_up(
                 message: format!("its script defines no `fn {function}(input, context)`"),
                 suggestion: Some(match role {
                     Role::Called(_) => "define it, or call a function the script has".to_owned(),
-                    _ => {
-                        "a source's or a `script` action's script answers with `answer`".to_owned()
-                    }
+                    _ => "a source's script answers with `answer`".to_owned(),
                 }),
             }),
             Ok(None) => {}

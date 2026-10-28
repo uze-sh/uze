@@ -127,8 +127,8 @@ const ACTION_PROPS: &[(&str, &str)] = &[
 ];
 const ACTION_NODES: &[(&str, &str)] = &[
     (
-        "script",
-        "A component whose `<script>` runs the action with `answer`.",
+        "call",
+        "A function of a component's `<script>`: `call \"prev\"`, or `call \"prev\" in=\"x.uze\"`.",
     ),
     ("refresh", "The sources it asks again."),
     (

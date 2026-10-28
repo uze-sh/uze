@@ -139,7 +139,7 @@ impl DeclaredExtension {
             ));
         }
         Ok(match &declared.does {
-            Does::Script(_) | Does::Call { .. } | Does::Run(_) => Run::Script {
+            Does::Call { .. } | Does::Run(_) => Run::Script {
                 action: declared.id.clone(),
                 label,
                 input: action_input(item, scope),
@@ -283,15 +283,12 @@ impl DeclaredExtension {
     /// What `run` will do, as the question shows it.
     fn arguments(&self, declared: &ActionDecl, run: &Run) -> String {
         let said = match (run, &declared.does) {
-            (Run::Script { input, .. }, Does::Script(_) | Does::Call { .. }) => {
+            (Run::Script { input, .. }, Does::Call { .. }) => {
                 let ran = self
                     .compiled
                     .manifest
                     .script_of(declared)
-                    .map(|(file, function)| match function {
-                        "answer" => file.to_owned(),
-                        function => format!("{function} in {file}"),
-                    })
+                    .map(|(file, function)| format!("{function} in {file}"))
                     .unwrap_or_default();
                 match &input["item"] {
                     Value::Null => format!("Runs {ran}"),
@@ -698,7 +695,7 @@ fn reads_the_item(declared: &ActionDecl) -> bool {
             target: uze_contract::AgentTarget::Named(template),
         } => vec![template],
         Does::AgentRestart { .. } | Does::FocusAgent { .. } => Vec::new(),
-        Does::Script(_) | Does::Call { .. } | Does::Refresh(_) | Does::Open(_) => Vec::new(),
+        Does::Call { .. } | Does::Refresh(_) | Does::Open(_) => Vec::new(),
     };
     done.into_iter()
         .chain(&declared.confirm)

@@ -37,3 +37,4 @@ grammars beyond UZE's own highlighter; running a script at check time.
 - **Highlighting treats tag lines as fences** (D7).
 - **The check reaches every script and scans only its block** (D8).
 - **The language server knows `.uze`** (D9).
+- **`answer` stays a source's entry; an action only `call`s** (D10).
