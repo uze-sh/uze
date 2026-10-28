@@ -143,25 +143,30 @@ pub fn judge(consent: Option<&Consent>, wants: &Wants, digest: &str) -> Judgemen
         .difference(&consent.accepted_grants)
         .cloned()
         .collect();
-    // The same files read what they read when they were accepted, so only
-    // new files are compared: a record that kept no reads asks once.
-    let (new_reads, new_packaged) = if consent.accepted_digest == digest {
-        (BTreeMap::new(), BTreeSet::new())
+    // The same files read what they read when the operator saw them, so
+    // only new files are compared, and files an update applied by a build
+    // that kept neither: nobody was shown what those read or run.
+    let new_files = consent.accepted_digest != digest;
+    let applied_unseen = consent.updated_at.is_some();
+    let new_reads = if new_files || (applied_unseen && consent.accepted_reads.is_none()) {
+        reads_beyond(consent.accepted_reads.as_ref(), &wants.reads)
     } else {
-        (
-            reads_beyond(consent.accepted_reads.as_ref(), &wants.reads),
-            wants
-                .packaged
-                .iter()
-                .filter(|file| {
-                    !consent
-                        .accepted_packaged
-                        .as_ref()
-                        .is_some_and(|accepted| accepted.contains(*file))
-                })
-                .cloned()
-                .collect(),
-        )
+        BTreeMap::new()
+    };
+    let new_packaged = if new_files || (applied_unseen && consent.accepted_packaged.is_none()) {
+        wants
+            .packaged
+            .iter()
+            .filter(|file| {
+                !consent
+                    .accepted_packaged
+                    .as_ref()
+                    .is_some_and(|accepted| accepted.contains(*file))
+            })
+            .cloned()
+            .collect()
+    } else {
+        BTreeSet::new()
     };
     if !new_grants.is_empty() || !new_reads.is_empty() || !new_packaged.is_empty() {
         Judgement::Held {
@@ -758,6 +763,33 @@ mod tests {
             Judgement::Updated,
             "an update that reads nothing asks nothing"
         );
+    }
+
+    #[test]
+    fn files_an_older_build_applied_without_comparing_reads_ask_once() {
+        let applied_unseen = Consent {
+            accepted_grants: names(&["exec:sh"]),
+            accepted_digest: "sha256:b".to_owned(),
+            updated_at: Some(2),
+            ..Consent::default()
+        };
+        assert!(
+            matches!(
+                judge(
+                    Some(&applied_unseen),
+                    &reading("sh", &["/home/u"]),
+                    "sha256:b"
+                ),
+                Judgement::Held { .. }
+            ),
+            "an update kept no reads, so nobody saw these"
+        );
+        let mut packaged = applied_unseen.clone();
+        packaged.accepted_grants.clear();
+        assert!(matches!(
+            judge(Some(&packaged), &packaging(&["bin/upload"]), "sha256:b"),
+            Judgement::Held { .. }
+        ));
     }
 
     fn packaging(files: &[&str]) -> Wants {
