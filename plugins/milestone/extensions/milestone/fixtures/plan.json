@@ -1,0 +1,18 @@
+{
+  "milestone": "v1 · a tasks CLI",
+  "done": 1,
+  "total": 4,
+  "phases": [
+    { "number": "1", "name": "CLI skeleton", "state": "done", "plan": false, "execute": false },
+    { "number": "2", "name": "Keep tasks in a file", "state": "planned", "plan": false, "execute": true },
+    { "number": "3", "name": "Mark a task done", "state": "pending", "plan": true, "execute": false },
+    { "number": "4", "name": "List only the pending ones", "state": "pending", "plan": true, "execute": false }
+  ],
+  "next": { "number": "2", "name": "Keep tasks in a file", "state": "planned", "plan": false, "execute": true },
+  "focus": {
+    "number": "2",
+    "name": "Keep tasks in a file",
+    "plan": "# Phase 2 · Keep tasks in a file\n\n1. Create `store.py` with `load()` and `save(tasks)` over `tasks.json`.\n2. `add` appends and saves.\n3. `list` reads from `tasks.json`.\n",
+    "summary": null
+  }
+}

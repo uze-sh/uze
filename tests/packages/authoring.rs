@@ -1278,3 +1278,22 @@ fn every_fixture_plugins_extensions_check_clean() {
     );
     let _ = fs::remove_dir_all(root);
 }
+
+/// Every plugin this repository's own marketplace lists checks clean, the
+/// examples' extension tests and snapshots included: the catalog a person
+/// browses never offers one that a catalog change broke.
+#[test]
+fn every_plugin_of_the_repositorys_marketplace_checks_clean() {
+    let root = uze_testkit::temp::scratch("check-marketplace-plugins");
+    let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(repository.join("marketplace.json")).unwrap()).unwrap();
+    let listed = manifest["plugins"].as_array().expect("plugins");
+    for entry in listed {
+        let source = entry["source"].as_str().expect("a source");
+        let (clean, text) = check(&root, &repository.join(source));
+        assert!(clean, "{source}: {text}");
+    }
+    assert!(listed.len() > 1, "the official plugin and its examples");
+    let _ = fs::remove_dir_all(root);
+}

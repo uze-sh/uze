@@ -1,0 +1,10 @@
+<view>
+// In the bar: the phases done and the next one. A click opens the drawer,
+// where the next step has its button.
+Row gap=1 {
+    Icon "list" role="info"
+    Text "{done}/{total}"
+    Text "· phase {next.number}" role="muted" when="next"
+    Text "· complete" role="success" unless="next"
+}
+</view>

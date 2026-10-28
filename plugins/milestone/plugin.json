@@ -1,0 +1,5 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "milestone",
+  "description": "A milestone in .planning/: skills for the agent to plan and execute each phase, and a drawer that shows where it stands and asks for the next step."
+}

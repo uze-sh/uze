@@ -1,0 +1,34 @@
+test "idle, the bar shows the day's sessions" {
+    surface "timer"
+    given "clock" fixture="fixtures/idle.json"
+    snapshot "timer-idle"
+}
+
+test "focusing, the bar counts the time" {
+    surface "timer"
+    given "clock" fixture="fixtures/running.json"
+    now 1761570400000
+    expect-text "6m40s"
+    snapshot "timer-running"
+}
+
+test "idle, the drawer starts a session and shows the week" {
+    surface "session"
+    given "clock" fixture="fixtures/idle.json"
+    expect-text "25:00"
+    expect-text "17 sessions this week"
+    press-button "start"
+    expect-action "start"
+    snapshot "drawer-idle"
+}
+
+test "focusing, the drawer says what is left and stops" {
+    surface "session"
+    given "clock" fixture="fixtures/running.json"
+    now 1761570400000
+    expect-text "18:20"
+    expect-no-text "start"
+    press-button "stop"
+    expect-action "stop"
+    snapshot "drawer-running"
+}

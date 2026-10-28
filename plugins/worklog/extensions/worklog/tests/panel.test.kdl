@@ -1,0 +1,38 @@
+test "the drawer opens on the goal and the month" {
+    surface "panel"
+    given "sheet" fixture="fixtures/month.json"
+    expect-text "131h"
+    expect-text "logged of 176h expected"
+    expect-text "Oct 2026"
+    expect-text "MON"
+    snapshot "month"
+}
+
+test "the week shows what went into each day" {
+    surface "panel"
+    given "sheet" fixture="fixtures/month.json"
+    click "Week"
+    expect-text "mon 26"
+    snapshot "week"
+}
+
+test "refresh asks the source again" {
+    surface "panel"
+    given "sheet" fixture="fixtures/month.json"
+    press-button "refresh"
+    expect-action "refresh"
+}
+
+test "a wide drawer" {
+    surface "panel"
+    given "sheet" fixture="fixtures/month.json"
+    size 90 34
+    snapshot "wide"
+}
+
+test "the bar says the month's hours" {
+    surface "today"
+    given "sheet" fixture="fixtures/month.json"
+    expect-text "131h of 176h"
+    snapshot "bar"
+}

@@ -7,6 +7,6 @@ invoke:
 ---
 Answer with exactly:
 
-`hello, world (UZE_PLAYGROUND_SKILL: hello)`
+`hello, world (UZE_PINGPONG_SKILL: hello)`
 
 If the invocation carried a name, greet that name instead of `world`.

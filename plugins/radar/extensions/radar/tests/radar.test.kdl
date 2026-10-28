@@ -1,0 +1,27 @@
+test "the top of the sidebar says the last notice and how long ago" {
+    surface "notice"
+    given "notice" fixture="fixtures/notice.json"
+    now 1761570112000
+    expect-text "codex finished"
+    expect-text "12s"
+    snapshot "notice"
+}
+
+test "every agent says how long it has worked, or how it stopped" {
+    surface "agents"
+    given "crew" fixture="fixtures/crew.json"
+    now 1761570125000
+    expect-text "feat/tasks-file"
+    expect-text "2m05s"
+    expect-text "done"
+    snapshot "agents"
+}
+
+test "events come newest first, with the tool and the file" {
+    surface "events"
+    given "events" fixture="fixtures/events.json"
+    expect-text "asks for approval"
+    expect-text "Write"
+    expect-text "store.py"
+    snapshot "events"
+}

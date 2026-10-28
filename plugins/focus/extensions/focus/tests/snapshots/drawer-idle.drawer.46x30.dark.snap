@@ -1,0 +1,69 @@
+# uze snapshot · protocol 1 · drawer 46x30 · dark
+ ┌───────────────────────────────────────────┐
+ │ focus · focus@local                       │
+ │                                           │
+ │  25:00                                    │
+ │  a session                                │
+ │  2 of 4 today                    start    │
+ │                                           │
+ │  ─ last 7 days ─────────────────────────  │
+ │                                           │
+ │   ▂  █                                    │
+ │  ▄█  █                                    │
+ │  ██  █▅▅                                  │
+ │  ██▇ ███                                  │
+ │                                           │
+ │  10-22                             today  │
+ │                                           │
+ │  17 sessions this week              ●●○○  │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ └───────────────────────────────────────────┘
+---
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ a bbbbb b bbbbbbbbbbb                       a
+ a                                           a
+ a  ccccc                                    a
+ a  b bbbbbbb                                a
+ a  b bb b bbbbb                    ddddd    a
+ a                                           a
+ a  e cccc c cccc eeeeeeeeeeeeeeeeeeeeeeeee  a
+ a                                           a
+ a   f  f                                    a
+ a  ff  f                                    a
+ a  ff  fff                                  a
+ a  fff fff                                  a
+ a                                           a
+ a  eeeee                             eeeee  a
+ a                                           a
+ a  bb bbbbbbbb bbbb bbbb              ddee  a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+---
+a border.default
+b text.muted
+c text.bright
+d text.secondary
+e text.faint
+f state.info

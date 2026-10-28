@@ -1,0 +1,9 @@
+<view>
+// In the bar: focusing, the time running; idle, the day's sessions.
+Row gap=1 {
+    Icon "timer" role="warning" when="running"
+    Elapsed since="{started}" role="warning" when="running"
+    Icon "timer" role="faint" unless="running"
+    Pips done="{today}" total="{goal}"
+}
+</view>

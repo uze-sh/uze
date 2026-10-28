@@ -173,8 +173,8 @@ path = "tests/_fixtures/bin/command_probe.rs"
 required-features = ["dev-servers"]
 
 [[bin]]
-name = "playground-mcp"
-path = "playground/mcp_server.rs"
+name = "pingpong-mcp"
+path = "plugins/pingpong/mcp/server.rs"
 required-features = ["dev-servers"]
 
 # The harness stand-ins every suite and the journeys run against: one binary,

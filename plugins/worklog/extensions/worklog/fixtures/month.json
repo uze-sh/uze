@@ -1,0 +1,286 @@
+{
+ "month": "Oct 2026",
+ "target_per_day": 8,
+ "total": "131h",
+ "target": "176h",
+ "pct": "74%",
+ "ratio": 0.744,
+ "gap_days": "12 working days under the goal",
+ "touched": "5 items touched",
+ "days": [
+  {
+   "pad": true
+  },
+  {
+   "pad": true
+  },
+  {
+   "pad": true
+  },
+  {
+   "day": "1",
+   "hours": "0h",
+   "items": "",
+   "state": "empty",
+   "filled": false
+  },
+  {
+   "day": "2",
+   "hours": "7h",
+   "items": "2 items",
+   "state": "partial",
+   "filled": true
+  },
+  {
+   "day": "5",
+   "hours": "8h",
+   "items": "1 item",
+   "state": "full",
+   "filled": true
+  },
+  {
+   "day": "6",
+   "hours": "6h",
+   "items": "2 items",
+   "state": "partial",
+   "filled": true
+  },
+  {
+   "day": "7",
+   "hours": "8h",
+   "items": "1 item",
+   "state": "full",
+   "filled": true
+  },
+  {
+   "day": "8",
+   "hours": "6h",
+   "items": "2 items",
+   "state": "partial",
+   "filled": true
+  },
+  {
+   "day": "9",
+   "hours": "8h",
+   "items": "1 item",
+   "state": "full",
+   "filled": true
+  },
+  {
+   "day": "12",
+   "hours": "7h",
+   "items": "2 items",
+   "state": "partial",
+   "filled": true
+  },
+  {
+   "day": "13",
+   "hours": "9h",
+   "items": "2 items",
+   "state": "full",
+   "filled": true
+  },
+  {
+   "day": "14",
+   "hours": "8h",
+   "items": "2 items",
+   "state": "full",
+   "filled": true
+  },
+  {
+   "day": "15",
+   "hours": "8h",
+   "items": "3 items",
+   "state": "full",
+   "filled": true
+  },
+  {
+   "day": "16",
+   "hours": "5h",
+   "items": "1 item",
+   "state": "partial",
+   "filled": true
+  },
+  {
+   "day": "19",
+   "hours": "2h",
+   "items": "1 item",
+   "state": "partial",
+   "filled": true
+  },
+  {
+   "day": "20",
+   "hours": "8h",
+   "items": "2 items",
+   "state": "full",
+   "filled": true
+  },
+  {
+   "day": "21",
+   "hours": "8h",
+   "items": "1 item",
+   "state": "full",
+   "filled": true
+  },
+  {
+   "day": "22",
+   "hours": "7h",
+   "items": "2 items",
+   "state": "partial",
+   "filled": true
+  },
+  {
+   "day": "23",
+   "hours": "7h",
+   "items": "2 items",
+   "state": "partial",
+   "filled": true
+  },
+  {
+   "day": "26",
+   "hours": "3h",
+   "items": "1 item",
+   "state": "partial",
+   "filled": true
+  },
+  {
+   "day": "27",
+   "hours": "8h",
+   "items": "3 items",
+   "state": "full",
+   "filled": true
+  },
+  {
+   "day": "28",
+   "hours": "8h",
+   "items": "1 item",
+   "state": "full",
+   "filled": true
+  },
+  {
+   "day": "29",
+   "hours": "0h",
+   "items": "",
+   "state": "empty",
+   "filled": false
+  },
+  {
+   "day": "30",
+   "hours": "0h",
+   "items": "",
+   "state": "empty",
+   "filled": false
+  }
+ ],
+ "lastweek": [
+  {
+   "label": "mon 26",
+   "hours": "3h",
+   "ratio": 0.375,
+   "state": "partial",
+   "items": [
+    {
+     "hours": "3h",
+     "title": "Sync tasks with the calendar"
+    }
+   ]
+  },
+  {
+   "label": "tue 27",
+   "hours": "8h",
+   "ratio": 1.0,
+   "state": "full",
+   "items": [
+    {
+     "hours": "2h",
+     "title": "Search the task list"
+    },
+    {
+     "hours": "4h",
+     "title": "Sync tasks with the calendar"
+    },
+    {
+     "hours": "2h",
+     "title": "Fix the login timeout"
+    }
+   ]
+  },
+  {
+   "label": "wed 28",
+   "hours": "8h",
+   "ratio": 1.0,
+   "state": "full",
+   "items": [
+    {
+     "hours": "8h",
+     "title": "Review the billing export"
+    }
+   ]
+  },
+  {
+   "label": "thu 29",
+   "hours": "0h",
+   "ratio": 0.0,
+   "state": "empty",
+   "items": []
+  },
+  {
+   "label": "fri 30",
+   "hours": "0h",
+   "ratio": 0.0,
+   "state": "empty",
+   "items": []
+  }
+ ],
+ "items": [
+  {
+   "id": "WL-105",
+   "title": "Review the billing export",
+   "hours": "49h",
+   "ratio": 1.0,
+   "url": "https://tracker.example/WL-105"
+  },
+  {
+   "id": "WL-102",
+   "title": "Sync tasks with the calendar",
+   "hours": "27h",
+   "ratio": 0.5510204081632653,
+   "url": "https://tracker.example/WL-102"
+  },
+  {
+   "id": "WL-104",
+   "title": "Write the onboarding guide",
+   "hours": "27h",
+   "ratio": 0.5510204081632653,
+   "url": "https://tracker.example/WL-104"
+  },
+  {
+   "id": "WL-103",
+   "title": "Fix the login timeout",
+   "hours": "20h",
+   "ratio": 0.40816326530612246,
+   "url": "https://tracker.example/WL-103"
+  },
+  {
+   "id": "WL-101",
+   "title": "Search the task list",
+   "hours": "8h",
+   "ratio": 0.16326530612244897,
+   "url": "https://tracker.example/WL-101"
+  }
+ ],
+ "unlogged": [
+  {
+   "id": "WL-104",
+   "title": "Write the onboarding guide",
+   "url": "https://tracker.example/WL-104"
+  },
+  {
+   "id": "WL-105",
+   "title": "Review the billing export",
+   "url": "https://tracker.example/WL-105"
+  }
+ ],
+ "unlogged_label": "assigned, nothing logged (2)",
+ "updated": "updated 2026-10-28 14:05 \u00b7 you"
+}

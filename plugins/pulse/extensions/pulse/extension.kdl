@@ -1,0 +1,27 @@
+// Pulse: the repository's rhythm, read from git. In the bar, today's
+// commits and the last 14 days as a sparkline; a click opens the view, a
+// heatmap of the last 12 weeks where every day can be clicked to list its
+// commits.
+protocol 1
+id "pulse"
+name "Pulse"
+description "A heatmap of the commits, day by day"
+
+wants "exec:git" "store"
+
+// In the bar, on the left: today and the last two weeks.
+surface "today" slot="bar" view="today.uze" source="git" opens="heatmap"
+
+// The view: the heatmap, the totals, the authors and the chosen day.
+surface "heatmap" slot="view" view="heatmap.uze" source="git" title="Pulse"
+
+// The git log, asked again whenever the checkout gains a commit.
+source "git" {
+    script "heatmap.uze"
+    refresh-on "checkout.changed"
+}
+
+// A click on a day of the heatmap chooses it; its commits are listed below.
+action "day" label="Show the day" on="heatmap" {
+    call "choose"
+}

@@ -125,12 +125,13 @@ everywhere.
 
 ## Playground
 
-`playground/` holds disposable worlds to try this checkout by hand, and a plugin
-that declares every capability uze delivers (skills, an agent, an MCP server,
-hooks and rules):
+The marketplace's example plugins (`plugins/` beside the official one) can be
+tried against this checkout on your own machine, and `playground/` holds
+disposable worlds to try the checkout as a person meets it:
 
 ```bash
-make playground-plugin    # build its MCP server and link its marketplace to this checkout
+make try                  # ~/uze-try: a demo project with every example installed from this checkout
+make examples             # link the uze marketplace to this checkout and build pingpong's MCP server
 make playground-linux     # a throwaway WSL distribution with this build installed
 make playground-windows   # a fresh Windows Sandbox with this build installed (run from WSL)
 ```
@@ -159,5 +160,7 @@ merge. Versions come from one place:
 
 This repository is itself the official uze marketplace: `marketplace.json` +
 `plugins/**` at the root, with `plugins/uze` (the `uze:init`, `uze:rules`,
-`uze:worktree`, `uze:architect` and `uze:author` Skills) as the one official
-plugin.
+`uze:worktree`, `uze:architect`, `uze:author` and `uze:try` Skills) as the
+one official plugin, and beside it the examples (category `example`): the
+plugins a person browses to see what uze delivers, each checked by
+`every_plugin_of_the_repositorys_marketplace_checks_clean`.

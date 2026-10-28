@@ -1,4 +1,4 @@
-//! Deterministic stdio MCP server for the manually dogfoodable playground.
+//! Deterministic stdio MCP server of the pingpong example plugin.
 //! It performs no network or filesystem access: the point is to validate that
 //! a real harness received an MCP capability from one UZE-managed package.
 
@@ -31,11 +31,11 @@ struct HelloArgs {
 struct NoArgs {}
 
 #[derive(Debug, Clone)]
-struct PlaygroundServer {
+struct PingpongServer {
     tool_router: ToolRouter<Self>,
 }
 
-impl PlaygroundServer {
+impl PingpongServer {
     fn new() -> Self {
         Self {
             tool_router: Self::tool_router(),
@@ -44,7 +44,7 @@ impl PlaygroundServer {
 }
 
 #[tool_router]
-impl PlaygroundServer {
+impl PingpongServer {
     #[tool(description = "Echoes text exactly as supplied. Useful for proving MCP tool wiring.")]
     fn echo(&self, Parameters(args): Parameters<EchoArgs>) -> String {
         args.text
@@ -57,27 +57,27 @@ impl PlaygroundServer {
 
     #[tool(description = "Answers a ping with a pong, proving the server was delivered.")]
     fn ping(&self, Parameters(_args): Parameters<NoArgs>) -> String {
-        "pong (UZE_PLAYGROUND_MCP: ping)".to_owned()
+        "pong (UZE_PINGPONG_MCP: ping)".to_owned()
     }
 
     #[tool(description = "Greets the given name, or the world when none is given.")]
     fn hello(&self, Parameters(args): Parameters<HelloArgs>) -> String {
         let name = args.name.as_deref().unwrap_or("world");
-        format!("hello, {name} (UZE_PLAYGROUND_MCP: hello)")
+        format!("hello, {name} (UZE_PINGPONG_MCP: hello)")
     }
 }
 
 #[tool_handler(router = self.tool_router)]
-impl ServerHandler for PlaygroundServer {
+impl ServerHandler for PingpongServer {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
-            .with_instructions("The playground's ping-pong tools")
+            .with_instructions("Pingpong's ping-pong tools")
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let server = PlaygroundServer::new().serve(stdio()).await?;
+    let server = PingpongServer::new().serve(stdio()).await?;
     server.waiting().await?;
     Ok(())
 }

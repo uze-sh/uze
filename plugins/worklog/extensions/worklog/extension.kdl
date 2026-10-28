@@ -1,0 +1,30 @@
+// Worklog: hours logged per working day, against a daily goal. The entries
+// come from the `worklog_month` tool of the plugin's own MCP server, the one
+// the agents call too: the extension reads what an agent can be asked
+// about. Its server makes the month up; pointing `mcp` at a real tracker's
+// server is the only change a real one needs.
+protocol 1
+id "worklog"
+name "Worklog"
+description "Hours logged per working day"
+
+wants "mcp:worklog/worklog_month" "store"
+
+mcp "worklog" timeout="1m"
+
+// The drawer beside the agent: the month, the week, and where the hours went.
+surface "panel" slot="drawer" view="panel.uze" source="sheet" title="Worklog"
+
+// In the bar, on the right: the month's hours; a click opens the drawer.
+surface "today" slot="bar" align="right" view="today.uze" source="sheet" opens="panel"
+
+// The current month plus the offset ‹ › keep in the store, asked again
+// every 30 s.
+source "sheet" {
+    script "panel.uze"
+    every "30s"
+}
+
+action "prev" label="Previous month" on="panel" { call "prev"; }
+action "next" label="Next month" on="panel" { call "next"; }
+action "refresh" label="Refresh" on="panel" key="ctrl-r" { refresh "sheet"; }

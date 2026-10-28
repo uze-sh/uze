@@ -1,0 +1,33 @@
+<view>
+// At the top of the sidebar: the last notice and how long ago.
+Row gap=1 {
+    Icon "bell" role="{tone}" when="said"
+    Text "{harness} {said}" truncate=#true grow=#true when="said"
+    Elapsed since="{at}" role="muted" when="at"
+    Text "no notice yet" role="faint" unless="said"
+}
+</view>
+
+<script>
+// Asked once per event: answers the sound or the notification, as the
+// preferences say, and what the line shows.
+fn answer(input, context) {
+    if !("event" in input) {
+        return #{ data: #{} };
+    }
+    let event = input.event;
+    let prefs = input.preferences;
+    if event.name == "agent.approval.asked" {
+        let said = #{ data: #{ said: "asks for approval", harness: event.harness, at: event.at, tone: "warning" } };
+        if prefs.approval {
+            said.notify = #{ title: "Approval", body: `An agent in ${event.harness} asks for approval` };
+            said.sound = "attention";
+        }
+        said
+    } else {
+        let said = #{ data: #{ said: "finished", harness: event.harness, at: event.at, tone: "success" } };
+        if prefs.sound { said.sound = "done"; }
+        said
+    }
+}
+</script>

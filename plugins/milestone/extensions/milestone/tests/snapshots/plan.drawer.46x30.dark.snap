@@ -1,0 +1,69 @@
+# uze snapshot · protocol 1 · drawer 46x30 · dark
+ ┌───────────────────────────────────────────┐
+ │ milestone · milestone@local               │
+ │                                           │
+ │  v1 · a tasks CLI                   ●○○○  │
+ │                                           │
+ │                                           │
+ │   next step                               │
+ │   phase 2 · Keep tasks in a file          │
+ │                                           │
+ │     execute                               │
+ │                                           │
+ │                                           │
+ │   roadmap  phase plan                     │
+ │                                           │
+ │  Phase 2 · Keep tasks in a file           │
+ │                                           │
+ │  1. Create store.py with load() and       │
+ │     save(tasks) over tasks.json.          │
+ │  2. add appends and saves.                │
+ │  3. list reads from tasks.json.           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ └───────────────────────────────────────────┘
+---
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ a bbbbbbbbb b bbbbbbbbbbbbbbb               a
+ a                                           a
+ a  cc c c ccccc ccc                   deee  a
+ a                                           a
+ a                                           a
+ a   cccc cccc                               a
+ a   ccccc c c cccc ccccc cc c cccc          a
+ a                                           a
+ a     ddddddd                               a
+ a                                           a
+ a                                           a
+ a   bbbbbbb  ccccc cccc                     a
+ a                                           a
+ a  ccccc c c cccc ccccc cc c cccc           a
+ a                                           a
+ a  bb cccccc ffffffff cccc ffffff ccc       a
+ a     fffffffffff cccc ffffffffffc          a
+ a  bb fff ccccccc ccc cccccc                a
+ a  bb ffff ccccc cccc ffffffffffc           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+---
+a border.default
+b text.muted
+c text.bright
+d text.secondary
+e text.faint
+f state.info

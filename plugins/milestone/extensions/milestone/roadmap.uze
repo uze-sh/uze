@@ -1,0 +1,153 @@
+<view>
+// The drawer, the milestone's place: at the top, the next step and its
+// button, the only one; below, the roadmap, a row per phase on the ground
+// of its state, and the next phase's plan as the agent wrote it.
+lookup "ground" default="" {
+    done "success"
+    planned "info"
+}
+
+lookup "ink" default="faint" {
+    done "default"
+    planned "default"
+}
+
+Stack gap=1 {
+    Row gap=1 align="center" {
+        Text "{milestone}" strong=#true grow=#true
+        Pips done="{done}" total="{total}"
+    }
+
+    // The next step: the next phase, and the button that asks the agent
+    // for it.
+    Box gap=1 padding-x=1 padding-y=1 ground="info" tone="soft" when="next" {
+        Stack {
+            Text "next step" role="faint"
+            Text "phase {next.number} · {next.name}" strong=#true truncate=#true
+        }
+        Row {
+            Button "plan" action="plan" item="{next}" when="next.plan"
+            Button "execute" action="execute" item="{next}" when="next.execute"
+        }
+    }
+    Text "the milestone is complete" role="success" unless="next"
+
+    Tabs id="tab" {
+        Tab "roadmap" value="roadmap"
+        Tab "phase plan" value="plan"
+    }
+
+    // A row per phase, the drawer's width: its number, name and state, on
+    // the ground of its state.
+    Box show="ui.tab=roadmap" {
+        Box each="phases" height=1 padding-x=1 ground="{ground:state}" tone="soft" {
+            Row gap=2 {
+                Text "{number}" role="{ink:state}" strong=#true
+                Text "{name}" role="{ink:state}" truncate=#true grow=#true
+                Text "{state}" role="{ink:state}"
+            }
+        }
+    }
+
+    Stack gap=1 show="ui.tab=plan" {
+        Markdown "{focus.plan}" when="focus.plan"
+        Stack unless="focus.plan" {
+            Text "phase {focus.number} · {focus.name}" strong=#true
+            Text "no plan yet: the button at the top asks for one" role="faint"
+        }
+        Rule "what was done" when="focus.summary"
+        Markdown "{focus.summary}" when="focus.summary"
+    }
+}
+</view>
+
+<script>
+// The milestone in .planning/, in the format this plugin's plan-phase and
+// execute-phase skills write:
+//
+//   STATE.md     lines `Milestone: …`, `Phase: N` and `Step: …`
+//   ROADMAP.md   a line per phase: `- [ ] **Phase N: name**` ([x] done)
+//   phases/      a folder `NN-name` per phase, holding `NN-PLAN.md` once
+//                planned and `NN-SUMMARY.md` once executed
+//
+// It feeds the bar and the drawer: the next step is the first phase not
+// done, to plan if it has no plan, to execute if it has; the phase the
+// drawer shows is that one, or the last once they are all done.
+
+fn value_of(text, key) {
+    for line in lines(text) {
+        if line.starts_with(key) {
+            let value = line.sub_string(key.len());
+            value.trim();
+            return value;
+        }
+    }
+    ""
+}
+
+fn two(n) {
+    if n.len() < 2 { `0${n}` } else { n }
+}
+
+// The text of `file` in the phase's folder, or () when it is not there.
+fn read_in(folder, file, files) {
+    if files.contains(file) { read_checkout(`.planning/phases/${folder}/${file}`) } else { () }
+}
+
+fn answer(input, context) {
+    let state = read_checkout(".planning/STATE.md");
+    let roadmap = read_checkout(".planning/ROADMAP.md");
+    let folders = [];
+    try {
+        folders = list_checkout(".planning/phases").filter(|entry| entry.kind == "dir").map(|entry| entry.name);
+    } catch {}
+
+    let phases = [];
+    let done = 0;
+    let next = ();
+    for found in regex(roadmap, "(?m)^- \\[( |x)\\] \\*\\*Phase (\\d+): ([^*]+)\\*\\*") {
+        let number = found[2];
+        let name = found[3];
+        name.trim();
+        let prefix = two(number);
+        let folder = folders.filter(|folder| folder.starts_with(prefix + "-"));
+        let files = [];
+        if folder.len() > 0 {
+            files = list_checkout(`.planning/phases/${folder[0]}`).map(|entry| entry.name);
+        }
+        let planned = files.contains(`${prefix}-PLAN.md`);
+        let is_done = found[1] == "x" || files.contains(`${prefix}-SUMMARY.md`);
+        let phase = #{
+            number: number,
+            name: name,
+            state: if is_done { "done" } else if planned { "planned" } else { "pending" },
+            plan: !is_done && !planned,
+            execute: !is_done && planned,
+            folder: if folder.len() > 0 { folder[0] } else { "" },
+            files: files,
+        };
+        if is_done { done += 1; }
+        if next == () && !is_done { next = phase; }
+        phases.push(phase);
+    }
+
+    let focus = if next != () { next } else if phases.len() > 0 { phases[phases.len() - 1] } else { () };
+    if focus != () {
+        let prefix = two(focus.number);
+        focus.plan = read_in(focus.folder, `${prefix}-PLAN.md`, focus.files);
+        focus.summary = read_in(focus.folder, `${prefix}-SUMMARY.md`, focus.files);
+    }
+    let drop_files = |phase| #{ number: phase.number, name: phase.name, state: phase.state, plan: phase.plan, execute: phase.execute };
+
+    #{
+        data: #{
+            milestone: value_of(state, "Milestone:"),
+            done: done,
+            total: phases.len(),
+            phases: phases.map(drop_files),
+            next: if next != () { drop_files.call(next) } else { () },
+            focus: if focus != () { #{ number: focus.number, name: focus.name, plan: focus.plan, summary: focus.summary } } else { () },
+        }
+    }
+}
+</script>

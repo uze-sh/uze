@@ -785,7 +785,7 @@ mod tests {
     }
 
     /// Every `hooks.json` the repository carries, the scaffold's and the
-    /// playground's included: a handler's spellings are exactly what its
+    /// examples' included: a handler's spellings are exactly what its
     /// JSON says, so a plain string stays POSIX-only and never reaches the
     /// portable shell, which needs `uze` on the hook's path.
     #[test]
@@ -795,7 +795,7 @@ mod tests {
         let mut pending = [
             "tests/_fixtures",
             "conformance/_fixtures",
-            "playground",
+            "plugins",
             "crates",
         ]
         .map(|root| repository.join(root))

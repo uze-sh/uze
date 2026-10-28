@@ -3,7 +3,7 @@
   "mcpServers": {
     "pingpong": {
       "type": "stdio",
-      "command": "playground-mcp",
+      "command": "pingpong-mcp",
       "args": []
     }
   }

@@ -1,0 +1,5 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "worklog",
+  "description": "Hours logged per working day, read from an MCP server the agents can call too, in a drawer beside the agent. Its server makes up a month of entries, so it works with nothing to connect."
+}

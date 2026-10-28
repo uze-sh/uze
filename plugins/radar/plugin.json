@@ -1,0 +1,5 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "radar",
+  "description": "What the agents are doing: who is working and for how long, what they just touched, and a sound or a notification when a turn ends or one asks for approval."
+}

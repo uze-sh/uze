@@ -1,0 +1,68 @@
+# uze snapshot · protocol 1 · drawer 46x30 · dark
+ ┌───────────────────────────────────────────┐
+ │ milestone · milestone@local               │
+ │                                           │
+ │  v1 · a tasks CLI                   ●○○○  │
+ │                                           │
+ │                                           │
+ │   next step                               │
+ │   phase 2 · Keep tasks in a file          │
+ │                                           │
+ │     execute                               │
+ │                                           │
+ │                                           │
+ │   roadmap  phase plan                     │
+ │                                           │
+ │   1  CLI skeleton                  done   │
+ │   2  Keep tasks in a file       planned   │
+ │   3  Mark a task done           pending   │
+ │   4  List only the pending on…  pending   │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ └───────────────────────────────────────────┘
+---
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ a bbbbbbbbb b bbbbbbbbbbbbbbb               a
+ a                                           a
+ a  cc c c ccccc ccc                   deee  a
+ a                                           a
+ a                                           a
+ a   cccc cccc                               a
+ a   ccccc c c cccc ccccc cc c cccc          a
+ a                                           a
+ a     ddddddd                               a
+ a                                           a
+ a                                           a
+ a   ccccccc  bbbbb bbbb                     a
+ a                                           a
+ a   c  ccc cccccccc                  cccc   a
+ a   c  cccc ccccc cc c cccc       ccccccc   a
+ a   e  eeee e eeee eeee           eeeeeee   a
+ a   e  eeee eeee eee eeeeeee eee  eeeeeee   a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+---
+a border.default
+b text.muted
+c text.bright
+d text.secondary
+e text.faint

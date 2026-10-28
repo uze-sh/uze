@@ -1,0 +1,6 @@
+[
+  { "id": "a1", "harness": "claude", "label": "feat/tasks-file", "space": "demo",
+    "checkout": "/work/demo", "state": "working", "since": 1761570000000, "reports": true },
+  { "id": "a2", "harness": "codex", "label": "docs/readme", "space": "demo",
+    "checkout": "/work/demo", "state": "done", "since": null, "reports": false }
+]

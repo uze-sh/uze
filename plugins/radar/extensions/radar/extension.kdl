@@ -1,0 +1,43 @@
+// Radar: what the workspace's agents are doing, at three heights. A line
+// at the top of the sidebar says the last notice; a section lists every
+// agent and how long its turn has run; alt+e opens, from anywhere, the last
+// events. A finished turn plays a sound, and an agent asking for approval
+// notifies, as the operator prefers.
+protocol 1
+id "radar"
+name "Radar"
+description "Who is working, for how long, and what just happened"
+
+wants "agent:observe" "notify"
+
+preferences {
+    toggle "sound" label="Play a sound when a turn ends" default=#true
+    toggle "approval" label="Notify when an agent asks for approval" default=#true
+}
+
+// The last notice, in a line at the top of the sidebar.
+surface "notice" slot="status" view="notice.uze" source="notice" title="Radar"
+
+// Every agent: working and for how long, or how it stopped.
+surface "agents" slot="section" view="agents.uze" source="crew" title="Agents"
+
+// The last events, over everything, on alt+e.
+surface "events" slot="overlay" view="events.uze" source="events" title="Agent events"
+
+source "crew" { agents; }
+
+source "events" { events 40; }
+
+// Asked once per event: the sound, the notification, and what the line at
+// the top says.
+source "notice" {
+    script "notice.uze"
+    deliver "each"
+    preferences
+    refresh-on "agent.turn.finished"
+    refresh-on "agent.approval.asked"
+}
+
+action "open" label="Agent events" on="events" key="alt-e" {
+    open "events"
+}

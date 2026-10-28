@@ -1,0 +1,38 @@
+<view>
+// The last events, newest first: the tool and the file it touched, or
+// what happened to the turn.
+lookup "tone" default="muted" {
+    "agent.tool.started" "dim"
+    "agent.tool.finished" "default"
+    "agent.turn.started" "info"
+    "agent.turn.finished" "success"
+    "agent.approval.asked" "warning"
+    "agent.approval.resolved" "success"
+    "agent.session.started" "info"
+}
+lookup "said" default="" {
+    "agent.tool.started" "started"
+    "agent.tool.finished" "finished"
+    "agent.turn.started" "turn started"
+    "agent.turn.finished" "turn finished"
+    "agent.approval.asked" "asks for approval"
+    "agent.approval.resolved" "approval answered"
+    "agent.session.started" "session started"
+}
+
+Stack gap=1 {
+    Row gap=1 {
+        Text "newest first" role="faint" grow=#true
+        Kbd "esc"
+        Text "closes" role="faint"
+    }
+    List each="." empty="no event yet: the agents have not done anything" {
+        Row gap=2 {
+            Text "{harness}" role="faint" min-width=7
+            Text "{tool}" role="{tone:name}" strong=#true min-width=6 when="tool"
+            Text "{said:name}" role="{tone:name}" min-width=17
+            Text "{path}" role="info" truncate=#true grow=#true when="path"
+        }
+    }
+}
+</view>

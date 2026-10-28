@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Starts a fresh, throwaway WSL distribution (Ubuntu 24.04) with this
-# checkout's uze installed the way a person installs it and the playground
+# checkout's uze installed the way a person installs it and its
 # marketplace registered, and opens a shell in it. Run from WSL:
 #
 #   make playground-linux          a new distribution, replacing the last one
@@ -31,7 +31,7 @@ fi
 say "Building uze and the playground MCP server"
 cd "$repo_root"
 cargo build --locked --release --bin uze
-cargo build --locked --release --features dev-servers --bin playground-mcp
+cargo build --locked --release --features dev-servers --bin pingpong-mcp
 built="${CARGO_TARGET_DIR:-${repo_root}/target}/release"
 
 stage="${world}/stage"
@@ -44,7 +44,7 @@ stage_release "$stage" "$stage/$archive"
 stage_market "$stage"
 stage_sessions "$stage"
 stage_installer "$stage" "${repo_root}/install.sh"
-cp "${playground_root}/linux/prepare.sh" "$built/playground-mcp" "$stage/"
+cp "${playground_root}/linux/prepare.sh" "$built/pingpong-mcp" "$stage/"
 printf '%s' "$(version)" > "$stage/version"
 
 rootfs="${world}/cache/$(basename "$rootfs_url")"

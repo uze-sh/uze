@@ -1,0 +1,116 @@
+<view>
+// The drawer: what is left, a button to start or stop, and the sessions
+// of the last seven days.
+Stack gap=1 {
+    Stack when="running" {
+        Stat "{left}" "left" role="warning"
+        Progress ratio="{ratio}" role="warning" style="line"
+        Row gap=1 {
+            Text "focusing for" role="muted"
+            Elapsed since="{started}" role="muted"
+            Text "" grow=#true
+            Button "stop" action="stop"
+        }
+    }
+    Stack unless="running" {
+        Stat "{minutes}:00" "a session" role="info"
+        Row gap=1 {
+            Text "{today} of {goal} today" role="muted" grow=#true
+            Button "start" action="start"
+        }
+    }
+
+    Rule "last 7 days"
+    Chart series="{week}" kind="bar" height=4 role="info"
+    Row {
+        Text "{first_day}" role="faint" grow=#true
+        Text "today" role="faint"
+    }
+    Row gap=1 {
+        Text "{week_total} sessions this week" role="muted" grow=#true
+        Pips done="{today}" total="{goal}"
+    }
+}
+</view>
+
+<script>
+// The pomodoro's clock. The store keeps `started` (when the session
+// began, in ms, or nothing) and `days` (the sessions each day closed, by
+// date). Asked every 5 s, it closes the session when its minutes are up:
+// it counts the day, plays a sound and notifies.
+
+// "YYYY-MM-DD" of ms since 1970, by the civil calendar (Howard Hinnant).
+fn date_of(ms) {
+    let z = ms / 86400000 + 719468;
+    let era = z / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { yoe + era * 400 + 1 } else { yoe + era * 400 };
+    let two = |n| if n < 10 { `0${n}` } else { `${n}` };
+    `${y}-${two.call(m)}-${two.call(d)}`
+}
+
+fn mmss(ms) {
+    let s = if ms > 0 { ms / 1000 } else { 0 };
+    let m = s / 60;
+    let r = s % 60;
+    `${m}:${if r < 10 { "0" } else { "" }}${r}`
+}
+
+fn answer(input, context) {
+    let now = clock();
+    let kept = store();
+    let days = kept.days ?? #{};
+    let started = kept.started ?? ();
+    let minutes = input.preferences.minutes;
+    let goal = input.preferences.goal;
+    let length = minutes * 60000;
+    let today = date_of(now);
+    let reply = #{};
+
+    // Time is up: the session closes, and the day gains one.
+    if started != () && now - started >= length {
+        days[today] = (days[today] ?? 0) + 1;
+        started = ();
+        reply.store = #{ started: (), days: days };
+        reply.sound = "done";
+        reply.notify = #{ title: "Focus", body: `${minutes}-minute session done: ${days[today]} today` };
+    }
+
+    let week = [];
+    let week_total = 0;
+    for back in range(6, -1, -1) {
+        let n = days[date_of(now - back * 86400000)] ?? 0;
+        week.push(n);
+        week_total += n;
+    }
+    let running = started != ();
+    reply.data = #{
+        running: running,
+        started: started,
+        left: if running { mmss(length - (now - started)) } else { "" },
+        ratio: if running { (now - started).to_float() / length.to_float() } else { 0.0 },
+        minutes: minutes,
+        today: days[today] ?? 0,
+        goal: goal,
+        week: week,
+        week_total: week_total,
+        first_day: date_of(now - 6 * 86400000).sub_string(5),
+    };
+    reply
+}
+
+// Starts a session now, and the source draws the clock running.
+fn begin(input, context) {
+    #{ data: (), store: #{ started: clock() }, refresh: ["clock"] }
+}
+
+// Stops the session without counting it.
+fn end(input, context) {
+    #{ data: (), store: #{ started: () }, refresh: ["clock"] }
+}
+</script>
