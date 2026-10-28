@@ -355,6 +355,35 @@ fn a_key_runs_the_action_on_the_selected_row() {
     );
 }
 
+#[test]
+fn a_click_on_a_row_of_a_list_with_an_action_runs_it_on_that_row() {
+    let view = compiled_view(
+        vec![
+            n(NodeName::List)
+                .literal("id", json!("rows"))
+                .literal("action", json!("go"))
+                .each("rows")
+                .child(n(NodeName::Text).arg("{name}"))
+                .item(),
+        ],
+        Vec::new(),
+        Vec::new(),
+    );
+    let mut compiled = extension(view);
+    compiled.manifest.actions = vec![action("go", Does::Clipboard("{item.name}".to_owned()))];
+    let mut engine = DeclaredExtension::new(compiled, "en");
+    engine.set_data(
+        SOURCE,
+        Ok(json!({ "rows": [{ "name": "auth" }, { "name": "billing" }] })),
+    );
+    engine.open(VIEW, &checkout("/work/a"));
+    let list = first(&tree(&engine), |kind| matches!(kind, NodeKind::List { .. }));
+    assert_eq!(
+        engine.hit(VIEW, act(list.id, NodeAct::Row(1)), SPACE),
+        Outcome::Copy("billing".to_owned())
+    );
+}
+
 /// A list of two rows, nothing selected, offering `actions` on the view.
 fn list_without_a_selection(actions: Vec<ActionDecl>) -> DeclaredExtension {
     let view = compiled_view(

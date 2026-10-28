@@ -61,6 +61,8 @@ pub(super) enum Act {
         key: String,
         rows: usize,
         selected: Option<usize>,
+        /// What a click on a row runs, handed that row's item.
+        action: Option<String>,
         /// The item each row was drawn from, `null` for a row no `each`
         /// repeated: what an action on the selection receives.
         items: Vec<Value>,
@@ -1128,6 +1130,7 @@ fn list<'a>(
             key,
             rows,
             selected,
+            action: literal(node, "action"),
             items,
         },
     );

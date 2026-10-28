@@ -2786,8 +2786,22 @@
       "additionalProperties": false
     },
     "ListNode": {
-      "description": "Rows repeated over `each`; with an `id`, the host holds which one is selected; `filter=\"ui.<id>\"` keeps the rows whose fields hold what a `Field` has typed.",
+      "description": "Rows repeated over `each`; with an `id`, the host holds which one is selected; `filter=\"ui.<id>\"` keeps the rows whose fields hold what a `Field` has typed; `action` runs on a click on a row, handed that row's item.",
       "type": "object",
+      "dependentSchemas": {
+        "item": {
+          "required": [
+            "props"
+          ],
+          "properties": {
+            "props": {
+              "required": [
+                "action"
+              ]
+            }
+          }
+        }
+      },
       "properties": {
         "type": {
           "const": "List"
@@ -2811,6 +2825,10 @@
               "type": "string",
               "description": "`ui.<id>` of a `Field`: keep only the rows whose fields hold its text."
             },
+            "action": {
+              "type": "string",
+              "description": "The action a press records, by name."
+            },
             "grow": {
               "type": "boolean",
               "description": "Take a share of what is left of the row."
@@ -2822,6 +2840,9 @@
             }
           },
           "additionalProperties": false
+        },
+        "item": {
+          "description": "What the named action receives when it runs."
         },
         "children": {
           "type": "array",

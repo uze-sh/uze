@@ -327,7 +327,7 @@ One segment of a `Progress`: as wide as its `weight`, filled to its `ratio`, in 
 
 ### `List`
 
-Rows repeated over `each`; with an `id`, the host holds which one is selected; `filter="ui.<id>"` keeps the rows whose fields hold what a `Field` has typed.
+Rows repeated over `each`; with an `id`, the host holds which one is selected; `filter="ui.<id>"` keeps the rows whose fields hold what a `Field` has typed; `action` runs on a click on a row, handed that row's item.
 
 - Holds: `Box`, `Icon`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
@@ -336,6 +336,7 @@ Rows repeated over `each`; with an `id`, the host holds which one is selected; `
 | `id` | name | The name the host keeps this node's state under, as `ui.<id>`. |
 | `empty` | text | What to draw when there are no rows. |
 | `filter` | name | `ui.<id>` of a `Field`: keep only the rows whose fields hold its text. |
+| `action` | name | The action a press records, by name. |
 
 ### `Table`
 

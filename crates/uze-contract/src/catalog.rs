@@ -308,6 +308,7 @@ pub const CATALOG: &[NodeSpec] = &[
             ("id", PropKind::Identity),
             ("empty", PropKind::Text),
             ("filter", PropKind::Identity),
+            ("action", PropKind::Identity),
         ],
         children: Some(ANY),
     },
@@ -611,7 +612,8 @@ impl NodeName {
             }
             Self::List => {
                 "Rows repeated over `each`; with an `id`, the host holds which one is selected; \
-                 `filter=\"ui.<id>\"` keeps the rows whose fields hold what a `Field` has typed."
+                 `filter=\"ui.<id>\"` keeps the rows whose fields hold what a `Field` has typed; \
+                 `action` runs on a click on a row, handed that row's item."
             }
             Self::Table => {
                 "Named columns, one argument per heading; each child `Row` is a line whose children are its cells."

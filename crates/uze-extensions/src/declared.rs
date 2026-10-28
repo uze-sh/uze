@@ -1077,9 +1077,24 @@ impl DeclaredExtension {
                 Some((action, item)) => self.act_on(surface, &action, item),
                 None => Outcome::Stay,
             },
-            (Act::List { key, rows, .. }, NodeAct::Row(row)) if row < rows => {
+            (
+                Act::List {
+                    key,
+                    rows,
+                    action,
+                    items,
+                    ..
+                },
+                NodeAct::Row(row),
+            ) if row < rows => {
                 self.set_ui(surface, key, row.to_string());
-                Outcome::Stay
+                match action {
+                    Some(action) => {
+                        let item = items.get(row).cloned().unwrap_or(serde_json::Value::Null);
+                        self.act_on(surface, &action, item)
+                    }
+                    None => Outcome::Stay,
+                }
             }
             (act @ Act::Select { .. }, NodeAct::Step { forward }) => {
                 self.step(surface, act, forward);
