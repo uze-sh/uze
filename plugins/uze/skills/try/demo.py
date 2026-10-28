@@ -8,7 +8,9 @@ repository, a tasks CLI, holding what each example reads:
 - twelve weeks of commits by three authors, for `pulse`'s heatmap;
 - a milestone in `.planning/`, one phase done and the next one planned, for
   `milestone`, whose drawer then offers to execute it;
-- an `AGENTS.md`, so any harness opened there has something to read.
+- an `AGENTS.md`, so any harness opened there has something to read;
+- an empty `agents.yaml`, so the plugins installed there are declared by
+  the project, and the workspace offers their extensions where it opens.
 
 Nothing outside the directory is touched. Git is the only program it runs.
 """
@@ -36,6 +38,7 @@ SUBJECTS = [
 ]
 
 FILES = {
+    "agents.yaml": "",
     "AGENTS.md": """# Tasks
 
 A small command-line task list, kept to try uze's example plugins.

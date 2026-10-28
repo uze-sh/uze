@@ -8,9 +8,9 @@ invoke:
 
 # UZE — trying the example plugins
 
-uze's own marketplace carries, besides the `uze` plugin, a handful of
-examples (category `example`), built into uze as the `uze-official`
-marketplace. Each one needs a project with something in it to show:
+uze's own marketplace, `uze-sh/uze`, carries besides the `uze` plugin a
+handful of examples (category `example`). Each one needs a project with
+something in it to show:
 `pulse` draws a repository's commit history, `milestone` a plan in
 `.planning/`. This Skill makes that project and installs the examples into
 it. The person then opens the workspace.
@@ -28,23 +28,25 @@ it. The person then opens the workspace.
 
 1. **uze is there.** `uze --version`. Without it, stop and point the person
    to <https://uze.sh>: installing uze is theirs to do.
-2. **The examples are there.** They come built in, as `uze-official`. A
-   uze older than the examples answers `milestone@uze-official` with an
-   unknown package: then run `uze market add uze-sh/uze` and name them
-   `@uze` instead in step 5.
+2. **The marketplace is there.** `uze market list`; with no marketplace
+   named `uze`, run `uze market add uze-sh/uze`. Not the built-in
+   `uze-official`, which carries the same examples: a project cannot
+   declare a plugin from it, and the workspace offers a project only the
+   extensions it declares.
 3. **Where.** The person's directory if they named one, else `~/uze-try`.
    It must be new or empty: never reuse a directory with something in it.
 4. **Make the project.** Run the `demo.py` beside this file with Python 3:
    `python3 <this skill's directory>/demo.py <directory>`. It makes a Git
-   repository with twelve weeks of commits and a milestone in
-   `.planning/`, touches nothing outside the directory, and prints its
-   path.
+   repository with twelve weeks of commits, a milestone in `.planning/`
+   and an empty `agents.yaml`, touches nothing outside the directory, and
+   prints its path.
 5. **Install the examples into it**, one command each, from inside the
-   directory: `uze install milestone@uze-official`, then `radar`, `focus`,
-   `pulse` and `worklog`, each `@uze-official`. `worklog`'s MCP server runs
-   `python3`; if an install refuses an executable capability, say which and
-   ask the person before adding `--trust` to that one command. Leave
-   `pingpong` out unless they ask: its server is not in a release.
+   directory: `uze install milestone@uze`, then `radar@uze`, `focus@uze`,
+   `pulse@uze` and `worklog@uze`; each is declared in its `agents.yaml`.
+   `worklog`'s MCP server runs `python3`; if an install refuses an
+   executable capability, say which and ask the person before adding
+   `--trust` to that one command. Leave `pingpong` out unless they ask: its
+   server is not in a release.
 6. **Hand over.** The workspace is a terminal UI the person runs, never
    you. Tell them, in this order:
    - `cd <directory> && uze workspace`;
