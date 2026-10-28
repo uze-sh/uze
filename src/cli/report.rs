@@ -992,11 +992,26 @@ pub(crate) fn render_remove(report: &RemovePluginReport) -> String {
             "",
             &format!("nothing to remove: no uze state remains for {plugin}"),
         ),
-        RemovePluginReport::Removed { plugin, .. } => progress::change_report(
-            "remove",
-            &progress::change(progress::Change::Removed, plugin, None),
-            "1 plugin removed from this machine",
-        ),
+        RemovePluginReport::Removed {
+            plugin,
+            unforgotten,
+            ..
+        } => {
+            let mut text = progress::change_report(
+                "remove",
+                &progress::change(progress::Change::Removed, plugin, None),
+                "1 plugin removed from this machine",
+            );
+            if let Some(why) = unforgotten {
+                text.push_str(&format!(
+                    "{}\n",
+                    progress::warning_text(format!(
+                        "what its extensions were given or kept was not all forgotten: {why}"
+                    ))
+                ));
+            }
+            text
+        }
         RemovePluginReport::Blocked { report, plan } => {
             let mut text = progress::report_title("Removal blocked", Some(&report.package_id));
             text.push_str(&format!(

@@ -607,3 +607,13 @@
 - decided:  `UzeHome::extension_store_lock_path(plugin, id, project)` and `UzeHome::extension_preferences_lock_path(plugin, id)` name each, beside the record it guards (the same files as before, so a build on either side of this change waits on the same lock), and the two writers use them. `a_patch_waits_on_the_lock_its_home_names` holds the named lock and sees the patch refused as a mutation in progress. The fix is structural, so that test passes before the change too; it pins where the lock is.
 - rejected: Leaving `preferences.rs` for another change: it is the same composition one module over.
 - blast:    `uze-core::machine::home`, `uze-workspace::extensions::{store,preferences}`.
+
+## D171 — Forgetting a removed plugin's extensions is best-effort, and its failure is said
+
+- status:   pending
+- task:     review finding 12
+- commit:
+- trigger:  `remove` called `Extensions::forget_plugin` after the package had left the store, with `?`: a failure to forget (a store directory that could not be removed, a consent record locked or from a newer build) made `uze remove` report an error for a plugin that was gone and skip republishing, leaving every derived view stale.
+- decided:  The forgetting is best-effort: its error is logged (`tracing::warn!`) and carried in `RemovePluginReport::Removed { unforgotten }` (serialized only when set), which `uze remove` prints as a warning under its report; republishing always follows. A consent left behind this way is the one thing the operator should know of, since the same plugin installed again would find it.
+- rejected: Forgetting before the package is removed, to refuse the whole removal on failure: a removal blocked by an extension's preferences file is worse than a removal that says what it left.
+- blast:    `uze-application::{lifecycle::remove, read_models}`, `src/cli/report.rs`.

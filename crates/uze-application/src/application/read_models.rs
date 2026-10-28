@@ -657,6 +657,11 @@ pub enum RemovePluginReport {
         plugin: String,
         detached_receipts: Vec<String>,
         already_missing_receipts: Vec<String>,
+        /// Why what its extensions were given or kept (consents, stores,
+        /// secrets, preferences) was not all forgotten, when it was not:
+        /// the plugin is gone either way.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        unforgotten: Option<String>,
     },
     Blocked {
         report: ReconciliationReport,

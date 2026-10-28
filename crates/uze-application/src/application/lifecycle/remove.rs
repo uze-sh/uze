@@ -100,11 +100,21 @@ impl Plugins<'_> {
         }
         self.0.store.remove_package(&package.id)?;
         state::forget_undelivered(&self.0.home, package.id.as_str(), None)?;
-        if consents == Consents::Forget {
-            self.0
-                .extensions()
-                .forget_plugin(package.id.plugin_name(), package.id.marketplace())?;
-        }
+        // The package is gone: what its extensions leave behind is
+        // forgotten as far as it can be, and never undoes the removal or
+        // keeps the derived views stale.
+        let unforgotten = (consents == Consents::Forget)
+            .then(|| {
+                self.0
+                    .extensions()
+                    .forget_plugin(package.id.plugin_name(), package.id.marketplace())
+                    .err()
+            })
+            .flatten()
+            .map(|error| {
+                tracing::warn!(plugin = package.id.as_str(), %error, "its extensions were not all forgotten");
+                error.to_string()
+            });
         // The package set changed, so every derived view is now stale. A
         // failure to rebuild one does not un-remove the package.
         if republish {
@@ -114,6 +124,7 @@ impl Plugins<'_> {
             plugin: package.id.as_str().to_owned(),
             detached_receipts,
             already_missing_receipts,
+            unforgotten,
         })
     }
 }

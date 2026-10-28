@@ -445,3 +445,34 @@ fn removing_the_plugin_forgets_its_extensions() {
         "installed again, it is consented to from nothing"
     );
 }
+
+#[test]
+fn a_plugin_whose_extensions_cannot_be_forgotten_is_still_removed() {
+    let env = TestEnvironment::isolated();
+    let (app, _) = installed_from_a_linked_marketplace(&env);
+    let home = UzeHome::at(&env.uze_home);
+    // A file where the plugin's stores are kept: removing them fails.
+    let stores = home.extension_plugin_stores_dir(&format!("gsd@{MARKET}"));
+    fs::create_dir_all(stores.parent().unwrap()).unwrap();
+    fs::write(&stores, "not a directory").unwrap();
+
+    let removed = app
+        .plugins()
+        .remove("gsd")
+        .expect("the plugin is removed whatever is left of its extensions");
+    let uze_application::application::RemovePluginReport::Removed { unforgotten, .. } = removed
+    else {
+        panic!("removed: {removed:?}");
+    };
+    assert!(
+        unforgotten.is_some(),
+        "what was not forgotten is said, not hidden"
+    );
+    assert!(
+        app.extensions()
+            .installed()
+            .iter()
+            .all(|extension| extension.identity.plugin != "gsd"),
+        "the package is gone"
+    );
+}
