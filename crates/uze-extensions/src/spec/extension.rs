@@ -60,6 +60,10 @@ pub struct SpecExtension {
     focus: Option<Checkout>,
     counted: Option<Counted>,
     counting: Option<PathBuf>,
+    /// The last read, by the checkout it was about: a reopening draws it
+    /// at once while the next read is out, since asking Git what a long
+    /// branch touched can take a visible moment.
+    last_read: Option<SpecRead>,
 }
 
 impl SpecExtension {
@@ -242,6 +246,13 @@ impl Extension for SpecExtension {
         if let Some(place) = self.sent_to.take() {
             view.resume(place);
         }
+        if let Some(last) = self
+            .last_read
+            .as_ref()
+            .filter(|last| last.root == checkout.root)
+        {
+            view.absorb(last.answer.clone());
+        }
         self.open = Some(Open {
             root: checkout.root.clone(),
             view,
@@ -294,8 +305,9 @@ impl Extension for SpecExtension {
         let answer = match answer.0.downcast::<SpecRead>() {
             Ok(read) => {
                 if let Some(open) = self.open.as_mut().filter(|open| open.root == read.root) {
-                    open.view.absorb(read.answer);
+                    open.view.refresh(read.answer.clone());
                 }
+                self.last_read = Some(*read);
                 return Outcome::Stay;
             }
             Err(other) => Opaque(other),

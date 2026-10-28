@@ -1590,6 +1590,62 @@ mod hosted {
         (repository, target)
     }
 
+    fn reading(extension: &SpecExtension) -> bool {
+        format!("{:?}", extension.view(DOCUMENT, space())).contains("Reading the checkout")
+    }
+
+    #[test]
+    fn reopening_draws_the_last_read_at_once_and_reads_again_beneath_it() {
+        let (repository, target) = working();
+        let mut extension = SpecExtension::default();
+        let here = checkout(repository.root(), Some(target));
+        extension.open(DOCUMENT, &here);
+        assert!(
+            reading(&extension),
+            "a first opening has nothing to show yet"
+        );
+        for answer in run(&mut extension) {
+            extension.absorb(answer);
+        }
+        assert!(!reading(&extension));
+        extension.close(DOCUMENT);
+
+        extension.open(DOCUMENT, &here);
+        assert!(
+            !reading(&extension),
+            "the last read is drawn while the next one is out"
+        );
+        let answers = run(&mut extension);
+        assert_eq!(answers.len(), 1, "and the checkout is read again");
+        for answer in answers {
+            extension.absorb(answer);
+        }
+        assert!(!reading(&extension));
+    }
+
+    #[test]
+    fn a_fresh_read_keeps_the_viewer_where_they_were() {
+        let (repository, target) = working();
+        let mut extension = SpecExtension::default();
+        let here = checkout(repository.root(), Some(target));
+        extension.open(DOCUMENT, &here);
+        for answer in run(&mut extension) {
+            extension.absorb(answer);
+        }
+        extension.close(DOCUMENT);
+        extension.open(DOCUMENT, &here);
+        extension.command(DOCUMENT, Command::SelectNext, space());
+        let moved = extension.text(DOCUMENT, 0..40);
+        for answer in run(&mut extension) {
+            extension.absorb(answer);
+        }
+        assert_eq!(
+            extension.text(DOCUMENT, 0..40),
+            moved,
+            "the read landing beneath the viewer does not move them"
+        );
+    }
+
     #[test]
     fn the_checkout_in_front_is_counted_once_while_it_stands() {
         let (repository, target) = working();

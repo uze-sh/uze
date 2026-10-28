@@ -393,6 +393,23 @@ impl SpecView {
         })
     }
 
+    /// A read landing beneath a view already showing one: the viewer stays
+    /// where they were, when what they stood on is still there.
+    pub fn refresh(&mut self, answer: SpecAnswer) {
+        if matches!(self.state, State::Found { .. })
+            && let Some(here) = self.place()
+        {
+            let (scroll, folded) = (self.scroll, self.folded.clone());
+            self.resuming = Some(here);
+            self.absorb(answer);
+            self.folded = folded;
+            self.scroll = scroll;
+            self.redraw();
+        } else {
+            self.absorb(answer);
+        }
+    }
+
     pub fn absorb(&mut self, answer: SpecAnswer) {
         self.branch = answer.branch;
         self.root = answer.root;
