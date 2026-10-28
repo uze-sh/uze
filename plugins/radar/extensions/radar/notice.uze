@@ -1,16 +1,14 @@
 <view>
-// At the top of the sidebar: the last notice and how long ago.
-Row gap=1 {
-    Icon "bell" role="{tone}" when="said"
-    Text "{harness} {said}" truncate=#true grow=#true when="said"
-    Elapsed since="{at}" role="muted" when="at"
-    Text "no notice yet" role="faint" unless="said"
-}
+// Draws nothing: what radar says arrives as a sound, and an approval as a
+// notification the sidebar shows where it shows a new release. The status
+// row stands only so its source is asked on every event; an answer that
+// draws nothing takes no row.
+Row {}
 </view>
 
 <script>
 // Asked once per event: answers the sound or the notification, as the
-// preferences say, and what the line shows.
+// preferences say.
 fn answer(input, context) {
     if !("event" in input) {
         return #{ data: #{} };
@@ -18,16 +16,16 @@ fn answer(input, context) {
     let event = input.event;
     let prefs = input.preferences;
     if event.name == "agent.approval.asked" {
-        let said = #{ data: #{ said: "needs approval", harness: event.harness, at: event.at, tone: "warning" } };
+        let reply = #{ data: #{} };
         if prefs.approval {
-            said.notify = #{ title: "Approval", body: `An agent in ${event.harness} asks for approval` };
-            said.sound = "attention";
+            reply.notify = #{ title: "Approval", body: `An agent in ${event.harness} asks for approval` };
+            reply.sound = "attention";
         }
-        said
+        reply
     } else {
-        let said = #{ data: #{ said: "done", harness: event.harness, at: event.at, tone: "success" } };
-        if prefs.sound { said.sound = "done"; }
-        said
+        let reply = #{ data: #{} };
+        if prefs.sound { reply.sound = "done"; }
+        reply
     }
 }
 </script>

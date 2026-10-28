@@ -1029,6 +1029,8 @@ pub(super) enum WorkspaceHit {
     OpenReleaseNotes,
     /// The mark on the notice's header, which puts it away.
     DismissRelease,
+    /// The mark on an extension's notice, which puts it away.
+    DismissExtensionNotice,
     /// One entry of the sidebar's quick strip — performed exactly as the
     /// keyboard performs it, which is why it carries the action rather
     /// than naming a surface: a control that took its own path to the
@@ -1857,6 +1859,11 @@ struct WorkspaceModel {
     /// What the sidebar's foot says about releases, as of `release_revision`.
     release: Option<crate::self_update::Notice>,
     release_revision: u64,
+    /// The last thing an extension notified, attributed, until put away:
+    /// drawn where the release notice is, ahead of it, since it is newer
+    /// news. A desktop notification is gone once read; this stays until
+    /// the operator has seen it here.
+    extension_notice: Option<(String, String)>,
     /// The spaces minimized to their header row, by id, flipped by the
     /// fold in front of the name. A view of the column, not of the work:
     /// the space's agents keep running and the chords still reach them.

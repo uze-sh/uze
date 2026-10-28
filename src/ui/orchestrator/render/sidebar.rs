@@ -321,8 +321,37 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
     // The release notice sits on whatever holds the foot — the steps, or
     // the history once the steps are put away — rather than under them: it
     // is news, and news below two sections reads as the column's floor.
-    if let Some(notice) = model.release.as_ref().map(crate::ui::ReleaseNotice)
-        && let Some(rect) = notice.rect(Rect::new(
+    // An extension's notice comes ahead of the release's: it is newer,
+    // and the release's waits under it until it is put away.
+    let release = model
+        .release
+        .as_ref()
+        .map(crate::ui::SidebarNotice::release);
+    let notice = match (&model.extension_notice, &release) {
+        (Some((title, body)), _) => Some((
+            crate::ui::SidebarNotice {
+                marker: Symbol::IconBell,
+                tone: Token::StateInfo,
+                headline: title,
+                detail: body,
+            },
+            WorkspaceHit::DismissExtensionNotice,
+            None,
+        )),
+        (None, Some((version, action))) => Some((
+            crate::ui::SidebarNotice {
+                marker: Symbol::ArrowUp,
+                tone: Token::Accent,
+                headline: version,
+                detail: action,
+            },
+            WorkspaceHit::DismissRelease,
+            Some(WorkspaceHit::OpenReleaseNotes),
+        )),
+        (None, None) => None,
+    };
+    if let Some((notice, dismiss, opens)) = notice
+        && let Some(rect) = crate::ui::SidebarNotice::rect(Rect::new(
             inner.x,
             inner.y,
             inner.width,
@@ -330,13 +359,10 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
         ))
     {
         let targets = notice.render(frame, rect);
-        hits.push((targets.dismiss, WorkspaceHit::DismissRelease));
-        hits.extend(
-            targets
-                .notes
-                .into_iter()
-                .map(|rect| (rect, WorkspaceHit::OpenReleaseNotes)),
-        );
+        hits.push((targets.dismiss, dismiss));
+        if let Some(opens) = opens {
+            hits.extend(targets.rows.into_iter().map(|rect| (rect, opens)));
+        }
         rows.bottom = rect.y;
     }
 

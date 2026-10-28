@@ -221,6 +221,10 @@ fn a_notification_is_attributed_sent_once_and_the_next_within_ten_seconds_counte
         }],
         "led by the extension's attribution"
     );
+    assert_eq!(
+        model.extension_notice, outgoing[0].notification,
+        "and kept for the sidebar's notice until put away"
+    );
     let mut written = Vec::new();
     let mut started = 0;
     send_notification(

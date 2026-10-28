@@ -42,6 +42,14 @@ impl WorkspaceModel {
                 }
             }));
         }
+        if let Some(said) = outgoing
+            .iter()
+            .rev()
+            .find_map(|out| out.notification.clone())
+        {
+            self.extension_notice = Some(said);
+            self.dirty = true;
+        }
         outgoing
     }
 }

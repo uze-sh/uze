@@ -710,33 +710,46 @@ impl FirstSteps<'_> {
     }
 }
 
-/// The release notice both sidebars carry, sitting on the sections that
-/// hold their foot. It borrows a section row's layout — a marker column,
-/// the text, anything right-aligned kept `TRAILING_PAD` off the divider —
-/// but not a section's header: there is nothing under it to fold, and a
-/// band with a chevron that folds nothing reads as a control that does
-/// nothing.
-pub(crate) struct ReleaseNotice<'a>(pub(crate) &'a crate::self_update::Notice);
+/// A notice the sidebar carries at its foot, sitting on the sections that
+/// hold it: news with a mark that puts it away. It borrows a section row's
+/// layout — a marker column, the text, anything right-aligned kept
+/// `TRAILING_PAD` off the divider — but not a section's header: there is
+/// nothing under it to fold, and a band with a chevron that folds nothing
+/// reads as a control that does nothing. A release and what an extension
+/// notifies are both drawn here, one at a time.
+pub(crate) struct SidebarNotice<'a> {
+    pub(crate) marker: Symbol,
+    pub(crate) tone: theme::Token,
+    /// The first row: what happened.
+    pub(crate) headline: &'a str,
+    /// The second row, quieter: what it means or what to do about it.
+    pub(crate) detail: &'a str,
+}
 
 /// What a drawn notice answers to.
-pub(crate) struct ReleaseTargets {
-    /// Every row that opens the release's notes.
-    pub(crate) notes: Vec<Rect>,
+pub(crate) struct NoticeTargets {
+    /// Every row of the notice, for a notice that opens something.
+    pub(crate) rows: Vec<Rect>,
     /// The mark that puts the notice away. It goes into a frame's hits
-    /// ahead of `notes`, because it sits on one of them.
+    /// ahead of `rows`, because it sits on one of them.
     pub(crate) dismiss: Rect,
 }
 
-impl ReleaseNotice<'_> {
+impl SidebarNotice<'_> {
     /// Two rows and a blank one under them, which keeps the notice off the
     /// header of the section it sits on. A heading of its own was tried and
-    /// read as a third thing to take in, where the version and what to do
-    /// about it are the whole of the news.
+    /// read as a third thing to take in, where the news and what to do
+    /// about it are the whole of it.
     const HEIGHT: u16 = 3;
+
+    /// The release's notice: its version, and what to do about it.
+    pub(crate) fn release(notice: &crate::self_update::Notice) -> (String, &str) {
+        (format!("v{}", notice.version()), notice.action())
+    }
 
     /// Where it goes at the foot of `column`, or nothing when the column
     /// cannot spare the rows — the same headroom rule the steps keep.
-    pub(crate) fn rect(&self, column: Rect) -> Option<Rect> {
+    pub(crate) fn rect(column: Rect) -> Option<Rect> {
         const HEADROOM: u16 = 5;
         (column.height >= Self::HEIGHT + HEADROOM).then(|| {
             Rect::new(
@@ -748,19 +761,18 @@ impl ReleaseNotice<'_> {
         })
     }
 
-    /// The mark rides on the version's row rather than on a caption: a
+    /// The mark rides on the headline's row rather than on a caption: a
     /// caption is the first thing a narrow column elides, and a mark at its
     /// end went with it — a notice nobody could put away. What gives way on
     /// a narrow column is the text, the way a section row's name does; the
     /// mark never does.
-    pub(crate) fn render(&self, frame: &mut ratatui::Frame<'_>, area: Rect) -> ReleaseTargets {
+    pub(crate) fn render(&self, frame: &mut ratatui::Frame<'_>, area: Rect) -> NoticeTargets {
         use ratatui::{text::Line, widgets::Paragraph};
 
-        let notice = self.0;
-        let version = Rect::new(area.x, area.y, area.width, 1);
-        let action = Rect::new(area.x, area.y + 1, area.width, 1);
-        let gutter = theme::width(Symbol::ArrowUp) + 1;
-        // The room the version has once its gutter, the gap `push_trailing`
+        let headline = Rect::new(area.x, area.y, area.width, 1);
+        let detail = Rect::new(area.x, area.y + 1, area.width, 1);
+        let gutter = theme::width(self.marker) + 1;
+        // The room the headline has once its gutter, the gap `push_trailing`
         // keeps and the dismissing mark are paid for.
         let room = usize::from(
             area.width
@@ -769,42 +781,40 @@ impl ReleaseNotice<'_> {
 
         let mut spans = vec![
             Span::styled(
-                format!("{} ", theme::glyph(Symbol::ArrowUp)),
-                theme::fg(theme::Token::Accent),
+                format!("{} ", theme::glyph(self.marker)),
+                theme::fg(self.tone),
             ),
             Span::styled(
-                text::elide(&format!("v{}", notice.version()), room),
+                text::elide(self.headline, room),
                 theme::fg(theme::Token::TextPrimary),
             ),
         ];
         row::push_trailing(
             &mut spans,
-            version.width,
+            headline.width,
             theme::glyph(Symbol::MarkClose),
             theme::color(theme::Token::TextFaint),
         );
-        frame.render_widget(Paragraph::new(Line::from(spans)), version);
+        frame.render_widget(Paragraph::new(Line::from(spans)), headline);
 
-        // No trailing glyph: the notes open here, in a modal, and an
-        // external-link arrow would promise the browser.
         let spans = vec![
             Span::raw(" ".repeat(usize::from(gutter))),
             Span::styled(
                 text::elide(
-                    notice.action(),
+                    self.detail,
                     usize::from(area.width.saturating_sub(gutter + TRAILING_PAD)),
                 ),
                 theme::fg(theme::Token::TextDim),
             ),
         ];
-        frame.render_widget(Paragraph::new(Line::from(spans)), action);
+        frame.render_widget(Paragraph::new(Line::from(spans)), detail);
 
         let mark = theme::width(Symbol::MarkClose);
-        ReleaseTargets {
-            notes: vec![version, action],
+        NoticeTargets {
+            rows: vec![headline, detail],
             dismiss: Rect::new(
-                version.right().saturating_sub(mark + TRAILING_PAD),
-                version.y,
+                headline.right().saturating_sub(mark + TRAILING_PAD),
+                headline.y,
                 mark,
                 1,
             ),

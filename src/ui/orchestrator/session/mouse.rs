@@ -1291,6 +1291,10 @@ impl Attach<'_> {
                     self.model.dirty = true;
                 }
             }
+            WorkspaceHit::DismissExtensionNotice => {
+                self.model.extension_notice = None;
+                self.model.dirty = true;
+            }
             WorkspaceHit::DismissRelease => {
                 if let Some(notice) = self.model.release.take() {
                     crate::self_update::acknowledge(self.home, notice.version());

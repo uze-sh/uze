@@ -177,6 +177,11 @@ on "cancel" must not save first.
   at its end reads as a button. Whose it is belongs to the Extensions screen and the
   inspector; a clash between extensions is resolved by id, never shown. A
   view, a drawer and an overlay keep their strip where they open.
+- A plugin has no standing line to say it has nothing to say: no "no
+  notice yet" row at the top of the sidebar. What it notifies is drawn in
+  the sidebar's notice, where a new release is, one notice at a time with
+  its mark to put it away, ahead of the release's; a status row that has
+  nothing to show takes no row.
 - A plugin never writes an icon glyph either: it names one with `Icon`
   and the host draws it in the operator's glyph set, as UZE's own chrome
   names a `Symbol`. The check refuses a Nerd Font codepoint or a

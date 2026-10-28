@@ -155,6 +155,44 @@ fn a_release_notice_sits_on_the_sections_at_the_foot() {
     assert!(y < steps, "and the notice sits on them: {rows:?}");
 }
 
+/// What an extension notifies is drawn where a release's notice is, ahead
+/// of it, until its mark puts it away; the release's comes back then.
+#[test]
+fn an_extensions_notice_takes_the_release_notices_place_until_put_away() {
+    let mut model = session_with_timeline(&["feat: one"]);
+    model.timeline_collapsed = true;
+    model.release = Some(crate::self_update::Notice("0.0.0-alpha.14".to_owned()));
+    model.extension_notice = Some((
+        "radar · radar@uze: Approval".to_owned(),
+        "An agent in claude-code asks for approval".to_owned(),
+    ));
+    let Sidebar { rows, hits, .. } = sidebar(&model, &identities_fixture());
+    let (mark, _) = hits
+        .iter()
+        .find(|(_, hit)| matches!(hit, WorkspaceHit::DismissExtensionNotice))
+        .expect("its mark puts it away");
+    let y = usize::from(mark.y);
+    assert!(rows[y].contains("Approval"), "{rows:?}");
+    assert!(rows[y + 1].contains("asks for"), "{rows:?}");
+    assert!(
+        !rows.iter().any(|line| line.contains("v0.0.0-alpha.14")),
+        "one notice at a time: {rows:?}"
+    );
+    assert!(
+        !hits
+            .iter()
+            .any(|(_, hit)| matches!(hit, WorkspaceHit::OpenReleaseNotes)),
+        "an extension's notice opens nothing"
+    );
+
+    model.extension_notice = None;
+    let Sidebar { rows, .. } = sidebar(&model, &identities_fixture());
+    assert!(
+        rows.iter().any(|line| line.contains("v0.0.0-alpha.14")),
+        "the release's is back: {rows:?}"
+    );
+}
+
 /// The notes open over everything, take the keys and the pointer from
 /// what is underneath, and a click on them is reading rather than a
 /// way out.

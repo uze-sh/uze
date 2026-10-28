@@ -1,10 +1,7 @@
-test "the top of the sidebar says the last notice and how long ago" {
+test "the status row draws nothing" {
     surface "notice"
     given "notice" fixture="fixtures/notice.json"
-    now 1761570112000
-    expect-text "codex done"
-    expect-text "12s"
-    snapshot "notice"
+    expect-no-text "done"
 }
 
 test "every agent says how long it has worked, or how it stopped" {
