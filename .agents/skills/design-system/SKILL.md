@@ -77,6 +77,13 @@ on "cancel" must not save first.
   word that is not never turns bold under the pointer or while pressed.
   Manage's version and health are the reference.
 - Text-only affordances start muted and brighten.
+- What a plugin draws follows the same rule, without the plugin asking:
+  every element of the catalog that answers a click lifts under the
+  pointer in its own hue (`theme::lifted_ink`, `widget::lift`), and a
+  whole region that answers one, such as a bar item that opens a drawer,
+  rests held back like the bar's own doors (`widget::hold_back`). A
+  coloured mark never turns accent on hover: it is a stronger version of
+  itself.
 - Every close `x` is faint at rest and turns to the danger hue under the
   pointer and while pressed: use `mark::close_tone(state)`, never a tone
   of your own.

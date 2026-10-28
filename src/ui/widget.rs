@@ -116,7 +116,7 @@ pub(crate) use field::Field;
 pub(crate) use row::RowState;
 pub(crate) use rule::{Edge, Rule};
 pub(crate) use scrollbar::Scrollbar;
-pub(crate) use surface::{Surface, fill, root};
+pub(crate) use surface::{Surface, fill, hold_back, lift, root};
 pub(crate) use toast::{Toast, ToastKind};
 
 #[cfg(test)]

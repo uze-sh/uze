@@ -67,6 +67,23 @@ fn cells_are_drawn_in_their_roles_and_each_region_is_a_target() {
         act: NodeAct::Region(0),
     };
     assert_eq!(hits, vec![(Rect::new(1, 0, 1, 2), region)]);
+
+    terminal
+        .draw(|frame| {
+            let hovered = TreeFrame {
+                hovered: Some(region),
+                ..at(0)
+            };
+            render_tree(frame, frame.area(), 0, &root, hovered, &mut Vec::new());
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    assert_eq!(
+        buffer[(1, 0)].fg,
+        theme::lifted_ink(color(Role::Danger)),
+        "under the pointer, a region lifts in its own hue"
+    );
+    assert_eq!(buffer[(0, 0)].fg, color(Role::Muted), "and only it");
 }
 
 #[test]

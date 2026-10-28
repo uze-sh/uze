@@ -1568,9 +1568,7 @@ impl Painter<'_, '_> {
                 continue;
             };
             if self.hovered(hit) {
-                self.frame
-                    .buffer_mut()
-                    .set_style(rect, theme::fg(Token::Accent));
+                widget::lift(self.frame, rect);
             }
             self.hits.push((rect, hit));
         }

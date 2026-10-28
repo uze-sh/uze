@@ -193,6 +193,44 @@ pub(crate) fn fill(frame: &mut ratatui::Frame<'_>, area: Rect, ground: Token) {
     frame.render_widget(Block::default().style(theme::bg(ground)), area);
 }
 
+/// Lifts every ink already drawn in `area` toward the brightest text: the
+/// hover of something clickable whose colours are not the host's, such as
+/// what an extension drew. Each cell keeps its own hue, ground and weight,
+/// so the pointer changes how strong it reads and nothing else.
+pub(crate) fn lift(frame: &mut ratatui::Frame<'_>, area: Rect) {
+    let area = area.intersection(frame.area());
+    let buffer = frame.buffer_mut();
+    for y in area.top()..area.bottom() {
+        for x in area.left()..area.right() {
+            if let Some(cell) = buffer.cell_mut((x, y)) {
+                cell.fg = theme::lifted_ink(cell.fg);
+            }
+        }
+    }
+}
+
+/// Holds back the brightest text drawn in `area` to the secondary: what a
+/// whole region that answers a click, such as a bar item that opens a
+/// drawer, wears at rest, so [`lift`] has somewhere to take it. Coloured
+/// ink keeps its hue, and lifts in it.
+pub(crate) fn hold_back(frame: &mut ratatui::Frame<'_>, area: Rect) {
+    let area = area.intersection(frame.area());
+    let (bright, secondary) = (
+        theme::color(Token::TextBright),
+        theme::color(Token::TextSecondary),
+    );
+    let buffer = frame.buffer_mut();
+    for y in area.top()..area.bottom() {
+        for x in area.left()..area.right() {
+            if let Some(cell) = buffer.cell_mut((x, y))
+                && cell.fg == bright
+            {
+                cell.fg = secondary;
+            }
+        }
+    }
+}
+
 /// The frame's own ground: the backdrop everything is drawn on, and the
 /// ink any text that names no colour of its own inherits.
 ///

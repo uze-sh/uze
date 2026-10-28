@@ -273,18 +273,27 @@ pub(crate) fn muted(token: Token) -> Token {
 /// asked for. What a status that answers a click wears under the pointer,
 /// so the hue that says the state stays and only its strength moves.
 pub(crate) fn lifted(token: Token) -> Color {
+    lifted_ink(color(token))
+}
+
+/// [`lifted`], for ink already drawn: what something clickable that names
+/// no token of its own wears under the pointer, an extension's drawing
+/// among them. Ink with no value of its own is the theme's text, lifted.
+pub(crate) fn lifted_ink(ink: Color) -> Color {
     /// How far the hue travels toward the brightest text, in percent.
     const TOWARD_BRIGHT: u16 = 40;
 
-    let hue = uze_theme::active().color(token);
+    let Color::Rgb(red, green, blue) = ink else {
+        return color(Token::TextBright);
+    };
     let bright = uze_theme::active().color(Token::TextBright);
     let mix = |from: u8, to: u8| {
         ((u16::from(from) * (100 - TOWARD_BRIGHT) + u16::from(to) * TOWARD_BRIGHT) / 100) as u8
     };
     Color::Rgb(
-        mix(hue.0, bright.0),
-        mix(hue.1, bright.1),
-        mix(hue.2, bright.2),
+        mix(red, bright.0),
+        mix(green, bright.1),
+        mix(blue, bright.2),
     )
 }
 

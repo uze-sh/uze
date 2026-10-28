@@ -684,6 +684,35 @@ fn an_item_stands_on_its_side_and_a_click_opens_what_it_names() {
 }
 
 #[test]
+fn an_item_that_opens_something_is_lifted_in_its_own_hue_under_the_pointer() {
+    let mut model = hosting_a_bar(uze_contract::BarAlign::Left);
+    answers(&mut model, "notes", "6h12 today");
+    let row = layout(&model).bar.unwrap().y + 1;
+    let column = u16::try_from(bar_row(&mut model).find("6h12").expect("drawn")).unwrap();
+    let ink = |model: &mut WorkspaceModel| frame_buffer_at(model, ROOMY)[(column, row)].fg;
+    let resting = ink(&mut model);
+    assert_eq!(
+        resting,
+        crate::ui::theme::color(uze_theme::Token::TextSecondary),
+        "held back at rest, like the bar's doors"
+    );
+    let item = model
+        .remembered
+        .declared
+        .slots
+        .iter()
+        .find(|slot| slot.surface.id == "today")
+        .expect("hosted");
+    model.hovered = model.bar_target(item);
+    assert!(model.hovered.is_some(), "the item opens the drawer");
+    assert_eq!(
+        ink(&mut model),
+        crate::ui::theme::color(uze_theme::Token::TextBright),
+        "the pointer shows it answers a click"
+    );
+}
+
+#[test]
 fn without_a_plugin_in_it_the_bar_takes_no_row() {
     let mut model = hosting(vec![compiled(
         "notes",

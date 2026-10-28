@@ -246,6 +246,18 @@ pub(super) fn frame_rows(model: &mut WorkspaceModel) -> Vec<String> {
 
 /// [`frame_rows`] on a terminal of `area`'s size.
 pub(super) fn frame_rows_at(model: &mut WorkspaceModel, area: Rect) -> Vec<String> {
+    let buffer = frame_buffer_at(model, area);
+    (0..buffer.area.height)
+        .map(|row| {
+            (0..buffer.area.width)
+                .map(|column| buffer[(column, row)].symbol())
+                .collect()
+        })
+        .collect()
+}
+
+/// The frame drawn on a terminal of `area`'s size, colours and all.
+pub(super) fn frame_buffer_at(model: &mut WorkspaceModel, area: Rect) -> ratatui::buffer::Buffer {
     let mut terminal = Terminal::new(TestBackend::new(area.width, area.height)).unwrap();
     terminal
         .draw(|frame| {
@@ -258,14 +270,7 @@ pub(super) fn frame_rows_at(model: &mut WorkspaceModel, area: Rect) -> Vec<Strin
             )
         })
         .unwrap();
-    let buffer = terminal.backend().buffer().clone();
-    (0..buffer.area.height)
-        .map(|row| {
-            (0..buffer.area.width)
-                .map(|column| buffer[(column, row)].symbol())
-                .collect()
-        })
-        .collect()
+    terminal.backend().buffer().clone()
 }
 
 pub(super) fn label_every_tab(model: &mut WorkspaceModel, label: &str) {

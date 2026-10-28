@@ -425,7 +425,12 @@ fn an_agents_source_never_consented_to_says_so_rather_than_wait() {
     hosted.record = Some(None);
     let withheld = |model: &WorkspaceModel| {
         let owner = super::Owner::Declared(identity());
-        let engine = model.remembered.declared.engines.get(&owner).expect("engine");
+        let engine = model
+            .remembered
+            .declared
+            .engines
+            .get(&owner)
+            .expect("engine");
         let engine = engine.declared().expect("declared");
         (
             engine.withheld("board").map(str::to_owned),

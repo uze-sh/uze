@@ -158,6 +158,12 @@ fn render_item(
 ) -> bool {
     let animates = render_docked_slot(frame, rect, model, slot.id, view, hits);
     if let Some(target) = model.bar_target(slot) {
+        // A door like the bar's own: held back at rest, lifted in its
+        // own hues under the pointer.
+        match model.hovered.as_ref() == Some(&target) {
+            true => widget::lift(frame, rect),
+            false => widget::hold_back(frame, rect),
+        }
         hits.push((rect, target));
     }
     animates
