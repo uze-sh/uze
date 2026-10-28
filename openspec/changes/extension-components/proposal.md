@@ -17,8 +17,11 @@ already reads: KDL and Rhai.
   an action's `script` name `.uze` files; `.kdl` views and `.rhai` scripts
   are refused, naming the `.uze` that replaces them.
 - An action may `call "<function>"`: a function of the `<script>` in the
-  file of the surface the action is `on`, called with the same
-  `(input, context)` an `answer` takes.
+  file of the surface the action is `on`, or of the file `in=` names,
+  called with the same `(input, context)` an `answer` takes. It needs
+  consent as a script action does.
+- The check now compiles every script an extension reaches, so it reports
+  Rhai syntax errors and a called function that does not exist.
 - `extension.kdl` and `tests/*.test.kdl` stay KDL, unchanged.
 - UZE highlights `.uze` in its own code viewer and inspector, each block
   in its language. Editors other than UZE's own are out of scope.
@@ -36,8 +39,8 @@ None.
 
 ## Impact
 
-`uze-core` (a block reader, the manifest's file checks, the view and
-script compiles), `uze-contract` (`Does::Call`), `uze-script` (calling a
+`uze-contract` (the block rules, `Does::Call`), `uze-core` (the
+manifest's file checks, the view compile over a blanked file), `uze-script` (calling a
 named function), `uze-application` (the runner), `uze-extensions` (the
 highlighter), `src/cli/lsp` (completion by block), the scaffold
 (`uze agent plugin create`), every fixture and journey that writes an
