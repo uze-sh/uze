@@ -16,6 +16,7 @@ pub mod features;
 pub mod harness_runtime;
 pub mod home;
 pub mod launcher;
+pub mod mcp;
 pub mod path;
 pub mod portable_shell;
 pub mod process_cwd;

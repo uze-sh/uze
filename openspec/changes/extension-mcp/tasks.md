@@ -5,8 +5,8 @@
 
 ## 2. Client
 
-- [ ] 2.1 `uze-core::machine::mcp`: a stdio session — start, `initialize`, `tools/call`, a bounded reader, a deadline, the group ended on drop
-- [ ] 2.2 `uze-integrations`: a server's launch from a stored package's `mcp.json`, shared with delivery
+- [x] 2.1 `uze-core::machine::mcp`: a stdio session — start, `initialize`, `tools/call`, a bounded reader, a deadline, the group ended on drop
+- [x] 2.2 `uze-integrations`: a server's launch from a stored package's `mcp.json`, shared with delivery
 
 ## 3. Host
 
