@@ -1,0 +1,37 @@
+## Purpose
+
+Lets an extension keep a view and the logic it shows in one file, a
+component, written in the KDL and Rhai UZE already reads.
+
+## ADDED Requirements
+
+### Requirement: A component file holds a view and a script in blocks
+A `.uze` file SHALL hold at most one `<view>` block and at most one
+`<script>` block, each opened and closed by its tag alone on a line,
+with only blank lines and `//` comments outside them. The `<view>` SHALL
+be read as a view and the `<script>` as a script, and a problem in either
+SHALL be reported at its line and column in the `.uze` file.
+
+#### Scenario: A typo in a view block
+- **WHEN** line 12 of `panel.uze`, inside `<view>`, declares `Stak`
+- **THEN** the check reports `panel.uze:12:…` naming `Stak`, as it did for a `.kdl` view
+
+### Requirement: The manifest names components, never loose views or scripts
+A surface's `view` SHALL name a `.uze` file with a `<view>`; a source's
+`script` or `resident`, and an action's `script`, SHALL name a `.uze` file
+with a `<script>`. A `.kdl` view or `.rhai` script SHALL be refused, naming
+the `.uze` to write. `extension.kdl` and `tests/*.test.kdl` SHALL stay KDL.
+
+#### Scenario: A manifest from before components
+- **WHEN** a surface declares `view="board.kdl"`
+- **THEN** the check refuses it, suggesting `board.uze` with a `<view>` block
+
+### Requirement: An action calls a function of its surface's script
+An action SHALL `call "<function>"` to run that function of the `<script>`
+in the file of the surface it is `on`, with `(input, context)`, applying
+its envelope as an action's script's. The check SHALL refuse a `call`
+whose surface's file has no `<script>` or no such function.
+
+#### Scenario: The month buttons of the timesheet
+- **WHEN** `action "prev" on="panel" { call "prev"; }` and `panel.uze`'s script defines `fn prev(input, context)`
+- **THEN** pressing the button runs `prev`, and its envelope's store and refresh apply
