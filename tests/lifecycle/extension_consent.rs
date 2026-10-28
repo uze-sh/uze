@@ -309,11 +309,19 @@ fn an_update_that_widens_what_a_program_reads_is_held() {
         "fn answer(input, context) { #{} }\n",
     )
     .unwrap();
-    assert_eq!(
-        state(&app, &band, &here),
-        ExtensionState::Enabled,
-        "the same reads or fewer apply"
-    );
+    let narrowed = state(&app, &band, &here);
+    if uze_application::confinement().is_available() {
+        assert_eq!(
+            narrowed,
+            ExtensionState::Enabled,
+            "the same reads or fewer apply"
+        );
+    } else {
+        assert!(
+            matches!(narrowed, ExtensionState::NeedsConsent { .. }),
+            "accepted unconfined, new files are asked again whatever they read (D6): {narrowed:?}"
+        );
+    }
 }
 
 /// Adds a source to the band that runs `file`, a native program packaged

@@ -3077,7 +3077,7 @@ directory, so a file changed on disk since is not what runs.
 
 Where the machine confines, a program reads the checkout, its Git
 directory, its extension and the system; writes only its scratch folder;
-opens no socket; signals nothing outside its run and cannot leave its
+connects to no socket; signals nothing outside its run and cannot leave its
 process group; inherits no secret of the operator's environment; and is
 ended with every process it started past its time or output bound. A run
 accepted as confined never runs unconfined: without the helper, or when
@@ -3085,7 +3085,7 @@ the helper cannot apply the confinement, nothing runs.
 
 > `tests/lifecycle/extension_programs.rs::a_confined_program_writes_nowhere_but_its_scratch`
 > `tests/lifecycle/extension_programs.rs::a_confined_program_reads_the_checkout_and_nothing_outside_it`
-> `tests/lifecycle/extension_programs.rs::a_confined_program_opens_no_socket`
+> `tests/lifecycle/extension_programs.rs::a_confined_program_connects_to_no_socket`
 > `tests/lifecycle/extension_programs.rs::a_confined_program_cannot_leave_its_process_group`
 > `tests/lifecycle/extension_programs.rs::a_helper_that_cannot_confine_runs_nothing`
 > `crates/uze-core/src/machine/extension_program.rs::tests::a_token_in_the_environment_does_not_reach_the_program`

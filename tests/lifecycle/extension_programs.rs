@@ -325,11 +325,19 @@ fn a_confined_program_connects_to_no_socket() {
         return;
     }
     assert!(failed(&world.ask(&runner, "socket", "")).contains("PermissionError"));
-    let bus = std::env::var("XDG_RUNTIME_DIR").map_or_else(
-        |_| "/run/dbus/system_bus_socket".to_owned(),
-        |dir| format!("{dir}/bus"),
-    );
-    assert!(failed(&world.ask(&runner, "unix", &bus)).contains("PermissionError"));
+    // A Unix socket that is listening, as an agent's or Docker's is: a path
+    // that does not exist would fail for the wrong reason. Unix only, where
+    // such a socket is made; short, for macOS's 104-byte bound on its path.
+    #[cfg(unix)]
+    {
+        let path = format!("/tmp/uze-probe-{}.sock", std::process::id());
+        let _ = fs::remove_file(&path);
+        let listening = std::os::unix::net::UnixListener::bind(&path).unwrap();
+        let reason = failed(&world.ask(&runner, "unix", &path));
+        drop(listening);
+        let _ = fs::remove_file(&path);
+        assert!(reason.contains("PermissionError"), "{reason}");
+    }
 }
 
 #[test]
