@@ -29,4 +29,15 @@ fn answer(input, context) {
         store: #{ name: name },
     }
 }
+
+// The `feed` action, called from the kennel: one more meal, and when,
+// kept in the store; the kennel is asked again to show the pet content.
+fn feed(input, context) {
+    let kept = store();
+    #{
+        data: (),
+        store: #{ fed: (kept.fed ?? 0) + 1, last_fed: clock() },
+        refresh: ["kennel"],
+    }
+}
 </script>

@@ -12,5 +12,5 @@ wants "resident" "store"
 surface "game" slot="view" view="game.uze" source="board" title="Snake"
 
 source "board" {
-    resident "snake.uze"
+    resident "game.uze"
 }

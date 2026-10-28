@@ -86,7 +86,7 @@ world:
       }
 
       action "done" label="Say done" on="log" {
-          script "done.uze"
+          call "done"
       }
     market/plugins/deck/extensions/deck/waiting.uze: |
       <view>
@@ -110,6 +110,16 @@ world:
           Text "Nothing changed yet" role="faint" unless="."
       }
       </view>
+
+      <script>
+      fn done(input, context) {
+          #{
+              data: (),
+              notify: #{ title: "Deck", body: "The phases are up to date" },
+              sound: "done",
+          }
+      }
+      </script>
     market/plugins/deck/extensions/deck/picker.uze: |
       <view>
       List each="items" {
@@ -119,16 +129,6 @@ world:
           }
       }
       </view>
-    market/plugins/deck/extensions/deck/done.uze: |
-      <script>
-      fn answer(input, context) {
-          #{
-              data: (),
-              notify: #{ title: "Deck", body: "The phases are up to date" },
-              sound: "done",
-          }
-      }
-      </script>
     market/plugins/deck/extensions/deck/notes.uze: |
       <script>
       fn answer(input, context) {

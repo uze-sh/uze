@@ -41,5 +41,5 @@ action "copy-note" label="Copy" on="picker" {
 }
 
 action "done" label="Say done" on="log" {
-    script "done.uze"
+    call "done"
 }

@@ -42,9 +42,9 @@ impl Reach for Kept {
 }
 
 fn snake(store: Value) -> Resident {
-    let component = std::fs::read(file("snake", "snake.uze")).unwrap();
-    let script = ResidentScript::compile(&uze_script::script_of("snake.uze", &component).unwrap())
-        .expect("snake.uze compiles as a resident script");
+    let component = std::fs::read(file("snake", "game.uze")).unwrap();
+    let script = ResidentScript::compile(&uze_script::script_of("game.uze", &component).unwrap())
+        .expect("game.uze compiles as a resident script");
     let grants = Grants::from([Grant::Resident, Grant::Store]);
     let (game, started) = Resident::start(
         Arc::new(script),
@@ -189,16 +189,22 @@ fn kennel_script(name: &str) -> Script {
 #[test]
 fn pets_feeds_the_pet_and_the_kennel_says_it_is_content() {
     let grants = Grants::from([Grant::Store]);
+    // One component: the kennel's `answer` and the `feed` its button calls.
     let kennel = kennel_script("kennel.uze");
-    let feed = kennel_script("feed.uze");
-    let ask = |script: &Script, store: Value| {
-        script
-            .answer(&json!({}), &json!({}), &grants, Kept::holding(store))
+    let call = |function: &str, store: Value| {
+        kennel
+            .call(
+                function,
+                &json!({}),
+                &json!({}),
+                &grants,
+                Kept::holding(store),
+            )
             .outcome
             .unwrap()
     };
 
-    let hungry = ask(&kennel, json!({}));
+    let hungry = call("answer", json!({}));
     assert_eq!(
         hungry.data,
         json!({ "name": "Pixel", "fed": 0, "mood": "hungry", "said": "hungry" })
@@ -209,14 +215,14 @@ fn pets_feeds_the_pet_and_the_kennel_says_it_is_content() {
         "its name is kept"
     );
 
-    let fed = ask(&feed, json!({ "name": "Pixel", "fed": 2 }));
+    let fed = call("feed", json!({ "name": "Pixel", "fed": 2 }));
     let patch = fed.store.expect("a meal is kept");
     assert_eq!(patch["fed"], json!(3));
     assert!(patch["last_fed"].as_i64().unwrap() > 0);
     assert_eq!(fed.refresh, ["kennel"]);
 
-    let content = ask(
-        &kennel,
+    let content = call(
+        "answer",
         json!({ "name": "Biscuit", "fed": 3, "last_fed": patch["last_fed"] }),
     );
     assert_eq!(content.data["name"], "Biscuit");

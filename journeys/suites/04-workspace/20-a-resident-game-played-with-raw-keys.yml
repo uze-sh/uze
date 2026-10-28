@@ -56,14 +56,14 @@ world:
       surface "game" slot="view" view="game.uze" source="board" title="Snake"
 
       source "board" {
-          resident "snake.uze"
+          resident "game.uze"
       }
     market/plugins/media/extensions/snake/game.uze: |
       <view>
       // What the view draws until the game's first frame.
       Text "Starting the game…" role="faint"
       </view>
-    market/plugins/media/extensions/snake/snake.uze: |
+
       <script>
       // The `board` source, resident: the game lives on `this` between calls.
       // The board is 20 by 10; the snake starts heading right, waits for an
@@ -257,7 +257,7 @@ scenes:
       - shell: "cd {project} && {uze} install media@studio > {world}/install.log 2>&1"
         say: add the plugin to the project, with nobody at a terminal to answer
     then:
-      - file: "{uze_home}/store/plugins/studio/media/extensions/snake/snake.uze"
+      - file: "{uze_home}/store/plugins/studio/media/extensions/snake/game.uze"
         contains: "fn render(size)"
         about: the game's script was installed from the clone, into the Store
       - file: "{uze_home}/state/extensions.json"

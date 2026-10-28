@@ -71,7 +71,7 @@ world:
       }
 
       action "feed" label="Feed" on="kennel" {
-          script "feed.uze"
+          call "feed"
       }
     market/plugins/media/extensions/pets/pack.uze: |
       <view>
@@ -115,10 +115,8 @@ world:
               store: #{ name: name },
           }
       }
-      </script>
-    market/plugins/media/extensions/pets/feed.uze: |
-      <script>
-      fn answer(input, context) {
+
+      fn feed(input, context) {
           let kept = store();
           #{
               data: (),

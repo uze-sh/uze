@@ -12,3 +12,14 @@ Stack gap=1 {
     Text "Nothing changed yet" role="faint" unless="."
 }
 </view>
+
+<script>
+// The `done` action, offered on the log: tells the operator, and sounds the done cue.
+fn done(input, context) {
+    #{
+        data: (),
+        notify: #{ title: "Deck", body: "The phases are up to date" },
+        sound: "done",
+    }
+}
+</script>

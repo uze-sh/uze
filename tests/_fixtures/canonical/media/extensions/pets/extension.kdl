@@ -33,5 +33,5 @@ source "kennel" {
 }
 
 action "feed" label="Feed" on="kennel" {
-    script "feed.uze"
+    call "feed"
 }
