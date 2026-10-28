@@ -76,11 +76,14 @@ fn described_from(input: impl std::io::Read) -> serde_json::Value {
 }
 
 /// `text` as JSON or, when it does not read as JSON (cut at the bound),
-/// the fields a report keeps, each found in it as a key and its string.
+/// the fields a report keeps, each found in it as a key and its string
+/// before `tool_response`: what the tool answered can hold any key, so a
+/// field named only after it is left unsaid rather than taken from there.
 fn described_by(text: &str) -> serde_json::Value {
     if let Ok(described) = serde_json::from_str(text) {
         return described;
     }
+    let text = key_at(text, "tool_response").map_or(text, |at| &text[..at]);
     let mut described = serde_json::Map::new();
     for key in ["tool_name", "tool_use_id", "call_id"] {
         if let Some(value) = string_of_key(text, key) {
@@ -95,6 +98,15 @@ fn described_by(text: &str) -> serde_json::Value {
         described.insert("tool_input".to_owned(), input.into());
     }
     serde_json::Value::Object(described)
+}
+
+/// Where the first `"key":` in `text` starts, skipping the key's name
+/// quoted inside another string.
+fn key_at(text: &str, key: &str) -> Option<usize> {
+    let quoted = format!("\"{key}\"");
+    text.match_indices(&quoted).map(|(at, _)| at).find(|&at| {
+        !text[..at].ends_with('\\') && text[at + quoted.len()..].trim_start().starts_with(':')
+    })
 }
 
 /// The string the first `"key":` in `text` holds, skipping the key's name
@@ -1363,12 +1375,34 @@ mod tests {
             None,
             "what was cut away is not guessed"
         );
-        let quoted = r#"{"tool_response": "say \"tool_name\": \"Evil\"", "tool_name": "Bash""#;
+        let quoted = r#"{"cwd": "say \"tool_name\": \"Evil\"", "tool_name": "Bash""#;
         assert_eq!(
             field_at(&described_by(quoted), &["tool_name"]).as_deref(),
             Some("Bash"),
             "a key quoted inside a string is no key"
         );
+    }
+
+    #[test]
+    fn a_cut_hook_input_takes_nothing_from_what_the_tool_answered() {
+        let whole = serde_json::json!({
+            "tool_name": "mcp__files__fetch",
+            "tool_input": { "url": "https://example.com" },
+            "tool_response": {
+                "path": "/work/acme/secret.txt",
+                "tool_use_id": "toolu_forged",
+                "content": "x".repeat(1 << 20),
+            },
+            "tool_use_id": "toolu_01",
+        })
+        .to_string();
+        let described = described_by(&whole[..whole.len() / 2]);
+        assert_eq!(
+            field_at(&described, &["tool_name"]).as_deref(),
+            Some("mcp__files__fetch")
+        );
+        assert_eq!(field_at(&described, &["tool_input", "path"]), None);
+        assert_eq!(field_at(&described, &["tool_use_id"]), None);
     }
 
     #[test]
