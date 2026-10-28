@@ -571,6 +571,9 @@ pub(crate) struct ExtensionHere {
     /// The digest of the files the operator was shown, which consent
     /// covers and nothing else.
     pub(crate) shown: Option<String>,
+    /// It reaches agents, so enabling it holds for `project` alone rather
+    /// than for every project.
+    pub(crate) reaches_agents: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1436,8 +1439,10 @@ impl TuiModel {
 
     /// Switching the selected extension to `enabled`, or nothing when it
     /// already is — an offer that is not available answers no key. One
-    /// that runs code is switched in this project: enabling it asks for
-    /// its grants first when nobody accepted them.
+    /// that runs code is switched for the machine, as this screen's every
+    /// switch is: in every project, or in this one alone when it reaches
+    /// agents. Enabling it asks for its grants first when nobody accepted
+    /// them.
     pub(crate) fn switch_selected_extension(&mut self, enabled: bool) -> crate::ui::worker::Intent {
         use crate::ui::worker::Intent;
         use uze_application::ExtensionCondition as Condition;
@@ -1475,6 +1480,7 @@ impl TuiModel {
             enable: enabled,
             switch_on: enabled && !switched_on,
             shown: standing.digest.clone(),
+            reaches_agents: standing.reaches_agents,
         };
         match standing.condition {
             Condition::NeedsConsent | Condition::Held if enabled => {

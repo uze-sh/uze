@@ -425,16 +425,22 @@ surface.
 - **WHEN** the operator disables an extension
 - **THEN** its surfaces disappear from the workspace and none of its sources, actions, events or commands run
 
-### Requirement: Enabling is per project
+### Requirement: Enabling is per project or for every project
 Consent to an extension's grants SHALL be given once per machine, per
-identity and digest; enabling SHALL be per project. An extension enabled in
-one project SHALL run no program and deliver no surface in another until
-enabled there, and there SHALL be no machine-wide enable. A plugin a project
-declares SHALL offer its extensions in that project on first open.
+identity and digest. Enabling SHALL be per project unless the operator
+enables it in every project; an extension wanting an `agent:*` grant SHALL
+never be enabled in every project. An extension enabled in one project
+alone SHALL run no program and deliver no surface in another until enabled
+there. A plugin a project declares SHALL offer its extensions in that
+project on open, all in one list.
 
 #### Scenario: Enabling does not cross projects
 - **WHEN** `gsd-band` is enabled in project A and the operator opens project B, which declares the same plugin
 - **THEN** B shows the extension as needing enabling and nothing of it runs in B
+
+#### Scenario: Every project reaches a project never named
+- **WHEN** the operator enables `gsd-band` in every project from project A
+- **THEN** it runs in project B without being enabled there
 
 #### Scenario: Consent is not asked twice for the same code
 - **WHEN** the operator accepted `gsd-band`'s grants in project A and enables it in project B at the same digest

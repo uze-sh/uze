@@ -580,11 +580,15 @@ fn extension_grants_body(
         || here.project.display().to_string(),
         |name| name.to_string_lossy().into_owned(),
     );
-    let mut body = vec![if new_grants.is_empty() {
+    let mut body = vec![if new_grants.is_empty() && here.reaches_agents {
         format!(
-            "It runs a script inside the workspace, in {project} only, and reaches no further \
-             than this:"
+            "It runs a script inside the workspace, in {project} only, since it reaches its \
+             agents, and no further than this:"
         )
+    } else if new_grants.is_empty() {
+        "It runs a script inside the workspace, in every project, and reaches no further than \
+         this:"
+            .to_owned()
     } else {
         "Its update wants more than you accepted. Nothing of it runs until you allow it:".to_owned()
     }];

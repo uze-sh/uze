@@ -554,7 +554,7 @@ fn standing_status(
             DrawerStatus {
                 color: warning,
                 headline: "Needs a project",
-                subtitle: "Enabled per project: open an agent in one, then enable it here",
+                subtitle: "Open an agent in a project, then enable it from there",
             }
         }
         _ if standing.checkout_refused.is_some() => DrawerStatus {
@@ -576,6 +576,11 @@ fn standing_status(
             color: theme::color(Token::TextDim),
             headline: "Not enabled here",
             subtitle: "Allowed on this machine, and off in this project",
+        },
+        Condition::Enabled if standing.enabled_everywhere => DrawerStatus {
+            color: theme::color(Token::StateSuccess),
+            headline: "Enabled everywhere",
+            subtitle: "Its scripts answer in every project",
         },
         Condition::Enabled => DrawerStatus {
             color: theme::color(Token::StateSuccess),

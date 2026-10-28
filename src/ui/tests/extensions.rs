@@ -316,6 +316,7 @@ fn here(consent: bool, enable: bool) -> Intent {
         enable,
         switch_on: false,
         shown: Some("sha256:shown".to_owned()),
+        reaches_agents: false,
     })
 }
 
@@ -351,7 +352,10 @@ fn enabling_an_unconsented_extension_asks_with_its_grants_first() {
     let screen = screen_of(&model);
     assert!(screen.contains("Allow this extension to run?"), "{screen}");
     assert!(screen.contains("gsd-band · gsd@market"), "{screen}");
-    assert!(screen.contains("in acme only"), "{screen}");
+    assert!(
+        screen.contains("the workspace, in every"),
+        "this screen answers for the machine: {screen}"
+    );
     assert!(
         screen.contains("read:checkout · reads the files of the checkout"),
         "{screen}"
@@ -518,6 +522,20 @@ fn a_refused_checkout_is_the_reason_the_extension_runs_nothing() {
     );
 }
 
+/// One that reaches agents is enabled in the project in front alone,
+/// even from this screen, and the question says so.
+#[test]
+fn enabling_one_that_reaches_agents_asks_for_this_project_alone() {
+    let mut reaching = standing(uze_application::ExtensionCondition::NeedsConsent);
+    reaching.reaches_agents = true;
+    let mut model = standing_in_a_project(reaching);
+    let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(model.apply_key(enter), Intent::None);
+    let screen = screen_of(&model);
+    assert!(screen.contains("in acme only,"), "{screen}");
+    assert!(screen.contains("since it reaches its"), "{screen}");
+}
+
 /// Seen with no project in front (a shell alone in the space), an
 /// extension that runs code is enabled nowhere, and its machine switch is
 /// already on: Enable must say where it is enabled instead of answering
@@ -534,7 +552,7 @@ fn enabling_with_no_project_in_front_says_where_it_is_enabled() {
         "no dialog for a project there is none of"
     );
     let screen = screen_of(&model);
-    assert!(screen.contains("open an agent in one"), "{screen}");
+    assert!(screen.contains("Open an agent in a project"), "{screen}");
 }
 
 /// A consented extension's drawer lists its programs where they were

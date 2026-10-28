@@ -558,7 +558,10 @@ the operator has **consented** to its grants and **enabled** it in the
 project; until then its surfaces say `needs consent` or `needs enabling
 in this project` where the data would be. Consent is recorded per
 extension, by `plugin@marketplace/id`, with the grants and the digest of
-the files consented to; enabling is per project, and so is disabling.
+the files consented to. The workspace's offer enables in the project, or
+in every project when the operator chooses so; the Extensions screen
+enables and disables for every project. One wanting an `agent:*` grant is
+only ever enabled project by project.
 
 - An update that wants the same grants or fewer is applied without
   asking. One that wants a new grant is **held** (`held: its update wants

@@ -26,10 +26,12 @@ consent.
 - **THEN** the second shows as needing consent and shares no record, cache or keys
 
 ### Requirement: Enabling is per project
-A consented extension SHALL run only in the projects it is enabled in.
-Opening a project that declares a plugin with an extension not enabled
-there SHALL offer enabling through a toast and a dialog, as a project's
-commands are offered.
+A consented extension SHALL run only in the projects it is enabled in, or
+in every project once the operator enables it there, which an extension
+wanting an `agent:*` grant never is. Opening a project that declares a
+plugin with an extension not enabled there SHALL offer enabling through a
+toast and one dialog listing them all, as a project's commands are
+offered; putting the dialog away SHALL record nothing.
 
 #### Scenario: Enabling does not cross projects
 - **WHEN** `gsd-band` is enabled in project A and the operator opens project B, which declares the same plugin

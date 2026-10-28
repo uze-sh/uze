@@ -1616,8 +1616,10 @@ fn switch_extension(home: &UzeHome, id: &str, enabled: bool) -> std::result::Res
     Ok(())
 }
 
-/// The operator's answer about a declared extension in one project, made
-/// from this client, which only the operator's keyboard reaches.
+/// The operator's answer about a declared extension, made from this
+/// client, which only the operator's keyboard reaches: for the machine, as
+/// every switch here is, except that one reaching agents is enabled in the
+/// project in front alone.
 fn extension_here(app: &UzeApplication, here: &super::model::ExtensionHere) -> Result<String> {
     let extensions = app.extensions();
     let asker = crate::asker::asker();
@@ -1633,11 +1635,17 @@ fn extension_here(app: &UzeApplication, here: &super::model::ExtensionHere) -> R
         |name| name.to_string_lossy().into_owned(),
     );
     let message = if here.enable {
-        extensions.enable(&here.identity, &here.project, asker)?;
-        format!("{} is enabled in {project}", here.name)
+        if extensions
+            .enable_everywhere(&here.identity, &here.project, asker)?
+            .everywhere
+        {
+            format!("{} is enabled in every project", here.name)
+        } else {
+            format!("{} is enabled in {project}; it reaches agents", here.name)
+        }
     } else {
-        extensions.disable(&here.identity, &here.project)?;
-        format!("{} is disabled in {project}", here.name)
+        extensions.disable_everywhere(&here.identity, &here.project)?;
+        format!("{} is disabled in every project", here.name)
     };
     // The workspace asks its sources again once it looks again.
     crate::ui::extension_switch::plugins_changed();
