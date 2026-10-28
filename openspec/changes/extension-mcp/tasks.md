@@ -15,6 +15,6 @@
 
 ## 4. Proof and documentation
 
-- [ ] 4.1 Tests: grant parsing and check; the client against a fake server; a script calling a tool end to end
-- [ ] 4.2 `docs/extensions/`, the `uze:author` extension reference
-- [ ] 4.3 The sandbox timesheet calls a stand-in `rtc_timesheet` tool; a patch adding the tool to Cardinal's `rtc` server
+- [x] 4.1 Tests: grant parsing and check; the client against a fake server; a script calling a tool end to end
+- [x] 4.2 `docs/extensions/`, the `uze:author` extension reference
+- [x] 4.3 The sandbox timesheet calls a stand-in `rtc_timesheet` tool; a patch adding the tool to Cardinal's `rtc` server
