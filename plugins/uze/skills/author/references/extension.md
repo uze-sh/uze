@@ -508,6 +508,35 @@ if runs.status != 200 { return #{ notice: `GitHub said ${runs.status}` }; }
   is replaced with `[secret]` in every answer, and a run that sent one keeps
   no store and sends no notification.
 
+### Calling an MCP server
+
+When the logic already lives in an MCP server a plugin delivers to its
+agents, call its tools rather than writing it again:
+
+```kdl
+wants "mcp:rtc/rtc_timesheet"
+mcp "rtc" plugin="std@cardinal" timeout="5m"
+```
+
+```rhai
+let month = mcp("rtc", "rtc_timesheet", #{ month: "2026-10" });
+#{ data: month }
+```
+
+- One grant per tool, `mcp:<server>/<tool>`: the operator consents to each
+  by name, and a tool no grant names is refused before the server hears
+  of it. Never grant a server's writing tools to read with.
+- The server is the extension's own plugin's, or the one an `mcp` node
+  names with `plugin="<plugin>@<marketplace>"`. It is started from that
+  plugin's `mcp.json` exactly as a harness starts it (a stdio server with
+  no `env` or `cwd` of its own), unconfined, kept alive between calls and
+  ended after five idle minutes.
+- `mcp(server, tool, args)` answers the tool's structured content, or its
+  text read as JSON when it is JSON, else the text. A tool's error is
+  thrown; catch it with `try { … } catch (error) { … }`.
+- A call may take 30 s, or what the `mcp` node's `timeout` says, up to
+  `10m`. A check starts no server: give the source a fixture to test with.
+
 `edit:checkout` is refused: no extension writes the checkout.
 There is no `write:checkout`, and `exec:uze` and a harness's own program
 are never granted. Ask for the fewest grants that do the job: each one is
