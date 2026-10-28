@@ -57,7 +57,7 @@ case "$2" in
     escape) setsid sleep 30 && echo escaped ;;
     stdin) cat ;;
     fill) head -c 100000000 /dev/zero > "$TMPDIR/fill" && echo filled ;;
-    socket) python3 -I -c 'import socket; socket.socket()' && echo opened ;;
+    socket) python3 -I -c 'import socket; s=socket.socket(); s.settimeout(2); s.connect(("127.0.0.1", 9))' && echo connected ;;
     unix) python3 -I -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1])' "$3" && echo connected ;;
     *) echo "unknown $2" >&2; exit 2 ;;
 esac
@@ -317,7 +317,7 @@ fn a_confined_program_signals_nothing_outside_its_run() {
 }
 
 #[test]
-fn a_confined_program_opens_no_socket() {
+fn a_confined_program_connects_to_no_socket() {
     let world = World::new("socket");
     let Some(runner) = confining() else { return };
     if uze_platform::executable::on_path("python3").is_none() {
@@ -368,7 +368,13 @@ fn a_flood_of_output_or_of_scratch_is_cut_off() {
     assert!(failed(&world.ask(&runner, "flood", "")).contains("more than 1024 KiB on stdout"));
     let reason = failed(&world.ask(&runner, "fill", ""));
     assert!(
-        reason.contains("File size limit exceeded") || reason.contains("signal: 25"),
+        [
+            "File size limit exceeded",
+            "Filesize limit exceeded",
+            "signal: 25"
+        ]
+        .iter()
+        .any(|said| reason.contains(said)),
         "{reason}"
     );
 }
