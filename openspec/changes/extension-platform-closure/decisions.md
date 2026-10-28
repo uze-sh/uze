@@ -617,3 +617,73 @@
 - decided:  The forgetting is best-effort: its error is logged (`tracing::warn!`) and carried in `RemovePluginReport::Removed { unforgotten }` (serialized only when set), which `uze remove` prints as a warning under its report; republishing always follows. A consent left behind this way is the one thing the operator should know of, since the same plugin installed again would find it.
 - rejected: Forgetting before the package is removed, to refuse the whole removal on failure: a removal blocked by an extension's preferences file is worse than a removal that says what it left.
 - blast:    `uze-application::{lifecycle::remove, read_models}`, `src/cli/report.rs`.
+
+## D190 — Seatbelt maps the system's libraries executable, and reads the root's listing
+
+- status:   pending
+- task:     CI macOS
+- commit:
+- trigger:  Every confined program on macOS died of SIGABRT before its first line. Seatbelt asks `file-map-executable` apart from `file-read*`, so under `(deny default)` dyld could not map the shared cache; once that was granted, Seatbelt's log named one more refusal, `sh deny(1) file-read-data /`, and macOS's `/bin/sh` aborts on it.
+- decided:  `/usr/lib`, `/System` and `/Library/Apple`, and what a program may execute, are mapped executable; the root directory's own listing is readable as a `literal`, so nothing beneath it is. A lifecycle test that finds a program unanswered prints Seatbelt's refusals of the last minute, so the next one names itself.
+- rejected: `(allow file-read* (subpath "/"))` or `(allow default)` with denials, as other harnesses' profiles do: either reads every file the operator can.
+- blast:    `uze-platform::confine::seatbelt`; `tests/lifecycle/extension_programs.rs`.
+
+## D191 — Confinement is proven by the connection refused, on every platform
+
+- status:   pending
+- task:     CI macOS
+- commit:
+- trigger:  Seatbelt refuses using a socket, not making one, so the probe that only made one was answered on macOS though nothing could reach the network.
+- decided:  The probe connects to a local port: the seccomp filter refuses the socket on Linux, Seatbelt the connection on macOS, and both answer `PermissionError`. macOS's bash words a file-size limit "Filesize limit exceeded", accepted beside Linux's wording.
+- rejected: Refusing socket creation on macOS with `(deny system-socket)`: the guarantee the operator was promised is no network, which the connection proves.
+- blast:    `tests/lifecycle/extension_programs.rs`.
+
+## D192 — A journal read checks the line its cursor ends on
+
+- status:   pending
+- task:     polish re-review
+- commit:
+- trigger:  A cut was noticed only when the reader's offset lay past the new end; a journal cut and grown back past the offset between two polls was read from inside new content, skipping every report kept before the offset.
+- decided:  Before reading on, the line ending at the offset must still be the last report delivered; when it is not, the read is one after a cut. Portable: no file identity, which would be a new `uze-platform` concept.
+- rejected: Keeping the file's identity (device and inode) in the cursor: it needs a per-platform concept for a check the content already answers.
+- blast:    `uze-workspace::reports`.
+
+## D193 — Files an older build applied unseen have their reads and packaged programs compared
+
+- status:   pending
+- task:     polish re-review
+- commit:
+- trigger:  A build from before D161/D162 applies an update by writing the new digest and dropping `accepted_reads` and `accepted_packaged`; this build then saw the same digest and judged the extension current, so reads nobody was shown ran.
+- decided:  A record an update wrote (`updated_at` set) that keeps neither field has them compared even under the same digest: it asks once, and this build's own updates keep them.
+- rejected: Comparing them whenever the field is absent: a record the operator accepted before they were kept showed its reads on the consent screen, and asking again would ask everyone once for nothing.
+- blast:    `uze-workspace::extensions::consent::judge`.
+
+## D194 — The chosen item is taken again when the surface's gestures change
+
+- status:   pending
+- task:     polish re-review
+- commit:
+- trigger:  D142 took the item again only when the selected row's index moved; a filter typed over the list puts another item at that index, and the source asked about the one no longer drawn there.
+- decided:  It is taken again when the row or any of the surface's `ui.*` values change, never because an answer redrew the row.
+- rejected: Comparing the item itself: that is what an answer changes, which is the loop D142 closed.
+- blast:    `uze-extensions::declared` (`Chosen`, `capture_selection`).
+
+## D195 — A cut hook input is read only up to the tool's answer
+
+- status:   pending
+- task:     polish re-review
+- commit:
+- trigger:  D166 scanned an input cut at 8 MiB for the first `path`, `tool_use_id` or `call_id` anywhere, so keys inside a tool's or an MCP server's response named a path never touched and a forged call id.
+- decided:  The scan stops at `tool_response`; a field named only after it is left unsaid.
+- rejected: Parsing the prefix as a partial JSON document: no dependency for it, and the keys a report keeps all come before the response in what Claude Code sends.
+- blast:    `src/cli/agent.rs`.
+
+## D196 — Fixers worked in scratch clones the workspace does not manage
+
+- status:   pending
+- task:     process finding
+- commit:
+- trigger:  D101 reset three of the four polish checkouts mid-work.
+- decided:  Each fixer moved to a `git clone --shared` in this job's temporary directory, on its own branch, and its commits were cherry-picked onto this branch; `decisions.md`, which every fixer appended to, was merged by keeping both sides and checked entry by entry.
+- rejected: Retrying in `uze agent work split` checkouts: the reset recurs whenever `main` moves.
+- blast:    None in the code.
