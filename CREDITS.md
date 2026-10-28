@@ -324,7 +324,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `potential_utf` | 0.1.6 | Unicode-3.0 |
 | `powerfmt` | 0.2.0 | MIT OR Apache-2.0 |
 | `proc-macro2` | 1.0.107 | MIT OR Apache-2.0 |
-| `pulldown-cmark` | 0.13.4 | MIT |
+| `pulldown-cmark` | 0.13.5 | MIT |
 | `quick-error` | 2.0.1 | MIT OR Apache-2.0 |
 | `quick-xml` | 0.41.0 | MIT |
 | `quote` | 1.0.47 | MIT OR Apache-2.0 |
