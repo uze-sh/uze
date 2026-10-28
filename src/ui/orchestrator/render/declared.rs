@@ -138,10 +138,10 @@ pub(super) fn render_status_rows(
     animates
 }
 
-/// A band in the rows the layout took for it: its extension's id, muted,
-/// against the right end of its first row, where the host keeps the
-/// column it needs so nothing the band draws can cover it, and the band's
-/// view in the rest. A band with nothing to draw leaves its rows blank.
+/// A band in the rows the layout took for it, its view drawn across all of
+/// them. No mark names whose it is: like a sidebar section, it is drawn
+/// flat, and a muted name at its end read as a button that did nothing
+/// (`extension-bar` D8). A band with nothing to draw leaves its rows blank.
 /// Answers whether anything in it moves with the clock.
 pub(super) fn render_band(
     frame: &mut ratatui::Frame<'_>,
@@ -150,31 +150,12 @@ pub(super) fn render_band(
     slot: SlotId,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) -> bool {
-    let Some(id) = model
-        .remembered
-        .declared
-        .slot(slot)
-        .and_then(|slot| slot.owner.declared())
-        .map(|identity| identity.id.clone())
-    else {
-        return false;
-    };
-    let mark = text::elide(&id, usize::from(area.width / 2));
-    let mark_width = u16::try_from(text::columns(&mark)).unwrap_or(u16::MAX);
-    let content = Rect {
-        width: area.width.saturating_sub(mark_width + 1),
-        ..area
-    };
-    frame.render_widget(
-        Paragraph::new(Span::styled(mark, theme::fg(Token::TextMuted))),
-        Rect::new(content.right() + 1, area.y, mark_width, 1),
-    );
     let space = uze_extensions::view::Size {
-        width: content.width,
-        height: content.height,
+        width: area.width,
+        height: area.height,
     };
     match model.band_view(slot, space) {
-        Some(view) => render_docked_slot(frame, content, model, slot, &view, hits),
+        Some(view) => render_docked_slot(frame, area, model, slot, &view, hits),
         None => false,
     }
 }

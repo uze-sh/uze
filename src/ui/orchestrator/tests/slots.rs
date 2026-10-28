@@ -358,8 +358,8 @@ fn a_band_takes_its_rows_before_the_pane_is_sized_and_no_answer_resizes_it() {
         .collect();
     assert!(first.contains("phase 3 of 5"), "{rows:#?}");
     assert!(
-        first.trim_end().ends_with("notes"),
-        "its id at the end of its first row: {first:?}"
+        !first.trim_end().ends_with("notes"),
+        "no id at the end of its first row, which read as a button: {first:?}"
     );
 
     answers(&mut model, "notes", "");

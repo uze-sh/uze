@@ -166,7 +166,8 @@ on "cancel" must not save first.
   foot, which takes its rows only while a plugin puts something there.
 - A plugin's section in the sidebar is drawn flat, its header its own
   title, as the sidebar's own sections are: no strip naming its extension
-  and plugin above it. Whose it is belongs to the Extensions screen and the
+  and plugin above it. A band has no mark naming it either: a muted name
+  at its end reads as a button. Whose it is belongs to the Extensions screen and the
   inspector; a clash between extensions is resolved by id, never shown. A
   view, a drawer and an overlay keep their strip where they open.
 - A plugin never writes an icon glyph either: it names one with `Icon`
