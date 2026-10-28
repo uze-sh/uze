@@ -8,7 +8,6 @@
     { "name": "uze", "source": "./plugins/uze", "category": "development" },
     { "name": "pingpong", "source": "./plugins/pingpong", "category": "example" },
     { "name": "milestone", "source": "./plugins/milestone", "category": "example" },
-    { "name": "radar", "source": "./plugins/radar", "category": "example" },
     { "name": "focus", "source": "./plugins/focus", "category": "example" },
     { "name": "pulse", "source": "./plugins/pulse", "category": "example" }
   ]

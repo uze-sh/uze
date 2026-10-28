@@ -51,7 +51,7 @@ sandbox:
     # untracked file before a take.
     - |
       cd {fixtures}/demo-tasks
-      for plugin in milestone radar focus pulse; do
+      for plugin in milestone focus pulse; do
         {project}/target/release/uze install "$plugin@uze" >/dev/null
       done
       git add -A

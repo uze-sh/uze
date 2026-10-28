@@ -1,6 +1,6 @@
 ---
 name: try
-description: Sets up a project to try uze's example plugins in — milestone, radar, focus, pulse — so the person sees what extensions do in the workspace without wiring anything of their own. Use when the person asks to try uze, to see example extensions or plugins, to set up a demo or playground project, or invokes /uze:try or $uze:try directly.
+description: Sets up a project to try uze's example plugins in — milestone, focus, pulse — so the person sees what extensions do in the workspace without wiring anything of their own. Use when the person asks to try uze, to see example extensions or plugins, to set up a demo or playground project, or invokes /uze:try or $uze:try directly.
 invoke:
   model: true
   user: true
@@ -18,7 +18,6 @@ it. The person then opens the workspace.
 | Example | Where it shows | What it does |
 |---|---|---|
 | `milestone` | bar, drawer | a milestone in phases; plans or executes the next one through the agent |
-| `radar` | bar, drawer | the agents at a glance: waiting on you, working and for how long, or idle; what they did, tool by tool |
 | `focus` | bar, drawer | a pomodoro, with the last seven days |
 | `pulse` | bar, view | a heatmap of twelve weeks of commits; click a day for its commits |
 | `pingpong` | the harness | one of every capability a plugin delivers; its MCP server is built from a uze checkout |
@@ -40,8 +39,8 @@ it. The person then opens the workspace.
    and an empty `agents.yaml`, touches nothing outside the directory, and
    prints its path.
 5. **Install the examples into it**, one command each, from inside the
-   directory: `uze install milestone@uze`, then `radar@uze`, `focus@uze`
-   and `pulse@uze`; each is declared in its `agents.yaml`. Leave
+   directory: `uze install milestone@uze`, then `focus@uze` and
+   `pulse@uze`; each is declared in its `agents.yaml`. Leave
    `pingpong` out unless they ask: its server is not in a release, and its
    hooks and MCP server ask the person to trust them.
 6. **Hand over.** The workspace is a terminal UI the person runs, never

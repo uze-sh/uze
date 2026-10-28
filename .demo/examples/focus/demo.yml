@@ -22,8 +22,8 @@ beats:
     timeout: 15
     pause: 1.2
   - say: a click opens the drawer
-    # The pips, in the pane's band: radar's spinner in the sidebar draws the
-    # same glyph. One cell in, since the hourglass before them is drawn
+    # The pips, in the pane's band: an agent's spinner in the sidebar can
+    # draw the same glyph. One cell in, since the hourglass before them is drawn
     # wider than the screen's text counts it.
     click: '○○○○'
     in: pane

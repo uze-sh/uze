@@ -39,7 +39,7 @@ examples: ## Link the uze marketplace to this checkout, examples included, and i
 	uze market link uze "$(CURDIR)"
 
 TRY_DIR ?= $(HOME)/uze-try
-EXAMPLES := milestone radar focus pulse pingpong
+EXAMPLES := milestone focus pulse pingpong
 
 try: examples ## Make a project in TRY_DIR (~/uze-try) with this checkout's example plugins installed in it.
 	python3 plugins/uze/skills/try/demo.py "$(TRY_DIR)"

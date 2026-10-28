@@ -1,8 +1,0 @@
-[
-  { "name": "agent.approval.asked", "agent": "a1", "harness": "claude", "at": 1761570124000 },
-  { "name": "agent.tool.finished", "agent": "a1", "harness": "claude", "tool": "Write",
-    "path": "store.py", "outcome": "ok", "at": 1761570120000 },
-  { "name": "agent.tool.started", "agent": "a1", "harness": "claude", "tool": "Bash", "at": 1761570110000 },
-  { "name": "agent.turn.finished", "agent": "a2", "harness": "codex", "at": 1761570100000 },
-  { "name": "agent.turn.started", "agent": "a1", "harness": "claude", "at": 1761570000000 }
-]
