@@ -36,9 +36,12 @@ pub(super) fn render_bar(
     let mut animates = false;
 
     // A plugin's doors, lowercase whatever its manifest titles them: every
-    // button UZE draws is, and a plugin's is drawn by UZE.
+    // button UZE draws is, and a plugin's is drawn by UZE. A surface an
+    // item opens has that item for its door, so it gets no second one.
+    let opened = model.opened_by_items();
     let doors: Vec<GroupButton> = model
         .declared_views()
+        .filter(|slot| !opened.contains(&slot.id))
         .map(|slot| GroupButton {
             hit: WorkspaceHit::OpenDeclared(slot.id),
             label: door_label(&slot.surface.title),
@@ -47,14 +50,19 @@ pub(super) fn render_bar(
             lit: model.open_slot == Some(slot.id),
             switch: true,
         })
-        .chain(model.declared_drawers().map(|slot| GroupButton {
-            hit: WorkspaceHit::ToggleDrawer(slot.id),
-            label: door_label(&slot.surface.title),
-            hue: theme::color(Token::TextSecondary),
-            strong: false,
-            lit: model.open_drawer() == Some(slot.id),
-            switch: true,
-        }))
+        .chain(
+            model
+                .declared_drawers()
+                .filter(|slot| !opened.contains(&slot.id))
+                .map(|slot| GroupButton {
+                    hit: WorkspaceHit::ToggleDrawer(slot.id),
+                    label: door_label(&slot.surface.title),
+                    hue: theme::color(Token::TextSecondary),
+                    strong: false,
+                    lit: model.open_drawer() == Some(slot.id),
+                    switch: true,
+                }),
+        )
         .collect();
     if !doors.is_empty() {
         let width = group_width(&doors).min(row.width);

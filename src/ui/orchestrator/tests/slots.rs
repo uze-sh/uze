@@ -628,7 +628,12 @@ fn bar_row(model: &mut WorkspaceModel) -> String {
 
 #[test]
 fn a_plugins_doors_stand_in_the_bar_lowercase_and_never_in_the_tab_strip() {
-    let mut model = hosting_a_bar(uze_contract::BarAlign::Left);
+    let mut panel = surface("panel", uze_contract::Slot::Drawer);
+    panel.title = Some("Timesheet".to_owned());
+    let mut model = hosting(vec![compiled(
+        "notes",
+        vec![surface("board", uze_contract::Slot::View), panel],
+    )]);
     let strip = frame_rows_at(&mut model, ROOMY)[0].clone();
     assert!(
         !strip.contains("board") && !strip.contains("imesheet"),
@@ -645,11 +650,15 @@ fn an_item_stands_on_its_side_and_a_click_opens_what_it_names() {
     let mut model = hosting_a_bar(uze_contract::BarAlign::Right);
     answers(&mut model, "notes", "6h12 today");
     let bar = bar_row(&mut model);
+    assert!(
+        !bar.contains("timesheet"),
+        "the drawer the item opens has the item for its door: {bar}"
+    );
     let item = bar
         .find("6h12 today")
         .unwrap_or_else(|| panic!("the item is drawn: {bar}"));
     assert!(
-        item > bar.find("timesheet").unwrap(),
+        item > bar.find("board").unwrap(),
         "right of the doors: {bar}"
     );
     assert!(

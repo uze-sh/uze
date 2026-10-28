@@ -59,3 +59,13 @@
 - decided:  The binder lowercases `Button`, `Tab` and `Toggle` labels and a form's submit (default `send`); a tab's value, when it names none, stays as written. The bar's doors are lowercase too. A test's `click` and `press-button` match a label in either case. Everything not clicked keeps the author's case: `Text`, headings, `Badge`, `Rule`, `Details`, a `Choice` (a value, as `harness ‹ Claude Code ›` is in the core), data and a bar item's line.
 - rejected: Refusing capitals at check: authors' existing views would stop compiling for a cosmetic rule.
 - blast:    `bind.rs::control_label`, `extension_test.rs::hit_on`.
+
+## D7 — A surface an item opens gets no door of its own
+
+- status:   pending
+- task:     2.2
+- commit:
+- trigger:  The operator, on the timesheet: with an item on the right that opens the drawer, the door on the left made two buttons that do the same thing.
+- decided:  The bar draws no door for a view or drawer that an item of the bar in front opens: the item is its door. A surface no item opens keeps its door on the left.
+- rejected: A manifest flag to hide a door: the item already says it.
+- blast:    `declared/bar.rs::opened_by_items`, `render/bar.rs`.

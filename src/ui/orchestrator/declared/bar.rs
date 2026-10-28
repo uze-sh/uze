@@ -34,6 +34,18 @@ impl WorkspaceModel {
             || !self.bar_items().is_empty()
     }
 
+    /// The surfaces an item of the bar in front opens: their item is their
+    /// door, so the bar draws them none of their own.
+    pub(in crate::ui::orchestrator) fn opened_by_items(&self) -> Vec<SlotId> {
+        self.bar_items()
+            .into_iter()
+            .filter_map(|item| match self.bar_target(item)? {
+                WorkspaceHit::OpenDeclared(slot) | WorkspaceHit::ToggleDrawer(slot) => Some(slot),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// What a click on `item` does: the view or the drawer of its own
     /// extension that its `opens` names.
     pub(in crate::ui::orchestrator) fn bar_target(
