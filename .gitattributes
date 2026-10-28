@@ -4,3 +4,9 @@
 
 # A vendored licence, kept exactly as its authors wrote it.
 web/app/fonts/OFL.txt -text
+
+# A declared extension's component: a `<view>` block and a `<script>` block,
+# the shape of a Vue single-file component, so GitHub highlights it as one
+# (the script, Rhai, reads close to JavaScript). `.uze` files stay out of
+# the repository's language statistics: they are examples and fixtures.
+*.uze linguist-language=Vue linguist-documentation
