@@ -26,7 +26,7 @@
 - task:     3.2
 - commit:
 - trigger:  An MCP server needs the network and the operator's credentials (`rtc` reads `~/cardinal/.env` and logs in); confined like a program it could do neither.
-- decided:  The host starts the command and arguments the plugin's `mcp.json` declares, `${PLUGIN_ROOT}` resolved to the delivered package and launched as delivery launches it, with the operator's environment plus the server's own `env`, in the server's `cwd` or the checkout. It is not confined. The extension supplies nothing to the launch: only tool names and arguments cross.
+- decided:  The host starts the command and arguments the plugin's `mcp.json` declares, `${PLUGIN_ROOT}` resolved to the delivered package (materialized first when no harness was handed it yet) and launched as delivery launches it, with the operator's environment, in the checkout. A server that declares an `env` or a `cwd` of its own is refused, as delivery refuses it. It is not confined. The extension supplies nothing to the launch: only tool names and arguments cross.
 - rejected: Confining it: the server is the plugin's code the operator already runs for their agents, unconfined; the grant changes who asks, not what runs.
 - blast:    `extensions/mcp.rs`, `uze-integrations/src/shared/mcp.rs::stdio_launch`.
 
