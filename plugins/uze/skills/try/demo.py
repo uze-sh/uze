@@ -122,17 +122,20 @@ def write(directory, path, text):
 
 
 def history(directory):
-    """Commits on most weekdays of the last twelve weeks, a few on weekends:
-    enough for the heatmap to have quiet days, busy days and every tone."""
+    """Commits on most weekdays of the last twelve weeks, a few on weekends,
+    and a few earlier today: enough for the heatmap to have quiet days, busy
+    days and every tone, and for today to have some."""
     chance = random.Random(12)
-    today = datetime.date.today()
+    now = datetime.datetime.now().replace(microsecond=0)
+    today = now.date()
     day = today - datetime.timedelta(weeks=12)
     log = os.path.join(directory, "CHANGELOG.md")
-    while day < today:
+    while day <= today:
         weekend = day.weekday() >= 5
-        count = chance.choice([0, 0, 1] if weekend else [0, 1, 2, 3, 4, 6, 9])
+        count = 3 if day == today else chance.choice([0, 0, 1] if weekend else [0, 1, 2, 3, 4, 6, 9])
         for index in range(count):
-            when = datetime.datetime.combine(day, datetime.time(9 + index % 9, chance.randint(0, 59)))
+            when = (now - datetime.timedelta(minutes=40 * (count - index))) if day == today else \
+                datetime.datetime.combine(day, datetime.time(9 + index % 9, chance.randint(0, 59)))
             subject = chance.choice(SUBJECTS)
             with open(log, "a", encoding="utf-8", newline="\n") as file:
                 file.write(f"- {day.isoformat()}: {subject}\n")
