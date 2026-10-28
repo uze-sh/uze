@@ -287,7 +287,7 @@ scenes:
         expect: "first steps"
         expect_timeout: 10
       - wait: screen
-        until: '2 phases\s+deck'
+        until: '2 phases {5,}'
         in: pane
         timeout: 20
         say: the band is drawn again, without the names
