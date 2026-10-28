@@ -163,10 +163,13 @@ on "cancel" must not save first.
 **Shortcuts:**
 - Keep them few: group actions behind a context menu (`alt+.`) rather than
   adding specific keys.
-- One modifier per family: extensions all use `alt`. Not every `alt` chord
-  reaches a terminal: GPU overlays take some before it sees them (NVIDIA:
-  `alt+z`, `alt+r`, `alt+f1`, `alt+f9`, `alt+f10`), so an example or a
-  built-in never suggests one of those.
+- One modifier per family: extensions all use `alt`. But a global chord an
+  extension suggests competes with the system, GPU overlays (NVIDIA takes
+  `alt+z`, `alt+r`, `alt+f1`, `alt+f9`, `alt+f10` before a terminal sees
+  them) and the harness in the pane (Claude Code pastes an image on
+  `alt+v`): an example opens what it shows from a control the person can
+  see, and leaves the global key for the person to bind on the Keys
+  screen.
 - Keyboard users must never lose a path.
 
 **What is UZE's and what is a plugin's:**

@@ -1,6 +1,6 @@
 // Radar: what the workspace's agents are doing. A section lists every agent
-// and how long its turn has run; alt+v opens, from anywhere, the last
-// events. A finished turn plays a sound, and an agent asking for approval
+// and how long its turn has run, and opens the last events over
+// everything. A finished turn plays a sound, and an agent asking for approval
 // notifies, as the operator prefers: the sidebar shows that notice where it
 // shows a new release.
 protocol 1
@@ -22,8 +22,10 @@ surface "notice" slot="status" view="notice.uze" source="notice" title="Radar"
 // Every agent: working and for how long, or how it stopped.
 surface "agents" slot="section" view="agents.uze" source="crew" title="Agents"
 
-// The last events, over everything, on alt+v: alt+e is the host's files,
-// and alt+r is taken by NVIDIA's overlay before a terminal sees it.
+// The last events, over everything, opened from the section. No key is
+// suggested: every alt chord was someone's (the host's files on alt+e,
+// NVIDIA's overlay on alt+r, an image paste on alt+v); the person binds one
+// on the Keys screen if they want it.
 surface "events" slot="overlay" view="events.uze" source="events" title="Agent events"
 
 source "crew" { agents; }
@@ -40,6 +42,6 @@ source "notice" {
     refresh-on "agent.approval.asked"
 }
 
-action "open" label="Agent events" on="events" key="alt-v" {
+action "events" label="Agent events" on="agents" {
     open "events"
 }

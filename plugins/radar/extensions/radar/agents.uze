@@ -1,6 +1,7 @@
 <view>
 // Every agent on a line: the spinner while it works, what it works on,
-// and how long the turn has run; stopped, its state.
+// and how long the turn has run; stopped, its state. At the foot, the way
+// to what they did.
 lookup "tone" default="muted" {
     working "warning"
     done "success"
@@ -12,12 +13,18 @@ lookup "state" default="" {
     ready "ready"
 }
 
-List each="." empty="no agent open" {
-    Row gap=1 {
-        Activity busy="{since}"
-        Text "{label}" truncate=#true grow=#true
-        Elapsed since="{since}" role="warning" when="since"
-        Text "{state:state}" role="{tone:state}" unless="since"
+Stack {
+    List each="." empty="no agent open" {
+        Row gap=1 {
+            Activity busy="{since}"
+            Text "{label}" truncate=#true grow=#true
+            Elapsed since="{since}" role="warning" when="since"
+            Text "{state:state}" role="{tone:state}" unless="since"
+        }
+    }
+    Row {
+        Text "" grow=#true
+        Button "events" action="events"
     }
 }
 </view>

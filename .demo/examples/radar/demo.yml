@@ -42,8 +42,10 @@ beats:
     until: 'claude-code done'
     timeout: 180
     pause: 1.8
-  - say: alt+v, from anywhere, opens what the agents did
-    key: M-v
+  - say: the section's events open what the agents did
+    click: events
+    in: sidebar
+    occurrence: last
     expect: newest first
     expect_timeout: 8
     pause: 3.4

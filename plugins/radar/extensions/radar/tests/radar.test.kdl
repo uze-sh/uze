@@ -22,3 +22,10 @@ test "events come newest first, with the tool and the file" {
     expect-text "store.py"
     snapshot "events"
 }
+
+test "the section opens the events" {
+    surface "agents"
+    given "crew" fixture="fixtures/crew.json"
+    press-button "events"
+    expect-action "events"
+}
