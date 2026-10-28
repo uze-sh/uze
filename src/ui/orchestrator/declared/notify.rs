@@ -4,9 +4,11 @@
 //! The engine lets a notification through only under `notify` and within
 //! the extension's rate, and counts what it held back in its notice. The
 //! host takes what it let through only from an extension whose manifest
-//! holds the grant, leads the title with the extension's attribution, and
-//! sends it the way `uze_platform::notify` chooses: a desktop tool on a
-//! thread of its own, or bytes for the terminal written between frames.
+//! holds the grant, leads a desktop notification's title with the
+//! extension's name, and sends it the way `uze_platform::notify` chooses: a
+//! desktop tool on a thread of its own, or bytes for the terminal written
+//! between frames. The sidebar's notice carries what the extension said and
+//! nothing else: an id there took the row from the message.
 
 use std::process::{Command, Stdio};
 
@@ -27,27 +29,36 @@ impl WorkspaceModel {
     /// extension that does not hold `notify` has what it asked dropped.
     pub(in crate::ui::orchestrator) fn take_notifications(&mut self) -> Vec<Outgoing> {
         let mut outgoing = Vec::new();
+        let mut notice = None;
         for (owner, engine) in &mut self.remembered.declared.engines {
             let asked = engine.notifications();
             let Some(identity) = owner.declared().filter(|_| engine.may_notify()) else {
                 continue;
             };
-            let by = crate::ui::extension_view::tree::attribution(identity);
-            outgoing.extend(asked.into_iter().map(|notify| {
-                Outgoing {
+            let by = engine
+                .declared()
+                .map(|declared| declared.compiled().manifest.name.clone())
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(|| crate::ui::extension_view::tree::attribution(identity));
+            for notify in asked {
+                if let Some(said) = &notify.notification {
+                    let headline = if said.title.is_empty() {
+                        &by
+                    } else {
+                        &said.title
+                    };
+                    notice = Some((headline.clone(), said.body.clone()));
+                }
+                outgoing.push(Outgoing {
                     notification: notify
                         .notification
                         .map(|said| (attributed_title(&by, &said.title), said.body)),
                     sound: notify.sound.is_some(),
-                }
-            }));
+                });
+            }
         }
-        if let Some(said) = outgoing
-            .iter()
-            .rev()
-            .find_map(|out| out.notification.clone())
-        {
-            self.extension_notice = Some(said);
+        if notice.is_some() {
+            self.extension_notice = notice;
             self.dirty = true;
         }
         outgoing

@@ -163,7 +163,7 @@ fn an_extensions_notice_takes_the_release_notices_place_until_put_away() {
     model.timeline_collapsed = true;
     model.release = Some(crate::self_update::Notice("0.0.0-alpha.14".to_owned()));
     model.extension_notice = Some((
-        "radar · radar@uze: Approval".to_owned(),
+        "Approval".to_owned(),
         "An agent in claude-code asks for approval".to_owned(),
     ));
     let Sidebar { rows, hits, .. } = sidebar(&model, &identities_fixture());

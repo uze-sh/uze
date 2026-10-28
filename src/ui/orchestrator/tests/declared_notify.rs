@@ -213,17 +213,15 @@ fn a_notification_is_attributed_sent_once_and_the_next_within_ten_seconds_counte
     assert_eq!(
         outgoing,
         [Outgoing {
-            notification: Some((
-                "gpu-meter · gpu@proving: Hot".to_owned(),
-                "load 92%".to_owned(),
-            )),
+            notification: Some(("GPU meter: Hot".to_owned(), "load 92%".to_owned())),
             sound: true,
         }],
-        "led by the extension's attribution"
+        "led by the extension's name, never its id"
     );
     assert_eq!(
-        model.extension_notice, outgoing[0].notification,
-        "and kept for the sidebar's notice until put away"
+        model.extension_notice,
+        Some(("Hot".to_owned(), "load 92%".to_owned())),
+        "and what it said, alone, kept for the sidebar's notice until put away"
     );
     let mut written = Vec::new();
     let mut started = 0;
@@ -235,7 +233,7 @@ fn a_notification_is_attributed_sent_once_and_the_next_within_ten_seconds_counte
     );
     // A desktop session takes the notification; the cue is the bell
     // either way.
-    let osc9 = b"\x1b]9;gpu-meter \xc2\xb7 gpu@proving: Hot: load 92%\x07".to_vec();
+    let osc9 = b"\x1b]9;GPU meter: Hot: load 92%\x07".to_vec();
     match started {
         0 => assert_eq!(written, [osc9, b"\x07".to_vec()]),
         _ => assert_eq!(written, [b"\x07".to_vec()]),
