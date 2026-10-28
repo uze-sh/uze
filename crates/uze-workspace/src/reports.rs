@@ -149,7 +149,7 @@ pub fn read_from(home: &UzeHome, agent: &str, cursor: &Cursor) -> (Vec<Report>, 
         return (Vec::new(), Cursor::default());
     };
     let size = file.metadata().map(|metadata| metadata.len()).unwrap_or(0);
-    let cut = cursor.offset > size;
+    let cut = cursor.offset > size || !ends_with_last(&mut file, cursor);
     let from = if cut { 0 } else { cursor.offset };
     let unread = |offset| Cursor {
         offset,
@@ -183,6 +183,34 @@ pub fn read_from(home: &UzeHome, agent: &str, cursor: &Cursor) -> (Vec<Report>, 
         last: reports.last().cloned().or_else(|| cursor.last.clone()),
     };
     (reports, next)
+}
+
+/// Whether the line that ends at `cursor`'s offset is still the last report
+/// it delivered. A journal cut and grown back past the offset before the
+/// next read is longer than the offset, so its size alone does not say so.
+fn ends_with_last(file: &mut std::fs::File, cursor: &Cursor) -> bool {
+    let Some(last) = &cursor.last else {
+        return true;
+    };
+    if cursor.offset == 0 {
+        return true;
+    }
+    let window = cursor.offset.min(REPORTS_BYTES);
+    let mut before = Vec::new();
+    if file.seek(SeekFrom::Start(cursor.offset - window)).is_err()
+        || Read::take(&mut *file, window)
+            .read_to_end(&mut before)
+            .is_err()
+    {
+        return false;
+    }
+    let Some(line) = before
+        .strip_suffix(b"\n")
+        .and_then(|lines| lines.rsplit(|byte| *byte == b'\n').next())
+    else {
+        return false;
+    };
+    serde_json::from_slice::<Report>(line).is_ok_and(|report| report == *last)
 }
 
 #[cfg(test)]
@@ -324,5 +352,40 @@ mod tests {
             "in the order reported"
         );
         assert_eq!(delivered.last(), Some(&599));
+    }
+
+    #[test]
+    fn a_journal_cut_and_grown_back_past_the_reader_skips_nothing_it_kept() {
+        let root = uze_testkit::temp::scratch("agent-reports-regrown");
+        let home = UzeHome::at(root.join("uze"));
+        let at = |at| Report {
+            at,
+            ..report("tool.finished")
+        };
+        let mut delivered = Vec::new();
+        let mut cursor = Cursor::default();
+        for stamp in 0..1000 {
+            append(&home, "a1", at(stamp)).unwrap();
+            if stamp % 160 == 100 {
+                let (kept, _) = read_from(&home, "a1", &Cursor::default());
+                let (read, next) = read_from(&home, "a1", &cursor);
+                let read: Vec<u64> = read.into_iter().map(|report| report.at).collect();
+                let newest = delivered.last().copied();
+                let owed: Vec<u64> = kept
+                    .iter()
+                    .map(|report| report.at)
+                    .filter(|at| newest.is_none_or(|newest| *at > newest))
+                    .collect();
+                assert_eq!(
+                    read, owed,
+                    "at {stamp}: every kept report not yet delivered"
+                );
+                delivered.extend(read);
+                cursor = next;
+            }
+        }
+        let mut sorted = delivered.clone();
+        sorted.dedup();
+        assert_eq!(sorted, delivered, "nothing was delivered twice");
     }
 }
