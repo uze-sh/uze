@@ -519,7 +519,18 @@ impl Compiler<'_, '_> {
                 format!("{what} is a role, not {}", spelled(other)),
                 Some(roles()),
             )),
-            (PropKind::Count, KdlValue::Integer(number)) if *number >= 0 => Ok(literal(value)),
+            (PropKind::Count | PropKind::Size, KdlValue::Integer(number)) if *number >= 0 => {
+                Ok(literal(value))
+            }
+            (PropKind::Size, KdlValue::String(text))
+                if uze_contract::catalog::Size::parse_text(text).is_some() =>
+            {
+                Ok(Binding::Literal(serde_json::Value::String(text.clone())))
+            }
+            (PropKind::Size, KdlValue::String(text)) if text.ends_with('%') => Err((
+                format!("{what} `{text}` is not a percentage from 1% to 100%"),
+                Some("write a share such as \"20%\", or a number of cells".to_owned()),
+            )),
             (PropKind::Number, KdlValue::Integer(_) | KdlValue::Float(_)) => match literal(value) {
                 Binding::Literal(serde_json::Value::Null) => {
                     Err((format!("{what} is not a finite number"), None))
@@ -529,10 +540,11 @@ impl Compiler<'_, '_> {
             (PropKind::Flag, KdlValue::Bool(flag)) => {
                 Ok(Binding::Literal(serde_json::Value::Bool(*flag)))
             }
-            (PropKind::Count | PropKind::Number | PropKind::Flag, KdlValue::String(text)) => {
-                self.lone(text, entry, kind, what)
-            }
-            (PropKind::Count | PropKind::Number | PropKind::Flag, other) => Err((
+            (
+                PropKind::Count | PropKind::Number | PropKind::Flag | PropKind::Size,
+                KdlValue::String(text),
+            ) => self.lone(text, entry, kind, what),
+            (PropKind::Count | PropKind::Number | PropKind::Flag | PropKind::Size, other) => Err((
                 format!("{what} is {}, not {}", noun(kind), spelled(other)),
                 Some(match kind {
                     PropKind::Flag => "write `#true`, `#false` or a lone reference".to_owned(),
@@ -1209,6 +1221,7 @@ fn noun(kind: PropKind) -> &'static str {
         PropKind::Count => "a whole number",
         PropKind::Number => "a number",
         PropKind::Flag => "`#true` or `#false`",
+        PropKind::Size => "a number of cells or `N%` (from 1% to 100%)",
         _ => "a value",
     }
 }

@@ -44,6 +44,7 @@
 
     "progress.fill": ["#"],
     "progress.track": "-",
+    "progress.line": "=",
     "chart.level": ["_", "-", "=", "#"],
     "pip.filled": "*",
     "pip.empty": ".",

@@ -445,6 +445,7 @@ fn kind_name(kind: PropKind) -> &'static str {
     match kind {
         PropKind::Text => "text",
         PropKind::Count => "count",
+        PropKind::Size => "size",
         PropKind::Number => "number",
         PropKind::Flag => "flag",
         PropKind::Role => "role",

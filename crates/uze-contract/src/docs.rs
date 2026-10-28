@@ -179,6 +179,12 @@ fn literal(kind: PropKind) -> Value {
     match kind {
         PropKind::Text => json!({ "type": ["string", "number", "boolean"] }),
         PropKind::Count => json!({ "type": "integer", "minimum": 0 }),
+        PropKind::Size => json!({
+            "oneOf": [
+                { "type": "integer", "minimum": 0 },
+                { "type": "string", "pattern": "^([1-9][0-9]?|100)%$" }
+            ]
+        }),
         PropKind::Number => json!({ "type": "number" }),
         PropKind::Flag => json!({ "type": "boolean" }),
         PropKind::Role => {
@@ -195,6 +201,7 @@ fn kind_name(kind: PropKind) -> String {
     match kind {
         PropKind::Text => "text".into(),
         PropKind::Count => "count".into(),
+        PropKind::Size => "cells or `N%`".into(),
         PropKind::Number => "number".into(),
         PropKind::Flag => "flag".into(),
         PropKind::Role => "role".into(),

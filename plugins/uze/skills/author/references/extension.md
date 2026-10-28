@@ -547,10 +547,10 @@ workspace (`SKILL.md`, *Install and iterate*).
 A view is built from the catalog's nodes, PascalCase, each documented in
 the language server's hover:
 
-- layout: `Stack`, `Row`, `Grid`, `Tabs`/`Tab`, `Rule`
+- layout: `Box`, `Stack`, `Row`, `Grid`, `Tabs`/`Tab`, `Rule`
 - text: `Text`, `Markdown`, `Code`, `Log`, `Kbd`
 - data: `List`, `Table`, `Details`/`Entry`
-- measures: `Progress`/`Segment`, `Gauge`, `Chart`, `Pips`, `Stat`
+- measures: `Progress`/`Segment` (`style="line"` for a thin line), `Gauge`, `Chart`, `Pips`, `Stat`
 - status: `Badge`, `Marks`/`Mark`, `Activity`, `Elapsed`
 - input: `Toggle`, `Button` (runs the declared action its `action` names), `Select`/`Choice`, `Field`, `Form` (values held as `ui.<id>`, a form sending `form.<id>`)
 - media: `Cells`, `Image`, `Sprite` (a grid in roles, a picture, a declared sprite)
@@ -558,6 +558,39 @@ the language server's hover:
 Colour is always a role (`muted`, `warning`, `{tone:state}`), never a
 value. `ui.` and `context.` are scopes: a fixture field named `context`
 is not reachable as `{context.…}`.
+
+### A free-form area: `Box`
+
+When the fixed nodes do not draw what you want (a card, a calendar day, a
+framed panel), compose it with `Box`, a flex container the host lays out:
+
+```kdl
+lookup "ground" default="" {
+    full "info"
+    partial "info"
+}
+
+Box direction="row" wrap=#true gap=1 {
+    Box each="days" width="19%" height=3 padding-x=1 ground="{ground:state}" {
+        Row { Text "{day}" strong=#true grow=#true; Text "{hours}" strong=#true; }
+        Text "{items}" truncate=#true
+    }
+}
+```
+
+- `direction` (`column`, the default, or `row`), `wrap` in a row, `gap`
+  between children and between wrapped lines, `justify` (`start`,
+  `center`, `end`, `between`).
+- `width` is cells (`12`) or a share of what holds it (`"20%"`); `height`
+  fixes its rows; `padding`, `padding-x`, `padding-y` keep cells free
+  inside its edge; `grow` shares what is left of a row.
+- `ground` fills it with a role's hue (`tone="soft"` lightens it toward the
+  surface); an empty ground (`""`, a lookup's default) is none. Text on a
+  ground is drawn in an ink the host picks to read on it, whatever its role.
+- `border` (`line`, `round`, `heavy`) is drawn by the host inside the box,
+  in `border-role` (`faint` when it names none).
+- No colour value is ever accepted: `ground="#5b5bf7"` is refused. The hue
+  of a role is the theme's; an operator who wants another sets it there.
 
 ## Test an extension
 

@@ -539,6 +539,9 @@ pub enum NodeKind {
     Stack {
         gap: u16,
     },
+    /// A flex container: its children in a direction, sized, inside its
+    /// padding, on a ground and within a border, every colour a role.
+    Box(BoxLayout),
     /// Its children side by side, `gap` cells apart.
     Row {
         gap: u16,
@@ -565,6 +568,8 @@ pub enum NodeKind {
     /// filled to its own share. One segment is a plain progress bar.
     Progress {
         segments: Vec<Segment>,
+        /// Drawn as a thin line over a quiet track rather than in blocks.
+        line: bool,
     },
     /// Its children as rows to choose between; `selected` is the index of
     /// the chosen one, if any.
@@ -710,6 +715,57 @@ pub enum NodeKind {
         submit: String,
         focused: bool,
     },
+}
+
+/// How a [`NodeKind::Box`] lays out and paints its children.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct BoxLayout {
+    /// Side by side rather than one under another.
+    pub row: bool,
+    /// In a row, the children that do not fit go onto a next line.
+    pub wrap: bool,
+    pub gap: u16,
+    /// Its own width, of what holds it; its natural width when `None`.
+    pub width: Option<uze_contract::catalog::Size>,
+    /// Its own rows; as many as its children take when `None`.
+    pub height: Option<u16>,
+    pub pad_x: u16,
+    pub pad_y: u16,
+    pub justify: Justify,
+    pub ground: Option<Ground>,
+    pub border: Option<Border>,
+}
+
+/// Where a line of a box's children sits along it.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Justify {
+    #[default]
+    Start,
+    Center,
+    End,
+    /// The space left shared between the children.
+    Between,
+}
+
+/// A box's ground: a role's hue, solid or lightened toward the surface.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Ground {
+    pub role: Role,
+    pub soft: bool,
+}
+
+/// A frame the host draws inside a box, in a role.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Border {
+    pub style: BorderStyle,
+    pub role: Role,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BorderStyle {
+    Line,
+    Round,
+    Heavy,
 }
 
 /// One character of a [`NodeKind::Cells`], in a role: never a colour.

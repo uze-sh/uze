@@ -258,6 +258,7 @@ fn a_lone_reference_keeps_its_type_and_mixed_text_is_a_string() {
     assert_eq!(
         progress.kind,
         NodeKind::Progress {
+            line: false,
             segments: vec![view::Segment {
                 weight: 19,
                 filled: 890,
@@ -788,6 +789,7 @@ fn every_node_kind_reads_its_properties() {
     assert_eq!(
         row.children[2].kind,
         NodeKind::Progress {
+            line: false,
             segments: vec![view::Segment {
                 weight: 1,
                 filled: 1000,

@@ -222,6 +222,10 @@ vocabulary! {
         ProgressFill = "progress.fill",
         /// The part of a progress bar not yet filled.
         ProgressTrack = "progress.track",
+        /// A progress bar drawn as a thin line (`style="line"`): its filled
+        /// part in the bar's role and its track in a quiet one, so a full
+        /// bar still reads as a measure.
+        ProgressLine = "progress.line",
         /// One of a count's done marks: three of five drawn as five pips.
         PipFilled = "pip.filled",
         /// One of a count's marks still to do.

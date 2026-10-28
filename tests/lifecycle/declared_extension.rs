@@ -172,7 +172,7 @@ fn the_gsd_band_is_found_in_the_working_tree_compiled_once_and_drawn_from_its_fi
     let segments = all
         .iter()
         .find_map(|node| match &node.kind {
-            NodeKind::Progress { segments } => Some(segments.clone()),
+            NodeKind::Progress { segments, .. } => Some(segments.clone()),
             _ => None,
         })
         .expect("a progress bar");

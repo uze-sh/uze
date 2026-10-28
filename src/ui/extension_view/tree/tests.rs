@@ -350,6 +350,7 @@ fn a_plain_progress_bar_fills_to_its_share() {
         let bar = node(
             0,
             NodeKind::Progress {
+                line: false,
                 segments: vec![segment(1, 500, Role::Success)],
             },
         );
@@ -383,6 +384,7 @@ fn a_segmented_progress_bar_has_one_segment_per_entry() {
         let bar = node(
             0,
             NodeKind::Progress {
+                line: false,
                 segments: segments.clone(),
             },
         );
@@ -427,6 +429,7 @@ fn a_bar_too_narrow_for_gaps_still_draws_every_weighted_segment() {
     let bar = node(
         0,
         NodeKind::Progress {
+            line: false,
             segments: vec![
                 segment(100, 1000, Role::Success),
                 segment(1, 1000, Role::Danger),
@@ -1118,6 +1121,7 @@ fn a_gsd_band_board_draws_every_part_and_answers_every_control() {
             growing(node(
                 5,
                 NodeKind::Progress {
+                    line: false,
                     segments: vec![
                         segment(19, 1000, Role::Success),
                         segment(12, 800, Role::Success),
@@ -1629,4 +1633,110 @@ fn a_form_draws_its_fields_then_a_button_that_sends_it() {
             "{theme}: focused, the button is the accent"
         );
     });
+}
+
+fn boxed(id: usize, layout: uze_extensions::view::BoxLayout) -> Node {
+    node(id, NodeKind::Box(layout))
+}
+
+#[test]
+fn a_row_box_of_percentages_wraps_five_to_a_line() {
+    use uze_extensions::view::BoxLayout;
+    let card = |id: usize| {
+        holding(
+            boxed(
+                id,
+                BoxLayout {
+                    width: Some(uze_contract::catalog::Size::Percent(20)),
+                    ..BoxLayout::default()
+                },
+            ),
+            vec![words(id + 100, &format!("d{id}"), Role::Default)],
+        )
+    };
+    let row = holding(
+        boxed(
+            0,
+            BoxLayout {
+                row: true,
+                wrap: true,
+                ..BoxLayout::default()
+            },
+        ),
+        (1..=7).map(card).collect(),
+    );
+    let rows = draw(&row, 50, 3, 0, at(0)).rows();
+    assert!(
+        rows[0].contains("d1") && rows[0].contains("d5"),
+        "{rows:#?}"
+    );
+    assert!(!rows[0].contains("d6"), "{rows:#?}");
+    assert!(
+        rows[1].contains("d6") && rows[1].contains("d7"),
+        "{rows:#?}"
+    );
+    assert_eq!(
+        rows[0].find("d2").unwrap() - rows[0].find("d1").unwrap(),
+        10,
+        "each a fifth of 50: {rows:#?}"
+    );
+}
+
+#[test]
+fn text_on_a_ground_takes_the_ink_that_reads_on_it() {
+    use uze_extensions::view::{BoxLayout, Ground};
+    let card = holding(
+        boxed(
+            0,
+            BoxLayout {
+                ground: Some(Ground {
+                    role: Role::Info,
+                    soft: false,
+                }),
+                pad_x: 1,
+                ..BoxLayout::default()
+            },
+        ),
+        vec![words(1, "13", Role::Faint)],
+    );
+    let drawn = draw(&card, 10, 1, 0, at(0));
+    let cell = &drawn.buffer[(1, 0)];
+    assert_eq!(cell.symbol(), "1");
+    let ground = theme::color(Token::StateInfo);
+    assert_eq!(cell.bg, ground, "the box's ground is the role's hue");
+    assert_eq!(
+        cell.fg,
+        theme::ink_on(ground),
+        "the faint role is not drawn on the ground"
+    );
+    assert_ne!(cell.fg, theme::color(Token::TextFaint));
+    assert_eq!(drawn.buffer[(9, 0)].bg, ground, "the ground fills the box");
+}
+
+#[test]
+fn a_full_line_progress_reads_as_a_line_not_a_slab() {
+    let bar = node(
+        0,
+        NodeKind::Progress {
+            line: true,
+            segments: vec![segment(1, 1000, Role::Info)],
+        },
+    );
+    let rows = draw(&bar, 8, 1, 0, at(0)).rows();
+    let line = theme::glyph(Symbol::ProgressLine);
+    assert_eq!(rows[0].trim_end(), line.repeat(8));
+    let half = node(
+        0,
+        NodeKind::Progress {
+            line: true,
+            segments: vec![segment(1, 500, Role::Info)],
+        },
+    );
+    let drawn = draw(&half, 8, 1, 0, at(0));
+    assert_eq!(drawn.buffer[(0, 0)].fg, theme::color(Token::StateInfo));
+    assert_eq!(
+        drawn.buffer[(7, 0)].fg,
+        theme::color(Token::TextFaint),
+        "the track is quiet"
+    );
 }

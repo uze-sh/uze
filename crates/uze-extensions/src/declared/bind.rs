@@ -538,6 +538,17 @@ impl<'a> Builder<'a> {
             .is_some_and(|value| as_flag(&value))
     }
 
+    /// A word property's value, as the view or the data spells it.
+    fn word_prop(&self, node: &'a Compiled, scopes: &[&'a Value], name: &str) -> Option<String> {
+        self.prop(node, scopes, name)
+            .and_then(|value| value.as_str().map(str::to_owned))
+    }
+
+    /// A role property other than `role`, when it is given.
+    fn named_role(&self, node: &'a Compiled, scopes: &[&'a Value], name: &str) -> Option<Role> {
+        self.prop(node, scopes, name).map(|value| as_role(&value))
+    }
+
     fn role_prop(&self, node: &'a Compiled, scopes: &[&'a Value]) -> Role {
         self.prop(node, scopes, "role")
             .map(|value| as_role(&value))
@@ -705,6 +716,10 @@ fn make_node<'a>(
         NodeName::Details => {
             children = builder.expand(&node.children, scopes, &mut trace.children, make_entry);
             NodeKind::Details
+        }
+        NodeName::Box => {
+            children = builder.expand(&node.children, scopes, &mut trace.children, make_node);
+            box_layout(builder, node, scopes)
         }
         NodeName::Grid => {
             children = builder.expand(&node.children, scopes, &mut trace.children, make_node);
@@ -1101,7 +1116,63 @@ fn progress<'a>(
             role: builder.role_prop(node, scopes),
         });
     }
-    NodeKind::Progress { segments }
+    NodeKind::Progress {
+        segments,
+        line: builder.word_prop(node, scopes, "style").as_deref() == Some("line"),
+    }
+}
+
+/// A `Box`'s layout, every value resolved: a size or a role the data names
+/// that is not one is left out, so the box is drawn as if it named none.
+fn box_layout<'a>(builder: &Builder<'a>, node: &'a Compiled, scopes: &[&'a Value]) -> NodeKind {
+    let padding = builder.count_prop(node, scopes, "padding");
+    let side = |name: &str| match builder.prop(node, scopes, name) {
+        Some(_) => builder.count_prop(node, scopes, name),
+        None => padding,
+    };
+    // An empty ground is none: a lookup's default names no ground for the
+    // rows it leaves bare.
+    let ground = builder
+        .prop(node, scopes, "ground")
+        .filter(|value| !matches!(&**value, Value::Null) && value.as_str() != Some(""))
+        .map(|value| as_role(&value))
+        .map(|role| view::Ground {
+            role,
+            soft: builder.word_prop(node, scopes, "tone").as_deref() == Some("soft"),
+        });
+    let border = match builder.word_prop(node, scopes, "border").as_deref() {
+        Some("line") => Some(view::BorderStyle::Line),
+        Some("round") => Some(view::BorderStyle::Round),
+        Some("heavy") => Some(view::BorderStyle::Heavy),
+        _ => None,
+    }
+    .map(|style| view::Border {
+        style,
+        role: builder
+            .named_role(node, scopes, "border-role")
+            .unwrap_or(Role::Faint),
+    });
+    NodeKind::Box(view::BoxLayout {
+        row: builder.word_prop(node, scopes, "direction").as_deref() == Some("row"),
+        wrap: builder.flag_prop(node, scopes, "wrap"),
+        gap: builder.count_prop(node, scopes, "gap"),
+        width: builder
+            .prop(node, scopes, "width")
+            .and_then(|value| uze_contract::catalog::Size::parse(&value)),
+        height: builder
+            .prop(node, scopes, "height")
+            .and_then(|value| as_count(&value)),
+        pad_x: side("padding-x"),
+        pad_y: side("padding-y"),
+        justify: match builder.word_prop(node, scopes, "justify").as_deref() {
+            Some("center") => view::Justify::Center,
+            Some("end") => view::Justify::End,
+            Some("between") => view::Justify::Between,
+            _ => view::Justify::Start,
+        },
+        ground,
+        border,
+    })
 }
 
 fn tabs<'a>(

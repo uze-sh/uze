@@ -79,6 +79,10 @@ fn draws_nothing(node: &Node) -> bool {
         NodeKind::Stack { .. } | NodeKind::Row { .. } | NodeKind::Grid { .. } => {
             node.children.iter().all(draws_nothing)
         }
+        // A ground or a border is drawn whatever the box holds.
+        NodeKind::Box(layout) if layout.ground.is_none() && layout.border.is_none() => {
+            node.children.iter().all(draws_nothing)
+        }
         NodeKind::Text { spans, .. } => spans.iter().all(|span| span.text.trim().is_empty()),
         _ => false,
     }

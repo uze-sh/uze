@@ -211,6 +211,20 @@ pub(crate) fn softened(token: Token, into: Token) -> Color {
     )
 }
 
+/// The ink that reads on `ground`: the theme's background on a light one,
+/// its brightest text on a dark one. What a declared box's text takes on
+/// its ground, so no pair of roles can be unreadable in some theme.
+pub(crate) fn ink_on(ground: Color) -> Color {
+    let light = match ground {
+        Color::Rgb(red, green, blue) => uze_theme::Rgb(red, green, blue).is_light(),
+        _ => false,
+    };
+    color(match light {
+        true => Token::SurfaceBackground,
+        false => Token::TextBright,
+    })
+}
+
 /// The held-back form of a state's hue: what a status no click answers
 /// wears, so the full hue is only ever worn by one a click answers. A
 /// token with no held-back form is its own.

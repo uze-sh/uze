@@ -1664,20 +1664,123 @@
       ],
       "description": "The cues an answer may ask for. The host sounds each as the\nterminal's bell."
     },
-    "StackNode": {
-      "description": "Its children one under another, `gap` rows apart.",
+    "BoxNode": {
+      "description": "A flex container: its children in a `direction`, `gap` apart, onto a next line when `wrap` and they do not fit, inside `padding`, on a `ground` and within a `border`, every colour a role.",
       "type": "object",
       "properties": {
         "type": {
-          "const": "Stack"
+          "const": "Box"
         },
         "props": {
           "type": "object",
           "properties": {
+            "direction": {
+              "enum": [
+                "column",
+                "row"
+              ],
+              "description": "How a box's children run: `column` (one under another) or `row`."
+            },
+            "wrap": {
+              "type": "boolean",
+              "description": "In a `row` box, move the children that do not fit onto a next line."
+            },
             "gap": {
               "type": "integer",
               "minimum": 0,
-              "description": "Rows (in a `Stack`) or columns (in a `Row`) between children."
+              "description": "Rows (in a `Stack`) or columns (in a `Row`) between children, and in a `Box` both."
+            },
+            "width": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "string",
+                  "pattern": "^([1-9][0-9]?|100)%$"
+                }
+              ],
+              "description": "How wide: a number of cells, or `N%` of what holds it."
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "How many rows it takes: a chart's bars, a picture's, a sprite's or a box's height."
+            },
+            "padding": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Cells kept free inside the edge, on every side."
+            },
+            "padding-x": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Cells kept free inside the left and right edges."
+            },
+            "padding-y": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Rows kept free inside the top and bottom edges."
+            },
+            "justify": {
+              "enum": [
+                "start",
+                "center",
+                "end",
+                "between"
+              ],
+              "description": "Where a line of a box's children sits: `start`, `center`, `end`, or `between` them."
+            },
+            "ground": {
+              "enum": [
+                "default",
+                "muted",
+                "secondary",
+                "bright",
+                "inactive",
+                "accent",
+                "dim",
+                "faint",
+                "info",
+                "success",
+                "warning",
+                "danger"
+              ],
+              "description": "The role whose hue fills the box; text on it takes an ink chosen to read on it."
+            },
+            "tone": {
+              "enum": [
+                "solid",
+                "soft"
+              ],
+              "description": "`solid` draws the ground in the role's hue, `soft` lightens it toward the surface."
+            },
+            "border": {
+              "enum": [
+                "none",
+                "line",
+                "round",
+                "heavy"
+              ],
+              "description": "A frame the host draws inside the box: `none`, `line`, `round` or `heavy`."
+            },
+            "border-role": {
+              "enum": [
+                "default",
+                "muted",
+                "secondary",
+                "bright",
+                "inactive",
+                "accent",
+                "dim",
+                "faint",
+                "info",
+                "success",
+                "warning",
+                "danger"
+              ],
+              "description": "The role the border is drawn in."
             },
             "grow": {
               "type": "boolean",
@@ -1695,6 +1798,142 @@
           "type": "array",
           "items": {
             "anyOf": [
+              {
+                "$ref": "#/$defs/BoxNode"
+              },
+              {
+                "$ref": "#/$defs/StackNode"
+              },
+              {
+                "$ref": "#/$defs/RowNode"
+              },
+              {
+                "$ref": "#/$defs/TextNode"
+              },
+              {
+                "$ref": "#/$defs/BadgeNode"
+              },
+              {
+                "$ref": "#/$defs/MarksNode"
+              },
+              {
+                "$ref": "#/$defs/PipsNode"
+              },
+              {
+                "$ref": "#/$defs/ProgressNode"
+              },
+              {
+                "$ref": "#/$defs/ListNode"
+              },
+              {
+                "$ref": "#/$defs/TableNode"
+              },
+              {
+                "$ref": "#/$defs/TabsNode"
+              },
+              {
+                "$ref": "#/$defs/ToggleNode"
+              },
+              {
+                "$ref": "#/$defs/ButtonNode"
+              },
+              {
+                "$ref": "#/$defs/ActivityNode"
+              },
+              {
+                "$ref": "#/$defs/ElapsedNode"
+              },
+              {
+                "$ref": "#/$defs/LogNode"
+              },
+              {
+                "$ref": "#/$defs/RuleNode"
+              },
+              {
+                "$ref": "#/$defs/DetailsNode"
+              },
+              {
+                "$ref": "#/$defs/MarkdownNode"
+              },
+              {
+                "$ref": "#/$defs/CodeNode"
+              },
+              {
+                "$ref": "#/$defs/GaugeNode"
+              },
+              {
+                "$ref": "#/$defs/ChartNode"
+              },
+              {
+                "$ref": "#/$defs/StatNode"
+              },
+              {
+                "$ref": "#/$defs/KbdNode"
+              },
+              {
+                "$ref": "#/$defs/GridNode"
+              },
+              {
+                "$ref": "#/$defs/CellsNode"
+              },
+              {
+                "$ref": "#/$defs/ImageNode"
+              },
+              {
+                "$ref": "#/$defs/SpriteNode"
+              },
+              {
+                "$ref": "#/$defs/SelectNode"
+              },
+              {
+                "$ref": "#/$defs/FieldNode"
+              },
+              {
+                "$ref": "#/$defs/FormNode"
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "StackNode": {
+      "description": "Its children one under another, `gap` rows apart.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Stack"
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "gap": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Rows (in a `Stack`) or columns (in a `Row`) between children, and in a `Box` both."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/BoxNode"
+              },
               {
                 "$ref": "#/$defs/StackNode"
               },
@@ -1807,7 +2046,7 @@
             "gap": {
               "type": "integer",
               "minimum": 0,
-              "description": "Rows (in a `Stack`) or columns (in a `Row`) between children."
+              "description": "Rows (in a `Stack`) or columns (in a `Row`) between children, and in a `Box` both."
             },
             "align": {
               "enum": [
@@ -1833,6 +2072,9 @@
           "type": "array",
           "items": {
             "anyOf": [
+              {
+                "$ref": "#/$defs/BoxNode"
+              },
               {
                 "$ref": "#/$defs/StackNode"
               },
@@ -2212,6 +2454,13 @@
               ],
               "description": "The semantic colour, or `{table:field}` to look one up."
             },
+            "style": {
+              "enum": [
+                "block",
+                "line"
+              ],
+              "description": "`block` fills the bar with blocks; `line` draws a thin line over a quiet track."
+            },
             "grow": {
               "type": "boolean",
               "description": "Take a share of what is left of the row."
@@ -2335,6 +2584,9 @@
           "type": "array",
           "items": {
             "anyOf": [
+              {
+                "$ref": "#/$defs/BoxNode"
+              },
               {
                 "$ref": "#/$defs/StackNode"
               },
@@ -3222,7 +3474,7 @@
             "height": {
               "type": "integer",
               "minimum": 0,
-              "description": "How many rows it takes: a chart's bars, a picture's or a sprite's height."
+              "description": "How many rows it takes: a chart's bars, a picture's, a sprite's or a box's height."
             },
             "role": {
               "enum": [
@@ -3390,7 +3642,7 @@
             "gap": {
               "type": "integer",
               "minimum": 0,
-              "description": "Rows (in a `Stack`) or columns (in a `Row`) between children."
+              "description": "Rows (in a `Stack`) or columns (in a `Row`) between children, and in a `Box` both."
             },
             "grow": {
               "type": "boolean",
@@ -3408,6 +3660,9 @@
           "type": "array",
           "items": {
             "anyOf": [
+              {
+                "$ref": "#/$defs/BoxNode"
+              },
               {
                 "$ref": "#/$defs/StackNode"
               },
@@ -3576,7 +3831,7 @@
             "height": {
               "type": "integer",
               "minimum": 0,
-              "description": "How many rows it takes: a chart's bars, a picture's or a sprite's height."
+              "description": "How many rows it takes: a chart's bars, a picture's, a sprite's or a box's height."
             },
             "grow": {
               "type": "boolean",
@@ -3628,7 +3883,7 @@
             "height": {
               "type": "integer",
               "minimum": 0,
-              "description": "How many rows it takes: a chart's bars, a picture's or a sprite's height."
+              "description": "How many rows it takes: a chart's bars, a picture's, a sprite's or a box's height."
             },
             "grow": {
               "type": "boolean",
@@ -3865,6 +4120,9 @@
           "items": {
             "anyOf": [
               {
+                "$ref": "#/$defs/BoxNode"
+              },
+              {
                 "$ref": "#/$defs/StackNode"
               },
               {
@@ -3966,6 +4224,9 @@
     "CatalogNode": {
       "description": "A node of the catalog, as a composed answer writes it: `type`, then its `args`, `props` and `children`. Every value is a literal; `{x}` in a composed tree is text.",
       "oneOf": [
+        {
+          "$ref": "#/$defs/BoxNode"
+        },
         {
           "$ref": "#/$defs/StackNode"
         },

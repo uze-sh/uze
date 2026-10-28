@@ -174,6 +174,10 @@ fn literal(value: &Value, kind: PropKind, at: &str) -> Result<Binding, String> {
             Some(count) => Value::from(count),
             None => return wrong("a whole number"),
         },
+        PropKind::Size => match uze_contract::catalog::Size::parse(value) {
+            Some(_) => value.clone(),
+            None => return wrong("a number of cells or a percentage"),
+        },
         PropKind::Number => match value.as_f64() {
             Some(number) if number.is_finite() => value.clone(),
             _ => return wrong("a number"),

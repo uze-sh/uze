@@ -359,6 +359,29 @@ fn a_colour_value_is_not_a_role() {
 }
 
 #[test]
+fn a_box_takes_roles_and_sizes_and_refuses_a_colour_or_a_share_past_whole() {
+    let ground = the_one(r##"Box ground="#5b5bf7" { Text "a"; }"##);
+    assert!(
+        ground.suggestion.unwrap().contains("info"),
+        "a ground is a role, and the roles are listed"
+    );
+    let border = the_one(r##"Box border="line" border-role="#5b5bf7" { Text "a"; }"##);
+    assert!(border.message.contains("role"), "{border}");
+    let share = the_one(r#"Box width="120%" { Text "a"; }"#);
+    assert!(share.message.contains("percentage"), "{share}");
+    for accepted in [
+        r#"Box direction="row" wrap=#true width="20%" padding-x=1 ground="info" tone="soft" { Text "a"; }"#,
+        r#"Box width=12 height=3 border="round" border-role="faint" { Progress ratio=1 style="line"; }"#,
+    ] {
+        assert!(
+            view(accepted).is_ok(),
+            "{accepted}: {:#?}",
+            view(accepted).err()
+        );
+    }
+}
+
+#[test]
 fn identity_is_never_interpolated() {
     let diagnostic = the_one(r#"Button "Go" action="{kind}""#);
     assert!(

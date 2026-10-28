@@ -47,6 +47,7 @@ pub enum NodeName {
     Choice,
     Field,
     Form,
+    Box,
 }
 
 /// What a property's value must be once bound.
@@ -69,6 +70,52 @@ pub enum PropKind {
     Word(&'static [&'static str]),
     /// Any value, handed through to whatever receives it (an action's item).
     Value,
+    /// A size: a whole number of cells, or `N%` of what holds the node.
+    Size,
+}
+
+/// A size a view gives a node: cells, or a share of what holds it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Size {
+    Cells(u16),
+    /// From 1 to 100.
+    Percent(u8),
+}
+
+impl Size {
+    /// `12` or `"20%"`, as a view or an answer writes it; `None` for
+    /// anything else, a percentage out of 1–100 included.
+    pub fn parse(value: &serde_json::Value) -> Option<Self> {
+        match value {
+            serde_json::Value::Number(number) => number
+                .as_u64()
+                .and_then(|cells| u16::try_from(cells).ok())
+                .map(Self::Cells),
+            serde_json::Value::String(text) => Self::parse_text(text),
+            _ => None,
+        }
+    }
+
+    pub fn parse_text(text: &str) -> Option<Self> {
+        match text.strip_suffix('%') {
+            Some(share) => share
+                .parse::<u8>()
+                .ok()
+                .filter(|share| (1..=100).contains(share))
+                .map(Self::Percent),
+            None => text.parse::<u16>().ok().map(Self::Cells),
+        }
+    }
+
+    /// The cells it takes out of `room`.
+    pub fn of(self, room: u16) -> u16 {
+        match self {
+            Self::Cells(cells) => cells.min(room),
+            Self::Percent(share) => {
+                u16::try_from(u32::from(room) * u32::from(share) / 100).unwrap_or(room)
+            }
+        }
+    }
 }
 
 /// What a node accepts: its arguments, its properties and whether it holds
@@ -104,9 +151,15 @@ pub const COMMON_PROPS: &[(&str, PropKind)] = &[
 pub const COMPOSED_PROPS: &[&str] = &["grow", "min-width"];
 
 const ALIGN: PropKind = PropKind::Word(&["start", "center", "end"]);
+const DIRECTION: PropKind = PropKind::Word(&["column", "row"]);
+const JUSTIFY: PropKind = PropKind::Word(&["start", "center", "end", "between"]);
+const TONE: PropKind = PropKind::Word(&["solid", "soft"]);
+const BORDER: PropKind = PropKind::Word(&["none", "line", "round", "heavy"]);
+const PROGRESS_STYLE: PropKind = PropKind::Word(&["block", "line"]);
 
 /// Any node a container may hold.
 const ANY: &[NodeName] = &[
+    NodeName::Box,
     NodeName::Stack,
     NodeName::Row,
     NodeName::Text,
@@ -142,6 +195,27 @@ const ANY: &[NodeName] = &[
 const CHART_KIND: PropKind = PropKind::Word(&["sparkline", "bar"]);
 
 pub const CATALOG: &[NodeSpec] = &[
+    NodeSpec {
+        name: NodeName::Box,
+        args: &[],
+        required_args: 0,
+        props: &[
+            ("direction", DIRECTION),
+            ("wrap", PropKind::Flag),
+            ("gap", PropKind::Count),
+            ("width", PropKind::Size),
+            ("height", PropKind::Count),
+            ("padding", PropKind::Count),
+            ("padding-x", PropKind::Count),
+            ("padding-y", PropKind::Count),
+            ("justify", JUSTIFY),
+            ("ground", PropKind::Role),
+            ("tone", TONE),
+            ("border", BORDER),
+            ("border-role", PropKind::Role),
+        ],
+        children: Some(ANY),
+    },
     NodeSpec {
         name: NodeName::Stack,
         args: &[],
@@ -199,7 +273,11 @@ pub const CATALOG: &[NodeSpec] = &[
         name: NodeName::Progress,
         args: &[],
         required_args: 0,
-        props: &[("ratio", PropKind::Number), ("role", PropKind::Role)],
+        props: &[
+            ("ratio", PropKind::Number),
+            ("role", PropKind::Role),
+            ("style", PROGRESS_STYLE),
+        ],
         children: Some(&[NodeName::Segment]),
     },
     NodeSpec {
@@ -470,6 +548,7 @@ impl NodeName {
             Self::Choice => "Choice",
             Self::Field => "Field",
             Self::Form => "Form",
+            Self::Box => "Box",
         }
     }
 
@@ -585,6 +664,11 @@ impl NodeName {
                 "Its `Field`s and `Select`s, and a button (`submit`) running `action` with \
                  them as `form.<id>`, cleaned like any item."
             }
+            Self::Box => {
+                "A flex container: its children in a `direction`, `gap` apart, onto a next \
+                 line when `wrap` and they do not fit, inside `padding`, on a `ground` and \
+                 within a `border`, every colour a role."
+            }
         }
     }
 }
@@ -681,7 +765,9 @@ pub fn prop_doc(prop: &str) -> Option<&'static str> {
         "show-any" => "Draw while any of several `ui.<id>=<value>` pairs, comma-separated, holds.",
         "grow" => "Take a share of what is left of the row.",
         "min-width" => "Never draw narrower than this many columns.",
-        "gap" => "Rows (in a `Stack`) or columns (in a `Row`) between children.",
+        "gap" => {
+            "Rows (in a `Stack`) or columns (in a `Row`) between children, and in a `Box` both."
+        }
         "align" => "Where a row with nothing that grows sits: `start`, `center` or `end`.",
         "role" => "The semantic colour, or `{table:field}` to look one up.",
         "strong" => "Emphasis.",
@@ -708,7 +794,29 @@ pub fn prop_doc(prop: &str) -> Option<&'static str> {
         "danger" => "The ratio from which the gauge is drawn in the `danger` role.",
         "series" => "A list field of numbers.",
         "kind" => "`sparkline` (one row) or `bar` (columns `height` rows tall).",
-        "height" => "How many rows it takes: a chart's bars, a picture's or a sprite's height.",
+        "height" => {
+            "How many rows it takes: a chart's bars, a picture's, a sprite's or a box's height."
+        }
+        "direction" => "How a box's children run: `column` (one under another) or `row`.",
+        "wrap" => "In a `row` box, move the children that do not fit onto a next line.",
+        "width" => "How wide: a number of cells, or `N%` of what holds it.",
+        "padding" => "Cells kept free inside the edge, on every side.",
+        "padding-x" => "Cells kept free inside the left and right edges.",
+        "padding-y" => "Rows kept free inside the top and bottom edges.",
+        "justify" => {
+            "Where a line of a box's children sits: `start`, `center`, `end`, or `between` them."
+        }
+        "ground" => {
+            "The role whose hue fills the box; text on it takes an ink chosen to read on it."
+        }
+        "tone" => {
+            "`solid` draws the ground in the role's hue, `soft` lightens it toward the surface."
+        }
+        "border" => "A frame the host draws inside the box: `none`, `line`, `round` or `heavy`.",
+        "border-role" => "The role the border is drawn in.",
+        "style" => {
+            "`block` fills the bar with blocks; `line` draws a thin line over a quiet track."
+        }
         "rows" => "A list of rows, each a list of `{ch, role}` cells or a plain string.",
         "regions" => {
             "A list of `{x, y, w, h, action, item}`: a click inside runs `action` with `item`."

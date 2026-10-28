@@ -138,25 +138,47 @@ A view names these nodes, PascalCase. A property's value is a literal, a `{field
 | `grow` | flag | Take a share of what is left of the row. | yes |
 | `min-width` | count | Never draw narrower than this many columns. | yes |
 
+### `Box`
+
+A flex container: its children in a `direction`, `gap` apart, onto a next line when `wrap` and they do not fit, inside `padding`, on a `ground` and within a `border`, every colour a role.
+
+- Holds: `Box`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
+
+| property | value | what |
+|---|---|---|
+| `direction` | `column` · `row` | How a box's children run: `column` (one under another) or `row`. |
+| `wrap` | flag | In a `row` box, move the children that do not fit onto a next line. |
+| `gap` | count | Rows (in a `Stack`) or columns (in a `Row`) between children, and in a `Box` both. |
+| `width` | cells or `N%` | How wide: a number of cells, or `N%` of what holds it. |
+| `height` | count | How many rows it takes: a chart's bars, a picture's, a sprite's or a box's height. |
+| `padding` | count | Cells kept free inside the edge, on every side. |
+| `padding-x` | count | Cells kept free inside the left and right edges. |
+| `padding-y` | count | Rows kept free inside the top and bottom edges. |
+| `justify` | `start` · `center` · `end` · `between` | Where a line of a box's children sits: `start`, `center`, `end`, or `between` them. |
+| `ground` | role | The role whose hue fills the box; text on it takes an ink chosen to read on it. |
+| `tone` | `solid` · `soft` | `solid` draws the ground in the role's hue, `soft` lightens it toward the surface. |
+| `border` | `none` · `line` · `round` · `heavy` | A frame the host draws inside the box: `none`, `line`, `round` or `heavy`. |
+| `border-role` | role | The role the border is drawn in. |
+
 ### `Stack`
 
 Its children one under another, `gap` rows apart.
 
-- Holds: `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
+- Holds: `Box`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
 | property | value | what |
 |---|---|---|
-| `gap` | count | Rows (in a `Stack`) or columns (in a `Row`) between children. |
+| `gap` | count | Rows (in a `Stack`) or columns (in a `Row`) between children, and in a `Box` both. |
 
 ### `Row`
 
 Its children side by side, `gap` columns apart; `grow` children share what is left, the rest are placed by `align`.
 
-- Holds: `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
+- Holds: `Box`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
 | property | value | what |
 |---|---|---|
-| `gap` | count | Rows (in a `Stack`) or columns (in a `Row`) between children. |
+| `gap` | count | Rows (in a `Stack`) or columns (in a `Row`) between children, and in a `Box` both. |
 | `align` | `start` · `center` · `end` | Where a row with nothing that grows sits: `start`, `center` or `end`. |
 
 ### `Text`
@@ -220,6 +242,7 @@ A bar: one fill at `ratio`, or one segment per `Segment`.
 |---|---|---|
 | `ratio` | number | How full, from 0 to 1. |
 | `role` | role | The semantic colour, or `{table:field}` to look one up. |
+| `style` | `block` · `line` | `block` fills the bar with blocks; `line` draws a thin line over a quiet track. |
 
 ### `Segment`
 
@@ -237,7 +260,7 @@ One segment of a `Progress`: as wide as its `weight`, filled to its `ratio`, in 
 
 Rows repeated over `each`; with an `id`, the host holds which one is selected; `filter="ui.<id>"` keeps the rows whose fields hold what a `Field` has typed.
 
-- Holds: `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
+- Holds: `Box`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
 | property | value | what |
 |---|---|---|
@@ -403,7 +426,7 @@ A list of numbers (`series`) as one `sparkline` row or as `bar`s `height` rows t
 |---|---|---|
 | `series` | any value | A list field of numbers. |
 | `kind` | `sparkline` · `bar` | `sparkline` (one row) or `bar` (columns `height` rows tall). |
-| `height` | count | How many rows it takes: a chart's bars, a picture's or a sprite's height. |
+| `height` | count | How many rows it takes: a chart's bars, a picture's, a sprite's or a box's height. |
 | `role` | role | The semantic colour, or `{table:field}` to look one up. |
 
 ### `Stat`
@@ -429,11 +452,11 @@ A key, drawn as the workspace draws its own keys.
 
 Its children as tiles, in as many columns as fit their `min-width`, row by row.
 
-- Holds: `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
+- Holds: `Box`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
 | property | value | what |
 |---|---|---|
-| `gap` | count | Rows (in a `Stack`) or columns (in a `Row`) between children. |
+| `gap` | count | Rows (in a `Stack`) or columns (in a `Row`) between children, and in a `Box` both. |
 
 ### `Cells`
 
@@ -456,7 +479,7 @@ A picture: a PNG, JPEG or GIF inside the extension, or `scratch:<name>` its prog
 | property | value | what |
 |---|---|---|
 | `alt` | text | What stands in for the picture where the terminal draws none. |
-| `height` | count | How many rows it takes: a chart's bars, a picture's or a sprite's height. |
+| `height` | count | How many rows it takes: a chart's bars, a picture's, a sprite's or a box's height. |
 
 ### `Sprite`
 
@@ -468,7 +491,7 @@ A declared sprite playing `state` (or its fallback), on the host's clock.
 | property | value | what |
 |---|---|---|
 | `state` | text | The state to play: one of the sprite's, or its fallback otherwise. |
-| `height` | count | How many rows it takes: a chart's bars, a picture's or a sprite's height. |
+| `height` | count | How many rows it takes: a chart's bars, a picture's, a sprite's or a box's height. |
 
 ### `Select`
 
@@ -508,7 +531,7 @@ A line of text the host holds as `ui.<id>` while the operator types into it; `pl
 
 Its `Field`s and `Select`s, and a button (`submit`) running `action` with them as `form.<id>`, cleaned like any item.
 
-- Holds: `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
+- Holds: `Box`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
 | property | value | what |
 |---|---|---|

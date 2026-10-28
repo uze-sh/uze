@@ -233,6 +233,7 @@ fn the_board_is_drawn_from_its_fixture() {
     assert_eq!(
         measure.children[0].kind,
         NodeKind::Progress {
+            line: false,
             segments: vec![
                 segment(6, 1000, Role::Success),
                 segment(19, 890, Role::Warning),

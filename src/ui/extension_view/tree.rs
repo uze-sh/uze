@@ -16,9 +16,11 @@ mod display;
 
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use ratatui::widgets::{Block, BorderType, Borders};
+use uze_contract::catalog::Size as Length;
 use uze_extensions::view::{
-    Align, CellGlyph, CellRegion, Node, NodeAct, NodeKind, Picture, Segment, Tab, sprite_frame,
-    sprite_moves,
+    Align, Border, BorderStyle, BoxLayout, CellGlyph, CellRegion, Ground, Justify, Node, NodeAct,
+    NodeKind, Picture, Segment, Tab, sprite_frame, sprite_moves,
 };
 
 use super::*;
@@ -158,6 +160,7 @@ pub(super) fn render_tree(
         hits,
         folded: None,
         gauge_labels: None,
+        ink: None,
     };
     painter.node(root, area.x, area.width, 0);
     if held.fold && overflows {
@@ -324,6 +327,7 @@ fn sum(widths: impl IntoIterator<Item = u16>) -> u16 {
 /// The cells a node asks for when nothing tells it otherwise.
 fn natural(node: &Node) -> u16 {
     let own = match &node.kind {
+        NodeKind::Box(layout) => box_natural(node, layout),
         NodeKind::Stack { .. } => node.children.iter().map(natural).max().unwrap_or(0),
         NodeKind::Row { gap, .. } => sum(node.children.iter().map(natural))
             .saturating_add(gap.saturating_mul(cells_of(node.children.len().saturating_sub(1)))),
@@ -337,7 +341,7 @@ fn natural(node: &Node) -> u16 {
             cells_of(roles.len()).saturating_mul(theme::width(Symbol::MarkFacet))
         }
         NodeKind::Pips { total, .. } => total.saturating_mul(pip_width()),
-        NodeKind::Progress { segments } => cells_of(segments.len())
+        NodeKind::Progress { segments, .. } => cells_of(segments.len())
             .saturating_mul(PROGRESS_CELLS_PER_SEGMENT)
             .max(PROGRESS_MIN_WIDTH),
         NodeKind::List { empty, .. } => match node.children.is_empty() {
@@ -443,6 +447,7 @@ fn natural(node: &Node) -> u16 {
 /// The rows a node takes at `width`.
 fn height(node: &Node, width: u16) -> usize {
     match &node.kind {
+        NodeKind::Box(layout) => box_height(node, layout, own_width(layout, width)),
         NodeKind::Stack { gap } => {
             let rows: usize = node.children.iter().map(|child| height(child, width)).sum();
             rows + usize::from(*gap) * node.children.len().saturating_sub(1)
@@ -573,6 +578,163 @@ fn step_width(symbol: Symbol) -> u16 {
 /// The widest a `Markdown` asks to be: a reading measure, past which its
 /// paragraphs would be lines too long to follow.
 const MARKDOWN_MEASURE: u16 = 80;
+/// The cells a box's border takes on each side.
+fn border_cells(layout: &BoxLayout) -> u16 {
+    u16::from(layout.border.is_some())
+}
+
+/// The columns and rows a box keeps between its edge and its children.
+fn box_chrome(layout: &BoxLayout) -> (u16, u16) {
+    let border = border_cells(layout);
+    (
+        layout.pad_x.saturating_add(border).saturating_mul(2),
+        layout.pad_y.saturating_add(border).saturating_mul(2),
+    )
+}
+
+/// A box's own width in `room`: its `width` of it, or all of it.
+fn own_width(layout: &BoxLayout, room: u16) -> u16 {
+    layout.width.map_or(room, |size| size.of(room))
+}
+
+/// The width a box gives a child of its inner `room`: a box's own size of
+/// it, else what the child asks, never more than the room.
+fn child_width(child: &Node, room: u16) -> u16 {
+    match &child.kind {
+        NodeKind::Box(layout) if layout.width.is_some() => own_width(layout, room),
+        _ => natural(child).min(room),
+    }
+}
+
+/// The rows a child takes at `width`, a box already sized by its parent.
+fn sized_height(child: &Node, width: u16) -> usize {
+    match &child.kind {
+        NodeKind::Box(layout) => box_height(child, layout, width),
+        _ => height(child, width),
+    }
+}
+
+fn box_natural(node: &Node, layout: &BoxLayout) -> u16 {
+    if let Some(Length::Cells(cells)) = layout.width {
+        return cells;
+    }
+    let gaps = layout
+        .gap
+        .saturating_mul(cells_of(node.children.len().saturating_sub(1)));
+    let inner = match layout.row {
+        true => sum(node.children.iter().map(natural)).saturating_add(gaps),
+        false => node.children.iter().map(natural).max().unwrap_or(0),
+    };
+    inner.saturating_add(box_chrome(layout).0)
+}
+
+/// A row box's children in lines of `room` cells, each child with the
+/// width it is drawn at: a line breaks before a child that does not fit
+/// when the box wraps, and the growing ones of a line share what is left.
+fn box_lines(node: &Node, layout: &BoxLayout, room: u16) -> Vec<Vec<(usize, u16)>> {
+    let mut lines: Vec<Vec<(usize, u16)>> = vec![Vec::new()];
+    let mut used = 0u16;
+    for (index, child) in node.children.iter().enumerate() {
+        let width = child_width(child, room);
+        let line = lines.last_mut().expect("there is always a line");
+        let needed = match line.is_empty() {
+            true => width,
+            false => layout.gap.saturating_add(width),
+        };
+        if layout.wrap && !line.is_empty() && used.saturating_add(needed) > room {
+            lines.push(vec![(index, width)]);
+            used = width;
+        } else {
+            line.push((index, width.min(room.saturating_sub(used.min(room)))));
+            used = used.saturating_add(needed);
+        }
+    }
+    for line in &mut lines {
+        let taken = sum(line.iter().map(|(_, width)| *width)).saturating_add(
+            layout
+                .gap
+                .saturating_mul(cells_of(line.len().saturating_sub(1))),
+        );
+        let growing: Vec<usize> = (0..line.len())
+            .filter(|at| node.children[line[*at].0].grow)
+            .collect();
+        let left = room.saturating_sub(taken);
+        let count = cells_of(growing.len());
+        if let (Some(each), Some(rest)) = (left.checked_div(count), left.checked_rem(count)) {
+            for (nth, at) in growing.iter().enumerate() {
+                let share = each + u16::from(cells_of(nth) < rest);
+                line[*at].1 = line[*at].1.saturating_add(share);
+            }
+        }
+    }
+    lines
+}
+
+/// The rows a box takes when it is `width` cells wide.
+fn box_height(node: &Node, layout: &BoxLayout, width: u16) -> usize {
+    if let Some(rows) = layout.height {
+        return usize::from(rows);
+    }
+    let (chrome_x, chrome_y) = box_chrome(layout);
+    let room = width.saturating_sub(chrome_x);
+    let gap = usize::from(layout.gap);
+    let content = match layout.row {
+        false => {
+            let rows: usize = node
+                .children
+                .iter()
+                .map(|child| sized_height(child, child_width_in_column(child, room)))
+                .sum();
+            rows + gap * node.children.len().saturating_sub(1)
+        }
+        true => {
+            let lines = box_lines(node, layout, room);
+            let rows: usize = lines
+                .iter()
+                .map(|line| {
+                    line.iter()
+                        .map(|(index, width)| sized_height(&node.children[*index], *width))
+                        .max()
+                        .unwrap_or(0)
+                })
+                .sum();
+            rows + gap * lines.len().saturating_sub(1)
+        }
+    };
+    content + usize::from(chrome_y)
+}
+
+/// The width a column box gives a child: all of its room, but a box its
+/// own size of it.
+fn child_width_in_column(child: &Node, room: u16) -> u16 {
+    match &child.kind {
+        NodeKind::Box(layout) => own_width(layout, room),
+        _ => room,
+    }
+}
+
+/// Where the children of a line start, and the gap after each, for the
+/// box's `justify` over the `left` cells nothing took.
+fn justified(justify: Justify, left: u16, count: usize, gap: u16) -> (u16, u16) {
+    match justify {
+        Justify::Start => (0, gap),
+        Justify::Center => (left / 2, gap),
+        Justify::End => (left, gap),
+        Justify::Between if count > 1 => (0, gap.saturating_add(left / cells_of(count - 1))),
+        Justify::Between => (0, gap),
+    }
+}
+
+/// The ground's colour, and the ink that reads on it.
+fn ground_colours(ground: &Ground) -> (Color, Color) {
+    let hue = token(ground.role);
+    let paint = match ground.soft {
+        true => theme::softened(hue, Token::SurfaceBackground),
+        false => theme::color(hue),
+    };
+    (paint, theme::ink_on(paint))
+}
+
 /// A `Grid`'s tile when it names no `min-width`.
 const GRID_TILE: u16 = 24;
 
@@ -859,6 +1021,31 @@ fn button(label: &str, hovered: bool) -> Button {
 /// A segmented bar `width` cells wide: each segment as wide as its weight
 /// is of their sum, a cell apart where there is room for it, and filled to
 /// its share to the finest step the glyph set draws.
+/// A progress bar as a thin line: each segment's filled cells in its role,
+/// the rest in a quiet one, to the whole cell. Read as a measure even full,
+/// where a bar of blocks reads as a slab.
+fn thin_progress_line(segments: &[Segment], width: u16) -> Line<'static> {
+    let width = usize::from(width);
+    if segments.is_empty() || width == 0 {
+        return Line::default();
+    }
+    let glyph = theme::glyph(Symbol::ProgressLine);
+    let track = theme::fg(Token::TextFaint);
+    let mut spans = Vec::new();
+    for (segment, cells) in segments.iter().zip(segment_cells(segments, width)) {
+        let filled =
+            usize::try_from((u64::from(segment.filled.min(1000)) * cells as u64 + 500) / 1000)
+                .unwrap_or(cells)
+                .min(cells);
+        spans.push(TextSpan::styled(
+            glyph.repeat(filled),
+            theme::fg(token(segment.role)),
+        ));
+        spans.push(TextSpan::styled(glyph.repeat(cells - filled), track));
+    }
+    Line::from(spans)
+}
+
 fn progress_line(segments: &[Segment], width: u16) -> Line<'static> {
     let width = usize::from(width);
     if segments.is_empty() || width == 0 {
@@ -958,6 +1145,9 @@ struct Painter<'p, 'f> {
     /// The label column the gauges of the stack being drawn share, so
     /// their bars start together.
     gauge_labels: Option<u16>,
+    /// The ink every line takes while it is drawn on a box's ground, so a
+    /// role never sits unreadable on another's hue.
+    ink: Option<Color>,
 }
 
 impl Painter<'_, '_> {
@@ -977,10 +1167,15 @@ impl Painter<'_, '_> {
         y + rows <= self.scroll + self.rows
     }
 
-    fn line(&mut self, y: usize, x: u16, width: u16, line: Line<'static>) {
+    fn line(&mut self, y: usize, x: u16, width: u16, mut line: Line<'static>) {
         let (Some(row), Some((x, width))) = (self.screen_row(y), self.columns(x, width)) else {
             return;
         };
+        if let Some(ink) = self.ink {
+            for span in &mut line.spans {
+                span.style = span.style.fg(ink);
+            }
+        }
         self.frame
             .render_widget(Paragraph::new(line), Rect::new(x, row, width, 1));
     }
@@ -1036,6 +1231,9 @@ impl Painter<'_, '_> {
             return true;
         }
         match &node.kind {
+            NodeKind::Box(layout) => {
+                return self.boxed(node, layout, x, own_width(layout, width), y);
+            }
             NodeKind::Stack { gap } => return self.stack(&node.children, *gap, x, width, y),
             NodeKind::Row { gap, align } => {
                 let (offset, widths) = row_widths(&node.children, *gap, *align, width);
@@ -1085,8 +1283,12 @@ impl Painter<'_, '_> {
                 ]);
                 self.line(y, x, width, line);
             }
-            NodeKind::Progress { segments } => {
-                self.line(y, x, width, progress_line(segments, width));
+            NodeKind::Progress { segments, line } => {
+                let drawn = match line {
+                    true => thin_progress_line(segments, width),
+                    false => progress_line(segments, width),
+                };
+                self.line(y, x, width, drawn);
             }
             NodeKind::List { selected, empty } => {
                 return self.list(node, *selected, empty.as_deref(), (x, width), y);
@@ -1376,6 +1578,108 @@ impl Painter<'_, '_> {
     }
 
     /// Tiles row by row, each row as tall as its tallest tile.
+    /// A box `width` cells wide: its ground and border first, then its
+    /// children in its inner area, a line at a time. Folding, a box that
+    /// does not fit whole ends the tree, as a stacked child does.
+    fn boxed(&mut self, node: &Node, layout: &BoxLayout, x: u16, width: u16, y: usize) -> bool {
+        let rows = box_height(node, layout, width);
+        if self.held.fold && !self.fits(y, rows) {
+            return self.fold_at(y, 1);
+        }
+        let ink = layout.ground.map(|ground| {
+            let (paint, ink) = ground_colours(&ground);
+            if let Some(rect) = self.visible(y, rows, x, width) {
+                self.frame
+                    .render_widget(Block::new().style(Style::default().bg(paint)), rect);
+            }
+            ink
+        });
+        if let Some(border) = layout.border {
+            self.border(border, (x, width), y, rows);
+        }
+        let inherited = self.ink;
+        let outer = std::mem::replace(&mut self.ink, ink.or(inherited));
+        let edge = border_cells(layout);
+        let inner_x = x.saturating_add(edge).saturating_add(layout.pad_x);
+        let room = width.saturating_sub(box_chrome(layout).0);
+        let mut at = y + usize::from(edge.saturating_add(layout.pad_y));
+        let gap = usize::from(layout.gap);
+        let mut drawn = true;
+        if layout.row {
+            for line in box_lines(node, layout, room) {
+                let taken = sum(line.iter().map(|(_, width)| *width));
+                let gaps = layout
+                    .gap
+                    .saturating_mul(cells_of(line.len().saturating_sub(1)));
+                let left = room.saturating_sub(taken.saturating_add(gaps));
+                let (start, between) = justified(layout.justify, left, line.len(), layout.gap);
+                let mut left_x = inner_x.saturating_add(start);
+                let mut tallest = 0;
+                for (index, child_width) in &line {
+                    let child = &node.children[*index];
+                    tallest = tallest.max(sized_height(child, *child_width));
+                    if !self.sized(child, left_x, *child_width, at) {
+                        drawn = false;
+                        break;
+                    }
+                    left_x = left_x.saturating_add(*child_width).saturating_add(between);
+                }
+                if !drawn {
+                    break;
+                }
+                at += tallest + gap;
+            }
+        } else {
+            for child in &node.children {
+                let child_width = child_width_in_column(child, room);
+                if !self.sized(child, inner_x, child_width, at) {
+                    drawn = false;
+                    break;
+                }
+                at += sized_height(child, child_width) + gap;
+            }
+        }
+        self.ink = outer;
+        drawn
+    }
+
+    /// A child of a box at the width the box gave it: a box is not sized
+    /// again by its own `width`.
+    fn sized(&mut self, child: &Node, x: u16, width: u16, y: usize) -> bool {
+        match &child.kind {
+            NodeKind::Box(layout) => self.boxed(child, layout, x, width, y),
+            _ => self.node(child, x, width, y),
+        }
+    }
+
+    /// A box's border, in its role: its top and bottom edges only where
+    /// they are in the window, so a box scrolled half away keeps its sides.
+    fn border(&mut self, border: Border, (x, width): (u16, u16), y: usize, rows: usize) {
+        let Some(rect) = self.visible(y, rows, x, width) else {
+            return;
+        };
+        let mut sides = Borders::LEFT | Borders::RIGHT;
+        if self.screen_row(y).is_some() {
+            sides |= Borders::TOP;
+        }
+        if self.screen_row(y + rows.saturating_sub(1)).is_some() {
+            sides |= Borders::BOTTOM;
+        }
+        let kind = match border.style {
+            BorderStyle::Line => BorderType::Plain,
+            BorderStyle::Round => BorderType::Rounded,
+            BorderStyle::Heavy => BorderType::Thick,
+        };
+        let ink = self.ink.unwrap_or_else(|| color(border.role));
+        self.frame.render_widget(
+            Block::new()
+                .borders(sides)
+                .border_type(kind)
+                .border_style(Style::default().fg(ink)),
+            rect,
+        );
+    }
+
     fn grid(&mut self, node: &Node, gap: u16, x: u16, width: u16, y: usize) -> bool {
         let (columns, tile) = grid_columns(node, gap, width);
         let mut at = y;

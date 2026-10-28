@@ -105,6 +105,7 @@
 
     "progress.fill": ["▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"],
     "progress.track": "─",
+    "progress.line": "━",
     "chart.level": ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"],
     "pip.filled": "●",
     "pip.empty": "○",

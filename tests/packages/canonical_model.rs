@@ -124,16 +124,7 @@ fn the_official_package_contributes_its_agent_skill_resources() {
         .iter()
         .map(|capability| capability.name.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(
-        names,
-        [
-            "architect",
-            "author",
-            "init",
-            "rules",
-            "worktree"
-        ]
-    );
+    assert_eq!(names, ["architect", "author", "init", "rules", "worktree"]);
     fs::remove_dir_all(root).unwrap();
 }
 
