@@ -587,3 +587,13 @@
 - decided:  Codex runs one `notify`, so the reporter contributes nothing when `config.toml` (at the integration's `config_toml_path`) sets a top-level `notify`, and also when the file exists and does not parse, since it may hold one. That agent then reports nothing, and the workspace reads its turns from its pane, as for any agent with no reporter. With no file, or a file that sets no `notify`, the reporter is as before.
 - rejected: Chaining the operator's program from `uze agent report`: UZE would run the operator's command line on their behalf with a payload it does not own, and break it the day Codex changes the argument it passes. A `notify` set only in a profile is not looked for: a launch names no profile UZE could know.
 - blast:    `uze-integrations::codex`.
+
+## D169 — A store patch follows the ladder: a newer store is refused, an unreadable one set aside
+
+- status:   pending
+- task:     review finding 10
+- commit:
+- trigger:  `store::patch` built on `store::read`, which reads an unreadable store, or one a newer build wrote, as `{}`; the next patch then wrote over it, destroying what the extension kept (or what a newer build keeps).
+- decided:  Under its lock, `patch` reads the record through `uze_document::read` as the consent record's writer does: a shape this build knows is carried; one with no rung (bytes that do not parse) is set aside with `uze_document::set_aside` before the patch starts an empty store; one from a newer build is refused and left exactly as it is. The refusal reaches the answer as its notice, through `keep_store`, as an oversized store's does. `read` (no lock, read-only) still answers `{}` for either, as the ladder rule says a read-only surface does.
+- rejected: Making `read` fail: a source's answer that cannot see its store still draws, and the next patch is where the record is healed or refused.
+- blast:    `uze-workspace::extensions::store`.

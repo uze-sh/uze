@@ -59,7 +59,9 @@ pub fn read(home: &UzeHome, of: &StoreOf<'_>) -> Map<String, Value> {
 
 /// Replaces each key of `of`'s store that `patch` names, removing those it
 /// sets to `null`. Refused, leaving the store as it was, when the result
-/// would be larger than [`STORE_MAX`].
+/// would be larger than [`STORE_MAX`], and when a newer build wrote it. A
+/// record this build cannot read is set aside before the patch starts an
+/// empty store, never written over.
 pub fn patch(
     home: &UzeHome,
     of: &StoreOf<'_>,
@@ -74,7 +76,17 @@ pub fn patch(
         })?;
     }
     let _held = crate::file_lock::Held::acquire(&lock, LOCK_PATIENCE)?;
-    let mut store = read(home, of);
+    let mut store = match uze_document::read::<StoreRecord>(&path) {
+        Ok(carried) => carried
+            .record()
+            .map(|record| record.store)
+            .unwrap_or_default(),
+        Err(reason) if uze_document::may_be_set_aside(&reason) => {
+            uze_document::set_aside(&path, <StoreRecord as uze_document::Shaped>::KIND, &reason)?;
+            Map::new()
+        }
+        Err(reason) => return Err(reason.into()),
+    };
     for (key, value) in patch {
         if value.is_null() {
             store.remove(key);
@@ -164,5 +176,51 @@ mod tests {
         forget_plugin(&home, "gpu@proving").unwrap();
         assert!(read(&home, &store(Some(&a))).is_empty());
         forget_plugin(&home, "gpu@proving").unwrap();
+    }
+
+    fn last(value: u64) -> Map<String, Value> {
+        serde_json::json!({ "last": value })
+            .as_object()
+            .unwrap()
+            .clone()
+    }
+
+    #[test]
+    fn a_newer_builds_store_is_left_as_it_is_and_the_patch_refused() {
+        let root = uze_testkit::temp::scratch("extension-store-newer");
+        let home = UzeHome::at(root.join("uze"));
+        let path = store(None).path(&home);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let newer = br#"{"schema_version": 2, "store": {"history": [1, 2, 3]}}"#;
+        std::fs::write(&path, newer).unwrap();
+
+        assert!(patch(&home, &store(None), &last(5)).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), newer.to_vec());
+    }
+
+    #[test]
+    fn an_unreadable_store_is_set_aside_before_a_patch_writes() {
+        let root = uze_testkit::temp::scratch("extension-store-unreadable");
+        let home = UzeHome::at(root.join("uze"));
+        let path = store(None).path(&home);
+        let dir = path.parent().unwrap().to_path_buf();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&path, b"{ not json").unwrap();
+
+        let patched = patch(&home, &store(None), &last(5)).unwrap();
+        assert_eq!(Value::Object(patched), serde_json::json!({ "last": 5 }));
+        let kept = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .any(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .contains(uze_document::SET_ASIDE_MARK)
+            });
+        assert!(
+            kept,
+            "the unreadable bytes were kept aside, not overwritten"
+        );
     }
 }
