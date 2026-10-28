@@ -40,29 +40,29 @@ pub(super) fn render_bar(
     // item opens has that item for its door, so it gets no second one.
     let opened = model.opened_by_items();
     let doors: Vec<GroupButton> = model
-        .declared_views()
+        .bar_doors()
+        .into_iter()
         .filter(|slot| !opened.contains(&slot.id))
-        .map(|slot| GroupButton {
-            hit: WorkspaceHit::OpenDeclared(slot.id),
-            label: door_label(&slot.surface.title),
-            hue: theme::color(Token::TextSecondary),
-            strong: false,
-            lit: model.open_slot == Some(slot.id),
-            switch: true,
+        .map(|slot| {
+            let (hit, lit) = match slot.is_drawer() {
+                true => (
+                    WorkspaceHit::ToggleDrawer(slot.id),
+                    model.open_drawer() == Some(slot.id),
+                ),
+                false => (
+                    WorkspaceHit::OpenDeclared(slot.id),
+                    model.open_slot == Some(slot.id),
+                ),
+            };
+            GroupButton {
+                hit,
+                label: door_label(&slot.surface.title),
+                hue: theme::color(Token::TextSecondary),
+                strong: false,
+                lit,
+                switch: true,
+            }
         })
-        .chain(
-            model
-                .declared_drawers()
-                .filter(|slot| !opened.contains(&slot.id))
-                .map(|slot| GroupButton {
-                    hit: WorkspaceHit::ToggleDrawer(slot.id),
-                    label: door_label(&slot.surface.title),
-                    hue: theme::color(Token::TextSecondary),
-                    strong: false,
-                    lit: model.open_drawer() == Some(slot.id),
-                    switch: true,
-                }),
-        )
         .collect();
     if !doors.is_empty() {
         let width = group_width(&doors).min(row.width);

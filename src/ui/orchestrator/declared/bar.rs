@@ -11,7 +11,6 @@ impl WorkspaceModel {
     /// The items of the bar the checkout in front shows: as a status row,
     /// only where its extension is enabled.
     pub(in crate::ui::orchestrator) fn bar_items(&self) -> Vec<&HostedSlot> {
-        let in_front = self.project_of_pane(self.focused_pane());
         self.remembered
             .declared
             .slots
@@ -20,18 +19,33 @@ impl WorkspaceModel {
                 slot.is_bar()
                     && slot.owner.declared().is_some()
                     && self.offers_declared(&slot.owner)
-                    && in_front
-                        .as_ref()
-                        .is_some_and(|project| self.enabled_in(&slot.owner, project))
+                    && self.enabled_in_front(&slot.owner)
             })
             .collect()
     }
 
+    /// The views and drawers the bar has a door for: those of an extension
+    /// enabled in the project in front, as its items are. A door to an
+    /// extension that runs nothing here was a row of bare titles, one per
+    /// surface, with nothing to say what they were; the way to enable it is
+    /// the offer and the Extensions screen.
+    pub(in crate::ui::orchestrator) fn bar_doors(&self) -> Vec<&HostedSlot> {
+        self.declared_views()
+            .chain(self.declared_drawers())
+            .filter(|slot| self.enabled_in_front(&slot.owner))
+            .collect()
+    }
+
+    /// Whether `owner` runs in the project of the pane in front.
+    fn enabled_in_front(&self, owner: &Owner) -> bool {
+        self.project_of_pane(self.focused_pane())
+            .as_ref()
+            .is_some_and(|project| self.enabled_in(owner, project))
+    }
+
     /// Whether a plugin puts anything in the bar: a door or an item.
     pub(in crate::ui::orchestrator) fn has_bar(&self) -> bool {
-        self.declared_views().next().is_some()
-            || self.declared_drawers().next().is_some()
-            || !self.bar_items().is_empty()
+        !self.bar_doors().is_empty() || !self.bar_items().is_empty()
     }
 
     /// The surfaces an item of the bar in front opens: their item is their

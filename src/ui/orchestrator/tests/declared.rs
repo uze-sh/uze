@@ -265,7 +265,16 @@ fn hosting_the_board() -> WorkspaceModel {
         ..HostedExtensions::default()
     };
     assert!(model.absorb_extension_answer(discovered()));
+    enabled_where_its_agent_stands(&mut model);
     model
+}
+
+/// Every hosted extension running in the project in front: a door in the
+/// bar is only offered for one that does.
+fn enabled_where_its_agent_stands(model: &mut WorkspaceModel) {
+    for hosted in model.remembered.declared.extensions.values_mut() {
+        hosted.per_project = false;
+    }
 }
 
 /// Where the last frame drew `wanted`, anywhere on screen.
@@ -714,6 +723,7 @@ fn the_real_gsd_band_opens_switches_its_tab_and_redraws_a_save() {
         &home,
         super::ExtensionJob::Discover(Default::default()),
     );
+    enabled_where_its_agent_stands(&mut model);
     let slot = view_slot(&model);
     let mut driven = driven(model, &home).on_a_roomy_terminal();
     driven.frame();
@@ -1513,6 +1523,7 @@ fn a_tests_click_and_the_workspaces_reach_the_same_tab() {
         &home,
         super::ExtensionJob::Discover(Default::default()),
     );
+    enabled_where_its_agent_stands(&mut model);
     let slot = view_slot(&model);
     let mut driven = driven(model, &home).on_a_roomy_terminal();
     driven.frame();
@@ -1802,6 +1813,7 @@ fn a_declared_views_scrollbar_follows_the_pointer() {
         &home,
         super::ExtensionJob::Discover(Default::default()),
     );
+    enabled_where_its_agent_stands(&mut model);
     let slot = view_slot(&model);
     let mut driven = driven(model, &home).on_a_roomy_terminal();
     driven.area = ratatui::layout::Rect::new(0, 0, 120, 14);

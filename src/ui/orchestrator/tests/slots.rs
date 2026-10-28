@@ -713,6 +713,22 @@ fn an_item_that_opens_something_is_lifted_in_its_own_hue_under_the_pointer() {
 }
 
 #[test]
+fn an_extension_not_enabled_here_has_no_door_in_the_bar() {
+    let mut panel = surface("panel", uze_contract::Slot::Drawer);
+    panel.title = Some("Timesheet".to_owned());
+    let mut model = hosting(vec![compiled(
+        "notes",
+        vec![surface("board", uze_contract::Slot::View), panel],
+    )]);
+    for hosted in model.remembered.declared.extensions.values_mut() {
+        hosted.per_project = true;
+        hosted.record = Some(None);
+    }
+    assert!(model.bar_doors().is_empty(), "nothing it shows runs here");
+    assert!(!model.has_bar(), "so the bar takes no row for it");
+}
+
+#[test]
 fn without_a_plugin_in_it_the_bar_takes_no_row() {
     let mut model = hosting(vec![compiled(
         "notes",
