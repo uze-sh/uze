@@ -135,7 +135,12 @@ for a crate arrives when you touch it.
   and never draw.
 - `crates/uze-contract` — the extension contract: manifest and
   compiled-view types, the binding grammar, the catalog, the sanitizer.
-  Plain data, and the one UZE crate `uze-extensions` may depend on.
+  Plain data, and the one UZE crate `uze-extensions` may depend on;
+  `uze_contract::component` is the one reader of a `.uze` file's blocks.
+- `crates/uze-script` — the engine a declared extension's script runs in:
+  the only crate that names `rhai`, bounded, reaching the machine only
+  through the host functions its grants register (`Reach`). Used by
+  `uze-application` alone.
 - `crates/uze-testkit` — shared test infrastructure; `tests/` holds the
   domain suites (taxonomy in `tests/README.md`).
 - `conformance/` — the Harness Conformance Lab (Python, Docker): real
@@ -173,6 +178,7 @@ uze-integrations (Claude, Codex, Antigravity, OpenCode — implement Integration
 
 uze-git          (transport, no domain — used by core, workspace, integrations, application)
 uze-terminal     (local terminal runtime — reaches only uze-platform and uze-document)
+uze-script       (an extension's script engine — reaches only uze-contract and uze-platform)
 leaves           uze-platform, uze-document, uze-theme, uze-keys, uze-contract (name no domain)
 ```
 
