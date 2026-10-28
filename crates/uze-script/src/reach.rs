@@ -116,6 +116,21 @@ pub trait Reach: Send + Sync {
         )))
     }
 
+    /// Calls `tool` of the MCP server `server` with `arguments`, already
+    /// checked against the extension's `mcp:` grants, and answers its
+    /// result as data (`extension-mcp`).
+    fn mcp(
+        &self,
+        server: &str,
+        tool: &str,
+        arguments: &serde_json::Value,
+    ) -> Result<serde_json::Value, ReachError> {
+        let _ = arguments;
+        Err(ReachError(format!(
+            "mcp: `{server}/{tool}` is not reached here"
+        )))
+    }
+
     /// Makes `request`, already checked against the extension's `net:`
     /// grants, under the bounds and confinement of a program run.
     fn fetch(&self, request: &FetchRequest) -> Result<FetchReply, ReachError> {
@@ -145,6 +160,7 @@ pub(crate) const HOST_FUNCTIONS: &[(&str, Option<Grant>)] = &[
     ("list_checkout", Some(Grant::ReadCheckout)),
     ("store", Some(Grant::Store)),
     ("timer", Some(Grant::Resident)),
+    ("mcp", Some(ANY_TOOL)),
     ("clock", None),
 ];
 
@@ -154,11 +170,21 @@ pub(crate) const RUN_PROGRAM: &str = "run_program";
 /// The grant `fetch` is registered under: a `net:` grant of any host.
 pub const ANY_HOST: Grant = Grant::Net(String::new());
 
+/// The grant `mcp` is registered under: an `mcp:` grant of any tool.
+pub const ANY_TOOL: Grant = Grant::Mcp {
+    server: String::new(),
+    tool: String::new(),
+};
+
 /// Whether `grants` hold what `grant` asks: `store:global` is a store too,
-/// and [`ANY_HOST`] is held by any `net:` grant.
+/// [`ANY_HOST`] is held by any `net:` grant and [`ANY_TOOL`] by any
+/// `mcp:` grant.
 pub(crate) fn holds(grants: &Grants, grant: &Grant) -> bool {
     if *grant == ANY_HOST {
         return grants.iter().any(|held| held.host().is_some());
+    }
+    if *grant == ANY_TOOL {
+        return grants.iter().any(|held| held.mcp_tool().is_some());
     }
     grants.contains(grant) || (*grant == Grant::Store && grants.contains(&Grant::StoreGlobal))
 }

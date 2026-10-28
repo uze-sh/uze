@@ -159,14 +159,14 @@ impl CallClock {
     ) -> Result<T, Box<rhai::EvalAltResult>> {
         if self.host_calls.fetch_add(1, Ordering::Relaxed) >= limits.host_calls {
             return Err(failure(format!(
-                "an answer asks the host at most {} calls of `run_program` and `fetch`",
+                "an answer asks the host at most {} calls of `run_program`, `fetch` and `mcp`",
                 limits.host_calls
             )));
         }
         let waited = Duration::from_millis(self.waiting.load(Ordering::Relaxed));
         if waited >= limits.host_waiting {
             return Err(failure(format!(
-                "an answer waits on `run_program` and `fetch` at most {} s in all",
+                "an answer waits on `run_program`, `fetch` and `mcp` at most {} s in all",
                 limits.host_waiting.as_secs()
             )));
         }
@@ -306,6 +306,38 @@ fn register_host(
         let plain = fetch.clone();
         engine.register_fn("fetch", move |url: &str| plain(url, Map::new()));
         engine.register_fn("fetch", fetch);
+    }
+    if crate::reach::holds(grants, &crate::reach::ANY_TOOL) {
+        let caller = Arc::clone(&reach);
+        let granted = grants.clone();
+        let waited = Arc::clone(&clock);
+        let mcp = move |server: &str,
+                        tool: &str,
+                        arguments: Map|
+              -> Result<Dynamic, Box<rhai::EvalAltResult>> {
+            let grant = Grant::Mcp {
+                server: server.to_owned(),
+                tool: tool.to_owned(),
+            };
+            if !granted.contains(&grant) {
+                return Err(failure(format!(
+                    "`{server}/{tool}` is not a tool this extension holds `{}` for",
+                    grant.name()
+                )));
+            }
+            let arguments = crate::value::to_json(&Dynamic::from_map(arguments))
+                .map_err(|crossing| failure(format!("the arguments are {crossing}")))?;
+            let answer = waited
+                .host(&LIMITS, || caller.mcp(server, tool, &arguments))?
+                .map_err(|error| failure(error.0))?;
+            crate::value::to_dynamic(&answer)
+                .map_err(|crossing| failure(format!("the result is {crossing}")))
+        };
+        let bare = mcp.clone();
+        engine.register_fn("mcp", move |server: &str, tool: &str| {
+            bare(server, tool, Map::new())
+        });
+        engine.register_fn("mcp", mcp);
     }
     if grants.contains(&Grant::ReadCheckout) {
         let reader = Arc::clone(&reach);
