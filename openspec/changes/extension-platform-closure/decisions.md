@@ -768,3 +768,12 @@
 - rejected: 60 columns with the plugin column cut: the rows the operator called cramped. A detail sized to the row: the dialog would jump as the cursor moves.
 - blast:    `extension_offer.rs` (`WIDTH`, `LIST_ROWS`, `DETAIL_ROWS`), `.agents/skills/design-system/SKILL.md`.
 
+## D205 — A declared extension has one id, `plugin@marketplace/id`, in every file
+
+- status:   pending
+- task:     operator review of D5
+- commit:
+- trigger:  Reading D5 with the files side by side, the operator found the ids badly designed: `config.toml` switched a declared extension by its attribution, `"notes · proof@proving" = false`, while `state/extensions.json` filed its consent under `proof@proving/notes`. One extension, two spellings, and a key with spaces and a middle dot.
+- decided:  `extension_switch::declared_id` is `consent_key`: `plugin@marketplace/id` in `config.toml`'s `[extensions]`, in `state/extensions.json` and in the client's layout (status row order). The attribution `id · plugin@marketplace` is only what a surface draws. A built-in keeps its bare id (`code`), which cannot collide: it has neither `@` nor `/`. No migration: the attribution key never reached `main` or a release. Follows the market's practice: one qualified id wherever settings, records and commands name a package (Claude Code's `plugin@marketplace` in `enabledPlugins`, VS Code's `publisher.name`, Homebrew's `user/tap/formula`).
+- rejected: A nested table (`[extensions."proof@proving"] notes = false`): still a quoted key, and a second shape for one id. The id alone (`notes`): two plugins may each ship one.
+- blast:    `src/ui/extension_switch.rs::declared_id`, tests keyed by it.

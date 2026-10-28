@@ -201,18 +201,18 @@ fn enter_switches_a_declared_extension_by_its_identity() {
     assert_eq!(
         model.apply_key(enter),
         Intent::SwitchExtension {
-            id: "gsd-band · gsd@market".to_owned(),
+            id: "gsd@market/gsd-band".to_owned(),
             name: "GSD".to_owned(),
             enabled: false,
         }
     );
     model
         .disabled_extensions
-        .insert("gsd-band · gsd@market".to_owned());
+        .insert("gsd@market/gsd-band".to_owned());
     assert_eq!(
         model.apply_key(enter),
         Intent::SwitchExtension {
-            id: "gsd-band · gsd@market".to_owned(),
+            id: "gsd@market/gsd-band".to_owned(),
             name: "GSD".to_owned(),
             enabled: true,
         }
@@ -259,7 +259,7 @@ fn clicking_the_drawers_switch_on_a_declared_extension_is_pressing_its_key() {
     assert_eq!(
         intent,
         Intent::SwitchExtension {
-            id: "gsd-band · gsd@market".to_owned(),
+            id: "gsd@market/gsd-band".to_owned(),
             name: "GSD".to_owned(),
             enabled: false,
         }
@@ -766,7 +766,7 @@ fn moving_a_status_row_orders_the_sidebars_header_and_a_click_is_the_action() {
     assert!(screen.contains("Load · status row"), "{screen}");
     assert!(screen.contains("its row in the sidebar"), "{screen}");
     let selected = model.selected_extension().expect("a selection").id();
-    assert_eq!(selected, "gsd-band · gsd@market");
+    assert_eq!(selected, "gsd@market/gsd-band");
     assert!(
         offered_button(&model, uze_keys::Action::MoveItemDown).is_none(),
         "already the last"
@@ -785,8 +785,8 @@ fn moving_a_status_row_orders_the_sidebars_header_and_a_click_is_the_action() {
     );
     assert_eq!(clicked, Intent::None);
     let moved = vec![
-        "gsd-band · gsd@market".to_owned(),
-        "gpu-meter · gsd@market".to_owned(),
+        "gsd@market/gsd-band".to_owned(),
+        "gsd@market/gpu-meter".to_owned(),
     ];
     assert_eq!(model.status_order, moved);
     assert_eq!(model.management_layout().status_order, moved, "kept");
@@ -799,8 +799,8 @@ fn moving_a_status_row_orders_the_sidebars_header_and_a_click_is_the_action() {
     assert_eq!(
         model.status_order,
         vec![
-            "gpu-meter · gsd@market".to_owned(),
-            "gsd-band · gsd@market".to_owned(),
+            "gsd@market/gpu-meter".to_owned(),
+            "gsd@market/gsd-band".to_owned(),
         ],
         "Move down, as the key would"
     );

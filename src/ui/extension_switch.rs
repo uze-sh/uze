@@ -59,11 +59,14 @@ pub(crate) fn load(home: &UzeHome) {
     *DISABLED.lock().unwrap_or_else(PoisonError::into_inner) = chosen;
 }
 
-/// The key a declared extension is switched by: the attribution it is
-/// drawn with (`id · plugin@marketplace`), which no built-in's id can
-/// collide with.
+/// The key a declared extension is switched by in `config.toml`: the one
+/// its consent is filed under in `state/extensions.json` too
+/// (`plugin@marketplace/id`), so one extension has one id wherever the
+/// operator reads it. No built-in's id can collide with it: theirs carry
+/// neither `@` nor `/`. The attribution `id · plugin@marketplace` is what
+/// a surface draws, never a key.
 pub(crate) fn declared_id(identity: &uze_application::ExtensionIdentity) -> String {
-    identity.to_string()
+    uze_application::consent_key(identity)
 }
 
 /// The extension whose surface `action` opens, so that switching an
