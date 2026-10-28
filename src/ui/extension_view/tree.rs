@@ -408,6 +408,9 @@ fn natural(node: &Node) -> u16 {
                 .unwrap_or(0),
         ),
         NodeKind::Notice { text: said, .. } => cells_of(text::columns(said)),
+        NodeKind::Withheld { text: said } => cells_of(text::columns(said))
+            .saturating_add(cells_of(text::columns(REVIEW)))
+            .saturating_add(TRAILING_PAD * 3),
         NodeKind::Rule { label, .. } => display::rule_width(label.as_deref()),
         NodeKind::Details => {
             let (keys, values) = entry_columns(&node.children);
@@ -503,6 +506,7 @@ fn height(node: &Node, width: u16) -> usize {
         NodeKind::Notice { text: said, role } => wrapped(&[Span::new(said.clone(), *role)], width)
             .len()
             .max(1),
+        NodeKind::Withheld { .. } => 1,
         NodeKind::Details => node.children.len(),
         NodeKind::Markdown { text: source } => display::markdown(source, width).len().max(1),
         NodeKind::Code {
@@ -934,6 +938,9 @@ fn table_row_height(row: &Node, widths: &[u16]) -> usize {
 }
 
 /// A list row's room inside the inset its ground keeps either side.
+/// What a withheld surface offers: the way to where it is answered.
+const REVIEW: &str = "review";
+
 fn list_inner(width: u16) -> u16 {
     match width > TRAILING_PAD * 2 {
         true => width - TRAILING_PAD * 2,
@@ -1204,6 +1211,35 @@ impl Painter<'_, '_> {
         }
     }
 
+    /// Why the source is told nothing, inset as a list's rows are, with
+    /// `review` at the far end: the whole row answers, as a list row does,
+    /// and the word brightens under the pointer.
+    fn withheld(&mut self, id: usize, said: &str, x: u16, width: u16, y: usize) {
+        let hit = ViewHit::Node {
+            node: id,
+            act: NodeAct::Review,
+        };
+        let inner = list_inner(width);
+        let inset = (width - inner) / 2;
+        let review = cells_of(text::columns(REVIEW));
+        let room = usize::from(inner.saturating_sub(review + TRAILING_PAD));
+        let reason = text::elide(said, room);
+        let gap = usize::from(inner)
+            .saturating_sub(text::columns(&reason))
+            .saturating_sub(usize::from(review));
+        let tone = match self.hovered(hit) {
+            true => Token::TextBright,
+            false => Token::TextSecondary,
+        };
+        let line = Line::from(vec![
+            TextSpan::styled(reason, theme::fg(Token::StateWarning)),
+            TextSpan::raw(" ".repeat(gap)),
+            TextSpan::styled(REVIEW, theme::fg(tone)),
+        ]);
+        self.line(y, x.saturating_add(inset), inner, line);
+        self.hit(y, 1, x, width, hit);
+    }
+
     fn hovered(&self, hit: ViewHit) -> bool {
         self.held.hovered == Some(hit)
     }
@@ -1388,6 +1424,7 @@ impl Painter<'_, '_> {
                     self.line(y + row, x, width, line);
                 }
             }
+            NodeKind::Withheld { text: said } => self.withheld(node.id, said, x, width, y),
             NodeKind::Rule { label, role } => {
                 self.line(y, x, width, display::rule(label.as_deref(), *role, width));
             }

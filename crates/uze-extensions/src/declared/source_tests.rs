@@ -209,18 +209,14 @@ fn a_source_the_host_would_not_ask_says_why_until_it_answers() {
     ask_all(&mut engine, &host);
     assert_eq!(
         tree(&engine).kind,
-        NodeKind::Notice {
+        NodeKind::Withheld {
             text: "needs enabling in this project".to_owned(),
-            role: Role::Warning,
         }
     );
     let section = engine.section(SECTION, false).expect("a section");
     assert!(matches!(
         section.tree.expect("a tree").kind,
-        NodeKind::Notice {
-            role: Role::Warning,
-            ..
-        }
+        NodeKind::Withheld { .. }
     ));
     assert_eq!(
         engine.trace(VIEW).expect("a trace").data,

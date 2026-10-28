@@ -995,7 +995,7 @@ impl DeclaredExtension {
         before: Option<&BTreeMap<String, media::Playing>>,
     ) -> Built {
         if let Some(reason) = self.withheld.get(&decl.source) {
-            return Built::notice(view, reason, Role::Warning);
+            return Built::withheld(view, reason);
         }
         let data = match self.data.get(&decl.source) {
             None => return Built::notice(view, "Waiting for data", Role::Muted),
@@ -1270,6 +1270,10 @@ impl Extension for DeclaredExtension {
         }
         match hit {
             ViewHit::Close => Outcome::Close,
+            ViewHit::Node {
+                act: NodeAct::Review,
+                ..
+            } => Outcome::Review,
             ViewHit::Node { node, act } => match self.act(surface, space, node) {
                 Some(meaning) => self.perform(surface, meaning, act),
                 None => Outcome::Stay,

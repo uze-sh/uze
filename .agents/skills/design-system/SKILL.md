@@ -182,6 +182,11 @@ on "cancel" must not save first.
   the sidebar's notice, where a new release is, one notice at a time with
   its mark to put it away, ahead of the release's; a status row that has
   nothing to show takes no row.
+- A surface whose extension is withheld (it needs consent, enabling here,
+  or its update is held) says why in one row inset as a list's rows are,
+  with `review` at its far end, and the whole row opens the Extensions
+  screen on that extension. A state the person can act on is never a
+  bare warning they have to go find the answer to.
 - A plugin never writes an icon glyph either: it names one with `Icon`
   and the host draws it in the operator's glyph set, as UZE's own chrome
   names a `Symbol`. The check refuses a Nerd Font codepoint or a

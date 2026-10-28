@@ -140,6 +140,26 @@ impl Built {
             playing: BTreeMap::new(),
         }
     }
+
+    /// [`Self::notice`], for why its source is told nothing: with the way to
+    /// where that is answered.
+    pub fn withheld(view: &CompiledView, text: &str) -> Self {
+        Self {
+            root: view::Node::new(
+                0,
+                NodeKind::Withheld {
+                    text: Clean::label(text).into_string(),
+                },
+            ),
+            acts: BTreeMap::new(),
+            items: TraceNode::skeleton(&view.items),
+            templates: skeletons(view),
+            folded: false,
+            count: 1,
+            media: BTreeSet::new(),
+            playing: BTreeMap::new(),
+        }
+    }
 }
 
 fn skeletons(view: &CompiledView) -> BTreeMap<String, Vec<TraceNode>> {

@@ -1155,8 +1155,9 @@ impl WorkspaceModel {
                 self.say_failed(&title, detail);
             }
             // Only the timeline's rows ask, and their click opens it
-            // beside the row (see `open_commit_detail`).
-            Outcome::OpenCommit { .. } => {}
+            // beside the row (see `open_commit_detail`); only a click on
+            // what it drew reviews it, and `hit_surface` takes that.
+            Outcome::OpenCommit { .. } | Outcome::Review => {}
         }
         self.dirty = true;
     }
@@ -1165,7 +1166,11 @@ impl WorkspaceModel {
     /// copies or says is attributed to it, and it has nothing to close.
     pub(super) fn follow_chrome(&mut self, id: SlotId, outcome: Outcome) {
         match outcome {
-            Outcome::Stay | Outcome::Close | Outcome::Notice(_) | Outcome::OpenCommit { .. } => {}
+            Outcome::Stay
+            | Outcome::Close
+            | Outcome::Notice(_)
+            | Outcome::OpenCommit { .. }
+            | Outcome::Review => {}
             Outcome::Agent(request) => {
                 if let Some(owner) = self
                     .remembered
@@ -1315,6 +1320,16 @@ impl WorkspaceModel {
             .unwrap_or(Outcome::Stay);
         if let Outcome::Show(surface) = &outcome {
             self.show_surface(id, surface);
+            self.dirty = true;
+            return;
+        }
+        // The Extensions screen is the session's to open, on its next pass.
+        if outcome == Outcome::Review {
+            self.review_extension = self
+                .remembered
+                .declared
+                .slot(id)
+                .and_then(|slot| slot.owner.declared().cloned());
             self.dirty = true;
             return;
         }

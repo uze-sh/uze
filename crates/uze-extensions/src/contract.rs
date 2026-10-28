@@ -87,6 +87,9 @@ pub enum Outcome {
     /// Do this to an agent, through the host: shown first, refused rather
     /// than queued, limited (`extension-agent-bridge`).
     Agent(Box<AgentRequest>),
+    /// Show this extension where the operator answers why it is withheld:
+    /// its consent, its enabling here, its held update.
+    Review,
 }
 
 /// What an extension asks the host to do to an agent.

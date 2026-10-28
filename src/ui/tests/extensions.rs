@@ -846,3 +846,28 @@ fn a_reopened_extensions_screen_still_lists_the_plugins_extensions() {
         "a reopening inside the resolution's life asks nothing again, so it keeps what it read"
     );
 }
+
+/// What a click on why an extension is withheld asks for: the screen opens
+/// on that extension, now when the list holds it, or as soon as one does.
+#[test]
+fn revealing_an_extension_selects_it_now_or_once_the_list_holds_it() {
+    let mut model = two_status_rows();
+    let gpu = model.declared_extensions[1].identity.clone();
+    model.remembered.extension_screen.selected = 0;
+    model.reveal_extension(gpu.clone());
+    assert_eq!(
+        model.selected_extension().expect("a selection").id(),
+        "gsd@market/gpu-meter"
+    );
+
+    let held = std::mem::take(&mut model.declared_extensions);
+    model.remembered.extension_screen.selected = 0;
+    model.reveal_extension(gpu.clone());
+    assert!(model.revealing.is_some(), "waits for a list that holds it");
+    model.declared_extensions = held;
+    model.reveal_pending();
+    assert_eq!(
+        model.selected_extension().expect("a selection").id(),
+        "gsd@market/gpu-meter"
+    );
+}

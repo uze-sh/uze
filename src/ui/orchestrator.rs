@@ -708,6 +708,7 @@ pub(crate) fn attach_workspace(
         if let Some(text) = attach.model.clipboard.take() {
             terminal.emit(&selection::osc52(&text));
         }
+        attach.follow_review();
         for outgoing in attach.model.take_notifications() {
             send_notification(
                 &outgoing,
@@ -1864,6 +1865,9 @@ struct WorkspaceModel {
     /// news. A desktop notification is gone once read; this stays until
     /// the operator has seen it here.
     extension_notice: Option<(String, String)>,
+    /// The extension a click on why it is withheld asked to review: the
+    /// session opens the Extensions screen on it, on its next pass.
+    review_extension: Option<uze_application::ExtensionIdentity>,
     /// The spaces minimized to their header row, by id, flipped by the
     /// fold in front of the name. A view of the column, not of the work:
     /// the space's agents keep running and the chords still reach them.

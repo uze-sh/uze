@@ -620,6 +620,12 @@ pub enum NodeKind {
         text: String,
         role: Role,
     },
+    /// Why the surface's source is told nothing (it needs consent, or
+    /// enabling here, or its update is held), with the way to where the
+    /// operator answers it: [`NodeAct::Review`].
+    Withheld {
+        text: String,
+    },
     /// A hairline across the width, with a label when there is one.
     Rule {
         label: Option<String>,
@@ -878,6 +884,8 @@ pub enum NodeAct {
     Step { forward: bool },
     /// A [`NodeKind::Field`] taken to type into.
     Edit,
+    /// A [`NodeKind::Withheld`] followed to where it is answered.
+    Review,
 }
 
 /// An image as straight-alpha RGBA, row by row from the top-left.

@@ -440,6 +440,31 @@ fn an_agents_source_never_consented_to_says_so_rather_than_wait() {
 
     model.tell_agents(Instant::now());
     assert_eq!(withheld(&model), (Some("needs consent".to_owned()), None));
+    let slot = model
+        .remembered
+        .declared
+        .slots
+        .iter()
+        .find(|slot| slot.owner.declared() == Some(&identity()))
+        .map(|slot| slot.id)
+        .expect("its section");
+    let space = uze_extensions::view::Size {
+        width: 30,
+        height: 4,
+    };
+    model.hit_surface(
+        slot,
+        uze_extensions::view::ViewHit::Node {
+            node: 0,
+            act: uze_extensions::view::NodeAct::Review,
+        },
+        space,
+    );
+    assert_eq!(
+        model.review_extension,
+        Some(identity()),
+        "a click on why it is withheld asks the session to review it"
+    );
 
     let project = model.projects.get(&root).cloned().expect("its project");
     model

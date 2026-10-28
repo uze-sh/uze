@@ -76,6 +76,18 @@ impl Attach<'_> {
         }
     }
 
+    /// Opens the Extensions screen on the extension a click on why it is
+    /// withheld asked to review, when one did.
+    pub(in crate::ui::orchestrator) fn follow_review(&mut self) {
+        let Some(identity) = self.model.review_extension.take() else {
+            return;
+        };
+        self.open_manage_at(Route::Extensions);
+        if let Some(manage) = self.model.manage.as_mut() {
+            manage.reveal_extension(identity);
+        }
+    }
+
     /// Closes the modal, keeping what it arranged: its own shape for the
     /// layout file, and the first-steps list the two surfaces share.
     pub(in crate::ui::orchestrator) fn close_manage(&mut self) {

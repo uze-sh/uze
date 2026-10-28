@@ -355,6 +355,29 @@ fn an_agents_source_hears_an_empty_list_and_says_why_it_is_told_nothing() {
 }
 
 #[test]
+fn a_withheld_surface_says_why_and_a_click_on_it_asks_to_review() {
+    let mut engine = board(None, Vec::new());
+    engine.compiled.manifest.sources[0].kind = uze_contract::SourceKind::Agents;
+    engine.workspace_sources_withheld(Some("needs consent"));
+    let root = super::tests::tree(&engine);
+    assert_eq!(
+        root.kind,
+        crate::view::NodeKind::Withheld {
+            text: "needs consent".to_owned()
+        }
+    );
+    let space = crate::view::Size {
+        width: 40,
+        height: 4,
+    };
+    let review = crate::view::ViewHit::Node {
+        node: root.id,
+        act: crate::view::NodeAct::Review,
+    };
+    assert_eq!(engine.hit(SECTION, review, space), Outcome::Review);
+}
+
+#[test]
 fn a_source_slower_than_its_every_is_not_asked_again_until_it_answers() {
     let start = Instant::now();
     let mut engine = board(Some(Duration::from_secs(2)), Vec::new());

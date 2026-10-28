@@ -788,6 +788,9 @@ pub(crate) struct TuiModel {
     pub(crate) extensions: Vec<BuiltinExtension>,
     /// The extensions installed plugins declare, as the last refresh
     /// found them, listed after the built-ins.
+    /// An extension to select on the Extensions screen once its list
+    /// holds it: what a click on why it is withheld asked to review.
+    pub(crate) revealing: Option<uze_application::ExtensionIdentity>,
     pub(crate) declared_extensions: Vec<DeclaredExtensionSummary>,
     /// Where each of them stands in [`Self::extension_project`]: consent,
     /// enabling, a held update, the checkout it may not read.
@@ -1056,6 +1059,7 @@ impl TuiModel {
                 .all()
                 .to_vec(),
             declared_extensions,
+            revealing: None,
             extension_standings,
             extension_project,
             disabled_extensions: super::extension_switch::disabled(),
@@ -1304,6 +1308,30 @@ impl TuiModel {
                     .map(ExtensionEntry::Declared),
             )
             .collect()
+    }
+
+    /// Selects `identity` on the Extensions screen, now if the list holds
+    /// it, else as soon as the list that does arrives.
+    pub(crate) fn reveal_extension(&mut self, identity: uze_application::ExtensionIdentity) {
+        self.revealing = Some(identity);
+        self.reveal_pending();
+    }
+
+    pub(crate) fn reveal_pending(&mut self) {
+        let Some(identity) = &self.revealing else {
+            return;
+        };
+        let entries = self.extension_entries();
+        let found = self
+            .extension_visible_indices()
+            .iter()
+            .position(|index| {
+                matches!(entries.get(*index), Some(ExtensionEntry::Declared(summary)) if summary.identity == *identity)
+            });
+        if let Some(position) = found {
+            self.remembered.extension_screen.selected = position;
+            self.revealing = None;
+        }
     }
 
     pub(crate) fn selected_extension(&self) -> Option<ExtensionEntry<'_>> {
@@ -2570,6 +2598,7 @@ impl TuiModel {
         self.extension_standings = data.extension_standings;
         self.extension_project = data.extension_project;
         self.clamp_list_selection(Route::Extensions);
+        self.reveal_pending();
         self.remembered.profiles = data.profiles;
         // A refresh is the operator asking to see the machine as it is;
         // a harness configuration edited by hand is part of that.

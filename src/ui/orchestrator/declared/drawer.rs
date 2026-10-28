@@ -268,7 +268,7 @@ impl WorkspaceModel {
                 let detail = self.attributed(self.open_drawer(), detail);
                 self.say_failed(&title, detail);
             }
-            Outcome::OpenCommit { .. } => {}
+            Outcome::OpenCommit { .. } | Outcome::Review => {}
         }
         self.dirty = true;
     }

@@ -869,6 +869,32 @@ fn a_log_draws_a_line_a_row_and_a_notice_in_its_role() {
 }
 
 #[test]
+fn a_withheld_surface_says_why_inset_as_rows_are_and_answers_with_review() {
+    let withheld = node(
+        3,
+        NodeKind::Withheld {
+            text: "needs consent".into(),
+        },
+    );
+    let drawn = draw(&withheld, 30, 1, 0, at(0));
+    let row = &drawn.rows()[0];
+    assert!(
+        row.starts_with(" needs consent"),
+        "inset as a list's rows: {row:?}"
+    );
+    assert!(row.trim_end().ends_with("review"), "{row:?}");
+    assert_eq!(drawn.fg(1, 0), color(Role::Warning));
+    assert_eq!(
+        drawn.hit_at(5, 0),
+        Some(ViewHit::Node {
+            node: 3,
+            act: NodeAct::Review,
+        }),
+        "the whole row answers"
+    );
+}
+
+#[test]
 fn scrolling_skips_rows_from_the_top_and_hits_follow_what_is_drawn() {
     let list = holding(
         node(

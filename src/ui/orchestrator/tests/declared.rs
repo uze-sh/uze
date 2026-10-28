@@ -1940,9 +1940,10 @@ fn a_section_is_drawn_from_a_script_that_reads_the_checkout_once_enabled() {
         &home,
         super::ExtensionJob::Recompile(installed.clone()),
     );
-    // The column wraps the reason: its first words are on one row.
-    let rows = drawn_once_answered(&mut model, &home, area, "needs enabling in this");
-    assert!(shown(&rows, "needs enabling in this"), "{rows:#?}");
+    // One row: the reason, cut to the column, and the way to answer it.
+    let rows = drawn_once_answered(&mut model, &home, area, "needs enabling");
+    assert!(shown(&rows, "needs enabling"), "{rows:#?}");
+    assert!(shown(&rows, "review"), "{rows:#?}");
 
     extensions
         .enable(
@@ -2028,8 +2029,8 @@ fn a_section_asks_again_once_its_extension_is_enabled_or_disabled() {
     extensions.disable(&identity, &project).unwrap();
     let known = model.remembered.declared.known();
     answered(&mut model, &home, super::ExtensionJob::Discover(known));
-    let rows = drawn_once_answered(&mut model, &home, area, "needs enabling in this");
-    assert!(shown(&rows, "needs enabling in this"), "{rows:#?}");
+    let rows = drawn_once_answered(&mut model, &home, area, "needs enabling");
+    assert!(shown(&rows, "needs enabling"), "{rows:#?}");
     assert!(!shown(&rows, "4 lines of state"), "{rows:#?}");
 
     std::fs::remove_dir_all(root).unwrap();
