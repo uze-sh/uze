@@ -597,3 +597,13 @@
 - decided:  Under its lock, `patch` reads the record through `uze_document::read` as the consent record's writer does: a shape this build knows is carried; one with no rung (bytes that do not parse) is set aside with `uze_document::set_aside` before the patch starts an empty store; one from a newer build is refused and left exactly as it is. The refusal reaches the answer as its notice, through `keep_store`, as an oversized store's does. `read` (no lock, read-only) still answers `{}` for either, as the ladder rule says a read-only surface does.
 - rejected: Making `read` fail: a source's answer that cannot see its store still draws, and the next patch is where the record is healed or refused.
 - blast:    `uze-workspace::extensions::store`.
+
+## D170 — The extension store's lock, and the preferences' lock, are named in `UzeHome`
+
+- status:   pending
+- task:     review finding 11
+- commit:
+- trigger:  `store::patch` composed its lock path with `path.with_extension("lock")`, a path UZE owns composed outside `UzeHome`; `preferences::set` did the same.
+- decided:  `UzeHome::extension_store_lock_path(plugin, id, project)` and `UzeHome::extension_preferences_lock_path(plugin, id)` name each, beside the record it guards (the same files as before, so a build on either side of this change waits on the same lock), and the two writers use them. `a_patch_waits_on_the_lock_its_home_names` holds the named lock and sees the patch refused as a mutation in progress. The fix is structural, so that test passes before the change too; it pins where the lock is.
+- rejected: Leaving `preferences.rs` for another change: it is the same composition one module over.
+- blast:    `uze-core::machine::home`, `uze-workspace::extensions::{store,preferences}`.

@@ -29,9 +29,16 @@ pub struct StoreOf<'a> {
 }
 
 impl StoreOf<'_> {
+    fn project_id(&self) -> Option<String> {
+        self.project.map(uze_core::harness_runtime::project_id_for)
+    }
+
     fn path(&self, home: &UzeHome) -> PathBuf {
-        let project = self.project.map(uze_core::harness_runtime::project_id_for);
-        home.extension_store_path(self.plugin, self.id, project.as_deref())
+        home.extension_store_path(self.plugin, self.id, self.project_id().as_deref())
+    }
+
+    fn lock_path(&self, home: &UzeHome) -> PathBuf {
+        home.extension_store_lock_path(self.plugin, self.id, self.project_id().as_deref())
     }
 }
 
@@ -68,7 +75,7 @@ pub fn patch(
     patch: &Map<String, Value>,
 ) -> Result<Map<String, Value>> {
     let path = of.path(home);
-    let lock = path.with_extension("lock");
+    let lock = of.lock_path(home);
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|source| UzeError::Write {
             path: dir.to_path_buf(),
@@ -183,6 +190,21 @@ mod tests {
             .as_object()
             .unwrap()
             .clone()
+    }
+
+    #[test]
+    fn a_patch_waits_on_the_lock_its_home_names() {
+        let root = uze_testkit::temp::scratch("extension-store-lock");
+        let home = UzeHome::at(root.join("uze"));
+        let lock = home.extension_store_lock_path("gpu@proving", "gpu-meter", None);
+        let _held = crate::file_lock::Held::acquire(&lock, LOCK_PATIENCE).unwrap();
+        assert!(
+            matches!(
+                patch(&home, &store(None), &last(5)),
+                Err(UzeError::MutationInProgress { .. })
+            ),
+            "another patch holds the store"
+        );
     }
 
     #[test]

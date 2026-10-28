@@ -233,6 +233,18 @@ impl UzeHome {
         }
     }
 
+    /// The lock a patch of that store holds, beside it: removed with the
+    /// plugin's stores.
+    pub fn extension_store_lock_path(
+        &self,
+        plugin: &str,
+        id: &str,
+        project: Option<&str>,
+    ) -> PathBuf {
+        self.extension_store_path(plugin, id, project)
+            .with_extension("lock")
+    }
+
     /// The operator's preferences for extension `id` of
     /// `plugin@marketplace`: a record, since only their answer says it.
     /// Removed with its plugin.
@@ -242,6 +254,12 @@ impl UzeHome {
             .join("preferences")
             .join(plugin)
             .join(format!("{id}.json"))
+    }
+
+    /// The lock a change of those preferences holds, beside them.
+    pub fn extension_preferences_lock_path(&self, plugin: &str, id: &str) -> PathBuf {
+        self.extension_preferences_path(plugin, id)
+            .with_extension("lock")
     }
 
     /// Every preference record of the plugin `plugin@marketplace`'s

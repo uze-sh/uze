@@ -51,7 +51,10 @@ pub fn set(
             source,
         })?;
     }
-    let _held = crate::file_lock::Held::acquire(&path.with_extension("lock"), LOCK_PATIENCE)?;
+    let _held = crate::file_lock::Held::acquire(
+        &home.extension_preferences_lock_path(plugin, id),
+        LOCK_PATIENCE,
+    )?;
     let mut values = read(home, plugin, id);
     values.insert(name.to_owned(), value);
     let record = PreferencesRecord {
