@@ -73,6 +73,13 @@ pub struct ExtensionReport {
     /// The projects it is enabled in, by canonical root.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub enabled_in: Vec<PathBuf>,
+    /// Whether it is enabled in every project, `enabled_in` or not.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub enabled_everywhere: bool,
+    /// Whether it wants a grant that reaches agents, which keeps it to the
+    /// projects named: it is never enabled in every project.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub reaches_agents: bool,
     /// When an update that wanted no new grant was last applied, in
     /// seconds since the epoch.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -328,6 +335,8 @@ impl Extensions<'_> {
                     condition: ExtensionCondition::Broken,
                     new_grants: Vec::new(),
                     enabled_in: Vec::new(),
+                    enabled_everywhere: false,
+                    reaches_agents: false,
                     updated_at: None,
                     checkout_refused: None,
                     offer_declined: project.is_some_and(|project| {
@@ -420,6 +429,7 @@ impl Extensions<'_> {
                         },
                     })
                     .collect();
+                report.reaches_agents = super::consent::reaches_agents(manifest);
                 let recorded = consent::consent(&self.0.home, &key);
                 if super::consent::runs_programs(manifest) {
                     let consented = recorded
@@ -440,6 +450,7 @@ impl Extensions<'_> {
                     });
                 }
                 if let Some(recorded) = recorded {
+                    report.enabled_everywhere = recorded.enabled_everywhere;
                     report.enabled_in = recorded.enabled_in.into_iter().collect();
                     report.updated_at = recorded.updated_at;
                 }

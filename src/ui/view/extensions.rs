@@ -519,7 +519,9 @@ fn standing_lines(standing: &ExtensionReport, project: Option<&Path>) -> Vec<Lin
         .iter()
         .filter(|enabled| project.is_none_or(|project| enabled.as_path() != project))
         .count();
-    if elsewhere > 0 {
+    if standing.enabled_everywhere {
+        said.push(("enabled in every project".to_owned(), Token::TextMuted));
+    } else if elsewhere > 0 {
         said.push((
             match elsewhere {
                 1 => "enabled in 1 other project".to_owned(),

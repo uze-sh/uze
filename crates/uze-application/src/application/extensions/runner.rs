@@ -1292,6 +1292,116 @@ pub(super) mod tests {
         );
     }
 
+    /// Enabled in every project, an extension answers in a project it was
+    /// never named in, and the Extensions screen's Disable takes it from
+    /// all of them while keeping what was accepted.
+    #[test]
+    fn enabled_everywhere_answers_in_any_project_until_disabled_everywhere() {
+        let world = World::new("runner-everywhere");
+        let extensions = world.app.extensions();
+        extensions
+            .consent(
+                &world.band(),
+                &extensions.digest(&world.band()).unwrap(),
+                Asker::Operator,
+            )
+            .unwrap();
+        let other = world.scratch.join("other");
+        fs::create_dir_all(&other).unwrap();
+
+        let switched = extensions
+            .enable_everywhere(&world.band(), &world.checkout, Asker::Operator)
+            .unwrap();
+        assert!(switched.everywhere && switched.changed);
+        assert_eq!(
+            extensions.state(&world.band(), &other).unwrap(),
+            ExtensionState::Enabled,
+            "a project it was never named in"
+        );
+
+        extensions
+            .disable_everywhere(&world.band(), &world.checkout)
+            .unwrap();
+        for project in [&world.checkout, &other] {
+            assert_eq!(
+                extensions.state(&world.band(), project).unwrap(),
+                ExtensionState::NeedsEnabling,
+                "consent is kept: {}",
+                project.display()
+            );
+        }
+    }
+
+    /// One that reaches agents is enabled in the project asked from even
+    /// when every project is asked for, and a consent that brings an agent
+    /// grant takes "every project" back (`extension-agent-bridge` D42).
+    #[test]
+    fn an_extension_that_reaches_agents_is_never_enabled_everywhere() {
+        let world = World::new("runner-everywhere-agents");
+        let manifest = world.band.join("extension.kdl");
+        let plain = fs::read_to_string(&manifest).unwrap();
+        let other = world.scratch.join("other");
+        fs::create_dir_all(&other).unwrap();
+        let extensions = world.app.extensions();
+        let consent = |extensions: &crate::application::services::Extensions| {
+            extensions
+                .consent(
+                    &world.band(),
+                    &extensions.digest(&world.band()).unwrap(),
+                    Asker::Operator,
+                )
+                .unwrap();
+        };
+
+        fs::write(
+            &manifest,
+            plain.replace(
+                "wants \"read:checkout\"",
+                "wants \"read:checkout\" \"agent:observe\"",
+            ),
+        )
+        .unwrap();
+        consent(&extensions);
+        let switched = extensions
+            .enable_everywhere(&world.band(), &world.checkout, Asker::Operator)
+            .unwrap();
+        assert!(!switched.everywhere, "kept to the project asked from");
+        assert_eq!(
+            extensions.state(&world.band(), &world.checkout).unwrap(),
+            ExtensionState::Enabled
+        );
+        assert_eq!(
+            extensions.state(&world.band(), &other).unwrap(),
+            ExtensionState::NeedsEnabling
+        );
+
+        // Enabled everywhere while it reached no agent, then updated to.
+        fs::write(&manifest, &plain).unwrap();
+        consent(&extensions);
+        extensions
+            .enable_everywhere(&world.band(), &world.checkout, Asker::Operator)
+            .unwrap();
+        fs::write(
+            &manifest,
+            plain.replace(
+                "wants \"read:checkout\"",
+                "wants \"read:checkout\" \"agent:observe\"",
+            ),
+        )
+        .unwrap();
+        consent(&extensions);
+        assert_eq!(
+            extensions.state(&world.band(), &other).unwrap(),
+            ExtensionState::NeedsEnabling,
+            "every project is taken back"
+        );
+        assert_eq!(
+            extensions.state(&world.band(), &world.checkout).unwrap(),
+            ExtensionState::Enabled,
+            "the project named stays"
+        );
+    }
+
     /// The inspector lists every question with its input and how it ended,
     /// and what it costs counts only what ran (D25, D28).
     #[test]

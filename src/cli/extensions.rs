@@ -39,7 +39,9 @@ pub(crate) fn render_extension_standings(
             condition_detail(report),
         ]);
         let below = |detail: String| vec![String::new(), String::new(), detail];
-        if scope == StandingScope::Machine {
+        if report.enabled_everywhere {
+            rows.push(below(progress::label("enabled in every project")));
+        } else if scope == StandingScope::Machine {
             for project in &report.enabled_in {
                 rows.push(below(format!(
                     "{} {}",

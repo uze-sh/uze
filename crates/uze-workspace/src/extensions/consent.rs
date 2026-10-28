@@ -41,6 +41,11 @@ pub struct Consent {
     /// The projects it runs in, each by its canonical root, as a
     /// project's approved commands name it (ADR-055).
     pub enabled_in: BTreeSet<PathBuf>,
+    /// Whether it runs in every project, `enabled_in` or not: the
+    /// operator's answer once, rather than once a repository. Never set for
+    /// one that reaches agents, which stays with the projects named.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub enabled_everywhere: bool,
     /// Each `exec:` program as it was resolved when accepted, by name: the
     /// real path a run executes. A name not found is absent, and runs
     /// nothing until the operator resolves it again.
@@ -64,7 +69,14 @@ pub struct Consent {
 
 impl Consent {
     pub fn enabled_in(&self, project: &Path) -> bool {
-        self.enabled_in.contains(&canonical(project))
+        self.enabled_everywhere || self.enabled_in.contains(&canonical(project))
+    }
+
+    /// [`Self::enabled_in`] for a project already named by its canonical
+    /// root, without asking the filesystem: what a frame being drawn may
+    /// call.
+    pub fn enabled_in_as_written(&self, project: &Path) -> bool {
+        self.enabled_everywhere || self.enabled_in.contains(project)
     }
 
     /// Whether programs were accepted to run as the operator, unconfined.
@@ -302,6 +314,51 @@ pub fn enable(home: &UzeHome, key: &str, project: &Path) -> Result<bool> {
             ))
         })?;
         Ok(consent.enabled_in.insert(project))
+    })
+}
+
+/// Enables a consented extension in every project, and says whether it was
+/// not already. Refused, as [`enable`] is, before consent.
+pub fn enable_everywhere(home: &UzeHome, key: &str) -> Result<bool> {
+    rewrite(home, |extensions| {
+        let consent = extensions.get_mut(key).ok_or_else(|| {
+            UzeError::ExtensionConsent(format!(
+                "{key} has not been consented to on this machine; consent comes before enabling"
+            ))
+        })?;
+        Ok(!std::mem::replace(&mut consent.enabled_everywhere, true))
+    })
+}
+
+/// Disables it everywhere: in every project and as an answer for all of
+/// them, keeping what was accepted. Says whether it was enabled anywhere.
+pub fn disable_everywhere(home: &UzeHome, key: &str) -> Result<bool> {
+    if !consent(home, key)
+        .is_some_and(|consent| consent.enabled_everywhere || !consent.enabled_in.is_empty())
+    {
+        return Ok(false);
+    }
+    rewrite(home, |extensions| {
+        Ok(extensions.get_mut(key).is_some_and(|consent| {
+            let was = consent.enabled_everywhere || !consent.enabled_in.is_empty();
+            consent.enabled_everywhere = false;
+            consent.enabled_in.clear();
+            was
+        }))
+    })
+}
+
+/// Takes back "every project" from `key`, leaving the projects it was
+/// enabled in by name: for an extension whose accepted grants now reach
+/// agents, which only the projects named may give it.
+pub fn keep_to_named_projects(home: &UzeHome, key: &str) -> Result<bool> {
+    if !consent(home, key).is_some_and(|consent| consent.enabled_everywhere) {
+        return Ok(false);
+    }
+    rewrite(home, |extensions| {
+        Ok(extensions
+            .get_mut(key)
+            .is_some_and(|consent| std::mem::replace(&mut consent.enabled_everywhere, false)))
     })
 }
 
@@ -602,6 +659,63 @@ mod tests {
         assert!(disable(&home, BAND, &project).unwrap());
         assert!(!disable(&home, BAND, &project).unwrap(), "nothing left");
         assert!(!consent(&home, BAND).unwrap().enabled_in(&project));
+    }
+
+    #[test]
+    fn enabled_everywhere_reaches_every_project_until_disabled_everywhere() {
+        let (home, project) = home("consent-everywhere");
+        let other = project.parent().unwrap().join("other");
+        std::fs::create_dir_all(&other).unwrap();
+        assert!(
+            enable_everywhere(&home, BAND).is_err(),
+            "consent comes first"
+        );
+        accept(&home, BAND, &grants(&[]), "sha256:a", 1, None).unwrap();
+        enable(&home, BAND, &project).unwrap();
+
+        assert!(enable_everywhere(&home, BAND).unwrap());
+        assert!(!enable_everywhere(&home, BAND).unwrap(), "already");
+        let recorded = consent(&home, BAND).unwrap();
+        assert!(recorded.enabled_in(&other));
+        assert!(recorded.enabled_in_as_written(Path::new("/never/canonicalized")));
+
+        assert!(disable_everywhere(&home, BAND).unwrap());
+        assert!(!disable_everywhere(&home, BAND).unwrap(), "nothing left");
+        let recorded = consent(&home, BAND).unwrap();
+        assert!(!recorded.enabled_in(&project), "the projects named go too");
+        assert!(!recorded.enabled_in(&other));
+        assert_eq!(recorded.accepted_digest, "sha256:a", "consent is kept");
+    }
+
+    #[test]
+    fn keeping_to_named_projects_takes_back_every_project_only() {
+        let (home, project) = home("consent-narrowed");
+        let other = project.parent().unwrap().join("other");
+        std::fs::create_dir_all(&other).unwrap();
+        accept(&home, BAND, &grants(&[]), "sha256:a", 1, None).unwrap();
+        enable(&home, BAND, &project).unwrap();
+        enable_everywhere(&home, BAND).unwrap();
+
+        assert!(keep_to_named_projects(&home, BAND).unwrap());
+        assert!(!keep_to_named_projects(&home, BAND).unwrap());
+        let recorded = consent(&home, BAND).unwrap();
+        assert!(recorded.enabled_in(&project));
+        assert!(!recorded.enabled_in(&other));
+    }
+
+    #[test]
+    fn a_record_without_every_project_reads_as_named_projects_only() {
+        let consent: Consent = serde_json::from_str(
+            r#"{"accepted_grants":[],"accepted_digest":"sha256:a","accepted_at":1,"enabled_in":[]}"#,
+        )
+        .unwrap();
+        assert!(!consent.enabled_everywhere);
+        assert!(
+            !serde_json::to_string(&consent)
+                .unwrap()
+                .contains("enabled_everywhere"),
+            "written only when set: a record that never chose it is the record it was"
+        );
     }
 
     #[test]

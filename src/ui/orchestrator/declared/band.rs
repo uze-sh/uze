@@ -79,7 +79,7 @@ impl WorkspaceModel {
             .record
             .as_ref()
             .and_then(Option::as_ref)
-            .is_some_and(|consent| consent.enabled_in.contains(project))
+            .is_some_and(|consent| consent.enabled_in_as_written(project))
     }
 
     /// What the band in `slot` draws in `space`: its engine's answer, or

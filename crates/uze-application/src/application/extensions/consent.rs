@@ -109,6 +109,23 @@ pub struct Switched {
     pub project: PathBuf,
     /// Whether the record changed: `false` when it already said so.
     pub changed: bool,
+    /// Whether the answer holds for every project rather than `project`
+    /// alone. An extension that reaches agents is enabled in `project`
+    /// even when every project was asked for.
+    pub everywhere: bool,
+}
+
+/// Whether `manifest` wants a grant that reaches the workspace's agents:
+/// such an extension sees and prompts the agents of the projects it is
+/// enabled in, so it is never enabled in every project
+/// (`extension-agent-bridge` D42).
+pub fn reaches_agents(manifest: &Manifest) -> bool {
+    manifest.wants.iter().any(|grant| {
+        matches!(
+            grant,
+            Grant::AgentObserve | Grant::AgentPrompt | Grant::AgentPromptAuto | Grant::AgentRestart
+        )
+    })
 }
 
 /// The key an identity's consent is recorded under.
@@ -417,6 +434,9 @@ impl Extensions<'_> {
             now(),
             pinned,
         )?;
+        if reaches_agents(manifest) {
+            consent::keep_to_named_projects(&self.0.home, &consent_key(identity))?;
+        }
         Ok(Consented {
             identity: identity.clone(),
             grants,
@@ -530,8 +550,32 @@ impl Extensions<'_> {
     /// from an agent's pane, before consent, and while an update holds it.
     #[tracing::instrument(name = "extensions.enable", skip_all, fields(extension = %identity), err)]
     pub fn enable(&self, identity: &Identity, project: &Path, asker: Asker) -> Result<Switched> {
+        self.enable_where(identity, project, asker, false)
+    }
+
+    /// Switches `identity` on in every project, asked from the one rooted
+    /// at `project`: refused as [`Self::enable`] is, and enabled in
+    /// `project` alone when it reaches agents.
+    #[tracing::instrument(name = "extensions.enable_everywhere", skip_all, fields(extension = %identity), err)]
+    pub fn enable_everywhere(
+        &self,
+        identity: &Identity,
+        project: &Path,
+        asker: Asker,
+    ) -> Result<Switched> {
+        self.enable_where(identity, project, asker, true)
+    }
+
+    fn enable_where(
+        &self,
+        identity: &Identity,
+        project: &Path,
+        asker: Asker,
+        everywhere: bool,
+    ) -> Result<Switched> {
         refuse_an_agent(asker, "enable")?;
-        match self.state(identity, project)? {
+        let load = self.load_identity(identity)?;
+        match self.judged(&load, project)? {
             ExtensionState::FixturesOnly => Err(refusal(format!(
                 "{identity} runs nothing; it draws wherever its plugin is installed"
             ))),
@@ -544,11 +588,18 @@ impl Extensions<'_> {
                 quoted_list(&held.wanted_anew())
             ))),
             ExtensionState::NeedsEnabling | ExtensionState::Enabled => {
-                let changed = consent::enable(&self.0.home, &consent_key(identity), project)?;
+                let key = consent_key(identity);
+                let everywhere = everywhere && !reaches_agents(&load.compiled.manifest);
+                let changed = if everywhere {
+                    consent::enable_everywhere(&self.0.home, &key)?
+                } else {
+                    consent::enable(&self.0.home, &key, project)?
+                };
                 Ok(Switched {
                     identity: identity.clone(),
                     project: project.to_path_buf(),
                     changed,
+                    everywhere,
                 })
             }
         }
@@ -563,6 +614,20 @@ impl Extensions<'_> {
             identity: identity.clone(),
             project: project.to_path_buf(),
             changed,
+            everywhere: false,
+        })
+    }
+
+    /// Switches `identity` off in every project, keeping what was accepted:
+    /// the Extensions screen's Disable, which answers for the machine.
+    #[tracing::instrument(name = "extensions.disable_everywhere", skip_all, fields(extension = %identity), err)]
+    pub fn disable_everywhere(&self, identity: &Identity, project: &Path) -> Result<Switched> {
+        let changed = consent::disable_everywhere(&self.0.home, &consent_key(identity))?;
+        Ok(Switched {
+            identity: identity.clone(),
+            project: project.to_path_buf(),
+            changed,
+            everywhere: true,
         })
     }
 

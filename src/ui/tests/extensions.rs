@@ -276,6 +276,8 @@ fn standing(condition: uze_application::ExtensionCondition) -> uze_application::
         condition,
         new_grants: Vec::new(),
         enabled_in: Vec::new(),
+        enabled_everywhere: false,
+        reaches_agents: false,
         updated_at: None,
         checkout_refused: None,
         offer_declined: false,
