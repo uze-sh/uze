@@ -58,7 +58,12 @@ fn answer(input, context) {
                 reply.notify = #{ title: "Approval", body: `An agent in ${event.harness} asks for approval` };
                 reply.sound = "attention";
             }
-        } else if event.name == "agent.approval.resolved" {
+        } else if event.name == "agent.approval.resolved" || event.name == "agent.tool.finished" {
+            // A tool finishing is the approval answered: no harness says so.
+            asking.remove(agent);
+        } else if event.name == "agent.session.started" {
+            // What a closed session left behind is not this one's.
+            working.remove(agent);
             asking.remove(agent);
         }
         reply.store = #{ working: working, asking: asking, last: last };

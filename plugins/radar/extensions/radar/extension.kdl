@@ -37,4 +37,8 @@ source "watch" {
     refresh-on "agent.turn.finished"
     refresh-on "agent.approval.asked"
     refresh-on "agent.approval.resolved"
+    // No harness says an approval was answered: the agent doing anything
+    // after it is the answer, and a new session starts with none pending.
+    refresh-on "agent.tool.finished"
+    refresh-on "agent.session.started"
 }
