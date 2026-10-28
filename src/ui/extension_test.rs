@@ -406,8 +406,8 @@ impl Stage {
                     crate::ui::widget::surface::fill(frame, area, Token::SurfaceBackground);
                     match self.slot {
                         Slot::Section => {
+                            // Flat, as the sidebar draws it.
                             if let Some(section) = self.engine.section(&self.surface, false) {
-                                let area = render_attribution(frame, area, &said);
                                 let mut rows = crate::ui::Rows::over(area);
                                 render_section(
                                     frame,

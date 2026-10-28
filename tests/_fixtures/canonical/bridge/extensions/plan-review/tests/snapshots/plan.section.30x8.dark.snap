@@ -1,5 +1,4 @@
 # uze snapshot · protocol 1 · section 30x8 · dark
- plan-review · bridge@local
  ▾ Plan
  Agent bridge
   Write the fixtures
@@ -7,16 +6,16 @@
    ask for a review
 
 
----
- aaaaaaaaaaa a aaaaaaaaaaaa
- b bbbb
- ccccc cccccc
-  ccccc ccc cccccccc
-  ccccc ccc ccccccc
-   bbb bbb b bbbbbb
-
 
 ---
-a text.muted
-b text.secondary
-c text.bright
+ a aaaa
+ bbbbb bbbbbb
+  bbbbb bbb bbbbbbbb
+  bbbbb bbb bbbbbbb
+   aaa aaa a aaaaaa
+
+
+
+---
+a text.secondary
+b text.bright

@@ -536,21 +536,16 @@ fn draw_scrolled(
     (first, visible)
 }
 
-/// The rows a plugin's section gives the strip naming whose it is, over its
-/// header.
-pub(super) const ATTRIBUTION_ROWS: u16 = 1;
-
-/// The rows a declared section takes: the strip naming whose it is, its
-/// header, and while it is open its content and a row of air, within a
-/// third of what the column has left. Nothing when the strip and the
-/// header would not both fit: a section is never drawn unattributed.
+/// The rows a declared section takes: its header, and while it is open its
+/// content and a row of air, within a third of what the column has left.
+/// Nothing when the header would not fit.
 pub(super) fn declared_section_height(
     section: &uze_extensions::view::Section,
     width: u16,
     remaining: u16,
 ) -> u16 {
     let budget = remaining / 3;
-    let chrome = ATTRIBUTION_ROWS + SECTION_CHROME;
+    let chrome = SECTION_CHROME;
     if budget < chrome {
         return 0;
     }
@@ -561,5 +556,5 @@ pub(super) fn declared_section_height(
         Some(tree) => crate::ui::extension_view::tree_section_height(tree, width),
         None => SECTION_CHROME + u16::try_from(section.rows.len()).unwrap_or(u16::MAX),
     };
-    (ATTRIBUTION_ROWS + open + SECTION_AIR).min(budget)
+    (open + SECTION_AIR).min(budget)
 }

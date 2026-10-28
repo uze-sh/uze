@@ -1,16 +1,16 @@
 # uze snapshot · protocol 1 · section 32x5 · dark
- pets · media@local
  ▾ Pet
    Pixel                 feed
    content, fed 3
    times
+
 ---
- aaaa a aaaaaaaaaaa
- b bbb
-   ccccc                 bbbb
-   aaaaaaaa aaa a
-   aaaaa
+ a aaa
+   bbbbb                 aaaa
+   cccccccc ccc c
+   ccccc
+
 ---
-a text.muted
-b text.secondary
-c text.bright
+a text.secondary
+b text.bright
+c text.muted

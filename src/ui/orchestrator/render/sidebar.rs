@@ -543,21 +543,10 @@ pub(super) fn render_spec_summary(
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) -> bool {
     let mut section_hits = Vec::new();
-    let mut area = Rect::new(rows.x, rows.y, rows.width, rows.remaining());
-    // Over its header and outside what the section draws, so nothing in
-    // it can cover whose it is.
-    if let Some(identity) = model
-        .remembered
-        .declared
-        .slot(slot)
-        .and_then(|hosted| hosted.owner.declared())
-    {
-        area = crate::ui::extension_view::tree::render_attribution(
-            frame,
-            area,
-            &crate::ui::extension_view::tree::attribution(identity),
-        );
-    }
+    // Drawn flat, as the sidebar's own sections are: whose it is is the
+    // Extensions screen's and the inspector's to say, not a strip that
+    // breaks the sidebar's rhythm (`extension-bar` D8).
+    let area = Rect::new(rows.x, rows.y, rows.width, rows.remaining());
     let mut column = Rows::over(area);
     let under = match model.hovered {
         Some(WorkspaceHit::Extension(ExtensionHit { slot: over, hit })) if over == slot => {
@@ -605,21 +594,10 @@ fn render_declared_section(
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) -> bool {
     let mut section_hits = Vec::new();
-    let mut area = Rect::new(rows.x, rows.y, rows.width, rows.remaining());
-    // Over its header and outside what the section draws, so nothing in
-    // it can cover whose it is.
-    if let Some(identity) = model
-        .remembered
-        .declared
-        .slot(slot)
-        .and_then(|hosted| hosted.owner.declared())
-    {
-        area = crate::ui::extension_view::tree::render_attribution(
-            frame,
-            area,
-            &crate::ui::extension_view::tree::attribution(identity),
-        );
-    }
+    // Drawn flat, as the sidebar's own sections are: whose it is is the
+    // Extensions screen's and the inspector's to say, not a strip that
+    // breaks the sidebar's rhythm (`extension-bar` D8).
+    let area = Rect::new(rows.x, rows.y, rows.width, rows.remaining());
     let mut column = Rows::over(area);
     let under = match model.hovered {
         Some(WorkspaceHit::Extension(ExtensionHit { slot: over, hit })) if over == slot => {

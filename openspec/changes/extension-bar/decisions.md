@@ -69,3 +69,13 @@
 - decided:  The bar draws no door for a view or drawer that an item of the bar in front opens: the item is its door. A surface no item opens keeps its door on the left.
 - rejected: A manifest flag to hide a door: the item already says it.
 - blast:    `declared/bar.rs::opened_by_items`, `render/bar.rs`.
+
+## D8 — A plugin's section in the sidebar is drawn flat
+
+- status:   pending
+- task:     2.2
+- commit:
+- trigger:  The operator, on the milestone extension: every plugin section in the sidebar carried a strip naming its extension and plugin (`milestone · milestone@sandbox`) over its own title, which broke the sidebar's rhythm and told the operator nothing the title did not. Clashes between extensions are the host's to resolve by id, not something to show.
+- decided:  A plugin's section is drawn as the sidebar's own are, its header its title, with no strip; its height no longer counts the strip's row, and a test draws it the same way. Whose it is stays on the Extensions screen and in the inspector. A view, a drawer and an overlay keep their strip: they stand apart from UZE's chrome, and say whose they are where they open. This reverses the sidebar half of `extension-manifest-and-scripts` D29.
+- rejected: Moving sections out of the sidebar into the agent's space: considered with a layout prototype, then kept in the sidebar once the strip, the part that did not fit, was gone.
+- blast:    `render/sidebar.rs`, `render/declared.rs::declared_section_height`, `extension_test.rs`, every section snapshot in the gallery.

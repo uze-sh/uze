@@ -1,5 +1,4 @@
 # uze snapshot · protocol 1 · section 30x12 · dark
- screen · media@local
  ▾ Screen
  The device's screen
 
@@ -11,19 +10,20 @@
 
  emulator-5554    full size
 
----
- aaaaaa a aaaaaaaaaaa
- b bbbbbb
- aaa aaaaaaaa aaaaaa
-
-
-
-
-
-
-
- aaaaaaaaaaaaa    bbbb bbbb
 
 ---
-a text.muted
-b text.secondary
+ a aaaaaa
+ bbb bbbbbbbb bbbbbb
+
+
+
+
+
+
+
+ bbbbbbbbbbbbb    aaaa aaaa
+
+
+---
+a text.secondary
+b text.muted

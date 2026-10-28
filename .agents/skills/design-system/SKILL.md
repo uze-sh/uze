@@ -164,6 +164,11 @@ on "cancel" must not save first.
   (the doors to its views and drawers, the items it draws) stands in the
   bar under the agent area, the tab strip's mirror at the content column's
   foot, which takes its rows only while a plugin puts something there.
+- A plugin's section in the sidebar is drawn flat, its header its own
+  title, as the sidebar's own sections are: no strip naming its extension
+  and plugin above it. Whose it is belongs to the Extensions screen and the
+  inspector; a clash between extensions is resolved by id, never shown. A
+  view, a drawer and an overlay keep their strip where they open.
 - A plugin never writes an icon glyph either: it names one with `Icon`
   and the host draws it in the operator's glyph set, as UZE's own chrome
   names a `Symbol`. The check refuses a Nerd Font codepoint or a

@@ -153,8 +153,11 @@ fn shown(rows: &[String], wanted: &str) -> bool {
     rows.iter().any(|row| row.contains(wanted))
 }
 
+/// A plugin's section is drawn flat in the sidebar, as the sidebar's own
+/// are: its header is its title, with no strip naming whose it is above it
+/// (`extension-bar` D8).
 #[test]
-fn a_plugins_section_is_named_by_its_identity_over_its_header() {
+fn a_plugins_section_is_drawn_flat_under_its_own_title() {
     let mut model = hosting();
     let area = ratatui::layout::Rect::new(0, 0, 120, 40);
     let rows = frame_rows_at(&mut model, area);
@@ -162,13 +165,15 @@ fn a_plugins_section_is_named_by_its_identity_over_its_header() {
         .iter()
         .map(|row| row.chars().take_while(|cell| *cell != '│').collect())
         .collect();
-    let strip = sidebar
-        .iter()
-        .position(|row| row.contains("gsd-band · gsd@market"))
-        .unwrap_or_else(|| panic!("the strip: {sidebar:#?}"));
     assert!(
-        sidebar[strip + 1].contains("Code"),
-        "the extension's own name only under it: {sidebar:#?}"
+        sidebar.iter().any(|row| row.contains("Code")),
+        "the section's own title: {sidebar:#?}"
+    );
+    assert!(
+        !sidebar
+            .iter()
+            .any(|row| row.contains("gsd-band · gsd@market")),
+        "no strip in the sidebar: {sidebar:#?}"
     );
 }
 
