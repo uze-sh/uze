@@ -171,12 +171,19 @@ fn a_declared_extension_is_listed_after_the_built_ins_with_whose_it_is() {
 
 #[test]
 fn a_declared_extension_that_failed_says_so_on_its_card_and_in_its_drawer() {
-    let mut model = listing_a_declared_extension(&["board.kdl:3:5: unknown node `Stak`"]);
+    let mut model = listing_a_declared_extension(&[
+        "board.kdl:3:5: unknown node `Stak`",
+        "extension.kdl:11:7: there is no grant `mcp:rtc/rtc_timesheet` (this version offers \
+         `read:checkout`, `clipboard`, `open-path`, `store` and the families that end here)",
+    ]);
     let (terminal, _) = super::support::drawn_at(&model, 140, 40);
     let screen = super::support::buffer_rows(&terminal).join("\n");
-    assert!(screen.contains("1 error"), "{screen}");
-    assert!(screen.contains("last compile"), "{screen}");
+    assert!(screen.contains("2 errors"), "{screen}");
+    assert!(screen.contains("the last compile has 2 errors"), "{screen}");
     assert!(screen.contains("unknown node `Stak`"), "{screen}");
+    // A long error is folded in the drawer, never cut: its end says how
+    // to fix it.
+    assert!(screen.contains("that end here)"), "{screen}");
 
     // Switched off, its error no longer reaches the workspace, and the
     // card says only that it is off.

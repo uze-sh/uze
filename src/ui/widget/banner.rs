@@ -27,11 +27,51 @@ pub(crate) fn render(
     title: &str,
     lines: &[String],
 ) -> Rect {
+    draw(frame, area, title, lines, false)
+}
+
+/// [`render`], each line folded across rows rather than cut, and as tall
+/// as all of `area` when it needs it: for a surface whose purpose is to say
+/// what is wrong, handed the room its other content leaves, where the end
+/// of a line is the part that says how to fix it.
+pub(crate) fn render_folded(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    title: &str,
+    lines: &[String],
+) -> Rect {
+    draw(frame, area, title, lines, true)
+}
+
+fn draw(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    title: &str,
+    lines: &[String],
+    folded: bool,
+) -> Rect {
     if area.height < 2 || area.width < 4 {
         return Rect::new(area.x, area.y, 0, 0);
     }
+    // The rule and the space after it, then a space before the text.
+    let measure = usize::from(area.width.saturating_sub(3));
+    let owned: Vec<String>;
+    let lines = if folded {
+        owned = lines
+            .iter()
+            .flat_map(|line| text::fold(line, measure))
+            .collect();
+        &owned[..]
+    } else {
+        lines
+    };
     let wanted = u16::try_from(lines.len() + 1).unwrap_or(u16::MAX);
-    let height = wanted.min((area.height / 2).max(2));
+    let room = if folded {
+        area.height
+    } else {
+        (area.height / 2).max(2)
+    };
+    let height = wanted.min(room);
     let rect = Rect::new(area.x, area.bottom() - height, area.width, height);
     frame.render_widget(Clear, rect);
     fill(frame, rect, Token::SurfaceRaised);

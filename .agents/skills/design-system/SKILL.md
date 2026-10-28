@@ -226,6 +226,16 @@ Toasts:
   first`). It never acts on emptiness: a copy of empty text never reaches
   the clipboard.
 
+**Problems with what a surface draws:**
+- What is wrong with an extension's compile or save is `widget::banner`:
+  a danger rule down its left, a `⚠` title that counts the errors (`the
+  last save has 2 errors`), each error under it in a secondary tone. Never
+  loose lines of red text.
+- Over a plugin's own surface it is cut to fit and takes at most half the
+  room. On a screen that exists to say what is wrong (an extension's
+  detail) it is `render_folded`: every error whole, folded across rows,
+  in all the room its other content leaves.
+
 **Timing:**
 - The first frame is right. Nothing visibly settles, flickers, or shows one
   status and then corrects it a second later.

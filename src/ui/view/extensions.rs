@@ -25,7 +25,7 @@ use super::{DrawerStatus, render_drawer_footer};
 use crate::ui::hit::Hit;
 use crate::ui::model::{ExtensionEntry, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::RowState;
+use crate::ui::widget::{RowState, text};
 use crate::ui::{content_area, render_screen_header};
 use uze_application::{ExtensionCondition as Condition, ExtensionReport};
 
@@ -297,18 +297,31 @@ fn render_extension_drawer(
         usage,
         theme::fg(Token::TextSecondary),
     )));
+    // What the last compile refused stands at the foot of the body, as it
+    // does over a plugin's own surface while its author saves.
+    let mut text_area = body;
     if let ExtensionEntry::Declared(summary) = extension
         && !summary.errors.is_empty()
     {
-        lines.push(Line::from(""));
-        lines.push(super::section_label("last compile"));
-        lines.extend(
-            summary.errors.iter().map(|error| {
-                Line::from(Span::styled(error.clone(), theme::fg(Token::StateDanger)))
-            }),
-        );
+        let title = match summary.errors.len() {
+            1 => "the last compile has an error".to_owned(),
+            count => format!("the last compile has {count} errors"),
+        };
+        // The room under what the drawer says, a blank row apart.
+        let said: usize = lines
+            .iter()
+            .map(|line| text::fold(&line.to_string(), usize::from(body.width)).len())
+            .sum();
+        let taken = u16::try_from(said + 1).unwrap_or(u16::MAX).min(body.height);
+        let room = Rect {
+            y: body.y + taken,
+            height: body.height - taken,
+            ..body
+        };
+        let banner = crate::ui::widget::banner::render_folded(frame, room, &title, &summary.errors);
+        text_area.height = body.height.saturating_sub(banner.height);
     }
-    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), body);
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), text_area);
 
     let from_a_plugin = matches!(extension, ExtensionEntry::Declared(_));
     render_drawer_footer(
