@@ -290,7 +290,9 @@ impl DeclaredExtension {
             notices: BTreeMap::new(),
             now: None,
             answered: BTreeMap::new(),
-            agents: serde_json::Value::Array(Vec::new()),
+            // Nothing handed yet, so the first list, even an empty one,
+            // reaches the sources.
+            agents: serde_json::Value::Null,
             unattended: Vec::new(),
             outgoing: Vec::new(),
             rate: notify::Rate::default(),
@@ -1303,6 +1305,35 @@ impl Extension for DeclaredExtension {
     /// changed since it was last asked.
     fn agent_events(&mut self, happened: &[crate::contract::AgentHappened], now: Instant) {
         self.take_agent_events(happened, now);
+    }
+
+    fn workspace_sources_withheld(&mut self, reason: Option<&str>) {
+        let sources: Vec<String> = self
+            .compiled
+            .manifest
+            .sources
+            .iter()
+            .filter(|source| {
+                matches!(
+                    source.kind,
+                    uze_contract::SourceKind::Agents | uze_contract::SourceKind::Events(_)
+                )
+            })
+            .map(|source| source.id.clone())
+            .collect();
+        for source in sources {
+            match reason {
+                Some(reason) if self.withheld.get(&source).map(String::as_str) != Some(reason) => {
+                    self.withhold(source, reason.to_owned());
+                }
+                None if self.withheld.remove(&source).is_some() => {
+                    self.digests.remove(&source);
+                    // What it held before it was withheld is handed again.
+                    self.agents = serde_json::Value::Null;
+                }
+                _ => {}
+            }
+        }
     }
 
     fn agents(&mut self, agents: &serde_json::Value) {

@@ -236,6 +236,22 @@ impl WorkspaceModel {
         let happened = std::mem::take(&mut self.remembered.declared.bridge.happened);
         let mut requests = Vec::new();
         for owner in self.observers() {
+            // Never consented to: the sources the workspace answers say so,
+            // as a script's source would, rather than wait for an answer
+            // that will not come.
+            let withheld = owner
+                .declared()
+                .and_then(|identity| self.remembered.declared.extensions.get(identity))
+                .is_some_and(|extension| {
+                    extension.per_project && matches!(extension.record, Some(None))
+                })
+                .then_some("needs consent");
+            if let Some(engine) = self.remembered.declared.engines.get_mut(&owner) {
+                engine.workspace_sources_withheld(withheld);
+            }
+            if withheld.is_some() {
+                continue;
+            }
             let value = self.agents_value(&owner);
             let seen: Vec<AgentHappened> = happened
                 .iter()

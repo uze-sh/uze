@@ -408,6 +408,53 @@ fn an_observer_not_enabled_in_the_agents_project_sees_nothing_of_it() {
     );
 }
 
+#[test]
+fn an_agents_source_never_consented_to_says_so_rather_than_wait() {
+    let root = PathBuf::from("/repo");
+    let mut observing = compiled(None, Vec::new());
+    observing.manifest.wants = vec![uze_contract::Grant::AgentObserve];
+    observing.manifest.sources[0].kind = uze_contract::SourceKind::Agents;
+    let mut model = hosting(&root, observing);
+    let hosted = model
+        .remembered
+        .declared
+        .extensions
+        .get_mut(&identity())
+        .expect("hosted");
+    hosted.per_project = true;
+    hosted.record = Some(None);
+    let withheld = |model: &WorkspaceModel| {
+        let owner = super::Owner::Declared(identity());
+        let engine = model.remembered.declared.engines.get(&owner).expect("engine");
+        let engine = engine.declared().expect("declared");
+        (
+            engine.withheld("board").map(str::to_owned),
+            engine.data("board").cloned(),
+        )
+    };
+
+    model.tell_agents(Instant::now());
+    assert_eq!(withheld(&model), (Some("needs consent".to_owned()), None));
+
+    let project = model.projects.get(&root).cloned().expect("its project");
+    model
+        .remembered
+        .declared
+        .extensions
+        .get_mut(&identity())
+        .expect("hosted")
+        .record = Some(Some(uze_application::ExtensionConsent {
+        enabled_in: [project].into(),
+        ..Default::default()
+    }));
+    model.tell_agents(Instant::now());
+    assert_eq!(
+        withheld(&model),
+        (None, Some(Ok(serde_json::json!([])))),
+        "consented, it is told the agents, none being one answer"
+    );
+}
+
 /// An observing extension, enabled in `/repo`'s project, with the agent
 /// `a1` seen there.
 fn observed(root: &Path) -> (WorkspaceModel, super::BridgedAgent) {

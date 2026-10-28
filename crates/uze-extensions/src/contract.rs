@@ -281,6 +281,12 @@ pub trait Extension: Send {
     /// handed only to an extension holding `agent:observe`.
     fn agents(&mut self, _agents: &serde_json::Value) {}
 
+    /// Why the sources the workspace answers itself (`agents`, `events`)
+    /// are told nothing, such as `needs consent`, or `None` once they may
+    /// be told again. A script's source hears it from its runner; these
+    /// have no runner to say it.
+    fn workspace_sources_withheld(&mut self, _reason: Option<&str>) {}
+
     /// What the extension asks of the host on its own, outside any
     /// gesture: an unattended prompt its agent events sent. Taken once.
     fn requests(&mut self) -> Vec<Outcome> {

@@ -331,6 +331,30 @@ fn an_agents_source_is_answered_by_the_workspace_and_never_asked() {
 }
 
 #[test]
+fn an_agents_source_hears_an_empty_list_and_says_why_it_is_told_nothing() {
+    let mut engine = board(None, Vec::new());
+    engine.compiled.manifest.sources[0].kind = uze_contract::SourceKind::Agents;
+    engine.agents(&json!([]));
+    assert_eq!(
+        engine.data(super::tests::SOURCE).cloned(),
+        Some(Ok(json!([]))),
+        "no agent is an answer, not a wait"
+    );
+
+    engine.workspace_sources_withheld(Some("needs consent"));
+    assert_eq!(engine.withheld(super::tests::SOURCE), Some("needs consent"));
+    engine.agents(&json!([{ "id": "a1" }]));
+    engine.workspace_sources_withheld(None);
+    assert_eq!(engine.withheld(super::tests::SOURCE), None);
+    engine.agents(&json!([{ "id": "a1" }]));
+    assert_eq!(
+        engine.data(super::tests::SOURCE).cloned(),
+        Some(Ok(json!([{ "id": "a1" }]))),
+        "consented, the agents it was handed meanwhile reach it"
+    );
+}
+
+#[test]
 fn a_source_slower_than_its_every_is_not_asked_again_until_it_answers() {
     let start = Instant::now();
     let mut engine = board(Some(Duration::from_secs(2)), Vec::new());

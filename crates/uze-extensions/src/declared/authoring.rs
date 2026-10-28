@@ -175,6 +175,10 @@ impl DeclaredExtension {
             return;
         }
         self.agents = agents.clone();
+        // Nothing handed yet: the next pass hands the workspace's list.
+        if agents.is_null() {
+            return;
+        }
         let sources: Vec<String> = self
             .compiled
             .manifest
