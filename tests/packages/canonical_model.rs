@@ -112,7 +112,7 @@ fn the_official_package_contributes_its_agent_skill_resources() {
         )
         .unwrap();
     let inspection = application.plugins().inspect("uze").unwrap();
-    assert_eq!(inspection.capabilities.len(), 6);
+    assert_eq!(inspection.capabilities.len(), 5);
     assert!(
         inspection
             .capabilities
@@ -129,7 +129,6 @@ fn the_official_package_contributes_its_agent_skill_resources() {
         [
             "architect",
             "author",
-            "extension",
             "init",
             "rules",
             "worktree"
