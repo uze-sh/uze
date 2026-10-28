@@ -707,3 +707,13 @@
 - decided:  `capture_selection` reads the selected row inside the build and copies that row alone: `jobs()` now takes 1.1 µs. `view()` is left as it is: 84 µs a frame is not worth an `Arc`-shared tree.
 - rejected: Sharing the built tree through `Arc` for `view()`: a change to every reader of the tree for a cost below a frame's noise.
 - blast:    `uze-extensions::declared::capture_selection`.
+
+## D199 — A session remembers at most 64 answers of one extension
+
+- status:   pending
+- task:     polish suspected performance
+- commit:
+- trigger:  The runner remembered a source's answer by its input and its files' digest and let none go but on `forget`: each selection or page a source's input reads, and each save of an extension being authored, added an answer held for the session. Shown by a test asking one source 200 inputs: 200 remembered.
+- decided:  Remembering an answer lets go what the same source answered about the same checkout from other files, never asked again, and past 64 answers of one extension the oldest goes. The newest answers stay, so going back to a recent selection is still answered without running.
+- rejected: A bound in bytes against `MEMORY_TARGET`: the weight is already reported in `uze doctor`; a count is what keeps the map from growing with gestures.
+- blast:    `uze-application::extensions::runner` (`remember`).

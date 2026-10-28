@@ -33,6 +33,11 @@ use super::runs::{self, ExtensionCost, ExtensionRun, RunBook};
 use super::{CheckoutReach, ExtensionCheckout, ExtensionState, NotACheckout};
 use crate::application::services::Extensions;
 
+/// How many answers a session remembers of one extension: one per input
+/// it was asked with (a selection, a page), each kept until the checkout,
+/// the files or the input changes back. Past this the oldest goes.
+const REMEMBERED_PER_EXTENSION: usize = 64;
+
 /// What a session's answer is remembered by.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct Asked {
@@ -53,8 +58,11 @@ struct Asked {
 /// saying so never runs a program unconfined.
 #[derive(Debug)]
 pub struct ExtensionRunner {
-    /// Each remembered answer, with what its data weighs as JSON.
-    answered: Mutex<HashMap<Asked, (Envelope, usize)>>,
+    /// Each remembered answer, with what its data weighs as JSON and when
+    /// it was remembered, oldest first out past [`REMEMBERED_PER_EXTENSION`].
+    answered: Mutex<HashMap<Asked, (Envelope, usize, u64)>>,
+    /// Counts what was remembered, ordering it.
+    remembered: AtomicU64,
     scripts: Mutex<ScriptCache>,
     runs: AtomicU64,
     /// What it answered for each extension, for the inspector.
@@ -119,6 +127,7 @@ impl ExtensionRunner {
             answered: Mutex::default(),
             scripts: Mutex::default(),
             runs: AtomicU64::default(),
+            remembered: AtomicU64::default(),
             book: Mutex::default(),
             listing: Mutex::default(),
             residents: Mutex::default(),
@@ -255,7 +264,7 @@ impl ExtensionRunner {
         cost.remembered_bytes = lock(&self.answered)
             .iter()
             .filter(|(asked, _)| asked.identity == *identity)
-            .map(|(_, (_, bytes))| *bytes)
+            .map(|(_, (_, bytes, _))| *bytes)
             .sum();
         cost
     }
@@ -683,6 +692,35 @@ impl ExtensionRunner {
         })
     }
 
+    /// Remembers `envelope` as the answer to `asked`. What the same source
+    /// answered about the same checkout from other files is let go, since
+    /// those files are not asked again; past [`REMEMBERED_PER_EXTENSION`]
+    /// of its extension, the oldest goes.
+    fn remember(&self, asked: Asked, envelope: &Envelope) {
+        let order = self.remembered.fetch_add(1, Ordering::Relaxed);
+        let (envelope, bytes) = weighed(envelope);
+        let mut answered = lock(&self.answered);
+        answered.retain(|kept, _| {
+            kept.identity != asked.identity
+                || kept.declaration != asked.declaration
+                || kept.checkout != asked.checkout
+                || kept.files == asked.files
+        });
+        let mine = |kept: &Asked| kept.identity == asked.identity;
+        while answered.keys().filter(|kept| mine(kept)).count() >= REMEMBERED_PER_EXTENSION {
+            let Some(oldest) = answered
+                .iter()
+                .filter(|(kept, _)| mine(kept))
+                .min_by_key(|(_, (_, _, order))| *order)
+                .map(|(kept, _)| kept.clone())
+            else {
+                break;
+            };
+            answered.remove(&oldest);
+        }
+        answered.insert(asked, (envelope, bytes, order));
+    }
+
     /// What a source asked as `asked` answered this session, or what
     /// `run` answers now, remembered when it is a source's: an action is
     /// run on every gesture.
@@ -692,7 +730,7 @@ impl ExtensionRunner {
             ..asked.clone()
         };
         if asked.asking == Asking::Source
-            && let Some((envelope, _)) = lock(&self.answered).get(&remembered)
+            && let Some((envelope, _, _)) = lock(&self.answered).get(&remembered)
         {
             return Answer::Answered {
                 envelope: envelope.clone(),
@@ -704,7 +742,7 @@ impl ExtensionRunner {
         if asked.asking != Asking::Action
             && let Answer::Answered { envelope, .. } = &answer
         {
-            lock(&self.answered).insert(remembered, weighed(envelope));
+            self.remember(remembered, envelope);
         }
         answer
     }
@@ -915,7 +953,7 @@ impl ExtensionRunner {
             ..asked.clone()
         };
         if asked.asking == Asking::Source
-            && let Some((envelope, _)) = lock(&self.answered).get(&remembered)
+            && let Some((envelope, _, _)) = lock(&self.answered).get(&remembered)
         {
             return Answer::Answered {
                 envelope: envelope.clone(),
@@ -951,7 +989,7 @@ impl ExtensionRunner {
             Ok(envelope) => {
                 let envelope = keep(envelope);
                 if asked.asking != Asking::Action {
-                    lock(&self.answered).insert(remembered, weighed(&envelope));
+                    self.remember(remembered, &envelope);
                 }
                 Answer::Answered { envelope, trace }
             }
@@ -1356,6 +1394,32 @@ pub(super) mod tests {
             "what it allowed changed, so it runs again"
         );
         assert_eq!(runner.runs(), 2);
+    }
+
+    #[test]
+    fn what_a_session_remembers_of_one_extension_stays_bounded() {
+        let world = World::new("runner-bounded");
+        world.enabled();
+        let runner = ExtensionRunner::new();
+        for page in 0..200 {
+            let question = Question {
+                input: serde_json::json!({ "page": page }),
+                ..world.question("state")
+            };
+            world.ask(&runner, &question);
+        }
+        assert_eq!(runner.runs(), 200, "each new input ran");
+        assert!(
+            lock(&runner.answered).len() <= REMEMBERED_PER_EXTENSION,
+            "{} remembered",
+            lock(&runner.answered).len()
+        );
+        let newest = Question {
+            input: serde_json::json!({ "page": 199 }),
+            ..world.question("state")
+        };
+        world.ask(&runner, &newest);
+        assert_eq!(runner.runs(), 200, "the newest answer is still remembered");
     }
 
     #[test]
