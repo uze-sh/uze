@@ -140,7 +140,7 @@ scenes:
         until: "read:checkout"
         timeout: 5
         say: the question shows every grant it wants
-      - click: "Allow and enable"
+      - click: "Enable 1"
         say: allow its grants and enable it here
         expect: "extension enabled"
         expect_timeout: 10

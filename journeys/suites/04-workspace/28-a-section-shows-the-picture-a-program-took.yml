@@ -132,6 +132,10 @@ scenes:
         expect_timeout: 90
       - click: "Review"
         say: review the extension the project offers
+        expect: "Enable Screen in demo-app"
+        expect_timeout: 10
+      - click: "Enable 1"
+        say: choose it; a program is all it asks for, asked on the next step
         expect: "Allow these programs to run"
         expect_timeout: 10
       - wait: screen

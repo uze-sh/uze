@@ -22,6 +22,10 @@ impl Attach<'_> {
             scopes.push(Scope::ReleaseNotes);
             return scopes;
         }
+        if self.model.extension_offer_chooses() {
+            scopes.push(Scope::Choose);
+            return scopes;
+        }
         if self.model.approval.is_some()
             || self.model.extension_offer.is_some()
             || self.model.agent_write.is_some()

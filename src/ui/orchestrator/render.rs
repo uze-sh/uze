@@ -400,7 +400,7 @@ pub(super) fn render(
         render_agent_write(frame, frame.area(), open, hits);
     }
     if let Some(open) = &model.extension_offer {
-        render_extension_offer(frame, frame.area(), open, hits);
+        render_extension_offer(frame, frame.area(), open, model.hovered, hits);
     }
     if let Some(open) = &model.proposal {
         render_proposal(frame, frame.area(), open, hits);

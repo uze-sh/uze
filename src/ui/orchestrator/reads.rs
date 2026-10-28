@@ -298,13 +298,12 @@ pub(super) fn spawn_extension_offers(
     });
 }
 
-/// Records the operator's answer to the offer: consent when the extension
-/// needs it and enabling in the project, or the offer put away there.
+/// Answers the workspace's offer of a project's extensions: each chosen is
+/// consented to when it must be, then enabled where the answer said. Off
+/// the frame, since each writes a record.
 pub(super) fn spawn_extension_offer_answer(
     home: &UzeHome,
-    project: PathBuf,
-    offer: uze_application::ExtensionReport,
-    allow: bool,
+    answer: OfferAnswer,
     asker: uze_application::Asker,
     sender: mpsc::Sender<ExtensionOfferResolution>,
 ) {
@@ -312,41 +311,66 @@ pub(super) fn spawn_extension_offer_answer(
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _span = tracing::info_span!(parent: &parent, "tui.extension_offer").entered();
-        let identity = offer.identity();
-        let outcome = answered_or(
-            || {
-                let app = tui_application(home).map_err(|error| error.to_string())?;
-                let extensions = app.extensions();
-                let answered = if !allow {
-                    extensions.decline_offer(&identity, &project).map(drop)
-                } else if offer.condition == uze_application::ExtensionCondition::NeedsEnabling {
-                    extensions.enable(&identity, &project, asker).map(drop)
-                } else {
-                    extensions
-                        .consent(
-                            &identity,
-                            offer.digest.as_deref().unwrap_or_default(),
-                            asker,
-                        )
-                        .and_then(|_| extensions.enable(&identity, &project, asker))
-                        .map(drop)
-                };
-                if allow && answered.is_ok() {
-                    // The workspace asks the extension's sources again
-                    // once it looks again.
-                    crate::ui::extension_switch::plugins_changed();
-                }
-                answered.map_err(|error| error.to_string())
-            },
-            Err("answering failed".to_owned()),
-        );
-        let _ = sender.send(ExtensionOfferResolution {
+        let OfferAnswer {
             project,
-            attribution: offer.attribution(),
-            name: offer.name.clone(),
-            allowed: allow,
-            outcome,
-        });
+            enable,
+            everywhere,
+        } = answer;
+        let mut resolution = ExtensionOfferResolution {
+            project: project.clone(),
+            everywhere,
+            enabled: Vec::new(),
+            kept_here: Vec::new(),
+            failed: Vec::new(),
+        };
+        let app = match tui_application(home) {
+            Ok(app) => app,
+            Err(error) => {
+                resolution.failed = enable
+                    .iter()
+                    .map(|offer| (offer.attribution(), error.to_string()))
+                    .collect();
+                let _ = sender.send(resolution);
+                return;
+            }
+        };
+        let extensions = app.extensions();
+        for offer in &enable {
+            let identity = offer.identity();
+            let answered = answered_or(
+                || {
+                    if offer.condition != uze_application::ExtensionCondition::NeedsEnabling {
+                        extensions
+                            .consent(
+                                &identity,
+                                offer.digest.as_deref().unwrap_or_default(),
+                                asker,
+                            )
+                            .map_err(|error| error.to_string())?;
+                    }
+                    if everywhere {
+                        extensions.enable_everywhere(&identity, &project, asker)
+                    } else {
+                        extensions.enable(&identity, &project, asker)
+                    }
+                    .map_err(|error| error.to_string())
+                },
+                Err("answering failed".to_owned()),
+            );
+            match answered {
+                Ok(switched) if everywhere && !switched.everywhere => {
+                    resolution.kept_here.push(offer.name.clone())
+                }
+                Ok(_) => resolution.enabled.push(offer.name.clone()),
+                Err(reason) => resolution.failed.push((offer.attribution(), reason)),
+            }
+        }
+        if !resolution.enabled.is_empty() || !resolution.kept_here.is_empty() {
+            // The workspace asks the extensions' sources again once it
+            // looks again.
+            crate::ui::extension_switch::plugins_changed();
+        }
+        let _ = sender.send(resolution);
     });
 }
 

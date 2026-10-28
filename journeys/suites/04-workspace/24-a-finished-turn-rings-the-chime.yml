@@ -140,7 +140,7 @@ scenes:
         until: "notify"
         timeout: 5
         say: the question shows that it may notify
-      - click: "Allow and enable"
+      - click: "Enable 1"
         say: allow its grants and enable it here
         expect: "extension enabled"
         expect_timeout: 10

@@ -103,7 +103,7 @@ scenes:
         until: "agent:prompt"
         timeout: 5
         say: the question says it may type into an agent
-      - click: "Allow and enable"
+      - click: "Enable 1"
         say: allow it and enable it here
         expect: "extension enabled"
         expect_timeout: 10

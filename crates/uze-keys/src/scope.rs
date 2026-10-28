@@ -143,6 +143,9 @@ scopes! {
     /// A modal asking a yes/no question, in either mode: the workspace
     /// asks one before running a project's commands.
     Confirm => "confirm", "While being asked", Both, seals: true, text: false;
+    /// A question answered by choosing several rows of a list, then once:
+    /// the workspace's offer of a project's extensions.
+    Choose => "choose", "While choosing", Both, seals: true, text: false;
 
     /// The workspace client, with nothing of uze's own open.
     Workspace => "workspace", "Workspace", Workspace, seals: false, text: false;

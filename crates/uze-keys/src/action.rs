@@ -234,6 +234,10 @@ actions! {
         "Preview", "Show what the selected profile writes into each harness";
     ToggleProfileHarness => "toggle-profile-harness", false,
         "Toggle harness", "Include or exclude the highlighted harness";
+    ToggleChoice => "toggle-choice", false,
+        "Switch", "Include or leave out the marked row";
+    ToggleAllChoices => "toggle-all-choices", false,
+        "Switch all", "Include every row, or none once all are";
     NextValue => "next-value", false,
         "Next value", "Change the highlighted preference to the next value";
     PreviousValue => "previous-value", false,

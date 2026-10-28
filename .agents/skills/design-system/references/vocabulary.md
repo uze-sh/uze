@@ -27,6 +27,7 @@ ratatui primitives (`chrome_is_built_from_the_widget_vocabulary`).
 | a detail column | `drawer::render`, `drawer::foot` |
 | a drawer docked beside a live pane | `drawer::render_docked`, `drawer::docked_width` |
 | a question or notice | `dialog::Dialog`, `render_choice`, `shell` |
+| a list to choose from, answered once | `dialog::shell` with `Scope::Choose` (`orchestrator/extension_offer.rs`) |
 | a titled card over a scrim | `modal`, `footer::render` (returns `Drawn{trailers, hints}`), `scrim` |
 | what to check, worst first | `alerts` |
 | a problem with content still drawn under it | `banner::render` |

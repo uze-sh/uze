@@ -865,6 +865,18 @@ pub(super) enum WorkspaceHit {
     ReviewExtensions,
     /// An answer to that question: allow and enable, or put it away.
     ExtensionOfferAnswer(bool),
+    /// A row of its list, by index: marks it.
+    ExtensionOfferRow(usize),
+    /// A row's mark, by index: switches the row.
+    ExtensionOfferMark(usize),
+    /// The field saying where the answer holds: switches it.
+    ExtensionOfferWhere,
+    /// The subject's "switch all": every row on, or none once all are.
+    ExtensionOfferAll,
+    /// The way to everything the marked row asks for, and back.
+    ExtensionOfferWhole,
+    /// A row of the list's scrollbar: the first row it asks to see.
+    ExtensionOfferBar(usize),
     /// The question itself, which a click does not put away.
     ExtensionOfferBody,
     /// An answer to an extension's prompt question: true types it.

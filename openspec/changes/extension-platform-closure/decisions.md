@@ -717,3 +717,54 @@
 - decided:  Remembering an answer lets go what the same source answered about the same checkout from other files, never asked again, and past 64 answers of one extension the oldest goes. The newest answers stay, so going back to a recent selection is still answered without running.
 - rejected: A bound in bytes against `MEMORY_TARGET`: the weight is already reported in `uze doctor`; a count is what keeps the map from growing with gestures.
 - blast:    `uze-application::extensions::runner` (`remember`).
+
+## D200 — The workspace offers a project's extensions in one list, answered once
+
+- status:   pending
+- task:     operator UX review (prototype in the progress artifact)
+- commit:
+- trigger:  With ten extensions a project offered ten dialogs in a queue, each answer raising its own "extension enabled" toast. The operator validated a prototype and chose one list (variant A) over a list grouped by plugin (B).
+- decided:  One toast per project per session, as before, and Review opens one dialog listing every extension offered (`ExtensionOfferDialog`, `Scope::Choose`): a row per extension with its mark, name, plugin and what is notable (`allowed`, `wants more`, `runs <program>`, `N grants`), the marked row's grants with their meanings below, `where ‹ this project ›` beside the answers, and `Enable N`. Space or a click on the mark switches a row; a click on the row only marks it. An update wanting more starts switched off. The programs of every row chosen are asked on one step after the list (D22 of programs kept: never on the same screen as the grants); its Cancel leaves those rows off and enables the rest. One toast says what was enabled (`3 extensions enabled`) and one what was not. Revises D42 of manifest-and-scripts (one dialog per extension) and D34 of programs (one programs step per extension).
+- rejected: The queue of dialogs: ten Enters and ten toasts for one decision. Grouping by plugin (B): a second level of marks, and a partial glyph the theme does not have, for little gain. A row click that switches: the operator found it too easy to switch by accident.
+- blast:    `src/ui/orchestrator/extension_offer.rs`, `reads::spawn_extension_offer_answer`, `uze-keys` (`Scope::Choose`, `ToggleChoice`, `ToggleAllChoices`), journeys 16–29 that click the offer.
+
+## D201 — Putting the offer away answers nothing; it is made again at the next opening
+
+- status:   pending
+- task:     operator UX review
+- commit:
+- trigger:  An Esc on the old dialog wrote `offers_declined` for good, and the offer never came back in that project. The operator chose "not now": if it reads badly in use, it is adjusted then.
+- decided:  Cancel, Esc and a click outside close the dialog and write nothing; the session does not ask again, the next opening does. A row left off is offered again the same way. `offers_declined` written by earlier builds is still read, so an offer put away before is not made again.
+- rejected: Keeping the permanent decline: an accidental Esc hid the offer for good, with the Extensions screen as the only way back. A third "never in this project" answer: a choice nobody asked for, addable if "not now" proves noisy.
+- blast:    `WorkspaceModel::answer_extension_offer`; `Extensions::decline_offer` is left without a caller from the workspace.
+
+## D202 — An extension can be enabled in every project, except one that reaches agents
+
+- status:   pending
+- task:     operator UX review
+- commit:
+- trigger:  Enabling repository by repository asked the same question again for every project; the operator asked for "every project".
+- decided:  The consent record gains `enabled_everywhere` (written only when set; shape 1 kept, as `accepted_reads` was added). `Consent::enabled_in` and `enabled_in_as_written` honour it, so the runner, a band, a status row and the agent bridge all do. `Extensions::enable_everywhere` enables an extension wanting an `agent:*` grant in the project asked from alone and says so (`Switched::everywhere`), and a consent that brings such a grant takes "every project" back (`keep_to_named_projects`), keeping D42 of the agent bridge: an extension sees and prompts only the agents of projects it is enabled in by name. The report, the drawer and `uze status` say "enabled in every project". An older build that rewrites the record drops the flag, which only narrows what runs.
+- rejected: A pattern of projects (`~/work/*`): more to show and to judge for no case asked. Letting `agent:*` extensions run everywhere: an extension that types into agents would reach every repository's agents.
+- blast:    `uze-workspace::extensions::consent`, `uze-application::extensions::consent` (`enable_everywhere`, `disable_everywhere`, `reaches_agents`), `report.rs`.
+
+## D203 — The Extensions screen enables and disables for every project
+
+- status:   pending
+- task:     operator UX review
+- commit:
+- trigger:  The operator: the management screen is global, so its Enable and Disable should be too.
+- decided:  Enable on the Extensions screen calls `enable_everywhere` (still asking for the grants and the programs first when they were not accepted); Disable calls `disable_everywhere`, which clears every project and the flag and keeps the consent. One reaching agents is enabled in the project in front alone, and the grants dialog says why. A project in front is still needed to enable ("Needs a project"), since the state is judged where the operator stands. Revises D41 of manifest-and-scripts.
+- rejected: A per-project Disable on a global screen: a switch that turns off somewhere other than where it says.
+- blast:    `src/ui/worker.rs::extension_here`, `overlay::extension_grants_body`, `view/extensions.rs` (`Enabled everywhere`).
+
+## D204 — A list to choose from is up to 96 columns, its rows take the height left
+
+- status:   pending
+- task:     operator UX review
+- commit:
+- trigger:  The operator found the prototype's rows cramped and asked for the size that holds the information, past the 60 columns of a question.
+- decided:  The list dialog is `dialog::shell`, 60 to 96 columns wide by the terminal. Its rows take the height left between 4 and 14 and scroll under the standard `Scrollbar` (the wheel scrolls, the cursor stays); the marked row's detail takes at most half of what is left, 3 to 6 rows, fixed while the cursor moves. A row asking more than the detail holds ends in `⋯ N more · see all ›`; `i` or that line shows everything in the list's place, headed by `‹`, and esc goes back. The cursor is the product's `Symbol::Prompt`, not the prototype's highlighted row. The rules are in the design-system skill.
+- rejected: 60 columns with the plugin column cut: the rows the operator called cramped. A detail sized to the row: the dialog would jump as the cursor moves.
+- blast:    `extension_offer.rs` (`WIDTH`, `LIST_ROWS`, `DETAIL_ROWS`), `.agents/skills/design-system/SKILL.md`.
+

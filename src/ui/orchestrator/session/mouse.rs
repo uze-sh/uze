@@ -1012,6 +1012,11 @@ impl Attach<'_> {
                 };
                 return self.action_index_action(action, viewport);
             }
+            // The offer's list scrolls under the wheel; its cursor stays
+            // where the keys left it.
+            _ if self.model.extension_offer.is_some() => {
+                self.extension_offer_wheel(mouse.kind == MouseEventKind::ScrollDown);
+            }
             // Recent has the column while it is open, so the wheel over it
             // scrolls its list, and the selection stays where the keys
             // left it.
@@ -1436,6 +1441,12 @@ impl Attach<'_> {
             WorkspaceHit::ApprovalAnswer(_)
             | WorkspaceHit::ApprovalBody
             | WorkspaceHit::ExtensionOfferAnswer(_)
+            | WorkspaceHit::ExtensionOfferRow(_)
+            | WorkspaceHit::ExtensionOfferMark(_)
+            | WorkspaceHit::ExtensionOfferWhere
+            | WorkspaceHit::ExtensionOfferAll
+            | WorkspaceHit::ExtensionOfferWhole
+            | WorkspaceHit::ExtensionOfferBar(_)
             | WorkspaceHit::ExtensionOfferBody
             | WorkspaceHit::AgentWriteAnswer(_)
             | WorkspaceHit::AgentWriteBody

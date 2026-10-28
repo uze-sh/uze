@@ -103,7 +103,7 @@ scenes:
         say: review the extension the project offers
         expect: "Enable Jump in demo-app"
         expect_timeout: 10
-      - click: "Allow and enable"
+      - click: "Enable 1"
         say: allow its grant and enable it here
         expect: "extension enabled"
         expect_timeout: 10

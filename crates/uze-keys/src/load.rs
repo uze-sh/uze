@@ -325,6 +325,20 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Confirm, "esc", Action::Dismiss),
         bind(Scope::Confirm, "left", Action::FocusPrevious),
         bind(Scope::Confirm, "right", Action::FocusNext),
+        // Choosing several rows, then answering once: the arrows walk the
+        // rows, space switches the marked one, left and right change the
+        // field beside the answers, tab moves between the answers, and i
+        // shows all the marked row says. Enter and esc answer as above.
+        bind(Scope::Choose, "enter", Action::Activate),
+        bind(Scope::Choose, "esc", Action::Dismiss),
+        bind(Scope::Choose, "up", Action::SelectPrevious),
+        bind(Scope::Choose, "down", Action::SelectNext),
+        bind(Scope::Choose, "space", Action::ToggleChoice),
+        bind(Scope::Choose, "a", Action::ToggleAllChoices),
+        bind(Scope::Choose, "left", Action::PreviousValue),
+        bind(Scope::Choose, "right", Action::NextValue),
+        bind(Scope::Choose, "tab", Action::FocusNext),
+        bind(Scope::Choose, "i", Action::Expand),
         bind(Scope::KeyCapture, "esc", Action::Dismiss),
         // --- The index, in either mode ----------------------------------
         bind(Scope::ActionIndex, "down", Action::SelectNext),

@@ -56,7 +56,9 @@ on "cancel" must not save first.
 - The first click acts. Opening or closing a popover, menu or Recents must
   never swallow the next click.
 - The whole row, chip, card or button is the target, not just the arrow or
-  one word.
+  one word. The one exception is a list of choices (rows marked `◉`/`○`):
+  a click on the row marks it, and only a click on its mark switches it,
+  as space does from the keyboard.
 - Never leave a dead region, and never open anything on a double click:
   Enter opens.
 - A click that does nothing must not *look* like it acted. For example, a
@@ -138,6 +140,10 @@ on "cancel" must not save first.
 - Esc closes everything, and a modal or a drawer says so nowhere: its
   closing is a bare `x` at the top right, with no label, no footer "close"
   button and no "esc" hint.
+- A step opened inside a dialog (everything a row asks for, in the list's
+  place) goes back before it closes: its heading starts with `‹`
+  (`Symbol::StepPrevious`) and is a target, and the bottom border names
+  esc "back". Esc on the first step closes.
 - A surface's own foot (the overview's) is different: it is the keys that
   act there, so it names Dismiss by what it does in that state, "back",
   "cancel", "clear" or "close", and that word is a click target like any
@@ -162,6 +168,15 @@ on "cancel" must not save first.
   your own.
 - Never ask for Y/N.
 - Enter is the primary action.
+- Several things waiting on the same answer are asked in one dialog, a
+  list to choose from (`Scope::Choose`), never a queue of dialogs; one
+  toast says what was done (`3 extensions enabled`), never one each.
+- A question is 60 columns at most. A list to choose from takes what its
+  rows need, up to 96, its rows take the height left (4 to 14, then it
+  scrolls), and the marked row's detail keeps a fixed height, so moving
+  the cursor never resizes the dialog.
+- Putting a question away answers nothing unless the question says so: an
+  offer put away is made again the next time, never refused for good.
 
 **Skip choices with one answer:**
 - With one harness, launch it directly.

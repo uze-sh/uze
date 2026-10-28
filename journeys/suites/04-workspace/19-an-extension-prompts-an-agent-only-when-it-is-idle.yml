@@ -190,21 +190,17 @@ scenes:
         expect: "2 extensions run nothing there"
         expect_timeout: 90
       - click: "Review"
-        say: review the extensions the project offers
-        expect: "Enable Agents in demo-app"
+        say: review the extensions the project offers, both in one list
+        expect: "Enable extensions in demo-app"
         expect_timeout: 10
-      - click: "Allow and enable"
-        say: allow the status row's grant
-        expect: "Enable Flight deck in demo-app"
-        expect_timeout: 10
+      - key: "Down"
+        say: mark the flight deck, the list's second row
       - wait: screen
         until: "agent:prompt"
         timeout: 5
-        say: the second question says it may type into an agent
-      # The first answer's "extension enabled" may still stand: what only
-      # the second draws is the flight deck's own section.
-      - click: "Allow and enable"
-        say: allow the flight deck's grants
+        say: its detail says it may type into an agent
+      - click: "Enable 2"
+        say: allow both and enable them here
         expect: "No calls yet"
         expect_timeout: 10
     then:

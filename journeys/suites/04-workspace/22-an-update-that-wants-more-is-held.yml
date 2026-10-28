@@ -93,7 +93,7 @@ scenes:
         say: review the extension the project offers
         expect: "Enable Release in demo-app"
         expect_timeout: 10
-      - click: "Allow and enable"
+      - click: "Enable 1"
         say: allow its grant and enable it here
         expect: "extension enabled"
         expect_timeout: 10
@@ -176,13 +176,19 @@ scenes:
         expect_timeout: 30
       - click: "Review"
         say: review what the update wants
-        expect: "Its update wants more than you allowed"
+        expect: "its update wants more than you allowed"
         expect_timeout: 10
       - wait: screen
-        until: "store ·"
+        until: "store +keeps what it remembers"
         timeout: 5
         say: the question names the new grant
-      - click: "Allow and enable"
+      # An update that wants more starts left off: allowing it is the
+      # operator's own gesture.
+      - key: "Space"
+        say: switch it on
+        expect: "Enable 1"
+        expect_timeout: 5
+      - click: "Enable 1"
         say: allow it
         expect: "extension enabled"
         expect_timeout: 10

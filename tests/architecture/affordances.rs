@@ -336,6 +336,14 @@ fn affordances() -> BTreeMap<Action, Affordance> {
              review hint along the overview's foot",
         ),
     );
+    put(
+        Action::ToggleChoice,
+        Control("the mark at the start of a row in a list to choose from"),
+    );
+    put(
+        Action::ToggleAllChoices,
+        Control("the switch all beside a list to choose from's count"),
+    );
     for position in 1..=9u8 {
         put(Action::SelectTab(position), Control("clicking the tab"));
     }

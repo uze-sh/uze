@@ -115,7 +115,7 @@ scenes:
         until: "clipboard"
         timeout: 5
         say: the first question shows the grants that are not programs
-      - click: "Allow and enable"
+      - click: "Enable 1"
         say: allow its grants
         expect: "Allow these programs to run"
         expect_timeout: 10
