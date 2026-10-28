@@ -177,6 +177,9 @@ on "cancel" must not save first.
   (the doors to its views and drawers, the items it draws) stands in the
   bar under the agent area, the tab strip's mirror at the content column's
   foot, which takes its rows only while a plugin puts something there.
+- A plugin's list in a sidebar section reads as the sidebar's own rows: no
+  ground on hover or selection, its text held back at rest and lit in its
+  own hues under the pointer or once chosen, as the tasks section is.
 - A plugin's section in the sidebar is drawn flat, its header its own
   title, as the sidebar's own sections are: no strip naming its extension
   and plugin above it. A band has no mark naming it either: a muted name

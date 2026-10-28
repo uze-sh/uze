@@ -1989,11 +1989,25 @@ impl Painter<'_, '_> {
                 act: NodeAct::Row(index),
             };
             let state = RowState::of(selected == Some(index), self.hovered(hit));
-            if let (Some(ground), Some(rect)) = (state.ground(), self.visible(at, rows, x, width)) {
+            // A section's rows read as the sidebar's own: no ground, the
+            // text held back at rest and lit in its own hues under the
+            // pointer or once chosen. A ground there read as a block laid
+            // over the column.
+            let in_section = self.held.fold;
+            if !in_section
+                && let (Some(ground), Some(rect)) =
+                    (state.ground(), self.visible(at, rows, x, width))
+            {
                 widget::fill(self.frame, rect, ground);
             }
             if !self.node(child, x.saturating_add(inset), inner, at) {
                 return false;
+            }
+            if in_section && let Some(rect) = self.visible(at, rows, x, width) {
+                match state {
+                    RowState::Resting => widget::hold_back(self.frame, rect),
+                    _ => widget::lift(self.frame, rect),
+                }
             }
             self.hit(at, rows, x, width, hit);
             at += rows;

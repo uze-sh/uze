@@ -8,14 +8,13 @@
 ---
  a aa
  bbbbbbbbbb b bbbb
-  cccccc    dd                bbbb
-  eeeeeee   dddddddd           bbb
-  ffffff    dd                bbbb
+  cccccc    aa                bbbb
+  ddddddd   aaaaaaaa           bbb
+  eeeeee    aa                bbbb
 
 ---
 a text.secondary
 b text.faint
 c state.success
-d text.bright
-e state.warning
-f state.danger
+d state.warning
+e state.danger

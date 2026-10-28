@@ -7,16 +7,15 @@
 
 ---
  a aaaaaa
-  b ccccccccccccccccc ddddd
-  ddd                eeeeeee
-  f cccccccccccccccccccc
-  dddd                 ggggg
+  b aaaaaaaaaaaaaaaaa ccccc
+  ccc                ddddddd
+  e aaaaaaaaaaaaaaaaaaaa
+  cccc                 fffff
 
 ---
 a text.secondary
 b state.in-flight
-c text.bright
-d text.muted
-e state.warning
-f text.faint
-g state.info
+c text.muted
+d state.warning
+e text.faint
+f state.info

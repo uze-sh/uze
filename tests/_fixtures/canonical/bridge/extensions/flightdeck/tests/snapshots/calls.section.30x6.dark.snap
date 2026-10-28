@@ -7,13 +7,12 @@
 
 ---
  a aaaa aaaaa
-  bbbb cccccccc           dd
-  bbbb ccccccc
-  cccc ccccccc
+  aaaa bbbbbbbb           cc
+  aaaa bbbbbbb
+  bbbb bbbbbbb
 
 
 ---
 a text.secondary
-b text.bright
-c text.muted
-d text.faint
+b text.muted
+c text.faint

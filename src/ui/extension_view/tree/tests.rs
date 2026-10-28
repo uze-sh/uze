@@ -894,6 +894,49 @@ fn a_withheld_surface_says_why_inset_as_rows_are_and_answers_with_review() {
     );
 }
 
+/// A section's list reads as the sidebar's own rows: no ground, its text
+/// held back at rest, and the row under the pointer lit in its own hue.
+#[test]
+fn a_sections_list_rows_take_no_ground_and_light_under_the_pointer() {
+    let list = holding(
+        node(
+            9,
+            NodeKind::List {
+                selected: None,
+                empty: None,
+            },
+        ),
+        vec![
+            words(1, "extension view engine", Role::Default),
+            words(2, "doctor delivery", Role::Default),
+        ],
+    );
+    let second = ViewHit::Node {
+        node: 9,
+        act: NodeAct::Row(1),
+    };
+    let in_section = |hovered| TreeFrame {
+        fold: true,
+        ..TreeFrame::now(hovered)
+    };
+    let drawn = draw(&list, 30, 2, 0, in_section(Some(second)));
+    assert_eq!(
+        drawn.fg(2, 0),
+        theme::color(Token::TextSecondary),
+        "held back at rest"
+    );
+    assert_eq!(
+        drawn.fg(2, 1),
+        theme::color(Token::TextBright),
+        "lit under the pointer"
+    );
+    for row in 0..2 {
+        for x in 0..30 {
+            assert_eq!(drawn.bg(x, row), Color::Reset, "no ground at ({x}, {row})");
+        }
+    }
+}
+
 #[test]
 fn scrolling_skips_rows_from_the_top_and_hits_follow_what_is_drawn() {
     let list = holding(
