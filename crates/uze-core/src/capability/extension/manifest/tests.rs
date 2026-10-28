@@ -1046,3 +1046,34 @@ fn a_skill_is_named_as_a_plugin_names_it_and_never_as_a_harness_command() {
     decoded(&with("gsd:execute-phase"));
     decoded(&with("my_plugin:Run-2"));
 }
+
+#[test]
+fn an_icon_is_declared_in_every_glyph_set_and_never_shadows_the_hosts() {
+    let with = |rest: &str| GSD.replace("source \"board\"", &format!("{rest}\nsource \"board\""));
+    let kennel = r#"icon "kennel" nerd="\u{f0a43}" unicode="⌂" ascii="K""#;
+    let manifest = decoded(&with(kennel));
+    assert_eq!(manifest.icons[0].name, "kennel");
+    assert_eq!(manifest.icons[0].ascii, "K");
+
+    assert!(
+        first_message(&with(&kennel.replace("kennel", "clock")))
+            .contains("one of the host's icons")
+    );
+    assert!(first_message(&with(&kennel.replace(r#" ascii="K""#, ""))).contains("ascii"));
+    assert!(
+        first_message(&with(&kennel.replace(r#"nerd="\u{f0a43}""#, r#"nerd="⌂""#)))
+            .contains("`nerd` is one character of a Nerd Font's private use area")
+    );
+    assert!(
+        first_message(&with(&kennel.replace(r#"unicode="⌂""#, r#"unicode="🐕""#)))
+            .contains("`unicode` is a character drawn as text, not an emoji")
+    );
+    assert!(
+        first_message(&with(&kennel.replace(r#"ascii="K""#, r#"ascii="KEN""#)))
+            .contains("`ascii` is one or two printable ASCII characters")
+    );
+    assert!(
+        first_message(&with(&format!("{kennel}\n{kennel}")))
+            .contains("the icon `kennel` is declared twice")
+    );
+}

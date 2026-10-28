@@ -60,6 +60,7 @@ fn compiled(every: Option<Duration>, refresh_on: Vec<EventName>) -> CompiledExte
             exec: Vec::new(),
             preferences: Vec::new(),
             sprites: Vec::new(),
+            icons: Vec::new(),
         },
         views: BTreeMap::from([("band.kdl".to_owned(), view)]),
     }

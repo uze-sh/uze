@@ -1740,3 +1740,74 @@ fn a_full_line_progress_reads_as_a_line_not_a_slab() {
         "the track is quiet"
     );
 }
+
+/// The theme a glyph set makes of the default, the way `[appearance]
+/// glyphs` puts it in force.
+fn in_glyph_set(set: &str) -> uze_theme::Theme {
+    let mut layers = vec![uze_theme::default_file()];
+    layers.extend(uze_theme::glyph_set_file(set));
+    uze_theme::resolve_stack(
+        &uze_theme::Identity::from_file(set, uze_theme::default_file()),
+        &layers,
+    )
+    .expect("the bundled set resolves")
+    .theme
+}
+
+#[test]
+fn an_icon_draws_in_the_glyph_set_the_operator_chose() {
+    use uze_extensions::view::IconGlyph;
+    let kennel = || IconGlyph::Declared {
+        nerd: "\u{f0a43}".to_owned(),
+        unicode: "⌂".to_owned(),
+        ascii: "K".to_owned(),
+    };
+    let icons = || {
+        row(
+            0,
+            1,
+            Align::Start,
+            vec![
+                node(
+                    1,
+                    NodeKind::Icon {
+                        glyph: IconGlyph::Host("clock".to_owned()),
+                        role: Role::Info,
+                    },
+                ),
+                node(
+                    2,
+                    NodeKind::Icon {
+                        glyph: kennel(),
+                        role: Role::Info,
+                    },
+                ),
+                node(
+                    3,
+                    NodeKind::Icon {
+                        glyph: IconGlyph::Unknown,
+                        role: Role::Info,
+                    },
+                ),
+                words(4, "end", Role::Muted),
+            ],
+        )
+    };
+    for (set, clock, declared) in [
+        ("default", "◷", "⌂"),
+        ("nerd", "\u{f017}", "\u{f0a43}"),
+        ("ascii", "t", "K"),
+    ] {
+        uze_theme::with_active(in_glyph_set(set), || {
+            let drawn = draw(&icons(), 20, 1, 0, at(0));
+            // A name nothing knows draws no cell, and the row still keeps
+            // its gap, as it does for an empty `Text`.
+            assert_eq!(
+                drawn.rows()[0].trim_end(),
+                format!("{clock} {declared}  end"),
+                "{set}"
+            );
+            assert_eq!(drawn.fg(0, 0), color(Role::Info), "{set}");
+        });
+    }
+}

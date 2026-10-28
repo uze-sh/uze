@@ -566,6 +566,11 @@ impl Compiler<'_, '_> {
     fn text(&mut self, text: &str, entry: &KdlEntry) -> Result<Binding, (String, Option<String>)> {
         let parts = parse_text(text).map_err(|error| (error, None))?;
         for part in &parts {
+            if let TextPart::Literal(literal) = part {
+                loose_glyph(literal)?;
+            }
+        }
+        for part in &parts {
             if let TextPart::Lookup { table, .. } | TextPart::Label { table, .. } = part {
                 self.tables.push((table.clone(), entry.offset()));
             }
@@ -842,6 +847,10 @@ impl Compiler<'_, '_> {
             refuse_extra(entry, &parts, 1, &[], false, self.report);
             match parts.args.first().map(|arg| arg.value()) {
                 Some(KdlValue::String(value)) => {
+                    if let Err((message, suggestion)) = loose_glyph(value) {
+                        self.report.on(entry, message, suggestion);
+                        continue;
+                    }
                     if lookup.entries.insert(key.clone(), value.clone()).is_some() {
                         self.report.on(
                             entry,
@@ -1207,6 +1216,26 @@ fn show_error(text: &str) -> (String, String) {
         format!("`{text}` does not compare a UI value with a literal"),
         "write `show=\"ui.tab=phases\"`, or `show-any=\"ui.tab=a,ui.tab=b\"`".to_owned(),
     )
+}
+
+/// Refuses a glyph written loose in a view's own text: an icon is named
+/// with `Icon`, so the operator's glyph set decides what is drawn.
+fn loose_glyph(text: &str) -> Result<(), (String, Option<String>)> {
+    match uze_contract::icons::loose_glyph(text) {
+        None => Ok(()),
+        Some(glyph) => Err((
+            format!(
+                "`{glyph}` (U+{:04X}) is a glyph written loose: a terminal without its font, \
+                 or an operator who chose ASCII, would not draw it",
+                u32::from(glyph)
+            ),
+            Some(
+                "name it with `Icon`: one of the host's (`Icon \"clock\"`) or one the manifest \
+                 declares with `icon \"…\" nerd=… unicode=… ascii=…`"
+                    .to_owned(),
+            ),
+        )),
+    }
 }
 
 fn span_of(node: &KdlNode) -> Span {

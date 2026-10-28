@@ -1177,3 +1177,42 @@ fn a_form_holds_fields_and_names_its_action() {
         "an action is identity, never data: {interpolated}"
     );
 }
+
+#[test]
+fn an_icon_glyph_written_loose_is_refused_and_named_with_icon_instead() {
+    let loose = the_one("Text \"\u{f017} {total}\"");
+    assert!(loose.message.contains("U+F017"), "{loose:?}");
+    assert!(loose.suggestion.unwrap().contains("Icon"));
+    assert!(the_one("Text \"⏱ today\"").message.contains("U+23F1"));
+    let table = the_one("lookup \"state\" {\n    done \"🚀\"\n}\nText \"{state:phase}\"");
+    assert!(table.message.contains("glyph written loose"), "{table:?}");
+
+    view("Row {\n    Icon \"clock\" role=\"info\"\n    Text \"▶ ● ━ ↑ {total}\"\n}")
+        .expect("text marks stay text");
+}
+
+#[test]
+fn an_icon_names_the_hosts_or_one_the_manifest_declares() {
+    let manifest = |icons: &str| {
+        format!(
+            "protocol 1\nid \"board\"\nname \"Board\"\ndescription \"A board.\"\n{icons}\nsurface \"board\" slot=\"view\" view=\"board.kdl\" source=\"board\"\nsource \"board\" {{ fixture \"fixtures/board.json\"; }}\n"
+        )
+    };
+    let board = "Row {\n    Icon \"clock\"\n    Icon \"kennel\"\n    Icon \"{state}\"\n}";
+
+    let undeclared = manifest("");
+    let dir = plugin(
+        "icon-undeclared",
+        &[("board", &gsd_files(&undeclared, board))],
+    );
+    let diagnostics = compile_in(dir.path(), "board").expect_err("kennel is no icon");
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
+    assert!(
+        diagnostics[0].message.contains("there is no icon `kennel`"),
+        "{diagnostics:#?}"
+    );
+
+    let declared = manifest(r#"icon "kennel" nerd="\u{f0a43}" unicode="⌂" ascii="K""#);
+    let dir = plugin("icon-declared", &[("board", &gsd_files(&declared, board))]);
+    compile_in(dir.path(), "board").expect("a declared icon and one the data names both compile");
+}

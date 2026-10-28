@@ -67,6 +67,7 @@ fn compiled_as(slot: uze_contract::Slot, resident: bool) -> CompiledExtension {
             exec: Vec::new(),
             preferences: Vec::new(),
             sprites: Vec::new(),
+            icons: Vec::new(),
         },
         views: BTreeMap::from([("game.kdl".to_owned(), view)]),
     }

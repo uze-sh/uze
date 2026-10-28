@@ -863,6 +863,7 @@ fn leaf<'a>(
         NodeName::Field => field(builder, node, scopes, id),
         NodeName::Image => image(builder, node, scopes),
         NodeName::Sprite => sprite(builder, node, scopes, id),
+        NodeName::Icon => icon(builder, node, scopes),
         // Containers are built by `make_node`, and parts of a container by
         // their container; neither reaches here.
         _ => NodeKind::Stack { gap: 0 },
@@ -974,6 +975,31 @@ fn image<'a>(builder: &mut Builder<'a>, node: &'a Compiled, scopes: &Scopes<'a>)
         alt: builder.text_prop(node, scopes, "alt").unwrap_or_default(),
         refused,
         height,
+    }
+}
+
+/// An icon by the name its argument gives: the host's, or one the manifest
+/// declares; another name draws nothing.
+fn icon<'a>(builder: &mut Builder<'a>, node: &'a Compiled, scopes: &Scopes<'a>) -> NodeKind {
+    let named = builder
+        .arg(node, scopes, 0)
+        .map(|value| scalar_text(&value))
+        .unwrap_or_default();
+    let glyph = if uze_contract::icons::is_vocabulary(&named) {
+        view::IconGlyph::Host(named)
+    } else {
+        match builder.lookup.icons.iter().find(|icon| icon.name == named) {
+            Some(icon) => view::IconGlyph::Declared {
+                nerd: icon.nerd.clone(),
+                unicode: icon.unicode.clone(),
+                ascii: icon.ascii.clone(),
+            },
+            None => view::IconGlyph::Unknown,
+        }
+    };
+    NodeKind::Icon {
+        glyph,
+        role: builder.role_prop(node, scopes),
     }
 }
 

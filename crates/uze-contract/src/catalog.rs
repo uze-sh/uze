@@ -48,6 +48,7 @@ pub enum NodeName {
     Field,
     Form,
     Box,
+    Icon,
 }
 
 /// What a property's value must be once bound.
@@ -160,6 +161,7 @@ const PROGRESS_STYLE: PropKind = PropKind::Word(&["block", "line"]);
 /// Any node a container may hold.
 const ANY: &[NodeName] = &[
     NodeName::Box,
+    NodeName::Icon,
     NodeName::Stack,
     NodeName::Row,
     NodeName::Text,
@@ -195,6 +197,13 @@ const ANY: &[NodeName] = &[
 const CHART_KIND: PropKind = PropKind::Word(&["sparkline", "bar"]);
 
 pub const CATALOG: &[NodeSpec] = &[
+    NodeSpec {
+        name: NodeName::Icon,
+        args: &[PropKind::Text],
+        required_args: 1,
+        props: &[("role", PropKind::Role)],
+        children: None,
+    },
     NodeSpec {
         name: NodeName::Box,
         args: &[],
@@ -549,6 +558,7 @@ impl NodeName {
             Self::Field => "Field",
             Self::Form => "Form",
             Self::Box => "Box",
+            Self::Icon => "Icon",
         }
     }
 
@@ -663,6 +673,10 @@ impl NodeName {
             Self::Form => {
                 "Its `Field`s and `Select`s, and a button (`submit`) running `action` with \
                  them as `form.<id>`, cleaned like any item."
+            }
+            Self::Icon => {
+                "An icon by name, drawn in the glyph set the operator chose: one of the host's \
+                 (`clock`, `git-branch`, `check`…) or one the manifest declares with `icon`."
             }
             Self::Box => {
                 "A flex container: its children in a `direction`, `gap` apart, onto a next \

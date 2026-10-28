@@ -562,6 +562,7 @@ the language server's hover:
 - status: `Badge`, `Marks`/`Mark`, `Activity`, `Elapsed`
 - input: `Toggle`, `Button` (runs the declared action its `action` names), `Select`/`Choice`, `Field`, `Form` (values held as `ui.<id>`, a form sending `form.<id>`)
 - media: `Cells`, `Image`, `Sprite` (a grid in roles, a picture, a declared sprite)
+- icons: `Icon` (one of the host's icons by name, or one the manifest declares)
 
 Colour is always a role (`muted`, `warning`, `{tone:state}`), never a
 value. `ui.` and `context.` are scopes: a fixture field named `context`
@@ -599,6 +600,35 @@ Box direction="row" wrap=#true gap=1 {
   in `border-role` (`faint` when it names none).
 - No colour value is ever accepted: `ground="#5b5bf7"` is refused. The hue
   of a role is the theme's; an operator who wants another sets it there.
+
+### Icons: `Icon`, never a glyph
+
+An icon is named, never typed: the operator chose a glyph set (Unicode, a
+Nerd Font or ASCII) and the host draws the icon in it. A view or a lookup
+table that writes an icon glyph loose (`⏱`, `🚀`, a Nerd Font codepoint)
+is refused by the check; arrows, box drawing, `● ▶ ━` and accented text are
+text and pass.
+
+```kdl
+Row gap=1 {
+    Icon "clock" role="info"
+    Text "{total}" strong=#true
+}
+```
+
+The host's icons are listed in `docs/extensions/reference.md` (`clock`,
+`timer`, `calendar`, `check`, `cross`, `warning`, `git-branch`,
+`pull-request`, `rocket`, `bug`…). For an idea they do not hold, declare
+it in `extension.kdl` with all three spellings:
+
+```kdl
+icon "kennel" nerd="\u{f0a43}" unicode="⌂" ascii="K"
+```
+
+`nerd` is one character of a Nerd Font's private use area, `unicode` one
+character drawn as text (not an emoji), `ascii` one or two printable
+characters. A declared name may not be one of the host's. `Icon
+"{state}"` may name an icon by data: a name nothing holds draws nothing.
 
 ## Test an extension
 

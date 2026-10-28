@@ -226,6 +226,106 @@ vocabulary! {
         /// part in the bar's role and its track in a quiet one, so a full
         /// bar still reads as a measure.
         ProgressLine = "progress.line",
+        // ── icons a plugin names with `Icon` (`extension-icons`): one idea
+        // each, drawn in the glyph set the operator chose ─────────────────
+        /// Time of day, a duration, a schedule.
+        IconClock = "icon.clock",
+        /// Time running out: a countdown, an hourglass.
+        IconTimer = "icon.timer",
+        /// A day, a date, a sprint.
+        IconCalendar = "icon.calendar",
+        /// Done, passing, accepted.
+        IconCheck = "icon.check",
+        /// Failed, refused, closed.
+        IconCross = "icon.cross",
+        /// Needs attention.
+        IconWarning = "icon.warning",
+        /// A note, more to read.
+        IconInfo = "icon.info",
+        /// An error, something blocked.
+        IconError = "icon.error",
+        /// A notification, an alert.
+        IconBell = "icon.bell",
+        /// A branch.
+        IconGitBranch = "icon.git-branch",
+        /// A commit.
+        IconCommit = "icon.commit",
+        /// A merge.
+        IconMerge = "icon.merge",
+        /// A pull or merge request.
+        IconPullRequest = "icon.pull-request",
+        /// An issue, a ticket.
+        IconIssue = "icon.issue",
+        /// A tag, a label, a release.
+        IconTag = "icon.tag",
+        /// A favourite, a rating.
+        IconStar = "icon.star",
+        /// Liked, healthy.
+        IconHeart = "icon.heart",
+        /// A person.
+        IconUser = "icon.user",
+        /// A directory.
+        IconFolder = "icon.folder",
+        /// A file.
+        IconFile = "icon.file",
+        /// Locked, private, secret.
+        IconLock = "icon.lock",
+        /// A link, a reference.
+        IconLink = "icon.link",
+        /// Pulled in, received.
+        IconDownload = "icon.download",
+        /// Pushed out, sent.
+        IconUpload = "icon.upload",
+        /// Run, start.
+        IconPlay = "icon.play",
+        /// Paused, held.
+        IconPause = "icon.pause",
+        /// Stopped.
+        IconStop = "icon.stop",
+        /// Ask again, sync.
+        IconRefresh = "icon.refresh",
+        /// Find.
+        IconSearch = "icon.search",
+        /// Settings, configuration.
+        IconSettings = "icon.settings",
+        /// Home, the start.
+        IconHome = "icon.home",
+        /// A shell, a command.
+        IconTerminal = "icon.terminal",
+        /// Source code.
+        IconCode = "icon.code",
+        /// A database.
+        IconDatabase = "icon.database",
+        /// A server, a host.
+        IconServer = "icon.server",
+        /// A remote, a service.
+        IconCloud = "icon.cloud",
+        /// A bug.
+        IconBug = "icon.bug",
+        /// A deploy, a launch.
+        IconRocket = "icon.rocket",
+        /// Fast, power, an event.
+        IconBolt = "icon.bolt",
+        /// A chart, a metric.
+        IconChart = "icon.chart",
+        /// A list.
+        IconList = "icon.list",
+        /// A message, an inbox.
+        IconMail = "icon.mail",
+        /// A comment, a reply.
+        IconComment = "icon.comment",
+        /// Watched, visible.
+        IconEye = "icon.eye",
+        /// A package, a build.
+        IconPackage = "icon.package",
+        /// Protected, security.
+        IconShield = "icon.shield",
+        /// A key, a credential.
+        IconKey = "icon.key",
+        /// A processor, load.
+        IconCpu = "icon.cpu",
+        /// A meter, usage.
+        IconGauge = "icon.gauge",
         /// One of a count's done marks: three of five drawn as five pips.
         PipFilled = "pip.filled",
         /// One of a count's marks still to do.

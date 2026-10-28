@@ -211,6 +211,35 @@ pub(crate) fn softened(token: Token, into: Token) -> Color {
     )
 }
 
+/// What an extension's `Icon` draws, and the cells it takes: one of the
+/// host's resolves as every symbol does, from the active theme; one the
+/// extension declares is the spelling of the glyph set the operator chose.
+pub(crate) fn icon(glyph: &uze_extensions::view::IconGlyph) -> (String, u16) {
+    use uze_extensions::view::IconGlyph;
+    match glyph {
+        IconGlyph::Host(name) => match Symbol::from_name(&format!("icon.{name}")) {
+            Some(symbol) => (self::glyph(symbol), width(symbol)),
+            None => (String::new(), 0),
+        },
+        IconGlyph::Declared {
+            nerd,
+            unicode,
+            ascii,
+        } => {
+            let (drawn, cells) = match uze_theme::active().glyphs() {
+                uze_theme::GlyphSet::Nerd => (nerd, 1),
+                uze_theme::GlyphSet::Ascii => (ascii, ascii.len()),
+                uze_theme::GlyphSet::Unicode => (
+                    unicode,
+                    unicode_width::UnicodeWidthStr::width(unicode.as_str()),
+                ),
+            };
+            (drawn.clone(), u16::try_from(cells).unwrap_or(1))
+        }
+        IconGlyph::Unknown => (String::new(), 0),
+    }
+}
+
 /// The ink that reads on `ground`: the theme's background on a light one,
 /// its brightest text on a dark one. What a declared box's text takes on
 /// its ground, so no pair of roles can be unreadable in some theme.

@@ -1005,6 +1005,7 @@ impl DeclaredExtension {
         let lookup = media::Lookup {
             shelf: &self.media,
             sprites: &self.compiled.manifest.sprites,
+            icons: &self.compiled.manifest.icons,
             before,
             now: self.now,
         };

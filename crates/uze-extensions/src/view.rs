@@ -539,6 +539,11 @@ pub enum NodeKind {
     Stack {
         gap: u16,
     },
+    /// An icon in a role, drawn in the glyph set the operator chose.
+    Icon {
+        glyph: IconGlyph,
+        role: Role,
+    },
     /// A flex container: its children in a direction, sized, inside its
     /// padding, on a ground and within a border, every colour a role.
     Box(BoxLayout),
@@ -715,6 +720,20 @@ pub enum NodeKind {
         submit: String,
         focused: bool,
     },
+}
+
+/// What an [`NodeKind::Icon`] draws: one of the host's, by name, or one
+/// the extension declares in every glyph set; the host picks the operator's.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IconGlyph {
+    Host(String),
+    Declared {
+        nerd: String,
+        unicode: String,
+        ascii: String,
+    },
+    /// A name the data gave that is neither: drawn as nothing.
+    Unknown,
 }
 
 /// How a [`NodeKind::Box`] lays out and paints its children.

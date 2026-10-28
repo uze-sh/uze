@@ -334,6 +334,7 @@ fn sum(widths: impl IntoIterator<Item = u16>) -> u16 {
 fn natural(node: &Node) -> u16 {
     let own = match &node.kind {
         NodeKind::Box(layout) => box_natural(node, layout),
+        NodeKind::Icon { glyph, .. } => theme::icon(glyph).1,
         NodeKind::Stack { .. } => node.children.iter().map(natural).max().unwrap_or(0),
         NodeKind::Row { gap, .. } => sum(node.children.iter().map(natural))
             .saturating_add(gap.saturating_mul(cells_of(node.children.len().saturating_sub(1)))),
@@ -538,6 +539,7 @@ fn height(node: &Node, width: u16) -> usize {
                 .collect();
             rows.iter().sum::<usize>() + usize::from(*gap > 0) * rows.len().saturating_sub(1)
         }
+        NodeKind::Icon { glyph, .. } => usize::from(theme::icon(glyph).1 > 0),
         NodeKind::Rule { .. }
         | NodeKind::Entry { .. }
         | NodeKind::Gauge { .. }
@@ -1239,6 +1241,11 @@ impl Painter<'_, '_> {
         match &node.kind {
             NodeKind::Box(layout) => {
                 return self.boxed(node, layout, x, own_width(layout, width), y);
+            }
+            NodeKind::Icon { glyph, role } => {
+                let (drawn, _) = theme::icon(glyph);
+                let line = Line::from(TextSpan::styled(drawn, Style::default().fg(color(*role))));
+                self.line(y, x, width, line);
             }
             NodeKind::Stack { gap } => return self.stack(&node.children, *gap, x, width, y),
             NodeKind::Row { gap, align } => {

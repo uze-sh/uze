@@ -33,7 +33,10 @@ Stack gap=1 {
             Text "{title}" strong=#true grow=#true
             Badge "{version}" role="info"
         }
-        Text "⎇ {branch}  ·  {done} {t::of} {total} {t::phase}  ·  {percent}%" role="muted"
+        Row gap=1 {
+            Icon "git-branch" role="muted"
+            Text "{branch}  ·  {done} {t::of} {total} {t::phase}  ·  {percent}%" role="muted"
+        }
     }
 
     // Where it stands, said once and in full.

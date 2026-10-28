@@ -1543,6 +1543,1672 @@
             }
           ]
         },
+        "icon.clock": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.timer": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.calendar": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.check": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.cross": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.warning": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.info": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.error": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.bell": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.git-branch": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.commit": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.merge": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.pull-request": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.issue": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.tag": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.star": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.heart": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.user": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.folder": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.file": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.lock": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.link": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.download": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.upload": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.play": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.pause": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.stop": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.refresh": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.search": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.settings": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.home": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.terminal": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.code": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.database": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.server": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.cloud": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.bug": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.rocket": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.bolt": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.chart": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.list": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.mail": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.comment": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.eye": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.package": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.shield": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.key": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.cpu": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "icon.gauge": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "glyph": {
+                  "type": "string"
+                },
+                "frames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
         "pip.filled": {
           "oneOf": [
             {
@@ -3380,6 +5046,15 @@
           ]
         }
       }
+    },
+    "glyphs": {
+      "description": "The glyph set this file's symbols spell, when it is one: what an icon a plugin declares in every set is drawn from. Absent in every layer means `unicode`.",
+      "type": "string",
+      "enum": [
+        "unicode",
+        "nerd",
+        "ascii"
+      ]
     },
     "syntax": {
       "type": "object",

@@ -5,7 +5,7 @@
 //! array read, and there is no `Option` on the path: a surface that asked
 //! for a colour always gets one.
 
-use crate::{Rgb, Symbol, SymbolDef, Token};
+use crate::{GlyphSet, Rgb, Symbol, SymbolDef, Token};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Theme {
@@ -14,6 +14,7 @@ pub struct Theme {
     colors: Vec<Rgb>,
     symbols: Vec<SymbolDef>,
     syntax_theme: String,
+    glyphs: GlyphSet,
 }
 
 impl Theme {
@@ -27,6 +28,7 @@ impl Theme {
         colors: Vec<Rgb>,
         symbols: Vec<SymbolDef>,
         syntax_theme: String,
+        glyphs: GlyphSet,
     ) -> Self {
         debug_assert_eq!(colors.len(), Token::ALL.len());
         debug_assert_eq!(symbols.len(), Symbol::ALL.len());
@@ -36,7 +38,14 @@ impl Theme {
             colors,
             symbols,
             syntax_theme,
+            glyphs,
         }
+    }
+
+    /// The glyph set its symbols are drawn in: what an icon a plugin
+    /// declares in every set is drawn from.
+    pub fn glyphs(&self) -> GlyphSet {
+        self.glyphs
     }
 
     pub fn name(&self) -> &str {

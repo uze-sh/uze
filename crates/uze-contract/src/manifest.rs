@@ -31,6 +31,23 @@ pub struct Manifest {
     pub preferences: Vec<PreferenceDecl>,
     /// The frame sheets its `Sprite` nodes play.
     pub sprites: Vec<SpriteDecl>,
+    /// The icons its `Icon` nodes name beyond the host's own.
+    #[serde(default)]
+    pub icons: Vec<IconDecl>,
+}
+
+/// An icon an extension declares, in every glyph set the operator may
+/// choose: the host draws the one their `[appearance] glyphs` names.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct IconDecl {
+    pub name: String,
+    /// One glyph of a Nerd Font's private use area.
+    pub nerd: String,
+    /// One character of Unicode drawn as text, never as an emoji.
+    pub unicode: String,
+    /// One or two printable ASCII characters.
+    pub ascii: String,
 }
 
 /// A sheet of equal frames and the states that play them

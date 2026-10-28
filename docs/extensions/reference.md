@@ -123,6 +123,62 @@ A script answers the envelope; a program answers it or a bare value, read as its
 | `choice` | One of the values listed after its name. |
 | `secret` | Kept in the system's keychain, read only by `fetch`'s `secret` option. |
 
+## Icons
+
+| icon | for |
+|---|---|
+| `clock` | Time of day, a duration, a schedule. |
+| `timer` | Time running out: a countdown, an hourglass. |
+| `calendar` | A day, a date, a sprint. |
+| `check` | Done, passing, accepted. |
+| `cross` | Failed, refused, closed. |
+| `warning` | Needs attention. |
+| `info` | A note, more to read. |
+| `error` | An error, something blocked. |
+| `bell` | A notification, an alert. |
+| `git-branch` | A branch. |
+| `commit` | A commit. |
+| `merge` | A merge. |
+| `pull-request` | A pull or merge request. |
+| `issue` | An issue, a ticket. |
+| `tag` | A tag, a label, a release. |
+| `star` | A favourite, a rating. |
+| `heart` | Liked, healthy. |
+| `user` | A person. |
+| `folder` | A directory. |
+| `file` | A file. |
+| `lock` | Locked, private, secret. |
+| `link` | A link, a reference. |
+| `download` | Pulled in, received. |
+| `upload` | Pushed out, sent. |
+| `play` | Run, start. |
+| `pause` | Paused, held. |
+| `stop` | Stopped. |
+| `refresh` | Ask again, sync. |
+| `search` | Find. |
+| `settings` | Settings, configuration. |
+| `home` | Home, the start. |
+| `terminal` | A shell, a command. |
+| `code` | Source code. |
+| `database` | A database. |
+| `server` | A server, a host. |
+| `cloud` | A remote, a service. |
+| `bug` | A bug. |
+| `rocket` | A deploy, a launch. |
+| `bolt` | Fast, power, an event. |
+| `chart` | A chart, a metric. |
+| `list` | A list. |
+| `mail` | A message, an inbox. |
+| `comment` | A comment, a reply. |
+| `eye` | Watched, visible. |
+| `package` | A package, a build. |
+| `shield` | Protected, security. |
+| `key` | A key, a credential. |
+| `cpu` | A processor, load. |
+| `gauge` | A meter, usage. |
+
+`Icon "<name>"` draws one of these in the glyph set the operator chose. An idea they do not hold is declared in the manifest, `icon "<name>" nerd="…" unicode="…" ascii="…"`, with all three: `nerd` one character of a Nerd Font's private use area, `unicode` one character drawn as text, `ascii` one or two printable characters. A view or a lookup table that writes an icon glyph loose — from a Nerd Font, or a pictograph a terminal draws from its emoji font — is refused.
+
 ## Catalog
 
 A view names these nodes, PascalCase. A property's value is a literal, a `{field}` reference or text mixing both, except a `name`, which is a literal: identity never depends on data. In a composed answer every value is a literal.
@@ -139,11 +195,22 @@ A view names these nodes, PascalCase. A property's value is a literal, a `{field
 | `grow` | flag | Take a share of what is left of the row. | yes |
 | `min-width` | count | Never draw narrower than this many columns. | yes |
 
+### `Icon`
+
+An icon by name, drawn in the glyph set the operator chose: one of the host's (`clock`, `git-branch`, `check`…) or one the manifest declares with `icon`.
+
+- Arguments: text.
+- Holds no other node.
+
+| property | value | what |
+|---|---|---|
+| `role` | role | The semantic colour, or `{table:field}` to look one up. |
+
 ### `Box`
 
 A flex container: its children in a `direction`, `gap` apart, onto a next line when `wrap` and they do not fit, inside `padding`, on a `ground` and within a `border`, every colour a role.
 
-- Holds: `Box`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
+- Holds: `Box`, `Icon`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
 | property | value | what |
 |---|---|---|
@@ -165,7 +232,7 @@ A flex container: its children in a `direction`, `gap` apart, onto a next line w
 
 Its children one under another, `gap` rows apart.
 
-- Holds: `Box`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
+- Holds: `Box`, `Icon`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
 | property | value | what |
 |---|---|---|
@@ -175,7 +242,7 @@ Its children one under another, `gap` rows apart.
 
 Its children side by side, `gap` columns apart; `grow` children share what is left, the rest are placed by `align`.
 
-- Holds: `Box`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
+- Holds: `Box`, `Icon`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
 | property | value | what |
 |---|---|---|
@@ -261,7 +328,7 @@ One segment of a `Progress`: as wide as its `weight`, filled to its `ratio`, in 
 
 Rows repeated over `each`; with an `id`, the host holds which one is selected; `filter="ui.<id>"` keeps the rows whose fields hold what a `Field` has typed.
 
-- Holds: `Box`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
+- Holds: `Box`, `Icon`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
 | property | value | what |
 |---|---|---|
@@ -453,7 +520,7 @@ A key, drawn as the workspace draws its own keys.
 
 Its children as tiles, in as many columns as fit their `min-width`, row by row.
 
-- Holds: `Box`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
+- Holds: `Box`, `Icon`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
 | property | value | what |
 |---|---|---|
@@ -532,7 +599,7 @@ A line of text the host holds as `ui.<id>` while the operator types into it; `pl
 
 Its `Field`s and `Select`s, and a button (`submit`) running `action` with them as `form.<id>`, cleaned like any item.
 
-- Holds: `Box`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
+- Holds: `Box`, `Icon`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
 | property | value | what |
 |---|---|---|

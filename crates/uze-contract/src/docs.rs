@@ -419,6 +419,7 @@ fn manifest(id: &str, name: &str, description: &str) -> Manifest {
         exec: Vec::new(),
         preferences: Vec::new(),
         sprites: Vec::new(),
+        icons: Vec::new(),
     }
 }
 
@@ -842,8 +843,29 @@ pub fn reference() -> String {
             .iter()
             .map(|(name, doc)| vec![code(name), (*doc).to_owned()]),
     );
+    icons(&mut line);
     catalog(&mut line);
     out
+}
+
+fn icons(line: &mut impl FnMut(&str)) {
+    table(
+        line,
+        "## Icons",
+        &["icon", "for"],
+        crate::icons::ICONS
+            .iter()
+            .map(|(name, doc)| vec![code(name), (*doc).to_owned()]),
+    );
+    line(
+        "`Icon \"<name>\"` draws one of these in the glyph set the operator chose. An idea \
+         they do not hold is declared in the manifest, `icon \"<name>\" nerd=\"…\" \
+         unicode=\"…\" ascii=\"…\"`, with all three: `nerd` one character of a Nerd Font's \
+         private use area, `unicode` one character drawn as text, `ascii` one or two printable \
+         characters. A view or a lookup table that writes an icon glyph loose — from a Nerd \
+         Font, or a pictograph a terminal draws from its emoji font — is refused.",
+    );
+    line("");
 }
 
 fn catalog(line: &mut impl FnMut(&str)) {

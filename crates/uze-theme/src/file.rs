@@ -47,6 +47,22 @@ pub struct ThemeFile {
     pub symbols: BTreeMap<String, SymbolValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub syntax: Option<SyntaxSection>,
+    /// The glyph set this file draws its symbols from, when it is one:
+    /// `nerd` or `ascii`. What an icon a plugin declares in every set is
+    /// drawn from; a stack none of whose layers says is `unicode`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub glyphs: Option<GlyphSet>,
+}
+
+/// Which spelling of a glyph a theme draws: the built-in Unicode, a Nerd
+/// Font's icons, or plain ASCII.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum GlyphSet {
+    #[default]
+    Unicode,
+    Nerd,
+    Ascii,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]

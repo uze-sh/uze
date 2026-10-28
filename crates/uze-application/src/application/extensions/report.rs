@@ -711,6 +711,7 @@ mod tests {
             exec: Vec::new(),
             preferences: Vec::new(),
             sprites: Vec::new(),
+            icons: Vec::new(),
         };
         assert_eq!(band_rows(&manifest), None);
         manifest

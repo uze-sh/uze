@@ -69,6 +69,14 @@ pub fn json_schema() -> Value {
                 "additionalProperties": false,
                 "properties": symbol_properties(),
             },
+            "glyphs": {
+                "description":
+                    "The glyph set this file's symbols spell, when it is one: what \
+                     an icon a plugin declares in every set is drawn from. Absent \
+                     in every layer means `unicode`.",
+                "type": "string",
+                "enum": ["unicode", "nerd", "ascii"],
+            },
             "syntax": {
                 "type": "object",
                 "additionalProperties": false,

@@ -95,6 +95,8 @@ pub(super) struct MediaAnswer {
 pub(super) struct Lookup<'a> {
     pub shelf: &'a Shelf,
     pub sprites: &'a [SpriteDecl],
+    /// The icons it declares beyond the host's.
+    pub icons: &'a [uze_contract::IconDecl],
     /// The sprites the last build of the same surface was playing.
     pub before: Option<&'a BTreeMap<String, Playing>>,
     /// The host's clock at its last pass: when a state seen now began.

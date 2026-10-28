@@ -73,6 +73,14 @@
             "$ref": "#/$defs/SpriteDecl"
           },
           "description": "The frame sheets its `Sprite` nodes play."
+        },
+        "icons": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/IconDecl"
+          },
+          "description": "The icons its `Icon` nodes name beyond the host's own.",
+          "default": []
         }
       },
       "required": [
@@ -160,7 +168,8 @@
           ],
           "exec": [],
           "preferences": [],
-          "sprites": []
+          "sprites": [],
+          "icons": []
         },
         {
           "protocol": 1,
@@ -199,7 +208,8 @@
           "actions": [],
           "exec": [],
           "preferences": [],
-          "sprites": []
+          "sprites": [],
+          "icons": []
         },
         {
           "protocol": 1,
@@ -264,7 +274,8 @@
           ],
           "exec": [],
           "preferences": [],
-          "sprites": []
+          "sprites": [],
+          "icons": []
         },
         {
           "protocol": 1,
@@ -334,7 +345,8 @@
             }
           ],
           "preferences": [],
-          "sprites": []
+          "sprites": [],
+          "icons": []
         },
         {
           "protocol": 1,
@@ -407,7 +419,8 @@
           ],
           "exec": [],
           "preferences": [],
-          "sprites": []
+          "sprites": [],
+          "icons": []
         },
         {
           "protocol": 1,
@@ -511,7 +524,8 @@
               ],
               "fallback": "ready"
             }
-          ]
+          ],
+          "icons": []
         }
       ]
     },
@@ -1627,6 +1641,33 @@
       ],
       "description": "One animation of a sprite: frame indices into the sheet, read left to\nright and top to bottom."
     },
+    "IconDecl": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "nerd": {
+          "type": "string",
+          "description": "One glyph of a Nerd Font's private use area."
+        },
+        "unicode": {
+          "type": "string",
+          "description": "One character of Unicode drawn as text, never as an emoji."
+        },
+        "ascii": {
+          "type": "string",
+          "description": "One or two printable ASCII characters."
+        }
+      },
+      "required": [
+        "name",
+        "nerd",
+        "unicode",
+        "ascii"
+      ],
+      "description": "An icon an extension declares, in every glyph set the operator may\nchoose: the host draws the one their `[appearance] glyphs` names."
+    },
     "Envelope": {
       "type": "object",
       "properties": {
@@ -1713,6 +1754,66 @@
         "error"
       ],
       "description": "The cues an answer may ask for. The host sounds each as the\nterminal's bell."
+    },
+    "IconNode": {
+      "description": "An icon by name, drawn in the glyph set the operator chose: one of the host's (`clock`, `git-branch`, `check`…) or one the manifest declares with `icon`.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Icon"
+        },
+        "args": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          ],
+          "items": false,
+          "minItems": 1
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "role": {
+              "enum": [
+                "default",
+                "muted",
+                "secondary",
+                "bright",
+                "inactive",
+                "accent",
+                "dim",
+                "faint",
+                "info",
+                "success",
+                "warning",
+                "danger"
+              ],
+              "description": "The semantic colour, or `{table:field}` to look one up."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "args"
+      ],
+      "additionalProperties": false
     },
     "BoxNode": {
       "description": "A flex container: its children in a `direction`, `gap` apart, onto a next line when `wrap` and they do not fit, inside `padding`, on a `ground` and within a `border`, every colour a role.",
@@ -1852,6 +1953,9 @@
                 "$ref": "#/$defs/BoxNode"
               },
               {
+                "$ref": "#/$defs/IconNode"
+              },
+              {
                 "$ref": "#/$defs/StackNode"
               },
               {
@@ -1983,6 +2087,9 @@
             "anyOf": [
               {
                 "$ref": "#/$defs/BoxNode"
+              },
+              {
+                "$ref": "#/$defs/IconNode"
               },
               {
                 "$ref": "#/$defs/StackNode"
@@ -2124,6 +2231,9 @@
             "anyOf": [
               {
                 "$ref": "#/$defs/BoxNode"
+              },
+              {
+                "$ref": "#/$defs/IconNode"
               },
               {
                 "$ref": "#/$defs/StackNode"
@@ -2636,6 +2746,9 @@
             "anyOf": [
               {
                 "$ref": "#/$defs/BoxNode"
+              },
+              {
+                "$ref": "#/$defs/IconNode"
               },
               {
                 "$ref": "#/$defs/StackNode"
@@ -3714,6 +3827,9 @@
                 "$ref": "#/$defs/BoxNode"
               },
               {
+                "$ref": "#/$defs/IconNode"
+              },
+              {
                 "$ref": "#/$defs/StackNode"
               },
               {
@@ -4173,6 +4289,9 @@
                 "$ref": "#/$defs/BoxNode"
               },
               {
+                "$ref": "#/$defs/IconNode"
+              },
+              {
                 "$ref": "#/$defs/StackNode"
               },
               {
@@ -4274,6 +4393,9 @@
     "CatalogNode": {
       "description": "A node of the catalog, as a composed answer writes it: `type`, then its `args`, `props` and `children`. Every value is a literal; `{x}` in a composed tree is text.",
       "oneOf": [
+        {
+          "$ref": "#/$defs/IconNode"
+        },
         {
           "$ref": "#/$defs/BoxNode"
         },

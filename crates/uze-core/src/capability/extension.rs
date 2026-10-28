@@ -224,6 +224,12 @@ fn compile_from(
     };
     let mut views = BTreeMap::new();
     let mut view_diagnostics = Vec::new();
+    let declared_icons: Vec<&str> = decoded
+        .manifest
+        .icons
+        .iter()
+        .map(|icon| icon.name.as_str())
+        .collect();
     let mut read = BTreeSet::new();
     for (surface, (view_at, _)) in decoded
         .manifest
@@ -235,7 +241,7 @@ fn compile_from(
             continue;
         }
         match files.holds(&surface.view) {
-            Ok(()) => match compile_view(files, &surface.view) {
+            Ok(()) => match compile_view(files, &surface.view, &declared_icons) {
                 Ok(view) => {
                     views.insert(surface.view.clone(), view);
                 }
@@ -359,14 +365,52 @@ fn interpreter_is_granted(
 fn compile_view(
     files: &impl Files,
     file: &str,
+    icons: &[&str],
 ) -> Result<uze_contract::CompiledView, Vec<Diagnostic>> {
     let source = files.text(file).map_err(|refusal| vec![refusal])?;
     let mut report = Report::new(file, &source);
     let compiled =
         bounded::parse(&mut report).map(|document| view::compile(&document, file, &mut report));
+    if let Some(view) = &compiled {
+        icons_are_named(view, icons, &mut report);
+    }
     match compiled {
         Some(view) if report.diagnostics().is_empty() => Ok(view),
         _ => Err(report.into_diagnostics()),
+    }
+}
+
+/// Every `Icon` a view names by a literal is one of the host's or one the
+/// manifest declares. A name the data gives is checked as it is drawn.
+fn icons_are_named(view: &uze_contract::CompiledView, declared: &[&str], report: &mut Report<'_>) {
+    fn walk(items: &[uze_contract::Item], declared: &[&str], report: &mut Report<'_>) {
+        for item in items {
+            let uze_contract::Item::Node(node) = item else {
+                continue;
+            };
+            if node.name == uze_contract::NodeName::Icon
+                && let Some(uze_contract::binding::Binding::Literal(serde_json::Value::String(
+                    name,
+                ))) = node.args.first()
+                && !uze_contract::icons::is_vocabulary(name)
+                && !declared.contains(&name.as_str())
+            {
+                report.at(
+                    node.span.offset,
+                    format!("there is no icon `{name}`"),
+                    Some(
+                        "name one of the host's icons, or declare it in the manifest with \
+                         `icon \"…\" nerd=… unicode=… ascii=…`"
+                            .to_owned(),
+                    ),
+                );
+            }
+            walk(&node.children, declared, report);
+        }
+    }
+    walk(&view.items, declared, report);
+    for items in view.templates.values() {
+        walk(items, declared, report);
     }
 }
 

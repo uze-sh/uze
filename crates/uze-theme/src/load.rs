@@ -451,7 +451,18 @@ pub fn resolve_stack(identity: &Identity, layers: &[&ThemeFile]) -> Result<Loade
     let name = identity.name.clone().unwrap_or_else(|| id.to_owned());
     let description = identity.description.clone().unwrap_or_default();
     Ok(Loaded {
-        theme: Theme::new(name, description, colors, symbols, syntax_theme),
+        theme: Theme::new(
+            name,
+            description,
+            colors,
+            symbols,
+            syntax_theme,
+            layers
+                .iter()
+                .rev()
+                .find_map(|layer| layer.glyphs)
+                .unwrap_or_default(),
+        ),
         warnings,
     })
 }

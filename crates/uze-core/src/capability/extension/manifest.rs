@@ -12,6 +12,7 @@
 mod action;
 mod check;
 mod grants;
+mod icon;
 mod source;
 pub mod sprite;
 
@@ -38,6 +39,7 @@ const NODES: &[&str] = &[
     "exec",
     "preferences",
     "sprite",
+    "icon",
 ];
 /// What later changes of `extension-platform` add to a manifest, with
 /// the change that brings each.
@@ -128,6 +130,7 @@ pub fn decode(document: &KdlDocument, dir_id: &str, report: &mut Report<'_>) -> 
             exec: Vec::new(),
             preferences: Vec::new(),
             sprites: Vec::new(),
+            icons: Vec::new(),
         },
         surface_places: Vec::new(),
         source_places: Vec::new(),
@@ -197,6 +200,24 @@ pub fn decode(document: &KdlDocument, dir_id: &str, report: &mut Report<'_>) -> 
                     } else {
                         decoded.sprite_places.push(node.offset());
                         decoded.manifest.sprites.push(sprite);
+                    }
+                }
+            }
+            "icon" => {
+                if let Some(decl) = icon::decode(node, report) {
+                    if decoded
+                        .manifest
+                        .icons
+                        .iter()
+                        .any(|seen| seen.name == decl.name)
+                    {
+                        report.on(
+                            node,
+                            format!("the icon `{}` is declared twice", decl.name),
+                            None,
+                        );
+                    } else {
+                        decoded.manifest.icons.push(decl);
                     }
                 }
             }

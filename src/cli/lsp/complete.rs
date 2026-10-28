@@ -66,6 +66,10 @@ const MANIFEST_NODES: &[(&str, &str)] = &[
         "preferences",
         "Settings the operator edits: `preferences { number \"warn-at\" default=70 min=1 max=100; }`.",
     ),
+    (
+        "icon",
+        "An icon the host lacks, in every glyph set: `icon \"<name>\" nerd=\"…\" unicode=\"…\" ascii=\"…\"`.",
+    ),
 ];
 const SOURCE_NODES: &[(&str, &str)] = &[
     ("script", "A Rhai file whose `answer` returns the data."),
@@ -302,6 +306,10 @@ fn values(kind: FileKind, located: &Located, prop: Option<&str>, text: &str) -> 
     match (kind, located.node.as_deref(), prop) {
         (FileKind::Manifest, Some("surface"), Some("slot")) => words(Slot::NAMES),
         (FileKind::Test, Some("theme"), None) => words(&["dark", "light"]),
+        (FileKind::View, Some("Icon"), None) => uze_contract::icons::ICONS
+            .iter()
+            .map(|(name, doc)| item(name, KIND_VALUE, doc))
+            .collect(),
         (FileKind::Test, Some("expect-absent"), None) => CATALOG
             .iter()
             .map(|spec| item(spec.name.as_str(), KIND_FUNCTION, spec.name.doc()))
@@ -534,6 +542,10 @@ mod tests {
         assert!(answers.contains(&"script".to_owned()), "{answers:?}");
         let does = at_cursor(FileKind::Manifest, "action \"r\" {\n    r|", &Value::Null);
         assert!(does.contains(&"refresh".to_owned()), "{does:?}");
+        let top = at_cursor(FileKind::Manifest, "i|", &Value::Null);
+        assert!(top.contains(&"icon".to_owned()), "{top:?}");
+        let icons = at_cursor(FileKind::View, "Icon \"|", &Value::Null);
+        assert!(icons.contains(&"git-branch".to_owned()), "{icons:?}");
     }
 
     #[test]
