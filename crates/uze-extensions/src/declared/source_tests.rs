@@ -342,6 +342,56 @@ fn round(engine: &mut DeclaredExtension, round: usize) -> Vec<serde_json::Value>
 }
 
 #[test]
+fn a_filter_typed_over_the_selected_row_feeds_the_input_the_item_now_there() {
+    let view = compiled_view(
+        vec![
+            n(NodeName::Field)
+                .arg("Filter")
+                .literal("id", json!("query"))
+                .item(),
+            n(NodeName::List)
+                .literal("id", json!("rows"))
+                .each("rows")
+                .literal("filter", json!("ui.query"))
+                .child(n(NodeName::Text).arg("{name}"))
+                .item(),
+        ],
+        Vec::new(),
+        Vec::new(),
+    );
+    let mut compiled = extension(view);
+    compiled.manifest.sources[0].input = [("pick".to_owned(), "{item.name}".to_owned())]
+        .into_iter()
+        .collect();
+    let mut engine = DeclaredExtension::new(compiled, "en");
+    engine.open(VIEW, &checkout("/work/a"));
+    round(&mut engine, 1);
+    let list = super::tests::first(&tree(&engine), |kind| matches!(kind, NodeKind::List { .. }));
+    engine.hit(
+        VIEW,
+        super::tests::act(list.id, crate::view::NodeAct::Row(0)),
+        super::tests::SPACE,
+    );
+    assert_eq!(round(&mut engine, 2), [json!({ "pick": "r1-a" })]);
+    let field = super::tests::first(&tree(&engine), |kind| {
+        matches!(kind, NodeKind::Field { .. })
+    });
+    engine.hit(
+        VIEW,
+        super::tests::act(field.id, crate::view::NodeAct::Edit),
+        super::tests::SPACE,
+    );
+    for character in "-b".chars() {
+        engine.command(VIEW, Command::Type(character), super::tests::SPACE);
+    }
+    assert_eq!(
+        round(&mut engine, 3),
+        [json!({ "pick": "r2-b" })],
+        "the filter put another item under the selection"
+    );
+}
+
+#[test]
 fn an_input_reading_its_own_lists_selection_is_not_fed_its_next_answer() {
     let view = compiled_view(
         vec![

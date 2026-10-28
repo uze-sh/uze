@@ -97,6 +97,15 @@ pub struct RecordedAction {
     pub declared: bool,
 }
 
+/// The item a surface's selection stood on when it was taken, and what
+/// it was taken under: a change of either takes it again.
+#[derive(Clone, Debug)]
+struct Chosen {
+    row: usize,
+    gestures: BTreeMap<String, String>,
+    item: serde_json::Value,
+}
+
 pub struct DeclaredExtension {
     compiled: CompiledExtension,
     /// Bumped by [`DeclaredExtension::replace`], so a build of the old
@@ -165,7 +174,7 @@ pub struct DeclaredExtension {
     /// The row selected in each surface's first list and its item as it was
     /// drawn when the operator chose it: what a source's input reads, so
     /// an answer renaming that row never feeds the next question.
-    chosen: BTreeMap<String, (usize, serde_json::Value)>,
+    chosen: BTreeMap<String, Chosen>,
     /// `ui.<id>` values, by surface then id.
     ui: BTreeMap<String, BTreeMap<String, String>>,
     /// The first row shown, by surface.
@@ -428,7 +437,7 @@ impl DeclaredExtension {
         let chosen = self
             .chosen
             .get(surface)
-            .map(|(_, item)| item.clone())
+            .map(|chosen| chosen.item.clone())
             .unwrap_or_default();
         let item = action::template_scope(&chosen);
         serde_json::Value::Object(
@@ -509,8 +518,9 @@ impl DeclaredExtension {
     }
 
     /// Takes the item of the row selected in `surface`'s first list when
-    /// the selection moved to another row since it was last taken, never
-    /// because an answer redrew the row under it: a source reading the
+    /// the selection moved to another row, or a gesture (a filter typed, a
+    /// choice) may have put another item under it, since it was last taken;
+    /// never because an answer redrew the row under it: a source reading the
     /// selection of its own list would otherwise ask again on each of its
     /// answers. Rows still answered about another checkout give none.
     fn capture_selection(&mut self, surface: &str) {
@@ -529,9 +539,18 @@ impl DeclaredExtension {
             self.chosen.remove(surface);
             return;
         };
-        if self.chosen.get(surface).map(|(at, _)| *at) != Some(row) {
+        let gestures = self.ui.get(surface).cloned().unwrap_or_default();
+        let taken = self.chosen.get(surface);
+        if taken.is_none_or(|chosen| chosen.row != row || chosen.gestures != gestures) {
             let item = items.get(row).cloned().unwrap_or_default();
-            self.chosen.insert(surface.to_owned(), (row, item));
+            self.chosen.insert(
+                surface.to_owned(),
+                Chosen {
+                    row,
+                    gestures,
+                    item,
+                },
+            );
         }
     }
 
