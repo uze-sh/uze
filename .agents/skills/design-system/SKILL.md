@@ -159,6 +159,12 @@ on "cancel" must not save first.
 - One modifier per family: extensions all use `alt`.
 - Keyboard users must never lose a path.
 
+**What is UZE's and what is a plugin's:**
+- The tab strip holds UZE's own surfaces only. Everything a plugin adds
+  (the doors to its views and drawers, the items it draws) stands in the
+  bar under the agent area, the tab strip's mirror at the content column's
+  foot, which takes its rows only while a plugin puts something there.
+
 **Confirmation:**
 - A destructive action is confirmed in a centred dialog with a scrim and
   Confirm/Cancel buttons, chosen with the arrows and Enter. Never an
@@ -388,7 +394,11 @@ Use the `src/progress.rs` helpers and never hand-format:
   reads `Verified`, never `Verified (Update)`, which reads as an update
   waiting beside a version.
 - Use the present tense for actions ("send", "install"), lowercase labels,
-  and punctuate status words the same way everywhere.
+  and punctuate status words the same way everywhere. A plugin's clickable
+  controls follow the core: its buttons, tabs, switches, a form's submit and
+  the doors to its surfaces are drawn lowercase by the host, whatever the
+  plugin wrote. Everything else it draws (text, headings, badges, a
+  choice's value, its data) keeps the case the plugin gave it.
 - "uze" is lowercase, and a sentence shouldn't start with it.
 - Don't claim more than the product does, and don't repeat a claim
   everywhere.

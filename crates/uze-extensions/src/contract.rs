@@ -32,6 +32,8 @@ pub enum SurfaceSlot {
     Band { rows: u8, bottom: bool },
     /// A modal card over the frame, opened by a gesture.
     Overlay,
+    /// One item of the bar under the agent area, on its `right` or left.
+    Bar { right: bool },
 }
 
 /// One surface an extension offers.
@@ -41,6 +43,9 @@ pub struct SurfaceInfo {
     pub id: String,
     pub slot: SurfaceSlot,
     pub title: String,
+    /// The surface of the same extension a click on it opens: a bar
+    /// item's, `None` for every other slot.
+    pub opens: Option<String>,
 }
 
 /// What the host does once an extension has answered a gesture.

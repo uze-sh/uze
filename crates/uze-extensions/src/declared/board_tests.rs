@@ -216,7 +216,7 @@ fn the_board_is_drawn_from_its_fixture() {
             .collect(),
         other => panic!("{other:?}"),
     };
-    assert_eq!(tabs, [("Fases".into(), true), ("Log".into(), false)]);
+    assert_eq!(tabs, [("fases".into(), true), ("log".into(), false)]);
     assert_eq!(
         header.children[4].kind,
         NodeKind::Button {

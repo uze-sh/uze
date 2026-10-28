@@ -1137,6 +1137,7 @@ impl Extension for DeclaredExtension {
             .surfaces
             .iter()
             .map(|surface| SurfaceInfo {
+                opens: surface.bar.as_ref().and_then(|bar| bar.opens.clone()),
                 id: surface.id.clone(),
                 slot: match surface.slot {
                     uze_contract::Slot::View => SurfaceSlot::View,
@@ -1150,6 +1151,12 @@ impl Extension for DeclaredExtension {
                             .is_some_and(|band| band.place == uze_contract::BandPlace::Bottom),
                     },
                     uze_contract::Slot::Overlay => SurfaceSlot::Overlay,
+                    uze_contract::Slot::Bar => SurfaceSlot::Bar {
+                        right: surface
+                            .bar
+                            .as_ref()
+                            .is_some_and(|bar| bar.align == uze_contract::BarAlign::Right),
+                    },
                 },
                 title: self.title(surface),
             })

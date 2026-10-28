@@ -49,6 +49,8 @@ const SURFACE_PROPS: &[&str] = &[
     "title",
     "rows",
     "place",
+    "align",
+    "opens",
     "applies-when",
 ];
 
@@ -419,6 +421,7 @@ fn surface(node: &KdlNode, report: &mut Report<'_>) -> Option<(SurfaceDecl, (usi
     let view = view.filter(|(view, offset)| relative_file(view, "kdl", *offset, report));
     let source = source.filter(|(source, offset)| referred_id(source, "source", *offset, report));
     let band = band(node, &parts, slot?, report);
+    let bar = bar(&parts, slot?, report);
     let ((view, view_at), (source, source_at)) = (view?, source?);
     Some((
         SurfaceDecl {
@@ -428,10 +431,53 @@ fn surface(node: &KdlNode, report: &mut Report<'_>) -> Option<(SurfaceDecl, (usi
             source,
             title: title.map(|title| Clean::label(&title).into_string()),
             band: band?,
+            bar: bar?,
             applies_when: applies_when?,
         },
         (view_at, source_at),
     ))
+}
+
+/// A bar item's `align=` (`left`, the default, or `right`) and `opens=`,
+/// the surface a click on it opens, checked once every surface is read;
+/// refused on any other slot. `Some(None)` for a surface that is no bar.
+fn bar(
+    parts: &super::document::Entries<'_>,
+    slot: Slot,
+    report: &mut Report<'_>,
+) -> Option<Option<uze_contract::BarDecl>> {
+    let align = prop(parts, "align");
+    let opens = prop(parts, "opens");
+    if slot != Slot::Bar {
+        for entry in [align, opens].into_iter().flatten() {
+            report.on(
+                entry,
+                "only a bar item takes `align` and `opens`",
+                Some("remove it, or write `slot=\"bar\"`".to_owned()),
+            );
+        }
+        return Some(None);
+    }
+    let align = match align {
+        None => uze_contract::BarAlign::Left,
+        Some(entry) => {
+            let written = string_prop("align", entry, report)?;
+            let Some(align) = uze_contract::BarAlign::parse(&written) else {
+                report.on(
+                    entry,
+                    format!("a bar item is aligned `left` or `right`, not `{written}`"),
+                    None,
+                );
+                return None;
+            };
+            align
+        }
+    };
+    let opens = match opens {
+        None => None,
+        Some(entry) => Some(string_prop("opens", entry, report)?),
+    };
+    Some(Some(uze_contract::BarDecl { align, opens }))
 }
 
 /// A band's `rows=` (1 to 6) and `place=` (`top` or `bottom`); refused on

@@ -161,26 +161,9 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
         // covers. Said by the ground, not by the word's hue or weight.
         // In the order a change is read: what it intends, what it was
         // described as, and what it is.
-        // A plugin's views lead the group, so the built-ins keep the
-        // places at its end the eye already learned.
-        let declared = model.declared_views().map(|slot| GroupButton {
-            hit: WorkspaceHit::OpenDeclared(slot.id),
-            label: text::elide(&slot.surface.title, DECLARED_LABEL),
-            hue: theme::color(Token::TextSecondary),
-            strong: false,
-            lit: model.open_slot == Some(slot.id),
-            switch: true,
-        });
-        // Its drawers beside them: lit while one stands docked by the
-        // pane, which it shares the frame with rather than replacing.
-        let drawers = model.declared_drawers().map(|slot| GroupButton {
-            hit: WorkspaceHit::ToggleDrawer(slot.id),
-            label: text::elide(&slot.surface.title, DECLARED_LABEL),
-            hue: theme::color(Token::TextSecondary),
-            strong: false,
-            lit: model.open_drawer() == Some(slot.id),
-            switch: true,
-        });
+        // UZE's own surfaces only: a plugin's views and drawers have their
+        // doors in the bar under the agent area (`render_bar`), so nothing
+        // a plugin adds reads as part of the product.
         let built_in = [
             (
                 spec::CATALOG.id,
@@ -217,7 +200,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
             lit: open,
             switch: true,
         });
-        let buttons: Vec<GroupButton> = declared.chain(drawers).chain(built_in).collect();
+        let buttons: Vec<GroupButton> = built_in.collect();
         if !buttons.is_empty() {
             let width = group_width(&buttons);
             let rect = Rect::new(trailing_right.saturating_sub(width), inner.y, width, 1);
@@ -649,10 +632,6 @@ fn render_agent_tabs(
 /// and plain Unicode has no sign for any of them, so what a set without
 /// icons can offer is a box or an arrow that means nothing here. The word
 /// already says it; the glyph joins it only where there is a real one.
-/// The most a plugin's view's name takes of the strip: the tabs' room
-/// comes before the buttons', and a title is the plugin's to make long.
-const DECLARED_LABEL: usize = 12;
-
 pub(super) fn surface_label(symbol: Symbol, name: &str) -> String {
     match theme::glyph(symbol) {
         glyph if glyph.is_empty() => name.to_string(),
@@ -717,9 +696,9 @@ pub(super) fn group_width(buttons: &[GroupButton]) -> u16 {
 /// end in a rect of its own, the other appends it to the single line the
 /// tab side is already building.
 ///
-/// Local to this screen, not in `src/ui/widget/`, by that module's own
-/// threshold: the second *file* is what moves a helper into the
-/// vocabulary, and both groups are drawn by this function's own caller.
+/// Local to the workspace's two strips (the tab strip and the bar under
+/// the agent area), not in `src/ui/widget/`: both are this screen's, drawn
+/// by the same module.
 pub(super) fn button_group(
     model: &WorkspaceModel,
     buttons: &[GroupButton],

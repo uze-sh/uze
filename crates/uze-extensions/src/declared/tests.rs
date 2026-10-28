@@ -145,6 +145,7 @@ pub(super) fn compiled_view(
 pub(super) fn extension(view: CompiledView) -> CompiledExtension {
     let surface = |id: &str, slot| SurfaceDecl {
         band: None,
+        bar: None,
         id: id.to_owned(),
         slot,
         view: "board.kdl".to_owned(),
@@ -376,7 +377,7 @@ fn show_compares_a_ui_value_and_the_first_tab_is_the_default() {
     assert_eq!(
         tabs.kind,
         NodeKind::Tabs {
-            tabs: vec![tab("Fases", true), tab("Log", false)]
+            tabs: vec![tab("fases", true), tab("log", false)]
         }
     );
 

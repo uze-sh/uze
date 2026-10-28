@@ -27,6 +27,7 @@ impl WorkspaceModel {
                     _ => None,
                 })
                 .collect(),
+            bar: self.has_bar(),
         }
     }
 

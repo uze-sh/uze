@@ -52,12 +52,20 @@ action "copy" label="Copy" on="board" key="ctrl-y" confirm="Copy {text}?" {
 
   | slot | where |
   |---|---|
-  | `view` | the full frame, opened from the tab strip |
+  | `view` | the full frame, opened from its door in the bar under the agent area |
   | `section` | a block of the sidebar |
-  | `drawer` | a panel beside the agent's pane |
+  | `drawer` | a panel beside the agent's pane, opened from its door in the bar |
   | `status` | one row of the sidebar's header, folded to it |
   | `band` | `rows=1`…`6` along the `place="top"` (or `"bottom"`) of each agent's pane, taken before the pane is sized, so no answer resizes the agent |
   | `overlay` | a card over the frame, opened by an `open` action, closed by Esc |
+  | `bar` | one line in the bar under the agent area, `align="left"` (the default) or `"right"`, folded to at most 32 cells; a click opens the view or drawer `opens="<surface>"` names |
+
+  The bar is where everything a plugin adds stands, apart from UZE's own
+  tab strip: the doors to its views and drawers on the left, then its
+  items, in the order extensions were found. What is clicked is drawn
+  lowercase, as UZE's own controls are (`Button`, `Tab`, `Toggle`, a form's
+  submit, a door), whatever the manifest or view writes, and a test's
+  `click` finds it in either case. Everything else keeps your case.
 - **`source "<id>" { … }`**: exactly one of `script "x.rhai"` or
   `fixture "fixtures/x.json"`. `input name="<template>" …` is what the
   script is asked with, text only. `every "<n>s|m|h"` asks again on a

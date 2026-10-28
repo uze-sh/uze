@@ -1,7 +1,7 @@
 test "the band names the next phase and runs it" {
     surface "next"
     size 70 1
-    expect-text "Run phase 12"
+    expect-text "run phase 12"
     snapshot "next"
 }
 

@@ -312,7 +312,7 @@ scenes:
         expect: demo-app
         expect_timeout: 20
         pause: 1.0
-      # The strip's surfaces are about a project, so an agent stands in
+      # The bar's doors are about a project, so an agent stands in
       # front first: the board opens on the checkout it works in.
       - click: "new"
         say: open the new-agent popup from the space's row
@@ -323,9 +323,9 @@ scenes:
         expect: 'agent 1(?!: preparing)'
         expect_timeout: 90
         pause: 1.5
-      - click: "Milestone"
-        say: open the extension's board from the tab strip
-        in: strip
+      - click: "milestone"
+        say: open the extension's board from the bar under the agent area
+        in: bar
         expect: "gsd-band · gsd@studio"
         expect_timeout: 20
       - wait: screen
@@ -347,7 +347,7 @@ scenes:
 
   - scene: and then switching a tab draws the log and touches nothing
     when:
-      - click: "Activity"
+      - click: "activity"
         say: switch the board to its log
         in: pane
         occurrence: first

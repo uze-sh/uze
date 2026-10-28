@@ -300,7 +300,7 @@ fn a_form_is_drawn_with_its_button() {
     assert_eq!(
         form.kind,
         NodeKind::Form {
-            submit: "Comment".into(),
+            submit: "comment".into(),
             focused: false,
         }
     );

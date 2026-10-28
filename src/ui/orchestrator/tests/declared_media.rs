@@ -57,6 +57,7 @@ fn compiled() -> CompiledExtension {
     };
     let surface = |id: &str, slot| uze_contract::SurfaceDecl {
         band: None,
+        bar: None,
         id: id.to_owned(),
         slot,
         view: "board.kdl".to_owned(),

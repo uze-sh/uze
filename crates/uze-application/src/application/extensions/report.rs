@@ -690,6 +690,7 @@ mod tests {
             source: "s".to_owned(),
             title: None,
             band,
+            bar: None,
             applies_when: None,
         };
         let band = |rows| {

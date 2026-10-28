@@ -31,6 +31,8 @@ pub struct DeclaredExtensionSummary {
     pub bands: Vec<(String, u8)>,
     /// The titles of the overlays it opens over the frame.
     pub overlays: Vec<String>,
+    /// The titles of the items it puts in the bar under the agent area.
+    pub bars: Vec<String>,
     /// What its last compile said was wrong, one problem a line. Empty
     /// when it compiled.
     pub errors: Vec<String>,
@@ -68,6 +70,7 @@ fn summarize(
         statuses: Vec::new(),
         bands: Vec::new(),
         overlays: Vec::new(),
+        bars: Vec::new(),
         errors: Vec::new(),
     };
     match compiled {
@@ -88,6 +91,7 @@ fn summarize(
                         .bands
                         .push((title, surface.band.map_or(1, |band| band.rows))),
                     Slot::Overlay => summary.overlays.push(title),
+                    Slot::Bar => summary.bars.push(title),
                 }
             }
         }
@@ -124,6 +128,7 @@ mod tests {
     fn a_compiled_extension_says_what_it_offers() {
         let surface = |id: &str, slot, title: Option<&str>| uze_contract::SurfaceDecl {
             band: None,
+            bar: None,
             id: id.to_owned(),
             slot,
             view: format!("{id}.kdl"),

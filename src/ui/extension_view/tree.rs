@@ -236,6 +236,12 @@ pub(super) fn render_tree_content(
 
 /// The rows `root` takes at `width`, for a host reserving a section's
 /// room before it draws it.
+/// The cells a tree asks for when nothing tells it otherwise: what an item
+/// of the bar takes of it.
+pub(crate) fn tree_width(root: &Node) -> u16 {
+    natural(root)
+}
+
 pub(crate) fn tree_height(root: &Node, width: u16) -> u16 {
     u16::try_from(height(root, width)).unwrap_or(u16::MAX)
 }

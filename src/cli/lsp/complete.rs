@@ -526,7 +526,9 @@ mod tests {
         let slots = at_cursor(FileKind::Manifest, "surface \"b\" slot=\"|", &Value::Null);
         assert_eq!(
             slots,
-            ["view", "section", "drawer", "status", "band", "overlay"]
+            [
+                "view", "section", "drawer", "status", "band", "overlay", "bar"
+            ]
         );
         let answers = at_cursor(FileKind::Manifest, "source \"b\" {\n    s|", &Value::Null);
         assert!(answers.contains(&"script".to_owned()), "{answers:?}");

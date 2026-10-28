@@ -108,7 +108,7 @@ scenes:
         expect: "extension enabled"
         expect_timeout: 10
       - wait: screen
-        until: 'v1\.2 +12 · Consulta de dados +Run phase 12'
+        until: 'v1\.2 +12 · Consulta de dados +run phase 12'
         in: pane
         timeout: 20
         say: the band under the agent names the next phase and offers to run it
@@ -129,7 +129,7 @@ scenes:
 
   - scene: and then the operator presses Run phase 12, reads the skill it types, and allows it, and the agent receives it
     when:
-      - click: "Run phase 12"
+      - click: "run phase 12"
         say: press the band's button
         in: pane
         expect: "Type this into agent 1"

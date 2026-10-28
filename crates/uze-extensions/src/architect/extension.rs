@@ -65,6 +65,7 @@ impl Extension for ArchitectExtension {
 
     fn surfaces(&self) -> Vec<SurfaceInfo> {
         vec![SurfaceInfo {
+            opens: None,
             id: SURFACE.to_owned(),
             slot: SurfaceSlot::View,
             title: CATALOG.name.to_owned(),

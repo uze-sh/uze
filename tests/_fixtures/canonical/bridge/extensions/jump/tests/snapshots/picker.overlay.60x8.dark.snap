@@ -1,8 +1,8 @@
 # uze snapshot · protocol 1 · overlay 60x8 · dark
  jump · bridge@local
 
-   fix/branch-naming                          uze    Go
-   docs/extension-skill                      site    Go
+   fix/branch-naming                          uze    go
+   docs/extension-skill                      site    go
 
 
 

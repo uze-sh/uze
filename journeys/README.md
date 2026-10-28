@@ -191,7 +191,7 @@ scenes:
 | `kill` | ends every process of the world whose command line matches the pattern, at once and without asking, as a reboot does, and waits until they are gone |
 | `wait` | `screen` / `file` / `shell` with `until:` and a `timeout:` |
 
-Aiming a click: `in:` bands the search (`strip`, `sidebar`, `pane`),
+Aiming a click: `in:` bands the search (`strip`, `bar`, `sidebar`, `pane`),
 `occurrence:` picks among hits (`first`, `last`, or an index), `glyph:` aims
 at any character in a set, and `offset:` / `row_offset:` move from the hit —
 which is how you click a menu row by its popup's title instead of by text the

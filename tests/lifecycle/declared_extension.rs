@@ -224,11 +224,15 @@ fn the_gsd_band_is_found_in_the_working_tree_compiled_once_and_drawn_from_its_fi
             _ => None,
         })
         .expect("the tabs");
-    assert_eq!(tabs, [("Phases".into(), true), ("Activity".into(), false)]);
+    assert_eq!(
+        tabs,
+        [("phases".into(), true), ("activity".into(), false)],
+        "a control's label is drawn lowercase"
+    );
     assert!(
         all.iter().any(|node| matches!(
             &node.kind,
-            NodeKind::Button { label } if label == "Run phase 12"
+            NodeKind::Button { label } if label == "run phase 12"
         )),
         "the next step, labelled in the operator's locale"
     );

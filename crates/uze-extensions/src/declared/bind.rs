@@ -787,7 +787,7 @@ fn leaf<'a>(
             };
             builder.acts.insert(id, Act::Toggle { key, on });
             NodeKind::Toggle {
-                label: builder.label(node, scopes),
+                label: control_label(builder.label(node, scopes)),
                 on,
             }
         }
@@ -799,7 +799,7 @@ fn leaf<'a>(
                 .unwrap_or(Value::Null);
             builder.acts.insert(id, Act::Button { action, item });
             NodeKind::Button {
-                label: builder.label(node, scopes),
+                label: control_label(builder.label(node, scopes)),
             }
         }
         NodeName::Activity => NodeKind::Activity {
@@ -1193,7 +1193,7 @@ fn tabs<'a>(
         .iter()
         .enumerate()
         .map(|(at, (label, _))| Tab {
-            label: label.clone(),
+            label: control_label(label.clone()),
             active: at == active,
         })
         .collect();
@@ -1339,7 +1339,14 @@ fn field<'a>(
 }
 
 /// The word a form's button says when it names none.
-const SUBMIT: &str = "Send";
+const SUBMIT: &str = "send";
+
+/// A control's label as the host draws it: lowercase, as every button,
+/// tab and switch UZE draws is, whatever the extension wrote. Only what is
+/// drawn: a tab's value, when it names none, stays the label as written.
+fn control_label(label: String) -> String {
+    label.to_lowercase()
+}
 
 /// A form: its own button, which sends `fields` to its `action`.
 fn form<'a>(
@@ -1368,6 +1375,7 @@ fn form<'a>(
         submit: builder
             .text_prop(node, scopes, "submit")
             .filter(|said| !said.is_empty())
+            .map(control_label)
             .unwrap_or_else(|| SUBMIT.to_owned()),
         focused,
     }

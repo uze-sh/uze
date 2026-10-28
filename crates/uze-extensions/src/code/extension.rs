@@ -450,11 +450,13 @@ impl Extension for CodeExtension {
     fn surfaces(&self) -> Vec<SurfaceInfo> {
         vec![
             SurfaceInfo {
+                opens: None,
                 id: SURFACE.to_owned(),
                 slot: SurfaceSlot::View,
                 title: CATALOG.name.to_owned(),
             },
             SurfaceInfo {
+                opens: None,
                 id: TIMELINE.to_owned(),
                 slot: SurfaceSlot::Section,
                 title: TIMELINE.to_owned(),

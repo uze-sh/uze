@@ -43,6 +43,7 @@ fn compiled(wants: Vec<uze_contract::Grant>) -> CompiledExtension {
             description: String::new(),
             surfaces: vec![uze_contract::SurfaceDecl {
                 band: None,
+                bar: None,
                 id: "meter".to_owned(),
                 slot: uze_contract::Slot::Section,
                 view: "meter.kdl".to_owned(),

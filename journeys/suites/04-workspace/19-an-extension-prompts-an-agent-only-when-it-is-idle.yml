@@ -253,7 +253,7 @@ scenes:
         in: pane
         timeout: 10
         say: its row says the agent works
-      - click: "Ask"
+      - click: "ask"
         say: press the row's Ask
         in: pane
         expect: "Type this into agent 1"
@@ -278,7 +278,7 @@ scenes:
         in: pane
         timeout: 60
         say: the flight deck says the agent is ready
-      - click: "Ask"
+      - click: "ask"
         say: press the row's Ask again
         in: pane
         expect: "Type this into agent 1"

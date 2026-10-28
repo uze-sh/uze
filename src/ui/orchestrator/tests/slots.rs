@@ -150,6 +150,7 @@ fn surface(id: &str, slot: uze_contract::Slot) -> uze_contract::SurfaceDecl {
             rows: 2,
             place: uze_contract::BandPlace::Top,
         }),
+        bar: (slot == uze_contract::Slot::Bar).then_some(uze_contract::BarDecl::default()),
         id: id.to_owned(),
         slot,
         view: format!("{id}.kdl"),
@@ -322,9 +323,14 @@ fn the_status_rows_follow_the_operators_order_and_discovery_without_one() {
     );
 }
 
-/// The pane of the agent in front, with nothing drawn over it.
+/// The pane of the agent in front, with no band over it: under the same
+/// bar, which stands for what is installed, never for what answers.
 fn unbanded(model: &WorkspaceModel) -> ratatui::layout::Rect {
-    super::compute_layout(ROOMY, model.sidebar_width, Default::default()).pane
+    let reserved = super::render::Reserved {
+        bar: model.has_bar(),
+        ..Default::default()
+    };
+    super::compute_layout(ROOMY, model.sidebar_width, reserved).pane
 }
 
 #[test]
@@ -596,4 +602,89 @@ fn an_overlay_card_keeps_its_least_room_on_a_small_frame() {
         tiny,
         "never past the frame"
     );
+}
+
+/// A plugin's view and drawer as `notes` declares them, with an item of the
+/// bar on `align`'s side that opens the drawer.
+fn hosting_a_bar(align: uze_contract::BarAlign) -> WorkspaceModel {
+    let mut item = surface("today", uze_contract::Slot::Bar);
+    item.bar = Some(uze_contract::BarDecl {
+        align,
+        opens: Some("panel".to_owned()),
+    });
+    let mut panel = surface("panel", uze_contract::Slot::Drawer);
+    panel.title = Some("Timesheet".to_owned());
+    hosting(vec![compiled(
+        "notes",
+        vec![surface("board", uze_contract::Slot::View), panel, item],
+    )])
+}
+
+fn bar_row(model: &mut WorkspaceModel) -> String {
+    let at = layout(model).bar.expect("the bar stands");
+    let rows = frame_rows_at(model, ROOMY);
+    rows[usize::from(at.y + 1)].clone()
+}
+
+#[test]
+fn a_plugins_doors_stand_in_the_bar_lowercase_and_never_in_the_tab_strip() {
+    let mut model = hosting_a_bar(uze_contract::BarAlign::Left);
+    let strip = frame_rows_at(&mut model, ROOMY)[0].clone();
+    assert!(
+        !strip.contains("board") && !strip.contains("imesheet"),
+        "{strip}"
+    );
+    assert!(strip.contains("spec"), "UZE's own stay: {strip}");
+    let bar = bar_row(&mut model);
+    assert!(bar.contains("board") && bar.contains("timesheet"), "{bar}");
+    assert!(!bar.contains("Timesheet"), "drawn lowercase: {bar}");
+}
+
+#[test]
+fn an_item_stands_on_its_side_and_a_click_opens_what_it_names() {
+    let mut model = hosting_a_bar(uze_contract::BarAlign::Right);
+    answers(&mut model, "notes", "6h12 today");
+    let bar = bar_row(&mut model);
+    let item = bar
+        .find("6h12 today")
+        .unwrap_or_else(|| panic!("the item is drawn: {bar}"));
+    assert!(
+        item > bar.find("timesheet").unwrap(),
+        "right of the doors: {bar}"
+    );
+    assert!(
+        bar[item..].trim_end().ends_with("today"),
+        "against the bar's right end: {bar}"
+    );
+    let drawer = slot_of(&model, "panel");
+    let column = u16::try_from(bar[..item].chars().count()).unwrap();
+    let row = layout(&model).bar.unwrap().y + 1;
+    let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("bar-item"));
+    let mut driven = driven(model, &home);
+    driven.area = ROOMY;
+    driven.frame();
+    assert_eq!(driven.attach.model.open_drawer(), None);
+    driven.press(column + 1, row);
+    assert_eq!(
+        driven.attach.model.open_drawer(),
+        Some(drawer),
+        "the item opens the drawer it names"
+    );
+}
+
+#[test]
+fn without_a_plugin_in_it_the_bar_takes_no_row() {
+    let mut model = hosting(vec![compiled(
+        "notes",
+        vec![surface("meter", uze_contract::Slot::Status)],
+    )]);
+    assert!(!model.has_bar());
+    assert_eq!(layout(&model).bar, None);
+    let with_one = hosting_a_bar(uze_contract::BarAlign::Left);
+    assert_eq!(
+        layout(&with_one).pane.height + 2,
+        layout(&model).pane.height,
+        "the bar's hairline and row"
+    );
+    let _ = frame_rows_at(&mut model, ROOMY);
 }

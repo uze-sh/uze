@@ -211,7 +211,7 @@ scenes:
 
   - scene: and then Feed feeds the pet, which is kept in the store and makes it content
     when:
-      - click: "Feed"
+      - click: "feed"
         say: press the section's button
         in: sidebar
         expect: "content, fed 1"

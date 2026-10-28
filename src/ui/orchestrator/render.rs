@@ -13,6 +13,7 @@ use crate::ui::widget::{
     TRAILING_PAD, action_index, chip, mark, row, text,
 };
 
+mod bar;
 mod declared;
 mod pane;
 mod popups;
@@ -21,6 +22,7 @@ mod sidebar;
 mod space_overview;
 mod tab_strip;
 
+use bar::*;
 #[cfg(test)]
 pub(super) use declared::overlay_card;
 use declared::*;
@@ -65,6 +67,9 @@ pub(super) struct WorkspaceLayout {
     /// The rows each band asked for took, by its slot: along the pane's
     /// top or bottom, never over it.
     pub(super) bands: Vec<(SlotId, Rect)>,
+    /// The bar under the agent area, its hairline included, while a plugin
+    /// puts anything in it: the tab strip's mirror at the column's foot.
+    pub(super) bar: Option<Rect>,
 }
 
 /// A drawer docked beside the pane, as the layout is asked for one: the
@@ -88,6 +93,10 @@ pub(super) struct BandRows {
 pub(super) struct Reserved {
     pub(super) dock: Option<Dock>,
     pub(super) bands: Vec<BandRows>,
+    /// Whether the bar under the agent area stands: a plugin offers a view,
+    /// a drawer or an item there. Never by what an item answers, so the
+    /// pane is sized by what is installed, not by what is drawn.
+    pub(super) bar: bool,
 }
 
 /// The fewest rows the pane keeps under its bands: a band that would
@@ -121,7 +130,11 @@ pub(super) fn compute_layout(
     let (sidebar, column) = crate::ui::sidebar_and_column(frame_area, sidebar_width_override);
     let content_rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(2), Constraint::Min(1)])
+        .constraints([
+            Constraint::Length(2),
+            Constraint::Min(1),
+            Constraint::Length(if reserved.bar { 2 } else { 0 }),
+        ])
         .split(column);
     // No left inset either, matching the sidebar's own flush
     // `Padding::new(1, 0, 0, 0)` on its side of the same divider — the two
@@ -164,6 +177,7 @@ pub(super) fn compute_layout(
         pane,
         drawer,
         bands,
+        bar: reserved.bar.then_some(content_rows[2]),
     }
 }
 
@@ -295,6 +309,9 @@ pub(super) fn render(
     };
     if let Some(area) = layout.drawer {
         metrics.marquee |= render_declared_drawer(frame, area, model, hits);
+    }
+    if let Some(area) = layout.bar {
+        metrics.marquee |= render_bar(frame, area, model, hits);
     }
     for (slot, area) in &layout.bands {
         metrics.marquee |= render_band(frame, *area, model, *slot, hits);

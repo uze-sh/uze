@@ -174,11 +174,14 @@ pub enum Slot {
     Band,
     /// A modal card over the frame, opened by a gesture.
     Overlay,
+    /// One item of the bar under the agent area, on its left or its right.
+    Bar,
 }
 
 impl Slot {
-    pub const NAMES: &'static [&'static str] =
-        &["view", "section", "drawer", "status", "band", "overlay"];
+    pub const NAMES: &'static [&'static str] = &[
+        "view", "section", "drawer", "status", "band", "overlay", "bar",
+    ];
 
     pub fn parse(name: &str) -> Option<Self> {
         match name {
@@ -188,6 +191,7 @@ impl Slot {
             "status" => Some(Self::Status),
             "band" => Some(Self::Band),
             "overlay" => Some(Self::Overlay),
+            "bar" => Some(Self::Bar),
             _ => None,
         }
     }
@@ -200,6 +204,7 @@ impl Slot {
             Self::Status => "status",
             Self::Band => "band",
             Self::Overlay => "overlay",
+            Self::Bar => "bar",
         }
     }
 }
@@ -230,6 +235,36 @@ impl BandPlace {
         match name {
             "top" => Some(Self::Top),
             "bottom" => Some(Self::Bottom),
+            _ => None,
+        }
+    }
+}
+
+/// Where an item of the bar stands, and the surface of its own extension a
+/// click on it opens.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BarDecl {
+    pub align: BarAlign,
+    /// A `view` or `drawer` of the same extension.
+    pub opens: Option<String>,
+}
+
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum BarAlign {
+    #[default]
+    Left,
+    Right,
+}
+
+impl BarAlign {
+    pub const NAMES: &'static [&'static str] = &["left", "right"];
+
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "left" => Some(Self::Left),
+            "right" => Some(Self::Right),
             _ => None,
         }
     }
@@ -316,6 +351,9 @@ pub struct SurfaceDecl {
     pub view: String,
     /// A band's rows and place; `None` for every other slot.
     pub band: Option<BandDecl>,
+    /// A bar item's side and what it opens; `None` for every other slot.
+    #[serde(default)]
+    pub bar: Option<BarDecl>,
     /// The source whose data the view is bound to.
     pub source: String,
     /// What the host titles the surface with; the extension's name when

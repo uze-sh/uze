@@ -211,7 +211,7 @@ scenes:
 
   - scene: and then an action run by a pointer copies what the button carries
     when:
-      - click: "Copy summary"
+      - click: "copy summary"
         say: click the board's button
         in: pane
         expect: "copied"

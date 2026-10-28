@@ -189,7 +189,7 @@ scenes:
 
   - scene: and then Full size opens the picture in a card over the frame, which Esc puts away
     when:
-      - click: "Full size"
+      - click: "full size"
         say: press the section's button
         in: sidebar
         expect: "emulator-5554 · home"

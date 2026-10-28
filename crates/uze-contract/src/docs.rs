@@ -428,6 +428,7 @@ fn surface(id: &str, slot: Slot, source: &str) -> SurfaceDecl {
         slot,
         view: format!("{id}.kdl"),
         band: None,
+        bar: None,
         source: source.into(),
         title: None,
         applies_when: None,
@@ -458,6 +459,10 @@ fn slot_doc(slot: Slot) -> &'static str {
              taken before the pane is sized."
         }
         Slot::Overlay => "A card over the frame, opened by an `open` action and closed by Esc.",
+        Slot::Bar => {
+            "One item of the bar under the agent's pane, `align=\"left\"` (the default) or \
+             `\"right\"`, a line drawn from its view; a click opens the surface `opens=` names."
+        }
     }
 }
 
@@ -468,6 +473,7 @@ const SLOTS: &[Slot] = &[
     Slot::Status,
     Slot::Band,
     Slot::Overlay,
+    Slot::Bar,
 ];
 
 const SOURCE_KINDS: &[(&str, &str, &str)] = &[

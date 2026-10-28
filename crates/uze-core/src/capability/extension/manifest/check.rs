@@ -11,6 +11,7 @@ use crate::capability::extension::document::Report;
 
 pub fn references(decoded: &Decoded, report: &mut Report<'_>) {
     surfaces_read_declared_sources(decoded, report);
+    bar_items_open_a_surface(decoded, report);
     sources_run_what_this_build_runs(decoded, report);
     actions_name_what_is_declared(decoded, report);
     programs_are_granted(decoded, report);
@@ -159,6 +160,38 @@ fn surfaces_read_declared_sources(decoded: &Decoded, report: &mut Report<'_>) {
                     )
                 } else {
                     format!("declared sources: {declared}")
+                }),
+            );
+        }
+    }
+}
+
+/// A bar item's `opens` names a view or a drawer of the same extension:
+/// the surfaces a click on it brings up.
+fn bar_items_open_a_surface(decoded: &Decoded, report: &mut Report<'_>) {
+    use uze_contract::Slot;
+    let manifest = &decoded.manifest;
+    let openable = ids(manifest
+        .surfaces
+        .iter()
+        .filter(|surface| matches!(surface.slot, Slot::View | Slot::Drawer))
+        .map(|surface| &surface.id));
+    for (surface, (view_at, _)) in manifest.surfaces.iter().zip(&decoded.surface_places) {
+        let Some(opens) = surface.bar.as_ref().and_then(|bar| bar.opens.as_ref()) else {
+            continue;
+        };
+        let opened = manifest.surface(opens);
+        if !opened.is_some_and(|opened| matches!(opened.slot, Slot::View | Slot::Drawer)) {
+            report.at(
+                *view_at,
+                format!(
+                    "the bar item `{}` opens `{opens}`, which is no view or drawer of this extension",
+                    surface.id
+                ),
+                Some(if openable.is_empty() {
+                    "declare a `view` or `drawer` surface for it to open".to_owned()
+                } else {
+                    format!("surfaces it can open: {openable}")
                 }),
             );
         }

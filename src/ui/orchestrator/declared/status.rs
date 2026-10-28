@@ -90,7 +90,7 @@ fn draws_nothing(node: &Node) -> bool {
 
 /// `view` with every text cut at its end rather than wrapped: a status is
 /// one row whatever it answers.
-fn folded(mut view: View) -> View {
+pub(in crate::ui::orchestrator) fn folded(mut view: View) -> View {
     if let uze_extensions::view::Content::Tree { root, .. } = &mut view.content {
         cut_texts(root);
     }

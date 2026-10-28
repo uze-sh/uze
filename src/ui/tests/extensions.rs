@@ -127,6 +127,7 @@ fn declared(errors: &[&str]) -> uze_application::DeclaredExtensionSummary {
         statuses: Vec::new(),
         bands: Vec::new(),
         overlays: Vec::new(),
+        bars: Vec::new(),
         errors: errors.iter().map(|error| (*error).to_owned()).collect(),
     }
 }

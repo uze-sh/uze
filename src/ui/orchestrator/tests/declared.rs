@@ -184,6 +184,7 @@ fn installed() -> InstalledExtension {
 fn compiled() -> CompiledExtension {
     let surface = |id: &str, slot| uze_contract::SurfaceDecl {
         band: None,
+        bar: None,
         id: id.to_owned(),
         slot,
         view: format!("{id}.kdl"),
@@ -727,7 +728,7 @@ fn the_real_gsd_band_opens_switches_its_tab_and_redraws_a_save() {
         "Relatórios do lojista",
         "17/19",
         "65%  3 of 6 done",
-        "Run phase 12",
+        "run phase 12",
         "12-18  Diagnóstico de estoque baixo por loja",
     ] {
         assert!(shown(&rows, wanted), "{wanted}: {rows:#?}");
@@ -1112,6 +1113,7 @@ fn hosting_the_drawer() -> WorkspaceModel {
         .surfaces
         .push(uze_contract::SurfaceDecl {
             band: None,
+            bar: None,
             id: "side".to_owned(),
             slot: uze_contract::Slot::Drawer,
             view: "side.kdl".to_owned(),
@@ -1519,9 +1521,9 @@ fn a_tests_click_and_the_workspaces_reach_the_same_tab() {
     let (y, row) = rows
         .iter()
         .enumerate()
-        .find(|(_, row)| row.contains("Activity") && row.contains("Phases"))
-        .expect("the tabs are drawn");
-    let x = row[..row.find("Activity").unwrap()].chars().count() as u16;
+        .find(|(_, row)| row.contains("activity") && row.contains("phases"))
+        .expect("the tabs are drawn, lowercase");
+    let x = row[..row.find("activity").unwrap()].chars().count() as u16;
     let from_the_workspace = driven
         .attach
         .model

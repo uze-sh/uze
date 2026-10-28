@@ -159,7 +159,8 @@ impl WorkspaceModel {
     }
 
     /// Each extension's surfaces in view: the view standing in the pane,
-    /// every unfolded section and every status row (the sidebar is always
+    /// every unfolded section, every status row and item of the bar (the
+    /// sidebar and the bar are always
     /// drawn) while a checkout is in front for them to be about, the open
     /// drawer, the bands over the pane and the overlay over the frame.
     pub(in crate::ui::orchestrator) fn surfaces_in_view(&self) -> BTreeMap<Owner, Vec<String>> {
@@ -168,7 +169,7 @@ impl WorkspaceModel {
             in_front
                 && match slot.surface.slot {
                     SurfaceSlot::Section => !slot.collapsed,
-                    SurfaceSlot::Status => true,
+                    SurfaceSlot::Status | SurfaceSlot::Bar { .. } => true,
                     _ => false,
                 }
                 && self.offers_declared(&slot.owner)

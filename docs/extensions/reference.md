@@ -21,6 +21,7 @@ Owner: `crates/uze-contract` (`src/docs.rs`). A change to the contract changes t
 | `status` | One row of the sidebar's header. |
 | `band` | `rows=1`…`6` along the `place="top"` (or `"bottom"`) of each agent's pane, taken before the pane is sized. |
 | `overlay` | A card over the frame, opened by an `open` action and closed by Esc. |
+| `bar` | One item of the bar under the agent's pane, `align="left"` (the default) or `"right"`, a line drawn from its view; a click opens the surface `opens=` names. |
 
 ## Sources
 

@@ -286,7 +286,7 @@ pub(super) fn render_overlay(
 
 /// What a status row or a band draws in `area`, its hits tagged with its
 /// slot and the room it had kept for the click that reaches it.
-fn render_docked_slot(
+pub(super) fn render_docked_slot(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     model: &WorkspaceModel,

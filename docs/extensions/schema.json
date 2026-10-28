@@ -104,6 +104,7 @@
               "slot": "View",
               "view": "board.kdl",
               "band": null,
+              "bar": null,
               "source": "items",
               "title": null,
               "applies_when": null
@@ -173,6 +174,7 @@
               "slot": "Section",
               "view": "count.kdl",
               "band": null,
+              "bar": null,
               "source": "items",
               "title": null,
               "applies_when": null
@@ -213,6 +215,7 @@
               "slot": "Drawer",
               "view": "crew.kdl",
               "band": null,
+              "bar": null,
               "source": "agents",
               "title": null,
               "applies_when": null
@@ -279,6 +282,7 @@
               "slot": "Status",
               "view": "last.kdl",
               "band": null,
+              "bar": null,
               "source": "log",
               "title": null,
               "applies_when": null
@@ -349,6 +353,7 @@
                 "rows": 2,
                 "place": "Bottom"
               },
+              "bar": null,
               "source": "seen",
               "title": null,
               "applies_when": null
@@ -419,6 +424,7 @@
               "slot": "Overlay",
               "view": "game.kdl",
               "band": null,
+              "bar": null,
               "source": "board",
               "title": null,
               "applies_when": null
@@ -428,6 +434,7 @@
               "slot": "Section",
               "view": "score.kdl",
               "band": null,
+              "bar": null,
               "source": "board",
               "title": null,
               "applies_when": null
@@ -618,6 +625,18 @@
           ],
           "description": "A band's rows and place; `None` for every other slot."
         },
+        "bar": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BarDecl"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A bar item's side and what it opens; `None` for every other slot.",
+          "default": null
+        },
         "source": {
           "type": "string",
           "description": "The source whose data the view is bound to."
@@ -676,6 +695,11 @@
           "type": "string",
           "const": "Overlay",
           "description": "A modal card over the frame, opened by a gesture."
+        },
+        {
+          "type": "string",
+          "const": "Bar",
+          "description": "One item of the bar under the agent area, on its left or its right."
         }
       ],
       "description": "Where a surface is drawn. The host owns its geometry."
@@ -704,6 +728,32 @@
       "enum": [
         "Top",
         "Bottom"
+      ]
+    },
+    "BarDecl": {
+      "type": "object",
+      "properties": {
+        "align": {
+          "$ref": "#/$defs/BarAlign"
+        },
+        "opens": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A `view` or `drawer` of the same extension."
+        }
+      },
+      "required": [
+        "align"
+      ],
+      "description": "Where an item of the bar stands, and the surface of its own extension a\nclick on it opens."
+    },
+    "BarAlign": {
+      "type": "string",
+      "enum": [
+        "Left",
+        "Right"
       ]
     },
     "SourceDecl": {

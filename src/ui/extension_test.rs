@@ -35,6 +35,7 @@ fn default_size(slot: Slot) -> (u16, u16) {
         Slot::Section => (30, 16),
         Slot::Drawer => (46, 30),
         Slot::Status => (30, 1),
+        Slot::Bar => (40, 1),
         Slot::Band => (100, 2),
     }
 }
@@ -428,10 +429,11 @@ impl Stage {
                                 render_docked(frame, &view, content, None, &mut hits);
                             }
                         }
-                        // A row of the header or a band over a pane: drawn
+                        // A row of the header, an item of the bar or a band
+                        // over a pane: drawn
                         // whole into its rows, attributed where the host
                         // draws it rather than in a strip of its own.
-                        Slot::Status | Slot::Band => {
+                        Slot::Status | Slot::Band | Slot::Bar => {
                             let space = Size {
                                 width: area.width,
                                 height: area.height,
@@ -528,10 +530,18 @@ impl Stage {
     fn hit_on(&self, text: &str) -> Option<ViewHit> {
         let drawn = self.drawn.as_ref()?;
         for (y, (row, columns)) in self.rows().iter().enumerate() {
-            let Some(byte) = row.find(text) else {
-                continue;
+            // A control's label is drawn lowercase whatever the test
+            // wrote, so a step names it in either case.
+            let index = match row.find(text) {
+                Some(byte) => row[..byte].chars().count(),
+                None => {
+                    let lower = row.to_lowercase();
+                    let Some(byte) = lower.find(&text.to_lowercase()) else {
+                        continue;
+                    };
+                    lower[..byte].chars().count()
+                }
             };
-            let index = row[..byte].chars().count();
             let x = *columns.get(index)?;
             let y = u16::try_from(y).ok()?;
             // The first hit drawn under the cell, as the workspace resolves

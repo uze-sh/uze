@@ -28,6 +28,7 @@ use uze_extensions::view::{Command, Role, ScrollTarget, Section, SectionRow, Siz
 
 mod agent;
 mod band;
+mod bar;
 mod bridge;
 mod doors;
 mod drawer;
@@ -373,12 +374,16 @@ impl HostedSlot {
         self.surface.slot == SurfaceSlot::Overlay
     }
 
-    /// A status row or a band: drawn in the host's own chrome, with no
-    /// place of its own to close or to say a notice in.
+    pub(super) fn is_bar(&self) -> bool {
+        matches!(self.surface.slot, SurfaceSlot::Bar { .. })
+    }
+
+    /// A status row, a band or an item of the bar: drawn in the host's own
+    /// chrome, with no place of its own to close or to say a notice in.
     pub(super) fn is_chrome(&self) -> bool {
         matches!(
             self.surface.slot,
-            SurfaceSlot::Status | SurfaceSlot::Band { .. }
+            SurfaceSlot::Status | SurfaceSlot::Band { .. } | SurfaceSlot::Bar { .. }
         )
     }
 }
@@ -695,6 +700,7 @@ impl HostedExtensions {
                     self.insert_slot(HostedSlot {
                         id,
                         surface: SurfaceInfo {
+                            opens: None,
                             id: String::new(),
                             slot: SurfaceSlot::View,
                             title,
@@ -833,6 +839,7 @@ fn surfaces_of(compiled: &CompiledExtension) -> Vec<SurfaceInfo> {
         .surfaces
         .iter()
         .map(|surface| SurfaceInfo {
+            opens: surface.bar.as_ref().and_then(|bar| bar.opens.clone()),
             id: surface.id.clone(),
             slot: match surface.slot {
                 uze_contract::Slot::View => SurfaceSlot::View,
@@ -846,6 +853,12 @@ fn surfaces_of(compiled: &CompiledExtension) -> Vec<SurfaceInfo> {
                         .is_some_and(|band| band.place == uze_contract::BandPlace::Bottom),
                 },
                 uze_contract::Slot::Overlay => SurfaceSlot::Overlay,
+                uze_contract::Slot::Bar => SurfaceSlot::Bar {
+                    right: surface
+                        .bar
+                        .as_ref()
+                        .is_some_and(|bar| bar.align == uze_contract::BarAlign::Right),
+                },
             },
             title: surface
                 .title

@@ -46,6 +46,7 @@ fn compiled_as(slot: uze_contract::Slot, resident: bool) -> CompiledExtension {
             description: String::new(),
             surfaces: vec![uze_contract::SurfaceDecl {
                 band: None,
+                bar: None,
                 id: "game".to_owned(),
                 slot,
                 view: "game.kdl".to_owned(),

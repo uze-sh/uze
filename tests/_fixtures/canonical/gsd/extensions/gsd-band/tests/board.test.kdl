@@ -1,7 +1,7 @@
 test "the board opens on its phases" {
     surface "board"
     size 112 24
-    expect-text "Phases"
+    expect-text "phases"
     expect-text "Consulta de dados e diagnóstico"
     expect-no-text "Turn finished in 4m12s"
     snapshot "board"
@@ -26,8 +26,8 @@ test "the board speaks the operator's language" {
     surface "board"
     size 112 24
     locale "pt"
-    expect-text "Fases"
-    expect-text "Executar fase 12"
+    expect-text "fases"
+    expect-text "executar fase 12"
 }
 
 test "an empty milestone says so" {

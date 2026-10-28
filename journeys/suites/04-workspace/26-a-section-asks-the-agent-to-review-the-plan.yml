@@ -171,7 +171,7 @@ scenes:
 
   - scene: and then Ask for a review shows the request and, allowed, types it into the agent
     when:
-      - click: "Ask for a review"
+      - click: "ask for a review"
         say: press the section's button
         in: sidebar
         expect: "Type this into agent 1"
