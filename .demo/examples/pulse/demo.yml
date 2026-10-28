@@ -1,0 +1,44 @@
+# pulse: a heatmap of the repository's commits, read from git. Published
+# for plugins/pulse/README.md.
+#
+#   tui-record run .demo/examples/pulse
+
+extends: ../_base.yml
+
+video:
+  title: uze — the pulse example
+  out: .demo/examples/pulse/pulse.gif
+  cast: '{root}/example-pulse.cast'
+  publish:
+    - from: out
+      to: web/public/examples/pulse.gif
+  # The heatmap open with a day chosen: the frame that says what it is.
+  poster_when: 'commits in 12 weeks'
+
+beats:
+  - use: open-and-enable
+    with: {say: 'a project with twelve weeks of history, and an agent on it', review_pause: 1.6}
+  - say: in the bar, today's commits and the last two weeks
+    wait: screen
+    until: '\d+ today'
+    timeout: 15
+    pause: 1.6
+  - say: a click opens the heatmap, twelve weeks of it
+    click: today
+    in: screen
+    occurrence: last
+    refuse: '0 today'
+    expect: commits in 12 weeks
+    expect_timeout: 15
+    pause: 2.4
+  - say: a day is a click away from its commits
+    # The Tuesday row's label, then right to its latest week's square: a
+    # day the history is sure to have, two columns per week.
+    click: 'T ■'
+    in: pane
+    offset: 22
+    expect: '─ \d{4}-\d{2}-\d{2} ─'
+    expect_timeout: 10
+    pause: 3.0
+  - say: and out
+    end: C-q

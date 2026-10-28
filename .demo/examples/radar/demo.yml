@@ -1,0 +1,51 @@
+# radar: what the agents are doing, at three heights. Published for
+# plugins/radar/README.md.
+#
+#   tui-record run .demo/examples/radar
+#
+# The take spends one short Claude Code turn: the agent reads two files and
+# answers in a line, so radar has something to watch.
+
+extends: ../_base.yml
+
+video:
+  title: uze — the radar example
+  out: .demo/examples/radar/radar.gif
+  cast: '{root}/example-radar.cast'
+  publish:
+    - from: out
+      to: web/public/examples/radar.gif
+  poster_when: 'newest first'
+
+beats:
+  - use: open-and-enable
+    with: {say: 'a project, and an agent on it', review_pause: 1.2}
+  - say: radar's section lists every agent, ready for now
+    wait: screen
+    until: 'agent 1\s+ready'
+    timeout: 15
+    pause: 1.2
+  - say: the agent is asked something
+    type: Read tasks.py and AGENTS.md, then say in one line what this project is.
+    expect: 'working|\d+s'
+    expect_timeout: 15
+    pause: 1.0
+  - say: while it works, the section counts its turn
+    # Its name changes on the way: the agent names its own work, so the
+    # proof is the spinner's elapsed time, not the label.
+    wait: screen
+    until: '[⠁-⣿]\s+\S.*\d+s'
+    timeout: 20
+    pause: 2.0
+  - say: when the turn ends, the notice at the top says so, with a sound
+    wait: screen
+    until: 'claude-code done'
+    timeout: 180
+    pause: 1.8
+  - say: alt+r, from anywhere, opens what the agents did
+    key: M-r
+    expect: newest first
+    expect_timeout: 8
+    pause: 3.4
+  - say: and out
+    end: C-q
