@@ -201,7 +201,7 @@ scenes:
         say: its detail says it may type into an agent
       - click: "Enable 2"
         say: allow both and enable them here
-        expect: "No calls yet"
+        expect: "2 extensions enabled"
         expect_timeout: 10
     then:
       - json: "{uze_home}/state/extensions.json"
@@ -246,10 +246,10 @@ scenes:
         expect_timeout: 10
       - type: "Open Flight deck"
         say: open the flight deck
-        expect: "Focus +Ask"
+        expect: "focus +ask"
         expect_timeout: 20
       - wait: screen
-        until: "working +Focus"
+        until: "working +focus"
         in: pane
         timeout: 10
         say: its row says the agent works
@@ -274,7 +274,7 @@ scenes:
   - scene: and then, once the turn is over, the same prompt is typed into the agent
     when:
       - wait: screen
-        until: "ready +Focus"
+        until: "ready +focus"
         in: pane
         timeout: 60
         say: the flight deck says the agent is ready

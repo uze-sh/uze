@@ -145,11 +145,11 @@ scenes:
         expect: "jump · bridge@studio"
         expect_timeout: 10
       - wait: screen
-        until: 'agent 1 .*Go'
+        until: 'agent 1 .*go'
         timeout: 10
         say: it lists the first agent
       - wait: screen
-        until: 'agent 2 .*Go'
+        until: 'agent 2 .*go'
         timeout: 10
         say: and the second
       - key: "C-g"
