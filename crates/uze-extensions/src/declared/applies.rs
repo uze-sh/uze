@@ -66,6 +66,9 @@ impl DeclaredExtension {
         let Some(marker) = &decl.applies_when else {
             return true;
         };
+        if self.every_path_there {
+            return true;
+        }
         self.checkout_of_surface(surface)
             .is_some_and(|checkout| self.markers.present(&checkout, marker) == Some(true))
     }
@@ -82,6 +85,9 @@ impl DeclaredExtension {
         else {
             return true;
         };
+        if self.every_path_there {
+            return true;
+        }
         let present = self.markers.present(checkout, &marker);
         let said = reason(&marker);
         match present {

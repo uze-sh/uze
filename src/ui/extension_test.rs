@@ -156,6 +156,7 @@ fn run_one(
         height,
         drawn: None,
     };
+    stage.engine.assume_every_path_there();
     for (source, value) in data {
         stage.engine.set_data(source, Ok(value));
     }
@@ -609,6 +610,7 @@ pub(crate) fn hit_for_text(
         height,
         drawn: None,
     };
+    stage.engine.assume_every_path_there();
     for (source, value) in data {
         stage.engine.set_data(source, Ok(value));
     }

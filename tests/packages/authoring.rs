@@ -904,6 +904,60 @@ fn a_tests_press_reaches_an_extension_action_by_its_key() {
     let _ = fs::remove_dir_all(root);
 }
 
+/// A test draws its surface on no checkout, so a surface that applies only
+/// where a path is (`applies-when`) is drawn as where it applies; it was
+/// drawn as nothing, and no such surface could be tested.
+#[test]
+fn a_surface_that_applies_only_where_a_path_is_can_be_tested() {
+    let root = uze_testkit::temp::scratch("authoring-cli-extension-applies");
+    let at = root.join("my-market");
+    assert!(
+        create_marketplace(&root, &at)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    assert!(
+        uze(&root)
+            .args([
+                "agent",
+                "plugin",
+                "create",
+                "greet",
+                "--market",
+                "tools",
+                "--extension",
+                "board"
+            ])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let plugin = at.join("plugins/greet");
+    let manifest = plugin.join("extensions/board/extension.kdl");
+    // A view is drawn wherever it is opened; a section is the slot that
+    // applies only where its path is.
+    let written = fs::read_to_string(&manifest).unwrap().replace(
+        "title=\"board\"",
+        "title=\"board\" applies-when=\".planning\"",
+    );
+    assert!(written.contains("applies-when"), "{written}");
+    fs::write(&manifest, written).unwrap();
+    let test = plugin.join("extensions/board/tests/board.test.kdl");
+    let mut tests = fs::read_to_string(&test).unwrap();
+    tests.push_str(
+        "\ntest \"the section draws its fixture\" {\n    surface \"summary\"\n    given \"live\" fixture=\"fixtures/board.json\"\n    expect-text \"Write the view\"\n}\n",
+    );
+    fs::write(&test, tests).unwrap();
+
+    let (passed, output) = check(&root, &plugin);
+    assert!(passed, "{output}");
+    assert!(output.contains("4 tests passed"), "{output}");
+    let _ = fs::remove_dir_all(root);
+}
+
 /// An id a built-in extension answers to is refused, and nothing written.
 #[test]
 fn a_reserved_extension_id_is_refused_before_the_scaffold() {

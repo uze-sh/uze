@@ -202,6 +202,9 @@ pub struct DeclaredExtension {
     media: media::Shelf,
     /// Whether each checkout has each path an `applies-when` names.
     markers: applies::Markers,
+    /// Whether every path `applies-when` names is taken as there: a test
+    /// draws a surface on no checkout at all.
+    every_path_there: bool,
     /// What the author of a linked extension did to it from the inspector.
     authoring: authoring::Authoring,
 }
@@ -311,6 +314,7 @@ impl DeclaredExtension {
             builds: std::cell::Cell::new(0),
             media: media::Shelf::default(),
             markers: applies::Markers::default(),
+            every_path_there: false,
             authoring: authoring::Authoring::default(),
         }
     }
@@ -355,6 +359,13 @@ impl DeclaredExtension {
         for source in std::mem::take(&mut self.withheld).into_keys() {
             self.digests.remove(&source);
         }
+    }
+
+    /// Takes every path a surface's or a source's `applies-when` names as
+    /// held by the checkout: what a test draws is the surface given its
+    /// data, on no checkout to ask about.
+    pub fn assume_every_path_there(&mut self) {
+        self.every_path_there = true;
     }
 
     pub fn set_data(&mut self, source: impl Into<String>, data: SourceData) {
