@@ -1077,3 +1077,43 @@ fn an_icon_is_declared_in_every_glyph_set_and_never_shadows_the_hosts() {
             .contains("the icon `kennel` is declared twice")
     );
 }
+
+#[test]
+fn an_mcp_server_is_named_with_its_plugin_and_time_and_used_by_a_grant() {
+    let with = |rest: &str| GSD.replace("source \"board\"", &format!("{rest}\nsource \"board\""));
+    let granted = r#"wants "mcp:rtc/rtc_timesheet""#;
+    let node = r#"mcp "rtc" plugin="std@cardinal" timeout="5m""#;
+    let manifest = decoded(&with(&format!("{granted}\n{node}")));
+    assert_eq!(
+        manifest.mcp,
+        [uze_contract::McpDecl {
+            server: "rtc".into(),
+            plugin: Some("std@cardinal".into()),
+            timeout: Some(std::time::Duration::from_secs(300)),
+        }]
+    );
+    assert!(manifest.wants(&uze_contract::Grant::Mcp {
+        server: "rtc".into(),
+        tool: "rtc_timesheet".into(),
+    }));
+    decoded(&with(granted));
+
+    assert!(
+        first_message(&with(node)).contains("names a server no tool of which the manifest wants")
+    );
+    assert!(
+        first_message(&with(&format!("{granted}\n{}", node.replace("5m", "11m"))))
+            .contains("is not a call's time")
+    );
+    assert!(
+        first_message(&with(&format!(
+            "{granted}\n{}",
+            node.replace("std@cardinal", "std")
+        )))
+        .contains("is not a plugin as `<plugin>@<marketplace>`")
+    );
+    assert!(
+        first_message(&with(&format!("{granted}\n{node}\n{node}")))
+            .contains("`mcp \"rtc\"` is declared twice")
+    );
+}

@@ -13,6 +13,7 @@ mod action;
 mod check;
 mod grants;
 mod icon;
+mod mcp;
 mod source;
 pub mod sprite;
 
@@ -40,6 +41,7 @@ const NODES: &[&str] = &[
     "preferences",
     "sprite",
     "icon",
+    "mcp",
 ];
 /// What later changes of `extension-platform` add to a manifest, with
 /// the change that brings each.
@@ -69,6 +71,8 @@ pub struct Decoded {
     pub action_places: Vec<action::Places>,
     /// Parallel to `manifest.exec`: where each `exec` was written.
     pub exec_places: Vec<usize>,
+    /// Where each `mcp` node of [`Manifest::mcp`] stands.
+    pub mcp_places: Vec<usize>,
     /// Parallel to `manifest.sprites`: where each `sprite` was written.
     pub sprite_places: Vec<usize>,
 }
@@ -131,11 +135,13 @@ pub fn decode(document: &KdlDocument, dir_id: &str, report: &mut Report<'_>) -> 
             preferences: Vec::new(),
             sprites: Vec::new(),
             icons: Vec::new(),
+            mcp: Vec::new(),
         },
         surface_places: Vec::new(),
         source_places: Vec::new(),
         action_places: Vec::new(),
         exec_places: Vec::new(),
+        mcp_places: Vec::new(),
         sprite_places: Vec::new(),
     };
     let mut seen = BTreeSet::new();
@@ -218,6 +224,25 @@ pub fn decode(document: &KdlDocument, dir_id: &str, report: &mut Report<'_>) -> 
                         );
                     } else {
                         decoded.manifest.icons.push(decl);
+                    }
+                }
+            }
+            "mcp" => {
+                if let Some(decl) = mcp::decode(node, report) {
+                    if decoded
+                        .manifest
+                        .mcp
+                        .iter()
+                        .any(|seen| seen.server == decl.server)
+                    {
+                        report.on(
+                            node,
+                            format!("`mcp \"{}\"` is declared twice", decl.server),
+                            None,
+                        );
+                    } else {
+                        decoded.manifest.mcp.push(decl);
+                        decoded.mcp_places.push(node.offset());
                     }
                 }
             }

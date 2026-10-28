@@ -61,6 +61,7 @@ fn compiled() -> CompiledExtension {
             preferences: Vec::new(),
             sprites: Vec::new(),
             icons: Vec::new(),
+            mcp: Vec::new(),
         },
         // Drawn until the source composes its own: nothing, here.
         views: BTreeMap::from([(

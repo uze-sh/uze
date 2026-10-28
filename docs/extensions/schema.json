@@ -81,6 +81,14 @@
           },
           "description": "The icons its `Icon` nodes name beyond the host's own.",
           "default": []
+        },
+        "mcp": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/McpDecl"
+          },
+          "description": "Where the MCP servers its `mcp:` grants call come from, and how long\na call may take, by server.",
+          "default": []
         }
       },
       "required": [
@@ -169,7 +177,8 @@
           "exec": [],
           "preferences": [],
           "sprites": [],
-          "icons": []
+          "icons": [],
+          "mcp": []
         },
         {
           "protocol": 1,
@@ -209,7 +218,8 @@
           "exec": [],
           "preferences": [],
           "sprites": [],
-          "icons": []
+          "icons": [],
+          "mcp": []
         },
         {
           "protocol": 1,
@@ -275,7 +285,8 @@
           "exec": [],
           "preferences": [],
           "sprites": [],
-          "icons": []
+          "icons": [],
+          "mcp": []
         },
         {
           "protocol": 1,
@@ -346,7 +357,8 @@
           ],
           "preferences": [],
           "sprites": [],
-          "icons": []
+          "icons": [],
+          "mcp": []
         },
         {
           "protocol": 1,
@@ -420,7 +432,8 @@
           "exec": [],
           "preferences": [],
           "sprites": [],
-          "icons": []
+          "icons": [],
+          "mcp": []
         },
         {
           "protocol": 1,
@@ -525,7 +538,8 @@
               "fallback": "ready"
             }
           ],
-          "icons": []
+          "icons": [],
+          "mcp": []
         }
       ]
     },
@@ -611,6 +625,31 @@
           ],
           "additionalProperties": false,
           "description": "Requesting `https://` URLs of this host, and no other, through\n`fetch`."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Mcp": {
+              "type": "object",
+              "properties": {
+                "server": {
+                  "type": "string"
+                },
+                "tool": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "server",
+                "tool"
+              ]
+            }
+          },
+          "required": [
+            "Mcp"
+          ],
+          "additionalProperties": false,
+          "description": "Calling this tool of this MCP server, and no other, through `mcp`."
         }
       ],
       "description": "What an extension may reach beyond drawing. Only the grants this build\nenforces exist here; the decoder names the change that brings any\nother."
@@ -1667,6 +1706,36 @@
         "ascii"
       ],
       "description": "An icon an extension declares, in every glyph set the operator may\nchoose: the host draws the one their `[appearance] glyphs` names."
+    },
+    "McpDecl": {
+      "type": "object",
+      "properties": {
+        "server": {
+          "type": "string"
+        },
+        "plugin": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The installed plugin that delivers it, `<plugin>@<marketplace>`;\nthe extension's own plugin when absent."
+        },
+        "timeout": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Duration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How long one call may take, at most [`MCP_TIMEOUT_MAX`]; the host's\n[`MCP_TIMEOUT`] when absent."
+        }
+      },
+      "required": [
+        "server"
+      ],
+      "description": "`mcp \"<server>\" plugin=\"<plugin>@<marketplace>\" timeout=\"5m\"`: whose\nserver an `mcp:` grant calls, when not the extension's own plugin's,\nand how long one call may take (`extension-mcp` D2, D7)."
     },
     "Envelope": {
       "type": "object",

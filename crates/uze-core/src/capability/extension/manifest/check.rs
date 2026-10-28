@@ -81,6 +81,23 @@ fn programs_are_granted(decoded: &Decoded, report: &mut Report<'_>) {
         program_is_granted(manifest, &who, program, at, report);
         substituted_values_follow_a_double_dash(&who, program, at, report);
     }
+    for (decl, at) in manifest.mcp.iter().zip(&decoded.mcp_places) {
+        let called = manifest.wants.iter().any(|grant| {
+            grant
+                .mcp_tool()
+                .is_some_and(|(server, _)| server == decl.server)
+        });
+        if !called {
+            report.at(
+                *at,
+                format!(
+                    "`mcp \"{}\"` names a server no tool of which the manifest wants",
+                    decl.server
+                ),
+                Some(format!("add \"mcp:{}/<tool>\" to `wants`", decl.server)),
+            );
+        }
+    }
     for (decl, at) in manifest.exec.iter().zip(&decoded.exec_places) {
         if !manifest.wants(&Grant::Exec(decl.name.clone())) {
             report.at(

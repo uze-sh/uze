@@ -175,6 +175,7 @@ pub(super) fn extension(view: CompiledView) -> CompiledExtension {
             preferences: Vec::new(),
             sprites: Vec::new(),
             icons: Vec::new(),
+            mcp: Vec::new(),
         },
         views: BTreeMap::from([("board.kdl".to_owned(), view)]),
     }

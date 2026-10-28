@@ -68,6 +68,7 @@ A source also takes `input name="<template>"…`, `every "<n>s|m|h"` (at least 5
 | `resident` | A `resident` source: its script kept running while shown, `timer`, and raw keys and pointer while focused. |
 | `exec:<program>` | Running that program, resolved once on the search path, pinned and confined. |
 | `net:<host>` | `fetch` to that one host, over HTTPS, and `secret` preferences sent to it. |
+| `mcp:<server>/<tool>` | `mcp(server, tool, args)` for that one tool of the MCP server the plugin delivers, or the one an `mcp` node names; the server runs as a harness runs it. |
 
 ## Events (`refresh-on`)
 

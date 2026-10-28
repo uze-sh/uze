@@ -34,6 +34,10 @@ pub struct Manifest {
     /// The icons its `Icon` nodes name beyond the host's own.
     #[serde(default)]
     pub icons: Vec<IconDecl>,
+    /// Where the MCP servers its `mcp:` grants call come from, and how long
+    /// a call may take, by server.
+    #[serde(default)]
+    pub mcp: Vec<McpDecl>,
 }
 
 /// An icon an extension declares, in every glyph set the operator may
@@ -173,6 +177,28 @@ pub struct ExecDecl {
     pub name: String,
     pub reads: Vec<String>,
 }
+
+/// `mcp "<server>" plugin="<plugin>@<marketplace>" timeout="5m"`: whose
+/// server an `mcp:` grant calls, when not the extension's own plugin's,
+/// and how long one call may take (`extension-mcp` D2, D7).
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct McpDecl {
+    pub server: String,
+    /// The installed plugin that delivers it, `<plugin>@<marketplace>`;
+    /// the extension's own plugin when absent.
+    pub plugin: Option<String>,
+    /// How long one call may take, at most [`MCP_TIMEOUT_MAX`]; the host's
+    /// [`MCP_TIMEOUT`] when absent.
+    pub timeout: Option<Duration>,
+}
+
+/// How long a call to an MCP tool may take when its `mcp` node says
+/// nothing.
+pub const MCP_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// The longest a manifest may let one MCP call take.
+pub const MCP_TIMEOUT_MAX: Duration = Duration::from_secs(600);
 
 /// Where a surface is drawn. The host owns its geometry.
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -874,6 +900,8 @@ pub enum Grant {
     /// Requesting `https://` URLs of this host, and no other, through
     /// `fetch`.
     Net(String),
+    /// Calling this tool of this MCP server, and no other, through `mcp`.
+    Mcp { server: String, tool: String },
 }
 
 impl Grant {
@@ -894,6 +922,7 @@ impl Grant {
     ];
     pub const EXEC: &'static str = "exec:";
     pub const NET: &'static str = "net:";
+    pub const MCP: &'static str = "mcp:";
 
     pub fn parse(name: &str) -> Option<Self> {
         if let Some(program) = name.strip_prefix(Self::EXEC) {
@@ -901,6 +930,13 @@ impl Grant {
         }
         if let Some(host) = name.strip_prefix(Self::NET) {
             return is_host_name(host).then(|| Self::Net(host.to_owned()));
+        }
+        if let Some(called) = name.strip_prefix(Self::MCP) {
+            let (server, tool) = called.split_once('/')?;
+            return (is_mcp_name(server) && is_mcp_name(tool)).then(|| Self::Mcp {
+                server: server.to_owned(),
+                tool: tool.to_owned(),
+            });
         }
         Self::FIXED
             .iter()
@@ -923,6 +959,7 @@ impl Grant {
             Self::Resident => "resident",
             Self::Exec(program) => return format!("{}{program}", Self::EXEC).into(),
             Self::Net(host) => return format!("{}{host}", Self::NET).into(),
+            Self::Mcp { server, tool } => return format!("{}{server}/{tool}", Self::MCP).into(),
         })
     }
 
@@ -934,6 +971,14 @@ impl Grant {
         }
     }
 
+    /// The server and tool an `mcp:` grant covers.
+    pub fn mcp_tool(&self) -> Option<(&str, &str)> {
+        match self {
+            Self::Mcp { server, tool } => Some((server, tool)),
+            _ => None,
+        }
+    }
+
     /// The host a `net:` grant covers.
     pub fn host(&self) -> Option<&str> {
         match self {
@@ -941,6 +986,16 @@ impl Grant {
             _ => None,
         }
     }
+}
+
+/// A server's or a tool's name as `mcp:` spells it: letters, digits, `_`,
+/// `-` and `.`, at most 64, as MCP names them.
+pub fn is_mcp_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
 }
 
 /// A host as `net:` spells it: a DNS name in lower case, its labels of
@@ -1096,6 +1151,25 @@ mod tests {
             Grant::Net("api.github.com".into()).name(),
             "net:api.github.com"
         );
+        let timesheet = Grant::Mcp {
+            server: "rtc".into(),
+            tool: "rtc_timesheet".into(),
+        };
+        assert_eq!(
+            Grant::parse("mcp:rtc/rtc_timesheet"),
+            Some(timesheet.clone())
+        );
+        assert_eq!(timesheet.name(), "mcp:rtc/rtc_timesheet");
+        for refused in [
+            "mcp:rtc",
+            "mcp:rtc/",
+            "mcp:/x",
+            "mcp:rtc/*",
+            "mcp:r tc/x",
+            "mcp:a/b/c",
+        ] {
+            assert_eq!(Grant::parse(refused), None, "{refused}");
+        }
         for later in [
             "net",
             "net:",

@@ -43,9 +43,10 @@ pub use compiled::{CompiledExtension, CompiledView, Item, Lookup, Node, Span};
 pub use manifest::{
     ActionDecl, AgentEvent, AgentTarget, AutoPrompt, BAND_ROWS_MAX, BandDecl, BandPlace, BarAlign,
     BarDecl, Deliver, Does, EVENTS_MAX, EVERY_FLOOR, EventName, ExecDecl, Grant, IconDecl,
-    KeySuggestion, Manifest, Output, PROGRAM_TIME_LIMIT, PreferenceDecl, PreferenceKind, Program,
-    PromptText, Slot, SourceDecl, SourceKind, SpriteDecl, SpriteState, StoreScope, SurfaceDecl,
-    Then, is_host_name, is_program_name, is_secret_value,
+    KeySuggestion, MCP_TIMEOUT, MCP_TIMEOUT_MAX, Manifest, McpDecl, Output, PROGRAM_TIME_LIMIT,
+    PreferenceDecl, PreferenceKind, Program, PromptText, Slot, SourceDecl, SourceKind, SpriteDecl,
+    SpriteState, StoreScope, SurfaceDecl, Then, is_host_name, is_mcp_name, is_program_name,
+    is_secret_value,
 };
 pub use question::{Answer, Asking, Envelope, Notification, Question, ResidentCall, Sound};
 pub use testing::{Given, GivenData, Step, StepKind, TestDecl, TestFile, ThemeName, World};

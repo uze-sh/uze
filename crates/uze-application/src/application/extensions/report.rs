@@ -266,6 +266,9 @@ pub fn grant_meaning(grant: &str) -> &'static str {
         Some(uze_contract::Grant::Notify) => {
             "notifies you and sounds a cue, a few times a minute at most"
         }
+        Some(uze_contract::Grant::Mcp { .. }) => {
+            "calls this tool of a plugin's MCP server, which runs as your agents run it"
+        }
         None => "a grant this build does not know",
     }
 }
@@ -712,6 +715,7 @@ mod tests {
             preferences: Vec::new(),
             sprites: Vec::new(),
             icons: Vec::new(),
+            mcp: Vec::new(),
         };
         assert_eq!(band_rows(&manifest), None);
         manifest

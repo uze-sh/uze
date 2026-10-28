@@ -154,6 +154,7 @@ mod tests {
                 preferences: Vec::new(),
                 sprites: Vec::new(),
                 icons: Vec::new(),
+                mcp: Vec::new(),
             },
             views: BTreeMap::new(),
         };

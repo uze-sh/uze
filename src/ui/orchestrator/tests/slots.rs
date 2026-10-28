@@ -184,6 +184,7 @@ fn compiled(id: &str, surfaces: Vec<uze_contract::SurfaceDecl>) -> CompiledExten
             preferences: Vec::new(),
             sprites: Vec::new(),
             icons: Vec::new(),
+            mcp: Vec::new(),
         },
         views: BTreeMap::new(),
     }

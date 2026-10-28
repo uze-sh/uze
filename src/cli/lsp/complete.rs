@@ -67,6 +67,10 @@ const MANIFEST_NODES: &[(&str, &str)] = &[
         "Settings the operator edits: `preferences { number \"warn-at\" default=70 min=1 max=100; }`.",
     ),
     (
+        "mcp",
+        "Whose MCP server an `mcp:<server>/<tool>` grant calls, and how long a call may take: `mcp \"rtc\" plugin=\"std@cardinal\" timeout=\"5m\"`.",
+    ),
+    (
         "icon",
         "An icon the host lacks, in every glyph set: `icon \"<name>\" nerd=\"…\" unicode=\"…\" ascii=\"…\"`.",
     ),

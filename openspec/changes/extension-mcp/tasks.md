@@ -1,7 +1,7 @@
 ## 1. Contract
 
-- [ ] 1.1 `Grant::Mcp { server, tool }` spelled `mcp:<server>/<tool>`; `McpDecl { server, plugin, timeout }` and `Manifest::mcp`
-- [ ] 1.2 The decoder reads `mcp`; the check refuses a node no grant uses, a repeat, a timeout past ten minutes, a plugin ill-spelt
+- [x] 1.1 `Grant::Mcp { server, tool }` spelled `mcp:<server>/<tool>`; `McpDecl { server, plugin, timeout }` and `Manifest::mcp`
+- [x] 1.2 The decoder reads `mcp`; the check refuses a node no grant uses, a repeat, a timeout past ten minutes, a plugin ill-spelt
 
 ## 2. Client
 

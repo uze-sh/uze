@@ -420,6 +420,7 @@ fn manifest(id: &str, name: &str, description: &str) -> Manifest {
         preferences: Vec::new(),
         sprites: Vec::new(),
         icons: Vec::new(),
+        mcp: Vec::new(),
     }
 }
 
@@ -566,6 +567,10 @@ fn grant_doc(grant: &Grant) -> &'static str {
         }
         Grant::Net(_) => {
             "`fetch` to that one host, over HTTPS, and `secret` preferences sent to it."
+        }
+        Grant::Mcp { .. } => {
+            "`mcp(server, tool, args)` for that one tool of the MCP server the plugin delivers, \
+             or the one an `mcp` node names; the server runs as a harness runs it."
         }
     }
 }
@@ -767,10 +772,14 @@ pub fn reference() -> String {
             .iter()
             .map(|(name, doc)| vec![code(name), (*doc).to_owned()]),
     );
-    let grants = Grant::FIXED
-        .iter()
-        .cloned()
-        .chain([Grant::Exec("<program>".into()), Grant::Net("<host>".into())]);
+    let grants = Grant::FIXED.iter().cloned().chain([
+        Grant::Exec("<program>".into()),
+        Grant::Net("<host>".into()),
+        Grant::Mcp {
+            server: "<server>".into(),
+            tool: "<tool>".into(),
+        },
+    ]);
     table(
         &mut line,
         "## Grants",
