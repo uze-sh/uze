@@ -23,6 +23,9 @@ It ships six Skills:
   `references/extension.md` beside it covers writing a declared extension
   the plugin carries: its manifest, a script or a program, its grants, its
   tests, and the consent and enabling it needs before it runs.
+- `skills/try/SKILL.md`: making a project to try the marketplace's example
+  plugins in, with `demo.py` beside it writing the project (a Git history
+  and a milestone in `.planning/`), and installing the examples there.
 
 The plugin format (skills, agents, MCP servers, hooks, and the
 `${PLUGIN_ROOT}` placeholder) and what each harness receives are documented
