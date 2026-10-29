@@ -707,16 +707,17 @@ impl SpaceOverviewView {
         self.directory()?.project.as_ref()?.as_ref().ok()
     }
 
-    /// The sections the bar shows, in its order: every one inside a Git
-    /// repository, and while the answer is awaited, since most agents work
-    /// in one; the agent and its memory elsewhere.
+    /// The sections the bar shows, in its order: the agent and its memory
+    /// where the directory is known to be outside every Git repository, or
+    /// to be gone; every one otherwise, a read still awaited or failed
+    /// included, since most agents work in one.
     pub(super) fn sections(&self) -> &'static [Section] {
         match self.answer.as_ref() {
-            None => &Section::ALL,
-            Some(Ok(SpaceOverview::Directory(directory))) if directory.project.is_some() => {
-                &Section::ALL
+            Some(Ok(SpaceOverview::Directory(directory))) if directory.project.is_none() => {
+                &Section::OUTSIDE_A_REPOSITORY
             }
-            Some(_) => &Section::OUTSIDE_A_REPOSITORY,
+            Some(Ok(SpaceOverview::DirectoryGone { .. })) => &Section::OUTSIDE_A_REPOSITORY,
+            _ => &Section::ALL,
         }
     }
 

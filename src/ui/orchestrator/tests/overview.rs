@@ -3355,6 +3355,22 @@ fn an_agent_whose_directory_is_gone_is_said_so() {
     );
 }
 
+/// A read that failed says nothing about where the agent stands, so the
+/// bar keeps the five sections it shows while reading, each saying why.
+#[test]
+fn a_read_that_failed_keeps_every_section() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-failed"));
+    let mut driven = overview_answered(&home, Some(Err("reading the overview failed".to_owned())));
+    assert_eq!(overview_of(&driven).sections(), &Section::ALL);
+    let settings =
+        driven.hit(|hit| *hit == WorkspaceHit::OverviewSection(Section::Settings.index()));
+    driven.press(settings.x + 1, settings.y);
+    driven.frame();
+    let screen = frame_rows(&mut driven.attach.model).join("\n");
+    assert!(screen.contains("NOT READ"), "{screen}");
+    assert!(screen.contains("reading the overview failed"), "{screen}");
+}
+
 /// A repository whose project could not be read keeps its five sections:
 /// each of the repository's own says why it has nothing to list, and the
 /// memory, read without it, is still listed.
