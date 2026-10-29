@@ -134,6 +134,10 @@ on "cancel" must not save first.
   an entry that asks before acting (`Discard…`). Two entries for one verb
   side by side (`Rename`, `Rename project`) become one that opens both.
 - Dropdowns float over content and never push it down.
+- A breadcrumb names levels, short and generic (`Context › Containers ›
+  Components ▾`), the step on show included. An item's own long name goes
+  in the list that step opens and stays pinned over the content it names,
+  never in the step itself.
 - A modal keeps its height while you filter inside it.
 - A popover's rows stand on its own ground: no raised band under the line
   typed into or under its list. The row Enter takes is the one marked.

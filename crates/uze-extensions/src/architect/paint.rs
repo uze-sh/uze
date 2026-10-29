@@ -20,7 +20,12 @@ pub struct Scene {
     pub graph: Graph,
     pub placement: Placement,
     pub routes: Routes,
+    /// The title written over the drawing, when it carries one.
+    pub title: Option<String>,
 }
+
+/// The rows a title takes over the drawing: itself and a gap.
+const TITLE_ROWS: i32 = 2;
 
 impl Scene {
     pub fn of(graph: Graph) -> Self {
@@ -30,7 +35,23 @@ impl Scene {
             graph,
             placement,
             routes,
+            title: None,
         }
+    }
+
+    /// The scene with room over it for `title`, which the screen pins to
+    /// its top-left corner. C4 asks for the title on the diagram, naming
+    /// its type and scope, which is too long for the menu's way down and
+    /// is what the reader needs wherever the board was moved to.
+    /// Everything drawn moves down by the title's rows, so the board at
+    /// home has nothing under it, and what a click lands on is still what
+    /// is drawn there.
+    pub fn titled(graph: Graph, title: String) -> Self {
+        let mut scene = Self::of(graph);
+        scene.placement.lowered(TITLE_ROWS);
+        scene.routes.lowered(TITLE_ROWS);
+        scene.title = Some(title);
+        scene
     }
 
     fn touches(&self, route: &Route, selected: Option<usize>) -> bool {

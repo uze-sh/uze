@@ -1550,7 +1550,7 @@ fn a_board_is_drawn_as_it_was_cut_and_a_click_lands_in_the_box_under_it() {
         rows[MENU_ROW].contains("C4")
             && !rows[MENU_ROW].contains("C4 2")
             && rows[MENU_ROW].contains("Context")
-            && rows[MENU_ROW].contains("Container diagram for uze"),
+            && rows[MENU_ROW].contains("Containers"),
         "one row: the area on show, then the way down to the view on show: {}",
         rows[MENU_ROW]
     );

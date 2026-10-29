@@ -61,9 +61,12 @@ deployment, then by name.
 
 The surface keeps no list of entered boxes: the path from the root to the
 view on show is computed, so a view opened from anywhere shows the same
-path. Ancestors are named by their level (`Context`, `Containers`,
-`Components`, `Landscape`, `Dynamic`, `Deployment`); the view on show by
-its title. The step on show opens the views that share its parent, through
+path. Every step is named by its level (`Context`, `Containers`,
+`Components`, `Landscape`, `Dynamic`, `Deployment`), the view on show
+included: a title names type and scope and is a sentence, so it is pinned
+to the board's top-left corner over the drawing instead, where it stays
+whatever the board is moved to. The step on show opens the views that
+share its parent, by their titles, through
 `TrailStep::choices` (a new field, empty by default, so the code map's
 trail is untouched). Going up opens the parent with the box whose alias is
 the child's scope selected and centred. A box with several children enters

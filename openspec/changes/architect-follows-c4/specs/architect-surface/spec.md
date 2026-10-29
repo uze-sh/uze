@@ -134,6 +134,13 @@ open that view with the box zoomed into selected and in view.
 - **THEN** the path SHALL be that artifact's own ancestors, not the way
   the viewer came
 
+#### Scenario: The step on show names its level
+- **WHEN** a component view titled `Component diagram for uze CLI: uze-core`
+  is on show
+- **THEN** its step SHALL read `Components`
+- **AND THEN** the title SHALL be pinned over the board's top-left corner,
+  wherever the board is moved
+
 #### Scenario: Views that share a parent
 - **WHEN** two component views zoom into `cli` and one is on show
 - **THEN** its step SHALL open a list naming both, and choosing the other

@@ -407,33 +407,33 @@ fn trail(state: &ArchitectView) -> Vec<String> {
         .collect()
 }
 
-/// The step of it the viewer is standing on.
+/// The title of the view on show.
 fn here(state: &ArchitectView) -> String {
-    view(state, SPACE)
-        .trail
-        .into_iter()
-        .find(|step| step.current)
-        .map(|step| step.name)
+    state
+        .catalog
+        .get(state.selected)
+        .map(|artifact| artifact.name.clone())
         .unwrap_or_default()
 }
 
 #[test]
 fn the_views_are_joined_by_zoom_from_the_context_down_to_the_code() {
     let mut state = showing(CONTEXT);
-    assert_eq!(trail(&state), [CONTEXT], "the root has no way down to it");
+    assert_eq!(trail(&state), ["Context"], "the root has no way down to it");
 
     pick(&mut state, "uze");
     assert_eq!(
         handle_command(&mut state, Command::Activate, SPACE),
         ArchitectOutcome::Stay
     );
-    assert_eq!(trail(&state), ["Context", CONTAINERS]);
+    assert_eq!(trail(&state), ["Context", "Containers"]);
 
     pick(&mut state, "cli");
     handle_command(&mut state, Command::Activate, SPACE);
+    assert_eq!(trail(&state), ["Context", "Containers", "Components"]);
     assert_eq!(
-        trail(&state),
-        ["Context", "Containers", CORE],
+        here(&state),
+        CORE,
         "the first of the views that zoom into the CLI"
     );
 
@@ -464,7 +464,8 @@ fn views_that_zoom_into_one_container_are_offered_on_its_step() {
         Some(ViewHit::SelectItem(step.choices[1].id)),
         SPACE,
     );
-    assert_eq!(trail(&state), ["Context", "Containers", WORKSPACE]);
+    assert_eq!(trail(&state), ["Context", "Containers", "Components"]);
+    assert_eq!(here(&state), WORKSPACE);
 }
 
 #[test]
@@ -490,7 +491,34 @@ fn a_view_opened_from_anywhere_shows_its_own_way_down() {
     let mut state = showing(CONTEXT);
     handle_command(&mut state, Command::NextView, SPACE);
     handle_command(&mut state, Command::NextView, SPACE);
-    assert_eq!(trail(&state), ["Context", "Containers", CORE]);
+    assert_eq!(trail(&state), ["Context", "Containers", "Components"]);
+    assert_eq!(here(&state), CORE);
+}
+
+/// The way down names levels, which are short; the view's own title,
+/// which names its type and scope, is written on the drawing.
+#[test]
+fn a_c4_view_carries_its_title_on_the_drawing() {
+    let mut state = showing(CORE);
+    let first_row = |state: &ArchitectView| {
+        state
+            .screen(SPACE)
+            .expect("a screen")
+            .to_text()
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_owned()
+    };
+    assert!(first_row(&state).starts_with(CORE));
+    drag_by(&mut state, -40, -20, SPACE);
+    assert!(
+        first_row(&state).starts_with(CORE),
+        "pinned, wherever the board was moved"
+    );
+    let step = view(&state, SPACE).trail.pop().unwrap();
+    assert_eq!(step.name, "Components");
 }
 
 #[test]

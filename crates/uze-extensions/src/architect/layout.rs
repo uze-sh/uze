@@ -35,6 +35,14 @@ pub struct Placement {
 }
 
 impl Placement {
+    /// The same placement, `rows` further down the board.
+    pub fn lowered(&mut self, rows: i32) {
+        for frame in self.nodes.iter_mut().chain(self.clusters.iter_mut()) {
+            frame.y += rows;
+        }
+        self.height += rows;
+    }
+
     pub fn node_at(&self, x: i32, y: i32) -> Option<usize> {
         self.nodes.iter().position(|frame| frame.contains(x, y))
     }

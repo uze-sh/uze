@@ -46,7 +46,7 @@ use crate::{
     },
 };
 
-use crate::shared::canvas::{Canvas, Frame, Glyphs};
+use crate::shared::canvas::{self, Canvas, Frame, Glyphs};
 use crate::shared::checkout;
 use crate::shared::nearest;
 use crate::shared::places::{ArtifactRoot, ArtifactSource};
@@ -628,10 +628,12 @@ impl ArchitectView {
         false
     }
 
-    /// The way down to the C4 view on show, for the menu to draw: its
-    /// ancestors by the level each is, and the view itself by its name,
-    /// opening onto the views that share its parent. Empty off C4, where
-    /// the area is a set to pick from.
+    /// The way down to the C4 view on show, for the menu to draw: every
+    /// step by the level it is, the view on show included, which opens
+    /// onto the views that share its parent by their titles. A title names
+    /// a view's type and scope, which is a sentence, and a row of them is
+    /// a row cut short; the title on show is written over the drawing
+    /// instead. Empty off C4, where the area is a set to pick from.
     fn steps(&self) -> Vec<TrailStep> {
         let zoom = self.zoom();
         let Some(place) = zoom.place(self.selected) else {
@@ -643,10 +645,7 @@ impl ArchitectView {
             .filter(|&view| view != self.selected)
             .filter_map(|view| Some(TrailStep::new(zoom.place(view)?.name(), false)))
             .collect();
-        let name = self
-            .catalog
-            .get(self.selected)
-            .map_or(place.name(), |artifact| artifact.name.as_str());
+        let name = place.name();
         let siblings = zoom.siblings(self.selected);
         let choices = match siblings.len() > 1 {
             true => siblings
@@ -733,6 +732,9 @@ impl ArchitectView {
     fn draw(&self, artifact: usize) -> Drawing {
         match self.catalog.get(artifact) {
             Some(artifact) => match mermaid::parse(artifact.diagram()) {
+                Ok(Diagram::Graph(graph)) if graph.view.is_some() => {
+                    Drawing::Graph(Box::new(Scene::titled(graph, artifact.name.clone())))
+                }
                 Ok(Diagram::Graph(graph)) => Drawing::Graph(Box::new(Scene::of(graph))),
                 Ok(Diagram::Sequence(sequence)) => Drawing::Sequence(sequence),
                 Err(reason) => Drawing::Unreadable(reason),
@@ -1085,6 +1087,15 @@ impl ArchitectView {
                     _ => {}
                 }
             }
+        }
+        if let Drawing::Graph(scene) = &self.drawing
+            && let Some(title) = &scene.title
+        {
+            let pinned = format!(" {title} ");
+            for x in 0..canvas::text_width(&pinned).min(columns) {
+                screen.put(x, 0, ' ', Role::Default, false);
+            }
+            screen.text(0, 0, &pinned, Role::Bright, true);
         }
         if let Some(map) = self.minimap(space) {
             let boxes: &[Frame] = match &self.drawing {
