@@ -38,6 +38,9 @@ class OpenCodeBindings(Bindings):
     #: no background service for a TUI to attach to.
     compact_command = "/compact"
     launch = "exec opencode --standalone"
+    help_snapshots = (
+        (("--help",), "crates/uze-integrations/src/opencode/help.txt"),
+    )
     ready_markers = ("Ask anything",)
     #: One interrupt ends it — measured (`experiments/relaunch_probe`). A
     #: second would not be spare: the process is already gone by then, so

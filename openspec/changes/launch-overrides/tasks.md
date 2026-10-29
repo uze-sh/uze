@@ -23,7 +23,7 @@
 - [x] 2.4 OpenCode catalog (owned `--session`, `--continue`, `--prompt`); managed env `XDG_CONFIG_HOME`, `XDG_DATA_HOME`
 - [x] 2.5 Antigravity CLI catalog (owned `--conversation`, `-i`; `--add-dir` operator, repeatable)
 - [x] 2.6 Unit test per harness: every catalog spelling appears in its snapshot; every Codex catalog flag appears in the `resume` snapshot
-- [ ] 2.7 Lab: diff each snapshot against the live binary's `--help` and fail naming the flags that drifted
+- [x] 2.7 Lab: diff each snapshot against the live binary's `--help` and fail naming the flags that drifted
 
 ## 3. Check and record (uze-workspace)
 

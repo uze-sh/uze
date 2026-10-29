@@ -26,6 +26,7 @@ from . import (
     context,
     continuity,
     first_session,
+    flags,
     hooks,
     instructions,
     isolation,
@@ -38,6 +39,7 @@ from . import (
 
 #: Every capability contract, in the order a run exercises them.
 CONTRACTS = (
+    flags,
     first_session,
     skill,
     mcp,

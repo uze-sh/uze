@@ -54,6 +54,7 @@ to a question UZE already asked:
 | what the harness could not do when last checked | `conformance/evidence/expected.json` (`adaptive`: every declared limitation, with its measurement and the versions it was measured on) |
 | how the Lab drives it, and what it declares unsupported | `conformance/harnesses/<vendor>/bindings.py` (`unsupported`) |
 | which native tool and input field each portable hook alias names | the `ToolBinding` tables in `crates/uze-integrations/src/<vendor>/hooks.rs`, and the Lab's independent expectation in `conformance/harnesses/<vendor>/vocabulary.json`; both are held against the snapshot, so a vendor rename is a red `vocabulary-*` check the night it ships, and the survey's job is to say what the rename *means* |
+| which launch flags an operator may add, and which UZE composes | the catalog in `crates/uze-integrations/src/<vendor>/flags.rs`, proven against the `--help` snapshot beside it (`help.txt`, and Codex's `resume-help.txt`); the Lab's `flags-*-matches-snapshot` check names a flag a release added or removed, and a refresh replaces the snapshot and the catalog together |
 | what the harness was measured to do, with the Lab check behind each | the `FACTS` table at the end of `crates/uze-integrations/src/<vendor>.rs` (`measured_on` per fact) |
 | why a delivery was chosen | `docs/adr/` (grep the vendor name) |
 | what must keep holding | `docs/architecture/invariants.md` |
