@@ -934,3 +934,220 @@ fn a_missing_requirement_reads_on_the_plugin_and_hands_its_install_to_a_shell() 
         "a gap installed by hand hands nothing over"
     );
 }
+
+fn extension(plugin: &str, market: &str, id: &str) -> uze_application::ExtensionIdentity {
+    uze_application::ExtensionIdentity {
+        marketplace: market.to_owned(),
+        plugin: plugin.to_owned(),
+        id: id.to_owned(),
+    }
+}
+
+/// `gsd` from `uze`, installed and unfolded, declaring one extension and
+/// the skills given.
+fn unfolded_gsd(skills: &[&str]) -> TuiModel {
+    let mut model = TuiModel {
+        route: Route::Plugins,
+        focus: Focus::Content,
+        remembered: Remembered {
+            marketplaces: vec![registered("uze")],
+            marketplace_plugins: vec![marketplace_plugin("uze", "gsd", true)],
+            ..TuiModel::default().remembered
+        },
+        ..TuiModel::default()
+    };
+    model.expanded_plugins.insert("gsd@uze".to_owned());
+    model.plugin_resources.insert(
+        "gsd@uze".to_owned(),
+        skills
+            .iter()
+            .map(|name| {
+                resource(
+                    name,
+                    uze_application::CapabilityKind::AgentSkill,
+                    &format!("skills/{name}/SKILL.md"),
+                    "",
+                )
+            })
+            .collect(),
+    );
+    model.plugin_extensions.insert(
+        "gsd@uze".to_owned(),
+        vec![extension("gsd", "uze", "gsd-band")],
+    );
+    model.select_plugin_row(0, None);
+    model
+}
+
+fn tree_rows(model: &TuiModel) -> Vec<String> {
+    let (terminal, _) = drawn_at(model, 140, 40);
+    buffer_rows(&terminal)
+        .iter()
+        .map(|row| row.split('│').next().unwrap_or_default().to_owned())
+        .collect()
+}
+
+/// A package that carries only an extension brings that, and its tree
+/// says so as a kind like any other, never as a package that brings
+/// nothing.
+#[test]
+fn an_extension_only_plugin_lists_its_extension_as_a_kind() {
+    let rows = tree_rows(&unfolded_gsd(&[]));
+    let heading = rows
+        .iter()
+        .position(|row| row.contains("extensions"))
+        .unwrap_or_else(|| panic!("the extensions branch: {rows:#?}"));
+    assert!(rows[heading].contains(" 1 "), "{rows:#?}");
+    assert!(rows[heading + 1].contains("gsd-band"), "{rows:#?}");
+    let unsupported = theme::glyph(theme::Symbol::MarkUnsupported);
+    assert!(
+        !rows.iter().any(|row| row.contains(unsupported.as_str())),
+        "{rows:#?}"
+    );
+    // Lined up with the kinds a harness receives: the count in their
+    // column, the heading at their indent.
+    let skills = tree_rows(&unfolded_gsd(&["plan"]));
+    let skills_row = skills.iter().find(|row| row.contains("skills")).unwrap();
+    let extensions_row = skills.iter().find(|row| row.contains("extensions")).unwrap();
+    assert_eq!(skills_row.find("skills"), extensions_row.find("extensions"));
+    assert_eq!(skills_row.find(" 1 "), extensions_row.find(" 1 "));
+}
+
+/// A package with skills and an extension shows both, what an agent
+/// invokes first.
+#[test]
+fn a_plugin_with_skills_and_an_extension_shows_both_kinds() {
+    let rows = tree_rows(&unfolded_gsd(&["plan", "ship"]));
+    let skills = rows.iter().position(|row| row.contains("skills"));
+    let extensions = rows.iter().position(|row| row.contains("extensions"));
+    assert!(
+        matches!((skills, extensions), (Some(s), Some(e)) if s < e),
+        "{rows:#?}"
+    );
+    assert!(rows[skills.unwrap()].contains(" 2 "), "{rows:#?}");
+}
+
+/// What brings nothing at all still says so.
+#[test]
+fn a_plugin_that_provides_nothing_still_says_so() {
+    let mut model = unfolded_gsd(&[]);
+    model.plugin_extensions.insert("gsd@uze".to_owned(), Vec::new());
+    let unsupported = theme::glyph(theme::Symbol::MarkUnsupported);
+    assert!(
+        tree_rows(&model).iter().any(|row| row.contains(unsupported.as_str())),
+        "{:#?}",
+        tree_rows(&model)
+    );
+}
+
+/// The Extensions screen lists `gsd-band`, as a refresh found it.
+fn listing_gsd_band(model: &mut TuiModel) {
+    model.declared_extensions = vec![uze_application::DeclaredExtensionSummary {
+        identity: extension("gsd", "uze", "gsd-band"),
+        linked: false,
+        name: "GSD".to_owned(),
+        description: String::new(),
+        views: Vec::new(),
+        sections: Vec::new(),
+        drawers: Vec::new(),
+        statuses: Vec::new(),
+        bands: Vec::new(),
+        overlays: Vec::new(),
+        bars: Vec::new(),
+        errors: Vec::new(),
+    }];
+}
+
+fn on_gsd_band(model: &TuiModel) -> bool {
+    model.route == Route::Extensions
+        && matches!(
+            model.selected_extension(),
+            Some(crate::ui::model::ExtensionEntry::Declared(summary))
+                if summary.identity.id == "gsd-band"
+        )
+}
+
+/// The keyboard walks onto a plugin's extension like any resource, and
+/// Enter opens the Extensions screen on it; the footer names it.
+#[test]
+fn enter_on_a_plugins_extension_opens_the_extensions_screen_on_it() {
+    let mut model = unfolded_gsd(&["plan"]);
+    listing_gsd_band(&mut model);
+    model.act(uze_keys::Action::SelectNext);
+    model.act(uze_keys::Action::SelectNext);
+    assert_eq!(
+        model.selected_package_extension().map(|e| e.id).as_deref(),
+        Some("gsd-band"),
+        "past the skill, onto the extension"
+    );
+    let rows = buffer_rows(&drawn_at(&model, 140, 40).0);
+    assert!(
+        rows.iter().any(|row| row.contains("open") && row.contains("Extensions")),
+        "the panel's way across: {rows:#?}"
+    );
+    model.apply_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert!(on_gsd_band(&model), "{:?}", model.route);
+}
+
+/// The panel's link is the key: hovered, it lights; clicked, it does what
+/// Enter does on the row.
+#[test]
+fn clicking_the_panels_extensions_link_is_pressing_enter_on_the_row() {
+    let start = || {
+        let mut model = unfolded_gsd(&[]);
+        listing_gsd_band(&mut model);
+        model.select_package_extension(0, extension("gsd", "uze", "gsd-band"));
+        model
+    };
+    let mut clicked = start();
+    let (_, hits) = drawn_at(&clicked, 140, 40);
+    let (rect, _) = *hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::ShowExtension))
+        .expect("the link is a target");
+    clicked.hits = hits;
+    let at = |kind| MouseEvent {
+        kind,
+        column: rect.x + 1,
+        row: rect.y,
+        modifiers: KeyModifiers::NONE,
+    };
+    clicked.apply_mouse(at(MouseEventKind::Moved), Rect::new(0, 0, 140, 40));
+    assert_eq!(
+        clicked.hovered_offer,
+        Some(uze_keys::Action::ShowExtension)
+    );
+    clicked.apply_mouse(
+        at(MouseEventKind::Down(crossterm::event::MouseButton::Left)),
+        Rect::new(0, 0, 140, 40),
+    );
+
+    let mut pressed = start();
+    pressed.apply_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert!(on_gsd_band(&clicked));
+    assert!(on_gsd_band(&pressed));
+    assert_eq!(clicked.route, pressed.route);
+    assert_eq!(
+        clicked.remembered.extension_screen.selected,
+        pressed.remembered.extension_screen.selected
+    );
+}
+
+/// An extension of a plugin on offer is nowhere on the Extensions screen
+/// yet: no link is drawn for it, and Enter installs as on the plugin.
+#[test]
+fn an_extension_of_a_plugin_on_offer_links_nowhere() {
+    let mut model = unfolded_gsd(&[]);
+    model.remembered.marketplace_plugins = vec![marketplace_plugin("uze", "gsd", false)];
+    model.select_package_extension(0, extension("gsd", "uze", "gsd-band"));
+    let (_, hits) = drawn_at(&model, 140, 40);
+    assert!(
+        !hits
+            .iter()
+            .any(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::ShowExtension)),
+        "{hits:?}"
+    );
+    model.apply_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_eq!(model.route, Route::Plugins);
+}

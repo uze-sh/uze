@@ -252,4 +252,45 @@ mod tests {
         );
         fs::remove_dir_all(root).unwrap();
     }
+
+    /// A package that carries only extensions provides them, and nothing
+    /// for a harness: what it brings is not nothing.
+    #[test]
+    fn an_extension_only_package_provides_its_extensions_and_no_capability() {
+        let root = uze_testkit::temp::scratch("declared-extensions-only");
+        let market = root.join("market");
+        uze_testkit::fixtures::copy_tree(
+            &uze_testkit::fixtures::canonical("gsd"),
+            &market.join("plugins/gsd"),
+        );
+        let manifest = serde_json::json!({
+            "name": "market",
+            "plugins": [{ "name": "gsd", "source": "./plugins/gsd" }],
+        });
+        fs::write(market.join("marketplace.json"), manifest.to_string()).unwrap();
+        uze_testkit::git::commit_everything_in(&market);
+        let home = UzeHome::at(root.join("home"));
+        uze_core::state::marketplace_add(
+            &home,
+            "market",
+            uze_core::PackageSource::Local {
+                path: market.clone(),
+            },
+        )
+        .unwrap();
+        let app = UzeApplication::new(home, Vec::new());
+
+        let offered = app.marketplace().inspect_plugin("market", "gsd").unwrap();
+        let said: Vec<String> = offered
+            .declared_extensions
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(
+            said,
+            vec!["gsd-band · gsd@market", "gsd-panel · gsd@market"]
+        );
+        assert!(offered.capabilities.is_empty(), "{:?}", offered.capabilities);
+        fs::remove_dir_all(root).unwrap();
+    }
 }

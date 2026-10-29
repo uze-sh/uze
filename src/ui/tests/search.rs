@@ -173,6 +173,7 @@ fn a_plugin_reads_and_filters_by_its_category() {
             revision: None,
             summary: summary.clone(),
             capabilities: Vec::new(),
+            declared_extensions: Vec::new(),
         }),
         remembered: Remembered {
             plugin_screen: ListScreen::default(),
