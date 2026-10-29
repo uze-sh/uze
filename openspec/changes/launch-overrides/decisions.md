@@ -19,3 +19,53 @@
 - decided:  An `## [Unreleased]` section in the shape cliff renders (`### Refactor`, scope first, `[**breaking**]`), naming the keys that stay. Whoever squashes the change keeps the meaning in the merge commit (a `!` subject or a `BREAKING CHANGE:` footer) so the regenerated changelog still says it.
 - rejected: Relying on the commit subjects alone: a subject has no room for the list of keys left in each harness's configuration, which is the part an operator needs.
 - blast:    One section of `CHANGELOG.md`.
+
+## D3 — Own the other ways a release resumes or relocates a conversation
+
+- status:   pending
+- task:     2.2, 2.3
+- commit:   4fb4d844, ebdaf633
+- trigger:  The design's owned list names session, resume, continue, fork, print and first-prompt flags; the snapshots show more flags that open a different conversation or start it elsewhere: Claude Code's `--from-pr` and `--teleport` resume one, and Codex's `-C`/`--cd` moves the working root away from the checkout whose rollouts the read-back matches by `cwd`.
+- decided:  All three are `Uze`, refused with the continuity reason (`--cd` with "uze starts the agent in its own checkout"). Launch modes that take the session out of the pane (`--bg`, `--desktop`, `--cloud`, `--remote-control`, `--worktree`; Codex `--worktree`, `--remote`; OpenCode `--standalone`, `--server`; agy `--project`, `--new-project`, `--remote-control`) are left out of the catalogs, so they pass as unknown, as the spec says an uncatalogued flag does.
+- rejected: Leaving `--from-pr`/`--teleport`/`--cd` out too: typed, they pass silently and the agent's continuity ends without a word. Owning the launch modes as well: each is a product decision (an operator may want `--remote-control`), not a collision with what UZE composes.
+- blast:    Three entries across `claude/flags.rs` and `codex/flags.rs`; the left-out list is only module docs.
+
+## D4 — Mark more flags than the design named as weakening or degrading
+
+- status:   pending
+- task:     2.2, 2.4, 2.5
+- commit:   4fb4d844, 3d380070, b7278d79
+- trigger:  The design names one `Weakens` (`--dangerously-skip-permissions`) and four Claude `Degrades`; each release has its own equivalents.
+- decided:  `Weakens`: Claude `--allow-dangerously-skip-permissions`, Codex `--dangerously-bypass-approvals-and-sandbox` and `--dangerously-bypass-hook-trust`, OpenCode `--auto`, agy `--dangerously-skip-permissions`. `Degrades`: Claude `--safe-mode` and `--restricted`, which switch off the same deliveries `--bare` does. Value-level danger (`--permission-mode bypassPermissions`, `--sandbox danger-full-access`) stays `Operator` with the summary saying so, since the owner is per flag. agy's `--disable-slash-commands` is left out: it acts in print mode only, which is owned.
+- rejected: Marking only the design's list: the operator would see Claude's skip flag marked and Codex's equivalent not.
+- blast:    Owner fields in the four `flags.rs`; a mark in the popup, never a refusal.
+
+## D5 — A flag whose value is optional is catalogued as a switch
+
+- status:   pending
+- task:     2.2
+- commit:   4fb4d844
+- trigger:  `FlagValue` has no optional-value case, and Claude Code's `-d, --debug [filter]` takes one.
+- decided:  `FlagValue::None`, with the summary naming `--debug=<filter>`: the attached form is the only one that cannot be read as a stray positional, which the check refuses.
+- rejected: A fourth `FlagValue` variant for one flag; `Free`, which would swallow the next entry as its value.
+- blast:    One entry; a variant added later replaces it.
+
+## D6 — A snapshot defines only the flags opening an option's own line
+
+- status:   pending
+- task:     2.6, 2.7
+- commit:   8b4eb891, d1e96bc8
+- trigger:  Reading every dash-led word in a `--help` let a flag mentioned in prose pass: Codex's top-level help says "use --last" in `resume`'s description, so a catalog listing `--last` passed the fresh-launch test.
+- decided:  A flag is defined by a line indented at most six columns whose leading words are flags (`-c, --continue`, `--session, -s string`); wrapped descriptions sit deeper. The Rust helper (`flags_in_help`) and the Lab (`contract/flags.py::defined_flags`) read it the same way, so the Lab compares sets of flags, never wording. Snapshots were taken with `UZE_BYPASS=1`, `NO_COLOR=1`, `COLUMNS=100`, ANSI and trailing blanks stripped.
+- rejected: A byte-for-byte diff in the Lab: help wraps with the terminal's width and vendors reword descriptions every release, so it would be red on noise.
+- blast:    The helper in `shared/test_support.rs` and its Python twin; a vendor that indents options deeper than six columns needs the constant raised in both.
+
+## D7 — The Lab's snapshot diff is a contract, declared by each binding
+
+- status:   pending
+- task:     2.7
+- commit:   d1e96bc8
+- trigger:  The design says the Lab diffs each snapshot; checks are either a vendor-neutral contract or a vertical's scenarios.
+- decided:  `contract/flags.py`, first in `CONTRACTS` (no provider, one `docker run --network none` per snapshot), with `Bindings.help_snapshots` naming each `(arguments, snapshot path)`. It runs the same binary the version probe does (`opencode2` for OpenCode). Checks: `flags-snapshot-declared`, `flags-<args>-runs`, `flags-<args>-matches-snapshot`, the last naming the flags that appeared and vanished. `harness-watch` lists the catalog and snapshot as a belief to refresh.
+- rejected: A per-vendor scenario: the same comparison four times, and a fifth harness could skip it without a failed check.
+- blast:    `contract/flags.py`, one attribute per binding, `tests/test_flags.py`, one row of the `harness-watch` skill.
