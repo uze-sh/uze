@@ -122,6 +122,20 @@ impl Attach<'_> {
         self.model.dirty = true;
     }
 
+    /// A click on an arrow of the harness field, on either view. On the
+    /// overrides view the sets used lately are the new harness's, so they
+    /// are asked for.
+    pub(super) fn cycle_popup_harness(&mut self, step: isize) {
+        let Some(popup) = self.model.directory_step.as_mut() else {
+            return;
+        };
+        popup.cycle_harness(step);
+        if popup.overrides.is_some() {
+            self.ask_recent_overrides();
+        }
+        self.model.dirty = true;
+    }
+
     /// The overrides step: its line, its list and Enter, which launches
     /// from an empty line with nothing marked.
     fn overrides_action(&mut self, action: Action) {

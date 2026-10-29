@@ -278,6 +278,7 @@ impl Attach<'_> {
                     Some(WorkspaceHit::HintAction(action) | WorkspaceHit::ViewAction(action)) => {
                         self.directory_step_action(action)
                     }
+                    Some(WorkspaceHit::HarnessArrow(step)) => self.cycle_popup_harness(step),
                     Some(
                         hit @ (WorkspaceHit::OverrideRow(_)
                         | WorkspaceHit::OverrideEntryClose(_)
@@ -957,6 +958,7 @@ impl Attach<'_> {
                     matches!(
                         hit,
                         WorkspaceHit::HintAction(_)
+                            | WorkspaceHit::HarnessArrow(_)
                             | WorkspaceHit::OverrideRow(_)
                             | WorkspaceHit::OverrideEntryClose(_)
                             | WorkspaceHit::ForgetOverrides(_)
@@ -1370,6 +1372,7 @@ impl Attach<'_> {
             | WorkspaceHit::ViewAction(action) => {
                 return self.act(action, viewport);
             }
+            WorkspaceHit::HarnessArrow(step) => self.cycle_popup_harness(step),
             WorkspaceHit::DismissToast(index) => self.model.dismiss_toast(index),
             // The offer is answered and the message goes: leaving it up
             // would say the thing is still waiting on the reader.

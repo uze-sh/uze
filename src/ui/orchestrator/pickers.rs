@@ -101,11 +101,19 @@ impl DirectoryStep {
         self.harnesses.get(self.harness)
     }
 
-    /// Moves the harness on by `step`, round the ones set up.
+    /// Moves the harness on by `step`, round the ones set up. On the
+    /// overrides view the entries, the catalog and the sets used lately
+    /// follow it, each kept per harness; what was marked in the list, and
+    /// why a token was refused, were the other harness's and go.
     pub(super) fn cycle_harness(&mut self, step: isize) {
         let count = self.harnesses.len();
         if count > 0 {
             self.harness = (self.harness as isize + step).rem_euclid(count as isize) as usize;
+        }
+        if let Some(over) = self.overrides.as_mut() {
+            over.marked = None;
+            over.top.set(0);
+            over.refusal = None;
         }
     }
 }

@@ -671,6 +671,44 @@ fn each_harness_keeps_its_own_entries() {
     assert_eq!(entries(&driven), vec![vec!["DEBUG=1".to_owned()]]);
 }
 
+/// The harness row is drawn alike on both views, so nothing shifts when
+/// they switch, and on the overrides view a click on its arrows changes
+/// the harness there: the entries, and the sets used lately, follow it,
+/// while the arrow keys keep moving the caret.
+#[test]
+fn the_harness_changes_on_the_overrides_view_and_the_overrides_follow() {
+    let mut popup = popup("overrides-harness-in-view");
+    let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
+    let (_, path) = popup_rows(&mut driven);
+    open_by_key(&mut driven);
+    let (_, view) = popup_rows(&mut driven);
+    assert_eq!(path[1], view[1], "the harness row does not move");
+
+    type_text(&mut driven, "DEBUG=1");
+    driven.press_key(chord(Action::Activate, Scope::LaunchOverrides));
+    let first = step_of(&driven).recent_question().unwrap().0;
+    driven.frame();
+    let next = driven.hit(|hit| *hit == WorkspaceHit::HarnessArrow(1));
+    driven.press(next.x, next.y);
+    assert!(in_step(&driven), "still on the overrides view");
+    let (second, _) = step_of(&driven).recent_question().unwrap();
+    assert_ne!(first, second, "the harness changed");
+    assert!(entries(&driven).is_empty(), "the other harness has its own");
+    assert_eq!(
+        step_of(&driven)
+            .recent_asked
+            .as_ref()
+            .map(|(harness, _)| harness),
+        Some(&second),
+        "its sets used lately are asked for"
+    );
+
+    driven.frame();
+    let back = driven.hit(|hit| *hit == WorkspaceHit::HarnessArrow(-1));
+    driven.press(back.x, back.y);
+    assert_eq!(entries(&driven), vec![vec!["DEBUG=1".to_owned()]]);
+}
+
 /// Enter on an empty line with nothing marked starts the agent, with the
 /// entries the step holds.
 #[test]

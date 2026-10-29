@@ -201,9 +201,8 @@ fn card_views(
 }
 
 /// The harness the agent will run, on the body's first row against its
-/// end, unlabelled: its name and arrows say what it is. In both views. On `new agent` it sits between the arrows that change it, a
-/// click on either being its key; on `overrides` the arrows move the
-/// caret, so the harness is only named, the one the flags are for.
+/// end, unlabelled: its name and arrows say what it is. The same on both
+/// views, and changeable on both: the overrides follow the harness.
 fn render_harness_field(
     frame: &mut ratatui::Frame<'_>,
     rect: Rect,
@@ -211,44 +210,49 @@ fn render_harness_field(
     step: &DirectoryStep,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
+    // The same arrows on both views, so the name never moves: on `new
+    // agent` they are the arrow keys' targets; on `overrides`, where
+    // those keys move the caret, targets of their own.
     let on_overrides = step.overrides.is_some();
-    let arrow_hue = |action: Action| {
-        if model.hovered == Some(WorkspaceHit::HintAction(action)) {
+    let arrow = |action: Action, step: isize| {
+        if on_overrides {
+            WorkspaceHit::HarnessArrow(step)
+        } else {
+            WorkspaceHit::HintAction(action)
+        }
+    };
+    let arrow_hue = |hit: WorkspaceHit| {
+        if model.hovered == Some(hit) {
             Token::Accent
         } else {
             Token::TextFaint
         }
     };
+    let previous = arrow(Action::FocusPrevious, -1);
+    let next = arrow(Action::FocusNext, 1);
     let left = vec![picker_lead()];
     let right = match step.chosen_harness() {
-        Some(option) if on_overrides => vec![Span::styled(
-            option.display_name.clone(),
-            theme::fg(Token::TextMuted),
-        )],
         Some(option) => vec![
             Span::styled(
                 format!("{} ", theme::glyph(Symbol::StepPrevious)),
-                theme::fg(arrow_hue(Action::FocusPrevious)),
+                theme::fg(arrow_hue(previous)),
             ),
             Span::styled(option.display_name.clone(), theme::fg_bold(Token::Accent)),
             Span::styled(
                 format!(" {}", theme::glyph(Symbol::StepNext)),
-                theme::fg(arrow_hue(Action::FocusNext)),
+                theme::fg(arrow_hue(next)),
             ),
         ],
         None => vec![Span::styled(NO_AGENT_SET_UP, theme::fg(Token::TextMuted))],
     };
     let right_width: u16 = right.iter().map(|span| span.width() as u16).sum();
     let end = rect.right().saturating_sub(TRAILING_PAD);
-    if !on_overrides && step.harnesses.len() > 1 {
+    if step.harnesses.len() > 1 {
         hits.push((
             Rect::new(end.saturating_sub(right_width), rect.y, 2, 1),
-            WorkspaceHit::HintAction(Action::FocusPrevious),
+            previous,
         ));
-        hits.push((
-            Rect::new(end.saturating_sub(2), rect.y, 2, 1),
-            WorkspaceHit::HintAction(Action::FocusNext),
-        ));
+        hits.push((Rect::new(end.saturating_sub(2), rect.y, 2, 1), next));
     }
     frame.render_widget(Paragraph::new(spread(rect, left, right)), rect);
 }

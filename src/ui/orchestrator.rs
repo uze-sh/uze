@@ -1064,6 +1064,11 @@ pub(super) enum WorkspaceHit {
     /// it. Apart from [`WorkspaceHit::HintAction`] so pointing at the view
     /// does not light the foot's hint for the same key.
     ViewAction(Action),
+    /// An arrow of the new agent's harness field, by the way it moves the
+    /// harness (`-1` back, `1` on). Its own target rather than the arrow
+    /// keys' hint: on the overrides view those keys move the caret, and
+    /// the arrows still change the harness there.
+    HarnessArrow(isize),
     /// One row of the open index, by position in it.
     ActionIndexEntry(usize),
     /// The release notes modal's own area: a click on it is reading, and

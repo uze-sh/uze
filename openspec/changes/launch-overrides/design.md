@@ -313,8 +313,10 @@ Against the operator's mockup and the design-system rules:
   line counts the overrides once there are any (`3 flags · 2 vars`, in
   the warning hue when one gives something up); with none it says
   nothing. A click on `overrides`, or `ctrl+f`, opens that view; a click
-  on `new agent`, or Esc, goes back. On `overrides` the arrows move the
-  caret, so the harness is named there without its arrows. The popup is
+  on `new agent`, or Esc, goes back. On `overrides` the arrow keys move the
+  caret, but the harness keeps its arrows, drawn alike, and a click on
+  one changes the harness there: the entries, the catalog and the sets
+  used lately follow it, each kept per harness. The popup is
   52 columns with 8 to 12 listing rows; `esc close` gives way to `ctrl+f
   overrides` in the foot.
 - **Not `ctrl+o`.** It is the Global `SwitchMode` and reaches Global even

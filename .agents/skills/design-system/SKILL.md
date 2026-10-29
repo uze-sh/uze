@@ -155,7 +155,9 @@ on "cancel" must not save first.
   reaches it, through a target of its own (`WorkspaceHit::ViewAction`), so
   pointing at a view never lights the foot's hint for the same key. The
   body under the border starts with its field, unlabelled against the
-  row's end (`‹ Claude Code ›`), and a rule, then the view in front, every view in the same rows, so
+  row's end (`‹ Claude Code ›`), drawn alike on every view so nothing
+  shifts when they switch, and changeable on every view (what a view
+  holds follows it), then a rule, then the view in front, every view in the same rows, so
   switching never resizes it. What a view holds that the other should
   know is one muted line at the body's foot, with a row of air over and
   under it so it rests against neither the list nor the keys (`3 flags ·
