@@ -535,6 +535,36 @@ impl IntegrationPort for ClaudeIntegration {
         .map(Some)
     }
 
+    fn switched_off(&self, receipt: &AttachmentReceipt) -> bool {
+        match &receipt.artifact {
+            ManagedArtifact::IntegrationOwned { kind, selector, .. }
+                if marketplace::receipt_origin::<ClaudeMarketplace>(kind).is_some() =>
+            {
+                plugin::plugin_switched_off(
+                    Path::new(&self.provisioning_executable()),
+                    &self.command_home,
+                    selector,
+                )
+            }
+            _ => false,
+        }
+    }
+
+    fn switch_off(&self, receipt: &AttachmentReceipt) -> Result<()> {
+        match &receipt.artifact {
+            ManagedArtifact::IntegrationOwned { kind, selector, .. }
+                if marketplace::receipt_origin::<ClaudeMarketplace>(kind).is_some() =>
+            {
+                plugin::switch_off_plugin(
+                    Path::new(&self.provisioning_executable()),
+                    &self.command_home,
+                    selector,
+                )
+            }
+            _ => Ok(()),
+        }
+    }
+
     fn republish_packages(&self, packages: &[StoredPackage]) -> Result<()> {
         marketplace::republish::<ClaudeMarketplace>(&self.uze_home, packages)
     }

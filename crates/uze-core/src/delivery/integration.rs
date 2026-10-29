@@ -922,6 +922,20 @@ pub trait IntegrationPort: Send + Sync {
         Ok(None)
     }
 
+    /// Whether the person switched off, inside the harness itself, what this
+    /// receipt delivered. Their choice, not a change to anything UZE wrote:
+    /// the receipt still inspects as matched, and delivering the package
+    /// again must not undo it.
+    fn switched_off(&self, _receipt: &AttachmentReceipt) -> bool {
+        false
+    }
+
+    /// Switches off again what this receipt delivered, for a delivery that
+    /// replaced one the person had switched off.
+    fn switch_off(&self, _receipt: &AttachmentReceipt) -> Result<()> {
+        Ok(())
+    }
+
     /// This harness's own layer of `plugin check`, above the rules every
     /// harness shares: what it would refuse, drop or not recognise in
     /// `resource` as authored, including its `harness.<id>` block. Offline

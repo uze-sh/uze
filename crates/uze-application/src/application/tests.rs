@@ -1548,6 +1548,101 @@ fn the_install_report_names_the_envelope_and_every_attachment_beside_it() {
     fs::remove_dir_all(root).unwrap();
 }
 
+/// A harness where the person switched UZE's plugin off, and that counts
+/// each time UZE switches it off again.
+#[cfg(unix)]
+struct SwitchedOffIntegration {
+    envelope: EnvelopingIntegration,
+    off: Arc<std::sync::atomic::AtomicBool>,
+    switched_off_again: Arc<AtomicUsize>,
+}
+
+#[cfg(unix)]
+impl IntegrationPort for SwitchedOffIntegration {
+    fn id(&self) -> &'static str {
+        self.envelope.id()
+    }
+    fn capabilities(&self) -> HarnessCapabilities {
+        HarnessCapabilities::default()
+    }
+    fn detect(&self) -> HarnessDetection {
+        self.envelope.detect()
+    }
+    fn exposure_plan(&self, resource: &Resource) -> ExposurePlan {
+        self.envelope.exposure_plan(resource)
+    }
+    fn package_exposure_plan(
+        &self,
+        package: &StoredPackage,
+        resources: &[&Resource],
+    ) -> Option<PackageExposurePlan> {
+        self.envelope.package_exposure_plan(package, resources)
+    }
+    fn attach_package(
+        &self,
+        package: &StoredPackage,
+        plan: &PackageExposurePlan,
+    ) -> Result<Option<AttachmentReceipt>> {
+        self.off.store(false, Ordering::SeqCst);
+        self.envelope.attach_package(package, plan)
+    }
+    fn attach_receipt(&self, resource: &Resource) -> Result<Option<AttachmentReceipt>> {
+        self.envelope.attach_receipt(resource)
+    }
+    fn switched_off(&self, receipt: &AttachmentReceipt) -> bool {
+        receipt.resource_identity.is_none() && self.off.load(Ordering::SeqCst)
+    }
+    fn switch_off(&self, _receipt: &AttachmentReceipt) -> Result<()> {
+        self.off.store(true, Ordering::SeqCst);
+        self.switched_off_again.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+/// Switching UZE's plugin off in a harness is the person's choice: an
+/// update goes ahead, brings the new bytes, and leaves the plugin off.
+#[cfg(unix)]
+#[test]
+fn an_update_keeps_a_plugin_the_person_switched_off_switched_off() {
+    let root = uze_testkit::temp::scratch("update-switched-off");
+    let attached = root.join("attached");
+    fs::create_dir_all(&attached).unwrap();
+    let off = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let switched_off_again = Arc::new(AtomicUsize::new(0));
+    let app = UzeApplication::new(
+        UzeHome::at(root.join("home")),
+        vec![Box::new(SwitchedOffIntegration {
+            envelope: EnvelopingIntegration {
+                root: attached.clone(),
+            },
+            off: off.clone(),
+            switched_off_again: switched_off_again.clone(),
+        })],
+    );
+    let added = app
+        .plugins()
+        .add(
+            uze_core::PackageSource::local(multi_mcp_fixture()),
+            &uze_core::trust::AlwaysTrust,
+        )
+        .unwrap();
+    assert_eq!(switched_off_again.load(Ordering::SeqCst), 0);
+
+    off.store(true, Ordering::SeqCst);
+    let updated = app
+        .plugins()
+        .update(&added.plugin.id, &uze_core::trust::AlwaysTrust)
+        .unwrap();
+
+    assert!(
+        matches!(updated, UpdatePluginReport::Updated { .. }),
+        "{updated:?}"
+    );
+    assert_eq!(switched_off_again.load(Ordering::SeqCst), 1);
+    assert!(off.load(Ordering::SeqCst), "still switched off");
+    fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn remove_is_idempotent_without_claiming_history_for_absent_state() {
     let root = uze_testkit::temp::scratch("remove-twice");

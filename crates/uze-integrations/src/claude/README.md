@@ -125,7 +125,12 @@ Inspection (`inspect_claude_plugin`, `ClaudeMarketplace::marketplace_exists`)
 reads Claude's own records first (`plugins/known_marketplaces.json`,
 `installed_plugins.json`, `settings.json`) and is unit-tested on that path
 (`claudes_records_answer_without_its_cli`,
-`an_installed_enabled_plugin_inspects_as_matched_from_the_records`). The
+`an_installed_enabled_plugin_inspects_as_matched_from_the_records`). A
+plugin the person switched off in Claude Code is still the one UZE
+delivered: it inspects as Matched, so it never blocks an update or a
+removal, and `IntegrationPort::switched_off` / `switch_off` let an update
+leave it off (`claude plugin disable`) after installing it again
+(`a_plugin_switched_off_in_claude_is_matched_and_a_moved_marketplace_is_drift`). The
 mutating CLI-shelling functions (`ClaudeMarketplace::add_marketplace`,
 `ClaudeMarketplace::install_plugin`, `attach_package`,
 `ClaudeMarketplace::remove_plugin`) are **not** unit-tested — they shell out to the
@@ -192,7 +197,7 @@ out.
 
 | Receipt | Inspect | Detach | Drift-safe |
 |---|---|---|---|
-| `IntegrationOwned{kind:"claude-plugin"}` (explicit) | `inspect_claude_plugin` — Claude's own records (`plugins/known_marketplaces.json`, `installed_plugins.json`, `settings.json`), falling back to `claude plugin marketplace list --json` + `plugin list --json` when they are absent; checks marketplace root + installed + enabled | `claude plugin uninstall <selector>` | Yes — MATCHED only when marketplace root, installed, and enabled all agree |
+| `IntegrationOwned{kind:"claude-plugin"}` (explicit) | `inspect_claude_plugin` — Claude's own records (`plugins/known_marketplaces.json`, `installed_plugins.json`, `settings.json`), falling back to `claude plugin marketplace list --json` + `plugin list --json` when they are absent; checks marketplace root + installed | `claude plugin uninstall <selector>` | Yes — MATCHED when marketplace root and installed agree, enabled or switched off by the person; a moved marketplace root is Drifted |
 | `IntegrationOwned{kind:"claude-plugin-generated"}` (generated) | Same `inspect_claude_plugin` (marketplace-root-agnostic) | Same `ClaudeMarketplace::remove_plugin`, plus `shared::marketplace::remove_generated_package` (Derived Artifact, safe to delete unconditionally) | Yes — identical inspection path to explicit |
 | `GeneratedTree` (Skill directory) | standard: the directory's `tree_sha256` against the receipt | standard detach, only while it still matches | Yes: an edited directory is Drifted and left in place |
 | `VendorConfigEntry` (MCP) | `inspect_claude_mcp` — read-only `~/.claude.json` parse, exact command+args match | `claude mcp remove <name>` | Yes — Blocked (not silently accepted) if the receipt requests cwd/env/enabled state this integration can't verify |
@@ -201,7 +206,7 @@ One thing worth a second look, not necessarily a bug: `inspect_claude_plugin`
 computes `package_root` from the receipt but only uses it to select which
 plugin.json fields to read — it never compares `package_root` against
 anything in Claude's own JSON response. The code comment states existence +
-enabled + marketplace-root match is "sufficient for Matched" since the cache
+marketplace-root match is "sufficient for Matched" since the cache
 is a Derived Artifact, not a second source of truth. Plausible, but it means
 a plugin re-pointed at a *different* package under the *same* marketplace
 selector would not be independently caught by a `package_root` mismatch —
