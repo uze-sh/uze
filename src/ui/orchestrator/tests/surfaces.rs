@@ -1340,3 +1340,25 @@ fn a_surface_opened_on_an_agents_shell_comes_back_with_the_agent() {
     bring_to_front(&mut model, shell);
     assert!(showing_architect(&model), "and on the shell beside it");
 }
+
+/// Under the overview no terminal of the agent was chosen yet: the
+/// overview follows the agent to its shell and still holds the pane, so
+/// what it put away stands again when it is put away.
+#[test]
+fn moving_to_the_agents_shell_under_the_overview_keeps_the_surface() {
+    let (mut model, first, _second) = two_agents_with_shells();
+    let shell = shell_beside(&model, first);
+    select_tab(&mut model, first);
+    model.settle_pane();
+    open_architect(&mut model);
+    let space = model.session.as_ref().expect("session").selected_space().id;
+    model.open_space_overview(space, first, PathBuf::from("/repo"), true);
+
+    bring_to_front(&mut model, shell);
+    assert!(
+        model.space_overview.is_some(),
+        "the overview follows the agent"
+    );
+    model.dismiss_space_overview();
+    assert!(showing_architect(&model));
+}

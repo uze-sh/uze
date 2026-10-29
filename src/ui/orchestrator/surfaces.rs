@@ -79,13 +79,15 @@ impl WorkspaceModel {
         if in_front != self.extension_tab {
             let same_agent =
                 in_front.map(|front| front.agent) == self.extension_tab.map(|front| front.agent);
-            if same_agent {
+            if !same_agent {
+                self.suspend_surface();
+            } else if self.space_overview.is_none() {
+                // Under the overview no terminal was chosen yet: it follows
+                // the agent, and what it put away waits for it to go.
                 self.close_surface();
                 if let Some(front) = in_front {
                     self.remembered.declared.standing.remove(&front.agent);
                 }
-            } else {
-                self.suspend_surface();
             }
             self.extension_tab = in_front;
         }
