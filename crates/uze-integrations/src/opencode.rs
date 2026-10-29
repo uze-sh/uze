@@ -41,6 +41,7 @@ use uze_core::{
 
 mod agent_context;
 mod distribution;
+mod flags;
 mod hooks;
 mod mcp;
 mod project_agents;
@@ -269,6 +270,14 @@ impl IntegrationPort for OpenCodeIntegration {
     /// (measured on 2.0.29, `experiments/opencode/session-assigned`), so UZE
     /// names it at launch. The read-back stays, for a conversation the
     /// person starts from inside the TUI.
+    fn flag_catalog(&self) -> &'static [uze_core::flag_catalog::FlagSpec] {
+        flags::CATALOG
+    }
+
+    fn managed_environment(&self) -> &'static [&'static str] {
+        flags::MANAGED_ENVIRONMENT
+    }
+
     fn session_continuity(&self) -> uze_core::integration::SessionContinuity {
         uze_core::integration::SessionContinuity::Assigned
     }
