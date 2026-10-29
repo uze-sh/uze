@@ -33,10 +33,6 @@ pub use uze_core::{
         FixedResolution, NameCollisionAuthority, NameCollisionRequest, NameCollisionResolution,
         NoNameCollisionAuthority,
     },
-    preference::{
-        Autonomy, AxisPlan, KeyPlan, ModelPreference, PlannedValue, PreferenceApplyOutcome,
-        PreferenceAxis, PreferencePlan, Preferences, SandboxScope,
-    },
     router::{CompatibilityRoute, HarnessCapabilities},
     store::{parse_plugin_marketplace_spec, typed_name},
     trust::{

@@ -31,16 +31,6 @@ impl UzeApplication {
     }
 }
 
-/// Universal user preferences and the profiles that carry them.
-pub struct Profiles<'a>(pub(super) &'a UzeApplication);
-
-impl UzeApplication {
-    /// Reading and applying user preference profiles.
-    pub fn profiles(&self) -> Profiles<'_> {
-        Profiles(self)
-    }
-}
-
 /// Which theme is active, and which themes this machine has.
 pub struct Themes<'a>(pub(super) &'a UzeApplication);
 

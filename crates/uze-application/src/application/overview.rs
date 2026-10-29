@@ -32,7 +32,7 @@ use uze_core::{
 use super::{services::Project, *};
 
 /// Everything the management screens show, read in one pass: the machine
-/// (plugins, health, marketplaces, profiles) and the project the session
+/// (plugins, health, marketplaces) and the project the session
 /// was opened in (workspace, context, prompt history). One read model so
 /// the TUI composes nothing of its own, and so the whole of what a
 /// refresh costs is one call a budget test can time.
@@ -42,7 +42,6 @@ pub struct MachineSnapshot {
     pub doctor: DoctorReport,
     pub marketplaces: Vec<MarketplaceSummary>,
     pub marketplace_plugins: Vec<MarketplacePluginSummary>,
-    pub profiles: Vec<ProfileSummary>,
     /// The root the workspace-scoped halves were read at — the detected
     /// workspace's, so a session opened in a subdirectory reads its own
     /// project's context, not a cwd-scoped miss.
@@ -68,7 +67,6 @@ impl UzeApplication {
         let plugins = doctor.plugins.clone();
         let marketplaces = self.marketplace().list()?;
         let marketplace_plugins = self.marketplace().plugins()?;
-        let profiles = self.profiles().list()?;
         let resolved = anchor::resolve_anchor(context_root).ok();
         let root = resolved
             .as_ref()
@@ -87,7 +85,6 @@ impl UzeApplication {
             doctor,
             marketplaces,
             marketplace_plugins,
-            profiles,
             root,
             workspace,
             context_status,

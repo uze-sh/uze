@@ -77,7 +77,6 @@ fn a_service_call_is_one_span_tree() {
         "health.report",
         "marketplace.list",
         "marketplace.plugins",
-        "profiles.list",
         "context.inspect",
     ] {
         assert_eq!(
