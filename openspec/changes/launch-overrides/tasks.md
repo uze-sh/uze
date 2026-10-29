@@ -27,8 +27,8 @@
 
 ## 3. Check and record (uze-workspace)
 
-- [ ] 3.1 Line splitter (quotes, backslash, no expansion) and tokenization into variables, flags and values against a catalog
-- [ ] 3.2 `overrides::check` with the shared rule (`UZE_*`, `PATH`, `HOME`, `TRACEPARENT`, `TRACESTATE`), spellings (`--f v`, `--f=v`, short, attached), `Keyed` parent-table matching, positional and `--` refusal; plan-less and plan-aware strictness; tests for each spec scenario
+- [x] 3.1 Line splitter (quotes, backslash, no expansion) and tokenization into variables, flags and values against a catalog
+- [x] 3.2 `overrides::check` with the shared rule (`UZE_*`, `PATH`, `HOME`, `TRACEPARENT`, `TRACESTATE`), spellings (`--f v`, `--f=v`, short, attached), `Keyed` parent-table matching, positional and `--` refusal; plan-less and plan-aware strictness; tests for each spec scenario
 - [ ] 3.3 `UzeHome::launch_overrides_path` (`state/launch-overrides.json`) and its lock; `Shaped` record (shape 1) with `agents` (by project, agent, harness) and `recent` (by harness), written `0600`
 - [ ] 3.4 Record an agent's overrides per harness; drop an agent's entry when its record goes
 - [ ] 3.5 Recent sets: dedupe by normalized tokens, move to top taking the project last used in, cap 20 per harness, this project's sets listed first, withhold secret-looking variables with a count, forget one set

@@ -69,3 +69,23 @@
 - decided:  `contract/flags.py`, first in `CONTRACTS` (no provider, one `docker run --network none` per snapshot), with `Bindings.help_snapshots` naming each `(arguments, snapshot path)`. It runs the same binary the version probe does (`opencode2` for OpenCode). Checks: `flags-snapshot-declared`, `flags-<args>-runs`, `flags-<args>-matches-snapshot`, the last naming the flags that appeared and vanished. `harness-watch` lists the catalog and snapshot as a belief to refresh.
 - rejected: A per-vendor scenario: the same comparison four times, and a fifth harness could skip it without a failed check.
 - blast:    `contract/flags.py`, one attribute per binding, `tests/test_flags.py`, one row of the `harness-watch` skill.
+
+## D8 — The check takes the arguments UZE composed, not the plan
+
+- status:   pending
+- task:     3.2, 3.6
+- commit:
+- trigger:  The design gives `check` an `Option<&LaunchPlan>`, but `features.memories=false` is composed by the shim from `memory_off` after `plan_with` returns, so the plan alone cannot say whether that conditional key is set on this launch.
+- decided:  `check(entries, catalog, managed, composed: Option<&[OsString]>)`, where `composed` is every argument UZE adds; `plan_with` passes the plan's `args` and `trailing`, and `LaunchOverrides::leave_out_composed(catalog, composed)` lets the shim drop, with a note, a flag that collides with what it adds afterwards (group 4 calls it with `memory_off`'s args).
+- rejected: Moving the `memory_off` decision into `plan_with`: it is the shim's today and group 3 does not change the shim. Treating conditional keys as always owned at launch: it would refuse `-c notify=…` on every launch where the operator's own config already sets `notify`, which is exactly the case UZE leaves alone.
+- blast:    The `check` signature and one method on `LaunchOverrides`; a plan-based signature is a wrapper over this one.
+
+## D9 — Grammar details the design left open
+
+- status:   pending
+- task:     3.1, 3.2
+- commit:
+- trigger:  The design names the splitter's quoting and the verdicts, not the edge cases each meets.
+- decided:  Double quotes take POSIX's escapes only (`\"`, `\\`, `` \` ``, `\$`), so a quoted `C:\dir` keeps its backslash; a backslash ending the line is itself. A catalogued flag that takes a value and has none, a `OneOf` value outside its set, and a keyed value with no `key=` are `Refused` with the reason (`takes a value: model`, `takes one of …`, `takes key=value`). Variable names are compared to the managed ones without case (`Path` is `PATH` on Windows). Keyed keys drop quotes and blanks around dots (`"hooks" . state` is `hooks.state`), and a key collides with an owned one when equal, its parent table, or inside it (`agents.max` under `agents`). A refusal note names a flag's spelling or a variable's name, never a value.
+- rejected: Passing a value-less `--model` through for the harness to reject: the agent would start and die in its pane, where the popup could have said why.
+- blast:    `overrides/line.rs` and `overrides/check.rs`, with their tests.

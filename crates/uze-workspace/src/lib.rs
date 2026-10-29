@@ -3,7 +3,7 @@
 //! Where an agent works ([`checkout`], [`worktree`]), the record of it
 //! ([`task`]), the conversation it is in ([`conversation`]) and carrying that
 //! across a launch ([`continuity`]) or across a change of harness
-//! ([`briefing`]), how its finished work reaches the
+//! ([`briefing`]), what the operator adds to a launch ([`overrides`]), how its finished work reaches the
 //! target ([`landing`]), what a project declares about all of that
 //! ([`declaration`]), and the workspace client's own state under `UzeHome`
 //! ([`client_layout`], [`prompt_history`], [`notifications`],
@@ -27,6 +27,7 @@ mod file_lock;
 mod git;
 pub mod landing;
 pub mod notifications;
+pub mod overrides;
 pub mod project_labels;
 pub mod prompt_history;
 pub mod reports;
