@@ -530,8 +530,8 @@ fn two_quick_clicks_on_a_surface_button_open_and_close_it() {
     );
 }
 
-/// Choosing a tab is choosing to see it — the one already in front
-/// included, which is how the pane is had back from a surface.
+/// Choosing the tab already in front is choosing to see it: that is how
+/// the pane is had back from a surface.
 #[test]
 fn choosing_a_tab_puts_the_open_surface_away() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-surface-tab"));
@@ -974,6 +974,59 @@ fn clicking_a_surface_footer_hint_is_pressing_its_key() {
             .model
             .showing(uze_extensions::code::CATALOG.id),
         "as the key does"
+    );
+}
+
+/// A space's header is the same gesture one level up: another space's
+/// leaves the surface to the agent it stands for, and the header of the
+/// space already in front takes the pane back.
+#[test]
+fn clicking_another_spaces_header_keeps_the_surface_and_its_own_takes_it_away() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-surface-space"));
+    let mut model = three_spaces();
+    let (one, three) = {
+        let spaces = &model.session.as_ref().expect("session").workspace.spaces;
+        (spaces[0].id, spaces[2].id)
+    };
+    open_architect(&mut model);
+    let mut driven = driven(model, &home);
+    let click_and_confirm = |driven: &mut Driven<'_>, space| {
+        // Each click is its own gesture, never the second half of a
+        // double click on the same header.
+        driven.attach.model.last_click = None;
+        driven.frame();
+        let header = space_header(&driven.attach.model.hits, space);
+        driven.press(header.x, header.y);
+        let mut session = driven.attach.model.session.clone().expect("session");
+        for request in driven.sent() {
+            match request {
+                ClientRequest::SelectSpace { space } => session.workspace.selected_space = space,
+                ClientRequest::SelectTab { tab } => {
+                    session.select_tab(tab);
+                }
+                _ => {}
+            }
+        }
+        driven.attach.model.apply(
+            ClientEvent::SessionUpdated { session },
+            &identities_fixture(),
+        );
+    };
+    let showing = |driven: &Driven<'_>| {
+        driven
+            .attach
+            .model
+            .showing(uze_extensions::architect::CATALOG.id)
+    };
+
+    click_and_confirm(&mut driven, one);
+    assert!(!showing(&driven));
+    click_and_confirm(&mut driven, three);
+    assert!(showing(&driven), "the surface stands again");
+    click_and_confirm(&mut driven, three);
+    assert!(
+        !showing(&driven),
+        "its own space's header takes the pane back"
     );
 }
 
