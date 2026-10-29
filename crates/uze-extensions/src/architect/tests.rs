@@ -1188,3 +1188,41 @@ fn a_link_that_is_a_url_leads_nowhere() {
         "a fragment is dropped, not followed"
     );
 }
+
+/// The text of the key under the drawing on show.
+fn key_of(state: &ArchitectView) -> String {
+    let text = state.canvas.as_ref().expect("a drawing").to_text();
+    text.split_once("\n Key\n")
+        .map(|(_, key)| key.to_owned())
+        .unwrap_or_default()
+}
+
+#[test]
+fn the_key_explains_only_what_the_drawing_uses() {
+    let state = drawing(vec![Artifact::read(
+        "a.mmd",
+        "C4Container\nSystem_Boundary(s, \"S\") {\n\
+         ContainerDb(db, \"Store\", \"Files\", \"Bytes\")\n}\n\
+         System_Ext(git, \"Git\", \"Remote\")\nRel(db, git, \"Mirrors\", \"Git\")\n",
+    )]);
+    let key = key_of(&state);
+    assert!(key.contains("a store of data"), "{key}");
+    assert!(key.contains("outside the system being described"), "{key}");
+    assert!(key.contains("a boundary"), "{key}");
+    assert!(
+        !key.contains("a queue") && !key.contains("a person"),
+        "{key}"
+    );
+}
+
+/// A label with no room on its line leaves a marker the key reads out.
+#[test]
+fn a_label_with_no_room_is_kept_in_the_key() {
+    let long = "a relationship whose label is far too long to fit on any line of this board at all";
+    let state = drawing(vec![Artifact::read(
+        "a.mmd",
+        &format!("C4Context\nSystem(a, \"A\")\nSystem(b, \"B\")\nRel(a, b, \"{long}\")\n"),
+    )]);
+    let key = key_of(&state);
+    assert!(key.contains(&format!("A ► B: {long}")), "{key}");
+}

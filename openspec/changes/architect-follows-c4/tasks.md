@@ -14,8 +14,8 @@
 
 ## 3. Drawing every relation and a key
 
-- [ ] 3.1 A label with no room becomes a numbered marker
-- [ ] 3.2 The key under the drawing: shapes, external, boundaries, dotted lines, marks, markers
+- [x] 3.1 A label with no room becomes a numbered marker
+- [x] 3.2 The key under the drawing: shapes, external, boundaries, dotted lines, marks, markers
 
 ## 4. Links and the check
 

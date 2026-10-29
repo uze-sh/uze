@@ -147,11 +147,12 @@ open that view with the box zoomed into selected and in view.
 ## ADDED Requirements
 
 ### Requirement: Every diagram carries a key
-Under every drawn graph the surface SHALL draw a key listing the
-notation that drawing uses: element shapes, the external style, boundary
-kinds, dotted lines, the marks for leading inside and to the code, and
-every relation whose label became a marker. A notation the drawing does
-not use SHALL NOT be listed.
+Under every drawn C4 view the surface SHALL draw a key listing the
+notation it uses: relationships, element shapes, the external style,
+boundaries, the marks for leading inside and to the code, and every
+relation whose label became a marker. Under any other graph the key SHALL
+list only shapes, marks and markers it uses. Unused notation SHALL NOT be
+listed.
 
 #### Scenario: A view with a database and an external system
 - **WHEN** a container view holds a `ContainerDb` and a `System_Ext`
