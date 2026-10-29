@@ -1369,6 +1369,23 @@ fn a_branch_gone_from_the_remote_is_no_longer_published() {
     assert!(publication(primary, work(&kept)).is_some());
 }
 
+/// A remote that cannot be asked says nothing about what it holds.
+#[test]
+fn nothing_is_forgotten_when_the_remote_cannot_be_asked() {
+    let (repository, _other) = published("landing-forget-unreachable");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let agent = launch(&repository, &mut store, "offline");
+    agent_commits(&repository, work(&agent), "a.rs", "");
+    let slot = slot_path(primary, work(&agent)).unwrap();
+    repository.git_in(&slot, &["push", "--quiet", REMOTE, "HEAD"]);
+    let unreachable = primary.join("no-such-remote.git");
+    repository.git(&["remote", "set-url", REMOTE, unreachable.to_str().unwrap()]);
+
+    forget_unpublished(primary, [work(&agent)]);
+    assert!(publication(primary, work(&agent)).is_some());
+}
+
 /// A fork workflow fetches from one repository and pushes to another, and
 /// a branch is on the remote where it was pushed.
 #[test]
