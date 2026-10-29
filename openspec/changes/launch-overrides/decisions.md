@@ -194,7 +194,7 @@
 
 - status:   pending
 - task:     5.4, 5.6
-- commit:
+- commit:   eb9d4fa0
 - trigger:  The step needs `←→` for the caret while `RootPicker` spends them on the harness, and forgetting a set is drawn as a row's `x`, which keyboard users would otherwise lose.
 - decided:  `Scope::LaunchOverrides` (sealed, takes text): `↑↓` mark (`↑` on the first row unmarks, so Enter launches again), `tab` `Expand` (completion, as in the picker), `enter`, `esc` back, `backspace` (on an empty line it takes the last entry back), `delete` (on an empty line with a set marked it forgets that set; otherwise it erases forward), `←→`/`home`/`end` the caret. A click on a list row takes it as Enter takes it marked; hovering a row only lights it, so the pointer resting there never changes what Enter does.
 - rejected: Reusing `RootPicker` with `←→` meaning two things by step: one key per meaning per scope is the keymap's rule, and the Keys screen could not list it.
@@ -204,7 +204,7 @@
 
 - status:   pending
 - task:     5.5
-- commit:
+- commit:   eb9d4fa0
 - trigger:  The design names `Symbol::Warning`, which the vocabulary does not have; "needs attention" is one meaning there, `MarkAttention`, and `IconWarning` is an icon for running text.
 - decided:  Entries, history rows, completion rows and the first step's field carry `MarkAttention` in `Token::StateWarning` when a flag weakens safety or switches off delivery; the detail line says `gives up …` or `turns off …`, the catalog's own words.
 - rejected: Adding a `Symbol::Warning`: a second glyph for the same meaning is what the symbol's own doc says was removed.
@@ -214,7 +214,7 @@
 
 - status:   pending
 - task:     5.3, 5.7
-- commit:
+- commit:   eb9d4fa0
 - trigger:  The first step gains a row and its foot gains `ctrl+f overrides`, which did not fit 54 columns and was left out whole; the overrides step needs room for entries and a list in the listing's rows.
 - decided:  Width 54 → 60. The first step is harness, overrides, rule, query, rule, listing; the overrides step is `‹ overrides`, the line, its lit underline, entries and list, rule, detail: both are the listing's rows plus five, so the step takes exactly the listing's rows. `new_agent_popup_rows` keeps its 4–9 clamp and raises the floor to 5 for the step, fixed when the popup opens. The entries come first; past the rows left for one list row, the earliest give way to a muted `N more` row.
 - rejected: A rule under the heading as well: it would cost the list a row, and the line's own underline already closes the heading.
@@ -224,7 +224,7 @@
 
 - status:   pending
 - task:     5.5, 5.6
-- commit:
+- commit:   eb9d4fa0
 - trigger:  `recent_overrides` asks for a project root; the popup has a directory, which may not be chosen yet when the step opens.
 - decided:  The root is the directory chosen, or the one listed, read when the step opens (one read per harness and root, the answer carrying its question; one that answers an earlier question is dropped). Forgetting is the same read with the set forgotten first, so the list redraws from disk. Entries and the first step's field show each entry's words in full (`--model opus · DEBUG=1`), as the design's example does: the popup is the operator's own screen; only spans and the record's history hold values back.
 - rejected: Reading recents for every harness when the popup opens: most popups never open the step.
@@ -234,7 +234,7 @@
 
 - status:   pending
 - task:     5.8
-- commit:
+- commit:   eb9d4fa0
 - trigger:  The overview's agent section heads with `harness` then `path`; an agent launched with nothing would show an empty row.
 - decided:  An `overrides` pair between `harness` and `path` once `agent_overrides` (read off-thread when the overview opens, keyed by project, agent and harness, the answer dropped unless the section is still that agent's) answers with words; nothing when it answers none.
 - rejected: `overrides none`: the section already says what reaches the agent, and a row that says nothing is clutter.
