@@ -26,6 +26,7 @@ fn at(now_ms: u64) -> TreeFrame {
             instant: std::time::Instant::now(),
         },
         hovered: None,
+        rested: 0,
         fold: false,
     }
 }
@@ -1987,9 +1988,10 @@ fn a_cut_line_slides_under_the_pointer_after_a_pause_unless_it_is_still() {
     );
     assert!(!at_rest.tree.animates, "nothing moves at rest");
 
-    let hovered = |now_ms| TreeFrame {
+    let hovered = |rested| TreeFrame {
         hovered: Some(read),
-        ..at(now_ms)
+        rested,
+        ..at(0)
     };
     let arrived = draw(&line(false), 20, 1, 0, hovered(0));
     assert_eq!(
@@ -1998,14 +2000,14 @@ fn a_cut_line_slides_under_the_pointer_after_a_pause_unless_it_is_still() {
         "the start, held still"
     );
     assert!(arrived.tree.animates, "the clock turns for it");
-    let later = draw(&line(false), 20, 1, 0, hovered(120 * 40));
+    let later = draw(&line(false), 20, 1, 0, hovered(40));
     assert!(
         !later.rows()[0].starts_with("Tokenize"),
         "it slid: {:?}",
         later.rows()[0]
     );
 
-    let still = draw(&line(true), 20, 1, 0, hovered(120 * 40));
+    let still = draw(&line(true), 20, 1, 0, hovered(40));
     assert_eq!(still.rows()[0].trim_end(), "Tokenize the card w…");
     assert!(still.hits.is_empty(), "no target for a still line");
 }

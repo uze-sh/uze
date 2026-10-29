@@ -110,7 +110,7 @@ pub(super) fn render_declared_drawer(
         Some(WorkspaceHit::Extension(ExtensionHit { slot: hovered, hit }))
             if hovered == slot.id =>
         {
-            Some(hit)
+            Some((hit, model.hovered_for()))
         }
         _ => None,
     };
@@ -338,7 +338,7 @@ pub(super) fn render_docked_slot(
     );
     let hovered = match model.hovered {
         Some(WorkspaceHit::Extension(ExtensionHit { slot: hovered, hit })) if hovered == slot => {
-            Some(hit)
+            Some((hit, model.hovered_for()))
         }
         _ => None,
     };

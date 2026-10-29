@@ -114,6 +114,9 @@ pub(crate) struct TreeFrame {
     pub(crate) clock: Clock,
     /// The hit under the pointer, which lights the control it belongs to.
     pub(crate) hovered: Option<ViewHit>,
+    /// Beats of the host's clock the pointer has rested on `hovered`: what
+    /// a cut line sliding under it counts from, so it holds still first.
+    pub(crate) rested: usize,
     /// Draw only whole nodes, ending in a mark saying how many more there
     /// are, rather than cutting the last one at the edge: what a section
     /// does, since nothing scrolls it into sight.
@@ -125,7 +128,16 @@ impl TreeFrame {
         Self {
             clock: Clock::now(),
             hovered,
+            rested: 0,
             fold: false,
+        }
+    }
+
+    /// [`Self::now`], with the pointer resting `beats` on `hovered`.
+    pub(crate) fn resting(sliding: Option<(ViewHit, usize)>) -> Self {
+        Self {
+            rested: sliding.map_or(0, |(_, beats)| beats),
+            ..Self::now(sliding.map(|(hit, _)| hit))
         }
     }
 }
@@ -283,29 +295,6 @@ pub(crate) fn tree_width(root: &Node) -> u16 {
 
 pub(crate) fn tree_height(root: &Node, width: u16) -> u16 {
     u16::try_from(height(root, width)).unwrap_or(u16::MAX)
-}
-
-/// Where a cut line is drawn: its node, its column and its row.
-type LineAt = (usize, u16, usize);
-
-thread_local! {
-    /// The cut line the pointer rests on, and the beat it came to rest
-    /// there: what its slide counts from, so it holds still before it
-    /// moves however long the clock has run.
-    static READING: std::cell::Cell<Option<(LineAt, usize)>> =
-        const { std::cell::Cell::new(None) };
-}
-
-/// The beats since the pointer came to rest on the line `at`, now `tick`;
-/// none for a line it has just reached.
-fn reading_for(at: LineAt, tick: usize) -> usize {
-    READING.with(|reading| match reading.get() {
-        Some((line, since)) if line == at => tick.saturating_sub(since),
-        _ => {
-            reading.set(Some((at, tick)));
-            0
-        }
-    })
 }
 
 /// Whether anything in `root` moves with the clock.
@@ -1307,8 +1296,7 @@ impl Painter<'_, '_> {
             .iter()
             .map(|span| (span.content.as_ref(), span.style))
             .collect();
-        let ticks = reading_for((node, x, y), self.held.clock.tick());
-        match crate::ui::widget::row::marquee(&pieces, usize::from(width), ticks) {
+        match crate::ui::widget::row::marquee(&pieces, usize::from(width), self.held.rested) {
             Some(window) => {
                 self.sliding = true;
                 self.line(y, x, width, Line::from(window));

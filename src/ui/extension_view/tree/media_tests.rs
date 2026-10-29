@@ -17,6 +17,7 @@ fn at(now_ms: u64) -> TreeFrame {
             instant: Instant::now(),
         },
         hovered: None,
+        rested: 0,
         fold: false,
     }
 }
@@ -214,6 +215,7 @@ fn a_sprite_shows_the_frame_of_its_state_on_the_clock() {
                 instant: began + Duration::from_millis(750),
             },
             hovered: None,
+            rested: 0,
             fold: false,
         };
         terminal

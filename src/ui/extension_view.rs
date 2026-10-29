@@ -180,7 +180,7 @@ pub(crate) fn render_docked(
     frame: &mut ratatui::Frame<'_>,
     view: &View,
     area: Rect,
-    hovered: Option<ViewHit>,
+    hovered: Option<(ViewHit, usize)>,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> Docked {
     match &view.content {
@@ -194,7 +194,7 @@ pub(crate) fn render_docked(
                 area,
                 (heading, *scroll, root),
                 &view.modes,
-                tree::TreeFrame::now(hovered),
+                tree::TreeFrame::resting(hovered),
                 hits,
             );
             Docked {
@@ -296,7 +296,7 @@ fn render_surface(
                 content_area,
                 (heading, *scroll, root),
                 column_modes,
-                tree::TreeFrame::now(held.sliding.map(|(hit, _)| hit)),
+                tree::TreeFrame::resting(held.sliding),
                 hits,
             );
             rendered.content_bar = drawn.bar;
