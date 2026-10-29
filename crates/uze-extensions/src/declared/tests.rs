@@ -788,7 +788,10 @@ fn every_node_kind_reads_its_properties() {
     let text = &row.children[0];
     assert!(text.grow);
     assert_eq!(text.min_width, 3);
-    let NodeKind::Text { spans, truncate, .. } = &text.kind else {
+    let NodeKind::Text {
+        spans, truncate, ..
+    } = &text.kind
+    else {
         panic!("{text:?}")
     };
     assert!(*truncate && spans[0].bold && spans[0].role == Role::Accent);
