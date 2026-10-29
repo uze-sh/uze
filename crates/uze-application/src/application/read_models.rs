@@ -638,7 +638,9 @@ impl AddPluginReport {
 #[derive(Clone, Debug, Serialize)]
 pub enum UpdatePluginReport {
     Updated {
-        plugin: PluginSummary,
+        /// Boxed, so a report that says nothing was replaced is not as
+        /// large as one that describes the whole package.
+        plugin: Box<PluginSummary>,
         attachments: Vec<AttachmentSummary>,
         publications: Vec<PublicationOutcome>,
         deliveries: Vec<HarnessDeliveryReport>,

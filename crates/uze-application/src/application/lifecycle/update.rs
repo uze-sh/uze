@@ -220,7 +220,7 @@ impl Plugins<'_> {
             .switch_off_again(installed.id.as_str(), &switched_off);
         let _ = fs::remove_dir_all(&superseded);
         Ok(UpdatePluginReport::Updated {
-            plugin: report.plugin,
+            plugin: Box::new(report.plugin),
             attachments: report.attachments,
             publications: report.publications,
             deliveries: report.deliveries,
