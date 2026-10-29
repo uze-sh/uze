@@ -56,7 +56,7 @@ sandbox:
       done
       git add -A
       git -c commit.gpgsign=false -c user.name=ana -c user.email=ana@example.invalid \
-        commit -q -m "chore: declare uze's example plugins"
+        commit -q -m "chore: declare uze's plugins"
       git rev-parse HEAD > {root}/base-demo-tasks.sha
   reset:
     # An agent works in the project itself, not in a checkout of its own,
@@ -92,7 +92,7 @@ macros:
       expect_timeout: 15
       pause: '{review_pause}'
     - say: each with what it may reach, enabled in this project
-      click: Enable 5
+      click: Enable 3
       in: screen
       expect: Allow these programs to run, confined\?
       expect_timeout: 8
@@ -101,6 +101,6 @@ macros:
     - say: and the one that runs a program, confined
       click: Allow and enable
       in: screen
-      expect: 5 extensions enabled
+      expect: 3 extensions enabled
       expect_timeout: 10
       pause: 1.0

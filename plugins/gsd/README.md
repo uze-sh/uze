@@ -8,7 +8,7 @@ harnesses you run, and the extension reads what it writes and asks the
 agent in front for its next step.
 
 <p align="center">
-  <img src="../../web/public/examples/gsd.gif" alt="The GSD drawer offers to execute phase 2; the agent runs its first wave and stops at a checkpoint, answered from a band over the agent's pane" width="860" />
+  <img src="../../web/public/examples/gsd.gif" alt="The GSD drawer shows plan 3-03 waiting at its checkpoint, answered from a band over the agent's pane and typed into the agent" width="860" />
 </p>
 
 | Where | What |
