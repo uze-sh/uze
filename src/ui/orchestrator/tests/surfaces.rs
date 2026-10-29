@@ -654,6 +654,61 @@ fn a_tab_coming_back_to_the_front_shows_the_surface_it_was_left_with() {
     );
 }
 
+/// The same, the way it is done: a click on another agent leaves the
+/// surface to the agent it was opened on, rather than closing it before
+/// the move is even confirmed.
+#[test]
+fn clicking_away_and_back_keeps_the_surface_of_the_agent_left() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-surface-left-open"));
+    let (mut model, first, second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    open_architect(&mut model);
+    let mut driven = driven(model, &home);
+    let click_and_confirm = |driven: &mut Driven<'_>, tab| {
+        driven.frame();
+        let row = driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .find(|(_, hit)| matches!(hit, WorkspaceHit::SelectTab(hit) if *hit == tab))
+            .map(|(rect, _)| *rect)
+            .expect("the agent has a row");
+        driven.press(row.x, row.y);
+        let selected = driven
+            .sent()
+            .into_iter()
+            .find_map(|request| match request {
+                ClientRequest::SelectTab { tab } => Some(tab),
+                _ => None,
+            })
+            .expect("the click asked for a tab");
+        let mut session = driven.attach.model.session.clone().expect("session");
+        session.select_tab(selected);
+        driven.attach.model.apply(
+            ClientEvent::SessionUpdated { session },
+            &identities_fixture(),
+        );
+    };
+
+    click_and_confirm(&mut driven, second);
+    assert!(
+        !driven
+            .attach
+            .model
+            .showing(uze_extensions::architect::CATALOG.id)
+    );
+
+    click_and_confirm(&mut driven, first);
+    assert!(
+        driven
+            .attach
+            .model
+            .showing(uze_extensions::architect::CATALOG.id),
+        "the first agent's surface stands again"
+    );
+}
+
 /// A group of buttons is one ground with a seam where the fills
 /// meet, and the seam is the only divider it has. A glyph drawn
 /// between two members belongs to neither: hovering one leaves that

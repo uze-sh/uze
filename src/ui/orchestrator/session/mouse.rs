@@ -1305,10 +1305,6 @@ impl Attach<'_> {
             // arm in `press` answers first.
             WorkspaceHit::ActionIndexEntry(_) | WorkspaceHit::ReleaseNotesBody => {}
             WorkspaceHit::SelectTab(tab) | WorkspaceHit::ProjectName(tab) => {
-                // Choosing a tab is choosing to see it, the one already in
-                // front included: that is how the pane is had back from a
-                // surface or the overview standing in it.
-                self.model.close_extension();
                 self.model.put_away_space_overview();
                 // Whether this click landed on the tab already
                 // holding its space's selection — read before
@@ -1346,6 +1342,14 @@ impl Attach<'_> {
                 } else {
                     tab
                 };
+                // Choosing the tab already in front is choosing to see it:
+                // that is how the pane is had back from a surface standing
+                // in it. Choosing another one leaves the surface to the tab
+                // it belongs to, put away when the server confirms the move
+                // and standing again when that tab comes back.
+                if self.model.selected_tab() == Some(selected) {
+                    self.model.close_extension();
+                }
                 self.model.acknowledge_completed_tab(tab);
                 let _ = send_request(
                     &mut self.stream,
@@ -1397,7 +1401,17 @@ impl Attach<'_> {
                 // no-op.
             }
             WorkspaceHit::SelectSpace(space) => {
-                self.model.close_extension();
+                // Another space's tab coming to the front puts the surface
+                // away for the tab it belongs to; its own space's header is
+                // the way back to the pane.
+                let current = self
+                    .model
+                    .session
+                    .as_ref()
+                    .is_some_and(|session| session.workspace.selected_space == space);
+                if current {
+                    self.model.close_extension();
+                }
                 self.model.put_away_space_overview();
                 // A space's own row is its own context: it
                 // lands on a shell belonging to no agent, the
