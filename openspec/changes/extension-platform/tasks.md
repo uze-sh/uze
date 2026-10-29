@@ -229,3 +229,16 @@
 - [x] 25.4 Register native primitives for scripts: lines, glob, regex, JSON, front matter, KDL (change 4) — done in `extension-manifest-and-scripts` (4.3)
 - [x] 25.5 Warn in the check when a program-backed source has `every` under 30 s (change 5, with 5.8) — done in `extension-programs-and-confinement` (1.3, D4: refused under 30 s rather than warned)
 - [x] 25.6 A performance test holding D28's targets (embedded answer p95 < 20 ms, binding < 1 ms per surface, < 1 MiB per extension, the 15 × 5 storm < 50 ms with sharing), and per-extension runs per minute, p95 and memory in the inspector and `uze doctor` — done in extension-platform-closure (4.3)
+
+## 26. Pending after the first stable version (#309)
+
+Found while the platform reached its first stable version; this change stays open until they are done.
+
+- [ ] 26.1 The agent events every harness can give, in place of `approval.asked`, `approval.resolved`, `tool.started` and `tool.finished`, before the contract is announced as stable — planned in `agent-events-engine` (its tasks are not written yet)
+- [ ] 26.2 Run a plugin's script in its tests: `tests/*.test.kdl` only feeds fixtures, so `planning.uze` (gsd), `heatmap.uze` (contributions) and `session.uze` (focus) never run in a test; a test runs a script against a world and checks its answer
+- [ ] 26.3 A date function in the script host (`uze-script`), and `focus` and `contributions` use it instead of each carrying its own conversion from days to civil dates and weekdays
+- [ ] 26.4 Every dialog's border hints answer a click, as `dialog::BorderHint` does in the preferences dialog alone
+- [ ] 26.5 The preference kind is an enum, not a `&'static str` (`"number"`, `"toggle"`, …) matched in several places; the `attribution()` doc comment fits the width
+- [ ] 26.6 A plugin the operator switched off in Codex reads as Matched, not drift, as `IntegrationPort::switched_off` already does for Claude
+- [ ] 26.7 Re-record the example plugins' GIFs (gsd replaced milestone; the heatmap, the focus card, drawer placement and surface titles changed): `web/public/examples/gsd.gif` is missing and gsd's `demo.yml` has never been run
+- [ ] 26.8 Workspace, found while building this: a subagent checkout made by `uze agent work split` is moved to a detached `main` mid-work and its status stays "working"; its reflog shows `checkout: moving from agent/<x> to main` at slow `tui.task_evaluation` passes, which points at `crates/uze-workspace/src/checkout/reconcile.rs` and `lifecycle.rs::shelve_and_reset`; its branch was twice renamed to an unrelated name; fix with a regression test
