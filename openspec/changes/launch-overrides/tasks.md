@@ -8,7 +8,7 @@
 - [x] 0.6 Remove `state/profiles.json` once where the application retires what earlier releases left; test that a machine with one ends without it and nothing else under `state/` changes
 - [x] 0.7 Remove `tests/integrations/preferences.rs` and the journey `01-first-run/03-a-profile-each-harness-can-read.yml`; fix `layout.json` fixtures (`.demo/_shared/workspace.yml`) and docs (`README.md`, `invariants.md` unfinished surfaces, doc comments in `client_layout.rs`, `appearance.rs`, `dialog.rs`, `mark.rs`)
 - [x] 0.8 CHANGELOG: the Profiles screen is gone; keys it applied to harness configuration stay and are the operator's
-- [ ] 0.9 `cargo test --workspace`, `cargo clippy --all-targets -- -D warnings`, and `rg -i 'profile' --type rust` reviewed for leftovers (shell, PowerShell, seatbelt, hook and Cargo profiles are unrelated and stay)
+- [x] 0.9 `cargo test --workspace`, `cargo clippy --all-targets -- -D warnings`, and `rg -i 'profile' --type rust` reviewed for leftovers (shell, PowerShell, seatbelt, hook and Cargo profiles are unrelated and stay)
 
 ## 1. Catalog contract (uze-core)
 
