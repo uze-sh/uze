@@ -367,7 +367,8 @@ impl EvaluationPass<'_> {
         // one its work in progress, which `refresh` refuses. Whatever the
         // completion behaviour: a task that follows the target as it moves
         // meets a conflict while its agent is still holding the change,
-        // rather than in a request already opened.
+        // rather than at delivery. Only until the branch is published:
+        // past that, a rebase here would take it away from its request.
         let arrived = (matches!(*state, WorkState::Running | WorkState::Ready)
             && slot.is_some()
             && matches!(

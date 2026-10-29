@@ -148,8 +148,8 @@ pub fn refresh(
         }
         // A published branch is what its request shows. Rewritten here, it
         // no longer matches the remote: every commit reads as unpushed and
-        // the agent's next plain push is refused. Delivery still rebases
-        // it, and pushes it with a lease.
+        // the agent's next plain push is refused. Rebasing it stays
+        // delivery's, which the operator asks for.
         if publication(primary, isolation).is_some() {
             return Ok(false);
         }
