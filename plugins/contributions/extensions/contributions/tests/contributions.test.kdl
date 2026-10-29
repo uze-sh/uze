@@ -64,3 +64,13 @@ test "a click on a day chooses it" {
     click "▣"
     expect-action "day" date="2026-10-27"
 }
+
+test "a click on any other day chooses that day" {
+    surface "heatmap"
+    given "git" fixture="fixtures/git.json"
+    size 120 18
+    // The first square drawn is the first Monday of the map, not the day
+    // already chosen: its region must name its own date.
+    click "■"
+    expect-action "day" date="2026-06-15"
+}

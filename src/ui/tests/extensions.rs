@@ -748,15 +748,28 @@ fn preferences_are_listed_and_set_from_the_keyboard() {
     assert_eq!(model.edit_selected_preferences(), Intent::None);
     let editor = screen_of(&model);
     assert!(editor.contains("GSD preferences"), "{editor}");
-    assert!(editor.contains("off"), "{editor}");
+    // The toggle's own row in the dialog, up to the dialog's edge: not
+    // the drawer behind it, nor anywhere else on the screen.
+    let row_of = |screen: &str| {
+        screen
+            .lines()
+            .find(|line| line.contains("❯ Show °F"))
+            .and_then(|line| line.split("Show °F").nth(1))
+            .and_then(|after| after.split('│').next())
+            .map(|value| value.trim().to_owned())
+            .unwrap_or_default()
+    };
+    assert!(row_of(&editor).ends_with("off"), "{:?}", row_of(&editor));
     let enter = key(KeyCode::Enter);
     assert_eq!(
         model.apply_key(enter),
         set("fahrenheit", "Show °F", serde_json::json!(true))
     );
+    let set_on = screen_of(&model);
     assert!(
-        screen_of(&model).contains(" on"),
-        "the row says what was set"
+        row_of(&set_on).ends_with(" on"),
+        "the row says what was set: {:?}",
+        row_of(&set_on)
     );
     model.apply_key(key(KeyCode::Down));
     assert_eq!(model.apply_key(enter), Intent::None, "a number is typed");

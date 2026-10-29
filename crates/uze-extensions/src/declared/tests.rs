@@ -1529,3 +1529,46 @@ fn a_composed_answer_draws_itself_and_holds_back_a_hasty_click() {
     };
     assert!(text.contains("a node the catalog does not have"), "{text}");
 }
+
+/// `marquee=#false` keeps a cut line still, and only it: a cut line slides
+/// by default. `primary=#true` marks the one button meant to be pressed next.
+#[test]
+fn a_cut_line_is_still_only_when_asked_and_a_button_primary_only_when_marked() {
+    let text = |marquee: Option<bool>| {
+        let mut text = n(NodeName::Text)
+            .arg("a long line")
+            .literal("truncate", json!(true));
+        if let Some(marquee) = marquee {
+            text = text.literal("marquee", json!(marquee));
+        }
+        text.item()
+    };
+    let items = vec![
+        text(None),
+        text(Some(true)),
+        text(Some(false)),
+        n(NodeName::Button).arg("go").prop("action", "go").item(),
+        n(NodeName::Button)
+            .arg("go")
+            .prop("action", "go")
+            .literal("primary", json!(true))
+            .item(),
+    ];
+    let root = tree(&hosted(items, json!({})));
+    let still: Vec<bool> = root.children[..3]
+        .iter()
+        .map(|node| match &node.kind {
+            NodeKind::Text { still, .. } => *still,
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    assert_eq!(still, [false, false, true]);
+    let primary: Vec<bool> = root.children[3..]
+        .iter()
+        .map(|node| match &node.kind {
+            NodeKind::Button { primary, .. } => *primary,
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    assert_eq!(primary, [false, true]);
+}
