@@ -234,6 +234,21 @@ pub(super) fn render_tree_content(
     drawn
 }
 
+/// The rows [`render_tree_content`] needs to draw all of `root` under its
+/// heading at `width`, padding included: what a drawer that fits what it
+/// holds is cut to.
+pub(super) fn content_rows(heading: &str, modes: &[Mode], root: &Node, width: u16) -> u16 {
+    let heading = u16::from(!heading.is_empty() || !modes.is_empty());
+    let inset = match width > PROSE_INSET.saturating_mul(2) {
+        true => PROSE_INSET,
+        false => 0,
+    };
+    let body = tree_height(root, width.saturating_sub(inset.saturating_mul(2)));
+    heading
+        .saturating_add(body)
+        .saturating_add(TEXT_PADDING.saturating_mul(2))
+}
+
 /// The rows `root` takes at `width`, for a host reserving a section's
 /// room before it draws it.
 /// The cells a tree asks for when nothing tells it otherwise: what an item

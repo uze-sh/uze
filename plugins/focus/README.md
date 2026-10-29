@@ -11,7 +11,7 @@ one more.
 | Where | What |
 |---|---|
 | bar | the session's time running, or the day's sessions as pips |
-| drawer | what is left, start and stop (`ctrl+s`, `ctrl+x`), and the last seven days |
+| drawer | a card floating above the timer, as tall as what it holds: what is left, start and stop (`ctrl+s`, `ctrl+x`), and the last seven days |
 
 **It may:** keep its sessions in UZE's state, per project (`store`), and
 notify you (`notify`). A session's minutes and the day's goal are

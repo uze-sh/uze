@@ -129,6 +129,7 @@ mod tests {
         let surface = |id: &str, slot, title: Option<&str>| uze_contract::SurfaceDecl {
             band: None,
             bar: None,
+            drawer: None,
             id: id.to_owned(),
             slot,
             view: format!("{id}.kdl"),

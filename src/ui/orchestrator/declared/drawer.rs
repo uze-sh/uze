@@ -3,8 +3,10 @@
 //! click in it borrows from the pane.
 //!
 //! A drawer is not modal. The pane beside it stays live and keeps the
-//! keyboard; the layout gives the drawer its own column (`compute_layout`),
-//! so it never covers a cell an agent drew.
+//! keyboard. Docked, the layout gives the drawer its own column or rows
+//! (`compute_layout`), so it never covers a cell an agent drew; floating,
+//! as its manifest may ask, it stands over the pane and the agent's
+//! terminal keeps its size.
 
 use super::*;
 use crate::ui::widget::ToastKind;
@@ -57,14 +59,21 @@ impl WorkspaceModel {
         self.open_drawer_slot().map(|slot| slot.id)
     }
 
-    /// What the layout is asked to dock beside the pane.
+    /// What the layout is asked to place beside or over the pane.
     pub(in crate::ui::orchestrator) fn dock(
         &self,
     ) -> Option<crate::ui::orchestrator::render::Dock> {
         self.open_drawer_slot()
-            .map(|_| crate::ui::orchestrator::render::Dock {
-                width: self.dock_width,
-            })
+            .and_then(HostedSlot::drawer_place)
+            .map(|place| self.dock_for(place))
+    }
+
+    fn dock_for(&self, place: uze_contract::DrawerDecl) -> crate::ui::orchestrator::render::Dock {
+        crate::ui::orchestrator::render::Dock {
+            place,
+            width: self.dock_width,
+            rows: self.dock_rows,
+        }
     }
 
     /// Whether the open drawer has the navigation keys now. Anything
@@ -75,9 +84,8 @@ impl WorkspaceModel {
 
     /// Opens `id`'s drawer in the space in front, closing whichever stood
     /// there, or closes it when it is the one open. Refused, with a toast
-    /// saying why, when beside `room` columns of agent area the pane would
-    /// be left too narrow.
-    pub(in crate::ui::orchestrator) fn toggle_drawer(&mut self, id: SlotId, room: u16) {
+    /// saying why, when in `room`, the agent area, it does not fit.
+    pub(in crate::ui::orchestrator) fn toggle_drawer(&mut self, id: SlotId, room: Rect) {
         if self.open_drawer() == Some(id) {
             self.close_drawer();
             return;
@@ -88,10 +96,17 @@ impl WorkspaceModel {
         let Some(slot) = self.remembered.declared.slot(id) else {
             return;
         };
-        if !slot.is_drawer() || !self.offers_declared(&slot.owner) {
+        let Some(place) = slot.drawer_place() else {
+            return;
+        };
+        if !self.offers_declared(&slot.owner) {
             return;
         }
-        if crate::ui::widget::drawer::docked_width(self.dock_width, room).is_none() {
+        let dock = self.dock_for(place);
+        if crate::ui::orchestrator::render::place_drawer(room, dock)
+            .1
+            .is_none()
+        {
             self.raise_toast(
                 ToastKind::Told,
                 "drawer not opened",
@@ -104,6 +119,50 @@ impl WorkspaceModel {
         self.leave_drawer_keys();
         self.dock_notice = None;
         self.dirty = true;
+    }
+
+    /// Follows the pointer holding the open drawer's edge, at `column`
+    /// and `row`: the drawer reaches from its own side of `room`, the
+    /// agent area, to there, within what [`place_drawer`] would lay out.
+    ///
+    /// [`place_drawer`]: crate::ui::orchestrator::render::place_drawer
+    pub(in crate::ui::orchestrator) fn drag_dock_edge(
+        &mut self,
+        room: Rect,
+        column: u16,
+        row: u16,
+    ) {
+        use uze_contract::DrawerSide;
+        let Some(place) = self.open_drawer_slot().and_then(HostedSlot::drawer_place) else {
+            return;
+        };
+        let gap = match place.float {
+            true => 0,
+            false => crate::ui::widget::drawer::DOCKED_GAP,
+        };
+        let wanted = match place.side {
+            DrawerSide::Right => room.right().saturating_sub(column + gap),
+            DrawerSide::Left => (column + 1).saturating_sub(room.x + gap),
+            DrawerSide::Bottom => room.bottom().saturating_sub(row + gap),
+            DrawerSide::Top => (row + 1).saturating_sub(room.y + gap),
+        };
+        let mut dock = self.dock_for(place);
+        match place.side.across() {
+            true => dock.rows = Some(wanted),
+            false => dock.width = Some(wanted),
+        }
+        let Some(drawn) = crate::ui::orchestrator::render::place_drawer(room, dock).1 else {
+            return;
+        };
+        let (width, rows) = match place.side.across() {
+            true => (self.dock_width, Some(drawn.height - gap)),
+            false => (Some(drawn.width - gap), self.dock_rows),
+        };
+        if (width, rows) != (self.dock_width, self.dock_rows) {
+            self.dock_width = width;
+            self.dock_rows = rows;
+            self.dirty = true;
+        }
     }
 
     /// Closes the drawer open in the space in front.

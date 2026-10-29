@@ -1171,7 +1171,9 @@ impl Extension for DeclaredExtension {
                 slot: match surface.slot {
                     uze_contract::Slot::View => SurfaceSlot::View,
                     uze_contract::Slot::Section => SurfaceSlot::Section,
-                    uze_contract::Slot::Drawer => SurfaceSlot::Drawer,
+                    uze_contract::Slot::Drawer => {
+                        SurfaceSlot::Drawer(surface.drawer.unwrap_or_default())
+                    }
                     uze_contract::Slot::Status => SurfaceSlot::Status,
                     uze_contract::Slot::Band => SurfaceSlot::Band {
                         rows: surface.band.map_or(1, |band| band.rows),

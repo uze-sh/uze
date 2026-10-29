@@ -146,6 +146,7 @@ pub(super) fn extension(view: CompiledView) -> CompiledExtension {
     let surface = |id: &str, slot| SurfaceDecl {
         band: None,
         bar: None,
+        drawer: None,
         id: id.to_owned(),
         slot,
         view: "board.uze".to_owned(),
@@ -963,7 +964,7 @@ fn a_drawer_answers_a_tree_view_as_a_view_does() {
     let mut extension = DeclaredExtension::new(compiled, "pt");
     extension.set_data(SOURCE, Ok(json!({})));
     let drawer = &extension.surfaces()[1];
-    assert_eq!(drawer.slot, SurfaceSlot::Drawer);
+    assert!(matches!(drawer.slot, SurfaceSlot::Drawer(_)));
     assert!(extension.section(SECTION, false).is_none());
     let view = extension.view(SECTION, SPACE).expect("a drawer is a view");
     assert_eq!(view.title[0].text, "GSD");

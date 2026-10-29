@@ -185,6 +185,7 @@ fn compiled() -> CompiledExtension {
     let surface = |id: &str, slot| uze_contract::SurfaceDecl {
         band: None,
         bar: None,
+        drawer: None,
         id: id.to_owned(),
         slot,
         view: format!("{id}.kdl"),
@@ -1126,6 +1127,7 @@ fn hosting_the_drawer() -> WorkspaceModel {
         .push(uze_contract::SurfaceDecl {
             band: None,
             bar: None,
+            drawer: None,
             id: "side".to_owned(),
             slot: uze_contract::Slot::Drawer,
             view: "side.uze".to_owned(),
@@ -1265,7 +1267,7 @@ fn a_click_in_the_drawer_reaches_its_engine_and_esc_gives_the_keys_back_then_clo
     let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("drawer-click"));
     let mut model = hosting_the_drawer();
     let slot = drawer_slot(&model);
-    model.toggle_drawer(slot, 200);
+    model.toggle_drawer(slot, ratatui::layout::Rect::new(0, 0, 200, 60));
     let mut driven = driven(model, &home).on_a_roomy_terminal();
     driven.frame();
     let tab = drawn(
@@ -1301,7 +1303,10 @@ fn a_click_in_the_drawer_reaches_its_engine_and_esc_gives_the_keys_back_then_clo
     );
 
     // Given back by a click elsewhere, the next esc is the pane's.
-    driven.attach.model.toggle_drawer(slot, 200);
+    driven
+        .attach
+        .model
+        .toggle_drawer(slot, ratatui::layout::Rect::new(0, 0, 200, 60));
     driven.frame();
     let body = drawn(&driven.attach.model, WorkspaceHit::DockBody);
     driven.press(body.x + 3, body.bottom() - 2);
@@ -1322,7 +1327,7 @@ fn the_wheel_over_the_drawer_scrolls_it() {
     let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("drawer-wheel"));
     let mut model = hosting_the_drawer();
     let slot = drawer_slot(&model);
-    model.toggle_drawer(slot, 200);
+    model.toggle_drawer(slot, ratatui::layout::Rect::new(0, 0, 200, 60));
     let mut driven = driven(model, &home).on_a_roomy_terminal();
     driven.frame();
     let body = drawn(&driven.attach.model, WorkspaceHit::DockBody);
@@ -1356,7 +1361,7 @@ fn the_drawer_is_resized_by_its_edge_and_remembers_it() {
     let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("drawer-resize"));
     let mut model = hosting_the_drawer();
     let slot = drawer_slot(&model);
-    model.toggle_drawer(slot, 200);
+    model.toggle_drawer(slot, ratatui::layout::Rect::new(0, 0, 200, 60));
     let mut driven = driven(model, &home).on_a_roomy_terminal();
     // Wide enough that six columns either way stay within the drawer's
     // bounds and the pane's floor.
@@ -1391,7 +1396,10 @@ fn the_drawer_is_resized_by_its_edge_and_remembers_it() {
     assert_eq!(after.drawer.unwrap().x, before.drawer.unwrap().x + 6);
 
     driven.attach.model.close_drawer();
-    driven.attach.model.toggle_drawer(slot, 200);
+    driven
+        .attach
+        .model
+        .toggle_drawer(slot, ratatui::layout::Rect::new(0, 0, 200, 60));
     assert_eq!(layout_of(&driven).pane, after.pane, "the width is kept");
 }
 
@@ -1400,7 +1408,7 @@ fn each_space_keeps_its_own_drawer_and_place() {
     let mut model = hosting_the_drawer();
     let slot = drawer_slot(&model);
     let first = model.space_in_front().unwrap();
-    model.toggle_drawer(slot, 200);
+    model.toggle_drawer(slot, ratatui::layout::Rect::new(0, 0, 200, 60));
     model.tell_drawer(Command::NextView);
     assert_eq!(drawer_said(&model), "tab 1 compile 1");
 
@@ -1408,7 +1416,7 @@ fn each_space_keeps_its_own_drawer_and_place() {
     session.create_space(Some("two".into()), PathBuf::from("/two"), 80, 24);
     model.follow_drawer_space();
     assert_eq!(model.open_drawer(), None, "the other space has none open");
-    model.toggle_drawer(slot, 200);
+    model.toggle_drawer(slot, ratatui::layout::Rect::new(0, 0, 200, 60));
     assert_eq!(drawer_said(&model), "tab 0 compile 1", "and starts over");
     let second = model.space_in_front().unwrap();
 
@@ -1431,7 +1439,7 @@ fn each_space_keeps_its_own_drawer_and_place() {
 fn a_switched_off_extension_takes_its_drawer_away() {
     let mut model = hosting_the_drawer();
     let slot = drawer_slot(&model);
-    model.toggle_drawer(slot, 200);
+    model.toggle_drawer(slot, ratatui::layout::Rect::new(0, 0, 200, 60));
     model.follow_extension_switch(std::collections::BTreeSet::from([super::switch_id(
         &identity(),
     )]));
@@ -1449,7 +1457,7 @@ fn a_switched_off_extension_takes_its_drawer_away() {
 fn the_drawer_is_drawn_raised_beside_a_live_pane() {
     let mut model = hosting_the_drawer();
     let slot = drawer_slot(&model);
-    model.toggle_drawer(slot, 200);
+    model.toggle_drawer(slot, ratatui::layout::Rect::new(0, 0, 200, 60));
     let area = ratatui::layout::Rect::new(0, 0, 120, 40);
     let layout = super::compute_layout(area, model.sidebar_width, model.reserved());
     let drawer = layout.drawer.unwrap();
@@ -2329,4 +2337,66 @@ fn an_installed_extensions_inspector_offers_no_tools() {
     assert!(driven.attach.model.inspector_tools().is_empty());
     let rows = frame_rows_at(&mut driven.attach.model, driven.area);
     assert!(!shown(&rows, "author"), "{rows:#?}");
+}
+
+/// Docked on any side, the pane gives up what the drawer takes and the two
+/// never overlap; floating, the pane keeps the whole area, so the agent's
+/// terminal is never resized by opening one.
+#[test]
+fn a_drawer_docks_on_its_side_or_floats_over_the_pane_without_resizing_it() {
+    use super::render::{Dock, place_drawer};
+    use uze_contract::{DrawerDecl, DrawerSide};
+    let area = ratatui::layout::Rect::new(10, 2, 120, 40);
+    let dock = |side, float, fit| Dock {
+        place: DrawerDecl { side, float, fit },
+        width: None,
+        rows: None,
+    };
+    for side in [
+        DrawerSide::Right,
+        DrawerSide::Left,
+        DrawerSide::Bottom,
+        DrawerSide::Top,
+    ] {
+        let (pane, drawer) = place_drawer(area, dock(side, false, false));
+        let drawer = drawer.expect("it fits");
+        assert!(
+            pane.intersection(drawer).is_empty(),
+            "{side:?}: beside it, never over it"
+        );
+        assert_eq!(
+            pane.union(drawer),
+            area,
+            "{side:?}: together they are the agent area"
+        );
+        let (pane, card) = place_drawer(area, dock(side, true, false));
+        assert_eq!(pane, area, "{side:?}: floating, the pane keeps its size");
+        let card = card.expect("it fits");
+        assert_eq!(
+            card.intersection(area),
+            card,
+            "{side:?}: inside the agent area"
+        );
+    }
+    let (_, bottom) = place_drawer(area, dock(DrawerSide::Bottom, true, false));
+    let bottom = bottom.unwrap();
+    assert_eq!((bottom.bottom(), bottom.width), (area.bottom(), area.width));
+    let (_, left) = place_drawer(area, dock(DrawerSide::Left, false, false));
+    assert_eq!(
+        left.unwrap().x,
+        area.x,
+        "the left drawer stands at the area's start"
+    );
+    let (_, fitted) = place_drawer(area, dock(DrawerSide::Right, true, true));
+    assert_eq!(
+        fitted.unwrap().width,
+        crate::ui::widget::drawer::FIT_WIDTH,
+        "a fitted card keeps the width its views are written for"
+    );
+    let short = ratatui::layout::Rect::new(0, 0, 120, 12);
+    assert_eq!(
+        place_drawer(short, dock(DrawerSide::Bottom, false, false)).1,
+        None,
+        "docked along the bottom, it is refused where the pane would keep too few rows"
+    );
 }

@@ -68,6 +68,7 @@ fn compiled() -> CompiledExtension {
     let surface = |id: &str, slot| uze_contract::SurfaceDecl {
         band: None,
         bar: None,
+        drawer: None,
         id: id.to_owned(),
         slot,
         view: "board.uze".to_owned(),

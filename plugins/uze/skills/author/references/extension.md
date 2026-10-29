@@ -58,7 +58,7 @@ action "copy" label="Copy" on="board" key="ctrl-y" confirm="Copy {text}?" {
   |---|---|
   | `view` | the full frame, opened from its door in the bar under the agent area |
   | `section` | a block of the sidebar |
-  | `drawer` | a panel beside the agent's pane, opened from its door in the bar |
+  | `drawer` | a panel on the `side="right"` (the default), `"left"`, `"bottom"` or `"top"` of the agent area, opened from its door in the bar. Beside the pane, which gives up that room, or with `float=#true` over it, so the agent's terminal keeps its size; a floating one with `size="fit"` is a card as big as what it holds. Float what is glanced at and closed (a map, a timer), dock what is read while the agent works |
   | `status` | one row of the sidebar's header, folded to it |
   | `band` | `rows=1`…`6` along the `place="top"` (or `"bottom"`) of each agent's pane, taken before the pane is sized, so no answer resizes the agent |
   | `overlay` | a card over the frame, opened by an `open` action, closed by Esc |

@@ -61,8 +61,10 @@ pub(super) struct WorkspaceLayout {
     /// What the pane's terminal is sized to: the agent area, less a
     /// docked drawer's column and the rows bands take along its edges.
     pub(super) pane: Rect,
-    /// The column a plugin's drawer is docked in, its gap included, when
-    /// one is open and fits: beside the pane, never over it.
+    /// Where a plugin's drawer stands when one is open and fits: docked,
+    /// the column or rows beside the pane, its gap included; floating, the
+    /// most of the pane it may cover (one that fits what it holds is cut
+    /// to that while it is drawn).
     pub(super) drawer: Option<Rect>,
     /// The rows each band asked for took, by its slot: along the pane's
     /// top or bottom, never over it.
@@ -72,11 +74,119 @@ pub(super) struct WorkspaceLayout {
     pub(super) bar: Option<Rect>,
 }
 
-/// A drawer docked beside the pane, as the layout is asked for one: the
-/// width it was dragged to, `None` for its width at rest.
+/// A drawer open beside or over the pane, as the layout is asked for one:
+/// where it stands, and the width or rows it was dragged to, `None` for
+/// its size at rest.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct Dock {
+    pub(super) place: uze_contract::DrawerDecl,
     pub(super) width: Option<u16>,
+    pub(super) rows: Option<u16>,
+}
+
+/// The edge of a drawer's card that faces the pane: where its gap and its
+/// drag handle are.
+pub(super) fn facing(side: uze_contract::DrawerSide) -> widget::Edge {
+    match side {
+        uze_contract::DrawerSide::Right => widget::Edge::Left,
+        uze_contract::DrawerSide::Left => widget::Edge::Right,
+        uze_contract::DrawerSide::Bottom => widget::Edge::Top,
+        uze_contract::DrawerSide::Top => widget::Edge::Bottom,
+    }
+}
+
+/// The pane, and the rect `dock`'s drawer takes of `area`: docked, the
+/// pane gives up that column or those rows; floating, the pane keeps
+/// `area` whole and the drawer stands over its side. `None` for the
+/// drawer when it does not fit, and then the pane keeps `area` too.
+pub(super) fn place_drawer(area: Rect, dock: Dock) -> (Rect, Option<Rect>) {
+    use uze_contract::DrawerSide;
+    use widget::drawer::{DOCKED_GAP, DOCKED_MIN_ROWS, DOCKED_MIN_WIDTH, FIT_WIDTH};
+    let side = dock.place.side;
+    if dock.place.float {
+        let extent = match (side.across(), dock.place.fit) {
+            (false, true) => Some(dock.width.unwrap_or(FIT_WIDTH).min(area.width)),
+            (false, false) => {
+                widget::drawer::floating_extent(dock.width, area.width, DOCKED_MIN_WIDTH)
+            }
+            // Fitted along the top or bottom, it may take every row there
+            // is; what it holds decides how many it does.
+            (true, true) => Some(area.height),
+            (true, false) => {
+                widget::drawer::floating_extent(dock.rows, area.height, DOCKED_MIN_ROWS)
+            }
+        };
+        let Some(extent) = extent.filter(|extent| *extent > 0) else {
+            return (area, None);
+        };
+        let card = match side {
+            DrawerSide::Right => Rect {
+                x: area.right() - extent,
+                width: extent,
+                ..area
+            },
+            DrawerSide::Left => Rect {
+                width: extent,
+                ..area
+            },
+            DrawerSide::Bottom => Rect {
+                y: area.bottom() - extent,
+                height: extent,
+                ..area
+            },
+            DrawerSide::Top => Rect {
+                height: extent,
+                ..area
+            },
+        };
+        return (area, Some(card));
+    }
+    let extent = match side.across() {
+        false => widget::drawer::docked_width(dock.width, area.width),
+        true => widget::drawer::docked_height(dock.rows, area.height),
+    };
+    let Some(extent) = extent else {
+        return (area, None);
+    };
+    let taken = extent + DOCKED_GAP;
+    match side {
+        DrawerSide::Right => {
+            let pane = Rect {
+                width: area.width - taken,
+                ..area
+            };
+            (
+                pane,
+                Some(Rect::new(pane.right(), area.y, taken, area.height)),
+            )
+        }
+        DrawerSide::Left => {
+            let pane = Rect {
+                x: area.x + taken,
+                width: area.width - taken,
+                ..area
+            };
+            (pane, Some(Rect::new(area.x, area.y, taken, area.height)))
+        }
+        DrawerSide::Bottom => {
+            let pane = Rect {
+                height: area.height - taken,
+                ..area
+            };
+            (
+                pane,
+                Some(Rect::new(area.x, pane.bottom(), area.width, taken)),
+            )
+        }
+        DrawerSide::Top => {
+            let pane = Rect {
+                y: area.y + taken,
+                height: area.height - taken,
+                ..area
+            };
+            (pane, Some(Rect::new(area.x, area.y, area.width, taken)))
+        }
+    }
 }
 
 /// Rows a band asks to have along the pane's top, or its `bottom`.
@@ -155,19 +265,8 @@ pub(super) fn compute_layout(
         content_rows[1].width.saturating_sub(1),
         content_rows[1].height,
     );
-    let docked = dock.and_then(|dock| widget::drawer::docked_width(dock.width, area.width));
-    let (pane, drawer) = match docked {
-        Some(width) => {
-            let column = width + widget::drawer::DOCKED_GAP;
-            let pane = Rect {
-                width: area.width - column,
-                ..area
-            };
-            (
-                pane,
-                Some(Rect::new(pane.right(), area.y, column, area.height)),
-            )
-        }
+    let (pane, drawer) = match dock {
+        Some(dock) => place_drawer(area, dock),
         None => (area, None),
     };
     let (pane, bands) = take_bands(pane, &reserved.bands);
@@ -307,14 +406,17 @@ pub(super) fn render(
             None
         }
     };
-    if let Some(area) = layout.drawer {
-        metrics.marquee |= render_declared_drawer(frame, area, model, hits);
-    }
     if let Some(area) = layout.bar {
         metrics.marquee |= render_bar(frame, area, model, hits);
     }
     for (slot, area) in &layout.bands {
         metrics.marquee |= render_band(frame, *area, model, *slot, hits);
+    }
+    // After the bands: a floating drawer stands over the pane's whole
+    // side, its bands included.
+    model.dock_drawn.set(None);
+    if let Some(area) = layout.drawer {
+        metrics.marquee |= render_declared_drawer(frame, area, model, hits);
     }
     // A plugin's overlay, over everything the workspace drew and under
     // the client's own questions and popups.

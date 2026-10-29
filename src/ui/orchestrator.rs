@@ -1980,6 +1980,14 @@ struct WorkspaceModel {
     /// rest of the run. Apart from the overview's drawer width because the
     /// inspector, which shares that one, can stand open beside it.
     dock_width: Option<u16>,
+    /// The rows a drawer along the top or bottom was dragged to, kept the
+    /// same way: apart from its width, so a drawer on another side keeps
+    /// its own.
+    dock_rows: Option<u16>,
+    /// The card the drawer stood in on the last frame: a floating drawer
+    /// that fits what it holds is only sized while it is drawn, and the
+    /// wheel and a drag of its edge are measured against what was seen.
+    dock_drawn: std::cell::Cell<Option<Rect>>,
     /// Whether the docked drawer's edge is held by the pointer.
     dragging_dock: bool,
     /// Whether the docked drawer's scrollbar is held by the pointer.

@@ -47,6 +47,7 @@ fn compiled(every: Option<Duration>, refresh_on: Vec<EventName>) -> CompiledExte
             surfaces: vec![uze_contract::SurfaceDecl {
                 band: None,
                 bar: None,
+                drawer: None,
                 id: "band".to_owned(),
                 slot: uze_contract::Slot::Section,
                 view: "band.uze".to_owned(),

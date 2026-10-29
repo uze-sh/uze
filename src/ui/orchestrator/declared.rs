@@ -367,7 +367,15 @@ impl HostedSlot {
     }
 
     pub(super) fn is_drawer(&self) -> bool {
-        self.surface.slot == SurfaceSlot::Drawer
+        matches!(self.surface.slot, SurfaceSlot::Drawer(_))
+    }
+
+    /// Where a drawer stands, as its manifest declared it.
+    pub(super) fn drawer_place(&self) -> Option<uze_contract::DrawerDecl> {
+        match self.surface.slot {
+            SurfaceSlot::Drawer(place) => Some(place),
+            _ => None,
+        }
     }
 
     pub(super) fn is_overlay(&self) -> bool {
@@ -844,7 +852,9 @@ fn surfaces_of(compiled: &CompiledExtension) -> Vec<SurfaceInfo> {
             slot: match surface.slot {
                 uze_contract::Slot::View => SurfaceSlot::View,
                 uze_contract::Slot::Section => SurfaceSlot::Section,
-                uze_contract::Slot::Drawer => SurfaceSlot::Drawer,
+                uze_contract::Slot::Drawer => {
+                    SurfaceSlot::Drawer(surface.drawer.unwrap_or_default())
+                }
                 uze_contract::Slot::Status => SurfaceSlot::Status,
                 uze_contract::Slot::Band => SurfaceSlot::Band {
                     rows: surface.band.map_or(1, |band| band.rows),

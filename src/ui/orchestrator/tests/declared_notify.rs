@@ -44,6 +44,7 @@ fn compiled(wants: Vec<uze_contract::Grant>) -> CompiledExtension {
             surfaces: vec![uze_contract::SurfaceDecl {
                 band: None,
                 bar: None,
+                drawer: None,
                 id: "meter".to_owned(),
                 slot: uze_contract::Slot::Section,
                 view: "meter.uze".to_owned(),

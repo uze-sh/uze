@@ -431,6 +431,7 @@ fn surface(id: &str, slot: Slot, source: &str) -> SurfaceDecl {
         view: format!("{id}.kdl"),
         band: None,
         bar: None,
+        drawer: None,
         source: source.into(),
         title: None,
         applies_when: None,
@@ -454,7 +455,12 @@ fn slot_doc(slot: Slot) -> &'static str {
     match slot {
         Slot::View => "The full frame, opened from the tab strip like the built-in surfaces.",
         Slot::Section => "A collapsible block of the workspace sidebar.",
-        Slot::Drawer => "A panel docked beside the agent's pane, opened by a gesture.",
+        Slot::Drawer => {
+            "A panel on the `side=\"right\"` (the default), `\"left\"`, `\"bottom\"` or \
+             `\"top\"` of the agent area, opened by a gesture: beside the pane, which gives up \
+             that room, or with `float=#true` over it, the agent's terminal keeping its size; \
+             a floating one with `size=\"fit\"` is a card as big as what it holds."
+        }
         Slot::Status => "One row of the sidebar's header.",
         Slot::Band => {
             "`rows=1`…`6` along the `place=\"top\"` (or `\"bottom\"`) of each agent's pane, \

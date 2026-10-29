@@ -507,17 +507,8 @@ impl Attach<'_> {
                 self.model.scroll_drawer_to(mouse.row);
             }
             _ if self.model.dragging_dock => {
-                if let Some(drawer) = layout.drawer {
-                    let room = self.agent_room(viewport);
-                    let wanted = drawer
-                        .right()
-                        .saturating_sub(mouse.column + crate::ui::widget::drawer::DOCKED_GAP);
-                    let width = crate::ui::widget::drawer::docked_width(Some(wanted), room);
-                    if width.is_some() && self.model.dock_width != width {
-                        self.model.dock_width = width;
-                        self.model.dirty = true;
-                    }
-                }
+                let room = self.agent_room(viewport);
+                self.model.drag_dock_edge(room, mouse.column, mouse.row);
             }
             _ if self.model.dragging_sidebar => {
                 let new_width = crate::ui::clamp_sidebar_width(
@@ -1069,9 +1060,13 @@ impl Attach<'_> {
                     self.model.dirty = true;
                 }
             }
-            // The drawer scrolls under the pointer, wherever the keys are.
-            _ if layout
-                .drawer
+            // The drawer scrolls under the pointer, wherever the keys are:
+            // where its card was drawn, a fitted one being shorter than the
+            // room it was given.
+            _ if self
+                .model
+                .dock_drawn
+                .get()
                 .is_some_and(|drawer| drawer.contains(Position::new(mouse.column, mouse.row))) =>
             {
                 self.model
@@ -1704,12 +1699,14 @@ impl Attach<'_> {
         }
     }
 
-    /// The columns of agent area the pane and a drawer share: the pane's
-    /// width with no drawer beside it.
-    pub(super) fn agent_room(&self, viewport: &Viewport) -> u16 {
+    /// The agent area the pane and a drawer share: the pane with no
+    /// drawer beside it.
+    pub(super) fn agent_room(&self, viewport: &Viewport) -> Rect {
         let frame = Rect::new(0, 0, viewport.size.width, viewport.size.height);
-        compute_layout(frame, self.model.sidebar_width, render::Reserved::default())
-            .pane
-            .width
+        let reserved = render::Reserved {
+            bar: self.model.has_bar(),
+            ..render::Reserved::default()
+        };
+        compute_layout(frame, self.model.sidebar_width, reserved).pane
     }
 }

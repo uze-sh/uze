@@ -18,8 +18,10 @@ preferences {
 // In the bar, on the right: the time running, or the day's sessions.
 surface "timer" slot="bar" align="right" view="timer.uze" source="clock" opens="session"
 
-// The drawer: what is left, start and stop, and the last days.
-surface "session" slot="drawer" view="session.uze" source="clock" title="Focus"
+// The drawer: what is left, start and stop, and the last days. A card as
+// tall as what it holds, floating over the right of the agent area above
+// the bar's timer, so opening it resizes nothing.
+surface "session" slot="drawer" float=#true size="fit" view="session.uze" source="clock" title="Focus"
 
 // Asked every 5 s while the bar is in sight: it is what closes the session
 // when its time is up.

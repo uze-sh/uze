@@ -23,8 +23,9 @@ pub enum SurfaceSlot {
     View,
     /// A collapsible block of the sidebar.
     Section,
-    /// A panel docked along the right of the agent area, beside the pane.
-    Drawer,
+    /// A panel along one side of the agent area, beside the pane or
+    /// floating over it.
+    Drawer(uze_contract::DrawerDecl),
     /// One row of the sidebar's header.
     Status,
     /// `rows` reserved along the top, or the `bottom`, of each agent's

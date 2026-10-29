@@ -52,10 +52,15 @@ pub(super) fn render_declared_overlays(
     }
 }
 
-/// The open drawer, in the column `compute_layout` docked beside the pane:
-/// a raised card, the strip naming whose it is across its top where nothing
-/// it draws can cover it, and its view under that. Answers whether anything
-/// in it moves with the clock.
+/// The rows of a raised card's chrome around what it holds: its two
+/// hairlines and the strip naming whose it is.
+const CARD_CHROME_ROWS: u16 = 3;
+
+/// The open drawer, where `compute_layout` placed it: a raised card, the
+/// strip naming whose it is across its top where nothing it draws can
+/// cover it, and its view under that. A floating drawer that fits what it
+/// holds is cut to that, against its own side. Answers whether anything in
+/// it moves with the clock.
 pub(super) fn render_declared_drawer(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
@@ -65,13 +70,32 @@ pub(super) fn render_declared_drawer(
     let Some(slot) = model.open_drawer_slot() else {
         return false;
     };
+    let Some(place) = slot.drawer_place() else {
+        return false;
+    };
+    let area = match place.fit {
+        true => fitted(area, place.side, model, slot),
+        false => area,
+    };
+    model.dock_drawn.set(Some(area));
+    let gap = match place.float {
+        true => 0,
+        false => widget::drawer::DOCKED_GAP,
+    };
     let note = model.dock_notice.as_ref().map(|notice| {
         Line::from(Span::styled(
             format!(" {} ", notice.text),
             theme::fg(Token::TextMuted),
         ))
     });
-    let (inner, handle) = widget::drawer::render_docked(frame, area, model.dragging_dock, note);
+    let (inner, handle) = widget::drawer::render_docked(
+        frame,
+        area,
+        super::facing(place.side),
+        gap,
+        model.dragging_dock,
+        note,
+    );
     let content = match slot.owner.declared() {
         Some(identity) => crate::ui::extension_view::tree::render_attribution(
             frame,
@@ -115,6 +139,36 @@ pub(super) fn render_declared_drawer(
     }));
     hits.push((area, WorkspaceHit::DockBody));
     animates
+}
+
+/// `area` cut to the rows `slot`'s view needs, against `side`: its foot
+/// on the bottom or a side, where the bar item that opens it stands, its
+/// head on the top. The view is asked at the card's width, as it will be
+/// drawn.
+fn fitted(
+    area: Rect,
+    side: uze_contract::DrawerSide,
+    model: &WorkspaceModel,
+    slot: &HostedSlot,
+) -> Rect {
+    let width = area.width.saturating_sub(2);
+    let space = uze_extensions::view::Size {
+        width,
+        height: area.height.saturating_sub(CARD_CHROME_ROWS),
+    };
+    let view = model.surface_view(slot, space);
+    let Some(rows) = crate::ui::extension_view::docked_rows(&view, width) else {
+        return area;
+    };
+    let height = rows.saturating_add(CARD_CHROME_ROWS).min(area.height);
+    match side {
+        uze_contract::DrawerSide::Top => Rect { height, ..area },
+        _ => Rect {
+            y: area.bottom() - height,
+            height,
+            ..area
+        },
+    }
 }
 
 /// The status rows, one under another from where `rows` stands, each

@@ -121,6 +121,7 @@
               "view": "board.kdl",
               "band": null,
               "bar": null,
+              "drawer": null,
               "source": "items",
               "title": null,
               "applies_when": null
@@ -193,6 +194,7 @@
               "view": "count.kdl",
               "band": null,
               "bar": null,
+              "drawer": null,
               "source": "items",
               "title": null,
               "applies_when": null
@@ -236,6 +238,7 @@
               "view": "crew.kdl",
               "band": null,
               "bar": null,
+              "drawer": null,
               "source": "agents",
               "title": null,
               "applies_when": null
@@ -305,6 +308,7 @@
               "view": "last.kdl",
               "band": null,
               "bar": null,
+              "drawer": null,
               "source": "log",
               "title": null,
               "applies_when": null
@@ -378,6 +382,7 @@
                 "place": "Bottom"
               },
               "bar": null,
+              "drawer": null,
               "source": "seen",
               "title": null,
               "applies_when": null
@@ -451,6 +456,7 @@
               "view": "game.kdl",
               "band": null,
               "bar": null,
+              "drawer": null,
               "source": "board",
               "title": null,
               "applies_when": null
@@ -461,6 +467,7 @@
               "view": "score.kdl",
               "band": null,
               "bar": null,
+              "drawer": null,
               "source": "board",
               "title": null,
               "applies_when": null
@@ -690,6 +697,18 @@
           "description": "A bar item's side and what it opens; `None` for every other slot.",
           "default": null
         },
+        "drawer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DrawerDecl"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A drawer's side and whether it floats; `None` for every other slot.",
+          "default": null
+        },
         "source": {
           "type": "string",
           "description": "The source whose data the view is bound to."
@@ -732,7 +751,7 @@
         {
           "type": "string",
           "const": "Drawer",
-          "description": "A panel docked along the right of the agent area, opened by a\ngesture and laid beside the pane rather than over it."
+          "description": "A panel along one side of the agent area, opened by a gesture:\nlaid beside the pane, or floating over it (`DrawerDecl`)."
         },
         {
           "type": "string",
@@ -807,6 +826,36 @@
       "enum": [
         "Left",
         "Right"
+      ]
+    },
+    "DrawerDecl": {
+      "type": "object",
+      "properties": {
+        "side": {
+          "$ref": "#/$defs/DrawerSide"
+        },
+        "float": {
+          "type": "boolean"
+        },
+        "fit": {
+          "type": "boolean",
+          "description": "Floating only: the card as tall (or, on the left or right, as\nshort) as what it holds, instead of the whole side."
+        }
+      },
+      "required": [
+        "side",
+        "float",
+        "fit"
+      ],
+      "description": "Where a drawer stands and whether it moves the agent aside.\n\nDocked, the pane gives up the rows or columns the drawer takes, so its\nterminal is resized once, when the drawer opens. Floating, the drawer\nstands over the pane and the agent's terminal keeps its size: what the\nagent printed never rewraps, at the cost of covering part of it while\nit is open."
+    },
+    "DrawerSide": {
+      "type": "string",
+      "enum": [
+        "Right",
+        "Left",
+        "Bottom",
+        "Top"
       ]
     },
     "SourceDecl": {

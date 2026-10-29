@@ -721,6 +721,55 @@ fn a_band_says_its_rows_and_place_and_nothing_else_does() {
 }
 
 #[test]
+fn a_drawer_says_its_side_whether_it_floats_and_fits_and_nothing_else_does() {
+    let with_surface = |surface: &str| {
+        GSD.replace(
+            r#"surface "summary" slot="section" view="board.uze" source="board" title="GSD""#,
+            surface,
+        )
+    };
+    let drawer = |props: &str| {
+        decoded(&with_surface(&format!(
+            r#"surface "summary" slot="drawer" view="board.uze" source="board" {props}"#
+        )))
+        .surface("summary")
+        .unwrap()
+        .drawer
+        .unwrap()
+    };
+    assert_eq!(drawer(""), uze_contract::DrawerDecl::default());
+    let floating = drawer(r#"side="bottom" float=#true size="fit""#);
+    assert_eq!(
+        (floating.side, floating.float, floating.fit),
+        (uze_contract::DrawerSide::Bottom, true, true)
+    );
+    assert!(
+        first_message(&with_surface(
+            r#"surface "summary" slot="drawer" view="board.uze" source="board" side="middle""#
+        ))
+        .contains("a drawer stands on the right, left, bottom, top, not `middle`")
+    );
+    assert!(
+        first_message(&with_surface(
+            r#"surface "summary" slot="drawer" view="board.uze" source="board" size="fit""#
+        ))
+        .contains("only a floating drawer fits what it holds")
+    );
+    assert!(
+        first_message(&with_surface(
+            r#"surface "summary" slot="drawer" view="board.uze" source="board" float="yes""#
+        ))
+        .contains("`float` is `#true` or `#false`")
+    );
+    assert!(
+        first_message(&with_surface(
+            r#"surface "summary" slot="section" view="board.uze" source="board" side="left""#
+        ))
+        .contains("only a drawer takes `side`, `float` and `size`")
+    );
+}
+
+#[test]
 fn preferences_are_typed_with_a_default_they_may_hold() {
     let manifest = decoded(&format!(
         "{GSD}preferences {{\n    number \"warn-at\" label=\"Warn at\" default=70 min=1 max=100\n    toggle \"fahrenheit\" default=#false\n    choice \"unit\" \"MiB\" \"GiB\" default=\"MiB\"\n    text \"title\" default=\"GPU\"\n}}\n"

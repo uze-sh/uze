@@ -1,6 +1,7 @@
 <view>
-// The heatmap: a column per week, a row per weekday, each day a square
-// in the tone of how many commits it had. A click on a day chooses it.
+// A strip along the bottom of the agent area: the totals over the map,
+// and beside it the chosen day's commits and who wrote them. A click on a
+// day chooses it.
 Stack gap=1 {
     Row gap=4 {
         Stat "{total}" "commits in 12 weeks" role="success"
@@ -8,33 +9,41 @@ Stack gap=1 {
         Stat "{best}" "on the busiest day" role="warning"
     }
 
-    Cells rows="{grid}" regions="{regions}"
-    Row gap=1 {
-        Text "less" role="faint"
-        Marks {
-            Mark role="faint"
-            Mark role="info"
-            Mark role="success"
-            Mark role="warning"
+    Row gap=4 {
+        Stack gap=1 {
+            Cells rows="{grid}" regions="{regions}"
+            Row gap=1 {
+                Text "less" role="faint"
+                Marks {
+                    Mark role="faint"
+                    Mark role="info"
+                    Mark role="success"
+                    Mark role="warning"
+                }
+                Text "more" role="faint"
+            }
         }
-        Text "more" role="faint"
-    }
 
-    Rule "{chosen.date}" when="chosen"
-    Rule "click a day to see its commits" unless="chosen"
-    List each="chosen.commits" empty="no commit that day" when="chosen" {
-        Row gap=2 {
-            Text "{hash}" role="info" min-width=7
-            Text "{subject}" truncate=#true grow=#true
-            Text "{author}" role="muted"
+        Stack gap=1 grow=#true {
+            Rule "{chosen.date}" when="chosen"
+            Rule "click a day to see its commits" unless="chosen"
+            List each="chosen.commits" empty="no commit that day" when="chosen" {
+                Row gap=2 {
+                    Text "{hash}" role="info" min-width=7
+                    Text "{subject}" truncate=#true grow=#true
+                    Text "{author}" role="muted"
+                }
+            }
         }
-    }
 
-    Rule "who"
-    Table "author" "commits" {
-        Row each="authors" {
-            Text "{name}"
-            Text "{count}" role="muted"
+        Stack gap=1 min-width=22 {
+            Rule "who"
+            Table "author" "commits" {
+                Row each="authors" {
+                    Text "{name}"
+                    Text "{count}" role="muted"
+                }
+            }
         }
     }
 }

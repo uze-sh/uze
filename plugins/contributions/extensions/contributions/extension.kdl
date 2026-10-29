@@ -1,6 +1,6 @@
 // Contributions: the repository's contribution graph, read from git. In the bar, today's
-// commits and the last 14 days as a sparkline; a click opens the view, a
-// heatmap of the last 12 weeks where every day can be clicked to list its
+// commits and the last 14 days as a sparkline; a click opens the drawer,
+// a heatmap of the last 12 weeks where every day can be clicked to list its
 // commits.
 protocol 1
 id "contributions"
@@ -12,8 +12,10 @@ wants "exec:git" "store"
 // In the bar, on the left: today and the last two weeks.
 surface "today" slot="bar" view="today.uze" source="git" opens="heatmap"
 
-// The view: the heatmap, the totals, the authors and the chosen day.
-surface "heatmap" slot="view" view="heatmap.uze" source="git" title="Contributions"
+// The drawer: the heatmap, the totals, the authors and the chosen day. It
+// floats over the bottom of the agent area, so the agent's terminal keeps
+// its size and nothing it printed rewraps while the map is open.
+surface "heatmap" slot="drawer" side="bottom" float=#true view="heatmap.uze" source="git" title="Contributions"
 
 // The git log, asked again whenever the checkout gains a commit.
 source "git" {

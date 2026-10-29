@@ -17,7 +17,7 @@ Owner: `crates/uze-contract` (`src/docs.rs`). A change to the contract changes t
 |---|---|
 | `view` | The full frame, opened from the tab strip like the built-in surfaces. |
 | `section` | A collapsible block of the workspace sidebar. |
-| `drawer` | A panel docked beside the agent's pane, opened by a gesture. |
+| `drawer` | A panel on the `side="right"` (the default), `"left"`, `"bottom"` or `"top"` of the agent area, opened by a gesture: beside the pane, which gives up that room, or with `float=#true` over it, the agent's terminal keeping its size; a floating one with `size="fit"` is a card as big as what it holds. |
 | `status` | One row of the sidebar's header. |
 | `band` | `rows=1`…`6` along the `place="top"` (or `"bottom"`) of each agent's pane, taken before the pane is sized. |
 | `overlay` | A card over the frame, opened by an `open` action and closed by Esc. |

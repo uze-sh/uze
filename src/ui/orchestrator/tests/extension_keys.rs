@@ -127,6 +127,7 @@ fn compiled(plugin: &str) -> CompiledExtension {
             surfaces: vec![uze_contract::SurfaceDecl {
                 band: None,
                 bar: None,
+                drawer: None,
                 id: "board".to_owned(),
                 slot: uze_contract::Slot::View,
                 view: "board.uze".to_owned(),

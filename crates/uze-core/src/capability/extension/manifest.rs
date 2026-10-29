@@ -55,6 +55,9 @@ const SURFACE_PROPS: &[&str] = &[
     "place",
     "align",
     "opens",
+    "side",
+    "float",
+    "size",
     "applies-when",
 ];
 
@@ -472,6 +475,7 @@ fn surface(node: &KdlNode, report: &mut Report<'_>) -> Option<(SurfaceDecl, (usi
     let source = source.filter(|(source, offset)| referred_id(source, "source", *offset, report));
     let band = band(node, &parts, slot?, report);
     let bar = bar(&parts, slot?, report);
+    let drawer = drawer(&parts, slot?, report);
     let ((view, view_at), (source, source_at)) = (view?, source?);
     Some((
         SurfaceDecl {
@@ -482,6 +486,7 @@ fn surface(node: &KdlNode, report: &mut Report<'_>) -> Option<(SurfaceDecl, (usi
             title: title.map(|title| Clean::label(&title).into_string()),
             band: band?,
             bar: bar?,
+            drawer: drawer?,
             applies_when: applies_when?,
         },
         (view_at, source_at),
@@ -528,6 +533,87 @@ fn bar(
         Some(entry) => Some(string_prop("opens", entry, report)?),
     };
     Some(Some(uze_contract::BarDecl { align, opens }))
+}
+
+/// A drawer's `side=` (`right`, the default, `left`, `bottom` or `top`),
+/// `float=#true` to stand over the pane instead of beside it, and
+/// `size="fit"` for a floating card as big as what it holds; refused on
+/// any other slot. `Some(None)` for a surface that is no drawer.
+fn drawer(
+    parts: &super::document::Entries<'_>,
+    slot: Slot,
+    report: &mut Report<'_>,
+) -> Option<Option<uze_contract::DrawerDecl>> {
+    let side = prop(parts, "side");
+    let float = prop(parts, "float");
+    let size = prop(parts, "size");
+    if slot != Slot::Drawer {
+        for entry in [side, float, size].into_iter().flatten() {
+            report.on(
+                entry,
+                "only a drawer takes `side`, `float` and `size`",
+                Some("remove it, or write `slot=\"drawer\"`".to_owned()),
+            );
+        }
+        return Some(None);
+    }
+    let side = match side {
+        None => uze_contract::DrawerSide::Right,
+        Some(entry) => {
+            let written = string_prop("side", entry, report)?;
+            let Some(side) = uze_contract::DrawerSide::parse(&written) else {
+                report.on(
+                    entry,
+                    format!(
+                        "a drawer stands on the {}, not `{written}`",
+                        uze_contract::DrawerSide::NAMES.join(", ")
+                    ),
+                    None,
+                );
+                return None;
+            };
+            side
+        }
+    };
+    let float = match float {
+        None => false,
+        Some(entry) => match entry.value() {
+            KdlValue::Bool(flag) => *flag,
+            _ => {
+                report.on(
+                    entry,
+                    "`float` is `#true` or `#false`",
+                    Some("write `float=#true`".to_owned()),
+                );
+                return None;
+            }
+        },
+    };
+    let size = match size {
+        None => uze_contract::DrawerSize::Fill,
+        Some(entry) => {
+            let written = string_prop("size", entry, report)?;
+            let Some(size) = uze_contract::DrawerSize::parse(&written) else {
+                report.on(
+                    entry,
+                    format!("a drawer's size is `fill` or `fit`, not `{written}`"),
+                    None,
+                );
+                return None;
+            };
+            size
+        }
+    };
+    let fit = size == uze_contract::DrawerSize::Fit;
+    if fit && !float {
+        report.on(
+            prop(parts, "size")?,
+            "only a floating drawer fits what it holds",
+            Some("add `float=#true`, or remove `size`".to_owned()),
+        );
+        return None;
+    }
+    Some(Some(uze_contract::DrawerDecl { side, float, fit }))
 }
 
 /// A band's `rows=` (1 to 6) and `place=` (`top` or `bottom`); refused on

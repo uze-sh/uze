@@ -231,8 +231,8 @@ pub enum Slot {
     View,
     /// A collapsible block of the workspace sidebar.
     Section,
-    /// A panel docked along the right of the agent area, opened by a
-    /// gesture and laid beside the pane rather than over it.
+    /// A panel along one side of the agent area, opened by a gesture:
+    /// laid beside the pane, or floating over it (`DrawerDecl`).
     Drawer,
     /// One row of the sidebar's header.
     Status,
@@ -301,6 +301,73 @@ impl BandPlace {
         match name {
             "top" => Some(Self::Top),
             "bottom" => Some(Self::Bottom),
+            _ => None,
+        }
+    }
+}
+
+/// Where a drawer stands and whether it moves the agent aside.
+///
+/// Docked, the pane gives up the rows or columns the drawer takes, so its
+/// terminal is resized once, when the drawer opens. Floating, the drawer
+/// stands over the pane and the agent's terminal keeps its size: what the
+/// agent printed never rewraps, at the cost of covering part of it while
+/// it is open.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DrawerDecl {
+    pub side: DrawerSide,
+    pub float: bool,
+    /// Floating only: the card as tall (or, on the left or right, as
+    /// short) as what it holds, instead of the whole side.
+    pub fit: bool,
+}
+
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum DrawerSide {
+    #[default]
+    Right,
+    Left,
+    Bottom,
+    Top,
+}
+
+impl DrawerSide {
+    pub const NAMES: &'static [&'static str] = &["right", "left", "bottom", "top"];
+
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "right" => Some(Self::Right),
+            "left" => Some(Self::Left),
+            "bottom" => Some(Self::Bottom),
+            "top" => Some(Self::Top),
+            _ => None,
+        }
+    }
+
+    /// Whether it stands across the pane's width, taking rows.
+    pub fn across(self) -> bool {
+        matches!(self, Self::Bottom | Self::Top)
+    }
+}
+
+/// How much of its side a floating drawer takes.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DrawerSize {
+    #[default]
+    Fill,
+    Fit,
+}
+
+impl DrawerSize {
+    pub const NAMES: &'static [&'static str] = &["fill", "fit"];
+
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "fill" => Some(Self::Fill),
+            "fit" => Some(Self::Fit),
             _ => None,
         }
     }
@@ -420,6 +487,9 @@ pub struct SurfaceDecl {
     /// A bar item's side and what it opens; `None` for every other slot.
     #[serde(default)]
     pub bar: Option<BarDecl>,
+    /// A drawer's side and whether it floats; `None` for every other slot.
+    #[serde(default)]
+    pub drawer: Option<DrawerDecl>,
     /// The source whose data the view is bound to.
     pub source: String,
     /// What the host titles the surface with; the extension's name when

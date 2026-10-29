@@ -47,6 +47,7 @@ fn compiled() -> CompiledExtension {
             surfaces: vec![uze_contract::SurfaceDecl {
                 band: None,
                 bar: None,
+                drawer: None,
                 id: "phase".to_owned(),
                 slot: uze_contract::Slot::Status,
                 view: "phase.uze".to_owned(),

@@ -1,0 +1,46 @@
+# uze snapshot · protocol 1 · drawer 120x18 · dark
+ ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ │ contributions · contributions@local                                                                                 │
+ │                                                                                                                     │
+ │  347                    63                    15                                                                    │
+ │  commits in 12 weeks    days with a commit    on the busiest day                                                    │
+ │                                                                                                                     │
+ │  M ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     ─ 2026-10-27 ────────────────────────────────────────────    ─ who ────────────────  │
+ │  T ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                                                                                          │
+ │  W ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■      3f9a1c2  feat(cli): add a --done filter to list     ana     author  commits         │
+ │  T ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■        b71e044  fix(store): keep the file when a write…  bruno                             │
+ │  F ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■        0c2d9e8  test(store): cover an empty tasks file     ana     ana     173             │
+ │  S ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■        9e13a77  docs: say where tasks are kept           carla     bruno   104             │
+ │  S ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■        51b6f30  refactor(cli): parse arguments in one …  bruno     carla   70              │
+ │                                                                                                                     │
+ │  less ■■■■ more                                                                                                     │
+ │                                                                                                                     │
+ │                                                                                                                     │
+ └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+---
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ a bbbbbbbbbbbbb b bbbbbbbbbbbbbbbbbbb                                                                                 a
+ a                                                                                                                     a
+ a  ccc                    cc                    cc                                                                    a
+ a  bbbbbbb bb bb bbbbb    bbbb bbbb b bbbbbb    bb bbb bbbbbbb bbb                                                    a
+ a                                                                                                                     a
+ a  d e e e d f g e g e e g g     d cccccccccc dddddddddddddddddddddddddddddddddddddddddddd    d ccc dddddddddddddddd  a
+ a  d g f e f e e g e e g e g                                                                                          a
+ a  d e d g g d g g g e g e e      ggggggg  cccccccccc ccc c cccccc cccccc cc cccc     bbb     bbbbbb  bbbbbbb         a
+ a  d d e g g g e f f e g e        ggggggg  ccccccccccc cccc ccc cccc cccc c cccccc  bbbbb                             a
+ a  d g g g f d g f d e g e        ggggggg  cccccccccccc ccccc cc ccccc ccccc cccc     bbb     ccc     bbb             a
+ a  d g d g d g g d g g d d        ggggggg  ccccc ccc ccccc ccccc ccc cccc           bbbbb     ccccc   bbb             a
+ a  d d d g g d d d d g g g        ggggggg  cccccccccccccc ccccc ccccccccc cc ccc c  bbbbb     ccccc   bb              a
+ a                                                                                                                     a
+ a  dddd dgef dddd                                                                                                     a
+ a                                                                                                                     a
+ a                                                                                                                     a
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+---
+a border.default
+b text.muted
+c text.bright
+d text.faint
+e state.success
+f state.warning
+g state.info

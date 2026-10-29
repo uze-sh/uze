@@ -419,8 +419,14 @@ impl Stage {
                             }
                         }
                         Slot::Drawer => {
-                            let (inner, _) =
-                                crate::ui::widget::drawer::render_docked(frame, area, false, None);
+                            let (inner, _) = crate::ui::widget::drawer::render_docked(
+                                frame,
+                                area,
+                                crate::ui::widget::Edge::Left,
+                                crate::ui::widget::drawer::DOCKED_GAP,
+                                false,
+                                None,
+                            );
                             let content = render_attribution(frame, inner, &said);
                             let space = Size {
                                 width: content.width,

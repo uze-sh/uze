@@ -694,6 +694,7 @@ mod tests {
             title: None,
             band,
             bar: None,
+            drawer: None,
             applies_when: None,
         };
         let band = |rows| {

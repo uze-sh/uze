@@ -75,7 +75,7 @@ impl WorkspaceModel {
             .find(|slot| slot.owner == item.owner && &slot.surface.id == opens)?;
         match target.surface.slot {
             SurfaceSlot::View => Some(WorkspaceHit::OpenDeclared(target.id)),
-            SurfaceSlot::Drawer => Some(WorkspaceHit::ToggleDrawer(target.id)),
+            SurfaceSlot::Drawer(_) => Some(WorkspaceHit::ToggleDrawer(target.id)),
             _ => None,
         }
     }

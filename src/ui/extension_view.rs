@@ -210,6 +210,17 @@ pub(crate) fn render_docked(
     }
 }
 
+/// The rows [`render_docked`] needs to draw all of `view` at `width`;
+/// `None` for a view that is not a tree, which takes what it is given.
+pub(crate) fn docked_rows(view: &View, width: u16) -> Option<u16> {
+    match &view.content {
+        Content::Tree { heading, root, .. } => {
+            Some(tree::content_rows(heading, &view.modes, root, width))
+        }
+        _ => None,
+    }
+}
+
 fn render_surface(
     frame: &mut ratatui::Frame<'_>,
     view: &View,

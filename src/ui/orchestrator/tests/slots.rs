@@ -151,6 +151,7 @@ fn surface(id: &str, slot: uze_contract::Slot) -> uze_contract::SurfaceDecl {
             place: uze_contract::BandPlace::Top,
         }),
         bar: (slot == uze_contract::Slot::Bar).then_some(uze_contract::BarDecl::default()),
+        drawer: (slot == uze_contract::Slot::Drawer).then_some(uze_contract::DrawerDecl::default()),
         id: id.to_owned(),
         slot,
         view: format!("{id}.kdl"),

@@ -12,7 +12,7 @@ a click away from its commits.
 | Where | What |
 |---|---|
 | bar | today's commits and a sparkline of the last 14 days |
-| view | the totals, the heatmap, the chosen day's commits and who made them |
+| drawer | floating along the bottom, over the agent: the totals, the heatmap, the chosen day's commits and who made them |
 
 Each day's tone is its place among the days that had a commit, so the map
 reads the same for a commit a week and for a hundred a day.
@@ -23,9 +23,9 @@ reads the same for a commit a week and for a hundred a day.
 ## How it is built
 
 - [`extension.kdl`](extensions/contributions/extension.kdl): a bar item that opens
-  a view, a source refreshed on `checkout.changed`, and an action a click
+  a floating drawer, a source refreshed on `checkout.changed`, and an action a click
   on a day calls.
-- [`heatmap.uze`](extensions/contributions/heatmap.uze): the view, built on
+- [`heatmap.uze`](extensions/contributions/heatmap.uze): the drawer's view, built on
   `Cells` with a click region per day, and the script that reads one
   `git log`.
 
