@@ -32,6 +32,7 @@
 mod catalog;
 mod decision;
 mod dialect;
+mod extension;
 mod ownership;
 mod progress;
 mod summary;
@@ -57,6 +58,7 @@ use crate::{
 pub use catalog::{Artifact, Found, Unit};
 pub use decision::Standing;
 pub use dialect::{Role, Subject};
+pub use extension::{DOCUMENT, SUMMARY, SpecExtension, SpecRead, SummaryRead};
 pub use progress::Progress;
 pub use summary::{ChangeSummary, Summary, summary, summary_section};
 
@@ -354,8 +356,13 @@ impl SpecView {
 
     /// Where to put the viewer once the answer lands.
     pub fn resuming(mut self, place: SpecPlace) -> Self {
-        self.resuming = Some(place);
+        self.resume(place);
         self
+    }
+
+    /// [`Self::resuming`], on a surface already open.
+    pub fn resume(&mut self, place: SpecPlace) {
+        self.resuming = Some(place);
     }
 
     /// The change in flight the viewer is on, by name — what the sidebar's
@@ -384,6 +391,23 @@ impl SpecView {
                     .map(|artifact| artifact.relative.clone()),
             },
         })
+    }
+
+    /// A read landing beneath a view already showing one: the viewer stays
+    /// where they were, when what they stood on is still there.
+    pub fn refresh(&mut self, answer: SpecAnswer) {
+        if matches!(self.state, State::Found { .. })
+            && let Some(here) = self.place()
+        {
+            let (scroll, folded) = (self.scroll, self.folded.clone());
+            self.resuming = Some(here);
+            self.absorb(answer);
+            self.folded = folded;
+            self.scroll = scroll;
+            self.redraw();
+        } else {
+            self.absorb(answer);
+        }
     }
 
     pub fn absorb(&mut self, answer: SpecAnswer) {

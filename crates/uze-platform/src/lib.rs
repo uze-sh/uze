@@ -8,6 +8,7 @@
 //! that cannot answer says *unknown*, never *no*.
 
 pub mod clock;
+pub mod confine;
 pub mod cpu;
 pub mod desktop;
 pub mod endpoint;
@@ -18,13 +19,16 @@ pub mod fs_name;
 pub mod git;
 pub mod home;
 pub mod interrupt;
+pub mod locale;
 pub mod lock;
 pub mod machine;
 pub mod mounts;
+pub mod notify;
 pub mod path;
 pub mod probe;
 pub mod process;
 pub mod secret;
+pub mod secrets;
 pub mod shell;
 pub mod stdio;
 pub mod target;

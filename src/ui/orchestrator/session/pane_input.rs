@@ -66,17 +66,15 @@ impl Attach<'_> {
                 }
                 self.model.dirty = true;
             }
-            _ if self
-                .model
-                .code
-                .as_ref()
-                .is_some_and(code::CodeView::editing) =>
-            {
-                let space = self.code_space();
-                if let Some(view) = self.model.code.as_mut() {
-                    view.paste(&text, space);
+            _ if self.model.inspector.edit.is_some() => {
+                if let Some((_, buffer)) = self.model.inspector.edit.as_mut() {
+                    buffer.insert_str(text.trim_end_matches(['\r', '\n']));
                 }
                 self.model.dirty = true;
+            }
+            _ if self.model.open_typing() => {
+                let space = self.surface_space();
+                self.model.paste_into_open(&text, space);
             }
             _ if self.model.no_modal_open() => {
                 let pane = self.model.focused_pane();

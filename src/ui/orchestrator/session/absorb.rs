@@ -5,7 +5,7 @@ use super::*;
 impl Attach<'_> {
     /// Submits `message` into `pane` as UZE's own words — see
     /// [`notice_bytes`] for why it cannot be typed as it stands.
-    fn submit_notice(&mut self, pane: PaneId, message: &str) {
+    pub(in crate::ui::orchestrator) fn submit_notice(&mut self, pane: PaneId, message: &str) {
         let bracketed = self
             .model
             .panes
@@ -44,12 +44,15 @@ impl Attach<'_> {
                 self.submit_notice(pane, &instruction);
                 self.model
                     .note_agent_prompt_submission(pane, &self.identities, None);
-                self.model.raise_toast(
-                    ToastKind::Done,
-                    "sent to agent",
-                    crate::ui::widget::text::elide(&instruction, QUOTED),
-                    None,
-                );
+                // Into the agent in front, what was typed is its own news.
+                if pane != self.model.focused_pane() {
+                    self.model.raise_toast(
+                        ToastKind::Done,
+                        "sent to agent",
+                        crate::ui::widget::text::elide(&instruction, QUOTED),
+                        None,
+                    );
+                }
             }
             Some((reason, _)) if automatic => {
                 self.model.raise_toast(
@@ -348,19 +351,25 @@ impl Attach<'_> {
         }
         // A directory first seen is where a space opens: its project's
         // `AGENTS.md` is brought in step before any agent there reads it.
+        let opened = self.model.newly_opened_directories(&self.identities);
         spawn_unspelled_gates(
             self.home,
-            unread.clone(),
+            opened.clone(),
             self.channels.unspelled_gates.sender.clone(),
         );
         spawn_commands_awaiting(
             self.home,
-            unread.clone(),
+            opened.clone(),
             self.channels.commands_awaiting.sender.clone(),
+        );
+        spawn_extension_offers(
+            self.home,
+            opened.clone(),
+            self.channels.extension_offers.sender.clone(),
         );
         spawn_retired_region_check(
             self.home,
-            unread,
+            opened,
             self.channels.retired_regions.sender.clone(),
         );
         if self
@@ -422,6 +431,8 @@ impl Attach<'_> {
         {
             self.model.remembered.last_checkout_watch = Some(Instant::now());
             self.model.remembered.checkout_watch_pending = true;
+            let agents = bridged_agents(&self.model, &self.identities);
+            self.model.see_agents(agents);
             spawn_checkout_watch(
                 self.home,
                 self.model.watched_checkouts(),
@@ -429,6 +440,7 @@ impl Attach<'_> {
                     .space_overview
                     .as_ref()
                     .map(|overview| overview.root.clone()),
+                self.model.extension_watch(),
                 self.channels.checkout_stamps.sender.clone(),
             );
         }
@@ -516,8 +528,10 @@ impl Attach<'_> {
     /// the refresh clock. A checkout read for the first time only sets its
     /// stamp — the evaluation that put it on screen already read it.
     pub(in crate::ui::orchestrator) fn absorb_checkout_stamps(&mut self) {
-        while let Ok(resolution) = self.channels.checkout_stamps.receiver.try_recv() {
+        while let Ok(mut resolution) = self.channels.checkout_stamps.receiver.try_recv() {
             self.model.remembered.checkout_watch_pending = false;
+            self.model
+                .absorb_extension_watch(std::mem::take(&mut resolution.extensions));
             // What the open overview's project declares moved — an edit by
             // hand, an install, an agent writing `AGENTS.md` — so the
             // overview is read again. Its first read only sets the stamp:
@@ -592,7 +606,7 @@ impl Attach<'_> {
     }
 
     /// What the Git badge, the release notes, the commit detail and the
-    /// code and architect surfaces' reads answered.
+    /// hosted engines' reads answered.
     /// What keeping `AGENTS.md` in step could not do: said once a session
     /// per file, never repaired over the operator's edit.
     /// The registry's launcher names, asked once and absorbed when they
@@ -746,6 +760,12 @@ impl Attach<'_> {
         while let Ok(resolution) = self.channels.approvals.receiver.try_recv() {
             self.model.absorb_approval(resolution);
         }
+        while let Ok(read) = self.channels.extension_offers.receiver.try_recv() {
+            self.model.extensions_offered(read.project, read.offers);
+        }
+        while let Ok(resolution) = self.channels.extension_offer_answers.receiver.try_recv() {
+            self.model.absorb_extension_offer(resolution);
+        }
     }
 
     pub(super) fn absorb_surface_answers(&mut self) {
@@ -761,46 +781,33 @@ impl Attach<'_> {
         while let Ok(resolution) = self.channels.commit_details.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_commit_detail(resolution);
         }
-        while let Ok(resolution) = self.channels.code_changes.receiver.try_recv() {
-            self.model.dirty |= self.model.absorb_changes(resolution);
+        while let Ok(answer) = self.channels.extension_jobs.receiver.try_recv() {
+            self.model.dirty |= self.model.absorb_extension_answer(answer);
         }
-        while let Ok(resolution) = self.channels.code_diffs.receiver.try_recv() {
-            self.model.dirty |= self.model.absorb_diff(resolution);
+        while let Ok(answer) = self.channels.extension_stamps.receiver.try_recv() {
+            self.model.absorb_extension_stamps(answer);
         }
-        while let Ok(resolution) = self.channels.code_files.receiver.try_recv() {
-            self.model.dirty |= self.model.absorb_file_answer(resolution);
+        while let Ok(answer) = self.channels.engine_answers.receiver.try_recv() {
+            self.model.dirty |= self.model.absorb_engine_answer(answer);
         }
-        while let Ok(resolution) = self.channels.code_measures.receiver.try_recv() {
-            self.model.dirty |= self.model.absorb_measure(resolution);
-        }
-        while let Ok(resolution) = self.channels.artifacts.receiver.try_recv() {
-            self.model.dirty |= self.model.absorb_artifacts(resolution);
-        }
-        while let Ok(resolution) = self.channels.spec.receiver.try_recv() {
-            self.model.dirty |= self.model.absorb_spec(resolution);
-        }
-        while let Ok(resolution) = self.channels.spec_summaries.receiver.try_recv() {
-            self.model.dirty |= self.model.absorb_spec_summary(resolution);
+        while let Ok(answer) = self.channels.inspector.receiver.try_recv() {
+            self.model.absorb_inspector(answer);
         }
     }
 
     /// Asks whatever those same surfaces now show and have not read.
     pub(super) fn schedule_surface_reads(&mut self) {
         self.model.schedule_git_read(&self.channels.git.sender);
-        self.model
-            .schedule_diff_read(&self.channels.code_diffs.sender);
-        self.model
-            .schedule_changes_refresh(&self.channels.code_changes.sender);
-        self.model
-            .schedule_file_request(&self.channels.code_files.sender);
-        self.model
-            .schedule_code_measure(&self.channels.code_measures.sender);
-        self.model
-            .schedule_artifacts_read(&self.channels.artifacts.sender);
-        self.model
-            .schedule_spec_read(self.home, &self.channels.spec.sender);
-        self.model
-            .schedule_spec_summary(&self.channels.spec_summaries.sender);
+        self.model.schedule_extension_jobs(
+            self.home,
+            crate::ui::extension_switch::plugins_revision(),
+            &self.channels.extension_jobs.sender,
+            &self.channels.extension_stamps.sender,
+        );
+        let _ = self
+            .model
+            .schedule_engine_jobs(self.home, &self.channels.engine_answers.sender);
+        self.schedule_extension_costs();
     }
 
     /// Advances the activity spinner while anything it animates is on

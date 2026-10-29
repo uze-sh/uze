@@ -143,3 +143,44 @@ fn settings_reopened_where_it_was_left_still_reads_its_lists() {
         "only that screen reads them"
     );
 }
+
+#[test]
+fn an_extension_enabled_in_the_workspace_is_read_again_by_the_next_opening() {
+    use crate::ui::management::opening_asks_again;
+    use std::time::Instant;
+
+    let just = Some(Instant::now());
+    assert!(
+        !opening_asks_again(just, false, false, false),
+        "a fresh reading stands"
+    );
+    assert!(
+        opening_asks_again(just, false, true, false),
+        "an offer answered in the workspace revised the plugins: the screen reads again"
+    );
+    assert!(
+        opening_asks_again(just, false, true, true),
+        "even with a reading in flight: it began before the change"
+    );
+    assert!(
+        !opening_asks_again(just, false, false, true),
+        "otherwise never twice at once about the same project"
+    );
+}
+
+#[test]
+fn a_reading_that_began_before_the_shown_one_is_dropped() {
+    let mut model = TuiModel::recall(None, &uze_application::ManagementLayout::default());
+    let reading = |revision, project: &str| crate::ui::model::RefreshData {
+        plugins_revision: revision,
+        extension_project: Some(std::path::PathBuf::from(project)),
+        ..Default::default()
+    };
+    model.refreshed(reading(2, "/newer"));
+    model.refreshed(reading(1, "/older"));
+    assert_eq!(
+        model.extension_project.as_deref(),
+        Some(std::path::Path::new("/newer")),
+        "the older answer landing late does not paint over the newer"
+    );
+}

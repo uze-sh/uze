@@ -1,0 +1,16 @@
+// Snake, in a view of its own: a resident script keeps the game on `this`
+// while the view is open, reads the arrow keys raw while it is focused,
+// moves on its own `timer`, draws the board as `Cells` and keeps the best
+// score in the store. Esc lets go of the keys, a second Esc closes it.
+protocol 1
+id "snake"
+name "Snake"
+description "Snake, steered with the arrow keys, its best score kept"
+
+wants "resident" "store"
+
+surface "game" slot="view" view="game.uze" source="board" title="Snake"
+
+source "board" {
+    resident "game.uze"
+}

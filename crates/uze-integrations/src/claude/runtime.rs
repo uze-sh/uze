@@ -160,6 +160,77 @@ pub(super) fn runtime_contribution(ctx: &RuntimeContext) -> HarnessRuntimeContri
     }
 }
 
+/// Claude's hook events and the report each makes, with `--hook-input`
+/// reading the tool's name, path and call id from the JSON Claude hands a
+/// hook on stdin. `Notification` reports only under
+/// [`APPROVAL_NOTIFICATION`].
+const REPORTED: &[(&str, &str)] = &[
+    ("SessionStart", "session.started"),
+    ("UserPromptSubmit", "turn.started"),
+    ("Stop", "turn.finished"),
+    ("PreToolUse", "tool.started"),
+    ("PostToolUse", "tool.finished"),
+    ("Notification", "approval.asked"),
+];
+
+/// The notification type of a permission prompt, as a `Notification`
+/// hook's matcher names it: Claude also notifies an idle prompt, an
+/// authentication and dialogs, none of which asks for an approval.
+const APPROVAL_NOTIFICATION: &str = "permission_prompt";
+
+/// The events [`reporter`] makes Claude report.
+pub(super) const REPORTED_EVENTS: &[&str] = &[
+    "session.started",
+    "turn.started",
+    "turn.finished",
+    "tool.started",
+    "tool.finished",
+    "approval.asked",
+];
+
+/// A settings file of hooks running `uze agent report`, in the agent's own
+/// directory, named by `--settings` on this launch alone: Claude merges it
+/// with the operator's settings and runs it only in this session.
+pub(super) fn reporter(
+    ctx: &uze_core::integration::ReporterContext,
+) -> Option<uze_core::integration::ContextContribution> {
+    let uze = shell_quoted(&ctx.uze.to_string_lossy());
+    let hooks: serde_json::Map<String, serde_json::Value> = REPORTED
+        .iter()
+        .map(|(hook, event)| {
+            let mut entry = serde_json::json!({
+                "hooks": [{
+                    "type": "command",
+                    "command": format!("{uze} agent report {event} --hook-input"),
+                    "timeout": 5,
+                }],
+            });
+            if hook.ends_with("ToolUse") {
+                entry["matcher"] = serde_json::json!("*");
+            } else if *hook == "Notification" {
+                entry["matcher"] = serde_json::json!(APPROVAL_NOTIFICATION);
+            }
+            ((*hook).to_owned(), serde_json::json!([entry]))
+        })
+        .collect();
+    let settings = serde_json::json!({ "hooks": hooks });
+    let file = ctx.dir.join("reporter-settings.json");
+    crate::shared::agent_context::write_private(
+        &file,
+        &serde_json::to_string_pretty(&settings).ok()?,
+    )
+    .ok()?;
+    Some(uze_core::integration::ContextContribution {
+        args: vec![OsString::from("--settings"), file.into_os_string()],
+        env: Vec::new(),
+    })
+}
+
+/// `text` as one word for the shell Claude runs a hook's command in.
+fn shell_quoted(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "'\\''"))
+}
+
 /// The agent's context as a `CLAUDE.md` inline in its own directory, added
 /// to the launch. Inline rather than an `@import`, because an import from
 /// outside the working directory raises Claude's one-time approval dialog.
@@ -572,5 +643,37 @@ mod runtime_projection_tests {
         );
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod reporter_tests {
+    use super::*;
+
+    #[test]
+    fn the_reporter_is_this_launchs_settings_file_of_hooks() {
+        let dir = uze_testkit::temp::scratch("claude-reporter");
+        let contribution = reporter(&uze_core::integration::ReporterContext {
+            uze: std::path::Path::new("/opt/it's/uze"),
+            dir: &dir,
+        })
+        .expect("a reporter");
+        assert_eq!(contribution.args[0], "--settings");
+        let settings: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&contribution.args[1]).unwrap()).unwrap();
+        let command = settings["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap();
+        assert_eq!(
+            command,
+            "'/opt/it'\\''s/uze' agent report turn.started --hook-input"
+        );
+        assert_eq!(settings["hooks"]["PreToolUse"][0]["matcher"], "*");
+        assert_eq!(
+            settings["hooks"]["Notification"][0]["matcher"], "permission_prompt",
+            "only a permission prompt is an approval asked; an idle prompt is none"
+        );
+        assert!(settings["hooks"]["Stop"].is_array());
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

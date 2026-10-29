@@ -1,0 +1,20 @@
+// The checkout's plan, read again whenever it changes, and the agent asked
+// to review it on a gesture.
+protocol 1
+id "plan-review"
+name "Plan review"
+description "The checkout's plan, and its review asked of the agent"
+
+wants "read:checkout" "agent:prompt"
+
+surface "plan" slot="section" view="plan.uze" source="plan" title="Plan"
+
+source "plan" {
+    script "plan.uze"
+    input file="PLAN.md"
+    refresh-on "paths.changed" "PLAN.md"
+}
+
+action "review" label="Ask for a review" on="plan" {
+    agent-prompt "Review {file} and say what you would change before going on" target="self"
+}

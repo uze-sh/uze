@@ -19,8 +19,10 @@ reaches an agent through its launch, and what a plugin tells every agent is
 an `always_on` rule.
 
 This repository is itself the official uze marketplace: `marketplace.json` +
-`plugins/**` at the root, with `plugins/uze` (the `uze:init`, `uze:rules`, `uze:worktree`,
-`uze:architect` and `uze:author` Skills) as the one official plugin today.
+`plugins/**` at the root, with `plugins/uze` (the `uze:init`, `uze:rules`,
+`uze:worktree`, `uze:architect`, `uze:author` and `uze:try` Skills) as the
+one official plugin, and beside it the examples (category `example`), each
+checked by `every_plugin_of_the_repositorys_marketplace_checks_clean`.
 
 ## Commands
 
@@ -131,7 +133,16 @@ for a crate arrives when you touch it.
 - `crates/uze-theme`, `crates/uze-keys` — the design and input
   vocabularies (`Token`, `Symbol`; `Action`, `Chord`, `Keymap`).
 - `crates/uze-extensions` — built-in TUI extensions (`code`, `architect`,
-  `spec`), which describe and never draw.
+  `spec`) and the engine for extensions a plugin declares, which describe
+  and never draw.
+- `crates/uze-contract` — the extension contract: manifest and
+  compiled-view types, the binding grammar, the catalog, the sanitizer.
+  Plain data, and the one UZE crate `uze-extensions` may depend on;
+  `uze_contract::component` is the one reader of a `.uze` file's blocks.
+- `crates/uze-script` — the engine a declared extension's script runs in:
+  the only crate that names `rhai`, bounded, reaching the machine only
+  through the host functions its grants register (`Reach`). Used by
+  `uze-application` alone.
 - `crates/uze-testkit` — shared test infrastructure; `tests/` holds the
   domain suites (taxonomy in `tests/README.md`).
 - `conformance/` — the Harness Conformance Lab (Python, Docker): real
@@ -139,7 +150,8 @@ for a crate arrives when you touch it.
 - `journeys/` — the product journeys, the third test tier: a user's flow
   through the real CLI and TUI, checked against the machine it left.
 - `playground/` — disposable worlds to try this checkout by hand
-  (`make playground-windows`, `make playground-linux`).
+  (`make playground-windows`, `make playground-linux`); `make try` puts
+  the examples in a demo project on this machine instead.
 - `docs/adr/` — numbered architecture decision records; read the recent
   ones before a structural change.
 - `docs/architecture/*.mmd` — the architecture as Mermaid, the one diagram
@@ -169,7 +181,8 @@ uze-integrations (Claude, Codex, Antigravity, OpenCode — implement Integration
 
 uze-git          (transport, no domain — used by core, workspace, integrations, application)
 uze-terminal     (local terminal runtime — reaches only uze-platform and uze-document)
-leaves           uze-platform, uze-document, uze-theme, uze-keys (name no domain)
+uze-script       (an extension's script engine — reaches only uze-contract and uze-platform)
+leaves           uze-platform, uze-document, uze-theme, uze-keys, uze-contract (name no domain)
 ```
 
 `uze-core` never depends on `uze-workspace`: that is how the package

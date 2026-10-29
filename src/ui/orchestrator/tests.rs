@@ -14,6 +14,8 @@ use super::*;
 #[cfg(test)]
 mod activity;
 #[cfg(test)]
+mod agent_writes;
+#[cfg(test)]
 mod agents;
 #[cfg(test)]
 mod approval;
@@ -22,9 +24,25 @@ mod attach;
 #[cfg(test)]
 mod context_menu;
 #[cfg(test)]
+mod declared;
+#[cfg(test)]
+mod declared_actions;
+mod declared_events;
+mod declared_media;
+#[cfg(test)]
+mod declared_motion;
+#[cfg(test)]
+mod declared_notify;
+#[cfg(test)]
+mod declared_resident;
+#[cfg(test)]
 mod delivery;
 #[cfg(test)]
 mod drawing;
+#[cfg(test)]
+mod extension_keys;
+#[cfg(test)]
+mod extension_offer;
 #[cfg(test)]
 mod extensions;
 #[cfg(test)]
@@ -51,6 +69,8 @@ mod recent;
 mod selection;
 #[cfg(test)]
 mod sidebar;
+#[cfg(test)]
+mod slots;
 #[cfg(test)]
 mod status;
 #[cfg(test)]

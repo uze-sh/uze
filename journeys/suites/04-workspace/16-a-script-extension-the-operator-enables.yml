@@ -1,0 +1,226 @@
+journey: a script extension from a marketplace's clone runs once the operator consents and enables it in the project
+tags: [gate, tui, workspace]
+about: |
+  The operator's side of an extension that runs code: its plugin comes from
+  a marketplace UZE cloned into its Store, not one linked to an author's
+  working tree, and installing it without a terminal leaves it disabled and
+  says so. The workspace opened on the project offers it; the operator reads
+  its grants, allows it and enables it there; its view opens from the action
+  index drawn from what its script read off the checkout; and its two
+  actions copy, one by its key behind a confirmation and one by a pointer.
+
+  The machine is what each scene checks: the consent record in
+  `state/extensions.json` with the grants allowed and the project enabled,
+  the checkout the script read and never wrote, and the bytes the app asked
+  its terminal to put on the clipboard. The screen only gates each gesture.
+
+world:
+  project: demo-app
+  commits:
+    - message: "chore: initial commit"
+      files:
+        README.md: "# demo-app\n"
+    - message: "docs: keep the open notes"
+      files:
+        NOTES.md: |
+          # Notes
+
+          - [ ] Write the script
+          - [x] Draft the view
+          - [ ] Ship the board
+  files:
+    market/marketplace.json: |
+      {
+        "name": "studio",
+        "description": "A marketplace this journey stages and installs from its clone.",
+        "plugins": [
+          { "name": "notes", "source": "./plugins/notes", "description": "A board of the checkout's open notes." }
+        ]
+      }
+    market/plugins/notes/plugin.json: |
+      {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "notes",
+        "version": "1.0.0",
+        "description": "A board of the open items in the checkout's NOTES.md, read by a script."
+      }
+    market/plugins/notes/extensions/notes/extension.kdl: |
+      protocol 1
+      id "notes"
+      name "Notes"
+      description "The open items of the checkout's NOTES.md"
+
+      wants "read:checkout" "clipboard"
+
+      surface "board" slot="view" view="board.uze" source="items" title="Notes"
+
+      source "items" {
+          script "items.uze"
+          input file="NOTES.md"
+      }
+
+      action "copy-line" label="Copy line" on="board" key="ctrl-y" confirm="Copy this item?" {
+          clipboard "{text}"
+      }
+
+      action "copy-summary" label="Copy summary" on="board" {
+          clipboard "{summary}"
+      }
+    market/plugins/notes/extensions/notes/board.uze: |
+      <view>
+      Stack gap=1 {
+          Row gap=2 {
+              Text "{summary}" strong=#true grow=#true
+              Button "Copy summary" action="copy-summary" item="{.}"
+          }
+          List each="items" {
+              Text "{text}"
+          }
+      }
+      </view>
+    market/plugins/notes/extensions/notes/items.uze: |
+      <script>
+      // The `items` source: every line of the notes file that opens with `- [ ] `.
+      fn answer(input, context) {
+          let open = [];
+          for line in lines(read_checkout(input.file)) {
+              if line.starts_with("- [ ] ") {
+                  open.push(#{ text: line.sub_string(6) });
+              }
+          }
+          #{ data: #{ items: open, summary: `${open.len()} open in ${input.file}` } }
+      }
+      </script>
+    market/plugins/notes/extensions/notes/fixtures/items.json: |
+      { "summary": "1 open in the fixture", "items": [ { "text": "An item of the fixture" } ] }
+
+scenes:
+  - scene: a plugin installed from a marketplace's clone leaves its script extension disabled, and says so
+    when:
+      - shell: "{uze} market add {world}/market"
+        say: register the marketplace, linked to nothing
+      - shell: "cd {project} && {uze} install notes@studio > {world}/install.log 2>&1"
+        say: add the plugin to the project, with nobody at a terminal to answer
+    then:
+      - json: "{uze_home}/state/marketplaces.json"
+        at: marketplaces.studio.link
+        exists: false
+        about: the marketplace follows no working tree
+      - file: "{uze_home}/store/plugins/studio/notes/extensions/notes/items.uze"
+        contains: read_checkout
+        about: the extension's script was installed from the clone, into the Store
+      - file: "{project}/agents.yaml"
+        contains: notes
+        about: the project declares the plugin
+      - file: "{uze_home}/state/extensions.json"
+        exists: false
+        about: nobody consented to anything, and nothing was enabled
+      - file: "{world}/install.log"
+        contains: "notes@studio installed disabled; enable it from the workspace"
+        about: and the install said so, and where to answer
+
+  - scene: and then the workspace offers it, and the operator allows and enables it in the project
+    when:
+      - open: ["{uze}", "workspace"]
+        tap: "{world}/terminal.bytes"
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      # A project opens where an agent stands, which is also what the
+      # view is about later.
+      - click: "new"
+        say: open the new-agent popup from the space's row
+        in: sidebar
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
+        say: place an agent on the project
+        expect: "Notes runs nothing there yet"
+        expect_timeout: 90
+      - click: "Review"
+        say: review the extension the project offers
+        expect: "Enable Notes in demo-app"
+        expect_timeout: 10
+      - wait: screen
+        until: "read:checkout"
+        timeout: 5
+        say: the question shows every grant it wants
+      - click: "Enable 1"
+        say: allow its grants and enable it here
+        expect: "extension enabled"
+        expect_timeout: 10
+    then:
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.notes@studio/notes.accepted_grants.*
+        count: 2
+        includes: ["read:checkout", "clipboard"]
+        about: the consent holds exactly the grants the question showed
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.notes@studio/notes.enabled_in.*
+        equals: "{project}"
+        count: 1
+        about: and it is enabled in this project, and in no other
+      - capture:
+          name: before-the-script
+          tree: ["{project}"]
+          except: ["demo-app/.git/*", "demo-app/.worktrees/*/.git"]
+
+  - scene: and then its view opens from the action index, drawn from what its script read off the checkout
+    when:
+      - key: "F1"
+        say: open the action index
+        expect: "type to narrow"
+        expect_timeout: 10
+      - type: "Open Notes"
+        say: choose the extension's view
+        expect: "2 open in NOTES.md"
+        expect_timeout: 20
+      - wait: screen
+        until: "Ship the board"
+        in: pane
+        timeout: 10
+        say: the board lists the checkout's open items, not its fixture's
+    then:
+      - tree: ["{project}"]
+        except: ["demo-app/.git/*", "demo-app/.worktrees/*/.git"]
+        same_as: before-the-script
+        about: the script read the checkout and wrote nothing into it
+      # A compiled view is named by a 16-digit digest; `costs.json`, what
+      # the workspace measured of each extension, sits beside it.
+      - file: "{uze_home}/runtime/extensions/????????????????.json"
+        count: 1
+        about: the view was compiled once, into the generated tier
+
+  - scene: and then an action run by its key copies the selected item, once the operator confirms
+    when:
+      # The selection is drawn as a colour, not as text: what the key
+      # copies below is the proof it landed on the first item.
+      - key: "Down"
+        say: select the first item
+      - key: "C-y"
+        say: press the action's key on it
+        expect: "Copy this item"
+        expect_timeout: 10
+      - key: "Right"
+        say: move to the action's answer
+        expect: "enter copy line"
+        expect_timeout: 10
+      - key: "Enter"
+        say: and take it
+        expect: "copied"
+        expect_timeout: 10
+    then:
+      - file: "{world}/terminal.bytes"
+        contains: "]52;c;V3JpdGUgdGhlIHNjcmlwdA=="
+        about: the terminal was asked to put exactly the item's text on the clipboard
+
+  - scene: and then an action run by a pointer copies what the button carries
+    when:
+      - click: "copy summary"
+        say: click the board's button
+        in: pane
+        expect: "copied"
+        expect_timeout: 10
+    then:
+      - file: "{world}/terminal.bytes"
+        contains: "]52;c;MiBvcGVuIGluIE5PVEVTLm1k"
+        about: the terminal was asked to put the summary the script answered on the clipboard

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs as root inside the fresh distribution (see up.sh): an ordinary user
 # with sudo, Git, then uze installed through install.sh from the staged
-# release, the playground marketplace registered and a demo project.
+# release, this checkout's marketplace registered and a demo project.
 set -euo pipefail
 stage="$1"
 user=person
@@ -31,31 +31,31 @@ git config --global init.defaultBranch main
 
 UZE_BASE_URL='file://${stage}/release' UZE_VERSION='$(cat "$stage/version")' sh '${stage}/install.sh'
 export PATH="\$HOME/.local/bin:\$PATH"
-install -m 0755 '${stage}/playground-mcp' "\$HOME/.local/bin/playground-mcp"
+install -m 0755 '${stage}/pingpong-mcp' "\$HOME/.local/bin/pingpong-mcp"
 
-cp -R '${stage}/market' "\$HOME/playground-market"
-git -C "\$HOME/playground-market" init -q
-git -C "\$HOME/playground-market" add -A
-git -C "\$HOME/playground-market" commit -q -m 'playground marketplace'
-uze market add "\$HOME/playground-market"
+cp -R '${stage}/market' "\$HOME/uze-market"
+git -C "\$HOME/uze-market" init -q
+git -C "\$HOME/uze-market" add -A
+git -C "\$HOME/uze-market" commit -q -m 'uze marketplace'
+uze market add "\$HOME/uze-market"
 
 touch "\$HOME/.hushlogin"
 mkdir -p "\$HOME/projects/demo"
 git -C "\$HOME/projects/demo" init -q
 printf '# Demo\n\nA project to try uze in.\n' > "\$HOME/projects/demo/AGENTS.md"
 mkdir -p "\$HOME/projects/demo/.agents/rules"
-printf -- '---\ntrigger: always_on\n---\n\nWhen the whole message is \140marco\140, the answer is exactly\n\140polo (UZE_PLAYGROUND_PROJECT_RULE)\140.\n' > "\$HOME/projects/demo/.agents/rules/marco.md"
+printf -- '---\ntrigger: always_on\n---\n\nWhen the whole message is \140marco\140, the answer is exactly\n\140polo (UZE_PINGPONG_PROJECT_RULE)\140.\n' > "\$HOME/projects/demo/.agents/rules/marco.md"
 git -C "\$HOME/projects/demo" add -A
 git -C "\$HOME/projects/demo" commit -q -m init
 
 cat >> "\$HOME/.bashrc" <<'RC'
 export PATH="\$HOME/.local/bin:\$PATH"
 cat <<'WELCOME'
-uze from your checkout, with Git and the playground marketplace.
+uze from your checkout, with Git and its marketplace: the uze plugin and the examples.
 
   uze doctor
   uze setup claude-code            (or codex, opencode, antigravity)
-  cd ~/projects/demo && uze playground@playground
+  cd ~/projects/demo && uze pingpong@uze
   uze workspace
 WELCOME
 RC

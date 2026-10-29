@@ -444,6 +444,14 @@ the installed one did not have asks again.
 > `tests/packages/acquisition.rs::an_update_introducing_executable_capability_asks_again`
 > `crates/uze-core/src/package/trust.rs::a_changed_environment_or_working_directory_introduces_new_execution`
 
+Trust (may these bytes be installed) is still never persisted. Consent to
+run an extension's code is a different question, answered per grant set and
+recorded in `state/extensions.json` (ADR-041, `extension-platform` D5):
+that record is what lets a widened update be held.
+
+> `crates/uze-workspace/src/extensions/consent.rs::tests::consent_is_recorded_by_identity_with_its_grants_and_digest`
+> `crates/uze-workspace/src/extensions/consent.rs::tests::an_update_is_judged_by_its_grant_set`
+
 ### An authored agent never widens what the harness lets it do
 
 A plugin or a project writes its agents; the operator grants permissions.
@@ -604,6 +612,27 @@ UZE never destroys external state it cannot positively identify. Drift,
 conflict, and an unreadable ledger all block a destructive operation rather
 than authorizing one. Every M2 addition preserved this: a failed acquisition,
 a rejected package and a refused consent all mutate nothing.
+
+### A plugin switched off in its harness is the person's choice, not drift
+
+Switching UZE's plugin off inside the harness changes nothing UZE wrote,
+so its receipt inspects as matched: an update goes ahead and switches it
+off again after delivering it anew, and a removal takes it away. A
+marketplace pointing elsewhere is still drift.
+
+> `crates/uze-integrations/src/claude/plugin.rs::recorded_state_tests::a_plugin_switched_off_in_claude_is_matched_and_a_moved_marketplace_is_drift`
+> `crates/uze-application/src/application/tests.rs::an_update_keeps_a_plugin_the_person_switched_off_switched_off`
+
+### A package of extensions only never touches a harness
+
+A package that carries nothing a harness reads is stored, locked and found
+by the workspace, and delivered to no harness on install, update, setup or
+removal. What an earlier build delivered of one is taken back off through
+its receipts, and an artifact someone changed since stays with its receipt.
+
+> `tests/lifecycle/extension_only.rs::a_plugin_of_extensions_only_is_stored_and_found_but_reaches_no_harness`
+> `tests/lifecycle/extension_only.rs::an_update_takes_off_what_an_earlier_build_delivered`
+> `tests/lifecycle/extension_only.rs::delivering_again_takes_off_only_what_still_matches_its_receipt`
 
 ### A file the operator owns keeps its link and its mode
 
@@ -932,12 +961,30 @@ by hand from the extension's raw data, which put the palette, the eliding
 and the hit rectangles on the host's side of a boundary whose whole point
 is that they are not there. A section is now `view::Section`, drawn by
 `extension_view::render_section` like any other extension surface, and its
-hits come back as `ExtensionHit` — one variant per surface, so
-"row 3 was clicked" cannot be confused between a file list and a list of
-commits.
+hits come back as `ExtensionHit` tagged with the slot the surface stands
+in, so "row 3 was clicked" cannot be confused between a file list and a
+list of commits.
 
 > `src/ui/orchestrator/tests/timeline.rs::the_timeline_speaks_only_the_extensions_vocabulary`
 > `crates/uze-extensions/src/code/tests.rs::the_timeline_section_names_meaning_rather_than_colour`
+
+### Every extension is hosted through the one contract
+
+The built-ins and the extensions a plugin declares stand in the same slot
+map and are spoken to through the same `contract::Extension`: the host
+opens, closes, scrolls and hands gestures to a slot, never to a type it
+knows by name. What an extension needs read is a `Job` it hands over, run
+off the drawing thread with the workspace's `Host` and answered back to
+the extension that asked, its fallback answered if the thread dies. Where
+a built-in's section has a place of its own in the sidebar, the host keeps
+the place and the budget; what the section holds and what its rows mean
+are still the extension's.
+
+> `src/ui/orchestrator/tests/declared.rs::a_hosted_engines_jobs_run_off_the_frame_and_answer_it`
+> `src/ui/orchestrator/tests/extensions.rs::opening_the_code_surface_lists_its_tree_as_jobs`
+> `src/ui/orchestrator/tests/extensions.rs::opening_the_architect_reads_its_artifacts_as_a_job`
+> `src/ui/orchestrator/tests/extensions.rs::the_spec_summary_is_counted_as_a_job_for_the_checkout_in_front`
+> `src/ui/orchestrator/tests/timeline.rs::the_timeline_is_read_as_a_job_and_a_commit_asks_for_its_account`
 
 ### Slot lifecycle is the application's, not the client's
 
@@ -2942,6 +2989,240 @@ dozen of them, and a harness UZE integrates keeps its state under `$HOME`
 on this side.
 
 > `crates/uze-platform/src/mounts.rs::tests::a_windows_drive_mounted_into_wsl_is_a_network_mount`
+
+## Declared extensions (`extension-manifest-and-scripts`)
+
+### The declared engine builds what it draws only through `Clean`
+
+Everything a declared extension hands the host is somebody else's text:
+the data a script or a fixture answered, an envelope's notice and toast,
+the reason the runner gives for a failure, which quotes the script. Each
+reaches a `Span`, a badge, a title or a toast through
+`uze_contract::Clean` where the engine takes it, so a terminal control or
+a bidi override is drawn inert rather than performed. A `view::Span` is
+made there only by `Span::clean`, which takes a `Clean`; a `Clean` is made
+only by cleaning, its `Deserialize` included, and is bounded in the cells
+a terminal gives it.
+
+> `tests/architecture/layering.rs::the_declared_engine_builds_spans_only_through_clean`
+> `crates/uze-contract/src/clean.rs::tests::what_is_deserialized_is_cleaned`
+> `crates/uze-extensions/src/declared/tests.rs::an_escape_sequence_in_data_is_drawn_inert`
+> `crates/uze-extensions/src/declared/source_tests.rs::a_reason_the_host_gives_is_drawn_inert`
+> `crates/uze-extensions/src/declared/action_tests.rs::an_actions_envelope_toasts_says_its_notice_and_refreshes`
+
+### Only the runner asks by declaration
+
+The declared engine asks the host for an answer by identity and
+declaration id (`Host::answer(Question)`), never with argv or a script's
+text, and nothing but the declared engine asks it: in `src/`, only
+`src/ui/extension_host.rs` names a `Question`, to pass it to
+`ExtensionRunner`. What answers a declaration is the runner's to find, so
+there is one path from a source to whatever runs.
+
+> `tests/architecture/layering.rs::only_the_declared_engine_asks_a_source`
+> `crates/uze-application/src/application/extensions/runner.rs::tests::a_fixture_is_answered_by_the_same_path_without_consent`
+
+### Consent comes before the first run
+
+A script runs only once the operator consented to the extension's grants
+and enabled it in the project of the checkout asking; until then the
+runner withholds, says why, and runs nothing. Disabling stops a remembered
+answer at once, since the state is judged before the session's cache is
+looked at. An extension that only declares fixtures needs no consent.
+
+> `crates/uze-application/src/application/extensions/runner.rs::tests::a_script_answers_only_once_consented_to_and_enabled_in_the_project`
+> `tests/lifecycle/extension_consent.rs::a_script_runs_only_once_consented_to_and_enabled_in_its_project`
+> `tests/lifecycle/extension_consent.rs::a_fixtures_only_extension_needs_no_consent`
+
+### The identity keys the record
+
+A consent is recorded by `plugin@marketplace/id`. An extension of the
+same id in another plugin, or in the same plugin from another marketplace,
+is a stranger: it inherits neither the consent nor the projects it was
+enabled in.
+
+> `crates/uze-workspace/src/extensions/consent.rs::tests::a_same_named_extension_of_another_plugin_is_a_stranger`
+> `crates/uze-workspace/src/extensions/consent.rs::tests::enabling_belongs_to_one_project`
+
+### What runs is what was digested
+
+The runner reads the extension's directory once into memory, judges the
+consent against that load's digest and runs the script's bytes from the
+same load: a save is a new question, and the digest an applied update
+records is the one of the bytes that answered.
+
+> `crates/uze-application/src/application/extensions/runner.rs::tests::what_runs_is_the_load_whose_digest_was_accepted`
+> `crates/uze-application/src/application/extensions/compiled.rs::tests::a_fixture_is_read_from_the_loaded_bytes`
+> `crates/uze-application/src/application/extensions/compiled.rs::tests::a_load_digests_what_it_compiled`
+
+### An update that widens the grants is held
+
+An update under the same grants or fewer is applied and its digest
+recorded; one that wants a grant nobody accepted is held, naming the new
+grant, and runs nothing until the operator consents again. A grant a
+narrowing dropped is asked for again when it returns.
+
+> `tests/lifecycle/extension_consent.rs::an_update_is_held_by_a_new_grant_and_applied_under_the_same_or_fewer`
+> `crates/uze-application/src/application/extensions/runner.rs::tests::an_update_that_widens_the_grants_runs_nothing_until_consented_to`
+
+### Enabling is refused inside an agent's pane
+
+Consent and enabling are a person's answers. Asked from an agent's pane
+(a process carrying the stamp of an agent UZE launched) both are refused,
+as `uze workspace allow` refuses a project's commands; disabling never is.
+
+> `tests/lifecycle/extension_consent.rs::an_agents_pane_can_neither_consent_nor_enable`
+
+### An extension's program is started from one place
+
+The program runner in `uze-core` (`machine::extension_program`) is the
+only code that starts an extension's program or the `__confine` helper,
+and the helper's own command the only caller of
+`uze_platform::confine::enter`. Consent, pinning, the bounds and the
+confinement are all on that one path, so no program runs around them.
+
+> `tests/architecture/layering.rs::only_the_program_runner_starts_an_extension_program`
+
+### A program runs where it was pinned, from the bytes that were digested
+
+An `exec:` name runs from the real path recorded when the operator
+allowed the extension, never a `PATH` search at run time, and never from
+beneath the project, UZE's home or a temporary directory. A packaged
+program runs from a copy of the consented load, in its run's own
+directory, so a file changed on disk since is not what runs.
+
+> `crates/uze-core/src/machine/extension_program.rs::tests::a_program_is_pinned_to_its_real_path_and_never_beneath_the_project`
+> `crates/uze-workspace/src/extensions/consent.rs::tests::programs_accepted_unconfined_are_asked_again_on_any_update`
+
+### A confined program reaches only what it was granted
+
+Where the machine confines, a program reads the checkout, its Git
+directory, its extension and the system; writes only its scratch folder;
+connects to no socket; signals nothing outside its run and cannot leave its
+process group; inherits no secret of the operator's environment; and is
+ended with every process it started past its time or output bound. A run
+accepted as confined never runs unconfined: without the helper, or when
+the helper cannot apply the confinement, nothing runs.
+
+> `tests/lifecycle/extension_programs.rs::a_confined_program_writes_nowhere_but_its_scratch`
+> `tests/lifecycle/extension_programs.rs::a_confined_program_reads_the_checkout_and_nothing_outside_it`
+> `tests/lifecycle/extension_programs.rs::a_confined_program_connects_to_no_socket`
+> `tests/lifecycle/extension_programs.rs::a_confined_program_cannot_leave_its_process_group`
+> `tests/lifecycle/extension_programs.rs::a_helper_that_cannot_confine_runs_nothing`
+> `crates/uze-core/src/machine/extension_program.rs::tests::a_token_in_the_environment_does_not_reach_the_program`
+> `crates/uze-core/src/machine/extension_program.rs::tests::a_hang_is_ended_with_its_children`
+
+### An extension's store is its own, bounded, and leaves with its plugin
+
+What an extension keeps is one record per extension and project (or for
+the machine under `store:global`), at most 1 MiB, patched only from a
+fresh answer of an extension that wants `store`, and removed with its
+plugin.
+
+> `crates/uze-workspace/src/extensions/store.rs::tests::a_store_is_patched_key_by_key_and_kept_per_project`
+> `tests/lifecycle/extension_programs.rs::answers_keep_a_store_and_a_script_runs_a_granted_program`
+
+### A band never resizes the pane it stands over
+
+A band's rows are taken from the agent's pane before the terminal is
+sized, so an answer, an empty answer or a band's withdrawal never sends a
+resize; a click on the pane under a band reaches the agent at the pane's
+own coordinates. A band stands only over an agent's own tab, in a project
+the extension is enabled in.
+
+> `src/ui/orchestrator/tests/slots.rs::a_band_takes_its_rows_before_the_pane_is_sized_and_no_answer_resizes_it`
+> `src/ui/orchestrator/tests/slots.rs::a_click_on_the_panes_first_row_under_a_top_band_reaches_it_as_its_first_row`
+> `src/ui/orchestrator/tests/slots.rs::a_band_stands_over_an_agents_own_pane_in_a_project_it_is_enabled_in`
+
+### A composed answer is validated whole before it is drawn
+
+A source answering `output "view"` answers a tree checked against the same
+catalog a view file is compiled against, every string cleaned and every
+value a literal; a tree that does not validate is refused whole, naming
+its first wrong node, and a control may only name an action the manifest
+declares.
+
+> `crates/uze-extensions/src/declared/compose.rs::tests::a_tree_that_does_not_validate_names_its_first_wrong_node`
+> `crates/uze-extensions/src/declared/compose.rs::tests::a_tree_of_catalog_nodes_becomes_a_view_of_literals`
+
+### A notification is granted, attributed and rate-limited
+
+An answer's `notify` and `sound` go out only from an extension that wants
+`notify`, at most one every 10 s and 30 an hour, titled with who said it;
+what is dropped is counted in the extension's notice.
+
+> `src/ui/orchestrator/tests/declared_notify.rs::a_notification_is_attributed_sent_once_and_the_next_within_ten_seconds_counted`
+> `src/ui/orchestrator/tests/declared_notify.rs::an_extension_without_notify_sends_nothing`
+> `crates/uze-extensions/src/declared/notify.rs::tests::thirty_an_hour_and_then_none_until_the_first_is_an_hour_old`
+
+### An agent's report moves what is drawn, never what is allowed
+
+What an agent reports (`uze agent report`) lands in a bounded journal and
+reaches only the extensions holding `agent:observe`, as `agent.*` events
+with a scrubbed tool and a path kept only inside the agent's checkout. It
+asks sources again and draws; it grants nothing.
+
+> `src/ui/orchestrator/tests/declared_events.rs::an_agents_report_asks_the_source_of_an_extension_observing_agents`
+> `src/ui/orchestrator/declared/bridge.rs::tests::a_report_keeps_only_a_path_inside_the_checkout_and_a_scrubbed_tool`
+> `tests/cli/agent_report.rs::a_report_from_no_agent_takes_nothing_and_still_exits_well`
+
+### An extension types into an agent only through the bridge, shown first and never queued
+
+An extension's prompt is shown to the operator (text, agent, extension)
+before it is typed, typed only into a ready agent whose harness holds its
+pane and that waits on no approval, within the bridge's rates; otherwise
+it is refused with the reason and dropped. F8 holds every write. The
+project's instructions and the bridge are the only writers into a pane.
+
+> `src/ui/orchestrator/tests/agent_writes.rs::a_prompt_is_shown_then_typed_once_allowed_and_a_second_in_the_turn_is_dropped`
+> `src/ui/orchestrator/tests/agent_writes.rs::a_paused_workspace_takes_no_prompt_and_a_command_character_is_refused`
+> `tests/architecture/layering.rs::only_the_bridge_and_the_instructions_type_into_an_agent`
+
+### An image is bounded before and after it is decoded, and read only from the extension or its scratch
+
+An `Image` or a sprite's sheet is a name, never a path: one that leaves
+the extension (absolute, `..`, a backslash) or its scratch is refused
+before the host is asked. The host reads the installed extension's own
+files, or the pictures its program left in its scratch, no further than
+8 MiB; a header asking past the 32 MiB of pixels one extension may hold is
+refused before anything is allocated, naming the bound; one read is out
+per extension at a time, off the drawing thread.
+
+> `crates/uze-extensions/src/declared/media.rs::tests::a_name_leaving_the_extension_or_its_scratch_is_never_read`
+> `crates/uze-extensions/src/declared/media.rs::tests::a_file_over_its_bound_is_refused_before_it_is_decoded`
+> `crates/uze-extensions/src/declared/media.rs::tests::a_decode_past_what_the_extension_has_left_is_refused_naming_the_bound`
+> `crates/uze-extensions/src/declared/media_tests.rs::an_oversized_image_says_its_bound_and_nothing_is_decoded`
+> `crates/uze-extensions/src/declared/media_tests.rs::images_are_read_one_at_a_time`
+> `tests/lifecycle/extension_programs.rs::the_screen_program_leaves_a_picture_its_views_read_from_scratch`
+
+### A resident script is stopped at its bounds and never reads the host's chords
+
+Every call into a resident session has the script engine's operations
+bound and deadline of its own; the first call that fails stops the
+session and its surface names why, and a render asked again only once a
+frame was drawn, at most 30 a second. A focused resident surface reads
+raw keys and the pointer, but Esc (which lets go of it), F1 and F8 never
+reach it and cannot be rebound for it.
+
+> `crates/uze-script/tests/resident.rs::a_runaway_render_is_stopped_at_its_bound_and_the_session_with_it`
+> `crates/uze-script/tests/resident.rs::each_call_has_its_own_budget`
+> `crates/uze-extensions/src/declared/resident_tests.rs::a_breach_stops_the_session_and_the_surface_names_the_bound`
+> `crates/uze-extensions/src/declared/resident_tests.rs::renders_wait_for_a_drawn_frame_and_the_rate`
+> `src/ui/orchestrator/tests/declared_resident.rs::a_focused_resident_view_reads_up_and_esc_lets_go_of_it`
+
+### A request reaches only a granted host, and a secret is used, never read
+
+`fetch` reaches only `https://` on a host a `net:` grant names, follows no
+redirect, and runs the system's `curl` through the program runner. A
+secret preference lives in the keychain, reaches `curl` only on its stdin,
+is never handed to a view, a script or an agent, and is scrubbed from every
+answer.
+
+> `crates/uze-script/src/fetch.rs::tests::only_https_to_a_granted_host_is_asked`
+> `crates/uze-script/src/fetch.rs::tests::a_secret_is_named_never_given`
+> `crates/uze-application/src/application/extensions/fetch.rs::tests::the_secret_goes_on_stdin_and_comes_back_scrubbed`
+> `crates/uze-application/src/application/extensions/fetch.rs::tests::an_unset_secret_or_an_ungranted_host_requests_nothing`
+> `crates/uze-workspace/src/extensions/secrets.rs::tests::a_secret_is_kept_apart_from_the_preferences_and_leaves_with_its_plugin`
 
 ## Harness conformance (`assert-one-capability-contract`)
 

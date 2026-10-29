@@ -5,7 +5,7 @@
 //! it opens over itself reads as one product, not two.
 
 use super::tui_application;
-use crate::ui::extension_host::WorkspaceHost;
+use crate::ui::extension_host::{EngineHost, WorkspaceHost};
 use crate::ui::extension_view;
 use crate::ui::root_picker::RootPicker;
 use crate::ui::selection::{self, Selection};
@@ -67,8 +67,12 @@ mod agents;
 use agents::StatusAnswer;
 mod answers;
 mod approval;
+mod declared;
+mod extension_offer;
+use declared::*;
 mod events;
 mod interrupt;
+mod lanes;
 mod notices;
 mod overview_question;
 mod proposal;
@@ -91,19 +95,6 @@ const EVENTS_PER_FRAME: usize = 64;
 /// enough to follow commands typed in the active pane without attaching that
 /// cost to every PTY damage redraw.
 const GIT_BADGE_REFRESH: Duration = Duration::from_millis(750);
-/// How far back the sidebar's timeline reads — the most its section can
-/// be dragged open to. The section itself never claims the column from
-/// the spaces it sits under (see `render::timeline_height`).
-const TIMELINE_COMMITS: usize = 30;
-/// How often the timeline is re-read while the tab stays put — slower
-/// than the badge: telling a delivered commit from one still ahead
-/// compares patches across the branch and its target, and history does
-/// not move at the pace a working tree does.
-const TIMELINE_REFRESH: Duration = Duration::from_secs(3);
-/// How often the sidebar's spec summary is re-read while the tab stays
-/// put. Slower still: task lists are ticked by hand, a few times an hour,
-/// and each read walks every change in flight.
-const SPEC_SUMMARY_REFRESH: Duration = Duration::from_secs(5);
 
 /// How far apart two reads of the same thing are kept: never closer than
 /// `floor`, and never closer than a few times what the last one took.
@@ -121,12 +112,6 @@ fn paced(floor: Duration, took: Duration) -> Duration {
 /// so it paints the frame instead of letting indicatif write to stderr.
 const AGENT_ACTIVITY_TICK: Duration = Duration::from_millis(120);
 
-/// How long a checkout's measurement is taken to still describe it.
-///
-/// Long enough that opening the code surface, closing it and opening it
-/// again is free — which is how it is used — and short enough that a map
-/// is never a picture of a morning ago.
-const CODE_MEASURE_FRESH: Duration = Duration::from_secs(30);
 /// How long a pressed control wears its pressed skin. Long enough to be
 /// seen at a glance, short enough that it reads as the press itself and
 /// never as a state the control got stuck in.
@@ -224,6 +209,7 @@ const AGENT_SETTLE_QUIET: Duration = Duration::from_millis(400);
 const AGENT_SETTLE_CAP: Duration = Duration::from_millis(2500);
 
 use approval::*;
+use extension_offer::*;
 use interrupt::*;
 use overview_question::*;
 use proposal::*;
@@ -451,9 +437,13 @@ pub(crate) fn attach_workspace(
     // it to, so the pane starts at its real width immediately instead of
     // assuming the sidebar's responsive default.
     let size = terminal.size()?;
+    // No drawer: which one stands open belongs to the space this client
+    // lands in, which the server has not said yet; the first frame's
+    // resize narrows the pane if one does.
     let geometry = compute_layout(
         Rect::new(0, 0, size.width, size.height),
         layout.sidebar.width,
+        render::Reserved::default(),
     );
     let (columns, rows) = (geometry.pane.width, geometry.pane.height);
 
@@ -557,6 +547,7 @@ pub(crate) fn attach_workspace(
         first_steps_closed: layout.first_steps.closed,
         steps_taken: layout.first_steps.taken.clone(),
         disabled_extensions: super::extension_switch::disabled(),
+        registered_keys: BTreeMap::new(),
         timeline_collapsed: layout.workspace.timeline_collapsed,
         timeline_rows: layout.workspace.timeline_rows,
         collapsed_spaces: layout.workspace.collapsed_spaces.clone(),
@@ -626,6 +617,7 @@ pub(crate) fn attach_workspace(
         manage_memory: manage,
         keyboard: terminal.keyboard(),
         theme_generation: uze_theme::generation(),
+        asker: crate::asker::asker(),
     };
     // Every way out of the loop — a quit, a runtime gone, an error — must
     // hand the model's memory back, so the loop runs inside one call whose
@@ -634,6 +626,9 @@ pub(crate) fn attach_workspace(
     // frame (see the drain at the end of the loop).
     let mut held: Option<Event> = None;
     let mut painter = crate::ui::graphics::Painter::default();
+    // Which terminal this is decides how a notification is shown in it,
+    // and it does not change while the client runs.
+    let term_program = std::env::var("TERM_PROGRAM").ok();
     let outcome: Result<WorkspaceExit> = (|| loop {
         if let Flow::Exit(exit) = attach.pump(&receiver) {
             return Ok(exit);
@@ -642,6 +637,7 @@ pub(crate) fn attach_workspace(
         let geometry = compute_layout(
             Rect::new(0, 0, size.width, size.height),
             attach.model.sidebar_width,
+            attach.model.reserved(),
         );
         let viewport = Viewport {
             size,
@@ -666,16 +662,14 @@ pub(crate) fn attach_workspace(
             let mut metrics = render::FrameMetrics::default();
             let model = &attach.model;
             let identities = &attach.identities;
-            let mut uncovered = None;
+            let mut uncovered = Vec::new();
             terminal.draw(|frame| {
+                crate::ui::graphics::take_placed();
                 render(frame, model, identities, &mut hits, &mut metrics);
-                uncovered = metrics
-                    .code
-                    .as_ref()
-                    .and_then(|drawn| drawn.picture.clone())
-                    .filter(|placement| placement.uncovered_in(frame.buffer_mut()));
+                uncovered = crate::ui::graphics::take_placed();
+                uncovered.retain(|(_, placement)| placement.uncovered_in(frame.buffer_mut()));
             })?;
-            if let Some(pixels) = painter.after_frame(uncovered.as_ref()) {
+            for pixels in painter.after_frame(&uncovered) {
                 terminal.emit(&pixels);
             }
             attach.model.hits = hits;
@@ -686,9 +680,9 @@ pub(crate) fn attach_workspace(
                 .remembered
                 .tree_scroll
                 .min(metrics.tree_overflow);
-            if let Some(rendered) = metrics.code {
-                attach.model.code_tree_scroll = rendered.navigator_scroll;
-                attach.model.code_scrollbars = rendered;
+            if let Some(rendered) = metrics.surface {
+                attach.model.navigator_scroll = rendered.navigator_scroll;
+                attach.model.surface_frame = rendered;
             }
             if let Some(frame) = metrics.recent {
                 attach.model.recent.scroll = frame.scroll;
@@ -698,7 +692,7 @@ pub(crate) fn attach_workspace(
             attach.model.absorb_manage_frame(metrics.manage);
             attach.model.dirty = false;
         }
-        if let Some(pixels) = painter.take_ready() {
+        for pixels in painter.take_ready() {
             terminal.emit(&pixels);
         }
         attach
@@ -713,6 +707,15 @@ pub(crate) fn attach_workspace(
         }
         if let Some(text) = attach.model.clipboard.take() {
             terminal.emit(&selection::osc52(&text));
+        }
+        attach.follow_review();
+        for outgoing in attach.model.take_notifications() {
+            send_notification(
+                &outgoing,
+                term_program.as_deref(),
+                &mut |bytes| terminal.emit(bytes),
+                &mut spawn_desktop,
+            );
         }
         // Everything already waiting is handled before the next frame: a
         // burst of keys or wheel ticks is one frame, not one per event.
@@ -858,6 +861,28 @@ pub(super) enum WorkspaceHit {
     /// A toast's offer to read a project's commands that wait for the
     /// operator's approval: opens the question about them.
     ReviewCommands,
+    /// The toast's way to an extension the project offers to enable:
+    /// opens the question about it.
+    ReviewExtensions,
+    /// An answer to that question: allow and enable, or put it away.
+    ExtensionOfferAnswer(bool),
+    /// A row of its list, by index: marks it.
+    ExtensionOfferRow(usize),
+    /// A row's mark, by index: switches the row.
+    ExtensionOfferMark(usize),
+    /// The field saying where the answer holds: switches it.
+    ExtensionOfferWhere,
+    /// The subject's "switch all": every row on, or none once all are.
+    ExtensionOfferAll,
+    /// The way to everything the marked row asks for, and back.
+    ExtensionOfferWhole,
+    /// A row of the list's scrollbar: the first row it asks to see.
+    ExtensionOfferBar(usize),
+    /// The question itself, which a click does not put away.
+    ExtensionOfferBody,
+    /// An answer to an extension's prompt question: true types it.
+    AgentWriteAnswer(bool),
+    AgentWriteBody,
     /// One of the answers to that question: `true` approves.
     ApprovalAnswer(bool),
     /// The question itself, which a click on answers nothing.
@@ -890,7 +915,7 @@ pub(super) enum WorkspaceHit {
     PullTarget,
     /// The tab strip's right-corner button — opens the Git extension's
     /// changes of the active tab's checkout — the code surface
-    /// (`WorkspaceModel::code`), opened on its diff.
+    /// hosted in its slot, opened on its diff.
     OpenChanges,
     /// The tab strip's code button — the same surface, opened on the
     /// checkout's file tree.
@@ -904,6 +929,21 @@ pub(super) enum WorkspaceHit {
     OpenArchitect,
     /// The tab strip's spec button, first of the three.
     OpenSpec,
+    /// A tab strip button for a view a plugin declared, by its slot.
+    OpenDeclared(SlotId),
+    /// A tab strip button for a drawer a plugin declared, by its slot:
+    /// opens it beside the pane, or closes it.
+    ToggleDrawer(SlotId),
+    /// The docked drawer's left edge, dragged to resize it.
+    ResizeDock,
+    /// The docked drawer itself, behind what it drew: a click there lends
+    /// it the navigation keys and does nothing else.
+    DockBody,
+    /// A plugin's overlay itself, behind what it drew: a click there keeps
+    /// it open and does nothing else.
+    OverlayBody,
+    /// The mark that closes a plugin's overlay.
+    CloseOverlay,
     /// The tab strip's overview button, before the three: the space's
     /// overview, lit while it stands in the pane.
     OpenOverview,
@@ -921,11 +961,18 @@ pub(super) enum WorkspaceHit {
     OverviewChoice(usize, usize),
     /// One of the paths a list's field offers, by position.
     OverviewPick(usize),
-    /// The rule along the overview's drawer, dragged to resize it.
+    /// The rule along the overview's drawer, or the inspector's, dragged
+    /// to resize it: the workspace's drawers share one width.
     ResizeOverviewDrawer,
     /// The text of the overview's drawer: the wheel scrolls it rather than
     /// the section, and a click on it does nothing.
     OverviewDrawer,
+    /// The inspector beside a declared view: the wheel scrolls it rather
+    /// than the view, and a click on it lends it the moves.
+    Inspector,
+    /// One of the inspector's tools, by its place among
+    /// `WorkspaceModel::inspector_tools`.
+    InspectorTool(usize),
     /// The overview's question about the project's commands.
     OverviewReview,
     /// Dropping the overview's workspace edits `agents.yaml` refused.
@@ -983,6 +1030,8 @@ pub(super) enum WorkspaceHit {
     OpenReleaseNotes,
     /// The mark on the notice's header, which puts it away.
     DismissRelease,
+    /// The mark on an extension's notice, which puts it away.
+    DismissExtensionNotice,
     /// One entry of the sidebar's quick strip — performed exactly as the
     /// keyboard performs it, which is why it carries the action rather
     /// than naming a surface: a control that took its own path to the
@@ -1001,18 +1050,6 @@ pub(super) enum WorkspaceHit {
 }
 
 impl WorkspaceHit {
-    /// Whether this is a target the open surface drew — in the pane, or in
-    /// the bar's leading slot — rather than one of the sections an
-    /// extension keeps in the sidebar, which answer as the sidebar does.
-    pub(super) fn is_open_surfaces(self) -> bool {
-        matches!(
-            self,
-            WorkspaceHit::Extension(
-                ExtensionHit::Code(_) | ExtensionHit::Spec(_) | ExtensionHit::Architect(_)
-            )
-        )
-    }
-
     /// Whether this is one of recent's own targets, its way in and out
     /// among them.
     pub(super) fn is_recents(self) -> bool {
@@ -1329,6 +1366,29 @@ fn agent_contexts(model: &WorkspaceModel, identities: &[AgentIdentity]) -> Vec<L
         .collect()
 }
 
+/// Every agent UZE launched across the open spaces, as the extension
+/// bridge tells them.
+fn bridged_agents(model: &WorkspaceModel, identities: &[AgentIdentity]) -> Vec<BridgedAgent> {
+    model
+        .session
+        .iter()
+        .flat_map(|session| &session.workspace.spaces)
+        .flat_map(|space| space.tabs.iter().map(move |tab| (space, tab)))
+        .filter_map(|(space, tab)| {
+            let identity = agent_for_tab(identities, tab)?;
+            Some(BridgedAgent {
+                harness: identity.integration.to_owned(),
+                skill_prefix: identity.skill_prefix,
+                id: launched_agent_id(tab)?.to_owned(),
+                label: tab.label.clone(),
+                space: space.label.clone(),
+                checkout: named_checkout(&tab.pane.cwd),
+                pane: tab.pane.id,
+            })
+        })
+        .collect()
+}
+
 /// The agent a tab was launched for, as the server echoes the launch: the
 /// identity the client stamped when it created the tab. `None` for a
 /// shell, and for a tab whose agent exited and was respawned as one.
@@ -1449,11 +1509,6 @@ struct Channels {
     git: Answers<GitResolution>,
     commit_details: Answers<CommitDetailResolution>,
     release_notes: Answers<ReleaseNotesResolution>,
-    code_changes: Answers<ChangesResolution>,
-    code_diffs: Answers<DiffResolution>,
-    /// The surface's file reads and writes, off-thread for the same
-    /// reason its changes are.
-    code_files: Answers<FileResolution>,
     /// Preserved work across the machine. Off-thread like every other
     /// read: it opens `$UZE_HOME` and walks every project UZE has
     /// recorded, which is not something a frame may wait on.
@@ -1466,11 +1521,16 @@ struct Channels {
     labels: Answers<LabelResolution>,
     occupancy: Answers<OccupancyResolution>,
     placements: Answers<PlacementResolution>,
-    artifacts: Answers<ArtifactsResolution>,
-    spec: Answers<SpecResolution>,
-    spec_summaries: Answers<SpecSummaryResolution>,
-    /// The code surface's map, measured once per checkout it is opened on.
-    code_measures: Answers<MeasureResolution>,
+    /// The declared extensions installed plugins carry: found, compiled and
+    /// their fixtures read, or one of them compiled again after a save.
+    extension_jobs: Answers<ExtensionAnswer>,
+    /// The linked ones' stamps, polled on [`DECLARED_POLL`].
+    extension_stamps: Answers<StampsAnswer>,
+    /// What hosted engines' jobs answered, each for the slot that asked.
+    engine_answers: Answers<EngineAnswer>,
+    /// A fixture the inspector switched a source to, and a session's
+    /// events it recorded.
+    inspector: Answers<InspectorAnswer>,
     /// Keeping each project's `AGENTS.md` workspace section in step.
     retired_regions: Answers<RetiredRegionsNotice>,
     /// Bringing each project's target in line with its remote.
@@ -1487,6 +1547,10 @@ struct Channels {
     commands_awaiting: Answers<AwaitingRead>,
     /// Recording an approval, and the setup it lets run.
     approvals: Answers<ApprovalResolution>,
+    /// What a project offers to enable, read where it opens.
+    extension_offers: Answers<ExtensionOffersRead>,
+    /// Answering one of those offers.
+    extension_offer_answers: Answers<ExtensionOfferResolution>,
     /// The machine facts agents proposed, read on the evaluation clock.
     proposals: Answers<ProposalsResolution>,
     /// Accepting or discarding one.
@@ -1553,31 +1617,13 @@ struct Remembered {
     /// The checkout a background Git read is out for, so the workspace
     /// asks once rather than once per frame — see [`spawn_git_read`].
     git_pending: Option<PathBuf>,
-    /// The sidebar's spec summary for the checkout in front, and the one
-    /// being read — kept like the badge, so a tab switch shows the last
-    /// answer until the new one lands rather than an empty column.
-    spec_summary: Option<SpecSummaryState>,
-    spec_summary_pending: Option<PathBuf>,
     /// How long the last of those reads took (see [`paced`]).
     git_took: Duration,
     /// Per-pane reconstruction of the line being typed, flushed on Enter.
     prompt_buffers: BTreeMap<PaneId, PromptBuffer>,
-    /// Where the viewer was on each checkout's code surface, keyed by the
-    /// checkout — reviewing one agent's work and coming back to another's
-    /// is two places, not one. Kept here rather than in the client layout
-    /// because a path a file once had is a claim about a tree that is
-    /// being rewritten while nobody is looking; within a session it is
-    /// worth returning to, and across runs it is worth nothing.
-    code_places: BTreeMap<PathBuf, code::CodePlace>,
-    /// Where the viewer was on each checkout's architect surface, keyed
-    /// the same way and for the same reason: a drawing is walked into —
-    /// a level entered, a box selected, the board moved to it — and a
-    /// surface that forgets all of that on the way out is one nobody
-    /// leaves to check something.
-    architect_places: BTreeMap<PathBuf, architect::ArchitectPlace>,
-    /// The same for the spec surface: which change, and which of its
-    /// documents.
-    spec_places: BTreeMap<PathBuf, spec::SpecPlace>,
+    /// The surfaces plugins declare, each with the engine that answers for
+    /// it, and where the viewer was on each per checkout.
+    declared: HostedExtensions,
     /// Preserved work across the machine, as last swept. The last good
     /// answer stays drawn while a new one is in flight, so opening the
     /// list never shows an empty one it is about to fill.
@@ -1623,6 +1669,10 @@ struct Remembered {
     /// whatever it found — a directory that is no repository is answered
     /// too, and must not be asked again on every frame.
     evaluated: BTreeSet<PathBuf>,
+    /// The directories a space has opened in this session, by the
+    /// repository each is evaluated as: read once for what a project asks
+    /// where it opens, whether or not an evaluation reached it first.
+    opened: BTreeSet<PathBuf>,
     /// Shell tabs told to take an agent label, and the label each was
     /// told, until the session confirms it — so two updates arriving
     /// before the rename lands do not ask twice.
@@ -1676,6 +1726,11 @@ struct Remembered {
     /// the lines they would approve. Said once a session per project; the
     /// question stays here until it is answered yes.
     commands_awaiting: BTreeMap<PathBuf, uze_application::CommandsAwaitingApproval>,
+    /// Each project the workspace offered extensions to enable in, with
+    /// those not answered yet. Said once a session per project; putting
+    /// one away is also remembered on the machine, so it is not offered
+    /// again on the next opening.
+    extension_offers: BTreeMap<PathBuf, Vec<uze_application::ExtensionReport>>,
     /// The names a harness launched through the workspace's shim runs
     /// under, once the registry has answered, and whether it was asked.
     launchers: Option<Vec<String>>,
@@ -1805,6 +1860,14 @@ struct WorkspaceModel {
     /// What the sidebar's foot says about releases, as of `release_revision`.
     release: Option<crate::self_update::Notice>,
     release_revision: u64,
+    /// The last thing an extension notified, attributed, until put away:
+    /// drawn where the release notice is, ahead of it, since it is newer
+    /// news. A desktop notification is gone once read; this stays until
+    /// the operator has seen it here.
+    extension_notice: Option<(String, String)>,
+    /// The extension a click on why it is withheld asked to review: the
+    /// session opens the Extensions screen on it, on its next pass.
+    review_extension: Option<uze_application::ExtensionIdentity>,
     /// The spaces minimized to their header row, by id, flipped by the
     /// fold in front of the name. A view of the column, not of the work:
     /// the space's agents keep running and the chords still reach them.
@@ -1831,6 +1894,9 @@ struct WorkspaceModel {
     /// The directory of the agent whose context is in front, read again
     /// with the session: what everything about a project is drawn for.
     agent_in_front: Option<PathBuf>,
+    /// That agent's tab: the one pane a band is laid over while it is the
+    /// tab selected.
+    agent_tab_in_front: Option<TabId>,
     /// Whether the sidebar's first-steps section is folded to its header.
     first_steps_collapsed: bool,
     /// Whether the sidebar's spec section is open. Folded until asked,
@@ -1849,6 +1915,10 @@ struct WorkspaceModel {
     /// button, an entry in the index, a sidebar section, the reads that
     /// feed one — asks this, so switching one off is one place changing.
     disabled_extensions: std::collections::BTreeSet<String>,
+    /// What this client registered with the keyboard for the declared
+    /// extensions it hosts, by owner: an extension disabled or gone is
+    /// taken back from what is here.
+    registered_keys: BTreeMap<String, uze_keys::ExtensionTable>,
     dragging_sidebar: bool,
     /// What's being renamed (a tab or a space) and its live edit buffer.
     /// While set, all keyboard input edits this instead of reaching the
@@ -1880,6 +1950,14 @@ struct WorkspaceModel {
     /// Seals the client while it is open: an answer only ever comes from
     /// the operator's own click or keystroke.
     approval: Option<ApprovalDialog>,
+    /// The open question about enabling an extension in a project (see
+    /// `extension_offer`). Seals the client like the approval does.
+    extension_offer: Option<ExtensionOfferDialog>,
+    /// A prompt an extension would type into an agent, shown first
+    /// (`extension-agent-bridge`). Seals the client like the offer does.
+    agent_write: Option<AgentWriteDialog>,
+    /// The agent's tab an extension asked to put in front.
+    agent_focus: Option<TabId>,
     /// The open question about interrupting an agent mid-turn to continue
     /// it on another harness (see `interrupt`). Seals the client like the
     /// approval does.
@@ -1887,23 +1965,79 @@ struct WorkspaceModel {
     /// The open question about a machine fact an agent proposed (see
     /// `proposal`). Seals the client like the approval does.
     proposal: Option<ProposalDialog>,
-    /// Open state of the code surface; `None` when closed. Drawn where the
-    /// pane is, with the sidebar and the strip live around it — so unlike
-    /// `renaming`/`agent_picker`/`context_menu` a click outside it is not a
-    /// dismissal but a click on whatever it landed on. `Esc`, either
-    /// shortcut that opens it, or putting another tab in front closes it.
-    code: Option<code::CodeView>,
-    /// Open state of the architect surface. It borrows the code surface's
-    /// frame — the navigator width, its scroll, the scrollbars — because
-    /// the two are never open together and the frame is the host's, not
-    /// either extension's.
-    architect: Option<architect::ArchitectView>,
-    /// Open state of the spec surface, on the same borrowed frame.
-    spec: Option<spec::SpecView>,
-    /// The checkout it belongs to, and whether it has been read yet — as
-    /// `architect_root` and `architect_asked` are for the architect.
-    spec_root: Option<PathBuf>,
-    spec_asked: bool,
+    /// The view standing in the pane, by its slot, and the checkout it was
+    /// opened on — what its place is remembered under. Every view, built-in
+    /// or declared, stands in a slot, and the frame around it — the
+    /// navigator width, its scroll, the scrollbars — is the host's, kept
+    /// below, since only one view is open at a time.
+    open_slot: Option<SlotId>,
+    open_root: Option<PathBuf>,
+    /// Whether the inspector stands beside it.
+    inspecting: bool,
+    /// Where the author is in the inspector.
+    inspector: InspectorState,
+    /// The width a plugin's docked drawer was dragged to, kept for the
+    /// rest of the run. Apart from the overview's drawer width because the
+    /// inspector, which shares that one, can stand open beside it.
+    dock_width: Option<u16>,
+    /// The rows a drawer along the top or bottom was dragged to, kept the
+    /// same way: apart from its width, so a drawer on another side keeps
+    /// its own.
+    dock_rows: Option<u16>,
+    /// The same two for a drawer floating over the pane, apart from a
+    /// docked one's: a card dragged wide over the agent must not open the
+    /// next docked drawer squeezing the agent to its narrowest.
+    float_width: Option<u16>,
+    float_rows: Option<u16>,
+    /// The card the drawer stood in on the last frame: a floating drawer
+    /// that fits what it holds is only sized while it is drawn, and the
+    /// wheel and a drag of its edge are measured against what was seen.
+    dock_drawn: std::cell::Cell<Option<Rect>>,
+    /// Whether the docked drawer's edge is held by the pointer.
+    dragging_dock: bool,
+    /// Whether the docked drawer's scrollbar is held by the pointer.
+    dragging_dock_content: bool,
+    /// The docked drawer's scrollbar on the last frame, and the first row
+    /// it showed: what a press or a drag on its track is measured against.
+    dock_bar: std::cell::Cell<Option<(crate::ui::widget::Scrollbar, usize)>>,
+    /// Whether the docked drawer has the navigation keys: a click in it
+    /// lends them, a click anywhere else gives them back. Every other key
+    /// stays the pane's.
+    dock_focused: bool,
+    /// Whether the last gesture still waiting for its extension's answer
+    /// was made in the drawer rather than the pane's view: where the
+    /// answer is said, when one extension has both open.
+    asked_in_drawer: bool,
+    /// What the drawer's engine last asked to say, along its foot.
+    dock_notice: Option<uze_extensions::view::Span>,
+    /// The room the drawer's view had on the last frame: what its engine
+    /// is told it has when a key or a click reaches it.
+    dock_space: std::cell::Cell<uze_extensions::view::Size>,
+    /// How far down the inspector is scrolled, settled by the frame so its
+    /// last line stops at its foot.
+    inspector_scroll: std::cell::Cell<u16>,
+    /// The rows the inspector showed at once on the last frame: what a
+    /// page key moves it by.
+    inspector_rows: std::cell::Cell<u16>,
+    /// What its engine last asked to say at the end of its footer.
+    open_notice: Option<uze_extensions::view::Span>,
+    /// The overlay a declared extension opened over the frame, by its
+    /// slot: modal while it stands, and put away by Esc or a click
+    /// outside it.
+    open_overlay: Option<SlotId>,
+    /// What the overlay's engine last asked to say at the end of its
+    /// footer.
+    overlay_notice: Option<uze_extensions::view::Span>,
+    /// The focused resident surface was let go of with Esc: its keys and
+    /// the pointer are the host's again until it is pressed on or opened
+    /// anew.
+    resident_released: bool,
+    /// Where the overlay's content stood on the last frame: what a press
+    /// on a resident overlay is told relative to.
+    overlay_area: std::cell::Cell<Rect>,
+    /// The room each status row, band and overlay had on the last frame:
+    /// what its engine is told it has when a click reaches it.
+    slot_spaces: std::cell::RefCell<BTreeMap<SlotId, uze_extensions::view::Size>>,
     /// The tab the open surface stands in for. It is drawn where that
     /// tab's pane is, about that tab's checkout, so a different tab coming
     /// to the front — however it got there — puts it away rather than
@@ -1921,47 +2055,42 @@ struct WorkspaceModel {
     /// the rows it was on, edits not yet saved — so opening it again
     /// returns to it rather than starting over.
     put_away_overviews: std::collections::BTreeMap<SpaceId, SpaceOverviewView>,
-    /// The width the overview's drawer was dragged to, kept across
-    /// openings for the rest of the attach.
+    /// The width the overview's drawer, or the inspector, was dragged to,
+    /// kept across openings for the rest of the attach: one width for the
+    /// workspace's drawers, as manage's share one.
     overview_drawer_width: Option<u16>,
     /// Whether the drawer's rule is held by the pointer.
     dragging_overview_drawer: bool,
-    /// The diagram held by the pointer. A press on it is not yet a click
-    /// or a drag — the first movement says which, as it does for
+    /// The open board held by the pointer. A press on it is not yet a
+    /// click or a drag — the first movement says which, as it does for
     /// [`EdgeDrag`] — so the click it might turn out to be is kept here
     /// until release.
-    architect_grab: Option<DiagramGrab>,
-    /// The checkout the open architect surface belongs to, and whether
-    /// its artifacts have been asked for yet. Asked once per opening: the
-    /// answer carries the root, so one that arrives for a surface since
-    /// closed or reopened elsewhere is dropped rather than drawn.
-    architect_root: Option<PathBuf>,
-    architect_asked: bool,
+    board_grab: Option<DiagramGrab>,
     /// User-dragged navigator width; `None` falls back to its own
     /// responsive default. Mirrors `sidebar_width`/`dragging_sidebar`
     /// above, kept on the model rather than on the view itself so it
     /// survives closing and reopening the surface within the same
     /// session, the same way the sidebar's width survives switching tabs.
-    code_tree_width: Option<u16>,
+    navigator_width: Option<u16>,
     /// Where the navigator is scrolled to. The host's, not the
     /// extension's, for the reason the width is: how far a list of rows
     /// can scroll is a question about how many fit, and only the render
     /// knows — which is also why a frame hands it back settled (see
     /// `render::FrameMetrics`).
-    code_tree_scroll: extension_view::NavigatorScroll,
+    navigator_scroll: extension_view::NavigatorScroll,
     /// The scrollbars the last frame drew, so a drag can answer *where in
     /// the content* the pointer went. Geometry belongs to the render, so
     /// it travels from there rather than being derived twice.
-    code_scrollbars: extension_view::Rendered,
-    /// Where the pointer asked for the code surface's row menu, which is
+    surface_frame: extension_view::Rendered,
+    /// Where the pointer asked for the open view's row menu, which is
     /// where it opens. `None` when the keyboard asked, and the menu opens
     /// under its row instead.
-    code_menu_at: Option<Rect>,
+    menu_at: Option<Rect>,
     /// A press on the navigator's edge, waiting to find out what it is.
-    code_edge_drag: Option<EdgeDrag>,
+    edge_drag: Option<EdgeDrag>,
     /// Whether the content's own scrollbar is being held. Unambiguous, so
     /// it needs nothing but a flag.
-    dragging_code_content: bool,
+    dragging_content: bool,
     /// Whether the pointer is held since a press on a toast, so the rest
     /// of that gesture is the toast's and reaches nothing beneath it.
     pressing_toast: bool,
@@ -1983,28 +2112,6 @@ struct WorkspaceModel {
     /// The commit a background `git show` is out for; see
     /// [`CommitDetailResolution`] for why the answer names it back.
     commit_detail_pending: Option<String>,
-    /// Whether a re-read of the surface's changes half is out, and
-    /// whether one of its file requests is. Two flags because the two
-    /// halves have two cadences and can be in flight at once.
-    code_changes_pending: bool,
-    /// Whether a one-file diff read is out. Its own flag, apart from the
-    /// refresh's: a click must not wait behind a `status` it does not
-    /// need.
-    code_diff_pending: bool,
-    code_request_pending: bool,
-    /// The checkout the map's measurement was asked about. Not a flag:
-    /// the answer outside a repository is nothing, and a flag cleared on
-    /// nothing would ask again every frame.
-    code_measure_asked: Option<PathBuf>,
-    /// The last measurement of each checkout, and when it was taken.
-    ///
-    /// Kept because measuring is a `git grep` that opens every file the
-    /// checkout has, and the surface it feeds is opened and closed all
-    /// day. Without it, every open paid that again and showed no map
-    /// until it landed — the one thing the cost was supposed to buy.
-    /// Handed to a surface the moment it opens, and taken again in the
-    /// background once it is old enough to have missed something.
-    code_measures: BTreeMap<PathBuf, (Instant, code::Measure)>,
     /// Sink for recorded prompts. `None` leaves the history untouched —
     /// the default, so tests exercise the submission path without writing
     /// to a real UZE home.
@@ -2242,11 +2349,6 @@ impl Submission {
 struct GitBadge {
     cwd: PathBuf,
     summary: Option<code::ChangeSummary>,
-    /// The same checkout's recent history, for the same tab: what the
-    /// sidebar's timeline section draws. Re-read on its own, slower
-    /// cadence (`TIMELINE_REFRESH`).
-    timeline: Option<code::Timeline>,
-    timeline_checked_at: Instant,
     checked_at: Instant,
 }
 /// The keys a hint drew, as targets.
@@ -2343,10 +2445,7 @@ impl WorkspaceModel {
     /// that isn't already claimed by one of them straight into the focused
     /// pane's PTY instead of dropping it.
     fn no_modal_open(&self) -> bool {
-        self.chrome_answers()
-            && self.code.is_none()
-            && self.architect.is_none()
-            && self.spec.is_none()
+        self.chrome_answers() && self.open_slot.is_none()
     }
 
     /// Whether the sidebar and the strip answer the pointer: nothing is
@@ -2360,6 +2459,8 @@ impl WorkspaceModel {
             && !self.recent.has_keys()
             && self.context_menu.is_none()
             && self.approval.is_none()
+            && self.extension_offer.is_none()
+            && self.agent_write.is_none()
             && self.interrupt.is_none()
             && self.proposal.is_none()
             && !self.asks_overview_question()
@@ -2367,6 +2468,7 @@ impl WorkspaceModel {
             && self.release_notes.is_none()
             && self.manage.is_none()
             && !self.commit_detail_open()
+            && self.open_overlay.is_none()
     }
 
     /// Takes hold of the foot of the sidebar by the section header at
@@ -2382,12 +2484,12 @@ impl WorkspaceModel {
         if self.timeline_collapsed {
             return false;
         }
-        let timeline = self.hits.iter().find_map(|(rect, hit)| {
-            matches!(
-                hit,
-                WorkspaceHit::Extension(ExtensionHit::CodeTimeline(ViewHit::ToggleSection))
-            )
-            .then_some(rect.y)
+        let timeline = self.hits.iter().find_map(|(rect, hit)| match hit {
+            WorkspaceHit::Extension(ExtensionHit {
+                slot,
+                hit: ViewHit::ToggleSection,
+            }) if self.is_timeline(*slot) => Some(rect.y),
+            _ => None,
         });
         let Some(timeline) = timeline else {
             return false;
@@ -2466,7 +2568,8 @@ impl WorkspaceModel {
     fn over_timeline(&self, column: u16, row: u16) -> bool {
         matches!(
             self.hit_at(column, row),
-            Some(WorkspaceHit::Extension(ExtensionHit::CodeTimeline(_)))
+            Some(WorkspaceHit::Extension(ExtensionHit { slot, .. }))
+                if self.is_timeline(slot)
         )
     }
 
@@ -2478,7 +2581,10 @@ impl WorkspaceModel {
             .filter(|(_, hit)| {
                 matches!(
                     hit,
-                    WorkspaceHit::Extension(ExtensionHit::CodeTimeline(ViewHit::SelectItem(_)))
+                    WorkspaceHit::Extension(ExtensionHit {
+                        slot,
+                        hit: ViewHit::SelectItem(_),
+                    }) if self.is_timeline(*slot)
                 )
             })
             .count()

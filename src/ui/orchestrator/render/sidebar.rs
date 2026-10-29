@@ -214,6 +214,10 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
         );
     }
 
+    // A plugin's status rows stand under the rule rather than above it,
+    // so the rule keeps meeting the tab strip's own along one line.
+    metrics.marquee |= super::declared::render_status_rows(frame, &mut rows, model, hits);
+
     let Some(session) = &model.session else {
         return;
     };
@@ -250,11 +254,7 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
     // under a long tree, and a history that is only there while the tree
     // is short is no place to go looking for one. Its rows are reserved
     // before the spaces are laid out, and handed back to them below.
-    let timeline = model
-        .remembered
-        .git_badge
-        .as_ref()
-        .and_then(|badge| badge.timeline.as_ref());
+    let timeline = model.timeline();
     // Two sections stacked at the foot: the steps above the history, each
     // taking its rows before the tree is laid out, so neither is ever
     // drawn over the other. Any of them may be open at once; each is
@@ -263,7 +263,7 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
     let column_bottom = rows.bottom;
     let steps = model.first_steps();
     let steps_height = steps.height();
-    let reserved = timeline.map_or(0, |timeline| {
+    let reserved = timeline.as_ref().map_or(0, |(_, timeline)| {
         timeline_height(
             timeline,
             model.timeline_collapsed,
@@ -274,16 +274,32 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
     // The spec section sits on the timeline: what the work intends over
     // what it did. Reserved the same way, before the tree.
     let spec_summary = model.spec_summary();
-    let spec_reserved = spec_summary.map_or(0, |summary| {
+    let spec_reserved = spec_summary.as_ref().map_or(0, |(_, section)| {
         spec_summary_height(
-            summary,
+            section,
             model.spec_summary_open,
             rows.remaining()
                 .saturating_sub(steps_height)
                 .saturating_sub(reserved),
         )
     });
-    let foot = reserved + spec_reserved;
+    // A plugin's sections sit over the spec section, each reserved the
+    // same way and each within what the ones below it left.
+    let declared_sections = model.declared_sections();
+    let mut declared_heights = Vec::with_capacity(declared_sections.len());
+    let mut declared_reserved = 0u16;
+    for (_, section) in &declared_sections {
+        let height = super::declared::declared_section_height(
+            section,
+            rows.width,
+            rows.remaining()
+                .saturating_sub(steps_height)
+                .saturating_sub(reserved + spec_reserved + declared_reserved),
+        );
+        declared_heights.push(height);
+        declared_reserved += height;
+    }
+    let foot = reserved + spec_reserved + declared_reserved;
     // Every header at the foot is a handle on the timeline (see
     // `WorkspaceModel::grab_foot`), and the one lit while dragging is the
     // one held: its distance from the timeline's own header is the grab.
@@ -305,8 +321,37 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
     // The release notice sits on whatever holds the foot — the steps, or
     // the history once the steps are put away — rather than under them: it
     // is news, and news below two sections reads as the column's floor.
-    if let Some(notice) = model.release.as_ref().map(crate::ui::ReleaseNotice)
-        && let Some(rect) = notice.rect(Rect::new(
+    // An extension's notice comes ahead of the release's: it is newer,
+    // and the release's waits under it until it is put away.
+    let release = model
+        .release
+        .as_ref()
+        .map(crate::ui::SidebarNotice::release);
+    let notice = match (&model.extension_notice, &release) {
+        (Some((title, body)), _) => Some((
+            crate::ui::SidebarNotice {
+                marker: Symbol::IconBell,
+                tone: Token::StateInfo,
+                headline: title,
+                detail: body,
+            },
+            WorkspaceHit::DismissExtensionNotice,
+            None,
+        )),
+        (None, Some((version, action))) => Some((
+            crate::ui::SidebarNotice {
+                marker: Symbol::ArrowUp,
+                tone: Token::Accent,
+                headline: version,
+                detail: action,
+            },
+            WorkspaceHit::DismissRelease,
+            Some(WorkspaceHit::OpenReleaseNotes),
+        )),
+        (None, None) => None,
+    };
+    if let Some((notice, dismiss, opens)) = notice
+        && let Some(rect) = crate::ui::SidebarNotice::rect(Rect::new(
             inner.x,
             inner.y,
             inner.width,
@@ -314,13 +359,10 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
         ))
     {
         let targets = notice.render(frame, rect);
-        hits.push((targets.dismiss, WorkspaceHit::DismissRelease));
-        hits.extend(
-            targets
-                .notes
-                .into_iter()
-                .map(|rect| (rect, WorkspaceHit::OpenReleaseNotes)),
-        );
+        hits.push((targets.dismiss, dismiss));
+        if let Some(opens) = opens {
+            hits.extend(targets.rows.into_iter().map(|rect| (rect, opens)));
+        }
         rows.bottom = rect.y;
     }
 
@@ -412,7 +454,7 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
             &steps.section(),
             &mut Rows::over(rect),
             SectionState {
-                dragging: grabbed(spec_reserved + rect.height),
+                dragging: grabbed(declared_reserved + spec_reserved + rect.height),
                 ..SectionState::default()
             },
             &mut section_hits,
@@ -442,7 +484,24 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
         }
     }
 
-    if let Some(summary) = spec_summary
+    let mut declared_top = column_bottom - foot;
+    for ((slot, section), height) in declared_sections.iter().zip(declared_heights) {
+        if height == 0 {
+            continue;
+        }
+        let air = if !section.collapsed && height > SECTION_CHROME {
+            SECTION_AIR
+        } else {
+            0
+        };
+        rows.scroll_past(0);
+        rows.y = declared_top;
+        rows.bottom = declared_top + height - air;
+        metrics.marquee |= render_declared_section(frame, *slot, section, model, &mut rows, hits);
+        declared_top += height;
+    }
+
+    if let Some((slot, section)) = &spec_summary
         && spec_reserved > 0
     {
         rows.scroll_past(0);
@@ -452,10 +511,11 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
             0
         };
         rows.bottom = column_bottom - reserved - air;
-        rows.y = column_bottom - foot;
+        rows.y = column_bottom - reserved - spec_reserved;
         metrics.marquee |= render_spec_summary(
             frame,
-            summary,
+            *slot,
+            section,
             model,
             grabbed(spec_reserved),
             &mut rows,
@@ -468,7 +528,7 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
         rows.scroll_past(0);
         rows.bottom = column_bottom;
         rows.y = column_bottom - reserved;
-        metrics.marquee |= render_timeline(frame, timeline, model, grabbed(0), &mut rows, hits);
+        metrics.marquee |= render_timeline(frame, &timeline, model, grabbed(0), &mut rows, hits);
     }
 }
 
@@ -479,7 +539,7 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
 /// are what the sidebar is for. Nothing when even the header would not
 /// fit.
 pub(in crate::ui::orchestrator) fn spec_summary_height(
-    summary: &uze_extensions::spec::Summary,
+    section: &uze_extensions::view::Section,
     open: bool,
     remaining: u16,
 ) -> u16 {
@@ -487,7 +547,7 @@ pub(in crate::ui::orchestrator) fn spec_summary_height(
     if budget < SECTION_CHROME {
         return 0;
     }
-    let changes = u16::try_from(summary.changes.len()).unwrap_or(u16::MAX);
+    let changes = u16::try_from(section.rows.len()).unwrap_or(u16::MAX);
     if open {
         SECTION_CHROME + changes + SECTION_AIR
     } else {
@@ -501,51 +561,98 @@ pub(in crate::ui::orchestrator) fn spec_summary_height(
 /// host state, and tags the hits it gets back.
 pub(super) fn render_spec_summary(
     frame: &mut ratatui::Frame<'_>,
-    summary: &uze_extensions::spec::Summary,
+    slot: SlotId,
+    section: &uze_extensions::view::Section,
     model: &WorkspaceModel,
     dragging: bool,
     rows: &mut Rows,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) -> bool {
-    let section = uze_extensions::spec::summary_section(summary, !model.spec_summary_open, 0);
     let mut section_hits = Vec::new();
-    let mut column = Rows::over(Rect::new(rows.x, rows.y, rows.width, rows.remaining()));
+    // Drawn flat, as the sidebar's own sections are: whose it is is the
+    // Extensions screen's and the inspector's to say, not a strip that
+    // breaks the sidebar's rhythm (`extension-bar` D8).
+    let area = Rect::new(rows.x, rows.y, rows.width, rows.remaining());
+    let mut column = Rows::over(area);
     let under = match model.hovered {
-        Some(WorkspaceHit::Extension(ExtensionHit::SpecSummary(hit))) => Some(hit),
+        Some(WorkspaceHit::Extension(ExtensionHit { slot: over, hit })) if over == slot => {
+            Some(hit)
+        }
         _ => None,
     };
     let hovered_row = match under {
         Some(ViewHit::SelectItem(index)) => Some(index),
         _ => None,
     };
-    let on_show = model
-        .spec
-        .as_ref()
-        .and_then(uze_extensions::spec::SpecView::change_on_show)
-        .and_then(|name| {
-            summary
-                .changes
-                .iter()
-                .position(|change| change.name == name)
-        });
-    let lit_rows: Vec<usize> = hovered_row.into_iter().chain(on_show).collect();
-    let slid = crate::ui::extension_view::render_section(
-        frame,
-        &section,
-        &mut column,
-        SectionState {
-            dragging,
-            sliding: under.map(|hit| (hit, model.hovered_for())),
-            lit_rows: &lit_rows,
-        },
-        &mut section_hits,
-    );
-    hits.extend(section_hits.into_iter().map(|(rect, hit)| {
-        (
-            rect,
-            WorkspaceHit::Extension(ExtensionHit::SpecSummary(hit)),
+    let lit_rows: Vec<usize> = hovered_row
+        .into_iter()
+        .chain(section.lit.iter().copied())
+        .collect();
+    let slid = crate::ui::graphics::in_slot(slot, || {
+        crate::ui::extension_view::render_section(
+            frame,
+            section,
+            &mut column,
+            SectionState {
+                dragging,
+                sliding: under.map(|hit| (hit, model.hovered_for())),
+                lit_rows: &lit_rows,
+            },
+            &mut section_hits,
         )
-    }));
+    });
+    hits.extend(
+        section_hits
+            .into_iter()
+            .map(|(rect, hit)| (rect, WorkspaceHit::Extension(ExtensionHit { slot, hit }))),
+    );
+    slid
+}
+
+/// One section a plugin declared. Its fold is the host's, kept on the
+/// slot; its hits go back to the slot's engine.
+fn render_declared_section(
+    frame: &mut ratatui::Frame<'_>,
+    slot: SlotId,
+    section: &uze_extensions::view::Section,
+    model: &WorkspaceModel,
+    rows: &mut Rows,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) -> bool {
+    let mut section_hits = Vec::new();
+    // Drawn flat, as the sidebar's own sections are: whose it is is the
+    // Extensions screen's and the inspector's to say, not a strip that
+    // breaks the sidebar's rhythm (`extension-bar` D8).
+    let area = Rect::new(rows.x, rows.y, rows.width, rows.remaining());
+    let mut column = Rows::over(area);
+    let under = match model.hovered {
+        Some(WorkspaceHit::Extension(ExtensionHit { slot: over, hit })) if over == slot => {
+            Some(hit)
+        }
+        _ => None,
+    };
+    let lit_rows: Vec<usize> = match under {
+        Some(ViewHit::SelectItem(index)) => vec![index],
+        _ => Vec::new(),
+    };
+    let slid = crate::ui::graphics::in_slot(slot, || {
+        crate::ui::extension_view::render_section(
+            frame,
+            section,
+            &mut column,
+            SectionState {
+                dragging: false,
+                sliding: under.map(|hit| (hit, model.hovered_for())),
+                lit_rows: &lit_rows,
+            },
+            &mut section_hits,
+        )
+    });
+    hits.extend(
+        section_hits
+            .into_iter()
+            .map(|(rect, hit)| (rect, WorkspaceHit::Extension(ExtensionHit { slot, hit }))),
+    );
     slid
 }
 
@@ -1282,12 +1389,12 @@ pub(super) const MIN_TREE_ROWS: u16 = 4;
 /// within the history there is and what the column can spare past the
 /// tree's minimum. Nothing when even the header would not fit.
 pub(in crate::ui::orchestrator) fn timeline_height(
-    timeline: &uze_extensions::code::Timeline,
+    timeline: &uze_extensions::view::Section,
     collapsed: bool,
     rows_wanted: Option<u16>,
     remaining: u16,
 ) -> u16 {
-    let commits = timeline.commits.len() as u16;
+    let commits = timeline.rows.len() as u16;
     let (chrome, rows, budget) = match rows_wanted {
         _ if collapsed => (SECTION_CHROME, 0, remaining / 2),
         Some(wanted) => (
@@ -1306,24 +1413,20 @@ pub(in crate::ui::orchestrator) fn timeline_height(
 /// The sidebar's commit-timeline section.
 ///
 /// Nothing here knows what a commit is. The extension says what the
-/// section holds ([`git::timeline_section`]) and
+/// section holds (`code::TIMELINE`) and
 /// `extension_view::render_section` draws it; this only supplies the host
 /// state the extension is not allowed to hold — whether the section is
 /// folded, how far it is scrolled, whether its divider is being dragged —
 /// and tags the hits that come back with the surface they came from.
 pub(super) fn render_timeline(
     frame: &mut ratatui::Frame<'_>,
-    timeline: &uze_extensions::code::Timeline,
+    (slot, section): &(SlotId, uze_extensions::view::Section),
     model: &WorkspaceModel,
     dragging: bool,
     rows: &mut Rows,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) -> bool {
-    let section = uze_extensions::code::timeline_section(
-        timeline,
-        model.timeline_collapsed,
-        model.timeline_scroll,
-    );
+    let slot = *slot;
     let mut section_hits = Vec::new();
     let mut column = Rows::over(Rect::new(rows.x, rows.y, rows.width, rows.remaining()));
     // The branch name on the header and a commit's subject are captions
@@ -1332,30 +1435,33 @@ pub(super) fn render_timeline(
     // instead of stopping at an "…": a branch is read from both ends, and
     // the end is the half an "…" eats.
     let under = match model.hovered {
-        Some(WorkspaceHit::Extension(ExtensionHit::CodeTimeline(hit))) => Some(hit),
+        Some(WorkspaceHit::Extension(ExtensionHit { slot: hovered, hit })) if hovered == slot => {
+            Some(hit)
+        }
         _ => None,
     };
     let hovered_row = match under {
         Some(ViewHit::SelectItem(index)) => Some(index),
         _ => None,
     };
-    let sliding = crate::ui::extension_view::render_section(
-        frame,
-        &section,
-        &mut column,
-        SectionState {
-            dragging,
-            sliding: under.map(|hit| (hit, model.hovered_for())),
-            lit_rows: hovered_row.as_slice(),
-        },
-        &mut section_hits,
-    );
-    hits.extend(section_hits.into_iter().map(|(rect, hit)| {
-        (
-            rect,
-            WorkspaceHit::Extension(ExtensionHit::CodeTimeline(hit)),
+    let sliding = crate::ui::graphics::in_slot(slot, || {
+        crate::ui::extension_view::render_section(
+            frame,
+            section,
+            &mut column,
+            SectionState {
+                dragging,
+                sliding: under.map(|hit| (hit, model.hovered_for())),
+                lit_rows: hovered_row.as_slice(),
+            },
+            &mut section_hits,
         )
-    }));
+    });
+    hits.extend(
+        section_hits
+            .into_iter()
+            .map(|(rect, hit)| (rect, WorkspaceHit::Extension(ExtensionHit { slot, hit }))),
+    );
     sliding
 }
 
@@ -1696,7 +1802,8 @@ mod tests {
             done: 0,
             total: 0,
         };
-        assert_eq!(render::spec_summary_height(&summary, true, 40), 1 + 2 + 1);
-        assert_eq!(render::spec_summary_height(&summary, false, 40), 1);
+        let section = uze_extensions::spec::summary_section(&summary, false, 0);
+        assert_eq!(render::spec_summary_height(&section, true, 40), 1 + 2 + 1);
+        assert_eq!(render::spec_summary_height(&section, false, 40), 1);
     }
 }

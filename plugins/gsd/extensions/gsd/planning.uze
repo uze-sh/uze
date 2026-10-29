@@ -1,0 +1,281 @@
+<script>
+// The `planning` source: the milestone GSD keeps in .planning/, read the
+// way GSD writes it.
+//
+//   STATE.md     front matter: `milestone`, `milestone_name`, `status`,
+//                `stopped_at`
+//   ROADMAP.md   a line per phase: `- [ ] **Phase N: name** - goal` ([x]
+//                done)
+//   phases/      a folder `NN-name` per phase: `NN-CONTEXT.md` once
+//                discussed, `NN-MM-PLAN.md` per plan (front matter `wave`,
+//                and `autonomous: false` for a plan that stops at a
+//                checkpoint), `NN-MM-SUMMARY.md` once a plan ran, and
+//                `NN-VERIFICATION.md` or `NN-UAT.md` once verified
+//
+// A phase goes discuss → plan → execute → verify; the phase in front is the
+// first not done, at the first of its steps not done. A checkpoint waits
+// while that phase executes and the first wave with plans left holds only
+// plans that stop for the person: the first of them is the one waiting.
+
+fn steps() { ["discuss", "plan", "execute", "verify"] }
+
+fn commands() {
+    #{ discuss: "gsd-discuss-phase", plan: "gsd-plan-phase", execute: "gsd-execute-phase", verify: "gsd-verify-work" }
+}
+
+// A phase's number as its folder and files spell it: `3` is `03`, `2.1`
+// is `02.1`.
+fn padded(number) {
+    let dot = number.index_of(".");
+    let whole = if dot < 0 { number } else { number.sub_string(0, dot) };
+    let rest = if dot < 0 { "" } else { number.sub_string(dot) };
+    if whole.len() < 2 { whole = `0${whole}`; }
+    whole + rest
+}
+
+fn names_in(path) {
+    try {
+        list_checkout(path).map(|entry| entry.name)
+    } catch {
+        []
+    }
+}
+
+// What a plan sets out to do: its `<objective>`'s first line, else the name
+// of its first task.
+fn plan_title(plan) {
+    let objective = regex(plan, "(?s)<objective>\\s*([^\n]*)");
+    if objective.len() > 0 && objective[0][1] != "" { return objective[0][1]; }
+    let task = regex(plan, "(?s)<task[^>]*>.*?<name>\\s*(.*?)\\s*</name>");
+    if task.len() > 0 { task[0][1] } else { "a plan" }
+}
+
+// What a checkpoint plan asks the person to check: the name of its first
+// checkpoint task, or what that task says was built.
+fn checkpoint_title(plan) {
+    let found = regex(plan, "(?s)<task[^>]*type=\"checkpoint:[^\"]*\"[^>]*>.*?<(?:name|what-built)>\\s*(.*?)\\s*</");
+    if found.len() > 0 { found[0][1] } else { "the plan waits for you" }
+}
+
+// A phase's four steps as marks, discuss, plan, execute and verify, all
+// in one state: the D P E V columns of a phase done or still ahead.
+fn step_marks(state) {
+    steps().map(|step| #{ state: state })
+}
+
+// The phase in front: its steps, its plans in waves, and the checkpoint
+// that waits, if one does.
+fn in_front(phase, folder, files, executing) {
+    let prefix = padded(phase.number);
+    let plans = [];
+    for file in files {
+        let found = regex(file, "^(\\d+(?:\\.\\d+)?)-(\\d+)-PLAN\\.md$");
+        if found.len() == 0 { continue; }
+        let index = found[0][2];
+        let text = read_checkout(`.planning/phases/${folder}/${file}`);
+        let fields = front_matter(text).fields;
+        let wave = if "wave" in fields { parse_int(fields.wave) } else { 1 };
+        plans.push(#{
+            id: `${phase.number}-${index}`,
+            title: plan_title(text),
+            file: file,
+            wave: wave,
+            stops: "autonomous" in fields && fields.autonomous == "false",
+            ran: files.contains(`${found[0][1]}-${index}-SUMMARY.md`),
+        });
+    }
+    let ran = plans.filter(|plan| plan.ran).len();
+    let done = #{
+        discuss: files.contains(`${prefix}-CONTEXT.md`) || plans.len() > 0,
+        plan: plans.len() > 0,
+        execute: plans.len() > 0 && ran == plans.len(),
+        verify: files.contains(`${prefix}-VERIFICATION.md`) || files.contains(`${prefix}-UAT.md`),
+    };
+    let step = ();
+    for name in steps() {
+        if step == () && !done[name] { step = name; }
+    }
+    if step == () { step = "verify"; }
+
+    let waiting = ();
+    if step == "execute" && executing {
+        let first = ();
+        for plan in plans {
+            if !plan.ran && (first == () || plan.wave < first) { first = plan.wave; }
+        }
+        let left = plans.filter(|plan| plan.wave == first && !plan.ran);
+        if left.len() > 0 && left.all(|plan| plan.stops) {
+            let text = read_checkout(`.planning/phases/${folder}/${left[0].file}`);
+            waiting = #{ plan: left[0].id, title: checkpoint_title(text) };
+        }
+    }
+
+    let numbers = [];
+    for plan in plans {
+        if !numbers.contains(plan.wave) { numbers.push(plan.wave); }
+    }
+    numbers.sort();
+
+    // The plans one under another, by name, in wave order: what the phase
+    // is made of, and which of them is where.
+    let listed = [];
+    for number in numbers {
+        let lead = `wave ${number}`;
+        for plan in plans.filter(|plan| plan.wave == number) {
+            let state = if plan.ran {
+                "done"
+            } else if waiting != () && waiting.plan == plan.id {
+                "waiting"
+            } else {
+                "pending"
+            };
+            listed.push(#{
+                id: plan.id,
+                title: plan.title,
+                // The wave's label on its first plan only: the plans read
+                // as a table grouped by wave.
+                lead: lead,
+                state: state,
+                done: state == "done",
+                waiting: state == "waiting",
+                pending: state == "pending",
+            });
+            lead = "";
+        }
+    }
+
+    let at = steps().index_of(step);
+    let marks = [];
+    for name in steps() {
+        let index = steps().index_of(name);
+        let state = if index < at { "done" } else if index == at { "current" } else { "pending" };
+        marks.push(#{ state: state });
+    }
+
+    #{
+        number: phase.number,
+        name: phase.name,
+        step: step,
+        command: commands()[step],
+        label: `${step} phase ${phase.number}`,
+        steps: marks,
+        listed: listed,
+        goal: phase.goal,
+        plans: plans.len(),
+        ran: ran,
+        waiting: waiting,
+    }
+}
+
+fn answer(input, context) {
+    let state = front_matter(read_checkout(".planning/STATE.md")).fields;
+    let roadmap = "";
+    try { roadmap = read_checkout(".planning/ROADMAP.md"); } catch {}
+    let folders = [];
+    try {
+        folders = list_checkout(".planning/phases").filter(|entry| entry.kind == "dir").map(|entry| entry.name);
+    } catch {}
+    let status = if "status" in state { state.status.to_lower() } else { "" };
+    let stopped = if "stopped_at" in state { state.stopped_at.to_lower() } else { "" };
+    let executing = status.contains("execut") || stopped.contains("checkpoint");
+
+    let phases = [];
+    let segments = [];
+    let current = ();
+    let done = 0;
+    let progress = 0.0;
+    let previous = "";
+    for found in regex(roadmap, "(?m)^\\s*- \\[( |x)\\] \\*\\*Phase (\\d+(?:\\.\\d+)?): ([^*]+)\\*\\*(?:\\s*-\\s*([^\\n]*))?") {
+        let number = found[2];
+        let name = found[3];
+        name.trim();
+        let prefix = padded(number);
+        let folder = folders.filter(|folder| folder.starts_with(prefix + "-"));
+        let folder = if folder.len() > 0 { folder[0] } else { "" };
+        let files = if folder != "" { names_in(`.planning/phases/${folder}`) } else { [] };
+        let plans = files.filter(|file| regex_match(file, "^\\d+(?:\\.\\d+)?-\\d+-PLAN\\.md$")).len();
+        let ran = files.filter(|file| regex_match(file, "^\\d+(?:\\.\\d+)?-\\d+-SUMMARY\\.md$")).len();
+        let verified = files.contains(`${prefix}-VERIFICATION.md`) || files.contains(`${prefix}-UAT.md`);
+        let is_done = found[1] == "x" || (plans > 0 && ran >= plans && verified);
+
+        let goal = if found.len() > 4 && found[4] != () { found[4] } else { "" };
+        goal.trim();
+        let phase = #{ number: number, name: name, goal: goal, plans: if plans > 0 { `${ran}/${plans}` } else { "" }, after: `after ${previous}` };
+        let fill = 0.0;
+        if is_done {
+            done += 1;
+            fill = 1.0;
+            phase.state = "done";
+            phase.finished = true;
+            phase.marks = step_marks("done");
+            phase.status = "done";
+            phase.tone = "success";
+        } else if current == () {
+            current = in_front(phase, folder, files, executing);
+            phase.state = "current";
+            phase.front = current;
+            phase.marks = current.steps.map(|step| #{ state: step.state });
+            phase.plans = if current.plans > 0 { `${current.ran}/${current.plans}` } else { "" };
+            if current.waiting != () {
+                phase.status = "needs you";
+                phase.tone = "danger";
+            } else if current.step == "execute" && current.ran > 0 {
+                phase.status = "executing";
+                phase.tone = "warning";
+            } else {
+                phase.status = current.step;
+                phase.tone = "info";
+            }
+            if current.step == "execute" || current.step == "verify" {
+                if current.plans > 0 { fill = current.ran.to_float() / current.plans.to_float(); }
+            }
+            // The phase in front counts for most of its share once its
+            // plans have run, never all of it: it is done only verified,
+            // and the milestone never reads complete before that.
+            progress += fill * 0.9;
+        } else {
+            phase.state = "later";
+            phase.ahead = true;
+            phase.marks = step_marks("pending");
+            phase.status = phase.after;
+            phase.tone = "muted";
+        }
+        if is_done { progress += 1.0; }
+        // One equal step per phase: the bar reads as the roadmap, phase by
+        // phase, whatever each one's size.
+        segments.push(#{ weight: 1, ratio: fill, state: phase.state });
+        phases.push(phase);
+        previous = number;
+    }
+
+    let total = phases.len();
+    let checkpoint = if current != () { current.waiting } else { () };
+    let reply = #{
+        data: #{
+            version: if "milestone" in state { state.milestone } else { "" },
+            name: if "milestone_name" in state { state.milestone_name } else { "" },
+            percent: if total > 0 { (progress / total.to_float() * 100.0).round().to_int() } else { 0 },
+            done: done,
+            total: total,
+            next: if current != () { `phase ${current.number} next` } else { "complete" },
+            segments: segments,
+            phases: phases,
+            checkpoint: checkpoint,
+            // What the bar says: the phase in front and its step, apart
+            // from the phase itself, which the drawer reads in `phases`.
+            current: if current != () { #{ number: current.number, step: current.step } } else { () },
+        }
+    };
+
+    // A checkpoint is announced once, when it starts to wait.
+    let kept = store();
+    let told = if "told" in kept { kept.told } else { () };
+    if checkpoint != () && told != checkpoint.plan {
+        reply.notify = #{ title: `Checkpoint ${checkpoint.plan}`, body: `${checkpoint.title}: it waits for you in the agent` };
+        reply.store = #{ told: checkpoint.plan };
+    } else if checkpoint == () && told != () {
+        reply.store = #{ told: () };
+    }
+    reply
+}
+</script>

@@ -14,7 +14,7 @@ pub use application::services::{
     PlacementKind, PreservedWork, ProjectArtifacts, ProjectSpace, PullReport, Reconciliation,
     ReleasedTask, RequestQuestion, ShownCommand, SpaceMemory, SpaceOverview, SpacePlugin,
     SpacePlugins, SplitWork, SubagentCheckout, TargetSyncReport, UpstreamSync, WorkStateView,
-    WorkspaceEntry, project_artifacts,
+    WorkspaceEntry, project_artifacts, skill_invocation,
 };
 
 /// Types the read models above are made of. Presentation consumes these
@@ -44,6 +44,22 @@ pub use uze_core::{
         SourceOrigin, TrustAuthority, TrustOutcome, TrustRequest,
     },
 };
+
+/// A declared extension as the workspace hosts it: who it is, what it
+/// compiled to, and what was wrong with it when it did not.
+pub use application::{
+    Asker, CheckedExtension, Consented, DeclaredExtensionSummary, ExtensionCheckout,
+    ExtensionCondition, ExtensionConsent, ExtensionCost, ExtensionLoad, ExtensionOverlay,
+    ExtensionReport, ExtensionRun, ExtensionRunner, ExtensionStanding, ExtensionState,
+    FIXTURE_LIMIT, InstalledExtension, MEMORY_TARGET, MeasuredCost, MeasuredCosts, NotACheckout,
+    P95_TARGET, PreferenceRow, ProgramPin, RunOutcome, SourceData, Switched, WATCH_DEPTH,
+    WATCH_ENTRIES, bytes_text, confinement, consent_key, enabled_per_project, extension_stamp,
+    grant_meaning, paths_digest, secrets_kept_in,
+};
+pub use uze_contract::{CompiledExtension, Identity as ExtensionIdentity};
+pub use uze_core::capability::extension::Diagnostic as ExtensionDiagnostic;
+/// Where the cursor is in an extension's file, for an editor.
+pub use uze_core::capability::extension::locate as extension_locate;
 
 /// The shell a project's plain setup and gate lines run in, which
 /// `uze shell -c` is.
@@ -95,6 +111,8 @@ pub use uze_workspace::{
     notifications::{Chime, WrittenChime},
     project_labels::{ProjectLabels, directory_name},
     prompt_history::{PromptAge, PromptClock, PromptEntry, PromptOrigin},
+    reports::Cursor as AgentReportCursor,
+    reports::Report as AgentReport,
     worktree::{CompletionBehavior, PolicyStep, isolated_checkout},
 };
 

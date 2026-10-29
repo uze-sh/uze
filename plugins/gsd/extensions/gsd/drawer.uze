@@ -1,0 +1,97 @@
+<view>
+// The drawer, read while the agent works: the milestone and how far it
+// is, what waits for the person, and every phase on one row, its steps as
+// marks (discuss, plan, execute, verify), its plans run and where it
+// stands. The phase in front opens to its goal and its plans wave by wave,
+// with the one button that asks for its next step. Every row keeps the
+// columns of the one above it.
+lookup "fill" default="faint" {
+    done "success"
+    current "warning"
+}
+
+lookup "mark" default="faint" {
+    done "success"
+    current "info"
+}
+
+lookup "plan" default="faint" {
+    done "secondary"
+    waiting "danger"
+}
+
+Stack gap=1 {
+    Stack {
+        Row gap=1 {
+            Text "{version}" strong=#true
+            Text "{name}" role="secondary" truncate=#true grow=#true
+            Text "{percent}%" role="secondary"
+        }
+        Progress style="line" {
+            Segment each="segments" weight="{weight}" ratio="{ratio}" role="{fill:state}"
+        }
+        Text "{done} of {total} phases · {next}" role="muted"
+    }
+
+    // A plan stopped for the person, said once, at the top: the band over
+    // the agent is where it is answered.
+    Row gap=2 when="checkpoint" {
+        Icon "checkpoint" role="danger"
+        Text "{checkpoint.plan} needs you" role="danger" strong=#true
+        Text "{checkpoint.title}" role="secondary" truncate=#true grow=#true
+    }
+
+    Stack {
+        // The columns' names, over the marks.
+        Row gap=2 {
+            Text "" min-width=5
+            Text "" grow=#true
+            Text "DPEV" role="faint" min-width=4
+            Text "" min-width=5
+            Text "" min-width=9
+        }
+        Stack each="phases" {
+            Row gap=2 {
+                Icon "check" role="success" when="finished"
+                Text "▶" role="warning" when="front"
+                Text "·" role="faint" when="ahead"
+                Text "{number}" role="muted" min-width=2
+                Text "{name}" role="secondary" truncate=#true grow=#true when="finished"
+                Text "{name}" role="bright" strong=#true truncate=#true grow=#true when="front"
+                Text "{name}" role="muted" truncate=#true grow=#true when="ahead"
+                Row min-width=4 {
+                    Text "▮" role="{mark:state}" each="marks"
+                }
+                Text "{plans}" role="muted" min-width=5
+                Text "{status}" role="{tone}" truncate=#true min-width=9
+            }
+
+            // The phase in front: its goal, its plans wave by wave, and the
+            // button for its next step.
+            Stack when="front" {
+                Row when="front.goal" {
+                    Text "" min-width=7
+                    Text "{front.goal}" role="muted" truncate=#true grow=#true
+                }
+                Text "" when="front.listed"
+                Row gap=2 each="front.listed" {
+                    Text "" min-width=5
+                    Text "{lead}" role="faint" min-width=6
+                    Row gap=1 {
+                        Icon "check" role="success" when="done"
+                        Icon "checkpoint" role="danger" when="waiting"
+                        Text "○" role="faint" when="pending"
+                        Text "{id}" role="muted" min-width=4
+                    }
+                    Text "{title}" role="{plan:state}" truncate=#true grow=#true
+                }
+                Text "" unless="front.waiting"
+                Row align="end" unless="front.waiting" {
+                    Button "{front.label}" action="next" item="{front}" primary=#true
+                }
+                Text ""
+            }
+        }
+    }
+}
+</view>

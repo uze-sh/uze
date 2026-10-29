@@ -4,8 +4,8 @@
 use super::WorkspaceHit;
 use super::support::*;
 use super::{
-    ExtensionHit, GitAnswer, GitBadge, GitResolution, WorkStateView, WorkspaceModel,
-    open_architect, open_code, open_spec,
+    ExtensionHit, GitBadge, GitResolution, WorkStateView, WorkspaceModel, open_architect,
+    open_code, open_spec,
     render::{LeadingSlot, render_tab_strip},
 };
 use crate::ui::theme::{self, Token};
@@ -49,13 +49,13 @@ fn chip_colors(model: &WorkspaceModel, rect: Rect) -> (Color, Color) {
 fn an_open_surface_is_drawn_where_the_pane_is() {
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
-    open_code(&mut model, uze_extensions::code::ContentMode::Contents);
+    open_code(&mut model, uze_extensions::code::FILES);
 
     let layout = full_frame(&mut model);
     let extension_hits: Vec<Rect> = model
         .hits
         .iter()
-        .filter(|(_, hit)| matches!(hit, WorkspaceHit::Extension(ExtensionHit::Code(_))))
+        .filter(|(_, hit)| matches!(hit, WorkspaceHit::Extension(ExtensionHit { .. })))
         .map(|(rect, _)| *rect)
         .collect();
     assert!(!extension_hits.is_empty(), "the surface is drawn");
@@ -94,14 +94,10 @@ fn an_open_surface_is_drawn_where_the_pane_is() {
 #[test]
 fn an_open_surface_leaves_the_sidebar_its_own() {
     for open in [
-        (|model: &mut WorkspaceModel| open_code(model, uze_extensions::code::ContentMode::Contents))
+        (|model: &mut WorkspaceModel| open_code(model, uze_extensions::code::FILES))
             as fn(&mut WorkspaceModel),
-        |model| model.spec = Some(uze_extensions::spec::SpecView::opening("/repo".to_owned())),
-        |model| {
-            model.architect = Some(uze_extensions::architect::ArchitectView::opening(
-                "/repo".to_owned(),
-            ))
-        },
+        |model| open_spec(model),
+        |model| open_architect(model),
     ] {
         let (mut model, first, _second) = two_agents_with_shells();
         select_tab(&mut model, first);
@@ -110,7 +106,7 @@ fn an_open_surface_leaves_the_sidebar_its_own() {
         let over: Vec<_> = model
             .hits
             .iter()
-            .filter(|(rect, hit)| hit.is_open_surfaces() && layout.sidebar.intersects(*rect))
+            .filter(|(rect, hit)| model.is_open_surfaces(*hit) && layout.sidebar.intersects(*rect))
             .collect();
         assert!(over.is_empty(), "over the sidebar: {over:?}");
     }
@@ -132,7 +128,7 @@ fn the_strip_lights_one_thing_the_one_in_the_pane() {
     assert_eq!(chip_colors(&model, tab).1, raised, "the tab, at first");
     assert_eq!(chip_colors(&model, button), (resting, raised));
 
-    open_code(&mut model, uze_extensions::code::ContentMode::Contents);
+    open_code(&mut model, uze_extensions::code::FILES);
     let layout = full_frame(&mut model);
     assert!(
         !model.hits.iter().any(|(rect, hit)| {
@@ -162,9 +158,9 @@ fn the_surface_chords_walk_between_surfaces_without_closing_first() {
     let showing = |driven: &Driven<'_>| {
         let model = &driven.attach.model;
         match (
-            model.code.as_ref().map(CodeView::showing),
-            model.architect.is_some(),
-            model.spec.is_some(),
+            code_view(model).map(CodeView::showing),
+            model.showing(uze_extensions::architect::CATALOG.id),
+            model.showing(uze_extensions::spec::CATALOG.id),
         ) {
             (Some(mode), false, false) => format!("code {mode:?}"),
             (None, true, false) => "architect".to_owned(),
@@ -209,7 +205,7 @@ fn a_lit_surface_button_closes_it_in_one_click() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-lit-button"));
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
-    open_code(&mut model, uze_extensions::code::ContentMode::Diff);
+    open_code(&mut model, uze_extensions::code::CHANGES);
     let mut driven = driven(model, &home);
     driven.frame();
 
@@ -222,7 +218,13 @@ fn a_lit_surface_button_closes_it_in_one_click() {
         .map(|(rect, _)| *rect)
         .expect("the code button");
     driven.press(button.x, button.y);
-    assert!(driven.attach.model.code.is_none(), "closed in one click");
+    assert!(
+        !driven
+            .attach
+            .model
+            .showing(uze_extensions::code::CATALOG.id),
+        "closed in one click"
+    );
 }
 
 #[test]
@@ -259,14 +261,36 @@ fn the_spec_button_opens_and_closes_the_spec_surface() {
 
     let button = hit_rect(&driven.attach.model, WorkspaceHit::OpenSpec);
     driven.press(button.x, button.y);
-    assert!(driven.attach.model.spec.is_some(), "opened by its button");
-    assert!(driven.attach.model.code.is_none());
-    assert!(driven.attach.model.architect.is_none());
+    assert!(
+        driven
+            .attach
+            .model
+            .showing(uze_extensions::spec::CATALOG.id),
+        "opened by its button"
+    );
+    assert!(
+        !driven
+            .attach
+            .model
+            .showing(uze_extensions::code::CATALOG.id)
+    );
+    assert!(
+        !driven
+            .attach
+            .model
+            .showing(uze_extensions::architect::CATALOG.id)
+    );
 
     driven.frame();
     let button = hit_rect(&driven.attach.model, WorkspaceHit::OpenSpec);
     driven.press(button.x, button.y);
-    assert!(driven.attach.model.spec.is_none(), "closed in one click");
+    assert!(
+        !driven
+            .attach
+            .model
+            .showing(uze_extensions::spec::CATALOG.id),
+        "closed in one click"
+    );
 }
 
 fn switched_off(ids: &[&str]) -> std::collections::BTreeSet<String> {
@@ -284,7 +308,10 @@ fn an_extension_switched_off_leaves_the_strip_the_keys_and_the_index() {
     select_tab(&mut model, first);
     open_architect(&mut model);
     model.follow_extension_switch(switched_off(&[uze_extensions::architect::CATALOG.id]));
-    assert!(model.architect.is_none(), "the open surface closed");
+    assert!(
+        !model.showing(uze_extensions::architect::CATALOG.id),
+        "the open surface closed"
+    );
 
     let mut driven = driven(model, &home);
     driven.frame();
@@ -302,7 +329,10 @@ fn an_extension_switched_off_leaves_the_strip_the_keys_and_the_index() {
     driven.sent();
     driven.press_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::ALT));
     assert!(
-        driven.attach.model.architect.is_none(),
+        !driven
+            .attach
+            .model
+            .showing(uze_extensions::architect::CATALOG.id),
         "its key opens nothing"
     );
     assert!(
@@ -372,17 +402,23 @@ fn a_switched_off_extension_reads_nothing_for_the_sidebar() {
         uze_extensions::code::CATALOG.id,
         uze_extensions::spec::CATALOG.id,
     ]));
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-switched-off-reads",
+    ));
     let (git, _git_answers) = std::sync::mpsc::channel();
-    let (summary, _summary_answers) = std::sync::mpsc::channel();
+    let (engines, _engine_answers) = std::sync::mpsc::channel();
 
     model.schedule_git_read(&git);
-    model.schedule_spec_summary(&summary);
+    assert_eq!(
+        model.schedule_engine_jobs(&home, &engines),
+        0,
+        "the spec counts nothing"
+    );
 
     assert!(model.remembered.git_pending.is_none());
-    assert!(model.remembered.spec_summary_pending.is_none());
     assert!(!model.absorb_git_read(GitResolution {
         cwd: PathBuf::from("/repo"),
-        answer: GitAnswer::Summary(None),
+        summary: None,
         took: Duration::ZERO,
     }));
     assert!(model.remembered.git_badge.is_none());
@@ -396,11 +432,11 @@ fn an_extension_switched_back_on_opens_again() {
     select_tab(&mut model, first);
     model.follow_extension_switch(switched_off(&[uze_extensions::spec::CATALOG.id]));
     open_spec(&mut model);
-    assert!(model.spec.is_none());
+    assert!(!model.showing(uze_extensions::spec::CATALOG.id));
 
     model.follow_extension_switch(std::collections::BTreeSet::new());
     open_spec(&mut model);
-    assert!(model.spec.is_some());
+    assert!(model.showing(uze_extensions::spec::CATALOG.id));
 }
 
 /// The surface seals the keyboard: a letter it has no use for is not
@@ -418,7 +454,12 @@ fn a_key_typed_over_the_spec_surface_does_not_reach_the_pane() {
 
     driven.press_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
 
-    assert!(driven.attach.model.spec.is_some());
+    assert!(
+        driven
+            .attach
+            .model
+            .showing(uze_extensions::spec::CATALOG.id)
+    );
     assert!(
         !driven
             .sent()
@@ -435,8 +476,8 @@ fn a_key_typed_over_the_spec_surface_does_not_reach_the_pane() {
 fn a_surface_button_goes_out_without_a_press_flash() {
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
-    open_code(&mut model, uze_extensions::code::ContentMode::Contents);
-    model.close_code();
+    open_code(&mut model, uze_extensions::code::FILES);
+    model.close_surface();
     model.pressed = Some((WorkspaceHit::OpenFiles, std::time::Instant::now()));
     model.hovered = Some(WorkspaceHit::OpenFiles);
 
@@ -471,10 +512,22 @@ fn two_quick_clicks_on_a_surface_button_open_and_close_it() {
         .expect("the code button");
 
     driven.press(button.x, button.y);
-    assert!(driven.attach.model.code.is_some(), "the first opens");
+    assert!(
+        driven
+            .attach
+            .model
+            .showing(uze_extensions::code::CATALOG.id),
+        "the first opens"
+    );
     driven.frame();
     driven.press(button.x, button.y);
-    assert!(driven.attach.model.code.is_none(), "the second closes");
+    assert!(
+        !driven
+            .attach
+            .model
+            .showing(uze_extensions::code::CATALOG.id),
+        "the second closes"
+    );
 }
 
 /// Choosing a tab is choosing to see it — the one already in front
@@ -484,7 +537,7 @@ fn choosing_a_tab_puts_the_open_surface_away() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-surface-tab"));
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
-    open_code(&mut model, uze_extensions::code::ContentMode::Contents);
+    open_code(&mut model, uze_extensions::code::FILES);
     let mut driven = driven(model, &home);
     driven.frame();
 
@@ -497,7 +550,12 @@ fn choosing_a_tab_puts_the_open_surface_away() {
         .map(|(rect, _)| *rect)
         .expect("the agent's own row");
     driven.press(tab.x, tab.y);
-    assert!(driven.attach.model.code.is_none());
+    assert!(
+        !driven
+            .attach
+            .model
+            .showing(uze_extensions::code::CATALOG.id)
+    );
 }
 
 /// A command handed to a new shell is typed into the pane that shell
@@ -547,7 +605,10 @@ fn another_tab_in_front_puts_the_open_surface_away() {
         ClientEvent::SessionUpdated { session },
         &identities_fixture(),
     );
-    assert!(model.architect.is_some(), "the same tab in front keeps it");
+    assert!(
+        model.showing(uze_extensions::architect::CATALOG.id),
+        "the same tab in front keeps it"
+    );
 
     let mut session = model.session.clone().expect("session");
     session.select_tab(second);
@@ -555,7 +616,7 @@ fn another_tab_in_front_puts_the_open_surface_away() {
         ClientEvent::SessionUpdated { session },
         &identities_fixture(),
     );
-    assert!(model.architect.is_none());
+    assert!(!model.showing(uze_extensions::architect::CATALOG.id));
 }
 
 /// A group of buttons is one ground with a seam where the fills
@@ -631,8 +692,6 @@ fn the_changes_count_answers_with_its_hue_and_never_with_a_ground() {
             additions: 476,
             deletions: 286,
         }),
-        timeline: None,
-        timeline_checked_at: Instant::now(),
         checked_at: Instant::now(),
     });
     let (_, hits) = tab_strip(&model);
@@ -721,8 +780,6 @@ fn the_changes_badge_comes_with_the_work_and_the_code_button_never_leaves() {
             additions: 3,
             deletions: 1,
         }),
-        timeline: None,
-        timeline_checked_at: Instant::now(),
         checked_at: Instant::now(),
     });
     full_frame(&mut model);
@@ -757,7 +814,7 @@ fn clicking_a_surface_footer_hint_is_pressing_its_key() {
             code::ContentMode::Contents,
         );
         view.take_request();
-        model.code = Some(view);
+        show_code(&mut model, view);
         model
     };
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-hint-click"));
@@ -782,6 +839,18 @@ fn clicking_a_surface_footer_hint_is_pressing_its_key() {
     pressed.frame();
     pressed.press_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
-    assert!(clicked.attach.model.code.is_none(), "the click closed it");
-    assert!(pressed.attach.model.code.is_none(), "as the key does");
+    assert!(
+        !clicked
+            .attach
+            .model
+            .showing(uze_extensions::code::CATALOG.id),
+        "the click closed it"
+    );
+    assert!(
+        !pressed
+            .attach
+            .model
+            .showing(uze_extensions::code::CATALOG.id),
+        "as the key does"
+    );
 }

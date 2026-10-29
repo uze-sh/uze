@@ -39,7 +39,11 @@ fn bundled() -> &'static SyntaxSet {
 /// Grammars `two-face` ships only for onig: their upstream regexes once
 /// used what `fancy-regex` cannot compile, and onig is C, which this crate
 /// keeps out of the tree. Each is the upstream file with its licence
-/// beside it in `grammars/`.
+/// beside it in `grammars/`, except KDL, which `two-face` lacks and whose
+/// community grammar needs Oniguruma and Sublime's `extends`, and Rhai,
+/// which `two-face` lacks and whose community grammars are TextMate's:
+/// UZE wrote those two, since an extension's views are KDL and its
+/// scripts Rhai.
 ///
 /// A set of their own rather than added to [`bundled`]: adding one
 /// relinks every grammar in the dump, half a second before the first line
@@ -56,7 +60,11 @@ fn vendored() -> &'static SyntaxSet {
     })
 }
 
-const VENDORED_SOURCES: &[&str] = &[include_str!("../../grammars/PowerShell.sublime-syntax")];
+const VENDORED_SOURCES: &[&str] = &[
+    include_str!("../../grammars/PowerShell.sublime-syntax"),
+    include_str!("../../grammars/KDL.sublime-syntax"),
+    include_str!("../../grammars/Rhai.sublime-syntax"),
+];
 
 fn vendored_definitions() -> impl Iterator<Item = SyntaxDefinition> {
     VENDORED_SOURCES.iter().map(|source| {
@@ -105,6 +113,22 @@ fn plain_text() -> Grammar {
 pub(crate) struct Highlighter {
     lines: HighlightLines<'static>,
     set: &'static SyntaxSet,
+    /// Whether it reads Markdown, whose fences may name a language only a
+    /// vendored grammar knows.
+    markdown: bool,
+    /// Whether it reads a component (`.uze`), whose blocks are read each in
+    /// its language between its tag lines (`extension-components` D7).
+    component: bool,
+    /// The fence being read with a vendored grammar, while one is open.
+    fence: Option<Box<Fence>>,
+}
+
+/// A Markdown fence whose language the Markdown grammar cannot embed,
+/// since that grammar knows only the bundled set: its lines are coloured
+/// by a highlighter of their own until the fence closes.
+struct Fence {
+    marker: String,
+    inner: Highlighter,
 }
 
 impl Highlighter {
@@ -112,8 +136,71 @@ impl Highlighter {
         Self {
             lines: HighlightLines::new(grammar.syntax, theme(theme_name)),
             set: grammar.set,
+            markdown: grammar.syntax.name == "Markdown",
+            component: false,
+            fence: None,
         }
     }
+
+    /// A component's: its tag lines read as markup, each block as its
+    /// language.
+    fn component(theme_name: &str) -> Self {
+        let markup = find(|set| set.find_syntax_by_token("html")).unwrap_or_else(plain_text);
+        Self {
+            component: true,
+            ..Self::new(markup, theme_name)
+        }
+    }
+}
+
+/// The grammar a component's block of `kind` is read with.
+fn block_grammar(kind: uze_contract::component::BlockKind) -> Grammar {
+    let name = match kind {
+        uze_contract::component::BlockKind::View => "KDL",
+        uze_contract::component::BlockKind::Script => "Rhai",
+    };
+    find(|set| set.find_syntax_by_name(name)).unwrap_or_else(plain_text)
+}
+
+/// The marker and info string of a line opening a Markdown fence: up to
+/// three spaces, then three or more backticks or tildes.
+fn fence_opened(text: &str) -> Option<(String, &str)> {
+    let indent = text.len() - text.trim_start_matches(' ').len();
+    if indent > 3 {
+        return None;
+    }
+    let rest = &text[indent..];
+    let mark = rest.chars().next().filter(|ch| matches!(ch, '`' | '~'))?;
+    let run = rest.len() - rest.trim_start_matches(mark).len();
+    (run >= 3).then(|| (rest[..run].to_owned(), rest[run..].trim()))
+}
+
+/// Whether `text` closes the fence `marker` opened: as many of its
+/// characters or more, and nothing after them.
+fn fence_closed(text: &str, marker: &str) -> bool {
+    let trimmed = text.trim();
+    let Some(mark) = marker.chars().next() else {
+        return false;
+    };
+    trimmed.len() >= marker.len() && trimmed.chars().all(|ch| ch == mark)
+}
+
+/// The vendored grammar a fence's info string names, when the bundled set,
+/// which the Markdown grammar embeds from, has none of that name.
+fn vendored_fence_grammar(info: &str) -> Option<Grammar> {
+    let token = info
+        .trim_start_matches(['{', '.'])
+        .split([',', ' ', '{', '}'])
+        .next()
+        .unwrap_or_default();
+    if token.is_empty() || bundled().find_syntax_by_token(token).is_some() {
+        return None;
+    }
+    let set = vendored();
+    Some(Grammar {
+        set,
+        syntax: set.find_syntax_by_token(token)?,
+    })
 }
 
 fn theme_set() -> &'static ThemeSet {
@@ -143,6 +230,12 @@ pub(crate) fn theme(name: &str) -> &'static Theme {
 /// `first_line` is the file's own, when there is one to hand — see
 /// [`grammar_for`].
 pub(crate) fn highlighter(path: &Path, first_line: Option<&str>, theme_name: &str) -> Highlighter {
+    let is_component = path
+        .to_str()
+        .is_some_and(uze_contract::component::is_component);
+    if is_component {
+        return Highlighter::component(theme_name);
+    }
     Highlighter::new(grammar_for(path, first_line), theme_name)
 }
 
@@ -282,6 +375,51 @@ pub(crate) fn line(
     text: &str,
     theme_name: &str,
 ) -> Vec<(Rgb, String)> {
+    if highlighter.markdown {
+        // The fence's own lines go through the Markdown grammar, which
+        // keeps its state of a fence opened and closed; only what is
+        // between them is read with the fence's language.
+        match &mut highlighter.fence {
+            Some(fence) if fence_closed(text, &fence.marker) => highlighter.fence = None,
+            Some(fence) => return line(&mut fence.inner, text, theme_name),
+            None => {
+                if let Some((marker, grammar)) = fence_opened(text)
+                    .and_then(|(marker, info)| Some((marker, vendored_fence_grammar(info)?)))
+                {
+                    let opened = own_line(highlighter, text, theme_name);
+                    highlighter.fence = Some(Box::new(Fence {
+                        marker,
+                        inner: Highlighter::new(grammar, theme_name),
+                    }));
+                    return opened;
+                }
+            }
+        }
+    }
+    if highlighter.component {
+        // The block rule is the contract's, the one every reader of a
+        // component follows; a tag line is markup, what is between two a
+        // block in its language.
+        use uze_contract::component::{Tag, tag_of};
+        match (tag_of(text), &mut highlighter.fence) {
+            (Some(Tag::Open(kind)), None) => {
+                let opened = own_line(highlighter, text, theme_name);
+                highlighter.fence = Some(Box::new(Fence {
+                    marker: String::new(),
+                    inner: Highlighter::new(block_grammar(kind), theme_name),
+                }));
+                return opened;
+            }
+            (Some(Tag::Close(_)), Some(_)) => highlighter.fence = None,
+            (_, Some(fence)) => return line(&mut fence.inner, text, theme_name),
+            _ => {}
+        }
+    }
+    own_line(highlighter, text, theme_name)
+}
+
+/// One line in `highlighter`'s own grammar.
+fn own_line(highlighter: &mut Highlighter, text: &str, theme_name: &str) -> Vec<(Rgb, String)> {
     // syntect's line-oriented highlighter expects a trailing newline
     // (matches `load_defaults_newlines` above) to track multi-line
     // constructs correctly across calls.
@@ -345,7 +483,12 @@ mod tests {
 
     use syntect::parsing::{Regex, syntax_definition::Pattern};
 
-    use super::{FALLBACK_SYNTAX_THEME, highlighter, vendored_definitions};
+    use syntect::parsing::{ParseState, ScopeStack, ScopeStackOp};
+
+    use super::{
+        FALLBACK_SYNTAX_THEME, highlighter, highlighter_for_language, line, lines, plain,
+        syntax_for, vendored_definitions,
+    };
 
     /// syntect compiles a pattern the first time a line reaches it, and a
     /// pattern `fancy-regex` refuses turns the rest of the file plain —
@@ -363,6 +506,16 @@ mod tests {
                                 return None;
                             };
                             let regex = pattern.regex.regex_str().to_owned();
+                            // A back reference to the match that pushed
+                            // the context is filled in when a line
+                            // reaches it; any text stands in for it here.
+                            let regex = if pattern.has_captures {
+                                (1..=9).fold(regex, |regex, group| {
+                                    regex.replace(&format!("\\{group}"), "#")
+                                })
+                            } else {
+                                regex
+                            };
                             Regex::try_compile(&regex)
                                 .map(|error| format!("{name}: {regex}\n  {error}"))
                         })
@@ -393,5 +546,462 @@ mod tests {
                 .highlight_line(&format!("{line}\n"), highlighter.set)
                 .unwrap_or_else(|error| panic!("{line:?}: {error}"));
         }
+    }
+
+    const KDL_SAMPLE: &str = r###"lookup "tone" default="muted" {
+    done "success"
+}
+Stack gap=1 {
+    Text "GSD · {version}" role="muted" grow=#true
+    Segment weight=19 ratio=0.89
+    /- Button "hidden" action="x"
+    Log lines=#"raw {x}"#
+    Badge (u8)3
+    Text """
+        multi
+        """
+}
+"###;
+
+    /// The scopes syntect gives each piece of `text` read as `path`, one
+    /// `(scope stack, piece)` per piece, the innermost scope last.
+    fn scoped(path: &str, text: &str) -> Vec<(String, String)> {
+        let grammar = super::grammar_for(Path::new(path), text.lines().next());
+        let mut state = ParseState::new(grammar.syntax);
+        let mut stack = ScopeStack::new();
+        let mut pieces = Vec::new();
+        for line in text.lines() {
+            let line = format!("{line}\n");
+            let ops = state
+                .parse_line(&line, grammar.set)
+                .unwrap_or_else(|error| panic!("{line:?}: {error}"));
+            let mut start = 0;
+            for (end, op) in ops.into_iter().chain([(line.len(), ScopeStackOp::Noop)]) {
+                if end > start {
+                    let scopes = stack
+                        .as_slice()
+                        .iter()
+                        .map(|scope| scope.build_string())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    pieces.push((scopes, line[start..end].to_owned()));
+                    start = end;
+                }
+                stack.apply(&op).expect("the grammar's scope ops balance");
+            }
+        }
+        pieces
+    }
+
+    /// The scopes of the piece that is `needle`, or else of the first that
+    /// holds it.
+    fn scope_of<'a>(pieces: &'a [(String, String)], needle: &str) -> &'a str {
+        pieces
+            .iter()
+            .find(|(_, piece)| piece == needle)
+            .or_else(|| pieces.iter().find(|(_, piece)| piece.contains(needle)))
+            .map(|(scopes, _)| scopes.as_str())
+            .unwrap_or_else(|| panic!("{needle:?} is not one piece of {pieces:#?}"))
+    }
+
+    #[test]
+    fn a_kdl_file_resolves_to_the_vendored_kdl_grammar() {
+        for path in ["board.kdl", "extension.kdl", "board.test.kdl"] {
+            assert_eq!(syntax_for(Path::new(path), None).name, "KDL", "{path}");
+        }
+    }
+
+    #[test]
+    fn a_kdl_fence_is_read_with_the_kdl_grammar() {
+        let mut highlighter = highlighter_for_language("kdl", FALLBACK_SYNTAX_THEME);
+        let spans = line(
+            &mut highlighter,
+            "Text \"hi\" grow=#true",
+            FALLBACK_SYNTAX_THEME,
+        );
+        assert!(spans.len() > 1, "a kdl fence is coloured: {spans:?}");
+    }
+
+    #[test]
+    fn a_kdl_fence_in_a_markdown_file_is_coloured_as_kdl() {
+        let text = "# Notes\n\n```kdl\nText \"{name}\" strong=#true\n```\n\nafter\n";
+        let coloured = lines(text, Path::new("NOTES.md"), FALLBACK_SYNTAX_THEME, 100);
+        let fenced = &coloured[3];
+        assert!(fenced.len() > 1, "the fence's line is coloured: {fenced:?}");
+        let mut alone = highlighter_for_language("kdl", FALLBACK_SYNTAX_THEME);
+        assert_eq!(
+            *fenced,
+            line(
+                &mut alone,
+                "Text \"{name}\" strong=#true",
+                FALLBACK_SYNTAX_THEME
+            ),
+            "as the KDL grammar colours it"
+        );
+        let after = &coloured[6];
+        let plain_after = lines("after\n", Path::new("NOTES.md"), FALLBACK_SYNTAX_THEME, 1);
+        assert_eq!(*after, plain_after[0], "the fence closed: {after:?}");
+    }
+
+    #[test]
+    fn a_kdl_v2_document_is_scoped_piece_by_piece() {
+        let pieces = scoped("board.kdl", KDL_SAMPLE);
+        let expectations = [
+            ("lookup", "entity.name.tag"),
+            ("Stack", "entity.name.tag"),
+            ("done", "entity.name.tag"),
+            ("default", "entity.other.attribute-name"),
+            ("success", "string.quoted.double"),
+            ("GSD", "string.quoted.double"),
+            ("version", "variable.other"),
+            ("#true", "constant.language"),
+            ("19", "constant.numeric"),
+            ("0.89", "constant.numeric"),
+            ("Button", "comment.block.slashdash"),
+            ("raw ", "string.quoted.double.raw"),
+            ("u8", "storage.type"),
+            ("3", "constant.numeric"),
+            ("multi", "string.quoted.triple"),
+        ];
+        for (needle, scope) in expectations {
+            let scopes = scope_of(&pieces, needle);
+            assert!(
+                scopes.contains(scope),
+                "{needle:?} is {scopes:?}, not {scope}"
+            );
+        }
+        assert!(
+            !scope_of(&pieces, "Log").contains("comment"),
+            "a slashdash comments out one node, not the ones after it"
+        );
+    }
+
+    #[test]
+    fn kdl_v2_comments_numbers_and_raw_strings_of_every_shape_are_scoped() {
+        let pieces = scoped(
+            "edge.kdl",
+            concat!(
+                "/* outer /* inner */ still */ node 0xFF_ff 0o17 0b1_0 #-inf\n",
+                "node2 r=##\"has \"# inside\"## key=#nan /-{\n",
+                "    gone 1\n",
+                "} kept // tail\n",
+                "after #\"\"\"\n",
+                "raw lines\n",
+                "\"\"\"#\n",
+            ),
+        );
+        let expectations = [
+            ("still", "comment.block"),
+            ("node", "entity.name.tag"),
+            ("0xFF_ff", "constant.numeric"),
+            ("0o17", "constant.numeric"),
+            ("0b1_0", "constant.numeric"),
+            ("#-inf", "constant.language"),
+            ("#nan", "constant.language"),
+            ("inside", "string.quoted.double.raw"),
+            ("gone", "comment.block.slashdash"),
+            ("kept", "string.unquoted"),
+            ("tail", "comment.line"),
+            ("after", "entity.name.tag"),
+            ("raw lines", "string.quoted.triple.raw"),
+        ];
+        for (needle, scope) in expectations {
+            let scopes = scope_of(&pieces, needle);
+            assert!(
+                scopes.contains(scope),
+                "{needle:?} is {scopes:?}, not {scope}"
+            );
+        }
+    }
+
+    /// Scopes the theme has no colour for would still draw as plain text,
+    /// so each kind of piece is checked against the colour it is drawn in.
+    #[test]
+    fn a_kdl_v2_document_is_coloured_apart_from_plain_text() {
+        let coloured = lines(
+            KDL_SAMPLE,
+            Path::new("board.kdl"),
+            FALLBACK_SYNTAX_THEME,
+            100,
+        );
+        let colour_of = |needle: &str| {
+            coloured
+                .iter()
+                .flatten()
+                .find(|(_, piece)| piece.contains(needle))
+                .map(|(colour, _)| *colour)
+                .unwrap_or_else(|| panic!("{needle:?} was not drawn"))
+        };
+        let foreground = plain(FALLBACK_SYNTAX_THEME, "")[0].0;
+        let kinds = [
+            ("node name", "Stack"),
+            ("string", "GSD"),
+            ("keyword", "#true"),
+            ("number", "19"),
+            ("raw string", "raw "),
+            ("multi-line string", "multi"),
+            ("slashdash", "Button"),
+            ("type annotation", "u8"),
+        ];
+        for (kind, needle) in kinds {
+            assert_ne!(colour_of(needle), foreground, "a {kind} is coloured");
+        }
+        assert_ne!(
+            colour_of("Stack"),
+            colour_of("GSD"),
+            "a node name is not a string"
+        );
+        assert_ne!(
+            colour_of("Button"),
+            colour_of("Text"),
+            "a commented node is not a node"
+        );
+    }
+
+    const RHAI_SAMPLE: &str = r###"/// The board's answer.
+fn answer(input, context) {
+    let state = read_checkout(".planning/STATE.md");
+    const LIMIT = 0x1F_ff;
+    let shown = `${state.len()} of ${ #{ n: LIMIT }.n } lines`;
+    /* outer /* inner */ still */
+    for line in 0..=10 { if line == () { break; } }
+    let next = |x| x + 1.5e3;
+    let raw = #"no \n escape"#;
+    let ch = 'x';
+    input?.title ?? this.title;
+    #{ data: #{ lines: state.split("\n").len(), done: true }, mask: 0b1_0 }
+}
+"###;
+
+    #[test]
+    fn a_rhai_file_resolves_to_the_vendored_rhai_grammar() {
+        for path in ["board.rhai", "state.rhai", "gsd-band/board.rhai"] {
+            assert_eq!(syntax_for(Path::new(path), None).name, "Rhai", "{path}");
+        }
+    }
+
+    #[test]
+    fn a_rhai_fence_is_read_with_the_rhai_grammar() {
+        let mut highlighter = highlighter_for_language("rhai", FALLBACK_SYNTAX_THEME);
+        let spans = line(
+            &mut highlighter,
+            "let x = #{ a: \"hi\" };",
+            FALLBACK_SYNTAX_THEME,
+        );
+        assert!(spans.len() > 1, "a rhai fence is coloured: {spans:?}");
+    }
+
+    #[test]
+    fn a_rhai_script_is_scoped_piece_by_piece() {
+        let pieces = scoped("board.rhai", RHAI_SAMPLE);
+        let expectations = [
+            ("The board's answer.", "comment.line.documentation"),
+            ("fn", "storage.type.function"),
+            ("answer", "entity.name.function"),
+            ("let", "storage.type"),
+            ("const", "storage.type"),
+            ("read_checkout", "variable.function"),
+            (".planning/STATE.md", "string.quoted.double"),
+            ("0x1F_ff", "constant.numeric.integer.hexadecimal"),
+            (" of ", "string.quoted.other.template"),
+            ("${", "punctuation.section.interpolation.begin"),
+            ("#{", "punctuation.section.mapping.begin"),
+            ("n", "entity.other.attribute-name"),
+            ("still", "comment.block"),
+            ("for", "keyword.control"),
+            ("in", "keyword.control"),
+            ("..=", "keyword.operator.range"),
+            ("10", "constant.numeric"),
+            ("()", "constant.language.unit"),
+            ("break", "keyword.control"),
+            ("x", "variable.parameter"),
+            ("1.5e3", "constant.numeric.decimal"),
+            ("no \\n escape", "string.quoted.double.raw"),
+            ("'x'", "constant.character"),
+            ("?.", "punctuation.accessor"),
+            ("??", "keyword.operator.null-coalescing"),
+            ("this", "variable.language.this"),
+            ("split", "variable.function.method"),
+            ("\\n", "constant.character.escape"),
+            ("data", "entity.other.attribute-name"),
+            ("true", "constant.language.boolean"),
+            ("0b1_0", "constant.numeric.integer.binary"),
+        ];
+        for (needle, scope) in expectations {
+            let scopes = scope_of(&pieces, needle);
+            assert!(
+                scopes.contains(scope),
+                "{needle:?} is {scopes:?}, not {scope}"
+            );
+        }
+    }
+
+    /// Inside `${ … }` the text is code again, not the string around it,
+    /// and the string resumes after the `}` that closes it, however many
+    /// braces the code opened.
+    #[test]
+    fn a_rhai_interpolation_reads_code_inside_a_template_string() {
+        let pieces = scoped("board.rhai", RHAI_SAMPLE);
+        let interpolated = |needle: &str| {
+            pieces
+                .iter()
+                .find(|(scopes, piece)| piece == needle && scopes.contains("meta.interpolation"))
+                .map(|(scopes, _)| scopes.as_str())
+                .unwrap_or_else(|| panic!("{needle:?} is not interpolated in {pieces:#?}"))
+        };
+        for needle in ["state", "len", "LIMIT"] {
+            assert!(
+                !interpolated(needle).contains("string"),
+                "{needle:?} inside ${{…}} is code"
+            );
+        }
+        assert!(scope_of(&pieces, " lines").contains("string.quoted.other.template"));
+        assert!(
+            !scope_of(&pieces, "/*").contains("string"),
+            "the template string ends at its back-tick"
+        );
+    }
+
+    /// A `|` between two operands is an operator, and the parentheses of a
+    /// call are not the unit value.
+    #[test]
+    fn a_rhai_bitwise_or_and_an_empty_call_are_not_mistaken() {
+        let pieces = scoped("edge.rhai", "let m = a | b | c;\nlet t = now();\n");
+        assert!(
+            !scope_of(&pieces, "b").contains("variable.parameter"),
+            "{pieces:#?}"
+        );
+        assert!(
+            !scope_of(&pieces, "(").contains("constant.language.unit"),
+            "{pieces:#?}"
+        );
+    }
+
+    /// Scopes the theme has no colour for would still draw as plain text,
+    /// so each kind of piece is checked against the colour it is drawn in.
+    #[test]
+    fn a_rhai_script_is_coloured_apart_from_plain_text() {
+        let coloured = lines(
+            RHAI_SAMPLE,
+            Path::new("board.rhai"),
+            FALLBACK_SYNTAX_THEME,
+            100,
+        );
+        let colour_of = |needle: &str| {
+            coloured
+                .iter()
+                .flatten()
+                .find(|(_, piece)| piece.contains(needle))
+                .map(|(colour, _)| *colour)
+                .unwrap_or_else(|| panic!("{needle:?} was not drawn"))
+        };
+        let foreground = plain(FALLBACK_SYNTAX_THEME, "")[0].0;
+        let kinds = [
+            ("keyword", "let"),
+            ("function name", "answer"),
+            ("string", ".planning/STATE.md"),
+            ("template string", " of "),
+            ("number", "0x1F_ff"),
+            ("comment", "still"),
+            ("doc comment", "The board's answer."),
+            ("map key", "data"),
+        ];
+        for (kind, needle) in kinds {
+            assert_ne!(colour_of(needle), foreground, "a {kind} is coloured");
+        }
+        assert_ne!(
+            colour_of("let"),
+            colour_of(".planning/STATE.md"),
+            "a keyword is not a string"
+        );
+        assert_ne!(
+            colour_of("still"),
+            colour_of("0x1F_ff"),
+            "a comment is not a number"
+        );
+    }
+
+    /// The scripts extensions ship are read end to end: a pattern that
+    /// fails on one of their lines would turn the rest of the file plain.
+    #[test]
+    fn every_line_of_a_shipped_extension_script_parses_as_rhai() {
+        use uze_contract::component::{BlockKind, Component};
+        let script_of = |component: &'static str| {
+            let block = Component::read(component)
+                .unwrap()
+                .block(BlockKind::Script)
+                .unwrap();
+            &component[block.start..block.end]
+        };
+        let scripts = [
+            (
+                "board.rhai",
+                script_of(include_str!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../uze-core/src/package/authoring/board.uze.template"
+                ))),
+            ),
+            (
+                "state.rhai",
+                script_of(include_str!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../../tests/_fixtures/canonical/gsd/extensions/gsd-band/state.uze"
+                ))),
+            ),
+        ];
+        for (name, text) in scripts {
+            let path = Path::new(name);
+            assert_eq!(syntax_for(path, text.lines().next()).name, "Rhai");
+            let pieces = scoped(name, text);
+            assert!(
+                pieces
+                    .iter()
+                    .any(|(scopes, _)| scopes.contains("entity.name.function")),
+                "{name} names its function"
+            );
+            assert!(
+                pieces
+                    .iter()
+                    .any(|(scopes, _)| scopes.contains("meta.mapping")),
+                "{name} answers a map"
+            );
+        }
+    }
+
+    /// A component reads its tag lines as markup and each block in its own
+    /// language, so a view's node and a script's keyword are each coloured
+    /// as their file would colour them alone.
+    #[test]
+    fn a_component_colours_each_block_in_its_language() {
+        let text = "// The board.\n<view>\nStack gap=1 {\n    Text \"{title}\"\n}\n</view>\n\n<script>\nfn prev(input, context) { let offset = 1; }\n</script>\n";
+        let mut highlighter = highlighter(Path::new("board.uze"), None, FALLBACK_SYNTAX_THEME);
+        let drawn: Vec<Vec<(crate::view::Rgb, String)>> = text
+            .lines()
+            .map(|text| line(&mut highlighter, text, FALLBACK_SYNTAX_THEME))
+            .collect();
+        let colour_of = |needle: &str| {
+            drawn
+                .iter()
+                .flatten()
+                .find(|(_, piece)| piece.contains(needle))
+                .map(|(colour, _)| *colour)
+                .unwrap_or_else(|| panic!("{needle:?} was not drawn"))
+        };
+        let mut alone = highlighter_for_language("kdl", FALLBACK_SYNTAX_THEME);
+        let stack_alone = line(&mut alone, "Stack gap=1 {", FALLBACK_SYNTAX_THEME)
+            .into_iter()
+            .find(|(_, piece)| piece.contains("Stack"))
+            .unwrap()
+            .0;
+        assert_eq!(colour_of("Stack"), stack_alone, "the view is read as KDL");
+        let mut alone = highlighter_for_language("rhai", FALLBACK_SYNTAX_THEME);
+        let let_alone = line(&mut alone, "let offset = 1;", FALLBACK_SYNTAX_THEME)
+            .into_iter()
+            .find(|(_, piece)| piece.contains("let"))
+            .unwrap()
+            .0;
+        assert_eq!(colour_of("let"), let_alone, "the script is read as Rhai");
+        let foreground = plain(FALLBACK_SYNTAX_THEME, "")[0].0;
+        assert_ne!(colour_of("view"), foreground, "a tag line is markup");
     }
 }

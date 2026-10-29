@@ -1,14 +1,15 @@
 # UZE's own Skills
 
 `plugins/uze` is the one official plugin, and it is an ordinary Agent Plugins
-1.0 package: `plugin.json` plus a `skills/` directory. It carries four Skills.
+1.0 package: `plugin.json` plus a `skills/` directory. It carries six Skills.
 
 | Skill | What it reasons about |
 |---|---|
 | `uze:init` | Portable project context. Delegates every managed mutation to the deterministic Context Manager (`uze agent context inspect \| plan \| reconcile`) and never bypasses it — see [context-manager.md](context-manager.md). |
 | `uze:worktree` | For an agent `uze workspace` launched: working in the checkout it was placed in, naming its work (`uze agent work name`), committing on its own branch, giving subagents checkouts of their own (`uze agent work split \| join \| list`), and leaving delivery to UZE. It has no Context Manager mutation authority. |
+| `uze:rules` | A project's rules under `.agents/rules/`: whether an instruction is a rule, `AGENTS.md` or a Skill, the trigger and the glob dialect, moving a shared rule into a plugin, and `uze agent rules check` as the proof every rule is deliverable. |
 | `uze:architect` | The diagrams a project keeps under `workspace.artifacts`: which view a change belongs in, what the architect surface lists it as, and `uze agent artifacts check` as the only authority on whether it draws — the Skill never restates the accepted syntax, because the parser moves and a remembered grammar diverges from it silently. |
-| `uze:author` | Creating a plugin end to end: choosing or creating a marketplace (`uze agent market create`), scaffolding (`uze agent plugin create`), checking offline (`uze agent plugin check`) before `uze install -m <plugin>@<market>`, and iterating on the linked marketplace's files. It mutates nothing itself; the `uze agent` verbs do. |
+| `uze:author` | Creating a plugin end to end: choosing or creating a marketplace (`uze agent market create`), scaffolding (`uze agent plugin create`), checking offline (`uze agent plugin check`) before `uze install -m <plugin>@<market>`, and iterating on the linked marketplace's files. Its `references/extension.md` covers writing a declared extension the plugin carries: the `extension.kdl` manifest, a script or a program, grants, `.test.kdl` tests, and the consent and enabling the operator gives before it runs. It mutates nothing itself; the `uze agent` verbs do. |
 
 **The Skill reasons; `uze` mutates.** That boundary lives in each SKILL.md's
 own "Hard boundaries" section, not in Rust: `uze-core` has no idea these

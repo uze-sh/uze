@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "bridge",
+  "version": "1.0.0",
+  "description": "The agent bridge's reference extensions: every agent's state, a flight deck, chimes, a jump picker, a plan review and the next GSD step."
+}

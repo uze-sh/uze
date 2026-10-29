@@ -51,6 +51,10 @@ impl TuiModel {
             Overlay::None | Overlay::HarnessHelp | Overlay::Health => {}
             Overlay::ActionIndex { .. } => scopes.push(Scope::ActionIndex),
             Overlay::AddMarketplace(_) | Overlay::NewProfile(_) => scopes.push(Scope::TextPrompt),
+            Overlay::Preferences(ref editor) if editor.typing.is_some() => {
+                scopes.push(Scope::TextPrompt)
+            }
+            Overlay::Preferences(_) => scopes.push(Scope::ExtensionPreferences),
             Overlay::Confirm { .. } => scopes.push(Scope::Confirm),
             Overlay::ReleaseNotes(_) => scopes.push(Scope::ReleaseNotes),
         }
@@ -289,6 +293,20 @@ impl TuiModel {
             }
             Action::EnableExtension => self.switch_selected_extension(true),
             Action::DisableExtension => self.switch_selected_extension(false),
+            Action::ResolvePrograms => self.resolve_selected_programs(),
+            Action::EditPreferences => self.edit_selected_preferences(),
+            Action::ShowExtension => self
+                .shown_package_extension()
+                .map_or(Intent::None, |identity| self.show_extension(identity)),
+            Action::ShowPlugin => self
+                .selected_declared_identity()
+                .map_or(Intent::None, |identity| self.show_plugin_of(identity)),
+            Action::MoveItemUp if self.route == Route::Extensions => {
+                self.move_selected_status(true)
+            }
+            Action::MoveItemDown if self.route == Route::Extensions => {
+                self.move_selected_status(false)
+            }
             Action::AddMarketplace => {
                 self.overlay = Overlay::AddMarketplace(String::new());
                 Intent::None
@@ -450,7 +468,9 @@ impl TuiModel {
     /// the screen tabs.
     fn step_plugins_back(&mut self) {
         match self.plugin_tree_cursor() {
-            PluginTreeRow::Resource(position, _) => self.select_plugin_row(position, None),
+            PluginTreeRow::Resource(position, _) | PluginTreeRow::Extension(position, _) => {
+                self.select_plugin_row(position, None)
+            }
             PluginTreeRow::Plugin(_) => match self
                 .selected_marketplace_plugin()
                 .map(|plugin| (self.marketplace_plugin_id(&plugin), plugin.marketplace))
@@ -484,7 +504,7 @@ impl TuiModel {
                 self.expanded_plugins.insert(id);
                 self.marketplace_inspect_intent()
             }
-            PluginTreeRow::Resource(..) => Intent::None,
+            PluginTreeRow::Resource(..) | PluginTreeRow::Extension(..) => Intent::None,
         }
     }
 
@@ -559,6 +579,11 @@ impl TuiModel {
         match self.route {
             // The panel's first action: installing what is not there,
             // removing what is — each asked about before it happens.
+            // An extension a plugin declares is decided about on the
+            // Extensions screen; Enter goes there.
+            Route::Plugins if self.shown_package_extension().is_some() => {
+                self.act(Action::ShowExtension)
+            }
             Route::Plugins => match self
                 .selected_marketplace_plugin()
                 .and_then(|plugin| super::view::plugins::primary_offer(&plugin.offers()))
@@ -570,10 +595,16 @@ impl TuiModel {
             // drawer elsewhere. Editor: change the highlighted value.
             // Harnesses: no-op — toggling is the toggle action's job,
             // deliberately not doubled onto Enter.
-            // Enter switches an extension whichever way it is not.
+            // Enter switches an extension whichever way it is not: Enable
+            // when it is offered, Disable otherwise — except for one that
+            // waits for a project, which Enter must not switch off.
             Route::Extensions => match self.selected_extension() {
+                Some(extension) if self.extension_waits_for_a_project(extension) => Intent::None,
                 Some(extension) => {
-                    self.switch_selected_extension(!self.extension_enabled(extension.id))
+                    let enable = self.extension_offers(extension).iter().any(|offer| {
+                        offer.action == Action::EnableExtension && offer.is_available()
+                    });
+                    self.switch_selected_extension(enable)
                 }
                 None => Intent::None,
             },
@@ -678,6 +709,24 @@ impl TuiModel {
                     uze_extensions::view::ScrollDirection::Up
                 };
                 self.scroll_page(direction)
+            }
+            // Over an extension's preferences, only what the dialog drew
+            // lights: the screen under its scrim answers nothing.
+            MouseEventKind::Moved if matches!(self.overlay, Overlay::Preferences(_)) => {
+                self.hovered = self
+                    .hit_at(event.column, event.row)
+                    .filter(|hit| {
+                        matches!(
+                            hit,
+                            Hit::ExtensionPreferenceRow(_)
+                                | Hit::ExtensionPreferenceStep { .. }
+                                | Hit::ExtensionPreferenceValue(_)
+                                | Hit::OfferedAction(_)
+                        )
+                    })
+                    .cloned();
+                self.pointer_row = Some(event.row);
+                Intent::None
             }
             MouseEventKind::Moved if self.overlay == Overlay::None => {
                 // One read of the hit list answers every hover the chrome

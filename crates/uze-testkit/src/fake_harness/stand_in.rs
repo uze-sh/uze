@@ -145,16 +145,17 @@ fn perform(action: &Action, arguments: &[String]) -> ExitCode {
             vendor_marketplace(state_dir, *vendor, arguments)
         }
         Action::VendorAgy { state_dir, dest } => vendor_agy(state_dir, dest, arguments),
-        Action::InteractiveSession { banner } => hold_the_terminal(banner),
+        Action::InteractiveSession { banner } => hold_the_terminal(banner, None),
         Action::ConversationSession {
             transcripts_root,
             banner,
         } => {
-            if let Some(id) = arguments.get(1) {
+            let transcript = arguments.get(1).map(|id| {
                 let transcript = transcript(transcripts_root, id);
                 append_line(&transcript, &json!({ "session": id }).to_string());
-            }
-            hold_the_terminal(banner)
+                transcript
+            });
+            hold_the_terminal(banner, transcript.as_deref())
         }
         Action::RecordConversation { transcripts_root } => {
             if let Some(id) = arguments.get(1) {
@@ -316,7 +317,12 @@ fn working_directory() -> PathBuf {
         .unwrap_or(actual)
 }
 
-fn hold_the_terminal(banner: &str) -> ExitCode {
+/// Prints `banner` and echoes each line typed until `/exit`. A line is
+/// what the operator said, so a conversation's `transcript` records it as
+/// Claude Code records a turn typed into it: a `user` record whose content
+/// is the text. A line asking it to `work for <n> seconds` is a turn that
+/// long, painted as a harness paints while it works.
+fn hold_the_terminal(banner: &str, transcript: Option<&Path>) -> ExitCode {
     println!("{banner}");
     println!("cwd {}", working_directory().display());
     let _ = std::io::stdout().flush();
@@ -325,10 +331,44 @@ fn hold_the_terminal(banner: &str) -> ExitCode {
         if line == "/exit" {
             break;
         }
+        if let Some(transcript) = transcript {
+            let turn = json!({ "type": "user", "message": { "role": "user", "content": line } });
+            append_line(transcript, &turn.to_string());
+        }
         println!("> {line}");
         let _ = std::io::stdout().flush();
+        if let Some(seconds) = asked_to_work_for(&line) {
+            paint_a_turn(std::time::Duration::from_secs(seconds));
+        }
     }
     ExitCode::SUCCESS
+}
+
+/// The seconds `line` asks the session to work for, when it does.
+fn asked_to_work_for(line: &str) -> Option<u64> {
+    line.strip_prefix("work for ")?
+        .strip_suffix(" seconds")?
+        .parse()
+        .ok()
+}
+
+/// A spinner redrawn in place four times a second for `span`, then the
+/// turn's end said on a line of its own.
+fn paint_a_turn(span: std::time::Duration) {
+    const FRAMES: [char; 4] = ['|', '/', '-', '\\'];
+    let beat = std::time::Duration::from_millis(250);
+    let started = std::time::Instant::now();
+    let mut stdout = std::io::stdout();
+    for frame in FRAMES.iter().cycle() {
+        if started.elapsed() >= span {
+            break;
+        }
+        let _ = write!(stdout, "\r{frame} working");
+        let _ = stdout.flush();
+        std::thread::sleep(beat);
+    }
+    let _ = writeln!(stdout, "\rturn done");
+    let _ = stdout.flush();
 }
 
 /// Asks on the terminal when it has one, as a program on this platform

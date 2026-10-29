@@ -36,14 +36,14 @@ pub enum Severity {
 }
 
 impl Problem {
-    fn error(message: impl Into<String>) -> Problem {
+    pub(crate) fn error(message: impl Into<String>) -> Problem {
         Problem {
             severity: Severity::Error,
             message: message.into(),
         }
     }
 
-    fn warning(message: impl Into<String>) -> Problem {
+    pub(crate) fn warning(message: impl Into<String>) -> Problem {
         Problem {
             severity: Severity::Warning,
             message: message.into(),
@@ -89,6 +89,7 @@ pub fn resolve(file: &KeymapFile) -> Result<Loaded, Vec<Problem>> {
     let mut problems = Vec::new();
     let mut errors = Vec::new();
     let mut bindings = default_bindings();
+    let mut extensions = std::collections::BTreeMap::new();
 
     if let Some(version) = file.version
         && version > crate::file::CURRENT_VERSION
@@ -135,6 +136,19 @@ pub fn resolve(file: &KeymapFile) -> Result<Loaded, Vec<Problem>> {
             if !readable {
                 continue;
             }
+            if let Action::Extension(id) = action {
+                // An extension's action lives on its declared surface, and
+                // in the extension's own table: never among the host's.
+                if scope == Scope::Declared {
+                    extensions.insert(id, written);
+                } else {
+                    problems.push(Problem::warning(format!(
+                        "`{action_name}` is an extension's action, bound under `{}`; it is ignored under `{scope_name}`",
+                        Scope::Declared.name()
+                    )));
+                }
+                continue;
+            }
             // Declaring an action replaces every default chord it had in
             // that surface — including with nothing, which is how an
             // operator says "no key, the button is enough".
@@ -151,7 +165,10 @@ pub fn resolve(file: &KeymapFile) -> Result<Loaded, Vec<Problem>> {
         return Err(errors);
     }
     match Keymap::new(bindings) {
-        Ok(keymap) => Ok(Loaded { keymap, problems }),
+        Ok(keymap) => Ok(Loaded {
+            keymap: keymap.with_written(extensions),
+            problems,
+        }),
         Err(conflicts) => Err(conflicts
             .into_iter()
             .map(|conflict| Problem::error(conflict.to_string()))
@@ -170,7 +187,9 @@ pub fn saved_over(written: &KeymapFile, keymap: &Keymap) -> KeymapFile {
     for (scope_name, actions) in &written.bindings {
         let known_scope = Scope::parse(scope_name).is_some();
         for (action_name, chords) in actions {
-            if !known_scope || Action::parse(action_name).is_none() {
+            let misplaced_extension = scope_name != Scope::Declared.name()
+                && matches!(Action::parse(action_name), Some(Action::Extension(_)));
+            if !known_scope || Action::parse(action_name).is_none() || misplaced_extension {
                 file.set(scope_name, action_name, chords.clone());
             }
         }
@@ -209,6 +228,13 @@ pub fn difference_from_default(keymap: &Keymap) -> KeymapFile {
         if theirs != chords(default) {
             file.set(scope.name(), &action.name(), theirs);
         }
+    }
+    for (id, chords) in keymap.written_extension_bindings() {
+        file.set(
+            Scope::Declared.name(),
+            &crate::extension::name(id),
+            chords.iter().map(ToString::to_string).collect(),
+        );
     }
     file
 }
@@ -299,6 +325,29 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Confirm, "esc", Action::Dismiss),
         bind(Scope::Confirm, "left", Action::FocusPrevious),
         bind(Scope::Confirm, "right", Action::FocusNext),
+        // Choosing several rows, then answering once: the arrows walk the
+        // rows, space switches the marked one, left and right change the
+        // field beside the answers, tab moves between the answers, and i
+        // shows all the marked row says. Enter and esc answer as above.
+        bind(Scope::Choose, "enter", Action::Activate),
+        bind(Scope::Choose, "esc", Action::Dismiss),
+        bind(Scope::Choose, "up", Action::SelectPrevious),
+        bind(Scope::Choose, "down", Action::SelectNext),
+        bind(Scope::Choose, "space", Action::ToggleChoice),
+        bind(Scope::Choose, "a", Action::ToggleAllChoices),
+        bind(Scope::Choose, "left", Action::PreviousValue),
+        bind(Scope::Choose, "right", Action::NextValue),
+        bind(Scope::Choose, "tab", Action::FocusNext),
+        bind(Scope::Choose, "i", Action::Expand),
+        // An extension's preferences: up and down walk the rows, left and
+        // right step the value of the one the keyboard is on, enter types
+        // it or steps it on, esc closes.
+        bind(Scope::ExtensionPreferences, "up", Action::SelectPrevious),
+        bind(Scope::ExtensionPreferences, "down", Action::SelectNext),
+        bind(Scope::ExtensionPreferences, "left", Action::PreviousValue),
+        bind(Scope::ExtensionPreferences, "right", Action::NextValue),
+        bind(Scope::ExtensionPreferences, "enter", Action::Activate),
+        bind(Scope::ExtensionPreferences, "esc", Action::Dismiss),
         bind(Scope::KeyCapture, "esc", Action::Dismiss),
         // --- The index, in either mode ----------------------------------
         bind(Scope::ActionIndex, "down", Action::SelectNext),
@@ -330,6 +379,10 @@ fn default_bindings() -> Vec<Binding> {
         // and moves by word on those, and the workspace scope takes a chord
         // before the pane ever sees it.
         bind(Scope::Surfaces, "alt+x", Action::ToggleSpec),
+        // A plugin's drawer stands beside whatever the pane shows, so its
+        // door is live over all of them. `k`, free in a shell's line
+        // editor; not `]`, whose escape opens a terminal's own sequences.
+        bind(Scope::Surfaces, "alt+k", Action::ToggleDrawer),
         bind(Scope::Workspace, "alt+n", Action::NewAgent),
         // The same key the code surface opens a row's actions with, under
         // the modifier the pane leaves free: the selected agent's menu.
@@ -338,6 +391,10 @@ fn default_bindings() -> Vec<Binding> {
         // space, on the same modifier.
         bind(Scope::Workspace, "alt+s", Action::NewSpace),
         bind(Scope::Workspace, "f2", Action::RenameSelection),
+        // A function key: it must work over any agent's prompt and over
+        // every surface, and is pressed when an extension is typing where
+        // it should not.
+        bind(Scope::Surfaces, "f8", Action::PauseAgentWrites),
         // The sidebar is vertical and holds spaces; the strip is
         // horizontal and holds tabs. Ctrl walks the container, Alt walks
         // what is inside it.
@@ -398,6 +455,21 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Spec, "pagedown", Action::ScrollPageDown),
         bind(Scope::Spec, "pageup", Action::ScrollPageUp),
         bind(Scope::Spec, "p", Action::TogglePreview),
+        // A plugin's surface: the moves every list and row of tabs shares,
+        // so nothing a plugin declares needs keys of its own.
+        bind(Scope::Declared, "esc", Action::Dismiss),
+        bind(Scope::Declared, "down", Action::SelectNext),
+        bind(Scope::Declared, "up", Action::SelectPrevious),
+        bind(Scope::Declared, "tab", Action::NextDiagram),
+        bind(Scope::Declared, "shift+tab", Action::PreviousDiagram),
+        bind(Scope::Declared, "enter", Action::Activate),
+        // Nothing on a declared surface moves sideways, so the arrows are
+        // free to move between a question's answers, as on every other.
+        bind(Scope::Declared, "left", Action::FocusPrevious),
+        bind(Scope::Declared, "right", Action::FocusNext),
+        bind(Scope::Declared, "pagedown", Action::ScrollPageDown),
+        bind(Scope::Declared, "pageup", Action::ScrollPageUp),
+        bind(Scope::Declared, "i", Action::ToggleInspector),
         bind(Scope::Code, "e", Action::EditFile),
         bind(Scope::Code, "p", Action::TogglePreview),
         bind(Scope::Code, "m", Action::ToggleMap),
@@ -648,6 +720,14 @@ mod tests {
                 // Enter switches an extension whichever way it is not.
                 "enable-extension",
                 "disable-extension",
+                // Rare: after installing a program an extension wants.
+                "resolve-programs",
+                // On the extension's own drawer, beside its other offers.
+                "edit-preferences",
+                // Enter on an extension's row in a plugin's tree, and a
+                // link in each drawer: a way across, never a reflex.
+                "show-extension",
+                "show-plugin",
                 "install-project-environment",
                 // Rare, and project-wide rather than about the harness the
                 // keyboard is on: the index lists both on that screen.
@@ -661,6 +741,9 @@ mod tests {
                 // the cursor.
                 "isolate-agent",
                 "isolate-agent-at-commit",
+                // Offered by its toast and the index only while a project
+                // offers something: rare, and never a reflex.
+                "review-extensions",
                 // The same, and the menu is also what names the harness
                 // the agent continues in.
                 "switch-harness",

@@ -1,0 +1,225 @@
+journey: an extension's update that wants a grant nobody accepted is held, and its new code runs only once the operator allows what it wants
+tags: [gate, tui, workspace]
+about: |
+  Consent is to what an extension wants, not to whatever its next release
+  asks for. `release` is allowed and enabled in the project and draws a
+  status row from its script. Its marketplace then publishes a release
+  whose script keeps a record in the extension's store, which wants the
+  `store` grant nobody accepted. `uze update` brings it into the Store,
+  and there it stops: the consent is not widened, its new script never
+  runs, and the next time the workspace opens on the project it asks for
+  the new grant alone. Allowed, the new code runs, and its record appears.
+
+  The machine is what each scene checks: the consent record in
+  `state/extensions.json` (its grants and the digest it accepted), the
+  Store the update wrote, and the extension's store under
+  `state/extensions/store/`, which only the new script writes. The screen
+  only gates each gesture.
+
+world:
+  project: demo-app
+  commits:
+    - message: "chore: initial commit"
+      files:
+        README.md: "# demo-app\n"
+  files:
+    market/marketplace.json: |
+      {
+        "name": "studio",
+        "description": "A marketplace this journey stages, installs from and publishes to.",
+        "plugins": [
+          { "name": "release", "source": "./plugins/release", "description": "Which release of its script answered." }
+        ]
+      }
+    market/plugins/release/plugin.json: |
+      {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "release",
+        "version": "1.0.0",
+        "description": "Which release of its script answered, as a status row."
+      }
+    market/plugins/release/extensions/release/extension.kdl: |
+      protocol 1
+      id "release"
+      name "Release"
+      description "Which release of its script answered"
+
+      wants "read:checkout"
+
+      surface "row" slot="status" view="row.uze" source="said" title="Release"
+
+      source "said" {
+          script "said.uze"
+          input file="README.md"
+      }
+    market/plugins/release/extensions/release/row.uze: |
+      <view>
+      Text "{said}" role="muted"
+      </view>
+    market/plugins/release/extensions/release/said.uze: |
+      <script>
+      fn answer(input, context) {
+          let read = lines(read_checkout(input.file));
+          #{ data: #{ said: `release one read ${read.len()}` } }
+      }
+      </script>
+
+scenes:
+  - scene: a plugin installed from a marketplace's clone leaves its extension disabled
+    when:
+      - shell: "{uze} market add {world}/market"
+        say: register the marketplace, linked to nothing
+      - shell: "cd {project} && {uze} install release@studio > {world}/install.log 2>&1"
+        say: add the plugin to the project, with nobody at a terminal to answer
+    then:
+      - file: "{uze_home}/store/plugins/studio/release/extensions/release/said.uze"
+        contains: "release one"
+        about: the first release's script was installed into the Store
+      - file: "{uze_home}/state/extensions.json"
+        exists: false
+        about: nobody consented to anything, and nothing was enabled
+
+  - scene: and then the operator allows and enables it in the project, and its row draws what the first release answers
+    when:
+      - open: ["{uze}", "workspace"]
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - click: "new"
+        say: open the new-agent popup from the space's row
+        in: sidebar
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
+        say: place an agent on the project
+        expect: "Release runs nothing there yet"
+        expect_timeout: 90
+      - click: "Review"
+        say: review the extension the project offers
+        expect: "Enable Release in demo-app"
+        expect_timeout: 10
+      - click: "Enable 1"
+        say: allow its grant and enable it here
+        expect: "extension enabled"
+        expect_timeout: 10
+      - wait: screen
+        until: "release one read 1"
+        in: sidebar
+        timeout: 20
+        say: the row in the sidebar's header draws the first release's answer
+      - shell: "cp {uze_home}/state/extensions.json {world}/consent-before-the-update.json"
+        say: keep the consent as it stands, to compare with after the update
+    then:
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.release@studio/release.accepted_grants.*
+        count: 1
+        includes: ["read:checkout"]
+        about: the consent holds the one grant the first release wants
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.release@studio/release.enabled_in.*
+        equals: "{project}"
+        count: 1
+        about: and it is enabled in this project
+
+  - scene: and then the marketplace publishes a release that wants the store, and the update brings it into the Store and holds it there
+    when:
+      - shell: |
+          set -e
+          cd {world}/market/plugins/release/extensions/release
+          sed 's/^wants "read:checkout"$/wants "read:checkout" "store"/' extension.kdl > extension.kdl.next && mv extension.kdl.next extension.kdl
+          cat > said.uze <<'EOF'
+          <script>
+          fn answer(input, context) {
+              let read = lines(read_checkout(input.file));
+              #{
+                  data: #{ said: `release two read ${read.len()}` },
+                  store: #{ ran: "release two" },
+              }
+          }
+          </script>
+          EOF
+          cd {world}/market
+          git add -A
+          git commit -qm "feat: keep a record in the store"
+        say: the author publishes the second release
+      - shell: "cd {project} && {uze} update > {world}/update.log 2>&1"
+        say: the operator updates the project's plugins
+    then:
+      - file: "{uze_home}/store/plugins/studio/release/extensions/release/said.uze"
+        contains: "release two"
+        about: the second release is in the Store
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.release@studio/release.accepted_grants.*
+        count: 1
+        includes: ["read:checkout"]
+        about: the consent was not widened to what the update wants
+      - cmd:
+          run: |
+            {python} -I -c "
+            import json, sys
+            key = 'release@studio/release'
+            before = json.load(open('{world}/consent-before-the-update.json'))['extensions'][key]
+            after = json.load(open('{uze_home}/state/extensions.json'))['extensions'][key]
+            print(before['accepted_digest'], after['accepted_digest'])
+            sys.exit(0 if before['accepted_digest'] == after['accepted_digest'] else 1)
+            "
+        about: and the release it accepted is still the first one, by digest
+      - dir: "{uze_home}/state/extensions/store/release@studio/release"
+        exists: false
+        about: the second release's script never ran, so nothing is kept
+      - cmd:
+          run: "cd {project} && {uze} status"
+          stdout_contains: "its update wants store"
+        about: the status names the extension held, and the grant its update wants
+
+  - scene: and then the workspace, opened again, asks for the new grant alone, and once it is allowed the new code runs
+    when:
+      - key: "C-q"
+        say: leave the workspace, which keeps the agent running
+        pause: 2.0
+      - open: ["{uze}", "workspace"]
+        say: open it again
+        expect: "Release runs nothing there yet"
+        expect_timeout: 30
+      - click: "Review"
+        say: review what the update wants
+        expect: "its update wants more than you allowed"
+        expect_timeout: 10
+      - wait: screen
+        until: "store +keeps what it remembers"
+        timeout: 5
+        say: the question names the new grant
+      # An update that wants more starts left off: allowing it is the
+      # operator's own gesture.
+      - key: "Space"
+        say: switch it on
+        expect: "Enable 1"
+        expect_timeout: 5
+      - click: "Enable 1"
+        say: allow it
+        expect: "extension enabled"
+        expect_timeout: 10
+      - wait: screen
+        until: "release two read 1"
+        in: sidebar
+        timeout: 20
+        say: the row draws the second release's answer
+      - wait: file
+        until: "{uze_home}/state/extensions/store/release@studio/release/*.json"
+        timeout: 10
+        say: and its record is kept
+    then:
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.release@studio/release.accepted_grants.*
+        count: 2
+        includes: ["read:checkout", "store"]
+        about: the consent now holds the grant the update wanted
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.release@studio/release.enabled_in.*
+        equals: "{project}"
+        count: 1
+        about: and it is still enabled in the project it was, without being asked again
+      - json: "{uze_home}/state/extensions/store/release@studio/release/*.json"
+        at: store.ran
+        equals: "release two"
+        count: 1
+        about: the record only the second release's script writes is there

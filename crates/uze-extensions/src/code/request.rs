@@ -232,11 +232,11 @@ pub fn fulfill(host: &dyn Host, request: FileRequest) -> FileAnswer {
                 false => GLANCE,
             };
             let file = read_and_colour(host, &path, glance);
-            match (&file, super::picture::is_picture(&path)) {
+            match (&file, crate::shared::picture::is_picture(&path)) {
                 (Err(Unreadable::NotText), true) => match host
                     .read_bytes(&path)
                     .ok()
-                    .and_then(|bytes| super::picture::decode(&path, &bytes))
+                    .and_then(|bytes| crate::shared::picture::decode(&path, &bytes))
                 {
                     Some(picture) => FileAnswer::Pictured { path, picture },
                     None => FileAnswer::Read { path, file },

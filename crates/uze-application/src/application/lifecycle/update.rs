@@ -4,7 +4,7 @@
 use std::fs;
 
 use uze_core::{
-    MaterializedPackage, Result,
+    MaterializedPackage, Result, state,
     trust::{self, SourceOrigin, TrustAuthority},
 };
 
@@ -161,6 +161,7 @@ impl Plugins<'_> {
         // is removed under the same ownership rules any removal obeys.
         // Updates are allowed to replace a protected official plugin — the
         // protection is against `remove`, not `update`.
+        let switched_off = self.0.switched_off_harnesses(installed.id.as_str());
         let removal = self.detach_and_remove(id, true)?;
         if let RemovePluginReport::Blocked { report, plan } = removal {
             let _ = fs::remove_dir_all(&superseded);
@@ -183,6 +184,10 @@ impl Plugins<'_> {
             Ok(report) => report,
             Err(failure) => {
                 let restored = self.reinstate(&installed, &superseded, requested_active_name);
+                if restored.is_ok() {
+                    self.0
+                        .switch_off_again(installed.id.as_str(), &switched_off);
+                }
                 let message = match restored {
                     Ok(()) => {
                         let _ = fs::remove_dir_all(&superseded);
@@ -211,9 +216,11 @@ impl Plugins<'_> {
                 return Err(UzeError::LifecycleBlocked(message));
             }
         };
+        self.0
+            .switch_off_again(installed.id.as_str(), &switched_off);
         let _ = fs::remove_dir_all(&superseded);
         Ok(UpdatePluginReport::Updated {
-            plugin: report.plugin,
+            plugin: Box::new(report.plugin),
             attachments: report.attachments,
             publications: report.publications,
             deliveries: report.deliveries,
@@ -264,6 +271,55 @@ impl Plugins<'_> {
             &uze_core::naming::NoNameCollisionAuthority,
         )
         .map(|_| ())
+    }
+}
+
+impl UzeApplication {
+    /// The harnesses where the person switched `package_id`'s package-level
+    /// delivery off. Asked before an update takes the package off, since
+    /// taking it off is what forgets it.
+    fn switched_off_harnesses(&self, package_id: &str) -> Vec<String> {
+        state::receipts(&self.home, Some(package_id))
+            .unwrap_or_default()
+            .iter()
+            .filter(|receipt| receipt.resource_identity.is_none())
+            .filter(|receipt| {
+                self.integrations.iter().any(|integration| {
+                    integration.id() == receipt.integration && integration.switched_off(receipt)
+                })
+            })
+            .map(|receipt| receipt.integration.clone())
+            .collect()
+    }
+
+    /// Switches off again, on each of `harnesses`, the package-level delivery
+    /// an update just made: an update brings new bytes, never back a plugin
+    /// the person had switched off. One that cannot be switched off is said
+    /// in the log and leaves the update standing.
+    fn switch_off_again(&self, package_id: &str, harnesses: &[String]) {
+        if harnesses.is_empty() {
+            return;
+        }
+        for receipt in state::receipts(&self.home, Some(package_id)).unwrap_or_default() {
+            if receipt.resource_identity.is_some() || !harnesses.contains(&receipt.integration) {
+                continue;
+            }
+            let Some(integration) = self
+                .integrations
+                .iter()
+                .find(|integration| integration.id() == receipt.integration)
+            else {
+                continue;
+            };
+            if let Err(error) = integration.switch_off(&receipt) {
+                tracing::warn!(
+                    integration = integration.id(),
+                    package = package_id,
+                    %error,
+                    "the plugin the person had switched off could not be switched off again"
+                );
+            }
+        }
     }
 }
 

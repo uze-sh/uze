@@ -4,7 +4,7 @@
 
 use super::WorkspaceHit;
 use super::{
-    AgentIdentity, AgentView, Attach, ExtensionHit, Flow, GitBadge, PlacementResolution, Viewport,
+    AgentIdentity, AgentView, Attach, ExtensionHit, Flow, PlacementResolution, Viewport,
     WorkStateView, WorkspaceModel, agent_activity_frame,
     render::{
         self, FrameMetrics, LeadingSlot, WorkspaceLayout, compute_layout, render_sidebar,
@@ -56,6 +56,7 @@ pub(super) fn identities_fixture() -> Vec<AgentIdentity> {
         launch: std::path::PathBuf::from("agent"),
         continuity_gap: None,
         configured: true,
+        skill_prefix: Some("/"),
     }]
 }
 
@@ -224,9 +225,9 @@ pub(super) fn full_frame_at(model: &mut WorkspaceModel, area: Rect) -> Workspace
     // What the loop itself keeps from a frame — the extension surface
     // reports the geometry a click has to be resolved against, and a
     // test that dropped it would resolve clicks against the default.
-    if let Some(rendered) = metrics.code {
-        model.code_tree_scroll = rendered.navigator_scroll;
-        model.code_scrollbars = rendered;
+    if let Some(rendered) = metrics.surface {
+        model.navigator_scroll = rendered.navigator_scroll;
+        model.surface_frame = rendered;
     }
     if let Some(frame) = metrics.recent {
         model.recent.scroll = frame.scroll;
@@ -234,7 +235,7 @@ pub(super) fn full_frame_at(model: &mut WorkspaceModel, area: Rect) -> Workspace
     }
     model.absorb_manage_frame(metrics.manage);
     model.absorb_overview_frame(metrics.overview);
-    compute_layout(area, model.sidebar_width)
+    compute_layout(area, model.sidebar_width, model.reserved())
 }
 
 /// The whole frame as text, row by row — for asserting not just that
@@ -245,6 +246,18 @@ pub(super) fn frame_rows(model: &mut WorkspaceModel) -> Vec<String> {
 
 /// [`frame_rows`] on a terminal of `area`'s size.
 pub(super) fn frame_rows_at(model: &mut WorkspaceModel, area: Rect) -> Vec<String> {
+    let buffer = frame_buffer_at(model, area);
+    (0..buffer.area.height)
+        .map(|row| {
+            (0..buffer.area.width)
+                .map(|column| buffer[(column, row)].symbol())
+                .collect()
+        })
+        .collect()
+}
+
+/// The frame drawn on a terminal of `area`'s size, colours and all.
+pub(super) fn frame_buffer_at(model: &mut WorkspaceModel, area: Rect) -> ratatui::buffer::Buffer {
     let mut terminal = Terminal::new(TestBackend::new(area.width, area.height)).unwrap();
     terminal
         .draw(|frame| {
@@ -257,14 +270,7 @@ pub(super) fn frame_rows_at(model: &mut WorkspaceModel, area: Rect) -> Vec<Strin
             )
         })
         .unwrap();
-    let buffer = terminal.backend().buffer().clone();
-    (0..buffer.area.height)
-        .map(|row| {
-            (0..buffer.area.width)
-                .map(|column| buffer[(column, row)].symbol())
-                .collect()
-        })
-        .collect()
+    terminal.backend().buffer().clone()
 }
 
 pub(super) fn label_every_tab(model: &mut WorkspaceModel, label: &str) {
@@ -322,6 +328,7 @@ pub(super) fn identities_in_the_root() -> Vec<AgentIdentity> {
             launch: std::path::PathBuf::from("/uze/shims/claude"),
             continuity_gap: None,
             configured: true,
+            skill_prefix: Some("/"),
         },
         AgentIdentity {
             binary: "codex",
@@ -330,6 +337,7 @@ pub(super) fn identities_in_the_root() -> Vec<AgentIdentity> {
             launch: std::path::PathBuf::from("codex"),
             continuity_gap: None,
             configured: true,
+            skill_prefix: Some("/"),
         },
     ]
 }
@@ -421,6 +429,15 @@ pub(super) fn stamp_first_tab(model: &mut WorkspaceModel, id: &str) {
     )];
 }
 
+/// Makes the first tab the agent `a1` UZE launched, seen by the bridge,
+/// so an extension may ask something of it.
+pub(super) fn launch_agent_a1(model: &mut WorkspaceModel) {
+    stamp_first_tab(model, "a1");
+    model.note_space_projects(&identities_fixture());
+    let agents = super::bridged_agents(model, &identities_fixture());
+    model.see_agents(agents);
+}
+
 pub(super) fn agent_session_in(cwd: &str) -> WorkspaceModel {
     let mut session = session("/repo");
     let tab = &mut session.workspace.spaces[0].tabs[0];
@@ -461,26 +478,48 @@ pub(super) fn select_second_agent(model: &mut WorkspaceModel) {
 /// `subjects`, newest first, every commit landed `3h` ago.
 pub(super) fn session_with_timeline(subjects: &[&str]) -> WorkspaceModel {
     let mut model = agent_session_in("/repo");
-    model.remembered.git_badge = Some(GitBadge {
-        cwd: PathBuf::from("/repo"),
-        summary: None,
-        timeline: Some(uze_extensions::code::Timeline {
-            branch: "main".to_owned(),
-            commits: subjects
-                .iter()
-                .enumerate()
-                .map(|(index, subject)| uze_extensions::code::Commit {
-                    hash: format!("{index:07x}"),
-                    subject: (*subject).to_owned(),
-                    age: "3h".to_owned(),
-                    ahead: false,
-                })
-                .collect(),
-        }),
-        timeline_checked_at: Instant::now(),
-        checked_at: Instant::now(),
-    });
+    give_timeline(&mut model, timeline_of(subjects));
     model
+}
+
+/// A history of `subjects`, newest first, every commit landed `3h` ago.
+pub(super) fn timeline_of(subjects: &[&str]) -> uze_extensions::code::Timeline {
+    uze_extensions::code::Timeline {
+        branch: "main".to_owned(),
+        commits: subjects
+            .iter()
+            .enumerate()
+            .map(|(index, subject)| uze_extensions::code::Commit {
+                hash: format!("{index:07x}"),
+                subject: (*subject).to_owned(),
+                age: "3h".to_owned(),
+                ahead: false,
+            })
+            .collect(),
+    }
+}
+
+/// Hands the code extension `timeline` as the read of the checkout in
+/// front, as its job would have.
+pub(super) fn give_timeline(model: &mut WorkspaceModel, timeline: uze_extensions::code::Timeline) {
+    let cwd = model.focused_cwd().expect("a checkout in front");
+    let engine = code_engine(model);
+    engine.focus(Some(&uze_extensions::contract::Checkout {
+        root: cwd.clone(),
+        display: cwd.display().to_string(),
+        target: None,
+    }));
+    engine.absorb(uze_extensions::contract::Opaque::new(
+        uze_extensions::code::TimelineRead {
+            cwd,
+            timeline: Some(timeline),
+        },
+    ));
+}
+
+/// The timeline's section, as the sidebar is handed it.
+pub(super) fn timeline_section(model: &WorkspaceModel) -> uze_extensions::view::Section {
+    model.timeline().expect("a timeline").1
 }
 
 /// A sidebar row without its right-hand divider and the padding
@@ -489,12 +528,25 @@ pub(super) fn inside(row: &str) -> &str {
     row.trim_end_matches('│').trim_end()
 }
 
-pub(super) fn timeline_hit(hits: &[(Rect, WorkspaceHit)]) -> Option<Rect> {
+pub(super) fn timeline_hit(model: &WorkspaceModel, hits: &[(Rect, WorkspaceHit)]) -> Option<Rect> {
     hits.iter()
-        .find(|(_, hit)| {
-            *hit == WorkspaceHit::Extension(ExtensionHit::CodeTimeline(ViewHit::ToggleSection))
-        })
+        .find(|(_, hit)| *hit == timeline_tag(model, ViewHit::ToggleSection))
         .map(|(rect, _)| *rect)
+}
+
+/// `hit` on the timeline, tagged as the sidebar tags it.
+pub(super) fn timeline_tag(model: &WorkspaceModel, hit: ViewHit) -> WorkspaceHit {
+    WorkspaceHit::Extension(ExtensionHit {
+        slot: model
+            .remembered
+            .declared
+            .builtin_slot(
+                uze_extensions::code::CATALOG.id,
+                uze_extensions::code::TIMELINE,
+            )
+            .expect("the timeline has a slot"),
+        hit,
+    })
 }
 
 pub(super) fn manage_route(driven: &Driven<'_>) -> crate::ui::model::Route {
@@ -644,6 +696,7 @@ pub(super) fn identities() -> Vec<AgentIdentity> {
             launch: std::path::PathBuf::from("/uze/shims/claude"),
             continuity_gap: None,
             configured: true,
+            skill_prefix: Some("/"),
         },
         AgentIdentity {
             binary: "codex",
@@ -652,6 +705,7 @@ pub(super) fn identities() -> Vec<AgentIdentity> {
             launch: std::path::PathBuf::from("codex"),
             continuity_gap: Some("no launcher".to_owned()),
             configured: true,
+            skill_prefix: Some("/"),
         },
     ]
 }
@@ -699,7 +753,11 @@ impl Driven<'_> {
     /// use — the rest of a drag, which `press` alone cannot say.
     pub(super) fn mouse(&mut self, column: u16, row: u16, kind: MouseEventKind) {
         let area = self.area;
-        let layout = compute_layout(area, self.attach.model.sidebar_width);
+        let layout = compute_layout(
+            area,
+            self.attach.model.sidebar_width,
+            self.attach.model.reserved(),
+        );
         let viewport = Viewport {
             size: ratatui::layout::Size::new(area.width, area.height),
             columns: layout.pane.width,
@@ -713,7 +771,11 @@ impl Driven<'_> {
     /// One key, through the same dispatch the attach loop uses.
     pub(super) fn press_key(&mut self, key: crossterm::event::KeyEvent) {
         let area = self.area;
-        let layout = compute_layout(area, self.attach.model.sidebar_width);
+        let layout = compute_layout(
+            area,
+            self.attach.model.sidebar_width,
+            self.attach.model.reserved(),
+        );
         let viewport = Viewport {
             size: ratatui::layout::Size::new(area.width, area.height),
             columns: layout.pane.width,
@@ -729,6 +791,25 @@ impl Driven<'_> {
     /// placement once its thread has answered.
     pub(super) fn pump(&mut self) -> Flow {
         self.attach.pump(&self.events)
+    }
+
+    /// Waits out what the pumps left writing under the home: the task
+    /// evaluations still out and the costs write. Nothing new is asked
+    /// meanwhile, so a test that removes its home after this removes a
+    /// tree no thread of the client is still writing into.
+    pub(super) fn settle(&mut self) {
+        let deadline = Instant::now() + std::time::Duration::from_secs(60);
+        while !self.attach.model.remembered.task_eval_pending.is_empty() {
+            assert!(
+                Instant::now() < deadline,
+                "a task evaluation never answered"
+            );
+            self.attach.absorb_task_evaluations();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        if let Some(writer) = self.attach.model.remembered.declared.costs_writing.take() {
+            writer.join().expect("the costs write ended");
+        }
     }
 
     /// The terminal server exiting under the client.
@@ -842,6 +923,9 @@ pub(super) fn driven(model: WorkspaceModel, home: &UzeHome) -> Driven<'_> {
             )),
             keyboard: crate::ui::keys::KeyboardSupport::default(),
             theme_generation: uze_theme::generation(),
+            // The operator at a terminal of their own, whatever the suite
+            // runs inside.
+            asker: uze_application::Asker::Operator,
         },
         server,
         events: events_rx,
@@ -931,4 +1015,192 @@ pub(super) fn toast_close(driven: &Driven<'_>) -> Rect {
 pub(super) fn select_tab(model: &mut WorkspaceModel, tab: TabId) {
     model.session.as_mut().expect("session").select_tab(tab);
     model.note_space_projects(&identities_fixture());
+}
+
+/// The code surface's engine, as the slot map hosts it.
+pub(super) fn code_engine(model: &mut WorkspaceModel) -> &mut dyn super::Hosted {
+    model
+        .remembered
+        .declared
+        .engines
+        .get_mut(&super::Owner::Builtin(uze_extensions::code::CATALOG.id))
+        .expect("the code surface is hosted")
+        .as_mut()
+}
+
+/// The code surface, while it stands in the pane.
+pub(super) fn code_view(model: &WorkspaceModel) -> Option<&uze_extensions::code::CodeView> {
+    model
+        .remembered
+        .declared
+        .engine(&super::Owner::Builtin(uze_extensions::code::CATALOG.id))?
+        .code_view()
+        .filter(|_| model.showing(uze_extensions::code::CATALOG.id))
+}
+
+pub(super) fn code_view_mut(
+    model: &mut WorkspaceModel,
+) -> Option<&mut uze_extensions::code::CodeView> {
+    if !model.showing(uze_extensions::code::CATALOG.id) {
+        return None;
+    }
+    code_engine(model).code_view_mut()
+}
+
+/// The slot the code surface stands in, as its hits are tagged.
+pub(super) fn code_slot(model: &WorkspaceModel) -> u32 {
+    model
+        .remembered
+        .declared
+        .builtin_slot(
+            uze_extensions::code::CATALOG.id,
+            uze_extensions::code::SURFACE,
+        )
+        .expect("the code surface has a slot")
+}
+
+/// `hit` on the code surface, tagged as its frame tags it.
+pub(super) fn code_hit(model: &WorkspaceModel, hit: ViewHit) -> WorkspaceHit {
+    WorkspaceHit::Extension(ExtensionHit {
+        slot: code_slot(model),
+        hit,
+    })
+}
+
+/// Stands `view` in the pane as the code surface, on the checkout it was
+/// built for.
+pub(super) fn show_code(model: &mut WorkspaceModel, view: uze_extensions::code::CodeView) {
+    let slot = code_slot(model);
+    super::open_surface_on(model, slot, view.root().to_path_buf());
+    *code_view_mut(model).expect("the code surface opened") = view;
+}
+
+/// The architect's engine, as the slot map hosts it.
+pub(super) fn architect_engine(model: &mut WorkspaceModel) -> &mut dyn super::Hosted {
+    model
+        .remembered
+        .declared
+        .engines
+        .get_mut(&super::Owner::Builtin(
+            uze_extensions::architect::CATALOG.id,
+        ))
+        .expect("the architect is hosted")
+        .as_mut()
+}
+
+/// Opens the architect on the checkout in front and answers its read
+/// with `artifacts`, as its job would have.
+pub(super) fn open_architect_with(
+    model: &mut WorkspaceModel,
+    artifacts: Vec<uze_extensions::architect::Artifact>,
+) {
+    use uze_extensions::architect;
+    super::open_architect(model);
+    let root = model.open_root.clone().expect("opened on a checkout");
+    let answer = architect::ArtifactsAnswer {
+        branch: "main".to_owned(),
+        artifacts: architect::Artifacts::Found {
+            artifacts,
+            project: root.clone(),
+        },
+    };
+    architect_engine(model).absorb(uze_extensions::contract::Opaque::new(
+        architect::ArtifactsRead { root, answer },
+    ));
+}
+
+/// Where the viewer is on the open architect.
+pub(super) fn architect_place(model: &WorkspaceModel) -> uze_extensions::architect::ArchitectPlace {
+    model
+        .remembered
+        .declared
+        .engine(&super::Owner::Builtin(
+            uze_extensions::architect::CATALOG.id,
+        ))
+        .and_then(|engine| engine.place(uze_extensions::architect::SURFACE))
+        .and_then(|place| place.downcast())
+        .expect("the architect is open")
+}
+
+/// What the open architect draws in `space`.
+pub(super) fn architect_view(
+    model: &WorkspaceModel,
+    space: uze_extensions::view::Size,
+) -> uze_extensions::view::View {
+    model
+        .remembered
+        .declared
+        .engine(&super::Owner::Builtin(
+            uze_extensions::architect::CATALOG.id,
+        ))
+        .and_then(|engine| engine.view(uze_extensions::architect::SURFACE, space))
+        .expect("the architect is open")
+}
+
+/// The architect's slot, as its hits are tagged.
+pub(super) fn architect_slot(model: &WorkspaceModel) -> u32 {
+    model
+        .remembered
+        .declared
+        .builtin_slot(
+            uze_extensions::architect::CATALOG.id,
+            uze_extensions::architect::SURFACE,
+        )
+        .expect("the architect has a slot")
+}
+
+/// The spec's engine, as the slot map hosts it.
+pub(super) fn spec_engine(model: &mut WorkspaceModel) -> &mut dyn super::Hosted {
+    model
+        .remembered
+        .declared
+        .engines
+        .get_mut(&super::Owner::Builtin(uze_extensions::spec::CATALOG.id))
+        .expect("the spec is hosted")
+        .as_mut()
+}
+
+/// Hands the spec's engine a count of the checkout in front, as its job
+/// would have.
+pub(super) fn count_spec(model: &mut WorkspaceModel, summary: uze_extensions::spec::Summary) {
+    let cwd = model.focused_cwd().expect("a checkout in front");
+    let engine = spec_engine(model);
+    engine.focus(Some(&uze_extensions::contract::Checkout {
+        root: cwd.clone(),
+        display: cwd.display().to_string(),
+        target: None,
+    }));
+    engine.absorb(uze_extensions::contract::Opaque::new(
+        uze_extensions::spec::SummaryRead {
+            cwd,
+            summary: Some(summary),
+        },
+    ));
+}
+
+/// Hands the open spec view the read of its checkout, as its job would.
+pub(super) fn answer_spec(model: &mut WorkspaceModel, answer: uze_extensions::spec::SpecAnswer) {
+    let root = model.open_root.clone().expect("opened on a checkout");
+    spec_engine(model).absorb(uze_extensions::contract::Opaque::new(
+        uze_extensions::spec::SpecRead { root, answer },
+    ));
+}
+
+/// Where the viewer is on the open spec view.
+pub(super) fn spec_place(model: &WorkspaceModel) -> Option<uze_extensions::spec::SpecPlace> {
+    model
+        .remembered
+        .declared
+        .engine(&super::Owner::Builtin(uze_extensions::spec::CATALOG.id))
+        .and_then(|engine| engine.place(uze_extensions::spec::DOCUMENT))
+        .and_then(|place| place.downcast())
+}
+
+/// The slot a spec surface stands in, as its hits are tagged.
+pub(super) fn spec_slot(model: &WorkspaceModel, surface: &str) -> u32 {
+    model
+        .remembered
+        .declared
+        .builtin_slot(uze_extensions::spec::CATALOG.id, surface)
+        .expect("the spec has the slot")
 }

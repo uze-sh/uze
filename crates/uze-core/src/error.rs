@@ -201,6 +201,12 @@ pub enum UzeError {
     /// (ADR-055), so no flag stands in for one.
     #[error("{0}")]
     CommandApproval(String),
+    /// A declared extension could not be consented to, enabled or
+    /// disabled: nothing to consent to, consent still owed, or the request
+    /// came from inside an agent's pane. Consent is a person's answer, so
+    /// no flag stands in for one.
+    #[error("{0}")]
+    ExtensionConsent(String),
     #[error("unsupported state schema {found} in {path}; this uze writes {expected}")]
     UnsupportedStateSchema {
         path: PathBuf,

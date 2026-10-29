@@ -60,6 +60,21 @@ pub(crate) enum Intent {
         name: String,
         enabled: bool,
     },
+    /// Consent to a declared extension, enable it in a project, or disable
+    /// it there: the operator's answer on the Extensions screen.
+    ExtensionHere(super::model::ExtensionHere),
+    /// Set one preference of a declared extension.
+    SetPreference {
+        identity: uze_application::ExtensionIdentity,
+        name: String,
+        label: String,
+        value: serde_json::Value,
+    },
+    /// Pin a declared extension's programs again, where they are now.
+    ResolvePrograms {
+        identity: uze_application::ExtensionIdentity,
+        name: String,
+    },
     /// Read the themes and the glyph sets the Settings screen chooses
     /// from. Sent on arriving there rather than per frame, so the list
     /// cannot change under the cursor between two frames.
@@ -131,6 +146,9 @@ impl Intent {
             Self::SelectGlyphSet(_) => "select_glyph_set",
             Self::SelectChime(_) => "select_chime",
             Self::SwitchExtension { .. } => "switch_extension",
+            Self::ExtensionHere(_) => "extension_here",
+            Self::ResolvePrograms { .. } => "resolve_programs",
+            Self::SetPreference { .. } => "set_preference",
             Self::LoadSettings => "load_settings",
             Self::SelectTheme(_) => "select_theme",
             Self::Refresh => "refresh",
@@ -258,6 +276,47 @@ pub(crate) fn dispatch(
                 }
                 Err(error) => model.status = Status::Error(error),
             }
+        }
+        Intent::ExtensionHere(here) => {
+            if here.switch_on {
+                let id = crate::ui::extension_switch::declared_id(&here.identity);
+                if let Err(error) = switch_extension(home, &id, true) {
+                    model.status = Status::Error(error);
+                    return;
+                }
+                model.disabled_extensions = crate::ui::extension_switch::disabled();
+            }
+            let doing = if here.enable {
+                format!("Enabling {}…", here.name)
+            } else {
+                format!("Disabling {}…", here.name)
+            };
+            spawn_mutation(Mutation::asked(model, doing, home, sender), move |app| {
+                extension_here(app, &here)
+            });
+        }
+        Intent::SetPreference {
+            identity,
+            name,
+            label,
+            value,
+        } => {
+            spawn_mutation(
+                Mutation::asked(model, format!("Setting {label}…"), home, sender),
+                move |app| {
+                    app.extensions().set_preference(&identity, &name, value)?;
+                    // The workspace reads the preferences again once it
+                    // looks again, and draws what reads them.
+                    crate::ui::extension_switch::plugins_changed();
+                    Ok(format!("{label} is set"))
+                },
+            );
+        }
+        Intent::ResolvePrograms { identity, name } => {
+            spawn_mutation(
+                Mutation::asked(model, format!("Finding {name}'s programs…"), home, sender),
+                move |app| resolve_programs(app, &identity, &name),
+            );
         }
         Intent::LoadSettings => load_settings(home, model),
         Intent::PersistKeymap => persist_keymap(home, model),
@@ -834,8 +893,16 @@ fn answered_refresh(
     home: UzeHome,
     context_root: &std::path::Path,
 ) -> std::result::Result<RefreshData, String> {
+    let revision = super::extension_switch::plugins_revision();
     answered_or(
-        || load_refresh_data(home, context_root).map_err(|error| error.to_string()),
+        || {
+            load_refresh_data(home, context_root)
+                .map(|data| RefreshData {
+                    plugins_revision: revision,
+                    ..data
+                })
+                .map_err(|error| error.to_string())
+        },
         Err("Refreshing failed".to_owned()),
     )
 }
@@ -843,17 +910,22 @@ fn answered_refresh(
 fn load_refresh_data(home: UzeHome, context_root: &std::path::Path) -> Result<RefreshData> {
     let app = tui_application(home)?;
     let snapshot = app.machine_snapshot(context_root)?;
+    let extension_project = app.extensions().project_here(context_root);
     let mut plugins = snapshot.plugins;
     // Official plugins always lead the list — a stable sort keeps every
     // other ordering (whatever `list_plugins` returns) untouched within
     // each of the two groups.
     plugins.sort_by_key(|plugin| !plugin.source.starts_with("embedded:"));
     Ok(RefreshData {
+        plugins_revision: 0,
         plugins,
         doctor: Some(snapshot.doctor),
         marketplace_plugins: snapshot.marketplace_plugins,
         marketplaces: snapshot.marketplaces,
         profiles: snapshot.profiles,
+        declared_extensions: app.extensions().summaries(),
+        extension_standings: app.extensions().reports(extension_project.as_deref()),
+        extension_project,
         context_status: snapshot.context_status,
         workspace: snapshot.workspace,
         // Only `spawn_startup` ever fills this in; an ordinary refresh
@@ -1099,6 +1171,10 @@ pub(crate) fn drain_worker_results(
                     inspection.plugin.id.clone(),
                     inspection.capabilities.clone(),
                 );
+                model.plugin_extensions.insert(
+                    inspection.plugin.id.clone(),
+                    inspection.declared_extensions.clone(),
+                );
                 model.plugin_detail = Some(inspection);
                 model.inspection_in_flight = None;
             }
@@ -1107,10 +1183,15 @@ pub(crate) fn drain_worker_results(
                     model.marketplace_plugin_id(&detail.summary),
                     detail.capabilities.clone(),
                 );
+                model.plugin_extensions.insert(
+                    model.marketplace_plugin_id(&detail.summary),
+                    detail.declared_extensions.clone(),
+                );
                 model.marketplace_detail = Some(detail);
                 model.inspection_in_flight = None;
             }
             WorkerResult::Mutated(ticket, Ok((message, data))) => {
+                crate::ui::extension_switch::plugins_changed();
                 model.refreshed(data);
                 // What was inspected before the change describes a plugin
                 // that no longer stands as it did; the drawer asks again.
@@ -1144,6 +1225,7 @@ pub(crate) fn drain_worker_results(
                 model.mutation_answered(ticket, context_applied(message, &report));
             }
             WorkerResult::ProfileApplied(ticket, Ok((message, results, data))) => {
+                crate::ui::extension_switch::plugins_changed();
                 model.refreshed(data);
                 model.profile_apply_results = results;
                 model.mutation_answered(ticket, Status::Success(message));
@@ -1542,6 +1624,65 @@ fn switch_extension(home: &UzeHome, id: &str, enabled: bool) -> std::result::Res
     Ok(())
 }
 
+/// The operator's answer about a declared extension, made from this
+/// client, which only the operator's keyboard reaches: for the machine, as
+/// every switch here is, except that one reaching agents is enabled in the
+/// project in front alone.
+fn extension_here(app: &UzeApplication, here: &super::model::ExtensionHere) -> Result<String> {
+    let extensions = app.extensions();
+    let asker = crate::asker::asker();
+    if here.consent {
+        extensions.consent(
+            &here.identity,
+            here.shown.as_deref().unwrap_or_default(),
+            asker,
+        )?;
+    }
+    let project = here.project.file_name().map_or_else(
+        || here.project.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    let message = if here.enable {
+        if extensions
+            .enable_everywhere(&here.identity, &here.project, asker)?
+            .everywhere
+        {
+            format!("{} is enabled in every project", here.name)
+        } else {
+            format!("{} is enabled in {project}; it reaches agents", here.name)
+        }
+    } else {
+        extensions.disable_everywhere(&here.identity, &here.project)?;
+        format!("{} is disabled in every project", here.name)
+    };
+    // The workspace asks its sources again once it looks again.
+    crate::ui::extension_switch::plugins_changed();
+    Ok(message)
+}
+
+/// Pins a declared extension's programs where they are found now, and
+/// says what was found and what still is not.
+fn resolve_programs(
+    app: &UzeApplication,
+    identity: &uze_application::ExtensionIdentity,
+    name: &str,
+) -> Result<String> {
+    let pins = app
+        .extensions()
+        .resolve_again(identity, crate::asker::asker())?;
+    crate::ui::extension_switch::plugins_changed();
+    let missing: Vec<&str> = pins
+        .iter()
+        .filter(|pin| pin.path.is_none() && !pin.packaged)
+        .map(|pin| pin.name.as_str())
+        .collect();
+    Ok(if missing.is_empty() {
+        format!("{name}'s programs are found")
+    } else {
+        format!("{name} still misses {}", missing.join(", "))
+    })
+}
+
 fn select_theme(home: &UzeHome, id: &str) -> std::result::Result<(), String> {
     let application = tui_application(home.clone()).map_err(|error| error.to_string())?;
     crate::theme::select(&application, home, id)
@@ -1695,6 +1836,8 @@ mod tests {
     fn refreshed_with_repair() -> RefreshData {
         RefreshData {
             doctor: Some(DoctorReport {
+                program_confinement: Default::default(),
+                extension_costs: None,
                 uze_home: PathBuf::from("/home/uze"),
                 store: StoreHealth::Ready,
                 plugins: Vec::new(),
@@ -1883,6 +2026,7 @@ mod tests {
             .iter()
             .map(|id| uze_application::application::PluginSummary {
                 id: (*id).to_owned(),
+                kind: uze_application::application::PackageKind::Plugin,
                 active_name: (*id).to_owned(),
                 source: "embedded:example".to_owned(),
                 store_path: PathBuf::from("/store/example"),

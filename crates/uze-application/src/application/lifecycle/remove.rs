@@ -22,7 +22,7 @@ impl Plugins<'_> {
         // Removal changes vendor-visible state; cached inspection verdicts
         // must not outlive it (ADR 018).
         self.0.inspection_cache.invalidate();
-        self.detach_and_remove(id, false)
+        self.take_off(id, false, true, Consents::Forget)
     }
 
     /// Whether an installed package is protected from removal. Only the
@@ -41,17 +41,18 @@ impl Plugins<'_> {
         id: &str,
         allow_protected: bool,
     ) -> Result<RemovePluginReport> {
-        self.take_off(id, allow_protected, true)
+        self.take_off(id, allow_protected, true, Consents::Keep)
     }
 
-    /// `detach_and_remove` without rebuilding the derived views, for a
-    /// caller removing several packages that rebuilds them once at the end.
+    /// The plugin leaving the machine with its marketplace, without
+    /// rebuilding the derived views, for a caller removing several packages
+    /// that rebuilds them once at the end.
     pub(crate) fn detach_and_remove_unpublished(
         &self,
         id: &str,
         allow_protected: bool,
     ) -> Result<RemovePluginReport> {
-        self.take_off(id, allow_protected, false)
+        self.take_off(id, allow_protected, false, Consents::Forget)
     }
 
     fn take_off(
@@ -59,6 +60,7 @@ impl Plugins<'_> {
         id: &str,
         allow_protected: bool,
         republish: bool,
+        consents: Consents,
     ) -> Result<RemovePluginReport> {
         let package = match self.0.package_by_name(id) {
             Ok(package) => package,
@@ -96,8 +98,25 @@ impl Plugins<'_> {
         for reconciled in &final_report.receipts {
             state::forget_receipt(&self.0.home, &reconciled.receipt)?;
         }
+        let resources = uze_core::engine::package_resources(&package).unwrap_or_default();
+        let kind = PackageKind::of(&package, &resources.iter().collect::<Vec<_>>());
         self.0.store.remove_package(&package.id)?;
         state::forget_undelivered(&self.0.home, package.id.as_str(), None)?;
+        // The package is gone: what its extensions leave behind is
+        // forgotten as far as it can be, and never undoes the removal or
+        // keeps the derived views stale.
+        let unforgotten = (consents == Consents::Forget)
+            .then(|| {
+                self.0
+                    .extensions()
+                    .forget_plugin(package.id.plugin_name(), package.id.marketplace())
+                    .err()
+            })
+            .flatten()
+            .map(|error| {
+                tracing::warn!(plugin = package.id.as_str(), %error, "its extensions were not all forgotten");
+                error.to_string()
+            });
         // The package set changed, so every derived view is now stale. A
         // failure to rebuild one does not un-remove the package.
         if republish {
@@ -105,10 +124,23 @@ impl Plugins<'_> {
         }
         Ok(RemovePluginReport::Removed {
             plugin: package.id.as_str().to_owned(),
+            kind,
             detached_receipts,
             already_missing_receipts,
+            unforgotten,
         })
     }
+}
+
+/// What a removal does with the consents given to the plugin's
+/// extensions. An update takes the plugin off only to put it back, and its
+/// extensions keep what was accepted for them, judged again by the update
+/// rule; a plugin leaving the machine takes them along, so the same name
+/// installed again is consented to from nothing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Consents {
+    Keep,
+    Forget,
 }
 
 /// Whether `plugin`, offered by `marketplace`, belongs to the official set

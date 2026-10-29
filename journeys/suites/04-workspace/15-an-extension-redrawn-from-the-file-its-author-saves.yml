@@ -1,0 +1,387 @@
+journey: a plugin's declared extension opens in the workspace and is redrawn from the file its author saves
+tags: [gate, tui, workspace]
+about: |
+  The author's loop for an extension a plugin declares in KDL: the plugin
+  comes from a marketplace linked to the author's working tree, its board
+  opens from the tab strip drawn from its fixture, a tab is switched
+  without anything being read or written, and a save to the view in the
+  working tree is what the open board shows next — without a reinstall.
+
+  The machine is what each scene checks: the compiled view the workspace
+  keeps in its generated tier, the Store's copy the save never touched,
+  and the files a tab switch leaves exactly as they were. The screen only
+  gates each gesture.
+
+world:
+  project: demo-app
+  files:
+    market/marketplace.json: |
+      {
+        "name": "studio",
+        "description": "A marketplace this journey stages and links.",
+        "plugins": [
+          { "name": "gsd", "source": "./plugins/gsd", "description": "The gsd-band reference extension." }
+        ]
+      }
+    market/plugins/gsd/plugin.json: |
+      {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "gsd",
+        "version": "1.0.0",
+        "description": "The gsd-band reference extension: a board view and a sidebar section declared in KDL and drawn from a fixture."
+      }
+    market/plugins/gsd/extensions/gsd-band/extension.kdl: |
+      protocol 1
+      id "gsd-band"
+      name "GSD"
+      description "The checkout's GSD milestone: every phase, where it stands, and what to run next"
+
+      surface "board" slot="view" view="board.uze" source="milestone" title="Milestone"
+      surface "summary" slot="section" view="summary.uze" source="milestone" title="GSD"
+
+      source "milestone" {
+          fixture "fixtures/milestone.json"
+      }
+    market/plugins/gsd/extensions/gsd-band/board.uze: |
+      <view>
+      // The colour a phase's state is drawn in.
+      lookup "tone" default="muted" {
+          done "success"
+          running "warning"
+          ready "info"
+          waiting "faint"
+      }
+
+      // What each state is called, in the operator's language.
+      lookup "state" locale="en" default="" {
+          done "Done"
+          running "In progress"
+          ready "Ready to discuss"
+          waiting "Waiting"
+      }
+      lookup "state" locale="pt" default="" {
+          done "Concluída"
+          running "Em execução"
+          ready "Pronta para discussão"
+          waiting "Aguardando"
+      }
+
+      lookup "t" locale="en" {
+          phases "Phases"; log "Activity"; now "Now"; next "Run phase"
+          left "left"; plans "plans"; of "of"; done "done"; empty "Nothing in this milestone yet"
+          phase "Phase"; status "Status"; quiet "No activity yet"
+      }
+      lookup "t" locale="pt" {
+          phases "Fases"; log "Atividade"; now "Agora"; next "Executar fase"
+          left "faltam"; plans "planos"; of "de"; done "concluídas"; empty "Nada neste milestone ainda"
+          phase "Fase"; status "Situação"; quiet "Nenhuma atividade ainda"
+      }
+
+      Stack gap=1 {
+          // The milestone and the one action that moves it.
+          Row align="center" gap=2 {
+              Text "{milestone}" strong=#true
+              Text "{title}" role="muted" grow=#true truncate=#true
+              Button "{t::next} {next.number}" action="next" item="{next}" when="next"
+          }
+
+          // How far the milestone is: one segment per phase, as wide as its plans.
+          Row gap=2 {
+              Progress grow=#true {
+                  Segment each="phases" weight="{weight}" ratio="{ratio}" role="{tone:state}"
+              }
+              Text "{percent}%" strong=#true
+              Text "{finished} {t::of} {total} {t::done}" role="muted"
+          }
+
+          Tabs id="tab" {
+              Tab "{t::phases}" value="phases"
+              Tab "{t::log}" value="log"
+          }
+
+          Stack gap=1 show="ui.tab=phases" {
+              Table "#" "{t::phase}" "D" "P" "E" "Plans" "{t::status}" empty="{t::empty}" {
+                  // A phase: its number and name, the three steps a GSD phase
+                  // goes through (discuss, plan, execute), its plans and its state.
+                  Row each="phases" {
+                      Text "{number}" role="muted"
+                      Text "{name}" truncate=#true
+                      Marks { Mark role="{tone:discussed}"; }
+                      Marks { Mark role="{tone:planned}"; }
+                      Marks { Mark role="{tone:executed}"; }
+                      Row {
+                          Text "{summaries}/{plans}" role="muted" when="plans"
+                          Text "–" role="faint" unless="plans"
+                      }
+                      Text "{state:state}" role="{tone:state}"
+                  }
+              }
+
+              // The phase in progress, and exactly what is left of it.
+              Stack when="current" {
+                  Row gap=2 {
+                      Badge "{t::now}" role="warning"
+                      Text "{current.number} · {current.name}" strong=#true
+                      Pips done="{current.done}" total="{current.total}"
+                      Text "{current.left} {t::plans} {t::left}" role="muted"
+                  }
+                  List each="current.remaining" {
+                      Row gap=1 {
+                          Text "{id}" role="muted" min-width=6
+                          Text "{title}" truncate=#true
+                      }
+                  }
+              }
+          }
+
+          Stack show="ui.tab=log" {
+              Log lines="{activity}" when="activity"
+              Text "{t::quiet}" role="faint" unless="activity"
+          }
+      }
+      </view>
+    market/plugins/gsd/extensions/gsd-band/summary.uze: |
+      <view>
+      // The milestone at a glance, for the sidebar's narrow column.
+      lookup "tone" default="muted" {
+          done "success"
+          running "warning"
+          ready "info"
+          waiting "faint"
+      }
+
+      Stack {
+          Row gap=1 {
+              Text "{milestone}" strong=#true
+              Text "{percent}%" role="muted"
+          }
+          Progress {
+              Segment each="phases" weight="{weight}" ratio="{ratio}" role="{tone:state}"
+          }
+          Row gap=1 when="current" {
+              Text "{current.number}" role="warning"
+              Text "{current.name}" truncate=#true grow=#true
+              Text "{current.done}/{current.total}" role="muted"
+          }
+      }
+      </view>
+    market/plugins/gsd/extensions/gsd-band/fixtures/milestone.json: |
+      {
+        "milestone": "v1.23",
+        "title": "Assistente do lojista",
+        "percent": 65,
+        "finished": 3,
+        "total": 6,
+        "next": {
+          "number": "12",
+          "skill": "gsd:execute-phase"
+        },
+        "current": {
+          "number": "12",
+          "name": "Consulta de dados e diagnóstico",
+          "done": 17,
+          "total": 19,
+          "left": 2,
+          "remaining": [
+            {
+              "id": "12-18",
+              "title": "Diagnóstico de estoque baixo por loja"
+            },
+            {
+              "id": "12-19",
+              "title": "Relatório de erros de integração"
+            }
+          ]
+        },
+        "phases": [
+          {
+            "number": "09",
+            "name": "Fundação da loja",
+            "plans": 4,
+            "summaries": 4,
+            "weight": 4,
+            "ratio": 1.0,
+            "discussed": "done",
+            "planned": "done",
+            "executed": "done",
+            "state": "done",
+            "running": false
+          },
+          {
+            "number": "10",
+            "name": "Pedidos e pagamentos",
+            "plans": 5,
+            "summaries": 5,
+            "weight": 5,
+            "ratio": 1.0,
+            "discussed": "done",
+            "planned": "done",
+            "executed": "done",
+            "state": "done",
+            "running": false
+          },
+          {
+            "number": "11",
+            "name": "Catálogo de ajuda",
+            "plans": 6,
+            "summaries": 6,
+            "weight": 6,
+            "ratio": 1.0,
+            "discussed": "done",
+            "planned": "done",
+            "executed": "done",
+            "state": "done",
+            "running": false
+          },
+          {
+            "number": "12",
+            "name": "Consulta de dados e diagnóstico",
+            "plans": 19,
+            "summaries": 17,
+            "weight": 19,
+            "ratio": 0.89,
+            "discussed": "done",
+            "planned": "done",
+            "executed": "running",
+            "state": "running",
+            "running": true
+          },
+          {
+            "number": "13",
+            "name": "Ações com confirmação",
+            "plans": 0,
+            "summaries": 0,
+            "weight": 4,
+            "ratio": 0.0,
+            "discussed": "ready",
+            "planned": "waiting",
+            "executed": "waiting",
+            "state": "ready",
+            "running": false
+          },
+          {
+            "number": "14",
+            "name": "Relatórios do lojista",
+            "plans": 0,
+            "summaries": 0,
+            "weight": 4,
+            "ratio": 0.0,
+            "discussed": "waiting",
+            "planned": "waiting",
+            "executed": "waiting",
+            "state": "waiting",
+            "running": false
+          }
+        ],
+        "activity": [
+          {
+            "text": "12-17 · Consulta de pedidos por status — summary written",
+            "role": "success"
+          },
+          {
+            "text": "12-17 · 214 tests passed",
+            "role": "muted"
+          },
+          {
+            "text": "12-18 · Diagnóstico de estoque — plan started",
+            "role": "warning"
+          },
+          {
+            "text": "Turn finished in 4m12s",
+            "role": "muted"
+          }
+        ]
+      }
+
+scenes:
+  - scene: a plugin from a linked marketplace is installed, its extension with it
+    when:
+      - shell: "{uze} market add {world}/market && {uze} market link studio {world}/market && {uze} install -m gsd@studio"
+        say: register the marketplace, link it to its working tree, install the plugin
+    then:
+      - json: "{uze_home}/state/marketplaces.json"
+        at: marketplaces.studio.link
+        equals: "{world}/market"
+        about: the marketplace follows the author's working tree
+      - file: "{uze_home}/store/plugins/studio/gsd/extensions/gsd-band/board.uze"
+        contains: 'Text "{percent}%"'
+        about: the extension's view was installed with the plugin
+      - dir: "{uze_home}/runtime/extensions"
+        exists: false
+        about: nothing is compiled until the workspace asks
+
+  - scene: and then the board opens from the tab strip, compiled once and kept
+    when:
+      - open: ["{uze}", "workspace"]
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      # The bar's doors are about a project, so an agent stands in
+      # front first: the board opens on the checkout it works in.
+      - click: "new"
+        say: open the new-agent popup from the space's row
+        in: sidebar
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
+        say: place an agent on the project
+        expect: 'agent 1(?!: preparing)'
+        expect_timeout: 90
+        pause: 1.5
+      - click: "milestone"
+        say: open the extension's board from the bar under the agent area
+        in: bar
+        expect: "Milestone"
+        expect_timeout: 20
+      - wait: screen
+        until: "65%  3 of 6 done"
+        in: pane
+        timeout: 20
+        say: the board is drawn from its fixture
+    then:
+      # A compiled view is named by a 16-digit digest; `costs.json`, what the
+      # workspace measures of each extension, sits beside them.
+      - file: "{uze_home}/runtime/extensions/????????????????.json"
+        count: 1
+        about: the compiled view is kept in the generated tier, so the next open parses nothing
+      - capture:
+          name: before-the-tab
+          tree: ["{world}/market", "{uze_home}/runtime/extensions"]
+          # Rewritten every 30 s by the workspace, whatever the operator does.
+          except: ["extensions/costs.json"]
+
+  - scene: and then switching a tab draws the log and touches nothing
+    when:
+      - click: "activity"
+        say: switch the board to its log
+        in: pane
+        occurrence: first
+        expect: "Turn finished in 4m12s"
+        expect_timeout: 10
+    then:
+      - tree: ["{world}/market", "{uze_home}/runtime/extensions"]
+        except: ["extensions/costs.json"]
+        same_as: before-the-tab
+        about: a tab is the host's state — nothing was compiled, read into the cache or written
+
+  - scene: and then a save to the view in the working tree is what the board draws next
+    when:
+      - shell: |
+          {python} -c "import pathlib; p = pathlib.Path(r'{world}/market/plugins/gsd/extensions/gsd-band/board.uze'); p.write_text(p.read_text(encoding='utf-8').replace('Text \"{percent}%\"', 'Text \"{percent}% done\"'), encoding='utf-8')"
+        say: the author saves a change to the board's view
+      - wait: screen
+        until: "65% done"
+        in: pane
+        timeout: 10
+        say: the open board redraws on its own
+      - wait: screen
+        until: "Turn finished in 4m12s"
+        in: pane
+        timeout: 5
+        say: on the tab the author chose
+    then:
+      - file: "{uze_home}/runtime/extensions/????????????????.json"
+        count: 2
+        about: the save was compiled anew, beside the compile of the files it replaced
+      - file: "{uze_home}/store/plugins/studio/gsd/extensions/gsd-band/board.uze"
+        excludes: "% done"
+        about: read from the working tree — the Store's copy was never reinstalled

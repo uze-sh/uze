@@ -43,6 +43,11 @@ def spell(path: Path | str) -> str:
     return str(path)
 
 
+def spell_value(value: str) -> str:
+    """A recorded string as a journey compares it: as written, here."""
+    return value
+
+
 def host_path(path: str) -> str:
     """`path` as this filesystem holds it: as written, here."""
     return path
@@ -74,8 +79,16 @@ def shell_rc_name() -> str:
 
 def world_environment(root: Path, binary: Path) -> dict:
     """What a world's environment carries on this platform, beside the
-    identity and homes every platform's world shares."""
+    identity and homes every platform's world shares.
+
+    A temporary directory of its own, as a machine keeps one apart from its
+    projects and as the Windows world has: the world itself lives under
+    `/tmp`, and a program that refuses a temporary directory (an extension
+    asked to read a checkout) would refuse every project in it."""
+    temporary = root / "tmp"
+    temporary.mkdir(parents=True, exist_ok=True)
     return {
+        "TMPDIR": str(temporary),
         "XDG_RUNTIME_DIR": str(root / "run"),
         "PATH": f"{root / 'bin'}:{binary.parent}:/usr/local/bin:/usr/bin:/bin",
         "TERM": "xterm-256color",

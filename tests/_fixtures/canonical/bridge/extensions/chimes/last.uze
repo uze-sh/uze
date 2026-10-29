@@ -1,0 +1,7 @@
+<view>
+// The last chime, or nothing to say yet.
+Row gap=1 {
+    Text "{said}" role="muted" when="said"
+    Text "Quiet" role="faint" unless="said"
+}
+</view>

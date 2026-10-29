@@ -103,6 +103,22 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     put(Action::ClearPromptHistory, Index);
     put(Action::EnableExtension, Control("the drawer's buttons"));
     put(Action::DisableExtension, Control("the drawer's buttons"));
+    put(
+        Action::EditPreferences,
+        Control("the Preferences button in a declared extension's drawer, and a click on a row"),
+    );
+    put(
+        Action::ShowExtension,
+        Control("the open link in the Marketplace panel of an extension a plugin declares"),
+    );
+    put(
+        Action::ShowPlugin,
+        Control("the plugin line in a declared extension's drawer"),
+    );
+    put(
+        Action::ResolvePrograms,
+        Control("the Resolve again button in a declared extension's drawer"),
+    );
     put(Action::SetupHarness, Control("the drawer's buttons"));
     put(Action::AnalyzeContext, Index);
     put(Action::ApplyContextPlan, Index);
@@ -258,6 +274,14 @@ fn affordances() -> BTreeMap<Action, Affordance> {
         Control("the Map chip, beside the code surface's other views"),
     );
     put(
+        Action::ToggleInspector,
+        Control("the inspector key in a plugin's view footer"),
+    );
+    put(
+        Action::ToggleDrawer,
+        Control("a plugin drawer's button in the tab strip, beside its views"),
+    );
+    put(
         Action::DeliverTask,
         Control("the deliver key in a ready row's hint in recent"),
     );
@@ -265,6 +289,13 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     // and the index lists it only where there is a space to deliver.
     put(Action::DeliverAllTasks, Index);
     put(Action::ToggleRecent, Control("the sidebar header's name"));
+    // A brake, pressed while an extension types where it should not: its
+    // key over any pane, and the index's row, which lists it there.
+    put(Action::PauseAgentWrites, Index);
+    put(
+        Action::ReviewExtensions,
+        Control("the Review button of the toast that offers a project's extensions"),
+    );
     // Taking work away is never one misclick from a pointer: the index
     // offers it for recent's selected row, and only where it applies.
     put(Action::DiscardTask, Index);
@@ -290,11 +321,17 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     );
     put(
         Action::MoveItemUp,
-        Control("the up hint along the overview's foot, on a list's entry"),
+        Control(
+            "the up hint along the overview's foot, on a list's entry, and the Move up \
+             button in the drawer of an extension that draws a status row",
+        ),
     );
     put(
         Action::MoveItemDown,
-        Control("the down hint along the overview's foot, on a list's entry"),
+        Control(
+            "the down hint along the overview's foot, on a list's entry, and the Move \
+             down button in the drawer of an extension that draws a status row",
+        ),
     );
     put(
         Action::DiscardChanges,
@@ -306,6 +343,14 @@ fn affordances() -> BTreeMap<Action, Affordance> {
             "the Review button in the Settings drawer while commands wait, and the \
              review hint along the overview's foot",
         ),
+    );
+    put(
+        Action::ToggleChoice,
+        Control("the mark at the start of a row in a list to choose from"),
+    );
+    put(
+        Action::ToggleAllChoices,
+        Control("the switch all beside a list to choose from's count"),
     );
     for position in 1..=9u8 {
         put(Action::SelectTab(position), Control("clicking the tab"));

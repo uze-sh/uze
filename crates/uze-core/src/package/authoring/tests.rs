@@ -41,6 +41,9 @@ fn every_scaffold_passes_its_own_check() -> Result<()> {
             mcp: flags & 2 != 0,
             agent: flags & 4 != 0,
             rules: flags & 8 != 0,
+            // Every other layout carries an extension too: its directory
+            // must not cost the plugin its check or its standard.
+            extension: (flags % 2 == 0).then(|| "board".to_owned()),
         };
         let root = scratch(&format!("authoring-scaffold-{flags}"));
         let market = scaffold_marketplace("tools", Some("Test tools"), &root.join("market"))?;
@@ -498,6 +501,74 @@ fn a_name_the_manifest_already_carries_is_refused_before_any_write() -> Result<(
         !market.join("plugins/ghost").exists(),
         "the refusal wrote nothing"
     );
+    fs::remove_dir_all(&root).expect("teardown");
+    Ok(())
+}
+
+/// The extension a scaffold writes compiles by the rules the workspace
+/// hosts it with, and its fixture is where the manifest says it is.
+#[test]
+fn a_scaffolded_extension_compiles() -> Result<()> {
+    let _git_identity = git_identity();
+    let root = scratch("authoring-extension");
+    let market = scaffold_marketplace("tools", None, &root.join("market"))?;
+    let plugin = scaffold_plugin(
+        &market,
+        "greet",
+        None,
+        None,
+        &ScaffoldCapabilities {
+            extension: Some("board".to_owned()),
+            ..ScaffoldCapabilities::default()
+        },
+    )?;
+
+    let found = crate::capability::extension::discover(&plugin);
+    assert_eq!(found.len(), 1, "{found:?}");
+    let identity = uze_contract::Identity {
+        marketplace: "tools".to_owned(),
+        plugin: "greet".to_owned(),
+        id: "board".to_owned(),
+    };
+    let compiled = crate::capability::extension::compile(identity, &found[0].dir)
+        .unwrap_or_else(|diagnostics| panic!("{diagnostics:#?}"));
+    let surfaces: Vec<_> = compiled
+        .manifest
+        .surfaces
+        .iter()
+        .map(|surface| surface.id.as_str())
+        .collect();
+    assert_eq!(surfaces, ["board", "summary"]);
+    assert!(found[0].dir.join("fixtures/board.json").is_file());
+    let live = compiled.manifest.source("live").expect("a script source");
+    assert_eq!(live.script(), Some("board.uze"));
+    assert!(found[0].dir.join("board.uze").is_file());
+    fs::remove_dir_all(&root).expect("teardown");
+    Ok(())
+}
+
+/// An extension id a built-in already answers to, or one the manifest
+/// would refuse, is refused before the plugin is written at all.
+#[test]
+fn a_reserved_or_malformed_extension_id_is_refused_before_any_write() -> Result<()> {
+    let _git_identity = git_identity();
+    let root = scratch("authoring-extension-reserved");
+    let market = scaffold_marketplace("tools", None, &root.join("market"))?;
+    for id in ["code", "uze", "timeline", "Board", "../board"] {
+        let refused = scaffold_plugin(
+            &market,
+            "greet",
+            None,
+            None,
+            &ScaffoldCapabilities {
+                extension: Some(id.to_owned()),
+                ..ScaffoldCapabilities::default()
+            },
+        );
+        let message = refused.expect_err(id).to_string();
+        assert!(message.contains(&format!("`{id}`")), "{message}");
+        assert!(!market.join("plugins/greet").exists(), "{id} wrote nothing");
+    }
     fs::remove_dir_all(&root).expect("teardown");
     Ok(())
 }

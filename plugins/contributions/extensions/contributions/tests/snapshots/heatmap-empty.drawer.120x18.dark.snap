@@ -1,0 +1,48 @@
+# uze snapshot · protocol 1 · drawer 120x18 · dark
+ ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ │ Contributions                                                                                                       │
+ │                                                                                                                     │
+ │  0            0                0 days              0 days                                                           │
+ │  commits      active days      current streak      longest streak                                                   │
+ │                                                                                                                     │
+ │      Jun   Jul     Aug       Sep     Oct        Wed, Oct 28 · 0 commits                     who                     │
+ │  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■    no commit that day                                                  │
+ │      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                                                                        │
+ │  Wed ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ▣                                                                        │
+ │      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                                                                          │
+ │  Fri ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                                                                          │
+ │      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                                                                          │
+ │      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                                                                          │
+ │                                                                                                                     │
+ │  click a day                 less ■■■■■ more                                                                        │
+ │                                                                                                                     │
+ └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+---
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ a bbbbbbbbbbbbb                                                                                                       a
+ a                                                                                                                     a
+ a  c            c                c cccc              c cccc                                                           a
+ a  bbbbbbb      bbbbbb bbbb      bbbbbbb bbbbbb      bbbbbbb bbbbbb                                                   a
+ a                                                                                                                     a
+ a      bbb   bbb     bbb       bbb     bbb        cccc ccc cc b b bbbbbbb                     bbb                     a
+ a  bbb d d d d d d d d d d d d d d d d d d d d    ee eeeeee eeee eee                                                  a
+ a      d d d d d d d d d d d d d d d d d d d d                                                                        a
+ a  bbb d d d d d d d d d d d d d d d d d d d d                                                                        a
+ a      d d d d d d d d d d d d d d d d d d d                                                                          a
+ a  bbb d d d d d d d d d d d d d d d d d d d                                                                          a
+ a      d d d d d d d d d d d d d d d d d d d                                                                          a
+ a      d d d d d d d d d d d d d d d d d d d                                                                          a
+ a                                                                                                                     a
+ a  eeeee e eee                 bbbb dfghi bbbb                                                                        a
+ a                                                                                                                     a
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+---
+a border.default
+b text.muted
+c text.bright
+d heat.0
+e text.faint
+f heat.1
+g heat.2
+h heat.3
+i state.success

@@ -104,6 +104,38 @@ pub(crate) fn stdio_command(payload: &[u8], package_root: &Path) -> Option<(Path
     Some((PathBuf::from(command), args))
 }
 
+/// How the stdio server `server` of `package` is started, exactly as a
+/// harness is handed it: its command and arguments with the package root
+/// resolved, or why it is not one a harness would be handed
+/// (`extension-mcp` D3).
+pub fn stdio_server_launch(
+    package: &StoredPackage,
+    server: &str,
+) -> std::result::Result<(PathBuf, Vec<String>), String> {
+    let plugin = package.id.as_str();
+    let bytes = fs::read(package.root.join("mcp.json"))
+        .map_err(|_| format!("{plugin} delivers no MCP server"))?;
+    let servers = uze_core::authored::json::<serde_json::Value>(&bytes)
+        .map_err(|error| format!("{plugin}'s mcp.json is not read: {error}"))?;
+    let declared = servers
+        .get("mcpServers")
+        .and_then(|servers| servers.get(server))
+        .ok_or_else(|| format!("{plugin} delivers no MCP server `{server}`"))?;
+    let payload = serde_json::to_vec(declared).expect("a JSON value serializes");
+    let transport = declared.get("type").and_then(serde_json::Value::as_str);
+    if !matches!(transport, None | Some("stdio")) {
+        return Err(format!(
+            "`{server}` is a `{}` server; only a stdio server is started",
+            transport.unwrap_or_default()
+        ));
+    }
+    if let Some(why) = undeliverable(&payload) {
+        return Err(why.to_owned());
+    }
+    stdio_command(&payload, &package.root)
+        .ok_or_else(|| format!("`{server}` declares no command a harness could start"))
+}
+
 /// What a server declares that the managed stdio entry has no place for.
 /// The entry carries a command and its arguments; a server that also needs
 /// an environment or a working directory would start without them.
@@ -450,6 +482,58 @@ mod tests {
             .status()
             .unwrap();
         assert_eq!(status.code(), Some(6));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn an_extension_starts_a_server_as_a_harness_is_handed_it_or_says_why_not() {
+        let root = std::env::temp_dir().join(format!("uze-mcp-launch-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("mcp.json"),
+            r#"{"mcpServers":{
+                "rtc":{"type":"stdio","command":"bun","args":["run","${PLUGIN_ROOT}/mcp/rtc/src/index.ts"]},
+                "remote":{"type":"http","url":"https://example.com/mcp"},
+                "tokened":{"command":"server","env":{"TOKEN":"x"}}
+            }}"#,
+        )
+        .unwrap();
+        let id =
+            uze_core::store::PackageId::from_plugin_name("std", &root.join("plugin.json")).unwrap();
+        let package = StoredPackage {
+            active_name: id.plugin_name().to_owned(),
+            id,
+            root: root.clone(),
+            manifest: root.join("plugin.json"),
+            provenance: uze_core::acquisition::Provenance {
+                requested: uze_core::acquisition::PackageSource::Local { path: root.clone() },
+                resolved: uze_core::acquisition::ResolvedSource::Local { path: root.clone() },
+            },
+        };
+        let (command, args) = stdio_server_launch(&package, "rtc").unwrap();
+        assert_eq!(
+            (command, args),
+            stdio_command(
+                br#"{"command":"bun","args":["run","${PLUGIN_ROOT}/mcp/rtc/src/index.ts"]}"#,
+                &root
+            )
+            .unwrap()
+        );
+        assert!(
+            stdio_server_launch(&package, "remote")
+                .unwrap_err()
+                .contains("only a stdio server")
+        );
+        assert!(
+            stdio_server_launch(&package, "tokened")
+                .unwrap_err()
+                .contains("`env`")
+        );
+        assert!(
+            stdio_server_launch(&package, "absent")
+                .unwrap_err()
+                .contains("no MCP server `absent`")
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 }

@@ -49,6 +49,11 @@ person.** It uses both layers, each covering the other's escape:
   (`SpaceOpened`), which is what a `uze` typed into a pane needs. It is
   shown no snapshot, given no input, and cannot stop the runtime, even when
   it offers the key.
+  Amended (extension-agent-bridge): a pane may also *report about itself*. `uze agent
+  report <event>`, verified by the agent's launch key, appends to a bounded
+  per-agent journal under `UzeHome` that the workspace client polls; the
+  runtime still serves the pane no snapshot, no input and no stop, and a
+  report is a claim the client draws, never a permission (D16).
 - **Attaching and stopping take the runtime's key.** Each server mints 32
   random bytes when it takes the workspace claim and writes them, readable
   by the user alone, beside the claim (`state/terminal/workspace.key`).

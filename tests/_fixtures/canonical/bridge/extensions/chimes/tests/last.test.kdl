@@ -1,0 +1,12 @@
+test "the row says the last chime" {
+    surface "last"
+    given "chime" fixture="fixtures/turn.json"
+    expect-text "turn finished"
+    snapshot "last"
+}
+
+test "before any event it is quiet" {
+    surface "last"
+    given "chime" json="{}"
+    expect-text "Quiet"
+}

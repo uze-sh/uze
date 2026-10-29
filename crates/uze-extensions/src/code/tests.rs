@@ -1686,6 +1686,7 @@ fn every_language_fixture_is_read_as_its_own_language() {
         ("protobuf.proto", "Protocol Buffer"),
         ("python.py", "Python"),
         ("r.r", "R"),
+        ("rhai.rhai", "Rhai"),
         ("ruby.rb", "Ruby"),
         ("rust.rs", "Rust"),
         ("scala.scala", "Scala"),
@@ -3300,4 +3301,268 @@ fn a_folded_directory_stays_folded_when_the_surface_is_opened_again() {
         item_names_of_tree(&back),
         ["src", "deep/er", "x.rs", "README.md"]
     );
+}
+
+mod hosted {
+    use super::*;
+    use crate::contract::{Checkout, Entry, Extension, Opaque, Outcome};
+    use crate::view::Layout;
+
+    fn checkout(root: &str) -> Checkout {
+        Checkout {
+            root: PathBuf::from(root),
+            display: root.to_owned(),
+            target: None,
+        }
+    }
+
+    fn opened(door: &str, root: &str) -> CodeExtension {
+        let mut extension = CodeExtension::default();
+        extension.enter(SURFACE, Entry::Door(door.to_owned()));
+        extension.open(SURFACE, &checkout(root));
+        extension
+    }
+
+    /// Runs every job the extension hands over and gives it the answers,
+    /// until it has nothing left to ask.
+    fn settle_hosted(extension: &mut CodeExtension, host: &dyn Host) -> Vec<Outcome> {
+        let mut outcomes = Vec::new();
+        loop {
+            let answers: Vec<Opaque> = extension
+                .jobs()
+                .into_iter()
+                .map(|job| (job.run)(host))
+                .collect();
+            if answers.is_empty() {
+                return outcomes;
+            }
+            outcomes.extend(answers.into_iter().map(|answer| extension.absorb(answer)));
+        }
+    }
+
+    #[test]
+    fn a_door_opens_its_half_shuts_itself_and_switches_to_the_other() {
+        let mut extension = opened(FILES, "/w");
+        let showing = |extension: &CodeExtension| extension.code_view().map(CodeView::showing);
+        assert_eq!(showing(&extension), Some(ContentMode::Contents));
+        assert_eq!(
+            extension.enter(SURFACE, Entry::Door(CHANGES.to_owned())),
+            Outcome::Stay
+        );
+        assert_eq!(showing(&extension), Some(ContentMode::Diff), "switched");
+        assert_eq!(
+            extension.enter(SURFACE, Entry::Door(CHANGES.to_owned())),
+            Outcome::Close,
+            "the door already open shuts it"
+        );
+
+        let mut changes = opened(CHANGES, "/w");
+        assert_eq!(showing(&changes), Some(ContentMode::Diff));
+        changes.code_view_mut().unwrap().content = ContentMode::Preview;
+        assert_eq!(
+            changes.enter(SURFACE, Entry::Door(FILES.to_owned())),
+            Outcome::Close,
+            "a preview is still the files half"
+        );
+    }
+
+    #[test]
+    fn a_path_sent_from_another_surface_wins_over_the_last_place() {
+        let mut extension = CodeExtension::default();
+        extension.enter(
+            SURFACE,
+            Entry::Path {
+                target: PathBuf::from("/w/src/main.rs"),
+                directory: false,
+            },
+        );
+        extension.open(SURFACE, &checkout("/w"));
+        extension.resume(
+            SURFACE,
+            Opaque::new(CodePlace::at(
+                Path::new("/w"),
+                Path::new("/w/README.md"),
+                false,
+            )),
+        );
+        let view = extension.code_view().unwrap();
+        assert_eq!(view.showing(), ContentMode::Contents);
+        assert_eq!(view.selected(), Some(Path::new("/w/src/main.rs")));
+
+        extension.close(SURFACE);
+        extension.enter(SURFACE, Entry::Door(FILES.to_owned()));
+        extension.open(SURFACE, &checkout("/w"));
+        extension.resume(
+            SURFACE,
+            Opaque::new(CodePlace::at(
+                Path::new("/w"),
+                Path::new("/w/README.md"),
+                false,
+            )),
+        );
+        assert_eq!(
+            extension.code_view().unwrap().selected(),
+            Some(Path::new("/w/README.md")),
+            "a door goes back where the viewer was"
+        );
+    }
+
+    #[test]
+    fn a_save_waits_for_the_read_before_it_while_listings_go_alongside() {
+        let mut extension = opened(FILES, "/w");
+        let first = extension.jobs();
+        assert_eq!(first.len(), 2, "the exclusions and the root's listing");
+        let view = extension.code_view_mut().unwrap();
+        view.queue
+            .push_back(FileRequest::Read(PathBuf::from("/w/a.rs")));
+        view.queue.push_back(FileRequest::Save {
+            root: PathBuf::from("/w"),
+            path: PathBuf::from("/w/a.rs"),
+            contents: String::new(),
+        });
+        view.queue
+            .push_back(FileRequest::List(PathBuf::from("/w/src")));
+        assert_eq!(extension.jobs().len(), 1, "the read, alone");
+        assert!(extension.jobs().is_empty(), "the save waits behind it");
+        extension.absorb(Opaque::new(FileRead {
+            root: PathBuf::from("/w"),
+            answer: unanswered(&FileRequest::Read(PathBuf::from("/w/a.rs")), "gone"),
+        }));
+        assert_eq!(
+            extension.jobs().len(),
+            2,
+            "then the save, and the listing behind it"
+        );
+    }
+
+    #[test]
+    fn a_write_that_failed_after_the_surface_closed_is_still_said() {
+        let mut extension = opened(FILES, "/w");
+        extension.close(SURFACE);
+        let failed = extension.absorb(Opaque::new(FileRead {
+            root: PathBuf::from("/w"),
+            answer: FileAnswer::Saved {
+                path: PathBuf::from("/w/src/main.rs"),
+                outcome: Err("read-only".to_owned()),
+            },
+        }));
+        assert_eq!(
+            failed,
+            Outcome::Failed {
+                title: "save failed".to_owned(),
+                detail: "main.rs: read-only".to_owned(),
+            }
+        );
+        let listed = extension.absorb(Opaque::new(FileRead {
+            root: PathBuf::from("/w"),
+            answer: unanswered(&FileRequest::List(PathBuf::from("/w")), "gone"),
+        }));
+        assert_eq!(listed, Outcome::Stay, "a read that finished is not");
+    }
+
+    #[test]
+    fn the_map_is_measured_once_and_kept_for_the_next_opening() {
+        let machine = FakeMachine::default().with_file("/repo/a.rs", "fn a() {}\n");
+        let mut extension = opened(FILES, "/repo");
+        settle_hosted(&mut extension, &machine);
+        extension.code_view_mut().unwrap().show(ContentMode::Map);
+        assert_eq!(
+            extension.layout(SURFACE),
+            Layout::Board,
+            "the map takes the frame"
+        );
+        let asked = extension.jobs();
+        assert_eq!(asked.len(), 1, "measured once it is on show");
+        extension.absorb(Opaque::new(MeasureRead {
+            root: PathBuf::from("/repo"),
+            measure: Some(measured()),
+        }));
+        assert!(extension.code_view().unwrap().has_map());
+
+        extension.close(SURFACE);
+        extension.enter(SURFACE, Entry::Door(FILES.to_owned()));
+        extension.open(SURFACE, &checkout("/repo"));
+        assert!(
+            extension.code_view().unwrap().has_map(),
+            "the next opening has it already"
+        );
+        settle_hosted(&mut extension, &machine);
+        extension.code_view_mut().unwrap().show(ContentMode::Map);
+        assert!(extension.jobs().is_empty(), "and does not measure again");
+    }
+
+    #[test]
+    fn typing_and_a_paste_reach_the_file_open_for_editing() {
+        let machine = FakeMachine::default().with_file("/w/a.txt", "one\n");
+        let mut extension = opened(FILES, "/w");
+        settle_hosted(&mut extension, &machine);
+        let view = extension.code_view_mut().unwrap();
+        view.select(PathBuf::from("/w/a.txt"));
+        view.load_selection(None);
+        settle_hosted(&mut extension, &machine);
+        assert!(!extension.typing(SURFACE));
+        extension.command(SURFACE, Command::Edit, space());
+        assert!(extension.typing(SURFACE), "a letter is text now");
+        extension.paste(SURFACE, "two ", space());
+        extension.command(SURFACE, Command::Type('!'), space());
+        assert_eq!(extension.text(SURFACE, 0..1), ["two !one"]);
+    }
+
+    #[test]
+    fn the_checkout_in_front_has_its_history_read_and_a_commit_asks_for_its_account() {
+        let repository = uze_testkit::git::Repository::new("code-hosted-timeline");
+        repository.commit_file("a.txt", "a\n");
+        let root = repository.root().to_path_buf();
+        let mut extension = CodeExtension::default();
+        assert!(
+            extension.jobs().is_empty(),
+            "nothing in front, nothing read"
+        );
+        let front = Checkout {
+            root: root.clone(),
+            display: root.display().to_string(),
+            target: None,
+        };
+        extension.focus(Some(&front));
+        let reads: Vec<Opaque> = extension
+            .jobs()
+            .into_iter()
+            .map(|job| (job.run)(&crate::shared::DiskHost))
+            .collect();
+        assert_eq!(reads.len(), 1);
+        assert!(extension.jobs().is_empty(), "one read at a time");
+        for read in reads {
+            extension.absorb(read);
+        }
+        let section = extension.section(TIMELINE, false).expect("a history");
+        assert_eq!(section.rows.len(), 2, "the first commit and this one");
+        assert!(extension.jobs().is_empty(), "fresh, not read again");
+        let Outcome::OpenCommit { project, hash } =
+            extension.hit(TIMELINE, ViewHit::SelectItem(0), space())
+        else {
+            panic!("a commit asks for its account");
+        };
+        assert_eq!(project, root);
+        assert!(!hash.is_empty());
+        assert_eq!(
+            extension.hit(TIMELINE, ViewHit::SelectItem(5), space()),
+            Outcome::Stay,
+            "a row past the history is nothing"
+        );
+
+        let late = TimelineRead {
+            cwd: PathBuf::from("/elsewhere"),
+            timeline: None,
+        };
+        extension.absorb(Opaque::new(late));
+        assert!(
+            extension.section(TIMELINE, false).is_some(),
+            "a read about a checkout not in front is dropped"
+        );
+        extension.focus(None);
+        assert!(
+            extension.section(TIMELINE, false).is_none(),
+            "and none in front"
+        );
+    }
 }

@@ -1,0 +1,38 @@
+test "the board opens on its phases" {
+    surface "board"
+    size 112 24
+    expect-text "phases"
+    expect-text "Consulta de dados e diagnóstico"
+    expect-no-text "Turn finished in 4m12s"
+    snapshot "board"
+}
+
+test "the activity tab shows the log and runs nothing" {
+    surface "board"
+    size 112 24
+    click "Activity"
+    expect-text "Turn finished in 4m12s"
+    expect-absent "Stack" because="ui.tab=phases"
+}
+
+test "the next phase is recorded with its number" {
+    surface "board"
+    size 112 24
+    press-button "Run phase 12"
+    expect-action "next" number="12"
+}
+
+test "the board speaks the operator's language" {
+    surface "board"
+    size 112 24
+    locale "pt"
+    expect-text "fases"
+    expect-text "executar fase 12"
+}
+
+test "an empty milestone says so" {
+    surface "board"
+    given "milestone" json=#"{"milestone": "v2.0", "title": "Next", "phases": []}"#
+    expect-text "Nothing in this milestone yet"
+    expect-absent "Button" because="next"
+}

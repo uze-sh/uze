@@ -1,0 +1,244 @@
+{
+  "checkpoint": {
+    "plan": "3-04",
+    "title": "Check the payment form in the browser"
+  },
+  "current": {
+    "number": "3",
+    "step": "execute"
+  },
+  "done": 2,
+  "name": "Store checkout",
+  "next": "phase 3 next",
+  "percent": 51,
+  "phases": [
+    {
+      "after": "after ",
+      "finished": true,
+      "goal": "keep the cart across sessions",
+      "marks": [
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        }
+      ],
+      "name": "Cart service",
+      "number": "1",
+      "plans": "3/3",
+      "state": "done",
+      "status": "done",
+      "tone": "success"
+    },
+    {
+      "after": "after 1",
+      "finished": true,
+      "goal": "one order from a cart",
+      "marks": [
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        }
+      ],
+      "name": "Checkout API",
+      "number": "2",
+      "plans": "4/4",
+      "state": "done",
+      "status": "done",
+      "tone": "success"
+    },
+    {
+      "after": "after 2",
+      "front": {
+        "command": "gsd-execute-phase",
+        "goal": "pay with a card",
+        "label": "execute phase 3",
+        "listed": [
+          {
+            "done": true,
+            "id": "3-01",
+            "lead": "wave 1",
+            "pending": false,
+            "state": "done",
+            "title": "Card fields with inline validation",
+            "waiting": false
+          },
+          {
+            "done": true,
+            "id": "3-02",
+            "lead": "",
+            "pending": false,
+            "state": "done",
+            "title": "Tokenize the card with the payment provider",
+            "waiting": false
+          },
+          {
+            "done": true,
+            "id": "3-03",
+            "lead": "wave 2",
+            "pending": false,
+            "state": "done",
+            "title": "Charge the order and record the payment",
+            "waiting": false
+          },
+          {
+            "done": false,
+            "id": "3-04",
+            "lead": "",
+            "pending": false,
+            "state": "waiting",
+            "title": "Pay a test order end to end",
+            "waiting": true
+          },
+          {
+            "done": false,
+            "id": "3-05",
+            "lead": "wave 3",
+            "pending": true,
+            "state": "pending",
+            "title": "Show a declined card's reason",
+            "waiting": false
+          }
+        ],
+        "name": "Payment form",
+        "number": "3",
+        "plans": 5,
+        "ran": 3,
+        "step": "execute",
+        "steps": [
+          {
+            "state": "done"
+          },
+          {
+            "state": "done"
+          },
+          {
+            "state": "current"
+          },
+          {
+            "state": "pending"
+          }
+        ],
+        "waiting": {
+          "plan": "3-04",
+          "title": "Check the payment form in the browser"
+        }
+      },
+      "goal": "pay with a card",
+      "marks": [
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        },
+        {
+          "state": "current"
+        },
+        {
+          "state": "pending"
+        }
+      ],
+      "name": "Payment form",
+      "number": "3",
+      "plans": "3/5",
+      "state": "current",
+      "status": "needs you",
+      "tone": "danger"
+    },
+    {
+      "after": "after 3",
+      "ahead": true,
+      "goal": "a receipt once paid",
+      "marks": [
+        {
+          "state": "pending"
+        },
+        {
+          "state": "pending"
+        },
+        {
+          "state": "pending"
+        },
+        {
+          "state": "pending"
+        }
+      ],
+      "name": "Order emails",
+      "number": "4",
+      "plans": "",
+      "state": "later",
+      "status": "after 3",
+      "tone": "muted"
+    },
+    {
+      "after": "after 4",
+      "ahead": true,
+      "goal": "behind a flag, then for everyone",
+      "marks": [
+        {
+          "state": "pending"
+        },
+        {
+          "state": "pending"
+        },
+        {
+          "state": "pending"
+        },
+        {
+          "state": "pending"
+        }
+      ],
+      "name": "Rollout",
+      "number": "5",
+      "plans": "",
+      "state": "later",
+      "status": "after 4",
+      "tone": "muted"
+    }
+  ],
+  "segments": [
+    {
+      "ratio": 1.0,
+      "state": "done",
+      "weight": 1
+    },
+    {
+      "ratio": 1.0,
+      "state": "done",
+      "weight": 1
+    },
+    {
+      "ratio": 0.6,
+      "state": "current",
+      "weight": 1
+    },
+    {
+      "ratio": 0.0,
+      "state": "later",
+      "weight": 1
+    },
+    {
+      "ratio": 0.0,
+      "state": "later",
+      "weight": 1
+    }
+  ],
+  "total": 5,
+  "version": "v1.4"
+}

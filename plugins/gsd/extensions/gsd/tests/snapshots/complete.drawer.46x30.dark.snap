@@ -1,0 +1,69 @@
+# uze snapshot · protocol 1 · drawer 46x30 · dark
+ ┌───────────────────────────────────────────┐
+ │ GSD                                       │
+ │                                           │
+ │  v1.4 Store checkout                100%  │
+ │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+ │  5 of 5 phases · complete                 │
+ │                                           │
+ │                   DPEV                    │
+ │  ✓  1   Cart se…  ▮▮▮▮  3/3    done       │
+ │  ✓  2   Checkou…  ▮▮▮▮  4/4    done       │
+ │  ✓  3   Payment…  ▮▮▮▮  5/5    done       │
+ │  ✓  4   Order e…  ▮▮▮▮         done       │
+ │  ✓  5   Rollout   ▮▮▮▮         done       │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ └───────────────────────────────────────────┘
+---
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ a bbb                                       a
+ a                                           a
+ a  cccc ddddd dddddddd                dddd  a
+ a  eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee  a
+ a  b bb b bbbbbb b bbbbbbbb                 a
+ a                                           a
+ a                   ffff                    a
+ a  e  b   dddd ddd  eeee  bbb    eeee       a
+ a  e  b   dddddddd  eeee  bbb    eeee       a
+ a  e  b   dddddddd  eeee  bbb    eeee       a
+ a  e  b   ddddd dd  eeee         eeee       a
+ a  e  b   ddddddd   eeee         eeee       a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+---
+a border.default
+b text.muted
+c text.bright
+d text.secondary
+e state.success
+f text.faint

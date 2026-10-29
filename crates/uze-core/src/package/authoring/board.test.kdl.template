@@ -1,0 +1,23 @@
+// Tests for the board, run by `uze agent plugin check`: the surface is
+// drawn the way the workspace draws it, then driven by clicks and keys.
+test "the board opens on its tasks" {
+    surface "board"
+    expect-text "This week"
+    expect-text "Write the view"
+    // The cells it drew, kept beside this file. After a change you meant,
+    // `uze agent plugin check --update-snapshots` writes them again.
+    snapshot "board"
+}
+
+test "the notes tab shows the notes and runs nothing" {
+    surface "board"
+    click "Notes"
+    expect-text "A fixture is a sample of what the source answers."
+    expect-absent "List" because="ui.tab=tasks"
+}
+
+test "refresh is recorded with its action" {
+    surface "board"
+    press-button "refresh"
+    expect-action "refresh"
+}

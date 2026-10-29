@@ -1,0 +1,1590 @@
+//! Extension surfaces, hosted through one generic path.
+//!
+//! Every surface is a *slot*: one entry of [`HostedExtensions::slots`],
+//! keyed by the extension that owns it (a built-in, or one a plugin
+//! declares) and the surface's id, answered by that extension's engine.
+//! The built-ins that have moved onto this path are hosted from the start;
+//! a declared one once its plugin's files compile.
+//! A `view` slot opens full-frame from the tab strip, a `section` slot is a
+//! block of the sidebar, a `drawer` slot is docked beside the pane from its
+//! button in the strip, and every gesture on any of them reaches the engine
+//! through the [`Extension`] contract and nothing else.
+//!
+//! What a slot draws is the engine's, from the last compile and the last
+//! data that were good: a compile or a fixture that fails is never handed
+//! to it, so it keeps drawing what it drew, and the error is said over it.
+
+use super::*;
+use uze_application::{
+    CompiledExtension, ExtensionConsent, ExtensionDiagnostic, ExtensionIdentity,
+    InstalledExtension, SourceData,
+};
+use uze_contract::Clean;
+use uze_extensions::contract::{Checkout, Extension, Opaque, Outcome, SurfaceInfo, SurfaceSlot};
+use uze_extensions::declared::{
+    Absence, DataState, DeclaredExtension, NODE_CAP, RecordedAction, TraceEntry, TraceNode,
+};
+use uze_extensions::view::{Command, Role, ScrollTarget, Section, SectionRow, Size, View};
+
+mod agent;
+mod band;
+mod bar;
+mod bridge;
+mod doors;
+mod drawer;
+mod events;
+mod inspector;
+mod notify;
+mod overlay;
+mod raw;
+mod status;
+pub(super) use agent::*;
+pub(super) use bridge::*;
+pub(super) use drawer::*;
+pub(super) use events::*;
+pub(super) use inspector::*;
+pub(super) use notify::*;
+pub(super) use raw::raw_key;
+pub(super) use status::*;
+
+/// The host's number for a slot, handed out once and never reused, so a
+/// hit drawn on one frame cannot land on another slot after a reload.
+pub(super) type SlotId = u32;
+
+/// How often a linked extension's files are looked at.
+pub(super) const DECLARED_POLL: Duration = Duration::from_millis(250);
+/// How long a save must stand before it is compiled: an editor writing a
+/// file in two steps, or an author saving twice, is one recompile.
+pub(super) const DECLARED_SETTLE: Duration = Duration::from_millis(150);
+
+/// How often the installed plugins are looked at again for extensions,
+/// besides whenever an install, update or removal in this process lands:
+/// one made from another terminal is seen within this.
+pub(super) const DECLARED_REDISCOVER: Duration = Duration::from_secs(5);
+
+/// The longest the inspector prints a source's data, in lines.
+const INSPECTED_DATA_LINES: usize = 200;
+
+/// Who a slot's surface belongs to.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) enum Owner {
+    /// An extension UZE ships, by its catalog id.
+    Builtin(&'static str),
+    Declared(ExtensionIdentity),
+}
+
+impl Owner {
+    pub(super) fn is_builtin(&self, id: &str) -> bool {
+        matches!(self, Self::Builtin(builtin) if *builtin == id)
+    }
+
+    pub(super) fn declared(&self) -> Option<&ExtensionIdentity> {
+        match self {
+            Self::Builtin(_) => None,
+            Self::Declared(identity) => Some(identity),
+        }
+    }
+
+    /// The key the operator switches it on and off by, the same one the
+    /// Extensions screen switches.
+    pub(super) fn switch_id(&self) -> String {
+        match self {
+            Self::Builtin(id) => (*id).to_owned(),
+            Self::Declared(identity) => switch_id(identity),
+        }
+    }
+}
+
+/// What the host asks of a hosted extension beyond the contract: taking a
+/// newer compile of itself, its sources' data, and saying for the inspector
+/// how it came to draw what it drew. A built-in is never recompiled, reads
+/// no fixtures and is not inspected, so each does nothing by default.
+pub(super) trait Hosted: Extension {
+    /// A newer compile of the same extension. Where the viewer is, the UI
+    /// state it holds, is kept.
+    fn replace(&mut self, _compiled: CompiledExtension) {}
+    fn set_data(&mut self, _source: &str, _data: SourceData) {}
+    /// What the operator allowed it changed. Nothing by default: a
+    /// built-in is never consented to.
+    fn reconsider(&mut self) {}
+    fn inspect(&self, _surface: &str) -> Inspection {
+        Inspection::default()
+    }
+    /// Lets go of where the viewer was on `surface`. Nothing by default:
+    /// an engine that keeps no place has none to forget.
+    fn forget(&mut self, _surface: &str) {}
+    /// One of its declared actions, asked for by a key or the index while
+    /// `surface` is in front. Nothing by default: a built-in declares none.
+    fn press(&mut self, _surface: &str, _action: &str) -> Outcome {
+        Outcome::Stay
+    }
+
+    /// Whether what it asks to notify may reach the operator: only a
+    /// declared extension whose manifest holds `notify`.
+    fn may_notify(&self) -> bool {
+        false
+    }
+
+    /// The declared engine it is, for the inspector's account of it and
+    /// its author's tools. None by default: a built-in is not inspected.
+    fn declared(&self) -> Option<&DeclaredExtension> {
+        None
+    }
+
+    fn declared_mut(&mut self) -> Option<&mut DeclaredExtension> {
+        None
+    }
+
+    /// The code surface, for the tests to look into.
+    #[cfg(test)]
+    fn code_view(&self) -> Option<&code::CodeView> {
+        None
+    }
+
+    #[cfg(test)]
+    fn code_view_mut(&mut self) -> Option<&mut code::CodeView> {
+        None
+    }
+}
+
+impl Hosted for DeclaredExtension {
+    fn replace(&mut self, compiled: CompiledExtension) {
+        DeclaredExtension::replace(self, compiled);
+    }
+
+    fn set_data(&mut self, source: &str, data: SourceData) {
+        DeclaredExtension::set_data(self, source, data);
+    }
+
+    fn reconsider(&mut self) {
+        DeclaredExtension::reconsider(self);
+    }
+
+    fn forget(&mut self, surface: &str) {
+        DeclaredExtension::forget(self, surface);
+    }
+
+    fn press(&mut self, surface: &str, action: &str) -> Outcome {
+        DeclaredExtension::press(self, surface, action)
+    }
+
+    fn may_notify(&self) -> bool {
+        self.compiled().manifest.wants(&uze_contract::Grant::Notify)
+    }
+
+    fn declared(&self) -> Option<&DeclaredExtension> {
+        Some(self)
+    }
+
+    fn declared_mut(&mut self) -> Option<&mut DeclaredExtension> {
+        Some(self)
+    }
+
+    fn inspect(&self, surface: &str) -> Inspection {
+        let compiled = self.compiled();
+        let declared = compiled.manifest.surface(surface);
+        let trace = self.trace(surface);
+        let mut nodes = Vec::new();
+        if let Some(trace) = &trace {
+            match &trace.data {
+                DataState::Bound => {}
+                DataState::Waiting => nodes.push("waiting for data".to_owned()),
+                DataState::Failed(reason) => nodes.push(format!("no data: {reason}")),
+                DataState::Withheld(reason) => nodes.push(format!("not asked: {reason}")),
+            }
+            outline(&trace.items, 0, &mut nodes);
+            for (name, body) in &trace.templates {
+                nodes.push(format!("template {}", Clean::label(name).as_str()));
+                outline(body, 1, &mut nodes);
+            }
+            if trace.folded {
+                nodes.push(format!("folded at {NODE_CAP} nodes"));
+            }
+        }
+        // What a fixture holds is a third party's text: drawn only once
+        // it is clean, like everything else the plugin supplies.
+        let data = declared
+            .and_then(|declared| self.data(&declared.source))
+            .map(|data| match data {
+                Ok(value) => serde_json::to_string_pretty(value)
+                    .unwrap_or_default()
+                    .lines()
+                    .map(|line| Clean::label(line).into_string())
+                    .collect(),
+                Err(reason) => vec![Clean::label(reason).into_string()],
+            })
+            .unwrap_or_default();
+        Inspection {
+            nodes,
+            traced: trace.is_some(),
+            data,
+            ui: self
+                .ui(surface)
+                .map(|ui| {
+                    ui.iter()
+                        .map(|(id, value)| {
+                            (
+                                format!("ui.{}", Clean::label(id).as_str()),
+                                Clean::label(value).into_string(),
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            recorded: trace
+                .map(|trace| trace.recorded.iter().map(recorded_line).collect())
+                .unwrap_or_default(),
+            ..Inspection::default()
+        }
+    }
+}
+
+impl Hosted for uze_extensions::architect::ArchitectExtension {}
+impl Hosted for uze_extensions::spec::SpecExtension {}
+impl Hosted for code::CodeExtension {
+    #[cfg(test)]
+    fn code_view(&self) -> Option<&code::CodeView> {
+        code::CodeExtension::code_view(self)
+    }
+
+    #[cfg(test)]
+    fn code_view_mut(&mut self) -> Option<&mut code::CodeView> {
+        code::CodeExtension::code_view_mut(self)
+    }
+}
+
+/// The built-ins hosted on the slot path, each with its engine.
+fn builtins() -> Vec<(&'static str, Box<dyn Hosted>)> {
+    vec![
+        (code::CATALOG.id, Box::new(code::CodeExtension::default())),
+        (
+            architect::CATALOG.id,
+            Box::new(architect::ArchitectExtension::default()),
+        ),
+        (spec::CATALOG.id, Box::new(spec::SpecExtension::default())),
+    ]
+}
+
+fn recorded_line(action: &RecordedAction) -> String {
+    let ran = if action.declared { "" } else { " · not run" };
+    Clean::label(&format!("{} {}{ran}", action.action, action.item)).into_string()
+}
+
+/// The traced view as an indented outline, one node a line: how often it
+/// was drawn of how often it was reached, and why it was not.
+fn outline(nodes: &[TraceNode], depth: usize, lines: &mut Vec<String>) {
+    let indent = "  ".repeat(depth);
+    for node in nodes {
+        let name = match &node.entry {
+            TraceEntry::Node(name) => name.to_string(),
+            TraceEntry::Use(template) => format!("use {}", Clean::label(template).as_str()),
+        };
+        let standing = match (node.reached, node.drawn) {
+            (0, _) => " · not reached".to_owned(),
+            (reached, drawn) if drawn == reached => String::new(),
+            (reached, drawn) => format!(" · drawn {drawn} of {reached}"),
+        };
+        lines.push(format!("{indent}{name}{standing}"));
+        for absence in &node.absent {
+            lines.push(format!("{indent}  absent: {}", absence_text(absence)));
+        }
+        outline(&node.children, depth + 1, lines);
+    }
+}
+
+fn absence_text(absence: &Absence) -> String {
+    let said = match absence {
+        Absence::When {
+            field,
+            missing: true,
+        } => format!("`{field}` is missing from the data"),
+        Absence::When { field, .. } => format!("`{field}` is empty"),
+        Absence::Unless { field } => format!("`{field}` is present"),
+        Absence::Show { id, value, actual } => match actual {
+            Some(actual) => format!("ui.{id} is {actual}, not {value}"),
+            None => format!("ui.{id} is not {value}"),
+        },
+        Absence::ShowAny => "none of its show-any pairs hold".to_owned(),
+        Absence::EachMissing { field } => format!("`{field}` is missing from the data"),
+        Absence::EachEmpty { field } => format!("`{field}` is an empty list"),
+        Absence::EachNotList { field } => format!("`{field}` is not a list"),
+        Absence::Missing { field } => format!("`{field}` is missing from the data"),
+        Absence::CapReached => format!("the view reached {NODE_CAP} nodes"),
+        Absence::UnknownTemplate => "no template of that name".to_owned(),
+        Absence::Misplaced => "it only means something inside another node".to_owned(),
+    };
+    Clean::label(&said).into_string()
+}
+
+/// What the inspector shows of one surface.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(super) struct Inspection {
+    /// The compiled view, one node a line.
+    pub(super) nodes: Vec<String>,
+    /// Whether `nodes` says which were drawn and why the rest were not.
+    pub(super) traced: bool,
+    /// The source's data, pretty-printed.
+    pub(super) data: Vec<String>,
+    pub(super) ui: Vec<(String, String)>,
+    /// What a pressed button would have run, and with what.
+    pub(super) recorded: Vec<String>,
+    /// What the runner answered for it, newest first, two lines a run.
+    pub(super) runs: Vec<String>,
+    /// The events it saw, newest first.
+    pub(super) events: Vec<String>,
+    /// What it wants, whether its programs are confined, and what was not
+    /// asked and why.
+    pub(super) grants: Vec<String>,
+    /// Its runs per minute, p95 and memory, and what is over target.
+    pub(super) cost: Vec<String>,
+}
+
+/// Builds the engine a slot is answered by, for the operator's language.
+/// A function rather than a constant so a test can host an engine of its
+/// own.
+pub(super) type EngineFactory = fn(CompiledExtension, &str) -> Box<dyn Hosted>;
+
+fn declared_engine(compiled: CompiledExtension, locale: &str) -> Box<dyn Hosted> {
+    Box::new(DeclaredExtension::new(compiled, locale))
+}
+
+/// What the host last compiled each extension from: where its files are
+/// and their stamp then. A discovery loads again only what differs.
+pub(super) type Known = BTreeMap<ExtensionIdentity, (PathBuf, u64)>;
+
+/// One surface an extension offers, as the host holds it.
+pub(super) struct HostedSlot {
+    pub(super) id: SlotId,
+    pub(super) owner: Owner,
+    pub(super) surface: SurfaceInfo,
+    /// A section folded to its header.
+    pub(super) collapsed: bool,
+}
+
+impl HostedSlot {
+    pub(super) fn is_view(&self) -> bool {
+        self.surface.slot == SurfaceSlot::View
+    }
+
+    pub(super) fn is_drawer(&self) -> bool {
+        matches!(self.surface.slot, SurfaceSlot::Drawer(_))
+    }
+
+    /// Where a drawer stands, as its manifest declared it.
+    pub(super) fn drawer_place(&self) -> Option<uze_contract::DrawerDecl> {
+        match self.surface.slot {
+            SurfaceSlot::Drawer(place) => Some(place),
+            _ => None,
+        }
+    }
+
+    pub(super) fn is_overlay(&self) -> bool {
+        self.surface.slot == SurfaceSlot::Overlay
+    }
+
+    pub(super) fn is_bar(&self) -> bool {
+        matches!(self.surface.slot, SurfaceSlot::Bar { .. })
+    }
+
+    /// A status row, a band or an item of the bar: drawn in the host's own
+    /// chrome, with no place of its own to close or to say a notice in.
+    pub(super) fn is_chrome(&self) -> bool {
+        matches!(
+            self.surface.slot,
+            SurfaceSlot::Status | SurfaceSlot::Band { .. } | SurfaceSlot::Bar { .. }
+        )
+    }
+}
+
+/// One extension an installed plugin carries, as last read.
+pub(super) struct HostedExtension {
+    pub(super) installed: InstalledExtension,
+    /// The stamp of its files when it was last compiled.
+    pub(super) stamp: u64,
+    /// A save the poll saw and when, waiting for [`DECLARED_SETTLE`].
+    pub(super) changed: Option<(u64, Instant)>,
+    /// What was wrong with the last compile or fixture read, one problem a
+    /// line, said where it is. Empty when it all went through.
+    pub(super) errors: Vec<String>,
+    /// What the operator's record said of it at the last discovery, once
+    /// one read it.
+    pub(super) record: Option<Option<ExtensionConsent>>,
+    /// Its preferences as the last discovery read them, handed to every
+    /// engine of it built since.
+    pub(super) preferences: Option<serde_json::Value>,
+    /// Whether its last compile runs or reaches anything, so it is enabled
+    /// project by project rather than wherever its switch is.
+    pub(super) per_project: bool,
+    /// Whether its last compile holds `agent:observe`: it is told what the
+    /// workspace's agents do.
+    pub(super) observes_agents: bool,
+}
+
+/// Every declared extension the client hosts, and the slots their surfaces
+/// stand in. Kept across attaches with the rest of what the client
+/// resolved: a compile is a resolution, and where a viewer was on one is
+/// remembered per checkout.
+pub(super) struct HostedExtensions {
+    pub(super) extensions: BTreeMap<ExtensionIdentity, HostedExtension>,
+    /// One engine per extension, shared by its slots, so its view, its
+    /// section and its drawer keep one state. None for a declared extension
+    /// that has never compiled: its slot is a stand-in for its error.
+    pub(super) engines: BTreeMap<Owner, Box<dyn Hosted>>,
+    /// The built-ins first, then in identity order, each extension's
+    /// surfaces in the order it declares them.
+    pub(super) slots: Vec<HostedSlot>,
+    pub(super) next_slot: SlotId,
+    /// When the installed extensions were last asked for, this run.
+    pub(super) discovered_at: Option<Instant>,
+    /// The plugin set's revision that discovery answered for: a newer one
+    /// is an install, update or removal to look at now.
+    pub(super) plugins_seen: u64,
+    pub(super) discovery_pending: bool,
+    /// Extensions a recompile is out for.
+    pub(super) recompiling: BTreeSet<ExtensionIdentity>,
+    pub(super) stamps_pending: bool,
+    pub(super) polled_at: Option<Instant>,
+    /// Where the viewer was on each surface, per checkout.
+    pub(super) places: BTreeMap<(Owner, String, PathBuf), Opaque>,
+    /// The drawer open in each space: one at most, so the pane gives up
+    /// one column of room and never two.
+    pub(super) drawers: BTreeMap<SpaceId, SlotId>,
+    /// Where the viewer was on each drawer, per space: a drawer is about
+    /// the work in front, and each space is its own.
+    pub(super) drawer_places: BTreeMap<(Owner, String, SpaceId), Opaque>,
+    /// The space whose places the drawers' engines hold now.
+    pub(super) drawer_space: Option<SpaceId>,
+    pub(super) engine: EngineFactory,
+    /// The language every engine draws its label tables in.
+    pub(super) locale: String,
+    /// What answers the declared extensions' sources, and remembers their
+    /// answers for as long as the client runs.
+    pub(super) runner: std::sync::Arc<uze_application::ExtensionRunner>,
+    /// What each compiled extension offers the keyboard, from its last
+    /// compile that went through.
+    pub(super) keys: BTreeMap<ExtensionIdentity, uze_keys::ExtensionTable>,
+    /// What the checkout watch last read for the extensions, and what
+    /// moved since the last pass.
+    pub(super) watching: Watching,
+    /// What the workspace's agents did, for the extensions observing them.
+    pub(super) bridge: Bridge,
+    /// When what they cost was last written for `uze doctor`.
+    pub(super) costs_written_at: Option<Instant>,
+    /// The write of what they cost still under way, if one is: the next
+    /// waits for it rather than racing it to the same file.
+    pub(super) costs_writing: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Default for HostedExtensions {
+    fn default() -> Self {
+        let mut hosted = Self {
+            extensions: BTreeMap::new(),
+            engines: BTreeMap::new(),
+            slots: Vec::new(),
+            next_slot: 0,
+            discovered_at: None,
+            plugins_seen: 0,
+            discovery_pending: false,
+            recompiling: BTreeSet::new(),
+            stamps_pending: false,
+            polled_at: None,
+            places: BTreeMap::new(),
+            drawers: BTreeMap::new(),
+            drawer_places: BTreeMap::new(),
+            drawer_space: None,
+            engine: declared_engine,
+            locale: uze_platform::locale::language(),
+            runner: std::sync::Arc::default(),
+            keys: BTreeMap::new(),
+            watching: Watching::default(),
+            bridge: Bridge::default(),
+            costs_written_at: None,
+            costs_writing: None,
+        };
+        for (id, engine) in builtins() {
+            let owner = Owner::Builtin(id);
+            for surface in engine.surfaces() {
+                let slot = hosted.take_slot_id();
+                hosted.insert_slot(HostedSlot {
+                    id: slot,
+                    owner: owner.clone(),
+                    surface,
+                    collapsed: false,
+                });
+            }
+            hosted.engines.insert(owner, engine);
+        }
+        hosted
+    }
+}
+
+impl HostedExtensions {
+    pub(super) fn slot(&self, id: SlotId) -> Option<&HostedSlot> {
+        self.slots.iter().find(|slot| slot.id == id)
+    }
+
+    pub(super) fn slot_mut(&mut self, id: SlotId) -> Option<&mut HostedSlot> {
+        self.slots.iter_mut().find(|slot| slot.id == id)
+    }
+
+    /// The engine of an extension, when it has one.
+    pub(super) fn engine(&self, owner: &Owner) -> Option<&dyn Hosted> {
+        self.engines.get(owner).map(|engine| engine.as_ref())
+    }
+
+    /// The slot a built-in's surface stands in.
+    pub(super) fn builtin_slot(&self, id: &str, surface: &str) -> Option<SlotId> {
+        self.slots
+            .iter()
+            .find(|slot| slot.owner.is_builtin(id) && slot.surface.id == surface)
+            .map(|slot| slot.id)
+    }
+
+    /// A slot's surface id and its extension's engine.
+    pub(super) fn slot_engine_mut(&mut self, id: SlotId) -> Option<(String, &mut Box<dyn Hosted>)> {
+        let slot = self.slots.iter().find(|slot| slot.id == id)?;
+        let surface = slot.surface.id.clone();
+        let engine = self.engines.get_mut(&slot.owner)?;
+        Some((surface, engine))
+    }
+
+    pub(super) fn errors_of(&self, owner: &Owner) -> &[String] {
+        owner
+            .declared()
+            .and_then(|identity| self.extensions.get(identity))
+            .map_or(&[], |extension| extension.errors.as_slice())
+    }
+
+    /// The linked extensions' directories, which the poll looks at.
+    pub(super) fn watched(&self) -> Vec<(ExtensionIdentity, PathBuf)> {
+        self.extensions
+            .values()
+            .filter(|extension| extension.installed.linked)
+            .map(|extension| {
+                (
+                    extension.installed.identity.clone(),
+                    extension.installed.dir.clone(),
+                )
+            })
+            .collect()
+    }
+
+    /// What each hosted extension was last compiled from.
+    pub(super) fn known(&self) -> Known {
+        self.extensions
+            .iter()
+            .map(|(identity, extension)| {
+                (
+                    identity.clone(),
+                    (extension.installed.dir.clone(), extension.stamp),
+                )
+            })
+            .collect()
+    }
+
+    /// Whether a discovery is due: none was asked yet this run, the plugin
+    /// set moved since the last, or [`DECLARED_REDISCOVER`] passed.
+    pub(super) fn discovery_due(&self, plugins: u64, now: Instant) -> bool {
+        !self.discovery_pending
+            && self.discovered_at.is_none_or(|at| {
+                plugins != self.plugins_seen || now.duration_since(at) >= DECLARED_REDISCOVER
+            })
+    }
+
+    /// Takes what a discovery found: extensions no plugin carries any more
+    /// go, with their slots and the places kept on them. Answers whether
+    /// any went.
+    pub(super) fn absorb_discovery(&mut self, installed: &[InstalledExtension]) -> bool {
+        let present: BTreeSet<&ExtensionIdentity> =
+            installed.iter().map(|found| &found.identity).collect();
+        let before = self.extensions.len() + self.slots.len();
+        let stays = |owner: &Owner| owner.declared().is_none_or(|found| present.contains(found));
+        self.extensions
+            .retain(|identity, _| present.contains(identity));
+        self.keys.retain(|identity, _| present.contains(identity));
+        self.slots.retain(|slot| stays(&slot.owner));
+        self.engines.retain(|owner, _| stays(owner));
+        self.places.retain(|(owner, _, _), _| stays(owner));
+        self.drawer_places.retain(|(owner, _, _), _| stays(owner));
+        let slots = &self.slots;
+        self.drawers
+            .retain(|_, id| slots.iter().any(|slot| slot.id == *id));
+        before != self.extensions.len() + self.slots.len()
+    }
+
+    /// Takes what a discovery read of each extension's record: one that
+    /// moved since the last (a consent, or enabling or disabling it in a
+    /// project) has every surface of it ask again, and what the runner
+    /// remembered of it let go. Answers whether any moved.
+    pub(super) fn absorb_records(
+        &mut self,
+        records: BTreeMap<ExtensionIdentity, Option<ExtensionConsent>>,
+    ) -> bool {
+        let mut moved = false;
+        for (identity, record) in records {
+            let Some(extension) = self.extensions.get_mut(&identity) else {
+                continue;
+            };
+            let before = extension.record.replace(record.clone());
+            if before.is_none_or(|before| before == record) {
+                continue;
+            }
+            moved = true;
+            self.runner.forget(&identity);
+            if let Some(engine) = self.engines.get_mut(&Owner::Declared(identity)) {
+                engine.reconsider();
+            }
+        }
+        moved
+    }
+
+    /// Takes what a discovery read of each extension's preferences, and
+    /// hands a changed one to its engine. Answers whether any changed.
+    pub(super) fn absorb_preferences(
+        &mut self,
+        preferences: BTreeMap<ExtensionIdentity, serde_json::Value>,
+    ) -> bool {
+        let mut moved = false;
+        for (identity, set) in preferences {
+            let Some(extension) = self.extensions.get_mut(&identity) else {
+                continue;
+            };
+            if extension.preferences.as_ref() == Some(&set) {
+                continue;
+            }
+            extension.preferences = Some(set.clone());
+            moved = true;
+            if let Some(engine) = self.engines.get_mut(&Owner::Declared(identity)) {
+                engine.configure(&set);
+            }
+        }
+        moved
+    }
+
+    /// Takes one extension's compile and data. A compile that succeeded
+    /// replaces what each of its surfaces' engines holds, keeping where the
+    /// viewer is; one that failed changes nothing but the error said over
+    /// them.
+    pub(super) fn absorb_loaded(&mut self, loaded: LoadedExtension) {
+        let identity = loaded.installed.identity.clone();
+        let entry = self
+            .extensions
+            .entry(identity.clone())
+            .or_insert_with(|| HostedExtension {
+                installed: loaded.installed.clone(),
+                stamp: loaded.stamp,
+                changed: None,
+                errors: Vec::new(),
+                record: None,
+                preferences: None,
+                per_project: false,
+                observes_agents: false,
+            });
+        entry.installed = loaded.installed;
+        entry.stamp = loaded.stamp;
+        if entry
+            .changed
+            .is_some_and(|(stamp, _)| stamp == loaded.stamp)
+        {
+            entry.changed = None;
+        }
+        match loaded.compiled {
+            Ok(compiled) => {
+                entry.per_project = uze_application::enabled_per_project(&compiled);
+                entry.observes_agents = compiled.manifest.wants(&uze_contract::Grant::AgentObserve);
+                entry.errors = loaded
+                    .data
+                    .values()
+                    .filter_map(|data| data.as_ref().err().cloned())
+                    .collect();
+                self.host_compiled(&identity, compiled, &loaded.data);
+            }
+            Err(diagnostics) => {
+                entry.errors = diagnostics.iter().map(ToString::to_string).collect();
+                let title = identity.id.clone();
+                let owner = Owner::Declared(identity);
+                if !self.slots.iter().any(|slot| slot.owner == owner) {
+                    let id = self.take_slot_id();
+                    self.insert_slot(HostedSlot {
+                        id,
+                        surface: SurfaceInfo {
+                            opens: None,
+                            id: String::new(),
+                            slot: SurfaceSlot::View,
+                            title,
+                        },
+                        owner,
+                        collapsed: false,
+                    });
+                }
+            }
+        }
+    }
+
+    fn host_compiled(
+        &mut self,
+        identity: &ExtensionIdentity,
+        compiled: CompiledExtension,
+        data: &BTreeMap<String, SourceData>,
+    ) {
+        let surfaces = surfaces_of(&compiled);
+        self.keys
+            .insert(identity.clone(), crate::keymap::extension_table(&compiled));
+        let owner = Owner::Declared(identity.clone());
+        // The stand-in of a compile that never went through, and surfaces
+        // the extension no longer declares.
+        let hosted = self.engines.contains_key(&owner);
+        self.slots.retain(|slot| {
+            slot.owner != owner
+                || (hosted
+                    && surfaces.iter().any(|surface| {
+                        surface.id == slot.surface.id && surface.slot == slot.surface.slot
+                    }))
+        });
+        match self.engines.get_mut(&owner) {
+            Some(engine) => {
+                engine.replace(compiled.clone());
+                give_data(engine.as_mut(), data);
+            }
+            None => {
+                let mut engine = (self.engine)(compiled.clone(), &self.locale);
+                if let Some(set) = self
+                    .extensions
+                    .get(identity)
+                    .and_then(|extension| extension.preferences.as_ref())
+                {
+                    engine.configure(set);
+                }
+                give_data(engine.as_mut(), data);
+                self.engines.insert(owner.clone(), engine);
+            }
+        }
+        let slots = &self.slots;
+        self.drawers
+            .retain(|_, id| slots.iter().any(|slot| slot.id == *id));
+        for surface in surfaces {
+            let existing = self
+                .slots
+                .iter_mut()
+                .find(|slot| slot.owner == owner && slot.surface.id == surface.id);
+            match existing {
+                Some(slot) => slot.surface = surface,
+                None => {
+                    let id = self.take_slot_id();
+                    self.insert_slot(HostedSlot {
+                        id,
+                        owner: owner.clone(),
+                        surface,
+                        collapsed: false,
+                    });
+                }
+            }
+        }
+    }
+
+    fn take_slot_id(&mut self) -> SlotId {
+        let id = self.next_slot;
+        self.next_slot = self.next_slot.wrapping_add(1);
+        id
+    }
+
+    /// After the last slot of its own extension, or in owner order.
+    fn insert_slot(&mut self, slot: HostedSlot) {
+        let at = self
+            .slots
+            .iter()
+            .rposition(|other| other.owner <= slot.owner)
+            .map_or(0, |index| index + 1);
+        self.slots.insert(at, slot);
+    }
+
+    /// Takes a poll of the linked extensions' stamps: one that moved starts
+    /// (or restarts) its wait to settle.
+    pub(super) fn absorb_stamps(&mut self, stamps: Vec<(ExtensionIdentity, u64)>, now: Instant) {
+        for (identity, stamp) in stamps {
+            let Some(extension) = self.extensions.get_mut(&identity) else {
+                continue;
+            };
+            let seen = extension.changed.map(|(seen, _)| seen);
+            if stamp == extension.stamp {
+                extension.changed = None;
+            } else if seen != Some(stamp) {
+                extension.changed = Some((stamp, now));
+            }
+        }
+    }
+
+    /// The extensions whose save has settled and is not being compiled
+    /// already.
+    pub(super) fn settled(&self, now: Instant) -> Vec<InstalledExtension> {
+        self.extensions
+            .values()
+            .filter(|extension| {
+                extension
+                    .changed
+                    .is_some_and(|(_, at)| now.duration_since(at) >= DECLARED_SETTLE)
+                    && !self.recompiling.contains(&extension.installed.identity)
+            })
+            .map(|extension| extension.installed.clone())
+            .collect()
+    }
+}
+
+/// Hands an engine every source that answered. One that failed is held
+/// back, so the engine keeps the data it drew last.
+fn give_data(engine: &mut dyn Hosted, data: &BTreeMap<String, SourceData>) {
+    for (source, answer) in data {
+        if answer.is_ok() {
+            engine.set_data(source, answer.clone());
+        }
+    }
+}
+
+/// The surfaces a compile declares, as the contract names them.
+fn surfaces_of(compiled: &CompiledExtension) -> Vec<SurfaceInfo> {
+    compiled
+        .manifest
+        .surfaces
+        .iter()
+        .map(|surface| SurfaceInfo {
+            opens: surface.bar.as_ref().and_then(|bar| bar.opens.clone()),
+            id: surface.id.clone(),
+            slot: match surface.slot {
+                uze_contract::Slot::View => SurfaceSlot::View,
+                uze_contract::Slot::Section => SurfaceSlot::Section,
+                uze_contract::Slot::Drawer => {
+                    SurfaceSlot::Drawer(surface.drawer.unwrap_or_default())
+                }
+                uze_contract::Slot::Status => SurfaceSlot::Status,
+                uze_contract::Slot::Band => SurfaceSlot::Band {
+                    rows: surface.band.map_or(1, |band| band.rows),
+                    bottom: surface
+                        .band
+                        .is_some_and(|band| band.place == uze_contract::BandPlace::Bottom),
+                },
+                uze_contract::Slot::Overlay => SurfaceSlot::Overlay,
+                uze_contract::Slot::Bar => SurfaceSlot::Bar {
+                    right: surface
+                        .bar
+                        .as_ref()
+                        .is_some_and(|bar| bar.align == uze_contract::BarAlign::Right),
+                },
+            },
+            title: surface
+                .title
+                .clone()
+                .unwrap_or_else(|| compiled.manifest.name.clone()),
+        })
+        .collect()
+}
+
+/// What a load answered for one extension.
+pub(super) struct LoadedExtension {
+    pub(super) installed: InstalledExtension,
+    /// The stamp of its files, taken before they were read.
+    pub(super) stamp: u64,
+    pub(super) compiled: std::result::Result<CompiledExtension, Vec<ExtensionDiagnostic>>,
+    /// By source id; empty when the compile failed.
+    pub(super) data: BTreeMap<String, SourceData>,
+}
+
+/// The key a declared extension is switched on and off by, the same one
+/// the Extensions screen switches.
+pub(super) fn switch_id(identity: &ExtensionIdentity) -> String {
+    crate::ui::extension_switch::declared_id(identity)
+}
+
+impl WorkspaceModel {
+    pub(super) fn offers_declared(&self, owner: &Owner) -> bool {
+        self.offers_extension(&owner.switch_id())
+    }
+
+    /// Whether `slot`'s extension is offered and its surface applies where
+    /// it would stand now (`applies-when`).
+    pub(super) fn offers_slot(&self, slot: &HostedSlot) -> bool {
+        self.offers_declared(&slot.owner)
+            && self
+                .remembered
+                .declared
+                .engine(&slot.owner)
+                .is_none_or(|engine| engine.applies(&slot.surface.id))
+    }
+
+    /// Brings the keyboard in line with the declared extensions hosted
+    /// now: each enabled one that offers an action has its table
+    /// registered, and one disabled or gone has its table taken back.
+    pub(super) fn register_extension_keys(&mut self) {
+        let wanted: BTreeMap<String, &uze_keys::ExtensionTable> = self
+            .remembered
+            .declared
+            .keys
+            .iter()
+            .filter(|(identity, table)| {
+                !table.offered.is_empty() && self.offers_extension(&switch_id(identity))
+            })
+            .map(|(_, table)| (table.owner.clone(), table))
+            .collect();
+        let changed: Vec<uze_keys::ExtensionTable> = wanted
+            .iter()
+            .filter(|(owner, table)| self.registered_keys.get(*owner) != Some(**table))
+            .map(|(_, table)| (*table).clone())
+            .collect();
+        let gone: Vec<String> = self
+            .registered_keys
+            .keys()
+            .filter(|owner| !wanted.contains_key(*owner))
+            .cloned()
+            .collect();
+        for owner in gone {
+            uze_keys::unregister_extension(&owner);
+            self.registered_keys.remove(&owner);
+        }
+        for table in changed {
+            uze_keys::register_extension(table.clone());
+            self.registered_keys.insert(table.owner.clone(), table);
+        }
+    }
+
+    /// The declared extension and surface in front of the keyboard: its
+    /// owner as the keymap names it, and the surface's id.
+    pub(super) fn declared_front(&self) -> Option<(String, String)> {
+        let slot = self.overlay_slot().or_else(|| self.slot_in_pane())?;
+        let identity = slot.owner.declared()?;
+        Some((
+            crate::keymap::extension_owner(identity),
+            slot.surface.id.clone(),
+        ))
+    }
+
+    /// The declared actions the surface in front offers, each with the
+    /// chord that reaches it: the footer's and the index's list.
+    pub(super) fn declared_actions(&self) -> Vec<(Action, Option<uze_keys::Chord>)> {
+        match self.declared_front() {
+            Some((owner, surface)) => uze_keys::active().extension_actions(uze_keys::Front {
+                owner: &owner,
+                surface: &surface,
+            }),
+            None => Vec::new(),
+        }
+    }
+
+    /// Hands the surface in front one of its declared actions, asked for
+    /// by a key, a footer hint or the index.
+    pub(super) fn press_declared_action(&mut self, action: uze_keys::ExtensionActionId) {
+        let overlay = self.overlay_slot().map(|slot| slot.id);
+        let (Some(id), Some((owner, _))) = (overlay.or(self.open_slot), self.declared_front())
+        else {
+            return;
+        };
+        if uze_keys::extension::owner(action) != owner {
+            return;
+        }
+        let local = uze_keys::extension::local(action);
+        let outcome = self
+            .remembered
+            .declared
+            .slot_engine_mut(id)
+            .map(|(surface, engine)| engine.press(&surface, &local))
+            .unwrap_or(Outcome::Stay);
+        match overlay {
+            Some(_) => self.follow_overlay(outcome),
+            None => self.follow_surface(outcome),
+        }
+    }
+
+    /// The spec summary's slot and what it draws for the checkout in front,
+    /// folded as the operator left it: it keeps its own place at the
+    /// sidebar's foot, on the timeline, rather than a plugin's.
+    pub(super) fn spec_summary(&self) -> Option<(SlotId, Section)> {
+        if !self.offers_extension(spec::CATALOG.id) {
+            return None;
+        }
+        let declared = &self.remembered.declared;
+        let slot = declared.builtin_slot(spec::CATALOG.id, spec::SUMMARY)?;
+        let section = declared
+            .engine(&Owner::Builtin(spec::CATALOG.id))?
+            .section(spec::SUMMARY, !self.spec_summary_open)?;
+        Some((slot, section))
+    }
+
+    /// The timeline's slot and section, scrolled as far as the host
+    /// scrolled it, while the code extension is on.
+    pub(super) fn timeline(&self) -> Option<(SlotId, Section)> {
+        if !self.offers_extension(code::CATALOG.id) {
+            return None;
+        }
+        let declared = &self.remembered.declared;
+        let slot = declared.builtin_slot(code::CATALOG.id, code::TIMELINE)?;
+        let mut section = declared
+            .engine(&Owner::Builtin(code::CATALOG.id))?
+            .section(code::TIMELINE, self.timeline_collapsed)?;
+        section.scroll = self.timeline_scroll;
+        Some((slot, section))
+    }
+
+    /// Whether `slot` is the timeline's.
+    pub(super) fn is_timeline(&self, slot: SlotId) -> bool {
+        self.remembered
+            .declared
+            .builtin_slot(code::CATALOG.id, code::TIMELINE)
+            == Some(slot)
+    }
+
+    /// Whether `slot` is the spec summary's.
+    pub(super) fn is_spec_summary(&self, slot: SlotId) -> bool {
+        self.remembered
+            .declared
+            .builtin_slot(spec::CATALOG.id, spec::SUMMARY)
+            == Some(slot)
+    }
+
+    /// The views plugins declare that the tab strip offers, in slot order:
+    /// a built-in's has a door of its own.
+    pub(super) fn declared_views(&self) -> impl Iterator<Item = &HostedSlot> {
+        self.remembered.declared.slots.iter().filter(|slot| {
+            slot.is_view() && slot.owner.declared().is_some() && self.offers_slot(slot)
+        })
+    }
+
+    /// The view standing in the pane.
+    pub(super) fn slot_in_pane(&self) -> Option<&HostedSlot> {
+        self.remembered.declared.slot(self.open_slot?)
+    }
+
+    /// Whether `hit` is one the open surface drew — in the pane, or in the
+    /// bar's leading slot — rather than one of the sections an extension
+    /// keeps in the sidebar, which answer as the sidebar does.
+    pub(super) fn is_open_surfaces(&self, hit: WorkspaceHit) -> bool {
+        matches!(
+            hit,
+            WorkspaceHit::Extension(ExtensionHit { slot, .. })
+                if self.open_slot == Some(slot)
+        )
+    }
+
+    /// Whether the built-in `id`'s view stands in the pane.
+    pub(super) fn showing(&self, id: &str) -> bool {
+        self.slot_in_pane()
+            .is_some_and(|slot| slot.owner.is_builtin(id))
+    }
+
+    /// The open view's engine and surface, for a gesture on it.
+    pub(super) fn open_engine_mut(&mut self) -> Option<(String, &mut Box<dyn Hosted>)> {
+        let id = self.open_slot?;
+        self.remembered.declared.slot_engine_mut(id)
+    }
+
+    /// Whether the open view takes a letter as text: everything behind it
+    /// is sealed while it does.
+    pub(super) fn open_typing(&self) -> bool {
+        self.slot_in_pane().is_some_and(|slot| {
+            self.remembered
+                .declared
+                .engine(&slot.owner)
+                .is_some_and(|engine| engine.typing(&slot.surface.id))
+        })
+    }
+
+    /// Text pasted into the open view, while it takes text.
+    pub(super) fn paste_into_open(&mut self, text: &str, space: Size) {
+        if let Some((surface, engine)) = self.open_engine_mut() {
+            engine.paste(&surface, text, space);
+        }
+        self.dirty = true;
+    }
+
+    /// Whether what the open view draws is taken hold of and moved.
+    pub(super) fn open_drags(&self) -> bool {
+        self.slot_in_pane().is_some_and(|slot| {
+            self.remembered
+                .declared
+                .engine(&slot.owner)
+                .is_some_and(|engine| engine.drags(&slot.surface.id))
+        })
+    }
+
+    /// How the open view is laid out now.
+    pub(super) fn open_layout(&self) -> Option<uze_extensions::view::Layout> {
+        let slot = self.slot_in_pane()?;
+        self.remembered
+            .declared
+            .engine(&slot.owner)
+            .map(|engine| engine.layout(&slot.surface.id))
+    }
+
+    /// Closes the view standing in the pane, keeping where the viewer was
+    /// on this checkout — every way out goes through here.
+    pub(super) fn close_surface(&mut self) {
+        let Some(id) = self.open_slot.take() else {
+            return;
+        };
+        self.inspecting = false;
+        self.reset_inspector();
+        self.open_notice = None;
+        let root = self.open_root.take();
+        let declared = &mut self.remembered.declared;
+        let Some(slot) = declared.slot(id) else {
+            return;
+        };
+        let (owner, surface) = (slot.owner.clone(), slot.surface.id.clone());
+        let Some(engine) = declared.engines.get_mut(&owner) else {
+            return;
+        };
+        let place = engine.place(&surface);
+        engine.close(&surface);
+        if let (Some(place), Some(root)) = (place, root) {
+            declared.places.insert((owner, surface, root), place);
+        }
+    }
+
+    /// What the engine of the open view answered, followed.
+    pub(super) fn follow_surface(&mut self, outcome: Outcome) {
+        match outcome {
+            Outcome::Stay => {}
+            Outcome::Agent(request) => {
+                if let Some(owner) = self.slot_in_pane().map(|slot| slot.owner.clone()) {
+                    self.ask_of_agent(owner, *request);
+                }
+            }
+            Outcome::Close => self.close_surface(),
+            Outcome::Notice(span) => {
+                self.asked_in_drawer = false;
+                self.open_notice = Some(span);
+            }
+            Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
+            Outcome::Copy(text) => self.copy_answered_by(text, self.open_slot),
+            Outcome::Toast(text) => {
+                if let Some(owner) = self.slot_in_pane().map(|slot| slot.owner.clone()) {
+                    self.say_told(&owner, text);
+                }
+            }
+            Outcome::Show(surface) => {
+                if let Some(id) = self.open_slot {
+                    self.show_surface(id, &surface);
+                }
+            }
+            Outcome::Failed { title, detail } => {
+                let detail = self.attributed(self.open_slot, detail);
+                self.say_failed(&title, detail);
+            }
+            // Only the timeline's rows ask, and their click opens it
+            // beside the row (see `open_commit_detail`); only a click on
+            // what it drew reviews it, and `hit_surface` takes that.
+            Outcome::OpenCommit { .. } | Outcome::Review => {}
+        }
+        self.dirty = true;
+    }
+
+    /// What a status row's or a band's engine answered, followed: what it
+    /// copies or says is attributed to it, and it has nothing to close.
+    pub(super) fn follow_chrome(&mut self, id: SlotId, outcome: Outcome) {
+        match outcome {
+            Outcome::Stay
+            | Outcome::Close
+            | Outcome::Notice(_)
+            | Outcome::OpenCommit { .. }
+            | Outcome::Review => {}
+            Outcome::Agent(request) => {
+                if let Some(owner) = self
+                    .remembered
+                    .declared
+                    .slot(id)
+                    .map(|slot| slot.owner.clone())
+                {
+                    self.ask_of_agent(owner, *request);
+                }
+            }
+            Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
+            Outcome::Copy(text) => self.copy_answered_by(text, Some(id)),
+            Outcome::Toast(text) => {
+                if let Some(owner) = self
+                    .remembered
+                    .declared
+                    .slot(id)
+                    .map(|slot| slot.owner.clone())
+                {
+                    self.say_told(&owner, text);
+                }
+            }
+            Outcome::Show(surface) => self.show_surface(id, &surface),
+            Outcome::Failed { title, detail } => {
+                let detail = self.attributed(Some(id), detail);
+                self.say_failed(&title, detail);
+            }
+        }
+        self.dirty = true;
+    }
+
+    /// Opens the full-frame `surface` of the extension slot `from` belongs
+    /// to, as one of its surfaces asked.
+    pub(super) fn show_surface(&mut self, from: SlotId, surface: &str) {
+        let declared = &self.remembered.declared;
+        let Some(owner) = declared.slot(from).map(|slot| slot.owner.clone()) else {
+            return;
+        };
+        let shown = declared
+            .slots
+            .iter()
+            .find(|slot| {
+                slot.owner == owner
+                    && slot.surface.id == surface
+                    && (slot.is_view() || slot.is_overlay())
+            })
+            .map(|slot| (slot.id, slot.is_overlay()));
+        match shown {
+            Some((id, true)) => self.open_overlay(id),
+            Some((id, false)) => {
+                self.close_overlay();
+                open_surface(self, id);
+            }
+            None => {}
+        }
+    }
+
+    /// What a surface says went wrong, as a toast: it may have closed.
+    pub(super) fn say_failed(&mut self, title: &str, detail: String) {
+        self.raise_toast(ToastKind::Failed, title, detail, None);
+    }
+
+    /// What an extension's answer told the viewer, as a toast whose
+    /// detail is who said it: the host's attribution, never the
+    /// extension's own name.
+    pub(super) fn say_told(&mut self, owner: &Owner, text: String) {
+        let said = match owner.declared() {
+            Some(identity) => identity.to_string(),
+            None => owner.switch_id(),
+        };
+        self.raise_toast(ToastKind::Told, text, said, None);
+    }
+
+    /// Who a third party's surface in `slot` is, as every surface of it
+    /// is attributed (`id · plugin@marketplace`); `None` for a built-in.
+    pub(super) fn attribution_of(&self, slot: Option<SlotId>) -> Option<String> {
+        let identity = self.remembered.declared.slot(slot?)?.owner.declared()?;
+        Some(crate::ui::extension_view::tree::attribution(identity))
+    }
+
+    /// `detail`, led by who said it when a third party's surface did: a
+    /// toast outlives the surface that raised it.
+    pub(super) fn attributed(&self, slot: Option<SlotId>, detail: String) -> String {
+        match self.attribution_of(slot) {
+            Some(by) => format!("{by}: {detail}"),
+            None => detail,
+        }
+    }
+
+    /// Text a surface asked to have copied: on the clipboard, and said,
+    /// attributed to the surface in `slot` when it is a third party's.
+    pub(super) fn copy_answered_by(&mut self, text: String, slot: Option<SlotId>) {
+        // The engine refuses a copy of nothing; whatever else hands one
+        // over still never empties the operator's clipboard.
+        if text.trim().is_empty() {
+            return;
+        }
+        let said = self.attributed(slot, text.clone());
+        self.raise_toast(ToastKind::Done, "copied", said, None);
+        self.clipboard = Some(text);
+    }
+
+    /// Scrolls the open view to show line `first` at the top, as its held
+    /// scrollbar asks.
+    pub(super) fn scroll_surface_to(&mut self, first: usize, space: Size) {
+        let Some(id) = self.open_slot else {
+            return;
+        };
+        if let Some((surface, engine)) = self.remembered.declared.slot_engine_mut(id) {
+            engine.scroll_to(&surface, first, space);
+        }
+        self.dirty = true;
+    }
+
+    /// Hands the open view's engine a command. A list of actions the keys
+    /// opened hangs off its row, not off where the pointer last was.
+    pub(super) fn tell_surface(&mut self, command: Command, space: Size) {
+        let Some(id) = self.open_slot else {
+            return;
+        };
+        if command == Command::OpenMenu {
+            self.menu_at = None;
+        }
+        let outcome = self
+            .remembered
+            .declared
+            .slot_engine_mut(id)
+            .map(|(surface, engine)| engine.command(&surface, command, space))
+            .unwrap_or(Outcome::Stay);
+        self.follow_surface(outcome);
+    }
+
+    /// Hands a slot's engine a gesture on what it drew.
+    pub(super) fn hit_surface(&mut self, id: SlotId, hit: ViewHit, space: Size) {
+        if hit == ViewHit::ToggleSection {
+            if let Some(slot) = self.remembered.declared.slot_mut(id) {
+                slot.collapsed = !slot.collapsed;
+            }
+            self.dirty = true;
+            return;
+        }
+        let outcome = self
+            .remembered
+            .declared
+            .slot_engine_mut(id)
+            .map(|(surface, engine)| engine.hit(&surface, hit, space))
+            .unwrap_or(Outcome::Stay);
+        if let Outcome::Show(surface) = &outcome {
+            self.show_surface(id, surface);
+            self.dirty = true;
+            return;
+        }
+        // The Extensions screen is the session's to open, on its next pass.
+        if outcome == Outcome::Review {
+            self.review_extension = self
+                .remembered
+                .declared
+                .slot(id)
+                .and_then(|slot| slot.owner.declared().cloned());
+            self.dirty = true;
+            return;
+        }
+        if self.open_drawer() == Some(id) {
+            self.follow_drawer(outcome);
+            return;
+        }
+        if self.open_overlay == Some(id) {
+            self.follow_overlay(outcome);
+            return;
+        }
+        if self
+            .remembered
+            .declared
+            .slot(id)
+            .is_some_and(HostedSlot::is_chrome)
+        {
+            self.follow_chrome(id, outcome);
+            return;
+        }
+        // A section is part of the sidebar, as a band is of the chrome:
+        // what it answers is its own, asked of the agent in front, and it
+        // has no "close" of its own.
+        if self.open_slot == Some(id) {
+            self.follow_surface(outcome);
+        } else {
+            self.follow_chrome(id, outcome);
+        }
+        self.dirty = true;
+    }
+
+    pub(super) fn scroll_surface(
+        &mut self,
+        target: ScrollTarget,
+        direction: ScrollDirection,
+        space: Size,
+    ) {
+        let Some(id) = self.open_slot else {
+            return;
+        };
+        if let Some((surface, engine)) = self.remembered.declared.slot_engine_mut(id) {
+            engine.scroll(&surface, target, direction, space);
+        }
+        self.dirty = true;
+    }
+
+    /// What the open view draws this frame: the engine's answer, or, when
+    /// it has none to give yet, a message saying why. Its notice is the
+    /// host's last word from the engine, when it said one.
+    pub(super) fn view_in_pane(&self, space: Size) -> Option<View> {
+        let slot = self.slot_in_pane()?;
+        let mut view = self.surface_view(slot, space);
+        if let Some(notice) = &self.open_notice {
+            view.notice = Some(notice.clone());
+        }
+        Some(view)
+    }
+
+    /// What a view or drawer slot draws in `space`: its engine's answer,
+    /// or a message saying why it has none yet.
+    pub(super) fn surface_view(&self, slot: &HostedSlot, space: Size) -> View {
+        let errors = self.remembered.declared.errors_of(&slot.owner);
+        let drawn = self
+            .remembered
+            .declared
+            .engine(&slot.owner)
+            .and_then(|engine| engine.view(&slot.surface.id, space));
+        drawn.unwrap_or_else(|| {
+            let (text, role) = if errors.is_empty() {
+                (format!("Reading {}…", slot.surface.title), Role::Muted)
+            } else {
+                (
+                    format!("{} can't be drawn", slot.surface.title),
+                    Role::Danger,
+                )
+            };
+            View {
+                title: vec![uze_extensions::view::Span::new(
+                    slot.surface.title.clone(),
+                    Role::Muted,
+                )],
+                caption: Vec::new(),
+                navigator: None,
+                content: uze_extensions::view::Content::Message {
+                    text,
+                    hint: None,
+                    role,
+                },
+                footer: vec![Command::Close],
+                notice: None,
+                confirm: None,
+                modes: Vec::new(),
+                subjects: Vec::new(),
+                layout: uze_extensions::view::Layout::Sidebar,
+                trail: Vec::new(),
+            }
+        })
+    }
+
+    /// The declared sections the sidebar draws, in slot order: the engine's
+    /// own, with the error said in its caption and, open, in its rows.
+    /// A section with nothing to draw and nothing wrong takes no room.
+    pub(super) fn declared_sections(&self) -> Vec<(SlotId, Section)> {
+        let declared = &self.remembered.declared;
+        declared
+            .slots
+            .iter()
+            .filter(|slot| {
+                slot.surface.slot == SurfaceSlot::Section
+                    && slot.owner.declared().is_some()
+                    && self.offers_declared(&slot.owner)
+            })
+            .filter_map(|slot| {
+                let errors = declared.errors_of(&slot.owner);
+                let drawn = declared
+                    .engine(&slot.owner)
+                    .and_then(|engine| engine.section(&slot.surface.id, slot.collapsed));
+                let section = match (drawn, errors.is_empty()) {
+                    (Some(section), true) => section,
+                    (None, true) => return None,
+                    (drawn, false) => with_errors(drawn, slot, errors),
+                };
+                Some((slot.id, section))
+            })
+            .collect()
+    }
+
+    /// Opens or closes the inspector beside the open view.
+    pub(super) fn toggle_inspector(&mut self) {
+        if self
+            .slot_in_pane()
+            .is_some_and(|slot| slot.owner.declared().is_some())
+        {
+            self.inspecting = !self.inspecting;
+            self.inspector_scroll.set(0);
+            self.reset_inspector();
+            // Opened last, it holds the moves until a click lands on the
+            // view: the keys reach its tools as the pointer does.
+            self.inspector.keys = self.inspecting;
+            self.dirty = true;
+        }
+    }
+
+    /// Scrolls the inspector by `rows`, down when positive. The frame
+    /// stops it at its last line.
+    pub(super) fn scroll_inspector(&mut self, rows: i16) {
+        let scroll = self.inspector_scroll.get().saturating_add_signed(rows);
+        self.inspector_scroll.set(scroll);
+        self.dirty = true;
+    }
+
+    /// Scrolls the inspector a page, keeping a line of the last one.
+    pub(super) fn page_inspector(&mut self, down: bool) {
+        let page =
+            i16::try_from(self.inspector_rows.get().saturating_sub(1).max(1)).unwrap_or(i16::MAX);
+        self.scroll_inspector(if down { page } else { -page });
+    }
+
+    /// What the inspector shows of the open view.
+    pub(super) fn inspection(&self) -> Option<Inspection> {
+        let slot = self.slot_in_pane()?;
+        let mut inspection = self
+            .remembered
+            .declared
+            .engine(&slot.owner)
+            .map(|engine| engine.inspect(&slot.surface.id))
+            .unwrap_or_default();
+        inspection.data.truncate(INSPECTED_DATA_LINES);
+        self.inspect_extension(&mut inspection);
+        Some(inspection)
+    }
+}
+
+/// A section whose extension failed: what it drew last, or its header
+/// alone, with the error as its caption and, while open, a row a problem.
+fn with_errors(drawn: Option<Section>, slot: &HostedSlot, errors: &[String]) -> Section {
+    let mut section = drawn.unwrap_or_else(|| Section {
+        title: slot.surface.title.clone(),
+        collapsed: slot.collapsed,
+        ..Section::default()
+    });
+    let count = if errors.len() == 1 {
+        "1 error".to_owned()
+    } else {
+        format!("{} errors", errors.len())
+    };
+    section.caption = uze_extensions::view::Span::new(count, Role::Danger);
+    if !section.collapsed && section.tree.is_none() && section.rows.is_empty() {
+        section.rows = errors
+            .iter()
+            .map(|error| SectionRow {
+                mark: uze_extensions::view::RowMark::Step { done: false },
+                mark_role: Role::Danger,
+                name: uze_extensions::view::Span::new(error.clone(), Role::Danger),
+                trailing: uze_extensions::view::Span::default(),
+            })
+            .collect();
+    }
+    section
+}
+
+pub(super) fn open_surface(model: &mut WorkspaceModel, id: SlotId) {
+    // An agent's surface, never a shell of the space's: a shell works in
+    // no project, wherever it stands.
+    if let Some(root) = model.focused_cwd() {
+        open_surface_on(model, id, root);
+    }
+}
+
+/// Opens the view in slot `id` on `root`, which a path another surface
+/// pointed at may have named rather than the checkout in front.
+pub(super) fn open_surface_on(model: &mut WorkspaceModel, id: SlotId, root: PathBuf) {
+    let Some(slot) = model.remembered.declared.slot(id) else {
+        return;
+    };
+    if !slot.is_view() || !model.offers_declared(&slot.owner) {
+        return;
+    }
+    model.close_extension();
+    model.stand_extension_in_front();
+    let checkout = Checkout {
+        root: root.clone(),
+        display: crate::ui::display_project_path(&root),
+        target: model
+            .remembered
+            .targets
+            .get(&evaluation_key(&root))
+            .cloned(),
+    };
+    let declared = &mut model.remembered.declared;
+    if let Some(slot) = declared.slots.iter().find(|slot| slot.id == id) {
+        let key = (slot.owner.clone(), slot.surface.id.clone(), root.clone());
+        if let Some(engine) = declared.engines.get_mut(&key.0) {
+            engine.open(&key.1, &checkout);
+            if let Some(place) = declared.places.remove(&key) {
+                engine.resume(&key.1, place);
+            }
+        }
+    }
+    model.open_slot = Some(id);
+    model.resident_released = false;
+    model.open_root = Some(root);
+    model.navigator_scroll = extension_view::NavigatorScroll::default();
+    model.dirty = true;
+}

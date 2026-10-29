@@ -5,7 +5,9 @@
 //! marketplace is a group (the embedded `uze-official` snapshot as `uze`,
 //! and a `local` group for ad-hoc installs no catalogue knows about, so a
 //! direct install never disappears from the TUI), its plugins under it,
-//! and under an unfolded plugin its resources by kind. A fixed set of
+//! and under an unfolded plugin its resources by kind, the extensions it
+//! declares among them: what a package brings, whose running the
+//! Extensions screen decides, a step away from either. A fixed set of
 //! columns runs down the right of every row, and the group the keyboard is
 //! in stands on a recessed ground. A detail panel on the right describes
 //! the row the keyboard is on and ends in what can be done about it. A
@@ -141,7 +143,9 @@ impl Screen<'_> {
     fn active_market(&self) -> Option<&str> {
         match &self.cursor {
             PluginTreeRow::Market(market) => Some(market.as_str()),
-            PluginTreeRow::Plugin(position) | PluginTreeRow::Resource(position, _) => self
+            PluginTreeRow::Plugin(position)
+            | PluginTreeRow::Resource(position, _)
+            | PluginTreeRow::Extension(position, _) => self
                 .plugin(*position)
                 .map(|plugin| plugin.marketplace.as_str()),
         }
@@ -558,7 +562,11 @@ fn tree_lines(
             // resource under it share the selection's ground, and the cursor
             // alone says which of them the keyboard is on.
             let block = match &screen.cursor {
-                PluginTreeRow::Plugin(at) | PluginTreeRow::Resource(at, _) if *at == position => {
+                PluginTreeRow::Plugin(at)
+                | PluginTreeRow::Resource(at, _)
+                | PluginTreeRow::Extension(at, _)
+                    if *at == position =>
+                {
                     Some(Token::SurfaceSelected)
                 }
                 _ => ground,
@@ -735,71 +743,93 @@ fn resource_lines(
         return vec![note("loading…".to_owned())];
     };
     let groups = resource_groups(capabilities);
-    if groups.is_empty() {
+    let extensions = model.plugin_extensions_of(&id).unwrap_or_default();
+    if groups.is_empty() && extensions.is_empty() {
         return vec![note(theme::glyph(Symbol::MarkUnsupported))];
     }
     let blank = || Span::raw("");
-    let mut lines = Vec::new();
-    for (kind, resources) in groups {
-        lines.push(TreeLine::new(
+    let heading = |label: &str, count: usize| {
+        TreeLine::new(
             tree_row(
                 width,
                 group,
                 false,
                 KIND_INDENT,
-                vec![Span::styled(
-                    capability_label(kind).to_lowercase(),
-                    theme::fg(Token::TextDim),
-                )],
+                vec![Span::styled(label.to_owned(), theme::fg(Token::TextDim))],
                 columns.cells(
-                    Span::styled(resources.len().to_string(), theme::fg(Token::TextDim)),
+                    Span::styled(count.to_string(), theme::fg(Token::TextDim)),
                     blank(),
                     blank(),
                 ),
             ),
             vec![(0, width, Hit::MarketplaceRow(position))],
             false,
+        )
+    };
+    let resting = if plugin.installed {
+        Token::TextSecondary
+    } else {
+        Token::TextMuted
+    };
+    let leaf = |name: &str, last: bool, selected: bool, status: Span<'static>, hit: Hit| {
+        let branch = if last {
+            Symbol::TreeLast
+        } else {
+            Symbol::TreeBranch
+        };
+        TreeLine::new(
+            tree_row(
+                width,
+                group,
+                selected && screen.focused,
+                RESOURCE_INDENT,
+                vec![
+                    Span::styled(
+                        format!("{} ", theme::glyph(branch)),
+                        theme::fg(Token::TextFaint),
+                    ),
+                    Span::styled(name.to_owned(), name_style(selected, resting)),
+                ],
+                columns.cells(blank(), blank(), status),
+            ),
+            vec![(0, width, hit)],
+            selected,
+        )
+    };
+    let mut lines = Vec::new();
+    for (kind, resources) in groups {
+        lines.push(heading(
+            &capability_label(kind).to_lowercase(),
+            resources.len(),
         ));
         let last = resources.len() - 1;
         for (index, resource) in resources.into_iter().enumerate() {
-            let selected =
-                screen.cursor == PluginTreeRow::Resource(position, resource.identity.clone());
-            let branch = if index == last {
-                Symbol::TreeLast
-            } else {
-                Symbol::TreeBranch
-            };
-            let resting = if plugin.installed {
-                Token::TextSecondary
-            } else {
-                Token::TextMuted
-            };
             let status = if plugin.installed {
                 Span::styled("active", theme::fg(Token::StateSuccessMuted))
             } else {
                 blank()
             };
-            lines.push(TreeLine::new(
-                tree_row(
-                    width,
-                    group,
-                    selected && screen.focused,
-                    RESOURCE_INDENT,
-                    vec![
-                        Span::styled(
-                            format!("{} ", theme::glyph(branch)),
-                            theme::fg(Token::TextFaint),
-                        ),
-                        Span::styled(resource.name.clone(), name_style(selected, resting)),
-                    ],
-                    columns.cells(blank(), blank(), status),
-                ),
-                vec![(
-                    0,
-                    width,
-                    Hit::PluginResource(position, resource.identity.clone()),
-                )],
-                selected,
+            lines.push(leaf(
+                &resource.name,
+                index == last,
+                screen.cursor == PluginTreeRow::Resource(position, resource.identity.clone()),
+                status,
+                Hit::PluginResource(position, resource.identity.clone()),
+            ));
+        }
+    }
+    // What runs in the workspace rather than in an agent: whether it runs
+    // is the Extensions screen's to say, so its rows carry no status here.
+    if !extensions.is_empty() {
+        lines.push(heading("extensions", extensions.len()));
+        let last = extensions.len() - 1;
+        for (index, extension) in extensions.iter().enumerate() {
+            lines.push(leaf(
+                &extension.id,
+                index == last,
+                screen.cursor == PluginTreeRow::Extension(position, extension.clone()),
+                blank(),
+                Hit::PluginExtension(position, extension.clone()),
             ));
         }
     }
@@ -906,6 +936,10 @@ fn render_panel(
                 _ => return,
             }
         }
+        PluginTreeRow::Extension(position, identity) => match screen.plugin(position) {
+            Some(plugin) => (extension_detail(model, plugin, &identity), None),
+            None => return,
+        },
     };
     let room = usize::from(inner.width);
     let footer_height = panel_footer_height(&detail);
@@ -1223,6 +1257,15 @@ fn plugin_detail(model: &TuiModel, plugin: &MarketplacePluginSummary) -> Detail 
             .join(", ");
         fields.push((kind_key(kind), names, theme::fg(Token::TextSecondary), None));
     }
+    let extensions = model.plugin_extensions_of(&id).unwrap_or_default();
+    if !extensions.is_empty() {
+        let names = extensions
+            .iter()
+            .map(|extension| extension.id.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        fields.push(("extensions", names, theme::fg(Token::TextSecondary), None));
+    }
     // Whether the plugin actually reaches the harnesses: the one thing
     // about an installed plugin its status word cannot say.
     if plugin.installed {
@@ -1333,6 +1376,61 @@ fn resource_detail(plugin: &MarketplacePluginSummary, resource: &PluginCapabilit
     }
 }
 
+/// An extension the plugin declares, as the panel describes it: what it
+/// is and where it sits in the package, and the way across to the screen
+/// that decides whether it runs. Its plugin's actions stay at the foot,
+/// as a resource's do; nothing of the extension's own is offered here.
+fn extension_detail(
+    model: &TuiModel,
+    plugin: &MarketplacePluginSummary,
+    identity: &uze_application::ExtensionIdentity,
+) -> Detail {
+    let status = if plugin.installed {
+        (String::new(), theme::fg(Token::TextMuted))
+    } else {
+        (
+            format!("install {} to use", plugin.name),
+            theme::fg(Token::TextDim),
+        )
+    };
+    let link = if model.hovered_offer == Some(uze_keys::Action::ShowExtension) {
+        Token::TextBright
+    } else {
+        Token::TextMuted
+    };
+    Detail {
+        kind: format!("extension · {}", plugin.name),
+        status,
+        title: identity.id.clone(),
+        subtitle: Some(format!("extensions/{}", identity.id)),
+        description: Some(
+            "Runs in the workspace rather than in an agent. Whether it runs, where, and how \
+             it is set are said on the Extensions screen."
+                .to_owned(),
+        ),
+        tags: None,
+        fields: plugin
+            .installed
+            .then(|| {
+                (
+                    "open",
+                    "Extensions".to_owned(),
+                    theme::fg(link),
+                    Some(Hit::OfferedAction(uze_keys::Action::ShowExtension)),
+                )
+            })
+            .into_iter()
+            .collect(),
+        update: (plugin.installed && plugin.freshness.behind()).then(|| {
+            format!(
+                "new revision from {}",
+                group_display_name(&plugin.marketplace)
+            )
+        }),
+        offers: plugin.offers(),
+    }
+}
+
 /// A resource kind as the panel's grid names it.
 fn kind_key(kind: CapabilityKind) -> &'static str {
     match kind {
@@ -1420,11 +1518,14 @@ fn preview_rows(
                 && cached.text == resource.preview.text
         });
         if !current {
-            let rows =
-                uze_extensions::code::markdown(&preview_markdown(resource), &theme, width.into())
-                    .iter()
-                    .flat_map(|line| crate::ui::extension_view::prose_rows(line, width.into()))
-                    .collect();
+            let rows = uze_extensions::shared::markdown::render(
+                &preview_markdown(resource),
+                &theme,
+                width.into(),
+            )
+            .iter()
+            .flat_map(|line| crate::ui::extension_view::prose_rows(line, width.into()))
+            .collect();
             *cached = Some(RenderedPreview {
                 identity: resource.identity.clone(),
                 theme,

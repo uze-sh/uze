@@ -1,0 +1,10 @@
+# uze snapshot · protocol 1 · status 60x1 · dark
+  ⠙ fix/branch-naming 2m05s   · docs/extension-skill
+---
+  a bbbbbbbbbbbbbbbbb ccccc   d eeeeeeeeeeeeeeeeeeee
+---
+a state.in-flight
+b state.warning
+c text.muted
+d text.faint
+e state.info

@@ -2,7 +2,7 @@
 
 Two disposable worlds for trying this checkout by hand, the way a person
 meets uze: a fresh machine, uze installed through the real installer, Git,
-and a small plugin to install. Nothing is installed on your own system, and
+and this checkout's marketplace to install from. Nothing is installed on your own system, and
 each world starts over every time it is opened.
 
 Both are started from WSL.
@@ -20,9 +20,9 @@ world, which then:
 
 - installs Git;
 - installs uze through the installer, from that local release;
-- puts `playground-mcp` on `PATH`;
-- registers the `playground` marketplace (a Git repository made from
-  [`plugin/`](plugin));
+- puts `pingpong-mcp` on `PATH`;
+- registers this checkout's marketplace, `uze`: the official plugin and the
+  examples in [`plugins/`](../plugins), copied into a Git repository;
 - creates `~/projects/demo`, a Git repository with an `AGENTS.md`;
 - opens a shell there, as an ordinary user.
 
@@ -31,7 +31,7 @@ Then try, for example:
 ```sh
 uze doctor
 uze setup claude-code            # or codex, opencode, antigravity: the real installers
-cd ~/projects/demo && uze playground@playground
+cd ~/projects/demo && uze pingpong@uze
 uze workspace
 ```
 
@@ -99,50 +99,14 @@ Needs WSL 2. The Ubuntu 24.04 image is downloaded once into
 replaces the previous one and drops you into its shell; `exit` leaves it
 running, and `wsl -d uze-playground` returns to it.
 
-## The plugin
+## On your own machine
 
-[`plugin/`](plugin) is one portable Agent Plugin (`playground`) declaring one
-of every capability UZE delivers, each answering with a marker you can look
-for:
-
-| capability | what it is | try | answers |
-|---|---|---|---|
-| rule, always on | [`pong`](plugin/rules/pong.md), copied into a declaring project's `.agents/rules/` | `ping` | `pong (UZE_PLAYGROUND_RULE: pong)` |
-| rule, glob | [`txt`](plugin/rules/txt.md), the same | "write a hello.txt" | the file's last line is `UZE_PLAYGROUND_RULE: txt` |
-| skill, model + user | [`ping`](plugin/skills/ping/SKILL.md) | `/playground:ping` | `pong (UZE_PLAYGROUND_SKILL: ping)` |
-| skill, user only | [`hello`](plugin/skills/hello/SKILL.md) | `/playground:hello` | `hello, world (UZE_PLAYGROUND_SKILL: hello)` |
-| skill, model only | [`secret`](plugin/skills/secret/SKILL.md) | "what is the playground's secret word?" | `tangerine (UZE_PLAYGROUND_SKILL: secret)` |
-| agent | [`pong`](plugin/agents/pong.md) | "hand a ping to the playground:pong agent" | `pong (UZE_PLAYGROUND_AGENT: pong)` |
-| hook, deny | `deny-ping` on `PreToolUse` | "run `echo ping-deny`" | refused: `pong (UZE_PLAYGROUND_HOOK: deny-ping …)` |
-| hooks, observe | `SessionStart`, `PostToolUse`, `Stop` | any session | a line each in `$TMPDIR/uze-playground-hooks.log` |
-| MCP | `pingpong`, [`mcp_server.rs`](mcp_server.rs) built as `playground-mcp` | "call the pingpong `ping` tool" | `pong (UZE_PLAYGROUND_MCP: ping)` |
-
-The rules reach only a project that declares the plugin
-(`uze playground@playground` in it), never one that only has it on the
-machine (`uze install -m`). The demo project also keeps a rule of its own,
-`.agents/rules/marco.md`: asked `marco`, an agent answers
-`polo (UZE_PLAYGROUND_PROJECT_RULE)`. `uze status` in the project lists both.
-
-The MCP server also has `hello`, `echo` and `add`. The hooks share one
-handler, [`scripts/hook`](plugin/scripts/hook) (and its Windows twin, `hook.ps1`, run under the same name).
-`secret` is the one a harness may only *degrade*: some cannot withhold a
-skill from the person, and the install says which.
-
-It has no vendor envelope, so it shows how uze delivers portable
-capabilities to a harness with nothing harness-specific in the package.
-[`marketplace.json`](marketplace.json) makes this directory its
-marketplace.
-
-### On this machine
-
-Outside a playground world, install it on your own machine with:
+No world needed to try the example plugins against this checkout:
 
 ```sh
-make playground-plugin                 # playground-mcp on PATH, marketplace linked here
-uze playground@playground              # in a project: its rules arrive there
-uze install -m playground@playground   # the machine only: no rules
+make try        # ~/uze-try (or TRY_DIR=…): a demo project with every example installed
 ```
 
-The marketplace is linked to this checkout, so an edit to `plugin/` reaches
-the harnesses on the next `uze install` with no commit. `uze remove -m
-playground@playground` takes it off again.
+`make examples` alone links the `uze` marketplace to this checkout, so an
+edit under `plugins/` reaches the harnesses on the next `uze install` with no
+commit. What each example is, `pingpong` among them, is in its own README.

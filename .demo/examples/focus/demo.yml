@@ -1,0 +1,50 @@
+# focus: a pomodoro beside the agent. Published for plugins/focus/README.md.
+#
+#   tui-record run .demo/examples/focus
+
+extends: ../_base.yml
+
+video:
+  title: uze — the focus example
+  out: .demo/examples/focus/focus.gif
+  cast: '{root}/example-focus.cast'
+  publish:
+    - from: out
+      to: web/public/examples/focus.gif
+  poster_when: 'focusing for'
+
+beats:
+  - use: open-and-enable
+    with: {say: 'a project, and an agent on it', review_pause: 1.4}
+  - say: in the bar, the day's sessions
+    wait: screen
+    until: '○○○○'
+    timeout: 15
+    pause: 1.2
+  - say: a click opens the drawer
+    # The pips, in the pane's band: an agent's spinner in the sidebar can
+    # draw the same glyph. One cell in, since the hourglass before them is drawn
+    # wider than the screen's text counts it.
+    click: '○○○○'
+    in: pane
+    occurrence: last
+    offset: 1
+    expect: '25:00'
+    expect_timeout: 10
+    pause: 1.8
+  - say: a session starts
+    click: start
+    in: screen
+    occurrence: last
+    expect: focusing for
+    expect_timeout: 10
+    pause: 3.0
+  - say: its time runs in the drawer and in the bar, beside the agent
+    # The bar stays in sight under an open drawer, so nothing is closed:
+    # the take holds while both count.
+    wait: screen
+    until: 'focusing for\s+\d+s'
+    timeout: 10
+    pause: 3.0
+  - say: and out
+    end: C-q

@@ -37,10 +37,34 @@ pub(super) fn render_picture(
         area.width,
         area.height.saturating_sub(1),
     );
+    render_fitted(frame, body, picture, cell, false)
+}
+
+/// `picture` scaled to fit `body` and centred in it — in half blocks
+/// always, and where the terminal draws images (`cell`, its pixels a
+/// cell), as the [`Placement`] the frame lays over them once it is out,
+/// placed for the slot being drawn. `crisp` grows a few pixels into blocks
+/// of them, as a sprite is drawn, where a picture is never drawn past its
+/// own size.
+pub(super) fn render_fitted(
+    frame: &mut ratatui::Frame<'_>,
+    body: Rect,
+    picture: &Picture,
+    cell: Option<(u16, u16)>,
+    crisp: bool,
+) -> Option<Placement> {
     let screen = frame.area();
     let placement = cell
-        .and_then(|cell| Placement::fit(picture, body, cell))
-        .map(|placement| placement.on(screen));
+        .and_then(|cell| match crisp {
+            true => Placement::fit_crisp(picture, body, cell),
+            false => Placement::fit(picture, body, cell),
+        })
+        .map(|placement| placement.on(screen))
+        // A Sixel image leaves the cursor on the row under it, so one that
+        // ends on the screen's last row scrolls the whole screen up a row
+        // every time it is sent, as a sprite is on each frame of it: that
+        // row keeps its half blocks.
+        .filter(|placement| placement.cells.bottom() < screen.bottom());
     // Under pixels, the half blocks fill exactly the cells the pixels are
     // sent over: they are the mark that says nothing covered them, and a
     // fit at two pixels a cell can come out a column short of a fit at the
@@ -55,6 +79,9 @@ pub(super) fn render_picture(
     };
     if let Some((cells, rows)) = drawn {
         render_half_blocks(frame, cells, rows, picture);
+    }
+    if let Some(placement) = &placement {
+        graphics::place(placement.clone());
     }
     placement
 }
@@ -89,7 +116,7 @@ fn render_half_blocks(frame: &mut ratatui::Frame<'_>, cells: Rect, rows: u16, pi
 /// How many columns and pixel rows `picture` takes in `width` × `height`
 /// cells, keeping its proportions: a cell is about twice as tall as it is
 /// wide, so each half of one is close to square.
-fn fitted(picture: &Picture, width: u16, height: u16) -> Option<(u16, u16)> {
+pub(super) fn fitted(picture: &Picture, width: u16, height: u16) -> Option<(u16, u16)> {
     if picture.width == 0 || picture.height == 0 || width == 0 || height == 0 {
         return None;
     }
@@ -153,6 +180,41 @@ mod tests {
                 placement.cells
             );
         }
+    }
+
+    #[test]
+    fn a_picture_on_the_screens_last_row_stays_in_half_blocks() {
+        let backend = ratatui::backend::TestBackend::new(40, 10);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let (mut at_the_bottom, mut above_it) = (None, None);
+        terminal
+            .draw(|frame| {
+                at_the_bottom = render_fitted(
+                    frame,
+                    Rect::new(0, 8, 4, 2),
+                    &picture(16, 16),
+                    Some((10, 20)),
+                    true,
+                );
+                above_it = render_fitted(
+                    frame,
+                    Rect::new(10, 6, 4, 2),
+                    &picture(16, 16),
+                    Some((10, 20)),
+                    true,
+                );
+            })
+            .unwrap();
+        assert!(at_the_bottom.is_none(), "{at_the_bottom:?}");
+        let buffer = terminal.backend().buffer();
+        assert!(
+            (0..4).any(|x| buffer[(x, 9)].symbol() == graphics::HALF_BLOCK),
+            "drawn in half blocks"
+        );
+        assert!(
+            above_it.is_some(),
+            "a row above the last is drawn in pixels"
+        );
     }
 
     #[test]

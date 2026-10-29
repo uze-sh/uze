@@ -1,0 +1,21 @@
+# uze snapshot · protocol 1 · section 30x6 · dark
+ ▾ Agents
+  ⠙ fix/branch-naming 2m05s
+  uze                working
+  · docs/extension-skill
+  site                 ready
+
+---
+ a aaaaaa
+  b aaaaaaaaaaaaaaaaa ccccc
+  ccc                ddddddd
+  e aaaaaaaaaaaaaaaaaaaa
+  cccc                 fffff
+
+---
+a text.secondary
+b state.in-flight
+c text.muted
+d state.warning
+e text.faint
+f state.info

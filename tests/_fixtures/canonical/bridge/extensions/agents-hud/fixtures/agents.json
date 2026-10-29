@@ -1,0 +1,6 @@
+[
+  { "id": "a1", "harness": "claude", "label": "fix/branch-naming", "space": "uze",
+    "checkout": "/work/uze/.worktrees/a1", "state": "working", "since": 1761570000000, "reports": true },
+  { "id": "a2", "harness": "codex", "label": "docs/extension-skill", "space": "site",
+    "checkout": "/work/site", "state": "ready", "since": null, "reports": false }
+]

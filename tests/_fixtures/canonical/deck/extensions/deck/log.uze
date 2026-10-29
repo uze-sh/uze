@@ -1,0 +1,25 @@
+<view>
+// What changed in the checkout, newest first.
+Stack gap=1 {
+    Row gap=2 {
+        Text "What changed" strong=#true grow=#true
+        Button "Pick a note" action="pick"
+        Button "Say done" action="done"
+    }
+    List each="." {
+        Text "{name} {paths}"
+    }
+    Text "Nothing changed yet" role="faint" unless="."
+}
+</view>
+
+<script>
+// The `done` action, offered on the log: tells the operator, and sounds the done cue.
+fn done(input, context) {
+    #{
+        data: (),
+        notify: #{ title: "Deck", body: "The phases are up to date" },
+        sound: "done",
+    }
+}
+</script>

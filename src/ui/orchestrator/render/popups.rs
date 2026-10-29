@@ -513,7 +513,7 @@ fn rendered_commit_body(body: &str, width: usize) -> Vec<Line<'static>> {
             cached.body == body && cached.theme == theme && cached.width == width
         });
         if !current {
-            let rows = uze_extensions::code::markdown(body, &theme, width)
+            let rows = uze_extensions::shared::markdown::render(body, &theme, width)
                 .iter()
                 .flat_map(|line| crate::ui::extension_view::prose_rows(line, width))
                 .collect();

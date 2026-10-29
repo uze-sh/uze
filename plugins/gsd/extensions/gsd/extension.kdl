@@ -1,0 +1,51 @@
+// GSD: the checkout's .planning/, as GSD (Get Shit Done) writes it, beside
+// the agent. The bar says the milestone and the step it is at, and opens
+// the drawer; the drawer holds the phases and the one button for the next
+// step; while a plan waits at a checkpoint, a band over the agent's pane
+// takes the answer. GSD is the person's own install: every step is asked
+// of the agent in plain words, so it reaches GSD on whichever harness runs.
+protocol 1
+id "gsd"
+name "GSD"
+description "GSD's .planning/: the step in the bar, the phases in a drawer, a checkpoint over the agent"
+
+wants "read:checkout" "agent:prompt" "notify" "store"
+
+// A plan stopped for the person: an idea the host's icons do not hold.
+icon "checkpoint" nerd="\u{f024}" unicode="▲" ascii="!"
+
+// In the bar: the milestone and the step it is at, or the checkpoint that
+// waits; a click opens the drawer.
+surface "step" slot="bar" view="bar.uze" source="planning" opens="phases" applies-when=".planning"
+
+// The drawer, docked on the right: read while the agent works.
+surface "phases" slot="drawer" view="drawer.uze" source="planning" title="GSD" applies-when=".planning"
+
+// Over the agent's pane, one row: the checkpoint a plan waits at, and its
+// two answers. Its row is taken in every GSD checkout and blank while
+// nothing waits, so a checkpoint never resizes the agent.
+surface "checkpoint" slot="band" rows=1 place="top" view="band.uze" source="planning" applies-when=".planning"
+
+// .planning/ read again whenever a file there changes.
+source "planning" {
+    script "planning.uze"
+    applies-when ".planning/STATE.md"
+    refresh-on "paths.changed" ".planning"
+}
+
+// The next step of the phase in front, asked of the agent in words: GSD's
+// commands are spelled differently on each harness, and a prompt may not
+// lead with any harness's command syntax.
+action "next" label="Run the next GSD step" on="phases" {
+    agent-prompt "Run GSD's {step} step ({command}) for phase {number}." target="self"
+}
+
+// The answers a checkpoint waits for: GSD resumes on `approved`, and on
+// anything else hears what is wrong.
+action "approve" label="Approve the checkpoint" on="checkpoint" {
+    agent-prompt "approved" target="self"
+}
+
+action "report" label="Report a problem at the checkpoint" on="checkpoint" {
+    agent-prompt "Checkpoint {plan} is not right: ask me what I saw." target="self"
+}

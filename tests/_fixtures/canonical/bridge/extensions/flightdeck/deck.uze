@@ -1,0 +1,26 @@
+<view>
+// One row per agent: what it works on, where, how it stands, and the two
+// things the operator does from here.
+lookup "tone" default="muted" {
+    working "warning"
+    done "success"
+    ready "info"
+}
+lookup "state" default="" {
+    working "working"
+    done "done"
+    ready "ready"
+}
+
+List id="agents" each="." empty="No agents" {
+    Row gap=2 {
+        Activity busy="{since}"
+        Text "{label}" strong=#true truncate=#true grow=#true
+        Text "{space}" role="muted" min-width=8
+        Text "{harness}" role="muted" min-width=8
+        Text "{state:state}" role="{tone:state}" min-width=8
+        Button "Focus" action="focus" item="{.}"
+        Button "Ask" action="ask" item="{.}"
+    }
+}
+</view>

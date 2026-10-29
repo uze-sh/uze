@@ -30,6 +30,7 @@ mod evaluation;
 mod naming;
 mod occupancy;
 mod placement;
+mod reporting;
 mod repository;
 mod switch;
 mod views;
@@ -68,6 +69,8 @@ impl Workspace<'_> {
                     launch,
                     continuity_gap,
                     configured: self.is_set_up(integration.as_ref()),
+                    skill_prefix: Some(integration.invocation_prefix())
+                        .filter(|prefix| !prefix.is_empty()),
                 }
             })
             .collect()

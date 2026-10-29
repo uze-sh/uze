@@ -53,6 +53,9 @@ pub const CLASSIFICATION: &[(&str, PerformanceClass)] = &[
     // agent not working.
     ("agent work name", PerformanceClass::Budgeted),
     ("agent work list", PerformanceClass::Budgeted),
+    // Run by every hook a harness fires inside the workspace: one claim
+    // read and one appended line, and a turn waits on it.
+    ("agent report", PerformanceClass::Budgeted),
     // One small file read or written under a lock, plus the front matter of
     // the few facts a scope keeps; an agent waiting on it is not working.
     ("agent memory remember", PerformanceClass::Budgeted),
@@ -147,6 +150,13 @@ pub const CLASSIFICATION: &[(&str, PerformanceClass)] = &[
              artifact's own",
         ),
     ),
+    (
+        "agent plugin lsp",
+        PerformanceClass::JustifiedSlow(
+            "a language server: it runs until the editor shuts it down, and each change \
+             checks the edited extension, which costs what the check costs",
+        ),
+    ),
     // Machine scope: market.
     ("market list", PerformanceClass::Budgeted),
     ("market remove", PerformanceClass::Budgeted),
@@ -209,6 +219,12 @@ pub const CLASSIFICATION: &[(&str, PerformanceClass)] = &[
         ),
     ),
     (
+        "__confine",
+        PerformanceClass::JustifiedSlow(
+            "becomes the confined program and lasts as long as it does",
+        ),
+    ),
+    (
         "setup",
         PerformanceClass::JustifiedSlow(
             "provisions or updates harness executables through each harness's official installer",
@@ -244,6 +260,10 @@ pub const BUDGETED_COMMAND_TESTS: &[(&str, &str)] = &[
     ),
     (
         "agent work list",
+        "crates/uze-application/tests/performance.rs::the_agent_surface_meets_the_budget",
+    ),
+    (
+        "agent report",
         "crates/uze-application/tests/performance.rs::the_agent_surface_meets_the_budget",
     ),
     (

@@ -14,6 +14,145 @@ pub(crate) fn run_agent(app: &UzeApplication, action: AgentAction) -> Result<()>
         AgentAction::Context { action } => run_context(app, action),
         AgentAction::Market { action } => run_agent_market(app, action),
         AgentAction::Plugin { action } => run_agent_plugin(app, action),
+        AgentAction::Report {
+            event,
+            tool,
+            path,
+            call,
+            outcome,
+            hook_input,
+            payload,
+        } => {
+            let described = described_event(hook_input, payload.as_deref());
+            let field = |given: Option<String>, keys: &[&[&str]]| {
+                given.or_else(|| keys.iter().find_map(|key| field_at(&described, key)))
+            };
+            report_about_self(
+                app,
+                uze_application::AgentReport {
+                    event,
+                    at: u64::try_from(uze_platform::clock::since_epoch().as_millis())
+                        .unwrap_or(u64::MAX),
+                    tool: field(tool, &[&["tool_name"], &["tool"]]),
+                    path: field(
+                        path,
+                        &[
+                            &["tool_input", "file_path"],
+                            &["tool_input", "path"],
+                            &["path"],
+                        ],
+                    ),
+                    call: field(call, &[&["tool_use_id"], &["call_id"]]),
+                    outcome,
+                },
+            );
+            Ok(())
+        }
+    }
+}
+
+/// The most of a hook's input read. A `PostToolUse` carries the tool's
+/// whole response, which can be large; past this the prefix still names
+/// the tool and its path.
+const HOOK_INPUT_MAX: u64 = 8 << 20;
+
+/// What the harness said about the event, as JSON: from standard input
+/// when `from_stdin`, else from `payload`; nothing when neither says
+/// anything. Bounded: a hook's input is a description, never a transcript.
+fn described_event(from_stdin: bool, payload: Option<&str>) -> serde_json::Value {
+    if from_stdin {
+        described_from(std::io::stdin())
+    } else {
+        described_by(payload.unwrap_or_default())
+    }
+}
+
+/// What `input` describes, reading no more than [`HOOK_INPUT_MAX`].
+fn described_from(input: impl std::io::Read) -> serde_json::Value {
+    use std::io::Read as _;
+    let mut bytes = Vec::new();
+    let _ = input.take(HOOK_INPUT_MAX).read_to_end(&mut bytes);
+    described_by(&String::from_utf8_lossy(&bytes))
+}
+
+/// `text` as JSON or, when it does not read as JSON (cut at the bound),
+/// the fields a report keeps, each found in it as a key and its string
+/// before `tool_response`: what the tool answered can hold any key, so a
+/// field named only after it is left unsaid rather than taken from there.
+fn described_by(text: &str) -> serde_json::Value {
+    if let Ok(described) = serde_json::from_str(text) {
+        return described;
+    }
+    let text = key_at(text, "tool_response").map_or(text, |at| &text[..at]);
+    let mut described = serde_json::Map::new();
+    for key in ["tool_name", "tool_use_id", "call_id"] {
+        if let Some(value) = string_of_key(text, key) {
+            described.insert(key.to_owned(), value.into());
+        }
+    }
+    let input: serde_json::Map<String, serde_json::Value> = ["file_path", "path"]
+        .into_iter()
+        .filter_map(|key| Some((key.to_owned(), string_of_key(text, key)?.into())))
+        .collect();
+    if !input.is_empty() {
+        described.insert("tool_input".to_owned(), input.into());
+    }
+    serde_json::Value::Object(described)
+}
+
+/// Where the first `"key":` in `text` starts, skipping the key's name
+/// quoted inside another string.
+fn key_at(text: &str, key: &str) -> Option<usize> {
+    let quoted = format!("\"{key}\"");
+    text.match_indices(&quoted).map(|(at, _)| at).find(|&at| {
+        !text[..at].ends_with('\\') && text[at + quoted.len()..].trim_start().starts_with(':')
+    })
+}
+
+/// The string the first `"key":` in `text` holds, skipping the key's name
+/// quoted inside another string.
+fn string_of_key(text: &str, key: &str) -> Option<String> {
+    let quoted = format!("\"{key}\"");
+    text.match_indices(&quoted).find_map(|(at, _)| {
+        if text[..at].ends_with('\\') {
+            return None;
+        }
+        let value = text[at + quoted.len()..]
+            .trim_start()
+            .strip_prefix(':')?
+            .trim_start();
+        serde_json::Deserializer::from_str(value)
+            .into_iter::<String>()
+            .next()?
+            .ok()
+    })
+}
+
+/// The text at `path` inside `described`, when there is one.
+fn field_at(described: &serde_json::Value, path: &[&str]) -> Option<String> {
+    let value = path
+        .iter()
+        .try_fold(described, |value, key| value.get(key))?;
+    value.as_str().map(str::to_owned)
+}
+
+/// Appends a report about this agent, saying on stderr why one was not
+/// taken and exiting well either way: a harness runs this from its hooks,
+/// and a turn is never held up by what UZE could not record.
+fn report_about_self(app: &UzeApplication, report: uze_application::AgentReport) {
+    let taken = launched_agent(uze_application::UzeError::AgentWork).and_then(|(id, key)| {
+        let cwd = cwd()?;
+        app.workspace().report(
+            uze_application::Claim {
+                id: &id,
+                key: &key,
+                cwd: &cwd,
+            },
+            report,
+        )
+    });
+    if let Err(error) = taken {
+        eprintln!("uze agent report: {error}");
     }
 }
 
@@ -91,7 +230,7 @@ pub(crate) fn run_agent_market(app: &UzeApplication, action: AgentMarketAction) 
         }
         AgentMarketAction::Check { path, format } => {
             let report = app.project().check(&path, true)?;
-            emit(format, &report, |report| render_check(report, true));
+            emit(format, &report, |report| render_check(report, true, &[]));
             if !report.is_clean() {
                 return Err(uze_application::UzeError::LifecycleBlocked(format!(
                     "check failed ({})",
@@ -116,6 +255,7 @@ pub(crate) fn run_agent_plugin(app: &UzeApplication, action: AgentPluginAction) 
             agent,
             instructions,
             rules,
+            extension,
             format,
         } => {
             if instructions {
@@ -126,6 +266,7 @@ pub(crate) fn run_agent_plugin(app: &UzeApplication, action: AgentPluginAction) 
                         .to_owned(),
                 ));
             }
+            let scaffolded_extension = extension.clone();
             let report = with_spinner(&format!("Scaffolding plugin {name}..."), || {
                 app.project().create_plugin(
                     &market,
@@ -137,9 +278,19 @@ pub(crate) fn run_agent_plugin(app: &UzeApplication, action: AgentPluginAction) 
                         mcp,
                         agent,
                         rules,
+                        extension,
                     },
                 )
             })?;
+            if let Some(id) = scaffolded_extension {
+                // The scaffolded test takes a snapshot; it is recorded now,
+                // from the files just written, so the first check passes.
+                let dir = report.root.join("extensions").join(&id);
+                let checked = app
+                    .extensions()
+                    .check_extension(&dir, &uze_application::ExtensionOverlay::new());
+                uze::ui::extension_test::run_tests(app, &checked, true);
+            }
             emit(format, &report, |report| {
                 format!(
                     "{}{}\n",
@@ -159,27 +310,88 @@ pub(crate) fn run_agent_plugin(app: &UzeApplication, action: AgentPluginAction) 
                 )
             });
         }
-        AgentPluginAction::Check { path, format } => {
+        AgentPluginAction::Check {
+            path,
+            update_snapshots,
+            run,
+            checkout,
+            format,
+        } => {
             let report = app.project().check(&path, false)?;
-            emit(format, &report, |report| render_check(report, false));
-            if !report.is_clean() {
+            let mut extensions = app.extensions().check(&path);
+            let mut runs = uze::ui::extension_test::Runs::new();
+            let rehearsals = if run {
+                let checkout = match checkout {
+                    Some(checkout) => checkout,
+                    None => cwd()?,
+                };
+                super::extension_check::rehearse_scripts(app, &mut extensions, &checkout)
+            } else {
+                super::extension_check::Rehearsals::new()
+            };
+            for extension in &mut extensions {
+                super::extension_check::bind_fixtures(extension);
+                let run = uze::ui::extension_test::run_tests(app, extension, update_snapshots);
+                extension.errors.extend(run.failures.iter().cloned());
+                runs.insert(extension.id.clone(), run);
+            }
+            let checked = PluginCheckReport {
+                report: &report,
+                extensions: &extensions,
+                runs: &rehearsals,
+            };
+            emit(format, &checked, |checked| {
+                format!(
+                    "{}{}",
+                    render_check(checked.report, false, checked.extensions),
+                    super::extension_check::render_extensions(
+                        checked.extensions,
+                        &runs,
+                        checked.runs
+                    )
+                )
+            });
+            let problems = report.findings.len()
+                + extensions
+                    .iter()
+                    .map(|extension| extension.errors.len())
+                    .sum::<usize>();
+            if problems > 0 {
                 return Err(uze_application::UzeError::LifecycleBlocked(format!(
                     "check failed ({})",
-                    count(report.findings.len(), "problem")
+                    count(problems, "problem")
                 )));
             }
         }
+        AgentPluginAction::Lsp => super::lsp::serve(app)?,
     }
     Ok(())
 }
 
+/// A plugin check's answer for a program: the plugin's report, and each
+/// extension it carries when it carries any, so a plugin without one reads
+/// as it always has.
+#[derive(serde::Serialize)]
+pub(crate) struct PluginCheckReport<'a> {
+    #[serde(flatten)]
+    report: &'a uze_application::ValidationReport,
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    extensions: &'a [uze_application::CheckedExtension],
+    /// What `--run` ran, by extension id.
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    runs: &'a super::extension_check::Rehearsals,
+}
+
 /// The check's answer: what it would deliver, and every finding, located.
+/// Each extension the plugin carries is a row of what it delivers; what is
+/// wrong with one is said under its id, after this.
 pub(crate) fn render_check(
     report: &uze_application::ValidationReport,
     as_marketplace: bool,
+    extensions: &[uze_application::CheckedExtension],
 ) -> String {
     let mut text = String::new();
-    if report.is_clean() {
+    if report.is_clean() && extensions.iter().all(|extension| extension.is_clean()) {
         let standard = report
             .agent_plugins
             .as_ref()
@@ -204,6 +416,12 @@ pub(crate) fn render_check(
             let (kind, name) = delivered_as(identity);
             vec![progress::label(kind), name]
         })
+        .chain(extensions.iter().map(|extension| {
+            vec![
+                progress::label("extension"),
+                uze_contract::Clean::label(&extension.id).into_string(),
+            ]
+        }))
         .collect();
     if !rows.is_empty() {
         text.push_str(&progress::aligned_rows(rows));
@@ -1108,6 +1326,83 @@ mod tests {
             secret_looking: None,
             similar: Some("reply-in-ptbr"),
         }
+    }
+
+    /// A `PostToolUse` input whose `tool_response` is `response_bytes`
+    /// long, with the call's id after it, as Claude Code orders them.
+    fn post_tool_use(response_bytes: usize) -> String {
+        serde_json::json!({
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Read",
+            "tool_input": { "file_path": "/work/acme/src/main.rs" },
+            "tool_response": { "content": "x".repeat(response_bytes) },
+            "tool_use_id": "toolu_01",
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn a_hook_input_with_a_large_tool_response_keeps_its_tool_and_call() {
+        let described = described_from(std::io::Cursor::new(post_tool_use(1 << 20)));
+        assert_eq!(
+            field_at(&described, &["tool_name"]).as_deref(),
+            Some("Read")
+        );
+        assert_eq!(
+            field_at(&described, &["tool_use_id"]).as_deref(),
+            Some("toolu_01")
+        );
+        assert_eq!(
+            field_at(&described, &["tool_input", "file_path"]).as_deref(),
+            Some("/work/acme/src/main.rs")
+        );
+    }
+
+    #[test]
+    fn a_hook_input_cut_at_the_bound_keeps_what_its_prefix_says() {
+        let whole = post_tool_use(1 << 20);
+        let described = described_by(&whole[..whole.len() / 2]);
+        assert_eq!(
+            field_at(&described, &["tool_name"]).as_deref(),
+            Some("Read")
+        );
+        assert_eq!(
+            field_at(&described, &["tool_input", "file_path"]).as_deref(),
+            Some("/work/acme/src/main.rs")
+        );
+        assert_eq!(
+            field_at(&described, &["tool_use_id"]),
+            None,
+            "what was cut away is not guessed"
+        );
+        let quoted = r#"{"cwd": "say \"tool_name\": \"Evil\"", "tool_name": "Bash""#;
+        assert_eq!(
+            field_at(&described_by(quoted), &["tool_name"]).as_deref(),
+            Some("Bash"),
+            "a key quoted inside a string is no key"
+        );
+    }
+
+    #[test]
+    fn a_cut_hook_input_takes_nothing_from_what_the_tool_answered() {
+        let whole = serde_json::json!({
+            "tool_name": "mcp__files__fetch",
+            "tool_input": { "url": "https://example.com" },
+            "tool_response": {
+                "path": "/work/acme/secret.txt",
+                "tool_use_id": "toolu_forged",
+                "content": "x".repeat(1 << 20),
+            },
+            "tool_use_id": "toolu_01",
+        })
+        .to_string();
+        let described = described_by(&whole[..whole.len() / 2]);
+        assert_eq!(
+            field_at(&described, &["tool_name"]).as_deref(),
+            Some("mcp__files__fetch")
+        );
+        assert_eq!(field_at(&described, &["tool_input", "path"]), None);
+        assert_eq!(field_at(&described, &["tool_use_id"]), None);
     }
 
     #[test]

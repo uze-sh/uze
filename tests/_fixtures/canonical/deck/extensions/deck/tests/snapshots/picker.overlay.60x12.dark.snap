@@ -1,0 +1,32 @@
+# uze snapshot · protocol 1 · overlay 60x12 · dark
+ Notes
+
+   Write the script                                copy
+   Ship the board                                  copy
+
+
+
+
+
+
+
+esc close  ·  i inspector
+---
+ aaaaa
+
+   bbbbb bbb bbbbbb                                cccc
+   bbbb bbb bbbbb                                  cccc
+
+
+
+
+
+
+
+ddd aaaaa  e  d aaaaaaaaa
+---
+a text.muted
+b text.bright
+c text.secondary
+d accent
+e text.faint

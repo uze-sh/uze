@@ -1,0 +1,31 @@
+[package]
+name = "uze-contract"
+version.workspace = true
+edition = "2024"
+rust-version = "1.97"
+description = "The extension contract: manifest and compiled-view types, the binding grammar, the catalog's names and the sanitizer"
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+# An extension's data is JSON from its fixture (and, later, its script), so
+# the contract names the one value type every side already shares.
+serde_json = { version = "1", features = ["preserve_order"] }
+# `Clean` bounds what an extension says by the cells it takes on screen, as
+# the host measures it; already in the tree through the client and the
+# theme.
+unicode-width = "0.2"
+# The JSON Schema of the manifest and of a composed answer
+# (`docs/extensions/schema.json`). Already in the tree for the MCP fixture;
+# a feature so it reaches no shipped build: only the `extension-docs`
+# example that writes the file and the root suite's drift test turn it on.
+schemars = { version = "1", optional = true }
+
+[features]
+schema = ["dep:schemars"]
+
+[[example]]
+name = "extension-docs"
+required-features = ["schema"]

@@ -9,6 +9,17 @@ use super::worker::Intent;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Hit {
     Route(Route),
+    /// A row of a declared extension's preferences, by position: selects
+    /// it.
+    ExtensionPreferenceRow(usize),
+    /// A preference's `−`/`+` or `‹`/`›`: selects it and steps its value,
+    /// as ←/→ do.
+    ExtensionPreferenceStep {
+        index: usize,
+        forward: bool,
+    },
+    /// A preference's value: selects it and answers it as Enter does.
+    ExtensionPreferenceValue(usize),
     MarketplaceRow(usize),
     /// A plugin row's chevron, by position in the visible list: unfolds or
     /// folds its resources without the row's own click behind it.
@@ -16,6 +27,9 @@ pub(crate) enum Hit {
     /// A resource row under an unfolded plugin, by the plugin's position
     /// and the resource's identity.
     PluginResource(usize, String),
+    /// An extension row under an unfolded plugin, by the plugin's position
+    /// and the extension's identity.
+    PluginExtension(usize, uze_application::ExtensionIdentity),
     /// The drawer's preview of the selected resource: the wheel scrolls it
     /// rather than the list, and a click on it does nothing.
     ResourcePreview,
@@ -109,6 +123,15 @@ impl TuiModel {
             .map(|(_, hit)| hit)
     }
 
+    /// Puts the keyboard on an extension's preference `index`, leaving any
+    /// typing.
+    fn choose_preference(&mut self, index: usize) {
+        if let Overlay::Preferences(editor) = &mut self.overlay {
+            editor.selected = index;
+            editor.typing = None;
+        }
+    }
+
     pub(crate) fn click(&mut self, column: u16, row: u16) -> Intent {
         if let Overlay::ActionIndex { scopes, filter, .. } = self.overlay.clone() {
             // A click on a row performs it, the way choosing it with the
@@ -130,10 +153,27 @@ impl TuiModel {
             // A dialog's own buttons answer it; a click anywhere else
             // declines, because a click outside a dialog's actionable
             // area must never silently confirm.
-            let answer = match self.hit_at(column, row) {
-                Some(Hit::OfferedAction(action)) => Some(*action),
+            let answer = match self.hit_at(column, row).cloned() {
+                Some(Hit::OfferedAction(action)) => Some(action),
+                // A click on a preference's row chooses it; on its value or
+                // its steps, it is also the key that answers them.
+                Some(Hit::ExtensionPreferenceRow(index)) => {
+                    self.choose_preference(index);
+                    return Intent::None;
+                }
+                Some(Hit::ExtensionPreferenceStep { index, forward }) => {
+                    self.choose_preference(index);
+                    Some(if forward {
+                        uze_keys::Action::NextValue
+                    } else {
+                        uze_keys::Action::PreviousValue
+                    })
+                }
+                Some(Hit::ExtensionPreferenceValue(index)) => {
+                    self.choose_preference(index);
+                    Some(uze_keys::Action::Activate)
+                }
                 Some(Hit::Answer(yes)) => {
-                    let yes = *yes;
                     if let Overlay::Confirm { focus, .. } = &mut self.overlay {
                         *focus = Some(if yes {
                             1
@@ -171,7 +211,8 @@ impl TuiModel {
             Hit::MarketplaceRow(index) => {
                 let again = self.plugin_pane == PluginPane::Plugins
                     && self.remembered.plugin_screen.selected == index
-                    && self.selected_resource.is_none();
+                    && self.selected_resource.is_none()
+                    && self.selected_package_extension.is_none();
                 self.select_plugin_row(index, None);
                 self.plugin_pane = PluginPane::Plugins;
                 self.focus = Focus::Content;
@@ -194,6 +235,11 @@ impl TuiModel {
             Hit::PluginResource(position, identity) => {
                 self.select_plugin_row(position, Some(identity));
                 self.plugin_pane = PluginPane::Plugins;
+                self.focus = Focus::Content;
+                Intent::None
+            }
+            Hit::PluginExtension(position, identity) => {
+                self.select_package_extension(position, identity);
                 self.focus = Focus::Content;
                 Intent::None
             }
@@ -281,7 +327,12 @@ impl TuiModel {
             }
             // Only reachable while the index is open, which the guarded
             // arm above already answered.
-            Hit::ActionIndexEntry(_) | Hit::OverlayBody | Hit::Answer(_) => Intent::None,
+            Hit::ActionIndexEntry(_)
+            | Hit::OverlayBody
+            | Hit::Answer(_)
+            | Hit::ExtensionPreferenceRow(_)
+            | Hit::ExtensionPreferenceStep { .. }
+            | Hit::ExtensionPreferenceValue(_) => Intent::None,
             Hit::OfferedAction(action) => self.act(action),
             Hit::KeysTrack(track) => {
                 self.dragging_keys_track = Some(track);

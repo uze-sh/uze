@@ -78,6 +78,29 @@ impl Surface {
         }
     }
 
+    /// A box raised off the screen beside live content it does not cover —
+    /// a plugin's drawer docked by an agent's pane. The full hairline and
+    /// a ground a step up from the backdrop's, so it reads as lifted over
+    /// the work rather than a column of it; no inset, since what it holds
+    /// keeps its own.
+    ///
+    /// The caller must have cleared what is underneath.
+    pub(crate) fn raised() -> Self {
+        Self {
+            ground: Some(Token::SurfaceRaised),
+            ..Self::card()
+        }
+    }
+
+    /// The hairline in the accent, for a surface whose edge is held by
+    /// the pointer: the light every dragged handle wears.
+    pub(crate) fn held(mut self, held: bool) -> Self {
+        if held {
+            self.tone = Token::Accent;
+        }
+        self
+    }
+
     /// A card the keyboard can land on, whose border is what says so. The
     /// rounded corner is the one place the UI uses one, and it is load
     /// bearing: these cards are chosen from rather than read, and the
@@ -168,6 +191,44 @@ impl Surface {
 /// to align with anything, and leaves no inner rect worth answering with.
 pub(crate) fn fill(frame: &mut ratatui::Frame<'_>, area: Rect, ground: Token) {
     frame.render_widget(Block::default().style(theme::bg(ground)), area);
+}
+
+/// Lifts every ink already drawn in `area` toward the brightest text: the
+/// hover of something clickable whose colours are not the host's, such as
+/// what an extension drew. Each cell keeps its own hue, ground and weight,
+/// so the pointer changes how strong it reads and nothing else.
+pub(crate) fn lift(frame: &mut ratatui::Frame<'_>, area: Rect) {
+    let area = area.intersection(frame.area());
+    let buffer = frame.buffer_mut();
+    for y in area.top()..area.bottom() {
+        for x in area.left()..area.right() {
+            if let Some(cell) = buffer.cell_mut((x, y)) {
+                cell.fg = theme::lifted_ink(cell.fg);
+            }
+        }
+    }
+}
+
+/// Holds back the brightest text drawn in `area` to the secondary: what a
+/// whole region that answers a click, such as a bar item that opens a
+/// drawer, wears at rest, so [`lift`] has somewhere to take it. Coloured
+/// ink keeps its hue, and lifts in it.
+pub(crate) fn hold_back(frame: &mut ratatui::Frame<'_>, area: Rect) {
+    let area = area.intersection(frame.area());
+    let (bright, secondary) = (
+        theme::color(Token::TextBright),
+        theme::color(Token::TextSecondary),
+    );
+    let buffer = frame.buffer_mut();
+    for y in area.top()..area.bottom() {
+        for x in area.left()..area.right() {
+            if let Some(cell) = buffer.cell_mut((x, y))
+                && cell.fg == bright
+            {
+                cell.fg = secondary;
+            }
+        }
+    }
 }
 
 /// The frame's own ground: the backdrop everything is drawn on, and the

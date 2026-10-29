@@ -69,7 +69,7 @@ fn extension_filter_narrows_visible_selection() {
         model.apply_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
     }
     assert_eq!(model.extension_visible_indices(), vec![1]);
-    assert_eq!(model.selected_extension().unwrap().name, "Task List");
+    assert_eq!(model.selected_extension().unwrap().name(), "Task List");
 
     model.apply_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     assert!(model.remembered.extension_screen.filter.is_empty());
@@ -173,6 +173,7 @@ fn a_plugin_reads_and_filters_by_its_category() {
             revision: None,
             summary: summary.clone(),
             capabilities: Vec::new(),
+            declared_extensions: Vec::new(),
         }),
         remembered: Remembered {
             plugin_screen: ListScreen::default(),

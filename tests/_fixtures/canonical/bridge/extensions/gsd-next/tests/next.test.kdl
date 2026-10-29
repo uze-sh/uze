@@ -1,0 +1,19 @@
+test "the band names the next phase and runs it" {
+    surface "next"
+    size 70 1
+    expect-text "run phase 12"
+    snapshot "next"
+}
+
+test "the button sends the phase's number" {
+    surface "next"
+    press-button "Run phase 12"
+    expect-action "run" number="12"
+}
+
+test "a finished milestone offers nothing to run" {
+    surface "next"
+    given "milestone" json=#"{"milestone": "v1.2"}"#
+    expect-text "Every phase is done"
+    expect-absent "Button" because="next"
+}

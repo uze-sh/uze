@@ -1,0 +1,48 @@
+<view>
+// A view: PascalCase nodes from the catalog, bound to the source's data
+// with `{field}`. `{t::key}` is a label from the `t` lookup below.
+lookup "t" {
+    tasks "Tasks"
+    notes "Notes"
+    empty "Nothing to do"
+    refresh "refresh"
+}
+
+Stack {
+    Row align="center" {
+        Text "{title}" grow=#true
+        Badge "{status}" role="info"
+        Tabs id="tab" {
+            Tab "{t::tasks}" value="tasks"
+            Tab "{t::notes}" value="notes"
+        }
+        Button "{t::refresh}" action="refresh"
+    }
+    Progress {
+        Segment each="tasks" weight=1 ratio="{ratio}" role="success"
+    }
+    List each="tasks" show="ui.tab=tasks" empty="{t::empty}" {
+        Text "{name}"
+    }
+    Text "{notes}" show="ui.tab=notes" role="muted"
+}
+</view>
+
+<script>
+// The `live` source's answer. `answer` is asked with the source's `input`
+// and returns the envelope: its `data` is what the view draws, in the
+// shape of `fixtures/board.json`.
+fn answer(input, context) {
+    #{
+        data: #{
+            title: input.title,
+            status: "on track",
+            notes: "A script answers what a fixture only samples.",
+            tasks: [
+                #{ name: "Write the script", ratio: 1.0 },
+                #{ name: "Enable it in a project", ratio: 0.0 },
+            ],
+        },
+    }
+}
+</script>

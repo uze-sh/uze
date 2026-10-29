@@ -95,6 +95,15 @@ else. A delivery that cannot write a wrapper has nothing honest to attach,
 and an entry running a second implementation is a hook the author did not
 write.
 
+Amended (extension-agent-bridge): what UZE needs only inside its own workspace, the
+reporter that tells the client about turns, tools and approvals, is not a
+portable hook. A delivered hook runs in every session of the harness, UZE
+or not; the reporter rides each launch through
+`IntegrationPort::reporter` (Claude Code's `--settings` file of hooks,
+Codex's `-c notify=`), is gone when the launch is, and is the one place a
+`uze` appears on a harness's event path: `uze agent report`, which always
+exits 0.
+
 What the runtime was also the reference for is now data: the answer the
 wrapper gives for every fixture — the native decision document, the exit
 status and the reason — is recorded per harness under

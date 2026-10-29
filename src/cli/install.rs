@@ -212,6 +212,9 @@ pub(crate) fn install_package(app: &UzeApplication, install: PackageInstall<'_>)
         );
     }
     let package = report.plugin.id.clone();
+    if text && !install.machine {
+        ask_about_extensions(app, std::slice::from_ref(&package));
+    }
     match undelivered_failure(
         report
             .undelivered()

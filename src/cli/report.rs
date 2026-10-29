@@ -28,7 +28,7 @@ pub(crate) fn render_update_summary(report: &uze_application::application::Updat
     use progress::Change;
     use uze_application::application::{UpdateOutcome, UpdateScope};
     let mut lines = String::new();
-    let mut moved = 0;
+    let mut moved = Vec::new();
     for outcome in &report.outcomes {
         match outcome {
             UpdateOutcome::Moved {
@@ -36,7 +36,7 @@ pub(crate) fn render_update_summary(report: &uze_application::application::Updat
                 revision,
                 deliveries,
             } => {
-                moved += 1;
+                moved.push(plugin.as_str());
                 lines.push_str(&progress::change(
                     Change::Updated,
                     plugin,
@@ -49,7 +49,7 @@ pub(crate) fn render_update_summary(report: &uze_application::application::Updat
                 linked_source: checkout,
                 deliveries,
             } => {
-                moved += 1;
+                moved.push(plugin.as_str());
                 let detail = match report.scope {
                     UpdateScope::Machine => {
                         format!(
@@ -86,16 +86,39 @@ pub(crate) fn render_update_summary(report: &uze_application::application::Updat
             UpdateScope::Project => "this project declares no plugins".to_owned(),
             UpdateScope::Machine => "no plugins installed on this machine".to_owned(),
         }
-    } else if moved == 0 {
+    } else if moved.is_empty() {
+        let considered = report.outcomes.iter().map(UpdateOutcome::plugin);
         format!(
             "{} up to date {}",
             progress::success_icon(),
-            progress::label(format!("· {}", count(report.outcomes.len(), "plugin")))
+            progress::label(format!(
+                "· {}",
+                counted_by_kind(considered, &report.extensions)
+            ))
         )
     } else {
-        format!("{} updated", count(moved, "plugin"))
+        format!(
+            "{} updated",
+            counted_by_kind(moved.into_iter(), &report.extensions)
+        )
     };
     progress::change_report("update", &lines, &outcome)
+}
+
+/// `names` counted as plugins, or as extensions where `extensions` says
+/// they carry only that.
+fn counted_by_kind<'a>(names: impl Iterator<Item = &'a str>, extensions: &[String]) -> String {
+    let (extensions, plugins): (Vec<&str>, Vec<&str>) =
+        names.partition(|name| extensions.iter().any(|extension| extension == name));
+    progress::count_packages(plugins.len(), extensions.len())
+}
+
+/// The noun one package is reported under.
+fn kind_noun(kind: uze_application::application::PackageKind) -> &'static str {
+    match kind {
+        uze_application::application::PackageKind::Plugin => "plugin",
+        uze_application::application::PackageKind::Extension => "extension",
+    }
 }
 
 /// What `uze update` moved, and what it deliberately did not.
@@ -365,6 +388,16 @@ pub(crate) fn render_inspection(report: &PluginInspection, verbose: bool) -> Str
         std::slice::from_ref(&report.plugin),
     ));
     text.push_str(&super::status::render_held_back(&report.held_back));
+    let scope = if report.extensions_project.is_some() {
+        super::extensions::StandingScope::Here
+    } else {
+        super::extensions::StandingScope::Machine
+    };
+    let extensions = super::extensions::render_extension_standings(&report.extensions, scope);
+    if !extensions.is_empty() {
+        text.push('\n');
+        text.push_str(&extensions);
+    }
     text
 }
 
@@ -650,12 +683,13 @@ pub(crate) fn render_add_summary(report: &AddPluginReport) -> String {
         lines.push('\n');
         lines.push_str(&issues);
     }
+    let noun = kind_noun(report.plugin.kind);
     let scope = if report.declared {
-        "1 plugin added to this project"
+        format!("1 {noun} added to this project")
     } else {
-        "1 plugin installed on this machine only"
+        format!("1 {noun} installed on this machine only")
     };
-    progress::change_report("install", &lines, scope)
+    progress::change_report("install", &lines, &scope)
 }
 
 /// What a lifecycle operation did to each plugin's rules in the checkout:
@@ -982,11 +1016,27 @@ pub(crate) fn render_remove(report: &RemovePluginReport) -> String {
             "",
             &format!("nothing to remove: no uze state remains for {plugin}"),
         ),
-        RemovePluginReport::Removed { plugin, .. } => progress::change_report(
-            "remove",
-            &progress::change(progress::Change::Removed, plugin, None),
-            "1 plugin removed from this machine",
-        ),
+        RemovePluginReport::Removed {
+            plugin,
+            kind,
+            unforgotten,
+            ..
+        } => {
+            let mut text = progress::change_report(
+                "remove",
+                &progress::change(progress::Change::Removed, plugin, None),
+                &format!("1 {} removed from this machine", kind_noun(*kind)),
+            );
+            if let Some(why) = unforgotten {
+                text.push_str(&format!(
+                    "{}\n",
+                    progress::warning_text(format!(
+                        "what its extensions were given or kept was not all forgotten: {why}"
+                    ))
+                ));
+            }
+            text
+        }
         RemovePluginReport::Blocked { report, plan } => {
             let mut text = progress::report_title("Removal blocked", Some(&report.package_id));
             text.push_str(&format!(
@@ -1032,6 +1082,7 @@ pub(crate) fn render_install(report: &uze_application::application::InstallRepor
             skipped,
             reconciled,
             rules,
+            extensions,
             ..
         } => {
             let mut lines = String::new();
@@ -1058,10 +1109,16 @@ pub(crate) fn render_install(report: &uze_application::application::InstallRepor
             }
             let mut outcome = Vec::new();
             if !plugins.is_empty() {
-                outcome.push(format!("{} installed", count(plugins.len(), "plugin")));
+                outcome.push(format!(
+                    "{} installed",
+                    counted_by_kind(plugins.iter().map(String::as_str), extensions)
+                ));
             }
             if !removed.is_empty() {
-                outcome.push(format!("{} removed", count(removed.len(), "plugin")));
+                outcome.push(format!(
+                    "{} removed",
+                    counted_by_kind(removed.iter().map(String::as_str), extensions)
+                ));
             }
             if outcome.is_empty() {
                 outcome.push(format!("{} up to date", progress::success_icon()));
@@ -1085,6 +1142,7 @@ mod tests {
                 revision: revision.to_owned(),
                 deliveries: Vec::new(),
             }],
+            extensions: Vec::new(),
             rules: Vec::new(),
         }
     }
@@ -1097,6 +1155,51 @@ mod tests {
             short_commit("https://example.com/m.git@0123456789"),
             "https://example.com/m.git@0123456789"
         );
+    }
+
+    /// A package of extensions only is said to be one wherever a report
+    /// names what it changed; the rest stay plugins.
+    #[test]
+    fn a_package_of_extensions_only_is_reported_as_an_extension() {
+        use uze_application::application::{PackageKind, RemovePluginReport};
+        let mut report = moved_to("0123456789abcdef");
+        report.extensions = vec!["lint".to_owned()];
+        assert!(
+            progress::unpainted(&render_update_summary(&report)).contains("1 extension updated")
+        );
+        report.outcomes.push(UpdateOutcome::Moved {
+            plugin: "git".to_owned(),
+            revision: "fedcba9876543210".to_owned(),
+            deliveries: Vec::new(),
+        });
+        assert!(
+            progress::unpainted(&render_update_summary(&report))
+                .contains("1 plugin and 1 extension updated")
+        );
+
+        let removed = |kind| RemovePluginReport::Removed {
+            plugin: "focus@uze".to_owned(),
+            kind,
+            detached_receipts: Vec::new(),
+            already_missing_receipts: Vec::new(),
+            unforgotten: None,
+        };
+        assert!(
+            progress::unpainted(&render_remove(&removed(PackageKind::Extension)))
+                .contains("1 extension removed from this machine")
+        );
+        assert!(
+            progress::unpainted(&render_remove(&removed(PackageKind::Plugin)))
+                .contains("1 plugin removed from this machine")
+        );
+    }
+
+    #[test]
+    fn packages_are_counted_by_what_they_are() {
+        assert_eq!(progress::count_packages(2, 0), "2 plugins");
+        assert_eq!(progress::count_packages(0, 1), "1 extension");
+        assert_eq!(progress::count_packages(1, 2), "1 plugin and 2 extensions");
+        assert_eq!(progress::count_packages(0, 0), "0 plugins");
     }
 
     #[test]

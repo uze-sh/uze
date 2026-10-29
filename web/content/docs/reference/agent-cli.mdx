@@ -25,8 +25,8 @@ uze agent context inspect [path]       # what each agent currently sees of AGENT
 uze agent market create <name> --at <dir>   # scaffold, register and link a marketplace (--description)
 uze agent market create <name> --local      # the project as its own marketplace (--plugins-dir, default plugins)
 uze agent market check <path>               # validate a marketplace, offline
-uze agent plugin create <name> --market <m> # scaffold a plugin (--hook --mcp --agent --rules --category --description)
-uze agent plugin check <path>               # validate a plugin, offline
+uze agent plugin create <name> --market <m> # scaffold a plugin (--hook --mcp --agent --rules --extension <id> --category --description)
+uze agent plugin check <path>               # validate a plugin and its extensions, offline
 ```
 
 Every command but `work split` and `work join` takes `--format json`; `split`

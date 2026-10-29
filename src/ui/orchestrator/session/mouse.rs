@@ -53,16 +53,16 @@ impl Attach<'_> {
             MouseEventKind::Moved => self.hover(mouse),
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => self.wheel(mouse, viewport),
             MouseEventKind::ScrollLeft | MouseEventKind::ScrollRight
-                if self.model.architect.is_some() =>
+                if self.model.open_slot.is_some() =>
             {
-                let space = self.architect_space();
+                let space = self.surface_space();
                 let columns = if mouse.kind == MouseEventKind::ScrollLeft {
                     -6
                 } else {
                     6
                 };
-                if let Some(view) = self.model.architect.as_mut() {
-                    architect::pan(view, columns, space);
+                if let Some((surface, engine)) = self.model.open_engine_mut() {
+                    engine.pan(&surface, columns, space);
                     self.model.dirty = true;
                 }
                 Flow::Continue
@@ -98,6 +98,27 @@ impl Attach<'_> {
         );
     }
 
+    /// A press inside a resident surface's content is its, relative to
+    /// it, and takes the surface back if Esc had let go of it. Answers
+    /// whether the surface took it.
+    fn resident_press(&mut self, column: u16, row: u16) -> bool {
+        let Some(id) = self.model.resident_slot() else {
+            return false;
+        };
+        let area = self.model.raw_area(id);
+        if !area.contains(Position::new(column, row)) {
+            return false;
+        }
+        let input = uze_extensions::contract::RawInput::Pointer {
+            x: column - area.x,
+            y: row - area.y,
+            button: "left".to_owned(),
+        };
+        self.model.give_raw_input(id, input);
+        self.model.dirty = true;
+        true
+    }
+
     /// A left button going down.
     ///
     /// Guards first, in the same modal-precedence order the keyboard has:
@@ -107,6 +128,9 @@ impl Attach<'_> {
     pub(super) fn press(&mut self, mouse: MouseEvent, viewport: &Viewport) -> Flow {
         let Viewport { ref layout, .. } = *viewport;
         self.drop_selection();
+        if self.resident_press(mouse.column, mouse.row) {
+            return Flow::Continue;
+        }
         // An open extension answers only for the places it is drawn in: the
         // sidebar and the rest of the bar are still the chrome's. Those
         // places are the pane and one column more — the content's groove
@@ -115,6 +139,10 @@ impl Attach<'_> {
         // A key a hint names is the host's wherever it is drawn: what it
         // performs is an action, which the surface beneath never sees.
         let over = self.model.hit_at(mouse.column, mouse.row);
+        // A press anywhere but the drawer gives its keys back to the pane.
+        if !self.on_drawer(over) {
+            self.model.dock_focused = false;
+        }
         // A click anywhere outside the overview's form leaves what is
         // being typed there; the form's own targets leave it themselves,
         // knowing which row they land on, and so does a hint: it is a key
@@ -131,17 +159,46 @@ impl Attach<'_> {
         ) {
             self.finish_editing();
         }
-        let on_hint = matches!(over, Some(WorkspaceHit::HintAction(_)));
-        let on_surface = !on_hint
+        // A footer's keys, and the inspector beside a declared view, are
+        // the host's: they stand in the pane without being the surface's.
+        let on_host = matches!(
+            over,
+            Some(
+                WorkspaceHit::HintAction(_)
+                    | WorkspaceHit::Inspector
+                    | WorkspaceHit::InspectorTool(_)
+                    | WorkspaceHit::ResizeOverviewDrawer
+            )
+        );
+        let on_surface = !on_host
+            && !self.model.under_floating_drawer(mouse.column, mouse.row)
             && (layout
                 .pane
                 .contains(ratatui::layout::Position::new(mouse.column, mouse.row))
                 || self.on_content_scrollbar(mouse.column, mouse.row)
-                || over.is_some_and(WorkspaceHit::is_open_surfaces));
+                || over.is_some_and(|hit| self.model.is_open_surfaces(hit)));
         self.hand_recent_the_keys_or_not(mouse.column, layout.sidebar, over);
+        // A click in the inspector lends it the moves; one on the view
+        // gives them back.
+        if self.model.inspecting {
+            if matches!(
+                over,
+                Some(WorkspaceHit::Inspector | WorkspaceHit::InspectorTool(_))
+            ) {
+                self.model.inspector.keys = true;
+            } else if on_surface {
+                self.model.inspector.keys = false;
+            }
+        }
         match mouse {
             _ if self.model.approval.is_some() => {
                 self.approval_press(mouse.column, mouse.row);
+            }
+            _ if self.model.extension_offer.is_some() => {
+                self.extension_offer_press(mouse.column, mouse.row);
+            }
+            _ if self.model.agent_write.is_some() => {
+                self.agent_write_press(mouse.column, mouse.row);
             }
             _ if self.model.proposal.is_some() => {
                 self.proposal_press(mouse.column, mouse.row);
@@ -154,6 +211,9 @@ impl Attach<'_> {
             }
             _ if self.model.shows_space_issues() => {
                 self.space_issues_press(mouse.column, mouse.row);
+            }
+            _ if self.model.open_overlay.is_some() && self.model.action_index.is_none() => {
+                return self.overlay_press(mouse.column, mouse.row, viewport);
             }
             _ if self.model.release_notes.is_some() && self.model.action_index.is_none() => {
                 if !matches!(
@@ -193,6 +253,15 @@ impl Attach<'_> {
                 // outside the thing being edited discards it rather
                 // than silently confirming or acting on the click.
                 self.model.renaming = None;
+                self.model.dirty = true;
+            }
+            // A source's input being edited: its keys' hints are pressed,
+            // and any other click puts the edit away, as a rename's does.
+            _ if self.model.inspector.edit.is_some() => {
+                if let Some(WorkspaceHit::HintAction(action)) = over {
+                    return self.act(action, viewport);
+                }
+                self.model.inspector.edit = None;
                 self.model.dirty = true;
             }
             _ if self.model.directory_step.is_some() => {
@@ -322,72 +391,8 @@ impl Attach<'_> {
             _ if on_surface && self.presses_on_text(mouse.column, mouse.row) => {
                 self.mark_text_from(mouse.column, mouse.row);
             }
-            _ if self.model.architect.is_some() && on_surface => {
-                self.architect_press(mouse.column, mouse.row);
-            }
-            _ if self.model.spec.is_some() && on_surface => {
-                let view_hit = match self.model.hit_rect_at(mouse.column, mouse.row) {
-                    Some((_, WorkspaceHit::Extension(ExtensionHit::Spec(hit)))) => Some(hit),
-                    _ => None,
-                };
-                // The frame is the code surface's, and so are the three
-                // gestures that are about its geometry rather than its rows.
-                if view_hit == Some(ViewHit::GrabNavigatorEdge) {
-                    self.model.code_edge_drag = Some(EdgeDrag::armed_at(mouse.column, mouse.row));
-                } else if view_hit == Some(ViewHit::DragContentScrollbar)
-                    && self.model.code_scrollbars.content_bar.is_some()
-                {
-                    self.model.dragging_code_content = true;
-                    self.scroll_code_content_to(mouse.row);
-                } else {
-                    let space = self.code_space();
-                    let outcome = self
-                        .model
-                        .spec
-                        .as_mut()
-                        .map(|view| spec::handle_mouse(view, view_hit, space));
-                    self.follow_spec(outcome);
-                }
-                self.model.dirty = true;
-            }
-            _ if self.model.code.is_some() && on_surface => {
-                let hit = self.model.hit_rect_at(mouse.column, mouse.row);
-                // Mirrors `WorkspaceHit::ResizeSidebar` below: arms
-                // dragging instead of reaching the extension, which only
-                // knows about `ExtensionHit`s that are its own — the
-                // resize handle's drag lifecycle belongs to this
-                // workspace client, not the extension.
-                let view_hit = match hit {
-                    Some((rect, WorkspaceHit::Extension(ExtensionHit::Code(hit)))) => {
-                        Some(self.finished(rect, hit, mouse.column))
-                    }
-                    _ => None,
-                };
-                // Three of the surface's gestures are the host's rather
-                // than the extension's, because all three are about
-                // geometry it never sees: the edge between the columns,
-                // and the content's scrollbar.
-                if view_hit == Some(ViewHit::GrabNavigatorEdge) {
-                    // Armed, not decided: which of the edge's two jobs
-                    // this is belongs to the first movement.
-                    self.model.code_edge_drag = Some(EdgeDrag::armed_at(mouse.column, mouse.row));
-                } else if view_hit == Some(ViewHit::DragContentScrollbar)
-                    && self.model.code_scrollbars.content_bar.is_some()
-                {
-                    self.model.dragging_code_content = true;
-                    self.scroll_code_content_to(mouse.row);
-                } else {
-                    let space = self.code_space();
-                    if let Some(outcome) = self
-                        .model
-                        .code
-                        .as_mut()
-                        .map(|view| code::handle_mouse(view, view_hit, space))
-                    {
-                        self.follow_code(outcome);
-                    }
-                }
-                self.model.dirty = true;
+            _ if self.model.open_slot.is_some() && on_surface => {
+                self.slot_press(mouse.column, mouse.row);
             }
             _ => {
                 let Some((hit_rect, hit)) = self.model.hit_rect_at(mouse.column, mouse.row) else {
@@ -453,14 +458,14 @@ impl Attach<'_> {
             {
                 self.mark_text_to(mouse.column, mouse.row);
             }
-            _ if self.model.architect_grab.is_some() => {
-                self.drag_diagram(mouse.column, mouse.row);
+            _ if self.model.board_grab.is_some() => {
+                self.drag_board(mouse.column, mouse.row);
             }
-            _ if self.model.dragging_code_content => {
-                self.scroll_code_content_to(mouse.row);
+            _ if self.model.dragging_content => {
+                self.scroll_content_to(mouse.row);
             }
-            _ if self.model.code_edge_drag.is_some() => {
-                self.drag_code_edge(mouse.column, mouse.row, layout.pane);
+            _ if self.model.edge_drag.is_some() => {
+                self.drag_edge(mouse.column, mouse.row, layout.pane);
             }
             _ if self.model.recent.grab.is_some() => {
                 self.drag_recent_edge(mouse.column, mouse.row);
@@ -480,7 +485,7 @@ impl Attach<'_> {
                     .sidebar
                     .bottom()
                     .saturating_sub(timeline_header + 1)
-                    .clamp(1, TIMELINE_COMMITS as u16);
+                    .clamp(1, code::TIMELINE_COMMITS as u16);
                 if self.model.timeline_rows != Some(wanted) {
                     self.model.timeline_rows = Some(wanted);
                     self.model.dirty = true;
@@ -494,6 +499,15 @@ impl Attach<'_> {
                     self.model.overview_drawer_width = Some(width);
                     self.model.dirty = true;
                 }
+            }
+            // The docked drawer's card starts a column past its gap: its
+            // width is what lies between there and the agent area's edge.
+            _ if self.model.dragging_dock_content => {
+                self.model.scroll_drawer_to(mouse.row);
+            }
+            _ if self.model.dragging_dock => {
+                let room = self.agent_room(viewport);
+                self.model.drag_dock_edge(room, mouse.column, mouse.row);
             }
             _ if self.model.dragging_sidebar => {
                 let new_width = crate::ui::clamp_sidebar_width(
@@ -551,7 +565,7 @@ impl Attach<'_> {
                 self.model.dirty = true;
             }
             _ if !self.model.dragging_sidebar
-                && self.model.code_edge_drag.is_none()
+                && self.model.edge_drag.is_none()
                 && self.model.timeline_grab.is_none()
                 && self.model.dragging_tab.is_none()
                 && self.model.dragging_space.is_none()
@@ -587,8 +601,8 @@ impl Attach<'_> {
         // there too, not just silently dropped the way it was
         // before pane forwarding existed.
         if !self.model.dragging_sidebar
-            && self.model.code_edge_drag.is_none()
-            && !self.model.dragging_code_content
+            && self.model.edge_drag.is_none()
+            && !self.model.dragging_content
             && self.model.timeline_grab.is_none()
             && self.model.dragging_tab.is_none()
             && self.model.dragging_space.is_none()
@@ -596,7 +610,7 @@ impl Attach<'_> {
         {
             forward_mouse(&mut self.stream, &self.model, layout.pane, mouse);
         }
-        self.release_diagram();
+        self.release_board();
         if let Some(dragging) = self.model.dragging_space.take() {
             if let Some(pending) = dragging.pending {
                 let _ = send_request(
@@ -631,16 +645,20 @@ impl Attach<'_> {
         if std::mem::take(&mut self.model.dragging_overview_drawer) {
             self.model.dirty = true;
         }
+        if std::mem::take(&mut self.model.dragging_dock) {
+            self.model.dirty = true;
+        }
+        self.model.dragging_dock_content = false;
         // A press that never moved is a click, and a click on the edge
         // asks the list to show that part of itself — the gesture that
         // sharing the column with the divider would otherwise have cost.
-        if let Some(drag) = self.model.code_edge_drag.take()
+        if let Some(drag) = self.model.edge_drag.take()
             && drag.intent.is_none()
         {
-            self.scroll_code_tree_to(mouse.row);
+            self.scroll_navigator_to(mouse.row);
         }
         self.model.recent.grab = None;
-        self.model.dragging_code_content = false;
+        self.model.dragging_content = false;
         // A header pressed and let go where it was is the header's click.
         if let Some(grab) = self.model.timeline_grab.take()
             && !grab.moved
@@ -660,10 +678,16 @@ impl Attach<'_> {
                 self.model.remember_sidebar();
                 self.model.dirty = true;
             }
-            WorkspaceHit::Extension(ExtensionHit::SpecSummary(ViewHit::ToggleSection)) => {
+            WorkspaceHit::Extension(ExtensionHit {
+                slot,
+                hit: ViewHit::ToggleSection,
+            }) if self.model.is_spec_summary(slot) => {
                 toggle_spec_summary(&mut self.model);
             }
-            WorkspaceHit::Extension(ExtensionHit::CodeTimeline(ViewHit::ToggleSection)) => {
+            WorkspaceHit::Extension(ExtensionHit {
+                slot,
+                hit: ViewHit::ToggleSection,
+            }) if self.model.is_timeline(slot) => {
                 toggle_timeline(&mut self.model);
             }
             _ => {}
@@ -782,21 +806,16 @@ impl Attach<'_> {
     pub(super) fn open_context_menu(&mut self, mouse: MouseEvent) -> Flow {
         // A row of the code surface asks the surface for its actions: the
         // menu is the extension's, and only the gesture is the host's.
-        if let Some(WorkspaceHit::Extension(ExtensionHit::Code(
-            ViewHit::SelectItem(row) | ViewHit::ToggleGroup(row),
-        ))) = self.model.hit_at(mouse.column, mouse.row)
+        if let Some(WorkspaceHit::Extension(ExtensionHit {
+            slot,
+            hit: ViewHit::SelectItem(row) | ViewHit::ToggleGroup(row),
+        })) = self.model.hit_at(mouse.column, mouse.row)
+            && self.model.open_slot == Some(slot)
+            && self.model.showing(code::CATALOG.id)
         {
-            self.model.code_menu_at = Some(Rect::new(mouse.column, mouse.row, 1, 1));
-            let space = self.code_space();
-            if let Some(outcome) = self
-                .model
-                .code
-                .as_mut()
-                .map(|view| code::handle_mouse(view, Some(ViewHit::OpenMenu(row)), space))
-            {
-                self.follow_code(outcome);
-            }
-            self.model.dirty = true;
+            self.model.menu_at = Some(Rect::new(mouse.column, mouse.row, 1, 1));
+            let space = self.surface_space();
+            self.model.hit_surface(slot, ViewHit::OpenMenu(row), space);
             return Flow::Continue;
         }
         match mouse {
@@ -934,25 +953,12 @@ impl Attach<'_> {
                 // by the same rule — but resolved its way, not the
                 // chrome's, or the hover lands on the board beneath it.
                 let over = self
-                    .architect_hit_at(mouse.column, mouse.row)
+                    .slot_hit_at(mouse.column, mouse.row)
                     .map(|(_, hit)| hit);
                 if self
                     .model
-                    .architect
-                    .as_mut()
-                    .is_some_and(|view| architect::handle_hover(view, over))
-                {
-                    self.model.dirty = true;
-                }
-                let over_code = match hovered {
-                    Some(WorkspaceHit::Extension(ExtensionHit::Code(hit))) => Some(hit),
-                    _ => None,
-                };
-                if self
-                    .model
-                    .code
-                    .as_mut()
-                    .is_some_and(|view| code::handle_hover(view, over_code))
+                    .open_engine_mut()
+                    .is_some_and(|(surface, engine)| engine.hover(&surface, over))
                 {
                     self.model.dirty = true;
                 }
@@ -995,6 +1001,11 @@ impl Attach<'_> {
                     Action::SelectNext
                 };
                 return self.action_index_action(action, viewport);
+            }
+            // The offer's list scrolls under the wheel; its cursor stays
+            // where the keys left it.
+            _ if self.model.extension_offer.is_some() => {
+                self.extension_offer_wheel(mouse.kind == MouseEventKind::ScrollDown);
             }
             // Recent has the column while it is open, so the wheel over it
             // scrolls its list, and the selection stays where the keys
@@ -1048,79 +1059,68 @@ impl Attach<'_> {
                     self.model.dirty = true;
                 }
             }
-            _ if self.model.architect.is_some() && in_pane => {
-                let direction = if mouse.kind == MouseEventKind::ScrollUp {
-                    ScrollDirection::Up
-                } else {
-                    ScrollDirection::Down
-                };
-                let space = self.architect_space();
-                if let Some(view) = self.model.architect.as_mut() {
-                    architect::handle_scroll(view, direction, space);
-                }
-                self.model.dirty = true;
+            // The drawer scrolls under the pointer, wherever the keys are:
+            // where its card was drawn, a fitted one being shorter than the
+            // room it was given.
+            _ if self
+                .model
+                .dock_drawn
+                .get()
+                .is_some_and(|drawer| drawer.contains(Position::new(mouse.column, mouse.row))) =>
+            {
+                self.model
+                    .scroll_drawer(if mouse.kind == MouseEventKind::ScrollUp {
+                        ScrollDirection::Up
+                    } else {
+                        ScrollDirection::Down
+                    });
             }
-            _ if self.model.spec.is_some() && in_pane => {
+            _ if self.model.inspecting
+                && matches!(
+                    self.model.hit_at(mouse.column, mouse.row),
+                    Some(WorkspaceHit::Inspector | WorkspaceHit::InspectorTool(_))
+                ) =>
+            {
+                self.model.scroll_inspector(match mouse.kind {
+                    MouseEventKind::ScrollUp => -crate::ui::input::PREVIEW_WHEEL,
+                    _ => crate::ui::input::PREVIEW_WHEEL,
+                });
+            }
+            // Over a navigator the wheel scrolls the list, which is the
+            // host's; anywhere else the content, which is the engine's.
+            _ if self.model.open_slot.is_some() && in_pane => {
                 let direction = if mouse.kind == MouseEventKind::ScrollUp {
                     ScrollDirection::Up
                 } else {
                     ScrollDirection::Down
                 };
-                let target = match on_content_scrollbar {
+                let space = self.surface_space();
+                let navigated = self
+                    .model
+                    .view_in_pane(space)
+                    .is_some_and(|view| view.navigator.is_some());
+                let target = match on_content_scrollbar || !navigated {
                     true => Some(uze_extensions::view::ScrollTarget::Content),
                     false => crate::ui::extension_view::scroll_target(
                         layout.pane,
-                        self.model.code_tree_width,
-                        mouse.column,
-                        mouse.row,
-                    ),
-                };
-                match target {
-                    Some(uze_extensions::view::ScrollTarget::Navigator) => {
-                        self.model.code_tree_scroll =
-                            self.model.code_tree_scroll.scrolled(direction);
-                    }
-                    Some(uze_extensions::view::ScrollTarget::Content) => {
-                        if let Some(view) = self.model.spec.as_mut() {
-                            spec::handle_scroll(view, direction);
-                        }
-                    }
-                    None => {}
-                }
-                self.model.dirty = true;
-            }
-            _ if self.model.code.is_some() && in_pane => {
-                let direction = if mouse.kind == MouseEventKind::ScrollUp {
-                    ScrollDirection::Up
-                } else {
-                    ScrollDirection::Down
-                };
-                let target = match on_content_scrollbar {
-                    true => Some(uze_extensions::view::ScrollTarget::Content),
-                    false => crate::ui::extension_view::scroll_target(
-                        layout.pane,
-                        self.model.code_tree_width,
+                        self.model.navigator_width,
                         mouse.column,
                         mouse.row,
                     ),
                 };
                 match target {
                     // The list is the host's to scroll (see
-                    // `WorkspaceModel::code_tree_scroll`); the diff is the
-                    // extension's own content.
+                    // `WorkspaceModel::navigator_scroll`).
                     Some(uze_extensions::view::ScrollTarget::Navigator) => {
-                        self.model.code_tree_scroll =
-                            self.model.code_tree_scroll.scrolled(direction);
+                        self.model.navigator_scroll =
+                            self.model.navigator_scroll.scrolled(direction);
+                        self.model.dirty = true;
                     }
                     Some(uze_extensions::view::ScrollTarget::Content) => {
-                        let at_end = self.model.code_scrollbars.content_at_end;
-                        if let Some(view) = self.model.code.as_mut() {
-                            code::handle_scroll(view, direction, at_end);
-                        }
+                        self.scroll_surface_content(direction);
                     }
                     None => {}
                 }
-                self.model.dirty = true;
             }
             _ if self.model.commit_detail.is_some() => {
                 if let Some(popup) = self.model.commit_detail.as_mut() {
@@ -1224,7 +1224,10 @@ impl Attach<'_> {
             WorkspaceHit::ToggleSpaceCollapsed(space) => {
                 toggle_space_collapsed(&mut self.model, space);
             }
-            WorkspaceHit::Extension(ExtensionHit::CodeTimeline(ViewHit::ToggleSection)) => {
+            WorkspaceHit::Extension(ExtensionHit {
+                slot,
+                hit: ViewHit::ToggleSection,
+            }) if self.model.is_timeline(slot) => {
                 toggle_timeline(&mut self.model);
             }
             _ => return false,
@@ -1281,6 +1284,10 @@ impl Attach<'_> {
                     );
                     self.model.dirty = true;
                 }
+            }
+            WorkspaceHit::DismissExtensionNotice => {
+                self.model.extension_notice = None;
+                self.model.dirty = true;
             }
             WorkspaceHit::DismissRelease => {
                 if let Some(notice) = self.model.release.take() {
@@ -1425,11 +1432,22 @@ impl Attach<'_> {
             | WorkspaceHit::RecentShowAll => {}
             WorkspaceHit::ToggleRecent => self.open_recent(),
             WorkspaceHit::ReviewCommands => self.model.review_commands(),
+            WorkspaceHit::ReviewExtensions => self.model.review_extensions(),
             WorkspaceHit::ReviewProposal => self.model.review_proposal(),
             // Only reachable while the question is open, which the guarded
             // arm in `press` answers first.
             WorkspaceHit::ApprovalAnswer(_)
             | WorkspaceHit::ApprovalBody
+            | WorkspaceHit::ExtensionOfferAnswer(_)
+            | WorkspaceHit::ExtensionOfferRow(_)
+            | WorkspaceHit::ExtensionOfferMark(_)
+            | WorkspaceHit::ExtensionOfferWhere
+            | WorkspaceHit::ExtensionOfferAll
+            | WorkspaceHit::ExtensionOfferWhole
+            | WorkspaceHit::ExtensionOfferBar(_)
+            | WorkspaceHit::ExtensionOfferBody
+            | WorkspaceHit::AgentWriteAnswer(_)
+            | WorkspaceHit::AgentWriteBody
             | WorkspaceHit::ProposalAnswer(_)
             | WorkspaceHit::ProposalBody
             | WorkspaceHit::InterruptAnswer(_)
@@ -1438,7 +1456,8 @@ impl Attach<'_> {
             | WorkspaceHit::OverviewAnswer(_)
             | WorkspaceHit::OverviewQuestionBody
             | WorkspaceHit::OverviewIssuesBody => {}
-            WorkspaceHit::OverviewDrawer => {}
+            WorkspaceHit::OverviewDrawer | WorkspaceHit::Inspector => {}
+            WorkspaceHit::InspectorTool(index) => self.run_inspector_tool(index),
             WorkspaceHit::OverviewIssues => self.model.set_space_issues(true),
             WorkspaceHit::ContextMenuAction(_) | WorkspaceHit::ContextSubmenuAction(_) => {
                 // Only reachable while the context menu is
@@ -1456,11 +1475,34 @@ impl Attach<'_> {
             // of its halves is showing, so pressing it puts the surface
             // away in one click. Unlit, it is the keys' door: it opens, or
             // switches from the other surface.
-            WorkspaceHit::OpenFiles if self.model.code.is_some() => self.model.close_code(),
-            WorkspaceHit::OpenArchitect if self.model.architect.is_some() => {
-                self.model.close_architect();
+            WorkspaceHit::OpenFiles if self.model.showing(code::CATALOG.id) => {
+                self.model.close_surface();
             }
-            WorkspaceHit::OpenSpec if self.model.spec.is_some() => self.model.close_spec(),
+            WorkspaceHit::OpenArchitect if self.model.showing(architect::CATALOG.id) => {
+                self.model.close_surface();
+            }
+            WorkspaceHit::OpenSpec if self.model.showing(spec::CATALOG.id) => {
+                self.model.close_surface();
+            }
+            WorkspaceHit::OpenDeclared(slot) if self.model.open_slot == Some(slot) => {
+                self.model.close_surface();
+            }
+            WorkspaceHit::OpenDeclared(slot) => open_surface(&mut self.model, slot),
+            WorkspaceHit::ToggleDrawer(slot) => {
+                let room = self.agent_room(viewport);
+                self.model.toggle_drawer(slot, room);
+            }
+            WorkspaceHit::ResizeDock => {
+                self.model.dragging_dock = true;
+                self.model.dirty = true;
+            }
+            WorkspaceHit::DockBody => {
+                self.model.dock_focused = true;
+                self.model.dirty = true;
+            }
+            // Only reachable while the overlay is open, which the guarded
+            // arm in `press` answers first.
+            WorkspaceHit::OverlayBody | WorkspaceHit::CloseOverlay => {}
             WorkspaceHit::OpenOverview => return self.act(Action::OpenSpaceOverview, viewport),
             WorkspaceHit::OverviewSection(index) => {
                 return self.act(Action::SelectSection(index as u8 + 1), viewport);
@@ -1536,53 +1578,97 @@ impl Attach<'_> {
             // other two overlays; the sidebar section's are answered
             // here, since it is drawn as part of the sidebar rather than
             // over it.
-            WorkspaceHit::Extension(
-                ExtensionHit::Code(_) | ExtensionHit::Architect(_) | ExtensionHit::Spec(_),
-            ) => {}
-            // The spec section: its header folds it, and a change opens the
-            // surface on that change. Nothing else is drawn in it.
-            WorkspaceHit::Extension(ExtensionHit::SpecSummary(hit)) => match hit {
-                ViewHit::ToggleSection => self.press_foot_header(
-                    WorkspaceHit::Extension(ExtensionHit::SpecSummary(hit)),
-                    hit_rect,
-                ),
-                ViewHit::SelectItem(index) => {
-                    let change = self
-                        .model
-                        .spec_summary()
-                        .and_then(|summary| summary.changes.get(index))
-                        .map(|change| change.name.clone());
-                    if let Some(change) = change {
-                        open_spec_at(&mut self.model, &change);
+            // The timeline: its header folds it and is the handle its
+            // height is dragged by, and a commit opens its account beside
+            // the row.
+            WorkspaceHit::Extension(ExtensionHit { slot, hit }) if self.model.is_timeline(slot) => {
+                match hit {
+                    ViewHit::ToggleSection => self.press_foot_header(
+                        WorkspaceHit::Extension(ExtensionHit { slot, hit }),
+                        hit_rect,
+                    ),
+                    ViewHit::SelectItem(_) => {
+                        let space = self.surface_space();
+                        let asked = self
+                            .model
+                            .remembered
+                            .declared
+                            .slot_engine_mut(slot)
+                            .map(|(surface, engine)| engine.hit(&surface, hit, space));
+                        if let Some(uze_extensions::contract::Outcome::OpenCommit {
+                            project,
+                            hash,
+                        }) = asked
+                        {
+                            open_commit_detail(
+                                &mut self.model,
+                                project,
+                                hash,
+                                hit_rect,
+                                &self.channels.commit_details.sender,
+                            );
+                        }
                     }
+                    _ => {}
                 }
-                _ => {}
-            },
-            WorkspaceHit::Extension(ExtensionHit::CodeTimeline(hit)) => match hit {
-                ViewHit::ToggleSection => self.press_foot_header(
-                    WorkspaceHit::Extension(ExtensionHit::CodeTimeline(hit)),
-                    hit_rect,
-                ),
-                ViewHit::SelectItem(index) => open_commit_detail(
-                    &mut self.model,
-                    index,
-                    hit_rect,
-                    &self.channels.commit_details.sender,
-                ),
-                ViewHit::GrabNavigatorEdge
-                | ViewHit::ToggleGroup(_)
-                | ViewHit::OpenMenu(_)
-                | ViewHit::MenuEntry(_)
-                | ViewHit::Answer(_)
-                | ViewHit::ChooseGroup
-                | ViewHit::ChooseItem
-                | ViewHit::SelectTrail(_)
-                | ViewHit::PlaceCaret { .. }
-                | ViewHit::SelectMode(_)
-                | ViewHit::SelectSubject(_)
-                | ViewHit::DragContentScrollbar
-                | ViewHit::Close => {}
-            },
+            }
+            // The spec section: its header is a handle on the timeline and
+            // folds it, and a change opens the surface on that change.
+            WorkspaceHit::Extension(ExtensionHit { slot, hit })
+                if self.model.is_spec_summary(slot) =>
+            {
+                match hit {
+                    ViewHit::ToggleSection => self.press_foot_header(
+                        WorkspaceHit::Extension(ExtensionHit { slot, hit }),
+                        hit_rect,
+                    ),
+                    ViewHit::SelectItem(_) => {
+                        let space = self.surface_space();
+                        self.model.hit_surface(slot, hit, space);
+                    }
+                    _ => {}
+                }
+            }
+            // The docked drawer's: the engine's, told the room its view
+            // had, and the drawer has the navigation keys from now on.
+            // The open view's scrollbar is the host's too, as the code
+            // surface's is: held, it follows the pointer.
+            WorkspaceHit::Extension(ExtensionHit {
+                slot,
+                hit: ViewHit::DragContentScrollbar,
+            }) if self.model.open_slot == Some(slot) => {
+                self.model.dragging_content = true;
+                self.scroll_content_to(mouse.row);
+            }
+            // Its scrollbar is the host's, as on every surface: held, it
+            // follows the pointer.
+            WorkspaceHit::Extension(ExtensionHit {
+                slot,
+                hit: ViewHit::DragContentScrollbar,
+            }) if self.model.open_drawer() == Some(slot) => {
+                self.model.dock_focused = true;
+                self.model.dragging_dock_content = true;
+                self.model.scroll_drawer_to(mouse.row);
+            }
+            WorkspaceHit::Extension(ExtensionHit { slot, hit })
+                if self.model.open_drawer() == Some(slot) =>
+            {
+                self.model.dock_focused = true;
+                let space = self.model.dock_space.get();
+                self.model.hit_surface(slot, hit, space);
+            }
+            // A declared section's: its header folds it, and everything
+            // else is the engine's. The open view's are answered above.
+            // A status row's and a band's are told the room they were
+            // drawn in.
+            WorkspaceHit::Extension(ExtensionHit { slot, hit }) => {
+                let drawn = self.model.slot_spaces.borrow().get(&slot).copied();
+                let space = drawn.unwrap_or(uze_extensions::view::Size {
+                    width: layout.sidebar.width,
+                    height: 1,
+                });
+                self.model.hit_surface(slot, hit, space);
+            }
             WorkspaceHit::OpenManage => self.open_manage(),
             // Only reachable while the modal is open, which `handle` routes
             // to `manage_mouse` before any hit is looked up.
@@ -1596,5 +1682,30 @@ impl Attach<'_> {
             }
         }
         Flow::Continue
+    }
+}
+
+impl Attach<'_> {
+    /// Whether a hit is the docked drawer's: its card, its edge, or
+    /// anything its view drew.
+    pub(super) fn on_drawer(&self, hit: Option<WorkspaceHit>) -> bool {
+        match hit {
+            Some(WorkspaceHit::DockBody | WorkspaceHit::ResizeDock) => true,
+            Some(WorkspaceHit::Extension(ExtensionHit { slot, .. })) => {
+                self.model.open_drawer() == Some(slot)
+            }
+            _ => false,
+        }
+    }
+
+    /// The agent area the pane and a drawer share: the pane with no
+    /// drawer beside it.
+    pub(super) fn agent_room(&self, viewport: &Viewport) -> Rect {
+        let frame = Rect::new(0, 0, viewport.size.width, viewport.size.height);
+        let reserved = render::Reserved {
+            bar: self.model.has_bar(),
+            ..render::Reserved::default()
+        };
+        compute_layout(frame, self.model.sidebar_width, reserved).pane
     }
 }

@@ -1,0 +1,29 @@
+test "measures draw figures, gauges and charts" {
+    surface "measures"
+    expect-text "$15.48"
+    expect-text "Spent today"
+    expect-text "93%"
+    snapshot "measures"
+}
+
+test "measures in light" {
+    surface "measures"
+    theme "light"
+    snapshot "measures"
+}
+
+test "blocks draw markdown and highlighted code" {
+    surface "blocks"
+    expect-text "Retry policy"
+    expect-text "implement exponential backoff with jitter"
+    expect-text "fn backoff(attempt: u32) -> Duration {"
+    snapshot "blocks"
+}
+
+test "structure lays out pairs in the drawer" {
+    surface "structure"
+    expect-text "Branch"
+    expect-text "feat/retry-backoff"
+    expect-text "alt+k"
+    snapshot "structure"
+}

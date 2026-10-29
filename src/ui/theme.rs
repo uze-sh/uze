@@ -211,6 +211,49 @@ pub(crate) fn softened(token: Token, into: Token) -> Color {
     )
 }
 
+/// What an extension's `Icon` draws, and the cells it takes: one of the
+/// host's resolves as every symbol does, from the active theme; one the
+/// extension declares is the spelling of the glyph set the operator chose.
+pub(crate) fn icon(glyph: &uze_extensions::view::IconGlyph) -> (String, u16) {
+    use uze_extensions::view::IconGlyph;
+    match glyph {
+        IconGlyph::Host(name) => match Symbol::from_name(&format!("icon.{name}")) {
+            Some(symbol) => (self::glyph(symbol), width(symbol)),
+            None => (String::new(), 0),
+        },
+        IconGlyph::Declared {
+            nerd,
+            unicode,
+            ascii,
+        } => {
+            let (drawn, cells) = match uze_theme::active().glyphs() {
+                uze_theme::GlyphSet::Nerd => (nerd, 1),
+                uze_theme::GlyphSet::Ascii => (ascii, ascii.len()),
+                uze_theme::GlyphSet::Unicode => (
+                    unicode,
+                    unicode_width::UnicodeWidthStr::width(unicode.as_str()),
+                ),
+            };
+            (drawn.clone(), u16::try_from(cells).unwrap_or(1))
+        }
+        IconGlyph::Unknown => (String::new(), 0),
+    }
+}
+
+/// The ink that reads on `ground`: the theme's background on a light one,
+/// its brightest text on a dark one. What a declared box's text takes on
+/// its ground, so no pair of roles can be unreadable in some theme.
+pub(crate) fn ink_on(ground: Color) -> Color {
+    let light = match ground {
+        Color::Rgb(red, green, blue) => uze_theme::Rgb(red, green, blue).is_light(),
+        _ => false,
+    };
+    color(match light {
+        true => Token::SurfaceBackground,
+        false => Token::TextBright,
+    })
+}
+
 /// The held-back form of a state's hue: what a status no click answers
 /// wears, so the full hue is only ever worn by one a click answers. A
 /// token with no held-back form is its own.
@@ -230,18 +273,27 @@ pub(crate) fn muted(token: Token) -> Token {
 /// asked for. What a status that answers a click wears under the pointer,
 /// so the hue that says the state stays and only its strength moves.
 pub(crate) fn lifted(token: Token) -> Color {
+    lifted_ink(color(token))
+}
+
+/// [`lifted`], for ink already drawn: what something clickable that names
+/// no token of its own wears under the pointer, an extension's drawing
+/// among them. Ink with no value of its own is the theme's text, lifted.
+pub(crate) fn lifted_ink(ink: Color) -> Color {
     /// How far the hue travels toward the brightest text, in percent.
     const TOWARD_BRIGHT: u16 = 40;
 
-    let hue = uze_theme::active().color(token);
+    let Color::Rgb(red, green, blue) = ink else {
+        return color(Token::TextBright);
+    };
     let bright = uze_theme::active().color(Token::TextBright);
     let mix = |from: u8, to: u8| {
         ((u16::from(from) * (100 - TOWARD_BRIGHT) + u16::from(to) * TOWARD_BRIGHT) / 100) as u8
     };
     Color::Rgb(
-        mix(hue.0, bright.0),
-        mix(hue.1, bright.1),
-        mix(hue.2, bright.2),
+        mix(red, bright.0),
+        mix(green, bright.1),
+        mix(blue, bright.2),
     )
 }
 
@@ -309,6 +361,17 @@ pub(crate) fn token_of(color: Color) -> Option<Token> {
         .iter()
         .find(|token| theme.color(**token) == uze_theme::Rgb(red, green, blue))
         .copied()
+}
+
+/// Runs `draw` in the bundled theme `name` on this thread alone, or in the
+/// one in force when there is none of that name: what lets the inspector
+/// show a plugin's surface in another theme than the workspace's while the
+/// rest of the frame keeps it.
+pub(crate) fn drawn_in<R>(name: &str, draw: impl FnOnce() -> R) -> R {
+    match uze_theme::builtin(name) {
+        Some(theme) => uze_theme::with_active(theme.clone(), draw),
+        None => draw(),
+    }
 }
 
 #[cfg(test)]

@@ -249,6 +249,7 @@ fn the_drawer_leads_with_the_name_and_leaves_a_gutter() {
             }),
             summary: summary.clone(),
             capabilities: Vec::new(),
+            declared_extensions: Vec::new(),
         }),
         remembered: Remembered {
             plugin_screen: ListScreen::default(),

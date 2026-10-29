@@ -1,0 +1,72 @@
+# uze snapshot · protocol 1 · drawer 46x30 · dark
+ ┌───────────────────────────────────────────┐
+ │ GSD                                       │
+ │                                           │
+ │  v1.4 Store checkout                 40%  │
+ │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+ │  2 of 5 phases · phase 3 next             │
+ │                                           │
+ │                   DPEV                    │
+ │  ✓  1   Cart se…  ▮▮▮▮  3/3    done       │
+ │  ✓  2   Checkou…  ▮▮▮▮  4/4    done       │
+ │  ▶  3   Payment…  ▮▮▮▮         plan       │
+ │         pay with a card                   │
+ │                                           │
+ │                           plan phase 3    │
+ │                                           │
+ │  ·  4   Order e…  ▮▮▮▮         after 3    │
+ │  ·  5   Rollout   ▮▮▮▮         after 4    │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ └───────────────────────────────────────────┘
+---
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ a bbb                                       a
+ a                                           a
+ a  cccc ddddd dddddddd                 ddd  a
+ a  eeeeeeeeeeeeeeeefffffffffffffffffffffff  a
+ a  b bb b bbbbbb b bbbbb b bbbb             a
+ a                                           a
+ a                   ffff                    a
+ a  e  b   dddd ddd  eeee  bbb    eeee       a
+ a  e  b   dddddddd  eeee  bbb    eeee       a
+ a  g  b   cccccccc  ehff         hhhh       a
+ a         bbb bbbb b bbbb                   a
+ a                                           a
+ a                           iiii iiiii i    a
+ a                                           a
+ a  f  b   bbbbb bb  ffff         bbbbb b    a
+ a  f  b   bbbbbbb   ffff         bbbbb b    a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+---
+a border.default
+b text.muted
+c text.bright
+d text.secondary
+e state.success
+f text.faint
+g state.warning
+h state.info
+i accent

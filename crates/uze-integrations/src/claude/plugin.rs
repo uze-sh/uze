@@ -353,19 +353,65 @@ fn inspect_from_records(
     if !installed {
         return found(AttachmentState::Missing, "Claude plugin is not installed");
     }
-    let settings = recorded_settings(home)?;
-    let enabled = settings
-        .get("enabledPlugins")?
-        .get(format!("{plugin}@{marketplace_name}"))?
-        .as_bool()?;
-    if enabled {
-        found(
-            AttachmentState::Matched,
-            "Claude native plugin matches receipt",
-        )
-    } else {
-        found(AttachmentState::Drifted, "Claude plugin is disabled")
+    let enabled = recorded_enablement(home, &format!("{plugin}@{marketplace_name}"))?;
+    Some(installed_plugin_inspection(enabled))
+}
+
+/// What an installed plugin whose marketplace still points where the
+/// receipt says inspects as. Switched off or not, the plugin is the one UZE
+/// delivered: switching it off in Claude Code is the person's choice, made
+/// in the harness, and touches nothing UZE wrote. So it is never drift — an
+/// update keeps it off and a removal takes it away like any other.
+fn installed_plugin_inspection(enabled: bool) -> AttachmentInspection {
+    AttachmentInspection {
+        state: AttachmentState::Matched,
+        reason: if enabled {
+            "Claude native plugin matches receipt"
+        } else {
+            SWITCHED_OFF
+        }
+        .to_owned(),
     }
+}
+
+const SWITCHED_OFF: &str = "Claude native plugin matches receipt; switched off in Claude Code";
+
+/// Whether Claude's user settings say `selector` is enabled — `None` when
+/// they say nothing explicit, which leaves the CLI to answer.
+fn recorded_enablement(home: &Path, selector: &str) -> Option<bool> {
+    recorded_settings(home)?
+        .get("enabledPlugins")?
+        .get(selector)?
+        .as_bool()
+}
+
+/// Whether the person switched `selector` off in Claude Code. Answered from
+/// Claude's records when they are explicit, else from its CLI; a question
+/// neither can answer reads as not switched off.
+pub(super) fn plugin_switched_off(executable: &Path, home: &Path, selector: &str) -> bool {
+    if recorded_user_install(home, selector) == Some(false) {
+        return false;
+    }
+    if let Some(enabled) = recorded_enablement(home, selector) {
+        return !enabled;
+    }
+    json(executable, home, &["plugin", "list", "--json"], "claude").is_ok_and(|listing| {
+        installed_entry(&listing, selector)
+            .and_then(|plugin| plugin.get("enabled"))
+            .and_then(serde_json::Value::as_bool)
+            == Some(false)
+    })
+}
+
+/// Switches `selector` off in Claude Code, as the person had it before UZE
+/// installed it again.
+pub(super) fn switch_off_plugin(executable: &Path, home: &Path, selector: &str) -> Result<()> {
+    run_quiet(
+        executable,
+        home,
+        &format!("claude plugin disable {selector}"),
+        &["plugin", "disable", selector],
+    )
 }
 
 /// Claude's user settings, where it records which plugins are enabled.
@@ -624,21 +670,12 @@ fn inspect_claude_plugin(
             reason: "Claude plugin is not installed".to_owned(),
         };
     };
-    let enabled = plugin.get("enabled").and_then(serde_json::Value::as_bool);
-    if enabled == Some(false) {
-        return AttachmentInspection {
-            state: AttachmentState::Drifted,
-            reason: "Claude plugin is disabled".to_owned(),
-        };
-    }
     // Existence of the cached installPath is deliberately not checked: the
     // cache is a Derived Artifact, not a source of truth. Marketplace root
-    // identity + enabled + selector is sufficient for Matched; any
-    // marketplace/selector mismatch already returned Drifted above.
-    AttachmentInspection {
-        state: AttachmentState::Matched,
-        reason: "Claude native plugin matches receipt".to_owned(),
-    }
+    // identity + selector is sufficient for Matched; any marketplace/selector
+    // mismatch already returned Drifted above.
+    let enabled = plugin.get("enabled").and_then(serde_json::Value::as_bool);
+    installed_plugin_inspection(enabled != Some(false))
 }
 
 #[cfg(test)]
@@ -1436,11 +1473,85 @@ mod recorded_state_tests {
             uze_core::integration::AttachmentState::Missing
         );
 
+        let _ = fs::remove_dir_all(home);
+    }
+
+    /// Switching UZE's plugin off in Claude Code is the person's choice, not
+    /// a change to what UZE wrote: it inspects as matched, so neither an
+    /// update nor a removal is refused over it, and it is known to be off so
+    /// an update can leave it off. A marketplace that points elsewhere is
+    /// still drift.
+    #[test]
+    fn a_plugin_switched_off_in_claude_is_matched_and_a_moved_marketplace_is_drift() {
+        let mut env = uze_testkit::env::scope();
+        env.remove("CLAUDE_CONFIG_DIR");
+        let home = home_with(
+            "claude-recorded-switched-off",
+            &[
+                (
+                    "known_marketplaces.json",
+                    r#"{"uze-store":{"source":{"source":"directory","path":"/uze/generated"},"installLocation":"/uze/generated"}}"#,
+                ),
+                (
+                    "installed_plugins.json",
+                    r#"{"version":2,"plugins":{"git@uze-store":[{"scope":"user"}]}}"#,
+                ),
+            ],
+        );
+        let settings = home.join(".claude/settings.json");
+        let absent = Path::new("/nonexistent/claude");
+        let inspect = |root: &str| {
+            super::inspect_claude_plugin(absent, &home, "git@uze-store", Path::new(root))
+        };
+
         fs::write(&settings, r#"{"enabledPlugins":{"git@uze-store":false}}"#).unwrap();
+        let off = inspect("/uze/generated");
+        assert_eq!(off.state, uze_core::integration::AttachmentState::Matched);
+        assert!(off.reason.contains("switched off"), "{}", off.reason);
+        assert!(super::plugin_switched_off(absent, &home, "git@uze-store"));
         assert_eq!(
-            inspect("git@uze-store"),
+            inspect("/uze/elsewhere").state,
             uze_core::integration::AttachmentState::Drifted
         );
+
+        fs::write(&settings, r#"{"enabledPlugins":{"git@uze-store":true}}"#).unwrap();
+        assert!(!super::plugin_switched_off(absent, &home, "git@uze-store"));
+        let _ = fs::remove_dir_all(home);
+    }
+
+    /// Where Claude's settings say nothing explicit, its CLI answers — and
+    /// a plugin it lists as disabled is the same choice of the person's as
+    /// one the settings list as off.
+    // The stand-in for Claude's CLI is a POSIX shell script, which only Unix runs as a program.
+    #[cfg(unix)]
+    #[test]
+    fn a_plugin_claudes_cli_lists_as_disabled_is_matched_and_known_to_be_off() {
+        use std::os::unix::fs::PermissionsExt;
+        let mut env = uze_testkit::env::scope();
+        env.remove("CLAUDE_CONFIG_DIR");
+        let home = home_with("claude-cli-switched-off", &[]);
+        let claude = home.join("claude");
+        fs::write(
+            &claude,
+            "#!/bin/sh\ncase \"$2\" in\n  marketplace) echo '[{\"name\":\"uze-store\",\"path\":\"/uze/generated\"}]' ;;\n  list) echo '[{\"id\":\"git@uze-store\",\"enabled\":false}]' ;;\nesac\n",
+        )
+        .unwrap();
+        fs::set_permissions(&claude, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let inspection = super::inspect_claude_plugin(
+            &claude,
+            &home,
+            "git@uze-store",
+            Path::new("/uze/generated"),
+        );
+
+        assert_eq!(
+            inspection.state,
+            uze_core::integration::AttachmentState::Matched,
+            "{}",
+            inspection.reason
+        );
+        assert!(super::plugin_switched_off(&claude, &home, "git@uze-store"));
         let _ = fs::remove_dir_all(home);
     }
 

@@ -128,6 +128,26 @@ fn spelled_sha256(hasher: sha2::Sha256) -> String {
     spelled
 }
 
+/// The authenticating digest of files already read into memory, each by
+/// its path relative to the directory they came from, as `sha256:<hex>`:
+/// what an extension's consent is given over. Sorted by path and each
+/// field length-prefixed, as [`tree_sha256`] frames a tree, so the digest
+/// speaks for exactly the bytes held and never for a later read of disk.
+pub fn files_sha256<'a>(files: impl IntoIterator<Item = (&'a str, &'a [u8])>) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut sorted: Vec<(&str, &[u8])> = files.into_iter().collect();
+    sorted.sort_by(|left, right| left.0.cmp(right.0));
+    let mut hasher = Sha256::new();
+    for (path, body) in sorted {
+        hasher.update(u64::try_from(path.len()).unwrap_or(u64::MAX).to_be_bytes());
+        hasher.update(path.as_bytes());
+        hasher.update(u64::try_from(body.len()).unwrap_or(u64::MAX).to_be_bytes());
+        hasher.update(body);
+    }
+    spelled_sha256(hasher)
+}
+
 /// The authenticating digest of some entries of a tree — each a file or a
 /// directory named relative to `root` — as `sha256:<hex>`: the code an
 /// approval to execute something was given over. A directory takes part as
@@ -231,6 +251,30 @@ fn collect_entries(root: &std::path::Path, links: &Links) -> std::io::Result<Vec
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Order of reading never moves the digest; a byte, a name, or a byte
+    /// moved across the boundary between a name and its contents does.
+    #[test]
+    fn files_in_memory_digest_by_their_paths_and_bytes() {
+        let digest = files_sha256([("b.uze", &b"two"[..]), ("a.uze", &b"one"[..])]);
+        assert_eq!(
+            digest,
+            files_sha256([("a.uze", &b"one"[..]), ("b.uze", &b"two"[..])])
+        );
+        assert!(digest.starts_with("sha256:"));
+        assert_ne!(
+            digest,
+            files_sha256([("a.uze", &b"one"[..]), ("b.uze", &b"twO"[..])])
+        );
+        assert_ne!(
+            digest,
+            files_sha256([("a.uze", &b"one"[..]), ("c.uze", &b"two"[..])])
+        );
+        assert_ne!(
+            files_sha256([("ab", &b"c"[..])]),
+            files_sha256([("a", &b"bc"[..])])
+        );
+    }
 
     /// A link Git recorded but a checkout could not make, standing in as a
     /// copy of its target, digests as the link it is: what a checkout that

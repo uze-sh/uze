@@ -1,0 +1,18 @@
+// The GSD milestone's next phase over each agent's pane, and the button
+// that asks that agent to run it, in its own harness's spelling.
+protocol 1
+id "gsd-next"
+name "GSD next step"
+description "The milestone's next phase, run by the agent on a press"
+
+wants "agent:prompt"
+
+surface "next" slot="band" rows=1 place="bottom" view="next.uze" source="milestone" title="Next step"
+
+source "milestone" {
+    fixture "fixtures/milestone.json"
+}
+
+action "run" label="Run the next phase" on="next" {
+    agent-prompt skill="gsd:execute-phase" "{number}" target="self"
+}

@@ -74,12 +74,14 @@ impl UzeApplication {
     }
 }
 
-/// Which of the workspace's built-in extensions are switched on.
+/// Which of the workspace's extensions are switched on, and the declared
+/// ones installed plugins carry.
 pub struct Extensions<'a>(pub(super) &'a UzeApplication);
 
 impl UzeApplication {
-    /// The operator's choice of which extensions the workspace offers.
-    /// Only the choice: what an extension is belongs to the client.
+    /// The operator's choice of which extensions the workspace offers, and
+    /// the declared extensions installed plugins carry, compiled. What an
+    /// extension draws belongs to the client.
     pub fn extensions(&self) -> Extensions<'_> {
         Extensions(self)
     }
@@ -172,6 +174,28 @@ pub struct AgentIdentity {
     /// agent started without its launcher neither resumes its conversation
     /// nor receives what the launcher carries.
     pub configured: bool,
+    /// How this harness's prompt invokes a skill by name (`/`, `$`, `@`),
+    /// or `None` for one that has no way to.
+    pub skill_prefix: Option<&'static str>,
+}
+
+impl AgentIdentity {
+    /// What typing `skill` with `args` into this harness's prompt is: its
+    /// own spelling of a skill's invocation, or `None` where it has none.
+    pub fn skill_invocation(&self, skill: &str, args: &[String]) -> Option<String> {
+        Some(skill_invocation(self.skill_prefix?, skill, args))
+    }
+}
+
+/// `skill` with `args`, as a harness whose prompt invokes a skill with
+/// `prefix` is typed it.
+pub fn skill_invocation(prefix: &str, skill: &str, args: &[String]) -> String {
+    let mut typed = format!("{prefix}{skill}");
+    for arg in args {
+        typed.push(' ');
+        typed.push_str(arg);
+    }
+    typed
 }
 
 /// What the workspace needs before it opens, decided from the harnesses

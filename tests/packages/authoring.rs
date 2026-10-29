@@ -648,3 +648,652 @@ fn a_deny_on_session_start_fails_the_check() {
     );
     let _ = fs::remove_dir_all(root);
 }
+
+/// `--extension` scaffolds a manifest, a view and its fixture into the new
+/// plugin, and the scaffold passes its own check with nothing to warn of:
+/// every field the view names is in the fixture.
+#[test]
+fn a_scaffolded_extension_passes_its_own_check() {
+    let root = uze_testkit::temp::scratch("authoring-cli-extension");
+    let at = root.join("my-market");
+    assert!(
+        create_marketplace(&root, &at)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let created = uze(&root)
+        .args([
+            "agent",
+            "plugin",
+            "create",
+            "greet",
+            "--market",
+            "tools",
+            "--extension",
+            "board",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        created.status.success(),
+        "{}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let extension = at.join("plugins/greet/extensions/board");
+    for file in [
+        "extension.kdl",
+        "board.uze",
+        "fixtures/board.json",
+        "board.uze",
+        "tests/board.test.kdl",
+        "tests/snapshots/board.view.100x30.dark.snap",
+    ] {
+        assert!(extension.join(file).is_file(), "{file}");
+    }
+
+    let (passed, output) = check(&root, &at.join("plugins/greet"));
+    assert!(passed, "{output}");
+    assert!(output.contains("extension   board"), "{output}");
+    assert!(output.contains("3 tests passed"), "{output}");
+    assert!(!output.contains('!'), "nothing to warn of: {output}");
+    let _ = fs::remove_dir_all(root);
+}
+
+/// `--run` runs the scaffold's script in the engine against the checkout
+/// named, and a checkout an extension may not read fails the check naming
+/// the source that could not answer.
+#[test]
+fn the_check_runs_a_script_against_a_checkout_with_run() {
+    let root = uze_testkit::temp::scratch("authoring-cli-extension-run");
+    let at = root.join("my-market");
+    assert!(
+        create_marketplace(&root, &at)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let created = uze(&root)
+        .args(["agent", "plugin", "create", "greet", "--market", "tools"])
+        .args(["--extension", "board"])
+        .output()
+        .unwrap();
+    assert!(created.status.success());
+    let plugin = at.join("plugins/greet");
+    // Outside the system's temporary directory, which is never a checkout
+    // an extension reads.
+    let checkout = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("authoring-run-{}", std::process::id()));
+    fs::create_dir_all(&checkout).unwrap();
+    isolated_git_in(&checkout, &["init", "-q"]);
+    let run = |checkout: &std::path::Path| {
+        let output = uze(&root)
+            .args(["agent", "plugin", "check"])
+            .arg(&plugin)
+            .arg("--run")
+            .arg("--checkout")
+            .arg(checkout)
+            .output()
+            .unwrap();
+        (
+            output.status.success(),
+            format!(
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            ),
+        )
+    };
+
+    let (passed, output) = run(&checkout);
+    assert!(passed, "{output}");
+    assert!(output.contains("board.uze answered `live`"), "{output}");
+    assert!(output.contains("3 tests passed"), "{output}");
+
+    let (passed, output) = run(&root);
+    assert!(!passed, "{output}");
+    assert!(output.contains("source `live` did not answer"), "{output}");
+    let (passed, _) = check(&root, &plugin);
+    assert!(passed, "without --run nothing runs, and nothing fails");
+    let _ = fs::remove_dir_all(checkout);
+    let _ = fs::remove_dir_all(root);
+}
+
+/// A test that no longer holds fails the check at its step's line, saying
+/// what was drawn; a changed view fails its snapshot until it is written
+/// again with `--update-snapshots`.
+#[test]
+fn a_failing_extension_test_fails_the_check_until_its_snapshot_is_updated() {
+    let root = uze_testkit::temp::scratch("authoring-cli-extension-tests");
+    let at = root.join("my-market");
+    assert!(
+        create_marketplace(&root, &at)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    assert!(
+        uze(&root)
+            .args([
+                "agent",
+                "plugin",
+                "create",
+                "greet",
+                "--market",
+                "tools",
+                "--extension",
+                "board"
+            ])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let plugin = at.join("plugins/greet");
+    let fixture = plugin.join("extensions/board/fixtures/board.json");
+    let written = fs::read_to_string(&fixture).unwrap();
+    fs::write(&fixture, written.replace("This week", "Next week")).unwrap();
+
+    let (passed, output) = check(&root, &plugin);
+    assert!(!passed, "{output}");
+    assert!(
+        output.contains("tests/board.test.kdl:5:5: test \"the board opens on its tasks\": `This week` is not drawn"),
+        "{output}"
+    );
+
+    let test = plugin.join("extensions/board/tests/board.test.kdl");
+    fs::write(
+        &test,
+        fs::read_to_string(&test)
+            .unwrap()
+            .replace("\"This week\"", "\"Next week\""),
+    )
+    .unwrap();
+    let (passed, output) = check(&root, &plugin);
+    assert!(!passed, "the snapshot still holds the old title: {output}");
+    assert!(
+        output.contains("the cells differ from tests/snapshots/board.view.100x30.dark.snap"),
+        "{output}"
+    );
+
+    let updated = uze(&root)
+        .args(["agent", "plugin", "check"])
+        .arg(&plugin)
+        .arg("--update-snapshots")
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&updated.stdout);
+    assert!(updated.status.success(), "{said}");
+    assert!(
+        said.contains("wrote tests/snapshots/board.view.100x30.dark.snap"),
+        "{said}"
+    );
+    let (passed, output) = check(&root, &plugin);
+    assert!(passed, "{output}");
+    let _ = fs::remove_dir_all(root);
+}
+
+/// A key an extension suggests for its action reaches that action in a
+/// test the way it does in the workspace: through the extension's own
+/// table, beside the host's keys.
+#[test]
+fn a_tests_press_reaches_an_extension_action_by_its_key() {
+    let root = uze_testkit::temp::scratch("authoring-cli-extension-press");
+    let at = root.join("my-market");
+    assert!(
+        create_marketplace(&root, &at)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    assert!(
+        uze(&root)
+            .args([
+                "agent",
+                "plugin",
+                "create",
+                "greet",
+                "--market",
+                "tools",
+                "--extension",
+                "board"
+            ])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let plugin = at.join("plugins/greet");
+    let extension = plugin.join("extensions/board");
+    let manifest = extension.join("extension.kdl");
+    let mut written = fs::read_to_string(&manifest).unwrap();
+    written.push_str(
+        "action \"reload\" label=\"Reload\" on=\"board\" key=\"ctrl-r\" { refresh \"board\"; }\n",
+    );
+    fs::write(&manifest, written).unwrap();
+    let test = extension.join("tests/board.test.kdl");
+    let mut written = fs::read_to_string(&test).unwrap();
+    written.push_str(
+        "\ntest \"its key reloads the board\" {\n    surface \"board\"\n    press \"ctrl+r\"\n    expect-action \"reload\"\n}\n",
+    );
+    fs::write(&test, written).unwrap();
+
+    // The footer now names the key, so the snapshot is written again.
+    let updated = uze(&root)
+        .args(["agent", "plugin", "check"])
+        .arg(&plugin)
+        .arg("--update-snapshots")
+        .output()
+        .unwrap();
+    assert!(
+        updated.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&updated.stdout),
+        String::from_utf8_lossy(&updated.stderr)
+    );
+    let snapshot =
+        fs::read_to_string(extension.join("tests/snapshots/board.view.100x30.dark.snap")).unwrap();
+    assert!(snapshot.contains("ctrl+r reload"), "{snapshot}");
+    let (passed, output) = check(&root, &plugin);
+    assert!(passed, "{output}");
+    assert!(output.contains("4 tests passed"), "{output}");
+    let _ = fs::remove_dir_all(root);
+}
+
+/// A test draws its surface on no checkout, so a surface that applies only
+/// where a path is (`applies-when`) is drawn as where it applies; it was
+/// drawn as nothing, and no such surface could be tested.
+#[test]
+fn a_surface_that_applies_only_where_a_path_is_can_be_tested() {
+    let root = uze_testkit::temp::scratch("authoring-cli-extension-applies");
+    let at = root.join("my-market");
+    assert!(
+        create_marketplace(&root, &at)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    assert!(
+        uze(&root)
+            .args([
+                "agent",
+                "plugin",
+                "create",
+                "greet",
+                "--market",
+                "tools",
+                "--extension",
+                "board"
+            ])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let plugin = at.join("plugins/greet");
+    let manifest = plugin.join("extensions/board/extension.kdl");
+    // A view is drawn wherever it is opened; a section is the slot that
+    // applies only where its path is.
+    let written = fs::read_to_string(&manifest).unwrap().replace(
+        "title=\"board\"",
+        "title=\"board\" applies-when=\".planning\"",
+    );
+    assert!(written.contains("applies-when"), "{written}");
+    fs::write(&manifest, written).unwrap();
+    let test = plugin.join("extensions/board/tests/board.test.kdl");
+    let mut tests = fs::read_to_string(&test).unwrap();
+    tests.push_str(
+        "\ntest \"the section draws its fixture\" {\n    surface \"summary\"\n    given \"live\" fixture=\"fixtures/board.json\"\n    expect-text \"Write the view\"\n}\n",
+    );
+    fs::write(&test, tests).unwrap();
+
+    let (passed, output) = check(&root, &plugin);
+    assert!(passed, "{output}");
+    assert!(output.contains("4 tests passed"), "{output}");
+    let _ = fs::remove_dir_all(root);
+}
+
+/// An id a built-in extension answers to is refused, and nothing written.
+#[test]
+fn a_reserved_extension_id_is_refused_before_the_scaffold() {
+    let root = uze_testkit::temp::scratch("authoring-cli-extension-reserved");
+    let at = root.join("my-market");
+    assert!(
+        create_marketplace(&root, &at)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let refused = uze(&root)
+        .args([
+            "agent",
+            "plugin",
+            "create",
+            "greet",
+            "--market",
+            "tools",
+            "--extension",
+            "code",
+        ])
+        .output()
+        .unwrap();
+    assert!(!refused.status.success());
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("reserved"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert!(!at.join("plugins/greet").exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+/// What would keep an extension from being hosted fails the check, located
+/// under its id; a field the view names that its fixture lacks is a
+/// warning, placed in the view, and passes.
+#[test]
+fn check_places_an_extensions_errors_and_what_its_fixture_lacks() {
+    let root = uze_testkit::temp::scratch("authoring-cli-extension-check");
+    let at = root.join("my-market");
+    assert!(
+        create_marketplace(&root, &at)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    assert!(
+        uze(&root)
+            .args([
+                "agent",
+                "plugin",
+                "create",
+                "greet",
+                "--market",
+                "tools",
+                "--extension",
+                "board",
+            ])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let plugin = at.join("plugins/greet");
+    // What a warning does to the check alone, without the scaffold's tests,
+    // which expect the field this renames.
+    fs::remove_dir_all(plugin.join("extensions/board/tests")).unwrap();
+    let view = plugin.join("extensions/board/board.uze");
+    let written = fs::read_to_string(&view).unwrap();
+    fs::write(
+        &view,
+        written.replace("Text \"{name}\"", "Text \"{label}\""),
+    )
+    .unwrap();
+
+    let (passed, output) = check(&root, &plugin);
+    assert!(passed, "a warning does not fail the check: {output}");
+    assert!(output.contains("extension board"), "{output}");
+    assert!(
+        output.contains("board.uze:25:9: `label` is not in the fixture fixtures/board.json"),
+        "{output}"
+    );
+
+    fs::write(
+        &view,
+        written.replace("action=\"refresh\"", "action=\"refresh\" colour=\"red\""),
+    )
+    .unwrap();
+    let (passed, output) = check(&root, &plugin);
+    assert!(!passed, "{output}");
+    assert!(
+        output.contains("board.uze:19:") && output.contains("no property `colour`"),
+        "{output}"
+    );
+    assert!(output.contains("check failed (1 problem)"), "{output}");
+    let _ = fs::remove_dir_all(root);
+}
+
+/// The manifest's grants, sources and actions are checked as the install
+/// checks them: a grant a later change brings, a program, a source asked
+/// too often and a confirmed action on a bare key each fail the check,
+/// placed in `extension.kdl`.
+#[test]
+fn check_reports_what_a_manifest_may_not_run_yet() {
+    let root = uze_testkit::temp::scratch("authoring-cli-extension-grants");
+    let at = root.join("my-market");
+    assert!(
+        create_marketplace(&root, &at)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    assert!(
+        uze(&root)
+            .args([
+                "agent",
+                "plugin",
+                "create",
+                "greet",
+                "--market",
+                "tools",
+                "--extension",
+                "board",
+            ])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let plugin = at.join("plugins/greet");
+    let manifest = plugin.join("extensions/board/extension.kdl");
+    let written = fs::read_to_string(&manifest).unwrap();
+    fs::write(
+        &manifest,
+        written.replace("every \"30s\"", "every \"2s\"")
+            + "wants \"net\" \"write:checkout\"\n"
+            + "source \"meter\" { run \"./bin/meter\"; }\n"
+            + "action \"wipe\" label=\"Wipe\" on=\"board\" key=\"w\" confirm=\"Wipe it?\" { refresh \"live\"; }\n",
+    )
+    .unwrap();
+
+    let (passed, output) = check(&root, &plugin);
+    assert!(!passed, "{output}");
+    for said in [
+        "`every` is at least 5s",
+        "`net` names the host it grants",
+        "`write:checkout` does not exist",
+        "the program `bin/meter`",
+        "its key needs a modifier, not a bare `w`",
+    ] {
+        assert!(output.contains(said), "{said}: {output}");
+    }
+    assert!(output.contains("check failed (5 problems)"), "{output}");
+    let _ = fs::remove_dir_all(root);
+}
+
+/// The language server exits once the editor says `shutdown` and `exit`,
+/// as an editor expects of it, rather than waiting on its own output.
+#[test]
+fn the_language_server_exits_after_shutdown() {
+    use std::io::Write as _;
+    let root = uze_testkit::temp::scratch("authoring-lsp-exit");
+    let message = |body: serde_json::Value| {
+        let body = body.to_string();
+        format!("Content-Length: {}\r\n\r\n{body}", body.len())
+    };
+    let session: String = [
+        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"capabilities": {}}}),
+        serde_json::json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}),
+        serde_json::json!({"jsonrpc": "2.0", "id": 2, "method": "shutdown"}),
+        serde_json::json!({"jsonrpc": "2.0", "method": "exit"}),
+    ]
+    .into_iter()
+    .map(message)
+    .collect();
+    let mut server = uze(&root)
+        .args(["agent", "plugin", "lsp"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    server
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(session.as_bytes())
+        .unwrap();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(server.wait_with_output());
+    });
+    let output = receiver
+        .recv_timeout(std::time::Duration::from_secs(60))
+        .expect("the server exits")
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stdout).contains("\"hoverProvider\":true"));
+    let _ = fs::remove_dir_all(root);
+}
+
+/// A snapshot a plugin links elsewhere is never written through, and what
+/// a snapshot file says reaches the terminal cleaned. Unix: the link is
+/// made with `std::os::unix::fs::symlink`, which Windows grants only to
+/// an elevated or developer-mode account.
+#[cfg(unix)]
+#[test]
+fn a_linked_snapshot_is_refused_and_a_held_one_is_said_cleaned() {
+    let root = uze_testkit::temp::scratch("authoring-snapshot-link");
+    let at = root.join("my-market");
+    assert!(
+        create_marketplace(&root, &at)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    assert!(
+        uze(&root)
+            .args([
+                "agent",
+                "plugin",
+                "create",
+                "greet",
+                "--market",
+                "tools",
+                "--extension",
+                "board"
+            ])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let plugin = at.join("plugins/greet");
+    let snapshot = plugin.join("extensions/board/tests/snapshots/board.view.100x30.dark.snap");
+
+    fs::write(&snapshot, "\u{1b}]52;c;ZXZpbA==\u{7}stolen\n").unwrap();
+    let (passed, output) = check(&root, &plugin);
+    assert!(!passed, "{output}");
+    assert!(
+        !output.contains('\u{1b}'),
+        "no escape reaches the terminal: {output:?}"
+    );
+    assert!(output.contains("stolen"), "{output}");
+
+    let outside = root.join("operator-file");
+    fs::write(&outside, "mine").unwrap();
+    fs::remove_file(&snapshot).unwrap();
+    std::os::unix::fs::symlink(&outside, &snapshot).unwrap();
+    let updated = uze(&root)
+        .args(["agent", "plugin", "check"])
+        .arg(&plugin)
+        .arg("--update-snapshots")
+        .output()
+        .unwrap();
+    assert!(!updated.status.success());
+    assert!(
+        String::from_utf8_lossy(&updated.stdout).contains("reached through a link"),
+        "{}",
+        String::from_utf8_lossy(&updated.stdout)
+    );
+    assert_eq!(fs::read_to_string(&outside).unwrap(), "mine");
+    let _ = fs::remove_dir_all(root);
+}
+
+/// An extension's directory name is the plugin's, so the check says it
+/// cleaned, whatever escape it was given. Unix: Windows refuses a control
+/// character in a file name, so no such directory can exist there.
+#[cfg(unix)]
+#[test]
+fn an_extension_directory_name_reaches_the_terminal_cleaned() {
+    let root = uze_testkit::temp::scratch("authoring-hostile-id");
+    let plugin = root.join("legacy");
+    let extension = plugin.join("extensions/x\u{1b}[2Jy");
+    fs::create_dir_all(&extension).unwrap();
+    fs::write(plugin.join("plugin.json"), r#"{"name":"legacy"}"#).unwrap();
+    fs::write(extension.join("extension.kdl"), "protocol 1\n").unwrap();
+    let (passed, output) = check(&root, &plugin);
+    assert!(!passed, "{output}");
+    assert!(!output.contains('\u{1b}'), "{output:?}");
+    assert!(
+        output.contains("extension xy"),
+        "the sequence is dropped whole: {output}"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+/// Every fixture plugin that declares extensions checks clean, its tests
+/// and snapshots included: a snapshot a catalog change left behind fails
+/// here, not in an author's hands.
+#[test]
+fn every_fixture_plugins_extensions_check_clean() {
+    let root = uze_testkit::temp::scratch("check-fixture-extensions");
+    let canonical = uze_testkit::fixtures::canonical("gsd")
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let mut checked = Vec::new();
+    for entry in fs::read_dir(&canonical).unwrap() {
+        let plugin = entry.unwrap().path();
+        if !plugin.join("extensions").is_dir() {
+            continue;
+        }
+        let (clean, text) = check(&root, &plugin);
+        assert!(clean, "{}: {text}", plugin.display());
+        checked.push(plugin.file_name().unwrap().to_string_lossy().into_owned());
+    }
+    checked.sort();
+    assert!(
+        ["bridge", "ci", "deck", "gpu", "gsd", "media"]
+            .iter()
+            .all(|name| checked.iter().any(|checked| checked == name)),
+        "{checked:?}"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+/// Every plugin this repository's own marketplace lists checks clean, the
+/// examples' extension tests and snapshots included: the catalog a person
+/// browses never offers one that a catalog change broke.
+#[test]
+fn every_plugin_of_the_repositorys_marketplace_checks_clean() {
+    let root = uze_testkit::temp::scratch("check-marketplace-plugins");
+    let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(repository.join("marketplace.json")).unwrap()).unwrap();
+    let listed = manifest["plugins"].as_array().expect("plugins");
+    for entry in listed {
+        let source = entry["source"].as_str().expect("a source");
+        let (clean, text) = check(&root, &repository.join(source));
+        assert!(clean, "{source}: {text}");
+    }
+    assert!(listed.len() > 1, "the official plugin and its examples");
+    let _ = fs::remove_dir_all(root);
+}

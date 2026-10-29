@@ -1,0 +1,45 @@
+# uze snapshot · protocol 1 · view 60x18 · dark
+ Snake
+
+  score 0  best 4  an arrow starts · esc lets go
+  ┌────────────────────────────────────────┐
+  │                                        │
+  │                                        │
+  │          ●                             │
+  │                                        │
+  │                                        │
+  │      ██████                            │
+  │                                        │
+  │                                        │
+  │                                        │
+  │                                        │
+  └────────────────────────────────────────┘
+
+
+esc close  ·  i inspector
+---
+ aaaaa
+
+  bbbbb b  aaaa a  cc ccccc cccccc c ccc cccc cc
+  cccccccccccccccccccccccccccccccccccccccccc
+  c                                        c
+  c                                        c
+  c          d                             c
+  c                                        c
+  c                                        c
+  c      eeeeff                            c
+  c                                        c
+  c                                        c
+  c                                        c
+  c                                        c
+  cccccccccccccccccccccccccccccccccccccccccc
+
+
+fff aaaaa  c  f aaaaaaaaa
+---
+a text.muted
+b text.bright
+c text.faint
+d state.warning
+e state.success
+f accent

@@ -26,6 +26,11 @@ pub(super) fn token(role: Role) -> Token {
         Role::Success => Token::StateSuccess,
         Role::Warning => Token::StateWarning,
         Role::Danger => Token::StateDanger,
+        Role::Heat0 => Token::Heat0,
+        Role::Heat1 => Token::Heat1,
+        Role::Heat2 => Token::Heat2,
+        Role::Heat3 => Token::Heat3,
+        Role::Heat4 => Token::Heat4,
     }
 }
 
@@ -79,17 +84,21 @@ pub(crate) fn prose_rows(line: &ContentLine, width: usize) -> Vec<Line<'static>>
             continue;
         }
         for (text, style) in word {
-            // A word longer than a whole row — a URL, a path — is broken at
-            // the cell, since no row would ever hold it.
+            // A word longer than a whole row — a URL, a path, an
+            // identifier — is broken where it is joined (after a `/`, `_`,
+            // `.` or `-`) when the piece on the row has such a place, and at
+            // the cell only when it has none, since no row would ever hold it.
             let mut piece = String::new();
             for character in text.chars() {
                 let cells = cell_width(character);
                 if used + cells > width && used > hang_width {
+                    let carried = carry_after_last_joint(&mut piece);
                     rows.last_mut()
                         .expect("a row was pushed above")
                         .push(TextSpan::styled(std::mem::take(&mut piece), style));
                     break_row(&mut rows, &hang);
-                    used = hang_width;
+                    used = hang_width + carried.chars().map(cell_width).sum::<usize>();
+                    piece = carried;
                 }
                 match character {
                     '\t' => piece.push_str(&" ".repeat(TAB_WIDTH)),
@@ -105,6 +114,22 @@ pub(crate) fn prose_rows(line: &ContentLine, width: usize) -> Vec<Line<'static>>
         }
     }
     rows.into_iter().map(Line::from).collect()
+}
+
+/// Takes what follows the last joint of `piece` (a `/`, `_`, `.` or `-`
+/// that is not its last character) out of it, so a long word breaks where
+/// it is joined; empty when `piece` has no such joint.
+fn carry_after_last_joint(piece: &mut String) -> String {
+    let joint = piece
+        .char_indices()
+        .rev()
+        .filter(|(_, character)| matches!(character, '/' | '_' | '.' | '-'))
+        .map(|(at, character)| at + character.len_utf8())
+        .find(|after| *after < piece.len());
+    match joint {
+        Some(after) => piece.split_off(after),
+        None => String::new(),
+    }
 }
 
 /// [`words`] with the runs no space parts joined into one word: a span

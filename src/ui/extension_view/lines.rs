@@ -305,7 +305,7 @@ pub(super) fn render_chips(
     y: u16,
     modes: &[Mode],
     hits: &mut Vec<(Rect, ViewHit)>,
-    hit_of: fn(usize) -> ViewHit,
+    hit_of: impl Fn(usize) -> ViewHit,
 ) {
     let mut x = from;
     for (index, mode) in modes.iter().enumerate() {

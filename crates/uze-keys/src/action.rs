@@ -17,6 +17,8 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::extension::{self, ExtensionActionId};
+
 macro_rules! actions {
     ($($variant:ident => $name:literal, $destructive:expr, $label:literal, $description:literal;)*) => {
         /// Everything uze's keyboard can reach.
@@ -34,6 +36,12 @@ macro_rules! actions {
             /// [`Action::SelectTab`], whose chords stay live over the
             /// overview and choose a tab of the strip behind it.
             SelectSection(u8),
+            /// An action a plugin's extension declares, named
+            /// `ext.<plugin>@<marketplace>/<id>.<action>` and live only
+            /// while that extension's surface is in front. Never in
+            /// [`ALL_ACTIONS`]: what plugins declare is not this build's
+            /// vocabulary. See [`crate::extension`].
+            Extension(ExtensionActionId),
         }
 
         /// Every action this build knows, in vocabulary order — the order
@@ -55,6 +63,7 @@ macro_rules! actions {
                     $(Action::$variant => $name.to_owned(),)*
                     Action::SelectTab(index) => format!("select-tab-{index}"),
                     Action::SelectSection(index) => format!("select-section-{index}"),
+                    Action::Extension(id) => extension::name(id),
                 }
             }
 
@@ -64,6 +73,9 @@ macro_rules! actions {
             pub fn parse(name: &str) -> Option<Action> {
                 match name {
                     $($name => Some(Action::$variant),)*
+                    other if extension::is_name(other) => {
+                        Some(Action::Extension(extension::intern(other)))
+                    }
                     other => other
                         .strip_prefix("select-tab-")
                         .and_then(|index| index.parse::<u8>().ok())
@@ -86,6 +98,7 @@ macro_rules! actions {
                 match self {
                     $(Action::$variant => $destructive,)*
                     Action::SelectTab(_) | Action::SelectSection(_) => false,
+                    Action::Extension(id) => extension::destructive(id),
                 }
             }
 
@@ -95,6 +108,7 @@ macro_rules! actions {
                     $(Action::$variant => $label.to_owned(),)*
                     Action::SelectTab(index) => format!("Tab {index}"),
                     Action::SelectSection(index) => format!("Section {index}"),
+                    Action::Extension(id) => extension::label(id),
                 }
             }
 
@@ -113,6 +127,7 @@ macro_rules! actions {
                     Action::SelectSection(index) => {
                         format!("Show section {index} of the space's overview")
                     }
+                    Action::Extension(id) => extension::description(id),
                 }
             }
         }
@@ -187,6 +202,18 @@ actions! {
         "Disable",
         "Take the selected extension out of the workspace: its keys, its buttons and \
          its entries in the index";
+    ResolvePrograms => "resolve-programs", false,
+        "Resolve again", "Find the selected extension's programs again on this machine";
+    EditPreferences => "edit-preferences", false,
+        "Preferences", "Set the selected extension's preferences";
+
+    // --- Management, from one screen to its sibling ---------------------
+    ShowExtension => "show-extension", false,
+        "Show extension",
+        "Show the extension the selected plugin declares on the Extensions screen, where \
+         whether it runs is decided";
+    ShowPlugin => "show-plugin", false,
+        "Show plugin", "Show the plugin the selected extension comes with on the Marketplace";
 
     // --- Management, things done to a project ---------------------------
     InstallProjectEnvironment => "install-project-environment", false,
@@ -215,6 +242,10 @@ actions! {
         "Preview", "Show what the selected profile writes into each harness";
     ToggleProfileHarness => "toggle-profile-harness", false,
         "Toggle harness", "Include or exclude the highlighted harness";
+    ToggleChoice => "toggle-choice", false,
+        "Switch", "Include or leave out the marked row";
+    ToggleAllChoices => "toggle-all-choices", false,
+        "Switch all", "Include every row, or none once all are";
     NextValue => "next-value", false,
         "Next value", "Change the highlighted preference to the next value";
     PreviousValue => "previous-value", false,
@@ -235,6 +266,12 @@ actions! {
         "To worktree, no changes",
         "Move this agent into a worktree cut from the last commit; the \
          uncommitted changes stay here";
+    ReviewExtensions => "review-extensions", false,
+        "Review extensions",
+        "Enable, or put away, the extensions a project's plugins offer where it opens";
+    PauseAgentWrites => "pause-agent-writes", false,
+        "Pause extensions",
+        "Hold every prompt an extension would type into an agent, until pressed again";
     SwitchHarness => "switch-harness", false,
         "Continue in",
         "Relaunch this agent on another harness in the same checkout, \
@@ -291,6 +328,12 @@ actions! {
         "Level up", "Go back to the diagram this one was entered from";
     ToggleMap => "toggle-map", false,
         "Map", "Show the checkout as a map of where its lines are, or leave it";
+
+    // --- A plugin's surface ----------------------------------------------
+    ToggleInspector => "toggle-inspector", false,
+        "Inspector", "Show how a plugin's surface was drawn: its nodes, data, state and actions";
+    ToggleDrawer => "toggle-drawer", false,
+        "Drawer", "Open or close the drawer a plugin docks beside the pane";
 
     // --- The code surface, and typing into a file ------------------------
     EditFile => "edit-file", false,

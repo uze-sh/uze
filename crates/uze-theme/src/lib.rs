@@ -37,9 +37,9 @@ mod theme;
 mod token;
 mod vocab;
 
-pub use active::{active, generation, set_active};
+pub use active::{active, generation, set_active, with_active};
 pub use color::Rgb;
-pub use file::{CURRENT_VERSION, ColorValue, SymbolValue, SyntaxSection, ThemeFile};
+pub use file::{CURRENT_VERSION, ColorValue, GlyphSet, SymbolValue, SyntaxSection, ThemeFile};
 pub use load::{
     BUNDLED_SYNTAX_THEMES, DEFAULT_THEME, Identity, LoadError, Loaded, Warning, builtin,
     builtin_file, builtin_names, default_file, default_theme, glyph_set_file, glyph_sets,

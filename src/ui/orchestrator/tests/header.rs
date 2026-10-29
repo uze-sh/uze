@@ -3,7 +3,7 @@
 
 use super::WorkspaceHit;
 use super::support::*;
-use super::{FileResolution, code};
+use super::{EngineAnswer, Owner, code};
 use super::{
     GitBadge, UpstreamSync, WorkStateView, WorkspaceModel, agent_activity_frame,
     render::{self, LeadingSlot, compute_layout, render_tab_strip},
@@ -29,8 +29,6 @@ fn a_message_never_moves_an_action() {
             additions: 12,
             deletions: 3,
         }),
-        timeline: None,
-        timeline_checked_at: Instant::now(),
         checked_at: Instant::now(),
     });
     let (_, quiet) = tab_strip(&model);
@@ -368,7 +366,7 @@ fn a_toast_lines_up_with_the_controls_above_it() {
     model.raise_toast(ToastKind::Done, "synced", "to main", None);
 
     let frame_area = Rect::new(0, 0, 120, 30);
-    let layout = compute_layout(frame_area, model.sidebar_width);
+    let layout = compute_layout(frame_area, model.sidebar_width, model.reserved());
     let mut terminal = Terminal::new(TestBackend::new(120, 30)).unwrap();
     let mut hits = Vec::new();
     terminal
@@ -427,11 +425,14 @@ fn a_toast_over_an_open_extension_answers_its_own_close() {
         "orchestrator-toast-over-extension",
     ));
     let mut model = agent_with_task(WorkStateView::Ready, 3);
-    model.code = Some(uze_extensions::code::CodeView::opening(
-        PathBuf::from("/w"),
-        "/w".to_owned(),
-        uze_extensions::code::ContentMode::Contents,
-    ));
+    show_code(
+        &mut model,
+        uze_extensions::code::CodeView::opening(
+            PathBuf::from("/w"),
+            "/w".to_owned(),
+            uze_extensions::code::ContentMode::Contents,
+        ),
+    );
     model.raise_toast(ToastKind::Done, "synced", "to main", None);
     let mut driven = driven(model, &home).on_a_roomy_terminal();
     driven.frame();
@@ -443,7 +444,13 @@ fn a_toast_over_an_open_extension_answers_its_own_close() {
         driven.attach.model.toast_stack().is_empty(),
         "the toast went"
     );
-    assert!(driven.attach.model.code.is_some(), "and the surface stayed");
+    assert!(
+        driven
+            .attach
+            .model
+            .showing(uze_extensions::code::CATALOG.id),
+        "and the surface stayed"
+    );
 }
 
 /// A write that failed after the code surface closed has nowhere else to
@@ -451,34 +458,40 @@ fn a_toast_over_an_open_extension_answers_its_own_close() {
 #[test]
 fn a_failed_write_whose_surface_moved_on_is_still_reported() {
     let mut model = WorkspaceModel::default();
-    let answered = model.absorb_file_answer(FileResolution {
-        root: PathBuf::from("/gone"),
-        answer: code::FileAnswer::Saved {
+    let answer = |model: &mut WorkspaceModel, answer: code::FileAnswer| {
+        model.absorb_engine_answer(EngineAnswer {
+            extension: Owner::Builtin(code::CATALOG.id),
+            answer: uze_extensions::contract::Opaque::new(code::FileRead {
+                root: PathBuf::from("/gone"),
+                answer,
+            }),
+        });
+    };
+    answer(
+        &mut model,
+        code::FileAnswer::Saved {
             path: PathBuf::from("/gone/a.txt"),
             outcome: Err("permission denied".to_owned()),
         },
-    });
-    assert!(answered);
+    );
     assert_eq!(model.toast_stack().len(), 1);
     assert_eq!(model.remembered.toasts[0].text, "save failed");
 
-    let answered = model.absorb_file_answer(FileResolution {
-        root: PathBuf::from("/gone"),
-        answer: code::FileAnswer::Deleted {
+    answer(
+        &mut model,
+        code::FileAnswer::Deleted {
             path: PathBuf::from("/gone/b.txt"),
             outcome: Err("busy".to_owned()),
         },
-    });
-    assert!(answered);
+    );
     assert_eq!(model.toast_stack().len(), 2);
 
-    let answered = model.absorb_file_answer(FileResolution {
-        root: PathBuf::from("/gone"),
-        answer: code::FileAnswer::Saved {
+    answer(
+        &mut model,
+        code::FileAnswer::Saved {
             path: PathBuf::from("/gone/a.txt"),
             outcome: Ok(()),
         },
-    });
-    assert!(!answered);
-    assert_eq!(model.toast_stack().len(), 2);
+    );
+    assert_eq!(model.toast_stack().len(), 2, "one that landed stays quiet");
 }

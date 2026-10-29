@@ -11,8 +11,11 @@
 //! diagrams in cells. [`code`] answers what it *is*, four ways: what
 //! changed in it, what it contains, its commit timeline, and a map of
 //! where its lines are. Another is a module with its own `CATALOG` entry, one
-//! registration in `ExtensionRegistry::builtin`, and one [`ExtensionHit`]
-//! variant per surface it draws, not a new crate.
+//! registration in `ExtensionRegistry::builtin`, and its surfaces tagged
+//! with the slot the host stands them in ([`ExtensionHit`]), not a new
+//! crate. An extension a plugin declares is none of these: [`declared`]
+//! compiles its manifest into the same contract, and its logic answers
+//! through [`Host::answer`].
 //!
 //! # Where a file goes
 //!
@@ -30,7 +33,8 @@
 //! Everything outside the extension's own process memory — running Git,
 //! reading a file, knowing where `$HOME` is — arrives through [`Host`].
 //! The extension names what it needs; the host decides whether to oblige.
-//! Today it always does, in this process, so nothing observable changes.
+//! A built-in is always obliged, in this process; a declared extension's
+//! question is answered only within what the operator consented to.
 //!
 //! What changes is that an extension is now a pure function of what it is
 //! handed. That is what makes the trust question answerable later: code
@@ -49,39 +53,29 @@
 
 pub mod architect;
 pub mod code;
+pub mod contract;
+pub mod declared;
 pub mod registry;
-mod shared;
+pub mod shared;
 pub mod spec;
 pub mod view;
 
 pub use shared::places::{ArtifactRoot, ArtifactSource};
+pub use uze_contract::{Answer, Asking, Envelope, Question};
 
 /// Something a viewer did inside an extension's own surface, addressed to
-/// the extension that owns it.
+/// the slot the host stands that surface in.
 ///
 /// The payload is [`view::ViewHit`] for every extension, because the host
 /// produces it from what it drew and none of that is extension-specific.
-/// The variant is what routes: with two extensions open in one session,
-/// "row 3 was clicked" is meaningless without saying whose row 3.
+/// The slot is what routes: with two surfaces open in one session, "row 3
+/// was clicked" is meaningless without saying whose row 3. Which extension
+/// and which of its surfaces a slot is, built-in or declared, is the
+/// host's map to keep, since two plugins may declare the same ids.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ExtensionHit {
-    /// The code extension's full-frame surface — the changes, the file
-    /// tree and a file's contents are one surface in three modes, so
-    /// they are one variant.
-    Code(view::ViewHit),
-    /// The code extension's sidebar section — its commit timeline.
-    ///
-    /// A second variant for a second *surface* of the one extension, not
-    /// a second extension: `SelectItem(3)` means a different thing in a
-    /// file list than in a list of commits, and the host is the only side
-    /// that knows which of the two it drew.
-    CodeTimeline(view::ViewHit),
-    /// The architect extension's full-frame surface.
-    Architect(view::ViewHit),
-    /// The spec extension's full-frame surface.
-    Spec(view::ViewHit),
-    /// The spec extension's sidebar section — its changes in flight.
-    SpecSummary(view::ViewHit),
+pub struct ExtensionHit {
+    pub slot: u32,
+    pub hit: view::ViewHit,
 }
 
 /// Why [`Host::read_file`] has no contents to give.
@@ -205,6 +199,26 @@ pub trait Host {
     /// never reads differently twice.
     fn list_dir(&self, path: &std::path::Path) -> Result<Vec<DirEntry>, String>;
 
+    /// Whether `root`, a checkout, has something at `relative`: what an
+    /// `applies-when` asks. One bit, from the listing of its parent, so
+    /// nothing of the file is read; a path that climbs out has nothing.
+    fn checkout_has(&self, root: &std::path::Path, relative: &std::path::Path) -> bool {
+        let inside = relative
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)));
+        let (Some(name), true) = (relative.file_name(), inside) else {
+            return false;
+        };
+        let parent = relative
+            .parent()
+            .map_or(root.to_path_buf(), |parent| root.join(parent));
+        self.list_dir(&parent).is_ok_and(|entries| {
+            entries
+                .iter()
+                .any(|entry| std::ffi::OsStr::new(&entry.name) == name)
+        })
+    }
+
     /// Replaces `path`'s contents. The file must already exist: this
     /// extension edits what a project has, and creating a path from a
     /// typed string is a separate grant nothing asks for yet.
@@ -266,4 +280,38 @@ pub trait Host {
     /// same reason every other colour is, and it arrives here rather than as
     /// a constant so a light theme does not leave a diff illegible.
     fn syntax_theme(&self) -> String;
+
+    /// Where the project around `project` declares its artifacts: the
+    /// directories its `workspace.artifacts` names, why they were refused,
+    /// or that it names none. A host that reads no declaration finds none.
+    fn artifact_source(&self, _project: &std::path::Path) -> ArtifactSource {
+        ArtifactSource::Undeclared
+    }
+
+    /// The branch `checkout` delivers to, as the workspace's delivery
+    /// policy names it. A host that keeps no policy names none.
+    fn delivery_target(&self, _checkout: &std::path::Path) -> Option<String> {
+        None
+    }
+
+    /// Answers a declared extension's question: one of its declarations,
+    /// asked with its input about a checkout. Never a program or a script's
+    /// text: the host finds what answers it in the compile the operator
+    /// consented to, and says why when nothing may. Only the declared
+    /// engine asks it. A host that runs no declared extension answers
+    /// none.
+    fn answer(&self, _question: Question) -> Answer {
+        Answer::withheld("this host answers no declared extension")
+    }
+
+    /// The bytes of a picture a declared extension's view names: `name`
+    /// inside the extension's directory, from the compile the operator
+    /// consented to, or `scratch:<file>`, a file its program wrote into
+    /// its run's scratch and the host kept. Read no further than
+    /// [`declared::IMAGE_FILE_MAX`] and one byte, so a file past it is
+    /// refused without being held. Only the declared engine asks it. A
+    /// host that runs no declared extension shows none.
+    fn media(&self, _identity: &uze_contract::Identity, _name: &str) -> Result<Vec<u8>, String> {
+        Err("this host shows no extension's pictures".to_owned())
+    }
 }

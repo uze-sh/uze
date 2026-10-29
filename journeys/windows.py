@@ -107,6 +107,14 @@ def spell(path: Path | str) -> str:
     return Path(path).as_posix()
 
 
+def spell_value(value: str) -> str:
+    """A recorded string as a journey compares it: a drive path UZE wrote
+    with backslashes spelled as `spell` spells one; anything else as is."""
+    if re.match(r"^[A-Za-z]:[\\/]", value):
+        return value.replace("\\", "/")
+    return value
+
+
 def host_path(path: str) -> str:
     """`path` as NTFS holds it: each colon after the drive is the `-` UZE
     names the file with (`uze_platform::fs_name::file_name_for`), since a

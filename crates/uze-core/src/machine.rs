@@ -11,10 +11,12 @@
 //! package, a capability, or a project.
 
 pub mod detection_cache;
+pub mod extension_program;
 pub mod features;
 pub mod harness_runtime;
 pub mod home;
 pub mod launcher;
+pub mod mcp;
 pub mod path;
 pub mod portable_shell;
 pub mod process_cwd;

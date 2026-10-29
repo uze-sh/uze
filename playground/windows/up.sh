@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Opens a fresh Windows Sandbox with this checkout's uze installed the way a
-# person installs it and the playground marketplace registered, for an
+# person installs it and its marketplace registered, for an
 # ordinary account (`UZE_PLAYGROUND_USER=admin` for the Sandbox's
 # administrator, in Windows Terminal). Run from WSL: `make playground-windows`.
 #
@@ -42,7 +42,7 @@ export CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS="-C linker-flavor=lld-link 
 say "Building uze and the playground MCP server for Windows"
 cd "$repo_root"
 cargo build --locked --release --target "$target" --bin uze
-cargo build --locked --release --target "$target" --features dev-servers --bin playground-mcp
+cargo build --locked --release --target "$target" --features dev-servers --bin pingpong-mcp
 built="${CARGO_TARGET_DIR:-${repo_root}/target}/${target}/release"
 
 # --- the world -------------------------------------------------------------
@@ -72,7 +72,7 @@ stage_release "$stage" "$stage/uze-x86_64-windows.zip"
 stage_market "$stage"
 stage_installer "$stage" "${repo_root}/install.ps1"
 cp "${playground_root}/windows/prepare.ps1" \
-  "${playground_root}/windows/setup-user.ps1" "$built/playground-mcp.exe" "$stage/"
+  "${playground_root}/windows/setup-user.ps1" "$built/pingpong-mcp.exe" "$stage/"
 printf '%s' "$(version)" > "$stage/version"
 stage_sessions "$stage"
 # Whose world it is: an ordinary account by default (see prepare.ps1).

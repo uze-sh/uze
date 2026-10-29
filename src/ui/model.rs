@@ -7,6 +7,7 @@ use std::{
 };
 
 use ratatui::layout::Rect;
+use uze_application::DeclaredExtensionSummary;
 use uze_application::{Autonomy, ManagementLayout, ModelPreference, Preferences, SandboxScope};
 use uze_extensions::registry::BuiltinExtension;
 
@@ -39,9 +40,9 @@ pub(crate) enum Route {
     /// installable from a marketplace (the embedded `uze-official` snapshot
     /// included). Browse the catalog, install, update, remove.
     Plugins,
-    /// The tool side: official uze extensions that extend the TUI/CLI
-    /// itself (see `uze_extensions::BUILTIN_EXTENSIONS`) — as opposed to
-    /// plugins, which are packages delivered *to* harnesses.
+    /// The tool side: extensions of the workspace itself, the official
+    /// ones bundled with uze and those installed plugins declare — as
+    /// opposed to plugins, which are packages delivered *to* harnesses.
     Extensions,
     Harnesses,
     Profiles,
@@ -124,7 +125,7 @@ impl Route {
         match self {
             Route::Overview => "status & health",
             Route::Plugins => "plugins & skills",
-            Route::Extensions => "official tools",
+            Route::Extensions => "workspace tools",
             Route::Harnesses => "detected agents",
             Route::Profiles => "agent preferences",
             Route::Keys => "key bindings",
@@ -254,6 +255,9 @@ pub(crate) enum PluginTreeRow {
     Market(String),
     Plugin(usize),
     Resource(usize, String),
+    /// An extension the plugin declares: what it brings to the workspace,
+    /// whose standing the Extensions screen holds.
+    Extension(usize, uze_application::ExtensionIdentity),
 }
 
 /// Which of the Profiles screen's three panels currently has the arrow keys,
@@ -477,11 +481,46 @@ pub(crate) enum Overlay {
     AddMarketplace(String),
     /// A new profile's id, typed the same way as `AddMarketplace`.
     NewProfile(String),
+    /// A declared extension's preferences, one row each: Enter flips a
+    /// toggle, moves a choice on, or types a text or a number.
+    Preferences(PreferencesEditor),
+}
+
+/// The preferences of one declared extension, being set.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct PreferencesEditor {
+    pub(crate) identity: uze_application::ExtensionIdentity,
+    pub(crate) name: String,
+    pub(crate) rows: Vec<uze_application::PreferenceRow>,
+    pub(crate) selected: usize,
+    /// What is typed for the selected row, while one is.
+    pub(crate) typing: Option<String>,
 }
 
 /// What a confirmation is about, and so what agreeing to it does.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Confirmation {
+    /// Consent to what a declared extension wants, then enabling it in
+    /// this project: the grants are read before anything runs.
+    EnableExtension {
+        here: ExtensionHere,
+        attribution: String,
+        grants: Vec<String>,
+        /// What a held update wants beyond what was accepted.
+        new_grants: Vec<String>,
+        /// The programs it runs, asked on a step of their own once these
+        /// grants are allowed.
+        programs: Option<ProgramsStep>,
+        /// The rows its bands take over each agent's pane, when it has any.
+        band_rows: Option<u8>,
+    },
+    /// The `exec:` grants of an extension being allowed, after the rest:
+    /// each program with where it was pinned, and whether it runs confined.
+    AllowPrograms {
+        here: ExtensionHere,
+        attribution: String,
+        step: ProgramsStep,
+    },
     RemovePlugin(String),
     RemoveMarketplace(String),
     UpdatePlugin(String),
@@ -504,6 +543,42 @@ pub(crate) enum Confirmation {
     },
 }
 
+/// A declared extension switched in one project: consented to first when
+/// The programs a consent step asks about.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ProgramsStep {
+    pub(crate) programs: Vec<uze_application::ProgramPin>,
+    pub(crate) confined: bool,
+}
+
+impl ProgramsStep {
+    /// The step `standing` owes, when it runs programs.
+    pub(crate) fn of(standing: &uze_application::ExtensionReport) -> Option<Self> {
+        (!standing.programs.is_empty()).then(|| Self {
+            programs: standing.programs.clone(),
+            confined: standing.confined.unwrap_or(false),
+        })
+    }
+}
+
+/// `consent`, then enabled or disabled there.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ExtensionHere {
+    pub(crate) identity: uze_application::ExtensionIdentity,
+    pub(crate) name: String,
+    pub(crate) project: PathBuf,
+    pub(crate) consent: bool,
+    pub(crate) enable: bool,
+    /// Also turn on the machine's switch, which was off.
+    pub(crate) switch_on: bool,
+    /// The digest of the files the operator was shown, which consent
+    /// covers and nothing else.
+    pub(crate) shown: Option<String>,
+    /// It reaches agents, so enabling it holds for `project` alone rather
+    /// than for every project.
+    pub(crate) reaches_agents: bool,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum TrustedRetry {
     Install { name: String, marketplace: String },
@@ -520,13 +595,77 @@ pub(crate) enum Status {
 
 // --- Model --------------------------------------------------------------
 
+/// One row of the Extensions screen: an extension bundled with uze, or one
+/// an installed plugin declares. Both are switched by the same key.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ExtensionEntry<'a> {
+    Builtin(&'a BuiltinExtension),
+    Declared(&'a DeclaredExtensionSummary),
+}
+
+impl ExtensionEntry<'_> {
+    /// The key it is switched on and off by.
+    pub(crate) fn id(&self) -> String {
+        match self {
+            Self::Builtin(extension) => extension.id.to_owned(),
+            Self::Declared(summary) => super::extension_switch::declared_id(&summary.identity),
+        }
+    }
+
+    pub(crate) fn name(&self) -> &str {
+        match self {
+            Self::Builtin(extension) => extension.name,
+            Self::Declared(summary) => &summary.name,
+        }
+    }
+
+    pub(crate) fn description(&self) -> &str {
+        match self {
+            Self::Builtin(extension) => extension.description,
+            Self::Declared(summary) => &summary.description,
+        }
+    }
+
+    /// Whether `needle`, already lowercased, is in anything the row says.
+    fn matches(&self, needle: &str) -> bool {
+        let said = match self {
+            Self::Builtin(extension) => vec![
+                extension.id.to_owned(),
+                extension.name.to_owned(),
+                extension.description.to_owned(),
+                extension.surface.to_owned(),
+            ],
+            Self::Declared(summary) => [
+                summary.identity.to_string(),
+                summary.name.clone(),
+                summary.description.clone(),
+            ]
+            .into_iter()
+            .chain(summary.views.iter().cloned())
+            .chain(summary.sections.iter().cloned())
+            .chain(summary.drawers.iter().cloned())
+            .collect(),
+        };
+        said.iter().any(|text| text.to_lowercase().contains(needle))
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RefreshData {
+    /// The plugins' revision ([`super::extension_switch::plugins_revision`])
+    /// when the reading began: an answer older than one already shown is
+    /// not shown over it.
+    pub(crate) plugins_revision: u64,
     pub(crate) plugins: Vec<PluginSummary>,
     pub(crate) doctor: Option<DoctorReport>,
     pub(crate) marketplace_plugins: Vec<MarketplacePluginSummary>,
     pub(crate) marketplaces: Vec<MarketplaceSummary>,
     pub(crate) profiles: Vec<ProfileSummary>,
+    pub(crate) declared_extensions: Vec<DeclaredExtensionSummary>,
+    /// Where each declared extension stands, and the project it was judged
+    /// for (`None` outside every project).
+    pub(crate) extension_standings: Vec<uze_application::ExtensionReport>,
+    pub(crate) extension_project: Option<PathBuf>,
     pub(crate) context_status: Option<ProjectContextStatus>,
     /// The Overview's workspace-aware read model — present from the very
     /// first refresh onward (there is always a kind, even `NoWorkspace`).
@@ -625,6 +764,9 @@ pub(crate) struct TuiModel {
     /// rather than a position, so a refresh that reorders the groups or a
     /// removal that shortens them cannot move the reader somewhere else.
     pub(crate) plugin_market: Option<String>,
+    /// The order of the extensions whose rows stand in the workspace
+    /// sidebar's header, as Move up and Move down left it.
+    pub(crate) status_order: Vec<String>,
     /// Whether the keyboard is on that marketplace's heading or among its
     /// plugins.
     pub(crate) plugin_pane: PluginPane,
@@ -641,13 +783,32 @@ pub(crate) struct TuiModel {
     /// plugin is unfolded and still offers it — see
     /// [`TuiModel::selected_resource`].
     pub(crate) selected_resource: Option<String>,
+    /// Every plugin's declared extensions the drawer has been told this
+    /// session, by qualified id, beside [`Self::plugin_resources`].
+    pub(crate) plugin_extensions: BTreeMap<String, Vec<uze_application::ExtensionIdentity>>,
+    /// The declared extension under the selected plugin the keyboard is
+    /// on; never set together with `selected_resource`.
+    pub(crate) selected_package_extension: Option<uze_application::ExtensionIdentity>,
     /// How far the drawer's preview of that resource is scrolled, in rows.
     pub(crate) resource_scroll: u16,
 
     /// The official uze extensions catalog, from
     /// `uze_extensions::registry::ExtensionRegistry`.
     pub(crate) extensions: Vec<BuiltinExtension>,
-    /// The ids of those the operator switched off, as last written.
+    /// The extensions installed plugins declare, as the last refresh
+    /// found them, listed after the built-ins.
+    /// An extension to select on the Extensions screen once its list
+    /// holds it: what a click on why it is withheld asked to review.
+    pub(crate) revealing: Option<uze_application::ExtensionIdentity>,
+    pub(crate) declared_extensions: Vec<DeclaredExtensionSummary>,
+    /// Where each of them stands in [`Self::extension_project`]: consent,
+    /// enabling, a held update, the checkout it may not read.
+    pub(crate) extension_standings: Vec<uze_application::ExtensionReport>,
+    /// The project those were judged for, `None` outside every project.
+    pub(crate) extension_project: Option<PathBuf>,
+    /// The ids of those the operator switched off, as last written: a
+    /// built-in by its id, a declared one by
+    /// [`extension_switch::declared_id`](super::extension_switch::declared_id).
     pub(crate) disabled_extensions: BTreeSet<String>,
 
     pub(crate) profile_panel: ProfilePanel,
@@ -799,6 +960,14 @@ pub(crate) struct Remembered {
     pub(crate) extension_screen: ListScreen,
     pub(crate) harness_screen: ListScreen,
     pub(crate) profiles_selected: usize,
+    /// The plugins' revision the reading on screen began at.
+    pub(crate) plugins_revision: u64,
+    /// The plugins' extensions and where they stand, as the last refresh
+    /// read them: a reopening inside [`super::management::RESOLUTION_STANDS_FOR`]
+    /// asks nothing again, so without these it listed only the built-ins.
+    pub(crate) declared_extensions: Vec<DeclaredExtensionSummary>,
+    pub(crate) extension_standings: Vec<uze_application::ExtensionReport>,
+    pub(crate) extension_project: Option<PathBuf>,
 }
 
 /// Which asked mutation an answer is for. An answer is paired with its
@@ -852,6 +1021,10 @@ impl TuiModel {
     /// left behind. `None` is the first visit of the process, which has
     /// nothing resolved yet.
     pub(crate) fn recall(remembered: Option<Remembered>, layout: &ManagementLayout) -> Self {
+        let mut remembered = remembered.unwrap_or_default();
+        let declared_extensions = std::mem::take(&mut remembered.declared_extensions);
+        let extension_standings = std::mem::take(&mut remembered.extension_standings);
+        let extension_project = remembered.extension_project.take();
         let mut model = Self {
             route: layout
                 .route
@@ -878,21 +1051,28 @@ impl TuiModel {
             status_expires_at: None,
             mutations: VecDeque::new(),
             maintenance_in_flight: false,
-            remembered: remembered.unwrap_or_default(),
+            remembered,
             plugin_detail: None,
             marketplace_detail: None,
             inspection_in_flight: None,
             selection_moved_at: None,
             filtering: false,
             plugin_market: layout.plugin_market.clone(),
+            status_order: layout.status_order.clone(),
             plugin_pane: PluginPane::default(),
             expanded_plugins: BTreeSet::new(),
             plugin_resources: BTreeMap::new(),
             selected_resource: None,
+            plugin_extensions: BTreeMap::new(),
+            selected_package_extension: None,
             resource_scroll: 0,
             extensions: uze_extensions::registry::ExtensionRegistry::builtin()
                 .all()
                 .to_vec(),
+            declared_extensions,
+            revealing: None,
+            extension_standings,
+            extension_project,
             disabled_extensions: super::extension_switch::disabled(),
             profile_panel: ProfilePanel::List,
             profile_editor_selected: 0,
@@ -941,6 +1121,7 @@ impl TuiModel {
             drawer_width: self.drawer_width,
             profile_columns_width: self.profile_columns_width,
             plugin_market: self.plugin_market.clone(),
+            status_order: self.status_order.clone(),
         }
     }
 
@@ -948,6 +1129,9 @@ impl TuiModel {
     pub(crate) fn remember(self) -> Remembered {
         Remembered {
             plugin_pane: self.plugin_pane,
+            declared_extensions: self.declared_extensions,
+            extension_standings: self.extension_standings,
+            extension_project: self.extension_project,
             ..self.remembered
         }
     }
@@ -1123,30 +1307,309 @@ impl TuiModel {
         rows.into_iter().nth(raw_index)
     }
 
-    pub(crate) fn selected_extension(&self) -> Option<&BuiltinExtension> {
-        self.extensions.get(
-            *self
-                .extension_visible_indices()
-                .get(self.remembered.extension_screen.selected)?,
-        )
+    /// Every extension the screen lists: the built-ins, then the ones
+    /// plugins declare.
+    pub(crate) fn extension_entries(&self) -> Vec<ExtensionEntry<'_>> {
+        self.extensions
+            .iter()
+            .map(ExtensionEntry::Builtin)
+            .chain(
+                self.declared_extensions
+                    .iter()
+                    .map(ExtensionEntry::Declared),
+            )
+            .collect()
+    }
+
+    /// Selects `identity` on the Extensions screen, now if the list holds
+    /// it, else as soon as the list that does arrives.
+    pub(crate) fn reveal_extension(&mut self, identity: uze_application::ExtensionIdentity) {
+        self.revealing = Some(identity);
+        self.reveal_pending();
+    }
+
+    pub(crate) fn reveal_pending(&mut self) {
+        let Some(identity) = &self.revealing else {
+            return;
+        };
+        let entries = self.extension_entries();
+        let found = self
+            .extension_visible_indices()
+            .iter()
+            .position(|index| {
+                matches!(entries.get(*index), Some(ExtensionEntry::Declared(summary)) if summary.identity == *identity)
+            });
+        if let Some(position) = found {
+            self.remembered.extension_screen.selected = position;
+            self.revealing = None;
+        }
+    }
+
+    pub(crate) fn selected_extension(&self) -> Option<ExtensionEntry<'_>> {
+        let index = *self
+            .extension_visible_indices()
+            .get(self.remembered.extension_screen.selected)?;
+        self.extension_entries().get(index).copied()
     }
 
     pub(crate) fn extension_enabled(&self, id: &str) -> bool {
         !self.disabled_extensions.contains(id)
     }
 
-    /// Switching the selected extension to `enabled`, or nothing when it
-    /// already is — an offer that is not available answers no key.
-    pub(crate) fn switch_selected_extension(&self, enabled: bool) -> crate::ui::worker::Intent {
-        match self.selected_extension() {
-            Some(extension) if self.extension_enabled(extension.id) != enabled => {
-                crate::ui::worker::Intent::SwitchExtension {
-                    id: extension.id.to_owned(),
-                    name: extension.name.to_owned(),
-                    enabled,
-                }
+    /// Where a declared extension stands in the project the screen was
+    /// opened in, as the last refresh judged it.
+    pub(crate) fn extension_standing(
+        &self,
+        identity: &uze_application::ExtensionIdentity,
+    ) -> Option<&uze_application::ExtensionReport> {
+        self.extension_standings
+            .iter()
+            .find(|standing| standing.identity() == *identity)
+    }
+
+    /// The standing of an entry that runs code in a project known here:
+    /// what decides that its Enable and Disable are this project's.
+    fn standing_in_a_project(
+        &self,
+        extension: ExtensionEntry<'_>,
+    ) -> Option<&uze_application::ExtensionReport> {
+        use uze_application::ExtensionCondition as Condition;
+        let ExtensionEntry::Declared(summary) = extension else {
+            return None;
+        };
+        self.extension_standing(&summary.identity)
+            .filter(|standing| {
+                matches!(
+                    standing.condition,
+                    Condition::NeedsConsent
+                        | Condition::NeedsEnabling
+                        | Condition::Enabled
+                        | Condition::Held
+                )
+            })
+    }
+
+    pub(crate) fn extension_offers(
+        &self,
+        extension: ExtensionEntry<'_>,
+    ) -> Vec<uze_application::application::offers::ActionOffer> {
+        let switched_on = self.extension_enabled(&extension.id());
+        match extension {
+            ExtensionEntry::Builtin(_) => {
+                uze_application::application::offers::extension_offers(switched_on)
             }
-            _ => crate::ui::worker::Intent::None,
+            ExtensionEntry::Declared(summary) => {
+                let mut offers = uze_application::application::offers::declared_extension_offers(
+                    switched_on,
+                    self.extension_standing(&summary.identity),
+                    self.extension_project.is_some(),
+                );
+                if !summary.statuses.is_empty() {
+                    let keys = self.status_keys();
+                    let (up, down) = super::status_order::can_move(
+                        &self.status_order,
+                        keys.iter().map(String::as_str),
+                        &extension.id(),
+                    );
+                    offers.extend(uze_application::application::offers::status_order_offers(
+                        up, down,
+                    ));
+                }
+                offers
+            }
+        }
+    }
+
+    /// The extensions that draw a row in the sidebar's header, in the
+    /// order they were found: by identity, as the workspace hosts them.
+    pub(crate) fn status_keys(&self) -> Vec<String> {
+        let mut drawing: Vec<&DeclaredExtensionSummary> = self
+            .declared_extensions
+            .iter()
+            .filter(|summary| !summary.statuses.is_empty())
+            .collect();
+        drawing.sort_by(|one, other| one.identity.cmp(&other.identity));
+        drawing
+            .into_iter()
+            .map(|summary| super::extension_switch::declared_id(&summary.identity))
+            .collect()
+    }
+
+    /// Moves the selected extension's row in the sidebar's header one
+    /// place, when that is offered. The workspace draws the new order on
+    /// its next frame, and the layout keeps it.
+    pub(crate) fn move_selected_status(&mut self, up: bool) -> crate::ui::worker::Intent {
+        let Some(key) = self
+            .selected_extension()
+            .filter(|extension| {
+                matches!(extension, ExtensionEntry::Declared(summary) if !summary.statuses.is_empty())
+            })
+            .map(|extension| extension.id())
+        else {
+            return crate::ui::worker::Intent::None;
+        };
+        let keys = self.status_keys();
+        if let Some(order) = super::status_order::moved(
+            &self.status_order,
+            keys.iter().map(String::as_str),
+            &key,
+            up,
+        ) {
+            self.status_order = order;
+        }
+        crate::ui::worker::Intent::None
+    }
+
+    /// Whether `extension` runs code and nothing says which project it is
+    /// about: the screen was opened with no agent's project in front.
+    pub(crate) fn extension_waits_for_a_project(&self, extension: ExtensionEntry<'_>) -> bool {
+        use uze_application::ExtensionCondition as Condition;
+        self.extension_project.is_none()
+            && self.extension_enabled(&extension.id())
+            && self
+                .standing_in_a_project(extension)
+                .is_some_and(|standing| {
+                    matches!(
+                        standing.condition,
+                        Condition::NeedsConsent | Condition::NeedsEnabling | Condition::Held
+                    )
+                })
+    }
+
+    /// Switching the selected extension to `enabled`, or nothing when it
+    /// already is — an offer that is not available answers no key. One
+    /// that runs code is switched for the machine, as this screen's every
+    /// switch is: in every project, or in this one alone when it reaches
+    /// agents. Enabling it asks for its grants first when nobody accepted
+    /// them.
+    pub(crate) fn switch_selected_extension(&mut self, enabled: bool) -> crate::ui::worker::Intent {
+        use crate::ui::worker::Intent;
+        use uze_application::ExtensionCondition as Condition;
+        let Some(extension) = self.selected_extension() else {
+            return Intent::None;
+        };
+        let offered = self.extension_offers(extension).into_iter().any(|offer| {
+            offer.is_available()
+                && offer.action
+                    == if enabled {
+                        uze_keys::Action::EnableExtension
+                    } else {
+                        uze_keys::Action::DisableExtension
+                    }
+        });
+        if !offered {
+            return Intent::None;
+        }
+        let switched_on = self.extension_enabled(&extension.id());
+        let (Some(standing), Some(project)) = (
+            self.standing_in_a_project(extension).cloned(),
+            self.extension_project.clone(),
+        ) else {
+            return Intent::SwitchExtension {
+                id: extension.id(),
+                name: extension.name().to_owned(),
+                enabled,
+            };
+        };
+        let here = ExtensionHere {
+            identity: standing.identity(),
+            name: extension.name().to_owned(),
+            project,
+            consent: false,
+            enable: enabled,
+            switch_on: enabled && !switched_on,
+            shown: standing.digest.clone(),
+            reaches_agents: standing.reaches_agents,
+        };
+        match standing.condition {
+            Condition::NeedsConsent | Condition::Held if enabled => {
+                let here = ExtensionHere {
+                    consent: true,
+                    ..here
+                };
+                let programs = ProgramsStep::of(&standing);
+                let is_program = |grant: &String| grant.starts_with("exec:");
+                let asked: Vec<String> = if standing.new_grants.is_empty() {
+                    standing.grants.clone()
+                } else {
+                    standing.new_grants.clone()
+                };
+                let kind = match programs {
+                    // Nothing to ask before the programs: their step is the first.
+                    Some(step) if asked.iter().all(is_program) => Confirmation::AllowPrograms {
+                        here,
+                        attribution: standing.attribution(),
+                        step,
+                    },
+                    programs => Confirmation::EnableExtension {
+                        here,
+                        attribution: standing.attribution(),
+                        grants: standing
+                            .grants
+                            .iter()
+                            .filter(|grant| !is_program(grant))
+                            .cloned()
+                            .collect(),
+                        new_grants: standing
+                            .new_grants
+                            .iter()
+                            .filter(|grant| !is_program(grant))
+                            .cloned()
+                            .collect(),
+                        programs,
+                        band_rows: standing.band_rows,
+                    },
+                };
+                self.overlay = Overlay::Confirm {
+                    kind,
+                    focus: Some(1),
+                };
+                Intent::None
+            }
+            _ => Intent::ExtensionHere(here),
+        }
+    }
+
+    /// Opening the selected extension's preferences, when it declares any.
+    pub(crate) fn edit_selected_preferences(&mut self) -> crate::ui::worker::Intent {
+        use crate::ui::worker::Intent;
+        let Some(extension) = self.selected_extension() else {
+            return Intent::None;
+        };
+        let Some(standing) = self
+            .standing_in_a_project(extension)
+            .filter(|standing| !standing.preferences.is_empty())
+            .cloned()
+        else {
+            return Intent::None;
+        };
+        self.overlay = Overlay::Preferences(PreferencesEditor {
+            identity: standing.identity(),
+            name: extension.name().to_owned(),
+            rows: standing.preferences,
+            selected: 0,
+            typing: None,
+        });
+        Intent::None
+    }
+
+    /// Finding the selected extension's programs again, when that is
+    /// offered: after the operator installed one it wants.
+    pub(crate) fn resolve_selected_programs(&mut self) -> crate::ui::worker::Intent {
+        use crate::ui::worker::Intent;
+        let Some(extension) = self.selected_extension() else {
+            return Intent::None;
+        };
+        let offered = self
+            .extension_offers(extension)
+            .into_iter()
+            .any(|offer| offer.is_available() && offer.action == uze_keys::Action::ResolvePrograms);
+        let Some(standing) = self.standing_in_a_project(extension).filter(|_| offered) else {
+            return Intent::None;
+        };
+        Intent::ResolvePrograms {
+            identity: standing.identity(),
+            name: extension.name().to_owned(),
         }
     }
 
@@ -1157,16 +1620,10 @@ impl TuiModel {
             .filter
             .trim()
             .to_lowercase();
-        self.extensions
+        self.extension_entries()
             .iter()
             .enumerate()
-            .filter(|(_, extension)| {
-                needle.is_empty()
-                    || extension.id.to_lowercase().contains(&needle)
-                    || extension.name.to_lowercase().contains(&needle)
-                    || extension.description.to_lowercase().contains(&needle)
-                    || extension.surface.to_lowercase().contains(&needle)
-            })
+            .filter(|(_, extension)| needle.is_empty() || extension.matches(&needle))
             .map(|(index, _)| index)
             .collect()
     }
@@ -1254,6 +1711,7 @@ impl TuiModel {
         self.plugin_market = market;
         self.plugin_pane = PluginPane::Markets;
         self.selected_resource = None;
+        self.selected_package_extension = None;
     }
 
     /// Puts the keyboard on a plugin, or on one of its resources, and
@@ -1266,6 +1724,7 @@ impl TuiModel {
         }
         self.remembered.plugin_screen.selected = position;
         self.selected_resource = resource;
+        self.selected_package_extension = None;
         self.plugin_pane = PluginPane::Plugins;
         if let Some(plugin) = self.selected_marketplace_plugin() {
             self.plugin_market = Some(plugin.marketplace);
@@ -1308,6 +1767,12 @@ impl TuiModel {
                         PluginTreeRow::Resource(position, resource.identity.clone())
                     }));
                 }
+                tree.extend(
+                    self.plugin_extensions_of(&id)
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|extension| PluginTreeRow::Extension(position, extension.clone())),
+                );
             }
         }
         tree
@@ -1315,6 +1780,11 @@ impl TuiModel {
 
     /// The tree row the keyboard is on.
     pub(crate) fn plugin_tree_cursor(&self) -> PluginTreeRow {
+        if self.plugin_pane == PluginPane::Plugins
+            && let Some(extension) = self.selected_package_extension()
+        {
+            return PluginTreeRow::Extension(self.remembered.plugin_screen.selected, extension);
+        }
         match (self.plugin_pane, self.selected_resource()) {
             (PluginPane::Markets, _) => {
                 PluginTreeRow::Market(self.cursor_market().unwrap_or_default())
@@ -1336,6 +1806,9 @@ impl TuiModel {
             PluginTreeRow::Resource(position, identity) => {
                 self.select_plugin_row(position, Some(identity))
             }
+            PluginTreeRow::Extension(position, identity) => {
+                self.select_package_extension(position, identity)
+            }
         }
     }
 
@@ -1351,9 +1824,10 @@ impl TuiModel {
             .iter()
             .position(|row| *row == here)
             .or_else(|| match &here {
-                PluginTreeRow::Resource(position, _) => tree
-                    .iter()
-                    .position(|row| *row == PluginTreeRow::Plugin(*position)),
+                PluginTreeRow::Resource(position, _) | PluginTreeRow::Extension(position, _) => {
+                    tree.iter()
+                        .position(|row| *row == PluginTreeRow::Plugin(*position))
+                }
                 _ => None,
             })
             .unwrap_or(0);
@@ -1417,7 +1891,86 @@ impl TuiModel {
             self.expanded_plugins.insert(plugin.to_owned());
         } else {
             self.selected_resource = None;
+            self.selected_package_extension = None;
         }
+    }
+
+    /// Puts the keyboard on an extension `position`'s plugin declares.
+    pub(crate) fn select_package_extension(
+        &mut self,
+        position: usize,
+        identity: uze_application::ExtensionIdentity,
+    ) {
+        self.select_plugin_row(position, None);
+        self.selected_package_extension = Some(identity);
+    }
+
+    /// The declared extension the keyboard is on, while its plugin is
+    /// selected, unfolded and still declares it.
+    pub(crate) fn selected_package_extension(&self) -> Option<uze_application::ExtensionIdentity> {
+        let identity = self.selected_package_extension.as_ref()?;
+        let plugin = self.selected_marketplace_plugin()?;
+        let id = self.marketplace_plugin_id(&plugin);
+        if !self.expanded_plugins.contains(&id) {
+            return None;
+        }
+        self.plugin_extensions_of(&id)?
+            .iter()
+            .find(|extension| *extension == identity)
+            .cloned()
+    }
+
+    /// The selected declared extension the Extensions screen lists: one
+    /// whose plugin is installed. One on offer has nowhere to be shown yet.
+    pub(crate) fn shown_package_extension(&self) -> Option<uze_application::ExtensionIdentity> {
+        self.selected_marketplace_plugin()
+            .filter(|plugin| plugin.installed)
+            .and(self.selected_package_extension())
+    }
+
+    /// The extensions this plugin is known to declare, if it has been
+    /// asked.
+    pub(crate) fn plugin_extensions_of(
+        &self,
+        plugin: &str,
+    ) -> Option<&[uze_application::ExtensionIdentity]> {
+        self.plugin_extensions.get(plugin).map(Vec::as_slice)
+    }
+
+    /// Opens the Extensions screen on `identity`: what runs in the
+    /// workspace is said there, and a filter that would hide it is let go.
+    pub(crate) fn show_extension(
+        &mut self,
+        identity: uze_application::ExtensionIdentity,
+    ) -> crate::ui::worker::Intent {
+        self.remembered.extension_screen.filter.clear();
+        let intent = self.set_route(Route::Extensions);
+        self.focus = Focus::Content;
+        self.reveal_extension(identity);
+        intent
+    }
+
+    /// Opens the Marketplace on the plugin that declares `identity`,
+    /// unfolded on that extension, so what it brings stands under it.
+    pub(crate) fn show_plugin_of(
+        &mut self,
+        identity: uze_application::ExtensionIdentity,
+    ) -> crate::ui::worker::Intent {
+        self.remembered.plugin_screen.filter.clear();
+        let _ = self.set_route(Route::Plugins);
+        self.focus = Focus::Content;
+        let qualified = format!("{}@{}", identity.plugin, identity.marketplace);
+        let rows = self.marketplace_rows();
+        let Some(position) = self
+            .visible_indices_in(&rows)
+            .iter()
+            .position(|&raw| self.marketplace_plugin_id(&rows[raw]) == qualified)
+        else {
+            return crate::ui::worker::Intent::None;
+        };
+        self.expanded_plugins.insert(qualified);
+        self.select_package_extension(position, identity);
+        self.marketplace_inspect_intent()
     }
 
     /// What this plugin is known to offer, if it has been asked.
@@ -1457,6 +2010,10 @@ impl TuiModel {
                 *selected = 0;
             }
             Overlay::AddMarketplace(input) | Overlay::NewProfile(input) => input.push(character),
+            Overlay::Preferences(PreferencesEditor {
+                typing: Some(input),
+                ..
+            }) => input.push(character),
             _ => self.edit_filter(|filter| filter.push(character)),
         }
         super::worker::Intent::None
@@ -1763,6 +2320,7 @@ impl TuiModel {
             .into_iter()
             .filter(ActionOffer::is_available)
             .map(|offer| offer.action)
+            .chain(self.selected_link())
             .chain(self.screen_actions());
         for offered in offered {
             if !rows.iter().any(|(action, _)| *action == offered) {
@@ -1770,6 +2328,31 @@ impl TuiModel {
             }
         }
         crate::ui::widget::action_index::narrowed(rows, filter)
+    }
+
+    /// Where the selected row leads on the sibling screen: an extension a
+    /// plugin declares to the Extensions screen, a declared extension to
+    /// the plugin it comes with. Navigation rather than an offer, so no
+    /// drawer draws it as a button; its link and the index carry it.
+    pub(crate) fn selected_link(&self) -> Option<uze_keys::Action> {
+        match self.route {
+            Route::Plugins => self
+                .shown_package_extension()
+                .map(|_| uze_keys::Action::ShowExtension),
+            Route::Extensions => self
+                .selected_declared_identity()
+                .map(|_| uze_keys::Action::ShowPlugin),
+            _ => None,
+        }
+    }
+
+    /// The identity of the declared extension selected on the Extensions
+    /// screen; `None` on a built-in, which comes with no plugin.
+    pub(crate) fn selected_declared_identity(&self) -> Option<uze_application::ExtensionIdentity> {
+        match self.selected_extension()? {
+            ExtensionEntry::Declared(summary) => Some(summary.identity.clone()),
+            ExtensionEntry::Builtin(_) => None,
+        }
     }
 
     /// What this screen can do that is about no row of it, and holds no
@@ -1809,11 +2392,7 @@ impl TuiModel {
                 .unwrap_or_default(),
             Route::Extensions => self
                 .selected_extension()
-                .map(|extension| {
-                    uze_application::application::offers::extension_offers(
-                        self.extension_enabled(extension.id),
-                    )
-                })
+                .map(|extension| self.extension_offers(extension))
                 .unwrap_or_default(),
             Route::Harnesses => self
                 .selected_harness()
@@ -2137,6 +2716,10 @@ impl TuiModel {
     }
 
     pub(crate) fn refreshed(&mut self, data: RefreshData) {
+        if data.plugins_revision < self.remembered.plugins_revision {
+            return;
+        }
+        self.remembered.plugins_revision = data.plugins_revision;
         self.remembered.plugins = data.plugins;
         self.remembered.doctor = data.doctor;
         self.remembered.resolved_at = Some(Instant::now());
@@ -2144,7 +2727,11 @@ impl TuiModel {
         self.remembered.marketplace_plugins = data.marketplace_plugins;
         self.remembered.marketplaces = data.marketplaces;
         self.clamp_list_selection(Route::Plugins);
+        self.declared_extensions = data.declared_extensions;
+        self.extension_standings = data.extension_standings;
+        self.extension_project = data.extension_project;
         self.clamp_list_selection(Route::Extensions);
+        self.reveal_pending();
         self.remembered.profiles = data.profiles;
         // A refresh is the operator asking to see the machine as it is;
         // a harness configuration edited by hand is part of that.

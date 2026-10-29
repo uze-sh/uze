@@ -2,6 +2,38 @@
 
 Status: Accepted
 
+Amended 2026-10-23: `uze-extensions` may depend on exactly one UZE crate,
+`uze-contract`, the extension contract (manifest and compiled-view types,
+the binding grammar, the catalog's names, the sanitizer). It is plain data
+with no I/O, no other UZE crate and no rendering library, enforced by the
+architecture suite, so an extension handed one of its types is handed
+nothing that reaches the machine. It exists so the domain's decoder and the
+presentation engine share one definition of an extension without either
+reaching the other (`openspec/changes/archive/2026-10-24-extension-view-engine`). Nothing else
+about the decision changed.
+
+Amended (extension-manifest-and-scripts): the loading mechanism is chosen.
+An extension's logic is a Rhai script run by `uze-script`, a crate
+depending on `uze-contract` and `uze-platform` only, whose engine is built
+raw and reaches only the host functions the extension's grants register
+(`read:checkout` registers `read_checkout` and `list_checkout`, beneath the
+checkout and following no link). A program (argv) is not run yet: when it
+arrives (change 5 of `extension-platform`) it is run by the OS-confined
+runner where the platform confines it, and consent says where it does not.
+Dynamic libraries and native resident interpreters stay ruled out. The
+"second concrete use case" is the gallery of `extension-platform` D20.
+Extension state (today the grants record, `state/extensions.json`, named in
+`UzeHome`; later the store and the preferences) lives under `UzeHome` and is
+written by `uze-application` on the extension's behalf: an extension still
+touches none of UZE's state directly. The declared engine asks the host by
+declaration id, never by argv or script text:
+`Host::answer(Question { identity, declaration, asking, input, checkout })`,
+which `ExtensionRunner` answers from the compile whose digest the operator
+consented to, after judging consent, enabling in the project and the
+checkout. Trust (may these bytes be installed) is still never persisted;
+consent to run an extension's code is a different question, answered per
+grant set, and a later update that widens the set is held until asked again.
+
 ## Context
 
 UZE already has a trust boundary. `trust.rs` gates one question — may
@@ -33,7 +65,8 @@ Two consequences bind now, while there is nothing to load:
 
 - An extension never touches UZE's own state — no `UzeHome`, no Store, no
   receipts, no `uze-application`. `uze-extensions` depends on no UZE
-  crate and names no process, filesystem or environment API; everything
+  crate but the data-only `uze-contract` (amendment above) and names no
+  process, filesystem or environment API; everything
   it needs arrives through the `Host` trait the TUI implements. This is
   enforced by the architecture suite rather than left as a doc comment.
   It is what keeps an extension a pure function of what it is handed.

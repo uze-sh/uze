@@ -94,11 +94,11 @@ $project = "$home_\projects\demo"
 $who = if ($asAdministrator) { 'the Sandbox administrator' } else { 'person, an ordinary account' }
 $welcome = @"
 uze $((Get-Content "$stage\version" -Raw).Trim()) from your checkout, as $who, with Git and the
-playground marketplace.
+its marketplace: the uze plugin and the examples.
 
   uze doctor
   uze setup claude-code            (or codex, opencode, antigravity)
-  cd ~\projects\demo; uze playground@playground
+  cd ~\projects\demo; uze pingpong@uze
   uze workspace
 
 Progress and errors of this preparation: C:\playground\prepare.log

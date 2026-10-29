@@ -1,0 +1,59 @@
+# uze snapshot · protocol 1 · view 112x24 · dark
+ Milestone
+
+  v1.23  Assistente do lojista                                                                  run phase 12
+
+  ████████ ██████████ ████████████ ██████████████████████████████████▊──── ──────── ────────  65%  3 of 6 done
+
+   phases  activity
+
+  #   Phase                            D  P  E  Plans  Status
+
+  09  Fundação da loja                 ■  ■  ■  4/4    Done
+  10  Pedidos e pagamentos             ■  ■  ■  5/5    Done
+  11  Catálogo de ajuda                ■  ■  ■  6/6    Done
+  12  Consulta de dados e diagnóstico  ■  ■  ■  17/19  In progress
+  13  Ações com confirmação            ■  ■  ■  –      Ready to discuss
+  14  Relatórios do lojista            ■  ■  ■  –      Waiting
+
+   Now   12 · Consulta de dados e diagnóstico  ●●●●●●●●●●●●●●●●●○○  2 plans left
+   12-18  Diagnóstico de estoque baixo por loja
+   12-19  Relatório de erros de integração
+
+
+
+esc close  ·  ctrl+r refresh  ·  i inspector
+---
+ aaaaaaaaa
+
+  bbbbb  aaaaaaaaaa aa aaaaaaa                                                                  ccc ccccc cc
+
+  dddddddd dddddddddd dddddddddddd eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeffff ffffffff ffffffff  bbb  a aa a aaaa
+
+   bbbbbb  aaaaaaaa
+
+  a   aaaaa                            a  a  a  aaaaa  aaaaaa
+
+  aa  bbbbbbbb bb bbbb                 d  d  d  aaa    dddd
+  aa  bbbbbbb b bbbbbbbbbb             d  d  d  aaa    dddd
+  aa  bbbbbbbb bb bbbbb                d  d  d  aaa    dddd
+  aa  bbbbbbbb bb bbbbb b bbbbbbbbbbb  d  d  e  aaaaa  ee eeeeeeee
+  aa  bbbbb bbb bbbbbbbbbbb            g  f  f  f      ggggg gg ggggggg
+  aa  bbbbbbbbbb bb bbbbbbb            f  f  f  f      fffffff
+
+   eee   bb b bbbbbbbb bb bbbbb b bbbbbbbbbbb  cccccccccccccccccff  a aaaaa aaaa
+   aaaaa  bbbbbbbbbbb bb bbbbbbb bbbbb bbb bbbb
+   aaaaa  bbbbbbbbb bb bbbbb bb bbbbbbbbbb
+
+
+
+hhh aaaaa  f  hhhhhh aaaaaaa  f  h aaaaaaaaa
+---
+a text.muted
+b text.bright
+c text.secondary
+d state.success
+e state.warning
+f text.faint
+g state.info
+h accent

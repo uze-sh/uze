@@ -1,0 +1,41 @@
+// Focus: a pomodoro beside the agent. In the bar, what is left of the
+// session, or the day's sessions; a click opens the drawer, where a session
+// starts and stops. When one ends, a sound and a notification. Everything it
+// remembers is in one store for the machine, not per project: a session is
+// the person's, and goes on whichever space or project is in front. It keeps
+// when the session started and how many sessions each day closed.
+protocol 1
+id "focus"
+name "Focus"
+description "A pomodoro: the time in the bar and the sessions of the last days"
+
+wants "store:global" "notify"
+
+preferences {
+    number "minutes" label="Minutes in a session" default=25 min=1 max=90
+    number "goal" label="Sessions a day" default=4 min=1 max=12
+}
+
+// In the bar, on the right: what is left, or the day's sessions.
+surface "timer" slot="bar" align="right" view="timer.uze" source="clock" opens="session"
+
+// The drawer: what is left in large digits, start and stop, and the last
+// days. A card as tall as what it holds, floating over the right of the
+// agent area above the bar's timer, so opening it resizes nothing.
+surface "session" slot="drawer" float=#true size="fit" view="session.uze" source="clock" title="Focus"
+
+// Asked every 5 s while the bar is in sight: it is what closes the session
+// when its time is up. The countdown itself ticks on the host's clock.
+source "clock" {
+    script "session.uze"
+    preferences
+    every "5s"
+}
+
+action "start" label="Start a session" on="session" key="ctrl-s" {
+    call "begin"
+}
+
+action "stop" label="Stop the session" on="session" key="ctrl-x" {
+    call "end"
+}

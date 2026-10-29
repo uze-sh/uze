@@ -229,9 +229,15 @@ fn sibling(checkout: &Path, name: &str) -> PathBuf {
 /// cannot give it.
 pub fn commit_everything_in(root: &Path) -> String {
     let isolated = |args: &[&str]| -> String { isolated_git_in(root, args) };
-    let already = uze_git::read(root, &["rev-parse", "--git-dir"])
-        .map(|output| output.is_success())
-        .unwrap_or(false);
+    // A repository of its own, not one it sits inside: a fixture laid out
+    // beneath a checkout (Cargo's `target/tmp` in a worktree) would
+    // otherwise commit everything of the checkout around it.
+    let own_root = std::fs::canonicalize(root).ok();
+    let already = uze_git::read(root, &["rev-parse", "--show-toplevel"])
+        .ok()
+        .filter(|output| output.is_success())
+        .and_then(|output| std::fs::canonicalize(output.stdout.trim()).ok())
+        .is_some_and(|top| Some(top) == own_root);
     if !already {
         isolated(&["init", "--quiet", "-b", INITIAL_BRANCH, "."]);
         isolated(&["config", "user.name", AUTHOR_NAME]);

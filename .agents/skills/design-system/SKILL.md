@@ -48,6 +48,8 @@ on "cancel" must not save first.
 - `Hints::line()` (text with no target) is only for hints inside scrolling
   prose.
 - A `run` (↑↓, 1–9) is read, never clicked.
+- A dialog's bottom border is a hint bar too: draw it with
+  `dialog::BorderHint` and register its `targets` along the popup.
 - Prove a new hint bar with a click == key test. See
   `clicking_an_overview_foot_hint_is_pressing_its_key` and
   `clicking_a_surface_footer_hint_is_pressing_its_key`.
@@ -56,11 +58,18 @@ on "cancel" must not save first.
 - The first click acts. Opening or closing a popover, menu or Recents must
   never swallow the next click.
 - The whole row, chip, card or button is the target, not just the arrow or
-  one word.
+  one word. The one exception is a list of choices (rows marked `◉`/`○`):
+  a click on the row marks it, and only a click on its mark switches it,
+  as space does from the keyboard.
 - Never leave a dead region, and never open anything on a double click:
   Enter opens.
 - A click that does nothing must not *look* like it acted. For example, a
   drawer must not close as if it ran something.
+- Nor may a button offered as available answer a click with nothing. When
+  what it would do cannot happen here, it is offered as unavailable and the
+  place it is drawn says why and what to do instead. For example, an
+  extension's Enable with no project in front says "Needs a project" and
+  never quietly flips a switch that is already on.
 
 **Hover:**
 - Everything clickable has a hover, and nothing that isn't clickable does.
@@ -70,6 +79,16 @@ on "cancel" must not save first.
   word that is not never turns bold under the pointer or while pressed.
   Manage's version and health are the reference.
 - Text-only affordances start muted and brighten.
+- A plugin's surface has at most one button in the accent, the one it
+  means to be pressed next (`Button primary=#true`), as UZE's own buttons
+  are for what builds; every other button stays neutral.
+- What a plugin draws follows the same rule, without the plugin asking:
+  every element of the catalog that answers a click lifts under the
+  pointer in its own hue (`theme::lifted_ink`, `widget::lift`), and a
+  whole region that answers one, such as a bar item that opens a drawer,
+  rests held back like the bar's own doors (`widget::hold_back`). A
+  coloured mark never turns accent on hover: it is a stronger version of
+  itself.
 - Every close `x` is faint at rest and turns to the danger hue under the
   pointer and while pressed: use `mark::close_tone(state)`, never a tone
   of your own.
@@ -133,17 +152,77 @@ on "cancel" must not save first.
 - Esc closes everything, and a modal or a drawer says so nowhere: its
   closing is a bare `x` at the top right, with no label, no footer "close"
   button and no "esc" hint.
+- A step opened inside a dialog (everything a row asks for, in the list's
+  place) goes back before it closes: its heading starts with `‹`
+  (`Symbol::StepPrevious`) and is a target, and the bottom border names
+  esc "back". Esc on the first step closes.
 - A surface's own foot (the overview's) is different: it is the keys that
   act there, so it names Dismiss by what it does in that state, "back",
   "cancel", "clear" or "close", and that word is a click target like any
   other.
-- A drawer closes only on a click outside it.
+- A drawer closes only on a click outside it. The exception is a plugin's
+  `drawer` slot beside a live pane, which is not modal: a click outside
+  gives the pane its keys back and leaves it open; its bar item, its key
+  or Esc closes it. Esc never leaks to the agent behind a drawer it
+  belongs to: a floating drawer (over the pane) closes on Esc wherever the
+  keys are, and a docked one closes on Esc while it holds them. Only
+  beside a docked drawer the pane holds the keys of is Esc the agent's,
+  which interrupts its turn with it.
 
 **Shortcuts:**
 - Keep them few: group actions behind a context menu (`alt+.`) rather than
   adding specific keys.
-- One modifier per family: extensions all use `alt`.
+- One modifier per family: extensions all use `alt`. But a global chord an
+  extension suggests competes with the system, GPU overlays (NVIDIA takes
+  `alt+z`, `alt+r`, `alt+f1`, `alt+f9`, `alt+f10` before a terminal sees
+  them) and the harness in the pane (Claude Code pastes an image on
+  `alt+v`): an example opens what it shows from a control the person can
+  see, and leaves the global key for the person to bind on the Keys
+  screen.
 - Keyboard users must never lose a path.
+
+**What is UZE's and what is a plugin's:**
+- The tab strip holds UZE's own surfaces only. Everything a plugin adds
+  (the doors to its views and drawers, the items it draws) stands in the
+  bar under the agent area, the tab strip's mirror at the content column's
+  foot, which takes its rows only while a plugin puts something there.
+- A plugin's list in a sidebar section reads as the sidebar's own rows: no
+  ground on hover or selection, its text held back at rest and lit in its
+  own hues under the pointer or once chosen, as the tasks section is.
+- A plugin's section in the sidebar is drawn flat, its header its own
+  title, as the sidebar's own sections are: no strip naming its extension
+  and plugin above it. A band has no mark naming it either: a muted name
+  at its end reads as a button. Whose it is belongs to the Extensions screen and the
+  inspector; a clash between extensions is resolved by id, never shown. A
+  view, a drawer and an overlay are headed by the title their extension
+  gave them, muted, on no strip of its own: never the extension's id, its
+  plugin or its marketplace, which belong to the Extensions screen, a
+  consent and a question about what it would do to an agent.
+- A plugin has no standing line to say it has nothing to say: no "no
+  notice yet" row at the top of the sidebar. What it notifies is drawn in
+  the sidebar's notice, where a new release is, one notice at a time with
+  its mark to put it away, ahead of the release's; a status row that has
+  nothing to show takes no row.
+- A surface whose extension is withheld (it needs consent, enabling here,
+  or its update is held) says why in one row inset as a list's rows are,
+  with `review` at its far end, and the whole row opens the Extensions
+  screen on that extension. A state the person can act on is never a
+  bare warning they have to go find the answer to.
+- Marketplace says what a package brings; Extensions says what runs.
+  Each links to the other and neither repeats the other's actions. A
+  package's tree lists the extensions it declares as a kind like any
+  other (`extensions 1`, its rows carrying no status, since whether one
+  runs is the Extensions screen's to say), and `⊘` stands only under a
+  package that brings nothing at all. Enter on one, or its panel's `open
+  Extensions`, opens the Extensions screen on it; a declared extension's
+  drawer names its plugin on its `from` line, a link that opens the
+  Marketplace on that plugin unfolded on the extension. A way across is a
+  link and an index entry (`Show plugin`, `Show extension`), never a
+  drawer button beside the actions.
+- A plugin never writes an icon glyph either: it names one with `Icon`
+  and the host draws it in the operator's glyph set, as UZE's own chrome
+  names a `Symbol`. The check refuses a Nerd Font codepoint or a
+  pictograph written loose in a view (`extension-icons`).
 
 **Confirmation:**
 - A destructive action is confirmed in a centred dialog with a scrim and
@@ -154,6 +233,15 @@ on "cancel" must not save first.
   your own.
 - Never ask for Y/N.
 - Enter is the primary action.
+- Several things waiting on the same answer are asked in one dialog, a
+  list to choose from (`Scope::Choose`), never a queue of dialogs; one
+  toast says what was done (`3 extensions enabled`), never one each.
+- A question is 60 columns at most. A list to choose from takes what its
+  rows need, up to 96, its rows take the height left (4 to 14, then it
+  scrolls), and the marked row's detail keeps a fixed height, so moving
+  the cursor never resizes the dialog.
+- Putting a question away answers nothing unless the question says so: an
+  offer put away is made again the next time, never refused for good.
 
 **Skip choices with one answer:**
 - With one harness, launch it directly.
@@ -172,6 +260,14 @@ on "cancel" must not save first.
 - A fixed set of choices uses a combobox or radio buttons.
 - Files and branches come from a picker of real options.
 - Settings autosave, and the save shows no toast.
+- An extension's preferences open as a dialog (`dialog::shell`) titled
+  `Focus preferences`, never a bare menu of `label  value`: one row per
+  preference, its label on the left and its value as the control that
+  changes it in one column against the right edge (`widget::control`:
+  `− 25 +`, `‹ dark ›`, `◉ on`, a field), then under a rule a detail of
+  fixed height saying the selected row's kind, range and default (`A
+  number from 1 to 90 · default 25`), or where a secret is kept. ←→ step
+  and save at once; Enter types or flips.
 
 ## Feedback, state and timing
 
@@ -188,6 +284,26 @@ Toasts:
   their maximum.
 - Appear only for something that happened. Never raise a toast for a
   no-op, a save, or an error flood at startup.
+- Never for what the person already sees happen: a prompt typed into the
+  agent in front stands in its pane, so "sent to agent" is said only of
+  one typed into an agent out of sight.
+- What a plugin's action says while it waits ("Start a session…") is gone
+  the moment its extension answers, on a view, a drawer or an overlay
+  alike: it never stays on a foot after the action ran.
+- A gesture with nothing to act on runs nothing and says so in a toast
+  that names what is missing (`Copy hash did not run` · `select a row
+  first`). It never acts on emptiness: a copy of empty text never reaches
+  the clipboard.
+
+**Problems with what a surface draws:**
+- What is wrong with an extension's compile or save is `widget::banner`:
+  a danger rule down its left, a `⚠` title that counts the errors (`the
+  last save has 2 errors`), each error under it in a secondary tone. Never
+  loose lines of red text.
+- Over a plugin's own surface it is cut to fit and takes at most half the
+  room. On a screen that exists to say what is wrong (an extension's
+  detail) it is `render_folded`: every error whole, folded across rows,
+  in all the room its other content leaves.
 
 **Timing:**
 - The first frame is right. Nothing visibly settles, flickers, or shows one
@@ -204,6 +320,10 @@ Toasts:
 - Every colour is a `Token`; content colour goes through `theme::content`.
 - Colour carries meaning. Don't colour names for decoration, and don't
   spray the accent everywhere.
+- A quantity is drawn in the heat ramp (`Heat0`…`Heat4`, `heat-0`…`heat-4`
+  for an extension): one hue, brighter for more. Never stand the state hues
+  in for amounts: info, success and warning in a row read as three kinds,
+  not as less and more.
 - The default theme (`dark`) is monochrome: a near-black ground, off-white
   text, a white accent, and hue spent only where it means something (the
   `State*` tokens, of which the warning gold is the workspace's own).
@@ -292,7 +412,11 @@ operator rather than assume.
 **Narrow widths:**
 - Nothing clips the header, the footer or the first line.
 - Text that is too long marquees (slowly, after a pause) or elides. It
-  never cuts mid-word in a hint.
+  never cuts mid-word in a hint. A plugin's cut line (`Text truncate`)
+  slides only while the pointer rests on it, never on its own; at rest it
+  ends in an ellipsis. Inside something the pointer presses (a list's
+  row), the press wins and the line stays cut. `marquee=#false` keeps a
+  line cut for good.
 - Drop unimportant columns first and keep the drawer.
 - Footers stay on one line, with the two key actions, the rest behind F1.
 
@@ -361,7 +485,16 @@ Use the `src/progress.rs` helpers and never hand-format:
   reads `Verified`, never `Verified (Update)`, which reads as an update
   waiting beside a version.
 - Use the present tense for actions ("send", "install"), lowercase labels,
-  and punctuate status words the same way everywhere.
+  and punctuate status words the same way everywhere. A plugin's clickable
+  controls follow the core: its buttons, tabs, switches, a form's submit and
+  the doors to its surfaces are drawn lowercase by the host, whatever the
+  plugin wrote. Everything else it draws (text, headings, badges, a
+  choice's value, its data) keeps the case the plugin gave it.
+- A package that carries only workspace extensions is an extension, not a
+  plugin, wherever a report names what it changed: `1 extension installed
+  on this machine only`, `1 plugin and 1 extension updated`
+  (`progress::count_packages`). Only a package a harness receives is a
+  plugin.
 - "uze" is lowercase, and a sentence shouldn't start with it.
 - Don't claim more than the product does, and don't repeat a claim
   everywhere.

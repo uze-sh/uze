@@ -1,0 +1,305 @@
+journey: an agent's turn refreshes an extension's status row, and a prompt the extension asks to type is refused while the agent works and typed once it is idle
+tags: [gate, tui, workspace]
+about: |
+  The operator's side of the agent bridge, with a harness that reports
+  nothing of itself, so its turns are read from how its pane paints.
+  `agents-hud` draws every agent in the sidebar's header and is asked again
+  when a turn starts; `flightdeck` lists the agents with an `Ask` button
+  that asks to type a fixed prompt into the agent of its row. Both come
+  from `bridge`, the bridge's reference plugin, installed disabled and
+  enabled from the workspace's offer.
+
+  The prompt is shown before it is typed, and typed only into an agent
+  that is ready: asked while the agent works, it is refused and nothing
+  reaches the agent; asked again once the turn is over, it reaches it.
+  What reached the agent is read from the conversation the stand-in
+  records, one `user` record per line typed into it, as Claude Code
+  records a turn. The screen only gates each gesture.
+
+world:
+  project: demo-app
+  commits:
+    - message: "chore: initial commit"
+      files:
+        README.md: "# demo-app\n"
+  # Two of `tests/_fixtures/canonical/bridge`'s extensions, staged as a
+  # marketplace's plugin: a container mounts only `journeys/`.
+  files:
+    market/marketplace.json: |
+      {
+        "name": "studio",
+        "description": "A marketplace this journey stages and installs from its clone.",
+        "plugins": [
+          { "name": "bridge", "source": "./plugins/bridge", "description": "The agent bridge's reference extensions." }
+        ]
+      }
+    market/plugins/bridge/plugin.json: |
+      {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "bridge",
+        "version": "1.0.0",
+        "description": "The agent bridge's reference extensions: every agent's state and a flight deck."
+      }
+    market/plugins/bridge/extensions/agents-hud/extension.kdl: |
+      protocol 1
+      id "agents-hud"
+      name "Agents"
+      description "Every agent's state and how long its turn has run"
+
+      wants "agent:observe"
+
+      surface "row" slot="status" view="row.uze" source="crew" title="Agents"
+      surface "crew" slot="section" view="crew.uze" source="crew" title="Agents"
+
+      source "crew" {
+          agents
+          refresh-on "agent.turn.started"
+          refresh-on "agent.turn.finished"
+      }
+    market/plugins/bridge/extensions/agents-hud/row.uze: |
+      <view>
+      lookup "tone" default="muted" {
+          working "warning"
+          done "success"
+          ready "info"
+      }
+
+      Row gap=2 {
+          Row gap=1 each="." {
+              Activity busy="{since}"
+              Text "{label}" role="{tone:state}" truncate=#true
+              Elapsed since="{since}" role="muted" when="since"
+          }
+          Text "No agents" role="faint" unless="."
+      }
+      </view>
+    market/plugins/bridge/extensions/agents-hud/crew.uze: |
+      <view>
+      lookup "tone" default="muted" {
+          working "warning"
+          done "success"
+          ready "info"
+      }
+      lookup "state" default="" {
+          working "working"
+          done "done"
+          ready "ready"
+      }
+
+      List each="." empty="No agents" {
+          Stack {
+              Row gap=1 {
+                  Activity busy="{since}"
+                  Text "{label}" truncate=#true grow=#true
+                  Elapsed since="{since}" role="muted" when="since"
+              }
+              Row gap=1 {
+                  Text "{space}" role="muted" truncate=#true grow=#true
+                  Text "{state:state}" role="{tone:state}"
+              }
+          }
+      }
+      </view>
+    market/plugins/bridge/extensions/flightdeck/extension.kdl: |
+      protocol 1
+      id "flightdeck"
+      name "Flight deck"
+      description "Every agent on one board, and the tool calls they report"
+
+      wants "agent:observe" "agent:prompt"
+
+      surface "deck" slot="view" view="deck.uze" source="crew" title="Flight deck"
+      surface "calls" slot="section" view="calls.uze" source="calls" title="Tool calls"
+
+      source "crew" { agents; }
+
+      source "calls" { events 30; }
+
+      action "focus" label="Focus" on="deck" key="ctrl-g" {
+          focus-agent target="{id}"
+      }
+
+      action "ask" label="Ask where it stands" on="deck" {
+          agent-prompt "Say in two lines where you are and what comes next" target="{id}"
+      }
+    market/plugins/bridge/extensions/flightdeck/deck.uze: |
+      <view>
+      lookup "tone" default="muted" {
+          working "warning"
+          done "success"
+          ready "info"
+      }
+      lookup "state" default="" {
+          working "working"
+          done "done"
+          ready "ready"
+      }
+
+      List id="agents" each="." empty="No agents" {
+          Row gap=2 {
+              Activity busy="{since}"
+              Text "{label}" strong=#true truncate=#true grow=#true
+              Text "{space}" role="muted" min-width=8
+              Text "{harness}" role="muted" min-width=8
+              Text "{state:state}" role="{tone:state}" min-width=8
+              Button "Focus" action="focus" item="{.}"
+              Button "Ask" action="ask" item="{.}"
+          }
+      }
+      </view>
+    market/plugins/bridge/extensions/flightdeck/calls.uze: |
+      <view>
+      lookup "event" default="" {
+          "agent.tool.started" "started"
+          "agent.tool.finished" "finished"
+          "agent.turn.started" "turn started"
+          "agent.turn.finished" "turn finished"
+          "agent.approval.asked" "asks approval"
+          "agent.approval.resolved" "approved"
+          "agent.session.started" "session started"
+      }
+
+      List each="." empty="No calls yet" {
+          Row gap=1 {
+              Text "{tool}" strong=#true when="tool"
+              Text "{event:name}" role="muted" truncate=#true grow=#true
+              Text "{outcome}" role="faint" when="outcome"
+          }
+      }
+      </view>
+
+scenes:
+  - scene: a plugin installed from a marketplace's clone leaves its agent extensions disabled
+    when:
+      - shell: "{uze} market add {world}/market"
+        say: register the marketplace, linked to nothing
+      - shell: "cd {project} && {uze} install bridge@studio > {world}/install.log 2>&1"
+        say: add the plugin to the project, with nobody at a terminal to answer
+    then:
+      - file: "{uze_home}/store/plugins/studio/bridge/extensions/flightdeck/extension.kdl"
+        contains: "agent-prompt"
+        about: the extensions were installed from the clone, into the Store
+      - file: "{uze_home}/state/extensions.json"
+        exists: false
+        about: nobody consented to anything, and nothing was enabled
+
+  - scene: and then the workspace offers them, and the operator allows and enables both in the project
+    when:
+      - open: ["{uze}", "workspace"]
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - click: "new"
+        say: open the new-agent popup from the space's row
+        in: sidebar
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
+        say: place an agent on the project
+        expect: "2 extensions run nothing there"
+        expect_timeout: 90
+      - click: "Review"
+        say: review the extensions the project offers, both in one list
+        expect: "Enable extensions in demo-app"
+        expect_timeout: 10
+      - key: "Down"
+        say: mark the flight deck, the list's second row
+      - wait: screen
+        until: "agent:prompt"
+        timeout: 5
+        say: its detail says it may type into an agent
+      - click: "Enable 2"
+        say: allow both and enable them here
+        expect: "2 extensions enabled"
+        expect_timeout: 10
+    then:
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.bridge@studio/agents-hud.accepted_grants.*
+        count: 1
+        includes: ["agent:observe"]
+        about: the status row's consent holds the one grant its question showed
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.bridge@studio/flightdeck.accepted_grants.*
+        count: 2
+        includes: ["agent:observe", "agent:prompt"]
+        about: and the flight deck's, the two of its own
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.*.enabled_in.*
+        equals: "{project}"
+        count: 2
+        about: both are enabled in this project, and in no other
+
+  # The stand-in reports nothing through `uze agent report`, so its turn is
+  # read from its pane: the spinner it paints while it works.
+  - scene: and then a turn the agent paints refreshes the status row with how long it has run
+    when:
+      - type: "work for 30 seconds"
+        say: ask the agent for a turn of thirty seconds
+        expect: "working"
+        expect_timeout: 10
+      - wait: screen
+        until: 'agent 1 \d+s'
+        in: sidebar
+        timeout: 15
+        say: the row in the sidebar's header counts the turn
+    then:
+      - file: "{home}/.claude/projects/*/*.jsonl"
+        contains: '"content":"work for 30 seconds"'
+        about: the agent took the operator's line as its turn
+
+  - scene: and then the prompt the flight deck asks to type while the agent works is refused, and nothing reaches the agent
+    when:
+      - key: "F1"
+        say: open the action index
+        expect: "type to narrow"
+        expect_timeout: 10
+      - type: "Open Flight deck"
+        say: open the flight deck
+        expect: "focus +ask"
+        expect_timeout: 20
+      - wait: screen
+        until: "working +focus"
+        in: pane
+        timeout: 10
+        say: its row says the agent works
+      - click: "ask"
+        say: press the row's Ask
+        in: pane
+        expect: "Type this into agent 1"
+        expect_timeout: 10
+      - wait: screen
+        until: "Say in two lines where you are and what comes next"
+        timeout: 5
+        say: the question shows the exact text
+      - click: "Type it"
+        say: allow it
+        expect: "not sent"
+        expect_timeout: 10
+    then:
+      - file: "{home}/.claude/projects/*/*.jsonl"
+        excludes: "Say in two lines"
+        about: nothing was typed into the agent while it worked
+
+  - scene: and then, once the turn is over, the same prompt is typed into the agent
+    when:
+      - wait: screen
+        until: "ready +focus"
+        in: pane
+        timeout: 60
+        say: the flight deck says the agent is ready
+      - click: "ask"
+        say: press the row's Ask again
+        in: pane
+        expect: "Type this into agent 1"
+        expect_timeout: 10
+      - click: "Type it"
+        say: allow it
+        expect: '(?s)\A(?!.*Type this into agent 1)'
+        expect_timeout: 10
+      - wait: shell
+        until: "grep -q 'Say in two lines' {home}/.claude/projects/*/*.jsonl"
+        timeout: 10
+        say: the agent reads the line
+    then:
+      - file: "{home}/.claude/projects/*/*.jsonl"
+        contains: '"content":"Say in two lines where you are and what comes next"'
+        about: the agent received exactly the text the question showed, as one line it took as a turn

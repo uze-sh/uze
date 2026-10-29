@@ -1,0 +1,24 @@
+# uze snapshot · protocol 1 · overlay 60x8 · dark
+ Jump to an agent
+
+   fix/branch-naming                          uze    go
+   docs/extension-skill                      site    go
+
+
+
+esc close  ·  alt+j jump to an agent  ·  ctrl+g go
+---
+ aaaa aa aa aaaaa
+
+   bbbbbbbbbbbbbbbbb                          aaa    cc
+   bbbbbbbbbbbbbbbbbbbb                      aaaa    cc
+
+
+
+ddd aaaaa  e  ddddd aaaa aa aa aaaaa  e  dddddd aa
+---
+a text.muted
+b text.bright
+c text.secondary
+d accent
+e text.faint

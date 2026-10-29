@@ -140,9 +140,16 @@ scopes! {
     /// A modal asking for a line of text.
     TextPrompt => "text-prompt", "While typing an answer", Management,
         seals: true, text: true;
+    /// An extension's preferences, set row by row: the arrows walk the
+    /// rows and step the value of the one the keyboard is on.
+    ExtensionPreferences => "extension-preferences", "Setting an extension's preferences",
+        Management, seals: true, text: false;
     /// A modal asking a yes/no question, in either mode: the workspace
     /// asks one before running a project's commands.
     Confirm => "confirm", "While being asked", Both, seals: true, text: false;
+    /// A question answered by choosing several rows of a list, then once:
+    /// the workspace's offer of a project's extensions.
+    Choose => "choose", "While choosing", Both, seals: true, text: false;
 
     /// The workspace client, with nothing of uze's own open.
     Workspace => "workspace", "Workspace", Workspace, seals: false, text: false;
@@ -164,6 +171,10 @@ scopes! {
     /// The spec surface: a checkout's changes and specs, read as
     /// documents.
     Spec => "spec", "Spec", Workspace, seals: true, text: false;
+    /// A surface a plugin declared, open full-frame. One scope for every
+    /// declared extension: what its keys mean is the host's generic
+    /// vocabulary (select, switch tabs, activate), never the extension's.
+    Declared => "declared", "A plugin's surface", Workspace, seals: true, text: false;
     /// A space's overview, standing where the pane is. It does not seal:
     /// the sidebar's chords stay live over it, since it is where a space
     /// is landed on.

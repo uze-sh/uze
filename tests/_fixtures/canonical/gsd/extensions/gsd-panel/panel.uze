@@ -1,0 +1,97 @@
+<view>
+// What a phase's state is drawn as, and in which colour.
+lookup "mark" default="○" {
+    running "◆"
+    done "●"
+    ready "○"
+    waiting "·"
+}
+lookup "tone" default="muted" {
+    running "warning"
+    done "success"
+    ready "default"
+    waiting "faint"
+    ok "success"
+    attention "warning"
+    blocked "danger"
+}
+
+lookup "t" locale="en" {
+    phases "Phases"; blockers "Blockers"; stopped "Stopped at"; of "of"; phase "phases"
+    more "more in"; clear "New conversation"; none "Nothing blocks this milestone"
+    now "now"
+}
+lookup "t" locale="pt" {
+    phases "Fases"; blockers "Bloqueios"; stopped "Parou em"; of "de"; phase "fases"
+    more "a mais no"; clear "Nova conversa"; none "Nada bloqueia este milestone"
+    now "agora"
+}
+
+Stack gap=1 {
+    // Which milestone, on which version and branch, and how far.
+    Stack {
+        Row gap=1 align="center" {
+            Text "{title}" strong=#true grow=#true
+            Badge "{version}" role="info"
+        }
+        Row gap=1 {
+            Icon "git-branch" role="muted"
+            Text "{branch}  ·  {done} {t::of} {total} {t::phase}  ·  {percent}%" role="muted"
+        }
+    }
+
+    // Where it stands, said once and in full.
+    Row gap=1 {
+        Marks { Mark role="{tone:status.tone}"; }
+        Text "{status.text}" role="{tone:status.tone}" grow=#true
+    }
+
+    Progress {
+        Segment each="phases" weight=1 ratio="{ratio}" role="{tone:state}"
+    }
+
+    // The phases, the one in progress marked and named as such.
+    Stack {
+        Row gap=1 {
+            Text "{t::phases}" role="secondary" grow=#true
+            Text "{done}/{total}" role="faint"
+        }
+        List each="phases" {
+            Row gap=1 {
+                Text "{mark:state}" role="{tone:state}"
+                Text "{number}" role="muted" min-width=2
+                Text "{name}" grow=#true
+                Text "{t::now}" role="warning" when="current"
+            }
+        }
+    }
+
+    // What stands in the way: the first few in full, the rest counted.
+    Stack when="blockers" {
+        Row gap=1 {
+            Text "{t::blockers}" role="secondary" grow=#true
+            Badge "{blockers_total}" role="warning"
+        }
+        List each="blockers" {
+            Row gap=1 {
+                Text "!" role="warning"
+                Text "{.}" grow=#true
+            }
+        }
+        Text "+{blockers_more} {t::more} {state_file}" role="faint" when="blockers_more"
+    }
+    Text "{t::none}" role="faint" unless="blockers"
+
+    // Where the last session stopped, in its own words.
+    Stack when="stopped" {
+        Text "{t::stopped}" role="secondary"
+        Text "{stopped}" role="default"
+    }
+
+    // The next step first; starting over below it.
+    Stack {
+        Button "▶ {next.command}" action="next" item="{next}" when="next"
+        Button "{t::clear}" action="clear"
+    }
+}
+</view>

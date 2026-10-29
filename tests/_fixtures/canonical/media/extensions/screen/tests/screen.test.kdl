@@ -1,0 +1,23 @@
+test "the section shows the screen and the device it came from" {
+    surface "shot"
+    given "screen" fixture="fixtures/screen.json"
+    size 30 12
+    expect-text "emulator-5554"
+    snapshot "shot"
+}
+
+test "full size opens the card" {
+    surface "shot"
+    given "screen" fixture="fixtures/screen.json"
+    size 30 12
+    press-button "Full size"
+    expect-action "enlarge"
+}
+
+test "the card holds the screen at full size" {
+    surface "full"
+    given "screen" fixture="fixtures/screen.json"
+    size 60 28
+    expect-text "emulator-5554 · home"
+    snapshot "full"
+}

@@ -935,6 +935,7 @@ fn project_space(
             steps_not_spelled_here: Vec::new(),
             steps_only_in_sh: Vec::new(),
             commands_awaiting_approval: None,
+            extensions: Vec::new(),
         },
         plugins: Default::default(),
         memory,
@@ -3421,6 +3422,7 @@ fn a_declaration_changed_on_disk_reads_the_overview_again() {
             .send(StampResolution {
                 stamps: Vec::new(),
                 declaration: Some((PathBuf::from("/repo"), stamp)),
+                extensions: Default::default(),
             })
             .unwrap();
         driven.attach.absorb_checkout_stamps();

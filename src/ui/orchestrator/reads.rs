@@ -258,6 +258,122 @@ pub(super) fn spawn_commands_awaiting(
     });
 }
 
+/// What a project offers to enable where it opens.
+pub(super) struct ExtensionOffersRead {
+    pub(super) project: PathBuf,
+    pub(super) offers: Vec<uze_application::ExtensionReport>,
+}
+
+/// Asks, for each directory first seen, which extensions of the plugins
+/// its project declares wait for the operator there. Off the frame: it
+/// reads and digests every installed extension's files.
+pub(super) fn spawn_extension_offers(
+    home: &UzeHome,
+    directories: Vec<PathBuf>,
+    sender: mpsc::Sender<ExtensionOffersRead>,
+) {
+    if directories.is_empty() {
+        return;
+    }
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _pass = crate::telemetry::background_pass!("tui.extension_offers", parent: &parent);
+        let Ok(app) = tui_application(home) else {
+            return;
+        };
+        let mut asked = BTreeSet::new();
+        for directory in directories {
+            let Some(project) = app.extensions().project_here(&directory) else {
+                continue;
+            };
+            if !asked.insert(project.clone()) {
+                continue;
+            }
+            let offers = app.extensions().offers(&project);
+            if !offers.is_empty() {
+                let _ = sender.send(ExtensionOffersRead { project, offers });
+            }
+        }
+    });
+}
+
+/// Answers the workspace's offer of a project's extensions: each chosen is
+/// consented to when it must be, then enabled where the answer said. Off
+/// the frame, since each writes a record.
+pub(super) fn spawn_extension_offer_answer(
+    home: &UzeHome,
+    answer: OfferAnswer,
+    asker: uze_application::Asker,
+    sender: mpsc::Sender<ExtensionOfferResolution>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _span = tracing::info_span!(parent: &parent, "tui.extension_offer").entered();
+        let OfferAnswer {
+            project,
+            enable,
+            everywhere,
+        } = answer;
+        let mut resolution = ExtensionOfferResolution {
+            project: project.clone(),
+            everywhere,
+            enabled: Vec::new(),
+            kept_here: Vec::new(),
+            failed: Vec::new(),
+        };
+        let app = match tui_application(home) {
+            Ok(app) => app,
+            Err(error) => {
+                resolution.failed = enable
+                    .iter()
+                    .map(|offer| (offer.attribution(), error.to_string()))
+                    .collect();
+                let _ = sender.send(resolution);
+                return;
+            }
+        };
+        let extensions = app.extensions();
+        for offer in &enable {
+            let identity = offer.identity();
+            let answered = answered_or(
+                || {
+                    if offer.condition != uze_application::ExtensionCondition::NeedsEnabling {
+                        extensions
+                            .consent(
+                                &identity,
+                                offer.digest.as_deref().unwrap_or_default(),
+                                asker,
+                            )
+                            .map_err(|error| error.to_string())?;
+                    }
+                    if everywhere {
+                        extensions.enable_everywhere(&identity, &project, asker)
+                    } else {
+                        extensions.enable(&identity, &project, asker)
+                    }
+                    .map_err(|error| error.to_string())
+                },
+                Err("answering failed".to_owned()),
+            );
+            match answered {
+                Ok(switched) if everywhere && !switched.everywhere => {
+                    resolution.kept_here.push(offer.name.clone())
+                }
+                Ok(_) => resolution.enabled.push(offer.name.clone()),
+                Err(reason) => resolution.failed.push((offer.attribution(), reason)),
+            }
+        }
+        if !resolution.enabled.is_empty() || !resolution.kept_here.is_empty() {
+            // The workspace asks the extensions' sources again once it
+            // looks again.
+            crate::ui::extension_switch::plugins_changed();
+        }
+        let _ = sender.send(resolution);
+    });
+}
+
 /// Records the operator's approval and prepares the checkout that waited
 /// for it, which runs the project's setup: nothing a frame waits on.
 pub(super) fn spawn_command_approval(
@@ -571,22 +687,41 @@ pub(super) struct StampResolution {
     /// The stamp of what the open overview's project declares, with the
     /// project it was read for.
     pub(super) declaration: Option<(PathBuf, u64)>,
+    /// What the hosted extensions asked to be watched, as read.
+    pub(super) extensions: super::declared::ExtensionWatchRead,
 }
 
-/// Reads the change stamp of every checkout on screen. Off the render
-/// path like every other read, cheap as it is: a directory on a slow mount
-/// still answers a `stat` at its own pace. Without a `background_pass!`:
-/// it runs every second, and a span each time would be most of the
-/// journal.
+/// Reads the change stamp of every checkout on screen, and what the
+/// hosted extensions watch: the stamps of their checkouts and a bounded
+/// digest of each path they declared (`uze_application::paths_digest`).
+/// Off the render path like every other read, cheap as it is: a directory
+/// on a slow mount still answers a `stat` at its own pace. Without a
+/// `background_pass!`: it runs every second, and a span each time would
+/// be most of the journal.
 pub(super) fn spawn_checkout_watch(
     home: &UzeHome,
     checkouts: Vec<(PathBuf, Option<String>)>,
     overview: Option<PathBuf>,
+    extensions: super::declared::ExtensionWatch,
     sender: mpsc::Sender<StampResolution>,
 ) {
     let home = home.clone();
     thread::spawn(move || {
-        let (stamps, declaration) = answered_or(
+        let paths = answered_or(
+            || {
+                extensions
+                    .paths
+                    .into_iter()
+                    .map(|(root, path)| {
+                        let digest = uze_application::paths_digest(&root, &path);
+                        ((root, path), digest)
+                    })
+                    .collect()
+            },
+            Vec::new(),
+        );
+        let journals = extensions.journals;
+        let (stamps, declaration, watched, reports) = answered_or(
             || {
                 tui_application(home)
                     .map(|app| {
@@ -603,15 +738,36 @@ pub(super) fn spawn_checkout_watch(
                             let stamp = workspace.declaration_stamp(&root);
                             (root, stamp)
                         });
-                        (stamps, declaration)
+                        let watched = extensions
+                            .checkouts
+                            .into_iter()
+                            .map(|root| {
+                                let stamp = workspace.checkout_stamp(&root, None);
+                                (root, stamp)
+                            })
+                            .collect();
+                        let reports = journals
+                            .into_iter()
+                            .map(|(agent, cursor)| {
+                                let (reports, next) = workspace
+                                    .reports_since(&agent, &cursor.clone().unwrap_or_default());
+                                (agent, cursor.map(|_| reports), next)
+                            })
+                            .collect();
+                        (stamps, declaration, watched, reports)
                     })
                     .unwrap_or_default()
             },
-            (Vec::new(), None),
+            (Vec::new(), None, Vec::new(), Vec::new()),
         );
         let _ = sender.send(StampResolution {
             stamps,
             declaration,
+            extensions: super::declared::ExtensionWatchRead {
+                checkouts: watched,
+                paths,
+                reports,
+            },
         });
     });
 }
@@ -900,71 +1056,31 @@ pub(super) fn spawn_join(
     });
 }
 
-/// What one background Git read was asked to produce, and produced.
-///
-/// The working tree and the history behind it move at different speeds
-/// (see [`GIT_BADGE_REFRESH`]/[`TIMELINE_REFRESH`]), so a read that only
-/// owes a summary says so in its answer rather than handing back a
-/// `None` the receiver would have to tell apart from "there is no
-/// history".
-pub(super) enum GitAnswer {
-    Summary(Option<code::ChangeSummary>),
-    Full {
-        summary: Option<code::ChangeSummary>,
-        timeline: Option<code::Timeline>,
-    },
-}
-
-/// A finished Git read, tagged with the checkout it answers about: the
-/// selection can move while a read is in flight, and an answer about a
-/// checkout the workspace has since left must never be drawn as the
-/// current one.
+/// A finished read of the badge, tagged with the checkout it answers
+/// about: the selection can move while a read is in flight, and an answer
+/// about a checkout the workspace has since left must never be drawn as
+/// the current one.
 pub(super) struct GitResolution {
     pub(super) cwd: PathBuf,
-    pub(super) answer: GitAnswer,
+    pub(super) summary: Option<code::ChangeSummary>,
     /// How long the read took — what the next one waits in proportion to.
     pub(super) took: Duration,
 }
 
-/// Reads the badge — and, when `history` is set, the timeline behind it —
-/// off the UI thread.
+/// Reads the badge off the UI thread.
 ///
-/// Every one of these launches `git` several times (`rev-parse`,
-/// `status`, `log`, `rev-list`), which is why it cannot run where a frame
-/// is drawn: on a large repository `status --untracked-files=all` alone
-/// outlasts several frames, and it used to run inside the `dirty` branch
-/// immediately before `terminal.draw`.
-pub(super) fn spawn_git_read(
-    cwd: PathBuf,
-    target: Option<String>,
-    history: bool,
-    sender: mpsc::Sender<GitResolution>,
-) {
+/// It launches `git` several times (`rev-parse`, `status`), which is why
+/// it cannot run where a frame is drawn: on a large repository `status
+/// --untracked-files=all` alone outlasts several frames, and it used to run
+/// inside the `dirty` branch immediately before `terminal.draw`.
+pub(super) fn spawn_git_read(cwd: PathBuf, sender: mpsc::Sender<GitResolution>) {
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _pass = crate::telemetry::background_pass!("tui.git_read", parent: &parent);
         let started = Instant::now();
-        let answer = answered_or(
-            || {
-                let summary = code::change_summary(&WorkspaceHost, &cwd);
-                if history {
-                    GitAnswer::Full {
-                        summary,
-                        timeline: code::timeline(
-                            &WorkspaceHost,
-                            &cwd,
-                            TIMELINE_COMMITS,
-                            target.as_deref(),
-                        ),
-                    }
-                } else {
-                    GitAnswer::Summary(summary)
-                }
-            },
-            GitAnswer::Summary(None),
-        );
+        let summary = answered_or(|| code::change_summary(&WorkspaceHost, &cwd), None);
         let took = started.elapsed();
-        let _ = sender.send(GitResolution { cwd, answer, took });
+        let _ = sender.send(GitResolution { cwd, summary, took });
     });
 }
 
@@ -1245,207 +1361,6 @@ pub(super) fn spawn_occupancy_reconcile(
     });
 }
 
-/// A re-read of the open surface's changes half, tagged with the checkout
-/// it was read for.
-///
-/// The changes only, never the whole view: the same surface holds a file
-/// someone may be typing into, and a refresh that could reach it would be
-/// a refresh that eats what was typed.
-pub(super) struct ChangesResolution {
-    pub(super) root: PathBuf,
-    pub(super) refreshed: code::RefreshedChanges,
-}
-
-/// One file's diff, read because the selection moved — tagged like a
-/// refresh, and dropped by the view if the selection has moved again.
-pub(super) struct DiffResolution {
-    pub(super) root: PathBuf,
-    pub(super) answer: code::DiffAnswer,
-}
-
-/// One answered [`code::FileRequest`], tagged the same way and for the
-/// same reason: an answer landing after the viewer moved to another tab
-/// describes a tree nobody is looking at any more.
-pub(super) struct FileResolution {
-    pub(super) root: PathBuf,
-    pub(super) answer: code::FileAnswer,
-}
-
-/// Reading a directory, reading and highlighting a file, writing one:
-/// every one of them is unbounded, and none of them may happen on the
-/// thread that draws.
-pub(super) fn spawn_file_request(
-    root: PathBuf,
-    request: code::FileRequest,
-    sender: mpsc::Sender<FileResolution>,
-) {
-    thread::spawn(move || {
-        let _pass = crate::telemetry::background_pass!("tui.code_file_request");
-        // Highlighting runs syntect over whatever the tree listed, which
-        // is the one read here whose input nobody controls.
-        let silence = code::unanswered(&request, "reading it failed");
-        let answer = answered_or(|| code::fulfill(&WorkspaceHost, request), silence);
-        let _ = sender.send(FileResolution { root, answer });
-    });
-}
-
-/// One diff, on its own: moving the selection is a `git diff` of that
-/// file, never a `status` of the whole checkout in front of it.
-pub(super) fn spawn_diff_read(
-    root: PathBuf,
-    request: code::DiffRequest,
-    sender: mpsc::Sender<DiffResolution>,
-) {
-    let parent = tracing::Span::current();
-    thread::spawn(move || {
-        let _pass = crate::telemetry::background_pass!("tui.code_diff_read", parent: &parent);
-        let silence = code::DiffAnswer::failed(&request, "reading the diff failed".to_owned());
-        let answer = answered_or(
-            || code::CodeView::read_diff(&WorkspaceHost, &root, request),
-            silence,
-        );
-        let _ = sender.send(DiffResolution { root, answer });
-    });
-}
-
-pub(super) fn spawn_changes_refresh(
-    root: PathBuf,
-    placement: code::ViewPlacement,
-    sender: mpsc::Sender<ChangesResolution>,
-) {
-    let parent = tracing::Span::current();
-    thread::spawn(move || {
-        let _pass = crate::telemetry::background_pass!("tui.code_changes_refresh", parent: &parent);
-        let silence =
-            code::RefreshedChanges::failed(placement.clone(), "reading the changes".to_owned());
-        let refreshed = answered_or(
-            || code::CodeView::refresh(&WorkspaceHost, root.clone(), placement),
-            silence,
-        );
-        let _ = sender.send(ChangesResolution { root, refreshed });
-    });
-}
-
-/// The artifacts a project declares, read for the checkout they were
-/// asked about.
-pub(super) struct ArtifactsResolution {
-    pub(super) root: PathBuf,
-    pub(super) answer: architect::ArtifactsAnswer,
-}
-
-/// The changes in flight in a checkout, counted, for the sidebar.
-pub(super) struct SpecSummaryResolution {
-    pub(super) cwd: PathBuf,
-    pub(super) summary: Option<spec::Summary>,
-}
-
-/// What the sidebar's spec section last read, and when.
-pub(super) struct SpecSummaryState {
-    pub(super) cwd: PathBuf,
-    pub(super) summary: Option<spec::Summary>,
-    pub(super) checked_at: Instant,
-}
-
-/// A checkout's specs, read for the checkout they were asked about.
-pub(super) struct SpecResolution {
-    pub(super) root: PathBuf,
-    pub(super) answer: spec::SpecAnswer,
-}
-
-/// The checkout measured for the code surface's map, tagged with the
-/// checkout it was measured from — an answer landing after the viewer
-/// moved to another tab describes a repository nobody is looking at.
-pub(super) struct MeasureResolution {
-    pub(super) root: PathBuf,
-    /// `None` outside a repository, where there is nothing to measure.
-    pub(super) measure: Option<code::Measure>,
-}
-
-/// Resolving the manifest, walking the declared directory and reading
-/// every file in it: three unbounded reads, none of them the render
-/// thread's to make.
-pub(super) fn spawn_artifacts_read(root: PathBuf, sender: mpsc::Sender<ArtifactsResolution>) {
-    let parent = tracing::Span::current();
-    thread::spawn(move || {
-        let _pass = crate::telemetry::background_pass!("tui.architect_artifacts", parent: &parent);
-        let silence = architect::ArtifactsAnswer {
-            branch: String::new(),
-            artifacts: architect::Artifacts::Nothing {
-                text: "Reading the project's artifacts failed".to_owned(),
-                hint: "Close this and open it again.".to_owned(),
-            },
-        };
-        let answer = answered_or(
-            || {
-                let source = crate::ui::extension_host::artifacts_declared_in(&root);
-                architect::read_artifacts(&WorkspaceHost, &root, source)
-            },
-            silence,
-        );
-        let _ = sender.send(ArtifactsResolution { root, answer });
-    });
-}
-
-/// Counting the changes in flight: a directory walk and a read of every
-/// task list, none of it for the render thread.
-pub(super) fn spawn_spec_summary(
-    cwd: PathBuf,
-    target: Option<String>,
-    sender: mpsc::Sender<SpecSummaryResolution>,
-) {
-    let parent = tracing::Span::current();
-    thread::spawn(move || {
-        let _pass = crate::telemetry::background_pass!("tui.spec_summary", parent: &parent);
-        let summary = answered_or(
-            || spec::summary(&WorkspaceHost, &cwd, target.as_deref()),
-            None,
-        );
-        let _ = sender.send(SpecSummaryResolution { cwd, summary });
-    });
-}
-
-/// Walking the dialect's directories, reading every document in them and
-/// asking Git which of them the checkout touched — none of it the render
-/// thread's to wait on. The branch the checkout delivers to comes from
-/// the application, the one question here that is not the checkout's own.
-pub(super) fn spawn_spec_read(home: &UzeHome, root: PathBuf, sender: mpsc::Sender<SpecResolution>) {
-    let home = home.clone();
-    let parent = tracing::Span::current();
-    thread::spawn(move || {
-        let _pass = crate::telemetry::background_pass!("tui.spec_read", parent: &parent);
-        let silence = spec::SpecAnswer {
-            root: root.clone(),
-            branch: String::new(),
-            theme: String::new(),
-            found: spec::Found::NoLayout,
-            subjects: Vec::new(),
-        };
-        let answer = answered_or(
-            || {
-                let target = tui_application(home.clone())
-                    .ok()
-                    .and_then(|app| app.workspace().delivery_policy(&root))
-                    .and_then(|policy| policy.target);
-                let places = crate::ui::extension_host::artifacts_declared_in(&root);
-                spec::read_spec(&WorkspaceHost, &root, target.as_deref(), &places)
-            },
-            silence,
-        );
-        let _ = sender.send(SpecResolution { root, answer });
-    });
-}
-
-/// Measuring the checkout for the code surface's map: a `git grep` over
-/// every file in it, which is as unbounded as a read gets.
-pub(super) fn spawn_code_measure(root: PathBuf, sender: mpsc::Sender<MeasureResolution>) {
-    let parent = tracing::Span::current();
-    thread::spawn(move || {
-        let _pass = crate::telemetry::background_pass!("tui.code_measure", parent: &parent);
-        let measure = answered_or(|| code::measure(&WorkspaceHost, &root).ok(), None);
-        let _ = sender.send(MeasureResolution { root, measure });
-    });
-}
-
 /// An agent's recorded prompts, tagged with whose they are.
 pub(super) struct PromptHistoryResolution {
     pub(super) of: PromptsOf,
@@ -1696,4 +1611,324 @@ pub(super) fn spawn_declaration_save(
             outcome,
         });
     });
+}
+
+/// What a declared-extension job is asked to do.
+#[derive(Clone, Debug)]
+pub(super) enum ExtensionJob {
+    /// Find every extension the installed plugins carry, and load each
+    /// that is new or no longer what the host compiled it from.
+    Discover(Known),
+    /// Load these again: a linked extension's files were saved.
+    Recompile(Vec<uze_application::InstalledExtension>),
+}
+
+/// A declared-extension job's answer, carrying what it was asked.
+pub(super) struct ExtensionAnswer {
+    /// Whether it answers a discovery, found or failed: a failed one still
+    /// releases the discovery it reserved, or none would be asked again.
+    pub(super) discovery: bool,
+    /// What a discovery found, for the extensions no plugin carries any
+    /// more to go. `None` for a recompile, or a discovery that failed.
+    pub(super) discovered: Option<Vec<uze_application::InstalledExtension>>,
+    /// The extensions a recompile was asked for, so their reservation is
+    /// released whatever became of them.
+    pub(super) recompiled: Vec<uze_application::ExtensionIdentity>,
+    /// What a discovery read of each found extension's record: whether it
+    /// was consented to and where it is enabled. Empty for a recompile.
+    pub(super) records:
+        BTreeMap<uze_application::ExtensionIdentity, Option<uze_application::ExtensionConsent>>,
+    /// What the operator set each found extension's preferences to, each
+    /// admitted against what it declares. Empty for a recompile.
+    pub(super) preferences: BTreeMap<uze_application::ExtensionIdentity, serde_json::Value>,
+    pub(super) loaded: Vec<LoadedExtension>,
+}
+
+/// Finding the declared extensions, compiling each and reading its
+/// fixtures: a walk of every installed plugin, a parse of a third party's
+/// KDL behind its bounds, and file reads — none of it the drawing thread's.
+pub(super) fn spawn_extension_job(
+    home: &UzeHome,
+    job: ExtensionJob,
+    sender: mpsc::Sender<ExtensionAnswer>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _pass = crate::telemetry::background_pass!("tui.declared_extensions", parent: &parent);
+        let discovery = matches!(job, ExtensionJob::Discover(_));
+        let recompiled = match &job {
+            ExtensionJob::Discover(_) => Vec::new(),
+            ExtensionJob::Recompile(list) => list
+                .iter()
+                .map(|installed| installed.identity.clone())
+                .collect(),
+        };
+        let silence = ExtensionAnswer {
+            discovery,
+            discovered: None,
+            recompiled: recompiled.clone(),
+            records: BTreeMap::new(),
+            preferences: BTreeMap::new(),
+            loaded: Vec::new(),
+        };
+        let answer = answered_or(
+            || {
+                let Ok(app) = tui_application(home.clone()) else {
+                    return ExtensionAnswer {
+                        discovery,
+                        discovered: None,
+                        recompiled: recompiled.clone(),
+                        records: BTreeMap::new(),
+                        preferences: BTreeMap::new(),
+                        loaded: Vec::new(),
+                    };
+                };
+                let extensions = app.extensions();
+                let (discovered, asked) = match job {
+                    ExtensionJob::Discover(known) => {
+                        let found = extensions.installed();
+                        let changed = found
+                            .iter()
+                            .filter(|installed| {
+                                known.get(&installed.identity).is_none_or(|(dir, stamp)| {
+                                    *dir != installed.dir
+                                        || *stamp != uze_application::extension_stamp(dir)
+                                })
+                            })
+                            .cloned()
+                            .collect();
+                        (Some(found), changed)
+                    }
+                    ExtensionJob::Recompile(list) => (None, list),
+                };
+                let loaded = asked
+                    .into_iter()
+                    .map(|installed| {
+                        let stamp = uze_application::extension_stamp(&installed.dir);
+                        let (compiled, data) = match extensions.load(&installed) {
+                            Ok(load) => (Ok(load.compiled), load.fixtures),
+                            Err(diagnostics) => (Err(diagnostics), Default::default()),
+                        };
+                        LoadedExtension {
+                            installed,
+                            stamp,
+                            compiled,
+                            data,
+                        }
+                    })
+                    .collect();
+                let records = discovered
+                    .iter()
+                    .flatten()
+                    .map(|installed| {
+                        let identity = installed.identity.clone();
+                        let record = extensions.consent_record(&identity);
+                        (identity, record)
+                    })
+                    .collect();
+                let preferences = discovered
+                    .iter()
+                    .flatten()
+                    .filter_map(|installed| {
+                        let identity = installed.identity.clone();
+                        let preferences = extensions.preferences(&identity).ok()?;
+                        Some((identity, preferences))
+                    })
+                    .collect();
+                ExtensionAnswer {
+                    discovery,
+                    discovered,
+                    recompiled: recompiled.clone(),
+                    records,
+                    preferences,
+                    loaded,
+                }
+            },
+            silence,
+        );
+        let _ = sender.send(answer);
+    });
+}
+
+/// The linked extensions' stamps, as one poll read them.
+pub(super) struct StampsAnswer {
+    pub(super) stamps: Vec<(uze_application::ExtensionIdentity, u64)>,
+}
+
+/// Reading when each linked extension's files last changed: metadata of a
+/// handful of files, still a filesystem the frame must not wait on.
+pub(super) fn spawn_extension_stamps(
+    watched: Vec<(uze_application::ExtensionIdentity, PathBuf)>,
+    sender: mpsc::Sender<StampsAnswer>,
+) {
+    thread::spawn(move || {
+        let stamps = answered_or(
+            || {
+                watched
+                    .into_iter()
+                    .map(|(identity, dir)| (identity, uze_application::extension_stamp(&dir)))
+                    .collect()
+            },
+            Vec::new(),
+        );
+        let _ = sender.send(StampsAnswer { stamps });
+    });
+}
+
+/// What a hosted engine's job answered, for the extension that asked.
+pub(super) struct EngineAnswer {
+    pub(super) extension: super::declared::Owner,
+    pub(super) answer: uze_extensions::contract::Opaque,
+}
+
+/// The one pool every extension whose jobs run one at a time shares, for
+/// the whole client (`extension-platform` D28).
+static EXTENSION_POOL: std::sync::LazyLock<super::lanes::LanePool<super::declared::Owner>> =
+    std::sync::LazyLock::new(|| super::lanes::LanePool::new(super::lanes::POOL_THREADS));
+
+/// Runs a hosted engine's jobs, each with the workspace's `Host`, off the
+/// drawing thread. An engine whose lane is serial (every declared
+/// extension's) has its jobs run one after another in its own lane of the
+/// extension pool; one that runs in parallel (a built-in's Git reads) runs
+/// each on a thread of its own. A job that panics answers its fallback, so
+/// a failed read is drawn as one.
+pub(super) fn spawn_engine_jobs(
+    extension: super::declared::Owner,
+    jobs: Vec<uze_extensions::contract::Job>,
+    lanes: uze_extensions::contract::Lanes,
+    home: &UzeHome,
+    runner: &std::sync::Arc<uze_application::ExtensionRunner>,
+    sender: mpsc::Sender<EngineAnswer>,
+) {
+    fn answered(
+        job: uze_extensions::contract::Job,
+        host: &dyn uze_extensions::Host,
+    ) -> uze_extensions::contract::Opaque {
+        let uze_extensions::contract::Job { run, fallback } = job;
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(host)))
+            .unwrap_or_else(|_| fallback())
+    }
+    let parent = tracing::Span::current();
+    for job in jobs {
+        let sender = sender.clone();
+        let parent = parent.clone();
+        let lane = extension.clone();
+        let extension = extension.clone();
+        let host = EngineHost {
+            home: home.clone(),
+            runner: std::sync::Arc::clone(runner),
+        };
+        let run = move || {
+            let _pass = crate::telemetry::background_pass!("tui.engine_jobs", parent: &parent);
+            let _ = sender.send(EngineAnswer {
+                extension,
+                answer: answered(job, &host),
+            });
+        };
+        match lanes {
+            uze_extensions::contract::Lanes::Serial => {
+                EXTENSION_POOL.submit(lane, Box::new(run));
+            }
+            uze_extensions::contract::Lanes::Parallel => {
+                thread::spawn(run);
+            }
+        }
+    }
+}
+
+/// What the inspector asked off the frame, carrying what it asked about.
+pub(super) enum InspectorAnswer {
+    /// A source's fixture, read to feed it.
+    Fixture {
+        extension: uze_application::ExtensionIdentity,
+        source: String,
+        data: std::result::Result<serde_json::Value, String>,
+    },
+    /// A session's events, written into the linked extension's fixtures.
+    Recorded {
+        written: std::result::Result<PathBuf, String>,
+    },
+}
+
+/// Reading the fixture a linked extension's source is switched to, from
+/// inside its directory and bounded, as the workspace reads every fixture.
+pub(super) fn spawn_inspector_fixture(
+    home: &UzeHome,
+    extension: uze_application::ExtensionIdentity,
+    dir: PathBuf,
+    source: String,
+    sender: mpsc::Sender<InspectorAnswer>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _pass = crate::telemetry::background_pass!("tui.inspector_fixture", parent: &parent);
+        let fixture = super::declared::fixture_of(&source);
+        let data = answered_or(
+            || match tui_application(home) {
+                Ok(app) => app
+                    .extensions()
+                    .fixture(&dir, &fixture)
+                    .map_err(|diagnostic| diagnostic.to_string()),
+                Err(error) => Err(format!("the workspace's application cannot start: {error}")),
+            },
+            Err(format!("{fixture} could not be read")),
+        );
+        let _ = sender.send(InspectorAnswer::Fixture {
+            extension,
+            source,
+            data,
+        });
+    });
+}
+
+/// Writing a session's events into the linked extension's fixtures, as
+/// its author asked: the one file the workspace writes into an extension.
+pub(super) fn spawn_inspector_record(
+    home: &UzeHome,
+    extension: uze_application::ExtensionIdentity,
+    events: serde_json::Value,
+    sender: mpsc::Sender<InspectorAnswer>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _pass = crate::telemetry::background_pass!("tui.inspector_record", parent: &parent);
+        let written = answered_or(
+            || match tui_application(home) {
+                Ok(app) => app.extensions().record_fixture(
+                    &extension,
+                    super::declared::RECORDED_FIXTURE,
+                    &events,
+                ),
+                Err(error) => Err(format!("the workspace's application cannot start: {error}")),
+            },
+            Err("the recording stopped before it was written".to_owned()),
+        );
+        let _ = sender.send(InspectorAnswer::Recorded { written });
+    });
+}
+
+/// Writing what the declared extensions cost, for `uze doctor`.
+///
+/// Answers nothing: a generated file another process reads, which the
+/// next pass writes again. The handle only says when it is done.
+pub(super) fn spawn_extension_costs(
+    home: &UzeHome,
+    costs: uze_application::MeasuredCosts,
+) -> thread::JoinHandle<()> {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _pass = crate::telemetry::background_pass!("tui.extension_costs", parent: &parent);
+        answered_or(
+            || {
+                if let Ok(app) = tui_application(home) {
+                    let _ = app.extensions().write_costs(&costs);
+                }
+            },
+            (),
+        );
+    })
 }

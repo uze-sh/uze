@@ -53,6 +53,14 @@ pub enum Role {
     Success,
     Warning,
     Danger,
+    /// How much, in five steps of one hue, from none ([`Heat0`](Self::Heat0))
+    /// to the most ([`Heat4`](Self::Heat4)): a quantity compared by
+    /// brightness, where a state hue would say what kind it is.
+    Heat0,
+    Heat1,
+    Heat2,
+    Heat3,
+    Heat4,
 }
 
 /// Colour an extension supplies itself, as `(r, g, b)`.
@@ -87,6 +95,9 @@ pub struct Span {
 }
 
 impl Span {
+    /// A span of text the host or a built-in extension owns. What a declared
+    /// extension says is made a span only through [`Span::clean`], which the
+    /// architecture suite holds the declared engine to (D7, S14).
     pub fn new(text: impl Into<String>, role: Role) -> Self {
         Self {
             text: text.into(),
@@ -96,6 +107,13 @@ impl Span {
             bold: false,
             italic: false,
         }
+    }
+
+    /// A span of text that passed through [`uze_contract::Clean`]: the one
+    /// way the declared engine makes a span, so nothing an extension supplied
+    /// reaches the terminal raw.
+    pub fn clean(text: uze_contract::Clean, role: Role) -> Self {
+        Self::new(text.into_string(), role)
     }
 
     pub fn bold(mut self) -> Self {
@@ -479,6 +497,421 @@ pub enum Content {
     /// depends on the space and the glyphs the host draws with, and both
     /// are the host's.
     Picture { heading: String, picture: Picture },
+    /// A tree of laid-out nodes: what a declared extension's view becomes
+    /// once bound to its data (`extension-view-engine`).
+    ///
+    /// The third shape of content, beside lines and a picture, because a
+    /// declared view is neither: it is a composition of the catalog's
+    /// meanings (a row of marks, a segmented bar, a table), each of which
+    /// the host draws in its own palette, and none of which an extension
+    /// positions.
+    Tree {
+        heading: String,
+        /// First row to show. The host clamps it to what the tree takes.
+        scroll: usize,
+        root: Node,
+    },
+}
+
+/// One node of a [`Content::Tree`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Node {
+    /// The engine's own identifier, handed back verbatim in
+    /// [`ViewHit::Node`]. Opaque to the host, and unique within one tree.
+    pub id: usize,
+    pub kind: NodeKind,
+    /// Takes the room a row has left, shared with its other growing nodes.
+    pub grow: bool,
+    /// The fewest cells it is drawn in, so a column of numbers lines up.
+    pub min_width: u16,
+    pub children: Vec<Node>,
+}
+
+impl Node {
+    pub fn new(id: usize, kind: NodeKind) -> Self {
+        Self {
+            id,
+            kind,
+            grow: false,
+            min_width: 0,
+            children: Vec::new(),
+        }
+    }
+}
+
+/// What a [`Node`] means. Each is a kind the host knows how to draw; none
+/// says how.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NodeKind {
+    /// Its children one above another, `gap` rows apart.
+    Stack {
+        gap: u16,
+    },
+    /// An icon in a role, drawn in the glyph set the operator chose.
+    Icon {
+        glyph: IconGlyph,
+        role: Role,
+    },
+    /// A flex container: its children in a direction, sized, inside its
+    /// padding, on a ground and within a border, every colour a role.
+    Box(BoxLayout),
+    /// Its children side by side, `gap` cells apart.
+    Row {
+        gap: u16,
+        align: Align,
+    },
+    Text {
+        spans: Vec<Span>,
+        truncate: bool,
+        /// A cut line that never slides: by default one the pointer rests
+        /// on slides sideways to show all of itself.
+        still: bool,
+    },
+    /// A short label set apart from the text around it.
+    Badge {
+        text: String,
+        role: Role,
+    },
+    /// A run of marks, each in its role: a row's standing on several axes
+    /// at once, such as a phase's discussion, plan and execution.
+    Marks(Vec<Role>),
+    /// Done of total, as that many marks with the done ones filled.
+    Pips {
+        done: u16,
+        total: u16,
+    },
+    /// A bar in segments, each as wide as its weight is of their sum and
+    /// filled to its own share. One segment is a plain progress bar.
+    Progress {
+        segments: Vec<Segment>,
+        /// Drawn as a thin line over a quiet track rather than in blocks.
+        line: bool,
+    },
+    /// Its children as rows to choose between; `selected` is the index of
+    /// the chosen one, if any.
+    List {
+        selected: Option<usize>,
+        /// Said when there are no rows, instead of an empty space.
+        empty: Option<String>,
+    },
+    /// Its children are rows whose children are the cells under these
+    /// headings.
+    Table {
+        columns: Vec<String>,
+        empty: Option<String>,
+    },
+    /// A choice of what is shown, one of them active. The choice is the
+    /// host's state; the engine reports which tab it holds.
+    Tabs {
+        tabs: Vec<Tab>,
+    },
+    Toggle {
+        label: String,
+        on: bool,
+    },
+    Button {
+        label: String,
+        /// The one button a surface means to be pressed next, drawn in
+        /// the accent rather than the neutral of every other button.
+        primary: bool,
+    },
+    /// A mark the host animates while `busy`, on its own clock.
+    Activity {
+        busy: bool,
+    },
+    /// The time since `since_ms` (milliseconds of the Unix epoch), or,
+    /// with `until_ms`, what is left until then as a clock, ticked by the
+    /// host; nothing when neither is there.
+    Elapsed {
+        since_ms: Option<u64>,
+        until_ms: Option<u64>,
+        role: Role,
+    },
+    Log {
+        lines: Vec<Span>,
+    },
+    /// Something the engine itself has to say inside the tree, such as a
+    /// view folded at its node cap.
+    Notice {
+        text: String,
+        role: Role,
+    },
+    /// Why the surface's source is told nothing (it needs consent, or
+    /// enabling here, or its update is held), with the way to where the
+    /// operator answers it: [`NodeAct::Review`].
+    Withheld {
+        text: String,
+    },
+    /// A hairline across the width, with a label when there is one.
+    Rule {
+        label: Option<String>,
+        role: Role,
+    },
+    /// Key/value pairs, its children each an [`NodeKind::Entry`].
+    Details,
+    /// One pair of a [`NodeKind::Details`].
+    Entry {
+        key: String,
+        value: String,
+        role: Role,
+    },
+    /// Markdown, folded to the width it is drawn at.
+    Markdown {
+        text: String,
+    },
+    /// Code, highlighted for `language` and cut at the width.
+    Code {
+        text: String,
+        language: String,
+    },
+    /// A labelled meter, filled to `filled` thousandths, in the role its
+    /// thresholds chose.
+    Gauge {
+        label: String,
+        filled: u16,
+        role: Role,
+    },
+    /// A series of numbers, each as thousandths of the largest.
+    Chart {
+        kind: ChartKind,
+        levels: Vec<u16>,
+        height: u16,
+        role: Role,
+    },
+    /// A figure and its label, with a change beside it.
+    Stat {
+        value: String,
+        label: String,
+        delta: Option<String>,
+        role: Role,
+    },
+    /// A figure in large block digits: `text`, or, with `until_ms`, what
+    /// is left until then as a clock, ticked by the host.
+    Digits {
+        text: String,
+        until_ms: Option<u64>,
+        role: Role,
+    },
+    /// A key, drawn as the host draws its own.
+    Kbd {
+        key: String,
+    },
+    /// Its children as tiles, as many columns as fit their `min-width`.
+    Grid {
+        gap: u16,
+    },
+    /// A grid of characters, each in one of the host's roles, with
+    /// rectangles of it that answer a click ([`NodeAct::Region`]).
+    Cells {
+        rows: Vec<Vec<CellGlyph>>,
+        regions: Vec<CellRegion>,
+    },
+    /// A picture fitted to `height` rows. Until it is decoded, or when it
+    /// was refused, the first row says so instead.
+    Image {
+        picture: Option<Picture>,
+        alt: String,
+        /// Why there is no picture, naming the bound it broke.
+        refused: Option<String>,
+        height: u16,
+    },
+    /// A sprite's state: its frames, played from `since` on the host's
+    /// clock (see [`sprite_frame`]), fitted to `height` rows.
+    Sprite {
+        frames: Vec<Picture>,
+        fps: u16,
+        looped: bool,
+        /// When the state began playing; `None` plays it from the clock's
+        /// own phase.
+        since: Option<std::time::Instant>,
+        height: u16,
+        refused: Option<String>,
+    },
+    /// One of `options` chosen, stepped with its arrows
+    /// ([`NodeAct::Step`]) or with Enter while it has focus.
+    Select {
+        label: String,
+        options: Vec<String>,
+        chosen: usize,
+        focused: bool,
+    },
+    /// A line of text the host holds while the operator types into it
+    /// ([`NodeAct::Edit`] starts that).
+    Field {
+        label: String,
+        value: String,
+        placeholder: String,
+        focused: bool,
+        editing: bool,
+    },
+    /// Its children, then the button that sends them ([`NodeAct::Press`]).
+    Form {
+        submit: String,
+        focused: bool,
+    },
+}
+
+/// What an [`NodeKind::Icon`] draws: one of the host's, by name, or one
+/// the extension declares in every glyph set; the host picks the operator's.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IconGlyph {
+    Host(String),
+    Declared {
+        nerd: String,
+        unicode: String,
+        ascii: String,
+    },
+    /// A name the data gave that is neither: drawn as nothing.
+    Unknown,
+}
+
+/// How a [`NodeKind::Box`] lays out and paints its children.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct BoxLayout {
+    /// Side by side rather than one under another.
+    pub row: bool,
+    /// In a row, the children that do not fit go onto a next line.
+    pub wrap: bool,
+    pub gap: u16,
+    /// Its own width, of what holds it; its natural width when `None`.
+    pub width: Option<uze_contract::catalog::Size>,
+    /// Its own rows; as many as its children take when `None`.
+    pub height: Option<u16>,
+    pub pad_x: u16,
+    pub pad_y: u16,
+    pub justify: Justify,
+    pub ground: Option<Ground>,
+    pub border: Option<Border>,
+}
+
+/// Where a line of a box's children sits along it.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Justify {
+    #[default]
+    Start,
+    Center,
+    End,
+    /// The space left shared between the children.
+    Between,
+}
+
+/// A box's ground: a role's hue, solid or lightened toward the surface.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Ground {
+    pub role: Role,
+    pub soft: bool,
+}
+
+/// A frame the host draws inside a box, in a role.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Border {
+    pub style: BorderStyle,
+    pub role: Role,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BorderStyle {
+    Line,
+    Round,
+    Heavy,
+}
+
+/// One character of a [`NodeKind::Cells`], in a role: never a colour.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CellGlyph {
+    pub ch: char,
+    pub role: Role,
+}
+
+/// A rectangle of a [`NodeKind::Cells`], in its own cells from its
+/// top-left: what a click inside answers with its index.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CellRegion {
+    pub x: u16,
+    pub y: u16,
+    pub width: u16,
+    pub height: u16,
+}
+
+/// Which of `count` frames played at `fps` shows `elapsed` into a state:
+/// the clock's frame, wrapping when the state loops and held on its last
+/// frame when it does not.
+pub fn sprite_frame(count: usize, fps: u16, looped: bool, elapsed: std::time::Duration) -> usize {
+    if count == 0 {
+        return 0;
+    }
+    let played = elapsed.as_millis() * u128::from(fps) / 1000;
+    let played = usize::try_from(played).unwrap_or(usize::MAX);
+    match looped {
+        true => played % count,
+        false => played.min(count - 1),
+    }
+}
+
+/// Whether a sprite `elapsed` into its state still has a frame to show
+/// after the one it shows: what asks the host for the next frame.
+pub fn sprite_moves(count: usize, fps: u16, looped: bool, elapsed: std::time::Duration) -> bool {
+    count > 1 && fps > 0 && (looped || sprite_frame(count, fps, looped, elapsed) < count - 1)
+}
+
+/// How a [`NodeKind::Chart`] draws its series.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ChartKind {
+    /// One row, a level per value.
+    #[default]
+    Sparkline,
+    /// A column per value, `height` rows tall.
+    Bar,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Align {
+    #[default]
+    Start,
+    Center,
+    End,
+}
+
+/// One part of a [`NodeKind::Progress`] bar.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Segment {
+    /// Its share of the bar's width, against the other segments' weights.
+    pub weight: u32,
+    /// How much of it is filled, in thousandths: a whole number, so the
+    /// view stays comparable and two equal bars are equal.
+    pub filled: u16,
+    pub role: Role,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Tab {
+    pub label: String,
+    pub active: bool,
+}
+
+/// What was done to one [`Node`], handed back with its id in
+/// [`ViewHit::Node`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NodeAct {
+    /// A tab of a [`NodeKind::Tabs`], by its index.
+    Tab(usize),
+    /// A [`NodeKind::Toggle`], flipped.
+    Toggle,
+    /// A [`NodeKind::Button`], pressed.
+    Press,
+    /// A row of a [`NodeKind::List`], by its index.
+    Row(usize),
+    /// A region of a [`NodeKind::Cells`], by its index.
+    Region(usize),
+    /// A [`NodeKind::Select`] stepped to its next option, or back.
+    Step { forward: bool },
+    /// A [`NodeKind::Field`] taken to type into.
+    Edit,
+    /// A [`NodeKind::Withheld`] followed to where it is answered.
+    Review,
+    /// A cut [`NodeKind::Text`] the pointer rests on, to slide it: a
+    /// target for the pointer only, which a press does nothing with.
+    Read,
 }
 
 /// An image as straight-alpha RGBA, row by row from the top-left.
@@ -580,6 +1013,12 @@ pub struct Section {
     /// same way it clamps [`Content::Lines::scroll`].
     pub scroll: usize,
     pub rows: Vec<SectionRow>,
+    /// A declared extension's section is a tree of nodes rather than rows.
+    /// When present it is drawn instead of [`Section::rows`].
+    pub tree: Option<Node>,
+    /// Rows that stand for what the extension shows full-frame now, lit
+    /// as a row under the pointer is.
+    pub lit: Vec<usize>,
 }
 
 /// What a [`SectionRow`]'s mark stands for, so the host can draw it.
@@ -678,6 +1117,11 @@ pub enum ViewHit {
     /// answer, and it is not known until it is released or moved, so the
     /// host resolves it from the track it drew.
     DragContentScrollbar,
+    /// A [`Content::Tree`] node, acted on — by the node's own id.
+    Node {
+        node: usize,
+        act: NodeAct,
+    },
     /// A [`Section`]'s header, which folds it.
     ToggleSection,
     Close,
@@ -832,4 +1276,31 @@ pub enum PanDirection {
     Right,
     Up,
     Down,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[test]
+    fn a_looped_state_wraps_and_a_held_one_stops_on_its_last_frame() {
+        let at = Duration::from_millis;
+        assert_eq!(sprite_frame(4, 10, true, at(0)), 0);
+        assert_eq!(sprite_frame(4, 10, true, at(250)), 2, "2.5 frames in");
+        assert_eq!(sprite_frame(4, 10, true, at(450)), 0, "wrapped");
+        assert_eq!(sprite_frame(4, 10, false, at(250)), 2);
+        assert_eq!(sprite_frame(4, 10, false, at(10_000)), 3, "held");
+        assert_eq!(sprite_frame(0, 10, true, at(500)), 0);
+    }
+
+    #[test]
+    fn a_sprite_asks_for_a_frame_while_it_has_one_to_show() {
+        let at = Duration::from_millis;
+        assert!(sprite_moves(4, 10, true, at(10_000)), "a loop never ends");
+        assert!(sprite_moves(4, 10, false, at(250)));
+        assert!(!sprite_moves(4, 10, false, at(300)), "on its last frame");
+        assert!(!sprite_moves(1, 10, true, at(0)), "one frame never moves");
+    }
 }

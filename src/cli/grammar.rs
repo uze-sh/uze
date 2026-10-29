@@ -195,6 +195,16 @@ pub(crate) enum Command {
         #[arg(short = 'c', allow_hyphen_values = true)]
         command: String,
     },
+    /// Applies a confinement to this process and becomes the program after
+    /// `--`; the helper a confined program runs through, answered in `main`
+    /// before anything else (`cli::confine`).
+    #[command(name = "__confine", hide = true)]
+    Confine {
+        /// The confinement, as JSON
+        confinement: String,
+        #[arg(last = true, required = true)]
+        program: Vec<std::ffi::OsString>,
+    },
     /// The agent's own surface: what an agent calls to take part in the
     /// project it works in. Only `work` needs an agent `uze workspace`
     /// launched; `context`, `market`, `plugin`, `artifacts` and `rules` answer any
@@ -262,6 +272,34 @@ pub(crate) enum AgentAction {
     Plugin {
         #[command(subcommand)]
         action: AgentPluginAction,
+    },
+    /// Say what this agent is doing, for the workspace to draw: a turn
+    /// started or finished, a tool called, an approval asked. Only for an
+    /// agent `uze workspace` launched; it never fails a harness's hook
+    Report {
+        /// One of session.started, turn.started, turn.finished,
+        /// tool.started, tool.finished, approval.asked, approval.resolved
+        event: String,
+        /// The tool called, for a tool event
+        #[arg(long)]
+        tool: Option<String>,
+        /// The path the tool worked on, when it has one
+        #[arg(long)]
+        path: Option<String>,
+        /// The harness's id for the call, pairing its start and end
+        #[arg(long)]
+        call: Option<String>,
+        /// How it ended: ok, error, denied
+        #[arg(long)]
+        outcome: Option<String>,
+        /// Read the harness's own description of the event, as JSON, from
+        /// standard input: the tool's name, path and call id are taken from
+        /// it
+        #[arg(long)]
+        hook_input: bool,
+        /// The harness's description of the event, as JSON, when it passes
+        /// one as an argument rather than on standard input
+        payload: Option<String>,
     },
 }
 
@@ -333,16 +371,35 @@ pub(crate) enum AgentPluginAction {
         /// checkout of every project that declares the plugin
         #[arg(long)]
         rules: bool,
+        /// Also scaffold extensions/<id>/: a manifest declaring a view and
+        /// a sidebar section, the view they draw and its fixture
+        #[arg(long, value_name = "ID")]
+        extension: Option<String>,
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
     /// Validate an authored plugin offline — the same parsers the install
-    /// would run
+    /// would run, and every extension it carries bound to its fixtures and
+    /// put through its tests
     Check {
         path: PathBuf,
+        /// Write each extension snapshot that is missing or differs,
+        /// instead of failing on it
+        #[arg(long)]
+        update_snapshots: bool,
+        /// Run each extension's scripts in the engine against a checkout,
+        /// and draw its tests from what they answer
+        #[arg(long)]
+        run: bool,
+        /// The checkout `--run` reads; the one this is run in by default
+        #[arg(long, value_name = "PATH", requires = "run")]
+        checkout: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
+    /// Serve an editor completion, hover and the check's diagnostics for
+    /// extension files, over stdio (the Language Server Protocol)
+    Lsp,
 }
 
 #[derive(Debug, Subcommand)]

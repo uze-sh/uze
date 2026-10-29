@@ -1,0 +1,68 @@
+# uze snapshot · protocol 1 · view 100x30 · dark
+ Blocks
+
+  Retry policy
+
+  Make payment retries back off and stop after five attempts.
+
+  • read the current retry loop
+  • write failing tests for the backoff
+  • implement exponential backoff with jitter
+
+  │ Keep the existing timeout.
+
+  ─ The change ───────────────────────────────────────────────────────────────────────────────────
+
+    fn backoff(attempt: u32) -> Duration {
+        let base = Duration::from_millis(100);
+        base * 2u32.pow(attempt.min(5))
+    }
+
+
+
+
+
+
+
+
+
+
+
+esc close  ·  i inspector
+---
+ aaaaaa
+
+  bbbbb bbbbbb
+
+  bbbb bbbbbbb bbbbbbb bbbb bbb bbb bbbb bbbbb bbbb bbbbbbbbb
+
+  a bbbb bbb bbbbbbb bbbbb bbbb
+  a bbbbb bbbbbbb bbbbb bbb bbb bbbbbbb
+  a bbbbbbbbb bbbbbbbbbbb bbbbbbb bbbb bbbbbb
+
+  c bbbb bbb bbbbbbbb bbbbbbbb
+
+  d bbb bbbbbb ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+
+    .. ................ .... .. ........ .
+        ... .... . ...........................
+        .... . ........................
+    .
+
+
+
+
+
+
+
+
+
+
+
+eee aaaaa  d  e aaaaaaaaa
+---
+a text.muted
+b text.bright
+c text.dim
+d text.faint
+e accent

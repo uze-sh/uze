@@ -49,6 +49,9 @@ fn die_quietly_on_a_closed_pipe() {
 }
 
 fn main() {
+    // Ahead of everything, the runtime shim included: the confinement
+    // helper must reach nothing before it confines itself.
+    confine_if_asked();
     // Checked before any `clap` parsing, on `argv[0]` alone: a process
     // invoked as `claude`/`codex`/`opencode` (via the symlink
     // `ensure_runtime_shim` creates at `~/.uze/shims/<name>`) never reaches
@@ -503,6 +506,14 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
                             ))
                         );
                     }
+                    if matches!(format, OutputFormat::Text)
+                        && let uze_application::application::InstallReport::Installed {
+                            plugins,
+                            ..
+                        } = &report
+                    {
+                        ask_about_extensions(&app, plugins);
+                    }
                     if let Some(failure) = undelivered_failure(report.undelivered()) {
                         return Err(failure);
                     }
@@ -613,7 +624,10 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
             harness,
             format,
         } => {
-            let report = app.plugins().inspect_on(&plugin, harness.as_deref())?;
+            let project = app.extensions().project_here(&cwd()?);
+            let report =
+                app.plugins()
+                    .inspect_in(&plugin, harness.as_deref(), project.as_deref())?;
             emit(format, &report, |report| render_inspection(report, verbose));
         }
         Command::Status {
@@ -650,7 +664,17 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         Command::Market { action } => run_market(&app, action)?,
         Command::Doctor { format } => {
             let spinner = progress::spinner("Running diagnostics");
-            let report = app.health().report();
+            let mut report = app.health().report();
+            // The keyboard is this binary's, not the application's: what the
+            // installed extensions' keys meet is asked of the keymap in force.
+            report.machine_concerns.extend(
+                uze::keymap::extension_collisions(&app)
+                    .into_iter()
+                    .map(|detail| uze_application::application::MachineConcern {
+                        subject: "keys".to_owned(),
+                        detail,
+                    }),
+            );
             spinner.finish_and_clear();
             emit(format, &report, render_doctor);
             // A failure fails the command, so a script or CI can ask; a
@@ -664,6 +688,9 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         Command::External(args) => run_shorthand(&app, args, verbose)?,
         Command::Workspace { .. } | Command::Terminal { .. } | Command::Shell { .. } => {
             unreachable!("workspace commands return before application setup")
+        }
+        Command::Confine { .. } => {
+            unreachable!("the confinement helper is answered before the command line is parsed")
         }
         Command::Upgrade { .. } => {
             unreachable!("the release check returns before application setup")
@@ -682,6 +709,7 @@ fn tells_about_releases(command: &Command) -> bool {
             | Command::Workspace { .. }
             | Command::Terminal { .. }
             | Command::Shell { .. }
+            | Command::Confine { .. }
             | Command::Upgrade { .. }
     )
 }
@@ -919,6 +947,7 @@ mod status_output_tests {
             steps_not_spelled_here: Vec::new(),
             steps_only_in_sh: Vec::new(),
             commands_awaiting_approval: None,
+            extensions: Vec::new(),
         }
     }
 

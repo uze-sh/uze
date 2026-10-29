@@ -1,0 +1,10 @@
+{
+  "name": "NVIDIA GeForce RTX 4060 Ti",
+  "load": 9,
+  "load_ratio": 0.09,
+  "warn": 0.7,
+  "memory": "1926 / 8188 MiB",
+  "memory_ratio": 0.235,
+  "temperature": "56°C",
+  "history": [3, 5, 9, 41, 87, 92, 60, 12, 9]
+}

@@ -757,6 +757,9 @@ impl Project<'_> {
 
         Ok(UpdateReport {
             scope: UpdateScope::Project,
+            extensions: self
+                .0
+                .extensions_among(outcomes.iter().map(UpdateOutcome::plugin)),
             outcomes,
             rules,
         })
@@ -834,6 +837,9 @@ impl Project<'_> {
         }
         Ok(UpdateReport {
             scope: UpdateScope::Machine,
+            extensions: self
+                .0
+                .extensions_among(outcomes.iter().map(UpdateOutcome::plugin)),
             outcomes,
             rules: Vec::new(),
         })
@@ -1013,6 +1019,12 @@ impl Project<'_> {
             return Ok(InstallReport::NoChanges);
         }
         Ok(InstallReport::Installed {
+            extensions: self.0.extensions_among(
+                installed_plugins
+                    .iter()
+                    .chain(&removed_plugins)
+                    .map(String::as_str),
+            ),
             plugins: installed_plugins,
             removed: removed_plugins,
             skipped,
@@ -1736,10 +1748,27 @@ pub enum UpdateScope {
 pub struct UpdateReport {
     pub scope: UpdateScope,
     pub outcomes: Vec<UpdateOutcome>,
+    /// The plugins among `outcomes`, named as they are there, that carry
+    /// only workspace extensions.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<String>,
     /// What happened to each updated plugin's copies in the checkout; only
     /// plugins with something to say.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub rules: Vec<RuleCopies>,
+}
+
+impl UpdateOutcome {
+    /// The plugin this outcome is about.
+    pub fn plugin(&self) -> &str {
+        match self {
+            Self::Moved { plugin, .. }
+            | Self::AlreadyCurrent { plugin, .. }
+            | Self::FollowedLink { plugin, .. }
+            | Self::Held { plugin, .. }
+            | Self::Blocked { plugin, .. } => plugin,
+        }
+    }
 }
 
 impl UpdateReport {
@@ -1810,6 +1839,10 @@ pub enum InstallReport {
         /// only plugins with something to say.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         rules: Vec<RuleCopies>,
+        /// The plugins among `plugins` and `removed` that carry only
+        /// workspace extensions.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        extensions: Vec<String>,
     },
 }
 

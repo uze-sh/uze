@@ -1,0 +1,23 @@
+test "the section lists the branch's runs with their states" {
+    surface "runs"
+    given "runs" fixture="fixtures/runs.json"
+    size 36 6
+    expect-text "hiukky/uze · main"
+    expect-text "running"
+    expect-text "#411"
+    snapshot "runs"
+}
+
+test "the header row says how the last run ended" {
+    surface "last"
+    given "runs" fixture="fixtures/runs.json"
+    size 30 1
+    expect-text "passed"
+    snapshot "status"
+}
+
+test "a branch with no runs says so" {
+    surface "runs"
+    given "runs" json="{\"repo\":\"hiukky/uze\",\"branch\":\"new\",\"runs\":[],\"last\":{\"name\":\"CI\",\"state\":\"none\"}}"
+    expect-text "No runs on this branch"
+}

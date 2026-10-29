@@ -1,0 +1,13 @@
+// A test runs no script, so the game's first frame is given as the tree
+// its `render` answers; `crates/uze-script/tests/media_fixtures.rs` plays
+// the script itself and holds it to this same fixture.
+test "the board waits for an arrow, with the best score kept" {
+    surface "game"
+    given "board" fixture="fixtures/start.json"
+    size 60 18
+    expect-text "score 0"
+    expect-text "best 4"
+    expect-text "an arrow starts"
+    snapshot "start"
+}
+

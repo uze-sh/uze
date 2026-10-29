@@ -75,18 +75,21 @@ mod changes;
 mod diff;
 mod editor;
 mod exclude;
+mod extension;
 mod files;
 mod history;
 mod map;
-mod picture;
 mod render;
 mod request;
 mod row_menu;
 mod treemap;
 
-pub use crate::shared::markdown::render as markdown;
 pub use changes::{ChangeSummary, change_summary};
 pub use exclude::Exclusions;
+pub use extension::{
+    CHANGES, ChangesRead, CodeExtension, DiffRead, FILES, FileRead, MeasureRead, SURFACE, TIMELINE,
+    TIMELINE_COMMITS, TimelineRead,
+};
 pub use history::{Commit, CommitDetail, Timeline, commit_detail, timeline, timeline_section};
 pub use map::{FileMeasure, Measure, measure};
 pub use render::view;
@@ -212,7 +215,7 @@ enum Focus {
     Content,
 }
 
-/// Open state of the code surface (`WorkspaceModel::code`).
+/// Open state of the code surface, held by [`CodeExtension`].
 pub struct CodeView {
     /// The checkout this is scoped to, resolved once at open time from
     /// the active tab's live `cwd`. Inside a linked worktree this is that

@@ -1,0 +1,23 @@
+test "the drawer tells where the session stopped" {
+    surface "panel"
+    size 48 44
+    expect-text "Stopped at"
+    expect-text "Falta: commit + validação live em staging."
+    snapshot "panel"
+}
+
+test "the next step is recorded when pressed" {
+    surface "panel"
+    size 48 44
+    press-button "▶ /gsd-discuss-phase 43"
+    expect-action "next" command="/gsd-discuss-phase 43"
+}
+
+test "the drawer in light" {
+    surface "panel"
+    size 48 44
+    theme "light"
+    locale "pt"
+    expect-text "Bloqueios"
+    snapshot "panel"
+}

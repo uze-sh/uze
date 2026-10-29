@@ -134,8 +134,65 @@ fn render_with<T: Clone>(
     alternative: Option<(&str, T)>,
     confirm: T,
 ) -> Answers<T> {
+    let (width, measure) = measure_in(area);
+    let Content {
+        lines,
+        field_row,
+        buttons_row,
+    } = content(dialog, measure);
+
+    let height = (lines.len() as u16 + 2).min(area.height.saturating_sub(2));
+    let popup = area.centered(Constraint::Length(width), Constraint::Length(height));
+    frame.render_widget(Clear, popup);
+    // Wider than a popup's own inset and with no row above: a dialog's
+    // first line is a question, and it is read across rather than down.
+    let hint = match &alternative {
+        Some((label, _)) => choice_hint(dialog, scopes, label),
+        None => hint_line(dialog, scopes),
+    };
+    let inner = Surface::floating()
+        .hint(hint)
+        .padding(Padding::horizontal(PAD_X))
+        .render(frame, popup);
+    frame.render_widget(Paragraph::new(lines), inner);
+    if let (Some(field), Some(row)) = (&dialog.field, field_row)
+        && row + 2 <= inner.height
+    {
+        field.render(frame, Rect::new(inner.x, inner.y + row, inner.width, 2));
+    }
+    let buttons = if buttons_row < inner.height {
+        buttons(
+            frame,
+            Rect::new(inner.x, inner.y + buttons_row, inner.width, 1),
+            dialog,
+            cancel,
+            alternative,
+            confirm,
+        )
+    } else {
+        Vec::new()
+    };
+    Answers { popup, buttons }
+}
+
+/// The dialog's width in `area`, and the measure its text is folded to.
+fn measure_in(area: Rect) -> (u16, usize) {
     let width = WIDTH.min(area.width.saturating_sub(4));
-    let measure = usize::from(width.saturating_sub(2 + PAD_X * 2).max(1));
+    (
+        width,
+        usize::from(width.saturating_sub(2 + PAD_X * 2).max(1)),
+    )
+}
+
+/// A dialog's rows, laid out to `measure`: where its field and its
+/// answers stand among them.
+struct Content {
+    lines: Vec<Line<'static>>,
+    field_row: Option<u16>,
+    buttons_row: u16,
+}
+
+fn content(dialog: &Dialog<'_>, measure: usize) -> Content {
     let hue = dialog.tone.token();
 
     let mut lines = vec![
@@ -178,38 +235,20 @@ fn render_with<T: Clone>(
     lines.push(Line::default());
     lines.push(Line::default());
 
-    let height = (lines.len() as u16 + 2).min(area.height.saturating_sub(2));
-    let popup = area.centered(Constraint::Length(width), Constraint::Length(height));
-    frame.render_widget(Clear, popup);
-    // Wider than a popup's own inset and with no row above: a dialog's
-    // first line is a question, and it is read across rather than down.
-    let hint = match &alternative {
-        Some((label, _)) => choice_hint(dialog, scopes, label),
-        None => hint_line(dialog, scopes),
-    };
-    let inner = Surface::floating()
-        .hint(hint)
-        .padding(Padding::horizontal(PAD_X))
-        .render(frame, popup);
-    frame.render_widget(Paragraph::new(lines), inner);
-    if let (Some(field), Some(row)) = (&dialog.field, field_row)
-        && row + 2 <= inner.height
-    {
-        field.render(frame, Rect::new(inner.x, inner.y + row, inner.width, 2));
+    Content {
+        lines,
+        field_row,
+        buttons_row,
     }
-    let buttons = if buttons_row < inner.height {
-        buttons(
-            frame,
-            Rect::new(inner.x, inner.y + buttons_row, inner.width, 1),
-            dialog,
-            cancel,
-            alternative,
-            confirm,
-        )
-    } else {
-        Vec::new()
-    };
-    Answers { popup, buttons }
+}
+
+/// Whether `dialog` is drawn whole in `area`. Its height follows its
+/// wrapped text, and a frame too short for that cuts the end off: a
+/// question whose text must be read before it is answered asks this
+/// first.
+pub(crate) fn fits(area: Rect, dialog: &Dialog<'_>) -> bool {
+    let (_, measure) = measure_in(area);
+    content(dialog, measure).lines.len() as u16 + 2 <= area.height.saturating_sub(2)
 }
 
 /// `enter delete · esc cancel` — the dialog's own words for what each key
@@ -268,6 +307,107 @@ pub(crate) fn border_hint(
     spans.extend(answer_spans(scopes, answers));
     spans.push(Span::raw(" "));
     Line::from(spans)
+}
+
+/// One entry of a dialog's bottom border: a key and what it does, or a
+/// run of keys doing the same thing to two ends (`↑↓ move`), which is read
+/// and never pointed at.
+pub(crate) enum BorderKey<'a> {
+    Key(uze_keys::Action, &'a str),
+    Run(uze_keys::Action, uze_keys::Action, &'a str),
+}
+
+/// A dialog's bottom border that answers the pointer: the same words as
+/// [`border_hint`], arrows drawn as arrows, and each key a target once the
+/// dialog is placed. Hand [`BorderHint::line`] to [`shell`], then register
+/// [`BorderHint::targets`] along the popup it answered with.
+pub(crate) struct BorderHint {
+    line: Line<'static>,
+    /// Each key's column from the line's start, its width, and its action.
+    placed: Vec<(u16, u16, uze_keys::Action)>,
+}
+
+impl BorderHint {
+    /// The keys `keys` names, read from `scopes`; the one under the
+    /// pointer, `hovered`, drawn lit. A key bound to nothing here is left
+    /// out.
+    pub(crate) fn new(
+        scopes: &[uze_keys::Scope],
+        keys: &[BorderKey<'_>],
+        hovered: Option<uze_keys::Action>,
+    ) -> Self {
+        use crate::ui::widget::hint::{key_text, run_text};
+        let keymap = uze_keys::active();
+        let mut spans = vec![Span::raw(" ")];
+        let mut used = 1usize;
+        let mut placed = Vec::new();
+        for key in keys {
+            let (chord, action, word) = match key {
+                BorderKey::Key(action, word) => {
+                    let Some(chord) = keymap.chord_for(*action, scopes) else {
+                        continue;
+                    };
+                    (key_text(chord), Some(*action), *word)
+                }
+                BorderKey::Run(first, last, word) => {
+                    let (Some(first), Some(last)) = (
+                        keymap.chord_for(*first, scopes),
+                        keymap.chord_for(*last, scopes),
+                    ) else {
+                        continue;
+                    };
+                    (run_text(first, last), None, *word)
+                }
+            };
+            if used > 1 {
+                let separator = format!(" {} ", theme::glyph(Symbol::HintSeparator));
+                used += text::columns(&separator);
+                spans.push(Span::styled(separator, theme::fg(Token::TextDim)));
+            }
+            let word = format!(" {word}");
+            let width = text::columns(&chord) + text::columns(&word);
+            if let Some(action) = action {
+                placed.push((used as u16, width as u16, action));
+            }
+            let lit = action.is_some() && action == hovered;
+            spans.push(Span::styled(chord, theme::fg(Token::TextSecondary)));
+            spans.push(Span::styled(
+                word,
+                theme::fg(if lit {
+                    Token::TextBright
+                } else {
+                    Token::TextMuted
+                }),
+            ));
+            used += width;
+        }
+        spans.push(Span::raw(" "));
+        Self {
+            line: Line::from(spans),
+            placed,
+        }
+    }
+
+    pub(crate) fn line(&self) -> Line<'static> {
+        self.line.clone()
+    }
+
+    /// Where each key landed along `popup`'s bottom border, right-aligned
+    /// between its corners as [`Surface::hint`] draws it.
+    #[must_use = "register each target as a hit, so a click performs the key"]
+    pub(crate) fn targets(&self, popup: Rect) -> Vec<(Rect, uze_keys::Action)> {
+        let room = popup.width.saturating_sub(2);
+        let width = (self.line.width() as u16).min(room);
+        let start = popup.x + 1 + room - width;
+        let y = popup.bottom().saturating_sub(1);
+        self.placed
+            .iter()
+            .filter(|(offset, key_width, _)| offset + key_width <= width)
+            .map(|(offset, key_width, action)| {
+                (Rect::new(start + offset, y, *key_width, 1), *action)
+            })
+            .collect()
+    }
 }
 
 /// Where a dialog drawn by [`shell`] puts its content: the rows under its

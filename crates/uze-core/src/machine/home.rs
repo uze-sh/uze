@@ -201,6 +201,155 @@ impl UzeHome {
         self.state_dir().join("profiles.json")
     }
 
+    /// The operator's consent to each declared extension, by identity:
+    /// the grants accepted, the digest of the code they were accepted for
+    /// and the projects it is enabled in. A record: only a person's answer
+    /// says it, and nothing on the machine derives it again.
+    pub fn extensions_record_path(&self) -> PathBuf {
+        self.state_dir().join("extensions.json")
+    }
+
+    /// What each declared extension keeps between answers, one document
+    /// per extension and project (or per extension, for a machine-wide
+    /// store), under `<identity key>/`. A record: what an extension
+    /// remembered is not observed again. Removed with its plugin.
+    pub fn extension_stores_dir(&self) -> PathBuf {
+        self.state_dir().join("extensions").join("store")
+    }
+
+    /// Every store of the plugin `plugin@marketplace`'s extensions: what is
+    /// removed with the plugin.
+    pub fn extension_plugin_stores_dir(&self, plugin: &str) -> PathBuf {
+        self.extension_stores_dir().join(plugin)
+    }
+
+    /// The store of extension `id` of `plugin@marketplace`, for the
+    /// project whose id is `project`, or the machine-wide one without it.
+    pub fn extension_store_path(&self, plugin: &str, id: &str, project: Option<&str>) -> PathBuf {
+        let dir = self.extension_plugin_stores_dir(plugin).join(id);
+        match project {
+            Some(project) => dir.join(format!("{project}.json")),
+            None => dir.join("global.json"),
+        }
+    }
+
+    /// The lock a patch of that store holds, beside it: removed with the
+    /// plugin's stores.
+    pub fn extension_store_lock_path(
+        &self,
+        plugin: &str,
+        id: &str,
+        project: Option<&str>,
+    ) -> PathBuf {
+        self.extension_store_path(plugin, id, project)
+            .with_extension("lock")
+    }
+
+    /// The operator's preferences for extension `id` of
+    /// `plugin@marketplace`: a record, since only their answer says it.
+    /// Removed with its plugin.
+    pub fn extension_preferences_path(&self, plugin: &str, id: &str) -> PathBuf {
+        self.state_dir()
+            .join("extensions")
+            .join("preferences")
+            .join(plugin)
+            .join(format!("{id}.json"))
+    }
+
+    /// The lock a change of those preferences holds, beside them.
+    pub fn extension_preferences_lock_path(&self, plugin: &str, id: &str) -> PathBuf {
+        self.extension_preferences_path(plugin, id)
+            .with_extension("lock")
+    }
+
+    /// Every preference record of the plugin `plugin@marketplace`'s
+    /// extensions.
+    pub fn extension_plugin_preferences_dir(&self, plugin: &str) -> PathBuf {
+        self.state_dir()
+            .join("extensions")
+            .join("preferences")
+            .join(plugin)
+    }
+
+    /// Where a secret preference of extension `id` of `plugin@marketplace`
+    /// is kept on a machine with no keychain: a `0600` file holding the
+    /// value alone. A record, since only the operator's typing says it, and
+    /// apart from the preferences so nothing that reads those reads it.
+    /// Removed with its plugin.
+    pub fn extension_secret_path(&self, plugin: &str, id: &str, name: &str) -> PathBuf {
+        self.extension_plugin_secrets_dir(plugin)
+            .join(id)
+            .join(name)
+    }
+
+    /// Every secret file of the plugin `plugin@marketplace`'s extensions.
+    pub fn extension_plugin_secrets_dir(&self, plugin: &str) -> PathBuf {
+        self.state_dir()
+            .join("extensions")
+            .join("secrets")
+            .join(plugin)
+    }
+
+    /// What the agent `agent` reported about itself through `uze agent
+    /// report`, newest last, bounded: generated, since a report is a claim
+    /// about now and losing it costs nothing.
+    pub fn agent_reports_path(&self, agent: &str) -> PathBuf {
+        self.runtime_dir()
+            .join("agents")
+            .join(agent)
+            .join("reports.jsonl")
+    }
+
+    /// The lock every append to agent `agent`'s journal holds, so a cut
+    /// down to its newest half never drops a report appended meanwhile.
+    pub fn agent_reports_lock_path(&self, agent: &str) -> PathBuf {
+        self.runtime_dir()
+            .join("agents")
+            .join(agent)
+            .join("reports.lock")
+    }
+
+    /// The scratch directory one program run of an extension may write,
+    /// created before it and removed after it: generated, since losing it
+    /// costs nothing, and named here so the run's `TMPDIR` is never the
+    /// operator's shared tmp, where a pinned program may not live.
+    pub fn extension_scratch_dir(&self, run: &str) -> PathBuf {
+        self.extension_scratch_root().join(run)
+    }
+
+    /// Where every run's scratch directory is made. A run removes its own;
+    /// one a killed UZE left behind is swept by the next process's first
+    /// run, once older than any run could be.
+    pub fn extension_scratch_root(&self) -> PathBuf {
+        self.runtime_dir().join("extensions").join("scratch")
+    }
+
+    /// The pictures the programs of extension `id` of `plugin@marketplace`
+    /// wrote into their scratch, kept when the run ends so an `Image` can
+    /// show one as `scratch:<file>`: generated, since its program writes
+    /// them again on its next run.
+    pub fn extension_pictures_dir(&self, plugin: &str, id: &str) -> PathBuf {
+        self.runtime_dir()
+            .join("extensions")
+            .join("pictures")
+            .join(plugin)
+            .join(id)
+    }
+
+    /// What each declared extension cost the workspace that last measured
+    /// it: runs per minute, p95 and memory, which `uze doctor` reads.
+    /// Generated: the next workspace measures them again.
+    pub fn extension_costs_path(&self) -> PathBuf {
+        self.runtime_dir().join("extensions").join("costs.json")
+    }
+
+    /// The guard every read-modify-write of the extensions record takes:
+    /// the workspace and a terminal both answer for it. A lock, not a
+    /// record.
+    pub fn extensions_record_lock_path(&self) -> PathBuf {
+        self.state_dir().join("extensions.lock")
+    }
+
     /// What the TUI was left looking like, in both of its modes (see
     /// `client_layout`).
     pub fn client_layout_path(&self) -> PathBuf {
@@ -506,15 +655,33 @@ impl UzeHome {
     /// harness reads on every request: sweeping it took that context away
     /// seconds after the launch that wrote it. `rules` holds which rules
     /// each running session was already given: sweeping it would deliver
-    /// them all again on the session's next tool call.
-    pub fn runtime_tenants(&self) -> [PathBuf; 5] {
+    /// them all again on the session's next tool call. `extensions` holds
+    /// compiled extension views: sweeping it costs a compile on the next
+    /// open, so it is kept rather than swept by every `doctor`.
+    pub fn runtime_tenants(&self) -> [PathBuf; 6] {
         [
             self.runtime_projects_dir(),
             self.runtime_attachments_dir(),
             self.delivered_packages_dir(),
             self.runtime_sessions_dir(),
             self.runtime_rules_dir(),
+            self.compiled_extensions_dir(),
         ]
+    }
+
+    /// Declared extensions as last compiled, one file per digest of an
+    /// extension's files. Generated: deleting it costs a compile the next
+    /// time the extension is opened, and an entry no extension's files
+    /// digest to any more is simply never read again.
+    pub fn compiled_extensions_dir(&self) -> PathBuf {
+        self.runtime_dir().join("extensions")
+    }
+
+    /// One compiled extension, by the digest of the files it was compiled
+    /// from.
+    pub fn compiled_extension_path(&self, digest: &str) -> PathBuf {
+        self.compiled_extensions_dir()
+            .join(format!("{digest}.json"))
     }
 
     /// The rules engine's corner of the runtime tree.
@@ -775,6 +942,10 @@ mod tests {
             home.tasks_path("abc"),
             home.conversation_path("abc", "def"),
             home.prompt_history_path("abc"),
+            home.extensions_record_path(),
+            home.extension_stores_dir(),
+            home.extension_store_path("gsd@market", "gsd-band", Some("abc")),
+            home.extension_preferences_path("gsd@market", "gsd-band"),
         ];
         for record in records {
             assert!(
@@ -802,6 +973,8 @@ mod tests {
             home.logs_dir(),
             home.generated_attachments_dir("claude"),
             home.runtime_project_dir("abc"),
+            home.extension_scratch_dir("1"),
+            home.agent_reports_path("abc"),
         ] {
             assert!(
                 rebuildable.iter().any(|tier| rebuilt.starts_with(tier)),

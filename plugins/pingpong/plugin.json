@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "pingpong",
+  "version": "0.3.0",
+  "description": "A ping-pong plugin declaring every capability UZE delivers, for trying a harness by hand.",
+  "author": {
+    "name": "UZE"
+  }
+}

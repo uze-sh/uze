@@ -1,0 +1,11 @@
+<view>
+// In the bar: focusing, what is left of the session; idle, the day's
+// sessions against the goal.
+Row gap=1 {
+    Icon "timer" role="warning" when="running"
+    Elapsed until="{ends}" role="warning" when="running"
+    Icon "timer" role="faint" unless="running"
+    Text "{today}/{goal}" unless="running"
+    Text "today" role="muted" unless="running"
+}
+</view>

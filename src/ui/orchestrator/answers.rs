@@ -33,7 +33,7 @@ impl WorkspaceModel {
         self.agent_directory_in_front().map(Path::to_path_buf)
     }
 
-    /// Asks for whatever the badge is missing, on a thread of its own.
+    /// Asks for the badge again once it is due, on a thread of its own.
     ///
     /// Cheap enough to call every tick — it compares two instants and a
     /// path — which is the point: the read it schedules is the expensive
@@ -49,76 +49,17 @@ impl WorkspaceModel {
         if self.remembered.git_pending.is_some() {
             return;
         }
-        let now = Instant::now();
-        let current = self
+        let every = paced(GIT_BADGE_REFRESH, self.remembered.git_took);
+        let fresh = self
             .remembered
             .git_badge
             .as_ref()
-            .filter(|badge| badge.cwd == cwd);
-        let every = paced(GIT_BADGE_REFRESH, self.remembered.git_took);
-        let summary_fresh =
-            current.is_some_and(|badge| now.duration_since(badge.checked_at) < every);
-        let timeline_fresh = current
-            .is_some_and(|badge| now.duration_since(badge.timeline_checked_at) < TIMELINE_REFRESH);
-        if summary_fresh && timeline_fresh {
-            return;
-        }
-        let target = self.remembered.targets.get(&evaluation_key(&cwd)).cloned();
-        self.remembered.git_pending = Some(cwd.clone());
-        spawn_git_read(cwd, target, !timeline_fresh, sender.clone());
-    }
-
-    /// Asks for the spec summary of the checkout in front when the one
-    /// held is about another or has gone stale.
-    pub(super) fn schedule_spec_summary(&mut self, sender: &mpsc::Sender<SpecSummaryResolution>) {
-        if !self.offers_extension(spec::CATALOG.id) {
-            return;
-        }
-        let Some(cwd) = self.focused_cwd() else {
-            self.remembered.spec_summary = None;
-            return;
-        };
-        if self.remembered.spec_summary_pending.is_some() {
-            return;
-        }
-        let fresh = self.remembered.spec_summary.as_ref().is_some_and(|state| {
-            state.cwd == cwd && state.checked_at.elapsed() < SPEC_SUMMARY_REFRESH
-        });
+            .is_some_and(|badge| badge.cwd == cwd && badge.checked_at.elapsed() < every);
         if fresh {
             return;
         }
-        let target = self.remembered.targets.get(&evaluation_key(&cwd)).cloned();
-        self.remembered.spec_summary_pending = Some(cwd.clone());
-        spawn_spec_summary(cwd, target, sender.clone());
-    }
-
-    /// Installs a finished summary if it is still about the checkout in
-    /// front; releases the pending key either way.
-    pub(super) fn absorb_spec_summary(&mut self, resolution: SpecSummaryResolution) -> bool {
-        if self.remembered.spec_summary_pending.as_ref() == Some(&resolution.cwd) {
-            self.remembered.spec_summary_pending = None;
-        }
-        if self.focused_cwd().as_ref() != Some(&resolution.cwd)
-            || !self.offers_extension(spec::CATALOG.id)
-        {
-            return false;
-        }
-        let changed =
-            self.remembered.spec_summary.as_ref().is_none_or(|state| {
-                state.cwd != resolution.cwd || state.summary != resolution.summary
-            });
-        self.remembered.spec_summary = Some(SpecSummaryState {
-            cwd: resolution.cwd,
-            summary: resolution.summary,
-            checked_at: Instant::now(),
-        });
-        changed
-    }
-
-    /// The summary the sidebar draws: the checkout in front's, when it has
-    /// a spec layout.
-    pub(super) fn spec_summary(&self) -> Option<&spec::Summary> {
-        self.remembered.spec_summary.as_ref()?.summary.as_ref()
+        self.remembered.git_pending = Some(cwd.clone());
+        spawn_git_read(cwd, sender.clone());
     }
 
     /// Installs a finished read, or drops it.
@@ -137,27 +78,10 @@ impl WorkspaceModel {
         {
             return false;
         }
-        let now = Instant::now();
-        let carried = self
-            .remembered
-            .git_badge
-            .take()
-            .filter(|badge| badge.cwd == resolution.cwd);
-        self.remembered.git_badge = Some(match resolution.answer {
-            GitAnswer::Summary(summary) => GitBadge {
-                cwd: resolution.cwd,
-                summary,
-                timeline: carried.as_ref().and_then(|badge| badge.timeline.clone()),
-                timeline_checked_at: carried.map_or(now, |badge| badge.timeline_checked_at),
-                checked_at: now,
-            },
-            GitAnswer::Full { summary, timeline } => GitBadge {
-                cwd: resolution.cwd,
-                summary,
-                timeline,
-                timeline_checked_at: now,
-                checked_at: now,
-            },
+        self.remembered.git_badge = Some(GitBadge {
+            cwd: resolution.cwd,
+            summary: resolution.summary,
+            checked_at: Instant::now(),
         });
         true
     }
@@ -197,317 +121,258 @@ impl WorkspaceModel {
         });
         true
     }
+}
 
-    /// Hands the surface's file requests to threads.
-    ///
-    /// Everything that reads or writes a *file* stays serialised: a save
-    /// followed by the re-read that re-colours it must land in that
-    /// order, and two reads racing would let the older one describe the
-    /// newer one's file.
-    ///
-    /// The second colouring pass is not in that chain. It is the slowest
-    /// request there is — seconds for a long file — and the next file
-    /// opened used to wait behind the colour of the one being left. It
-    /// cannot describe a newer file than the one on screen, because the
-    /// view installs colour only for the text it already holds.
-    ///
-    /// Listings are not in that chain. They answer about directories
-    /// nothing else in the queue names, they cost a `readdir` each, and
-    /// they arrive in bulk — opening a surface back where it was left
-    /// asks for every directory that was open. One per pass made that a
-    /// frame each: a third of a second of a tree filling in one row at a
-    /// time, for a tenth of a millisecond of actual work. The read of the
-    /// checkout's `files.exclude` is off it for the same reason: it is
-    /// what the first listing waits on.
-    pub(super) fn schedule_file_request(&mut self, sender: &mpsc::Sender<FileResolution>) {
-        let Some(view) = self.code.as_mut() else {
-            return;
-        };
-        let root = view.root().to_path_buf();
-        loop {
-            let listing = match view.peek_request() {
-                // A second colouring pass is off the chain too: it is the
-                // slowest request there is, and a file opened after it
-                // must not wait for the colour of one being left.
-                Some(
-                    code::FileRequest::List(_)
-                    | code::FileRequest::Exclusions(_)
-                    | code::FileRequest::Colour(_),
-                ) => true,
-                // The chain is busy, and the queue is in the order the
-                // surface asked: stopping here rather than looking past
-                // it is what keeps a save ahead of the read that follows
-                // it.
-                Some(_) if !self.code_request_pending => false,
-                _ => return,
-            };
-            let Some(request) = view.take_request() else {
-                return;
-            };
-            self.code_request_pending |= !listing;
-            spawn_file_request(root.clone(), request, sender.clone());
-        }
-    }
-
-    pub(super) fn schedule_artifacts_read(&mut self, sender: &mpsc::Sender<ArtifactsResolution>) {
-        if self.architect.is_none() || self.architect_asked {
-            return;
-        }
-        if let Some(root) = self.architect_root.clone() {
-            self.architect_asked = true;
-            spawn_artifacts_read(root, sender.clone());
-        }
-    }
-
-    pub(super) fn schedule_spec_read(
+impl WorkspaceModel {
+    /// Asks for the declared extensions when a discovery is due (once a
+    /// run, whenever `plugins` — the plugin set's revision — moves, and
+    /// on [`DECLARED_REDISCOVER`] otherwise), polls the linked ones' stamps
+    /// on [`DECLARED_POLL`], and compiles again each one whose save has
+    /// settled. Cheap enough for every tick: it compares instants.
+    pub(super) fn schedule_extension_jobs(
         &mut self,
         home: &UzeHome,
-        sender: &mpsc::Sender<SpecResolution>,
+        plugins: u64,
+        jobs: &mpsc::Sender<ExtensionAnswer>,
+        stamps: &mpsc::Sender<StampsAnswer>,
     ) {
-        if self.spec.is_none() || self.spec_asked {
+        let now = Instant::now();
+        let declared = &mut self.remembered.declared;
+        if declared.discovery_due(plugins, now) {
+            declared.discovered_at = Some(now);
+            declared.plugins_seen = plugins;
+            declared.discovery_pending = true;
+            spawn_extension_job(home, ExtensionJob::Discover(declared.known()), jobs.clone());
             return;
         }
-        if let Some(root) = self.spec_root.clone() {
-            self.spec_asked = true;
-            spawn_spec_read(home, root, sender.clone());
+        if declared.discovery_pending {
+            return;
         }
-    }
-
-    pub(super) fn absorb_spec(&mut self, resolution: SpecResolution) -> bool {
-        match self.spec.as_mut() {
-            Some(view) if self.spec_root.as_ref() == Some(&resolution.root) => {
-                view.absorb(resolution.answer);
-                true
+        let settled = declared.settled(now);
+        if !settled.is_empty() {
+            declared
+                .recompiling
+                .extend(settled.iter().map(|installed| installed.identity.clone()));
+            spawn_extension_job(home, ExtensionJob::Recompile(settled), jobs.clone());
+        }
+        let due = declared
+            .polled_at
+            .is_none_or(|at| now.duration_since(at) >= DECLARED_POLL);
+        if !declared.stamps_pending && due {
+            let watched = declared.watched();
+            if !watched.is_empty() {
+                declared.stamps_pending = true;
+                declared.polled_at = Some(now);
+                spawn_extension_stamps(watched, stamps.clone());
             }
-            _ => false,
         }
     }
 
-    pub(super) fn absorb_artifacts(&mut self, resolution: ArtifactsResolution) -> bool {
-        match self.architect.as_mut() {
-            Some(view) if self.architect_root.as_ref() == Some(&resolution.root) => {
-                view.absorb(resolution.answer);
-                true
+    /// Hands each hosted engine's pending jobs to a thread, and answers how
+    /// many it handed. Cheap enough for every tick: an engine with nothing
+    /// to read answers none.
+    pub(super) fn schedule_engine_jobs(
+        &mut self,
+        home: &UzeHome,
+        answers: &mpsc::Sender<EngineAnswer>,
+    ) -> usize {
+        self.schedule_engine_jobs_at(home, answers, Instant::now())
+    }
+
+    /// [`Self::schedule_engine_jobs`] on the pass at `now`, which each
+    /// engine is told before it is asked for its jobs: what its `every`
+    /// and its events' window are counted on.
+    pub(super) fn schedule_engine_jobs_at(
+        &mut self,
+        home: &UzeHome,
+        answers: &mpsc::Sender<EngineAnswer>,
+        now: Instant,
+    ) -> usize {
+        let in_front = self
+            .focused_cwd()
+            .map(|root| uze_extensions::contract::Checkout {
+                display: crate::ui::display_project_path(&root),
+                target: self.remembered.targets.get(&evaluation_key(&root)).cloned(),
+                root,
+            });
+        let offered: BTreeSet<Owner> = self
+            .remembered
+            .declared
+            .engines
+            .keys()
+            .filter(|owner| self.offers_declared(owner))
+            .cloned()
+            .collect();
+        let mut handed = 0;
+        for (owner, engine) in &mut self.remembered.declared.engines {
+            engine.focus(in_front.as_ref().filter(|_| offered.contains(owner)));
+        }
+        self.pass_engines(now);
+        let declared = &mut self.remembered.declared;
+        for (owner, engine) in &mut declared.engines {
+            let jobs = engine.jobs();
+            handed += jobs.len();
+            if !jobs.is_empty() {
+                spawn_engine_jobs(
+                    owner.clone(),
+                    jobs,
+                    engine.lanes(),
+                    home,
+                    &declared.runner,
+                    answers.clone(),
+                );
             }
-            _ => false,
         }
+        handed
     }
 
-    /// Installs one file answer, if the surface is still open on the
-    /// checkout it was read for.
-    pub(super) fn absorb_file_answer(&mut self, resolution: FileResolution) -> bool {
-        // A listing never took the chain, so it does not release it — a
-        // pass that let one clear a read's reservation would put the next
-        // read alongside the read it has to follow.
-        if !matches!(
-            resolution.answer,
-            code::FileAnswer::Listed { .. }
-                | code::FileAnswer::Excluded(_)
-                | code::FileAnswer::Coloured { .. }
-        ) {
-            self.code_request_pending = false;
-        }
-        let Some(view) = self
-            .code
-            .as_mut()
-            .filter(|view| view.root() == resolution.root)
-        else {
-            // A surface that moved on no longer has anywhere to say a
-            // write failed, and a failed write must not pass unsaid: the
-            // reader believes it landed.
-            return self.report_unheard_write_failure(resolution.answer);
-        };
-        view.absorb(resolution.answer);
-        true
-    }
-
-    pub(super) fn report_unheard_write_failure(&mut self, answer: code::FileAnswer) -> bool {
-        let (title, path, message) = match answer {
-            code::FileAnswer::Saved {
-                path,
-                outcome: Err(message),
-            } => ("save failed", path, message),
-            code::FileAnswer::Deleted {
-                path,
-                outcome: Err(message),
-            } => ("delete failed", path, message),
-            code::FileAnswer::Renamed {
-                from,
-                outcome: Err(message),
-                ..
-            } => ("rename failed", from, message),
-            _ => return false,
-        };
-        self.raise_toast(
-            ToastKind::Failed,
-            title,
-            format!(
-                "{}: {message}",
-                path.file_name().map_or_else(
-                    || path.display().to_string(),
-                    |name| { name.to_string_lossy().into_owned() }
-                )
-            ),
-            None,
-        );
-        true
-    }
-
-    /// Asks for the selection's diff alone, the moment it moved.
-    pub(super) fn schedule_diff_read(&mut self, sender: &mpsc::Sender<DiffResolution>) {
-        if self.code_diff_pending {
-            return;
-        }
-        let Some(view) = self.code.as_ref() else {
-            return;
-        };
-        let Some(request) = view.diff_request() else {
-            return;
-        };
-        self.code_diff_pending = true;
-        spawn_diff_read(view.root().to_path_buf(), request, sender.clone());
-    }
-
-    pub(super) fn absorb_diff(&mut self, resolution: DiffResolution) -> bool {
-        self.code_diff_pending = false;
-        if self
-            .code
-            .as_ref()
-            .is_none_or(|view| view.root() != resolution.root)
+    /// Takes what a hosted engine's job answered to the engine that asked.
+    /// One whose extension went meanwhile is dropped. Returns whether it
+    /// is drawn.
+    ///
+    /// A marking on the open view whose text the answer changed is
+    /// dropped: a marking is a position in the text, and the same lines of
+    /// a different diff are not what was marked. One that found everything
+    /// as it was, most of them, leaves it drawn.
+    pub(super) fn absorb_engine_answer(&mut self, answer: EngineAnswer) -> bool {
+        if !self
+            .remembered
+            .declared
+            .engines
+            .contains_key(&answer.extension)
         {
             return false;
         }
-        let marked = self.code_marked_text();
-        if let Some(view) = self.code.as_mut() {
-            view.absorb_diff(resolution.answer);
-        }
-        self.forget_marking_if_moved(marked);
-        true
-    }
-
-    /// Asks for the changes half again, on its own cadence.
-    pub(super) fn schedule_changes_refresh(&mut self, sender: &mpsc::Sender<ChangesResolution>) {
-        if self.code_changes_pending {
-            return;
-        }
-        let Some(view) = self.code.as_ref() else {
-            return;
-        };
-        // The periodic re-read is what the cadence governs. A moved
-        // selection is the one-file read's, unless there is no list yet
-        // to find it in — the first read is a whole one.
-        let first = view.diff_pending() && view.diff_request().is_none();
-        if !first && !view.refresh_due() {
-            return;
-        }
-        self.code_changes_pending = true;
-        spawn_changes_refresh(view.root().to_path_buf(), view.placement(), sender.clone());
-    }
-
-    /// Gives a surface that has just opened the measurement this client
-    /// already holds for its checkout, so the map is there to be asked
-    /// for rather than arriving a second later.
-    pub(super) fn show_remembered_measure(&mut self) {
-        let Some(view) = self.code.as_mut() else {
-            return;
-        };
-        if let Some((_, measure)) = self.code_measures.get(view.root()) {
-            view.absorb_measure(measure.clone());
-        }
-    }
-
-    /// Asks for the checkout's measurement, once per surface that has no
-    /// map yet. A `git grep` over every file is not a read to repeat, so
-    /// the root it was asked about is remembered rather than the request
-    /// being in flight: outside a repository the answer is nothing, and
-    /// nothing must not be asked for again.
-    pub(super) fn schedule_code_measure(&mut self, sender: &mpsc::Sender<MeasureResolution>) {
-        let Some(view) = self.code.as_ref().filter(|view| view.wants_measure()) else {
-            return;
-        };
-        let root = view.root().to_path_buf();
-        if self.code_measure_asked.as_deref() == Some(root.as_path()) {
-            return;
-        }
-        // A measurement this recent describes the same checkout: a map is
-        // where the lines are, and that is not a picture that changes
-        // between one look at it and the next.
-        if self
-            .code_measures
-            .get(&root)
-            .is_some_and(|(taken, _)| taken.elapsed() < CODE_MEASURE_FRESH)
-        {
-            return;
-        }
-        self.code_measure_asked = Some(root.clone());
-        spawn_code_measure(root, sender.clone());
-    }
-
-    /// Installs the measurement, if the surface is still open on the
-    /// checkout it was measured from.
-    pub(super) fn absorb_measure(&mut self, resolution: MeasureResolution) -> bool {
-        let Some(measure) = resolution.measure else {
-            let Some(view) = self
-                .code
-                .as_mut()
-                .filter(|view| view.root() == resolution.root)
-            else {
-                return false;
-            };
-            view.absorb_unmeasurable();
-            return true;
-        };
-        // Kept whether or not there is still a surface to show it: the
-        // next one to open on this checkout is the reason it was worth
-        // measuring.
-        self.code_measures
-            .insert(resolution.root.clone(), (Instant::now(), measure.clone()));
-        let Some(view) = self
-            .code
-            .as_mut()
-            .filter(|view| view.root() == resolution.root)
-        else {
+        let marked = self.marked_text();
+        let Some(engine) = self.remembered.declared.engines.get_mut(&answer.extension) else {
             return false;
         };
-        view.absorb_measure(measure);
+        let outcome = engine.absorb(answer.answer);
+        if marked.is_some_and(|before| self.marked_text() != Some(before)) {
+            self.selection = None;
+        }
+        // An answer arrives after its gesture, wherever the viewer is now:
+        // only what is said reaches them, and a two-step action's prompt,
+        // which the bridge shows first. A copy, a path or a surface to
+        // open is a gesture's, never an answer's.
+        use uze_extensions::contract::Outcome;
+        // What the gesture said while it waited ("Say done…") is over once
+        // its extension answers: the answer says what there is to say.
+        // Said where the gesture waiting for it was made: an extension
+        // with a view and a drawer open answers in the one that asked.
+        let asked_in_drawer = self.asked_in_drawer
+            && self
+                .open_drawer_slot()
+                .is_some_and(|slot| slot.owner == answer.extension);
+        // So for the view in front, the drawer open beside it and the
+        // overlay over it, each of which says it along its own foot.
+        if !matches!(outcome, Outcome::Notice(_)) {
+            if self
+                .slot_in_pane()
+                .is_some_and(|slot| slot.owner == answer.extension)
+            {
+                self.open_notice = None;
+            }
+            if self
+                .open_drawer_slot()
+                .is_some_and(|slot| slot.owner == answer.extension)
+            {
+                self.dock_notice = None;
+            }
+            if self
+                .overlay_slot()
+                .is_some_and(|slot| slot.owner == answer.extension)
+            {
+                self.overlay_notice = None;
+            }
+        }
+        match outcome {
+            Outcome::Failed { title, detail } => self.say_failed(&title, detail),
+            Outcome::Toast(text) => self.say_told(&answer.extension, text),
+            // A two-step action's prompt, filled from what its first step
+            // answered: it stands on the gesture that ran it, and the
+            // bridge shows it and guards it as any prompt from a gesture.
+            Outcome::Agent(request) if !request.unattended => {
+                self.ask_of_agent(answer.extension.clone(), *request);
+            }
+            Outcome::Notice(span) if asked_in_drawer => self.dock_notice = Some(span),
+            Outcome::Notice(span)
+                if self
+                    .slot_in_pane()
+                    .is_some_and(|slot| slot.owner == answer.extension) =>
+            {
+                self.open_notice = Some(span);
+            }
+            Outcome::Notice(span)
+                if self
+                    .open_drawer_slot()
+                    .is_some_and(|slot| slot.owner == answer.extension) =>
+            {
+                self.dock_notice = Some(span);
+            }
+            _ => {}
+        }
         true
     }
 
-    /// Installs a refreshed changes half, if the surface is still open on
-    /// the checkout it was read for. The view itself decides whether the
-    /// answer still describes where the viewer is.
-    pub(super) fn absorb_changes(&mut self, resolution: ChangesResolution) -> bool {
-        self.code_changes_pending = false;
-        if self
-            .code
-            .as_ref()
-            .is_none_or(|view| view.root() != resolution.root)
-        {
-            return false;
-        }
-        let marked = self.code_marked_text();
-        if let Some(view) = self.code.as_mut() {
-            view.absorb_changes(resolution.refreshed);
-        }
-        self.forget_marking_if_moved(marked);
-        true
-    }
-
-    /// The text a marking on the code surface covers right now.
-    pub(super) fn code_marked_text(&self) -> Option<Vec<String>> {
+    /// The text a marking on the open view covers right now.
+    pub(super) fn marked_text(&self) -> Option<Vec<String>> {
         let Some(Selection::Text(marking)) = &self.selection else {
             return None;
         };
-        Some(code::text(self.code.as_ref()?, marking.marked()?.lines()))
+        let lines = marking.marked()?.lines();
+        let slot = self.slot_in_pane()?;
+        let engine = self.remembered.declared.engine(&slot.owner)?;
+        Some(engine.text(&slot.surface.id, lines))
     }
 
-    /// Drops a marking whose text a refresh changed. A marking is a
-    /// position in the text, and the same lines of a different diff are
-    /// not what was marked; a refresh that found everything as it was —
-    /// most of them — leaves it drawn.
-    pub(super) fn forget_marking_if_moved(&mut self, before: Option<Vec<String>>) {
-        if before.is_some_and(|before| self.code_marked_text() != Some(before)) {
-            self.selection = None;
+    /// Takes a declared-extension job's answer. Returns whether anything on
+    /// screen may have changed.
+    pub(super) fn absorb_extension_answer(&mut self, answer: ExtensionAnswer) -> bool {
+        let declared = &mut self.remembered.declared;
+        for identity in &answer.recompiled {
+            declared.recompiling.remove(identity);
         }
+        if answer.discovery {
+            declared.discovery_pending = false;
+        }
+        let mut went = false;
+        if let Some(found) = &answer.discovered {
+            went = declared.absorb_discovery(found);
+        }
+        // A recompile answers only for an extension still installed: one a
+        // discovery took away meanwhile stays away.
+        let recompiled = answer.discovered.is_none();
+        let loaded: Vec<LoadedExtension> = answer
+            .loaded
+            .into_iter()
+            .filter(|loaded| {
+                !recompiled || declared.extensions.contains_key(&loaded.installed.identity)
+            })
+            .collect();
+        let mut changed = went || !loaded.is_empty();
+        for loaded in loaded {
+            declared.absorb_loaded(loaded);
+        }
+        changed |= declared.absorb_records(answer.records);
+        changed |= declared.absorb_preferences(answer.preferences);
+        // A view whose extension went, or whose surface it stopped
+        // declaring, is put away rather than drawn from nothing.
+        if self.open_slot.is_some() && self.slot_in_pane().is_none() {
+            self.open_slot = None;
+            self.open_root = None;
+            self.inspecting = false;
+            self.reset_inspector();
+        }
+        self.register_extension_keys();
+        changed
+    }
+
+    /// Takes a poll of the linked extensions' stamps. Nothing on screen
+    /// changes until a save settles and is compiled.
+    pub(super) fn absorb_extension_stamps(&mut self, answer: StampsAnswer) {
+        let declared = &mut self.remembered.declared;
+        declared.stamps_pending = false;
+        declared.absorb_stamps(answer.stamps, Instant::now());
     }
 }

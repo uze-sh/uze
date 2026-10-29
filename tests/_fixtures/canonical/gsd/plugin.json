@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "gsd",
+  "version": "1.0.0",
+  "description": "The gsd-band reference extension: a board view and a sidebar section declared in KDL and drawn from a fixture."
+}

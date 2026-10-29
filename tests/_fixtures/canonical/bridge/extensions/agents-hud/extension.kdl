@@ -1,0 +1,19 @@
+// Every agent of the open spaces, read from the workspace's own account:
+// its state, and how long its turn has run, as a status row and a section.
+protocol 1
+id "agents-hud"
+name "Agents"
+description "Every agent's state and how long its turn has run"
+
+wants "agent:observe"
+
+surface "row" slot="status" view="row.uze" source="crew" title="Agents"
+surface "crew" slot="section" view="crew.uze" source="crew" title="Agents"
+
+// Answered by the workspace each pass; a turn's start and end ask again
+// at once.
+source "crew" {
+    agents
+    refresh-on "agent.turn.started"
+    refresh-on "agent.turn.finished"
+}

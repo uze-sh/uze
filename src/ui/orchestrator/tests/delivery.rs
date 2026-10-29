@@ -667,7 +667,10 @@ fn a_click_on_an_answered_status_sends_its_instruction_once() {
         "a click on an instruction delivers nothing"
     );
     let said = format!("{:?}", driven.attach.model.toast_stack());
-    assert!(said.contains("sent to agent"), "{said}");
+    assert!(
+        !said.contains("sent to agent"),
+        "typed into the agent in front, it is its own news: {said}"
+    );
     assert!(said.contains("agent is busy"), "{said}");
 }
 

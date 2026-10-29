@@ -1,0 +1,17 @@
+// A cue when an agent's turn ends and a notification when one asks for
+// an approval, and the last of them as a status row.
+protocol 1
+id "chimes"
+name "Chimes"
+description "A sound when a turn ends, and a notification when an agent asks"
+
+wants "agent:observe" "notify"
+
+surface "last" slot="status" view="last.uze" source="chime" title="Chimes"
+
+source "chime" {
+    script "chime.uze"
+    deliver "each"
+    refresh-on "agent.turn.finished"
+    refresh-on "agent.approval.asked"
+}

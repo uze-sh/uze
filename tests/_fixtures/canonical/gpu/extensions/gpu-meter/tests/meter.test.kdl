@@ -1,0 +1,25 @@
+test "the meter shows the GPU and its history" {
+    surface "meter"
+    given "gpu" fixture="fixtures/gpu.json"
+    size 80 20
+    expect-text "NVIDIA GeForce RTX 4060 Ti"
+    expect-text "1926 / 8188 MiB"
+    expect-text "56°C"
+    snapshot "meter"
+}
+
+test "the section fits the sidebar" {
+    surface "summary"
+    given "gpu" fixture="fixtures/gpu.json"
+    size 32 6
+    expect-text "load"
+    snapshot "summary"
+}
+
+test "the header row shows the load in one line" {
+    surface "load"
+    given "gpu" fixture="fixtures/gpu.json"
+    size 30 1
+    expect-text "GPU"
+    snapshot "status"
+}

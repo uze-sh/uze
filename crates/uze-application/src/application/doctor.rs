@@ -135,6 +135,9 @@ impl Health<'_> {
             .integrations
             .iter()
             .map(|integration| integration.as_ref())
+            .filter(|integration| {
+                super::lifecycle::attach::delivers_to(&package, &resources, *integration)
+            })
             .filter(|integration| self.0.detect_cached(*integration).present)
             .filter(|integration| {
                 !plugin
@@ -247,6 +250,8 @@ impl Health<'_> {
                         if uze_core::acquisition::forge::reached_over_ssh(url))
                 })
                 && !uze_core::acquisition::git::ssh_available(),
+            program_confinement: super::read_models::ProgramConfinement::of_this_machine(),
+            extension_costs: self.0.extensions().measured_costs(),
             machine_concerns: uze_platform::machine::concerns()
                 .into_iter()
                 .map(|concern| MachineConcern {
@@ -339,6 +344,7 @@ impl Health<'_> {
         Ok(MachineStatusReport {
             packages,
             held_back: held_back_notes(self.0, None),
+            extensions: self.0.extensions().reports(None),
         })
     }
 
@@ -353,6 +359,10 @@ impl Health<'_> {
             steps_not_spelled_here: workspace.steps_not_spelled_here(project_root),
             steps_only_in_sh: workspace.steps_only_in_sh(project_root),
             commands_awaiting_approval: workspace.commands_awaiting_approval(&report.root),
+            extensions: self
+                .0
+                .extensions()
+                .reports(Some(&crate::project_root_of(&report.root))),
             report,
         })
     }

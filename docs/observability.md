@@ -30,7 +30,7 @@ Under a root:
 - at debug level: `git` per Git invocation through `uze-git` (arguments,
   exit code), the TUI's timer-driven refreshes (`tui.git_read`,
   `tui.task_evaluation`, `tui.occupancy_reconcile`, `tui.support_refresh`,
-  `tui.conversation_refresh`, `tui.code_*`, `tui.architect_artifacts`,
+  `tui.conversation_refresh`, `tui.engine_jobs` (every extension's reads),
   `tui.preserved_sweep`), `engine.package_resources`, `persistence.write`,
   and the detection cache's hit and miss events.
 

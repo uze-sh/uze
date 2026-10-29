@@ -39,7 +39,12 @@ fn pane_showing(model: &mut WorkspaceModel, line: &str, reports_clicks: bool) {
 
 fn drag_across_the_first_word(driven: &mut Driven<'_>, modifiers: crossterm::event::KeyModifiers) {
     driven.frame();
-    let pane = compute_layout(driven.area, driven.attach.model.sidebar_width).pane;
+    let pane = compute_layout(
+        driven.area,
+        driven.attach.model.sidebar_width,
+        driven.attach.model.reserved(),
+    )
+    .pane;
     for (column, kind) in [
         (pane.x, MouseEventKind::Down(MouseButton::Left)),
         (pane.x + 4, MouseEventKind::Drag(MouseButton::Left)),
@@ -47,7 +52,11 @@ fn drag_across_the_first_word(driven: &mut Driven<'_>, modifiers: crossterm::eve
     ] {
         let mut event = mouse_at(column, pane.y, kind);
         event.modifiers = modifiers;
-        let layout = compute_layout(driven.area, driven.attach.model.sidebar_width);
+        let layout = compute_layout(
+            driven.area,
+            driven.attach.model.sidebar_width,
+            driven.attach.model.reserved(),
+        );
         let viewport = Viewport {
             size: ratatui::layout::Size::new(driven.area.width, driven.area.height),
             columns: layout.pane.width,
@@ -177,16 +186,19 @@ fn releasing_a_drag_over_the_code_surface_copies_what_it_covered() {
     };
     code::handle_command(&mut view, uze_extensions::view::Command::Activate, space);
     settle(&mut view);
-    model.code = Some(view);
+    show_code(&mut model, view);
     let mut driven = driven(model, &home);
     driven.frame();
     let first_line = driven.hit(|hit| {
         matches!(
             hit,
-            WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::PlaceCaret { line: 0, .. }))
+            WorkspaceHit::Extension(ExtensionHit {
+                hit: ViewHit::PlaceCaret { line: 0, .. },
+                ..
+            })
         )
     });
-    let text = first_line.x + driven.attach.model.code_scrollbars.content_gutter;
+    let text = first_line.x + driven.attach.model.surface_frame.content_gutter;
 
     driven.press(text, first_line.y);
     driven.mouse(
@@ -214,7 +226,7 @@ fn releasing_a_drag_over_the_code_surface_copies_what_it_covered() {
     // The copy's toast is put away first: it stands over the pane's
     // top-right corner, where the file's first line now is.
     driven.attach.model.dismiss_toast(0);
-    if let Some(view) = driven.attach.model.code.as_mut() {
+    if let Some(view) = code_view_mut(&mut driven.attach.model) {
         code::handle_command(view, uze_extensions::view::Command::Edit, space);
     }
     driven.frame();
@@ -222,7 +234,7 @@ fn releasing_a_drag_over_the_code_surface_copies_what_it_covered() {
         driven
             .attach
             .model
-            .code_scrollbars
+            .surface_frame
             .text_rows
             .iter()
             .find(|row| row.line == line)
@@ -236,7 +248,7 @@ fn releasing_a_drag_over_the_code_surface_copies_what_it_covered() {
         second.area.y,
         MouseEventKind::Drag(MouseButton::Left),
     );
-    let caret = match code::view(driven.attach.model.code.as_ref().unwrap(), space).content {
+    let caret = match code::view(code_view(&driven.attach.model).unwrap(), space).content {
         uze_extensions::view::Content::Lines { caret, .. } => caret,
         _ => None,
     };
@@ -342,7 +354,12 @@ fn a_click_still_reaches_a_program_that_owns_the_mouse() {
     pane_showing(&mut model, "hello world", true);
     let mut driven = driven(model, &home);
     driven.frame();
-    let pane = compute_layout(driven.area, driven.attach.model.sidebar_width).pane;
+    let pane = compute_layout(
+        driven.area,
+        driven.attach.model.sidebar_width,
+        driven.attach.model.reserved(),
+    )
+    .pane;
 
     driven.press(pane.x + 2, pane.y);
     assert!(
@@ -391,7 +408,12 @@ fn a_drag_past_the_top_of_a_full_screen_program_scrolls_it_with_the_wheel() {
     }
     let mut driven = driven(model, &home);
     driven.frame();
-    let pane = compute_layout(driven.area, driven.attach.model.sidebar_width).pane;
+    let pane = compute_layout(
+        driven.area,
+        driven.attach.model.sidebar_width,
+        driven.attach.model.reserved(),
+    )
+    .pane;
 
     driven.press(pane.x + 2, pane.y + 1);
     driven.mouse(

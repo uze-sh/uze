@@ -5,10 +5,10 @@
     "url": "https://github.com/uze-sh/uze"
   },
   "plugins": [
-    {
-      "name": "uze",
-      "source": "./plugins/uze",
-      "category": "development"
-    }
+    { "name": "uze", "source": "./plugins/uze", "category": "development" },
+    { "name": "pingpong", "source": "./plugins/pingpong", "category": "example" },
+    { "name": "gsd", "source": "./plugins/gsd", "category": "example" },
+    { "name": "focus", "source": "./plugins/focus", "category": "example" },
+    { "name": "contributions", "source": "./plugins/contributions", "category": "example" }
   ]
 }

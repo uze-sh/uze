@@ -77,7 +77,7 @@ impl Loop<'_> {
         let started = Instant::now();
         while !done(&self.driven.attach.model) {
             if started.elapsed() >= TIMEOUT {
-                let view = self.driven.attach.model.code.as_ref();
+                let view = self.code_view(&driven.attach.model);
                 panic!(
                     "{what} never happened: selected {:?}, shown {:?}, pending {:?}, content {:?}",
                     view.and_then(CodeView::selected),
@@ -146,7 +146,7 @@ fn summary(label: &str, samples: &mut [Duration]) {
 }
 
 fn code_view(model: &WorkspaceModel) -> &CodeView {
-    model.code.as_ref().expect("the surface is open")
+    code_view(&model).expect("the surface is open")
 }
 
 #[test]
@@ -168,7 +168,7 @@ fn code_surface_under_load() {
 
     run.key(alt('g'));
     let open = run.until("the first diff", |model| {
-        model.code.as_ref().is_some_and(selection_shown)
+        code_view(&model).is_some_and(selection_shown)
     });
     println!("open changes → first diff   {open:>8.1?}");
 
@@ -185,7 +185,7 @@ fn code_surface_under_load() {
             break;
         }
         clicks.push(run.until("the next diff", |model| {
-            model.code.as_ref().is_some_and(selection_shown)
+            code_view(&model).is_some_and(selection_shown)
         }));
     }
     summary("changes: next file → diff", &mut clicks);
@@ -195,7 +195,7 @@ fn code_surface_under_load() {
 
     open_code_at(&mut run.driven.attach.model, &repo, &file);
     let first = run.until("the file", |model| {
-        model.code.as_ref().is_some_and(selection_shown)
+        code_view(&model).is_some_and(selection_shown)
     });
     println!("open file                   {first:>8.1?}");
     let mut steps = Vec::new();
@@ -203,17 +203,14 @@ fn code_surface_under_load() {
         run.key(plain(crossterm::event::KeyCode::Down));
         run.key(plain(crossterm::event::KeyCode::Enter));
         steps.push(run.until("the next file", |model| {
-            model.code.as_ref().is_some_and(selection_shown)
+            code_view(&model).is_some_and(selection_shown)
         }));
     }
     summary("files: next file → shown", &mut steps);
 
     run.key(plain(crossterm::event::KeyCode::Char('m')));
     let map = run.until("the map", |model| {
-        model
-            .code
-            .as_ref()
-            .is_some_and(|view| view.showing() == ContentMode::Map && view.has_map())
+        code_view(&model).is_some_and(|view| view.showing() == ContentMode::Map && view.has_map())
     });
     println!("map → drawn                 {map:>8.1?}");
 

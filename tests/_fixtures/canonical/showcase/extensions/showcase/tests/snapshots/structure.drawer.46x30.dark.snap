@@ -1,0 +1,70 @@
+# uze snapshot · protocol 1 · drawer 46x30 · dark
+ ┌───────────────────────────────────────────┐
+ │ Structure                                 │
+ │                                           │
+ │  Plan       Max 5x                        │
+ │  Branch     feat/retry-backoff            │
+ │  Resets in  1h54m                         │
+ │                                           │
+ │  ───────────────────────────────────────  │
+ │                                           │
+ │  alt+k closes this drawer                 │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ └───────────────────────────────────────────┘
+---
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ a bbbbbbbbb                                 a
+ a                                           a
+ a  bbbb       ccc cc                        a
+ a  bbbbbb     dddddddddddddddddd            a
+ a  bbbbbb bb  eeeee                         a
+ a                                           a
+ a  fffffffffffffffffffffffffffffffffffffff  a
+ a                                           a
+ a  ggggg bbbbbb bbbb bbbbbb                 a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+---
+a border.default
+b text.muted
+c state.info
+d text.bright
+e state.warning
+f text.faint
+g accent

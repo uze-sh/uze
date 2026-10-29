@@ -87,21 +87,6 @@ pub(crate) fn board_space(frame_area: Rect) -> Size {
 
 /// How much room the content column has, for an extension deciding how
 /// much to produce.
-/// The room the code surface has. Which of the two it is depends on what
-/// the surface is showing, and only the surface knows: the map is a
-/// picture of the whole checkout and takes the frame, while everything
-/// else is read in the column beside the tree.
-pub(crate) fn code_space(
-    frame_area: Rect,
-    navigator_width_override: Option<u16>,
-    code: Option<&uze_extensions::code::CodeView>,
-) -> Size {
-    match code.map(uze_extensions::code::CodeView::showing) {
-        Some(uze_extensions::code::ContentMode::Map) => board_space(frame_area),
-        _ => content_space(frame_area, navigator_width_override),
-    }
-}
-
 /// The keys that act here, on one row: with no frame beneath it there is
 /// no edge the row needs keeping off.
 pub(super) const FOOTER_ROWS: u16 = 1;

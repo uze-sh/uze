@@ -33,6 +33,15 @@ it has written it there.**
 - An instruction is never sent into a pane where the agent is working or
   the operator has typed, and it is never queued.
 
+Amended (extension-agent-bridge): refuse, never queue, holds for every writer into a
+pane, extensions included. An extension's `agent-prompt` is shown to the
+operator first, then goes through `submit_notice` behind `may_submit`; it
+is refused with the reason while the pane is busy, typed into, held by
+another program or awaiting an approval, and past the bridge's rates, and
+it is never queued: the extension may try again on a later event
+(`extension-platform` D16). The session's two writers, the project's
+instructions and the bridge, are the only callers of `submit_notice`.
+
 The rejected alternative was keeping `pr` as a behavior with a configurable
 message. That still makes UZE the author of a step that belongs to the
 project's own review flow, and every forge or habit would need a new

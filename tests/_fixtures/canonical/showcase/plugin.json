@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "showcase",
+  "version": "1.0.0",
+  "description": "One view per family of the extension catalog, drawn from a fixture: the reference for what a declared extension can draw."
+}

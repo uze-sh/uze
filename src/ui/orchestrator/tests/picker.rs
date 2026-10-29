@@ -949,7 +949,9 @@ fn a_picker_row_over_the_tree_answers_its_own_click() {
 
     driven.frame();
     let option = driven.hit(|hit| matches!(hit, WorkspaceHit::PickAgent(0)));
-    let tree_ends = compute_layout(Rect::new(0, 0, 80, 24), None).pane.x;
+    let tree_ends = compute_layout(Rect::new(0, 0, 80, 24), None, Default::default())
+        .pane
+        .x;
     assert!(
         option.x < tree_ends,
         "the row this is about starts over the tree: {option:?}"

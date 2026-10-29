@@ -1,0 +1,28 @@
+// The last CI runs of the checkout's branch, asked of GitHub's API every
+// minute while a surface showing them is visible. The request goes to
+// `api.github.com` and nowhere else, over the system's `curl`; the
+// operator's token is a secret preference the script names in `fetch` and
+// never reads, kept in the keychain and never shown again.
+protocol 1
+id "ci-status"
+name "CI"
+description "The checkout's branch's last CI runs on GitHub"
+
+wants "read:checkout" "net:api.github.com"
+
+surface "runs" slot="section" view="runs.uze" source="runs" title="CI"
+surface "last" slot="status" view="status.uze" source="runs" title="CI"
+
+// The repository is read from the checkout's `origin` when it is GitHub's;
+// the operator names it here otherwise. The token reaches private
+// repositories and lifts the rate limit.
+preferences {
+    text "repo" label="Repository (owner/name)" default=""
+    secret "token" label="GitHub token"
+}
+
+source "runs" {
+    script "runs.uze"
+    every "60s"
+    preferences
+}

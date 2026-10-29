@@ -1,0 +1,17 @@
+#!/bin/sh
+# Stands in for a device's screenshot (`adb exec-out screencap -p` on a
+# phone): writes a small PNG of a home screen into its scratch, where the
+# views read it as `scratch:shot.png`, and says which device it was. Only
+# the shell's own `printf` runs: nothing else needs a grant.
+shot="$TMPDIR/shot.png"
+printf '\211PNG\015\012\032\012\000\000\000\015IHDR\000\000\000\044\000' > "$shot"
+printf '\000\000\100\010\002\000\000\000\375\007B\203\000\000\000\200IDA' >> "$shot"
+printf 'Tx\332c\340\021\220\241\033b\030\265\214\052\226I\050X\320\015' >> "$shot"
+printf '\215ZFe\313\236E\005\140Ep\005Q\047\052\260\042\270\202\200i\037' >> "$shot"
+printf '\260\242Q\313F\055\033\265l\264\270\032\272\226Q\036\377\037N' >> "$shot"
+printf '\270aE\243\226\215Z6j\331hq5t\055\243\074\376\011V\277\243\226' >> "$shot"
+printf '\215Z6\342\055\033\055\256\206\236e\224\307\077\301\352w\324\262' >> "$shot"
+printf 'Q\313F\274e\243\305\325\250e\003n\331\350\044\302\250e\203\3062' >> "$shot"
+printf '\000\225\354\220\052\371S\030\246\000\000\000\000IEND\256B\140' >> "$shot"
+printf '\202' >> "$shot"
+printf '{"data":{"device":"emulator-5554","screen":"home"}}\n'

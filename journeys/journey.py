@@ -488,18 +488,30 @@ class Screen:
     def band(self, where: str) -> tuple[int, int]:
         # The strip is the tab row right of the sidebar: the sidebar's own
         # header shares its line, and `+ space` there is not the strip's `+`.
+        # The bar is its mirror at the screen's foot, where plugins' doors
+        # and items stand.
         pane = (self.sidebar + 1, 9999)
-        return {"sidebar": (1, self.sidebar), "pane": pane, "strip": pane}.get(
-            where, (1, 9999)
-        )
+        return {
+            "sidebar": (1, self.sidebar),
+            "pane": pane,
+            "strip": pane,
+            "bar": pane,
+        }.get(where, (1, 9999))
+
+    def rows_of(self, where: str) -> tuple[int, list[str]]:
+        """The rows a search in `where` reads, and the row number of the first."""
+        rows = self.pane().splitlines()
+        if where == "strip":
+            return 1, rows[:1]
+        if where == "bar":
+            return len(rows), rows[-1:]
+        return 1, rows
 
     def find(self, text: str, where: str = "screen", occurrence="first"):
         low, high = self.band(where)
-        rows = self.pane().splitlines()
-        if where == "strip":
-            rows = rows[:1]
+        first, rows = self.rows_of(where)
         hits = []
-        for row, line in enumerate(rows, 1):
+        for row, line in enumerate(rows, first):
             start = low - 1
             while (col := line.find(text, start, high)) != -1:
                 hits.append((row, col + 1))
@@ -514,11 +526,9 @@ class Screen:
 
     def find_glyph(self, glyphs: str, where: str = "screen", occurrence="first"):
         low, high = self.band(where)
-        rows = self.pane().splitlines()
-        if where == "strip":
-            rows = rows[:1]
+        first, rows = self.rows_of(where)
         hits = []
-        for row, line in enumerate(rows, 1):
+        for row, line in enumerate(rows, first):
             for col, char in enumerate(line[low - 1 : high], low):
                 if char in glyphs:
                     hits.append((row, col))
@@ -531,9 +541,9 @@ class Screen:
         return hits[0]
 
     def shows(self, pattern: str, where: str = "screen") -> bool:
-        if where == "strip":
+        if where in ("strip", "bar"):
             low, high = self.band(where)
-            haystack = "".join(self.pane().splitlines()[:1])[low - 1 : high]
+            haystack = "".join(self.rows_of(where)[1])[low - 1 : high]
         else:
             haystack = self.pane()
         return re.search(pattern, haystack) is not None
@@ -1258,8 +1268,11 @@ class Checker:
             except json.JSONDecodeError as error:
                 return False, f"{path}: not JSON ({error})"
             values += resolve_json(document, spec.get("at", ""))
+        # A path UZE recorded is spelled as the host spells it (`C:\\…` on
+        # Windows); a journey's placeholders spell it with forward slashes.
         readable = [
-            value if isinstance(value, str) else json.dumps(value) for value in values
+            machine.spell_value(value) if isinstance(value, str) else json.dumps(value)
+            for value in values
         ]
         where = f"{pattern} at {spec.get('at', '.')!r}"
         if "count" in spec and len(values) != spec["count"]:

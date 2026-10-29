@@ -1,0 +1,41 @@
+test "the deck lists every agent with what to do from its row" {
+    surface "deck"
+    given "crew" fixture="fixtures/agents.json"
+    now 1761570125000
+    size 90 8
+    expect-text "fix/branch-naming"
+    expect-text "site"
+    snapshot "deck"
+}
+
+test "focus goes to the agent of its row" {
+    surface "deck"
+    given "crew" fixture="fixtures/agents.json"
+    now 1761570125000
+    press "down"
+    press "ctrl+g"
+    expect-action "focus" id="a1"
+}
+
+test "ask names the agent of the row it was pressed on" {
+    surface "deck"
+    given "crew" fixture="fixtures/agents.json"
+    now 1761570125000
+    press-button "Ask"
+    expect-action "ask" id="a1"
+}
+
+test "the calls read newest first" {
+    surface "calls"
+    given "calls" fixture="fixtures/calls.json"
+    size 30 6
+    expect-text "Edit"
+    expect-text "turn started"
+    snapshot "calls"
+}
+
+test "no call yet says so" {
+    surface "calls"
+    given "calls" json="[]"
+    expect-text "No calls yet"
+}

@@ -1,0 +1,76 @@
+test "the bar says today's commits and the last two weeks" {
+    surface "today"
+    given "git" fixture="fixtures/git.json"
+    expect-text "9 today"
+    snapshot "bar"
+}
+
+test "the drawer shows 20 weeks, the streaks, the chosen day and who" {
+    surface "heatmap"
+    given "git" fixture="fixtures/git.json"
+    size 120 18
+    expect-text "Jun"
+    expect-text "Oct"
+    expect-text "Mon"
+    expect-text "Fri"
+    expect-text "404"
+    expect-text "current streak"
+    expect-text "longest streak"
+    expect-text "Tue, Oct 27"
+    expect-text "· 12 commits"
+    expect-text "and 5 more"
+    expect-text "less"
+    expect-text "who"
+    snapshot "heatmap"
+}
+
+test "a wider strip gives the commits more room" {
+    surface "heatmap"
+    given "git" fixture="fixtures/git.json"
+    size 160 20
+    snapshot "heatmap-wide"
+}
+
+test "a narrow terminal keeps the map whole" {
+    surface "heatmap"
+    given "git" fixture="fixtures/git.json"
+    size 90 18
+    expect-text "Mon"
+    expect-text "Oct"
+    snapshot "heatmap-narrow"
+}
+
+test "a light theme draws the map in its own ramp" {
+    surface "heatmap"
+    given "git" fixture="fixtures/git.json"
+    size 120 18
+    theme "light"
+    snapshot "heatmap"
+}
+
+test "a repository with no commit yet says so" {
+    surface "heatmap"
+    given "git" fixture="fixtures/empty.json"
+    size 120 18
+    expect-text "0 days"
+    expect-text "no commit that day"
+    snapshot "heatmap-empty"
+}
+
+test "a click on a day chooses it" {
+    surface "heatmap"
+    given "git" fixture="fixtures/git.json"
+    size 120 18
+    click "▣"
+    expect-action "day" date="2026-10-27"
+}
+
+test "a click on any other day chooses that day" {
+    surface "heatmap"
+    given "git" fixture="fixtures/git.json"
+    size 120 18
+    // The first square drawn is the first Monday of the map, not the day
+    // already chosen: its region must name its own date.
+    click "■"
+    expect-action "day" date="2026-06-15"
+}

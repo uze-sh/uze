@@ -4,8 +4,7 @@
 use super::WorkspaceHit;
 use super::support::*;
 use super::{
-    ExtensionHit, SpecResolution, SpecSummaryState, WorkspaceModel, open_architect, open_code,
-    open_spec,
+    ExtensionHit, WorkspaceModel, open_code, open_spec,
     render::{self, compute_layout},
 };
 use crate::ui::theme::{self, Token};
@@ -26,7 +25,7 @@ fn coming_back_to_a_checkouts_code_returns_to_where_it_was_left() {
 
     let (mut model, first, second) = two_agents_with_shells();
     let answer_listing = |model: &mut WorkspaceModel, root: &str| {
-        let view = model.code.as_mut().expect("the surface is open");
+        let view = code_view_mut(model).expect("the surface is open");
         view.take_request();
         view.absorb(code::FileAnswer::Listed {
             chain: Vec::new(),
@@ -45,38 +44,38 @@ fn coming_back_to_a_checkouts_code_returns_to_where_it_was_left() {
     };
 
     let space =
-        crate::ui::extension_view::content_space(Rect::new(0, 0, 120, 40), model.code_tree_width);
+        crate::ui::extension_view::content_space(Rect::new(0, 0, 120, 40), model.navigator_width);
 
     select_tab(&mut model, first);
-    open_code(&mut model, uze_extensions::code::ContentMode::Contents);
+    open_code(&mut model, uze_extensions::code::FILES);
     answer_listing(&mut model, "/repo/.worktrees/a");
     // Walked away from the row the tree opened on, which is the part
     // that must survive the round trip.
     code::handle_command(
-        model.code.as_mut().expect("open"),
+        code_view_mut(&mut model).expect("open"),
         uze_extensions::view::Command::SelectNext,
         space,
     );
-    let walked_to = model.code.as_ref().expect("open").place();
+    let walked_to = code_view(&model).expect("open").place();
 
-    model.close_code();
-    assert!(model.code.is_none());
+    model.close_surface();
+    assert!(!model.showing(uze_extensions::code::CATALOG.id));
 
     // Another agent's checkout is a different place, not this one.
     select_tab(&mut model, second);
-    open_code(&mut model, uze_extensions::code::ContentMode::Contents);
+    open_code(&mut model, uze_extensions::code::FILES);
     answer_listing(&mut model, "/repo/.worktrees/b");
     assert_ne!(
-        model.code.as_ref().expect("open").place(),
+        code_view(&model).expect("open").place(),
         walked_to,
         "a checkout never visited opens on its own first row"
     );
-    model.close_code();
+    model.close_surface();
 
     select_tab(&mut model, first);
-    open_code(&mut model, uze_extensions::code::ContentMode::Contents);
+    open_code(&mut model, uze_extensions::code::FILES);
     assert_eq!(
-        model.code.as_ref().expect("open").place(),
+        code_view(&model).expect("open").place(),
         walked_to,
         "and the one left mid-walk is where it was left"
     );
@@ -92,17 +91,13 @@ fn coming_back_to_a_checkouts_architect_returns_to_the_diagram_it_was_left_on() 
 
     let (mut model, first, second) = two_agents_with_shells();
     let answer_artifacts = |model: &mut WorkspaceModel| {
-        let view = model.architect.as_mut().expect("the surface is open");
-        view.absorb(architect::ArtifactsAnswer {
-            branch: "main".to_owned(),
-            artifacts: architect::Artifacts::Found {
-                artifacts: vec![
-                    architect::Artifact::read("one.mmd", "flowchart TD\n a --> b"),
-                    architect::Artifact::read("two.mmd", "flowchart TD\n c --> d"),
-                ],
-                project: PathBuf::from("/repo"),
-            },
-        });
+        open_architect_with(
+            model,
+            vec![
+                architect::Artifact::read("one.mmd", "flowchart TD\n a --> b"),
+                architect::Artifact::read("two.mmd", "flowchart TD\n c --> d"),
+            ],
+        );
     };
     let space = uze_extensions::view::Size {
         width: 120,
@@ -110,36 +105,29 @@ fn coming_back_to_a_checkouts_architect_returns_to_the_diagram_it_was_left_on() 
     };
 
     select_tab(&mut model, first);
-    open_architect(&mut model);
     answer_artifacts(&mut model);
     // Moved off the diagram the surface opens on, which is the part
     // that must survive the round trip.
-    architect::handle_command(
-        model.architect.as_mut().expect("open"),
-        Command::NextView,
-        space,
-    );
-    let moved_to = model.architect.as_ref().expect("open").place();
+    model.tell_surface(Command::NextView, space);
+    let moved_to = architect_place(&model);
 
-    model.close_architect();
-    assert!(model.architect.is_none());
+    model.close_surface();
+    assert!(!model.showing(architect::CATALOG.id));
 
     // Another agent's checkout is a different place, not this one.
     select_tab(&mut model, second);
-    open_architect(&mut model);
     answer_artifacts(&mut model);
     assert_ne!(
-        model.architect.as_ref().expect("open").place(),
+        architect_place(&model),
         moved_to,
         "a checkout never visited opens on its own first diagram"
     );
-    model.close_architect();
+    model.close_surface();
 
     select_tab(&mut model, first);
-    open_architect(&mut model);
     answer_artifacts(&mut model);
     assert_eq!(
-        model.architect.as_ref().expect("open").place(),
+        architect_place(&model),
         moved_to,
         "and the one left mid-walk is where it was left"
     );
@@ -154,35 +142,37 @@ fn coming_back_to_a_checkouts_architect_returns_to_the_diagram_it_was_left_on() 
 /// save and the re-read that follows it have an order.
 #[test]
 fn every_directory_a_resumed_tree_needs_is_asked_for_at_once() {
-    use std::sync::mpsc;
-
     use uze_extensions::code;
 
     let root = PathBuf::from("/repo/.worktrees/a");
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
-    model.remembered.code_places.insert(
-        root.clone(),
-        code::CodePlace::at(&root, &root.join("src/ui/widget/row.rs"), false),
+    model.remembered.declared.places.insert(
+        (
+            super::Owner::Builtin(code::CATALOG.id),
+            code::SURFACE.to_owned(),
+            root.clone(),
+        ),
+        uze_extensions::contract::Opaque::new(code::CodePlace::at(
+            &root,
+            &root.join("src/ui/widget/row.rs"),
+            false,
+        )),
     );
-    open_code(&mut model, uze_extensions::code::ContentMode::Contents);
+    open_code(&mut model, uze_extensions::code::FILES);
 
-    let (sender, _receiver) = mpsc::channel();
-    model.schedule_file_request(&sender);
-
-    let held = model.code_request_pending;
-    let waiting = model
-        .code
-        .as_ref()
+    let handed = code_engine(&mut model).jobs().len();
+    let waiting = code_view(&model)
         .expect("the surface is open")
-        .peek_request();
+        .peek_request()
+        .cloned();
     assert!(
         waiting.is_none(),
         "every directory went out together, and the read behind them with it: {waiting:?}"
     );
     assert!(
-        held,
-        "the read is what took the one-at-a-time chain, not the listings"
+        handed > 2,
+        "the directories on the way, and the read: {handed}"
     );
 }
 
@@ -192,16 +182,13 @@ fn every_directory_a_resumed_tree_needs_is_asked_for_at_once() {
 /// until it lands.
 #[test]
 fn a_checkout_measured_once_is_not_measured_again_on_the_way_back_in() {
-    use std::sync::mpsc;
-
     use uze_extensions::code;
-
-    use crate::ui::orchestrator::MeasureResolution;
+    use uze_extensions::contract::Opaque;
 
     let root = PathBuf::from("/repo/.worktrees/a");
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
-    open_code(&mut model, uze_extensions::code::ContentMode::Contents);
+    open_code(&mut model, uze_extensions::code::FILES);
 
     let measured = code::Measure {
         root: root.clone(),
@@ -212,28 +199,26 @@ fn a_checkout_measured_once_is_not_measured_again_on_the_way_back_in() {
             changed: false,
         }],
     };
-    model.absorb_measure(MeasureResolution {
+    code_engine(&mut model).absorb(Opaque::new(code::MeasureRead {
         root: root.clone(),
         measure: Some(measured),
-    });
-    assert!(model.code.as_ref().expect("open").has_map());
+    }));
+    assert!(code_view(&model).expect("open").has_map());
 
-    model.close_code();
-    open_code(&mut model, uze_extensions::code::ContentMode::Contents);
+    model.close_surface();
+    open_code(&mut model, uze_extensions::code::FILES);
     assert!(
-        model.code.as_ref().expect("open").has_map(),
+        code_view(&model).expect("open").has_map(),
         "the map is there the moment the surface is"
     );
 
-    model
-        .code
-        .as_mut()
+    // What opening asked for, out of the way.
+    code_engine(&mut model).jobs();
+    code_view_mut(&mut model)
         .expect("open")
         .show(uze_extensions::code::ContentMode::Map);
-    let (sender, _receiver) = mpsc::channel();
-    model.schedule_code_measure(&sender);
     assert!(
-        model.code_measure_asked.is_none(),
+        code_engine(&mut model).jobs().is_empty(),
         "and nothing was asked of the checkout again"
     );
 }
@@ -245,7 +230,7 @@ fn a_checkout_measured_once_is_not_measured_again_on_the_way_back_in() {
 /// groove drawn to be dragged did nothing.
 #[test]
 fn the_content_scrollbar_answers_in_the_panes_margin() {
-    use uze_extensions::{ExtensionHit, code, view::ViewHit};
+    use uze_extensions::{code, view::ViewHit};
 
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-content-groove"));
     let (mut model, first, _second) = two_agents_with_shells();
@@ -256,31 +241,28 @@ fn the_content_scrollbar_answers_in_the_panes_margin() {
         code::ContentMode::Contents,
     );
     view.take_request();
-    model.code = Some(view);
+    show_code(&mut model, view);
 
     let mut driven = driven(model, &home);
     driven.frame();
-    let pane = compute_layout(driven.area, driven.attach.model.sidebar_width).pane;
+    let pane = compute_layout(
+        driven.area,
+        driven.attach.model.sidebar_width,
+        driven.attach.model.reserved(),
+    )
+    .pane;
     let track = Rect::new(pane.right(), pane.y + 1, 1, pane.height - 1);
     let bar = crate::ui::widget::Scrollbar::measure(track, usize::from(track.height), 500)
         .expect("five hundred lines in a pane is a scrollbar");
-    driven.attach.model.code_scrollbars.content_bar = Some(bar);
+    driven.attach.model.surface_frame.content_bar = Some(bar);
     driven.attach.model.hits.insert(
         0,
         (
             track,
-            WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::DragContentScrollbar)),
+            code_hit(&driven.attach.model, ViewHit::DragContentScrollbar),
         ),
     );
-    let place = |driven: &Driven<'_>| {
-        driven
-            .attach
-            .model
-            .code
-            .as_ref()
-            .expect("still open")
-            .place()
-    };
+    let place = |driven: &Driven<'_>| code_view(&driven.attach.model).expect("still open").place();
     let top = place(&driven);
 
     driven.press(track.x, track.bottom() - 1);
@@ -330,7 +312,7 @@ fn the_code_halves_take_the_bars_leading_slot() {
             changed: false,
         }],
     });
-    model.code = Some(view);
+    show_code(&mut model, view);
 
     let rows = frame_rows(&mut model);
     let layout = full_frame(&mut model);
@@ -357,7 +339,10 @@ fn the_code_halves_take_the_bars_leading_slot() {
     let control = model.hits.iter().find(|(_, hit)| {
         matches!(
             hit,
-            WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::SelectSubject(_)))
+            WorkspaceHit::Extension(ExtensionHit {
+                hit: ViewHit::SelectSubject(_),
+                ..
+            })
         )
     });
     let (rect, _) = control.expect("the control can be pointed at");
@@ -375,24 +360,26 @@ fn a_sidebar_section_answers_while_a_surface_is_open() {
     ));
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
-    let cwd = model.focused_cwd().expect("a tab in front");
-    model.remembered.spec_summary = Some(SpecSummaryState {
-        cwd,
-        summary: Some(Summary {
+    count_spec(
+        &mut model,
+        Summary {
             changes: vec![ChangeSummary {
                 name: "mine".to_owned(),
                 progress: Some(Progress { done: 1, total: 4 }),
             }],
             done: 1,
             total: 4,
-        }),
-        checked_at: std::time::Instant::now(),
-    });
-    model.spec = Some(uze_extensions::spec::SpecView::opening("/repo".to_owned()));
+        },
+    );
+    open_spec(&mut model);
+    let summary = spec_slot(&model, uze_extensions::spec::SUMMARY);
     let mut driven = driven(model, &home);
     driven.frame();
     let header = driven.hit(|hit| {
-        *hit == WorkspaceHit::Extension(ExtensionHit::SpecSummary(ViewHit::ToggleSection))
+        *hit == WorkspaceHit::Extension(ExtensionHit {
+            slot: summary,
+            hit: ViewHit::ToggleSection,
+        })
     });
     driven.press(header.x, header.y);
     assert!(
@@ -411,10 +398,9 @@ fn the_spec_section_totals_the_work_and_opens_the_surface_on_a_change() {
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
     model.timeline_collapsed = false;
-    let cwd = model.focused_cwd().expect("a tab in front");
-    model.remembered.spec_summary = Some(SpecSummaryState {
-        cwd,
-        summary: Some(Summary {
+    count_spec(
+        &mut model,
+        Summary {
             changes: vec![
                 ChangeSummary {
                     name: "mine".to_owned(),
@@ -427,9 +413,9 @@ fn the_spec_section_totals_the_work_and_opens_the_surface_on_a_change() {
             ],
             done: 3,
             total: 6,
-        }),
-        checked_at: std::time::Instant::now(),
-    });
+        },
+    );
+    let summary = spec_slot(&model, uze_extensions::spec::SUMMARY);
     let mut driven = driven(model, &home);
     driven.frame();
 
@@ -439,7 +425,12 @@ fn the_spec_section_totals_the_work_and_opens_the_surface_on_a_change() {
             .model
             .hits
             .iter()
-            .find(|(_, hit)| *hit == WorkspaceHit::Extension(ExtensionHit::SpecSummary(wanted)))
+            .find(|(_, hit)| {
+                *hit == WorkspaceHit::Extension(ExtensionHit {
+                    slot: summary,
+                    hit: wanted,
+                })
+            })
             .map(|(rect, _)| *rect)
             .unwrap_or_else(|| panic!("{wanted:?} is not in the sidebar"))
     };
@@ -457,13 +448,14 @@ fn the_spec_section_totals_the_work_and_opens_the_surface_on_a_change() {
     driven.frame();
     let row = drawn(&driven, ViewHit::SelectItem(1));
     driven.press(row.x, row.y);
-    let place = driven
-        .attach
-        .model
-        .spec
-        .as_ref()
-        .expect("the surface opened")
-        .place();
+    assert!(
+        driven
+            .attach
+            .model
+            .showing(uze_extensions::spec::CATALOG.id),
+        "the surface opened"
+    );
+    let place = spec_place(&driven.attach.model);
     assert_eq!(
         place,
         Some(uze_extensions::spec::SpecPlace::change("theirs")),
@@ -491,7 +483,12 @@ fn the_spec_section_totals_the_work_and_opens_the_surface_on_a_change() {
     let bright_name = |wanted: ViewHit, name: &str| {
         let (rect, _) = hits
             .iter()
-            .find(|(_, hit)| *hit == WorkspaceHit::Extension(ExtensionHit::SpecSummary(wanted)))
+            .find(|(_, hit)| {
+                *hit == WorkspaceHit::Extension(ExtensionHit {
+                    slot: summary,
+                    hit: wanted,
+                })
+            })
             .unwrap_or_else(|| panic!("{wanted:?} is not in the sidebar"));
         let text: String = (rect.x..rect.right())
             .map(|column| buffer[(column, rect.y)].symbol())
@@ -510,33 +507,50 @@ fn the_spec_section_totals_the_work_and_opens_the_surface_on_a_change() {
 #[test]
 fn a_spec_answer_for_a_surface_since_closed_or_moved_is_dropped() {
     let (mut model, first, second) = two_agents_with_shells();
-    let answer = |root: PathBuf| SpecResolution {
-        root: root.clone(),
-        answer: uze_extensions::spec::SpecAnswer {
-            root,
-            branch: "main".to_owned(),
-            theme: String::new(),
-            found: uze_extensions::spec::Found::NoLayout,
-            subjects: Vec::new(),
-        },
+    let read = |root: PathBuf| {
+        uze_extensions::contract::Opaque::new(uze_extensions::spec::SpecRead {
+            root: root.clone(),
+            answer: uze_extensions::spec::SpecAnswer {
+                root,
+                branch: "main".to_owned(),
+                theme: String::new(),
+                found: uze_extensions::spec::Found::NoLayout,
+                subjects: Vec::new(),
+            },
+        })
+    };
+    let reading = |model: &WorkspaceModel| {
+        let space = uze_extensions::view::Size {
+            width: 80,
+            height: 24,
+        };
+        matches!(
+            model.view_in_pane(space).map(|view| view.content),
+            Some(uze_extensions::view::Content::Message { text, .. }) if text.starts_with("Reading")
+        )
     };
     select_tab(&mut model, first);
     open_spec(&mut model);
-    let asked_for = model.spec_root.clone().expect("a root");
-    model.close_spec();
-    assert!(!model.absorb_spec(answer(asked_for.clone())));
-    assert!(model.spec.is_none(), "nothing reopened");
+    let asked_for = model.open_root.clone().expect("a root");
+    model.close_surface();
+    spec_engine(&mut model).absorb(read(asked_for.clone()));
+    assert!(
+        !model.showing(uze_extensions::spec::CATALOG.id),
+        "nothing reopened"
+    );
 
     select_tab(&mut model, second);
     open_spec(&mut model);
-    if model.spec_root.as_ref() != Some(&asked_for) {
+    let here = model.open_root.clone().expect("a root");
+    if here != asked_for {
+        spec_engine(&mut model).absorb(read(asked_for.clone()));
         assert!(
-            !model.absorb_spec(answer(asked_for.clone())),
+            reading(&model),
             "an answer about another checkout is not drawn"
         );
     }
-    let here = model.spec_root.clone().expect("a root");
-    assert!(model.absorb_spec(answer(here)), "its own answer lands");
+    spec_engine(&mut model).absorb(read(here));
+    assert!(!reading(&model), "its own answer lands");
 }
 
 /// Coming back to a checkout's spec surface returns to the document it
@@ -558,26 +572,29 @@ fn coming_back_to_a_checkouts_spec_returns_to_the_document_it_was_left_on() {
             rank: 0,
             text: Ok(format!("# {name}\n")),
         };
-        model.spec.as_mut().expect("open").absorb(spec::SpecAnswer {
-            root: PathBuf::from("/repo"),
-            branch: "main".to_owned(),
-            theme: String::new(),
-            found: spec::Found::Units {
-                dialects: vec!["OpenSpec"],
-                units: vec![spec::Unit {
-                    subject: spec::Subject::Changes,
-                    name: "x".to_owned(),
-                    relative: "openspec/changes/x".to_owned(),
-                    dialect: "OpenSpec",
-                    archives: true,
-                    artifacts: vec![artifact("proposal"), artifact("design")],
-                    progress: None,
-                    own: false,
-                    standing: None,
-                }],
+        answer_spec(
+            model,
+            spec::SpecAnswer {
+                root: PathBuf::from("/repo"),
+                branch: "main".to_owned(),
+                theme: String::new(),
+                found: spec::Found::Units {
+                    dialects: vec!["OpenSpec"],
+                    units: vec![spec::Unit {
+                        subject: spec::Subject::Changes,
+                        name: "x".to_owned(),
+                        relative: "openspec/changes/x".to_owned(),
+                        dialect: "OpenSpec",
+                        archives: true,
+                        artifacts: vec![artifact("proposal"), artifact("design")],
+                        progress: None,
+                        own: false,
+                        standing: None,
+                    }],
+                },
+                subjects: vec![spec::Subject::Changes],
             },
-            subjects: vec![spec::Subject::Changes],
-        });
+        );
     };
     let space = uze_extensions::view::Size {
         width: 120,
@@ -588,14 +605,14 @@ fn coming_back_to_a_checkouts_spec_returns_to_the_document_it_was_left_on() {
     open_spec(&mut model);
     answer(&mut model);
     for command in [Command::Expand, Command::SelectNext, Command::SelectNext] {
-        spec::handle_command(model.spec.as_mut().expect("open"), command, space);
+        model.tell_surface(command, space);
     }
-    let left_on = model.spec.as_ref().expect("open").place();
-    model.close_spec();
+    let left_on = spec_place(&model);
+    model.close_surface();
 
     open_spec(&mut model);
     answer(&mut model);
-    assert_eq!(model.spec.as_ref().expect("open").place(), left_on);
+    assert_eq!(spec_place(&model), left_on);
     assert!(left_on.is_some());
 }
 
@@ -608,13 +625,13 @@ fn coming_back_to_a_checkouts_spec_returns_to_the_document_it_was_left_on() {
 /// a tile nobody could reach at all.
 #[test]
 fn a_click_on_the_map_resolves_to_the_column_under_the_pointer() {
-    use uze_extensions::{ExtensionHit, code, view::ViewHit};
+    use uze_extensions::{code, view::ViewHit};
 
     let root = PathBuf::from("/repo/.worktrees/a");
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
-    open_code(&mut model, uze_extensions::code::ContentMode::Contents);
-    let view = model.code.as_mut().expect("the surface is open");
+    open_code(&mut model, uze_extensions::code::FILES);
+    let view = code_view_mut(&mut model).expect("the surface is open");
     view.absorb_measure(code::Measure {
         root,
         files: (0..6)
@@ -630,16 +647,17 @@ fn a_click_on_the_map_resolves_to_the_column_under_the_pointer() {
     full_frame(&mut model);
 
     assert_eq!(
-        model.code_scrollbars.content_gutter, 0,
+        model.surface_frame.content_gutter, 0,
         "a drawing carries no line numbers, so it has no gutter"
     );
     let (rect, line, cell) = model
         .hits
         .iter()
         .find_map(|(rect, hit)| match hit {
-            WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::PlaceCaret { line, cell })) => {
-                Some((*rect, *line, *cell))
-            }
+            WorkspaceHit::Extension(ExtensionHit {
+                hit: ViewHit::PlaceCaret { line, cell },
+                ..
+            }) => Some((*rect, *line, *cell)),
             _ => None,
         })
         .expect("the map's rows are clickable");
@@ -650,7 +668,7 @@ fn a_click_on_the_map_resolves_to_the_column_under_the_pointer() {
             rect,
             cell,
             far_right,
-            model.code_scrollbars.content_gutter,
+            model.surface_frame.content_gutter,
         ),
         usize::from(rect.width - 1),
         "the last column of a row is the last cell of the drawing"
@@ -693,7 +711,7 @@ fn a_click_inside_the_explorer_reaches_the_extension() {
             },
         ]),
     });
-    model.code = Some(view);
+    show_code(&mut model, view);
     full_frame(&mut model);
 
     let row = model
@@ -702,7 +720,10 @@ fn a_click_inside_the_explorer_reaches_the_extension() {
         .find(|(_, hit)| {
             matches!(
                 hit,
-                WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::SelectItem(_)))
+                WorkspaceHit::Extension(ExtensionHit {
+                    hit: ViewHit::SelectItem(_),
+                    ..
+                })
             )
         })
         .expect("the explorer drew a clickable file row")
@@ -710,9 +731,10 @@ fn a_click_inside_the_explorer_reaches_the_extension() {
     assert!(
         matches!(
             model.hit_at(row.x + 2, row.y),
-            Some(WorkspaceHit::Extension(ExtensionHit::Code(
-                ViewHit::SelectItem(_)
-            )))
+            Some(WorkspaceHit::Extension(ExtensionHit {
+                hit: ViewHit::SelectItem(_),
+                ..
+            }))
         ),
         "a click on the row resolves to that row, not to something under it"
     );
@@ -720,7 +742,10 @@ fn a_click_inside_the_explorer_reaches_the_extension() {
     let caret = model.hits.iter().find(|(_, hit)| {
         matches!(
             hit,
-            WorkspaceHit::Extension(ExtensionHit::Code(ViewHit::PlaceCaret { .. }))
+            WorkspaceHit::Extension(ExtensionHit {
+                hit: ViewHit::PlaceCaret { .. },
+                ..
+            })
         )
     });
     assert!(
@@ -741,34 +766,32 @@ fn a_click_inside_the_explorer_reaches_the_extension() {
 fn a_list_open_over_the_architects_board_follows_the_pointer() {
     use uze_extensions::{architect, view::Choosing};
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-architect-hover"));
-    let mut view = architect::ArchitectView::opening("~/repo".to_owned());
-    view.absorb(architect::ArtifactsAnswer {
-        branch: "main".to_owned(),
-        artifacts: architect::Artifacts::Found {
-            artifacts: [
-                (
-                    "crate-layering.mmd",
-                    include_str!("../../../../docs/architecture/crate-layering.mmd"),
-                ),
-                (
-                    "install-pipeline.mmd",
-                    include_str!("../../../../docs/architecture/install-pipeline.mmd"),
-                ),
-            ]
-            .map(|(origin, source)| architect::Artifact::read(origin, source))
-            .into(),
-            project: PathBuf::from("/repo"),
-        },
-    });
-    let mut model = model_of(session("/repo"));
-    model.architect = Some(view);
+    let mut model = agent_session_in("/repo");
+    open_architect_with(
+        &mut model,
+        [
+            (
+                "crate-layering.mmd",
+                include_str!("../../../../docs/architecture/crate-layering.mmd"),
+            ),
+            (
+                "install-pipeline.mmd",
+                include_str!("../../../../docs/architecture/install-pipeline.mmd"),
+            ),
+        ]
+        .map(|(origin, source)| architect::Artifact::read(origin, source))
+        .into(),
+    );
+    let slot = architect_slot(&model);
     // Roomy, because the board is drawn beside the sidebar: at the
     // default width the menu has no room to name what it chooses.
     let mut driven = driven(model, &home).on_a_roomy_terminal();
 
-    let space = crate::ui::extension_view::board_space(compute_layout(driven.area, None).pane);
+    let space = crate::ui::extension_view::board_space(
+        compute_layout(driven.area, None, Default::default()).pane,
+    );
     let highlighted = |driven: &Driven<'_>| {
-        architect::view(driven.attach.model.architect.as_ref().unwrap(), space)
+        architect_view(&driven.attach.model, space)
             .navigator
             .expect("a menu")
             .choosing
@@ -780,7 +803,10 @@ fn a_list_open_over_the_architects_board_follows_the_pointer() {
             .hits
             .iter()
             .find(|(_, hit)| {
-                *hit == WorkspaceHit::Extension(ExtensionHit::Architect(ViewHit::SelectItem(item)))
+                *hit == WorkspaceHit::Extension(ExtensionHit {
+                    slot,
+                    hit: ViewHit::SelectItem(item),
+                })
             })
             .map(|(rect, _)| *rect)
             .unwrap_or_else(|| panic!("no row for artifact {item}"))
@@ -793,7 +819,10 @@ fn a_list_open_over_the_architects_board_follows_the_pointer() {
         .hits
         .iter()
         .find(|(_, hit)| {
-            *hit == WorkspaceHit::Extension(ExtensionHit::Architect(ViewHit::ChooseItem))
+            *hit == WorkspaceHit::Extension(ExtensionHit {
+                slot,
+                hit: ViewHit::ChooseItem,
+            })
         })
         .map(|(rect, _)| *rect)
         .expect("two artifacts in the area, so it opens");
@@ -822,34 +851,31 @@ fn the_architects_source_is_marked_and_copied_and_its_diagram_is_not() {
     use uze_extensions::architect;
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-architect-copy"));
     let source = include_str!("../../../../docs/architecture/crate-layering.mmd");
-    let mut view = architect::ArchitectView::opening("~/repo".to_owned());
-    view.absorb(architect::ArtifactsAnswer {
-        branch: "main".to_owned(),
-        artifacts: architect::Artifacts::Found {
-            artifacts: [architect::Artifact::read("crate-layering.mmd", source)].into(),
-            project: PathBuf::from("/repo"),
-        },
-    });
-    let mut model = model_of(session("/repo"));
-    model.architect = Some(view);
+    let mut model = agent_session_in("/repo");
+    open_architect_with(
+        &mut model,
+        vec![architect::Artifact::read("crate-layering.mmd", source)],
+    );
     let mut driven = driven(model, &home).on_a_roomy_terminal();
 
     driven.frame();
     assert!(
-        driven.attach.model.code_scrollbars.text_rows.is_empty(),
+        driven.attach.model.surface_frame.text_rows.is_empty(),
         "a diagram has no text to mark"
     );
 
-    let space = driven.attach.model.code_scrollbars.content_space;
-    if let Some(view) = driven.attach.model.architect.as_mut() {
-        architect::handle_mouse(view, Some(ViewHit::SelectMode(2)), space);
-    }
+    let space = driven.attach.model.surface_frame.content_space;
+    let slot = architect_slot(&driven.attach.model);
+    driven
+        .attach
+        .model
+        .hit_surface(slot, ViewHit::SelectMode(2), space);
     driven.frame();
     let row_of = |driven: &Driven<'_>, line: usize| {
         driven
             .attach
             .model
-            .code_scrollbars
+            .surface_frame
             .text_rows
             .iter()
             .find(|row| row.line == line)
@@ -874,4 +900,160 @@ fn the_architects_source_is_marked_and_copied_and_its_diagram_is_not() {
         driven.attach.model.clipboard.as_deref(),
         Some(expected.join("\n").as_str())
     );
+}
+
+/// The architect is hosted like any extension: opening it asks its read as
+/// a job through the workspace's host, and the answer reaches its engine.
+#[test]
+fn opening_the_architect_reads_its_artifacts_as_a_job() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-architect-job"));
+    let mut model = agent_session_in("/repo");
+    // The spec counts the checkout in front on the same pass, and the
+    // code reads its history; off, only the architect's read is handed
+    // out.
+    model.follow_extension_switch(
+        [
+            uze_extensions::spec::CATALOG.id.to_owned(),
+            uze_extensions::code::CATALOG.id.to_owned(),
+        ]
+        .into(),
+    );
+    super::open_architect(&mut model);
+    assert!(model.showing(uze_extensions::architect::CATALOG.id));
+    let reading = |model: &WorkspaceModel| {
+        matches!(
+            architect_view(model, uze_extensions::view::Size { width: 80, height: 24 }).content,
+            uze_extensions::view::Content::Message { text, .. } if text.starts_with("Reading")
+        )
+    };
+    assert!(reading(&model));
+    let (sender, receiver) = std::sync::mpsc::channel();
+    assert_eq!(model.schedule_engine_jobs(&home, &sender), 1);
+    assert_eq!(model.schedule_engine_jobs(&home, &sender), 0, "asked once");
+    let answer = receiver
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .expect("the read answers");
+    assert!(model.absorb_engine_answer(answer));
+    assert!(!reading(&model), "the answer was drawn");
+}
+
+/// The code surface's tree is listed by its jobs, and drawn once they
+/// answer: nothing of it is read on the thread that draws.
+#[test]
+fn opening_the_code_surface_lists_its_tree_as_jobs() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-code-jobs"));
+    let root = uze_testkit::temp::scratch("orchestrator-code-jobs-checkout");
+    std::fs::write(root.join("main.rs"), "fn main() {}\n").unwrap();
+    let mut model = agent_session_in(root.to_str().unwrap());
+    model.follow_extension_switch([uze_extensions::spec::CATALOG.id.to_owned()].into());
+    open_code(&mut model, uze_extensions::code::FILES);
+    assert!(model.showing(uze_extensions::code::CATALOG.id));
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let mut handed = model.schedule_engine_jobs(&home, &sender);
+    assert!(handed >= 1, "the surface asked for its tree");
+    while handed > 0 {
+        let answer = receiver
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .expect("every job answers");
+        assert!(model.absorb_engine_answer(answer));
+        handed = handed - 1 + model.schedule_engine_jobs(&home, &sender);
+    }
+    let view = uze_extensions::code::view(
+        code_view(&model).expect("open"),
+        uze_extensions::view::Size {
+            width: 80,
+            height: 24,
+        },
+    );
+    let rows = view.navigator.expect("a tree").rows;
+    assert!(
+        format!("{rows:?}").contains("main.rs"),
+        "the listing was drawn: {rows:?}"
+    );
+}
+
+/// A board held and moved follows the pointer; one pressed and let go
+/// where it was is a click on what was under it.
+#[test]
+fn the_architects_board_is_dragged_through_its_slot() {
+    use uze_extensions::architect;
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-architect-drag"));
+    let mut model = agent_session_in("/repo");
+    open_architect_with(
+        &mut model,
+        vec![architect::Artifact::read(
+            "crate-layering.mmd",
+            include_str!("../../../../docs/architecture/crate-layering.mmd"),
+        )],
+    );
+    let slot = architect_slot(&model);
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    driven.frame();
+    let board = driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .find(|(_, hit)| {
+            matches!(
+                hit,
+                WorkspaceHit::Extension(ExtensionHit {
+                    slot: hit_slot,
+                    hit: ViewHit::PlaceCaret { .. },
+                }) if *hit_slot == slot
+            )
+        })
+        .map(|(rect, _)| *rect)
+        .expect("the board is drawn");
+    let before = architect_place(&driven.attach.model);
+    let (column, row) = (board.x + board.width / 2, board.y + board.height / 2);
+    driven.press(column, row);
+    assert!(
+        driven.attach.model.board_grab.is_some(),
+        "held, not clicked"
+    );
+    driven.mouse(column + 4, row + 2, MouseEventKind::Drag(MouseButton::Left));
+    driven.mouse(column + 4, row + 2, MouseEventKind::Up(MouseButton::Left));
+    assert!(driven.attach.model.board_grab.is_none());
+    assert_ne!(
+        architect_place(&driven.attach.model),
+        before,
+        "the board moved with the pointer"
+    );
+}
+
+/// The spec summary is counted for the checkout in front as its engine's
+/// job, once while it stands, and the answer reaches the sidebar.
+#[test]
+fn the_spec_summary_is_counted_as_a_job_for_the_checkout_in_front() {
+    let repository = uze_testkit::git::Repository::new("orchestrator-spec-count");
+    let target = repository.branch();
+    repository.commit_file("openspec/config.yaml", "schema: spec-driven\n");
+    repository.git(&["checkout", "--quiet", "-b", "work"]);
+    repository.commit_file("openspec/changes/mine/tasks.md", "- [x] a\n- [ ] b\n");
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-spec-count-home"));
+    let root = repository.root().display().to_string();
+    let mut model = agent_session_in(&root);
+    // What the checkout delivers to, as an evaluation left it: what the
+    // count is measured against.
+    model
+        .remembered
+        .targets
+        .insert(super::evaluation_key(repository.root()), target);
+    // The code reads the same checkout's history on the same pass.
+    model.follow_extension_switch([uze_extensions::code::CATALOG.id.to_owned()].into());
+    let (sender, receiver) = std::sync::mpsc::channel();
+    assert_eq!(model.schedule_engine_jobs(&home, &sender), 1);
+    assert_eq!(
+        model.schedule_engine_jobs(&home, &sender),
+        0,
+        "one count at a time"
+    );
+    let answer = receiver
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .expect("the count answers");
+    assert!(model.absorb_engine_answer(answer));
+    let (_, section) = model.spec_summary().expect("the section is drawn");
+    assert_eq!(section.rows.len(), 1);
+    assert_eq!(model.schedule_engine_jobs(&home, &sender), 0, "fresh");
 }

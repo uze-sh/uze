@@ -378,6 +378,73 @@ const RULES: &[Rule] = &[
         budget: &[],
     },
     Rule {
+        name: "the extension contract does no I/O",
+        scope: "crates/uze-contract/src",
+        forbidden: "std::fs",
+        reason: "uze-contract is the one UZE crate uze-extensions may depend on \
+                 (ADR-041, amended), and it is allowed there because it is plain \
+                 data: an extension handed a type from it is handed nothing that \
+                 reaches the machine.",
+        remedy: "keep reading files in uze-core (the decoder) or in the host, and \
+                 pass what was read into the contract's types.",
+        sanctioned: &[],
+        budget: &[],
+    },
+    Rule {
+        name: "the extension contract spawns nothing",
+        scope: "crates/uze-contract/src",
+        forbidden: "std::process",
+        reason: "same argument: the contract is data, and a type that can spawn \
+                 would carry a capability into every extension that holds one.",
+        remedy: "run programs where the plan puts them (the runner in uze-core, \
+                 under confinement), never in the contract.",
+        sanctioned: &[],
+        budget: &[],
+    },
+    Rule {
+        name: "the extension contract names no other UZE crate",
+        scope: "crates/uze-contract/src",
+        forbidden: "uze_core",
+        reason: "uze-core depends on the contract to read manifests; the contract \
+                 naming it back would be a cycle, and would hand the domain to \
+                 every extension through the one door ADR-041 opened.",
+        remedy: "define the type in the contract and have uze-core use it.",
+        sanctioned: &[],
+        budget: &[],
+    },
+    Rule {
+        name: "the extension contract draws nothing",
+        scope: "crates/uze-contract/src",
+        forbidden: "ratatui",
+        reason: "the contract says what a view is; drawing it is the workspace \
+                 client's, and a rendering library here would put geometry back \
+                 on the extension's side of the boundary.",
+        remedy: "describe it as data; `src/ui/extension_view` draws it.",
+        sanctioned: &[],
+        budget: &[],
+    },
+    Rule {
+        name: "the workspace client never parses an extension's KDL",
+        scope: "src/ui",
+        forbidden: "kdl::",
+        reason: "a third-party document is parsed only by uze-core, behind a size \
+                 cap, a nesting pre-scan and a timed worker (D22), because the \
+                 parser recurses without a limit; the client draws compiled views.",
+        remedy: "ask uze-application for the compiled extension.",
+        sanctioned: &[],
+        budget: &[],
+    },
+    Rule {
+        name: "an extension never parses KDL",
+        scope: "crates/uze-extensions/src",
+        forbidden: "kdl::",
+        reason: "the engine binds compiled views; parsing is uze-core's, behind \
+                 the bounds that make a hostile document safe to read.",
+        remedy: "take a `uze_contract::CompiledView`.",
+        sanctioned: &[],
+        budget: &[],
+    },
+    Rule {
         name: "an extension never names the domain crate",
         scope: "crates/uze-extensions/src",
         forbidden: "uze_core",
@@ -1334,7 +1401,7 @@ fn collect_rust_files(directory: &std::path::Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-fn repository_root() -> PathBuf {
+pub(crate) fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
@@ -1542,6 +1609,281 @@ fn the_platform_crate_is_a_leaf_and_the_terminal_reaches_only_it_and_documents()
     assert_eq!(terminal, ["uze-document", "uze-platform"]);
 }
 
+/// `uze-extensions` depends on one UZE crate, the extension contract, and the
+/// contract on none (ADR-041, amended): the door is exactly one type wide.
+#[test]
+fn an_extension_depends_on_the_contract_alone() {
+    let root = repository_root();
+    let manifest = |crate_name: &str| {
+        std::fs::read_to_string(root.join("crates").join(crate_name).join("Cargo.toml")).unwrap()
+    };
+    assert_eq!(
+        workspace_dependencies(&manifest("uze-extensions")),
+        ["uze-contract"],
+        "uze-extensions may name uze-contract and no other workspace crate outside its tests"
+    );
+    assert_eq!(
+        workspace_dependencies(&manifest("uze-contract")),
+        Vec::<String>::new(),
+        "uze-contract names no workspace crate"
+    );
+}
+
+/// Every key of a dependency table in `manifest`, dev and target tables
+/// included.
+fn dependency_names(manifest: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut in_dependencies = false;
+    for line in manifest.lines().map(str::trim) {
+        if line.starts_with('[') {
+            in_dependencies = line.ends_with("dependencies]");
+            continue;
+        }
+        if in_dependencies && let Some((name, _)) = line.split_once('=') {
+            found.push(name.trim().to_owned());
+        }
+    }
+    found
+}
+
+/// A script engine runs third-party code inside UZE's process, so exactly
+/// one crate holds it (`extension-platform` D19): `uze-script`, which
+/// builds the engine raw and bounded. A second crate naming `rhai` could
+/// build one without those bounds, or hand a script a function no grant
+/// registers. And `uze-script` reaches only the leaves it was given, so the
+/// engine carries nothing of the domain to the scripts it runs.
+#[test]
+fn only_uze_script_names_the_script_engine() {
+    let root = repository_root();
+    let mut manifests = vec![("uze".to_owned(), root.join("Cargo.toml"))];
+    for entry in fs::read_dir(root.join("crates"))
+        .unwrap()
+        .filter_map(Result::ok)
+    {
+        let manifest = entry.path().join("Cargo.toml");
+        if manifest.exists() {
+            manifests.push((entry.file_name().to_string_lossy().into_owned(), manifest));
+        }
+    }
+    let mut failures = Vec::new();
+    for (crate_name, manifest) in &manifests {
+        let names = dependency_names(&fs::read_to_string(manifest).unwrap());
+        if crate_name != "uze-script" && names.iter().any(|name| name == "rhai") {
+            failures.push(format!("  {crate_name} depends on rhai"));
+        }
+    }
+
+    let mut sources = Vec::new();
+    collect_rust_files(&root.join("src"), &mut sources);
+    collect_rust_files(&root.join("crates"), &mut sources);
+    for file in sources {
+        let relative = file
+            .strip_prefix(&root)
+            .unwrap_or(&file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        if relative.starts_with("crates/uze-script/") {
+            continue;
+        }
+        let contents = fs::read_to_string(&file).unwrap_or_default();
+        if occurrences(&contents, "rhai::") > 0 || occurrences(&contents, "use rhai") > 0 {
+            failures.push(format!("  {relative} names rhai"));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "the script engine is uze-script's alone; ask it for a `Script` and an answer:\n{}",
+        failures.join("\n")
+    );
+
+    let script_manifest = fs::read_to_string(root.join("crates/uze-script/Cargo.toml")).unwrap();
+    let outside: Vec<_> = workspace_dependencies(&script_manifest)
+        .into_iter()
+        .filter(|name| !["uze-contract", "uze-platform"].contains(&name.as_str()))
+        .collect();
+    assert!(
+        outside.is_empty(),
+        "uze-script may depend on uze-contract and uze-platform only, found {outside:?}"
+    );
+}
+
+/// A declared extension's question reaches the runner from one place: the
+/// declared engine (`extension-platform` D3). `Host::answer` is the
+/// grant to answer *a declaration of this extension*, and a built-in, which
+/// has no manifest, has no declaration to name; the client passes a
+/// question through and never makes one up.
+#[test]
+fn only_the_declared_engine_asks_a_source() {
+    let root = repository_root();
+    let mut failures = Vec::new();
+    let mut extensions = Vec::new();
+    collect_rust_files(&root.join("crates/uze-extensions/src"), &mut extensions);
+    for file in extensions {
+        let relative = file
+            .strip_prefix(&root)
+            .unwrap_or(&file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let declared = relative == "crates/uze-extensions/src/declared.rs"
+            || relative.starts_with("crates/uze-extensions/src/declared/");
+        let source = strip_test_modules(&fs::read_to_string(&file).unwrap_or_default());
+        let asks = source
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .any(|line| line.contains(".answer(") || line.contains("Host::answer"));
+        if asks && !declared {
+            failures.push(format!("  {relative} asks the host to answer"));
+        }
+    }
+    let mut client = Vec::new();
+    collect_rust_files(&root.join("src"), &mut client);
+    for file in client {
+        let relative = file
+            .strip_prefix(&root)
+            .unwrap_or(&file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        // The host's own file takes the question to the runner, and is
+        // the one place the client names the type.
+        let passes_it_on = relative == "src/ui/extension_host.rs";
+        let source = strip_test_modules(&fs::read_to_string(&file).unwrap_or_default());
+        let asks = source
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .any(|line| {
+                line.contains("Host::answer")
+                    || line.contains("host.answer(")
+                    || (!passes_it_on
+                        && (line.contains("uze_extensions::Question")
+                            || line.contains("uze_contract::Question")))
+            });
+        if asks {
+            failures.push(format!("  {relative} makes up a question for the host"));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "only uze-extensions' declared engine asks `Host::answer`:\n{}",
+        failures.join("\n")
+    );
+}
+
+/// What a declared extension says reaches the terminal only through
+/// `Clean` (`extension-platform` D7, S14): the declared engine makes a
+/// `view::Span` with `Span::clean`, which takes nothing but a `Clean`, and
+/// never with `Span::new`, a struct literal, or by writing a span's text
+/// afterwards. A built-in extension's text is the host's own and keeps
+/// `Span::new`.
+#[test]
+fn the_declared_engine_builds_spans_only_through_clean() {
+    let root = repository_root();
+    let mut failures = Vec::new();
+    let mut cleaned = 0;
+    for (path, source) in &production_sources(&root.join("crates/uze-extensions/src")) {
+        let relative = path
+            .strip_prefix(&root)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let declared = relative == "crates/uze-extensions/src/declared.rs"
+            || relative.starts_with("crates/uze-extensions/src/declared/");
+        if !declared {
+            continue;
+        }
+        for line in source
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+        {
+            cleaned += line.matches("Span::clean(").count();
+            // The contract's `Span` is where a node was written in a view
+            // file, `Span { offset, len }`, and carries no text.
+            let literal = line.contains("Span {") && !line.contains("offset");
+            let rewritten = [
+                ".text =",
+                ".text.push",
+                ".text.insert",
+                ".text.replace_range",
+            ]
+            .iter()
+            .any(|write| line.contains(write));
+            if line.contains("Span::new(") || literal || rewritten {
+                failures.push(format!("  {relative}: {}", line.trim()));
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "the declared engine builds a `view::Span` only with `Span::clean(Clean, role)`, \
+         so what an extension says is sanitized by type (D7):\n{}",
+        failures.join("\n")
+    );
+    assert!(
+        cleaned > 0,
+        "the declared engine makes no span through `Span::clean`; the scan is reading the wrong files"
+    );
+}
+
+/// An extension's program is started from one place, and confined from
+/// one (`extension-programs-and-confinement`, task 5.4): the runner in
+/// `uze-core`'s `machine::extension_program` is the only code that starts
+/// the `__confine` helper, and the helper's own command the only caller of
+/// `uze_platform::confine::enter`. A second spawn of an extension program
+/// would be one that consent, pinning and the bounds never see.
+#[test]
+fn only_the_program_runner_starts_an_extension_program() {
+    let root = repository_root();
+    let mut failures = Vec::new();
+    let mut files = Vec::new();
+    for dir in ["src", "crates"] {
+        collect_rust_files(&root.join(dir), &mut files);
+    }
+    for file in files {
+        let relative = file
+            .strip_prefix(&root)
+            .unwrap_or(&file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        if relative.contains("/tests/") || relative.starts_with("crates/uze-testkit/") {
+            continue;
+        }
+        let source = strip_test_modules(&fs::read_to_string(&file).unwrap_or_default());
+        let code: Vec<&str> = source
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect();
+        let names = |needle: &str| code.iter().any(|line| line.contains(needle));
+        let runner = relative == "crates/uze-core/src/machine/extension_program.rs";
+        // The helper's own command, where `main` hands over to it, and the
+        // grammar that names it for the help.
+        let helper = relative == "src/cli/confine.rs"
+            || relative == "src/main.rs"
+            || relative == "src/cli/grammar.rs"
+            || relative == "src/command_performance.rs";
+        if names("\"__confine\"") && !runner && !helper {
+            failures.push(format!("  {relative} starts the confinement helper"));
+        }
+        let platform = relative.starts_with("crates/uze-platform/src/confine");
+        if (names("confine::enter(") || names("confine::enter;"))
+            && relative != "src/cli/confine.rs"
+            && !platform
+        {
+            failures.push(format!("  {relative} enters a confinement"));
+        }
+        if names("uze_core::machine::extension_program::run(") || names("extension_program::run(") {
+            let sanctioned =
+                relative == "crates/uze-application/src/application/extensions/program.rs";
+            if !sanctioned && !runner {
+                failures.push(format!("  {relative} runs an extension program"));
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "only the program runner starts an extension's program, and only through `__confine`:\n{}",
+        failures.join("\n")
+    );
+}
+
 /// The project's `AGENTS.md` is the operator's: no UZE operation creates,
 /// changes or appends to it, except the cleanup that takes out the regions
 /// earlier releases wrote there. A production file that names the file and
@@ -1615,5 +1957,46 @@ fn a_retired_region_cleanup_is_the_only_writer_of_agents_md() {
          agent through its launch, and what a plugin tells every agent is an always_on rule.\n\n  \
          Fix: write nothing into AGENTS.md. A file that reads it and writes something else \
          says so by naming what it writes, not the file it read."
+    );
+}
+
+/// Agent-bridge (ADR-059, amended): what UZE types into an agent's pane on
+/// its own goes through `submit_notice`, whose callers are the project's
+/// instructions and the extension bridge, each behind `may_submit`; an
+/// extension reaches an agent only by asking the bridge.
+#[test]
+fn only_the_bridge_and_the_instructions_type_into_an_agent() {
+    let root = repository_root();
+    let mut files = Vec::new();
+    collect_rust_files(&root.join("src"), &mut files);
+    collect_rust_files(&root.join("crates/uze-extensions/src"), &mut files);
+    let mut failures = Vec::new();
+    for file in files {
+        let relative = file
+            .strip_prefix(&root)
+            .unwrap_or(&file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        if relative.contains("/tests/") {
+            continue;
+        }
+        let source = strip_test_modules(&fs::read_to_string(&file).unwrap_or_default());
+        let calls = source
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .any(|line| line.contains(".submit_notice("));
+        let sanctioned = relative == "src/ui/orchestrator/session/absorb.rs"
+            || relative == "src/ui/orchestrator/declared/agent.rs";
+        if calls && !sanctioned {
+            failures.push(format!("  {relative} types into a pane"));
+        }
+        if relative.starts_with("crates/uze-extensions/") && source.contains("ClientRequest") {
+            failures.push(format!("  {relative} speaks to the terminal server"));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "only the project's instructions and the extension bridge type into an agent:\n{}",
+        failures.join("\n")
     );
 }

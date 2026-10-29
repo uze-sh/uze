@@ -1,0 +1,430 @@
+//! Sources asked through the host: one question for each source a surface
+//! shows, asked again only when its checkout or input changed, and an
+//! answer taken only while its question is the latest.
+
+use std::cell::RefCell;
+use std::path::{Path, PathBuf};
+
+use serde_json::json;
+use uze_contract::NodeName;
+
+use super::tests::{SECTION, SOURCE, VIEW, compiled_view, extension, n, texts, tree};
+use super::*;
+use crate::view::NodeKind;
+
+/// A host that answers every question with what it was given, and keeps
+/// the questions.
+pub(super) struct Answering {
+    pub answer: Answer,
+    pub asked: RefCell<Vec<Question>>,
+}
+
+impl Answering {
+    pub fn with(answer: Answer) -> Self {
+        Self {
+            answer,
+            asked: RefCell::new(Vec::new()),
+        }
+    }
+}
+
+impl crate::Host for Answering {
+    fn git(&self, _: &Path, _: &[&str], _: &[i32]) -> Result<String, String> {
+        Err("no git here".to_owned())
+    }
+    fn repository_root(&self, _: &Path) -> Result<PathBuf, String> {
+        Err("no git here".to_owned())
+    }
+    fn read_file(&self, _: &Path) -> Result<String, crate::Unreadable> {
+        Err(crate::Unreadable::NotText)
+    }
+    fn list_dir(&self, _: &Path) -> Result<Vec<crate::DirEntry>, String> {
+        Ok(Vec::new())
+    }
+    fn write_file(&self, _: &Path, _: &Path, _: &str) -> Result<(), String> {
+        Err("read only".to_owned())
+    }
+    fn delete_file(&self, _: &Path, _: &Path) -> Result<(), String> {
+        Err("read only".to_owned())
+    }
+    fn restore_to_head(&self, _: &Path, _: &[PathBuf]) -> Result<(), String> {
+        Err("read only".to_owned())
+    }
+    fn syntax_theme(&self) -> String {
+        String::new()
+    }
+    fn answer(&self, question: Question) -> Answer {
+        self.asked.borrow_mut().push(question);
+        self.answer.clone()
+    }
+}
+
+pub(super) fn answered(data: serde_json::Value) -> Answer {
+    Answer::Answered {
+        envelope: uze_contract::Envelope::data(data),
+        trace: Vec::new(),
+    }
+}
+
+fn board() -> DeclaredExtension {
+    let view = compiled_view(
+        vec![n(NodeName::Text).arg("{count}").item()],
+        Vec::new(),
+        Vec::new(),
+    );
+    DeclaredExtension::new(extension(view), "pt")
+}
+
+pub(super) fn checkout(root: &str) -> Checkout {
+    Checkout {
+        root: PathBuf::from(root),
+        display: root.to_owned(),
+        target: None,
+    }
+}
+
+/// Asks what the engine has to ask now, of `host`.
+fn ask_all(engine: &mut DeclaredExtension, host: &Answering) {
+    let jobs = engine.jobs();
+    run(engine, jobs, host);
+}
+
+/// Runs `jobs` on `host` and hands each answer back, in order.
+fn run(engine: &mut DeclaredExtension, jobs: Vec<Job>, host: &Answering) {
+    for job in jobs {
+        let answer = (job.run)(host);
+        assert_eq!(engine.absorb(answer), Outcome::Stay);
+    }
+}
+
+#[test]
+fn nothing_is_asked_until_a_surface_shows_its_source() {
+    let mut engine = board();
+    assert!(engine.jobs().is_empty(), "no checkout in front, none open");
+    engine.focus(Some(&checkout("/work/a")));
+    let jobs = engine.jobs();
+    assert_eq!(jobs.len(), 1, "the section shows the source");
+    let host = Answering::with(answered(json!({ "count": 3 })));
+    run(&mut engine, jobs, &host);
+    assert_eq!(texts(&tree(&engine)), ["3"]);
+    let asked = host.asked.borrow();
+    assert_eq!(asked[0].identity, engine.compiled().identity);
+    assert_eq!(asked[0].declaration, SOURCE);
+    assert_eq!(asked[0].checkout, Some(PathBuf::from("/work/a")));
+    assert!(engine.jobs().is_empty(), "asked once");
+}
+
+#[test]
+fn a_view_and_a_section_showing_one_source_ask_it_once() {
+    let mut engine = board();
+    engine.focus(Some(&checkout("/work/a")));
+    engine.open(VIEW, &checkout("/work/a"));
+    assert_eq!(engine.jobs().len(), 1);
+
+    engine.open(VIEW, &checkout("/work/b"));
+    let jobs = engine.jobs();
+    assert_eq!(jobs.len(), 1, "the open view's checkout is asked");
+    let host = Answering::with(answered(json!({ "count": 1 })));
+    run(&mut engine, jobs, &host);
+    assert_eq!(
+        host.asked.borrow()[0].checkout,
+        Some(PathBuf::from("/work/b"))
+    );
+    assert!(
+        engine.jobs().is_empty(),
+        "and the section does not take turns"
+    );
+
+    engine.close(VIEW);
+    assert_eq!(engine.jobs().len(), 1, "the section's checkout once more");
+}
+
+#[test]
+fn an_answer_to_a_question_no_longer_the_latest_is_dropped() {
+    let mut engine = board();
+    engine.focus(Some(&checkout("/work/a")));
+    let first = engine.jobs();
+    engine.focus(Some(&checkout("/work/b")));
+    let second = engine.jobs();
+    let late = Answering::with(answered(json!({ "count": "a" })));
+    let latest = Answering::with(answered(json!({ "count": "b" })));
+    run(&mut engine, second, &latest);
+    run(&mut engine, first, &late);
+    assert_eq!(texts(&tree(&engine)), ["b"]);
+}
+
+#[test]
+fn a_failed_or_stopped_script_is_said_on_the_surface() {
+    let mut engine = board();
+    engine.focus(Some(&checkout("/work/a")));
+    let host = Answering::with(Answer::Failed {
+        reason: "board.uze: the script crossed its deadline bound".to_owned(),
+        trace: vec!["looking".to_owned()],
+    });
+    ask_all(&mut engine, &host);
+    assert_eq!(
+        tree(&engine).kind,
+        NodeKind::Notice {
+            text: "board.uze: the script crossed its deadline bound".to_owned(),
+            role: Role::Danger,
+        }
+    );
+
+    engine.focus(Some(&checkout("/work/b")));
+    let jobs = engine.jobs();
+    let fallback = jobs.into_iter().map(|job| (job.fallback)()).next().unwrap();
+    engine.absorb(fallback);
+    assert!(matches!(
+        tree(&engine).kind,
+        NodeKind::Notice { text, role: Role::Danger } if text == STOPPED
+    ));
+}
+
+/// A reason is the runner's words, but a script's error quotes the
+/// script: it reaches the surface through `Clean` like any data.
+#[test]
+fn a_reason_the_host_gives_is_drawn_inert() {
+    let mut engine = board();
+    engine.focus(Some(&checkout("/work/a")));
+    let host = Answering::with(Answer::Failed {
+        reason: "board.uze: \u{1b}]52;c;ZXZpbA==\u{7}unknown \u{202e}name".to_owned(),
+        trace: Vec::new(),
+    });
+    ask_all(&mut engine, &host);
+    assert_eq!(
+        tree(&engine).kind,
+        NodeKind::Notice {
+            text: "board.uze: unknown name".to_owned(),
+            role: Role::Danger,
+        }
+    );
+}
+
+#[test]
+fn a_source_the_host_would_not_ask_says_why_until_it_answers() {
+    let mut engine = board();
+    engine.set_data(SOURCE, Ok(json!({ "count": 9 })));
+    engine.focus(Some(&checkout("/work/a")));
+    let host = Answering::with(Answer::withheld("needs enabling in this project"));
+    ask_all(&mut engine, &host);
+    assert_eq!(
+        tree(&engine).kind,
+        NodeKind::Withheld {
+            text: "needs enabling in this project".to_owned(),
+        }
+    );
+    let section = engine.section(SECTION, false).expect("a section");
+    assert!(matches!(
+        section.tree.expect("a tree").kind,
+        NodeKind::Withheld { .. }
+    ));
+    assert_eq!(
+        engine.trace(VIEW).expect("a trace").data,
+        DataState::Withheld("needs enabling in this project".to_owned())
+    );
+
+    // Opening the view asks again: the operator may have enabled it since.
+    engine.open(VIEW, &checkout("/work/a"));
+    let host = Answering::with(answered(json!({ "count": 4 })));
+    ask_all(&mut engine, &host);
+    assert_eq!(texts(&tree(&engine)), ["4"]);
+    assert_eq!(engine.withheld(SOURCE), None);
+}
+
+#[test]
+fn a_newer_compile_asks_every_shown_source_again() {
+    let mut engine = board();
+    engine.focus(Some(&checkout("/work/a")));
+    let host = Answering::with(answered(json!({ "count": 1 })));
+    ask_all(&mut engine, &host);
+    let compiled = engine.compiled().clone();
+    engine.replace(compiled);
+    assert_eq!(engine.jobs().len(), 1);
+}
+
+#[test]
+fn what_the_operator_allowed_changing_asks_every_shown_source_again() {
+    let mut engine = board();
+    engine.focus(Some(&checkout("/work/a")));
+    let withheld = Answering::with(Answer::withheld("needs consent"));
+    ask_all(&mut engine, &withheld);
+    assert!(engine.jobs().is_empty(), "asked once");
+
+    engine.reconsider();
+    assert_eq!(engine.withheld(SOURCE), None, "the old reason is not said");
+    assert_eq!(
+        engine.trace(VIEW).expect("a trace").data,
+        DataState::Waiting
+    );
+    let in_flight = engine.jobs();
+    assert_eq!(in_flight.len(), 1, "the section asks again");
+
+    engine.reconsider();
+    let jobs = engine.jobs();
+    run(&mut engine, in_flight, &withheld);
+    assert_eq!(engine.withheld(SOURCE), None, "asked before the change");
+    run(
+        &mut engine,
+        jobs,
+        &Answering::with(answered(json!({ "count": 2 }))),
+    );
+    assert_eq!(texts(&tree(&engine)), ["2"]);
+}
+
+/// The host adds the preferences to the question as it asks it, so a
+/// change of them is a new question only the engine can know to ask.
+#[test]
+fn a_source_that_reads_the_preferences_is_asked_again_when_one_changes() {
+    let mut engine = board();
+    let mut compiled = engine.compiled().clone();
+    compiled.manifest.preferences = vec![uze_contract::PreferenceDecl {
+        name: "detail".to_owned(),
+        label: "Detail".to_owned(),
+        kind: uze_contract::PreferenceKind::Toggle,
+        default: json!(true),
+    }];
+    compiled.manifest.sources[0].with_preferences = true;
+    engine.replace(compiled);
+    engine.configure(&json!({}));
+    engine.focus(Some(&checkout("/work/a")));
+    let host = Answering::with(answered(json!({ "count": 1 })));
+    ask_all(&mut engine, &host);
+    assert!(engine.jobs().is_empty(), "asked once");
+
+    engine.configure(&json!({ "detail": true }));
+    assert!(
+        engine.jobs().is_empty(),
+        "the same setting is the same question"
+    );
+    engine.configure(&json!({ "detail": false }));
+    assert_eq!(engine.jobs().len(), 1, "a different setting asks again");
+}
+
+#[test]
+fn a_source_that_does_not_read_the_preferences_is_not_asked_again() {
+    let mut engine = board();
+    let mut compiled = engine.compiled().clone();
+    compiled.manifest.preferences = vec![uze_contract::PreferenceDecl {
+        name: "detail".to_owned(),
+        label: "Detail".to_owned(),
+        kind: uze_contract::PreferenceKind::Toggle,
+        default: json!(true),
+    }];
+    engine.replace(compiled);
+    engine.focus(Some(&checkout("/work/a")));
+    ask_all(
+        &mut engine,
+        &Answering::with(answered(json!({ "count": 1 }))),
+    );
+    engine.configure(&json!({ "detail": false }));
+    assert!(engine.jobs().is_empty());
+}
+
+/// One round of the host: every question the engine asks now, answered
+/// with rows named for `round`; the inputs asked with.
+fn round(engine: &mut DeclaredExtension, round: usize) -> Vec<serde_json::Value> {
+    let rows = json!({ "rows": [
+        { "name": format!("r{round}-a") },
+        { "name": format!("r{round}-b") },
+    ] });
+    let host = Answering::with(answered(rows));
+    ask_all(engine, &host);
+    tree(engine);
+    host.asked
+        .into_inner()
+        .into_iter()
+        .map(|question| question.input)
+        .collect()
+}
+
+#[test]
+fn a_filter_typed_over_the_selected_row_feeds_the_input_the_item_now_there() {
+    let view = compiled_view(
+        vec![
+            n(NodeName::Field)
+                .arg("Filter")
+                .literal("id", json!("query"))
+                .item(),
+            n(NodeName::List)
+                .literal("id", json!("rows"))
+                .each("rows")
+                .literal("filter", json!("ui.query"))
+                .child(n(NodeName::Text).arg("{name}"))
+                .item(),
+        ],
+        Vec::new(),
+        Vec::new(),
+    );
+    let mut compiled = extension(view);
+    compiled.manifest.sources[0].input = [("pick".to_owned(), "{item.name}".to_owned())]
+        .into_iter()
+        .collect();
+    let mut engine = DeclaredExtension::new(compiled, "en");
+    engine.open(VIEW, &checkout("/work/a"));
+    round(&mut engine, 1);
+    let list = super::tests::first(&tree(&engine), |kind| matches!(kind, NodeKind::List { .. }));
+    engine.hit(
+        VIEW,
+        super::tests::act(list.id, crate::view::NodeAct::Row(0)),
+        super::tests::SPACE,
+    );
+    assert_eq!(round(&mut engine, 2), [json!({ "pick": "r1-a" })]);
+    let field = super::tests::first(&tree(&engine), |kind| {
+        matches!(kind, NodeKind::Field { .. })
+    });
+    engine.hit(
+        VIEW,
+        super::tests::act(field.id, crate::view::NodeAct::Edit),
+        super::tests::SPACE,
+    );
+    for character in "-b".chars() {
+        engine.command(VIEW, Command::Type(character), super::tests::SPACE);
+    }
+    assert_eq!(
+        round(&mut engine, 3),
+        [json!({ "pick": "r2-b" })],
+        "the filter put another item under the selection"
+    );
+}
+
+#[test]
+fn an_input_reading_its_own_lists_selection_is_not_fed_its_next_answer() {
+    let view = compiled_view(
+        vec![
+            n(NodeName::List)
+                .literal("id", json!("rows"))
+                .each("rows")
+                .child(n(NodeName::Text).arg("{name}"))
+                .item(),
+        ],
+        Vec::new(),
+        Vec::new(),
+    );
+    let mut compiled = extension(view);
+    compiled.manifest.sources[0].input = [("pick".to_owned(), "{item.name}".to_owned())]
+        .into_iter()
+        .collect();
+    let mut engine = DeclaredExtension::new(compiled, "en");
+    engine.open(VIEW, &checkout("/work/a"));
+    assert_eq!(round(&mut engine, 1), [json!({ "pick": null })]);
+    let list = super::tests::first(&tree(&engine), |kind| matches!(kind, NodeKind::List { .. }));
+    let select = |row| super::tests::act(list.id, crate::view::NodeAct::Row(row));
+    engine.hit(VIEW, select(0), super::tests::SPACE);
+    assert_eq!(
+        round(&mut engine, 2),
+        [json!({ "pick": "r1-a" })],
+        "the row the operator chose"
+    );
+    for again in 3..6 {
+        assert!(
+            round(&mut engine, again).is_empty(),
+            "an answer renaming the selected row asks nothing again"
+        );
+    }
+    engine.hit(VIEW, select(1), super::tests::SPACE);
+    assert_eq!(
+        round(&mut engine, 6),
+        [json!({ "pick": "r2-b" })],
+        "a new choice reads the row as drawn"
+    );
+}

@@ -228,6 +228,38 @@ impl IntegrationPort for CodexIntegration {
         runtime::projection_would_activate(ctx, &self.config_toml_path())
     }
 
+    /// Codex runs its `notify` program when a turn completes, with the
+    /// turn's JSON as its last argument; set for this launch alone with
+    /// `-c`, which overrides `config.toml` without writing it. Codex runs
+    /// one `notify`, so an operator's own is never replaced: with one set
+    /// (or a `config.toml` that cannot be read to say), there is no
+    /// reporter, and the workspace reads that agent's turns from its pane.
+    fn reporter(
+        &self,
+        ctx: &uze_core::integration::ReporterContext,
+    ) -> Option<uze_core::integration::ContextContribution> {
+        if !notify_is_free(&self.config_toml_path()) {
+            return None;
+        }
+        let notify = serde_json::json!([
+            ctx.uze.to_string_lossy(),
+            "agent",
+            "report",
+            "turn.finished"
+        ]);
+        Some(uze_core::integration::ContextContribution {
+            args: vec![
+                std::ffi::OsString::from("-c"),
+                std::ffi::OsString::from(format!("notify={notify}")),
+            ],
+            env: Vec::new(),
+        })
+    }
+
+    fn reported_events(&self) -> &'static [&'static str] {
+        &["turn.finished"]
+    }
+
     fn runtime_projects_project_context(&self) -> bool {
         true
     }
@@ -908,6 +940,59 @@ const VERSION: &str = "0.162.1";
 
 /// The installer's documented switch for skipping its "Start Codex now?" prompt.
 const NON_INTERACTIVE: &str = "CODEX_NON_INTERACTIVE";
+
+/// Whether `config_toml` leaves `notify` to UZE: it sets none, or there is
+/// no file at all.
+fn notify_is_free(config_toml: &Path) -> bool {
+    if !config_toml.exists() {
+        return true;
+    }
+    trust::read_config(config_toml).is_some_and(|document| !document.contains_key("notify"))
+}
+
+#[cfg(test)]
+mod reporter_tests {
+    use super::*;
+
+    fn reporter_with(config: Option<&str>) -> Option<uze_core::integration::ContextContribution> {
+        let root = uze_testkit::temp::scratch("codex-reporter");
+        let integration = CodexIntegration::new(root.join("agents"), UzeHome::at(root.join("uze")));
+        if let Some(config) = config {
+            std::fs::create_dir_all(root.join(".codex")).unwrap();
+            std::fs::write(root.join(".codex/config.toml"), config).unwrap();
+        }
+        let contribution = integration.reporter(&uze_core::integration::ReporterContext {
+            uze: Path::new("/opt/uze"),
+            dir: &root,
+        });
+        let _ = std::fs::remove_dir_all(root);
+        contribution
+    }
+
+    #[test]
+    fn the_reporter_is_codexs_notify_where_the_operator_set_none() {
+        for config in [None, Some("model = \"o4\"\n")] {
+            let contribution = reporter_with(config).expect("a reporter");
+            assert_eq!(contribution.args[0], "-c");
+            assert!(
+                contribution.args[1]
+                    .to_string_lossy()
+                    .starts_with("notify=[\"/opt/uze\""),
+                "{:?}",
+                contribution.args
+            );
+        }
+    }
+
+    #[test]
+    fn an_operators_own_notify_is_never_replaced() {
+        assert!(reporter_with(Some("notify = [\"notify-send\", \"codex\"]\n")).is_none());
+        assert!(
+            reporter_with(Some("notify = [\n")).is_none(),
+            "a config that cannot be read may hold one"
+        );
+    }
+}
 
 #[cfg(test)]
 mod provision_tests {

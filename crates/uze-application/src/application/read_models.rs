@@ -38,6 +38,28 @@ impl Plugins<'_> {
         self.inspect_on(id, None)
     }
 
+    /// [`inspect_on`](Self::inspect_on), with the declared extensions the
+    /// plugin carries judged for the project rooted at `project`, or for
+    /// the machine with `None`.
+    #[tracing::instrument(name = "plugins.inspect_in", skip_all, fields(id = %id), err)]
+    pub fn inspect_in(
+        &self,
+        id: &str,
+        harness: Option<&str>,
+        project: Option<&std::path::Path>,
+    ) -> Result<PluginInspection> {
+        let mut inspection = self.inspect_on(id, harness)?;
+        inspection.extensions = self
+            .0
+            .extensions()
+            .reports(project)
+            .into_iter()
+            .filter(|report| report.plugin_id() == inspection.plugin.id)
+            .collect();
+        inspection.extensions_project = project.map(std::path::Path::to_path_buf);
+        Ok(inspection)
+    }
+
     /// [`inspect`](Self::inspect) narrowed to one harness, named any way
     /// [`UzeApplication::integration_named`] accepts. Attaches nothing and
     /// starts no harness: the plans are computed from the Store and the
@@ -61,6 +83,9 @@ impl Plugins<'_> {
             .0
             .integrations
             .iter()
+            .filter(|integration| {
+                super::lifecycle::attach::delivers_to(&package, &resources, integration.as_ref())
+            })
             .filter(|integration| only.is_none_or(|only| integration.id() == only))
             .map(|integration| {
                 let integration = integration.as_ref();
@@ -89,10 +114,16 @@ impl Plugins<'_> {
                 .iter()
                 .map(|resource| plugin_capability(resource))
                 .collect(),
+            declared_extensions: self
+                .0
+                .extensions()
+                .declared_by(package.id.marketplace(), package.id.plugin_name()),
             deliveries,
             managed_state: managed_state(&reconciliation),
             reconciliation,
             held_back: super::doctor::held_back_notes(self.0, Some(package.id.as_str())),
+            extensions: Vec::new(),
+            extensions_project: None,
         })
     }
 }
@@ -100,6 +131,9 @@ impl Plugins<'_> {
 #[derive(Clone, Debug, Serialize)]
 pub struct PluginSummary {
     pub id: String,
+    /// What a person reads it as: a plugin, or an extension when it carries
+    /// only workspace extensions and reaches no harness.
+    pub kind: PackageKind,
     /// The local name this plugin currently invokes under (ADR-036) — its
     /// own bare plugin name unless an install-time `alias` resolution gave
     /// it a different one to coexist with another marketplace's same-named
@@ -127,6 +161,30 @@ pub struct PluginSummary {
     /// What the package needs from the machine and the machine lacks, each
     /// with the command that installs it. Empty when nothing is missing.
     pub requirement_gaps: Vec<super::RequirementLine>,
+}
+
+/// What a package is to the person reading about it.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PackageKind {
+    /// It carries something a harness reads.
+    #[default]
+    Plugin,
+    /// It carries only workspace extensions: UZE's own, delivered to no
+    /// harness.
+    Extension,
+}
+
+impl PackageKind {
+    /// The kind of `package`, whose harness capabilities are `resources`.
+    pub(crate) fn of(package: &StoredPackage, resources: &[&uze_core::Resource]) -> Self {
+        let extensions_only = !super::lifecycle::attach::reaches_a_harness(package, resources);
+        if extensions_only {
+            Self::Extension
+        } else {
+            Self::Plugin
+        }
+    }
 }
 
 /// One harness a package stayed installed without reaching, and the error
@@ -336,6 +394,9 @@ pub struct MarketplacePluginSummary {
 pub struct MarketplacePluginDetail {
     pub summary: MarketplacePluginSummary,
     pub capabilities: Vec<PluginCapability>,
+    /// See [`PluginInspection::declared_extensions`].
+    #[serde(skip)]
+    pub declared_extensions: Vec<crate::ExtensionIdentity>,
     /// When this plugin was last written in the marketplace that offers
     /// it — what you would be installing, and how old it is.
     pub revision: Option<Revision>,
@@ -427,11 +488,26 @@ pub struct PluginInspection {
     pub revision: Option<Revision>,
     pub plugin: PluginSummary,
     pub capabilities: Vec<PluginCapability>,
+    /// The extensions the package declares under `extensions/`: what it
+    /// brings to the workspace, as `capabilities` is what it brings to the
+    /// harnesses. Read from its contents, whatever their standing; where
+    /// each stands is [`Self::extensions`]'s to say.
+    #[serde(skip)]
+    pub declared_extensions: Vec<crate::ExtensionIdentity>,
     pub deliveries: Vec<HarnessDelivery>,
     pub managed_state: ManagedStateSummary,
     pub reconciliation: ReconciliationReport,
     /// See [`StatusReport::held_back`]; this package's alone.
     pub held_back: Vec<HeldBackNote>,
+    /// The declared extensions this plugin carries, and where each stands:
+    /// on the machine, or in the project [`Plugins::inspect_in`] was asked
+    /// about.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<super::ExtensionReport>,
+    /// The project those extensions were judged for; absent when they
+    /// were judged for the machine.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extensions_project: Option<std::path::PathBuf>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -562,7 +638,9 @@ impl AddPluginReport {
 #[derive(Clone, Debug, Serialize)]
 pub enum UpdatePluginReport {
     Updated {
-        plugin: PluginSummary,
+        /// Boxed, so a report that says nothing was replaced is not as
+        /// large as one that describes the whole package.
+        plugin: Box<PluginSummary>,
         attachments: Vec<AttachmentSummary>,
         publications: Vec<PublicationOutcome>,
         deliveries: Vec<HarnessDeliveryReport>,
@@ -622,8 +700,14 @@ pub enum RemovePluginReport {
     AlreadyAbsent { plugin: String },
     Removed {
         plugin: String,
+        kind: PackageKind,
         detached_receipts: Vec<String>,
         already_missing_receipts: Vec<String>,
+        /// Why what its extensions were given or kept (consents, stores,
+        /// secrets, preferences) was not all forgotten, when it was not:
+        /// the plugin is gone either way.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        unforgotten: Option<String>,
     },
     Blocked {
         report: ReconciliationReport,
@@ -1102,6 +1186,10 @@ pub struct ProjectStatus {
     /// approves them (ADR-055).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commands_awaiting_approval: Option<super::services::CommandsAwaitingApproval>,
+    /// Every declared extension installed plugins carry, and where each
+    /// stands in this project.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<super::ExtensionReport>,
 }
 
 /// One delivered capability a harness holds back until the person acts in
@@ -1122,6 +1210,10 @@ pub struct MachineStatusReport {
     pub packages: Vec<PluginSummary>,
     /// See [`StatusReport::held_back`].
     pub held_back: Vec<HeldBackNote>,
+    /// Every declared extension installed plugins carry, and where each
+    /// stands on this machine.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<super::ExtensionReport>,
 }
 
 /// Drift along the chain a project's environment passes through:
@@ -1337,6 +1429,31 @@ pub struct DoctorReport {
     pub ssh_missing: bool,
     /// What else about this machine keeps UZE from working as it should.
     pub machine_concerns: Vec<MachineConcern>,
+    /// Whether an extension's programs run confined on this machine.
+    pub program_confinement: ProgramConfinement,
+    /// What the declared extensions cost the workspace that last measured
+    /// them, when one did.
+    pub extension_costs: Option<super::MeasuredCosts>,
+}
+
+/// Whether this machine confines the programs extensions run, and how,
+/// right by right.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct ProgramConfinement {
+    pub confined: bool,
+    /// `confined by Landlock ABI 7 and seccomp`, or why not.
+    pub summary: String,
+}
+
+impl ProgramConfinement {
+    /// This machine's, now.
+    pub fn of_this_machine() -> Self {
+        let availability = uze_platform::confine::availability();
+        Self {
+            confined: availability.is_available(),
+            summary: availability.summary(),
+        }
+    }
 }
 
 /// One thing about the machine a person should know (see

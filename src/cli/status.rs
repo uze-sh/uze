@@ -127,6 +127,17 @@ pub(crate) fn doctor_findings(report: &DoctorReport) -> DoctorFindings {
     for concern in &report.machine_concerns {
         warnings.push(format!("{}  {}", concern.subject, concern.detail));
     }
+    // What the workspace measured is a claim about its session: over
+    // D28's budget is worth a look, never a failure of this machine.
+    for cost in report
+        .extension_costs
+        .iter()
+        .flat_map(|costs| &costs.extensions)
+    {
+        for over in cost.over_target() {
+            warnings.push(format!("{}  {over}", cost.identity.id));
+        }
+    }
     if let Some(refusal) = &report.shell_refusal {
         problems.push(format!(
             "shell  {refusal}; setup steps, gates and hooks need it"
@@ -156,10 +167,27 @@ pub(crate) fn render_doctor(report: &DoctorReport) -> String {
             format!("{} {}", progress::error_icon(), progress::label("blocked"))
         }
     };
+    // What an extension's program reaches here: confined, or the
+    // operator's own reach, said before anything of it runs.
+    let confinement = &report.program_confinement;
+    let programs = if confinement.confined {
+        format!(
+            "{} {}",
+            progress::success_icon(),
+            progress::label(&confinement.summary)
+        )
+    } else {
+        format!(
+            "{} {}",
+            progress::warning_icon(),
+            progress::label(format!("run as you: {}", confinement.summary))
+        )
+    };
     let mut text = progress::aligned_rows(vec![
         vec![progress::label("home"), progress::path(&report.uze_home)],
         vec![progress::label("store"), store],
         vec![progress::label("plugins"), report.plugins.len().to_string()],
+        vec![progress::label("programs"), programs],
     ]);
     text.push_str("\n\n");
     // One row per agent: what it runs, whether it is set up, and how much
@@ -195,6 +223,12 @@ pub(crate) fn render_doctor(report: &DoctorReport) -> String {
     }
     text.push_str(&progress::aligned_rows(rows));
     text.push('\n');
+    if let Some(costs) = &report.extension_costs
+        && !costs.extensions.is_empty()
+    {
+        text.push('\n');
+        text.push_str(&render_extension_costs(costs));
+    }
     if !findings.problems.is_empty() || !findings.warnings.is_empty() {
         text.push('\n');
     }
@@ -276,6 +310,38 @@ pub(crate) fn render_doctor(report: &DoctorReport) -> String {
             progress::label("docs"),
             DOCUMENTATION_URL.to_owned()
         ]])
+    )
+}
+
+/// What each declared extension cost the workspace that last measured it,
+/// one row each, and when that was.
+fn render_extension_costs(costs: &uze_application::MeasuredCosts) -> String {
+    let mut rows = vec![vec![
+        String::new(),
+        progress::label("runs/min"),
+        progress::label("p95"),
+        progress::label("memory"),
+    ]];
+    for cost in &costs.extensions {
+        rows.push(vec![
+            cost.identity.id.clone(),
+            format!("{:.1}", cost.runs_per_minute),
+            cost.p95_ms
+                .map_or_else(|| "–".to_owned(), |p95| format!("{p95:.1} ms")),
+            uze_application::bytes_text(cost.memory_bytes),
+        ]);
+    }
+    let age = costs.age().as_secs();
+    let when = match age {
+        0..60 => "just now".to_owned(),
+        60..3600 => format!("{} min ago", age / 60),
+        3600..86400 => format!("{} h ago", age / 3600),
+        _ => format!("{} days ago", age / 86400),
+    };
+    format!(
+        "{}\n  {}\n",
+        progress::figure_groups(vec![rows]).concat(),
+        progress::label(format!("extensions, as the workspace measured them {when}"))
     )
 }
 
@@ -514,6 +580,11 @@ pub(crate) fn render_machine_status(report: &MachineStatusReport, asked: Machine
     text.push_str(&render_plugin_list(&report.packages));
     text.push_str(&render_requirement_gaps(&report.packages));
     text.push_str(&render_held_back(&report.held_back));
+    let extensions = render_extension_standings(&report.extensions, StandingScope::Machine);
+    if !extensions.is_empty() {
+        text.push('\n');
+        text.push_str(&extensions);
+    }
     text
 }
 
@@ -713,6 +784,11 @@ pub(crate) fn render_status(status: &ProjectStatus) -> String {
             &report.harnesses,
             label,
         ));
+    }
+    let extensions = render_extension_standings(&status.extensions, StandingScope::Here);
+    if !extensions.is_empty() {
+        text.push('\n');
+        text.push_str(&extensions);
     }
     for harness in &report.harnesses {
         if let Some(reason) = &harness.agent_context {
@@ -1544,5 +1620,58 @@ mod requirement_gap_tests {
         let text = crate::progress::unpainted(&requirement_gap_text(&by_hand));
         assert!(text.contains("install it by hand"), "{text}");
         assert!(!text.contains("denies"), "{text}");
+    }
+}
+
+#[cfg(test)]
+mod extension_cost_tests {
+    use uze_application::{ExtensionIdentity, MeasuredCost, MeasuredCosts};
+
+    use super::render_extension_costs;
+
+    fn cost(id: &str, p95_ms: Option<f64>, memory_bytes: usize) -> MeasuredCost {
+        MeasuredCost {
+            identity: ExtensionIdentity {
+                marketplace: "studio".to_owned(),
+                plugin: "gsd".to_owned(),
+                id: id.to_owned(),
+            },
+            runs_per_minute: 6.25,
+            p95_ms,
+            memory_bytes,
+        }
+    }
+
+    /// One row per extension, its figures under their headings, and when
+    /// the workspace measured them (D28).
+    #[test]
+    fn each_extension_says_its_runs_p95_and_memory() {
+        let costs = MeasuredCosts::now(vec![
+            cost("gsd-band", Some(3.24), 300 * 1024),
+            cost("chimes", None, 2 * 1024 * 1024),
+        ]);
+        let text = crate::progress::unpainted(&render_extension_costs(&costs));
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(
+            lines[0].contains("runs/min") && lines[0].contains("p95"),
+            "{text}"
+        );
+        assert!(lines[0].trim_end().ends_with("memory"), "{text}");
+        assert!(
+            lines[1].contains("gsd-band") && lines[1].contains("6.2"),
+            "{text}"
+        );
+        assert!(
+            lines[1].contains("3.2 ms") && lines[1].ends_with("300 KiB"),
+            "{text}"
+        );
+        assert!(
+            lines[2].contains('–') && lines[2].ends_with("2.0 MiB"),
+            "{text}"
+        );
+        assert!(
+            lines[3].contains("as the workspace measured them just now"),
+            "{text}"
+        );
     }
 }

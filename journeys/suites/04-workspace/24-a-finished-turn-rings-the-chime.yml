@@ -1,0 +1,189 @@
+journey: chimes rings the terminal's bell when an agent's turn finishes, and its status row says so
+tags: [gate, tui, workspace]
+about: |
+  The operator's side of `chimes`, from the agent bridge's gallery: asked
+  once for every turn that finishes, its script answers a cue and the
+  status row's words. Installed without a terminal it is disabled; the
+  workspace offers it, the operator allows `agent:observe` and `notify`
+  and enables it, and its row in the sidebar's header is quiet until the
+  agent's first turn is over.
+
+  A cue is the terminal's bell, so what proves it rang is read off the
+  bytes the app wrote to its terminal: a BEL standing on its own, outside
+  the escape sequences that end with the same byte. The workspace's own
+  chime is silent on a machine that never chose one, so a bell there is
+  the extension's. Whether a person heard it is the terminal's business,
+  and no check reads it. The harness reports nothing of itself, so its
+  turn is read from how its pane paints, as journey 19 does.
+
+world:
+  project: demo-app
+  commits:
+    - message: "chore: initial commit"
+      files:
+        README.md: "# demo-app\n"
+  # `tests/_fixtures/canonical/bridge`'s `chimes`, staged as a
+  # marketplace's plugin: a container mounts only `journeys/`.
+  files:
+    market/marketplace.json: |
+      {
+        "name": "studio",
+        "description": "A marketplace this journey stages and installs from its clone.",
+        "plugins": [
+          { "name": "bridge", "source": "./plugins/bridge", "description": "The agent bridge's chimes." }
+        ]
+      }
+    market/plugins/bridge/plugin.json: |
+      {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "bridge",
+        "version": "1.0.0",
+        "description": "The agent bridge's reference extension: a cue when a turn ends."
+      }
+    market/plugins/bridge/extensions/chimes/extension.kdl: |
+      protocol 1
+      id "chimes"
+      name "Chimes"
+      description "A sound when a turn ends, and a notification when an agent asks"
+
+      wants "agent:observe" "notify"
+
+      surface "last" slot="status" view="last.uze" source="chime" title="Chimes"
+
+      source "chime" {
+          script "chime.uze"
+          deliver "each"
+          refresh-on "agent.turn.finished"
+          refresh-on "agent.approval.asked"
+      }
+    market/plugins/bridge/extensions/chimes/last.uze: |
+      <view>
+      Row gap=1 {
+          Text "{said}" role="muted" when="said"
+          Text "Quiet" role="faint" unless="said"
+      }
+      </view>
+    market/plugins/bridge/extensions/chimes/chime.uze: |
+      <script>
+      fn answer(input, context) {
+          if !("event" in input) {
+              return #{ data: #{} };
+          }
+          let event = input.event;
+          if event.name == "agent.approval.asked" {
+              #{
+                  data: #{ said: "asks approval", agent: event.agent },
+                  notify: #{ title: "Approval", body: `An agent on ${event.harness} asks for an approval` },
+                  sound: "attention",
+              }
+          } else {
+              #{
+                  data: #{ said: "turn finished", agent: event.agent },
+                  sound: "done",
+              }
+          }
+      }
+      </script>
+    # Counts the bells the app wrote to its terminal that stand on their
+    # own: an OSC sequence (a title, a clipboard write) may end with the
+    # same byte, and that one is no bell.
+    bells.py: |
+      import sys
+
+      data = open(sys.argv[1], "rb").read()
+      bells, at = 0, 0
+      while at < len(data):
+          if data[at] == 0x1B and data[at + 1 : at + 2] == b"]":
+              at += 2
+              while at < len(data) and data[at] not in (0x07, 0x1B):
+                  at += 1
+          elif data[at] == 0x07:
+              bells += 1
+          at += 1
+      print(f"{bells} bell(s)")
+      sys.exit(0 if bells >= int(sys.argv[2]) and bells <= int(sys.argv[3]) else 1)
+
+scenes:
+  - scene: a plugin installed from a marketplace's clone leaves its chimes disabled
+    when:
+      - shell: "{uze} market add {world}/market"
+        say: register the marketplace, linked to nothing
+      - shell: "cd {project} && {uze} install bridge@studio > {world}/install.log 2>&1"
+        say: add the plugin to the project, with nobody at a terminal to answer
+    then:
+      - file: "{uze_home}/store/plugins/studio/bridge/extensions/chimes/chime.uze"
+        contains: "turn finished"
+        about: the extension's script was installed from the clone, into the Store
+      - file: "{uze_home}/state/extensions.json"
+        exists: false
+        about: nobody consented to anything, and nothing was enabled
+      - file: "{uze_home}/config.toml"
+        exists: false
+        about: and the workspace's own chime was never chosen, so it is silent
+
+  - scene: and then the operator allows and enables it, and its row is quiet while no turn has finished
+    when:
+      - open: ["{uze}", "workspace"]
+        tap: "{world}/terminal.bytes"
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - click: "new"
+        say: open the new-agent popup from the space's row
+        in: sidebar
+        expect: 'harness .*Claude Code'
+      - type: "{project}"
+        say: place an agent on the project
+        expect: "Chimes runs nothing there yet"
+        expect_timeout: 90
+      - click: "Review"
+        say: review the extension the project offers
+        expect: "Enable Chimes in demo-app"
+        expect_timeout: 10
+      - wait: screen
+        until: "notify"
+        timeout: 5
+        say: the question shows that it may notify
+      - click: "Enable 1"
+        say: allow its grants and enable it here
+        expect: "extension enabled"
+        expect_timeout: 10
+      - wait: screen
+        until: "Quiet"
+        in: sidebar
+        timeout: 20
+        say: its row in the sidebar's header is quiet
+    then:
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.bridge@studio/chimes.accepted_grants.*
+        count: 2
+        includes: ["agent:observe", "notify"]
+        about: the consent holds exactly the grants its question showed
+      - json: "{uze_home}/state/extensions.json"
+        at: extensions.bridge@studio/chimes.enabled_in.*
+        equals: "{project}"
+        count: 1
+        about: and it is enabled in this project
+      - cmd:
+          run: "{python} -I {world}/bells.py {world}/terminal.bytes 0 0"
+        about: no bell has rung yet
+
+  - scene: and then a turn of the agent finishes, and the bell rings once and the row says so
+    when:
+      - type: "work for 3 seconds"
+        say: ask the agent for a turn of three seconds
+        expect: "working"
+        expect_timeout: 10
+      - wait: screen
+        until: "turn finished"
+        in: sidebar
+        timeout: 30
+        say: the row says a turn finished
+        settle: 1.0
+    then:
+      - file: "{home}/.claude/projects/*/*.jsonl"
+        contains: '"content":"work for 3 seconds"'
+        about: the agent took the operator's line as its turn
+      - cmd:
+          run: "{python} -I {world}/bells.py {world}/terminal.bytes 1 1"
+        about: the app asked its terminal for exactly one bell, for the one turn that finished

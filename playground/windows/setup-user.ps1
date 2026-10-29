@@ -1,6 +1,6 @@
 # The part of the world that belongs to one user, run as that user: Git's
-# identity, uze through install.ps1 from the staged release, the playground
-# MCP server, the playground marketplace and a demo project. Its progress
+# identity, uze through install.ps1 from the staged release, the pingpong
+# MCP server, this checkout's marketplace and a demo project. Its progress
 # goes to the log named on the command line.
 param(
     [Parameter(Mandatory = $true)][string]$Stage,
@@ -33,17 +33,17 @@ try {
     Invoke-Expression (Get-Content "$stage\install.ps1" -Raw) *>&1 | ForEach-Object { Note "  $_" }
     $env:Path = "$env:LOCALAPPDATA\Programs\uze\bin;$env:Path"
 
-    Note 'mcp: playground-mcp'
+    Note 'mcp: pingpong-mcp'
     New-Item -ItemType Directory -Force "$env:USERPROFILE\.local\bin" | Out-Null
-    Copy-Item "$stage\playground-mcp.exe" "$env:USERPROFILE\.local\bin\"
+    Copy-Item "$stage\pingpong-mcp.exe" "$env:USERPROFILE\.local\bin\"
     Add-UserPath "$env:USERPROFILE\.local\bin"
 
-    Note 'market: playground'
-    $market = "$env:USERPROFILE\playground-market"
+    Note 'market: uze'
+    $market = "$env:USERPROFILE\uze-market"
     Copy-Item "$stage\market" $market -Recurse
     git -C $market init -q
     git -C $market add -A
-    git -C $market commit -q -m 'playground marketplace'
+    git -C $market commit -q -m 'uze marketplace'
     uze market add $market *>&1 | ForEach-Object { Note "  $_" }
 
     $project = "$env:USERPROFILE\projects\demo"
@@ -51,7 +51,7 @@ try {
     git -C $project init -q
     Set-Content "$project\AGENTS.md" "# Demo`n`nA project to try uze in.`n"
     New-Item -ItemType Directory -Force "$project\.agents\rules" | Out-Null
-    Set-Content "$project\.agents\rules\marco.md" "---`ntrigger: always_on`n---`n`nWhen the whole message is ``marco``, the answer is exactly`n``polo (UZE_PLAYGROUND_PROJECT_RULE)``.`n"
+    Set-Content "$project\.agents\rules\marco.md" "---`ntrigger: always_on`n---`n`nWhen the whole message is ``marco``, the answer is exactly`n``polo (UZE_PINGPONG_PROJECT_RULE)``.`n"
     git -C $project add -A
     git -C $project commit -q -m init
     Note 'user: ready'

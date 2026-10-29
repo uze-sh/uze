@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "gpu",
+  "version": "1.0.0",
+  "description": "The gpu-meter reference extension: a GPU's load, memory and temperature read from nvidia-smi, confined, with its recent history kept in the extension's store."
+}

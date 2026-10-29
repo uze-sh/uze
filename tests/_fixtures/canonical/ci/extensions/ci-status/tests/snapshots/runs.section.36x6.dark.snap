@@ -1,0 +1,20 @@
+# uze snapshot · protocol 1 · section 36x6 · dark
+ ▾ CI
+ hiukky/uze · main
+  passed    CI                #412
+  running   Journeys           #97
+  failed    CI                #411
+
+---
+ a aa
+ bbbbbbbbbb b bbbb
+  cccccc    aa                bbbb
+  ddddddd   aaaaaaaa           bbb
+  eeeeee    aa                bbbb
+
+---
+a text.secondary
+b text.faint
+c state.success
+d state.warning
+e state.danger

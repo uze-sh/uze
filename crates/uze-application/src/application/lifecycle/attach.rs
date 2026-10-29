@@ -94,6 +94,33 @@ pub(crate) fn refuses_one_name(error: &uze_core::UzeError) -> bool {
     )
 }
 
+/// Whether a package is one for a harness. One that carries only workspace
+/// extensions is UZE's own: stored, locked and discovered by the workspace,
+/// and never delivered to a harness — no plugin generated for it, no
+/// receipt, on any harness. What decides is that it carries extensions and
+/// nothing UZE reads for a harness: a plugin of a harness's own envelope
+/// holding only what no resource names (`commands/`, an LSP) carries none
+/// either, and is the harness's to read.
+pub(crate) fn reaches_a_harness(package: &StoredPackage, resources: &[&Resource]) -> bool {
+    !resources.is_empty() || uze_core::capability::extension::discover(&package.root).is_empty()
+}
+
+/// Whether `package` is delivered to `integration`: one for a harness
+/// ([`reaches_a_harness`]), or one that brings this harness's own plugin
+/// envelope, which is that harness's plugin whatever else it carries.
+/// Only a plugin UZE would have to generate for extensions alone is held
+/// back.
+pub(crate) fn delivers_to(
+    package: &StoredPackage,
+    resources: &[&Resource],
+    integration: &dyn IntegrationPort,
+) -> bool {
+    reaches_a_harness(package, resources)
+        || integration
+            .package_exposure_plan(package, resources)
+            .is_some_and(|plan| plan.envelope == uze_core::exposure::PackageEnvelope::Own)
+}
+
 impl UzeApplication {
     pub(crate) fn attach_stored_packages_to(
         &self,
@@ -163,6 +190,10 @@ impl UzeApplication {
             package = %package.id.as_str()
         )
         .entered();
+        if !delivers_to(package, resources, integration) {
+            self.retire_package_receipts(package, integration)?;
+            return Ok(PackageDelivery::default());
+        }
         // Before any harness is handed a path into it: `${PLUGIN_ROOT}`
         // names this copy, never the Store.
         uze_core::delivered_root::materialize(&self.home, package)?;
@@ -336,6 +367,23 @@ impl UzeApplication {
                     })
             })
             .collect())
+    }
+
+    /// Takes back off everything `integration` holds for `package` — what an
+    /// earlier build delivered of a package that no longer reaches a
+    /// harness — through its receipts, each inspected first, so what
+    /// someone changed since stays where it is.
+    pub(crate) fn retire_package_receipts(
+        &self,
+        package: &StoredPackage,
+        integration: &dyn IntegrationPort,
+    ) -> Result<()> {
+        for receipt in state::receipts(&self.home, Some(package.id.as_str()))? {
+            if receipt.integration == integration.id() {
+                self.retire_receipt(integration, &receipt)?;
+            }
+        }
+        Ok(())
     }
 
     /// Takes one receipt's artifact back off, inspecting first: a matched

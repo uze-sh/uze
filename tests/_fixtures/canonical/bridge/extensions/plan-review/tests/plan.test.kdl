@@ -1,0 +1,22 @@
+test "the plan shows its open steps" {
+    surface "plan"
+    given "plan" fixture="fixtures/plan.json"
+    size 30 8
+    expect-text "Agent bridge"
+    expect-text "Write the fixtures"
+    snapshot "plan"
+}
+
+test "the review is asked about the plan's file" {
+    surface "plan"
+    given "plan" fixture="fixtures/plan.json"
+    press-button "Ask for a review"
+    expect-action "review" file="PLAN.md"
+}
+
+test "no plan offers no review" {
+    surface "plan"
+    given "plan" json=#"{"file": "PLAN.md"}"#
+    expect-text "No plan yet"
+    expect-absent "Stack" because="title"
+}

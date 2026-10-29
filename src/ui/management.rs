@@ -67,6 +67,9 @@ pub(crate) struct ManagementMemory {
     /// only an answer about the project it was asked for, so opening the
     /// modal over a different one asks again however recent it was.
     resolved_for: Option<PathBuf>,
+    /// The plugins' revision ([`crate::ui::extension_switch::plugins_revision`])
+    /// the last resolution read.
+    resolved_revision: Option<u64>,
 }
 
 impl ManagementMemory {
@@ -104,6 +107,7 @@ impl ManagementMemory {
             remembered: None,
             in_flight: false,
             resolved_for: None,
+            resolved_revision: None,
         }
     }
 
@@ -141,9 +145,17 @@ impl ManagementMemory {
         // with one in flight, because that one is about the project this
         // is not.
         let elsewhere = self.resolved_for.as_deref() != Some(root);
-        if (opening_re_resolves(model.remembered.resolved_at) || elsewhere)
-            && (!self.in_flight || elsewhere)
-        {
+        // The workspace changed what is installed or allowed (an offer
+        // answered, a plugin added): what the last opening read is no
+        // longer the machine, however recent.
+        let revised =
+            self.resolved_revision != Some(crate::ui::extension_switch::plugins_revision());
+        if opening_asks_again(
+            model.remembered.resolved_at,
+            elsewhere,
+            revised,
+            self.in_flight,
+        ) {
             // Behind the frame: every list is already on screen, so
             // nothing about this reads as the plugins having gone away.
             spawn_refresh(
@@ -152,6 +164,7 @@ impl ManagementMemory {
                 model.context_root.clone(),
             );
             self.resolved_for = Some(model.context_root.clone());
+            self.resolved_revision = Some(crate::ui::extension_switch::plugins_revision());
             self.in_flight = true;
         }
         model.maintenance_in_flight = self.in_flight;
@@ -232,6 +245,22 @@ impl ManagementMemory {
 /// asks; a resolution inside [`RESOLUTION_STANDS_FOR`] is.
 pub(crate) fn opening_re_resolves(resolved_at: Option<Instant>) -> bool {
     resolved_at.is_none_or(|at| at.elapsed() >= RESOLUTION_STANDS_FOR)
+}
+
+/// Whether opening the modal asks the machine again: past the resolution's
+/// life, over another project, or after the plugins changed; never twice at
+/// once about the same project.
+pub(crate) fn opening_asks_again(
+    resolved_at: Option<Instant>,
+    elsewhere: bool,
+    revised: bool,
+    in_flight: bool,
+) -> bool {
+    // A reading in flight began before the change that revised the
+    // plugins, so it cannot stand for it: ask again beside it, and the
+    // older answer is dropped where it lands (`TuiModel::refreshed`).
+    (opening_re_resolves(resolved_at) || elsewhere || revised)
+        && (!in_flight || elsewhere || revised)
 }
 
 /// The directory this session speaks about, resolved the same way
@@ -374,6 +403,9 @@ pub(crate) fn render(
         }
         Overlay::Confirm { kind, focus } => {
             overlay::render_confirmation(frame, area, kind, *focus, hits)
+        }
+        Overlay::Preferences(editor) => {
+            overlay::render_preferences(frame, area, editor, model.hovered.as_ref(), hits)
         }
         Overlay::AddMarketplace(input) => overlay::render_text_prompt(
             frame,
@@ -597,6 +629,7 @@ fn activate_label(model: &TuiModel) -> Option<String> {
             _ => None,
         },
         Route::Plugins if model.plugin_pane == PluginPane::Markets => Some("open".to_owned()),
+        Route::Plugins if model.shown_package_extension().is_some() => Some("open".to_owned()),
         Route::Plugins => model
             .selected_marketplace_plugin()
             .and_then(|plugin| view::plugins::primary_offer(&plugin.offers()))
@@ -607,13 +640,22 @@ fn activate_label(model: &TuiModel) -> Option<String> {
             ProfilePanel::Editor => Some("change".to_owned()),
             ProfilePanel::Harnesses => None,
         },
-        Route::Extensions => model.selected_extension().map(|extension| {
-            if model.extension_enabled(extension.id) {
-                "disable"
+        // What Enter does: Enable when it is offered, else Disable when
+        // that is, else nothing to name.
+        Route::Extensions => model.selected_extension().and_then(|extension| {
+            let offers = model.extension_offers(extension);
+            let offered = |action| {
+                offers
+                    .iter()
+                    .any(|offer| offer.action == action && offer.is_available())
+            };
+            if offered(uze_keys::Action::EnableExtension) {
+                Some("enable".to_owned())
+            } else if offered(uze_keys::Action::DisableExtension) {
+                Some("disable".to_owned())
             } else {
-                "enable"
+                None
             }
-            .to_owned()
         }),
         Route::Overview | Route::Harnesses => None,
     }

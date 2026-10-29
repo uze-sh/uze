@@ -31,6 +31,11 @@ sandbox:
     # provider's own status line names the timezone it resets in, and the
     # leak scan looks for a username and a hostname — a place is neither.
     TZ: UTC
+  # The prompt's own binary, linked from the real PATH: `.zshrc` below
+  # starts starship, and without it zsh falls back to its default prompt,
+  # which prints the machine's hostname on camera.
+  binaries:
+    - starship
   author: Ada Lovelace
   author_email: ada@demo.dev
   link:

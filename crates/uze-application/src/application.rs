@@ -65,6 +65,15 @@ mod setup;
 mod theme;
 
 pub use agent_context::{AgentContextStatus, ResourceDelivery, UndeliveredReason};
+pub use extensions::{
+    Asker, CheckedExtension, Consented, DeclaredExtensionSummary, ExtensionCheckout,
+    ExtensionCondition, ExtensionConsent, ExtensionCost, ExtensionLoad, ExtensionReport,
+    ExtensionRun, ExtensionRunner, ExtensionStanding, ExtensionState, FIXTURE_LIMIT,
+    InstalledExtension, MEMORY_TARGET, MeasuredCost, MeasuredCosts, NotACheckout,
+    Overlay as ExtensionOverlay, P95_TARGET, PreferenceRow, ProgramPin, RunOutcome, SourceData,
+    Switched, WATCH_DEPTH, WATCH_ENTRIES, bytes_text, confinement, consent_key,
+    enabled_per_project, extension_stamp, grant_meaning, paths_digest, secrets_kept_in,
+};
 pub use profile::{HarnessPreview, ProfileApplyResult, ProfilePreview, ProfileSummary};
 pub use read_models::*;
 pub use requirements::{PackageRequirements, RequirementLine, RequirementStatus};
@@ -245,10 +254,27 @@ impl UzeApplication {
         }
     }
 
+    /// The installed packages among `names` that carry only workspace
+    /// extensions, each named as it was given.
+    pub(crate) fn extensions_among<'a>(&self, names: impl Iterator<Item = &'a str>) -> Vec<String> {
+        names
+            .filter(|name| {
+                self.package_by_name(name).is_ok_and(|package| {
+                    uze_core::engine::package_resources(&package).is_ok_and(|resources| {
+                        PackageKind::of(&package, &resources.iter().collect::<Vec<_>>())
+                            == PackageKind::Extension
+                    })
+                })
+            })
+            .map(str::to_owned)
+            .collect()
+    }
+
     pub(crate) fn plugin_summary(&self, package: &StoredPackage) -> Result<PluginSummary> {
         let resources = uze_core::engine::package_resources(package)?;
         Ok(PluginSummary {
             id: package.id.as_str().to_owned(),
+            kind: PackageKind::of(package, &resources.iter().collect::<Vec<_>>()),
             active_name: package.active_name.clone(),
             source: package.provenance.requested.display(),
             store_path: package.root.clone(),

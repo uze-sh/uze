@@ -1,0 +1,44 @@
+# contributions: the repository's contribution graph, read from git.
+# Published for plugins/contributions/README.md.
+#
+#   tui-record run .demo/examples/contributions
+
+extends: ../_base.yml
+
+video:
+  title: uze — the contributions example
+  out: .demo/examples/contributions/contributions.gif
+  cast: '{root}/example-contributions.cast'
+  publish:
+    - from: out
+      to: web/public/examples/contributions.gif
+  # The map open with a day chosen: the frame that says what it is.
+  poster_when: 'longest streak'
+
+beats:
+  - use: open-and-enable
+    with: {say: 'a project with twenty weeks of history, and an agent on it', review_pause: 1.6}
+  - say: in the bar, today's commits and the last two weeks
+    wait: screen
+    until: '\d+ today'
+    timeout: 15
+    pause: 1.6
+  - say: a click opens the map, twenty weeks of it
+    click: today
+    in: screen
+    occurrence: last
+    refuse: '0 today'
+    expect: longest streak
+    expect_timeout: 15
+    pause: 2.4
+  - say: a day is a click away from its commits
+    # The Monday row's label, then right to its next-to-last week's
+    # square: a day the history is sure to have, two columns per week.
+    click: 'Mon ■'
+    in: pane
+    offset: 40
+    expect: '\w{3}, \w{3} \d+ · \d+ commits?'
+    expect_timeout: 10
+    pause: 3.0
+  - say: and out
+    end: C-q

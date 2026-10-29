@@ -1,0 +1,70 @@
+# uze snapshot · protocol 1 · drawer 46x30 · dark
+ ┌───────────────────────────────────────────┐
+ │ Focus                                     │
+ │                                           │
+ │   █  ███   ███ ███                        │
+ │  ██  █ █ █   █ █ █                        │
+ │   █  ███   ███ █ █                        │
+ │   █  █ █ █ █   █ █                        │
+ │  ███ ███   ███ ███                        │
+ │  left in this session                     │
+ │                                           │
+ │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+ │  focusing for 6m40s               stop    │
+ │                                           │
+ │  ─ last 7 days ─────────────────────────  │
+ │                                           │
+ │       ▂▂▂            ███                  │
+ │  ▄▄▄  ███            ███                  │
+ │  ███  ███            ███  ▅▅▅  ▅▅▅        │
+ │  ███  ███  ▇▇▇  ▁▁▁  ███  ███  ███        │
+ │   3    4    1    0    5    2    2         │
+ │   T    W    T    F    S    S    M         │
+ │                                           │
+ │  17 sessions this week              ●●○○  │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ └───────────────────────────────────────────┘
+---
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ a bbbbb                                     a
+ a                                           a
+ a   c  ccc   ccc ccc                        a
+ a  cc  c c c   c c c                        a
+ a   c  ccc   ccc c c                        a
+ a   c  c c c c   c c                        a
+ a  ccc ccc   ccc ccc                        a
+ a  bbbb bb bbbb bbbbbbb                     a
+ a                                           a
+ a  ccccccccccddddddddddddddddddddddddddddd  a
+ a  bbbbbbbb bbb bbbbb               eeee    a
+ a                                           a
+ a  d ffff f ffff ddddddddddddddddddddddddd  a
+ a                                           a
+ a       ggg            ggg                  a
+ a  ggg  ggg            ggg                  a
+ a  ggg  ggg            ggg  ggg  ccc        a
+ a  ggg  ggg  ggg  ddd  ggg  ggg  ccc        a
+ a   b    b    b    b    b    b    c         a
+ a   d    d    d    d    d    d    c         a
+ a                                           a
+ a  bb bbbbbbbb bbbb bbbb              eedd  a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+---
+a border.default
+b text.muted
+c state.warning
+d text.faint
+e text.secondary
+f text.bright
+g state.info

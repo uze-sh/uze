@@ -80,6 +80,10 @@ pub fn artifacts_declared_in(project: &Path) -> uze_extensions::ArtifactSource {
 pub struct WorkspaceHost;
 
 impl uze_extensions::Host for WorkspaceHost {
+    fn artifact_source(&self, project: &Path) -> uze_extensions::ArtifactSource {
+        artifacts_declared_in(project)
+    }
+
     /// Through `uze-git`'s read path, so an overlay refreshing every few
     /// seconds cannot contend with an agent writing in a sibling checkout.
     ///
@@ -597,6 +601,96 @@ fn count_lines_of(path: &Path) -> u32 {
         None => 0,
         Some(b'\n') => lines,
         Some(_) => lines.saturating_add(1),
+    }
+}
+
+/// The grant a hosted engine's jobs run with: the workspace's, the one
+/// question about a checkout that is the application's rather than the
+/// machine's, which needs the home it was started on, and a declared
+/// extension's questions, answered by the session's runner.
+pub struct EngineHost {
+    pub home: uze_application::UzeHome,
+    pub runner: Arc<uze_application::ExtensionRunner>,
+}
+
+impl uze_extensions::Host for EngineHost {
+    /// Through the runner alone: it finds what answers the question in the
+    /// compile the operator consented to, and says why when nothing may.
+    fn answer(&self, question: uze_extensions::Question) -> uze_extensions::Answer {
+        match super::tui_application(self.home.clone()) {
+            Ok(app) => self.runner.answer(&app.extensions(), &question),
+            Err(error) => uze_extensions::Answer::withheld(format!(
+                "the workspace's application cannot start: {error}"
+            )),
+        }
+    }
+
+    /// Through the runner alone, which finds the file in the installed
+    /// extension or in what its programs' runs kept.
+    fn media(&self, identity: &uze_contract::Identity, name: &str) -> Result<Vec<u8>, String> {
+        match super::tui_application(self.home.clone()) {
+            Ok(app) => self.runner.media(&app.extensions(), identity, name),
+            Err(error) => Err(format!("the workspace's application cannot start: {error}")),
+        }
+    }
+
+    fn delivery_target(&self, checkout: &Path) -> Option<String> {
+        super::tui_application(self.home.clone())
+            .ok()
+            .and_then(|app| app.workspace().delivery_policy(checkout))
+            .and_then(|policy| policy.target)
+    }
+
+    fn artifact_source(&self, project: &Path) -> uze_extensions::ArtifactSource {
+        WorkspaceHost.artifact_source(project)
+    }
+
+    fn git(&self, root: &Path, args: &[&str], answers: &[i32]) -> Result<String, String> {
+        WorkspaceHost.git(root, args, answers)
+    }
+
+    fn repository_root(&self, path: &Path) -> Result<PathBuf, String> {
+        WorkspaceHost.repository_root(path)
+    }
+
+    fn read_file(&self, path: &Path) -> Result<String, Unreadable> {
+        WorkspaceHost.read_file(path)
+    }
+
+    fn read_bytes(&self, path: &Path) -> Result<Vec<u8>, Unreadable> {
+        WorkspaceHost.read_bytes(path)
+    }
+
+    fn list_dir(&self, path: &Path) -> Result<Vec<uze_extensions::DirEntry>, String> {
+        WorkspaceHost.list_dir(path)
+    }
+
+    fn write_file(&self, root: &Path, path: &Path, contents: &str) -> Result<(), String> {
+        WorkspaceHost.write_file(root, path, contents)
+    }
+
+    fn delete_file(&self, root: &Path, path: &Path) -> Result<(), String> {
+        WorkspaceHost.delete_file(root, path)
+    }
+
+    fn delete_dir(&self, root: &Path, path: &Path) -> Result<(), String> {
+        WorkspaceHost.delete_dir(root, path)
+    }
+
+    fn rename_path(&self, root: &Path, from: &Path, to: &Path) -> Result<(), String> {
+        WorkspaceHost.rename_path(root, from, to)
+    }
+
+    fn restore_to_head(&self, root: &Path, paths: &[PathBuf]) -> Result<(), String> {
+        WorkspaceHost.restore_to_head(root, paths)
+    }
+
+    fn count_lines(&self, path: &Path) -> u32 {
+        WorkspaceHost.count_lines(path)
+    }
+
+    fn syntax_theme(&self) -> String {
+        WorkspaceHost.syntax_theme()
     }
 }
 

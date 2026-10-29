@@ -1,0 +1,5 @@
+<view>
+// The header's row, drawn from the same composed answer's view file until
+// it answers; then the composed tree is the row.
+Text "Phases" role="faint"
+</view>

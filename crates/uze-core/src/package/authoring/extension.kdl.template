@@ -1,0 +1,41 @@
+// The extension's manifest: who it is, the surfaces it draws and where
+// their data comes from. `uze agent plugin check` reads it the way the
+// install does.
+protocol 1
+id "{EXTENSION_ID}"
+name "{EXTENSION_ID}"
+description "A board drawn from one source."
+
+// A `view` opens full-frame from the bar under the agent area; a `section`
+// is a block of the sidebar. Both draw the `<view>` of `board.uze`, the
+// component that holds the board's view and its script.
+surface "board" slot="view" view="board.uze" source="board"
+surface "summary" slot="section" view="board.uze" source="live" title="{EXTENSION_ID}"
+
+// A source's fixture is a sample of what it answers, drawn until a real
+// source exists. Every field a view names should be in it.
+source "board" { fixture "fixtures/board.json"; }
+
+// A script is the real source: the `<script>` of `board.uze` answers with
+// the same fields, asked again every 30 seconds while the section is
+// visible. It runs once the extension is enabled in a project; until then
+// the section waits.
+source "live" {
+    script "board.uze"
+    input title="This week"
+    every "30s"
+}
+
+// When a script cannot answer, a program can: an argv the host runs once
+// per question, never through a shell, confined to reading the checkout
+// where this machine can. A bare name runs only under its `exec:` grant,
+// pinned to the path found when the extension is enabled; a value put in
+// from `input` goes after `--`, so it can never be read as a flag.
+//
+// wants "exec:git"
+// source "recent" {
+//     run "git" "log" "--format=%h%x09%s" "-n" "5"
+//     output "lines"
+//     fields "hash" "subject"
+//     every "60s"
+// }

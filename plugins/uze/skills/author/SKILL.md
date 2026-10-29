@@ -3,7 +3,7 @@ name: author
 # Two lines deciding who finds this skill: the long text is what the model
 # matches an invocation against, so it names the moment the skill answers —
 # "create a plugin for me" — not what a scaffold is.
-description: Guides creating a uze plugin end to end — marketplace create or select, plugin scaffold, capability flags, check before install, install from the linked marketplace, iterate, publish by pushing. Use when someone asks to create, author or scaffold a plugin, or to set up their own marketplace of plugins.
+description: Guides creating a uze plugin end to end — marketplace create or select, plugin scaffold, capability flags, check before install, install from the linked marketplace, iterate, publish by pushing — and writing what it carries, a declared extension included (its `extension.kdl`, its `.uze` components of a view and a script, a program, a resident script, grants, tests, consent). Use when someone asks to create, author or scaffold a plugin, set up a marketplace of plugins, add an extension to a plugin, write or debug an extension's script, program, source, action or key, when `uze agent plugin check` refuses an extension, or when one draws "needs consent", "needs enabling in this project" or "`<program>` not found".
 invoke:
   model: true
   user: true
@@ -65,7 +65,8 @@ plugin to it directly.
 
 ```bash
 uze agent plugin create <name> --market <market> [--description "…"] \
-    [--category <word>] [--hook] [--mcp] [--agent] [--rules]
+    [--category <word>] [--hook] [--mcp] [--agent] [--rules] \
+    [--extension <id>]
 ```
 
 Each field has one file that owns it. `plugin.json` describes the plugin:
@@ -100,7 +101,17 @@ is refused there, the package with it — `uze agent plugin check` names
 each; `--mcp` adds an `mcp.json` and a working stdio server stub under
 `scripts/` (keep its stdout for the protocol alone — log to stderr);
 `--agent` adds an agent definition under `agents/<name>.md`;
-`--rules` adds `rules/` with one example rule (see below). There is no
+`--rules` adds `rules/` with one example rule (see below);
+`--extension <id>` adds a declared extension under `extensions/<id>/`: an
+`extension.kdl` declaring a `view` and a sidebar `section`, the
+`board.uze` component both draw (its `<view>`, and the `<script>` the live source runs), the `fixtures/board.json` it is bound to, and
+`tests/board.test.kdl` with the snapshot its first test takes (the id is
+lowercase with single hyphens, and `code`, `architect`, `spec` and `uze`
+are taken). Writing the extension itself (its manifest, a script or a
+program, its grants, its tests, and the consent it needs before it runs)
+is in [references/extension.md](references/extension.md): read it when
+the plugin carries one, and come back here for check, install and
+update. There is no
 `--instructions`: a plugin's own `AGENTS.md` reaches no project, and the
 flag is refused naming an `always_on` rule. Every generated file carries commented field
 documentation. A file the plugin ships is named `${PLUGIN_ROOT}/…` in
@@ -184,6 +195,16 @@ arrives here, before anything is delivered. Its `Agent Plugins 1.0`
 section says whether the plugin is a valid plugin of the standard or names
 what keeps it from being one; that is advice, never a reason the check
 fails.
+
+Each extension the plugin carries is compiled with the rules the
+workspace hosts it with; what is wrong is said under `extension <id>` as
+`file:line:column: message (suggestion)`, and fails the check. Each
+surface's view is then bound to its source's fixture, and a field the view
+names that the fixture lacks is a warning placed in the view: add the
+field to the fixture, or stop naming it.
+What a view can draw, how to test an extension and how to point an editor
+at the language server are in
+[references/extension.md](references/extension.md).
 
 A warning does not fail the check, but it is still yours to resolve: each
 one names the file and the one change that clears it. A marketplace

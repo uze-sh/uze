@@ -22,13 +22,25 @@ impl Attach<'_> {
             scopes.push(Scope::ReleaseNotes);
             return scopes;
         }
+        if self.model.extension_offer_chooses() {
+            scopes.push(Scope::Choose);
+            return scopes;
+        }
         if self.model.approval.is_some()
+            || self.model.extension_offer.is_some()
+            || self.model.agent_write.is_some()
             || self.model.interrupt.is_some()
             || self.model.proposal.is_some()
             || self.model.asks_overview_question()
             || self.model.shows_space_issues()
         {
             scopes.push(Scope::Confirm);
+            return scopes;
+        }
+        // A plugin's overlay is modal: what it declares and the moves every
+        // declared surface answers, and nothing behind it.
+        if self.model.open_overlay.is_some() {
+            scopes.push(Scope::Declared);
             return scopes;
         }
         let surface = if self.model.directory_step.is_some() {
@@ -43,17 +55,22 @@ impl Attach<'_> {
             Scope::RecentFilter
         } else if self.model.recent.has_keys() {
             Scope::Recent
-        } else if self.model.code.as_ref().is_some_and(code::CodeView::typing) {
+        } else if self.model.inspector.edit.is_some() {
+            // A source's input being edited takes text as a name does.
+            Scope::Rename
+        } else if self.model.open_typing() {
             // A file or a new name taking text seals everything behind
             // it, the same way the action index does: nothing else may
             // answer a letter.
             Scope::CodeEditing
-        } else if self.model.architect.is_some() {
+        } else if self.model.showing(architect::CATALOG.id) {
             Scope::Architect
-        } else if self.model.spec.is_some() {
+        } else if self.model.showing(spec::CATALOG.id) {
             Scope::Spec
-        } else if self.model.code.is_some() {
+        } else if self.model.showing(code::CATALOG.id) {
             Scope::Code
+        } else if self.model.open_slot.is_some() {
+            Scope::Declared
         } else if let Some(overview) = &self.model.space_overview {
             if overview.filtering {
                 Scope::SpaceOverviewFilter
@@ -73,25 +90,44 @@ impl Attach<'_> {
         // chord. Innermost, because a surface seals everything behind it.
         if matches!(
             surface,
-            Scope::Pane | Scope::Code | Scope::Architect | Scope::Spec | Scope::SpaceOverview
+            Scope::Pane
+                | Scope::Code
+                | Scope::Architect
+                | Scope::Spec
+                | Scope::Declared
+                | Scope::SpaceOverview
         ) {
             scopes.push(Scope::Surfaces);
         }
         scopes
     }
 
-    /// What is on offer where the index is opened that holds no key: what
-    /// recent's selected row offers, or, over the pane or a surface
-    /// standing in it, delivering every task of the space.
+    /// What is on offer where the index is opened beyond the host's own
+    /// vocabulary: what recent's selected row offers, or the declared
+    /// surface in front's actions, with their keys or by pointer alone,
+    /// and, over the pane or a surface standing in it, delivering every
+    /// task of the space.
     fn offered_without_a_key(&self) -> Vec<Action> {
         if self.model.recent.has_keys() {
             return recent_offered(&self.model);
         }
         let in_the_pane = self.scopes().last() == Some(&Scope::Surfaces);
+        let mut offered: Vec<Action> = self
+            .model
+            .declared_actions()
+            .into_iter()
+            .map(|(action, _)| action)
+            .collect();
         if in_the_pane && self.model.focused_cwd().is_some() {
-            return vec![Action::DeliverAllTasks];
+            offered.push(Action::DeliverAllTasks);
         }
-        Vec::new()
+        if self.model.focused_cwd().is_some() {
+            offered.extend(self.model.declared_view_doors());
+        }
+        if self.model.offers_waiting() {
+            offered.push(Action::ReviewExtensions);
+        }
+        offered
     }
 
     /// Keyboard input: say what is open, then act on what the keystroke
@@ -118,8 +154,21 @@ impl Attach<'_> {
         let Some(chord) = crate::ui::keys::chord_of(key) else {
             return Flow::Continue;
         };
+        if is_the_pause(chord) {
+            return self.act(Action::PauseAgentWrites, viewport);
+        }
+        if let Some(flow) = self.resident_key(chord) {
+            return flow;
+        }
+        if let Some(flow) = self.drawer_key(chord) {
+            return flow;
+        }
         let scopes = self.scopes();
-        match uze_keys::active().resolve(chord, &scopes) {
+        let front = self.model.declared_front();
+        let front = front
+            .as_ref()
+            .map(|(owner, surface)| uze_keys::Front { owner, surface });
+        match uze_keys::active().resolve_for(chord, &scopes, front) {
             Resolution::Act(action) if !self.model.offers_action(action) => {
                 self.unclaimed(key, chord);
                 Flow::Continue
@@ -143,6 +192,8 @@ impl Attach<'_> {
     /// surface's own "anything else means no".
     pub(super) fn unclaimed(&mut self, key: KeyEvent, chord: Chord) {
         if self.model.approval.is_some()
+            || self.model.extension_offer.is_some()
+            || self.model.agent_write.is_some()
             || self.model.interrupt.is_some()
             || self.model.proposal.is_some()
             || self.model.asks_overview_question()
@@ -180,6 +231,8 @@ impl Attach<'_> {
             step.picker.typed(character);
         } else if let Some((_, buffer)) = self.model.renaming.as_mut() {
             buffer.insert(character);
+        } else if let Some((_, buffer)) = self.model.inspector.edit.as_mut() {
+            buffer.insert(character);
         } else if self.model.recent.has_keys() && self.model.recent.filtering {
             self.model.recent.filter.push(character);
         } else if let Some(overview) = self
@@ -204,13 +257,9 @@ impl Attach<'_> {
         {
             field.buffer.insert(character);
             field.picked = 0;
-        } else if self
-            .model
-            .code
-            .as_ref()
-            .is_some_and(code::CodeView::editing)
-        {
-            self.tell_the_code_surface(Command::Type(character));
+        } else if self.model.open_typing() {
+            let space = self.surface_space();
+            self.model.tell_surface(Command::Type(character), space);
             return;
         }
         self.model.dirty = true;
@@ -248,7 +297,7 @@ impl Attach<'_> {
             // The step opens the new agent's popup on its directory.
             Action::NewAgent => self.model.directory_step.is_some(),
             Action::NextAgent => self.asked_for_a_tab,
-            Action::ToggleChanges | Action::ToggleFiles => self.model.code.is_some(),
+            Action::ToggleChanges | Action::ToggleFiles => self.model.showing(code::CATALOG.id),
             Action::ToggleRecent => self.model.recent.open,
             Action::OpenActionIndex => self.model.action_index.is_some(),
             _ => false,
@@ -268,6 +317,14 @@ impl Attach<'_> {
             Action::Quit => {
                 let _ = send_request(&mut self.stream, &ClientRequest::Detach);
                 return Flow::Exit(WorkspaceExit::Quit);
+            }
+            // The brake works wherever it is pressed, whatever stands in
+            // front: it is an extension's writes it stops, and an
+            // extension's surface or a question about one must never
+            // swallow it.
+            Action::PauseAgentWrites => {
+                self.model.toggle_agent_writes();
+                return Flow::Continue;
             }
             Action::OpenActionIndex if self.model.action_index.is_none() => {
                 self.model.action_index = Some(ActionIndexOverlay {
@@ -298,6 +355,14 @@ impl Attach<'_> {
             self.approval_action(action);
             return Flow::Continue;
         }
+        if self.model.extension_offer.is_some() {
+            self.extension_offer_action(action);
+            return Flow::Continue;
+        }
+        if self.model.agent_write.is_some() {
+            self.agent_write_action(action);
+            return Flow::Continue;
+        }
         if self.model.proposal.is_some() {
             self.proposal_action(action);
             return Flow::Continue;
@@ -314,12 +379,20 @@ impl Attach<'_> {
             self.space_issues_action(action);
             return Flow::Continue;
         }
+        if self.model.open_overlay.is_some() {
+            self.overlay_action(action);
+            return Flow::Continue;
+        }
         if self.model.directory_step.is_some() {
             self.directory_step_action(action);
             return Flow::Continue;
         }
         if self.model.renaming.is_some() {
             self.rename_action(action);
+            return Flow::Continue;
+        }
+        if self.model.inspector.edit.is_some() {
+            self.inspector_edit_action(action);
             return Flow::Continue;
         }
         if self.model.agent_picker.is_some() {
@@ -334,22 +407,30 @@ impl Attach<'_> {
             self.recent_action(action);
             return Flow::Continue;
         }
+        // The drawer's door stands over every surface: the drawer is laid
+        // beside whatever the pane shows rather than in its place.
+        if action == Action::ToggleDrawer {
+            if let Some(slot) = self.model.drawer_in_front() {
+                let room = self.agent_room(viewport);
+                self.model.toggle_drawer(slot, room);
+            }
+            return Flow::Continue;
+        }
         // The overview's door stands over the surfaces too, as theirs do
         // over each other: one of them in front must not swallow it.
         if action == Action::OpenSpaceOverview {
             self.toggle_space_overview();
             return Flow::Continue;
         }
-        if self.model.architect.is_some() {
-            self.architect_action(action);
+        // A declared view's door, from the index: it opens over whatever
+        // stands in the pane, as its button on the strip does.
+        if let Action::Extension(id) = action
+            && self.model.open_declared_door(id)
+        {
             return Flow::Continue;
         }
-        if self.model.spec.is_some() {
-            self.spec_action(action);
-            return Flow::Continue;
-        }
-        if self.model.code.is_some() {
-            self.code_action(action);
+        if self.model.open_slot.is_some() {
+            self.surface_action(action);
             return Flow::Continue;
         }
         if self.model.space_overview.is_some() && overview_answers(action) {
@@ -391,8 +472,8 @@ impl Attach<'_> {
                     self.model.dirty = true;
                 }
             }
-            Action::ToggleChanges => open_code(&mut self.model, code::ContentMode::Diff),
-            Action::ToggleFiles => open_code(&mut self.model, code::ContentMode::Contents),
+            Action::ToggleChanges => open_code(&mut self.model, code::CHANGES),
+            Action::ToggleFiles => open_code(&mut self.model, code::FILES),
             Action::ToggleArchitect => open_architect(&mut self.model),
             Action::ToggleSpec => open_spec(&mut self.model),
             Action::NextSpace => self.step_space(1, columns, rows),
@@ -433,6 +514,7 @@ impl Attach<'_> {
                 }
             }
             Action::ToggleRecent => self.open_recent(),
+            Action::ReviewExtensions => self.model.review_extensions(),
             _ => {}
         }
         Flow::Continue
@@ -526,5 +608,75 @@ impl Attach<'_> {
             return;
         };
         self.land_on_tab(target, columns, rows);
+    }
+}
+
+/// Where the pause's chord is looked up: where the keymap binds it, read
+/// as if nothing stood in front, so no surface, overlay or question that
+/// seals the keyboard can take it from the host.
+const PAUSE_STACK: [Scope; 3] = [Scope::Global, Scope::Workspace, Scope::Surfaces];
+
+/// Whether `chord` is the pause, wherever it is pressed.
+fn is_the_pause(chord: Chord) -> bool {
+    matches!(
+        uze_keys::active().resolve(chord, &PAUSE_STACK),
+        Resolution::Act(Action::PauseAgentWrites)
+    )
+}
+
+impl Attach<'_> {
+    /// A key a focused resident surface reads raw, before anything else
+    /// hears it: every key but Esc, which lets go of the surface, and F1
+    /// and F8, which stay the host's. `None` hands the key on.
+    fn resident_key(&mut self, chord: Chord) -> Option<Flow> {
+        let id = self.model.raw_input_slot()?;
+        match chord.key {
+            uze_keys::Key::F(1 | 8) => return None,
+            uze_keys::Key::Esc => self.model.release_resident(),
+            _ => self.model.give_raw_input(id, raw_key(chord)),
+        }
+        Some(Flow::Continue)
+    }
+
+    /// A key the open drawer answers before anything else: Esc, which
+    /// closes a floating drawer wherever the keys are, and a docked one
+    /// that holds them; and the navigation keys while a click in it lent it
+    /// them. `None` hands the key on as if no drawer were open: Esc beside
+    /// a docked drawer the pane holds the keys of is the agent's, which
+    /// interrupts its turn with it.
+    fn drawer_key(&mut self, chord: Chord) -> Option<Flow> {
+        if !self.model.chrome_answers() || self.model.open_drawer().is_none() {
+            return None;
+        }
+        let meaning = match uze_keys::active()
+            .resolve(chord, &[Scope::Global, Scope::Workspace, Scope::Declared])
+        {
+            Resolution::Act(action) => action,
+            _ => return None,
+        };
+        if meaning == Action::Dismiss && (self.model.drawer_floats() || self.model.drawer_focused())
+        {
+            self.model.close_drawer();
+            return Some(Flow::Continue);
+        }
+        if !self.model.drawer_focused() || !drawer_answers(meaning) {
+            return None;
+        }
+        self.dock_action(meaning);
+        Some(Flow::Continue)
+    }
+
+    /// The docked drawer, holding the navigation keys: Esc closes it;
+    /// every other key is a command its engine answers.
+    pub(super) fn dock_action(&mut self, action: Action) {
+        match action {
+            Action::Dismiss => self.model.close_drawer(),
+            _ => {
+                if let Some(command) = crate::ui::extension_view::command_for(action) {
+                    self.model.tell_drawer(command);
+                }
+            }
+        }
+        self.model.dirty = true;
     }
 }

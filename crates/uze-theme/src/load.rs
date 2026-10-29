@@ -436,7 +436,15 @@ pub fn resolve_stack(identity: &Identity, layers: &[&ThemeFile]) -> Result<Loade
         // definition — the tree glyphs and age columns nobody reads unless
         // they went looking. Warning about a token whose whole job is to sit
         // at the edge would fire on every theme ever written.
-        if token.is_surface() || Token::ANSI.contains(token) || *token == Token::TextFaint {
+        //
+        // The heat ramp's low steps sit near the background by design: a
+        // ramp is read step against step, and its first step's whole job is
+        // to be barely there.
+        if token.is_surface()
+            || Token::ANSI.contains(token)
+            || Token::HEAT.contains(token)
+            || *token == Token::TextFaint
+        {
             continue;
         }
         let ratio = contrast_ratio(colors[token.index()], background);
@@ -451,7 +459,18 @@ pub fn resolve_stack(identity: &Identity, layers: &[&ThemeFile]) -> Result<Loade
     let name = identity.name.clone().unwrap_or_else(|| id.to_owned());
     let description = identity.description.clone().unwrap_or_default();
     Ok(Loaded {
-        theme: Theme::new(name, description, colors, symbols, syntax_theme),
+        theme: Theme::new(
+            name,
+            description,
+            colors,
+            symbols,
+            syntax_theme,
+            layers
+                .iter()
+                .rev()
+                .find_map(|layer| layer.glyphs)
+                .unwrap_or_default(),
+        ),
         warnings,
     })
 }
@@ -1345,6 +1364,25 @@ mod tests {
                 loaded.warnings.is_empty(),
                 "`{id}` warns: {:?}",
                 loaded.warnings
+            );
+        }
+    }
+
+    /// The heat ramp is read step against step, so each step has to stand
+    /// further from the background than the one before, in every theme,
+    /// light or dark, whatever it repainted.
+    #[test]
+    fn the_heat_ramp_climbs_away_from_the_background_in_every_theme() {
+        let ids = std::iter::once(DEFAULT_THEME).chain(BUNDLED_PALETTES.iter().map(|(id, _)| *id));
+        for id in ids {
+            let theme = builtin(id).expect("bundled");
+            let contrast: Vec<f32> = Token::HEAT
+                .iter()
+                .map(|token| contrast_ratio(theme.color(*token), theme.background()))
+                .collect();
+            assert!(
+                contrast.windows(2).all(|pair| pair[0] < pair[1]),
+                "`{id}`'s heat ramp does not climb: {contrast:?}"
             );
         }
     }

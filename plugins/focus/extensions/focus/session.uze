@@ -1,0 +1,155 @@
+<view>
+// The drawer: what is left in large digits, how far the session is, a
+// button to start or stop, and the sessions of the last seven days.
+Stack gap=1 {
+    Stack {
+        Digits until="{ends}" role="warning" when="running"
+        Text "left in this session" role="muted" when="running"
+        Digits "{minutes}:00" role="info" unless="running"
+        Text "a session" role="muted" unless="running"
+    }
+    Stack {
+        Progress ratio="{ratio}" role="warning" style="line"
+        Row gap=1 when="running" {
+            Text "focusing for" role="muted"
+            Elapsed since="{started}" role="muted"
+            Text "" grow=#true
+            Button "stop" action="stop"
+        }
+        Row gap=1 unless="running" {
+            Text "{today} of {goal} today" role="muted" grow=#true
+            Button "start" action="start" primary=#true
+        }
+    }
+
+    Rule "last 7 days"
+    Cells rows="{week}"
+    Row gap=1 {
+        Text "{week_total} sessions this week" role="muted" grow=#true
+        Pips done="{today}" total="{goal}"
+    }
+}
+</view>
+
+<script>
+// The pomodoro's clock. The store keeps `started` (when the session
+// began, in ms, or nothing) and `days` (the sessions each day closed, by
+// date). Asked every 5 s, it closes the session when its minutes are up:
+// it counts the day, plays a sound and notifies. The clock itself is the
+// host's: the view counts down to `ends`.
+
+// "YYYY-MM-DD" of ms since 1970, by the civil calendar (Howard Hinnant).
+fn date_of(ms) {
+    let z = ms / 86400000 + 719468;
+    let era = z / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { yoe + era * 400 + 1 } else { yoe + era * 400 };
+    let two = |n| if n < 10 { `0${n}` } else { `${n}` };
+    `${y}-${two.call(m)}-${two.call(d)}`
+}
+
+// `text` in the middle of `n` cells, then `after` cells of air.
+fn centred(text, n, after) {
+    let left = if text.len() < n { (n - text.len()) / 2 } else { 0 };
+    let line = "";
+    for at in 0..left { line += " "; }
+    line += text;
+    while line.len() < n + after { line += " "; }
+    line
+}
+
+// The last seven days as columns, a bar over its count and its weekday,
+// today's in the warning hue: rows of `{ch, role}` for a `Cells`. A bar
+// is `bar_rows` rows tall at the week's best day, in eighths of a row; a
+// day with none keeps a faint floor so the week reads as seven days.
+fn week_chart(counts, today) {
+    let bar = 3;
+    let gap = 2;
+    let bar_rows = 4;
+    let levels = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
+    let letters = ["M", "T", "W", "T", "F", "S", "S"];
+    let best = counts.reduce(|most, n| if n > most { n } else { most }, 1);
+    let rows = [];
+    for row in 0..bar_rows + 2 { rows.push([]); }
+    for at in 0..counts.len() {
+        let n = counts[at];
+        let is_today = at == counts.len() - 1;
+        let after = if is_today { 0 } else { gap };
+        let tone = if n == 0 { "faint" } else if is_today { "warning" } else { "info" };
+        let eighths = if n == 0 { 0 } else { (n * bar_rows * 8 + best - 1) / best };
+        for row in 0..bar_rows {
+            let fill = eighths - (bar_rows - 1 - row) * 8;
+            let ch = if fill >= 8 { "█" } else if fill > 0 { levels[fill - 1] } else { " " };
+            let ch = if n == 0 && row == bar_rows - 1 { "▁" } else { ch };
+            for cell in 0..bar + after {
+                rows[row].push(#{ ch: if cell < bar { ch } else { " " }, role: tone });
+            }
+        }
+        let day = today - (counts.len() - 1 - at);
+        let under = [
+            [`${n}`, if is_today { "warning" } else { "muted" }],
+            [letters[(day + 3) % 7], if is_today { "warning" } else { "faint" }],
+        ];
+        for line in 0..under.len() {
+            for ch in centred(under[line][0], bar, after).chars() {
+                rows[bar_rows + line].push(#{ ch: `${ch}`, role: under[line][1] });
+            }
+        }
+    }
+    rows
+}
+
+fn answer(input, context) {
+    let now = clock();
+    let kept = store();
+    let days = kept.days ?? #{};
+    let started = kept.started ?? ();
+    let minutes = input.preferences.minutes;
+    let goal = input.preferences.goal;
+    let length = minutes * 60000;
+    let today = date_of(now);
+    let reply = #{};
+
+    // Time is up: the session closes, and the day gains one.
+    if started != () && now - started >= length {
+        days[today] = (days[today] ?? 0) + 1;
+        started = ();
+        reply.store = #{ started: (), days: days };
+        reply.sound = "done";
+        reply.notify = #{ title: "Session done", body: `${minutes} minutes · ${days[today]} of ${goal} today` };
+    }
+
+    let counts = [];
+    for back in range(6, -1, -1) {
+        counts.push(days[date_of(now - back * 86400000)] ?? 0);
+    }
+    let running = started != ();
+    reply.data = #{
+        running: running,
+        started: started,
+        ends: if running { started + length } else { () },
+        ratio: if running { (now - started).to_float() / length.to_float() } else { 0.0 },
+        minutes: minutes,
+        today: days[today] ?? 0,
+        goal: goal,
+        week: week_chart(counts, now / 86400000),
+        week_total: counts.reduce(|sum, n| sum + n, 0),
+    };
+    reply
+}
+
+// Starts a session now, and the source draws the clock running.
+fn begin(input, context) {
+    #{ data: (), store: #{ started: clock() }, refresh: ["clock"] }
+}
+
+// Stops the session without counting it.
+fn end(input, context) {
+    #{ data: (), store: #{ started: () }, refresh: ["clock"] }
+}
+</script>

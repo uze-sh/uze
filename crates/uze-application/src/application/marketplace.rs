@@ -179,14 +179,10 @@ impl MarketplaceRequest {
     /// point, since a pin taken from unpublished work is one a
     /// collaborator cannot reach.
     fn materialize_from_link(&self, plugin: &str, checkout: &Path) -> Result<MaterializedPackage> {
-        let subpath = &self.repository.subpath;
-        let manifest_path = subpath
-            .directory_in(checkout)?
-            .join(uze_core::anchor::MARKETPLACE_MANIFEST_NAME);
-        let manifest_bytes =
-            std::fs::read(&manifest_path).map_err(UzeError::read(&manifest_path))?;
-        let manifest = marketplace::parse_manifest(&manifest_bytes)?;
-        let within = subpath.plugin_path(&manifest, plugin)?;
+        let within = self
+            .repository
+            .subpath
+            .linked_plugin_path(checkout, plugin)?;
 
         let scratch = acquisition::scratch_directory()?;
         let within_marketplace = (within != ".").then(|| PathBuf::from(&within));
@@ -817,6 +813,11 @@ impl Marketplace<'_> {
                 self.0.offered_revision(marketplace, name)
             },
             capabilities: inspected.resources.iter().map(plugin_capability).collect(),
+            declared_extensions: super::extensions::declared_in(
+                materialized.root(),
+                marketplace,
+                name,
+            ),
             summary,
         })
     }

@@ -12,3 +12,5 @@ pub mod registry;
 pub(crate) mod hooks;
 pub(crate) mod rules;
 mod shared;
+
+pub use shared::mcp::stdio_server_launch;

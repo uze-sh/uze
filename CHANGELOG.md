@@ -172,7 +172,7 @@ pre-releases — see `docs/versioning.md`.
 ### Documentation
 
 - **release:** Condense generated install guidance ([#214](https://github.com/uze-sh/uze/pull/214)) ([01377a4](https://github.com/uze-sh/uze/commit/01377a461727aae8457be98f9c4e56701d9b92bb))
-- **openspec:** Add the frozen add-extension-platform change ([#136](https://github.com/uze-sh/uze/pull/136)) ([78890be](https://github.com/uze-sh/uze/commit/78890bed588aeffc76d0abde448a2d2cb8e9ef77))
+- **openspec:** Add the frozen extension-platform change ([#136](https://github.com/uze-sh/uze/pull/136)) ([78890be](https://github.com/uze-sh/uze/commit/78890bed588aeffc76d0abde448a2d2cb8e9ef77))
 - **openspec:** Propose tracking the repositories an agent touches ([#224](https://github.com/uze-sh/uze/pull/224)) ([cca01b6](https://github.com/uze-sh/uze/commit/cca01b64255226e44b778d9207fffa4991adaf04))
 
 ### CI

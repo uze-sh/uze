@@ -124,6 +124,11 @@ pub struct ManagementLayout {
     /// The marketplace the plugin catalog was narrowed to, by name;
     /// `None` shows every marketplace's plugins.
     pub plugin_market: Option<String>,
+    /// The order the operator gave the extensions whose rows stand in the
+    /// workspace sidebar's header, by the key each is switched by. Set on
+    /// the Extensions screen; one it does not name stands after those it
+    /// does, in the order the extensions were found.
+    pub status_order: Vec<String>,
 }
 
 /// Best-effort on purpose: what the TUI was left looking like is worth

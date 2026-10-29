@@ -260,6 +260,15 @@ pub struct AgentContext<'a> {
     pub session: Option<&'a SessionId>,
 }
 
+/// What a reporter is built from.
+pub struct ReporterContext<'a> {
+    /// The `uze` the harness's events run, by its absolute path.
+    pub uze: &'a Path,
+    /// The agent's own context directory, where a reporter may write what
+    /// the launch then names.
+    pub dir: &'a Path,
+}
+
 /// What a channel adds to one launch. Never the document's text: only paths
 /// reach the process's arguments or environment.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -465,6 +474,22 @@ pub trait IntegrationPort: Send + Sync {
         Ok(ContextContribution::default())
     }
 
+    /// What this one launch carries so its harness tells the workspace
+    /// what the agent is doing, by running `uze agent report` from the
+    /// harness's own events: never a hook delivered to every session of
+    /// the harness, only this launch's (ADR-040, amended by extension-agent-bridge).
+    /// `None` where the harness has no such event to run it from; the
+    /// workspace then reads turns from what the pane paints.
+    fn reporter(&self, _ctx: &ReporterContext) -> Option<ContextContribution> {
+        None
+    }
+
+    /// The agent events this harness can report through [`Self::reporter`],
+    /// as `uze agent report` names them: what an extension can count on.
+    fn reported_events(&self) -> &'static [&'static str] {
+        &[]
+    }
+
     /// The facts this harness keeps for `project_root` (and for the
     /// machine) that UZE reads into every agent's memory index, never
     /// copying, moving or changing them. Each is read-only, and `origin` is
@@ -612,8 +637,10 @@ pub trait IntegrationPort: Send + Sync {
     /// The prefix a human types to explicitly invoke an exposed capability
     /// on this harness (e.g. `/` for slash commands, `$` for Codex's
     /// explicit skill invocation, nothing for a bare-name harness).
-    /// Presentation-only, rendered by docs/matrix tooling; never used for
-    /// lookup or matching.
+    /// Rendered by docs/matrix tooling, and the spelling the workspace
+    /// types when an extension's `agent-prompt` names a skill
+    /// (`AgentIdentity::skill_invocation`); never used for lookup or
+    /// matching.
     fn invocation_prefix(&self) -> &'static str {
         ""
     }
@@ -893,6 +920,20 @@ pub trait IntegrationPort: Send + Sync {
         _plan: &PackageExposurePlan,
     ) -> Result<Option<AttachmentReceipt>> {
         Ok(None)
+    }
+
+    /// Whether the person switched off, inside the harness itself, what this
+    /// receipt delivered. Their choice, not a change to anything UZE wrote:
+    /// the receipt still inspects as matched, and delivering the package
+    /// again must not undo it.
+    fn switched_off(&self, _receipt: &AttachmentReceipt) -> bool {
+        false
+    }
+
+    /// Switches off again what this receipt delivered, for a delivery that
+    /// replaced one the person had switched off.
+    fn switch_off(&self, _receipt: &AttachmentReceipt) -> Result<()> {
+        Ok(())
     }
 
     /// This harness's own layer of `plugin check`, above the rules every

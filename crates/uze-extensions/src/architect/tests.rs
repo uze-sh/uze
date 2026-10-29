@@ -801,6 +801,9 @@ impl Host for Written {
     fn syntax_theme(&self) -> String {
         String::new()
     }
+    fn artifact_source(&self, _project: &std::path::Path) -> ArtifactSource {
+        declared()
+    }
 }
 
 fn declared() -> ArtifactSource {
@@ -1020,4 +1023,91 @@ fn two_roots_keep_two_files_of_one_name_apart() {
         .collect();
     origins.sort();
     assert_eq!(origins, vec!["design/overview.mmd", "docs/overview.mmd"]);
+}
+
+mod hosted {
+    use super::*;
+    use crate::architect::{ArchitectExtension, SURFACE};
+    use crate::contract::{Checkout, Extension, Opaque};
+    use crate::view::Content;
+
+    const SPACE: Size = Size {
+        width: 80,
+        height: 24,
+    };
+
+    fn checkout(root: &str) -> Checkout {
+        Checkout {
+            root: PathBuf::from(root),
+            display: root.to_owned(),
+            target: None,
+        }
+    }
+
+    fn overview() -> Written {
+        Written(vec![("overview.mmd", "flowchart LR\n  a[A] --> b[B]\n")])
+    }
+
+    /// The answer each of the extension's jobs gives, run against `host`.
+    fn run(extension: &mut ArchitectExtension, host: &dyn Host) -> Vec<Opaque> {
+        extension
+            .jobs()
+            .into_iter()
+            .map(|job| (job.run)(host))
+            .collect()
+    }
+
+    fn reading(extension: &ArchitectExtension) -> bool {
+        matches!(
+            extension.view(SURFACE, SPACE).map(|view| view.content),
+            Some(Content::Message { text, .. }) if text.starts_with("Reading")
+        )
+    }
+
+    #[test]
+    fn opening_asks_one_read_and_its_answer_draws_the_artifacts() {
+        let mut extension = ArchitectExtension::default();
+        assert!(extension.view(SURFACE, SPACE).is_none(), "closed, nothing");
+        extension.open(SURFACE, &checkout("/project"));
+        assert!(reading(&extension));
+        let answers = run(&mut extension, &overview());
+        assert_eq!(answers.len(), 1);
+        assert!(extension.jobs().is_empty(), "asked once per opening");
+        for answer in answers {
+            extension.absorb(answer);
+        }
+        assert!(!reading(&extension), "the artifacts are drawn");
+    }
+
+    #[test]
+    fn an_answer_about_a_checkout_left_behind_is_dropped() {
+        let mut extension = ArchitectExtension::default();
+        extension.open(SURFACE, &checkout("/first"));
+        let late = run(&mut extension, &overview());
+        extension.open(SURFACE, &checkout("/second"));
+        for answer in late {
+            extension.absorb(answer);
+        }
+        assert!(reading(&extension), "still reading the second");
+    }
+
+    #[test]
+    fn a_place_survives_closing_and_a_closed_surface_draws_nothing() {
+        let mut extension = ArchitectExtension::default();
+        extension.open(SURFACE, &checkout("/project"));
+        for answer in run(&mut extension, &overview()) {
+            extension.absorb(answer);
+        }
+        let place = extension.place(SURFACE).expect("a place");
+        extension.close(SURFACE);
+        assert!(extension.view(SURFACE, SPACE).is_none());
+        assert!(extension.place(SURFACE).is_none());
+
+        extension.open(SURFACE, &checkout("/project"));
+        extension.resume(SURFACE, place);
+        for answer in run(&mut extension, &overview()) {
+            extension.absorb(answer);
+        }
+        assert!(!reading(&extension));
+    }
 }

@@ -179,6 +179,95 @@ pub fn extension_offers(enabled: bool) -> Vec<ActionOffer> {
     ]
 }
 
+/// What can be done to a declared extension, as it stands in the project
+/// the screen was opened in. One that runs code is enabled and disabled
+/// per project, after consent; one that runs nothing or does not compile
+/// has only the machine's switch. Seen with no project open (`in_a_project`
+/// false), one that runs code is enabled nowhere: its switch is not what
+/// holds it back, so flipping it would answer the click with nothing.
+pub fn declared_extension_offers(
+    switched_on: bool,
+    standing: Option<&super::ExtensionReport>,
+    in_a_project: bool,
+) -> Vec<ActionOffer> {
+    use super::ExtensionCondition as Condition;
+    if !in_a_project
+        && switched_on
+        && standing.is_some_and(|standing| {
+            matches!(
+                standing.condition,
+                Condition::NeedsConsent | Condition::NeedsEnabling | Condition::Held
+            )
+        })
+    {
+        let mut offers = extension_offers(switched_on);
+        offers[0] = ActionOffer::unavailable(
+            Action::EnableExtension,
+            "it is enabled per project: open an agent in one, then enable it here",
+        );
+        return offers;
+    }
+    let Some(standing) = standing.filter(|standing| {
+        matches!(
+            standing.condition,
+            Condition::NeedsConsent
+                | Condition::NeedsEnabling
+                | Condition::Enabled
+                | Condition::Held
+        )
+    }) else {
+        return extension_offers(switched_on);
+    };
+    let enabled_here = switched_on && standing.condition == Condition::Enabled;
+    let enable = if enabled_here {
+        ActionOffer::unavailable(Action::EnableExtension, "already enabled in this project")
+    } else if let Some(reason) = &standing.checkout_refused {
+        ActionOffer::unavailable(Action::EnableExtension, reason.clone())
+    } else {
+        ActionOffer::available(Action::EnableExtension)
+    };
+    let disable = if standing.condition == Condition::Enabled {
+        ActionOffer::available(Action::DisableExtension)
+    } else {
+        ActionOffer::unavailable(Action::DisableExtension, "not enabled in this project")
+    };
+    // Programs were pinned when it was allowed; one installed since, or
+    // moved, is found again only when the operator asks.
+    let resolve = (!standing.programs.is_empty()
+        && !matches!(standing.condition, Condition::NeedsConsent))
+    .then(|| ActionOffer::available(Action::ResolvePrograms));
+    let mut offers = vec![
+        enable,
+        disable,
+        ActionOffer::unavailable(
+            Action::InstallPlugin,
+            "it comes with its plugin; there is nothing to install",
+        ),
+    ];
+    offers.extend(resolve);
+    if !standing.preferences.is_empty() {
+        offers.push(ActionOffer::available(Action::EditPreferences));
+    }
+    offers
+}
+
+/// Moving a declared extension's row in the sidebar's header one place,
+/// up and down, as far as the operator's order lets it go each way.
+pub fn status_order_offers(can_move_up: bool, can_move_down: bool) -> Vec<ActionOffer> {
+    vec![
+        if can_move_up {
+            ActionOffer::available(Action::MoveItemUp)
+        } else {
+            ActionOffer::unavailable(Action::MoveItemUp, "its row is already the first")
+        },
+        if can_move_down {
+            ActionOffer::available(Action::MoveItemDown)
+        } else {
+            ActionOffer::unavailable(Action::MoveItemDown, "its row is already the last")
+        },
+    ]
+}
+
 /// What can be done to one line of the Keys screen. A free function for
 /// the same reason as [`extension_offers`]: the line is the keymap's, and
 /// all this needs to know about it is whether the operator changed it.

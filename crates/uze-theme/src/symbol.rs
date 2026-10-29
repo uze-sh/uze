@@ -199,7 +199,8 @@ vocabulary! {
         TaskInReview = "task.review",
 
         // ── an agent's standing in the sidebar ─────────────────────────
-        /// Producing output right now. The one animated symbol.
+        /// Producing output right now. An agent's own animation, which
+        /// nothing else wears.
         StatusWorking = "status.working",
         /// Finished while the user was looking elsewhere.
         StatusCompleted = "status.completed",
@@ -212,6 +213,138 @@ vocabulary! {
         /// all a shell can be known to do is run something, not produce
         /// output, and an editor left open runs for hours.
         StatusRunning = "status.running",
+
+        // ── what a declared extension's view is made of ────────────────
+        /// The filled part of a progress bar. Its frames are not an
+        /// animation but the steps of one cell filling, from the least a
+        /// cell can show to a whole one: a set with eight draws a bar to
+        /// the eighth of a cell, a set with one draws it to the cell.
+        ProgressFill = "progress.fill",
+        /// The part of a progress bar not yet filled.
+        ProgressTrack = "progress.track",
+        /// A progress bar drawn as a thin line (`style="line"`): its filled
+        /// part in the bar's role and its track in a quiet one, so a full
+        /// bar still reads as a measure.
+        ProgressLine = "progress.line",
+        // ── icons a plugin names with `Icon` (`extension-icons`): one idea
+        // each, drawn in the glyph set the operator chose ─────────────────
+        /// Time of day, a duration, a schedule.
+        IconClock = "icon.clock",
+        /// Time running out: a countdown, an hourglass.
+        IconTimer = "icon.timer",
+        /// A day, a date, a sprint.
+        IconCalendar = "icon.calendar",
+        /// Done, passing, accepted.
+        IconCheck = "icon.check",
+        /// Failed, refused, closed.
+        IconCross = "icon.cross",
+        /// Needs attention.
+        IconWarning = "icon.warning",
+        /// A note, more to read.
+        IconInfo = "icon.info",
+        /// An error, something blocked.
+        IconError = "icon.error",
+        /// A notification, an alert.
+        IconBell = "icon.bell",
+        /// A branch.
+        IconGitBranch = "icon.git-branch",
+        /// A commit.
+        IconCommit = "icon.commit",
+        /// A merge.
+        IconMerge = "icon.merge",
+        /// A pull or merge request.
+        IconPullRequest = "icon.pull-request",
+        /// An issue, a ticket.
+        IconIssue = "icon.issue",
+        /// A tag, a label, a release.
+        IconTag = "icon.tag",
+        /// A favourite, a rating.
+        IconStar = "icon.star",
+        /// Liked, healthy.
+        IconHeart = "icon.heart",
+        /// A person.
+        IconUser = "icon.user",
+        /// A directory.
+        IconFolder = "icon.folder",
+        /// A file.
+        IconFile = "icon.file",
+        /// Locked, private, secret.
+        IconLock = "icon.lock",
+        /// A link, a reference.
+        IconLink = "icon.link",
+        /// Pulled in, received.
+        IconDownload = "icon.download",
+        /// Pushed out, sent.
+        IconUpload = "icon.upload",
+        /// Run, start.
+        IconPlay = "icon.play",
+        /// Paused, held.
+        IconPause = "icon.pause",
+        /// Stopped.
+        IconStop = "icon.stop",
+        /// Ask again, sync.
+        IconRefresh = "icon.refresh",
+        /// Find.
+        IconSearch = "icon.search",
+        /// Settings, configuration.
+        IconSettings = "icon.settings",
+        /// Home, the start.
+        IconHome = "icon.home",
+        /// A shell, a command.
+        IconTerminal = "icon.terminal",
+        /// Source code.
+        IconCode = "icon.code",
+        /// A database.
+        IconDatabase = "icon.database",
+        /// A server, a host.
+        IconServer = "icon.server",
+        /// A remote, a service.
+        IconCloud = "icon.cloud",
+        /// A bug.
+        IconBug = "icon.bug",
+        /// A deploy, a launch.
+        IconRocket = "icon.rocket",
+        /// Fast, power, an event.
+        IconBolt = "icon.bolt",
+        /// A chart, a metric.
+        IconChart = "icon.chart",
+        /// A list.
+        IconList = "icon.list",
+        /// A message, an inbox.
+        IconMail = "icon.mail",
+        /// A comment, a reply.
+        IconComment = "icon.comment",
+        /// Watched, visible.
+        IconEye = "icon.eye",
+        /// A package, a build.
+        IconPackage = "icon.package",
+        /// Protected, security.
+        IconShield = "icon.shield",
+        /// A key, a credential.
+        IconKey = "icon.key",
+        /// A processor, load.
+        IconCpu = "icon.cpu",
+        /// A meter, usage.
+        IconGauge = "icon.gauge",
+        /// One of a count's done marks: three of five drawn as five pips.
+        PipFilled = "pip.filled",
+        /// One of a count's marks still to do.
+        PipEmpty = "pip.empty",
+        /// One standing among several on the same row, said by its hue: a
+        /// phase's discussion, plan and execution side by side. Apart from
+        /// [`MarkStanding`](Self::MarkStanding), which is a row's one
+        /// standing: a run of these is read as one strip.
+        MarkFacet = "mark.facet",
+        /// Something an extension says is under way. Animated, and not
+        /// [`StatusWorking`](Self::StatusWorking): the pulsing star is an
+        /// agent's alone.
+        ActivityBusy = "activity.busy",
+        /// The same place, with nothing under way.
+        ActivityIdle = "activity.idle",
+        /// A chart's height, a frame per level from the least a cell can
+        /// show to a whole one: a sparkline draws one cell per value at its
+        /// level, a bar stacks whole cells and tops them with a level.
+        ChartLevel = "chart.level",
 
         // ── a checkout's history ───────────────────────────────────────
         /// The commit `HEAD` is on.
@@ -246,6 +379,9 @@ vocabulary! {
         BarThin = "bar.thin",
         /// The caret in a text input.
         CursorText = "cursor.text",
+        /// One character typed into a field that never shows what was
+        /// typed: a secret.
+        CursorMasked = "cursor.masked",
         /// A scrollbar's handle: where you are in a list, and how much of
         /// it you can see.
         ///

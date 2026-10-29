@@ -10,8 +10,19 @@
 //!
 //! Machine-scoped, like the theme: which surfaces a person wants in their
 //! workspace is theirs, not the project's.
+//!
+//! A declared extension that runs code answers to more than this switch:
+//! [`consent`] holds what the operator accepted for it and where it is
+//! enabled. The switch stays authored text in `config.toml`, beside the
+//! record rather than absorbed by it, because a built-in's switch is a
+//! preference, not a consent.
 
 use std::collections::BTreeSet;
+
+pub mod consent;
+pub mod preferences;
+pub mod secrets;
+pub mod store;
 
 use crate::{Result, config, home::UzeHome};
 
@@ -55,6 +66,21 @@ mod tests {
             BTreeSet::from(["architect".to_owned()])
         );
         set_enabled(&home, "architect", true).expect("written");
+        assert!(disabled(&home).expect("readable").is_empty());
+    }
+
+    /// A declared extension is switched by its attribution, spaces, `·`
+    /// and `@` included.
+    #[test]
+    fn a_declared_extension_s_identity_round_trips_as_its_key() {
+        let home = home("extensions-declared-key");
+        let key = "gsd-band · gsd@market";
+        set_enabled(&home, key, false).expect("written");
+        assert_eq!(
+            disabled(&home).expect("readable"),
+            BTreeSet::from([key.to_owned()])
+        );
+        set_enabled(&home, key, true).expect("written");
         assert!(disabled(&home).expect("readable").is_empty());
     }
 

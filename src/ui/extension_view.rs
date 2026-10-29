@@ -37,6 +37,7 @@ mod navigator;
 mod picture;
 mod prose;
 mod section;
+pub(crate) mod tree;
 
 pub(crate) use footer::*;
 pub(crate) use geometry::*;
@@ -67,9 +68,6 @@ const FOOTER_GAP: u16 = 2;
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Rendered {
     pub(crate) navigator_scroll: NavigatorScroll,
-    /// The image drawn this frame, where the terminal can be sent it as
-    /// pixels.
-    pub(crate) picture: Option<crate::ui::graphics::Placement>,
     /// Whether a row's name was drawn sliding, which is what keeps the
     /// host's clock turning for the next frame of it.
     pub(crate) marquee: bool,
@@ -102,6 +100,9 @@ pub(crate) struct Rendered {
     /// pane's width and below its height belonged to no tile at all, and
     /// everything else belonged to the wrong one.
     pub(crate) content_space: uze_extensions::view::Size,
+    /// Where that room is on the frame: what the pointer is told relative
+    /// to on a surface that reads it raw.
+    pub(crate) content_area: Rect,
     /// Every row of text drawn, with the character in each of its cells:
     /// what a press is resolved against to start a selection, and a drag
     /// to extend one. Empty for a [`Medium::Drawing`], which is pointed
@@ -119,9 +120,13 @@ pub(crate) struct Rendered {
 /// The keys a surface's footer names: read from the scope the surface is
 /// open in, the one under the pointer drawn lit.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct FooterKeys {
+pub(crate) struct FooterKeys<'a> {
     pub(crate) scope: uze_keys::Scope,
     pub(crate) hovered: Option<uze_keys::Action>,
+    /// Keys the host offers on this surface beyond the ones its commands
+    /// name, after them: a declared view's own actions and its inspector,
+    /// which no engine draws.
+    pub(crate) host: &'a [uze_keys::Action],
 }
 
 /// Where the host holds the navigator this frame: the width it was
@@ -142,7 +147,7 @@ pub(crate) fn render(
     view: &View,
     area: Rect,
     held: NavigatorFrame,
-    keys: FooterKeys,
+    keys: FooterKeys<'_>,
     selection: Option<&TextSelection>,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> Rendered {
@@ -158,12 +163,70 @@ pub(crate) fn render(
     rendered
 }
 
+/// What a docked view drew that its host needs after the frame.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Docked {
+    /// Whether anything on it moves with the clock.
+    pub(crate) animates: bool,
+    /// Its scrollbar, and the first row it showed, when it scrolls.
+    pub(crate) bar: Option<(Scrollbar, usize)>,
+}
+
+/// A view drawn in a drawer docked beside the pane rather than in the
+/// pane's place: its content alone, since a drawer has no navigator, no
+/// footer and no bar of its own. A tree scrolls as it does full-frame,
+/// its groove on the right edge `area` leaves past itself.
+pub(crate) fn render_docked(
+    frame: &mut ratatui::Frame<'_>,
+    view: &View,
+    area: Rect,
+    hovered: Option<(ViewHit, usize)>,
+    hits: &mut Vec<(Rect, ViewHit)>,
+) -> Docked {
+    match &view.content {
+        Content::Tree {
+            heading,
+            scroll,
+            root,
+        } => {
+            let drawn = tree::render_tree_content(
+                frame,
+                area,
+                (heading, *scroll, root),
+                &view.modes,
+                tree::TreeFrame::resting(hovered),
+                hits,
+            );
+            Docked {
+                animates: drawn.animates,
+                bar: drawn.bar.map(|bar| (bar, *scroll)),
+            }
+        }
+        Content::Message { text, hint, role } => {
+            render_message(frame, area, text, hint.as_deref(), color(*role));
+            Docked::default()
+        }
+        _ => Docked::default(),
+    }
+}
+
+/// The rows [`render_docked`] needs to draw all of `view` at `width`;
+/// `None` for a view that is not a tree, which takes what it is given.
+pub(crate) fn docked_rows(view: &View, width: u16) -> Option<u16> {
+    match &view.content {
+        Content::Tree { heading, root, .. } => {
+            Some(tree::content_rows(heading, &view.modes, root, width))
+        }
+        _ => None,
+    }
+}
+
 fn render_surface(
     frame: &mut ratatui::Frame<'_>,
     view: &View,
     area: Rect,
     held: NavigatorFrame,
-    keys: FooterKeys,
+    keys: FooterKeys<'_>,
     selection: Option<&TextSelection>,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> Rendered {
@@ -174,8 +237,9 @@ fn render_surface(
     frame.render_widget(Clear, area);
     widget::fill(frame, area, Token::SurfaceBackground);
     if view.layout == ViewLayout::Board {
-        let mut rendered = render_board(frame, view, area, keys, selection, hits);
+        let mut rendered = render_board(frame, view, area, keys, held.sliding, selection, hits);
         rendered.content_space = board_space(area);
+        rendered.content_area = geometry::board_rows(area).1;
         return rendered;
     }
     // A view with no list — nothing found, or nothing to find — is one
@@ -220,9 +284,27 @@ fn render_surface(
         Content::Message { text, hint, role } => {
             render_message(frame, content_area, text, hint.as_deref(), color(*role))
         }
+        Content::Tree {
+            heading,
+            scroll,
+            root,
+        } => {
+            rendered.heading = heading.clone();
+            let drawn = tree::render_tree_content(
+                frame,
+                content_area,
+                (heading, *scroll, root),
+                column_modes,
+                tree::TreeFrame::resting(held.sliding),
+                hits,
+            );
+            rendered.content_bar = drawn.bar;
+            rendered.content_at_end = drawn.at_end;
+            rendered.marquee |= drawn.animates;
+        }
         Content::Picture { heading, picture } => {
             rendered.heading = heading.clone();
-            rendered.picture = picture::render_picture(
+            picture::render_picture(
                 frame,
                 content_area,
                 heading,
@@ -276,6 +358,7 @@ fn render_surface(
         width: content_area.width,
         height: content_area.height,
     };
+    rendered.content_area = content_area;
     rendered
 }
 
@@ -329,13 +412,29 @@ pub(crate) fn render_row_menu(
 /// question in the product is asked in, centred in `area`, with the keys
 /// that answer it where the surface is open: `scope`. The caller puts the
 /// scrim behind it and its answers ahead of everything it covers.
+/// `attribution` names a third party's extension (`id · plugin@marketplace`)
+/// beside what it asks about: a question that may close a pane or delete
+/// a file says whose question it is.
 pub(crate) fn render_confirm(
     frame: &mut ratatui::Frame<'_>,
     confirm: &uze_extensions::view::Confirm,
+    attribution: Option<&str>,
     area: Rect,
     scope: uze_keys::Scope,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) {
+    let subject = match attribution {
+        // A declared action's question is about the extension itself, so
+        // its subject already is the attribution.
+        Some(by) if confirm.subject.is_empty() || confirm.subject == by => {
+            Line::from(TextSpan::styled(by.to_owned(), theme::fg(Token::TextMuted)))
+        }
+        Some(by) => Line::from(vec![
+            TextSpan::raw(confirm.subject.clone()),
+            TextSpan::styled(format!("  {by}"), theme::fg(Token::TextMuted)),
+        ]),
+        None => Line::from(confirm.subject.clone()),
+    };
     let dialog = widget::dialog::Dialog {
         // A yes-or-no is asked only before what cannot be undone; a
         // question that takes text is asking for a name.
@@ -344,7 +443,7 @@ pub(crate) fn render_confirm(
             None => widget::dialog::Tone::Danger,
         },
         title: &confirm.title,
-        subject: Some(Line::from(confirm.subject.clone())),
+        subject: Some(subject),
         body: vec![confirm.body.clone()],
         confirm: Some(&confirm.confirm),
         focus: Some(match confirm.on_confirm {
@@ -373,7 +472,8 @@ fn render_board(
     frame: &mut ratatui::Frame<'_>,
     view: &View,
     area: Rect,
-    keys: FooterKeys,
+    keys: FooterKeys<'_>,
+    sliding: Option<(ViewHit, usize)>,
     selection: Option<&TextSelection>,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> Rendered {
@@ -387,9 +487,27 @@ fn render_board(
         Content::Message { text, hint, role } => {
             render_message(frame, board, text, hint.as_deref(), color(*role));
         }
+        Content::Tree {
+            heading,
+            scroll,
+            root,
+        } => {
+            rendered.heading = heading.clone();
+            let drawn = tree::render_tree_content(
+                frame,
+                board,
+                ("", *scroll, root),
+                &[],
+                tree::TreeFrame::resting(sliding),
+                hits,
+            );
+            rendered.content_bar = drawn.bar;
+            rendered.content_at_end = drawn.at_end;
+            rendered.marquee = drawn.animates;
+        }
         Content::Picture { heading, picture } => {
             rendered.heading = heading.clone();
-            rendered.picture = picture::render_picture(
+            picture::render_picture(
                 frame,
                 board,
                 heading,

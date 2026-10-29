@@ -2,6 +2,7 @@
   "version": 1,
   "name": "uze nerd",
   "description": "UZE's marks drawn from a patched icon font. Needs Nerd Fonts v3 or newer. Each entry is chosen by meaning first and then by metrics: of the names that would say the right thing, the one whose glyph sits closest to the band a patched font normalises every source to (62% of the em, on the baseline), so a row of marks is one optical size rather than a range. Generated from the official glyphnames.json by name, never by codepoint. Widths are declared for the `Nerd Font Mono` builds, whose icons occupy one cell. Declares only the marks an icon says better than a letterform: box drawing, bars and typography are the built-in default's, which any patched font draws.",
+  "glyphs": "nerd",
   "symbols": {
     "mark.native": {
       "glyph": "",
@@ -222,6 +223,202 @@
     },
     "file.legal": {
       "glyph": "󰗑",
+      "width": 1
+    },
+    "icon.clock": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.timer": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.calendar": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.check": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.cross": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.warning": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.info": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.error": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.bell": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.git-branch": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.commit": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.merge": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.pull-request": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.issue": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.tag": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.star": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.heart": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.user": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.folder": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.file": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.lock": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.link": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.download": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.upload": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.play": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.pause": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.stop": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.refresh": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.search": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.settings": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.home": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.terminal": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.code": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.database": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.server": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.cloud": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.bug": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.rocket": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.bolt": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.chart": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.list": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.mail": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.comment": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.eye": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.package": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.shield": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.key": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.cpu": {
+      "glyph": "",
+      "width": 1
+    },
+    "icon.gauge": {
+      "glyph": "󰊚",
       "width": 1
     }
   }

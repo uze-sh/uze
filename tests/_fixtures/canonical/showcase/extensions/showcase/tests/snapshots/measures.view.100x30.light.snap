@@ -1,0 +1,70 @@
+# uze snapshot · protocol 1 · view 100x30 · light
+ Measures
+
+  $15.48  +12%                    4.56M                           7
+  Spent today                     Tokens this block               Sessions
+
+  ─ Context ──────────────────────────────────────────────────────────────────────────────────────
+
+  Opus   ████████████████████████████████████████████████████▏───────────────────────────────  62%
+
+  Sonnet █████████████████████████████████████████████████████████████████▌──────────────────  78%
+
+  Haiku  ██████████████████████████████████████████████████████████████████████████████▏─────  93%
+
+  ─ Burn rate ────────────────────────────────────────────────────────────────────────────────────
+
+  last hour   ▁▁▁▂▃▂▃▅▄▅▆▆▅▄▅▇██▆▇
+
+      █ ▄
+   ▄ ██ █
+  ▅█▂██▇█
+  ███████
+
+
+
+
+
+
+
+
+esc close  ·  i inspector
+---
+ aaaaaaaa
+
+  bbbbbb  cccc                    bbbbb                           b
+  aaaaa aaaaa                     aaaaaa aaaa aaaaa               aaaaaaaa
+
+  d bbbbbbb dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+
+  eeee   fffffffffffffffffffffffffffffffffffffffffffffffffffffddddddddddddddddddddddddddddddd  fff
+
+  eeeeee ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccdddddddddddddddddd  ccc
+
+  eeeee  gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggddddd  ggg
+
+  d bbbb bbbb dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+
+  aaaa aaaa   bbbbbbbbbbbbbbbbbbbb
+
+      f f
+   f ff f
+  fffffff
+  fffffff
+
+
+
+
+
+
+
+
+bbb aaaaa  d  b aaaaaaaaa
+---
+a text.muted
+b text.bright
+c state.warning
+d text.faint
+e text.secondary
+f state.info
+g state.danger

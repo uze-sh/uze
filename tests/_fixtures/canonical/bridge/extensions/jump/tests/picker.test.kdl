@@ -1,0 +1,24 @@
+test "the picker lists every agent across the spaces" {
+    surface "picker"
+    given "crew" fixture="fixtures/agents.json"
+    size 60 8
+    expect-text "fix/branch-naming"
+    expect-text "site"
+    snapshot "picker"
+}
+
+test "its key focuses the agent selected" {
+    surface "picker"
+    given "crew" fixture="fixtures/agents.json"
+    press "down"
+    press "down"
+    press "ctrl+g"
+    expect-action "go" id="a2"
+}
+
+test "go focuses the agent of its row" {
+    surface "picker"
+    given "crew" fixture="fixtures/agents.json"
+    press-button "Go"
+    expect-action "go" id="a1"
+}
