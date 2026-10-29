@@ -1,12 +1,14 @@
 //! The flags an OpenCode launch takes, as offered to an operator's
 //! overrides, and the variables this integration reads.
 //!
-//! Described from `help.txt`, the `--help` of OpenCode 2.1.3. `--standalone`
-//! and `--server` are left out: which server holds the agent's session is
-//! what the read-back asks, and they pass as unknown.
+//! Described from `help.txt`, the `--help` of OpenCode 2.1.3; every flag it
+//! defines is catalogued or left out for a reason the tests name. Which
+//! server holds the agent's session is what the read-back asks of the
+//! background service, so `--server` is UZE's, and `--standalone` is marked
+//! for the conversation uze may not find again.
 
 use uze_core::flag_catalog::{
-    FlagOwner::{Operator, Uze, Weakens},
+    FlagOwner::{Degrades, Operator, Uze, Weakens},
     FlagSpec, FlagValue,
 };
 
@@ -36,6 +38,18 @@ pub(super) const CATALOG: &[FlagSpec] = &[
         Weakens("permission prompts"),
     ),
     FlagSpec::new(
+        &["--standalone"],
+        FlagValue::None,
+        "a private server instead of the background service",
+        Degrades("uze continuing this conversation, which it asks the background service for"),
+    ),
+    FlagSpec::new(
+        &["--server"],
+        FlagValue::Free("url"),
+        "a server URL instead of the background service",
+        Uze("uze finds the agent's conversation on the background service"),
+    ),
+    FlagSpec::new(
         &[RESUME_FLAG, "-s"],
         FlagValue::Free("session"),
         "session to continue",
@@ -61,10 +75,21 @@ pub(super) const MANAGED_ENVIRONMENT: &[&str] = &["XDG_CONFIG_HOME", "XDG_DATA_H
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shared::test_support::assert_catalog_in_help;
+    use crate::shared::test_support::{
+        LeftOut::{self, EndsTheLaunch},
+        assert_catalog_covers_help,
+    };
+
+    /// Every flag `help.txt` defines that the catalog does not list.
+    const LEFT_OUT: &[LeftOut] = &[
+        EndsTheLaunch(&["--help", "-h"]),
+        EndsTheLaunch(&["--version", "-v"]),
+        EndsTheLaunch(&["--wizard"]),
+        EndsTheLaunch(&["--completions"]),
+    ];
 
     #[test]
-    fn every_catalogued_spelling_is_in_the_snapshot() {
-        assert_catalog_in_help(CATALOG, include_str!("help.txt"));
+    fn every_flag_in_the_snapshot_is_catalogued_or_left_out() {
+        assert_catalog_covers_help(CATALOG, LEFT_OUT, include_str!("help.txt"));
     }
 }
