@@ -65,7 +65,7 @@ fn prompt_row_of(rows: &[String]) -> String {
         .iter()
         .position(|row| row.contains("new agent") && row.contains("overrides"))
         .expect("the popup is drawn");
-    rows[head + 1].clone()
+    rows[head + 3].clone()
 }
 
 /// Enter on the directory step, as the keyboard sends it.

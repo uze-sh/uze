@@ -118,7 +118,7 @@ fn open_by_key(driven: &mut Driven<'_>) {
 
 /// The head's `overrides` segment opens the overrides view on a click,
 /// exactly as its key does; the foot names that key too, its hint the
-/// same gesture, and the note says there are none yet.
+/// same gesture, and with none given the popup says nothing of them.
 #[test]
 fn the_overrides_segment_and_its_key_open_the_same_view() {
     let mut by_key = popup("overrides-open-key");
@@ -130,8 +130,16 @@ fn the_overrides_segment_and_its_key_open_the_same_view() {
         rows.join("\n")
     );
     assert!(
-        rows.iter().any(|row| row.contains("no overrides")),
+        !rows
+            .iter()
+            .any(|row| row.contains("overrides") && !row.contains("ctrl+f"))
+            || rows[0].contains("overrides"),
         "{}",
+        rows.join("\n")
+    );
+    assert!(
+        rows[1..].iter().all(|row| !row.contains("no overrides")),
+        "nothing said of none:\n{}",
         rows.join("\n")
     );
     let foot = rows
@@ -150,9 +158,8 @@ fn the_overrides_segment_and_its_key_open_the_same_view() {
         .model
         .hits
         .iter()
-        .filter(|(_, hit)| *hit == WorkspaceHit::HintAction(Action::OpenOverrides))
+        .find(|(_, hit)| *hit == WorkspaceHit::ViewAction(Action::OpenOverrides))
         .map(|(rect, _)| *rect)
-        .max_by_key(|rect| rect.width)
         .expect("the segment is a target");
     by_row.press(row.x + 2, row.y);
     assert!(in_step(&by_row), "a click on the segment opens the view");
@@ -165,9 +172,8 @@ fn the_overrides_segment_and_its_key_open_the_same_view() {
         .model
         .hits
         .iter()
-        .filter(|(_, hit)| *hit == WorkspaceHit::HintAction(Action::OpenOverrides))
+        .find(|(_, hit)| *hit == WorkspaceHit::HintAction(Action::OpenOverrides))
         .map(|(rect, _)| *rect)
-        .min_by_key(|rect| rect.width)
         .expect("the foot's hint is a target");
     by_hint.press(hint.x, hint.y);
     assert!(
@@ -215,26 +221,31 @@ fn the_head_chooses_the_view_and_a_note_counts_the_overrides() {
         "{all}"
     );
     assert!(
-        rows[0].contains("Claude Code"),
+        rows[1].contains("Claude Code"),
         "the harness at the end:\n{all}"
     );
-    assert!(!rows[0].contains("harness"), "no label for it:\n{all}");
     assert!(
-        rows[1].contains("filter directories"),
-        "the line first:\n{all}"
+        rows[1].contains("harness"),
+        "the harness under the border:\n{all}"
     );
-    assert!(is_rule(&rows[2]), "a rule under the line:\n{all}");
+    assert!(
+        rows[3].contains("filter directories"),
+        "the line under the harness:\n{all}"
+    );
+    assert!(
+        is_rule(&rows[2]) && is_rule(&rows[4]),
+        "a rule under each:\n{all}"
+    );
     assert!(
         all.contains("filter directories"),
         "path is in front:\n{all}"
     );
     assert!(is_rule(&rows[last - 2]), "the foot's rule:\n{all}");
     assert!(rows[last - 1].contains("ctrl+f overrides"), "{all}");
-    assert!(rows[last - 4].contains("no overrides"), "{all}");
-    for air in [last - 5, last - 3] {
+    for air in [last - 5, last - 4, last - 3] {
         assert!(
             rows[air].trim_matches('│').trim().is_empty(),
-            "air over and under the note:\n{all}"
+            "with none, the note's rows are air:\n{all}"
         );
     }
 
@@ -268,9 +279,8 @@ fn the_head_chooses_the_view_and_a_note_counts_the_overrides() {
         .model
         .hits
         .iter()
-        .filter(|(_, hit)| *hit == WorkspaceHit::HintAction(Action::Dismiss))
+        .find(|(_, hit)| *hit == WorkspaceHit::ViewAction(Action::Dismiss))
         .map(|(rect, _)| *rect)
-        .min_by_key(|rect| rect.y)
         .expect("the new agent segment is a target");
     driven.press(path.x + 1, path.y);
     assert!(!in_step(&driven), "a click on new agent goes back");
@@ -279,9 +289,10 @@ fn the_head_chooses_the_view_and_a_note_counts_the_overrides() {
     assert!(rows[last - 4].contains("1 flag") && rows[last - 4].contains("1 var"));
 }
 
-/// The segment in front is in the accent; the other rests held back and
-/// lights under the pointer. Colour alone tells them apart: no ground and
-/// no weight. In the light theme too.
+/// The segment in front is in the accent and the other held back, parted
+/// by the hint bar's separator. Colour alone tells them apart: no ground,
+/// no weight, and nothing under the pointer; and pointing at one never
+/// lights the foot's hint for the same key. In the light theme too.
 #[test]
 fn the_segments_are_told_apart_by_colour_alone() {
     for name in ["dark", "light"] {
@@ -295,46 +306,52 @@ fn the_segments_are_told_apart_by_colour_alone() {
                 .model
                 .hits
                 .iter()
-                .filter(|(_, hit)| *hit == WorkspaceHit::HintAction(Action::OpenOverrides))
+                .find(|(_, hit)| *hit == WorkspaceHit::ViewAction(Action::OpenOverrides))
                 .map(|(rect, _)| *rect)
-                .min_by_key(|rect| rect.y)
                 .expect("the segment is a target");
-            let inks = |driven: &mut Driven<'_>| {
+            assert_eq!(segment.width, "overrides".len() as u16, "its word");
+            let hint = driven
+                .attach
+                .model
+                .hits
+                .iter()
+                .find(|(_, hit)| *hit == WorkspaceHit::HintAction(Action::OpenOverrides))
+                .map(|(rect, _)| *rect)
+                .expect("the foot's hint");
+            let cells = |driven: &mut Driven<'_>| {
                 let buffer = frame_buffer_at(&mut driven.attach.model, driven.area);
                 let line = &buffer_rows(&buffer)[usize::from(segment.y)];
                 let at = |word: &str| {
                     let column = line[..line.find(word).unwrap()].chars().count() as u16;
                     buffer[(column, segment.y)].clone()
                 };
-                (at("new agent"), at("overrides"))
+                let separator = theme::glyph(Symbol::HintSeparator);
+                assert!(
+                    line.contains(&format!("new agent {separator} overrides")),
+                    "parted as the keys are: {line}"
+                );
+                (
+                    at("new agent"),
+                    at("overrides"),
+                    buffer[(hint.x, hint.y)].clone(),
+                )
             };
-            let (open, other) = inks(&mut driven);
+            let (open, other, foot) = cells(&mut driven);
             assert_eq!(open.fg, theme::color(Token::Accent), "{name}");
             assert_eq!(other.fg, theme::color(Token::TextMuted), "{name}");
             assert_eq!(open.bg, other.bg, "no ground for the one in front: {name}");
             assert_eq!(open.modifier, other.modifier, "no weight either: {name}");
-            assert_eq!(
-                driven
-                    .attach
-                    .model
-                    .hits
-                    .iter()
-                    .find(|(rect, hit)| {
-                        *hit == WorkspaceHit::HintAction(Action::OpenOverrides)
-                            && rect.y == segment.y
-                    })
-                    .map(|(rect, _)| rect.width),
-                Some("overrides".len() as u16),
-                "the segment's target is its word"
-            );
             driven.mouse(
                 segment.x + 2,
                 segment.y,
                 crossterm::event::MouseEventKind::Moved,
             );
-            let (_, lit) = inks(&mut driven);
-            assert_eq!(lit.fg, theme::color(Token::TextBright), "{name}");
-            assert_eq!(lit.bg, other.bg, "no band under the pointer");
+            let (_, pointed, pointed_foot) = cells(&mut driven);
+            assert_eq!(pointed.fg, other.fg, "no hover on a segment: {name}");
+            assert_eq!(
+                pointed_foot.fg, foot.fg,
+                "the foot's hint stays put: {name}"
+            );
         });
     }
 }
@@ -855,7 +872,7 @@ fn long_values_are_cut_at_their_end_and_narrow_widths_hold() {
     driven.press_key(chord(Action::Dismiss, Scope::LaunchOverrides));
     let (popup, rows) = popup_rows(&mut driven);
     assert_eq!(popup.width, 46, "the popup gives way to the terminal");
-    assert!(rows[0].contains("Claude Code"), "{}", rows.join("\n"));
+    assert!(rows[1].contains("Claude Code"), "{}", rows.join("\n"));
     assert!(
         rows.iter().any(|row| row.contains("1 var")),
         "{}",

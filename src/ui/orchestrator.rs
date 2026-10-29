@@ -1060,6 +1060,10 @@ pub(super) enum WorkspaceHit {
     /// [`WorkspaceHit::QuickAction`] only so pointing at one does not
     /// light the other where both offer the same action.
     HintAction(Action),
+    /// A view a popup's top border names, reached by the key that opens
+    /// it. Apart from [`WorkspaceHit::HintAction`] so pointing at the view
+    /// does not light the foot's hint for the same key.
+    ViewAction(Action),
     /// One row of the open index, by position in it.
     ActionIndexEntry(usize),
     /// The release notes modal's own area: a click on it is reading, and

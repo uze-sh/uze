@@ -1,5 +1,6 @@
 //! A segmented control: a few views of one place side by side, choosing
-//! which the place below shows, said in colour alone.
+//! which the place below shows, said in colour alone and parted as a hint
+//! bar's keys are.
 //!
 //! Not a [`tabs`](super::tabs) strip: a tab is a screen reached by its
 //! number, while a segment is a view of the same thing, two or three of
@@ -10,25 +11,20 @@
 use ratatui::text::{Line, Span};
 use uze_theme::Token;
 
-use crate::ui::theme;
+use crate::ui::theme::{self, Symbol};
 
-/// Between one segment's name and the next.
-const GAP: &str = "  ";
-
-/// One segment: its name, what a click on it answers (`None` for the one
-/// in front, which a click leaves where it is), and whether the pointer
-/// is on it.
+/// One segment: its name, and what a click on it answers (`None` for the
+/// one in front, which a click leaves where it is).
 pub(crate) struct Segment<'a, T> {
     pub(crate) label: &'a str,
     pub(crate) target: Option<T>,
-    pub(crate) hovered: bool,
 }
 
-/// `segments` as one line, with a space of air at each end: the one at
-/// `open` in the accent, the rest held back until the pointer lights
-/// them. No ground and no weight tell them apart, only the ink. Answers
-/// with the line and, for each segment with a target, its column from the
-/// line's start and its width.
+/// `segments` as one line, with a space of air at each end, parted by the
+/// hint bar's separator: the one at `open` in the accent, the rest held
+/// back. No ground, no weight and no hover tell them apart, only the ink
+/// of the one in front. Answers with the line and, for each segment with a
+/// target, its column from the line's start and its width.
 pub(crate) fn segmented<T: Clone>(
     segments: &[Segment<'_, T>],
     open: usize,
@@ -38,13 +34,14 @@ pub(crate) fn segmented<T: Clone>(
     let mut placed = Vec::new();
     for (index, segment) in segments.iter().enumerate() {
         if index > 0 {
-            spans.push(Span::raw(GAP));
-            at += GAP.len() as u16;
+            let gap = format!(" {} ", theme::glyph(Symbol::HintSeparator));
+            at += gap.chars().count() as u16;
+            spans.push(Span::styled(gap, theme::fg(Token::TextFaint)));
         }
-        let tone = match () {
-            _ if index == open => Token::Accent,
-            _ if segment.hovered => Token::TextBright,
-            _ => Token::TextMuted,
+        let tone = if index == open {
+            Token::Accent
+        } else {
+            Token::TextMuted
         };
         let width = segment.label.chars().count() as u16;
         spans.push(Span::styled(segment.label.to_owned(), theme::fg(tone)));

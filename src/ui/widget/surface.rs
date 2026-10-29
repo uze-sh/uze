@@ -47,7 +47,6 @@ pub(crate) struct Surface {
     /// The title is the caller's own line, coloured as it says, rather
     /// than a name in the accent.
     title_as_drawn: bool,
-    aside: Option<Line<'static>>,
     hint: Option<Line<'static>>,
     padding: Padding,
 }
@@ -67,7 +66,6 @@ impl Surface {
             ground: Some(Token::SurfaceBackground),
             title: None,
             title_as_drawn: false,
-            aside: None,
             hint: None,
             padding: FLOATING_PADDING,
         }
@@ -144,13 +142,6 @@ impl Surface {
         self
     }
 
-    /// A line along the top edge, right-aligned, in its spans' own colours:
-    /// a choice the surface carries beside its title.
-    pub(crate) fn aside(mut self, aside: impl Into<Line<'static>>) -> Self {
-        self.aside = Some(aside.into());
-        self
-    }
-
     /// A note along the bottom edge, right-aligned: what this surface
     /// answers to, or that its content is longer than the box.
     pub(crate) fn hint(mut self, hint: impl Into<Line<'static>>) -> Self {
@@ -201,9 +192,6 @@ impl Surface {
                 );
             }
             None => {}
-        }
-        if let Some(aside) = self.aside {
-            block = block.title_top(aside.right_aligned());
         }
         if let Some(hint) = self.hint {
             block = block.title_bottom(hint.right_aligned());

@@ -272,9 +272,12 @@ impl Attach<'_> {
                         }
                         self.confirm_directory();
                     }
-                    // The harness field's arrows and the foot's hints are
-                    // their keys, in the popup's own scope.
-                    Some(WorkspaceHit::HintAction(action)) => self.directory_step_action(action),
+                    // The harness field's arrows, the foot's hints and the
+                    // views on the border are their keys, in the popup's
+                    // own scope.
+                    Some(WorkspaceHit::HintAction(action) | WorkspaceHit::ViewAction(action)) => {
+                        self.directory_step_action(action)
+                    }
                     Some(
                         hit @ (WorkspaceHit::OverrideRow(_)
                         | WorkspaceHit::OverrideEntryClose(_)
@@ -1362,7 +1365,9 @@ impl Attach<'_> {
             ..
         } = *viewport;
         match hit {
-            WorkspaceHit::QuickAction(action) | WorkspaceHit::HintAction(action) => {
+            WorkspaceHit::QuickAction(action)
+            | WorkspaceHit::HintAction(action)
+            | WorkspaceHit::ViewAction(action) => {
                 return self.act(action, viewport);
             }
             WorkspaceHit::DismissToast(index) => self.model.dismiss_toast(index),
