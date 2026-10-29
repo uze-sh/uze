@@ -77,6 +77,10 @@ pub(super) struct DirectoryStep {
     /// The overrides added in this popup, by harness: moving the harness
     /// shows that harness's, never another's flags.
     pub(super) drafts: BTreeMap<String, Vec<OverrideEntry>>,
+    /// Every entry added in this popup, by harness, checked or not: a
+    /// choice stays in the list when it is unchecked, and leaves only by
+    /// its close mark.
+    pub(super) listed: BTreeMap<String, Vec<OverrideEntry>>,
     /// The entries used lately, as last read.
     pub(super) recent: Option<RecentOverridesRead>,
     /// The read of them that is out, so a step opened again before it

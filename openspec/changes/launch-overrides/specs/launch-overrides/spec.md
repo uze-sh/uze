@@ -201,6 +201,10 @@ launches, those last used in this project first.
 - **WHEN** the operator removes a remembered entry from the list
 - **THEN** it is no longer offered for that harness in any project, and this launch leaves it out
 
+#### Scenario: An unchecked entry stays listed
+- **WHEN** the operator adds `--verbose` in the step and then unchecks it
+- **THEN** the launch leaves it out and the list still holds it, until its close mark takes it off
+
 #### Scenario: Space switches the marked row
 - **WHEN** the operator marks a row with the arrows and presses space
 - **THEN** that entry is included or left out, and with no row marked space is typed into the line

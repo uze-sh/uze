@@ -719,12 +719,12 @@ fn recent_entries_are_choices_space_switches_the_marked_one() {
     assert_eq!(entries(&driven), vec![words_of("KEPT=1")]);
     assert_eq!(step_of(&driven).choices().len(), 3);
 
-    // An entry added that the history does not hold leaves the list once
-    // it is left out.
+    // An entry added that the history does not hold stays in the list
+    // once left out: only its close mark takes it away.
     driven.press_key(chord(Action::SelectPrevious, Scope::LaunchOverrides));
     driven.press_key(chord(Action::ToggleChoice, Scope::LaunchOverrides));
     assert!(entries(&driven).is_empty());
-    assert_eq!(step_of(&driven).choices().len(), 2);
+    assert_eq!(step_of(&driven).choices().len(), 3);
 
     // With a choice marked, Enter still starts the agent.
     driven.press_key(chord(Action::SelectNext, Scope::LaunchOverrides));
@@ -966,6 +966,51 @@ fn a_free_value_being_typed_is_said_centred_in_the_lists_room() {
     assert!(
         !rows[at - 1].trim_matches('│').trim().is_empty(),
         "what the flag is, over it:\n{all}"
+    );
+}
+
+/// A flag added in the popup stays in the list once unchecked, left out
+/// of the launch but there to check again; only its close mark takes it
+/// out of the list.
+#[test]
+fn an_unchecked_flag_stays_listed_until_its_close_mark() {
+    let mut popup = popup("overrides-unchecked-stays");
+    let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
+    driven.frame();
+    open_by_key(&mut driven);
+    type_text(&mut driven, "--verbose");
+    driven.press_key(chord(Action::Activate, Scope::LaunchOverrides));
+    assert_eq!(entries(&driven), vec![vec!["--verbose".to_owned()]]);
+
+    driven.frame();
+    let toggle = driven.hit(|hit| *hit == WorkspaceHit::OverrideToggle(0));
+    driven.press(toggle.x, toggle.y);
+    assert!(entries(&driven).is_empty(), "left out of the launch");
+    let (_, rows) = popup_rows(&mut driven);
+    assert!(
+        rows.iter().any(|row| row.contains("--verbose")),
+        "still listed:\n{}",
+        rows.join("\n")
+    );
+
+    driven.frame();
+    let toggle = driven.hit(|hit| *hit == WorkspaceHit::OverrideToggle(0));
+    driven.press(toggle.x, toggle.y);
+    assert_eq!(
+        entries(&driven),
+        vec![vec!["--verbose".to_owned()]],
+        "checked again"
+    );
+
+    driven.frame();
+    let close = driven.hit(|hit| *hit == WorkspaceHit::OverrideClose(0));
+    driven.press(close.x, close.y);
+    assert!(entries(&driven).is_empty());
+    let (_, rows) = popup_rows(&mut driven);
+    assert!(
+        !rows.iter().any(|row| row.contains("--verbose")),
+        "gone once closed:\n{}",
+        rows.join("\n")
     );
 }
 

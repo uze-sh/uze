@@ -194,8 +194,9 @@ on "cancel" must not save first.
 - That history is a list of choices, one row per value, never per
   bundle of them: the overrides list holds each flag or variable once
   (`◉ --model opus ✕`), the ones added first, then the ones used lately,
-  `◉` when this launch carries it and `○` when not, its close mark
-  against the end leaving it out and forgetting one used before. Space
+  `◉` when this launch carries it and `○` when not. Unchecking never
+  takes a row off the list; only its close mark against the end does,
+  leaving it out and forgetting one used before. Space
   switches the row marked (and is typed when none is), Delete is the
   close mark, Enter still answers the whole question (`new`), and the
   foot names space and Delete only while a row is marked (`space toggle

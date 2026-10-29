@@ -374,3 +374,7 @@
 - decided:  `space` is bound to `ToggleChoice` in `LaunchOverrides`: it switches the marked choice and, with none marked, types a space. Enter with a choice marked answers the whole question, as in the `Choose` scope (`new` on an empty line, `add` with text), and takes only a marked completion. Delete on a marked choice is its `✕` (`forget` for one used before, `remove` for one only added). The foot names `space toggle · delete <word>` only while a choice is marked, and `tab complete` only while there are completions; `esc back` gives way when the keys need the room.
 - rejected: Enter switching the marked choice too: two keys for one thing, and ↓ space ↓ space Enter could no longer launch from the list. Space always typed: the operator asked for space to switch the marked row.
 - blast:    One binding in `uze-keys/load.rs`; `overrides_action`'s `ToggleChoice`/`EraseForward` arms; the overrides foot in `popups.rs`.
+> D34 note: at the operator's word an entry added in the popup stays in
+> the list once unchecked, left out of the launch but there to check
+> again; only its `✕` (or Delete, or Backspace on an empty line for the
+> last one) takes it off the list.

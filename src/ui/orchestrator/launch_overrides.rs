@@ -234,6 +234,7 @@ impl DirectoryStep {
             harness,
             overrides: None,
             drafts: BTreeMap::new(),
+            listed: BTreeMap::new(),
             recent: None,
             recent_asked: None,
         }
@@ -265,6 +266,19 @@ impl DirectoryStep {
         self.drafts.entry(key).or_default()
     }
 
+    /// The entries added in this popup on the harness in the field,
+    /// whether the launch carries them now or not.
+    fn listed(&self) -> &[OverrideEntry] {
+        self.listed
+            .get(&self.harness_key())
+            .map_or(&[], Vec::as_slice)
+    }
+
+    fn listed_mut(&mut self) -> &mut Vec<OverrideEntry> {
+        let key = self.harness_key();
+        self.listed.entry(key).or_default()
+    }
+
     /// The words the agent is launched with.
     pub(super) fn launch_words(&self) -> Vec<String> {
         self.entries().iter().flatten().cloned().collect()
@@ -293,12 +307,13 @@ impl DirectoryStep {
             .map(|read| read.entries.as_slice())
     }
 
-    /// The list of choices: the entries added that the history does not
-    /// hold, in the order added, then the entries used lately, each checked
-    /// when the launch carries it. An entry used lately that the catalog
-    /// of today refuses is not offered.
+    /// The list of choices: the entries added in this popup that the
+    /// history does not hold, in the order added, checked or not, then the
+    /// entries used lately, each checked when the launch carries it. An
+    /// entry used lately that the catalog of today refuses is not offered.
     pub(super) fn choices(&self) -> Vec<OverrideChoice<'_>> {
-        let added = self.entries();
+        let carried = self.entries();
+        let added = self.listed();
         let catalog = self.catalog();
         let recent: Vec<&RecentOverride> = self
             .recent_entries()
@@ -311,19 +326,21 @@ impl DirectoryStep {
                     .any(|checked| checked.verdict.is_refused())
             })
             .collect();
+        let carried_unlisted = carried.iter().filter(|words| !added.contains(words));
         let mut choices: Vec<OverrideChoice<'_>> = added
             .iter()
+            .chain(carried_unlisted)
             .filter(|words| !recent.iter().any(|entry| entry.words == **words))
             .map(|words| OverrideChoice {
                 words,
                 recent: None,
-                checked: true,
+                checked: carried.contains(words),
             })
             .collect();
         choices.extend(recent.into_iter().map(|entry| OverrideChoice {
             words: &entry.words,
             recent: Some(entry),
-            checked: added.contains(&entry.words),
+            checked: carried.contains(&entry.words),
         }));
         choices
     }
@@ -365,6 +382,7 @@ impl DirectoryStep {
             return OverridesOutcome::Kept;
         };
         self.entries_mut().retain(|entry| *entry != words);
+        self.listed_mut().retain(|entry| *entry != words);
         self.keep_mark_in_the_list();
         if recent {
             OverridesOutcome::Forget(words)
@@ -373,8 +391,8 @@ impl DirectoryStep {
         }
     }
 
-    /// A choice left out that the history does not hold leaves the list:
-    /// the mark moves onto the row that takes its place, or off the end.
+    /// A choice taken away by its close mark leaves the list: the mark
+    /// moves onto the row that takes its place, or off the end.
     fn keep_mark_in_the_list(&mut self) {
         let rows = self.override_rows().len();
         if let Some(step) = self.overrides.as_mut() {
@@ -554,7 +572,9 @@ impl DirectoryStep {
                 step.refusal = None;
                 step.marked = None;
                 if step.line.text().is_empty() {
-                    self.entries_mut().pop();
+                    if let Some(last) = self.entries_mut().pop() {
+                        self.listed_mut().retain(|entry| *entry != last);
+                    }
                 } else {
                     step.line.erase_back();
                 }
@@ -648,8 +668,11 @@ impl DirectoryStep {
         step.line = RenameBuffer::new(kept.join(" "));
         step.refusal = refusal;
         step.marked = None;
-        let entries = self.entries_mut();
         for entry in added {
+            if !self.listed().contains(&entry) {
+                self.listed_mut().push(entry.clone());
+            }
+            let entries = self.entries_mut();
             if !entries.contains(&entry) {
                 entries.push(entry);
             }
