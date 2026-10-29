@@ -414,7 +414,17 @@ impl Attach<'_> {
             // selected one: this is also where a launch left pending by a
             // client that was not running is finally resolved, well before
             // a relaunch needs the answer.
-            spawn_conversation_refresh(self.home, agent_contexts(&self.model, &self.identities));
+            if self
+                .model
+                .remembered
+                .conversation_refresh
+                .as_ref()
+                .is_none_or(std::thread::JoinHandle::is_finished)
+            {
+                let agents = agent_contexts(&self.model, &self.identities);
+                self.model.remembered.conversation_refresh =
+                    spawn_conversation_refresh(self.home, agents);
+            }
             // And on it, the machine facts agents proposed: a proposal is
             // asked about within one pass of being written.
             if !self.model.remembered.memory_proposals_pending {
@@ -444,14 +454,17 @@ impl Attach<'_> {
                 self.channels.checkout_stamps.sender.clone(),
             );
         }
-        if self
-            .model
-            .remembered
+        let remembered = &self.model.remembered;
+        if remembered
             .last_target_sync
             .is_none_or(|last| last.elapsed() >= TARGET_SYNC)
+            && remembered
+                .target_sync
+                .as_ref()
+                .is_none_or(std::thread::JoinHandle::is_finished)
         {
             self.model.remembered.last_target_sync = Some(Instant::now());
-            spawn_target_sync(
+            self.model.remembered.target_sync = spawn_target_sync(
                 self.home,
                 self.model.working_projects(),
                 self.channels.target_syncs.sender.clone(),
