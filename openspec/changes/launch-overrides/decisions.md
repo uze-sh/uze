@@ -144,7 +144,7 @@
 
 - status:   pending
 - task:     4.3, 4.4
-- commit:
+- commit:   0230beb5
 - trigger:  `place_new_agent` has 69 callers and `resume_task` 8; the task asks for an overrides parameter. A harness started by its plain binary (no launcher, or no continuity) needs its overrides from the client, on every kind of launch, not only a new one.
 - decided:  `place_new_agent_with(…, overrides: &[String])` and `resume_task_with(…, overrides: Option<&[String]>)` (`None` keeps what the agent had on that harness, `Some` replaces it), the plain names delegating with none. Every placement (new, resume, isolate, switch) ends in `launching_with`, which records the overrides under the agent's project for the harness its record now names, before the answer and so before the tab, and fills `AgentPlacement.bare_launch` from the record when `launcher` reports a gap — the same rule that names the launch. What a bare launch leaves out or weakens joins the placement's warnings. A record that cannot be written warns and launches without them.
 - rejected: Changing the two signatures: 77 call sites for a parameter almost all pass empty. Letting the client compose bare launches from what it typed: a resume, an isolate and a switch carry recorded overrides the client never saw.
@@ -154,7 +154,7 @@
 
 - status:   pending
 - task:     4.3
-- commit:
+- commit:   0230beb5
 - trigger:  The spec says the tab says the earlier overrides were left behind; a switch already answers `told`, which the client raises as a toast for that tab's agent.
 - decided:  When the outgoing harness has recorded overrides, `switch_harness` appends "Its overrides on <harness> were left behind, and come back with it." to `told`. The incoming harness's own recorded set is what its launch carries (none the first time), since the record is per harness; nothing is copied or cleared.
 - rejected: A note on the next shim launch through `LaunchPlan.note`: it would need a pending flag in the record, and a bare launch has no shim to say it.
@@ -174,7 +174,7 @@
 
 - status:   pending
 - task:     4.3
-- commit:
+- commit:   0230beb5
 - trigger:  The popup checks the typed line on every keystroke, and the client may not wait on the application there; `src/` may not name `uze_core::`.
 - decided:  `OverrideCatalog` (the integration's static catalog and managed variables) is a `Copy` field of `AgentIdentity` and also `Workspace::override_catalog`; `flags()` yields `OverrideFlag`s (offered ones only, with `OverrideValue` and an `OverrideMark` of `Plain`/`Weakens`/`Degrades`), `check(line)`/`check_words` are pure and answer `CheckedOverride`s with the workspace's `Verdict` (re-exported as `OverrideVerdict`). Recent sets (`recent_overrides`, `forget_recent_overrides`, re-exported `RecentOverrides`) and `agent_overrides` read the record and belong on a thread.
 - rejected: Re-exporting `FlagSpec`/`FlagOwner`: `Keyed { owned, conditional }` is the check's concern, not something a row draws.

@@ -272,6 +272,9 @@ struct AgentTab {
     agent: String,
     /// The secret the placement issued this launch (`UZE_AGENT_KEY`).
     launch_key: String,
+    /// Variables the launch carries beside its identity: the agent's
+    /// overrides, when no UZE launcher carries them.
+    env: Vec<(String, String)>,
     size: (u16, u16),
 }
 

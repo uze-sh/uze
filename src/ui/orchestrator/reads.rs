@@ -1172,6 +1172,7 @@ pub(super) enum PlacementRequest {
         from: PathBuf,
         harness: String,
         space: SpaceId,
+        overrides: Vec<String>,
     },
     /// The agent this checkout is being cut for, and what the operator
     /// answered about the changes their own tree holds.
@@ -1260,13 +1261,18 @@ pub(super) fn spawn_agent_placement(
                 // answers with the reason and opens nothing: the operator
                 // chose the kind, and an agent landing anywhere else is
                 // the one outcome a notice could not undo.
-                PlacementRequest::New { from, harness, .. } => tui_application(home)
+                PlacementRequest::New {
+                    from,
+                    harness,
+                    overrides,
+                    ..
+                } => tui_application(home)
                     .and_then(|app| {
                         // No kind travels: where an agent starts is the
                         // project's to declare, and isolating one is an
                         // action on it afterwards.
                         app.workspace()
-                            .place_new_agent(&from, None, &harness, &occupied)
+                            .place_new_agent_with(&from, None, &harness, &occupied, &overrides)
                     })
                     .map_err(|error| error.to_string()),
                 PlacementRequest::Isolate { from, agent, carry } => tui_application(home)

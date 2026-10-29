@@ -100,6 +100,31 @@ impl std::fmt::Display for EnvironmentRefusal {
     }
 }
 
+/// Whether a program's launch may carry `environment`: the check a
+/// `CreateTab` is answered by, for a client to ask before it sends one
+/// rather than learn it from a tab that never opened.
+pub fn admits(environment: &[(String, String)]) -> Result<(), EnvironmentRefusal> {
+    if environment.len() > MAX_ENVIRONMENT_ENTRIES {
+        return Err(EnvironmentRefusal::TooManyEntries {
+            entries: environment.len(),
+        });
+    }
+    let bytes = environment
+        .iter()
+        .map(|(name, value)| name.len() + value.len())
+        .sum::<usize>();
+    if bytes > MAX_ENVIRONMENT_BYTES {
+        return Err(EnvironmentRefusal::TooLarge { bytes });
+    }
+    if let Some((name, _)) = environment
+        .iter()
+        .find(|(name, _)| name.is_empty() || name.contains('=') || name.contains('\0'))
+    {
+        return Err(EnvironmentRefusal::InvalidName { name: name.clone() });
+    }
+    Ok(())
+}
+
 /// What a pane's first process is launched as.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub(crate) enum Launch {
@@ -140,24 +165,7 @@ pub(crate) fn validate(
             Err(EnvironmentRefusal::WithoutCommand)
         };
     };
-    if environment.len() > MAX_ENVIRONMENT_ENTRIES {
-        return Err(EnvironmentRefusal::TooManyEntries {
-            entries: environment.len(),
-        });
-    }
-    let bytes = environment
-        .iter()
-        .map(|(name, value)| name.len() + value.len())
-        .sum::<usize>();
-    if bytes > MAX_ENVIRONMENT_BYTES {
-        return Err(EnvironmentRefusal::TooLarge { bytes });
-    }
-    if let Some((name, _)) = environment
-        .iter()
-        .find(|(name, _)| name.is_empty() || name.contains('=') || name.contains('\0'))
-    {
-        return Err(EnvironmentRefusal::InvalidName { name: name.clone() });
-    }
+    admits(&environment)?;
     Ok(Launch::Program {
         argv,
         env: environment,

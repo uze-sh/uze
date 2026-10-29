@@ -49,6 +49,9 @@ pub(super) enum AgentLaunch {
 pub(super) struct NewPlace {
     pub(super) space: SpaceId,
     pub(super) directory: PathBuf,
+    /// The words the operator added to this agent's launch for its harness;
+    /// none is the launch the workspace makes by default.
+    pub(super) overrides: Vec<String>,
 }
 
 /// Open state of the "+ new agent" popup (`WorkspaceHit::NewAgentMenu`):

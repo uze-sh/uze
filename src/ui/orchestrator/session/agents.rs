@@ -84,7 +84,14 @@ impl Attach<'_> {
             return;
         }
         let option = harnesses.swap_remove(harness);
-        self.start_agent(option, AgentLaunch::New(NewPlace { space, directory }));
+        self.start_agent(
+            option,
+            AgentLaunch::New(NewPlace {
+                space,
+                directory,
+                overrides: Vec::new(),
+            }),
+        );
     }
 
     /// Asks which harness a resumed agent runs — unless exactly one is set
@@ -161,11 +168,16 @@ impl Attach<'_> {
                 },
                 target.replacing,
             ),
-            AgentLaunch::New(NewPlace { space, directory }) => (
+            AgentLaunch::New(NewPlace {
+                space,
+                directory,
+                overrides,
+            }) => (
                 PlacementRequest::New {
                     from: directory,
                     harness,
                     space,
+                    overrides,
                 },
                 None,
             ),
@@ -491,17 +503,29 @@ impl Attach<'_> {
     /// The one place a `CreateTab` for an agent is sent: an agent tab
     /// always carries the identity its placement recorded, and the key its
     /// placement issued.
+    ///
+    /// An environment the terminal runtime would refuse opens no tab and
+    /// says why: the overrides were the operator's, and a launch that
+    /// dropped some of them would be one they did not ask for.
     pub(super) fn open_agent_tab(&mut self, pending: AgentTab) {
-        let env = vec![
-            (
-                uze_terminal::launch::AGENT_IDENTITY_VARIABLE.to_owned(),
-                pending.agent,
-            ),
-            (
-                uze_terminal::launch::AGENT_KEY_VARIABLE.to_owned(),
-                pending.launch_key,
-            ),
-        ];
+        let mut env = pending.env;
+        env.push((
+            uze_terminal::launch::AGENT_IDENTITY_VARIABLE.to_owned(),
+            pending.agent,
+        ));
+        env.push((
+            uze_terminal::launch::AGENT_KEY_VARIABLE.to_owned(),
+            pending.launch_key,
+        ));
+        if let Err(refusal) = uze_terminal::launch::admits(&env) {
+            self.model.raise_toast(
+                ToastKind::Failed,
+                format!("not launched: {refusal}"),
+                pending.label,
+                None,
+            );
+            return;
+        }
         let _ = send_request(
             &mut self.stream,
             &ClientRequest::CreateTab {
@@ -602,6 +626,11 @@ impl Attach<'_> {
             space = space.0,
             "placing an agent's tab"
         );
+        // A harness with no UZE launcher in front of it is handed the
+        // agent's overrides here, since nothing between the tab and the
+        // binary would add them.
+        let mut command = command;
+        command.extend(placement.bare_launch.args);
         self.open_agent_tab(AgentTab {
             space,
             label,
@@ -609,6 +638,7 @@ impl Attach<'_> {
             cwd: placement.cwd,
             agent,
             launch_key: placement.launch_key,
+            env: placement.bare_launch.env,
             size,
         });
         if follow {
