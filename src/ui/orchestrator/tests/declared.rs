@@ -2533,10 +2533,10 @@ fn an_answer_to_the_drawer_is_said_in_the_drawer_beside_its_view() {
     super::open_surface(&mut model, view);
     let slot = drawer_slot(&model);
     model.toggle_drawer(slot, ratatui::layout::Rect::new(0, 0, 200, 60));
-    model.dock_notice = Some(uze_extensions::view::Span::new(
+    model.follow_drawer(Outcome::Notice(uze_extensions::view::Span::new(
         "Start a session…",
         uze_extensions::view::Role::Muted,
-    ));
+    )));
     let owner = model
         .open_drawer_slot()
         .expect("the drawer is open")
@@ -2606,4 +2606,38 @@ fn a_fitted_drawer_asks_for_its_view_once_a_frame() {
     BOARD_VIEWS.with(|built| built.set(0));
     driven.frame();
     assert_eq!(BOARD_VIEWS.with(std::cell::Cell::get), 1);
+}
+
+/// A drawer's earlier notice does not make it the one asking: a gesture in
+/// the pane's view, made after it, is answered along the view's foot.
+#[test]
+fn an_answer_to_the_view_is_said_in_the_view_though_the_drawer_said_something_before() {
+    let mut model = hosting_the_drawer();
+    let view = view_slot(&model);
+    super::open_surface(&mut model, view);
+    let slot = drawer_slot(&model);
+    model.toggle_drawer(slot, ratatui::layout::Rect::new(0, 0, 200, 60));
+    let muted =
+        |text: &str| uze_extensions::view::Span::new(text, uze_extensions::view::Role::Muted);
+    model.follow_drawer(Outcome::Notice(muted("saved")));
+    model.follow_surface(Outcome::Notice(muted("Say done…")));
+    let owner = model
+        .open_drawer_slot()
+        .expect("the drawer is open")
+        .owner
+        .clone();
+    assert!(model.absorb_engine_answer(super::reads::EngineAnswer {
+        extension: owner,
+        answer: uze_extensions::contract::Opaque::new(muted("done")),
+    }));
+    assert_eq!(
+        model.open_notice,
+        Some(muted("done")),
+        "said where it was asked"
+    );
+    assert_eq!(
+        model.dock_notice,
+        Some(muted("saved")),
+        "the drawer keeps its own"
+    );
 }

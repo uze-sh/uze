@@ -2004,6 +2004,10 @@ struct WorkspaceModel {
     /// lends them, a click anywhere else gives them back. Every other key
     /// stays the pane's.
     dock_focused: bool,
+    /// Whether the last gesture still waiting for its extension's answer
+    /// was made in the drawer rather than the pane's view: where the
+    /// answer is said, when one extension has both open.
+    asked_in_drawer: bool,
     /// What the drawer's engine last asked to say, along its foot.
     dock_notice: Option<uze_extensions::view::Span>,
     /// The room the drawer's view had on the last frame: what its engine

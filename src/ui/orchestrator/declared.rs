@@ -1147,7 +1147,10 @@ impl WorkspaceModel {
                 }
             }
             Outcome::Close => self.close_surface(),
-            Outcome::Notice(span) => self.open_notice = Some(span),
+            Outcome::Notice(span) => {
+                self.asked_in_drawer = false;
+                self.open_notice = Some(span);
+            }
             Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
             Outcome::Copy(text) => self.copy_answered_by(text, self.open_slot),
             Outcome::Toast(text) => {

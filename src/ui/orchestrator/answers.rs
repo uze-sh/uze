@@ -258,10 +258,9 @@ impl WorkspaceModel {
         use uze_extensions::contract::Outcome;
         // What the gesture said while it waited ("Say done…") is over once
         // its extension answers: the answer says what there is to say.
-        // The drawer is where the gesture was made when it is the one
-        // saying it waits: an extension with a view open as well answers
-        // there, not along the view's foot.
-        let asked_in_drawer = self.dock_notice.is_some()
+        // Said where the gesture waiting for it was made: an extension
+        // with a view and a drawer open answers in the one that asked.
+        let asked_in_drawer = self.asked_in_drawer
             && self
                 .open_drawer_slot()
                 .is_some_and(|slot| slot.owner == answer.extension);

@@ -346,7 +346,10 @@ impl WorkspaceModel {
                 }
             }
             Outcome::Close => self.close_drawer(),
-            Outcome::Notice(span) => self.dock_notice = Some(span),
+            Outcome::Notice(span) => {
+                self.asked_in_drawer = true;
+                self.dock_notice = Some(span);
+            }
             Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
             Outcome::Copy(text) => self.copy_answered_by(text, self.open_drawer()),
             Outcome::Toast(text) => {
