@@ -69,10 +69,11 @@ harness's conversation rather than starting a new one.
 
 ### Requirement: Every switch writes a briefing
 The system SHALL write, on every switch, a briefing describing the agent's
-work for the incoming harness, owner-readable only and outside every
-checkout, and SHALL NOT pass its content as a process argument. The
-briefing SHALL be bounded in size, and SHALL be written from the agent's
-Git facts alone when the outgoing conversation cannot be read.
+work for the incoming harness. It SHALL keep the briefing in the agent's
+record, owner-readable only and outside every checkout, and SHALL NOT pass
+its content as a process argument. The briefing SHALL fit its share of the
+agent context's bound. It SHALL be written from the agent's Git facts
+alone when the outgoing conversation cannot be read.
 
 #### Scenario: The briefing never enters a checkout
 - **WHEN** an agent is switched
@@ -97,20 +98,6 @@ output, reasoning and subagent turns.
 - **WHEN** the outgoing conversation was compacted by its harness
 - **THEN** the briefing carries the latest compaction summary and only the turns after it
 
-### Requirement: The incoming harness is pointed at the briefing once
-The system SHALL start the incoming harness with one short first turn that
-points at the briefing, and SHALL give that turn on the first launch after
-the switch only. Any later launch of the agent, including the terminal
-runtime restoring the workspace, SHALL carry no briefing turn.
-
-#### Scenario: A restore does not replay the briefing
-- **WHEN** the terminal runtime restores a workspace holding an agent that was switched earlier
-- **THEN** the agent resumes its conversation with no briefing turn added
-
-#### Scenario: A harness that takes no first turn
-- **WHEN** the incoming harness's integration declares no way to carry a first turn
-- **THEN** the agent starts without one and the briefing is still written
-
 ### Requirement: Switching back hands off only what is new
 When the incoming harness resumes a conversation it had before, the
 briefing SHALL describe only what happened in the agent since that harness
@@ -133,3 +120,23 @@ and SHALL switch an idle agent without asking.
 #### Scenario: Switching to a harness without continuity
 - **WHEN** the chosen harness declares no continuity
 - **THEN** the operator is told that its conversation will not be resumed on a later launch
+
+### Requirement: The incoming harness is briefed through the agent's context
+The system SHALL give the briefing to the incoming harness as a section of
+the agent's context, and SHALL start the incoming harness with no turn the
+operator did not type, so the operator's next turn is answered by a model
+that already holds the briefing. Where the incoming harness's delivery is
+degraded, the system SHALL fall back to one short first turn pointing at the
+briefing, given once.
+
+#### Scenario: Switching shows no prompt
+- **WHEN** an agent is switched to a harness whose context delivery is not degraded
+- **THEN** the incoming pane shows no first turn and no briefing path, and the model's first request carries the briefing
+
+#### Scenario: A harness whose delivery is degraded
+- **WHEN** an agent is switched to a harness whose context delivery is degraded
+- **THEN** that harness starts with one short first turn pointing at the briefing, on the first launch after the switch only
+
+#### Scenario: A restore keeps the briefing without replaying a turn
+- **WHEN** the terminal runtime restores a workspace holding an agent switched earlier that has not committed since
+- **THEN** the agent resumes with no turn added, and its context still carries the briefing

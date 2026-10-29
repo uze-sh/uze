@@ -25,4 +25,4 @@
 ## 5. Content and proof
 
 - [x] 5.1 The repository's C4 views, the `uze:architect` Skill and ADR-050 rewritten to the same rules
-- [ ] 5.2 Tests for each scenario; `openspec validate --all --strict`, `uze agent artifacts check`, the workspace suite
+- [x] 5.2 Tests for each scenario; `openspec validate --all --strict`, `uze agent artifacts check`, the workspace suite
