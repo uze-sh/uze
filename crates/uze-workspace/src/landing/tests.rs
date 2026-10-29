@@ -1369,6 +1369,32 @@ fn a_branch_gone_from_the_remote_is_no_longer_published() {
     assert!(publication(primary, work(&kept)).is_some());
 }
 
+/// A fork workflow fetches from one repository and pushes to another, and
+/// a branch is on the remote where it was pushed.
+#[test]
+fn a_branch_is_asked_about_where_it_was_pushed() {
+    let (repository, _other) = published("landing-forget-pushurl");
+    let primary = repository.root();
+    let origin = repository.git(&["remote", "get-url", REMOTE]);
+    let fork = primary.with_file_name("fork.git");
+    repository.git(&[
+        "clone",
+        "--quiet",
+        "--bare",
+        origin.trim(),
+        fork.to_str().unwrap(),
+    ]);
+    repository.git(&["config", "remote.origin.pushurl", fork.to_str().unwrap()]);
+    let mut store = AgentStore::default();
+    let agent = launch(&repository, &mut store, "forked");
+    agent_commits(&repository, work(&agent), "a.rs", "");
+    let slot = slot_path(primary, work(&agent)).unwrap();
+    repository.git_in(&slot, &["push", "--quiet", REMOTE, "HEAD"]);
+
+    forget_unpublished(primary, [work(&agent)]);
+    assert!(publication(primary, work(&agent)).is_some());
+}
+
 /// The other half the agent can do alone. UZE learns the number from
 /// the remote on the pass that already runs, so a request opened
 /// outside a delivery is still the request this branch has.

@@ -189,8 +189,8 @@ pub(super) fn effective_base(primary: &Path, isolation: &Isolation) -> String {
 /// stale one read as published for good: the task never followed the
 /// target again.
 ///
-/// Asks the remote about these names alone, and forgets nothing when it
-/// could not answer. Each ref is deleted only from the commit read here,
+/// Asks the remote where the branches were pushed about these names
+/// alone, and forgets nothing when it could not answer. Each ref is deleted only from the commit read here,
 /// so one a push moved since is left to say so.
 pub fn forget_unpublished<'a>(primary: &Path, isolations: impl IntoIterator<Item = &'a Isolation>) {
     let tracked: Vec<Publication> = isolations
@@ -204,7 +204,16 @@ pub fn forget_unpublished<'a>(primary: &Path, isolations: impl IntoIterator<Item
         .iter()
         .map(|published| format!("refs/heads/{}", published.branch))
         .collect();
-    let mut args = vec!["ls-remote", "--heads", REMOTE];
+    // Where the branches were pushed, which a fork workflow keeps apart
+    // from where they are fetched: asked of the fetch URL, every branch
+    // pushed to the fork reads as gone.
+    let Some(pushed_to) = crate::git::read(primary, &["remote", "get-url", "--push", REMOTE])
+        .ok()
+        .and_then(|output| output.successful().ok())
+    else {
+        return;
+    };
+    let mut args = vec!["ls-remote", "--heads", pushed_to.trim()];
     args.extend(patterns.iter().map(String::as_str));
     let Some(listing) = crate::git::read(primary, &args)
         .ok()
