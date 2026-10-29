@@ -160,6 +160,7 @@ pub(super) fn render_tree(
         true => room.saturating_sub(1),
         false => room,
     };
+    let first_hit = hits.len();
     let mut painter = Painter {
         frame,
         area,
@@ -177,8 +178,21 @@ pub(super) fn render_tree(
         let (at, more) = painter.folded.unwrap_or((scroll + rows, 0));
         painter.more(at.min(scroll + rows), more);
     }
+    let sliding = painter.sliding;
+    // A cut line's target only reads the pointer: behind every target that
+    // answers a press, so a row whose text is cut is still what a click on
+    // that text chooses.
+    hits[first_hit..].sort_by_key(|(_, hit)| {
+        matches!(
+            hit,
+            ViewHit::Node {
+                act: NodeAct::Read,
+                ..
+            }
+        )
+    });
     TreeDrawn {
-        animates: tree_animates(root) || painter.sliding,
+        animates: tree_animates(root) || sliding,
         bar: None,
         at_end: !overflows,
     }

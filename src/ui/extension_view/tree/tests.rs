@@ -2009,3 +2009,45 @@ fn a_cut_line_slides_under_the_pointer_after_a_pause_unless_it_is_still() {
     assert_eq!(still.rows()[0].trim_end(), "Tokenize the card w…");
     assert!(still.hits.is_empty(), "no target for a still line");
 }
+
+/// A cut line in a list's row slides only where nothing else answers the
+/// pointer: the row is what a click on its text chooses, and its target
+/// comes first.
+#[test]
+fn a_cut_line_in_a_row_leaves_the_click_to_the_row() {
+    let list = holding(
+        node(
+            1,
+            NodeKind::List {
+                selected: None,
+                empty: None,
+            },
+        ),
+        vec![node(
+            2,
+            NodeKind::Text {
+                spans: vec![Span::new(
+                    "Tokenize the card with the payment provider",
+                    Role::Default,
+                )],
+                truncate: true,
+                still: false,
+            },
+        )],
+    );
+    let drawn = draw(&list, 20, 1, 0, at(0));
+    let first = drawn
+        .hits
+        .iter()
+        .find(|(rect, _)| rect.contains(ratatui::layout::Position::new(4, 0)))
+        .map(|(_, hit)| *hit);
+    assert_eq!(
+        first,
+        Some(ViewHit::Node {
+            node: 1,
+            act: NodeAct::Row(0),
+        }),
+        "{:?}",
+        drawn.hits
+    );
+}
