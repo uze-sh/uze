@@ -6,7 +6,7 @@ weeks in the bar, and a map of the last twenty weeks where every day is a
 click away from its commits.
 
 <p align="center">
-  <img src="../../web/public/examples/contributions.gif" alt="The contribution graph opens from the bar; a click on a day lists its commits" width="860" />
+  <img src="../../web/public/examples/contributions.gif" alt="The contribution graph opens from the bar; a click on a day lists its commits" width="100%" />
 </p>
 
 | Where | What |
