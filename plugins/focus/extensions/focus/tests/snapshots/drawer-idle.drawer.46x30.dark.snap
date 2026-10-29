@@ -2,26 +2,26 @@
  ┌───────────────────────────────────────────┐
  │ focus · focus@local                       │
  │                                           │
- │  25:00                                    │
+ │  ███ ███   ███ ███                        │
+ │    █ █   █ █ █ █ █                        │
+ │  ███ ███   █ █ █ █                        │
+ │  █     █ █ █ █ █ █                        │
+ │  ███ ███   ███ ███                        │
  │  a session                                │
+ │                                           │
+ │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
  │  2 of 4 today                    start    │
  │                                           │
  │  ─ last 7 days ─────────────────────────  │
  │                                           │
- │   ▂  █                                    │
- │  ▄█  █                                    │
- │  ██  █▅▅                                  │
- │  ██▇ ███                                  │
- │                                           │
- │  10-22                             today  │
+ │       ▂▂▂            ███                  │
+ │  ▄▄▄  ███            ███                  │
+ │  ███  ███            ███  ▅▅▅  ▅▅▅        │
+ │  ███  ███  ▇▇▇  ▁▁▁  ███  ███  ███        │
+ │   3    4    1    0    5    2    2         │
+ │   T    W    T    F    S    S    M         │
  │                                           │
  │  17 sessions this week              ●●○○  │
- │                                           │
- │                                           │
- │                                           │
- │                                           │
- │                                           │
- │                                           │
  │                                           │
  │                                           │
  │                                           │
@@ -33,26 +33,26 @@
  aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  a bbbbb b bbbbbbbbbbb                       a
  a                                           a
- a  ccccc                                    a
+ a  ccc ccc   ccc ccc                        a
+ a    c c   c c c c c                        a
+ a  ccc ccc   c c c c                        a
+ a  c     c c c c c c                        a
+ a  ccc ccc   ccc ccc                        a
  a  b bbbbbbb                                a
- a  b bb b bbbbb                    ddddd    a
  a                                           a
- a  e cccc c cccc eeeeeeeeeeeeeeeeeeeeeeeee  a
+ a  ddddddddddddddddddddddddddddddddddddddd  a
+ a  b bb b bbbbb                    eeeee    a
  a                                           a
- a   f  f                                    a
- a  ff  f                                    a
- a  ff  fff                                  a
- a  fff fff                                  a
+ a  d ffff f ffff ddddddddddddddddddddddddd  a
  a                                           a
- a  eeeee                             eeeee  a
+ a       ccc            ccc                  a
+ a  ccc  ccc            ccc                  a
+ a  ccc  ccc            ccc  ccc  ggg        a
+ a  ccc  ccc  ccc  ddd  ccc  ccc  ggg        a
+ a   b    b    b    b    b    b    g         a
+ a   d    d    d    d    d    d    g         a
  a                                           a
- a  bb bbbbbbbb bbbb bbbb              ddee  a
- a                                           a
- a                                           a
- a                                           a
- a                                           a
- a                                           a
- a                                           a
+ a  bb bbbbbbbb bbbb bbbb              eedd  a
  a                                           a
  a                                           a
  a                                           a
@@ -63,7 +63,8 @@
 ---
 a border.default
 b text.muted
-c text.bright
-d text.secondary
-e text.faint
-f state.info
+c state.info
+d text.faint
+e text.secondary
+f text.bright
+g state.warning

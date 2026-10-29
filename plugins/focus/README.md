@@ -10,8 +10,8 @@ one more.
 
 | Where | What |
 |---|---|
-| bar | the session's time running, or the day's sessions as pips |
-| drawer | a card floating above the timer, as tall as what it holds: what is left, start and stop (`ctrl+s`, `ctrl+x`), and the last seven days |
+| bar | what is left of the session, counting down, or the day's sessions against the goal |
+| drawer | a card floating above the timer, as tall as what it holds: what is left in large digits, how far the session is, start and stop (`ctrl+s`, `ctrl+x`), and the last seven days, today's in the warning hue |
 
 **It may:** keep its sessions in UZE's state, per project (`store`), and
 notify you (`notify`). A session's minutes and the day's goal are
