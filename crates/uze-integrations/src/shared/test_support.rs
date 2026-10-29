@@ -115,6 +115,97 @@ pub(crate) fn assert_catalog_in_help(catalog: &[uze_core::flag_catalog::FlagSpec
     }
 }
 
+/// A flag a snapshot defines that its catalog leaves out, and why. Only two
+/// kinds may be: anything else the interactive `--help` defines is
+/// catalogued, a flag that collides with UZE included, as `Uze`.
+pub(crate) enum LeftOut {
+    /// Help, version, completions, a wizard: it answers and exits, so no
+    /// agent is launched.
+    EndsTheLaunch(&'static [&'static str]),
+    /// It acts only on non-interactive output, which a workspace agent never
+    /// is; the reason quotes the help's wording.
+    PrintOnly(&'static [&'static str], &'static str),
+}
+
+impl LeftOut {
+    fn spellings(&self) -> &'static [&'static str] {
+        match self {
+            Self::EndsTheLaunch(spellings) | Self::PrintOnly(spellings, _) => spellings,
+        }
+    }
+}
+
+/// Fails unless every flag `help` defines is either in `catalog` or
+/// `left_out`, and nothing in either is a flag `help` does not define: a
+/// release's interactive flags are catalogued whole, so a flag that appears
+/// in a refreshed snapshot fails here until it is classified.
+pub(crate) fn assert_catalog_covers_help(
+    catalog: &[uze_core::flag_catalog::FlagSpec],
+    left_out: &[LeftOut],
+    help: &str,
+) {
+    assert_catalog_in_help(catalog, help);
+    for flag in left_out {
+        if let LeftOut::PrintOnly(spellings, why) = flag {
+            assert!(
+                !why.is_empty(),
+                "{spellings:?} is left out without a reason"
+            );
+        }
+    }
+    let defined = flags_in_help(help);
+    let catalogued: BTreeSet<&str> = catalog
+        .iter()
+        .flat_map(|flag| flag.spellings.iter().copied())
+        .collect();
+    let excluded: BTreeSet<&str> = left_out
+        .iter()
+        .flat_map(|flag| flag.spellings().iter().copied())
+        .collect();
+    let both: Vec<&str> = catalogued.intersection(&excluded).copied().collect();
+    assert!(both.is_empty(), "catalogued and left out: {both:?}");
+    let stale: Vec<&str> = excluded.difference(&defined).copied().collect();
+    assert!(
+        stale.is_empty(),
+        "left out but not in the snapshot: {stale:?}"
+    );
+    let unclassified: Vec<&str> = defined
+        .difference(&catalogued)
+        .copied()
+        .filter(|flag| !excluded.contains(flag))
+        .collect();
+    assert!(
+        unclassified.is_empty(),
+        "in the snapshot but neither catalogued nor left out: {unclassified:?}"
+    );
+}
+
+#[test]
+fn a_catalog_covers_its_help_only_when_every_flag_is_classified() {
+    use uze_core::flag_catalog::{FlagOwner, FlagSpec, FlagValue};
+    const HELP: &str =
+        "Options:\n  -h, --help    help\n  --model <m>   model\n  --json        print only\n";
+    const CATALOG: &[FlagSpec] = &[FlagSpec::new(
+        &["--model"],
+        FlagValue::Free("model"),
+        "model",
+        FlagOwner::Operator,
+    )];
+    let covered = [
+        LeftOut::EndsTheLaunch(&["--help", "-h"]),
+        LeftOut::PrintOnly(&["--json"], "print only"),
+    ];
+
+    assert_catalog_covers_help(CATALOG, &covered, HELP);
+    let unclassified = std::panic::catch_unwind(|| {
+        assert_catalog_covers_help(CATALOG, &[LeftOut::EndsTheLaunch(&["--help", "-h"])], HELP);
+    });
+    assert!(
+        unclassified.is_err(),
+        "--json is neither catalogued nor left out"
+    );
+}
+
 #[test]
 fn a_flag_named_only_in_a_description_is_not_defined() {
     let help = "Usage: x [--last]\n\nOptions:\n  -c, --continue <id>    resume; see --last\n      --enable <F>\n          like --other\n";

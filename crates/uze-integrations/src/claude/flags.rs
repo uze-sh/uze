@@ -2,10 +2,11 @@
 //! overrides, and the variables this integration sets or reads.
 //!
 //! Described from `help.txt`, the `--help` of Claude Code 2.1.312; the
-//! tests below fail on a spelling the snapshot does not show, and the Lab
-//! fails when the snapshot no longer matches the release. Launch modes that
-//! take the session somewhere else (`--bg`, `--desktop`, `--cloud`,
-//! `--worktree`, `--remote-control`) are left out: they pass as unknown.
+//! tests below fail unless every flag the snapshot defines is catalogued or
+//! left out for a reason they name, and the Lab fails when the snapshot no
+//! longer matches the release. Launch modes that take the session out of
+//! its pane or its checkout (`--bg`, `--desktop`, `--cloud`, `--worktree`)
+//! are catalogued as UZE's, refused rather than passed unseen.
 
 use uze_core::flag_catalog::{
     FlagOwner::{Degrades, Operator, Uze, Weakens},
@@ -18,6 +19,9 @@ use super::{
 };
 
 const CONTINUITY: &str = "uze continues this agent's conversation itself";
+const IN_ITS_PANE: &str = "a workspace agent runs in its own pane";
+const IN_ITS_CHECKOUT: &str =
+    "uze starts the agent in its own checkout, where its conversation is found again";
 
 pub(super) const CATALOG: &[FlagSpec] = &[
     FlagSpec::new(
@@ -155,6 +159,75 @@ pub(super) const CATALOG: &[FlagSpec] = &[
         Operator,
     ),
     FlagSpec::new(
+        &["--autocompact"],
+        FlagValue::Free("auto-or-tokens"),
+        "auto-compact window: auto, or 100k to 1M tokens",
+        Operator,
+    ),
+    FlagSpec::new(
+        &["--system-prompt-snapshot"],
+        FlagValue::OneOf(&["on", "off"]),
+        "whether the system prompt is recorded once and reused",
+        Operator,
+    ),
+    FlagSpec::new(
+        &["--exclude-dynamic-system-prompt-sections"],
+        FlagValue::None,
+        "per-machine prompt sections moved into the first message",
+        Operator,
+    ),
+    FlagSpec::new(
+        &["--betas"],
+        FlagValue::Free("betas"),
+        "beta headers sent with API requests (API key users only)",
+        Operator,
+    )
+    .repeatable(),
+    FlagSpec::new(
+        &["--brief"],
+        FlagValue::None,
+        "the SendUserMessage tool on",
+        Operator,
+    ),
+    FlagSpec::new(
+        &["--file"],
+        FlagValue::Free("file_id:path"),
+        "file resources downloaded at startup",
+        Operator,
+    )
+    .repeatable(),
+    FlagSpec::new(
+        &["--plugin-url"],
+        FlagValue::Free("url"),
+        "a plugin .zip fetched for this session only",
+        Operator,
+    )
+    .repeatable(),
+    FlagSpec::new(
+        &["--prompt-suggestions"],
+        FlagValue::None,
+        "prompt suggestions on; --prompt-suggestions=off turns them off",
+        Operator,
+    ),
+    FlagSpec::new(
+        &["--ax-screen-reader"],
+        FlagValue::None,
+        "screen-reader friendly output",
+        Operator,
+    ),
+    FlagSpec::new(
+        &["--remote-control"],
+        FlagValue::None,
+        "Remote Control on; --remote-control=<name> names the session",
+        Operator,
+    ),
+    FlagSpec::new(
+        &["--remote-control-session-name-prefix"],
+        FlagValue::Free("prefix"),
+        "prefix for Remote Control session names",
+        Operator,
+    ),
+    FlagSpec::new(
         &["--dangerously-skip-permissions"],
         FlagValue::None,
         "bypass every permission check",
@@ -239,6 +312,42 @@ pub(super) const CATALOG: &[FlagSpec] = &[
         Uze(CONTINUITY),
     ),
     FlagSpec::new(
+        &["--worktree", "-w"],
+        FlagValue::None,
+        "a new git worktree for the session",
+        Uze(IN_ITS_CHECKOUT),
+    ),
+    FlagSpec::new(
+        &["--tmux"],
+        FlagValue::None,
+        "a tmux session for the worktree",
+        Uze("it takes --worktree, and uze starts the agent in its own checkout"),
+    ),
+    FlagSpec::new(
+        &["--bg", "--background"],
+        FlagValue::None,
+        "start in the background and return",
+        Uze(IN_ITS_PANE),
+    ),
+    FlagSpec::new(
+        &["--desktop"],
+        FlagValue::None,
+        "open in the desktop app instead of the terminal",
+        Uze(IN_ITS_PANE),
+    ),
+    FlagSpec::new(
+        &["--cloud"],
+        FlagValue::None,
+        "create or attach to a cloud session",
+        Uze(IN_ITS_PANE),
+    ),
+    FlagSpec::new(
+        &["--environment"],
+        FlagValue::Free("environment_id"),
+        "a new cloud session on a self-hosted environment",
+        Uze(IN_ITS_PANE),
+    ),
+    FlagSpec::new(
         &["--print", "-p"],
         FlagValue::None,
         "print one response and exit",
@@ -259,10 +368,34 @@ pub(super) const MANAGED_ENVIRONMENT: &[&str] = &[RUNTIME_PROJECTION_ENV_VAR, "C
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shared::test_support::assert_catalog_in_help;
+    use crate::shared::test_support::{
+        LeftOut::{self, EndsTheLaunch, PrintOnly},
+        assert_catalog_covers_help,
+    };
+
+    const STREAM_JSON: &str = "only works with --output-format=stream-json, itself print-only";
+
+    /// Every flag `help.txt` defines that the catalog does not list.
+    const LEFT_OUT: &[LeftOut] = &[
+        EndsTheLaunch(&["--help", "-h"]),
+        EndsTheLaunch(&["--version", "-v"]),
+        PrintOnly(&["--output-format"], "only works with --print"),
+        PrintOnly(&["--input-format"], "only works with --print"),
+        PrintOnly(&["--json-schema"], "only works with --print"),
+        PrintOnly(&["--max-budget-usd"], "only works with --print"),
+        PrintOnly(&["--no-session-persistence"], "only works with --print"),
+        PrintOnly(&["--include-partial-messages"], "only works with --print"),
+        PrintOnly(&["--forward-subagent-text"], "only works with --print"),
+        PrintOnly(
+            &["--permission-prompts"],
+            "who answers prompts with --print",
+        ),
+        PrintOnly(&["--include-hook-events"], STREAM_JSON),
+        PrintOnly(&["--replay-user-messages"], STREAM_JSON),
+    ];
 
     #[test]
-    fn every_catalogued_spelling_is_in_the_snapshot() {
-        assert_catalog_in_help(CATALOG, include_str!("help.txt"));
+    fn every_flag_in_the_snapshot_is_catalogued_or_left_out() {
+        assert_catalog_covers_help(CATALOG, LEFT_OUT, include_str!("help.txt"));
     }
 }
