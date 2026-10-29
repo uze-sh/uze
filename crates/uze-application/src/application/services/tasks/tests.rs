@@ -3866,25 +3866,31 @@ mod overrides_tests {
         assert_eq!(back.bare_launch.args, ["--model", "opus"]);
     }
 
+    /// A resume is never asked about overrides: the agent starts again
+    /// with the ones it last had on that harness, recorded where its
+    /// launcher reads them and handed to a bare launch alike.
     #[test]
-    fn a_resume_keeps_the_agents_overrides_unless_given_others() {
+    fn a_resumed_agent_keeps_its_recorded_overrides() {
         let repository = uze_testkit::git::Repository::new("overrides-resume");
         let root = repository.root().canonical().unwrap();
         let app = application("overrides-resume-home");
-        let placement = placed(&app, &root, "two", "--model opus");
-        let agent = placement.placement.agent().as_str().to_owned();
+        for (harness, line) in [("one", "--model opus DEBUG=1"), ("two", "--yolo")] {
+            let placement = placed(&app, &root, harness, line);
+            let agent = placement.placement.agent().as_str().to_owned();
 
-        let kept = app
-            .workspace()
-            .resume_task_with(&root, &agent, "two", &[], None)
-            .unwrap();
-        let replaced = app
-            .workspace()
-            .resume_task_with(&root, &agent, "two", &[], Some(&words("-m sonnet")))
-            .unwrap();
+            let resumed = app
+                .workspace()
+                .resume_task(&root, &agent, harness, &[])
+                .unwrap();
 
-        assert_eq!(kept.bare_launch.args, ["--model", "opus"]);
-        assert_eq!(replaced.bare_launch.args, ["-m", "sonnet"]);
+            assert_eq!(
+                app.workspace().agent_overrides(&root, &agent, harness),
+                words(line),
+                "{harness}"
+            );
+            assert_eq!(resumed.bare_launch, placement.bare_launch, "{harness}");
+            assert!(!resumed.bare_launch.args.is_empty(), "{harness}");
+        }
     }
 
     #[test]

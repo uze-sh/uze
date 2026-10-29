@@ -435,22 +435,6 @@ impl Workspace<'_> {
         Ok(self.launching_with(placed, None))
     }
 
-    /// [`Self::resume_task`], launched with `overrides` in place of the
-    /// ones the agent last had on `harness`; `None` keeps those, which is
-    /// what a resume that was not asked about them does.
-    #[tracing::instrument(name = "workspace.resume_task_with", skip_all, fields(cwd = %cwd.display(), task_id = %task_id, harness = %harness, overrides = overrides.map(<[String]>::len)), err)]
-    pub fn resume_task_with(
-        &self,
-        cwd: &Path,
-        task_id: &str,
-        harness: &str,
-        occupied: &[PathBuf],
-        overrides: Option<&[String]>,
-    ) -> Result<AgentPlacement> {
-        let placed = self.resume(cwd, task_id, harness, occupied)?;
-        Ok(self.launching_with(placed, overrides))
-    }
-
     fn resume(
         &self,
         cwd: &Path,
