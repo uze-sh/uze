@@ -84,13 +84,19 @@ pub(super) fn spawn_support_refresh(
 /// cleared, forked or switched inside the process is a different identifier
 /// in the harness's records, and the launch that recorded the previous one
 /// is long over.
-pub(super) fn spawn_conversation_refresh(home: &UzeHome, agents: Vec<LaunchedAgent>) {
+///
+/// The handle says when the pass is over: one spawns a harness per agent
+/// and may take longer than the clock that asks for the next.
+pub(super) fn spawn_conversation_refresh(
+    home: &UzeHome,
+    agents: Vec<LaunchedAgent>,
+) -> Option<thread::JoinHandle<()>> {
     if agents.is_empty() {
-        return;
+        return None;
     }
     let home = home.clone();
     let parent = tracing::Span::current();
-    thread::spawn(move || {
+    Some(thread::spawn(move || {
         let _pass = crate::telemetry::background_pass!("tui.conversation_refresh", parent: &parent);
         let Ok(app) = tui_application(home) else {
             return;
@@ -105,7 +111,7 @@ pub(super) fn spawn_conversation_refresh(home: &UzeHome, agents: Vec<LaunchedAge
                 },
             );
         }
-    });
+    }))
 }
 
 /// A project whose `AGENTS.md` still carries regions an earlier release
@@ -152,13 +158,13 @@ pub(super) fn spawn_target_sync(
     home: &UzeHome,
     directories: Vec<PathBuf>,
     sender: mpsc::Sender<TargetSyncReport>,
-) {
+) -> Option<thread::JoinHandle<()>> {
     if directories.is_empty() {
-        return;
+        return None;
     }
     let home = home.clone();
     let parent = tracing::Span::current();
-    thread::spawn(move || {
+    Some(thread::spawn(move || {
         let _pass = crate::telemetry::background_pass!("tui.target_sync", parent: &parent);
         let Ok(app) = tui_application(home) else {
             return;
@@ -176,7 +182,7 @@ pub(super) fn spawn_target_sync(
                 let _ = sender.send(report);
             }
         }
-    });
+    }))
 }
 
 /// A project's gates this machine's shell has no spelling for, and the

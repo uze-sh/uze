@@ -5,7 +5,7 @@
 extends: ../_base.yml
 
 video:
-  title: uze — the focus example
+  title: uze — the focus plugin
   out: .demo/examples/focus/focus.gif
   cast: '{root}/example-focus.cast'
   publish:
@@ -18,18 +18,17 @@ beats:
     with: {say: 'a project, and an agent on it', review_pause: 1.4}
   - say: in the bar, the day's sessions
     wait: screen
-    until: '○○○○'
+    until: '0/4 today'
     timeout: 15
     pause: 1.2
   - say: a click opens the drawer
-    # The pips, in the pane's band: an agent's spinner in the sidebar can
-    # draw the same glyph. One cell in, since the hourglass before them is drawn
-    # wider than the screen's text counts it.
-    click: '○○○○'
+    # The count, in the pane's band. One cell in, since the hourglass
+    # before it is drawn wider than the screen's text counts it.
+    click: '0/4 today'
     in: pane
     occurrence: last
     offset: 1
-    expect: '25:00'
+    expect: 'of 4 today'
     expect_timeout: 10
     pause: 1.8
   - say: a session starts

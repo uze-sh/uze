@@ -6,7 +6,7 @@
 extends: ../_base.yml
 
 video:
-  title: uze — the contributions example
+  title: uze — the contributions plugin
   out: .demo/examples/contributions/contributions.gif
   cast: '{root}/example-contributions.cast'
   publish:
@@ -24,7 +24,9 @@ beats:
     timeout: 15
     pause: 1.6
   - say: a click opens the map, twenty weeks of it
-    click: today
+    # The last two weeks' squares: focus's count says `today` too, further
+    # along the same bar.
+    click: '■■■■■■■■■■■■■■'
     in: screen
     occurrence: last
     refuse: '0 today'

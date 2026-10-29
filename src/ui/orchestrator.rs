@@ -1687,7 +1687,13 @@ struct Remembered {
     /// these the moment they land.
     task_name_adoptions: BTreeMap<TabId, String>,
     last_task_refresh: Option<Instant>,
+    /// The conversation refresh still running, if one is: the next pass
+    /// waits for it rather than stacking a harness process per agent on it.
+    conversation_refresh: Option<std::thread::JoinHandle<()>>,
     last_target_sync: Option<Instant>,
+    /// The target sync still running, if one is: a fetch from a remote that
+    /// hangs outlives the clock, and a second one would only queue behind it.
+    target_sync: Option<std::thread::JoinHandle<()>>,
     /// Each checkout's [`StampResolution`] as last read, and when the next
     /// read was asked for; a checkout whose stamp moves is evaluated.
     checkout_stamps: BTreeMap<PathBuf, u64>,

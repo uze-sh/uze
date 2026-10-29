@@ -42,16 +42,23 @@ const MEASURED_ON: &[&str] = &["linux", "macos"];
 const UNMEASURED: Duration = Duration::from_secs(1);
 
 /// A Git checkout outside the system's temporary directory, which an
-/// extension may never read: beside the build's own output.
+/// extension may never read, and outside this repository, which the
+/// workspace would otherwise evaluate as the checkout's project.
 fn checkout(label: &str) -> PathBuf {
-    let checkout = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/extension-checkouts")
-        .join(format!("{label}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&checkout);
+    let checkout = uze_testkit::temp::TempDir::outside_the_temporary_directory(label)
+        .keep()
+        .path()
+        .to_path_buf();
     std::fs::create_dir_all(checkout.join(".planning")).unwrap();
     std::fs::write(checkout.join(".planning/STATE.md"), "one\ntwo\nthree").unwrap();
     uze_testkit::git::isolated_git_in(&checkout, &["init", "-q"]);
-    uze_platform::path::canonical(&checkout).unwrap()
+    let checkout = uze_platform::path::canonical(&checkout).unwrap();
+    assert_eq!(
+        uze_application::project_root_of(&checkout),
+        checkout,
+        "the checkout is a project of its own, never one it sits inside"
+    );
+    checkout
 }
 
 /// Fifteen plugins carrying the `gsd` fixture's band, installed from one

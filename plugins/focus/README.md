@@ -5,7 +5,7 @@ works; when a session ends, a sound and a notification, and the day counts
 one more.
 
 <p align="center">
-  <img src="../../web/public/examples/focus.gif" alt="The focus drawer starts a 25-minute session, and its time runs in the drawer and in the bar" width="860" />
+  <img src="../../web/public/examples/focus.gif" alt="The focus drawer starts a 25-minute session, and its time runs in the drawer and in the bar" width="100%" />
 </p>
 
 | Where | What |

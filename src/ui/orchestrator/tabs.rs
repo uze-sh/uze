@@ -767,10 +767,13 @@ pub(super) fn sync_slot_occupancy(
                 .or_insert_with(|| checkout.directory());
         }
     }
-    model
-        .remembered
-        .pane_checkouts
-        .retain(|pane, _| live.iter().any(|(live, _)| live == pane));
+    let is_live = |pane: &PaneId| live.iter().any(|(live, _)| live == pane);
+    let remembered = &mut model.remembered;
+    remembered.pane_checkouts.retain(|pane, _| is_live(pane));
+    // What is kept per pane goes with it, or a session grows by every
+    // pane it ever opened.
+    remembered.prompt_buffers.retain(|pane, _| is_live(pane));
+    remembered.bypass_reported.retain(is_live);
     let occupied: BTreeSet<PathBuf> = model.remembered.pane_checkouts.values().cloned().collect();
     // Bound to a checkout that is no longer on disk, or first seen already
     // standing in one: `/proc` reports a removed directory as its old path
