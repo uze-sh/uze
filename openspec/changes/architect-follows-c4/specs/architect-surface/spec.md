@@ -135,8 +135,7 @@ open that view with the box zoomed into selected and in view.
   the viewer came
 
 #### Scenario: The step on show names its level
-- **WHEN** a component view titled `Component diagram for uze CLI: uze-core`
-  is on show
+- **WHEN** a component view titled `uze CLI: uze-core` is on show
 - **THEN** its step SHALL read `Components`
 - **AND THEN** the title SHALL be shown on the row of the drawing's
   modes

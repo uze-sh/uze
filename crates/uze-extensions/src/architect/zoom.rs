@@ -37,18 +37,6 @@ impl Place {
             Self::Deployment => "Deployment",
         }
     }
-
-    /// The word a title names this kind of view by, for the check.
-    pub fn title_word(self) -> &'static str {
-        match self {
-            Self::Landscape => "landscape",
-            Self::Context => "context",
-            Self::Container => "container",
-            Self::Component => "component",
-            Self::Dynamic => "dynamic",
-            Self::Deployment => "deployment",
-        }
-    }
 }
 
 /// What a view zooms into: the alias, and the kind of element that alias

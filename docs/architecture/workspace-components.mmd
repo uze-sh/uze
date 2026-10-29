@@ -1,5 +1,5 @@
 ---
-title: "Component diagram for uze CLI: uze-workspace, the agents' work"
+title: "uze CLI: uze-workspace"
 ---
 C4Component
   Person(dev, "Developer", "Installs plugins once, then runs coding agents side by side and reviews their work")
@@ -13,7 +13,7 @@ C4Component
     Component(commands, "Command line", "Rust, clap", "Parses each command and dispatches it to the application", $link="src/main.rs")
     Component(app, "uze-application", "Rust library", "The workspace's services: tasks, checkouts, work, reports", $link="crates/uze-application/src/lib.rs")
     Component(core, "uze-core", "Rust library", "The shared foundation and the package manager, IntegrationPort among it", $link="crates/uze-core/src/lib.rs")
-    Boundary(workspace, "uze-workspace", "Crate") {
+    Boundary(workspace, "uze-workspace", "Crate, main modules") {
       Component(task, "task", "Rust module", "The agents UZE launched in a project, and their state", $link="crates/uze-workspace/src/task.rs")
       Component(checkout, "checkout", "Rust module", "The slots an isolated agent works in, their pool and their records", $link="crates/uze-workspace/src/checkout.rs")
       Component(worktree, "worktree", "Rust module", "The fixed layout, the declared policy and the text it projects", $link="crates/uze-workspace/src/worktree.rs")

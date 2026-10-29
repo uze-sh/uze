@@ -63,9 +63,11 @@ The surface keeps no list of entered boxes: the path from the root to the
 view on show is computed, so a view opened from anywhere shows the same
 path. Every step is named by its level (`Context`, `Containers`,
 `Components`, `Landscape`, `Dynamic`, `Deployment`), the view on show
-included: a title names type and scope and is a sentence, so it is the
-view's `label` instead (a new field, empty by default), which the host
-sets muted on the row of the drawing's modes. The step on show opens the views that
+included. C4 asks a title to name the view's type and scope; here the
+type is the keyword, shown as the level, so a title names the scope
+alone (`uze CLI: uze-core`) and is the view's `label` (a new field, empty
+by default), which the host sets muted on the row of the drawing's modes.
+A title that repeated the type would say it twice on one screen. The step on show opens the views that
 share its parent, by their titles, through
 `TrailStep::choices` (a new field, empty by default, so the code map's
 trail is untouched). Going up opens the parent with the box whose alias is

@@ -7,10 +7,12 @@ const SPACE: Size = Size {
 
 /// uze's own architecture, as the repository keeps it. Living fixtures:
 /// what is checked here is also that the project's real artifacts draw.
-const CONTEXT: &str = "System context diagram for uze";
-const CONTAINERS: &str = "Container diagram for uze";
-const CORE: &str = "Component diagram for uze CLI: uze-core, its five concerns";
-const WORKSPACE: &str = "Component diagram for uze CLI: uze-workspace, the agents' work";
+// The C4 views, by file: two of them share the title `uze`, since a
+// title names a scope and both are views of the system.
+const CONTEXT: &str = "system-context.mmd";
+const CONTAINERS: &str = "containers.mmd";
+const CORE: &str = "core-components.mmd";
+const WORKSPACE: &str = "workspace-components.mmd";
 
 fn opened() -> ArchitectView {
     filled(ArchitectView::opening("~/project".to_owned()))
@@ -81,7 +83,7 @@ fn showing(name: &str) -> ArchitectView {
         .catalog
         .artifacts()
         .iter()
-        .position(|artifact| artifact.name == name)
+        .position(|artifact| artifact.name == name || artifact.origin == name)
         .expect("the artifact exists");
     state.open(index);
     state
@@ -407,12 +409,12 @@ fn trail(state: &ArchitectView) -> Vec<String> {
         .collect()
 }
 
-/// The title of the view on show.
+/// The file of the view on show.
 fn here(state: &ArchitectView) -> String {
     state
         .catalog
         .get(state.selected)
-        .map(|artifact| artifact.name.clone())
+        .map(|artifact| artifact.origin.clone())
         .unwrap_or_default()
 }
 
@@ -455,7 +457,7 @@ fn views_that_zoom_into_one_container_are_offered_on_its_step() {
     let mut state = showing(CORE);
     let step = view(&state, SPACE).trail.pop().expect("a way down");
     let offered: Vec<&str> = step.choices.iter().map(|c| c.name.as_str()).collect();
-    assert_eq!(offered, [CORE, WORKSPACE]);
+    assert_eq!(offered, ["uze CLI: uze-core", "uze CLI: uze-workspace"]);
 
     handle_mouse(&mut state, Some(ViewHit::ChooseItem), SPACE);
     assert_eq!(state.choosing, Some(Choosing::Item(state.selected)));
@@ -501,7 +503,7 @@ fn a_view_opened_from_anywhere_shows_its_own_way_down() {
 fn a_c4_view_is_labelled_by_its_title_and_stepped_to_by_its_level() {
     let state = showing(CORE);
     let mut drawn = view(&state, SPACE);
-    assert_eq!(drawn.label, CORE);
+    assert_eq!(drawn.label, "uze CLI: uze-core");
     assert_eq!(drawn.trail.pop().unwrap().name, "Components");
     assert_eq!(
         view(&showing("Crate layering"), SPACE).label,
@@ -1249,7 +1251,6 @@ fn the_check_notes_where_a_view_departs_from_c4_notation() {
         "views.mmd",
     );
     for wanted in [
-        "the title does not say it is a container view",
         "the view is drawn inside no `System_Boundary`, so it zooms into nothing",
         "`api` has no description",
         "`api` names no technology",
@@ -1262,7 +1263,7 @@ fn the_check_notes_where_a_view_departs_from_c4_notation() {
             "{wanted}: {notes:?}"
         );
     }
-    assert_eq!(notes.len(), 7, "{notes:?}");
+    assert_eq!(notes.len(), 6, "{notes:?}");
 }
 
 /// The repository's own C4 views are the model's example: they are held

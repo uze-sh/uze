@@ -92,13 +92,17 @@ deployment that differs from the obvious one.
   process: a module, a crate, a service behind an interface. Not
   separately deployable. A container too big for one component view is
   drawn as several, each filtered to one part (one crate's modules, say)
-  and saying so in its title.
+  and naming that part in its title.
 
 ### The notation, every time
 
-- The title states the type and the scope: `System context diagram for
-  shop`, `Container diagram for shop`, `Component diagram for shop API`.
-  A view showing only part of its scope says so in the title.
+- The title names the scope and nothing else: `shop` for its context and
+  container views, `shop API` for a component view, `shop API: billing`
+  for one part of it. The view's type is its keyword, and the surface
+  shows it as the level the view stands on, so a title that repeats it
+  (`Component diagram for …`) says it twice. A view that leaves part of
+  its scope out says so on the boundary it leaves it out of:
+  `Boundary(billing, "billing", "Crate, main modules")`.
 - Every element is the macro of its type, with a short description of its
   responsibility; every container and component carries a real technology
   (`Rust, clap`, `PostgreSQL`, `Filesystem, JSON`) — never a crate name or a
@@ -142,16 +146,16 @@ it a title:
 
 ```
 ---
-title: Container diagram for shop
+title: shop
 ---
 C4Container
   ...
 ```
 
 A name is what somebody scanning a list of a dozen diagrams reads. Name
-the view (`Container diagram for shop`, `Install pipeline`, `Agent
-lifecycle`), not the occasion for drawing it. A title holding a colon is
-YAML, so quote it: `title: "Component diagram for shop API: billing"`.
+the view (`shop API`, `Install pipeline`, `Agent lifecycle`), not the
+occasion for drawing it. A title holding a colon is YAML, so quote it:
+`title: "shop API: billing"`.
 
 ## Join a box to the code it stands for
 
@@ -207,8 +211,7 @@ reading the file does not:
    A directory opens, but link a Rust module by its file
    (`src/delivery.rs`), which is where its documentation starts.
 5. **C4 notes.** Beside a C4 view that draws, the check lists where it
-   departs from the notation above: a title that does not name the view's
-   type, a box with no description, a container or component with no
+   departs from the notation above: a box with no description, a container or component with no
    technology, a line with no label or running both ways, a view that
    zooms into nothing, an alias naming another kind of element elsewhere.
    A note fails nothing; leave none.

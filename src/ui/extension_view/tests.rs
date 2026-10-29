@@ -1567,7 +1567,7 @@ fn a_board_is_drawn_as_it_was_cut_and_a_click_lands_in_the_box_under_it() {
         .find(|row| row.contains("Unicode"))
         .expect("the modes are drawn");
     assert!(
-        modes_row.contains("Container diagram for uze") && !rows[MENU_ROW].contains("diagram"),
+        modes_row.trim_start().starts_with("uze ") && rows[MENU_ROW].contains("Containers"),
         "the title is on the row of the modes, not on the way down: {modes_row}"
     );
     assert!(

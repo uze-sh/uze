@@ -2,8 +2,9 @@
 //!
 //! C4 asks every element for a type, a description and — for containers
 //! and components — a technology; every line for a label, running one
-//! way; every title for the view's type and scope; and every view below
-//! the context for the one element above it that it zooms into. The type
+//! way; and every view below the context for the one element above it
+//! that it zooms into. A title names the view's scope; its type is the
+//! keyword, which the surface shows as the view's level. The type
 //! is the macro, so it cannot be missing; the rest can, and none of it
 //! stops a diagram drawing, which is why nobody notices until a reader
 //! has to guess.
@@ -15,19 +16,11 @@ use super::zoom::Place;
 /// The notes for the artifact at `index`, given every C4 view's graph by
 /// the same index (`None` for anything else).
 pub fn notes(catalog: &Catalog, graphs: &[Option<Graph>], index: usize) -> Vec<String> {
-    let (Some(graph), Some(artifact)) = (&graphs[index], catalog.get(index)) else {
+    let (Some(graph), Some(_)) = (&graphs[index], catalog.get(index)) else {
         return Vec::new();
     };
     let zoom = catalog.zoom();
     let mut notes = Vec::new();
-    if let Some(place) = zoom.place(index)
-        && !artifact.name.to_lowercase().contains(place.title_word())
-    {
-        notes.push(format!(
-            "the title does not say it is a {} view",
-            place.title_word()
-        ));
-    }
     if let Some(place) = zoom.place(index)
         && matches!(place, Place::Container | Place::Component)
         && zoom.parent(index).is_none()
