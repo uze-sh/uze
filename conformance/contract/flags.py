@@ -41,7 +41,9 @@ def _assert_unchanged(cfg, args, snapshot):
     check(
         f"flags-{name}-runs",
         live is not None,
-        f"`{label}` printed its help" if live is not None else f"`{label}` printed nothing",
+        f"`{label}` printed its help"
+        if live is not None
+        else f"`{label}` printed nothing",
     )
     if live is None:
         return

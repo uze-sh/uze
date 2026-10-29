@@ -14,8 +14,8 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from contract.bindings import Bindings
-from contract.flags import defined_flags, describe_drift, drift
+from contract.bindings import Bindings  # noqa: E402
+from contract.flags import defined_flags, describe_drift, drift  # noqa: E402
 
 HELP = """Usage: x [--last]
 

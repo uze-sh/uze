@@ -17,9 +17,7 @@ class ClaudeBindings(Bindings):
     display_name = "Claude Code"
     compact_command = "/compact"
     launch = "exec claude"
-    help_snapshots = (
-        (("--help",), "crates/uze-integrations/src/claude/help.txt"),
-    )
+    help_snapshots = ((("--help",), "crates/uze-integrations/src/claude/help.txt"),)
     ready_markers = ("Opus", "API Usage Billing", "❯")
     warmup = 6.0
     #: The status line under the prompt names the billing the session runs
