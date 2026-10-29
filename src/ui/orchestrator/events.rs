@@ -19,12 +19,7 @@ impl WorkspaceModel {
             ClientEvent::Snapshot { session } => {
                 self.session = Some(session);
                 self.panes.clear();
-                self.note_strip_selection(identities);
-                self.note_space_projects(identities);
-                self.put_away_space_overview_left_behind(identities);
-                self.settle_pane();
-                self.forget_overviews_of_closed_spaces();
-                self.forget_folds_of_closed_spaces();
+                self.follow_session(identities);
                 self.follow_drawer_space();
                 self.occupancy_stale = true;
             }
@@ -33,12 +28,7 @@ impl WorkspaceModel {
                 self.session = Some(session);
                 self.note_typing_target();
                 self.note_launcher_bypass();
-                self.note_strip_selection(identities);
-                self.note_space_projects(identities);
-                self.put_away_space_overview_left_behind(identities);
-                self.settle_pane();
-                self.forget_overviews_of_closed_spaces();
-                self.forget_folds_of_closed_spaces();
+                self.follow_session(identities);
                 self.name_the_new_space();
                 self.follow_drawer_space();
                 self.prune_dragging_tab();
@@ -79,6 +69,19 @@ impl WorkspaceModel {
             | ClientEvent::Usage(_) => {}
         }
     }
+    /// What every session the server sends moves on the client: the
+    /// selection, the overview, then the pane — after the overview, since
+    /// whether a tab gets its surface back depends on whether the overview
+    /// still holds the pane.
+    fn follow_session(&mut self, identities: &[AgentIdentity]) {
+        self.note_strip_selection(identities);
+        self.note_space_projects(identities);
+        self.put_away_space_overview_left_behind(identities);
+        self.settle_pane();
+        self.forget_overviews_of_closed_spaces();
+        self.forget_folds_of_closed_spaces();
+    }
+
     /// Every pane the session holds, across its spaces.
     pub(super) fn pane_ids(&self) -> std::collections::BTreeSet<PaneId> {
         self.session
