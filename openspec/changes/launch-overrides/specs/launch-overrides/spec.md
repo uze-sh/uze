@@ -132,9 +132,10 @@ say so on the agent's tab.
 
 ### Requirement: Recent overrides are offered again
 The system SHALL remember each distinct set of overrides a launch carried,
-per project and per harness, most recent first, keeping a bounded number,
-and SHALL offer them in the overrides step with none marked, so Enter
-still launches. Taking one SHALL replace the entries being edited.
+per harness across projects, keeping a bounded number, and SHALL offer
+them in the overrides step with none marked, so Enter still launches,
+those last used in this project first. Taking one SHALL replace the
+entries being edited.
 
 #### Scenario: Applying a recent set
 - **WHEN** the operator has `--verbose` entered, marks a remembered set and takes it
@@ -144,9 +145,13 @@ still launches. Taking one SHALL replace the entries being edited.
 - **WHEN** a set already remembered is launched again
 - **THEN** the history holds it once, at the top
 
+#### Scenario: A set from another project
+- **WHEN** the operator opens the overrides step in a project where `--model opus` was never used, after using it in another project
+- **THEN** `--model opus` is offered after this project's own sets, naming the project it was last used in
+
 #### Scenario: Forgetting a set
 - **WHEN** the operator removes a remembered set from the list
-- **THEN** it is no longer offered for that project and harness
+- **THEN** it is no longer offered for that harness in any project
 
 ### Requirement: Overrides stay private to the operator
 The system SHALL keep recorded and remembered overrides readable by the

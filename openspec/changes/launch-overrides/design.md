@@ -81,28 +81,37 @@ Alternatives:
   for identity, and a respawn would need the terminal runtime to persist
   them too.
 
-### 2. A separate owner-only document, not a field on `Agent`
+### 2. One global owner-only document, not a field on `Agent`
 
-`UzeHome::launch_overrides_path(project_id)` →
-`state/projects/<id>/launch-overrides.json`, mode `0600` in a `0700`
-directory, one `Shaped` document (shape 1):
+`UzeHome::launch_overrides_path()` → `state/launch-overrides.json`,
+beside its siblings `provisioning.json` and `hosts.json`, and named after `theme-overrides.json` at the root, mode
+`0600`. One `Shaped` document (shape 1):
 
 ```
-{ agents: { <agent id>: { <integration>: [tokens] } },
-  recent: { <integration>: [ { tokens, withheld: n, last_used_unix } ] } }
+{ agents: { <project id>: { <agent id>: { <integration>: [tokens] } } },
+  recent: { <integration>: [ { tokens, withheld: n, project, last_used_unix } ] } }
 ```
 
 Read-modify-write under a lock beside it. Tier: *record*, since losing it
 costs the operator what only they typed.
 
+Global rather than per project because most overrides are habits of the
+operator (`--model`, `--permission-mode`, `--verbose`), not of a project;
+a per-project history would have them typed again in every repository.
+The few that are a project's (`--add-dir ../lib`, `DATABASE_URL=…`) are
+handled by order, not by scope: each set remembers the project it was
+last used in, and the list shows this project's sets first, then the
+others.
+
 Rejected: a field on `Agent`. `agents.json` is world-readable, and a shape
 bump on `AgentStore` makes it unreadable to an older installed binary,
 whose shim would then find no owner and drop every agent's continuity in
-the project.
+the project. Rejected: one file per project
+(`state/projects/<id>/…`), for the reason above.
 
-Per agent *and* harness, so `Continue in` launches the other harness with
-none and switching back finds the first harness's set again. An agent's
-entry goes when the agent's record does.
+An agent's overrides are kept per agent *and* harness, so `Continue in`
+launches the other harness with none and switching back finds the first
+harness's set again. An agent's entry goes when the agent's record does.
 
 ### 3. Final argv and environment
 
@@ -177,8 +186,9 @@ hue. Backspace on an empty line removes the last entry.
 
 ### 7. History
 
-Up to 8 sets per harness, most recent first, identified by their
-normalized tokens so the same set moves to the top. A variable whose name
+Up to 20 sets per harness, this project's first and then the rest, each
+group most recent first, identified by their normalized tokens so the
+same set moves to the top and takes the project it was last used in. A variable whose name
 reads as a secret (`TOKEN`, `KEY`, `SECRET`, `PASSWORD`, `PASS`,
 `CREDENTIAL`, `AUTH` as a `_`-separated part) is not kept: the set counts
 it in `withheld` and its row says `1 variable not kept`. Spans carry
@@ -193,6 +203,40 @@ catalog that drifts from the snapshot. The Lab diffs each snapshot against
 the live binary, so the snapshot cannot drift from the release unseen;
 `harness-watch` refreshes both. `-c` keys are not in `--help` and are
 proven by the existing Codex conformance instead.
+
+### 9. Removing Profiles first, and what it leaves on disk
+
+Profiles is removed before the catalog is built, in its own commits, so
+nothing new is written against `PreferencePort` and the two harness
+vocabularies (a profile's axes, a launch's flags) never coexist. The
+model and permission axes were the reason Profiles existed; a launch
+override expresses them per agent without touching the harness's global
+configuration, which every session on the machine, UZE's or not, reads.
+
+What it leaves:
+
+- `state/profiles.json` exists on every machine (`snapshot.machine`
+  listed profiles unconditionally, and listing wrote a default). It is a
+  record nothing reads any more, so a record tier that no longer claims
+  its cost: removed once, at the point the application already retires
+  what earlier releases left behind.
+- `layout.json`'s `profile_columns_width` and a `route: "profiles"` read
+  as unknown and fall back; nothing to do.
+- Keys `Apply` wrote into harness configuration (Claude's
+  `permissions.defaultMode`, `sandbox.enabled`, `model`; Codex's
+  `approval_policy`, `sandbox_mode`; OpenCode's `permission.*`;
+  Antigravity's `agentMode`, `toolPermission`, …) stay. No receipt
+  records them, so UZE cannot tell them from the operator's own edits,
+  and removing an operator's setting is worse than leaving one UZE wrote
+  at their request. The CHANGELOG says so.
+
+Rejected: keeping `PreferencePort` as the catalog's home. It models a
+persistent machine-wide setting with a plan and an apply; the catalog is
+static data about a binary's argv. Sharing the trait would keep the
+write path alive for nothing.
+
+`Feature` keeps the mechanism with `Overview` as its one entry; its tests
+move to `Overview`.
 
 ## UI/UX
 
@@ -221,7 +265,8 @@ Against the operator's mockup and the design-system rules:
 - **The step, top to bottom:** the typed line (underline, caret, no raised
   band, which the mockup has); the entries added, one row each with an `x`
   in `mark::close_tone`; then a list: `recent` sets for this harness while
-  the line is empty, the catalog's completions while typing, a flag's
+  the line is empty (this project's first, another project's sets naming
+  it, muted, at their end), the catalog's completions while typing, a flag's
   accepted values after a `OneOf` flag and a space. Under a rule, a detail
   line of fixed height for the marked row (`Permission mode · default,
   acceptEdits, plan`) instead of the mockup's right column cut mid-word.

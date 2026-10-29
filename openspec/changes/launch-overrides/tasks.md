@@ -1,3 +1,15 @@
+## 0. Remove Profiles
+
+- [ ] 0.1 TUI: remove `src/ui/view/profiles.rs`, `Route::Profiles`, `ProfilePanel`/`ProfileColumns`, the `NewProfile` overlay, `DeleteProfile` confirmation, profile hits, intents and worker paths, and `src/ui/tests/profiles.rs`; move navigation and badge tests that sample `Route::Profiles` to `Overview`
+- [ ] 0.2 Keys: remove `NewProfile`, `DeleteProfile`, `ApplyProfile`, `PreviewProfile`, `ToggleProfileHarness`, the `Profiles`/`ProfileEditor` scopes and their defaults; give `NextValue`/`PreviousValue` a new control in `tests/architecture/affordances.rs`
+- [ ] 0.3 Application: remove `profile.rs`, the `Profiles` service, its re-exports, `MachineSnapshot.profiles`, `preference_adapters` (fold `new_with_runner_and_preferences` into `new_with_runner`); drop `"profiles.list"` and `"Profiles"` from the tracing and instrumentation tests
+- [ ] 0.4 Integrations: remove each `preferences.rs`, `shared/preference.rs`, the `PreferencePort` impls, Antigravity's `preferences_config_path`, the registry's preference adapters and `RegistryParts`; drop helpers in `json_config`/`toml_config` left without callers
+- [ ] 0.5 Core: remove `preference.rs`, `profile_state.rs`, the profile errors, `UzeHome::profiles_path` and its tier-test entry; `Feature::Profiles` (tests move to `Overview`)
+- [ ] 0.6 Remove `state/profiles.json` once where the application retires what earlier releases left; test that a machine with one ends without it and nothing else under `state/` changes
+- [ ] 0.7 Remove `tests/integrations/preferences.rs` and the journey `01-first-run/03-a-profile-each-harness-can-read.yml`; fix `layout.json` fixtures (`.demo/_shared/workspace.yml`) and docs (`README.md`, `invariants.md` unfinished surfaces, doc comments in `client_layout.rs`, `appearance.rs`, `dialog.rs`, `mark.rs`)
+- [ ] 0.8 CHANGELOG: the Profiles screen is gone; keys it applied to harness configuration stay and are the operator's
+- [ ] 0.9 `cargo test --workspace`, `cargo clippy --all-targets -- -D warnings`, and `rg -i 'profile' --type rust` reviewed for leftovers (shell, PowerShell, seatbelt, hook and Cargo profiles are unrelated and stay)
+
 ## 1. Catalog contract (uze-core)
 
 - [ ] 1.1 Add `FlagSpec`, `FlagValue` (`None`/`Free`/`OneOf`) and `FlagOwner` (`Operator`/`Weakens`/`Degrades`/`Uze`/`Keyed`) as plain data, naming no harness
@@ -17,9 +29,9 @@
 
 - [ ] 3.1 Line splitter (quotes, backslash, no expansion) and tokenization into variables, flags and values against a catalog
 - [ ] 3.2 `overrides::check` with the shared rule (`UZE_*`, `PATH`, `HOME`, `TRACEPARENT`, `TRACESTATE`), spellings (`--f v`, `--f=v`, short, attached), `Keyed` parent-table matching, positional and `--` refusal; plan-less and plan-aware strictness; tests for each spec scenario
-- [ ] 3.3 `UzeHome::launch_overrides_path` and its lock; `Shaped` record (shape 1) with `agents` and `recent`, written `0600` in a `0700` directory
+- [ ] 3.3 `UzeHome::launch_overrides_path` (`state/launch-overrides.json`) and its lock; `Shaped` record (shape 1) with `agents` (by project, agent, harness) and `recent` (by harness), written `0600`
 - [ ] 3.4 Record an agent's overrides per harness; drop an agent's entry when its record goes
-- [ ] 3.5 Recent sets: dedupe by normalized tokens, move to top, cap 8 per harness, withhold secret-looking variables with a count, forget one set
+- [ ] 3.5 Recent sets: dedupe by normalized tokens, move to top taking the project last used in, cap 20 per harness, this project's sets listed first, withhold secret-looking variables with a count, forget one set
 - [ ] 3.6 `LaunchPlan.overrides`, filled in `plan_with` from the same load that verifies the claim; refused or now-owned entries left out with a note
 - [ ] 3.7 Spans carry the count of overrides only; a test that no token reaches a span field
 

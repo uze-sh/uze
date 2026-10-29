@@ -29,11 +29,23 @@ repeated, so typing them again on every launch is the cost that matters.
   drives completion and the refusal alike; a flag outside it is still
   accepted as typed.
 - **Recent overrides are remembered.** Each launch that carried overrides
-  is kept, per project and per harness, in a short history the popup
-  offers first, so a set used before is applied again in one gesture.
+  is kept per harness, across projects, in a short history the popup
+  offers first (this project's sets ahead of the rest), so a set used before is applied again in one gesture.
 - **An agent keeps the overrides it was launched with.** A private
   record holds them, so a respawned pane and a resumed task start the same way; an
   agent continued on another harness drops them, and says so.
+
+- **BREAKING (unreleased surface): the Profiles module is removed
+  whole.** The Profiles screen (preference axes for autonomy, sandbox and
+  model, written into each harness's global configuration) never left its
+  feature flag, and launch overrides answer the same need per launch
+  instead of by rewriting `~/.claude/settings.json`, `~/.codex/config.toml`
+  and their siblings for every session on the machine. Its domain,
+  integration adapters, application service, screen, keys, tests and
+  journey go; `state/profiles.json`, which every build has written since
+  the overview listed profiles unconditionally, is removed once. Keys an
+  operator applied to a harness's configuration stay as they are: no
+  receipt says UZE wrote them, so they are the operator's settings now.
 
 ## Capabilities
 
@@ -51,16 +63,27 @@ repeated, so typing them again on every launch is the cost that matters.
   never turned off by a launch the workspace composed.
 - `agent-harness-switch`: continuing an agent on another harness does not
   carry its overrides over, since flags belong to one harness.
+- `cli-performance`: the management read model no longer carries
+  profiles.
 
 ## Impact
+
+- Removal: `uze-core` `preference` and `profile_state` and their errors and
+  path; each integration's `preferences.rs` and `PreferencePort`, the
+  registry's preference adapters; `uze-application` `profile.rs`, the
+  `Profiles` service, its re-exports and `MachineSnapshot.profiles`;
+  `src/ui/view/profiles.rs` and the `Profiles` route, overlays, hits,
+  intents and tests; the profile actions and scopes in `uze-keys`;
+  `tests/integrations/preferences.rs`; the first-run journey
+  `03-a-profile-each-harness-can-read`. `Feature::Profiles` goes, leaving
+  `Overview` as the only feature behind the flag.
 
 - `uze-core`: the integration contract gains a flag catalog per harness
   and the set of environment names it manages; no harness named.
 - `uze-integrations`: one catalog per harness (Claude Code, Codex,
   OpenCode, Antigravity CLI), kept to each harness's latest release.
-- `uze-workspace`: one owner-only record per project
-  (`state/projects/<id>/launch-overrides.json`) holding each agent's
-  overrides and the recent sets; the check; `LaunchPlan` carries the
+- `uze-workspace`: one owner-only record (`state/launch-overrides.json`)
+  holding each agent's overrides and the recent sets; the check; `LaunchPlan` carries the
   overrides the shim splices. `agents.json` is not touched.
 - `uze-application`: read models for the catalog and the history, a
   validation service, and launches that take overrides.
