@@ -9,7 +9,7 @@ use super::{
     CATALOG, Found, SpecAnswer, SpecOutcome, SpecPlace, SpecView, Summary, handle_command,
     handle_mouse, handle_scroll, read_spec, scroll_to, summary, summary_section, text, view,
 };
-use crate::contract::{Checkout, Extension, Job, Opaque, Outcome, SurfaceInfo, SurfaceSlot};
+use crate::contract::{Checkout, Entry, Extension, Job, Opaque, Outcome, SurfaceInfo, SurfaceSlot};
 use crate::view::{Command, ScrollDirection, ScrollTarget, Section, Size, View, ViewHit};
 
 /// The full-frame surface: a checkout's changes and specs, read as
@@ -237,6 +237,15 @@ impl Extension for SpecExtension {
         if self.focus.is_none() {
             self.counted = None;
         }
+    }
+
+    /// A return puts back what stood, never a change the summary pointed
+    /// at earlier and nothing opened for.
+    fn enter(&mut self, _surface: &str, entry: Entry) -> Outcome {
+        if entry == Entry::Return {
+            self.sent_to = None;
+        }
+        Outcome::Stay
     }
 
     fn open(&mut self, surface: &str, checkout: &Checkout) {

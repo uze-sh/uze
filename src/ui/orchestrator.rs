@@ -750,6 +750,10 @@ pub(crate) fn attach_workspace(
     // shape, and the shape is handed back so the next attach — or the
     // next run — opens on it.
     attach.close_manage();
+    // Put away rather than dropped: the next attach's first session gives
+    // it back to its tab, and the engine is not left holding a view no
+    // client draws.
+    attach.model.suspend_surface();
     attach.model.shape().apply_to(layout);
     // The recorder may still be writing an older shape, and `super::run`
     // writes the final one as soon as this returns: the older write must
@@ -1972,6 +1976,9 @@ struct WorkspaceModel {
     /// below, since only one view is open at a time.
     open_slot: Option<SlotId>,
     open_root: Option<PathBuf>,
+    /// The agent directory in front when it opened, kept with it when it
+    /// is put away for its tab.
+    open_context: Option<PathBuf>,
     /// Whether the inspector stands beside it.
     inspecting: bool,
     /// Where the author is in the inspector.
@@ -2038,9 +2045,10 @@ struct WorkspaceModel {
     /// The room each status row, band and overlay had on the last frame:
     /// what its engine is told it has when a click reaches it.
     slot_spaces: std::cell::RefCell<BTreeMap<SlotId, uze_extensions::view::Size>>,
-    /// The tab the open surface stands in for. It is drawn where that
-    /// tab's pane is, about that tab's checkout, so a different tab coming
-    /// to the front — however it got there — puts it away rather than
+    /// The tab the pane was last settled for, and so the one the open
+    /// surface stands in for. It is drawn where that tab's pane is, about
+    /// that tab's checkout, so a different tab coming to the front —
+    /// however it got there — puts it away for this one rather than
     /// leaving it answering for a checkout nobody is looking at.
     extension_tab: Option<TabId>,
     /// The overview of a space, standing where the pane is. It belongs to

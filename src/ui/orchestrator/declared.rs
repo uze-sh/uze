@@ -20,7 +20,9 @@ use uze_application::{
     InstalledExtension, SourceData,
 };
 use uze_contract::Clean;
-use uze_extensions::contract::{Checkout, Extension, Opaque, Outcome, SurfaceInfo, SurfaceSlot};
+use uze_extensions::contract::{
+    Checkout, Entry, Extension, Opaque, Outcome, SurfaceInfo, SurfaceSlot,
+};
 use uze_extensions::declared::{
     Absence, DataState, DeclaredExtension, NODE_CAP, RecordedAction, TraceEntry, TraceNode,
 };
@@ -420,6 +422,22 @@ pub(super) struct HostedExtension {
     pub(super) observes_agents: bool,
 }
 
+/// A surface put away for its tab: which one, on which checkout, what it
+/// held, and the host's own frame around it. By owner and surface rather
+/// than by slot, so a recompile in the meantime does not lose it.
+pub(super) struct Standing {
+    pub(super) owner: Owner,
+    pub(super) surface: String,
+    pub(super) root: PathBuf,
+    /// The agent directory in front when it was opened: a tab that no
+    /// longer answers for it — another runtime's tab under a number this
+    /// one reuses — is not the tab it was kept for.
+    pub(super) context: Option<PathBuf>,
+    pub(super) held: Option<Opaque>,
+    pub(super) navigator: extension_view::NavigatorScroll,
+    pub(super) inspecting: bool,
+}
+
 /// Every declared extension the client hosts, and the slots their surfaces
 /// stand in. Kept across attaches with the rest of what the client
 /// resolved: a compile is a resolution, and where a viewer was on one is
@@ -446,6 +464,10 @@ pub(super) struct HostedExtensions {
     pub(super) polled_at: Option<Instant>,
     /// Where the viewer was on each surface, per checkout.
     pub(super) places: BTreeMap<(Owner, String, PathBuf), Opaque>,
+    /// What stood in each tab's pane when another tab came to the front,
+    /// handed back when it returns. Kept across attaches, never written
+    /// down: what a surface holds is opaque and may be an unsaved thought.
+    pub(super) standing: BTreeMap<TabId, Standing>,
     /// The drawer open in each space: one at most, so the pane gives up
     /// one column of room and never two.
     pub(super) drawers: BTreeMap<SpaceId, SlotId>,
@@ -489,6 +511,7 @@ impl Default for HostedExtensions {
             stamps_pending: false,
             polled_at: None,
             places: BTreeMap::new(),
+            standing: BTreeMap::new(),
             drawers: BTreeMap::new(),
             drawer_places: BTreeMap::new(),
             drawer_space: None,
@@ -1115,6 +1138,7 @@ impl WorkspaceModel {
     /// Closes the view standing in the pane, keeping where the viewer was
     /// on this checkout — every way out goes through here.
     pub(super) fn close_surface(&mut self) {
+        self.open_context = None;
         let Some(id) = self.open_slot.take() else {
             return;
         };
@@ -1555,13 +1579,29 @@ pub(super) fn open_surface(model: &mut WorkspaceModel, id: SlotId) {
 /// Opens the view in slot `id` on `root`, which a path another surface
 /// pointed at may have named rather than the checkout in front.
 pub(super) fn open_surface_on(model: &mut WorkspaceModel, id: SlotId, root: PathBuf) {
+    open_surface_with(model, id, root, Resumed::Place);
+}
+
+/// What an opening hands the engine's `resume`: the checkout's place, for
+/// an arrival through a door or a path, or what was held for the tab.
+pub(super) enum Resumed {
+    Place,
+    Held(Option<Opaque>),
+}
+
+pub(super) fn open_surface_with(
+    model: &mut WorkspaceModel,
+    id: SlotId,
+    root: PathBuf,
+    resumed: Resumed,
+) -> bool {
     let Some(slot) = model.remembered.declared.slot(id) else {
-        return;
+        return false;
     };
     if !slot.is_view() || !model.offers_declared(&slot.owner) {
-        return;
+        return false;
     }
-    model.close_extension();
+    model.close_surface();
     model.stand_extension_in_front();
     let checkout = Checkout {
         root: root.clone(),
@@ -1576,15 +1616,27 @@ pub(super) fn open_surface_on(model: &mut WorkspaceModel, id: SlotId, root: Path
     if let Some(slot) = declared.slots.iter().find(|slot| slot.id == id) {
         let key = (slot.owner.clone(), slot.surface.id.clone(), root.clone());
         if let Some(engine) = declared.engines.get_mut(&key.0) {
+            if matches!(resumed, Resumed::Held(_)) {
+                engine.enter(&key.1, Entry::Return);
+            }
             engine.open(&key.1, &checkout);
-            if let Some(place) = declared.places.remove(&key) {
-                engine.resume(&key.1, place);
+            let kept = match resumed {
+                Resumed::Place => declared.places.remove(&key),
+                Resumed::Held(held) => held,
+            };
+            // Nothing kept is a checkout it never stood on, which starts
+            // over rather than wearing what the last one was left at.
+            match kept {
+                Some(kept) => engine.resume(&key.1, kept),
+                None => engine.forget(&key.1),
             }
         }
     }
     model.open_slot = Some(id);
     model.resident_released = false;
     model.open_root = Some(root);
+    model.open_context = model.focused_cwd();
     model.navigator_scroll = extension_view::NavigatorScroll::default();
     model.dirty = true;
+    true
 }

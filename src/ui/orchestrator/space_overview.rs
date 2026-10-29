@@ -1287,7 +1287,7 @@ impl WorkspaceModel {
             return;
         }
         self.put_away_space_overview();
-        self.close_extension();
+        self.suspend_surface();
         let overview = match self.put_away_overviews.remove(&space) {
             // Its answer is read again on opening; what was drawn from the
             // last one stands until the new one arrives.
@@ -1612,7 +1612,7 @@ impl Attach<'_> {
     /// in front, or put away when it is already up.
     pub(super) fn toggle_space_overview(&mut self) {
         if self.model.space_overview.is_some() {
-            self.model.put_away_space_overview();
+            self.model.dismiss_space_overview();
             return;
         }
         self.open_agent_overview();
@@ -1623,7 +1623,7 @@ impl Attach<'_> {
     /// in, what reaches it and the prompts it was given.
     pub(super) fn open_agent_overview(&mut self) {
         let Some(agent) = agent_panel_in_front(&self.model, &self.identities) else {
-            self.model.put_away_space_overview();
+            self.model.dismiss_space_overview();
             return;
         };
         let Some((space, behind, root)) = self.model.session.as_ref().and_then(|session| {
@@ -1917,7 +1917,7 @@ impl Attach<'_> {
                 overview.memory_filter.clear();
                 overview.narrowed();
             }
-            Action::Dismiss => self.model.put_away_space_overview(),
+            Action::Dismiss => self.model.dismiss_space_overview(),
             Action::StartFilter if overview.section == Section::Memory => {
                 overview.filtering = true;
             }

@@ -71,6 +71,19 @@ on "cancel" must not save first.
   extension's Enable with no project in front says "Needs a project" and
   never quietly flips a switch that is already on.
 
+**Moving between agents:**
+- A surface belongs to the tab it was opened on. Going to another agent,
+  however it got there (a click, a key, another space's header, an
+  extension asking for an agent), puts it away for that tab, and the tab
+  coming back has it standing again *as it was left*: the same half, the
+  same selection, the same scroll, whatever the extension. A return is not
+  a door; a door still decides the half on a fresh opening.
+- The space overview opened over a surface puts it away the same way, and
+  putting the overview away gives it back. A reattach does too.
+- Only choosing the tab or space already in front takes the pane back
+  from it, and forgets it. `each_agent_keeps_its_own_surface` and
+  `returning_to_an_agent_shows_code_on_the_half_it_was_left_on` hold it.
+
 **Hover:**
 - Everything clickable has a hover, and nothing that isn't clickable does.
 - Hover is a change of colour only (a "realce"): never underline, an arrow

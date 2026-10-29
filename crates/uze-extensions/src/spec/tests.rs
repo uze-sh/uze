@@ -1719,4 +1719,29 @@ mod hosted {
         let section = extension.section(SUMMARY, false).expect("counted");
         assert_eq!(section.lit, [0], "the change on show is lit");
     }
+
+    /// A return puts back what stood for the tab, never a change the
+    /// summary pointed at earlier and nothing opened for.
+    #[test]
+    fn a_return_is_not_sent_where_the_summary_pointed_before() {
+        let (repository, target) = working();
+        let at = checkout(repository.root(), Some(target));
+        let mut extension = SpecExtension::default();
+        extension.focus(Some(&at));
+        for answer in run(&mut extension) {
+            extension.absorb(answer);
+        }
+        assert_eq!(
+            extension.hit(SUMMARY, ViewHit::SelectItem(0), space()),
+            Outcome::Show(DOCUMENT.to_owned())
+        );
+
+        extension.enter(DOCUMENT, crate::contract::Entry::Return);
+        extension.open(DOCUMENT, &at);
+        extension.resume(DOCUMENT, Opaque::new(SpecPlace::change("held")));
+        let on_show = extension
+            .place(DOCUMENT)
+            .and_then(|place| place.downcast::<SpecPlace>());
+        assert_eq!(on_show, Some(SpecPlace::change("held")));
+    }
 }

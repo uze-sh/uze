@@ -28,6 +28,12 @@ a harness reads (ADR-041).
   spawns for it by name. A gesture or an answer the contract cannot carry
   is a new method with a default that does nothing, not a branch on which
   extension it is.
+- A surface keeps two things for the host: `place`, per checkout, handed
+  back when a door opens it there again, and `hold`, per tab, taken when
+  another tab comes to the front and handed back after `Entry::Return`
+  (`src/ui/orchestrator/surfaces.rs`, `settle_pane`). What a door must
+  decide afresh (code's half) goes in `hold`, never in `place`. Both stay
+  in memory; neither is written down.
 - `Host` grants every capability, including the five that write
   (`write_file`, `delete_file`, `delete_dir`, `rename_path`,
   `restore_to_head`), whose only caller is `code/request.rs`.

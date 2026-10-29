@@ -321,6 +321,19 @@ impl CodePlace {
     }
 }
 
+/// What the code surface keeps for the tab it stands in while another tab
+/// is in front: its place, and what [`CodePlace`] leaves to the door — the
+/// half on show, the one under the map, how the map is drawn and where the
+/// keyboard was. A return is not a door: it puts back what stood.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CodeHeld {
+    place: CodePlace,
+    content: ContentMode,
+    before_map: ContentMode,
+    map_showing: MapShowing,
+    focus: Focus,
+}
+
 /// What a viewer did inside an open [`CodeView`] that a re-read of the
 /// changes must not undo.
 ///
@@ -415,6 +428,39 @@ impl CodeView {
         // is not where the viewer was.
         self.scroll = scroll;
         self
+    }
+
+    /// The same surface, put back as [`CodeHeld`] says it stood when its
+    /// tab left the front: the half first, so the place is restored into
+    /// the list that goes with it.
+    pub fn returning(mut self, held: CodeHeld) -> Self {
+        let CodeHeld {
+            place,
+            content,
+            before_map,
+            map_showing,
+            focus,
+        } = held;
+        let was_files = self.navigator() == NavigatorMode::Files;
+        self.content = content;
+        if !was_files && self.navigator() == NavigatorMode::Files {
+            self.expand(self.root.clone());
+        }
+        self.before_map = before_map;
+        self.map_showing = map_showing;
+        self.focus = focus;
+        self.resuming(place)
+    }
+
+    /// What this surface keeps for its tab, for [`Self::returning`].
+    pub fn held(&self) -> CodeHeld {
+        CodeHeld {
+            place: self.place(),
+            content: self.content,
+            before_map: self.before_map,
+            map_showing: self.map_showing,
+            focus: self.focus,
+        }
     }
 
     /// Where the viewer is, for the host to hand back to [`Self::resuming`].
