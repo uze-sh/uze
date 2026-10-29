@@ -131,13 +131,13 @@ impl Health<'_> {
             return Vec::new();
         };
         let resources: Vec<_> = resources.iter().collect();
-        if !super::lifecycle::attach::reaches_a_harness(&package, &resources) {
-            return Vec::new();
-        }
         self.0
             .integrations
             .iter()
             .map(|integration| integration.as_ref())
+            .filter(|integration| {
+                super::lifecycle::attach::delivers_to(&package, &resources, *integration)
+            })
             .filter(|integration| self.0.detect_cached(*integration).present)
             .filter(|integration| {
                 !plugin

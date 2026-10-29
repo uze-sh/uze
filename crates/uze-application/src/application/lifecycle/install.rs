@@ -171,9 +171,8 @@ impl Plugins<'_> {
         //
         // A package that reaches no harness is delivered to none: what an
         // earlier build delivered of it is taken back off instead.
-        let reaches_a_harness = super::attach::reaches_a_harness(&installed, &resources);
-        if !reaches_a_harness {
-            for integration in &self.0.integrations {
+        for integration in &self.0.integrations {
+            if !super::attach::delivers_to(&installed, &resources, integration.as_ref()) {
                 self.0
                     .retire_package_receipts(&installed, integration.as_ref())?;
             }
@@ -182,7 +181,9 @@ impl Plugins<'_> {
             .0
             .integrations
             .iter()
-            .filter(|_| reaches_a_harness)
+            .filter(|integration| {
+                super::attach::delivers_to(&installed, &resources, integration.as_ref())
+            })
             .filter(|integration| self.0.detect_cached(integration.as_ref()).present)
             .map(|integration| {
                 let native = if unpublished.contains(integration.id()) {

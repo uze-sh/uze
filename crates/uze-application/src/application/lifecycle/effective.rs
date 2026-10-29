@@ -81,7 +81,7 @@ impl UzeApplication {
         resources: &[&Resource],
         integration: &dyn IntegrationPort,
     ) -> PlannedDelivery {
-        let package_plan = super::attach::reaches_a_harness(package, resources)
+        let package_plan = super::attach::delivers_to(package, resources, integration)
             .then(|| integration.package_exposure_plan(package, resources))
             .flatten();
         let package_receipt = state::receipts(&self.home, Some(package.id.as_str()))

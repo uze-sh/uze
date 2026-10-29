@@ -105,6 +105,22 @@ pub(crate) fn reaches_a_harness(package: &StoredPackage, resources: &[&Resource]
     !resources.is_empty() || uze_core::capability::extension::discover(&package.root).is_empty()
 }
 
+/// Whether `package` is delivered to `integration`: one for a harness
+/// ([`reaches_a_harness`]), or one that brings this harness's own plugin
+/// envelope, which is that harness's plugin whatever else it carries.
+/// Only a plugin UZE would have to generate for extensions alone is held
+/// back.
+pub(crate) fn delivers_to(
+    package: &StoredPackage,
+    resources: &[&Resource],
+    integration: &dyn IntegrationPort,
+) -> bool {
+    reaches_a_harness(package, resources)
+        || integration
+            .package_exposure_plan(package, resources)
+            .is_some_and(|plan| plan.envelope == uze_core::exposure::PackageEnvelope::Own)
+}
+
 impl UzeApplication {
     pub(crate) fn attach_stored_packages_to(
         &self,
@@ -174,7 +190,7 @@ impl UzeApplication {
             package = %package.id.as_str()
         )
         .entered();
-        if !reaches_a_harness(package, resources) {
+        if !delivers_to(package, resources, integration) {
             self.retire_package_receipts(package, integration)?;
             return Ok(PackageDelivery::default());
         }

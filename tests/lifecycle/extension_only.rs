@@ -89,12 +89,18 @@ impl IntegrationPort for EveryPackageAPlugin {
         package: &StoredPackage,
         resources: &[&Resource],
     ) -> Option<PackageExposurePlan> {
+        // A package that brings this harness's own envelope (here, a
+        // marker file) is that plugin; any other is one it would generate.
+        let envelope = match package.root.join("harness-envelope").exists() {
+            true => uze_core::exposure::PackageEnvelope::Own,
+            false => uze_core::exposure::PackageEnvelope::Generated,
+        };
         Some(PackageExposurePlan {
             package_id: package.id.clone(),
             route: CompatibilityRoute::Native,
-            envelope: uze_core::exposure::PackageEnvelope::Generated,
+            envelope,
             provided_resource_identities: resources.iter().map(|r| r.identity()).collect(),
-            evidence: "a generated plugin".to_owned(),
+            evidence: "a plugin".to_owned(),
         })
     }
     fn attach_package(
@@ -370,4 +376,42 @@ fn a_plugin_of_no_resource_and_no_extension_is_still_delivered() {
         report.deliveries
     );
     assert_eq!(world.harness_files().len(), 1);
+}
+
+/// A plugin of the harness's own envelope is that harness's plugin even
+/// when it also carries a workspace extension: its commands are the
+/// harness's to read, and only a plugin UZE would have to generate for
+/// extensions alone is held back.
+#[test]
+fn a_plugin_of_its_own_envelope_is_delivered_though_it_carries_an_extension() {
+    let world = world("own-envelope-with-extension");
+    let source = world
+        .harness_root
+        .parent()
+        .unwrap()
+        .join("commands-and-extension");
+    fs::create_dir_all(source.join("commands")).unwrap();
+    fs::write(source.join("harness-envelope"), "").unwrap();
+    fs::write(source.join("commands/hello.md"), "Say hello.\n").unwrap();
+    fs::write(
+        source.join("plugin.json"),
+        r#"{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"commands-and-extension","description":"a command and an extension"}"#,
+    )
+    .unwrap();
+    let extension = source.join("extensions/focus");
+    fs::create_dir_all(&extension).unwrap();
+    for entry in fs::read_dir(extension_only().join("extensions/focus")).unwrap() {
+        let entry = entry.unwrap();
+        if entry.file_type().unwrap().is_file() {
+            fs::copy(entry.path(), extension.join(entry.file_name())).unwrap();
+        }
+    }
+
+    world.install(&source);
+
+    assert_eq!(
+        world.attached.load(Ordering::SeqCst),
+        1,
+        "its own envelope reaches the harness"
+    );
 }
