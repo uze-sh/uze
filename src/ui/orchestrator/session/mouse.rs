@@ -1348,7 +1348,7 @@ impl Attach<'_> {
                 // it belongs to, put away when the server confirms the move
                 // and standing again when that tab comes back.
                 if self.model.selected_tab() == Some(selected) {
-                    self.model.close_surface();
+                    self.model.take_pane_back();
                 }
                 self.model.acknowledge_completed_tab(tab);
                 let _ = send_request(
@@ -1410,7 +1410,7 @@ impl Attach<'_> {
                     .as_ref()
                     .is_some_and(|session| session.workspace.selected_space == space);
                 if current {
-                    self.model.close_surface();
+                    self.model.take_pane_back();
                 }
                 self.model.put_away_space_overview();
                 // A space's own row is its own context: it

@@ -1119,8 +1119,7 @@ fn the_overview_opened_over_a_surface_gives_it_back_when_put_away() {
 
     model.open_space_overview(space, first, PathBuf::from("/repo"), true);
     assert!(!showing_architect(&model));
-    model.put_away_space_overview();
-    model.settle_pane();
+    model.dismiss_space_overview();
     assert!(showing_architect(&model));
 }
 
@@ -1136,6 +1135,25 @@ fn a_surface_opened_where_one_was_kept_replaces_it() {
     model.open_space_overview(space, second, PathBuf::from("/repo"), true);
     bring_to_front(&mut model, first);
     assert!(!showing_architect(&model), "the overview holds the pane");
+
+    open_spec(&mut model);
+    bring_to_front(&mut model, second);
+    bring_to_front(&mut model, first);
+    assert!(model.showing(uze_extensions::spec::CATALOG.id));
+    assert!(!showing_architect(&model));
+}
+
+/// A surface closed by hand stays closed: leaving and coming back does
+/// not bring back what was kept before it.
+#[test]
+fn a_surface_closed_by_hand_is_not_brought_back() {
+    let (mut model, first, second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    open_architect(&mut model);
+    bring_to_front(&mut model, second);
+    let space = model.session.as_ref().expect("session").selected_space().id;
+    model.open_space_overview(space, second, PathBuf::from("/repo"), true);
+    bring_to_front(&mut model, first);
 
     open_spec(&mut model);
     model.close_surface();
@@ -1162,14 +1180,32 @@ fn reattaching_shows_the_surface_of_the_tab_in_front() {
     assert!(showing_architect(&again));
 }
 
-/// A workspace set aside starts its tabs from one again: nothing kept
-/// for the old ones stands in the new.
+/// A workspace set aside starts its tabs from one again, and the server
+/// paints the new one before it says so: a tab under a number the old one
+/// used, working somewhere else, is not given the old tab's surface.
 #[test]
-fn a_workspace_set_aside_forgets_every_tab_kept() {
+fn a_tab_number_reused_by_another_runtime_does_not_get_the_old_surface() {
     let (mut model, first, second) = two_agents_with_shells();
     select_tab(&mut model, first);
     open_architect(&mut model);
     bring_to_front(&mut model, second);
+
+    let mut fresh = model.session.clone().expect("session");
+    for tab in fresh
+        .workspace
+        .spaces
+        .iter_mut()
+        .flat_map(|space| space.tabs.iter_mut())
+    {
+        if tab.id == first {
+            tab.pane.cwd = "/elsewhere".into();
+        }
+    }
+    fresh.select_tab(first);
+    model.apply(
+        ClientEvent::Snapshot { session: fresh },
+        &identities_fixture(),
+    );
     model.apply(
         ClientEvent::WorkspaceSetAside {
             kept_at: PathBuf::from("/kept"),
@@ -1177,8 +1213,40 @@ fn a_workspace_set_aside_forgets_every_tab_kept() {
         },
         &identities_fixture(),
     );
-    bring_to_front(&mut model, first);
     assert!(!showing_architect(&model));
+}
+
+/// Dismissing the overview over a tab gives the pane back at once, not a
+/// frame later.
+#[test]
+fn dismissing_the_overview_gives_the_surface_back_at_once() {
+    let (mut model, first, _second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    model.settle_pane();
+    open_architect(&mut model);
+    let space = model.session.as_ref().expect("session").selected_space().id;
+    model.open_space_overview(space, first, PathBuf::from("/repo"), true);
+    model.dismiss_space_overview();
+    assert!(showing_architect(&model));
+}
+
+/// Leaving a tab by a way that puts the overview away first does not give
+/// that tab its surface back for the moment before the move is confirmed.
+#[test]
+fn leaving_from_under_the_overview_does_not_flash_the_surface() {
+    let (mut model, first, second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    model.settle_pane();
+    open_architect(&mut model);
+    let space = model.session.as_ref().expect("session").selected_space().id;
+    model.open_space_overview(space, first, PathBuf::from("/repo"), true);
+
+    model.put_away_space_overview();
+    assert!(!showing_architect(&model), "nothing stands before the move");
+    bring_to_front(&mut model, second);
+    assert!(!showing_architect(&model));
+    bring_to_front(&mut model, first);
+    assert!(showing_architect(&model), "and it is there when the tab is");
 }
 
 /// An extension switched off takes with it what tabs kept of it, so

@@ -65,9 +65,10 @@ impl WorkspaceModel {
 
     /// Follows the tab in front: the surface standing for another tab is
     /// put away for it, and the tab in front gets back what it was left
-    /// with, unless the overview holds the pane. Answers the session and
-    /// every frame alike, so however the pane was given back — the overview
-    /// put away, a reattach — what the tab kept stands in it again.
+    /// with, unless the overview holds the pane. Asked after every session
+    /// the server sends, and when the overview is dismissed over the tab it
+    /// stood on — never on a frame, where a tab being left would get its
+    /// surface back for the round trip before the move is confirmed.
     pub(super) fn settle_pane(&mut self) {
         let in_front = self.selected_tab();
         if in_front != self.extension_tab {
@@ -101,6 +102,7 @@ impl WorkspaceModel {
             .and_then(|engine| engine.hold(&surface));
         let navigator = std::mem::take(&mut self.navigator_scroll);
         let inspecting = self.inspecting;
+        let context = self.open_context.clone();
         let root = self.open_root.clone();
         self.close_surface();
         if let Some(root) = root {
@@ -110,6 +112,7 @@ impl WorkspaceModel {
                     owner,
                     surface,
                     root,
+                    context,
                     held,
                     navigator,
                     inspecting,
@@ -118,12 +121,16 @@ impl WorkspaceModel {
         }
     }
 
-    /// Stands in `tab`'s pane what was put away for it, when its extension
+    /// Stands in `tab`'s pane what was put away for it, when the tab still
+    /// answers for the agent directory it was opened on and its extension
     /// still declares the surface and is offered.
     fn restore_surface(&mut self, tab: TabId) {
         let Some(standing) = self.remembered.declared.standing.remove(&tab) else {
             return;
         };
+        if standing.context != self.focused_cwd() {
+            return;
+        }
         let slot = self
             .remembered
             .declared
@@ -141,6 +148,9 @@ impl WorkspaceModel {
     }
 
     fn forget_surfaces_of_closed_tabs(&mut self) {
+        if self.remembered.declared.standing.is_empty() {
+            return;
+        }
         let Some(session) = self.session.as_ref() else {
             return;
         };
@@ -156,8 +166,25 @@ impl WorkspaceModel {
             .retain(|tab, _| live.contains(tab));
     }
 
+    /// Choosing the tab or the space already in front: the pane is had
+    /// back from whatever stands in it, and what the tab kept is let go.
+    pub(super) fn take_pane_back(&mut self) {
+        self.put_away_space_overview();
+        self.close_surface();
+        if let Some(tab) = self.selected_tab() {
+            self.remembered.declared.standing.remove(&tab);
+        }
+    }
+
+    /// The overview put away by the operator, staying on the tab it stood
+    /// over: what the tab kept stands in the pane again at once.
+    pub(super) fn dismiss_space_overview(&mut self) {
+        self.put_away_space_overview();
+        self.settle_pane();
+    }
+
     /// Notes the tab in front as the one a surface opening now stands in
-    /// for.
+    /// for, and what it opens as what the tab keeps from now on.
     pub(super) fn stand_extension_in_front(&mut self) {
         self.put_away_space_overview();
         self.extension_tab = self.selected_tab();

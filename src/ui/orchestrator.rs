@@ -698,7 +698,6 @@ pub(crate) fn attach_workspace(
         attach
             .model
             .follow_extension_switch(super::extension_switch::disabled());
-        attach.model.settle_pane();
         if attach
             .model
             .take_ring(super::chime::current(), Instant::now())
@@ -1977,6 +1976,9 @@ struct WorkspaceModel {
     /// below, since only one view is open at a time.
     open_slot: Option<SlotId>,
     open_root: Option<PathBuf>,
+    /// The agent directory in front when it opened, kept with it when it
+    /// is put away for its tab.
+    open_context: Option<PathBuf>,
     /// Whether the inspector stands beside it.
     inspecting: bool,
     /// Where the author is in the inspector.

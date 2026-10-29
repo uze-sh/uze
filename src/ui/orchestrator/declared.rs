@@ -422,10 +422,6 @@ pub(super) struct HostedExtension {
     pub(super) observes_agents: bool,
 }
 
-/// Every declared extension the client hosts, and the slots their surfaces
-/// stand in. Kept across attaches with the rest of what the client
-/// resolved: a compile is a resolution, and where a viewer was on one is
-/// remembered per checkout.
 /// A surface put away for its tab: which one, on which checkout, what it
 /// held, and the host's own frame around it. By owner and surface rather
 /// than by slot, so a recompile in the meantime does not lose it.
@@ -433,11 +429,19 @@ pub(super) struct Standing {
     pub(super) owner: Owner,
     pub(super) surface: String,
     pub(super) root: PathBuf,
+    /// The agent directory in front when it was opened: a tab that no
+    /// longer answers for it — another runtime's tab under a number this
+    /// one reuses — is not the tab it was kept for.
+    pub(super) context: Option<PathBuf>,
     pub(super) held: Option<Opaque>,
     pub(super) navigator: extension_view::NavigatorScroll,
     pub(super) inspecting: bool,
 }
 
+/// Every declared extension the client hosts, and the slots their surfaces
+/// stand in. Kept across attaches with the rest of what the client
+/// resolved: a compile is a resolution, and where a viewer was on one is
+/// remembered per checkout.
 pub(super) struct HostedExtensions {
     pub(super) extensions: BTreeMap<ExtensionIdentity, HostedExtension>,
     /// One engine per extension, shared by its slots, so its view, its
@@ -1134,9 +1138,7 @@ impl WorkspaceModel {
     /// Closes the view standing in the pane, keeping where the viewer was
     /// on this checkout — every way out goes through here.
     pub(super) fn close_surface(&mut self) {
-        if let Some(tab) = self.extension_tab {
-            self.remembered.declared.standing.remove(&tab);
-        }
+        self.open_context = None;
         let Some(id) = self.open_slot.take() else {
             return;
         };
@@ -1633,6 +1635,7 @@ pub(super) fn open_surface_with(
     model.open_slot = Some(id);
     model.resident_released = false;
     model.open_root = Some(root);
+    model.open_context = model.focused_cwd();
     model.navigator_scroll = extension_view::NavigatorScroll::default();
     model.dirty = true;
     true
