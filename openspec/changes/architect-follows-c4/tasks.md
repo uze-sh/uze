@@ -19,10 +19,10 @@
 
 ## 4. Links and the check
 
-- [ ] 4.1 `$link` refuses URLs, accepts directories, drops a fragment
-- [ ] 4.2 The check's C4 notes, in text and JSON; the repository's own views held to none
+- [x] 4.1 `$link` refuses URLs, accepts directories, drops a fragment
+- [x] 4.2 The check's C4 notes, in text and JSON; the repository's own views held to none
 
 ## 5. Content and proof
 
-- [ ] 5.1 The repository's C4 views, the `uze:architect` Skill and ADR-050 rewritten to the same rules
+- [x] 5.1 The repository's C4 views, the `uze:architect` Skill and ADR-050 rewritten to the same rules
 - [ ] 5.2 Tests for each scenario; `openspec validate --all --strict`, `uze agent artifacts check`, the workspace suite

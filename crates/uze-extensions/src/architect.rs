@@ -25,6 +25,7 @@ mod layout;
 mod mermaid;
 mod minimap;
 mod model;
+mod notation;
 mod paint;
 mod route;
 mod sequence;
@@ -304,6 +305,10 @@ pub struct Checked {
     /// The code surface opens a link as a file, so the box leads nowhere and
     /// nobody learns of it until they follow it.
     pub broken_links: Vec<String>,
+    /// Where a C4 view departs from the model's notation: a box with no
+    /// description, a line with no label, a view that zooms into nothing.
+    /// Said, not failed — C4 is guidance a project may follow loosely.
+    pub notes: Vec<String>,
 }
 
 /// What checking a project found: its artifacts, or why it has none to
@@ -343,18 +348,33 @@ pub fn check(host: &dyn Host, source: ArtifactSource) -> Checkup {
             hint: "Fix agents.yaml and run this again.".to_owned(),
         },
         ArtifactSource::Directories { roots, project } => match read_roots(host, &roots) {
-            Ok(artifacts) => Checkup::Checked {
-                declared: roots
-                    .iter()
-                    .map(|root| root.declared.clone())
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                artifacts: Catalog::of(artifacts, &project)
+            Ok(artifacts) => {
+                let catalog = Catalog::of(artifacts, &project);
+                let graphs: Vec<Option<model::Graph>> = catalog
                     .artifacts()
                     .iter()
-                    .map(|artifact| checked(host, &project, artifact))
-                    .collect(),
-            },
+                    .map(|artifact| match mermaid::parse(artifact.diagram()) {
+                        Ok(Diagram::Graph(graph)) if graph.view.is_some() => Some(graph),
+                        _ => None,
+                    })
+                    .collect();
+                Checkup::Checked {
+                    declared: roots
+                        .iter()
+                        .map(|root| root.declared.clone())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    artifacts: catalog
+                        .artifacts()
+                        .iter()
+                        .enumerate()
+                        .map(|(index, artifact)| Checked {
+                            notes: notation::notes(&catalog, &graphs, index),
+                            ..checked(host, &project, artifact)
+                        })
+                        .collect(),
+                }
+            }
             Err((declared, reason)) => {
                 let (text, hint) = unreadable(&declared, &reason);
                 Checkup::Unusable { text, hint }
@@ -395,6 +415,7 @@ fn checked(host: &dyn Host, project: &Path, artifact: &Artifact) -> Checked {
         area: artifact.kind.name(),
         verdict,
         broken_links,
+        notes: Vec::new(),
     }
 }
 

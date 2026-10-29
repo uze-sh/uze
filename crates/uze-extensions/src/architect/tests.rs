@@ -1226,3 +1226,85 @@ fn a_label_with_no_room_is_kept_in_the_key() {
     let key = key_of(&state);
     assert!(key.contains(&format!("A ► B: {long}")), "{key}");
 }
+
+fn notes_of(files: Vec<(&'static str, &'static str)>, origin: &str) -> Vec<String> {
+    let Checkup::Checked { artifacts, .. } = check(&Written(files), declared()) else {
+        panic!("a directory of diagrams is checked");
+    };
+    artifacts
+        .into_iter()
+        .find(|artifact| artifact.origin.ends_with(origin))
+        .expect("the diagram is checked")
+        .notes
+}
+
+#[test]
+fn the_check_notes_where_a_view_departs_from_c4_notation() {
+    let notes = notes_of(
+        vec![
+            (
+                "context.mmd",
+                "---\ntitle: Context for shop\n---\nC4Context\n\
+                 System(shop, \"Shop\", \"Sells\")\nPerson(api, \"API user\", \"Calls\")\n",
+            ),
+            (
+                "views.mmd",
+                "---\ntitle: Shop parts\n---\nC4Container\n\
+                 Container(api, \"API\")\nContainerDb(db, \"DB\", \"SQL\", \"Rows\")\n\
+                 Rel(api, db)\nBiRel(db, api, \"Syncs\")\n",
+            ),
+        ],
+        "views.mmd",
+    );
+    for wanted in [
+        "the title does not say it is a container view",
+        "the view is drawn inside no `System_Boundary`, so it zooms into nothing",
+        "`api` has no description",
+        "`api` names no technology",
+        "`api` is a container here and a person in context.mmd",
+        "the line from `api` to `db` has no label",
+        "the line between `db` and `api` runs both ways; C4 lines run one way",
+    ] {
+        assert!(
+            notes.iter().any(|note| note == wanted),
+            "{wanted}: {notes:?}"
+        );
+    }
+    assert_eq!(notes.len(), 7, "{notes:?}");
+}
+
+/// The repository's own C4 views are the model's example: they are held
+/// to no notes at all.
+#[test]
+fn the_repositorys_own_c4_views_follow_the_notation() {
+    let files = vec![
+        (
+            "system-context.mmd",
+            include_str!("../../../../docs/architecture/system-context.mmd"),
+        ),
+        (
+            "containers.mmd",
+            include_str!("../../../../docs/architecture/containers.mmd"),
+        ),
+        (
+            "core-components.mmd",
+            include_str!("../../../../docs/architecture/core-components.mmd"),
+        ),
+        (
+            "workspace-components.mmd",
+            include_str!("../../../../docs/architecture/workspace-components.mmd"),
+        ),
+    ];
+    for origin in [
+        "system-context.mmd",
+        "containers.mmd",
+        "core-components.mmd",
+        "workspace-components.mmd",
+    ] {
+        assert_eq!(
+            notes_of(files.clone(), origin),
+            Vec::<String>::new(),
+            "{origin}"
+        );
+    }
+}

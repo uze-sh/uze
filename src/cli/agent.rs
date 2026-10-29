@@ -714,6 +714,9 @@ pub(crate) struct CheckedArtifactReport {
     pub(crate) reason: Option<String>,
     /// Every box link that opens nothing, and why.
     pub(crate) broken_links: Vec<String>,
+    /// Where a C4 view departs from the model's notation. Said, never
+    /// failed on.
+    pub(crate) notes: Vec<String>,
 }
 
 impl ArtifactsCheckReport {
@@ -799,6 +802,7 @@ impl From<&uze_extensions::architect::Checkup> for ArtifactsCheckReport {
                             _ => None,
                         },
                         broken_links: artifact.broken_links.clone(),
+                        notes: artifact.notes.clone(),
                     })
                     .collect(),
                 ..empty
@@ -829,11 +833,19 @@ pub(crate) fn render_artifacts_check(report: &ArtifactsCheckReport) -> String {
     let rows = report
         .artifacts
         .iter()
-        .map(|artifact| {
+        .flat_map(|artifact| {
             let (icon, note) = match artifact.verdict {
                 "drawn" if !artifact.broken_links.is_empty() => (
                     progress::error_icon(),
                     progress::error_text(artifact.broken_links.join("; ")),
+                ),
+                "drawn" if !artifact.notes.is_empty() => (
+                    progress::warning_icon(),
+                    progress::warning_text(format!(
+                        "{} {}",
+                        artifact.notes.len(),
+                        plural(artifact.notes.len(), "C4 note", "C4 notes")
+                    )),
                 ),
                 "drawn" => (progress::success_icon(), artifact.name.clone()),
                 "unrouted" => (
@@ -849,12 +861,23 @@ pub(crate) fn render_artifacts_check(report: &ArtifactsCheckReport) -> String {
                     progress::error_text(artifact.reason.clone().unwrap_or_default()),
                 ),
             };
-            vec![
+            // Each note under the artifact it is about, in the column its
+            // verdict is in, so the list reads down from the count.
+            std::iter::once(vec![
                 icon,
                 artifact.origin.clone(),
                 progress::label(artifact.area),
                 note,
-            ]
+            ])
+            .chain(artifact.notes.iter().map(|note| {
+                vec![
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    progress::label(note),
+                ]
+            }))
+            .collect::<Vec<_>>()
         })
         .collect();
     out.push_str(&progress::aligned_rows(rows));
