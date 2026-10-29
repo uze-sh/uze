@@ -116,15 +116,31 @@ pub struct TempDir {
 impl TempDir {
     /// Creates a fresh, empty directory under the system temp dir.
     pub fn new(label: &str) -> Self {
+        static SWEPT: std::sync::Once = std::sync::Once::new();
+        Self::under(&std::env::temp_dir(), &SWEPT, label)
+    }
+
+    /// Creates a fresh, empty directory outside the system temp dir and
+    /// outside every repository, for what refuses to work inside the temp
+    /// dir: an extension never reads a checkout there. Under the real
+    /// home's `.cache/uze-tests/`, which no harness reads. Beside the
+    /// build's output it would sit inside this repository, and a project
+    /// resolved from it would be the developer's own.
+    pub fn outside_the_temporary_directory(label: &str) -> Self {
+        static SWEPT: std::sync::Once = std::sync::Once::new();
+        let home = real_home().expect("a home directory to place the scratch under");
+        Self::under(&home.join(".cache/uze-tests"), &SWEPT, label)
+    }
+
+    fn under(root: &Path, swept: &'static std::sync::Once, label: &str) -> Self {
         let _guard = CREATE_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let keep = std::env::var_os("UZE_TEST_KEEP").is_some();
         if !keep {
-            static SWEPT: std::sync::Once = std::sync::Once::new();
-            SWEPT.call_once(sweep_abandoned);
+            swept.call_once(|| sweep_abandoned(root));
         }
-        let path = std::env::temp_dir().join(format!(
+        let path = root.join(format!(
             "{SCRATCH_PREFIX}{label}-{}-{}",
             std::process::id(),
             nonce()
@@ -174,14 +190,14 @@ const SCRATCH_PREFIX: &str = "uze-tests-";
 /// spawned it and still reads what it left.
 const ABANDONED_AFTER: std::time::Duration = std::time::Duration::from_secs(60 * 60);
 
-/// Removes what [`scratch`] left behind in earlier runs. `scratch` hands
-/// cleanup to its caller and most callers never do it, so without this the
-/// system temp directory grows by every test ever run. Only a directory
-/// whose process is known to be gone, and has been for an hour, is taken:
-/// a live run's directories, or a pid this platform cannot answer for, are
-/// never touched.
-fn sweep_abandoned() {
-    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
+/// Removes what [`scratch`] left behind in `root` in earlier runs.
+/// `scratch` hands cleanup to its caller and most callers never do it, so
+/// without this the directory grows by every test ever run. Only a
+/// directory whose process is known to be gone, and has been for an hour,
+/// is taken: a live run's directories, or a pid this platform cannot
+/// answer for, are never touched.
+fn sweep_abandoned(root: &Path) {
+    let Ok(entries) = std::fs::read_dir(root) else {
         return;
     };
     let now = SystemTime::now();
