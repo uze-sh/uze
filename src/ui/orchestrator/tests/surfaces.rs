@@ -1341,24 +1341,113 @@ fn a_surface_opened_on_an_agents_shell_comes_back_with_the_agent() {
     assert!(showing_architect(&model), "and on the shell beside it");
 }
 
-/// Under the overview no terminal of the agent was chosen yet: the
-/// overview follows the agent to its shell and still holds the pane, so
-/// what it put away stands again when it is put away.
-#[test]
-fn moving_to_the_agents_shell_under_the_overview_keeps_the_surface() {
+/// Where `tab`'s chip is in the strip: its rightmost hit, the strip
+/// standing right of the sidebar's rows for the same tab.
+fn strip_chip(driven: &Driven<'_>, tab: uze_terminal::TabId) -> Rect {
+    driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .filter(|(_, hit)| *hit == WorkspaceHit::SelectTab(tab))
+        .map(|(rect, _)| *rect)
+        .max_by_key(|rect| rect.x)
+        .expect("the strip draws the tab")
+}
+
+/// Agent one with Architect open and its overview opened by the button,
+/// as the operator does it, driven.
+fn overview_over_architect(
+    home: &UzeHome,
+) -> (Driven<'_>, uze_terminal::TabId, uze_terminal::TabId) {
     let (mut model, first, _second) = two_agents_with_shells();
     let shell = shell_beside(&model, first);
     select_tab(&mut model, first);
     model.settle_pane();
     open_architect(&mut model);
-    let space = model.session.as_ref().expect("session").selected_space().id;
-    model.open_space_overview(space, first, PathBuf::from("/repo"), true);
+    let mut driven = driven(model, home).on_a_roomy_terminal();
+    driven.frame();
+    let button = driven.hit(|hit| *hit == WorkspaceHit::OpenOverview);
+    driven.press(button.x + 1, button.y);
+    assert!(driven.attach.model.space_overview.is_some(), "it opened");
+    driven.frame();
+    (driven, first, shell)
+}
 
-    bring_to_front(&mut model, shell);
+/// The server's word on what the client last asked for.
+fn confirm(driven: &mut Driven<'_>) {
+    let mut session = driven.attach.model.session.clone().expect("session");
+    for request in driven.sent() {
+        match request {
+            ClientRequest::SelectTab { tab } => {
+                session.select_tab(tab);
+            }
+            ClientRequest::CreateTab {
+                space,
+                label,
+                agent,
+                columns,
+                rows,
+                cwd,
+                ..
+            } => {
+                let space = space.unwrap_or(session.workspace.selected_space);
+                let cwd = cwd.unwrap_or_else(|| "/repo".into());
+                session.add_tab(space, label, agent, columns, rows, cwd);
+            }
+            _ => {}
+        }
+    }
+    driven
+        .events_sender
+        .as_ref()
+        .expect("the reader is connected")
+        .send(ClientEvent::SessionUpdated { session })
+        .unwrap();
+    driven.pump();
+}
+
+/// A shell clicked under the overview is a terminal chosen like anywhere
+/// else: the overview goes, the shell is shown, and the surface the
+/// overview put away does not come back over it.
+#[test]
+fn clicking_the_agents_shell_under_the_overview_shows_the_shell() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-shell"));
+    let (mut driven, first, shell) = overview_over_architect(&home);
+    let chip = strip_chip(&driven, shell);
+    driven.press(chip.x, chip.y);
+    confirm(&mut driven);
+    let model = &driven.attach.model;
+    assert!(model.space_overview.is_none());
+    assert!(model.open_slot.is_none(), "the shell's own pane");
+
+    driven.frame();
+    let chip = strip_chip(&driven, first);
+    driven.press(chip.x, chip.y);
+    confirm(&mut driven);
     assert!(
-        model.space_overview.is_some(),
-        "the overview follows the agent"
+        driven.attach.model.open_slot.is_none(),
+        "nor over the agent"
     );
-    model.dismiss_space_overview();
-    assert!(showing_architect(&model));
+}
+
+/// A shell opened under the overview is no terminal chosen: the overview
+/// follows the agent to it and still holds the pane, and putting it away
+/// gives back what it put away.
+#[test]
+fn moving_to_the_agents_shell_under_the_overview_keeps_the_surface() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-overview-new-shell",
+    ));
+    let (mut driven, _first, _shell) = overview_over_architect(&home);
+    let plus = driven.hit(|hit| *hit == WorkspaceHit::NewTab);
+    driven.press(plus.x, plus.y);
+    confirm(&mut driven);
+    assert!(
+        driven.attach.model.space_overview.is_some(),
+        "the overview follows the agent to its new shell"
+    );
+
+    driven.attach.model.dismiss_space_overview();
+    assert!(showing_architect(&driven.attach.model));
 }
