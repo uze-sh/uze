@@ -6,9 +6,9 @@ The directory must not exist yet, or be empty. It becomes a small Git
 repository, a tasks CLI, holding what each example reads:
 
 - twenty weeks of commits by three authors, for `contributions`' graph;
-- a GSD milestone in `.planning/`, written the way GSD writes it, one phase
-  done and the next one planned, for `gsd`, whose drawer then offers to
-  execute it (the second plan stops at a checkpoint);
+- a GSD milestone in `.planning/`, written the way GSD writes it, two phases
+  done and the third executing, stopped at a checkpoint, for `gsd`, whose
+  band then asks the person to try it and answer;
 - an `AGENTS.md`, so any harness opened there has something to read;
 - an empty `agents.yaml`, so the plugins installed there are declared by
   the project, and the workspace offers their extensions where it opens.
@@ -68,22 +68,24 @@ if __name__ == "__main__":
     ".planning/STATE.md": """---
 milestone: v1.0
 milestone_name: a tasks CLI
-status: ready_to_execute
-stopped_at: Phase 2 planned
+status: executing
+stopped_at: Checkpoint in 03-03-PLAN.md
 ---
 
 # Project State
 
-Phase 2 of 4 is planned: its two plans are ready to execute.
+Phase 3 of 5 is executing: wave 1 ran, and plan 03-03 waits at a
+checkpoint for the person to try `done` by hand.
 """,
     ".planning/ROADMAP.md": """# Roadmap: a tasks CLI
 
 ## Phases
 
 - [x] **Phase 1: CLI skeleton** - add and list tasks in memory
-- [ ] **Phase 2: Keep tasks in a file** - tasks survive between runs
-- [ ] **Phase 3: Mark a task done** - `done <n>`
-- [ ] **Phase 4: List only the pending ones** - `list --pending`
+- [x] **Phase 2: Keep tasks in a file** - tasks survive between runs
+- [ ] **Phase 3: Mark a task done** - done marks a task, and list shows it
+- [ ] **Phase 4: List only the pending ones** - list leaves out what is done
+- [ ] **Phase 5: Ship it** - a README and a first release
 """,
     ".planning/phases/01-cli-skeleton/01-CONTEXT.md": """# Phase 1: CLI skeleton - Context
 
@@ -96,16 +98,40 @@ wave: 1
 autonomous: true
 ---
 
+<objective>
+Parse the command line into add and list
+</objective>
+
 <tasks>
 <task type="auto">
-  <name>Create tasks.py with add and list</name>
+  <name>Create tasks.py with main(argv)</name>
 </task>
 </tasks>
 """,
     ".planning/phases/01-cli-skeleton/01-01-SUMMARY.md": """# Phase 1 Plan 01: Summary
 
-`tasks.py` has `main(argv)`; `add` appends to a list in memory and `list`
-prints it numbered.
+Parse the command line into add and list: done.
+""",
+    ".planning/phases/01-cli-skeleton/01-02-PLAN.md": """---
+phase: 01-cli-skeleton
+plan: 02
+wave: 1
+autonomous: true
+---
+
+<objective>
+Keep tasks in a list and print them numbered
+</objective>
+
+<tasks>
+<task type="auto">
+  <name>add appends, list prints</name>
+</task>
+</tasks>
+""",
+    ".planning/phases/01-cli-skeleton/01-02-SUMMARY.md": """# Phase 1 Plan 02: Summary
+
+Keep tasks in a list and print them numbered: done.
 """,
     ".planning/phases/01-cli-skeleton/01-VERIFICATION.md": """# Phase 1: Verification
 
@@ -122,33 +148,155 @@ wave: 1
 autonomous: true
 ---
 
+<objective>
+A store over tasks.json with load and save
+</objective>
+
 <tasks>
 <task type="auto">
-  <name>Create store.py with load() and save(tasks) over tasks.json</name>
-</task>
-<task type="auto">
-  <name>Make add save and list load</name>
+  <name>Create store.py</name>
 </task>
 </tasks>
+""",
+    ".planning/phases/02-keep-tasks-in-a-file/02-01-SUMMARY.md": """# Phase 2 Plan 01: Summary
+
+A store over tasks.json with load and save: done.
 """,
     ".planning/phases/02-keep-tasks-in-a-file/02-02-PLAN.md": """---
 phase: 02-keep-tasks-in-a-file
 plan: 02
+wave: 1
+autonomous: true
+---
+
+<objective>
+Keep an empty or missing file working
+</objective>
+
+<tasks>
+<task type="auto">
+  <name>load() of nothing is []</name>
+</task>
+</tasks>
+""",
+    ".planning/phases/02-keep-tasks-in-a-file/02-02-SUMMARY.md": """# Phase 2 Plan 02: Summary
+
+Keep an empty or missing file working: done.
+""",
+    ".planning/phases/02-keep-tasks-in-a-file/02-03-PLAN.md": """---
+phase: 02-keep-tasks-in-a-file
+plan: 03
+wave: 2
+autonomous: true
+---
+
+<objective>
+Make add save and list load
+</objective>
+
+<tasks>
+<task type="auto">
+  <name>Wire store.py into tasks.py</name>
+</task>
+</tasks>
+""",
+    ".planning/phases/02-keep-tasks-in-a-file/02-03-SUMMARY.md": """# Phase 2 Plan 03: Summary
+
+Make add save and list load: done.
+""",
+    ".planning/phases/02-keep-tasks-in-a-file/02-VERIFICATION.md": """# Phase 2: Verification
+
+status: passed
+""",
+    ".planning/phases/03-mark-a-task-done/03-CONTEXT.md": """# Phase 3: Mark a task done - Context
+
+A task gains `done: bool`; `done <n>` sets it and `list` shows `[x]`.
+""",
+    ".planning/phases/03-mark-a-task-done/03-01-PLAN.md": """---
+phase: 03-mark-a-task-done
+plan: 01
+wave: 1
+autonomous: true
+---
+
+<objective>
+Give a task a done flag in the store
+</objective>
+
+<tasks>
+<task type="auto">
+  <name>Store tasks as objects with text and done</name>
+</task>
+</tasks>
+""",
+    ".planning/phases/03-mark-a-task-done/03-02-PLAN.md": """---
+phase: 03-mark-a-task-done
+plan: 02
+wave: 1
+autonomous: true
+---
+
+<objective>
+Add the done command
+</objective>
+
+<tasks>
+<task type="auto">
+  <name>done <n> marks the nth task</name>
+</task>
+</tasks>
+""",
+    ".planning/phases/03-mark-a-task-done/03-03-PLAN.md": """---
+phase: 03-mark-a-task-done
+plan: 03
 wave: 2
 autonomous: false
 ---
 
+<objective>
+Show done tasks with [x] in list
+</objective>
+
 <tasks>
+<task type="auto">
+  <name>list prints [x] or [ ]</name>
+</task>
 <task type="checkpoint:human-verify" gate="blocking">
-  <name>Add a task, run list again: it is still there</name>
-  <what-built>Tasks kept in tasks.json</what-built>
+  <name>Mark a task done and list it</name>
+  <what-built>`done` and the [x] in list</what-built>
   <how-to-verify>
     1. python3 tasks.py add "buy milk"
-    2. python3 tasks.py list
+    2. python3 tasks.py done 1
+    3. python3 tasks.py list
   </how-to-verify>
   <resume-signal>Type "approved" or describe issues</resume-signal>
 </task>
 </tasks>
+""",
+    ".planning/phases/03-mark-a-task-done/03-04-PLAN.md": """---
+phase: 03-mark-a-task-done
+plan: 04
+wave: 3
+autonomous: true
+---
+
+<objective>
+Refuse a number with no task
+</objective>
+
+<tasks>
+<task type="auto">
+  <name>done 99 says there is no task 99</name>
+</task>
+</tasks>
+""",
+    ".planning/phases/03-mark-a-task-done/03-01-SUMMARY.md": """# Phase 3 Plan 01: Summary
+
+Give a task a done flag in the store: done.
+""",
+    ".planning/phases/03-mark-a-task-done/03-02-SUMMARY.md": """# Phase 3 Plan 02: Summary
+
+Add the done command: done.
 """,
 }
 

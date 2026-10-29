@@ -9,6 +9,7 @@
     {
       "after": "after ",
       "finished": true,
+      "goal": "keep the cart across sessions",
       "name": "Cart service",
       "number": "1",
       "plans": "3/3",
@@ -17,6 +18,7 @@
     {
       "after": "after 1",
       "finished": true,
+      "goal": "one order from a cart",
       "name": "Checkout API",
       "number": "2",
       "plans": "4/4",
@@ -25,6 +27,7 @@
     {
       "after": "after 2",
       "finished": true,
+      "goal": "pay with a card",
       "name": "Payment form",
       "number": "3",
       "plans": "5/5",
@@ -33,6 +36,7 @@
     {
       "after": "after 3",
       "finished": true,
+      "goal": "a receipt once paid",
       "name": "Order emails",
       "number": "4",
       "plans": "",
@@ -41,6 +45,7 @@
     {
       "after": "after 4",
       "finished": true,
+      "goal": "behind a flag, then for everyone",
       "name": "Rollout",
       "number": "5",
       "plans": "",
@@ -51,27 +56,27 @@
     {
       "ratio": 1.0,
       "state": "done",
-      "weight": 3
+      "weight": 1
     },
     {
       "ratio": 1.0,
       "state": "done",
-      "weight": 4
+      "weight": 1
     },
     {
       "ratio": 1.0,
       "state": "done",
-      "weight": 5
+      "weight": 1
     },
     {
       "ratio": 1.0,
       "state": "done",
-      "weight": 3
+      "weight": 1
     },
     {
       "ratio": 1.0,
       "state": "done",
-      "weight": 3
+      "weight": 1
     }
   ],
   "total": 5,

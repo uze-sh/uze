@@ -3,14 +3,14 @@
  │ gsd · gsd@local                           │
  │                                           │
  │  v1.4 Store checkout                 40%  │
- │  ███████ █████████ ─────── ────── ──────  │
+ │  ███████ ███████ ─────── ─────── ───────  │
  │  2 of 5 phases · phase 3 next             │
  │                                           │
  │  ✓  1   Cart service                 3/3  │
  │  ✓  2   Checkout API                 4/4  │
- │                                           │
  │  ▶  3   Payment form                      │
- │   ✓ discuss  ◆ plan  ○ execute  ○ verify  │
+ │         pay with a card                   │
+ │     ✓ discuss ◆ plan ○ execute ○ verify   │
  │                                           │
  │                           plan phase 3    │
  │                                           │
@@ -34,14 +34,14 @@
  a bbb b bbbbbbbbb                           a
  a                                           a
  a  cccc ddddd dddddddd                 ddd  a
- a  eeeeeee eeeeeeeee fffffff ffffff ffffff  a
+ a  eeeeeee eeeeeee fffffff fffffff fffffff  a
  a  b bb b bbbbbb b bbbbb b bbbb             a
  a                                           a
  a  e  b   bbbb bbbbbbb                 bbb  a
  a  e  b   bbbbbbbb bbb                 bbb  a
- a                                           a
  a  g  c   ccccccc cccc                      a
- a   e eeeeeee  g gggg  f fffffff  f ffffff  a
+ a         ddd dddd d dddd                   a
+ a     e eeeeeee g gggg f fffffff f ffffff   a
  a                                           a
  a                           dddd ddddd d    a
  a                                           a

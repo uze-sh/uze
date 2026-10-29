@@ -3,26 +3,26 @@
  │ gsd · gsd@local                           │
  │                                           │
  │  v1.4 Store checkout                 47%  │
- │  ██████ ████████ ███▋───── ────── ──────  │
+ │  ███████ ███████ ██▊──── ─────── ───────  │
  │  2 of 5 phases · phase 3 next             │
  │                                           │
  │  ✓  1   Cart service                 3/3  │
  │  ✓  2   Checkout API                 4/4  │
- │                                           │
  │  ▶  3   Payment form                      │
- │   ✓ discuss  ✓ plan  ◆ execute  ○ verify  │
- │   wave 1 ■■  wave 2 □□  wave 3 □     2/5  │
+ │         pay with a card                   │
+ │     ✓ discuss ✓ plan ◆ execute ○ verify   │
+ │     wave 1 ■■  wave 2 □□  wave 3 □   2/5  │
+ │                                           │
+ │     ✓ 3-01 Card fields with inline vali…  │
+ │     ✓ 3-02 Tokenize the card with the p…  │
+ │     ○ 3-03 Charge the order and record …  │
+ │     ○ 3-04 Pay a test order end to end    │
+ │     ○ 3-05 Show a declined card's reason  │
  │                                           │
  │                        execute phase 3    │
  │                                           │
  │  ·  4   Order emails             after 3  │
  │  ·  5   Rollout                  after 4  │
- │                                           │
- │                                           │
- │                                           │
- │                                           │
- │                                           │
- │                                           │
  │                                           │
  │                                           │
  │                                           │
@@ -34,26 +34,26 @@
  a bbb b bbbbbbbbb                           a
  a                                           a
  a  cccc ddddd dddddddd                 ddd  a
- a  eeeeee eeeeeeee ffffggggg gggggg gggggg  a
+ a  eeeeeee eeeeeee fffgggg ggggggg ggggggg  a
  a  b bb b bbbbbb b bbbbb b bbbb             a
  a                                           a
  a  e  b   bbbb bbbbbbb                 bbb  a
  a  e  b   bbbbbbbb bbb                 bbb  a
- a                                           a
  a  f  c   ccccccc cccc                      a
- a   e eeeeeee  e eeee  f fffffff  g gggggg  a
- a   bbbb b ee  bbbb b gg  bbbb b g     bbb  a
+ a         ddd dddd d dddd                   a
+ a     e eeeeeee e eeee f fffffff g gggggg   a
+ a     bbbb b ee  bbbb b gg  bbbb b g   bbb  a
+ a                                           a
+ a     e bbbb bbbb bbbbbb bbbb bbbbbb bbbbb  a
+ a     e bbbb bbbbbbbb bbb bbbb bbbb bbb bb  a
+ a     g gggg gggggg ggg ggggg ggg gggggg g  a
+ a     g gggg ggg g gggg ggggg ggg gg ggg    a
+ a     g gggg gggg g gggggggg gggggg gggggg  a
  a                                           a
  a                        ddddddd ddddd d    a
  a                                           a
  a  g  g   ggggg gggggg             ggggg g  a
  a  g  g   ggggggg                  ggggg g  a
- a                                           a
- a                                           a
- a                                           a
- a                                           a
- a                                           a
- a                                           a
  a                                           a
  a                                           a
  a                                           a

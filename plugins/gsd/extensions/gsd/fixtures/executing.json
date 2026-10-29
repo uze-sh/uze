@@ -1,82 +1,8 @@
 {
   "checkpoint": null,
   "current": {
-    "command": "gsd-execute-phase",
-    "label": "execute phase 3",
-    "name": "Payment form",
     "number": "3",
-    "plans": 5,
-    "ran": 2,
-    "step": "execute",
-    "steps": [
-      {
-        "done": true,
-        "mark": "○",
-        "name": "discuss",
-        "state": "done"
-      },
-      {
-        "done": true,
-        "mark": "○",
-        "name": "plan",
-        "state": "done"
-      },
-      {
-        "done": false,
-        "mark": "◆",
-        "name": "execute",
-        "state": "current"
-      },
-      {
-        "done": false,
-        "mark": "○",
-        "name": "verify",
-        "state": "pending"
-      }
-    ],
-    "waiting": null,
-    "waves": [
-      {
-        "kind": "label",
-        "text": "wave 1 "
-      },
-      {
-        "kind": "done",
-        "text": "■"
-      },
-      {
-        "kind": "done",
-        "text": "■"
-      },
-      {
-        "kind": "label",
-        "text": "  "
-      },
-      {
-        "kind": "label",
-        "text": "wave 2 "
-      },
-      {
-        "kind": "pending",
-        "text": "□"
-      },
-      {
-        "kind": "pending",
-        "text": "□"
-      },
-      {
-        "kind": "label",
-        "text": "  "
-      },
-      {
-        "kind": "label",
-        "text": "wave 3 "
-      },
-      {
-        "kind": "pending",
-        "text": "□"
-      }
-    ]
+    "step": "execute"
   },
   "done": 2,
   "name": "Store checkout",
@@ -86,6 +12,7 @@
     {
       "after": "after ",
       "finished": true,
+      "goal": "keep the cart across sessions",
       "name": "Cart service",
       "number": "1",
       "plans": "3/3",
@@ -94,6 +21,7 @@
     {
       "after": "after 1",
       "finished": true,
+      "goal": "one order from a cart",
       "name": "Checkout API",
       "number": "2",
       "plans": "4/4",
@@ -103,7 +31,55 @@
       "after": "after 2",
       "front": {
         "command": "gsd-execute-phase",
+        "goal": "pay with a card",
         "label": "execute phase 3",
+        "listed": [
+          {
+            "done": true,
+            "id": "3-01",
+            "pending": false,
+            "state": "done",
+            "title": "Card fields with inline validation",
+            "waiting": false,
+            "wave": "wave 1"
+          },
+          {
+            "done": true,
+            "id": "3-02",
+            "pending": false,
+            "state": "done",
+            "title": "Tokenize the card with the payment provider",
+            "waiting": false,
+            "wave": "wave 1"
+          },
+          {
+            "done": false,
+            "id": "3-03",
+            "pending": true,
+            "state": "pending",
+            "title": "Charge the order and record the payment",
+            "waiting": false,
+            "wave": "wave 2"
+          },
+          {
+            "done": false,
+            "id": "3-04",
+            "pending": true,
+            "state": "pending",
+            "title": "Pay a test order end to end",
+            "waiting": false,
+            "wave": "wave 2"
+          },
+          {
+            "done": false,
+            "id": "3-05",
+            "pending": true,
+            "state": "pending",
+            "title": "Show a declined card's reason",
+            "waiting": false,
+            "wave": "wave 3"
+          }
+        ],
         "name": "Payment form",
         "number": "3",
         "plans": 5,
@@ -179,6 +155,7 @@
           }
         ]
       },
+      "goal": "pay with a card",
       "name": "Payment form",
       "number": "3",
       "plans": "2/5",
@@ -187,6 +164,7 @@
     {
       "after": "after 3",
       "ahead": true,
+      "goal": "a receipt once paid",
       "name": "Order emails",
       "number": "4",
       "plans": "",
@@ -195,6 +173,7 @@
     {
       "after": "after 4",
       "ahead": true,
+      "goal": "behind a flag, then for everyone",
       "name": "Rollout",
       "number": "5",
       "plans": "",
@@ -205,27 +184,27 @@
     {
       "ratio": 1.0,
       "state": "done",
-      "weight": 3
+      "weight": 1
     },
     {
       "ratio": 1.0,
       "state": "done",
-      "weight": 4
+      "weight": 1
     },
     {
       "ratio": 0.4,
       "state": "current",
-      "weight": 5
+      "weight": 1
     },
     {
       "ratio": 0.0,
       "state": "later",
-      "weight": 3
+      "weight": 1
     },
     {
       "ratio": 0.0,
       "state": "later",
-      "weight": 3
+      "weight": 1
     }
   ],
   "total": 5,

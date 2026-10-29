@@ -12,6 +12,11 @@ lookup "step" default="faint" {
     current "warning"
 }
 
+lookup "plan" default="faint" {
+    done "muted"
+    waiting "danger"
+}
+
 lookup "wave" default="faint" {
     label "muted"
     done "success"
@@ -51,16 +56,20 @@ Stack gap=1 {
 
             // The phase in front: its steps, its plans wave by wave, and what
             // comes next, the button or the checkpoint it waits at.
-            Box gap=1 padding-y=1 when="front" {
+            Box gap=1 when="front" {
                 Stack {
                     Row gap=2 {
                         Text "▶" role="warning"
                         Text "{number}" role="bright" strong=#true min-width=2
                         Text "{name}" role="bright" strong=#true truncate=#true grow=#true
                     }
+                    Row when="front.goal" {
+                        Text "" min-width=7
+                        Text "{front.goal}" role="secondary" truncate=#true grow=#true
+                    }
                     Row {
-                        Text "" min-width=1
-                        Row gap=2 {
+                        Text "" min-width=3
+                        Row gap=1 {
                             Row gap=1 each="front.steps" {
                                 Icon "check" role="success" when="done"
                                 Text "{mark}" role="{step:state}" unless="done"
@@ -69,7 +78,7 @@ Stack gap=1 {
                         }
                     }
                     Row when="front.waves" {
-                        Text "" min-width=1
+                        Text "" min-width=3
                         Row grow=#true {
                             Row each="front.waves" {
                                 Icon "checkpoint" role="danger" when="waiting"
@@ -79,11 +88,26 @@ Stack gap=1 {
                         Text "{front.ran}/{front.plans}" role="muted"
                     }
                 }
+                // Its plans by name, so the drawer says what the phase is
+                // made of, not only how many.
+                Stack when="front.listed" {
+                    Row gap=1 each="front.listed" {
+                        Text "" min-width=2
+                        Icon "check" role="success" when="done"
+                        Icon "checkpoint" role="danger" when="waiting"
+                        Text "○" role="faint" when="pending"
+                        Text "{id}" role="{plan:state}" min-width=4
+                        Text "{title}" role="{plan:state}" truncate=#true grow=#true
+                    }
+                }
                 Row align="end" {
                     Text "waits for you above" role="danger" when="front.waiting"
                     Button "{front.label}" action="next" item="{front}" unless="front.waiting"
                 }
             }
+
+            // Air between the phase in front and the ones after it.
+            Text "" when="front"
 
             Row gap=2 when="ahead" {
                 Text "·" role="faint"

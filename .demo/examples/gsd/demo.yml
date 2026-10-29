@@ -5,9 +5,9 @@
 #   tui-record run .demo/examples/gsd
 #
 # The take spends Claude Code turns, and needs GSD installed for it in the
-# sandbox (the plugin ships none): the agent executes phase 2 of the
-# fixture's milestone, the way the drawer's button asks it to, stops at the
-# checkpoint of plan 2-02, and goes on once the band answers it.
+# sandbox (the plugin ships none): the fixture's milestone has phase 3
+# executing and stopped at the checkpoint of plan 3-03; the band answers it
+# and the agent runs the last wave.
 
 extends: ../_base.yml
 
@@ -18,58 +18,38 @@ video:
   publish:
     - from: out
       to: web/public/examples/gsd.gif
-  poster_when: 'execute phase 2'
+  poster_when: 'waits for you above'
 
 beats:
   - use: open-and-enable
     with: {say: 'a project with a GSD milestone in .planning/, and an agent on it', review_pause: 1.4}
-  - say: in the bar, the milestone and the step it is at
+  - say: in the bar, a plan that waits at its checkpoint
     wait: screen
-    until: 'v1.0 · 2 execute'
+    until: '3-03 waits for you'
     timeout: 15
     pause: 1.2
-  - say: a click opens the phases, the one in front with its steps and waves
-    click: 'v1.0'
+  - say: a click opens the phases, the one in front with its steps, waves and plans
+    click: '3-03 waits for you'
     in: pane
-    offset: 1
-    expect: execute phase 2
+    expect: waits for you above
     expect_timeout: 10
-    pause: 2.4
-  - say: the next step is the agent's to take
-    click: execute phase 2
-    in: pane
-    occurrence: last
-    expect: 'Type this into agent 1'
-    expect_timeout: 8
-    pause: 1.8
-  - say: what is typed into the agent is shown before it is
-    click: Type it
-    in: screen
-    refuse: 'Type this into agent 1'
-    expect: 'execute-phase'
-    expect_timeout: 8
-    pause: 1.0
-  - say: the agent runs the first wave, and stops at the checkpoint
-    wait: screen
-    until: 'Checkpoint 2-02'
-    timeout: 300
-    pause: 2.4
+    pause: 2.8
   - say: the checkpoint is answered over the agent
     click: approved
     in: pane
     expect: 'Type this into agent 1'
     expect_timeout: 8
     pause: 1.4
-  - say: and the agent goes on
+  - say: what is typed into the agent is shown before it is
     click: Type it
     in: screen
     refuse: 'Type this into agent 1'
     expect: 'approved'
     expect_timeout: 8
     pause: 1.0
-  - say: and the milestone moves on to the next phase by itself
+  - say: the agent runs the last wave, and the phase moves on to verify
     wait: screen
-    until: 'v1.0 · 3 discuss'
+    until: '3 verify'
     timeout: 300
     pause: 3.0
   - say: and out
