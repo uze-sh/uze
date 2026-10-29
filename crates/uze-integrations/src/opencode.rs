@@ -33,9 +33,6 @@ use uze_core::{
         HarnessDetection, IntegrationPort, ManagedArtifact, UnreadableDelivery, active_plugin_name,
         default_exposure_name_candidates, qualified_exposure_name_candidates,
     },
-    preference::{
-        PreferenceApplyOutcome, PreferencePlan, PreferencePort, PreferenceTranslation, Preferences,
-    },
     provisioning::{ProcessRunner, ProvisioningResult},
     router::HarnessCapabilities,
     state,
@@ -46,7 +43,6 @@ mod agent_context;
 mod distribution;
 mod hooks;
 mod mcp;
-mod preferences;
 mod project_agents;
 mod provision;
 pub(crate) mod runtime_plugin;
@@ -535,24 +531,6 @@ impl IntegrationPort for OpenCodeIntegration {
             });
         };
         mcp::detach_mcp_config(&self.config_path, &entry)
-    }
-}
-
-impl PreferencePort for OpenCodeIntegration {
-    fn preference_id(&self) -> &'static str {
-        IntegrationPort::id(self)
-    }
-
-    fn translate(&self, preferences: &Preferences) -> PreferenceTranslation {
-        preferences::translate(preferences)
-    }
-
-    fn apply(&self, preferences: &Preferences) -> Result<PreferenceApplyOutcome> {
-        preferences::apply(&self.config_path, preferences)
-    }
-
-    fn plan(&self, preferences: &Preferences) -> Result<PreferencePlan> {
-        preferences::plan(&self.config_path, preferences)
     }
 }
 

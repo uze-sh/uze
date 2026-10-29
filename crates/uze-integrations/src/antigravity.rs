@@ -70,9 +70,6 @@ use uze_core::{
         HarnessDetection, IntegrationPort, ManagedArtifact, active_plugin_name,
         default_exposure_name_candidates, qualified_exposure_name_candidates,
     },
-    preference::{
-        PreferenceApplyOutcome, PreferencePlan, PreferencePort, PreferenceTranslation, Preferences,
-    },
     provisioning::{ProcessRunner, ProcessSpec, ProvisioningResult},
     router::{CompatibilityRoute, HarnessCapabilities},
     state,
@@ -84,7 +81,6 @@ mod generate;
 mod hooks;
 mod mcp;
 mod plugin;
-mod preferences;
 mod provision;
 mod session;
 mod skills;
@@ -206,14 +202,6 @@ impl AntigravityIntegration {
     /// file(s)`), which is why this shared file was once the only route.
     fn hooks_config_path(&self) -> PathBuf {
         self.config_dir.join(HOOKS_FILE_NAME)
-    }
-
-    /// `~/.gemini/antigravity-cli/settings.json` — same directory as
-    /// `skills_dir`/`agents_dir`'s parent (unverified against current docs
-    /// beyond two independently reproduced fetches; see `preferences`'s
-    /// module doc for the confidence caveat).
-    fn preferences_config_path(&self) -> PathBuf {
-        self.cli_root.join("settings.json")
     }
 
     /// Falls back to the installer's documented destination
@@ -869,24 +857,6 @@ impl AntigravityIntegration {
             self.hooks_config_path(),
             "Antigravity CLI reads named hooks from its shared `~/.gemini/config/hooks.json`: UZE merges one named entry per canonical hook (`<package>:<group-id>`, matcher and timeout preserved, grouped for the tool events and flat for Stop; its `SessionStart` key runs once for a new conversation, flat like Stop, so a group waiting only for a resume or a clear is reported Unsupported) whose command is the generated `hooks/exec` wrapper — the handlers run against the portable HOOK_* contract with no UZE binary on the execution path — and keeps that exact entry receipt-owned. Inside a generated plugin the same entries go to the plugin's own root hooks.json instead, which Antigravity loads since 1.3.4 (experiment `antigravity/plugin-hooks`, 1.3.5); the shared file carries a group only when the package is delivered capability by capability.",
         )
-    }
-}
-
-impl PreferencePort for AntigravityIntegration {
-    fn preference_id(&self) -> &'static str {
-        IntegrationPort::id(self)
-    }
-
-    fn translate(&self, preferences: &Preferences) -> PreferenceTranslation {
-        preferences::translate(preferences)
-    }
-
-    fn apply(&self, preferences: &Preferences) -> Result<PreferenceApplyOutcome> {
-        preferences::apply(&self.preferences_config_path(), preferences)
-    }
-
-    fn plan(&self, preferences: &Preferences) -> Result<PreferencePlan> {
-        preferences::plan(&self.preferences_config_path(), preferences)
     }
 }
 

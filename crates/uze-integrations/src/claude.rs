@@ -28,9 +28,6 @@ use uze_core::{
         HarnessDetection, IntegrationPort, ManagedArtifact, PublicationStatus, UnreadableDelivery,
         active_plugin_name, default_exposure_name_candidates, qualified_exposure_name_candidates,
     },
-    preference::{
-        PreferenceApplyOutcome, PreferencePlan, PreferencePort, PreferenceTranslation, Preferences,
-    },
     provisioning::{ProcessRunner, ProcessSpec, ProvisioningResult},
     router::{CompatibilityRoute, HarnessCapabilities},
     state,
@@ -43,7 +40,6 @@ mod hooks;
 mod mcp;
 mod memory;
 mod plugin;
-mod preferences;
 mod runtime;
 mod session;
 mod skills;
@@ -800,34 +796,6 @@ fn user_agent_unreadable(path: &Path) -> Option<String> {
 /// `claude --version` prints "2.1.239 (Claude Code)" — the version leads.
 fn claude_version(program: &str) -> HarnessDetection {
     detect_version(program, VersionToken::First)
-}
-
-impl PreferencePort for ClaudeIntegration {
-    fn preference_id(&self) -> &'static str {
-        IntegrationPort::id(self)
-    }
-
-    fn translate(&self, preferences: &Preferences) -> PreferenceTranslation {
-        preferences::translate(preferences, &preferences::SandboxHost::detect())
-    }
-
-    fn apply(&self, preferences: &Preferences) -> Result<PreferenceApplyOutcome> {
-        // Preferences share Claude's user-scope settings file with Hooks
-        // (ADR-033) — same file, disjoint keys.
-        preferences::apply(
-            &self.hooks_config_path(),
-            preferences,
-            &preferences::SandboxHost::detect(),
-        )
-    }
-
-    fn plan(&self, preferences: &Preferences) -> Result<PreferencePlan> {
-        preferences::plan(
-            &self.hooks_config_path(),
-            preferences,
-            &preferences::SandboxHost::detect(),
-        )
-    }
 }
 
 /// The names Claude's MCP registry accepts for a server, most readable

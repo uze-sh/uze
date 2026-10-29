@@ -12,7 +12,6 @@ mod hooks;
 mod identity;
 mod lifecycle_conformance;
 mod policy;
-mod preferences;
 mod provisioning;
 mod runtime_boundary;
 mod runtime_projection;

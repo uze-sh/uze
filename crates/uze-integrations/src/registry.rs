@@ -11,20 +11,13 @@
 
 use std::path::Path;
 
-use uze_core::{Result, home::UzeHome, integration::IntegrationPort, preference::PreferencePort};
+use uze_core::{Result, home::UzeHome, integration::IntegrationPort};
 
 use crate::{antigravity, claude, codex, opencode};
-
-/// `IntegrationRegistry::into_parts`'s return shape.
-pub type RegistryParts = (Vec<Box<dyn IntegrationPort>>, Vec<Box<dyn PreferencePort>>);
 
 /// The built-in integration set, in registration order.
 pub struct IntegrationRegistry {
     integrations: Vec<Box<dyn IntegrationPort>>,
-    /// Preference translation/apply for every registered harness — unlike
-    /// hooks, all four opt in. Built from the same constructors as
-    /// `integrations`, so the adapter set cannot drift from the harness set.
-    preference_adapters: Vec<Box<dyn PreferencePort>>,
 }
 
 impl IntegrationRegistry {
@@ -55,8 +48,6 @@ impl IntegrationRegistry {
         )
     }
 
-    /// Every harness is both an integration and a preference adapter, so
-    /// both lists come from the one set of constructed values.
     fn from_integrations(
         claude: claude::ClaudeIntegration,
         codex: codex::CodexIntegration,
@@ -65,12 +56,6 @@ impl IntegrationRegistry {
     ) -> Self {
         Self {
             integrations: vec![
-                Box::new(claude.clone()),
-                Box::new(codex.clone()),
-                Box::new(opencode.clone()),
-                Box::new(antigravity.clone()),
-            ],
-            preference_adapters: vec![
                 Box::new(claude),
                 Box::new(codex),
                 Box::new(opencode),
@@ -83,13 +68,6 @@ impl IntegrationRegistry {
     /// (`UzeApplication::new`, tests, callers that own their own composition).
     pub fn into_inner(self) -> Vec<Box<dyn IntegrationPort>> {
         self.integrations
-    }
-
-    /// Consumes the registry into both its integration list and its
-    /// preference adapters (`UzeApplication::from_env`), for a caller that
-    /// needs both without a second construction pass.
-    pub fn into_parts(self) -> RegistryParts {
-        (self.integrations, self.preference_adapters)
     }
 
     pub fn all(&self) -> &[Box<dyn IntegrationPort>] {

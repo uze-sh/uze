@@ -21,12 +21,10 @@ pub(crate) mod mcp;
 pub(crate) mod package_root;
 pub(crate) mod path;
 pub(crate) mod plan;
-pub(crate) mod preference;
 pub(crate) mod process;
 pub(crate) mod provision;
 pub(crate) mod skill;
 #[cfg(test)]
 pub(crate) mod test_support;
-pub(crate) mod toml_config;
 pub(crate) mod transcript;
 pub(crate) mod tree;
