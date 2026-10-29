@@ -144,17 +144,31 @@ on "cancel" must not save first.
   carries no ellipsis: `Rename ›`, `Continue in ›`. An ellipsis marks only
   an entry that asks before acting (`Discard…`). Two entries for one verb
   side by side (`Rename`, `Rename project`) become one that opens both.
+- A dialog's field row that opens a step ends in the same `›`
+  (`Symbol::Submenu`) against its right edge (`overrides --model opus ›`),
+  never a disclosure arrow: `▸`/`▾` say a group unfolds in place, and a
+  step takes the list's place instead.
 - Dropdowns float over content and never push it down.
 - A breadcrumb names levels, short and generic (`Context › Containers ›
   Components ▾`), the step on show included. An item's own long name goes
   in the list that step opens and, muted and in its own case, on the row
   of the content's modes (`View::label`), never in the step itself.
 - A modal keeps its height while you filter inside it.
+- A popover with steps fixes its height when it opens, as the largest any
+  of its steps needs: going into a step and back never resizes it.
 - A popover's rows stand on its own ground: no raised band under the line
   typed into or under its list. The row Enter takes is the one marked.
+- A list under a line typed into opens with nothing marked, so Enter acts
+  on the line; `↓` marks the first row, and `↑` on it unmarks again.
+  Hovering a row only lights it: the pointer resting there never changes
+  what Enter does.
 - A choice that rarely changes is a field prefilled with the last answer
   (`harness ‹ Claude Code ›`, moved with `←` `→`), never a step of its own:
   the common case is the one question and Enter. Its arrows are its keys.
+- A field whose wrong value is unsafe, or invisible once the thing has
+  started (a new agent's launch overrides), is never prefilled from last
+  time: it opens empty, and the last values head a history under it, to
+  be taken back on purpose.
 - A popover's foot names its keys and nothing else (`enter new · ←→
   harness`), with `esc close` alone against its end.
 - `Tab` in a line typed into completes, as it does in a shell; it never
@@ -357,6 +371,12 @@ Toasts:
   `State*` tokens, of which the warning gold is the workspace's own).
   Markdown is "clean, not a rainbow".
 - Ground overlays are neutral grey, **never green-tinted**.
+- What weakens safety or switches something off (a flag that skips
+  permissions, one that turns delivery off) is marked
+  `Symbol::MarkAttention` in `Token::StateWarning` on every row that
+  carries it, and its detail says what it gives up in the catalog's own
+  words. Never a warning glyph of its own: `MarkAttention` is the one
+  "needs attention" mark, `IconWarning` an icon for running text.
 - A focused or selected container gets a subtle, slightly darker overlay.
 - The sidebar is transparent: only the space in front is lifted onto the
   panel, every other space stands on the column itself, and the row in
