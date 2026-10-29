@@ -75,6 +75,9 @@ const UZE_PREFIX: &str = "UZE_";
 const MANAGED: &str = "managed by uze";
 const A_PROMPT: &str = "the harness would read it as a prompt";
 const ENDS_OPTIONS: &str = "the harness would read what follows as a prompt";
+/// What a key UZE sets only on some launches loses to the operator's value
+/// on those launches, said as what is turned off.
+const UZES_OWN_VALUE: &str = "uze's own value for this key";
 
 /// `words` as entries. A flag the catalog says takes a value takes the
 /// word after it, or the value attached to it (`--model=opus`, `-mopus`);
@@ -240,7 +243,7 @@ fn keyed_verdict(
     }
     match composed_keys {
         None if conditional.iter().any(|maybe| collides(&key, maybe)) => {
-            Verdict::Degrades("uze may set this")
+            Verdict::Degrades(UZES_OWN_VALUE)
         }
         None => Verdict::Accepted,
         Some(composed) => match composed.iter().find(|set| collides(&key, set)) {
@@ -655,11 +658,11 @@ mod tests {
     fn a_conditional_key_is_a_warning_without_the_plan() {
         assert_eq!(
             verdicts("-c notify=[]", KEYED),
-            [Verdict::Degrades("uze may set this")]
+            [Verdict::Degrades(UZES_OWN_VALUE)]
         );
         assert_eq!(
             verdicts("-c features={}", KEYED),
-            [Verdict::Degrades("uze may set this")]
+            [Verdict::Degrades(UZES_OWN_VALUE)]
         );
     }
 
@@ -691,7 +694,7 @@ mod tests {
         );
         assert_eq!(
             verdicts("--enable memories --enable web", KEYED),
-            [Verdict::Degrades("uze may set this"), Verdict::Accepted]
+            [Verdict::Degrades(UZES_OWN_VALUE), Verdict::Accepted]
         );
         assert_eq!(
             verdicts("--disable web", KEYED),

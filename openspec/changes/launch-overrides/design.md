@@ -184,8 +184,8 @@ fact as `session.rs`'s constants.
 `uze_workspace::overrides::check(tokens, catalog, managed, plan: Option<&LaunchPlan>)`
 returns one verdict per entry: `Accepted`, `Unknown`, `Weakens`,
 `Degrades`, `Refused(reason)`. The popup calls it with no plan, pure and
-on each keystroke, treating conditionally owned keys as `Degrades` ("uze
-may set this"). The shim calls it with the real plan, where a
+on each keystroke, treating conditionally owned keys as `Degrades`, whose
+entry reads `-c turns off uze's own value for this key`. The shim calls it with the real plan, where a
 conditionally owned key the plan composes is left out with a note. Both
 refuse positionals and `--`.
 

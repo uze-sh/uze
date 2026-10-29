@@ -316,6 +316,48 @@ fn a_weakening_flag_is_marked() {
     );
 }
 
+/// A configuration key uze sets on some launches is marked on its entry,
+/// and the detail line says, in words, what the operator's value takes
+/// the place of.
+#[test]
+fn a_key_uze_may_set_says_what_it_takes_the_place_of() {
+    const LINE: &str = "-c notify=[]";
+    let mut popup = popup("overrides-conditional-key");
+    {
+        let step = popup.model.directory_step.as_mut().unwrap();
+        step.harness = step
+            .harnesses
+            .iter()
+            .position(|option| {
+                option.overrides.check(LINE).is_ok_and(|checked| {
+                    matches!(
+                        checked.as_slice(),
+                        [entry] if matches!(entry.verdict, uze_application::OverrideVerdict::Degrades(_))
+                    )
+                })
+            })
+            .expect("a harness whose configuration flag has a key uze may set");
+    }
+    let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
+    driven.frame();
+    open_by_key(&mut driven);
+    type_text(&mut driven, LINE);
+    driven.press_key(chord(Action::Activate, Scope::LaunchOverrides));
+    assert_eq!(
+        entries(&driven),
+        vec![vec!["-c".to_owned(), "notify=[]".to_owned()]]
+    );
+
+    let rows = screen(&mut driven);
+
+    assert!(
+        rows.iter()
+            .any(|row| row.contains("-c turns off uze's own value for this key")),
+        "{}",
+        rows.join("\n")
+    );
+}
+
 /// The head of a flag lists its completions with nothing marked; Tab
 /// completes it, and after a space the list offers the values it takes.
 #[test]
