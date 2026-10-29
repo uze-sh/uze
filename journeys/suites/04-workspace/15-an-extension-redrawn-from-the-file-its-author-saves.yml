@@ -330,7 +330,7 @@ scenes:
       - click: "milestone"
         say: open the extension's board from the bar under the agent area
         in: bar
-        expect: "gsd-band · gsd@studio"
+        expect: "Milestone"
         expect_timeout: 20
       - wait: screen
         until: "65%  3 of 6 done"

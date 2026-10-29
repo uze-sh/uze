@@ -186,8 +186,7 @@ scenes:
         say: the question shows the exact text, naming the plan's file
       - click: "Type it"
         say: allow it
-        expect: "sent to agent"
-        expect_timeout: 10
+        refuse: "Type this into agent 1"
       - wait: shell
         until: "grep -q 'Review PLAN.md' {home}/.claude/projects/*/*.jsonl"
         timeout: 10

@@ -144,7 +144,7 @@ scenes:
     when:
       - key: "M-j"
         say: press the picker's key
-        expect: "jump · bridge@studio"
+        expect: "Jump to an agent"
         expect_timeout: 10
       - wait: screen
         until: 'agent 1 .*go'
@@ -156,7 +156,7 @@ scenes:
         say: and the second
       - key: "C-g"
         say: focus the agent of the first row, selected as it opened
-        expect: '(?s)\A(?!.*jump · bridge@studio)(?!.*the second agent was told this).*the first agent was told this'
+        expect: '(?s)\A(?!.*Jump to an agent)(?!.*the second agent was told this).*the first agent was told this'
         expect_timeout: 10
     then:
       - agents: { count: 2, live: 2 }
@@ -166,13 +166,13 @@ scenes:
     when:
       - key: "M-j"
         say: press the picker's key again
-        expect: "jump · bridge@studio"
+        expect: "Jump to an agent"
         expect_timeout: 10
       - key: "Down"
         say: select the second row
       - key: "C-g"
         say: take it
-        expect: '(?s)\A(?!.*jump · bridge@studio)(?!.*the first agent was told this).*the second agent was told this'
+        expect: '(?s)\A(?!.*Jump to an agent)(?!.*the first agent was told this).*the second agent was told this'
         expect_timeout: 10
     then:
       - agents: { count: 2, live: 2 }

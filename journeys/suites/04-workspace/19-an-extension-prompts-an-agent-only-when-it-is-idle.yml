@@ -293,8 +293,7 @@ scenes:
         expect_timeout: 10
       - click: "Type it"
         say: allow it
-        expect: "sent to agent"
-        expect_timeout: 10
+        refuse: "Type this into agent 1"
       - wait: shell
         until: "grep -q 'Say in two lines' {home}/.claude/projects/*/*.jsonl"
         timeout: 10
