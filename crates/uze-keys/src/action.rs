@@ -248,6 +248,8 @@ actions! {
         "Close tab", "Close the selected tab";
     NewAgent => "new-agent", false,
         "New agent", "Start an agent in this space";
+    OpenOverrides => "open-overrides", false,
+        "Overrides", "Add flags and variables to the new agent's launch";
     IsolateAgent => "isolate-agent", false,
         "To worktree",
         "Move this agent into a worktree of its own, taking the uncommitted \

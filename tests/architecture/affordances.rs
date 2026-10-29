@@ -135,6 +135,10 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     put(Action::NewShellTab, Control("the tab strip's `+`"));
     put(Action::CloseTab, Control("a tab's close control"));
     put(Action::NewAgent, Control("the tab strip's `✦`"));
+    put(
+        Action::OpenOverrides,
+        Control("the new agent popup's `overrides` row, and its foot's hint"),
+    );
     put(Action::NewSpace, Control("the sidebar's `+ new` row"));
     put(
         Action::IsolateAgent,

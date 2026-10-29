@@ -582,6 +582,23 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::RootPicker, "enter", Action::Activate),
         bind(Scope::RootPicker, "esc", Action::Dismiss),
         bind(Scope::RootPicker, "backspace", Action::EraseBack),
+        // A control letter, the one register every terminal delivers: the
+        // picker takes typing, `tab` completes and `ctrl+o` is the Global
+        // way to manage. `f` for the flags most overrides are.
+        bind(Scope::RootPicker, "ctrl+f", Action::OpenOverrides),
+        // The overrides step is a line typed into: the sideways keys move
+        // its caret, the vertical ones mark in the list under it.
+        bind(Scope::LaunchOverrides, "down", Action::SelectNext),
+        bind(Scope::LaunchOverrides, "up", Action::SelectPrevious),
+        bind(Scope::LaunchOverrides, "tab", Action::Expand),
+        bind(Scope::LaunchOverrides, "enter", Action::Activate),
+        bind(Scope::LaunchOverrides, "esc", Action::Dismiss),
+        bind(Scope::LaunchOverrides, "backspace", Action::EraseBack),
+        bind(Scope::LaunchOverrides, "delete", Action::EraseForward),
+        bind(Scope::LaunchOverrides, "left", Action::CaretLeft),
+        bind(Scope::LaunchOverrides, "right", Action::CaretRight),
+        bind(Scope::LaunchOverrides, "home", Action::CaretLineStart),
+        bind(Scope::LaunchOverrides, "end", Action::CaretLineEnd),
         bind(Scope::Rename, "enter", Action::Activate),
         bind(Scope::Rename, "esc", Action::Dismiss),
         bind(Scope::Rename, "backspace", Action::EraseBack),
