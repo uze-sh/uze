@@ -148,7 +148,7 @@ Every style resolves a theme token. The helpers fall into these groups:
 |---|---|
 | text | `title`, `label` (muted), `accent`, `success_text`, `warning_text`, `error_text`, `command_name(text, CommandGroup)` |
 | layout | `aligned_rows`, `aligned_rows_wrapped`, `aligned_groups`, `terminal_width` |
-| reports | `report_section`, `report_title`, `key_value`, `path`, `count` |
+| reports | `report_section`, `report_title`, `key_value`, `path`, `count`, `count_packages` |
 | changes (bun-style) | `change(Change::{Added, Removed, Updated, Attention, Failed}, subject, detail)` |
 | whole report | `change_report(verb, lines, outcome)` |
 | marks | `success`, `warn`, `error(msg, hint)`, `next_step`, `success_icon`, `warning_icon`, `error_icon` |

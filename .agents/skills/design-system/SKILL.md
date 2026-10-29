@@ -488,6 +488,11 @@ Use the `src/progress.rs` helpers and never hand-format:
   the doors to its surfaces are drawn lowercase by the host, whatever the
   plugin wrote. Everything else it draws (text, headings, badges, a
   choice's value, its data) keeps the case the plugin gave it.
+- A package that carries only workspace extensions is an extension, not a
+  plugin, wherever a report names what it changed: `1 extension installed
+  on this machine only`, `1 plugin and 1 extension updated`
+  (`progress::count_packages`). Only a package a harness receives is a
+  plugin.
 - "uze" is lowercase, and a sentence shouldn't start with it.
 - Don't claim more than the product does, and don't repeat a claim
   everywhere.
