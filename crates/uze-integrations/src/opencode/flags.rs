@@ -8,6 +8,7 @@
 //! for the conversation uze may not find again.
 
 use uze_core::flag_catalog::{
+    FlagCatalog, FlagGrammar,
     FlagOwner::{Degrades, Operator, Uze, Weakens},
     FlagSpec, FlagValue,
 };
@@ -16,7 +17,10 @@ use super::session::{FIRST_TURN_FLAG, RESUME_FLAG};
 
 const CONTINUITY: &str = "uze continues this agent's conversation itself";
 
-pub(super) const CATALOG: &[FlagSpec] = &[
+/// Read as Effect's CLI reads OpenCode's command line.
+pub(super) const CATALOG: FlagCatalog = FlagCatalog::new(FlagGrammar::EffectCli, FLAGS);
+
+const FLAGS: &[FlagSpec] = &[
     FlagSpec::new(
         &["--log-level"],
         FlagValue::OneOf(&[
@@ -90,6 +94,6 @@ mod tests {
 
     #[test]
     fn every_flag_in_the_snapshot_is_catalogued_or_left_out() {
-        assert_catalog_covers_help(CATALOG, LEFT_OUT, include_str!("help.txt"));
+        assert_catalog_covers_help(&CATALOG, LEFT_OUT, include_str!("help.txt"));
     }
 }

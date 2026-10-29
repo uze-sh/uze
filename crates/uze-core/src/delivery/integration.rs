@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     error::Result,
     exposure::{ExposureMechanism, ExposurePlan, PackageExposurePlan},
-    flag_catalog::FlagSpec,
+    flag_catalog::FlagCatalog,
     harness_runtime::{HarnessRuntimeContribution, RuntimeContext},
     home::UzeHome,
     project_context::AgentsDirectoryResource,
@@ -535,12 +535,13 @@ pub trait IntegrationPort: Send + Sync {
     }
 
     /// The flags this harness's launch takes that are worth offering an
-    /// operator, and which of them UZE composes itself. Kept to the
+    /// operator, which of them UZE composes itself, and the grammar the
+    /// harness reads them in. Kept to the
     /// harness's latest release and proven against its `--help`. The
     /// default is none: a harness nobody has catalogued is completed with
     /// nothing, and every flag typed for it passes as unknown.
-    fn flag_catalog(&self) -> &'static [FlagSpec] {
-        &[]
+    fn flag_catalog(&self) -> FlagCatalog {
+        FlagCatalog::default()
     }
 
     /// The environment variables this integration sets or reads to deliver

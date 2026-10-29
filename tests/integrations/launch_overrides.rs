@@ -9,7 +9,7 @@ use std::ffi::OsString;
 
 use uze_core::{
     UzeHome,
-    flag_catalog::{FlagOwner, FlagSpec, FlagValue},
+    flag_catalog::{FlagCatalog, FlagGrammar, FlagOwner, FlagSpec, FlagValue},
     harness_runtime::HarnessRuntimeContribution,
     integration::{IntegrationPort, SessionContinuity},
     session::SessionId,
@@ -36,6 +36,7 @@ fn os(words: &[&str]) -> Vec<OsString> {
 fn an_operator_flag(integration: &dyn IntegrationPort) -> Vec<String> {
     let spec = integration
         .flag_catalog()
+        .flags
         .iter()
         .find(|spec| spec.owner == FlagOwner::Operator)
         .unwrap_or_else(|| panic!("{} offers a flag of the operator's", integration.id()));
@@ -222,6 +223,7 @@ fn an_override_of_what_uze_composes_never_reaches_any_harness() {
     for integration in registry("overrides-owned").iter() {
         let owned: Vec<&FlagSpec> = integration
             .flag_catalog()
+            .flags
             .iter()
             .filter(|spec| matches!(spec.owner, FlagOwner::Uze(_)))
             .collect();
@@ -260,19 +262,21 @@ fn an_override_of_what_uze_composes_never_reaches_any_harness() {
 
 /// Every spelling a harness would read as one of its owned flags: a short
 /// one inside a cluster of switches (`-zc` as `-z -c`), and a long one
-/// written with one dash (`-continue`, `-resume=id`).
-fn owned_spellings_in_disguise(spec: &FlagSpec) -> Vec<String> {
+/// written with one dash (`-continue`, `-resume=id`) where the harness's
+/// grammar reads one dash as two.
+fn owned_spellings_in_disguise(spec: &FlagSpec, catalog: FlagCatalog) -> Vec<String> {
     let value = if spec.value == FlagValue::None {
         ""
     } else {
         "=elsewhere"
     };
+    let one_dash_is_long = catalog.grammar != FlagGrammar::Posix;
     spec.spellings
         .iter()
         .filter_map(|spelling| spelling.strip_prefix('-'))
-        .map(|name| match name.strip_prefix('-') {
-            Some(long) => format!("-{long}{value}"),
-            None => format!("-z{name}"),
+        .filter_map(|name| match name.strip_prefix('-') {
+            Some(long) => one_dash_is_long.then(|| format!("-{long}{value}")),
+            None => Some(format!("-z{name}")),
         })
         .collect()
 }
@@ -287,10 +291,11 @@ fn an_owned_flag_in_disguise_never_reaches_any_harness() {
             "-z stays a letter no harness knows"
         );
         for spec in catalog
+            .flags
             .iter()
             .filter(|spec| matches!(spec.owner, FlagOwner::Uze(_)))
         {
-            for word in owned_spellings_in_disguise(spec) {
+            for word in owned_spellings_in_disguise(spec, catalog) {
                 let session = plan(
                     integration,
                     Vec::new(),
@@ -390,4 +395,43 @@ fn a_value_that_gives_up_safety_is_said_as_its_switch_is() {
             composed.weakens
         );
     }
+}
+
+fn verdicts(integration: &dyn IntegrationPort, line: &str) -> Vec<overrides::Verdict> {
+    let catalog = integration.flag_catalog();
+    let entries = overrides::entries(&overrides::split(line).unwrap(), catalog);
+    overrides::check(&entries, catalog, integration.managed_environment(), None)
+}
+
+fn harness<'r>(registry: &'r IntegrationRegistry, id: &str) -> &'r dyn IntegrationPort {
+    registry
+        .iter()
+        .find(|integration| integration.id() == id)
+        .unwrap_or_else(|| panic!("{id} is registered"))
+}
+
+/// clap and commander read `-model` as `-m odel`, never as `--model`: the
+/// word after it is then a prompt, and a fixed set refuses what the letters
+/// make of its value.
+#[test]
+fn a_long_flag_written_with_one_dash_is_short_letters_to_a_posix_harness() {
+    use overrides::Verdict::{Accepted, Refused};
+    let registry = registry("overrides-posix-one-dash");
+    let prompt = || Refused("the harness would read it as a prompt".to_owned());
+
+    assert_eq!(
+        verdicts(harness(&registry, "codex"), "-model opus"),
+        [Accepted, prompt()]
+    );
+    assert_eq!(
+        verdicts(harness(&registry, "claude-code"), "-name foo"),
+        [Accepted, prompt()]
+    );
+    assert_eq!(
+        verdicts(harness(&registry, "codex"), "-sandbox read-only"),
+        [
+            Refused("takes one of read-only, workspace-write, danger-full-access".to_owned()),
+            prompt()
+        ]
+    );
 }

@@ -62,9 +62,10 @@ refusal SHALL name the variable and say it is UZE's.
 The system SHALL refuse a flag the chosen harness's catalog marks as UZE's:
 the session, resume, continue and first-prompt flags and every flag UZE
 composes for a launch. A flag SHALL be matched in every spelling the
-harness accepts: long, short, `--flag=value`, a short flag's attached
-value, a short flag inside a cluster of switches, and a long flag written
-with one dash.
+harness accepts, read in the grammar of the harness's own parser, which
+its catalog declares: long, short, `--flag=value`, and, where that parser
+reads them so, a short flag's attached value, a short flag inside a
+cluster of switches, and a long flag written with one dash.
 
 #### Scenario: A resume flag
 - **WHEN** the operator adds `--resume abc` for a harness whose continuity UZE manages
@@ -79,8 +80,12 @@ with one dash.
 - **THEN** it is refused with that flag's reason
 
 #### Scenario: A long owned flag written with one dash
-- **WHEN** the operator adds `-continue` or `-conversation=abc` and the catalog spells that flag `--continue` or `--conversation`
+- **WHEN** the operator adds `-continue` or `-conversation=abc` for a harness whose parser reads one dash as two, and the catalog spells that flag `--continue` or `--conversation`
 - **THEN** it is refused exactly as its long spelling is
+
+#### Scenario: One dash before a long name, to a parser that reads short letters
+- **WHEN** the operator adds `-model opus` for a harness whose parser reads `-model` as `-m` with the value `odel`
+- **THEN** the entry is read as `-m odel`, and `opus` is refused as an argument the harness would read as a prompt
 
 #### Scenario: A configuration key UZE composes
 - **WHEN** the operator adds a configuration override setting a key UZE composes on that harness's launch

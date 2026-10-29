@@ -10,7 +10,7 @@ use std::path::Path;
 
 use uze_core::{
     Result,
-    flag_catalog::{FlagOwner, FlagSpec, FlagValue},
+    flag_catalog::{FlagCatalog, FlagOwner, FlagSpec, FlagValue},
     integration::IntegrationPort,
 };
 use uze_workspace::overrides::{self, Entry, Unterminated, Verdict, record};
@@ -22,7 +22,7 @@ use super::Workspace;
 /// declares.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct OverrideCatalog {
-    flags: &'static [FlagSpec],
+    flags: FlagCatalog,
     managed: &'static [&'static str],
 }
 

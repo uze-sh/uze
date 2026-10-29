@@ -270,7 +270,7 @@ impl IntegrationPort for OpenCodeIntegration {
     /// (measured on 2.0.29, `experiments/opencode/session-assigned`), so UZE
     /// names it at launch. The read-back stays, for a conversation the
     /// person starts from inside the TUI.
-    fn flag_catalog(&self) -> &'static [uze_core::flag_catalog::FlagSpec] {
+    fn flag_catalog(&self) -> uze_core::flag_catalog::FlagCatalog {
         flags::CATALOG
     }
 

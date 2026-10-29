@@ -6,6 +6,7 @@
 //! flags that act in print mode alone are left out.
 
 use uze_core::flag_catalog::{
+    FlagCatalog, FlagGrammar,
     FlagOwner::{Operator, Uze, Weakens},
     FlagSpec, FlagValue,
 };
@@ -15,7 +16,10 @@ use super::session::{FIRST_TURN_FLAG, RESUME_FLAG};
 const CONTINUITY: &str = "uze continues this agent's conversation itself";
 const INTERACTIVE: &str = "a workspace agent is interactive";
 
-pub(super) const CATALOG: &[FlagSpec] = &[
+/// Read as Go's `flag` package reads agy's command line ("Usage of agy:").
+pub(super) const CATALOG: FlagCatalog = FlagCatalog::new(FlagGrammar::GoFlag, FLAGS);
+
+const FLAGS: &[FlagSpec] = &[
     FlagSpec::new(
         &["--model"],
         FlagValue::Free("model"),
@@ -138,6 +142,6 @@ mod tests {
 
     #[test]
     fn every_flag_in_the_snapshot_is_catalogued_or_left_out() {
-        assert_catalog_covers_help(CATALOG, LEFT_OUT, include_str!("help.txt"));
+        assert_catalog_covers_help(&CATALOG, LEFT_OUT, include_str!("help.txt"));
     }
 }

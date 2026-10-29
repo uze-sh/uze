@@ -23,7 +23,7 @@ pub mod record;
 
 use std::ffi::OsString;
 
-use uze_core::flag_catalog::FlagSpec;
+use uze_core::flag_catalog::FlagCatalog;
 
 pub use check::{Entry, Verdict, check, entries};
 pub use line::{Unterminated, split};
@@ -58,7 +58,7 @@ impl LaunchOverrides {
     /// Leaves out the flags `composed` now collides with: what UZE adds to
     /// the launch after the plan was made, such as switching the harness's
     /// memory off.
-    pub fn leave_out_composed(&mut self, catalog: &[FlagSpec], composed: &[OsString]) {
+    pub fn leave_out_composed(&mut self, catalog: FlagCatalog, composed: &[OsString]) {
         let flags = compose(&self.arg_words(), catalog, &[], composed);
         self.args = flags.args;
         self.left_out.extend(flags.left_out);
@@ -83,7 +83,7 @@ impl LaunchOverrides {
 )]
 pub fn compose(
     words: &[String],
-    catalog: &[FlagSpec],
+    catalog: FlagCatalog,
     managed: &[&str],
     composed: &[OsString],
 ) -> LaunchOverrides {
@@ -121,11 +121,14 @@ pub fn compose(
 mod tests {
     use super::*;
     use uze_core::flag_catalog::{
+        FlagGrammar,
         FlagOwner::{Keyed, Operator, Uze, Weakens},
-        FlagValue,
+        FlagSpec, FlagValue,
     };
 
-    const CATALOG: &[FlagSpec] = &[
+    const CATALOG: FlagCatalog = FlagCatalog::new(FlagGrammar::Posix, FLAGS);
+
+    const FLAGS: &[FlagSpec] = &[
         FlagSpec::new(
             &["--model", "-m"],
             FlagValue::Free("model"),

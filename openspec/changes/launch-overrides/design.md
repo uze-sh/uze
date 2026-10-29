@@ -142,7 +142,7 @@ detail line says that secrets belong in variables.
 `uze-core` gains plain types and two `IntegrationPort` methods with empty
 defaults:
 
-- `flag_catalog() -> &'static [FlagSpec]`: `spellings` (`--model`, `-m`),
+- `flag_catalog() -> FlagCatalog`: `spellings` (`--model`, `-m`),
   `value` (`None` / `Free(hint)` / `OneOf(&[..])`), `repeatable`,
   `summary`, and `owner`:
   - `Operator`: offered, passed.
@@ -160,6 +160,14 @@ defaults:
     whose keys are checked one by one.
 - `managed_environment() -> &'static [&'static str]`: variables it sets
   or reads to deliver and resume.
+
+The catalog is a `FlagCatalog`: the specs and the `FlagGrammar` the
+harness's parser reads a single-dash word in, since the same word is a
+different flag to each. `Posix` (clap, commander): one dash starts a
+cluster of short switches and a short flag that takes a value takes the
+rest of its word, so `-model` is `-m odel`. `GoFlag` (Go's `flag`): one
+dash names a long flag as two do. `EffectCli` (Effect's CLI): `-name=value`
+names a flag, and a single-dash word without `=` is a cluster.
 
 The integration reuses its `session.rs` constants, so `--resume` is
 spelled once. The rule every harness shares (`UZE_*`, `PATH`, `HOME`,

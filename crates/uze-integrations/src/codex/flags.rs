@@ -12,6 +12,7 @@
 //! of the agent's checkout or off this machine, are UZE's and refused.
 
 use uze_core::flag_catalog::{
+    FlagCatalog, FlagGrammar,
     FlagOwner::{Degrades, Keyed, Operator, Uze, Weakens},
     FlagSpec, FlagValue,
 };
@@ -24,7 +25,10 @@ const IN_ITS_CHECKOUT: &str =
     "uze starts the agent in its own checkout, where its conversation is found again";
 const ON_THIS_MACHINE: &str = "uze finds the agent's conversation among this machine's sessions";
 
-pub(super) const CATALOG: &[FlagSpec] = &[
+/// Read as clap reads Codex's command line.
+pub(super) const CATALOG: FlagCatalog = FlagCatalog::new(FlagGrammar::Posix, FLAGS);
+
+const FLAGS: &[FlagSpec] = &[
     FlagSpec::new(
         &["--config", "-c"],
         FlagValue::Free("key=value"),
@@ -185,13 +189,13 @@ mod tests {
 
     #[test]
     fn every_flag_in_the_snapshot_is_catalogued_or_left_out() {
-        assert_catalog_covers_help(CATALOG, LEFT_OUT, include_str!("help.txt"));
+        assert_catalog_covers_help(&CATALOG, LEFT_OUT, include_str!("help.txt"));
     }
 
     /// A resumed launch is `codex resume <id> <overrides>`, so a flag only
     /// the fresh launch takes would break every resume.
     #[test]
     fn every_catalogued_spelling_is_taken_by_resume() {
-        assert_catalog_in_help(CATALOG, include_str!("resume-help.txt"));
+        assert_catalog_in_help(&CATALOG, include_str!("resume-help.txt"));
     }
 }

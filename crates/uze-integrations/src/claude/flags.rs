@@ -9,6 +9,7 @@
 //! are catalogued as UZE's, refused rather than passed unseen.
 
 use uze_core::flag_catalog::{
+    FlagCatalog, FlagGrammar,
     FlagOwner::{Degrades, Operator, Uze, Weakens},
     FlagSpec, FlagValue,
 };
@@ -23,7 +24,10 @@ const IN_ITS_PANE: &str = "a workspace agent runs in its own pane";
 const IN_ITS_CHECKOUT: &str =
     "uze starts the agent in its own checkout, where its conversation is found again";
 
-pub(super) const CATALOG: &[FlagSpec] = &[
+/// Read as commander reads Claude Code's command line.
+pub(super) const CATALOG: FlagCatalog = FlagCatalog::new(FlagGrammar::Posix, FLAGS);
+
+const FLAGS: &[FlagSpec] = &[
     FlagSpec::new(
         &["--model"],
         FlagValue::Free("model"),
@@ -396,6 +400,6 @@ mod tests {
 
     #[test]
     fn every_flag_in_the_snapshot_is_catalogued_or_left_out() {
-        assert_catalog_covers_help(CATALOG, LEFT_OUT, include_str!("help.txt"));
+        assert_catalog_covers_help(&CATALOG, LEFT_OUT, include_str!("help.txt"));
     }
 }

@@ -20,7 +20,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use uze_core::path::Canonical as _;
+use uze_core::{flag_catalog::FlagCatalog, path::Canonical as _};
 
 use crate::{
     Result, harness_runtime::project_id_for, home::UzeHome, persistence::write_atomic_private,
@@ -255,7 +255,7 @@ fn without_secrets(tokens: &[String]) -> (Vec<String>, usize) {
 }
 
 fn reads_as_secret(token: &str) -> bool {
-    match super::entries(&[token.to_owned()], &[]).as_slice() {
+    match super::entries(&[token.to_owned()], FlagCatalog::default()).as_slice() {
         [super::Entry::Variable { name, .. }] => {
             let name = name.to_ascii_uppercase();
             SECRET_FRAGMENTS

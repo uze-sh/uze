@@ -27,7 +27,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use uze_core::flag_catalog::FlagSpec;
+use uze_core::flag_catalog::FlagCatalog;
 
 use crate::{
     agent_context::{self, Section, SectionAsk},
@@ -102,7 +102,7 @@ impl LaunchPlan {
         self,
         contribution: &mut HarnessRuntimeContribution,
         memory_off: Option<ContextContribution>,
-        catalog: &[FlagSpec],
+        catalog: FlagCatalog,
     ) -> Option<String> {
         let mut notes: Vec<String> = self.note.into_iter().collect();
         let mut overrides = self.overrides;
@@ -862,7 +862,7 @@ mod tests {
         fn context_channel_unavailable(&self) -> Option<String> {
             self.unavailable.clone()
         }
-        fn flag_catalog(&self) -> &'static [uze_core::flag_catalog::FlagSpec] {
+        fn flag_catalog(&self) -> FlagCatalog {
             HARNESS_FLAGS
         }
         fn managed_environment(&self) -> &'static [&'static str] {
@@ -881,22 +881,25 @@ mod tests {
     }
 
     /// What the test harness's launch takes: its resume flag is UZE's.
-    const HARNESS_FLAGS: &[uze_core::flag_catalog::FlagSpec] = {
-        use uze_core::flag_catalog::{FlagOwner, FlagSpec, FlagValue};
-        &[
-            FlagSpec::new(
-                &["--resume"],
-                FlagValue::Free("id"),
-                "resume",
-                FlagOwner::Uze("uze continues this agent's conversation itself"),
-            ),
-            FlagSpec::new(
-                &["--model"],
-                FlagValue::Free("model"),
-                "model",
-                FlagOwner::Operator,
-            ),
-        ]
+    const HARNESS_FLAGS: FlagCatalog = {
+        use uze_core::flag_catalog::{FlagGrammar, FlagOwner, FlagSpec, FlagValue};
+        FlagCatalog::new(
+            FlagGrammar::Posix,
+            &[
+                FlagSpec::new(
+                    &["--resume"],
+                    FlagValue::Free("id"),
+                    "resume",
+                    FlagOwner::Uze("uze continues this agent's conversation itself"),
+                ),
+                FlagSpec::new(
+                    &["--model"],
+                    FlagValue::Free("model"),
+                    "model",
+                    FlagOwner::Operator,
+                ),
+            ],
+        )
     };
 
     /// A repository with one task in one slot: the home, the primary, the
@@ -1836,25 +1839,28 @@ mod tests {
 
     #[test]
     fn a_composed_launch_says_what_memory_off_left_out_and_what_weakens_once() {
-        const CATALOG: &[uze_core::flag_catalog::FlagSpec] = {
-            use uze_core::flag_catalog::{FlagOwner, FlagSpec, FlagValue};
-            &[
-                FlagSpec::new(
-                    &["--config", "-c"],
-                    FlagValue::Free("key=value"),
-                    "config",
-                    FlagOwner::Keyed {
-                        owned: &[],
-                        conditional: &["features.memories"],
-                    },
-                ),
-                FlagSpec::new(
-                    &["--yolo"],
-                    FlagValue::None,
-                    "yolo",
-                    FlagOwner::Weakens("permission prompts"),
-                ),
-            ]
+        const CATALOG: FlagCatalog = {
+            use uze_core::flag_catalog::{FlagGrammar, FlagOwner, FlagSpec, FlagValue};
+            FlagCatalog::new(
+                FlagGrammar::Posix,
+                &[
+                    FlagSpec::new(
+                        &["--config", "-c"],
+                        FlagValue::Free("key=value"),
+                        "config",
+                        FlagOwner::Keyed {
+                            owned: &[],
+                            conditional: &["features.memories"],
+                        },
+                    ),
+                    FlagSpec::new(
+                        &["--yolo"],
+                        FlagValue::None,
+                        "yolo",
+                        FlagOwner::Weakens("permission prompts"),
+                    ),
+                ],
+            )
         };
         let mut plan = LaunchPlan {
             overrides: overrides::compose(

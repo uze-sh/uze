@@ -3625,7 +3625,7 @@ mod overrides_tests {
         UzeHome,
         capability::Resource,
         exposure::{ExposureMechanism, ExposurePlan},
-        flag_catalog::{FlagOwner, FlagSpec, FlagValue},
+        flag_catalog::{FlagCatalog, FlagGrammar, FlagOwner, FlagSpec, FlagValue},
         integration::SessionContinuity,
         router::{CompatibilityRoute, HarnessCapabilities},
     };
@@ -3687,8 +3687,8 @@ mod overrides_tests {
                 SessionContinuity::Unsupported
             }
         }
-        fn flag_catalog(&self) -> &'static [FlagSpec] {
-            FLAGS
+        fn flag_catalog(&self) -> FlagCatalog {
+            FlagCatalog::new(FlagGrammar::Posix, FLAGS)
         }
         fn managed_environment(&self) -> &'static [&'static str] {
             &["HARNESS_HOME"]

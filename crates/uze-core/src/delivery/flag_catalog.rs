@@ -8,6 +8,49 @@
 //! catalog does not list is still the operator's to pass; the catalog
 //! completes and guards, it does not allow.
 
+/// A harness's flags and the grammar its command line is read in: the same
+/// word is a different flag to different parsers, so a spelling is only
+/// matched the way the harness itself would read it.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct FlagCatalog {
+    pub grammar: FlagGrammar,
+    pub flags: &'static [FlagSpec],
+}
+
+impl FlagCatalog {
+    pub const fn new(grammar: FlagGrammar, flags: &'static [FlagSpec]) -> Self {
+        Self { grammar, flags }
+    }
+}
+
+impl std::ops::Deref for FlagCatalog {
+    type Target = [FlagSpec];
+
+    fn deref(&self) -> &[FlagSpec] {
+        self.flags
+    }
+}
+
+/// How a harness's parser reads a word that starts with one dash. Named
+/// after the parser family, so a catalog says which one its harness uses
+/// and the check reads a word as that harness would.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum FlagGrammar {
+    /// getopt's family (clap, commander): a long flag takes two dashes;
+    /// one dash starts a cluster of short switches (`-cd` is `-c -d`), and
+    /// a short flag that takes a value takes the rest of its word
+    /// (`-mopus`), so `-model` is `-m odel`.
+    #[default]
+    Posix,
+    /// Go's `flag` package: one dash or two name the same flag
+    /// (`-model`, `--model=x`), and there are no clusters.
+    GoFlag,
+    /// Effect's CLI: `-name=value` names a flag, long or short, while a
+    /// single-dash word without `=` is a cluster of short flags, none of
+    /// which takes the rest of the word.
+    EffectCli,
+}
+
 /// One flag, in every spelling the harness accepts for it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FlagSpec {

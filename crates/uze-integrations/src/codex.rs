@@ -367,7 +367,7 @@ impl IntegrationPort for CodexIntegration {
         Ok(context_hook(ctx.file))
     }
 
-    fn flag_catalog(&self) -> &'static [uze_core::flag_catalog::FlagSpec] {
+    fn flag_catalog(&self) -> uze_core::flag_catalog::FlagCatalog {
         flags::CATALOG
     }
 

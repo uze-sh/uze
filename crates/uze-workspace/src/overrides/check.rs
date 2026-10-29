@@ -3,7 +3,7 @@
 
 use std::ffi::OsString;
 
-use uze_core::flag_catalog::{FlagOwner, FlagSpec, FlagValue};
+use uze_core::flag_catalog::{FlagCatalog, FlagGrammar, FlagOwner, FlagSpec, FlagValue};
 
 /// One thing an override adds to a launch, as the words that carry it.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -79,11 +79,12 @@ const ENDS_OPTIONS: &str = "the harness would read what follows as a prompt";
 /// on those launches, said as what is turned off.
 const UZES_OWN_VALUE: &str = "uze's own value for this key";
 
-/// `words` as entries. A flag the catalog says takes a value takes the
-/// word after it, or the value attached to it (`--model=opus`, `-mopus`);
-/// one it does not know takes a value only as `--flag=value`, so the word
-/// after it stays a word of its own.
-pub fn entries(words: &[String], catalog: &[FlagSpec]) -> Vec<Entry> {
+/// `words` as entries, read in the catalog's grammar. A flag the catalog
+/// says takes a value takes the word after it, or the value attached to it
+/// (`--model=opus`, and `-mopus` where short flags take one attached); one
+/// it does not know takes a value only attached, so the word after it
+/// stays a word of its own.
+pub fn entries(words: &[String], catalog: FlagCatalog) -> Vec<Entry> {
     let mut entries = Vec::new();
     let mut rest = words.iter();
     while let Some(word) = rest.next() {
@@ -95,10 +96,12 @@ pub fn entries(words: &[String], catalog: &[FlagSpec]) -> Vec<Entry> {
                 value: value.to_owned(),
             });
         } else if word.len() > 1 && word.starts_with('-') {
-            let (name, attached) = flag_and_attached(word, catalog);
-            let takes_value = spec(catalog, name).is_some_and(|spec| spec.value != FlagValue::None);
+            let reading = read(word, catalog);
+            let takes_value = reading
+                .spec
+                .is_some_and(|spec| spec.value != FlagValue::None);
             let mut flag_words = vec![word.clone()];
-            let value = match attached {
+            let value = match reading.attached {
                 Some(value) => Some(value.to_owned()),
                 None if takes_value => rest
                     .next()
@@ -107,7 +110,7 @@ pub fn entries(words: &[String], catalog: &[FlagSpec]) -> Vec<Entry> {
                 None => None,
             };
             entries.push(Entry::Flag {
-                name: name.to_owned(),
+                name: reading.name.to_owned(),
                 value,
                 words: flag_words,
             });
@@ -127,7 +130,7 @@ pub fn entries(words: &[String], catalog: &[FlagSpec]) -> Vec<Entry> {
 /// sets it.
 pub fn check(
     entries: &[Entry],
-    catalog: &[FlagSpec],
+    catalog: FlagCatalog,
     managed: &[&str],
     composed: Option<&[OsString]>,
 ) -> Vec<Verdict> {
@@ -136,12 +139,13 @@ pub fn check(
         .iter()
         .map(|entry| match entry {
             Entry::Variable { name, .. } => variable_verdict(name, managed),
-            Entry::Flag { name, value, .. } => {
-                match (cluster_refusal(name, catalog), spec(catalog, name)) {
+            Entry::Flag { value, words, .. } => {
+                let reading = read(&words[0], catalog);
+                match (reading.refusal, reading.spec) {
                     (Some(refusal), _) => refusal,
                     (None, None) => Verdict::Unknown,
                     (None, Some(spec)) => {
-                        flag_verdict(spec, value.as_deref(), catalog, composed_keys.as_deref())
+                        flag_verdict(spec, value.as_deref(), &catalog, composed_keys.as_deref())
                     }
                 }
             }
@@ -254,7 +258,7 @@ fn keyed_verdict(
 }
 
 /// The configuration keys `args` set through a keyed flag.
-fn composed_keys(args: &[OsString], catalog: &[FlagSpec]) -> Vec<String> {
+fn composed_keys(args: &[OsString], catalog: FlagCatalog) -> Vec<String> {
     let words: Vec<String> = args
         .iter()
         .map(|arg| arg.to_string_lossy().into_owned())
@@ -264,10 +268,11 @@ fn composed_keys(args: &[OsString], catalog: &[FlagSpec]) -> Vec<String> {
         .into_iter()
         .filter_map(|entry| match entry {
             Entry::Flag {
-                name,
                 value: Some(value),
+                words,
                 ..
-            } if spec(catalog, &name)
+            } if read(&words[0], catalog)
+                .spec
                 .is_some_and(|spec| matches!(spec.owner, FlagOwner::Keyed { .. })) =>
             {
                 config_key(&value)
@@ -310,73 +315,121 @@ fn variable(word: &str) -> Option<(&str, &str)> {
     .then_some((name, value))
 }
 
-/// The flag `word` names and the value attached to it, if any: after the
-/// `=` of a long flag, or after a short flag the catalog says takes one.
-fn flag_and_attached<'w>(word: &'w str, catalog: &[FlagSpec]) -> (&'w str, Option<&'w str>) {
-    if word.starts_with("--") {
-        return match word.split_once('=') {
-            Some((name, value)) => (name, Some(value)),
-            None => (word, None),
-        };
-    }
-    if spelled(catalog, word).is_some() {
-        return (word, None);
-    }
-    let (name, attached) = match word.split_once('=') {
-        Some((name, value)) => (name, Some(value)),
-        None => (word, None),
-    };
-    if spec(catalog, name).is_some() {
-        return (name, attached);
-    }
-    let Some((at, _)) = word.char_indices().nth(2) else {
-        return (word, None);
-    };
-    let (short, attached) = word.split_at(at);
-    match spec(catalog, short) {
-        Some(spec) if spec.value != FlagValue::None => (short, Some(attached)),
-        _ => (word, None),
+/// What one flag word is, read in its harness's grammar: the flag it names
+/// as typed, the value attached to it, the catalog's entry for that flag,
+/// and the refusal a cluster of short flags earns when one of them is
+/// UZE's.
+struct Reading<'w, 'c> {
+    name: &'w str,
+    attached: Option<&'w str>,
+    spec: Option<&'c FlagSpec>,
+    refusal: Option<Verdict>,
+}
+
+impl<'w, 'c> Reading<'w, 'c> {
+    fn flag(name: &'w str, attached: Option<&'w str>, spec: Option<&'c FlagSpec>) -> Self {
+        Self {
+            name,
+            attached,
+            spec,
+            refusal: None,
+        }
     }
 }
 
-/// The refusal a single-dash word earns when a harness would read it as
-/// several short switches (`-cd` as `-c -d`) and one of them is UZE's or a
-/// configuration flag, whose key cannot be checked inside a cluster. The
-/// switches are read until one that takes a value, which takes the rest.
-fn cluster_refusal(word: &str, catalog: &[FlagSpec]) -> Option<Verdict> {
-    let letters = word
-        .strip_prefix('-')
-        .filter(|letters| !letters.starts_with('-') && letters.chars().count() > 1)?;
-    if spelled(catalog, word).is_some() {
-        return None;
+/// `word`, a flag, as the harness's parser would read it.
+fn read<'w>(word: &'w str, catalog: FlagCatalog) -> Reading<'w, 'static> {
+    if word.starts_with("--") {
+        let (name, attached) = split_assignment(word);
+        return Reading::flag(name, attached, spelled(catalog, name));
     }
-    for letter in letters.chars() {
+    if let Some(spec) = spelled(catalog, word) {
+        return Reading::flag(word, None, Some(spec));
+    }
+    match catalog.grammar {
+        FlagGrammar::Posix => read_posix(word, catalog),
+        FlagGrammar::GoFlag => {
+            let (name, attached) = split_assignment(word);
+            match spelled_with_one_dash(catalog, name) {
+                Some(spec) => Reading::flag(name, attached, Some(spec)),
+                None => read_posix(word, catalog),
+            }
+        }
+        FlagGrammar::EffectCli => match word.split_once('=') {
+            Some((name, value)) => {
+                Reading::flag(name, Some(value), spelled_with_one_dash(catalog, name))
+            }
+            None => cluster(word, catalog, false),
+        },
+    }
+}
+
+/// A single-dash word as getopt's family reads it: `-m=opus` names `-m`; a
+/// first short flag that takes a value takes the rest of the word
+/// (`-mopus`, so `-model` is `-m odel`); anything else is a cluster.
+fn read_posix<'w>(word: &'w str, catalog: FlagCatalog) -> Reading<'w, 'static> {
+    if let Some((name, value)) = word.split_once('=')
+        && let Some(spec) = spelled(catalog, name)
+    {
+        return Reading::flag(name, Some(value), Some(spec));
+    }
+    if let Some((at, _)) = word.char_indices().nth(2) {
+        let (short, attached) = word.split_at(at);
+        if let Some(spec) = spelled(catalog, short).filter(|spec| spec.value != FlagValue::None) {
+            return Reading::flag(short, Some(attached), Some(spec));
+        }
+    }
+    cluster(word, catalog, true)
+}
+
+/// A single-dash word read as short flags (`-cd` as `-c -d`), refused when
+/// one of them is UZE's or a configuration flag, whose key cannot be
+/// checked inside a cluster. Where a short flag that takes a value takes
+/// the rest of the word, the letters after it are that value and not
+/// read.
+fn cluster<'w>(word: &'w str, catalog: FlagCatalog, value_ends_it: bool) -> Reading<'w, 'static> {
+    let mut reading = Reading::flag(word, None, None);
+    for letter in word.chars().skip(1) {
         let Some(spec) = spelled(catalog, &format!("-{letter}")) else {
             continue;
         };
         match spec.owner {
-            FlagOwner::Uze(reason) => return Some(Verdict::Refused(reason.to_owned())),
-            FlagOwner::Keyed { .. } => return Some(Verdict::Refused("takes key=value".to_owned())),
-            _ if spec.value != FlagValue::None => return None,
+            FlagOwner::Uze(reason) => {
+                reading.refusal = Some(Verdict::Refused(reason.to_owned()));
+                break;
+            }
+            FlagOwner::Keyed { .. } => {
+                reading.refusal = Some(Verdict::Refused("takes key=value".to_owned()));
+                break;
+            }
+            _ if value_ends_it && spec.value != FlagValue::None => break,
             _ => {}
         }
     }
-    None
+    reading
 }
 
-/// The flag `word` names: one of its spellings, or one of its long
-/// spellings written with a single dash (`-print` for `--print`), which
-/// some harnesses read as the long flag.
-fn spec<'c>(catalog: &'c [FlagSpec], word: &str) -> Option<&'c FlagSpec> {
-    spelled(catalog, word).or_else(|| {
-        word.strip_prefix('-')
-            .filter(|name| name.len() > 1 && !name.starts_with('-'))
-            .and_then(|name| spelled(catalog, &format!("--{name}")))
+/// `--name` and `value` of `--name=value`, or the word alone.
+fn split_assignment(word: &str) -> (&str, Option<&str>) {
+    match word.split_once('=') {
+        Some((name, value)) => (name, Some(value)),
+        None => (word, None),
+    }
+}
+
+/// The flag `-name` names in a grammar where one dash names a long flag
+/// as two do: one of its spellings, or `--name`.
+fn spelled_with_one_dash(catalog: FlagCatalog, name: &str) -> Option<&'static FlagSpec> {
+    spelled(catalog, name).or_else(|| {
+        name.strip_prefix('-')
+            .filter(|long| long.len() > 1 && !long.starts_with('-'))
+            .and_then(|long| spelled(catalog, &format!("--{long}")))
     })
 }
 
-fn spelled<'c>(catalog: &'c [FlagSpec], spelling: &str) -> Option<&'c FlagSpec> {
+fn spelled(catalog: FlagCatalog, spelling: &str) -> Option<&'static FlagSpec> {
     catalog
+        .flags
         .iter()
         .find(|spec| spec.spellings.contains(&spelling))
 }
@@ -389,7 +442,9 @@ mod tests {
     const CONTINUITY: &str = "uze continues this agent's conversation itself";
 
     /// A catalog shaped like the real ones, naming no harness.
-    const CATALOG: &[FlagSpec] = &[
+    const CATALOG: FlagCatalog = FlagCatalog::new(FlagGrammar::Posix, FLAGS);
+
+    const FLAGS: &[FlagSpec] = &[
         FlagSpec::new(
             &["--model", "-m"],
             FlagValue::Free("model"),
@@ -430,7 +485,9 @@ mod tests {
         ),
     ];
 
-    const KEYED: &[FlagSpec] = &[
+    const KEYED: FlagCatalog = FlagCatalog::new(FlagGrammar::Posix, KEYED_FLAGS);
+
+    const KEYED_FLAGS: &[FlagSpec] = &[
         FlagSpec::new(
             &["--config", "-c"],
             FlagValue::Free("key=value"),
@@ -459,7 +516,7 @@ mod tests {
         crate::overrides::split(line).unwrap()
     }
 
-    fn verdicts(line: &str, catalog: &[FlagSpec]) -> Vec<Verdict> {
+    fn verdicts(line: &str, catalog: FlagCatalog) -> Vec<Verdict> {
         check(&entries(&words(line), catalog), catalog, MANAGED, None)
     }
 
@@ -590,24 +647,64 @@ mod tests {
         assert_eq!(verdicts("-vmc", CATALOG), [Verdict::Unknown]);
     }
 
+    /// The test catalog, read as Go's `flag` package reads a command line.
+    const GO_FLAG: FlagCatalog = FlagCatalog::new(FlagGrammar::GoFlag, FLAGS);
+
     #[test]
-    fn a_long_flag_written_with_one_dash_is_read_as_that_flag() {
-        assert_eq!(verdicts("-resume abc", CATALOG), [refused(CONTINUITY)]);
-        assert_eq!(verdicts("-resume=abc", CATALOG), [refused(CONTINUITY)]);
-        assert_eq!(verdicts("-continue", CATALOG), [refused(CONTINUITY)]);
+    fn a_long_flag_written_with_one_dash_is_read_as_that_flag_by_a_go_flag_harness() {
+        assert_eq!(verdicts("-resume abc", GO_FLAG), [refused(CONTINUITY)]);
+        assert_eq!(verdicts("-resume=abc", GO_FLAG), [refused(CONTINUITY)]);
+        assert_eq!(verdicts("-continue", GO_FLAG), [refused(CONTINUITY)]);
         assert_eq!(
-            verdicts("-model", CATALOG),
+            verdicts("-model", GO_FLAG),
             [refused("takes a value: model")]
         );
         assert_eq!(
-            entries(&words("-model opus"), CATALOG),
+            entries(&words("-model opus"), GO_FLAG),
             [Entry::Flag {
                 name: "-model".into(),
                 value: Some("opus".into()),
                 words: vec!["-model".into(), "opus".into()]
             }]
         );
-        assert_eq!(verdicts("-model=opus", CATALOG), [Verdict::Accepted]);
+        assert_eq!(verdicts("-model=opus", GO_FLAG), [Verdict::Accepted]);
+    }
+
+    /// The test catalog, read as Effect's CLI reads a command line.
+    const EFFECT_CLI: FlagCatalog = FlagCatalog::new(FlagGrammar::EffectCli, FLAGS);
+
+    #[test]
+    fn one_dash_names_a_flag_only_before_an_equals_sign_to_an_effect_cli_harness() {
+        assert_eq!(verdicts("-resume=abc", EFFECT_CLI), [refused(CONTINUITY)]);
+        assert_eq!(verdicts("-verbose=true", EFFECT_CLI), [Verdict::Accepted]);
+        assert_eq!(verdicts("-vc", EFFECT_CLI), [refused(CONTINUITY)]);
+        // No short flag takes the rest of its word: `-mc` is `-m -c`.
+        assert_eq!(verdicts("-mc", EFFECT_CLI), [refused(CONTINUITY)]);
+        assert_eq!(verdicts("-mc", CATALOG), [Verdict::Accepted]);
+    }
+
+    #[test]
+    fn a_long_flag_written_with_one_dash_is_read_as_short_letters_by_a_posix_harness() {
+        assert_eq!(
+            entries(&words("-model opus"), CATALOG),
+            [
+                Entry::Flag {
+                    name: "-m".into(),
+                    value: Some("odel".into()),
+                    words: vec!["-model".into()]
+                },
+                Entry::Positional("opus".into())
+            ]
+        );
+        assert_eq!(
+            verdicts("-model opus", CATALOG),
+            [Verdict::Accepted, refused(A_PROMPT)]
+        );
+        assert_eq!(
+            verdicts("-resume abc", CATALOG),
+            [refused(CONTINUITY), refused(A_PROMPT)]
+        );
+        assert_eq!(verdicts("-continue", CATALOG), [refused(CONTINUITY)]);
     }
 
     #[test]
