@@ -63,34 +63,55 @@ impl WorkspaceModel {
         self.dirty = true;
     }
 
-    /// Follows the tab in front: the surface standing for another tab is
-    /// put away for it, and the tab in front gets back what it was left
-    /// with, unless the overview holds the pane. Asked after every session
-    /// the server sends, and when the overview is dismissed over the tab it
-    /// stood on — never on a frame, where a tab being left would get its
-    /// surface back for the round trip before the move is confirmed.
+    /// Follows the tab in front: the surface standing for another agent is
+    /// put away for it, and the agent in front gets back what it was left
+    /// with, unless the overview holds the pane. Another tab of the same
+    /// agent — its own, or a shell beside it — is a terminal of the agent
+    /// in front chosen, which takes the pane back as choosing the tab in
+    /// front does: the sidebar marks the agent whichever of its tabs is in
+    /// front, so a surface kept per tab was one the operator could not
+    /// tell was waiting on the shell. Asked after every session the server
+    /// sends, and when the overview is dismissed over the tab it stood on
+    /// — never on a frame, where a tab being left would get its surface
+    /// back for the round trip before the move is confirmed.
     pub(super) fn settle_pane(&mut self) {
-        let in_front = self.selected_tab();
+        let in_front = self.in_front();
         if in_front != self.extension_tab {
-            self.suspend_surface();
+            let same_agent =
+                in_front.map(|front| front.agent) == self.extension_tab.map(|front| front.agent);
+            if same_agent {
+                self.close_surface();
+                if let Some(front) = in_front {
+                    self.remembered.declared.standing.remove(&front.agent);
+                }
+            } else {
+                self.suspend_surface();
+            }
             self.extension_tab = in_front;
         }
         self.forget_surfaces_of_closed_tabs();
         if self.open_slot.is_some() || self.space_overview.is_some() {
             return;
         }
-        if let Some(tab) = in_front {
-            self.restore_surface(tab);
+        if let Some(front) = in_front {
+            self.restore_surface(front.agent);
         }
     }
 
-    /// Puts the open surface away for the tab it stands in, holding what
-    /// it keeps for that tab's return.
+    /// The tab in front and the agent it belongs to.
+    fn in_front(&self) -> Option<InFront> {
+        let tab = self.selected_tab()?;
+        let agent = self.tab(tab).and_then(|tab| tab.agent).unwrap_or(tab);
+        Some(InFront { tab, agent })
+    }
+
+    /// Puts the open surface away for the agent it stands in for, holding
+    /// what it keeps for that agent's return.
     pub(super) fn suspend_surface(&mut self) {
         if self.open_slot.is_none() {
             return;
         }
-        let (Some(tab), Some(slot)) = (self.extension_tab, self.slot_in_pane()) else {
+        let (Some(front), Some(slot)) = (self.extension_tab, self.slot_in_pane()) else {
             self.close_surface();
             return;
         };
@@ -107,7 +128,7 @@ impl WorkspaceModel {
         self.close_surface();
         if let Some(root) = root {
             self.remembered.declared.standing.insert(
-                tab,
+                front.agent,
                 Standing {
                     owner,
                     surface,
@@ -121,11 +142,11 @@ impl WorkspaceModel {
         }
     }
 
-    /// Stands in `tab`'s pane what was put away for it, when the tab still
-    /// answers for the agent directory it was opened on and its extension
-    /// still declares the surface and is offered.
-    fn restore_surface(&mut self, tab: TabId) {
-        let Some(standing) = self.remembered.declared.standing.remove(&tab) else {
+    /// Stands in the pane what was put away for `agent`, when the tab in
+    /// front still answers for the agent directory it was opened on and
+    /// its extension still declares the surface and is offered.
+    fn restore_surface(&mut self, agent: TabId) {
+        let Some(standing) = self.remembered.declared.standing.remove(&agent) else {
             return;
         };
         if standing.context != self.focused_cwd() {
@@ -167,12 +188,12 @@ impl WorkspaceModel {
     }
 
     /// Choosing the tab or the space already in front: the pane is had
-    /// back from whatever stands in it, and what the tab kept is let go.
+    /// back from whatever stands in it, and what its agent kept is let go.
     pub(super) fn take_pane_back(&mut self) {
         self.put_away_space_overview();
         self.close_surface();
-        if let Some(tab) = self.selected_tab() {
-            self.remembered.declared.standing.remove(&tab);
+        if let Some(front) = self.in_front() {
+            self.remembered.declared.standing.remove(&front.agent);
         }
     }
 
@@ -183,15 +204,24 @@ impl WorkspaceModel {
         self.settle_pane();
     }
 
-    /// Notes the tab in front as the one a surface opening now stands in
-    /// for, and what it opens as what the tab keeps from now on.
+    /// Notes the agent in front as the one a surface opening now stands
+    /// in for, and what it opens as what the agent keeps from now on.
     pub(super) fn stand_extension_in_front(&mut self) {
         self.put_away_space_overview();
-        self.extension_tab = self.selected_tab();
-        if let Some(tab) = self.extension_tab {
-            self.remembered.declared.standing.remove(&tab);
+        self.extension_tab = self.in_front();
+        if let Some(front) = self.extension_tab {
+            self.remembered.declared.standing.remove(&front.agent);
         }
     }
+}
+
+/// The tab the pane is settled for, and the agent it belongs to: its own
+/// id for an agent's tab or a tab of the space, the agent's for a shell
+/// opened beside one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct InFront {
+    tab: TabId,
+    agent: TabId,
 }
 
 pub(super) fn open_architect(model: &mut WorkspaceModel) {

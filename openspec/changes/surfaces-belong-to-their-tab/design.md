@@ -28,6 +28,13 @@ keeps for a return is asked separately from its place.
   over the tab it stood on — never on a frame, where a tab being left from
   under the overview would get its surface back before the move is
   confirmed.
+- Records are keyed by agent, not by tab: an agent's tab and the shells
+  beside it are one context, which the sidebar marks whichever is in front
+  and which a standing surface hides the strip of. Per tab, a surface opened
+  from the shell waited there unseen and stood over the shell each time it
+  was chosen, beside another kept on the agent's tab. Another tab of the
+  same agent coming to the front takes the pane back, as choosing the tab
+  in front does.
 - A record restores only where the tab in front still answers for the
   agent directory the surface was opened on: the server paints a set-aside
   workspace, whose tab numbers start again, before it says it was set

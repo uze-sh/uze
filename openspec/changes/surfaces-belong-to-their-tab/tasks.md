@@ -5,7 +5,7 @@
 
 ## 2. Workspace
 
-- [x] 2.1 `Standing` per tab replaces the stopgap's memory; `settle_pane` follows the session after the overview
+- [x] 2.1 `Standing` per agent replaces the stopgap's memory; `settle_pane` follows the session after the overview
 - [x] 2.2 The overview opened over a surface puts it away for its tab; put away, the surface stands again
 - [x] 2.3 The attach's end puts the live surface away; a reattach restores it
 - [x] 2.4 Records dropped for a closed tab, an extension switched off or gone, and a set-aside workspace

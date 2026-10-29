@@ -1274,3 +1274,69 @@ fn a_navigator_scroll_comes_back_with_its_tab() {
     bring_to_front(&mut model, first);
     assert_eq!(model.navigator_scroll.first, 7);
 }
+
+/// The shell opened beside `agent`, the one the strip draws after it.
+fn shell_beside(model: &WorkspaceModel, agent: uze_terminal::TabId) -> uze_terminal::TabId {
+    model
+        .tabs()
+        .find(|tab| tab.agent == Some(agent))
+        .map(|tab| tab.id)
+        .expect("the agent has a shell beside it")
+}
+
+/// A surface opened from the shell beside an agent is that agent's: the
+/// sidebar marks the agent while the shell is in front, so going to the
+/// agent's own tab is choosing a terminal of the agent already in front,
+/// and the surface does not wait on the shell to stand over it again.
+#[test]
+fn a_surface_opened_on_an_agents_shell_does_not_come_back_over_the_shell() {
+    let (mut model, first, _second) = two_agents_with_shells();
+    let shell = shell_beside(&model, first);
+    select_tab(&mut model, shell);
+    model.settle_pane();
+    open_architect(&mut model);
+    assert!(showing_architect(&model));
+
+    bring_to_front(&mut model, first);
+    assert!(!showing_architect(&model), "the agent's own pane is shown");
+    bring_to_front(&mut model, shell);
+    assert!(!showing_architect(&model), "and the shell's, when chosen");
+}
+
+/// One agent, one surface: whichever of its tabs it was opened on, an
+/// agent never keeps a second one waiting on another of its tabs.
+#[test]
+fn an_agent_and_its_shell_never_keep_two_surfaces() {
+    let (mut model, first, second) = two_agents_with_shells();
+    let shell = shell_beside(&model, first);
+    select_tab(&mut model, first);
+    model.settle_pane();
+    open_code(&mut model, uze_extensions::code::FILES);
+    bring_to_front(&mut model, shell);
+    open_architect(&mut model);
+
+    bring_to_front(&mut model, first);
+    assert!(model.open_slot.is_none(), "no surface left over the agent");
+    bring_to_front(&mut model, second);
+    bring_to_front(&mut model, shell);
+    assert!(model.open_slot.is_none(), "nor over its shell");
+}
+
+/// What an agent was left showing stands again whichever of its tabs the
+/// way back lands on: from the sidebar, that is the shell it was left in.
+#[test]
+fn a_surface_opened_on_an_agents_shell_comes_back_with_the_agent() {
+    let (mut model, first, second) = two_agents_with_shells();
+    let shell = shell_beside(&model, first);
+    select_tab(&mut model, shell);
+    model.settle_pane();
+    open_architect(&mut model);
+
+    bring_to_front(&mut model, second);
+    assert!(!showing_architect(&model));
+    bring_to_front(&mut model, first);
+    assert!(showing_architect(&model), "on the agent's own tab");
+    bring_to_front(&mut model, second);
+    bring_to_front(&mut model, shell);
+    assert!(showing_architect(&model), "and on the shell beside it");
+}
