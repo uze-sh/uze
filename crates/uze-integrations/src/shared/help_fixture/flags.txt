@@ -1,0 +1,16 @@
+--config
+--continue
+--debug
+--effort
+--enable
+--help
+--log_level
+--no-alt-screen
+--permission-mode
+--sandbox
+--session
+-c
+-d
+-h
+-i
+-s

@@ -124,3 +124,20 @@ fn a_flag_named_only_in_a_description_is_not_defined() {
         BTreeSet::from(["-c", "--continue", "--enable"])
     );
 }
+
+/// The fixture both readers of a `--help` are held to: this suite's
+/// `flags_in_help` and the Lab's `defined_flags`
+/// (`conformance/tests/test_flags.py`), so the rule is written twice but
+/// cannot read two ways.
+#[test]
+fn the_shared_help_fixture_defines_exactly_its_expected_flags() {
+    let expected: BTreeSet<&str> = include_str!("help_fixture/flags.txt")
+        .lines()
+        .filter(|line| !line.is_empty())
+        .collect();
+
+    assert_eq!(
+        flags_in_help(include_str!("help_fixture/help.txt")),
+        expected
+    );
+}

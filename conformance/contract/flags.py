@@ -89,7 +89,8 @@ def defined_flags(help_text):
     """Every flag `help_text` defines, in each spelling it shows: the
     dash-led words opening an option's own line (`-c, --continue`,
     `--session, -s string`), up to its value. The same reading as the Rust
-    suite's `flags_in_help`, so both sides agree on what a snapshot holds."""
+    suite's `flags_in_help`, so both sides agree on what a snapshot holds;
+    both are held to `crates/uze-integrations/src/shared/help_fixture`."""
     flags = set()
     for line in help_text.splitlines():
         if len(line) - len(line.lstrip()) > DEFINITION_INDENT:

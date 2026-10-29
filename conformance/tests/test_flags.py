@@ -35,6 +35,18 @@ class DefinedFlagsTest(unittest.TestCase):
             defined_flags(HELP), {"-c", "--continue", "--enable", "--session", "-s"}
         )
 
+    def test_the_shared_help_fixture_defines_exactly_its_expected_flags(self):
+        """The fixture the Rust suite's `flags_in_help` is held to as well,
+        so the rule written twice cannot read two ways."""
+        fixture = os.path.join(
+            os.path.dirname(ROOT), "crates/uze-integrations/src/shared/help_fixture"
+        )
+        with open(os.path.join(fixture, "help.txt")) as file:
+            help_text = file.read()
+        with open(os.path.join(fixture, "flags.txt")) as file:
+            expected = {line for line in file.read().splitlines() if line}
+        self.assertEqual(defined_flags(help_text), expected)
+
     def test_a_reworded_description_is_not_drift(self):
         reworded = HELP.replace("a session", "the session to open")
         self.assertEqual(drift(HELP, reworded), ([], []))
