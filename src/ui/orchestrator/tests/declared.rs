@@ -2641,3 +2641,82 @@ fn an_answer_to_the_view_is_said_in_the_view_though_the_drawer_said_something_be
         "the drawer keeps its own"
     );
 }
+
+/// Over a floating drawer, an agent that reads the mouse is told nothing
+/// of a gesture made on the card: not its press, not its release.
+#[test]
+fn a_floating_drawer_keeps_its_gestures_from_the_agent_behind() {
+    use crossterm::event::{MouseButton, MouseEventKind};
+    let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("drawer-float-agent"));
+    let mut model = hosting_a_drawer(Some(uze_contract::DrawerDecl {
+        side: uze_contract::DrawerSide::Right,
+        float: true,
+        fit: false,
+    }));
+    let slot = drawer_slot(&model);
+    model.toggle_drawer(slot, ratatui::layout::Rect::new(0, 0, 200, 60));
+    let pane = model.focused_pane();
+    let mut snapshot = super::render::blank_pane(pane, 120, 40);
+    snapshot.mouse = uze_terminal::MouseMode {
+        reports_clicks: true,
+        reports_drag: true,
+        sgr: true,
+    };
+    model.panes.insert(pane, snapshot);
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    driven.frame();
+    let card = driven.attach.model.dock_drawn.get().expect("the card");
+    let _ = driven.sent();
+
+    let (x, y) = (card.x + 2, card.bottom() - 2);
+    driven.press(x, y);
+    driven.mouse(x, y, MouseEventKind::Up(MouseButton::Left));
+    assert!(
+        !driven.sent().iter().any(|request| matches!(
+            request,
+            crate::ui::orchestrator::ClientRequest::Input { .. }
+        )),
+        "a gesture on the card is the drawer's"
+    );
+}
+
+/// Dragging a floating drawer's edge sizes floating drawers only, and a
+/// card that fits what it holds offers no edge to drag at all.
+#[test]
+fn a_floating_drawers_drag_is_its_own_and_a_fitted_card_has_no_edge() {
+    let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("drawer-float-drag"));
+    let room = ratatui::layout::Rect::new(0, 0, 200, 60);
+    let mut model = hosting_a_drawer(Some(uze_contract::DrawerDecl {
+        side: uze_contract::DrawerSide::Right,
+        float: true,
+        fit: false,
+    }));
+    let slot = drawer_slot(&model);
+    model.toggle_drawer(slot, room);
+    model.drag_dock_edge(room, 120, 10);
+    assert_eq!(
+        model.float_width,
+        Some(80),
+        "the pointer's column, from the right"
+    );
+    assert_eq!(model.dock_width, None, "a docked drawer keeps its own");
+
+    let mut fitted = hosting_a_drawer(Some(uze_contract::DrawerDecl {
+        side: uze_contract::DrawerSide::Right,
+        float: true,
+        fit: true,
+    }));
+    let slot = drawer_slot(&fitted);
+    fitted.toggle_drawer(slot, room);
+    let mut driven = driven(fitted, &home).on_a_roomy_terminal();
+    driven.frame();
+    assert!(
+        !driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .any(|(_, hit)| *hit == WorkspaceHit::ResizeDock),
+        "nothing to drag on a fitted card"
+    );
+}
