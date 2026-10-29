@@ -17,7 +17,7 @@
 
 ## 2. Catalogs (uze-integrations)
 
-- [ ] 2.1 Commit a `--help` snapshot per harness, plus `codex resume --help`, beside each integration
+- [x] 2.1 Commit a `--help` snapshot per harness, plus `codex resume --help`, beside each integration
 - [ ] 2.2 Claude Code catalog, reusing `session.rs` constants; owned: `--session-id`, `--resume`/`-r`, `--continue`/`-c`, `--fork-session`, `--print`/`-p`, `--settings`; `Degrades`: `--strict-mcp-config`, `--bare`, `--setting-sources`, `--disable-slash-commands`; `Weakens`: `--dangerously-skip-permissions`; managed env: `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD`, `CLAUDE_CONFIG_DIR`
 - [ ] 2.3 Codex catalog, with `-c`/`--config` as `Keyed` (always `agents`, `hooks.SessionStart`, `hooks.state`; conditionally `notify`, `features.memories`), `--disable` as `Degrades`; managed env `CODEX_HOME`
 - [ ] 2.4 OpenCode catalog (owned `--session`, `--continue`, `--prompt`); managed env `XDG_CONFIG_HOME`, `XDG_DATA_HOME`
