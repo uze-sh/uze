@@ -20,9 +20,9 @@ impl WorkspaceModel {
                 self.session = Some(session);
                 self.panes.clear();
                 self.note_strip_selection(identities);
-                self.close_extension_left_behind();
                 self.note_space_projects(identities);
                 self.put_away_space_overview_left_behind(identities);
+                self.settle_pane();
                 self.forget_overviews_of_closed_spaces();
                 self.forget_folds_of_closed_spaces();
                 self.follow_drawer_space();
@@ -34,9 +34,9 @@ impl WorkspaceModel {
                 self.note_typing_target();
                 self.note_launcher_bypass();
                 self.note_strip_selection(identities);
-                self.close_extension_left_behind();
                 self.note_space_projects(identities);
                 self.put_away_space_overview_left_behind(identities);
+                self.settle_pane();
                 self.forget_overviews_of_closed_spaces();
                 self.forget_folds_of_closed_spaces();
                 self.name_the_new_space();
@@ -64,6 +64,9 @@ impl WorkspaceModel {
                     None,
                 );
                 tracing::warn!(%reason, kept_at = %kept_at.display(), "the workspace was set aside");
+                // A runtime started afresh numbers its tabs from one again:
+                // what was kept for the old ones belongs to nobody now.
+                self.remembered.declared.standing.clear();
             }
             ClientEvent::Damage(_) => unreachable!("absorbed above"),
             ClientEvent::SelectionText { pane, text } => self.copy(pane, text),

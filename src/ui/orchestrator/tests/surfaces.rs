@@ -1049,5 +1049,160 @@ fn a_closed_tab_leaves_no_surface_behind() {
         ClientEvent::SessionUpdated { session },
         &identities_fixture(),
     );
-    assert!(model.left_open.is_empty());
+    assert!(model.remembered.declared.standing.is_empty());
+}
+
+/// The session's word that `tab` is in front, as the server sends it.
+fn bring_to_front(model: &mut WorkspaceModel, tab: uze_terminal::TabId) {
+    let mut session = model.session.clone().expect("session");
+    session.select_tab(tab);
+    model.apply(
+        ClientEvent::SessionUpdated { session },
+        &identities_fixture(),
+    );
+}
+
+fn showing_architect(model: &WorkspaceModel) -> bool {
+    model.showing(uze_extensions::architect::CATALOG.id)
+}
+
+/// A return is not a door: code stands again on the half it was left on,
+/// not on the changes every fresh opening starts from.
+#[test]
+fn returning_to_an_agent_shows_code_on_the_half_it_was_left_on() {
+    use uze_extensions::code::ContentMode;
+    let (mut model, first, second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    open_code(&mut model, uze_extensions::code::FILES);
+    assert_eq!(
+        code_view(&model).expect("open").showing(),
+        ContentMode::Contents
+    );
+
+    bring_to_front(&mut model, second);
+    assert!(code_view(&model).is_none());
+    bring_to_front(&mut model, first);
+    assert_eq!(
+        code_view(&model).expect("it stands again").showing(),
+        ContentMode::Contents,
+        "on files, where it was left"
+    );
+}
+
+/// Two agents, two surfaces: each tab gets back its own, however many
+/// times the operator goes between them.
+#[test]
+fn each_agent_keeps_its_own_surface() {
+    let (mut model, first, second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    open_code(&mut model, uze_extensions::code::FILES);
+    bring_to_front(&mut model, second);
+    open_architect(&mut model);
+
+    for _ in 0..2 {
+        bring_to_front(&mut model, first);
+        assert!(model.showing(uze_extensions::code::CATALOG.id));
+        bring_to_front(&mut model, second);
+        assert!(showing_architect(&model));
+    }
+}
+
+/// The overview opened over a surface puts it away for its tab, and the
+/// overview put away gives it back.
+#[test]
+fn the_overview_opened_over_a_surface_gives_it_back_when_put_away() {
+    let (mut model, first, _second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    model.settle_pane();
+    open_architect(&mut model);
+    let space = model.session.as_ref().expect("session").selected_space().id;
+
+    model.open_space_overview(space, first, PathBuf::from("/repo"), true);
+    assert!(!showing_architect(&model));
+    model.put_away_space_overview();
+    model.settle_pane();
+    assert!(showing_architect(&model));
+}
+
+/// A surface opened on a tab is what the tab keeps from then on, even
+/// one opened while an older one waited under the overview.
+#[test]
+fn a_surface_opened_where_one_was_kept_replaces_it() {
+    let (mut model, first, second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    open_architect(&mut model);
+    bring_to_front(&mut model, second);
+    let space = model.session.as_ref().expect("session").selected_space().id;
+    model.open_space_overview(space, second, PathBuf::from("/repo"), true);
+    bring_to_front(&mut model, first);
+    assert!(!showing_architect(&model), "the overview holds the pane");
+
+    open_spec(&mut model);
+    model.close_surface();
+    bring_to_front(&mut model, second);
+    bring_to_front(&mut model, first);
+    assert!(!showing_architect(&model));
+    assert!(!model.showing(uze_extensions::spec::CATALOG.id));
+}
+
+/// A client attaching again finds the tab in front as it was left.
+#[test]
+fn reattaching_shows_the_surface_of_the_tab_in_front() {
+    let (mut model, first, _second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    open_architect(&mut model);
+    let session = model.session.clone().expect("session");
+
+    model.suspend_surface();
+    let mut again = WorkspaceModel {
+        remembered: std::mem::take(&mut model.remembered),
+        ..WorkspaceModel::default()
+    };
+    again.apply(ClientEvent::Snapshot { session }, &identities_fixture());
+    assert!(showing_architect(&again));
+}
+
+/// A workspace set aside starts its tabs from one again: nothing kept
+/// for the old ones stands in the new.
+#[test]
+fn a_workspace_set_aside_forgets_every_tab_kept() {
+    let (mut model, first, second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    open_architect(&mut model);
+    bring_to_front(&mut model, second);
+    model.apply(
+        ClientEvent::WorkspaceSetAside {
+            kept_at: PathBuf::from("/kept"),
+            reason: "unreadable".to_owned(),
+        },
+        &identities_fixture(),
+    );
+    bring_to_front(&mut model, first);
+    assert!(!showing_architect(&model));
+}
+
+/// An extension switched off takes with it what tabs kept of it, so
+/// switching it back on does not bring an old surface back.
+#[test]
+fn an_extension_switched_off_forgets_what_tabs_kept_of_it() {
+    let (mut model, first, second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    open_architect(&mut model);
+    bring_to_front(&mut model, second);
+    model.follow_extension_switch(switched_off(&[uze_extensions::architect::CATALOG.id]));
+    model.follow_extension_switch(std::collections::BTreeSet::new());
+    bring_to_front(&mut model, first);
+    assert!(!showing_architect(&model));
+}
+
+/// The list's scroll is the host's, and travels with the tab too.
+#[test]
+fn a_navigator_scroll_comes_back_with_its_tab() {
+    let (mut model, first, second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    open_code(&mut model, uze_extensions::code::FILES);
+    model.navigator_scroll.first = 7;
+    bring_to_front(&mut model, second);
+    bring_to_front(&mut model, first);
+    assert_eq!(model.navigator_scroll.first, 7);
 }

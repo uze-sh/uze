@@ -698,6 +698,7 @@ pub(crate) fn attach_workspace(
         attach
             .model
             .follow_extension_switch(super::extension_switch::disabled());
+        attach.model.settle_pane();
         if attach
             .model
             .take_ring(super::chime::current(), Instant::now())
@@ -750,6 +751,10 @@ pub(crate) fn attach_workspace(
     // shape, and the shape is handed back so the next attach — or the
     // next run — opens on it.
     attach.close_manage();
+    // Put away rather than dropped: the next attach's first session gives
+    // it back to its tab, and the engine is not left holding a view no
+    // client draws.
+    attach.model.suspend_surface();
     attach.model.shape().apply_to(layout);
     // The recorder may still be writing an older shape, and `super::run`
     // writes the final one as soon as this returns: the older write must
@@ -2038,15 +2043,12 @@ struct WorkspaceModel {
     /// The room each status row, band and overlay had on the last frame:
     /// what its engine is told it has when a click reaches it.
     slot_spaces: std::cell::RefCell<BTreeMap<SlotId, uze_extensions::view::Size>>,
-    /// The tab the open surface stands in for. It is drawn where that
-    /// tab's pane is, about that tab's checkout, so a different tab coming
-    /// to the front — however it got there — puts it away rather than
+    /// The tab the pane was last settled for, and so the one the open
+    /// surface stands in for. It is drawn where that tab's pane is, about
+    /// that tab's checkout, so a different tab coming to the front —
+    /// however it got there — puts it away for this one rather than
     /// leaving it answering for a checkout nobody is looking at.
     extension_tab: Option<TabId>,
-    /// The view each tab had standing when another tab came to the front,
-    /// and the checkout it was on: the tab coming back opens it again, so
-    /// moving between agents never closes what one of them was showing.
-    left_open: BTreeMap<TabId, (SlotId, PathBuf)>,
     /// The overview of a space, standing where the pane is. It belongs to
     /// its space rather than to [`Self::extension_tab`]: the broadcast that
     /// confirms the space changes the tab in front.

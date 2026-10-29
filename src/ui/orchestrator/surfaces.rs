@@ -46,6 +46,17 @@ impl WorkspaceModel {
         {
             self.close_surface();
         }
+        let kept: Vec<TabId> = self
+            .remembered
+            .declared
+            .standing
+            .iter()
+            .filter(|(_, standing)| !self.offers_declared(&standing.owner))
+            .map(|(tab, _)| *tab)
+            .collect();
+        for tab in kept {
+            self.remembered.declared.standing.remove(&tab);
+        }
         self.close_drawers_switched_off();
         self.close_overlay_switched_off();
         self.register_extension_keys();
@@ -57,34 +68,80 @@ impl WorkspaceModel {
         self.close_surface();
     }
 
-    /// Puts the open surface away once its tab is no longer the one in
-    /// front, remembered for that tab, and opens again the one the tab now
-    /// in front was showing when it was left.
-    pub(super) fn close_extension_left_behind(&mut self) {
-        let in_front = self
-            .session
-            .as_ref()
-            .map(|session| session.selected_tab().id);
-        let moved = in_front != self.extension_tab;
-        if moved
-            && let (Some(tab), Some(slot), Some(root)) =
-                (self.extension_tab, self.open_slot, self.open_root.clone())
-        {
-            self.left_open.insert(tab, (slot, root));
+    /// Follows the tab in front: the surface standing for another tab is
+    /// put away for it, and the tab in front gets back what it was left
+    /// with, unless the overview holds the pane. Answers the session and
+    /// every frame alike, so however the pane was given back — the overview
+    /// put away, a reattach — what the tab kept stands in it again.
+    pub(super) fn settle_pane(&mut self) {
+        let in_front = self.selected_tab();
+        if in_front != self.extension_tab {
+            self.suspend_surface();
+            self.extension_tab = in_front;
         }
         self.forget_surfaces_of_closed_tabs();
-        if !moved {
+        if self.open_slot.is_some() || self.space_overview.is_some() {
             return;
         }
-        self.close_extension();
-        self.extension_tab = in_front;
-        // An overview standing keeps the pane; the surface waits for the
-        // tab's next return rather than being forgotten.
-        if self.space_overview.is_some() {
+        if let Some(tab) = in_front {
+            self.restore_surface(tab);
+        }
+    }
+
+    /// Puts the open surface away for the tab it stands in, holding what
+    /// it keeps for that tab's return.
+    pub(super) fn suspend_surface(&mut self) {
+        if self.open_slot.is_none() {
             return;
         }
-        if let Some((slot, root)) = in_front.and_then(|tab| self.left_open.remove(&tab)) {
-            open_surface_on(self, slot, root);
+        let (Some(tab), Some(slot)) = (self.extension_tab, self.slot_in_pane()) else {
+            self.close_surface();
+            return;
+        };
+        let (owner, surface) = (slot.owner.clone(), slot.surface.id.clone());
+        let held = self
+            .remembered
+            .declared
+            .engine(&owner)
+            .and_then(|engine| engine.hold(&surface));
+        let navigator = std::mem::take(&mut self.navigator_scroll);
+        let inspecting = self.inspecting;
+        let root = self.open_root.clone();
+        self.close_surface();
+        if let Some(root) = root {
+            self.remembered.declared.standing.insert(
+                tab,
+                Standing {
+                    owner,
+                    surface,
+                    root,
+                    held,
+                    navigator,
+                    inspecting,
+                },
+            );
+        }
+    }
+
+    /// Stands in `tab`'s pane what was put away for it, when its extension
+    /// still declares the surface and is offered.
+    fn restore_surface(&mut self, tab: TabId) {
+        let Some(standing) = self.remembered.declared.standing.remove(&tab) else {
+            return;
+        };
+        let slot = self
+            .remembered
+            .declared
+            .slots
+            .iter()
+            .find(|slot| slot.owner == standing.owner && slot.surface.id == standing.surface)
+            .map(|slot| slot.id);
+        let Some(slot) = slot else {
+            return;
+        };
+        if open_surface_with(self, slot, standing.root, Resumed::Held(standing.held)) {
+            self.navigator_scroll = standing.navigator;
+            self.inspecting = standing.inspecting;
         }
     }
 
@@ -98,17 +155,20 @@ impl WorkspaceModel {
             .iter()
             .flat_map(|space| space.tabs.iter().map(|tab| tab.id))
             .collect();
-        self.left_open.retain(|tab, _| live.contains(tab));
+        self.remembered
+            .declared
+            .standing
+            .retain(|tab, _| live.contains(tab));
     }
 
     /// Notes the tab in front as the one a surface opening now stands in
     /// for.
     pub(super) fn stand_extension_in_front(&mut self) {
         self.put_away_space_overview();
-        self.extension_tab = self
-            .session
-            .as_ref()
-            .map(|session| session.selected_tab().id);
+        self.extension_tab = self.selected_tab();
+        if let Some(tab) = self.extension_tab {
+            self.remembered.declared.standing.remove(&tab);
+        }
     }
 }
 

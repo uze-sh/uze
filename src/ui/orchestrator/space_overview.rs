@@ -1287,7 +1287,7 @@ impl WorkspaceModel {
             return;
         }
         self.put_away_space_overview();
-        self.close_extension();
+        self.suspend_surface();
         let overview = match self.put_away_overviews.remove(&space) {
             // Its answer is read again on opening; what was drawn from the
             // last one stands until the new one arrives.
