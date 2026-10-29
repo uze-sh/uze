@@ -182,3 +182,57 @@ pub(super) fn effective_base(primary: &Path, isolation: &Isolation) -> String {
         _ => isolation.base_commit.clone(),
     }
 }
+
+/// Forgets the remote-tracking refs of published branches the remote no
+/// longer has — a request closed and its branch deleted on the forge.
+/// UZE only ever fetches the target, so nothing else prunes them, and a
+/// stale one read as published for good: the task never followed the
+/// target again.
+///
+/// Asks the remote about these names alone, and forgets nothing when it
+/// could not answer. Each ref is deleted only from the commit read here,
+/// so one a push moved since is left to say so.
+pub fn forget_unpublished<'a>(primary: &Path, isolations: impl IntoIterator<Item = &'a Isolation>) {
+    let tracked: Vec<Publication> = isolations
+        .into_iter()
+        .filter_map(|isolation| publication(primary, isolation))
+        .collect();
+    if tracked.is_empty() {
+        return;
+    }
+    let patterns: Vec<String> = tracked
+        .iter()
+        .map(|published| format!("refs/heads/{}", published.branch))
+        .collect();
+    let mut args = vec!["ls-remote", "--heads", REMOTE];
+    args.extend(patterns.iter().map(String::as_str));
+    let Some(listing) = crate::git::read(primary, &args)
+        .ok()
+        .and_then(|output| output.successful().ok())
+    else {
+        return;
+    };
+    let present: std::collections::BTreeSet<&str> = listing
+        .lines()
+        .filter_map(|line| line.split_once('\t'))
+        .filter_map(|(_, reference)| reference.strip_prefix("refs/heads/"))
+        .collect();
+    let gone: Vec<&Publication> = tracked
+        .iter()
+        .filter(|published| !present.contains(published.branch.as_str()))
+        .collect();
+    if gone.is_empty() {
+        return;
+    }
+    let forgotten = uze_git::locked(primary, uze_git::DEFAULT_WRITE_TIMEOUT, || {
+        for published in gone {
+            let tracking = format!("refs/remotes/{REMOTE}/{}", published.branch);
+            if let Err(reason) = git(primary, &["update-ref", "-d", &tracking, &published.tip]) {
+                tracing::debug!(%tracking, %reason, "a stale remote-tracking ref was kept");
+            }
+        }
+    });
+    if let Err(error) = forgotten {
+        tracing::debug!(%error, "stale remote-tracking refs were kept");
+    }
+}

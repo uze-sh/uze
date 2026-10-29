@@ -1306,6 +1306,31 @@ fn a_branch_its_agent_pushed_is_delivered_onto_a_moved_target() {
     assert!(slot.join("theirs.rs").is_file(), "rebased onto the target");
 }
 
+/// A request closed and its branch deleted on the forge leaves the
+/// remote-tracking ref behind, and a branch read as published for good
+/// never followed the target again.
+#[test]
+fn a_branch_gone_from_the_remote_is_no_longer_published() {
+    let (repository, other) = published("landing-forget-unpublished");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let gone = launch(&repository, &mut store, "gone");
+    let kept = launch(&repository, &mut store, "kept");
+    for agent in [&gone, &kept] {
+        agent_commits(&repository, work(agent), &format!("{}.rs", agent.label), "");
+        let slot = slot_path(primary, work(agent)).unwrap();
+        repository.git_in(&slot, &["push", "--quiet", REMOTE, "HEAD"]);
+    }
+    repository.git_in(
+        &other,
+        &["push", "--quiet", REMOTE, "--delete", &work(&gone).branch],
+    );
+
+    forget_unpublished(primary, [work(&gone), work(&kept)]);
+    assert_eq!(publication(primary, work(&gone)), None);
+    assert!(publication(primary, work(&kept)).is_some());
+}
+
 /// The other half the agent can do alone. UZE learns the number from
 /// the remote on the pass that already runs, so a request opened
 /// outside a delivery is still the request this branch has.

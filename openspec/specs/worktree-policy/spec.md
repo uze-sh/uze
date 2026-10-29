@@ -505,6 +505,11 @@ The system SHALL deliver a ready task only on an explicit operator action, in a 
 - **THEN** its branch is not rebased, so it stays level with what its request shows and reads as having nothing to push
 - **AND** only a delivery rebases it onto the target, overwriting the remote branch under a lease when every commit the remote holds is one the branch carried before the rebase, whoever pushed it
 
+#### Scenario: A branch deleted on the remote is no longer published
+- **WHEN** a live task's branch is deleted on the remote, as a forge does when its request is closed
+- **THEN** the workspace's target sync forgets its remote-tracking ref, and the task reads and follows the target as unpublished work again
+- **AND** nothing is forgotten when the remote cannot be asked
+
 #### Scenario: Work the target already holds is delivered, not replayed
 - **WHEN** a live task's work reached the target as a squash or a rebase merge, so the target moved but none of the branch's commits is reachable from it
 - **THEN** the task is read as delivered from the patch the target carries
