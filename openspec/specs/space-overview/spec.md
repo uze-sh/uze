@@ -169,18 +169,6 @@ the management's health status does; a click elsewhere or Esc SHALL close it.
 - **WHEN** `uze status` reports a harness that will not read the project's context
 - **THEN** the foot counts it, and the list a click on the count opens names the harness and why
 
-### Requirement: An agent outside a project says so
-When the agent's directory no longer exists, or is not inside a project, the
-overview SHALL say which and show the Agent section alone.
-
-#### Scenario: A directory that is gone
-- **WHEN** the agent's directory was deleted
-- **THEN** the overview says the directory no longer exists and draws only the Agent section
-
-#### Scenario: A directory that is not a project
-- **WHEN** the agent runs in a plain directory with no project in or above it
-- **THEN** the overview says it is not a project and draws only the Agent section
-
 ### Requirement: The Memory section lists the project's facts
 The Memory section SHALL list the facts kept for the project, each with its
 kind, origin (UZE, or the harness that keeps it) and last update, SHALL say
@@ -288,3 +276,19 @@ manifest, lock or instructions change.
 #### Scenario: Walking the agents
 - **WHEN** the operator walks past several agents quickly
 - **THEN** a status read is made only for the agent the walk stops on
+
+### Requirement: The sections follow the directory
+Inside a Git repository the overview SHALL show all five sections. Outside
+every Git repository it SHALL show the Agent and Memory sections alone,
+mark neither for what is missing, and write no settings: applying a
+`workspace:` edit there SHALL be refused. A project that could not be read
+SHALL be said in Settings, Plugins and Worktrees, which their tabs mark,
+while Memory is still listed.
+
+#### Scenario: A directory outside every repository
+- **WHEN** the agent runs in a plain directory with no Git repository in or above it
+- **THEN** the bar shows Agent and Memory, unmarked, and the machine's facts are listed
+
+#### Scenario: A project that could not be read
+- **WHEN** the agent's repository cannot be read as a project
+- **THEN** all five sections are shown, and Settings, Plugins and Worktrees say why

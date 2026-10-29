@@ -14,8 +14,8 @@ The system SHALL record, for every agent it launches, in the space's root
 or in a checkout of its own, the conversation its harness started and the
 harness it belongs to. The record SHALL live in UZE's state beside the
 agent's, never in a checkout, keyed by the agent's identity. It SHALL hold
-no harness credential and no conversation content; a switch's briefing is
-the only place UZE writes conversation text.
+no harness credential and no conversation text but the agent's current
+briefing, which is removed with the agent's conversations.
 
 #### Scenario: A new agent's conversation is recorded
 - **WHEN** an agent is launched for the first time
@@ -35,7 +35,11 @@ the only place UZE writes conversation text.
 
 #### Scenario: The record holds no conversation text
 - **WHEN** an agent has been switched between harnesses
-- **THEN** its continuity record names conversations and a pending briefing's location, and holds none of their text
+- **THEN** its continuity record names its conversations and holds the current briefing's text, and nothing else of any conversation
+
+#### Scenario: The briefing goes with the conversations
+- **WHEN** an agent's conversations are forgotten
+- **THEN** its briefing is gone with them
 
 ### Requirement: A conversation is keyed by identity, and the record follows the agent
 The system SHALL key a conversation by the identifier its harness resumes
@@ -198,17 +202,26 @@ returns.
 - **WHEN** an agent is relaunched into a task whose recorded conversation exists in the harness but falls outside the first page of the harness's own listing
 - **THEN** the conversation is continued, not started fresh
 
-### Requirement: A pending briefing is given by the launch it was meant for
-The system SHALL give a pending briefing's first turn only to a launch of
-that agent on the harness it was written for, SHALL clear it in the same
-change that records that launch, and SHALL leave it untouched for a launch
-on any other harness. A launch carrying the operator's own arguments SHALL
-neither give nor clear it.
+### Requirement: A briefing is part of the agent's context until its work moves on
+The system SHALL keep an agent's briefing in the agent's continuity record.
+It SHALL include the briefing in the agent's context on every launch on the
+harness it was written for. It SHALL stop when the agent's branch gains a
+commit made after the switch, or when a later switch replaces the briefing.
+A launch on any other harness, and a launch carrying the operator's own
+arguments, SHALL neither give the briefing nor change it.
 
-#### Scenario: A launch on another harness leaves it pending
-- **WHEN** an agent with a briefing pending for one harness is launched on a different harness
-- **THEN** that launch carries no briefing turn and the briefing stays pending
+#### Scenario: A launch on another harness carries none
+- **WHEN** an agent with a briefing written for one harness is launched on a different harness
+- **THEN** that launch's context carries no briefing, and the briefing is kept
 
-#### Scenario: Given exactly once
-- **WHEN** the harness a briefing was written for is launched for that agent twice
-- **THEN** only the first launch carries the briefing turn
+#### Scenario: A restore still carries it
+- **WHEN** the harness a briefing was written for is launched for that agent twice before the agent commits
+- **THEN** both launches' contexts carry the briefing
+
+#### Scenario: The agent's first commit retires it
+- **WHEN** the agent's branch gains a commit after the switch
+- **THEN** later launches carry no briefing
+
+#### Scenario: The next switch replaces it
+- **WHEN** an agent with a briefing is switched again
+- **THEN** its context carries only the briefing written for the new switch
