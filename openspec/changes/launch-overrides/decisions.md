@@ -129,3 +129,53 @@
 - decided:  `plan_with` reads the overrides record only after `owner_of` accepted the claim, so a claim it refuses carries none; the plan-aware check runs against the plan's `args` and `trailing`. Each entry left out is also added to `LaunchPlan.note`, which the shim already prints, so a now-owned override is said on the tab before group 4 touches the shim. `LaunchOverrides.weakens` names the passed flags that weaken safety, for the shim's note in 4.1.
 - rejected: Copying the overrides into `agents.json` so one load serves both: the design rejects that file for being world-readable and for the shape bump.
 - blast:    `overrides_for` in `continuity.rs` and the note lines; group 4 must not print `left_out` a second time.
+
+## D14 — The plan composes the launch; the shim prints one note
+
+- status:   pending
+- task:     4.1, 4.2
+- commit:   e6f8bd12
+- trigger:  4.1 asks the shim to splice overrides between the contribution's args and the first turn, and to apply memory-off's args after; the shim is a binary entry point no suite in `tests/` can call, so the order could only be proven by an acceptance test per harness.
+- decided:  `LaunchPlan::compose(self, &mut contribution, memory_off, catalog) -> Option<String>` in `uze-workspace` folds the plan into the contribution in design decision 3's order, runs `leave_out_composed` with memory-off's args, and returns one note: the plan's own (which already holds what the plan left out, D13), then only what memory-off newly left out, then each `weakens` line. The shim calls it and prints the note once. A bypassed launch or a claim `owner_of` refuses says, through `continuity::overrides_left_behind`, how many overrides the agent has on that harness and why they were left out — a count, never a name, since the claimant need not be the operator; it is one `stat` when no record exists and never fails the launch.
+- rejected: Keeping the splice inline in `src/shim.rs`: the order is a rule of the plan, and per-harness tests would have to go through a real binary for each harness.
+- blast:    `LaunchPlan::compose` and `overrides_left_behind` in `continuity.rs`; the shim's block shrinks back if reverted.
+
+## D15 — Launches that take overrides are `_with` siblings, and every placement answers what a bare launch needs
+
+- status:   pending
+- task:     4.3, 4.4
+- commit:
+- trigger:  `place_new_agent` has 69 callers and `resume_task` 8; the task asks for an overrides parameter. A harness started by its plain binary (no launcher, or no continuity) needs its overrides from the client, on every kind of launch, not only a new one.
+- decided:  `place_new_agent_with(…, overrides: &[String])` and `resume_task_with(…, overrides: Option<&[String]>)` (`None` keeps what the agent had on that harness, `Some` replaces it), the plain names delegating with none. Every placement (new, resume, isolate, switch) ends in `launching_with`, which records the overrides under the agent's project for the harness its record now names, before the answer and so before the tab, and fills `AgentPlacement.bare_launch` from the record when `launcher` reports a gap — the same rule that names the launch. What a bare launch leaves out or weakens joins the placement's warnings. A record that cannot be written warns and launches without them.
+- rejected: Changing the two signatures: 77 call sites for a parameter almost all pass empty. Letting the client compose bare launches from what it typed: a resume, an isolate and a switch carry recorded overrides the client never saw.
+- blast:    `tasks/overrides.rs`, the `_with` methods, `BareLaunch` on `AgentPlacement`; group 5 calls the `_with` methods.
+
+## D16 — `Continue in` says what was left behind on the placement's `told`
+
+- status:   pending
+- task:     4.3
+- commit:
+- trigger:  The spec says the tab says the earlier overrides were left behind; a switch already answers `told`, which the client raises as a toast for that tab's agent.
+- decided:  When the outgoing harness has recorded overrides, `switch_harness` appends "Its overrides on <harness> were left behind, and come back with it." to `told`. The incoming harness's own recorded set is what its launch carries (none the first time), since the record is per harness; nothing is copied or cleared.
+- rejected: A note on the next shim launch through `LaunchPlan.note`: it would need a pending flag in the record, and a bare launch has no shim to say it.
+- blast:    A few lines in `switch.rs`.
+
+## D17 — A bare launch whose variables overflow a tab opens nothing
+
+- status:   pending
+- task:     4.4
+- commit:
+- trigger:  The terminal runtime caps a launch environment at 16 entries and 4096 bytes, and the identity takes two; a bare launch adds the overrides' variables.
+- decided:  `uze_terminal::launch::admits` (the check `validate` already ran, made public) is asked by `open_agent_tab` before `CreateTab`; a refused environment opens no tab and raises a failed toast naming the limit. The agent's record stays, as for any launch whose tab did not open, so it can be resumed with fewer.
+- rejected: Truncating to fit: a launch carrying some of the operator's overrides is one they did not ask for. Refusing in the application before placement: it would need the terminal's limits in `uze-application`, which does not depend on `uze-terminal`, and a bare launch is already the rare case (the workspace offers only harnesses whose launcher is in place).
+- blast:    `admits` in `launch.rs`, a guard in `open_agent_tab`.
+
+## D18 — The catalog read model travels on `AgentIdentity`, checked without a thread
+
+- status:   pending
+- task:     4.3
+- commit:
+- trigger:  The popup checks the typed line on every keystroke, and the client may not wait on the application there; `src/` may not name `uze_core::`.
+- decided:  `OverrideCatalog` (the integration's static catalog and managed variables) is a `Copy` field of `AgentIdentity` and also `Workspace::override_catalog`; `flags()` yields `OverrideFlag`s (offered ones only, with `OverrideValue` and an `OverrideMark` of `Plain`/`Weakens`/`Degrades`), `check(line)`/`check_words` are pure and answer `CheckedOverride`s with the workspace's `Verdict` (re-exported as `OverrideVerdict`). Recent sets (`recent_overrides`, `forget_recent_overrides`, re-exported `RecentOverrides`) and `agent_overrides` read the record and belong on a thread.
+- rejected: Re-exporting `FlagSpec`/`FlagOwner`: `Keyed { owned, conditional }` is the check's concern, not something a row draws.
+- blast:    `services/overrides.rs`, one field on `AgentIdentity` and its test fixtures.

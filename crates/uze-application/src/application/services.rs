@@ -167,6 +167,9 @@ pub struct AgentIdentity {
     /// How this harness's prompt invokes a skill by name (`/`, `$`, `@`),
     /// or `None` for one that has no way to.
     pub skill_prefix: Option<&'static str>,
+    /// What an agent of this harness may be launched with beyond what UZE
+    /// composes, for an overrides step to offer and check.
+    pub overrides: OverrideCatalog,
 }
 
 impl AgentIdentity {
@@ -212,6 +215,7 @@ mod checkouts;
 mod declaration;
 mod disk;
 mod launchers;
+mod overrides;
 mod policy_commands;
 mod retired_regions;
 mod space_overview;
@@ -222,6 +226,7 @@ pub use artifacts::*;
 pub use checkouts::*;
 pub use declaration::*;
 pub use disk::*;
+pub use overrides::*;
 pub use policy_commands::*;
 pub use space_overview::*;
 pub use tasks::*;

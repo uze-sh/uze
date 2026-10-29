@@ -18,6 +18,7 @@ fn identity(binary: &str, configured: bool) -> AgentIdentity {
         continuity_gap: None,
         configured,
         skill_prefix: Some("/"),
+        overrides: Default::default(),
     }
 }
 

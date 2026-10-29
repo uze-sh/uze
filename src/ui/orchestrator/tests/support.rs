@@ -57,6 +57,7 @@ pub(super) fn identities_fixture() -> Vec<AgentIdentity> {
         continuity_gap: None,
         configured: true,
         skill_prefix: Some("/"),
+        overrides: Default::default(),
     }]
 }
 
@@ -329,6 +330,7 @@ pub(super) fn identities_in_the_root() -> Vec<AgentIdentity> {
             continuity_gap: None,
             configured: true,
             skill_prefix: Some("/"),
+            overrides: Default::default(),
         },
         AgentIdentity {
             binary: "codex",
@@ -338,6 +340,7 @@ pub(super) fn identities_in_the_root() -> Vec<AgentIdentity> {
             continuity_gap: None,
             configured: true,
             skill_prefix: Some("/"),
+            overrides: Default::default(),
         },
     ]
 }
@@ -697,6 +700,7 @@ pub(super) fn identities() -> Vec<AgentIdentity> {
             continuity_gap: None,
             configured: true,
             skill_prefix: Some("/"),
+            overrides: Default::default(),
         },
         AgentIdentity {
             binary: "codex",
@@ -706,6 +710,7 @@ pub(super) fn identities() -> Vec<AgentIdentity> {
             continuity_gap: Some("no launcher".to_owned()),
             configured: true,
             skill_prefix: Some("/"),
+            overrides: Default::default(),
         },
     ]
 }

@@ -67,6 +67,7 @@ fn a_long_caption_is_elided_rather_than_run_off_the_sidebar() {
         continuity_gap: None,
         configured: true,
         skill_prefix: Some("/"),
+        overrides: Default::default(),
     }];
 
     let rows = sidebar(&model, &identities).rows;

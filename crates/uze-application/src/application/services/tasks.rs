@@ -29,6 +29,7 @@ mod delivery;
 mod evaluation;
 mod naming;
 mod occupancy;
+mod overrides;
 mod placement;
 mod reporting;
 mod repository;
@@ -71,6 +72,7 @@ impl Workspace<'_> {
                     configured: self.is_set_up(integration.as_ref()),
                     skill_prefix: Some(integration.invocation_prefix())
                         .filter(|prefix| !prefix.is_empty()),
+                    overrides: super::OverrideCatalog::of(integration.as_ref()),
                 }
             })
             .collect()
