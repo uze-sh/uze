@@ -138,7 +138,7 @@ accepts, which is why the table sums to more than the number of crates.
 
 | Licence | Crates |
 | --- | --- |
-| Apache License 2.0 (`Apache-2.0`) | 228 |
+| Apache License 2.0 (`Apache-2.0`) | 229 |
 | MIT License (`MIT`) | 82 |
 | Unicode License v3 (`Unicode-3.0`) | 19 |
 | Creative Commons Zero v1.0 Universal (`CC0-1.0`) | 1 |
@@ -342,8 +342,8 @@ accepts, which is why the table sums to more than the number of crates.
 | `regex-syntax` | 0.8.11 | MIT OR Apache-2.0 |
 | `rhai` | 1.27.0 | MIT OR Apache-2.0 |
 | `rhai_codegen` | 3.3.0 | MIT OR Apache-2.0 |
-| `rmcp` | 3.5.1 | Apache-2.0 |
-| `rmcp-macros` | 3.5.1 | Apache-2.0 |
+| `rmcp` | 3.7.0 | Apache-2.0 |
+| `rmcp-macros` | 3.8.0 | Apache-2.0 |
 | `rustc-hash` | 2.1.3 | Apache-2.0 OR MIT |
 | `rustc_version` | 0.4.1 | MIT OR Apache-2.0 |
 | `rustix` | 1.1.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
@@ -375,6 +375,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `slab` | 0.4.12 | MIT |
 | `smallvec` | 1.16.0 | MIT OR Apache-2.0 |
 | `smartstring` | 1.0.1 | MPL-2.0+ |
+| `socket2` | 0.6.5 | MIT OR Apache-2.0 |
 | `stable_deref_trait` | 1.2.1 | MIT OR Apache-2.0 |
 | `static_assertions` | 1.1.0 | MIT OR Apache-2.0 |
 | `strsim` | 0.11.1 | MIT |
@@ -398,7 +399,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `time-core` | 0.1.9 | MIT OR Apache-2.0 |
 | `tiny-keccak` | 2.0.2 | CC0-1.0 |
 | `tinystr` | 0.8.4 | Unicode-3.0 |
-| `tokio` | 1.53.3 | MIT |
+| `tokio` | 1.54.1 | MIT |
 | `tokio-macros` | 2.7.2 | MIT |
 | `tokio-util` | 0.7.19 | MIT |
 | `toml_datetime` | 1.1.2+spec-1.1.0 | MIT OR Apache-2.0 |
