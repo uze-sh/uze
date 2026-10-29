@@ -1,5 +1,5 @@
 # uze snapshot · protocol 1 · overlay 60x8 · dark
- jump · bridge@local
+ Jump to an agent
 
    fix/branch-naming                          uze    go
    docs/extension-skill                      site    go
@@ -8,7 +8,7 @@
 
 esc close  ·  alt+j jump to an agent  ·  ctrl+g go
 ---
- aaaa a aaaaaaaaaaaa
+ aaaa aa aa aaaaa
 
    bbbbbbbbbbbbbbbbb                          aaa    cc
    bbbbbbbbbbbbbbbbbbbb                      aaaa    cc

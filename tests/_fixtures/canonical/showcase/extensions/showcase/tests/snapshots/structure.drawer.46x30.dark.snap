@@ -1,6 +1,6 @@
 # uze snapshot · protocol 1 · drawer 46x30 · dark
  ┌───────────────────────────────────────────┐
- │ showcase · showcase@local                 │
+ │ Structure                                 │
  │                                           │
  │  Plan       Max 5x                        │
  │  Branch     feat/retry-backoff            │
@@ -31,7 +31,7 @@
  └───────────────────────────────────────────┘
 ---
  aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- a bbbbbbbb b bbbbbbbbbbbbbb                 a
+ a bbbbbbbbb                                 a
  a                                           a
  a  bbbb       ccc cc                        a
  a  bbbbbb     dddddddddddddddddd            a

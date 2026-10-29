@@ -326,8 +326,8 @@ fn a_declared_view_opens_from_its_button_and_closes_from_it() {
     driven.frame();
     let rows = frame_rows_at(&mut driven.attach.model, driven.area);
     assert!(
-        rows.iter().any(|row| row.contains("gsd-band")),
-        "attributed: {rows:#?}"
+        rows.iter().any(|row| row.contains("│ Board")),
+        "headed by its title: {rows:#?}"
     );
     driven.attach.model.last_click = None;
     let button = drawn(&driven.attach.model, WorkspaceHit::OpenDeclared(slot));
@@ -735,7 +735,7 @@ fn the_real_gsd_band_opens_switches_its_tab_and_redraws_a_save() {
     driven.frame();
     let rows = frame_rows_at(&mut driven.attach.model, driven.area);
     for wanted in [
-        "gsd-band · gsd@studio",
+        "Milestone",
         "v1.23  Assistente do lojista",
         "Consulta de dados e diagnóstico",
         "Relatórios do lojista",
@@ -1212,10 +1212,8 @@ fn a_drawer_opens_from_its_button_beside_the_pane_and_closes_from_it() {
         .map(|row| row.chars().skip(usize::from(drawer.x)).collect())
         .collect();
     assert!(
-        drawer_text
-            .iter()
-            .any(|row| row.contains("gsd-band · gsd@market")),
-        "attributed: {rows:#?}"
+        drawer_text.iter().any(|row| row.contains("│ Side")),
+        "headed by its title: {rows:#?}"
     );
     assert!(
         drawer_text

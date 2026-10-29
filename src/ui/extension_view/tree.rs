@@ -301,15 +301,20 @@ fn picture_columns(picture: &Picture, rows: u16) -> u16 {
     cells_of(columns.max(1))
 }
 
-/// The strip naming whose a declared view is, across the top of `area`,
-/// answering with the room left under it: the view is drawn there, so no
-/// part of it can cover the strip.
-pub(crate) fn render_attribution(frame: &mut ratatui::Frame<'_>, area: Rect, said: &str) -> Rect {
+/// The rows [`render_title`] takes off the top of a surface: its title; the
+/// air under it is the view's own.
+pub(crate) const TITLE_ROWS: u16 = 1;
+
+/// A declared surface's title across the top of `area` — the name its
+/// extension gave it, muted, as UZE's own surfaces head theirs — answering
+/// with the room left under it: the view is drawn there, so no part of it
+/// can cover the title. Whose it is (the plugin and its marketplace) is
+/// the Extensions screen's and the consent's to say, not every surface's.
+pub(crate) fn render_title(frame: &mut ratatui::Frame<'_>, area: Rect, said: &str) -> Rect {
     if area.height == 0 {
         return area;
     }
     let strip = Rect::new(area.x, area.y, area.width, 1);
-    widget::fill(frame, strip, Token::SurfaceRaisedSubtle);
     let room = usize::from(area.width.saturating_sub(TRAILING_PAD.saturating_mul(2)));
     frame.render_widget(
         Paragraph::new(Line::from(vec![
@@ -318,16 +323,18 @@ pub(crate) fn render_attribution(frame: &mut ratatui::Frame<'_>, area: Rect, sai
         ])),
         strip,
     );
+    let taken = TITLE_ROWS.min(area.height);
     Rect::new(
         area.x,
-        area.y.saturating_add(1),
+        area.y.saturating_add(taken),
         area.width,
-        area.height.saturating_sub(1),
+        area.height.saturating_sub(taken),
     )
 }
 
-/// What the attribution strip says: the extension, and the plugin and
-/// marketplace it came from, as the identity spells itself. Never the
+/// Whose a declared extension is, where that is the question (the
+/// Extensions screen, a consent, what it asks an agent): the extension, and
+/// the plugin and marketplace it came from, as the identity spells itself. Never the
 /// name the extension gives itself, which any plugin may choose.
 pub(crate) fn attribution(identity: &uze_contract::Identity) -> String {
     identity.to_string()

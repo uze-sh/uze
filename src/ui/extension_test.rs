@@ -24,7 +24,7 @@ use uze_keys::{Action, Front, Resolution, Scope};
 
 use crate::ui::extension_view::{
     FooterKeys, NavigatorFrame, SectionState, command_for, render, render_docked, render_section,
-    tree::{attribution, render_attribution},
+    tree::render_title,
 };
 use uze_theme::Token;
 
@@ -148,7 +148,6 @@ fn run_one(
         ),
         surface: surface.id.clone(),
         slot: surface.slot,
-        identity: compiled.identity.clone(),
         owner,
         footer,
         theme,
@@ -359,7 +358,6 @@ struct Stage {
     engine: DeclaredExtension,
     surface: String,
     slot: Slot,
-    identity: uze_contract::Identity,
     /// The extension's owner as the keymap names it.
     owner: String,
     /// What the host adds to its footer, as the workspace does.
@@ -383,6 +381,17 @@ impl Stage {
         }
     }
 
+    /// The surface's title, as the workspace heads it.
+    fn title(&self) -> String {
+        use uze_extensions::contract::Extension;
+        self.engine
+            .surfaces()
+            .into_iter()
+            .find(|surface| surface.id == self.surface)
+            .map(|surface| surface.title)
+            .unwrap_or_default()
+    }
+
     fn palette(&self) -> uze_theme::Theme {
         match self.theme {
             ThemeName::Dark => uze_theme::default_theme().clone(),
@@ -399,7 +408,7 @@ impl Stage {
             let mut terminal =
                 Terminal::new(TestBackend::new(self.width, self.height)).expect("a test backend");
             let mut hits = Vec::new();
-            let said = attribution(&self.identity);
+            let said = self.title();
             terminal
                 .draw(|frame| {
                     let area = frame.area();
@@ -427,7 +436,7 @@ impl Stage {
                                 false,
                                 None,
                             );
-                            let content = render_attribution(frame, inner, &said);
+                            let content = render_title(frame, inner, &said);
                             let space = Size {
                                 width: content.width,
                                 height: content.height,
@@ -450,7 +459,7 @@ impl Stage {
                             }
                         }
                         Slot::View | Slot::Overlay => {
-                            let content = render_attribution(frame, area, &said);
+                            let content = render_title(frame, area, &said);
                             let space = Size {
                                 width: content.width,
                                 height: content.height,
@@ -608,7 +617,6 @@ pub(crate) fn hit_for_text(
         engine: DeclaredExtension::new(compiled.clone(), DEFAULT_LOCALE),
         surface: surface.to_owned(),
         slot,
-        identity: compiled.identity.clone(),
         owner: crate::keymap::extension_owner(&compiled.identity),
         footer: vec![Action::ToggleInspector],
         theme: ThemeName::Dark,

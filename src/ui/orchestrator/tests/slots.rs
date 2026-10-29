@@ -504,8 +504,8 @@ fn an_overlay_opens_from_its_action_attributed_and_esc_gives_the_view_back() {
         .take(usize::from(card.width))
         .collect();
     assert!(
-        strip.contains("notes · proof@proving"),
-        "under the host's strip: {rows:#?}"
+        strip.contains("Notes") && !strip.contains("proof@proving"),
+        "headed by its title, not whose it is: {rows:#?}"
     );
     assert!(
         rows.iter().any(|row| row.contains("Copy the note")),

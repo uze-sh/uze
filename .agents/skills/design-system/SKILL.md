@@ -191,7 +191,10 @@ on "cancel" must not save first.
   and plugin above it. A band has no mark naming it either: a muted name
   at its end reads as a button. Whose it is belongs to the Extensions screen and the
   inspector; a clash between extensions is resolved by id, never shown. A
-  view, a drawer and an overlay keep their strip where they open.
+  view, a drawer and an overlay are headed by the title their extension
+  gave them, muted, on no strip of its own: never the extension's id, its
+  plugin or its marketplace, which belong to the Extensions screen, a
+  consent and a question about what it would do to an agent.
 - A plugin has no standing line to say it has nothing to say: no "no
   notice yet" row at the top of the sidebar. What it notifies is drawn in
   the sidebar's notice, where a new release is, one notice at a time with

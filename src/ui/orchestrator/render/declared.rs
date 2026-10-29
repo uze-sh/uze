@@ -53,12 +53,12 @@ pub(super) fn render_declared_overlays(
 }
 
 /// The rows of a raised card's chrome around what it holds: its two
-/// hairlines and the strip naming whose it is.
-const CARD_CHROME_ROWS: u16 = 3;
+/// hairlines and its title with the air under it.
+const CARD_CHROME_ROWS: u16 = 2 + crate::ui::extension_view::tree::TITLE_ROWS;
 
-/// The open drawer, where `compute_layout` placed it: a raised card, the
-/// strip naming whose it is across its top where nothing it draws can
-/// cover it, and its view under that. A floating drawer that fits what it
+/// The open drawer, where `compute_layout` placed it: a raised card, its
+/// title across its top where nothing it draws can cover it, and its view
+/// under that. A floating drawer that fits what it
 /// holds is cut to that, against its own side. Answers whether anything in
 /// it moves with the clock.
 pub(super) fn render_declared_drawer(
@@ -97,11 +97,7 @@ pub(super) fn render_declared_drawer(
         note,
     );
     let content = match slot.owner.declared() {
-        Some(identity) => crate::ui::extension_view::tree::render_attribution(
-            frame,
-            inner,
-            &crate::ui::extension_view::tree::attribution(identity),
-        ),
+        Some(_) => crate::ui::extension_view::tree::render_title(frame, inner, &slot.surface.title),
         None => inner,
     };
     let space = uze_extensions::view::Size {
@@ -276,11 +272,7 @@ pub(super) fn render_overlay(
         close_rect,
     );
     let content = match slot.owner.declared() {
-        Some(identity) => crate::ui::extension_view::tree::render_attribution(
-            frame,
-            inner,
-            &crate::ui::extension_view::tree::attribution(identity),
-        ),
+        Some(_) => crate::ui::extension_view::tree::render_title(frame, inner, &slot.surface.title),
         None => inner,
     };
     let space = crate::ui::extension_view::content_space(content, model.navigator_width);

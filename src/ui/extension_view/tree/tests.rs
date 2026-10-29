@@ -1182,34 +1182,28 @@ fn a_tree_section_folds_inside_its_rows_with_the_column_inset() {
 }
 
 #[test]
-fn the_attribution_strip_names_the_extension_and_keeps_its_row() {
+fn a_surface_is_headed_by_its_own_title_and_nothing_else() {
     in_both(|theme| {
         let mut terminal = Terminal::new(TestBackend::new(40, 3)).unwrap();
         let mut left = Rect::default();
         terminal
             .draw(|frame| {
-                let said = attribution(&uze_contract::Identity {
-                    marketplace: "community".to_owned(),
-                    plugin: "gsd".to_owned(),
-                    id: "gsd-band".to_owned(),
-                });
-                left = render_attribution(frame, frame.area(), &said);
+                left = render_title(frame, frame.area(), "Contributions");
             })
             .unwrap();
         let buffer = terminal.backend().buffer();
-        let strip: String = (0..40u16).map(|x| buffer[(x, 0)].symbol()).collect();
-        let separator = theme::glyph(Symbol::HintSeparator);
+        let row: String = (0..40u16).map(|x| buffer[(x, 0)].symbol()).collect();
         assert_eq!(
-            strip.trim_end(),
-            format!(" gsd-band{separator}gsd@community"),
-            "{theme}"
-        );
-        assert_eq!(
-            buffer[(39, 0)].bg,
-            theme::color(Token::SurfaceRaisedSubtle),
-            "{theme}"
+            row.trim_end(),
+            " Contributions",
+            "{theme}: no plugin, no marketplace"
         );
         assert_eq!(buffer[(1, 0)].fg, theme::color(Token::TextMuted), "{theme}");
+        assert_ne!(
+            buffer[(39, 0)].bg,
+            theme::color(Token::SurfaceRaisedSubtle),
+            "{theme}: no strip of its own"
+        );
         assert_eq!(left, Rect::new(0, 1, 40, 2), "{theme}");
     });
 }

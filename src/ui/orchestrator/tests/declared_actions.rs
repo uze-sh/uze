@@ -186,7 +186,7 @@ fn an_action_that_asks_first_is_a_host_dialog_attributed_and_esc_runs_nothing() 
     super::open_surface(&mut model, slot);
     full_frame_at(&mut model, area);
     let rows = frame_rows_at(&mut model, area);
-    assert!(shown(&rows, "gsd-band · gsd@market"), "{rows:#?}");
+    assert!(shown(&rows, "Code"), "headed by its title: {rows:#?}");
     assert!(shown(&rows, "Phase auth"), "{rows:#?}");
 
     let button = model
@@ -213,8 +213,8 @@ fn an_action_that_asks_first_is_a_host_dialog_attributed_and_esc_runs_nothing() 
         rows.iter()
             .filter(|row| row.contains("gsd-band · gsd@market"))
             .count()
-            >= 2,
-        "the question names whose it is, beside the strip: {rows:#?}"
+            == 1,
+        "the question names whose it is, and only the question: {rows:#?}"
     );
     let answers: Vec<ViewHit> = model
         .hits

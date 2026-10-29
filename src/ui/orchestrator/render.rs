@@ -363,15 +363,15 @@ pub(super) fn render(
         WorkspaceHit::ResizeSidebar,
     ));
     let (surface_area, inspector_area) = declared_split(model, layout.pane);
-    // A plugin's view is drawn under the strip naming whose it is, which
-    // nothing it draws can cover.
-    let declared = model.slot_in_pane().and_then(|slot| slot.owner.declared());
+    // A plugin's view is drawn under its title, which nothing it draws can
+    // cover.
+    let declared = model
+        .slot_in_pane()
+        .filter(|slot| slot.owner.declared().is_some());
     let surface_area = match declared {
-        Some(identity) => crate::ui::extension_view::tree::render_attribution(
-            frame,
-            surface_area,
-            &crate::ui::extension_view::tree::attribution(identity),
-        ),
+        Some(slot) => {
+            crate::ui::extension_view::tree::render_title(frame, surface_area, &slot.surface.title)
+        }
         None => surface_area,
     };
     let open = open_extension(model, surface_area);
