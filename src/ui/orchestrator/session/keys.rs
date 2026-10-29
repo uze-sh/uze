@@ -638,12 +638,13 @@ impl Attach<'_> {
         Some(Flow::Continue)
     }
 
-    /// A key the docked drawer answers before anything else: one of the
-    /// navigation keys while a click in it lent it them, or the second
-    /// Esc after the first gave them back, which closes it. `None` hands
-    /// the key on as if no drawer were open.
+    /// A key the open drawer answers before anything else: Esc, which
+    /// closes a floating drawer wherever the keys are, and a docked one
+    /// that holds them; and the navigation keys while a click in it lent it
+    /// them. `None` hands the key on as if no drawer were open: Esc beside
+    /// a docked drawer the pane holds the keys of is the agent's, which
+    /// interrupts its turn with it.
     fn drawer_key(&mut self, chord: Chord) -> Option<Flow> {
-        let armed = std::mem::take(&mut self.model.dock_esc_armed);
         if !self.model.chrome_answers() || self.model.open_drawer().is_none() {
             return None;
         }
@@ -653,7 +654,8 @@ impl Attach<'_> {
             Resolution::Act(action) => action,
             _ => return None,
         };
-        if armed && meaning == Action::Dismiss {
+        if meaning == Action::Dismiss && (self.model.drawer_floats() || self.model.drawer_focused())
+        {
             self.model.close_drawer();
             return Some(Flow::Continue);
         }
@@ -664,15 +666,11 @@ impl Attach<'_> {
         Some(Flow::Continue)
     }
 
-    /// The docked drawer, holding the navigation keys: Esc gives them back
-    /// to the pane and arms the next Esc to close it; every other key is a
-    /// command its engine answers.
+    /// The docked drawer, holding the navigation keys: Esc closes it;
+    /// every other key is a command its engine answers.
     pub(super) fn dock_action(&mut self, action: Action) {
         match action {
-            Action::Dismiss => {
-                self.model.dock_focused = false;
-                self.model.dock_esc_armed = true;
-            }
+            Action::Dismiss => self.model.close_drawer(),
             _ => {
                 if let Some(command) = crate::ui::extension_view::command_for(action) {
                     self.model.tell_drawer(command);

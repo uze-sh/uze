@@ -139,9 +139,7 @@ impl Attach<'_> {
         // A key a hint names is the host's wherever it is drawn: what it
         // performs is an action, which the surface beneath never sees.
         let over = self.model.hit_at(mouse.column, mouse.row);
-        // A press anywhere but the drawer gives its keys back to the pane,
-        // and any press at all disarms the Esc that would close it.
-        self.model.dock_esc_armed = false;
+        // A press anywhere but the drawer gives its keys back to the pane.
         if !self.on_drawer(over) {
             self.model.dock_focused = false;
         }

@@ -175,10 +175,17 @@ impl WorkspaceModel {
         self.dirty = true;
     }
 
-    /// Gives the navigation keys back to the pane, with nothing armed.
+    /// Gives the navigation keys back to the pane.
     pub(in crate::ui::orchestrator) fn leave_drawer_keys(&mut self) {
         self.dock_focused = false;
-        self.dock_esc_armed = false;
+    }
+
+    /// Whether the open drawer floats over the pane: then it is put away
+    /// as an overlay is, and Esc closes it wherever the keys are.
+    pub(in crate::ui::orchestrator) fn drawer_floats(&self) -> bool {
+        self.open_drawer_slot()
+            .and_then(HostedSlot::drawer_place)
+            .is_some_and(|place| place.float)
     }
 
     /// The drawer the key toggles: the one open, else the drawer of the

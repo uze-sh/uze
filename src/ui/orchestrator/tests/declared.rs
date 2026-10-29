@@ -1113,6 +1113,10 @@ fn the_inspector_is_resized_by_its_rule_and_fits_the_frame() {
 /// The board with a drawer besides its view and section, hosted with an
 /// agent in front.
 fn hosting_the_drawer() -> WorkspaceModel {
+    hosting_a_drawer(None)
+}
+
+fn hosting_a_drawer(place: Option<uze_contract::DrawerDecl>) -> WorkspaceModel {
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
     model.remembered.declared = HostedExtensions {
@@ -1127,7 +1131,7 @@ fn hosting_the_drawer() -> WorkspaceModel {
         .push(uze_contract::SurfaceDecl {
             band: None,
             bar: None,
-            drawer: None,
+            drawer: place,
             id: "side".to_owned(),
             slot: uze_contract::Slot::Drawer,
             view: "side.uze".to_owned(),
@@ -1293,14 +1297,12 @@ fn a_click_in_the_drawer_reaches_its_engine_and_esc_gives_the_keys_back_then_clo
     );
 
     driven.press_key(key("esc"));
-    assert!(!driven.attach.model.drawer_focused(), "esc gives them back");
-    assert_eq!(driven.attach.model.open_drawer(), Some(slot), "and stays");
-    driven.press_key(key("esc"));
     assert_eq!(
         driven.attach.model.open_drawer(),
         None,
-        "a second esc closes it"
+        "esc closes the drawer that holds the keys, never reaching the agent"
     );
+    assert!(!driven.attach.model.drawer_focused());
 
     // Given back by a click elsewhere, the next esc is the pane's.
     driven
@@ -2398,5 +2400,36 @@ fn a_drawer_docks_on_its_side_or_floats_over_the_pane_without_resizing_it() {
         place_drawer(short, dock(DrawerSide::Bottom, false, false)).1,
         None,
         "docked along the bottom, it is refused where the pane would keep too few rows"
+    );
+}
+
+/// A drawer floating over the agent is put away as an overlay is: Esc
+/// closes it though the pane holds the keys, and never reaches the agent.
+#[test]
+fn esc_closes_a_floating_drawer_without_reaching_the_agent() {
+    let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("drawer-float-esc"));
+    let mut model = hosting_a_drawer(Some(uze_contract::DrawerDecl {
+        side: uze_contract::DrawerSide::Bottom,
+        float: true,
+        fit: false,
+    }));
+    let slot = drawer_slot(&model);
+    model.toggle_drawer(slot, ratatui::layout::Rect::new(0, 0, 200, 60));
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    driven.frame();
+    assert!(
+        !driven.attach.model.drawer_focused(),
+        "the pane holds the keys"
+    );
+    let _ = driven.sent();
+
+    driven.press_key(key_event(uze_keys::Chord::parse("esc").unwrap()));
+    assert_eq!(driven.attach.model.open_drawer(), None, "esc closed it");
+    assert!(
+        !driven.sent().iter().any(|request| matches!(
+            request,
+            crate::ui::orchestrator::ClientRequest::Input { .. }
+        )),
+        "and the agent never saw it"
     );
 }

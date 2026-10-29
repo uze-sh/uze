@@ -1996,12 +1996,9 @@ struct WorkspaceModel {
     /// it showed: what a press or a drag on its track is measured against.
     dock_bar: std::cell::Cell<Option<(crate::ui::widget::Scrollbar, usize)>>,
     /// Whether the docked drawer has the navigation keys: a click in it
-    /// lends them, Esc or a click anywhere else gives them back. Every
-    /// other key stays the pane's.
+    /// lends them, a click anywhere else gives them back. Every other key
+    /// stays the pane's.
     dock_focused: bool,
-    /// Esc has just given the keys back: the next Esc closes the drawer
-    /// rather than reaching the pane. Anything else in between disarms it.
-    dock_esc_armed: bool,
     /// What the drawer's engine last asked to say, along its foot.
     dock_notice: Option<uze_extensions::view::Span>,
     /// The room the drawer's view had on the last frame: what its engine

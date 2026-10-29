@@ -157,10 +157,14 @@ on "cancel" must not save first.
   act there, so it names Dismiss by what it does in that state, "back",
   "cancel", "clear" or "close", and that word is a click target like any
   other.
-- A drawer closes only on a click outside it. The exception is a drawer
-  docked beside a live pane (a plugin's `drawer` slot), which is not
-  modal: a click outside gives the pane its keys back and leaves it open;
-  its strip button, its key, or a second Esc closes it.
+- A drawer closes only on a click outside it. The exception is a plugin's
+  `drawer` slot beside a live pane, which is not modal: a click outside
+  gives the pane its keys back and leaves it open; its bar item, its key
+  or Esc closes it. Esc never leaks to the agent behind a drawer it
+  belongs to: a floating drawer (over the pane) closes on Esc wherever the
+  keys are, and a docked one closes on Esc while it holds them. Only
+  beside a docked drawer the pane holds the keys of is Esc the agent's,
+  which interrupts its turn with it.
 
 **Shortcuts:**
 - Keep them few: group actions behind a context menu (`alt+.`) rather than
