@@ -89,6 +89,7 @@ pub(crate) mod alerts;
 pub(crate) mod banner;
 pub(crate) mod button;
 pub(crate) mod chip;
+pub(crate) mod control;
 pub(crate) mod dialog;
 pub(crate) mod drawer;
 pub(crate) mod field;

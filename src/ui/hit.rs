@@ -9,8 +9,17 @@ use super::worker::Intent;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Hit {
     Route(Route),
-    /// A row of a declared extension's preferences, by position.
+    /// A row of a declared extension's preferences, by position: selects
+    /// it.
     ExtensionPreferenceRow(usize),
+    /// A preference's `−`/`+` or `‹`/`›`: selects it and steps its value,
+    /// as ←/→ do.
+    ExtensionPreferenceStep {
+        index: usize,
+        forward: bool,
+    },
+    /// A preference's value: selects it and answers it as Enter does.
+    ExtensionPreferenceValue(usize),
     MarketplaceRow(usize),
     /// A plugin row's chevron, by position in the visible list: unfolds or
     /// folds its resources without the row's own click behind it.
@@ -111,6 +120,15 @@ impl TuiModel {
             .map(|(_, hit)| hit)
     }
 
+    /// Puts the keyboard on an extension's preference `index`, leaving any
+    /// typing.
+    fn choose_preference(&mut self, index: usize) {
+        if let Overlay::Preferences(editor) = &mut self.overlay {
+            editor.selected = index;
+            editor.typing = None;
+        }
+    }
+
     pub(crate) fn click(&mut self, column: u16, row: u16) -> Intent {
         if let Overlay::ActionIndex { scopes, filter, .. } = self.overlay.clone() {
             // A click on a row performs it, the way choosing it with the
@@ -132,19 +150,27 @@ impl TuiModel {
             // A dialog's own buttons answer it; a click anywhere else
             // declines, because a click outside a dialog's actionable
             // area must never silently confirm.
-            let answer = match self.hit_at(column, row) {
-                Some(Hit::OfferedAction(action)) => Some(*action),
-                // A click on a row is choosing it and pressing Enter.
+            let answer = match self.hit_at(column, row).cloned() {
+                Some(Hit::OfferedAction(action)) => Some(action),
+                // A click on a preference's row chooses it; on its value or
+                // its steps, it is also the key that answers them.
                 Some(Hit::ExtensionPreferenceRow(index)) => {
-                    let index = *index;
-                    if let Overlay::Preferences(editor) = &mut self.overlay {
-                        editor.selected = index;
-                        editor.typing = None;
-                    }
+                    self.choose_preference(index);
+                    return Intent::None;
+                }
+                Some(Hit::ExtensionPreferenceStep { index, forward }) => {
+                    self.choose_preference(index);
+                    Some(if forward {
+                        uze_keys::Action::NextValue
+                    } else {
+                        uze_keys::Action::PreviousValue
+                    })
+                }
+                Some(Hit::ExtensionPreferenceValue(index)) => {
+                    self.choose_preference(index);
                     Some(uze_keys::Action::Activate)
                 }
                 Some(Hit::Answer(yes)) => {
-                    let yes = *yes;
                     if let Overlay::Confirm { focus, .. } = &mut self.overlay {
                         *focus = Some(if yes {
                             1
@@ -295,7 +321,9 @@ impl TuiModel {
             Hit::ActionIndexEntry(_)
             | Hit::OverlayBody
             | Hit::Answer(_)
-            | Hit::ExtensionPreferenceRow(_) => Intent::None,
+            | Hit::ExtensionPreferenceRow(_)
+            | Hit::ExtensionPreferenceStep { .. }
+            | Hit::ExtensionPreferenceValue(_) => Intent::None,
             Hit::OfferedAction(action) => self.act(action),
             Hit::KeysTrack(track) => {
                 self.dragging_keys_track = Some(track);

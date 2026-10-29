@@ -201,7 +201,7 @@ impl<'a> Hints<'a> {
 
 /// A key as a hint spells it: an arrow key as the arrow the theme draws,
 /// which is what a run of them reads as; anything else as its chord.
-fn key_text(chord: Chord) -> String {
+pub(crate) fn key_text(chord: Chord) -> String {
     let arrow = match chord.to_string().as_str() {
         "up" => Some(Symbol::ArrowUp),
         "down" => Some(Symbol::ArrowDown),
@@ -214,7 +214,7 @@ fn key_text(chord: Chord) -> String {
 
 /// A run's two ends: arrows side by side, which is how a pair of them is
 /// read, and anything else as a range.
-fn run_text(first: Chord, last: Chord) -> String {
+pub(crate) fn run_text(first: Chord, last: Chord) -> String {
     let (first_text, last_text) = (key_text(first), key_text(last));
     let arrows = first_text != first.to_string() && last_text != last.to_string();
     if arrows {

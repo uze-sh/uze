@@ -128,6 +128,14 @@ pub struct PreferenceRow {
     pub value: serde_json::Value,
     /// A choice's values, in order; empty for any other kind.
     pub values: Vec<String>,
+    /// What it holds until the operator says otherwise; nothing for a
+    /// secret, which has no default to show.
+    pub default: serde_json::Value,
+    /// A number's bounds, when it declares them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max: Option<i64>,
 }
 
 impl PreferenceRow {
@@ -173,20 +181,74 @@ impl PreferenceRow {
         self.kind == "secret"
     }
 
-    /// `typed` as this preference's value: a number read as one.
+    /// What one step makes it, `forward` or back: a number one up or down,
+    /// held within its bounds, a choice its next or previous value, a
+    /// toggle flipped. `None` when the step changes nothing — a number at
+    /// its bound — or the kind is typed rather than stepped.
+    pub fn stepped(&self, forward: bool) -> Option<serde_json::Value> {
+        match self.kind {
+            "toggle" => self.pressed(),
+            "choice" => {
+                let count = self.values.len();
+                if count == 0 {
+                    return None;
+                }
+                let at = self
+                    .values
+                    .iter()
+                    .position(|value| Some(value.as_str()) == self.value.as_str());
+                let next = match (at, forward) {
+                    (None, _) => 0,
+                    (Some(at), true) => (at + 1) % count,
+                    (Some(at), false) => (at + count - 1) % count,
+                };
+                (Some(next) != at).then(|| serde_json::Value::String(self.values[next].clone()))
+            }
+            "number" => {
+                let now = self
+                    .value
+                    .as_f64()
+                    .or_else(|| self.default.as_f64())
+                    .unwrap_or(0.0);
+                let next = self.clamped(if forward { now + 1.0 } else { now - 1.0 });
+                (next != now).then(|| as_number(next))
+            }
+            _ => None,
+        }
+    }
+
+    /// `number` held within this preference's bounds.
+    fn clamped(&self, number: f64) -> f64 {
+        let number = self.min.map_or(number, |min| number.max(min as f64));
+        self.max.map_or(number, |max| number.min(max as f64))
+    }
+
+    /// `typed` as this preference's value: a number read as one, held
+    /// within its bounds.
     pub fn typed(&self, typed: &str) -> Option<serde_json::Value> {
         match self.kind {
             "number" => {
                 let typed = typed.trim();
                 typed
                     .parse::<i64>()
-                    .map(serde_json::Value::from)
                     .ok()
-                    .or_else(|| typed.parse::<f64>().ok().map(serde_json::Value::from))
+                    .map(|whole| whole as f64)
+                    .or_else(|| typed.parse::<f64>().ok())
+                    .filter(|number| number.is_finite())
+                    .map(|number| as_number(self.clamped(number)))
             }
             "text" | "secret" => Some(serde_json::Value::String(typed.to_owned())),
             _ => None,
         }
+    }
+}
+
+/// `value` as JSON, a whole number when it has no fraction.
+fn as_number(value: f64) -> serde_json::Value {
+    if value.fract() == 0.0 && value.abs() < i64::MAX as f64 {
+        serde_json::Value::from(value as i64)
+    } else {
+        serde_json::Value::from(value)
     }
 }
 
@@ -429,6 +491,19 @@ impl Extensions<'_> {
                         values: match &decl.kind {
                             uze_contract::PreferenceKind::Choice { values } => values.clone(),
                             _ => Vec::new(),
+                        },
+                        default: if decl.is_secret() {
+                            serde_json::Value::Null
+                        } else {
+                            decl.default.clone()
+                        },
+                        min: match decl.kind {
+                            uze_contract::PreferenceKind::Number { min, .. } => min,
+                            _ => None,
+                        },
+                        max: match decl.kind {
+                            uze_contract::PreferenceKind::Number { max, .. } => max,
+                            _ => None,
                         },
                     })
                     .collect();
@@ -726,5 +801,50 @@ mod tests {
             .surfaces
             .push(surface(uze_contract::Slot::Band, band(4)));
         assert_eq!(band_rows(&manifest), Some(6));
+    }
+
+    fn minutes(value: i64) -> PreferenceRow {
+        PreferenceRow {
+            name: "minutes".to_owned(),
+            label: "Minutes in a session".to_owned(),
+            kind: "number",
+            value: serde_json::json!(value),
+            values: Vec::new(),
+            default: serde_json::json!(25),
+            min: Some(1),
+            max: Some(90),
+        }
+    }
+
+    #[test]
+    fn a_number_steps_by_one_and_stops_at_its_bounds() {
+        assert_eq!(minutes(25).stepped(true), Some(serde_json::json!(26)));
+        assert_eq!(minutes(25).stepped(false), Some(serde_json::json!(24)));
+        assert_eq!(minutes(90).stepped(true), None, "at its max");
+        assert_eq!(minutes(1).stepped(false), None, "at its min");
+    }
+
+    #[test]
+    fn a_typed_number_is_held_within_its_bounds() {
+        assert_eq!(minutes(25).typed("120"), Some(serde_json::json!(90)));
+        assert_eq!(minutes(25).typed("0"), Some(serde_json::json!(1)));
+        assert_eq!(minutes(25).typed("2.5"), Some(serde_json::json!(2.5)));
+        assert_eq!(minutes(25).typed("many"), None);
+    }
+
+    #[test]
+    fn a_choice_steps_both_ways_round_its_values() {
+        let row = PreferenceRow {
+            name: "theme".to_owned(),
+            label: "Theme".to_owned(),
+            kind: "choice",
+            value: serde_json::json!("light"),
+            values: vec!["light".to_owned(), "dark".to_owned(), "auto".to_owned()],
+            default: serde_json::json!("dark"),
+            min: None,
+            max: None,
+        };
+        assert_eq!(row.stepped(true), Some(serde_json::json!("dark")));
+        assert_eq!(row.stepped(false), Some(serde_json::json!("auto")));
     }
 }

@@ -404,7 +404,9 @@ pub(crate) fn render(
         Overlay::Confirm { kind, focus } => {
             overlay::render_confirmation(frame, area, kind, *focus, hits)
         }
-        Overlay::Preferences(editor) => overlay::render_preferences(frame, area, editor, hits),
+        Overlay::Preferences(editor) => {
+            overlay::render_preferences(frame, area, editor, model.hovered.as_ref(), hits)
+        }
         Overlay::AddMarketplace(input) => overlay::render_text_prompt(
             frame,
             area,

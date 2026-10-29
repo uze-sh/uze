@@ -149,9 +149,10 @@ impl TuiModel {
         }
     }
 
-    /// A key on an extension's preferences: the arrows move between the
-    /// rows, Enter answers the row (flips, moves on, or starts typing), and
-    /// Esc puts the typing away, then the editor.
+    /// A key on an extension's preferences: up and down move between the
+    /// rows, left and right step the value, Enter answers the row (flips,
+    /// moves on, or starts typing), and Esc puts the typing away, then the
+    /// editor. A value set is saved at once.
     fn preferences_action(
         &mut self,
         mut editor: crate::ui::model::PreferencesEditor,
@@ -199,6 +200,12 @@ impl TuiModel {
             (None, Action::SelectPrevious) => {
                 editor.selected = editor.selected.saturating_sub(1);
                 Intent::None
+            }
+            (None, Action::NextValue | Action::PreviousValue) => {
+                match row.stepped(action == Action::NextValue) {
+                    Some(value) => set(&mut editor, value),
+                    None => Intent::None,
+                }
             }
             (None, Action::Activate) => match row.pressed() {
                 Some(value) => set(&mut editor, value),
@@ -436,81 +443,364 @@ pub(crate) struct TextPrompt<'a> {
     pub(crate) confirm: &'a str,
 }
 
-/// A dialog that asks for one line of text — the same dialog every
-/// question is, with a field between what it means and the answers.
-/// An extension's preferences: a card of rows, each its label and value,
-/// the selected one filled; or, while one is typed, the field for it.
+/// The rows an extension's preferences show before they scroll.
+const PREFERENCE_ROWS: usize = 14;
+/// The rows the selected preference's detail keeps whatever it says, so
+/// moving between rows never resizes the dialog: its label, then what it
+/// holds folded to two lines.
+const PREFERENCE_DETAIL: u16 = 3;
+/// The narrowest and widest the dialog is drawn: a list dialog's measure.
+const PREFERENCES_WIDTH: (u16, u16) = (60, 96);
+/// The narrowest and widest a value's control is: a number with two
+/// digits between its steps, and a typed value cut short.
+const PREFERENCE_CONTROL: (u16, u16) = (11, 24);
+/// The air between a label and its value.
+const PREFERENCE_GAP: u16 = 4;
+
+/// An extension's preferences: a dialog of rows, each its label and its
+/// value as the control that changes it, aligned in one column, then what
+/// the selected one holds; or, while one is typed, the field for it.
 pub(crate) fn render_preferences(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     editor: &crate::ui::model::PreferencesEditor,
+    hovered: Option<&Hit>,
     hits: &mut Vec<(Rect, Hit)>,
 ) {
     if let (Some(typed), Some(row)) = (&editor.typing, editor.rows.get(editor.selected)) {
-        let title = format!("{} · {}", editor.name, row.label);
-        let secret_body;
-        let body = match row.kind {
-            "number" => "A number.",
-            "secret" => {
-                secret_body = format!(
-                    "Kept in {} and never shown again. Leave it empty to forget it.",
-                    uze_application::secrets_kept_in()
-                );
-                &secret_body
-            }
-            _ => "Text.",
-        };
-        // A secret is drawn as one dot per character typed.
-        let masked: String;
-        let shown = if row.is_secret() {
-            masked = crate::ui::theme::glyph(uze_theme::Symbol::CursorMasked)
-                .repeat(typed.chars().count());
-            &masked
-        } else {
-            typed
-        };
-        render_text_prompt(
-            frame,
-            area,
-            &TextPrompt {
-                title: &title,
-                body,
-                placeholder: &row.label,
-                confirm: "Set",
-            },
-            shown,
-            hits,
-        );
+        render_preference_typing(frame, area, editor, row, typed, hits);
         return;
     }
-    crate::ui::widget::scrim::render(frame, area);
-    let labels: Vec<String> = editor
+    let Some(selected) = editor.rows.get(editor.selected) else {
+        return;
+    };
+    let lit = |hit: &Hit| hovered == Some(hit);
+    let scopes = [
+        uze_keys::Scope::Global,
+        uze_keys::Scope::ExtensionPreferences,
+    ];
+    let hint = dialog::BorderHint::new(
+        &scopes,
+        &preference_keys(editor.rows.len(), selected),
+        match hovered {
+            Some(Hit::OfferedAction(action)) => Some(*action),
+            _ => None,
+        },
+    );
+    let controls: Vec<crate::ui::widget::control::Control> =
+        editor.rows.iter().map(preference_control).collect();
+    let control_width = controls
+        .iter()
+        .map(|control| control.natural_width())
+        .max()
+        .unwrap_or(0)
+        .clamp(PREFERENCE_CONTROL.0, PREFERENCE_CONTROL.1);
+    let cursor_width = theme::width(Symbol::Prompt) + 1;
+    let label_width = editor
         .rows
         .iter()
-        .map(|row| format!("{}  {}", row.label, row.said()))
-        .collect();
-    let entries: Vec<crate::ui::widget::menu::Entry<'_>> = labels
-        .iter()
-        .map(|label| crate::ui::widget::menu::Entry::action(label))
-        .collect();
-    let center = Rect {
-        x: area.x + area.width / 3,
-        y: area.y + area.height / 3,
-        width: area.width / 3,
-        height: 1,
+        .map(|row| text::columns(&row.label) as u16)
+        .max()
+        .unwrap_or(0);
+    let visible = editor.rows.len().min(PREFERENCE_ROWS);
+    let overflows = editor.rows.len() > visible;
+    let bar_width = if overflows {
+        crate::ui::widget::Scrollbar::width() + 1
+    } else {
+        0
     };
-    let rects = crate::ui::widget::menu::render(frame, area, center, &entries, editor.selected);
-    let body = rects.iter().copied().reduce(Rect::union);
-    hits.splice(
-        0..0,
-        rects
+    let wanted = dialog::shell_chrome_width()
+        + cursor_width
+        + label_width
+        + PREFERENCE_GAP
+        + control_width
+        + bar_width;
+    let width = wanted.clamp(PREFERENCES_WIDTH.0, PREFERENCES_WIDTH.1);
+    // The rows, air, then the rule and the detail under it.
+    let body_rows = visible as u16 + 1 + 1 + PREFERENCE_DETAIL;
+    let shell = dialog::shell(
+        frame,
+        area,
+        width,
+        body_rows,
+        &format!("{} preferences", editor.name),
+        hint.line(),
+    );
+    let body = shell.body;
+    let first = (editor.selected + 1).saturating_sub(visible);
+    let list = Rect::new(
+        body.x,
+        body.y,
+        body.width.saturating_sub(bar_width),
+        (visible as u16).min(body.height),
+    );
+    let control_width = control_width.min(list.width.saturating_sub(cursor_width + 1));
+    let label_room = usize::from(
+        list.width
+            .saturating_sub(cursor_width + PREFERENCE_GAP + control_width),
+    );
+    let mut targets: Vec<(Rect, Hit)> = Vec::new();
+    for (index, (row, control)) in editor
+        .rows
+        .iter()
+        .zip(&controls)
+        .enumerate()
+        .skip(first)
+        .take(usize::from(list.height))
+    {
+        let line = Rect::new(list.x, list.y + (index - first) as u16, list.width, 1);
+        let marked = index == editor.selected;
+        let label_tone = if marked || lit(&Hit::ExtensionPreferenceRow(index)) {
+            Token::TextBright
+        } else {
+            Token::TextPrimary
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                // The cursor every list in the product points with.
+                Span::styled(
+                    if marked {
+                        format!("{} ", theme::glyph(Symbol::Prompt))
+                    } else {
+                        " ".repeat(usize::from(cursor_width))
+                    },
+                    theme::fg_bold(Token::Accent),
+                ),
+                Span::styled(
+                    text::elide(&row.label, label_room),
+                    if marked {
+                        theme::fg_bold(label_tone)
+                    } else {
+                        theme::fg(label_tone)
+                    },
+                ),
+            ])),
+            line,
+        );
+        let at = Rect::new(line.right() - control_width, line.y, control_width, 1);
+        let placed = control.render(
+            frame,
+            at,
+            marked,
+            crate::ui::widget::control::Lit {
+                previous: lit(&Hit::ExtensionPreferenceStep {
+                    index,
+                    forward: false,
+                }),
+                value: lit(&Hit::ExtensionPreferenceValue(index)),
+                next: lit(&Hit::ExtensionPreferenceStep {
+                    index,
+                    forward: true,
+                }),
+            },
+        );
+        // The control's parts before the row, so a click on one is not
+        // taken for choosing the row.
+        if let Some(previous) = placed.previous {
+            targets.push((
+                previous,
+                Hit::ExtensionPreferenceStep {
+                    index,
+                    forward: false,
+                },
+            ));
+        }
+        if let Some(next) = placed.next {
+            targets.push((
+                next,
+                Hit::ExtensionPreferenceStep {
+                    index,
+                    forward: true,
+                },
+            ));
+        }
+        targets.push((placed.value, Hit::ExtensionPreferenceValue(index)));
+        targets.push((line, Hit::ExtensionPreferenceRow(index)));
+    }
+    if overflows
+        && let Some(bar) = crate::ui::widget::Scrollbar::measure(
+            Rect::new(
+                body.right()
+                    .saturating_sub(crate::ui::widget::Scrollbar::width()),
+                list.y,
+                crate::ui::widget::Scrollbar::width(),
+                list.height,
+            ),
+            usize::from(list.height),
+            editor.rows.len(),
+        )
+    {
+        bar.render(frame, first);
+    }
+    let detail = Rect::new(
+        body.x,
+        list.bottom() + 1,
+        body.width,
+        (1 + PREFERENCE_DETAIL).min(body.bottom().saturating_sub(list.bottom() + 1)),
+    );
+    render_preference_detail(frame, detail, selected);
+    targets.extend(
+        hint.targets(shell.popup)
             .into_iter()
-            .enumerate()
-            .map(|(index, rect)| (rect, Hit::ExtensionPreferenceRow(index)))
-            .chain(body.map(|body| (body, Hit::OverlayBody))),
+            .map(|(rect, action)| (rect, Hit::OfferedAction(action))),
+    );
+    targets.push((shell.popup, Hit::OverlayBody));
+    // Prepended, so the screen under the dialog cannot answer a click
+    // meant here.
+    hits.splice(0..0, targets);
+}
+
+/// The keys the preferences answer to on `selected`, for the bottom
+/// border: what the arrows and Enter do to a row of its kind.
+fn preference_keys(
+    rows: usize,
+    selected: &uze_application::PreferenceRow,
+) -> Vec<dialog::BorderKey<'static>> {
+    use dialog::BorderKey;
+    let mut keys = Vec::new();
+    if rows > 1 {
+        keys.push(BorderKey::Run(
+            Action::SelectPrevious,
+            Action::SelectNext,
+            "move",
+        ));
+    }
+    let (step, enter) = match selected.kind {
+        "number" => (Some("step"), "type"),
+        "choice" => (Some("choose"), "next"),
+        "toggle" => (None, "switch"),
+        _ => (None, "type"),
+    };
+    if let Some(step) = step {
+        keys.push(BorderKey::Run(
+            Action::PreviousValue,
+            Action::NextValue,
+            step,
+        ));
+    }
+    keys.push(BorderKey::Key(Action::Activate, enter));
+    keys.push(BorderKey::Key(Action::Dismiss, "close"));
+    keys
+}
+
+/// A preference's value as the control that changes it.
+fn preference_control(row: &uze_application::PreferenceRow) -> crate::ui::widget::control::Control {
+    use crate::ui::widget::control::Control;
+    match row.kind {
+        "number" => Control::Stepper(row.said()),
+        "choice" => Control::Choice(row.said()),
+        "toggle" => Control::Toggle(row.value.as_bool().unwrap_or(false)),
+        _ if row.is_secret() => Control::Field {
+            text: row.said(),
+            quiet: row.value != serde_json::Value::Bool(true),
+        },
+        _ => {
+            let empty = row.value.as_str().is_none_or(str::is_empty);
+            Control::Field {
+                text: if empty {
+                    "empty".to_owned()
+                } else {
+                    row.said()
+                },
+                quiet: empty,
+            }
+        }
+    }
+}
+
+/// What `row` holds, as the detail and the typing step say it: its kind
+/// with its range, then its default (`A number from 1 to 90 · default
+/// 25`), or for a secret where it is kept.
+fn preference_meaning(row: &uze_application::PreferenceRow) -> String {
+    let kind = match row.kind {
+        "number" => match (row.min, row.max) {
+            (Some(min), Some(max)) => format!("A number from {min} to {max}"),
+            (Some(min), None) => format!("A number, {min} or more"),
+            (None, Some(max)) => format!("A number up to {max}"),
+            (None, None) => "A number".to_owned(),
+        },
+        "toggle" => "On or off".to_owned(),
+        "choice" => format!("One of {}", row.values.join(", ")),
+        "secret" => {
+            return format!(
+                "A secret, kept in {} and never shown again",
+                uze_application::secrets_kept_in()
+            );
+        }
+        _ => "Text".to_owned(),
+    };
+    let default = match &row.default {
+        serde_json::Value::Null => None,
+        serde_json::Value::Bool(on) => Some(if *on { "on" } else { "off" }.to_owned()),
+        serde_json::Value::String(text) if text.is_empty() => None,
+        serde_json::Value::String(text) => Some(text.clone()),
+        other => Some(other.to_string()),
+    };
+    match default {
+        Some(default) => format!("{kind} · default {default}"),
+        None => kind,
+    }
+}
+
+/// A hairline, then the selected preference: its label, and what it holds
+/// folded under it, cut to the rows the detail keeps.
+fn render_preference_detail(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    row: &uze_application::PreferenceRow,
+) {
+    let content = crate::ui::widget::Rule::new(crate::ui::widget::Edge::Top).render(frame, area);
+    let mut lines = vec![Line::from(Span::styled(
+        row.label.clone(),
+        theme::fg_bold(Token::TextBright),
+    ))];
+    lines.extend(
+        text::fold(&preference_meaning(row), usize::from(content.width).max(1))
+            .into_iter()
+            .take(usize::from(PREFERENCE_DETAIL - 1))
+            .map(|folded| Line::from(Span::styled(folded, theme::fg(Token::TextSecondary)))),
+    );
+    frame.render_widget(Paragraph::new(lines), content);
+}
+
+/// The step that types `row`'s value: the question every text prompt is,
+/// saying what the value may be.
+fn render_preference_typing(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    editor: &crate::ui::model::PreferencesEditor,
+    row: &uze_application::PreferenceRow,
+    typed: &str,
+    hits: &mut Vec<(Rect, Hit)>,
+) {
+    let title = format!("{} · {}", editor.name, row.label);
+    let body = if row.is_secret() {
+        format!("{}. Leave it empty to forget it.", preference_meaning(row))
+    } else {
+        format!("{}.", preference_meaning(row))
+    };
+    // A secret is drawn as one dot per character typed.
+    let shown = if row.is_secret() {
+        theme::glyph(Symbol::CursorMasked).repeat(typed.chars().count())
+    } else {
+        typed.to_owned()
+    };
+    render_text_prompt(
+        frame,
+        area,
+        &TextPrompt {
+            title: &title,
+            body: &body,
+            placeholder: &row.label,
+            confirm: "Set",
+        },
+        &shown,
+        hits,
     );
 }
 
+/// A dialog that asks for one line of text — the same dialog every
+/// question is, with a field between what it means and the answers.
 pub(crate) fn render_text_prompt(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,

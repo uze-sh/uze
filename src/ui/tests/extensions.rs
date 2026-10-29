@@ -626,6 +626,9 @@ fn with_preferences() -> TuiModel {
             kind: "toggle",
             value: serde_json::json!(false),
             values: Vec::new(),
+            default: serde_json::json!(false),
+            min: None,
+            max: None,
         },
         uze_application::PreferenceRow {
             name: "warn-at".to_owned(),
@@ -633,9 +636,38 @@ fn with_preferences() -> TuiModel {
             kind: "number",
             value: serde_json::json!(70),
             values: Vec::new(),
+            default: serde_json::json!(80),
+            min: Some(40),
+            max: Some(71),
         },
     ];
     standing_in_a_project(standing)
+}
+
+/// The focus example's two preferences, as its manifest declares them.
+fn focus_preferences() -> TuiModel {
+    let number = |name: &str, label: &str, value: i64, default: i64, max: i64| {
+        uze_application::PreferenceRow {
+            name: name.to_owned(),
+            label: label.to_owned(),
+            kind: "number",
+            value: serde_json::json!(value),
+            values: Vec::new(),
+            default: serde_json::json!(default),
+            min: Some(1),
+            max: Some(max),
+        }
+    };
+    let mut standing = standing(uze_application::ExtensionCondition::Enabled);
+    standing.name = "Focus".to_owned();
+    standing.preferences = vec![
+        number("minutes", "Minutes in a session", 25, 25, 90),
+        number("goal", "Sessions a day", 4, 4, 12),
+    ];
+    let mut model = standing_in_a_project(standing);
+    model.declared_extensions[0].name = "Focus".to_owned();
+    model.edit_selected_preferences();
+    model
 }
 
 fn set(name: &str, label: &str, value: serde_json::Value) -> Intent {
@@ -645,6 +677,55 @@ fn set(name: &str, label: &str, value: serde_json::Value) -> Intent {
         label: label.to_owned(),
         value,
     }
+}
+
+fn key(code: KeyCode) -> KeyEvent {
+    KeyEvent::new(code, KeyModifiers::NONE)
+}
+
+fn click(model: &mut TuiModel, target: &Hit) -> Intent {
+    let (_, hits) = super::support::drawn_at(model, 220, 44);
+    let (rect, _) = *hits
+        .iter()
+        .find(|(_, hit)| hit == target)
+        .unwrap_or_else(|| panic!("{target:?} is drawn as a target"));
+    model.hits = hits;
+    model.apply_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: rect.x + rect.width / 2,
+            row: rect.y,
+            modifiers: KeyModifiers::NONE,
+        },
+        Rect::new(0, 0, 220, 44),
+    )
+}
+
+/// The rows of the open preferences dialog, from its title to its bottom
+/// border.
+fn preferences_dialog(model: &TuiModel, width: u16, height: u16) -> Vec<String> {
+    let (terminal, _) = super::support::drawn_at(model, width, height);
+    let rows = super::support::buffer_rows(&terminal);
+    let title = rows
+        .iter()
+        .position(|row| row.contains("Focus preferences"))
+        .expect("the dialog has a title");
+    let top = title - 2;
+    let bottom = (top + 1..rows.len())
+        .find(|at| rows[*at].contains('└'))
+        .expect("the dialog has a bottom border");
+    let left = rows[top]
+        .chars()
+        .position(|ch| ch == '┌')
+        .expect("the dialog has a top-left corner");
+    let right = rows[top]
+        .chars()
+        .position(|ch| ch == '┐')
+        .expect("the dialog has a top-right corner");
+    rows[top..=bottom]
+        .iter()
+        .map(|row| row.chars().skip(left).take(right + 1 - left).collect())
+        .collect()
 }
 
 /// The drawer lists an extension's preferences; its Preferences button
@@ -659,27 +740,193 @@ fn preferences_are_listed_and_set_from_the_keyboard() {
     assert!(screen.contains("Preferences"), "{screen}");
     assert_eq!(model.edit_selected_preferences(), Intent::None);
     let editor = screen_of(&model);
-    assert!(editor.contains("Show °F  off"), "{editor}");
-    let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+    assert!(editor.contains("GSD preferences"), "{editor}");
+    assert!(editor.contains("off"), "{editor}");
+    let enter = key(KeyCode::Enter);
     assert_eq!(
         model.apply_key(enter),
         set("fahrenheit", "Show °F", serde_json::json!(true))
     );
     assert!(
-        screen_of(&model).contains("Show °F  on"),
+        screen_of(&model).contains(" on"),
         "the row says what was set"
     );
-    model.apply_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    model.apply_key(key(KeyCode::Down));
     assert_eq!(model.apply_key(enter), Intent::None, "a number is typed");
+    let typing = screen_of(&model);
+    assert!(
+        typing.contains("A number from 40 to 71 · default 80."),
+        "the typing step says what the value may be: {typing}"
+    );
     for _ in 0..2 {
-        model.apply_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        model.apply_key(key(KeyCode::Backspace));
     }
-    model.apply_key(KeyEvent::new(KeyCode::Char('5'), KeyModifiers::NONE));
-    model.apply_key(KeyEvent::new(KeyCode::Char('0'), KeyModifiers::NONE));
+    model.apply_key(key(KeyCode::Char('5')));
+    model.apply_key(key(KeyCode::Char('0')));
     assert_eq!(
         model.apply_key(enter),
         set("warn-at", "Warn at", serde_json::json!(50))
     );
+}
+
+/// The dialog is titled for the extension, its values stand in one column
+/// against its right edge, and under them the selected row says its range
+/// and its default.
+#[test]
+fn the_preferences_dialog_aligns_its_values_and_says_the_range_and_default() {
+    let model = focus_preferences();
+    let dialog = preferences_dialog(&model, 220, 44);
+    let text = dialog.join("\n");
+    assert!(text.contains("Focus preferences"), "{text}");
+    assert!(
+        text.contains("A number from 1 to 90 · default 25"),
+        "{text}"
+    );
+    let minutes = dialog
+        .iter()
+        .find(|row| row.contains("Minutes in a session"))
+        .expect("the minutes row");
+    let goal = dialog
+        .iter()
+        .find(|row| row.contains("Sessions a day"))
+        .expect("the goal row");
+    let column = |row: &str, glyph: char| row.chars().position(|ch| ch == glyph);
+    let plus = crate::ui::theme::glyph(uze_theme::Symbol::StepIncrease)
+        .chars()
+        .next()
+        .unwrap();
+    assert!(column(minutes, plus).is_some(), "{minutes}");
+    assert_eq!(column(minutes, plus), column(goal, plus), "{text}");
+    let width = dialog[0].chars().count();
+    assert!(width >= 60, "a list dialog is at least 60 wide: {width}");
+}
+
+/// Moving between rows never resizes the dialog, and the detail follows
+/// the keyboard.
+#[test]
+fn moving_between_preferences_keeps_the_dialog_still() {
+    let mut model = focus_preferences();
+    let before = preferences_dialog(&model, 220, 44);
+    model.apply_key(key(KeyCode::Down));
+    let after = preferences_dialog(&model, 220, 44);
+    assert_eq!(before.len(), after.len());
+    assert_eq!(before[0], after[0]);
+    let text = after.join("\n");
+    assert!(text.contains("A number from 1 to 12 · default 4"), "{text}");
+}
+
+/// Right and left step a number by one and save it at once; at its bound
+/// the step does nothing and saves nothing.
+#[test]
+fn the_arrows_step_a_number_within_its_bounds_and_save_it() {
+    let mut model = focus_preferences();
+    assert_eq!(
+        model.apply_key(key(KeyCode::Right)),
+        set("minutes", "Minutes in a session", serde_json::json!(26))
+    );
+    assert_eq!(
+        model.apply_key(key(KeyCode::Left)),
+        set("minutes", "Minutes in a session", serde_json::json!(25))
+    );
+    model.apply_key(key(KeyCode::Down));
+    for _ in 4..12 {
+        model.apply_key(key(KeyCode::Right));
+    }
+    assert_eq!(
+        model.apply_key(key(KeyCode::Right)),
+        Intent::None,
+        "twelve is the most"
+    );
+    let text = preferences_dialog(&model, 220, 44).join("\n");
+    assert!(text.contains(" 12 "), "{text}");
+}
+
+/// A click on a stepper's `+` is pressing → on its row, and on a row is
+/// choosing it and nothing more.
+#[test]
+fn clicking_a_stepper_is_pressing_its_arrow() {
+    let mut clicked = focus_preferences();
+    let mut keyed = focus_preferences();
+    assert_eq!(
+        click(&mut clicked, &Hit::ExtensionPreferenceRow(1)),
+        Intent::None,
+        "a click on a row chooses it"
+    );
+    keyed.apply_key(key(KeyCode::Down));
+    assert_eq!(clicked.overlay, keyed.overlay);
+    assert_eq!(
+        click(
+            &mut clicked,
+            &Hit::ExtensionPreferenceStep {
+                index: 1,
+                forward: true
+            }
+        ),
+        keyed.apply_key(key(KeyCode::Right))
+    );
+    assert_eq!(
+        click(
+            &mut clicked,
+            &Hit::ExtensionPreferenceStep {
+                index: 0,
+                forward: false
+            }
+        ),
+        set("minutes", "Minutes in a session", serde_json::json!(24))
+    );
+    keyed.apply_key(key(KeyCode::Up));
+    keyed.apply_key(key(KeyCode::Left));
+    assert_eq!(clicked.overlay, keyed.overlay);
+}
+
+/// Every key the bottom border names is a target doing what the key does:
+/// enter types the number, esc closes.
+#[test]
+fn clicking_a_preferences_border_hint_is_pressing_its_key() {
+    let mut clicked = focus_preferences();
+    let mut keyed = focus_preferences();
+    assert_eq!(
+        click(
+            &mut clicked,
+            &Hit::OfferedAction(uze_keys::Action::Activate)
+        ),
+        keyed.apply_key(key(KeyCode::Enter))
+    );
+    assert_eq!(clicked.overlay, keyed.overlay);
+    assert!(
+        matches!(&clicked.overlay, crate::ui::model::Overlay::Preferences(editor) if editor.typing.is_some()),
+        "enter on a number types it"
+    );
+    let mut clicked = focus_preferences();
+    let mut keyed = focus_preferences();
+    click(&mut clicked, &Hit::OfferedAction(uze_keys::Action::Dismiss));
+    keyed.apply_key(key(KeyCode::Esc));
+    assert_eq!(clicked.overlay, crate::ui::model::Overlay::None);
+    assert_eq!(clicked.overlay, keyed.overlay);
+}
+
+/// The border's keys stand where they are drawn: each target's rect holds
+/// the word the key is named by.
+#[test]
+fn the_preferences_border_hints_are_drawn_where_they_answer() {
+    let model = focus_preferences();
+    let (terminal, hits) = super::support::drawn_at(&model, 220, 44);
+    let buffer = terminal.backend().buffer();
+    let said = |rect: Rect| -> String {
+        (rect.x..rect.right())
+            .map(|x| buffer[(x, rect.y)].symbol().to_owned())
+            .collect()
+    };
+    for (action, word) in [
+        (uze_keys::Action::Activate, "enter type"),
+        (uze_keys::Action::Dismiss, "esc close"),
+    ] {
+        let (rect, _) = hits
+            .iter()
+            .find(|(_, hit)| *hit == Hit::OfferedAction(action))
+            .unwrap_or_else(|| panic!("{word} is a target"));
+        assert_eq!(said(*rect), word);
+    }
 }
 
 /// A secret is typed into a field that draws a dot per character, starts
@@ -693,51 +940,45 @@ fn a_secret_is_typed_masked_and_never_shown_again() {
         kind: "secret",
         value: serde_json::json!(true),
         values: Vec::new(),
+        default: serde_json::Value::Null,
+        min: None,
+        max: None,
     }];
     let mut model = standing_in_a_project(standing);
     assert!(screen_of(&model).contains("GitHub token · set"));
     model.edit_selected_preferences();
-    assert!(screen_of(&model).contains("GitHub token  set"));
-    let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+    let editor = screen_of(&model);
+    assert!(editor.contains("GitHub token"), "{editor}");
+    assert!(editor.contains(" set "), "{editor}");
+    assert!(
+        editor.contains("A secret, kept in"),
+        "the detail says where it is kept: {editor}"
+    );
+    let enter = key(KeyCode::Enter);
     assert_eq!(model.apply_key(enter), Intent::None, "a secret is typed");
     for ch in "ghp_abc".chars() {
-        model.apply_key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
+        model.apply_key(key(KeyCode::Char(ch)));
     }
     let typing = screen_of(&model);
     assert!(!typing.contains("ghp_abc"), "{typing}");
     assert!(typing.contains("•••••••"), "{typing}");
-    assert!(typing.contains("never shown"), "{typing}");
+    assert!(typing.contains("A secret, kept in"), "{typing}");
     assert_eq!(
         model.apply_key(enter),
         set("token", "GitHub token", serde_json::json!("ghp_abc"))
     );
     let after = screen_of(&model);
-    assert!(after.contains("GitHub token  set"), "{after}");
+    assert!(after.contains(" set "), "{after}");
     assert!(!after.contains("ghp_abc"), "{after}");
 }
 
-/// A click on a preference's row is choosing it and pressing Enter.
+/// A click on a toggle's value is pressing Enter on its row.
 #[test]
-fn clicking_a_preference_row_is_pressing_enter_on_it() {
+fn clicking_a_toggle_is_pressing_enter_on_it() {
     let mut model = with_preferences();
     model.edit_selected_preferences();
-    let (_, hits) = super::support::drawn_at(&model, 220, 44);
-    let (row, _) = *hits
-        .iter()
-        .find(|(_, hit)| *hit == Hit::ExtensionPreferenceRow(0))
-        .expect("the first row is clickable");
-    model.hits = hits;
-    let clicked = model.apply_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column: row.x + 1,
-            row: row.y,
-            modifiers: KeyModifiers::NONE,
-        },
-        Rect::new(0, 0, 220, 44),
-    );
     assert_eq!(
-        clicked,
+        click(&mut model, &Hit::ExtensionPreferenceValue(0)),
         set("fahrenheit", "Show °F", serde_json::json!(true))
     );
 }

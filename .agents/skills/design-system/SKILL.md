@@ -48,6 +48,8 @@ on "cancel" must not save first.
 - `Hints::line()` (text with no target) is only for hints inside scrolling
   prose.
 - A `run` (↑↓, 1–9) is read, never clicked.
+- A dialog's bottom border is a hint bar too: draw it with
+  `dialog::BorderHint` and register its `targets` along the popup.
 - Prove a new hint bar with a click == key test. See
   `clicking_an_overview_foot_hint_is_pressing_its_key` and
   `clicking_a_surface_footer_hint_is_pressing_its_key`.
@@ -237,6 +239,14 @@ on "cancel" must not save first.
 - A fixed set of choices uses a combobox or radio buttons.
 - Files and branches come from a picker of real options.
 - Settings autosave, and the save shows no toast.
+- An extension's preferences open as a dialog (`dialog::shell`) titled
+  `Focus preferences`, never a bare menu of `label  value`: one row per
+  preference, its label on the left and its value as the control that
+  changes it in one column against the right edge (`widget::control`:
+  `− 25 +`, `‹ dark ›`, `◉ on`, a field), then under a rule a detail of
+  fixed height saying the selected row's kind, range and default (`A
+  number from 1 to 90 · default 25`), or where a secret is kept. ←→ step
+  and save at once; Enter types or flips.
 
 ## Feedback, state and timing
 

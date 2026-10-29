@@ -54,7 +54,7 @@ impl TuiModel {
             Overlay::Preferences(ref editor) if editor.typing.is_some() => {
                 scopes.push(Scope::TextPrompt)
             }
-            Overlay::Preferences(_) => scopes.push(Scope::ActionIndex),
+            Overlay::Preferences(_) => scopes.push(Scope::ExtensionPreferences),
             Overlay::Confirm { .. } => scopes.push(Scope::Confirm),
             Overlay::ReleaseNotes(_) => scopes.push(Scope::ReleaseNotes),
         }
@@ -696,6 +696,24 @@ impl TuiModel {
                     uze_extensions::view::ScrollDirection::Up
                 };
                 self.scroll_page(direction)
+            }
+            // Over an extension's preferences, only what the dialog drew
+            // lights: the screen under its scrim answers nothing.
+            MouseEventKind::Moved if matches!(self.overlay, Overlay::Preferences(_)) => {
+                self.hovered = self
+                    .hit_at(event.column, event.row)
+                    .filter(|hit| {
+                        matches!(
+                            hit,
+                            Hit::ExtensionPreferenceRow(_)
+                                | Hit::ExtensionPreferenceStep { .. }
+                                | Hit::ExtensionPreferenceValue(_)
+                                | Hit::OfferedAction(_)
+                        )
+                    })
+                    .cloned();
+                self.pointer_row = Some(event.row);
+                Intent::None
             }
             MouseEventKind::Moved if self.overlay == Overlay::None => {
                 // One read of the hit list answers every hover the chrome

@@ -339,6 +339,15 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Choose, "right", Action::NextValue),
         bind(Scope::Choose, "tab", Action::FocusNext),
         bind(Scope::Choose, "i", Action::Expand),
+        // An extension's preferences: up and down walk the rows, left and
+        // right step the value of the one the keyboard is on, enter types
+        // it or steps it on, esc closes.
+        bind(Scope::ExtensionPreferences, "up", Action::SelectPrevious),
+        bind(Scope::ExtensionPreferences, "down", Action::SelectNext),
+        bind(Scope::ExtensionPreferences, "left", Action::PreviousValue),
+        bind(Scope::ExtensionPreferences, "right", Action::NextValue),
+        bind(Scope::ExtensionPreferences, "enter", Action::Activate),
+        bind(Scope::ExtensionPreferences, "esc", Action::Dismiss),
         bind(Scope::KeyCapture, "esc", Action::Dismiss),
         // --- The index, in either mode ----------------------------------
         bind(Scope::ActionIndex, "down", Action::SelectNext),
