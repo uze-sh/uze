@@ -1537,8 +1537,12 @@ mod recorded_state_tests {
         .unwrap();
         fs::set_permissions(&claude, fs::Permissions::from_mode(0o755)).unwrap();
 
-        let inspection =
-            super::inspect_claude_plugin(&claude, &home, "git@uze-store", Path::new("/uze/generated"));
+        let inspection = super::inspect_claude_plugin(
+            &claude,
+            &home,
+            "git@uze-store",
+            Path::new("/uze/generated"),
+        );
 
         assert_eq!(
             inspection.state,

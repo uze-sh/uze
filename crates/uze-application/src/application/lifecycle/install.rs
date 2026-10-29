@@ -168,10 +168,21 @@ impl Plugins<'_> {
         // delivery reads the view; attempting it against a view that failed
         // to publish would fail for a reason that has nothing to do with
         // this package.
+        //
+        // A package that reaches no harness is delivered to none: what an
+        // earlier build delivered of it is taken back off instead.
+        let reaches_a_harness = super::attach::reaches_a_harness(&resources);
+        if !reaches_a_harness {
+            for integration in &self.0.integrations {
+                self.0
+                    .retire_package_receipts(&installed, integration.as_ref())?;
+            }
+        }
         let targets: Vec<(&dyn IntegrationPort, NativeDelivery)> = self
             .0
             .integrations
             .iter()
+            .filter(|_| reaches_a_harness)
             .filter(|integration| self.0.detect_cached(integration.as_ref()).present)
             .map(|integration| {
                 let native = if unpublished.contains(integration.id()) {

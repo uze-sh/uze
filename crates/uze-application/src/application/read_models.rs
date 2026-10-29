@@ -79,10 +79,12 @@ impl Plugins<'_> {
             .transpose()?;
         let resources = uze_core::engine::package_resources(&package)?;
         let resources: Vec<_> = resources.iter().collect();
+        let reaches_a_harness = super::lifecycle::attach::reaches_a_harness(&resources);
         let deliveries = self
             .0
             .integrations
             .iter()
+            .filter(|_| reaches_a_harness)
             .filter(|integration| only.is_none_or(|only| integration.id() == only))
             .map(|integration| {
                 let integration = integration.as_ref();
