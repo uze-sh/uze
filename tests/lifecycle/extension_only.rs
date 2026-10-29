@@ -15,7 +15,7 @@ use std::{
 
 use uze_application::{
     UzeApplication,
-    application::{AddPluginReport, RemovePluginReport, UpdatePluginReport},
+    application::{AddPluginReport, PackageKind, RemovePluginReport, UpdatePluginReport},
 };
 use uze_core::{
     PackageSource, Result, UzeHome,
@@ -190,6 +190,7 @@ fn a_plugin_of_extensions_only_is_stored_and_found_but_reaches_no_harness() {
     let report = world.install(&extension_only());
 
     assert_eq!(report.plugin.id, "focus@local");
+    assert_eq!(report.plugin.kind, PackageKind::Extension);
     assert!(report.deliveries.is_empty(), "{:?}", report.deliveries);
     assert!(report.attachments.is_empty());
     assert_eq!(world.attached.load(Ordering::SeqCst), 0);
@@ -235,7 +236,13 @@ fn update_and_remove_reach_no_harness_either() {
 
     let removed = world.app.plugins().remove("focus").expect("it is removed");
     assert!(
-        matches!(removed, RemovePluginReport::Removed { .. }),
+        matches!(
+            removed,
+            RemovePluginReport::Removed {
+                kind: PackageKind::Extension,
+                ..
+            }
+        ),
         "{removed:?}"
     );
     assert!(world.stored("focus").is_none());
@@ -325,6 +332,7 @@ fn a_plugin_with_skills_beside_its_extensions_is_still_delivered() {
 
     let report = world.install(&source);
 
+    assert_eq!(report.plugin.kind, PackageKind::Plugin);
     assert_eq!(report.deliveries.len(), 1);
     assert_eq!(world.attached.load(Ordering::SeqCst), 1);
     assert_eq!(world.receipts().len(), 1);

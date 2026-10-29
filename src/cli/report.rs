@@ -1157,6 +1157,51 @@ mod tests {
         );
     }
 
+    /// A package of extensions only is said to be one wherever a report
+    /// names what it changed; the rest stay plugins.
+    #[test]
+    fn a_package_of_extensions_only_is_reported_as_an_extension() {
+        use uze_application::application::{PackageKind, RemovePluginReport};
+        let mut report = moved_to("0123456789abcdef");
+        report.extensions = vec!["lint".to_owned()];
+        assert!(
+            progress::unpainted(&render_update_summary(&report)).contains("1 extension updated")
+        );
+        report.outcomes.push(UpdateOutcome::Moved {
+            plugin: "git".to_owned(),
+            revision: "fedcba9876543210".to_owned(),
+            deliveries: Vec::new(),
+        });
+        assert!(
+            progress::unpainted(&render_update_summary(&report))
+                .contains("1 plugin and 1 extension updated")
+        );
+
+        let removed = |kind| RemovePluginReport::Removed {
+            plugin: "focus@uze".to_owned(),
+            kind,
+            detached_receipts: Vec::new(),
+            already_missing_receipts: Vec::new(),
+            unforgotten: None,
+        };
+        assert!(
+            progress::unpainted(&render_remove(&removed(PackageKind::Extension)))
+                .contains("1 extension removed from this machine")
+        );
+        assert!(
+            progress::unpainted(&render_remove(&removed(PackageKind::Plugin)))
+                .contains("1 plugin removed from this machine")
+        );
+    }
+
+    #[test]
+    fn packages_are_counted_by_what_they_are() {
+        assert_eq!(progress::count_packages(2, 0), "2 plugins");
+        assert_eq!(progress::count_packages(0, 1), "1 extension");
+        assert_eq!(progress::count_packages(1, 2), "1 plugin and 2 extensions");
+        assert_eq!(progress::count_packages(0, 0), "0 plugins");
+    }
+
     #[test]
     fn an_update_that_moved_a_plugin_to_a_non_ascii_path_reports_it() {
         let report = moved_to("/home/émilie/market");

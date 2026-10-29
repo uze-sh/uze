@@ -757,7 +757,9 @@ impl Project<'_> {
 
         Ok(UpdateReport {
             scope: UpdateScope::Project,
-            extensions: self.0.extensions_among(outcomes.iter().map(UpdateOutcome::plugin)),
+            extensions: self
+                .0
+                .extensions_among(outcomes.iter().map(UpdateOutcome::plugin)),
             outcomes,
             rules,
         })
@@ -835,7 +837,9 @@ impl Project<'_> {
         }
         Ok(UpdateReport {
             scope: UpdateScope::Machine,
-            extensions: self.0.extensions_among(outcomes.iter().map(UpdateOutcome::plugin)),
+            extensions: self
+                .0
+                .extensions_among(outcomes.iter().map(UpdateOutcome::plugin)),
             outcomes,
             rules: Vec::new(),
         })
