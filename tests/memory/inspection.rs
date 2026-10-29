@@ -137,6 +137,7 @@ fn the_space_overview_agrees_with_status() {
 /// first one written needs.
 #[test]
 fn a_space_outside_every_project_keeps_its_settings_and_memory() {
+    use uze_application::application::memory::{Kind, MemoryCaller, MemoryScope};
     use uze_application::{DeclarationApplied, DeclarationKey, DeclaredValue, Edit};
     let root = temp("space-overview-loose");
     let application = app(&root, true);
@@ -145,10 +146,10 @@ fn a_space_outside_every_project_keeps_its_settings_and_memory() {
     application
         .memory()
         .remember(
-            uze_application::application::memory::MemoryCaller::Operator { cwd: &bare },
-            uze_application::application::memory::MemoryScope::Machine,
+            MemoryCaller::Operator { cwd: &bare },
+            MemoryScope::Machine,
             "everywhere",
-            uze_application::application::memory::Kind::User,
+            Kind::User,
             "a fact for every project",
             "body",
         )
