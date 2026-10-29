@@ -1,7 +1,7 @@
 ## 0. Remove Profiles
 
 - [x] 0.1 TUI: remove `src/ui/view/profiles.rs`, `Route::Profiles`, `ProfilePanel`/`ProfileColumns`, the `NewProfile` overlay, `DeleteProfile` confirmation, profile hits, intents and worker paths, and `src/ui/tests/profiles.rs`; move navigation and badge tests that sample `Route::Profiles` to `Overview`
-- [ ] 0.2 Keys: remove `NewProfile`, `DeleteProfile`, `ApplyProfile`, `PreviewProfile`, `ToggleProfileHarness`, the `Profiles`/`ProfileEditor` scopes and their defaults; give `NextValue`/`PreviousValue` a new control in `tests/architecture/affordances.rs`
+- [x] 0.2 Keys: remove `NewProfile`, `DeleteProfile`, `ApplyProfile`, `PreviewProfile`, `ToggleProfileHarness`, the `Profiles`/`ProfileEditor` scopes and their defaults; give `NextValue`/`PreviousValue` a new control in `tests/architecture/affordances.rs`
 - [x] 0.3 Application: remove `profile.rs`, the `Profiles` service, its re-exports, `MachineSnapshot.profiles`, `preference_adapters` (fold `new_with_runner_and_preferences` into `new_with_runner`); drop `"profiles.list"` and `"Profiles"` from the tracing and instrumentation tests
 - [ ] 0.4 Integrations: remove each `preferences.rs`, `shared/preference.rs`, the `PreferencePort` impls, Antigravity's `preferences_config_path`, the registry's preference adapters and `RegistryParts`; drop helpers in `json_config`/`toml_config` left without callers
 - [ ] 0.5 Core: remove `preference.rs`, `profile_state.rs`, the profile errors, `UzeHome::profiles_path` and its tier-test entry; `Feature::Profiles` (tests move to `Overview`)

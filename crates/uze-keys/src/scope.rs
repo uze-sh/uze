@@ -123,12 +123,6 @@ scopes! {
     Plugins => "plugins", "Marketplace", Management, seals: false, text: false;
     Extensions => "extensions", "Extensions", Management, seals: false, text: false;
     Harnesses => "harnesses", "Integrations", Management, seals: false, text: false;
-    Profiles => "profiles", "Profiles", Management, seals: false, text: false;
-    /// The preference editor inside Profiles. Its own surface because
-    /// left/right change a value there and move focus everywhere else —
-    /// which is a different surface, not a guard on a binding.
-    ProfileEditor => "profile-editor", "Editing a preference", Management,
-        seals: false, text: false;
     /// The Keys screen itself.
     Keys => "keys", "Shortcuts", Management, seals: false, text: false;
     /// The Settings screen: the choices `config.toml` holds — palette,
