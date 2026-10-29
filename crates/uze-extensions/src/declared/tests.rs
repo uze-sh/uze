@@ -752,6 +752,11 @@ fn every_node_kind_reads_its_properties() {
                     .prop("role", "dim"),
             )
             .child(n(NodeName::Elapsed).prop("since", "soon"))
+            .child(
+                n(NodeName::Elapsed)
+                    .prop("until", "{started}")
+                    .prop("role", "warning"),
+            )
             .item(),
         n(NodeName::Table)
             .arg("Fase")
@@ -806,6 +811,7 @@ fn every_node_kind_reads_its_properties() {
         row.children[4].kind,
         NodeKind::Elapsed {
             since_ms: Some(1_700_000_000_000),
+            until_ms: None,
             role: Role::Dim
         }
     );
@@ -813,7 +819,16 @@ fn every_node_kind_reads_its_properties() {
         row.children[5].kind,
         NodeKind::Elapsed {
             since_ms: None,
+            until_ms: None,
             role: Role::Default
+        }
+    );
+    assert_eq!(
+        row.children[6].kind,
+        NodeKind::Elapsed {
+            since_ms: None,
+            until_ms: Some(1_700_000_000_000),
+            role: Role::Warning
         }
     );
     let table = &root.children[1];
@@ -1236,7 +1251,7 @@ fn a_chart_of_values_that_are_not_numbers_says_so() {
 }
 
 #[test]
-fn details_stats_rules_blocks_and_keys_bind_their_arguments() {
+fn details_stats_digits_rules_blocks_and_keys_bind_their_arguments() {
     let extension = hosted(
         vec![
             n(NodeName::Details)
@@ -1265,8 +1280,16 @@ fn details_stats_rules_blocks_and_keys_bind_their_arguments() {
                 .prop("gap", "2")
                 .child(n(NodeName::Text).arg("a"))
                 .item(),
+            n(NodeName::Digits)
+                .arg("{minutes}:00")
+                .prop("role", "info")
+                .item(),
+            n(NodeName::Digits)
+                .prop("until", "{ends}")
+                .prop("role", "warning")
+                .item(),
         ],
-        json!({ "plan": "Max 5x", "cost": "$15.48", "plan_text": "## Plan\n- one", "snippet": "fn main() {}\n" }),
+        json!({ "minutes": 25, "ends": 1_761_571_500_000_u64, "plan": "Max 5x", "cost": "$15.48", "plan_text": "## Plan\n- one", "snippet": "fn main() {}\n" }),
     );
     let root = tree(&extension);
     let kinds: Vec<NodeKind> = root.children.iter().map(|node| node.kind.clone()).collect();
@@ -1323,6 +1346,22 @@ fn details_stats_rules_blocks_and_keys_bind_their_arguments() {
         }
     );
     assert_eq!(kinds[7], NodeKind::Grid { gap: 2 });
+    assert_eq!(
+        kinds[8],
+        NodeKind::Digits {
+            text: "25:00".into(),
+            until_ms: None,
+            role: Role::Info
+        }
+    );
+    assert_eq!(
+        kinds[9],
+        NodeKind::Digits {
+            text: String::new(),
+            until_ms: Some(1_761_571_500_000),
+            role: Role::Warning
+        }
+    );
 }
 
 #[test]

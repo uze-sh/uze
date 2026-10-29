@@ -12,6 +12,7 @@
 //! which is how each stays current without the extension being asked for
 //! a new tree.
 
+mod digits;
 mod display;
 
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -45,6 +46,14 @@ const PROGRESS_MIN_WIDTH: u16 = 12;
 /// `59m59s` is the widest it gets before it turns to hours, and a row that
 /// changed width every minute would shove everything beside it.
 const ELAPSED_WIDTH: u16 = 6;
+
+/// The columns a countdown is laid out in, for the same reason:
+/// `9:59:59`, the widest it gets in a day.
+const COUNTDOWN_WIDTH: u16 = 7;
+
+/// What a countdown in block digits is measured at: `00:00`, a clock
+/// under an hour, which is what a countdown mostly is.
+const COUNTDOWN_DIGITS: &str = "00:00";
 
 /// The host's clock for one frame.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -266,7 +275,10 @@ pub(crate) fn tree_animates(root: &Node) -> bool {
     match &root.kind {
         NodeKind::Activity { busy: true } => true,
         NodeKind::Elapsed {
-            since_ms: Some(_), ..
+            since_ms, until_ms, ..
+        } => since_ms.is_some() || until_ms.is_some(),
+        NodeKind::Digits {
+            until_ms: Some(_), ..
         } => true,
         NodeKind::Sprite {
             frames,
@@ -334,6 +346,25 @@ pub(super) fn elapsed(since_ms: u64, now_ms: u64) -> String {
         format!("{hours}h{:02}m", minutes % 60)
     } else {
         format!("{days}d{:02}h", hours % 24)
+    }
+}
+
+/// What is left until `until_ms` at `now_ms`, as a clock: `24:58`, and
+/// `1:02:05` past an hour; `0:00` once it is over.
+pub(super) fn countdown(until_ms: u64, now_ms: u64) -> String {
+    let seconds = until_ms.saturating_sub(now_ms).div_ceil(1000);
+    let (hours, minutes) = (seconds / 3600, seconds / 60 % 60);
+    match hours {
+        0 => format!("{minutes}:{:02}", seconds % 60),
+        _ => format!("{hours}:{minutes:02}:{:02}", seconds % 60),
+    }
+}
+
+/// What a `Digits` says at `now_ms`: its countdown, or its text.
+fn digits_figure(text: &str, until_ms: Option<u64>, now_ms: u64) -> String {
+    match until_ms {
+        Some(until) => countdown(until, now_ms),
+        None => text.to_owned(),
     }
 }
 
@@ -411,9 +442,16 @@ fn natural(node: &Node) -> u16 {
         NodeKind::Activity { .. } => {
             theme::width(Symbol::ActivityBusy).max(theme::width(Symbol::ActivityIdle))
         }
-        NodeKind::Elapsed { since_ms, .. } => match since_ms {
-            Some(_) => ELAPSED_WIDTH,
-            None => 0,
+        NodeKind::Elapsed {
+            since_ms, until_ms, ..
+        } => match (until_ms, since_ms) {
+            (Some(_), _) => COUNTDOWN_WIDTH,
+            (None, Some(_)) => ELAPSED_WIDTH,
+            (None, None) => 0,
+        },
+        NodeKind::Digits { text, until_ms, .. } => match until_ms {
+            Some(_) => digits::width(COUNTDOWN_DIGITS),
+            None => digits::width(text),
         },
         NodeKind::Log { lines } => cells_of(
             lines
@@ -494,7 +532,13 @@ fn height(node: &Node, width: u16) -> usize {
             true => 1,
             false => wrapped(spans, width).len().max(1),
         },
-        NodeKind::Elapsed { since_ms, .. } => usize::from(since_ms.is_some()),
+        NodeKind::Elapsed {
+            since_ms, until_ms, ..
+        } => usize::from(since_ms.is_some() || until_ms.is_some()),
+        NodeKind::Digits { text, until_ms, .. } => match until_ms {
+            Some(_) => digits::ROWS,
+            None => digits::height(text),
+        },
         NodeKind::List { empty, .. } => match node.children.is_empty() {
             true => usize::from(empty.is_some()),
             false => {
@@ -1417,13 +1461,30 @@ impl Painter<'_, '_> {
                     Line::from(TextSpan::styled(glyph, theme::fg(ink))),
                 );
             }
-            NodeKind::Elapsed { since_ms, role } => {
-                if let Some(since) = since_ms {
-                    let said = elapsed(*since, self.held.clock.now_ms);
+            NodeKind::Elapsed {
+                since_ms,
+                until_ms,
+                role,
+            } => {
+                let now = self.held.clock.now_ms;
+                let said = match (until_ms, since_ms) {
+                    (Some(until), _) => Some(countdown(*until, now)),
+                    (None, Some(since)) => Some(elapsed(*since, now)),
+                    (None, None) => None,
+                };
+                if let Some(said) = said {
                     let line =
                         Line::from(TextSpan::styled(said, Style::default().fg(color(*role))));
                     self.line(y, x, width, line);
                 }
+            }
+            NodeKind::Digits {
+                text: figure,
+                until_ms,
+                role,
+            } => {
+                let figure = digits_figure(figure, *until_ms, self.held.clock.now_ms);
+                return self.rows_of(digits::rows(&figure, *role, width), x, width, y);
             }
             NodeKind::Log { lines } => {
                 for (row, line) in lines.iter().enumerate() {

@@ -815,6 +815,7 @@ fn elapsed_is_said_in_the_fewest_characters_and_ticks() {
             0,
             NodeKind::Elapsed {
                 since_ms: Some(1_000_000),
+                until_ms: None,
                 role: Role::Muted,
             },
         );
@@ -832,10 +833,80 @@ fn elapsed_is_said_in_the_fewest_characters_and_ticks() {
             0,
             NodeKind::Elapsed {
                 since_ms: None,
+                until_ms: None,
                 role: Role::Muted,
             },
         );
         assert_eq!(draw(&never, 10, 1, 0, at(0)).rows()[0], "", "{theme}");
+    });
+}
+
+#[test]
+fn a_countdown_is_said_as_a_clock_and_stops_at_nought() {
+    assert_eq!(countdown(1_500_000, 2_000), "24:58");
+    assert_eq!(
+        countdown(1_500_000, 1_499_500),
+        "0:01",
+        "a second begun is left"
+    );
+    assert_eq!(countdown(3_725_000, 0), "1:02:05");
+    assert_eq!(countdown(0, 10_000), "0:00", "an end gone by is over");
+
+    in_both(|theme| {
+        let until = node(
+            0,
+            NodeKind::Elapsed {
+                since_ms: Some(0),
+                until_ms: Some(1_500_000),
+                role: Role::Warning,
+            },
+        );
+        let drawn = draw(&until, 10, 1, 0, at(2_000));
+        assert_eq!(
+            drawn.rows()[0],
+            "24:58",
+            "{theme}: `until` wins over `since`"
+        );
+        assert_eq!(drawn.fg(0, 0), color(Role::Warning), "{theme}");
+        assert!(drawn.tree.animates, "{theme}");
+    });
+}
+
+#[test]
+fn digits_draw_their_figure_five_rows_tall_and_a_countdown_ticks() {
+    in_both(|theme| {
+        let figure = node(
+            0,
+            NodeKind::Digits {
+                text: "25:00".into(),
+                until_ms: None,
+                role: Role::Info,
+            },
+        );
+        assert_eq!((tree_width(&figure), tree_height(&figure, 40)), (17, 5));
+        let drawn = draw(&figure, 20, 5, 0, at(0));
+        assert_eq!(drawn.rows()[0].trim_end(), "███ ███   ███ ███", "{theme}");
+        assert_eq!(drawn.rows()[4].trim_end(), "███ ███   ███ ███", "{theme}");
+        assert_eq!(drawn.fg(0, 0), color(Role::Info), "{theme}");
+        assert!(!drawn.tree.animates, "{theme}: a figure stands still");
+
+        let left = node(
+            0,
+            NodeKind::Digits {
+                text: String::new(),
+                until_ms: Some(1_100_000),
+                role: Role::Warning,
+            },
+        );
+        assert_eq!(tree_height(&left, 40), 5);
+        let drawn = draw(&left, 20, 5, 0, at(0));
+        assert_eq!(
+            drawn.rows()[0].trim_end(),
+            " █  ███   ███ ███",
+            "{theme}: 18:20"
+        );
+        assert_eq!(drawn.fg(1, 0), color(Role::Warning), "{theme}");
+        assert!(drawn.tree.animates, "{theme}");
     });
 }
 
@@ -1182,6 +1253,7 @@ fn a_gsd_band_board_draws_every_part_and_answers_every_control() {
                         4,
                         NodeKind::Elapsed {
                             since_ms: Some(0),
+                            until_ms: None,
                             role: Role::Muted,
                         },
                     ),

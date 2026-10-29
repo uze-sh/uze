@@ -211,7 +211,7 @@ An icon by name, drawn in the glyph set the operator chose: one of the host's (`
 
 A flex container: its children in a `direction`, `gap` apart, onto a next line when `wrap` and they do not fit, inside `padding`, on a `ground` and within a `border`, every colour a role.
 
-- Holds: `Box`, `Icon`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
+- Holds: `Box`, `Icon`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Digits`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
 | property | value | what |
 |---|---|---|
@@ -233,7 +233,7 @@ A flex container: its children in a `direction`, `gap` apart, onto a next line w
 
 Its children one under another, `gap` rows apart.
 
-- Holds: `Box`, `Icon`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
+- Holds: `Box`, `Icon`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Digits`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
 | property | value | what |
 |---|---|---|
@@ -243,7 +243,7 @@ Its children one under another, `gap` rows apart.
 
 Its children side by side, `gap` columns apart; `grow` children share what is left, the rest are placed by `align`.
 
-- Holds: `Box`, `Icon`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
+- Holds: `Box`, `Icon`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Digits`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
 | property | value | what |
 |---|---|---|
@@ -329,7 +329,7 @@ One segment of a `Progress`: as wide as its `weight`, filled to its `ratio`, in 
 
 Rows repeated over `each`; with an `id`, the host holds which one is selected; `filter="ui.<id>"` keeps the rows whose fields hold what a `Field` has typed; `action` runs on a click on a row, handed that row's item.
 
-- Holds: `Box`, `Icon`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
+- Holds: `Box`, `Icon`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Digits`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
 | property | value | what |
 |---|---|---|
@@ -407,13 +407,14 @@ A mark the host animates while `busy`.
 
 ### `Elapsed`
 
-The time since `since`, ticked by the host.
+The time since `since`, or what is left until `until` as a clock (`24:58`), ticked by the host.
 
 - Holds no other node.
 
 | property | value | what |
 |---|---|---|
 | `since` | text | A timestamp: milliseconds, or an RFC 3339 date. |
+| `until` | text | When it ends, a timestamp as `since` takes: the clock counts down to it. |
 | `role` | role | The semantic colour, or `{table:field}` to look one up. |
 
 ### `Log`
@@ -511,6 +512,18 @@ A figure and its label, with a `delta` in its role when given.
 | `delta` | text | A change beside the figure, such as `+12%`, in `role`. |
 | `role` | role | The semantic colour, or `{table:field}` to look one up. |
 
+### `Digits`
+
+A figure five rows tall in block digits: its text, or with `until` what is left until then as a clock, ticked by the host. Digits, `:`, `.` and `-`; other text is drawn as one line.
+
+- Arguments: text, optional.
+- Holds no other node.
+
+| property | value | what |
+|---|---|---|
+| `until` | text | When it ends, a timestamp as `since` takes: the clock counts down to it. |
+| `role` | role | The semantic colour, or `{table:field}` to look one up. |
+
 ### `Kbd`
 
 A key, drawn as the workspace draws its own keys.
@@ -522,7 +535,7 @@ A key, drawn as the workspace draws its own keys.
 
 Its children as tiles, in as many columns as fit their `min-width`, row by row.
 
-- Holds: `Box`, `Icon`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
+- Holds: `Box`, `Icon`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Digits`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
 | property | value | what |
 |---|---|---|
@@ -601,7 +614,7 @@ A line of text the host holds as `ui.<id>` while the operator types into it; `pl
 
 Its `Field`s and `Select`s, and a button (`submit`) running `action` with them as `form.<id>`, cleaned like any item.
 
-- Holds: `Box`, `Icon`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
+- Holds: `Box`, `Icon`, `Stack`, `Row`, `Text`, `Badge`, `Marks`, `Pips`, `Progress`, `List`, `Table`, `Tabs`, `Toggle`, `Button`, `Activity`, `Elapsed`, `Log`, `Rule`, `Details`, `Markdown`, `Code`, `Gauge`, `Chart`, `Stat`, `Digits`, `Kbd`, `Grid`, `Cells`, `Image`, `Sprite`, `Select`, `Field`, `Form`.
 
 | property | value | what |
 |---|---|---|

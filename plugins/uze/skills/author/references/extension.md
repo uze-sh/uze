@@ -636,8 +636,8 @@ the language server's hover:
 - layout: `Box`, `Stack`, `Row`, `Grid`, `Tabs`/`Tab`, `Rule`
 - text: `Text`, `Markdown`, `Code`, `Log`, `Kbd`
 - data: `List`, `Table`, `Details`/`Entry`
-- measures: `Progress`/`Segment` (`style="line"` for a thin line), `Gauge`, `Chart`, `Pips`, `Stat`
-- status: `Badge`, `Marks`/`Mark`, `Activity`, `Elapsed`
+- measures: `Progress`/`Segment` (`style="line"` for a thin line), `Gauge`, `Chart`, `Pips`, `Stat`, `Digits` (a figure in large block digits)
+- status: `Badge`, `Marks`/`Mark`, `Activity`, `Elapsed` (`since` counts up; `until` counts down as a clock, `24:58`, as does a `Digits`)
 - input: `Toggle`, `Button` (runs the declared action its `action` names), `Select`/`Choice`, `Field`, `Form` (values held as `ui.<id>`, a form sending `form.<id>`)
 - media: `Cells`, `Image`, `Sprite` (a grid in roles, a picture, a declared sprite)
 - icons: `Icon` (one of the host's icons by name, or one the manifest declares)

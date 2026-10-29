@@ -2154,6 +2154,9 @@
                 "$ref": "#/$defs/StatNode"
               },
               {
+                "$ref": "#/$defs/DigitsNode"
+              },
+              {
                 "$ref": "#/$defs/KbdNode"
               },
               {
@@ -2288,6 +2291,9 @@
               },
               {
                 "$ref": "#/$defs/StatNode"
+              },
+              {
+                "$ref": "#/$defs/DigitsNode"
               },
               {
                 "$ref": "#/$defs/KbdNode"
@@ -2432,6 +2438,9 @@
               },
               {
                 "$ref": "#/$defs/StatNode"
+              },
+              {
+                "$ref": "#/$defs/DigitsNode"
               },
               {
                 "$ref": "#/$defs/KbdNode"
@@ -2970,6 +2979,9 @@
                 "$ref": "#/$defs/StatNode"
               },
               {
+                "$ref": "#/$defs/DigitsNode"
+              },
+              {
                 "$ref": "#/$defs/KbdNode"
               },
               {
@@ -3355,7 +3367,7 @@
       "additionalProperties": false
     },
     "ElapsedNode": {
-      "description": "The time since `since`, ticked by the host.",
+      "description": "The time since `since`, or what is left until `until` as a clock (`24:58`), ticked by the host.",
       "type": "object",
       "properties": {
         "type": {
@@ -3371,6 +3383,14 @@
                 "boolean"
               ],
               "description": "A timestamp: milliseconds, or an RFC 3339 date."
+            },
+            "until": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ],
+              "description": "When it ends, a timestamp as `since` takes: the clock counts down to it."
             },
             "role": {
               "enum": [
@@ -3902,6 +3922,73 @@
       ],
       "additionalProperties": false
     },
+    "DigitsNode": {
+      "description": "A figure five rows tall in block digits: its text, or with `until` what is left until then as a clock, ticked by the host. Digits, `:`, `.` and `-`; other text is drawn as one line.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Digits"
+        },
+        "args": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          ],
+          "items": false,
+          "minItems": 0
+        },
+        "props": {
+          "type": "object",
+          "properties": {
+            "until": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ],
+              "description": "When it ends, a timestamp as `since` takes: the clock counts down to it."
+            },
+            "role": {
+              "enum": [
+                "default",
+                "muted",
+                "secondary",
+                "bright",
+                "inactive",
+                "accent",
+                "dim",
+                "faint",
+                "info",
+                "success",
+                "warning",
+                "danger"
+              ],
+              "description": "The semantic colour, or `{table:field}` to look one up."
+            },
+            "grow": {
+              "type": "boolean",
+              "description": "Take a share of what is left of the row."
+            },
+            "min-width": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Never draw narrower than this many columns."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
     "KbdNode": {
       "description": "A key, drawn as the workspace draws its own keys.",
       "type": "object",
@@ -4047,6 +4134,9 @@
               },
               {
                 "$ref": "#/$defs/StatNode"
+              },
+              {
+                "$ref": "#/$defs/DigitsNode"
               },
               {
                 "$ref": "#/$defs/KbdNode"
@@ -4511,6 +4601,9 @@
                 "$ref": "#/$defs/StatNode"
               },
               {
+                "$ref": "#/$defs/DigitsNode"
+              },
+              {
                 "$ref": "#/$defs/KbdNode"
               },
               {
@@ -4629,6 +4722,9 @@
         },
         {
           "$ref": "#/$defs/StatNode"
+        },
+        {
+          "$ref": "#/$defs/DigitsNode"
         },
         {
           "$ref": "#/$defs/KbdNode"

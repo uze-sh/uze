@@ -831,6 +831,16 @@ fn leaf<'a>(
             since_ms: builder
                 .prop(node, scopes, "since")
                 .and_then(|value| since_ms(&value)),
+            until_ms: builder
+                .prop(node, scopes, "until")
+                .and_then(|value| since_ms(&value)),
+            role: builder.role_prop(node, scopes),
+        },
+        NodeName::Digits => NodeKind::Digits {
+            text: builder.label(node, scopes),
+            until_ms: builder
+                .prop(node, scopes, "until")
+                .and_then(|value| since_ms(&value)),
             role: builder.role_prop(node, scopes),
         },
         NodeName::Log => {

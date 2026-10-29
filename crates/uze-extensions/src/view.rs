@@ -605,10 +605,12 @@ pub enum NodeKind {
     Activity {
         busy: bool,
     },
-    /// The time since `since_ms` (milliseconds of the Unix epoch), ticked
-    /// by the host; nothing when `None`.
+    /// The time since `since_ms` (milliseconds of the Unix epoch), or,
+    /// with `until_ms`, what is left until then as a clock, ticked by the
+    /// host; nothing when neither is there.
     Elapsed {
         since_ms: Option<u64>,
+        until_ms: Option<u64>,
         role: Role,
     },
     Log {
@@ -667,6 +669,13 @@ pub enum NodeKind {
         value: String,
         label: String,
         delta: Option<String>,
+        role: Role,
+    },
+    /// A figure in large block digits: `text`, or, with `until_ms`, what
+    /// is left until then as a clock, ticked by the host.
+    Digits {
+        text: String,
+        until_ms: Option<u64>,
         role: Role,
     },
     /// A key, drawn as the host draws its own.

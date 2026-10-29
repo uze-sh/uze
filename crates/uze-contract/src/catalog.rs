@@ -38,6 +38,7 @@ pub enum NodeName {
     Gauge,
     Chart,
     Stat,
+    Digits,
     Kbd,
     Grid,
     Cells,
@@ -184,6 +185,7 @@ const ANY: &[NodeName] = &[
     NodeName::Gauge,
     NodeName::Chart,
     NodeName::Stat,
+    NodeName::Digits,
     NodeName::Kbd,
     NodeName::Grid,
     NodeName::Cells,
@@ -367,7 +369,11 @@ pub const CATALOG: &[NodeSpec] = &[
         name: NodeName::Elapsed,
         args: &[],
         required_args: 0,
-        props: &[("since", PropKind::Text), ("role", PropKind::Role)],
+        props: &[
+            ("since", PropKind::Text),
+            ("until", PropKind::Text),
+            ("role", PropKind::Role),
+        ],
         children: None,
     },
     NodeSpec {
@@ -441,6 +447,13 @@ pub const CATALOG: &[NodeSpec] = &[
         args: &[PropKind::Text, PropKind::Text],
         required_args: 2,
         props: &[("delta", PropKind::Text), ("role", PropKind::Role)],
+        children: None,
+    },
+    NodeSpec {
+        name: NodeName::Digits,
+        args: &[PropKind::Text],
+        required_args: 0,
+        props: &[("until", PropKind::Text), ("role", PropKind::Role)],
         children: None,
     },
     NodeSpec {
@@ -549,6 +562,7 @@ impl NodeName {
             Self::Gauge => "Gauge",
             Self::Chart => "Chart",
             Self::Stat => "Stat",
+            Self::Digits => "Digits",
             Self::Kbd => "Kbd",
             Self::Grid => "Grid",
             Self::Cells => "Cells",
@@ -625,7 +639,10 @@ impl NodeName {
             Self::Toggle => "A switch the host holds as `ui.<id>`, `on` at first when given.",
             Self::Button => "A label that records its `action` with its `item` when pressed.",
             Self::Activity => "A mark the host animates while `busy`.",
-            Self::Elapsed => "The time since `since`, ticked by the host.",
+            Self::Elapsed => {
+                "The time since `since`, or what is left until `until` as a clock (`24:58`), \
+                 ticked by the host."
+            }
             Self::Log => "Lines, each a string or an object with `text` and a `role`.",
             Self::Rule => "A hairline across the width, with its label when given.",
             Self::Details => {
@@ -645,6 +662,11 @@ impl NodeName {
                 "A list of numbers (`series`) as one `sparkline` row or as `bar`s `height` rows tall."
             }
             Self::Stat => "A figure and its label, with a `delta` in its role when given.",
+            Self::Digits => {
+                "A figure five rows tall in block digits: its text, or with `until` what is \
+                 left until then as a clock, ticked by the host. Digits, `:`, `.` and `-`; \
+                 other text is drawn as one line."
+            }
             Self::Kbd => "A key, drawn as the workspace draws its own keys.",
             Self::Grid => {
                 "Its children as tiles, in as many columns as fit their `min-width`, row by row."
@@ -804,6 +826,7 @@ pub fn prop_doc(prop: &str) -> Option<&'static str> {
         "agent" => "The agent whose activity this mark follows.",
         "busy" => "Whether the mark is animated.",
         "since" => "A timestamp: milliseconds, or an RFC 3339 date.",
+        "until" => "When it ends, a timestamp as `since` takes: the clock counts down to it.",
         "lines" => "A list field of lines, or one string of several.",
         "language" => "The language the code is highlighted for, such as `rust` or `json`.",
         "warning" => "The ratio from which the gauge is drawn in the `warning` role.",
