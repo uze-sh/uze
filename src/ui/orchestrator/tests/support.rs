@@ -793,10 +793,11 @@ impl Driven<'_> {
         self.attach.pump(&self.events)
     }
 
-    /// Waits out what the pumps left writing under the home: the task
-    /// evaluations still out and the costs write. Nothing new is asked
-    /// meanwhile, so a test that removes its home after this removes a
-    /// tree no thread of the client is still writing into.
+    /// Waits out the task evaluations still out and the costs write. That
+    /// is not every thread the pumps started: a source's script or a job
+    /// building the application may still write under the home, so
+    /// removing it afterwards is best effort, as `TempDir` does, never
+    /// asserted.
     pub(super) fn settle(&mut self) {
         let deadline = Instant::now() + std::time::Duration::from_secs(60);
         while !self.attach.model.remembered.task_eval_pending.is_empty() {

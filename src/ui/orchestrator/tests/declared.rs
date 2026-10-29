@@ -822,7 +822,7 @@ fn the_real_gsd_band_opens_switches_its_tab_and_redraws_a_save() {
     assert!(shown(&rows, "65% done"), "{rows:#?}");
     assert!(shown(&rows, "Turn finished in 4m12s"), "{rows:#?}");
     assert_eq!(driven.attach.model.open_slot, Some(slot), "kept open");
-    std::fs::remove_dir_all(root).unwrap();
+    let _ = std::fs::remove_dir_all(root);
 }
 
 /// A second plugin's extension, installed while the workspace is open.
@@ -2020,8 +2020,8 @@ fn a_section_is_drawn_from_a_script_that_reads_the_checkout_once_enabled() {
     assert!(shown(&rows, "4 lines of state"), "{rows:#?}");
     assert_eq!(model.remembered.declared.runner.runs(), 1);
 
-    std::fs::remove_dir_all(root).unwrap();
-    std::fs::remove_dir_all(checkout).unwrap();
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_dir_all(checkout);
 }
 
 /// Consent and enabling are a record, not a compile: the discovery the
@@ -2096,8 +2096,8 @@ fn a_section_asks_again_once_its_extension_is_enabled_or_disabled() {
     assert!(shown(&rows, "needs enabling"), "{rows:#?}");
     assert!(!shown(&rows, "4 lines of state"), "{rows:#?}");
 
-    std::fs::remove_dir_all(root).unwrap();
-    std::fs::remove_dir_all(checkout).unwrap();
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_dir_all(checkout);
 }
 
 /// The real `gsd-band`, linked, consented to and enabled, with a section
@@ -2306,8 +2306,8 @@ fn a_linked_extensions_inspector_lists_its_runs_and_reruns_with_edited_input() {
     assert_eq!(driven.attach.model.remembered.declared.runner.runs(), 2);
 
     driven.settle();
-    std::fs::remove_dir_all(root).unwrap();
-    std::fs::remove_dir_all(checkout).unwrap();
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_dir_all(checkout);
 }
 
 /// The author's other tools: a source fed by its fixture and back, a
@@ -2379,8 +2379,8 @@ fn a_linked_extensions_author_switches_fixtures_emits_resizes_and_records() {
         "the author's size goes with the inspector"
     );
     driven.settle();
-    std::fs::remove_dir_all(root).unwrap();
-    std::fs::remove_dir_all(checkout).unwrap();
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_dir_all(checkout);
 }
 
 /// An extension from a marketplace that is not linked offers its author
