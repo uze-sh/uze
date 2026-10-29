@@ -14,7 +14,7 @@ agent in front for its next step.
 | Where | What |
 |---|---|
 | bar | the milestone, the phase in front and its step: `◆ v1.4 · 3 plan`; while a checkpoint waits, `3-04 waits for you` |
-| drawer | the milestone and how far it is, what waits for you, and the phases: the one in front with its steps (discuss, plan, execute, verify) and its plans wave by wave, and the one button for its next step |
+| drawer | the milestone and how far it is, what waits for you, and every phase on one row: its steps as marks (D P E V: discuss, plan, execute, verify), its plans run and where it stands. The one in front opens to its goal and its plans wave by wave, with the one button for its next step |
 | band | over the agent's pane, only while a plan waits at a checkpoint: what to check, `approved` and `report a problem` |
 
 A checkpoint that starts to wait is also a notification, `Checkpoint 3-04`.

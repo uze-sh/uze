@@ -16,19 +16,51 @@
       "after": "after ",
       "finished": true,
       "goal": "keep the cart across sessions",
+      "marks": [
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        }
+      ],
       "name": "Cart service",
       "number": "1",
       "plans": "3/3",
-      "state": "done"
+      "state": "done",
+      "status": "done",
+      "tone": "success"
     },
     {
       "after": "after 1",
       "finished": true,
       "goal": "one order from a cart",
+      "marks": [
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        }
+      ],
       "name": "Checkout API",
       "number": "2",
       "plans": "4/4",
-      "state": "done"
+      "state": "done",
+      "status": "done",
+      "tone": "success"
     },
     {
       "after": "after 2",
@@ -163,28 +195,76 @@
         ]
       },
       "goal": "pay with a card",
+      "marks": [
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        },
+        {
+          "state": "current"
+        },
+        {
+          "state": "pending"
+        }
+      ],
       "name": "Payment form",
       "number": "3",
       "plans": "3/5",
-      "state": "current"
+      "state": "current",
+      "status": "needs you",
+      "tone": "danger"
     },
     {
       "after": "after 3",
       "ahead": true,
       "goal": "a receipt once paid",
+      "marks": [
+        {
+          "state": "pending"
+        },
+        {
+          "state": "pending"
+        },
+        {
+          "state": "pending"
+        },
+        {
+          "state": "pending"
+        }
+      ],
       "name": "Order emails",
       "number": "4",
       "plans": "",
-      "state": "later"
+      "state": "later",
+      "status": "after 3",
+      "tone": "muted"
     },
     {
       "after": "after 4",
       "ahead": true,
       "goal": "behind a flag, then for everyone",
+      "marks": [
+        {
+          "state": "pending"
+        },
+        {
+          "state": "pending"
+        },
+        {
+          "state": "pending"
+        },
+        {
+          "state": "pending"
+        }
+      ],
       "name": "Rollout",
       "number": "5",
       "plans": "",
-      "state": "later"
+      "state": "later",
+      "status": "after 4",
+      "tone": "muted"
     }
   ],
   "segments": [

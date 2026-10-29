@@ -18,7 +18,7 @@ Stack gap=1 {
         }
         Row gap=1 unless="running" {
             Text "{today} of {goal} today" role="muted" grow=#true
-            Button "start" action="start"
+            Button "start" action="start" primary=#true
         }
     }
 

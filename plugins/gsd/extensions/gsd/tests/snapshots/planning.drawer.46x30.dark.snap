@@ -6,17 +6,17 @@
  │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
  │  2 of 5 phases · phase 3 next             │
  │                                           │
- │  ✓  1   Cart service                 3/3  │
- │  ✓  2   Checkout API                 4/4  │
- │  ▶  3   Payment form                      │
+ │                   DPEV                    │
+ │  ✓  1   Cart se…  ▮▮▮▮  3/3    done       │
+ │  ✓  2   Checkou…  ▮▮▮▮  4/4    done       │
+ │  ▶  3   Payment…  ▮▮▮▮         plan       │
  │         pay with a card                   │
- │         ✓ discuss ◆ plan ○ execute        │
- │         ○ verify                          │
  │                                           │
  │                           plan phase 3    │
  │                                           │
- │  ·  4   Order emails             after 3  │
- │  ·  5   Rollout                  after 4  │
+ │  ·  4   Order e…  ▮▮▮▮         after 3    │
+ │  ·  5   Rollout   ▮▮▮▮         after 4    │
+ │                                           │
  │                                           │
  │                                           │
  │                                           │
@@ -37,17 +37,17 @@
  a  eeeeeeeeeeeeeeeefffffffffffffffffffffff  a
  a  b bb b bbbbbb b bbbbb b bbbb             a
  a                                           a
- a  e  b   bbbb bbbbbbb                 bbb  a
- a  e  b   bbbbbbbb bbb                 bbb  a
- a  g  c   ccccccc cccc                      a
+ a                   ffff                    a
+ a  e  b   dddd ddd  eeee  bbb    eeee       a
+ a  e  b   dddddddd  eeee  bbb    eeee       a
+ a  g  b   cccccccc  ehff         hhhh       a
  a         bbb bbbb b bbbb                   a
- a         e eeeeeee g gggg f fffffff        a
- a         f ffffff                          a
  a                                           a
- a                           dddd ddddd d    a
+ a                           iiii iiiii i    a
  a                                           a
- a  f  f   fffff ffffff             fffff f  a
- a  f  f   fffffff                  fffff f  a
+ a  f  b   bbbbb bb  ffff         bbbbb b    a
+ a  f  b   bbbbbbb   ffff         bbbbb b    a
+ a                                           a
  a                                           a
  a                                           a
  a                                           a
@@ -68,3 +68,5 @@ d text.secondary
 e state.success
 f text.faint
 g state.warning
+h state.info
+i accent

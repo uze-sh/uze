@@ -52,7 +52,7 @@
  a   b    b    b    b    b    b    g         a
  a   d    d    d    d    d    d    g         a
  a                                           a
- a  bb bbbbbbbb bbbb bbbb              eedd  a
+ a  bb bbbbbbbb bbbb bbbb              hhdd  a
  a                                           a
  a                                           a
  a                                           a
@@ -65,6 +65,7 @@ a border.default
 b text.muted
 c state.info
 d text.faint
-e text.secondary
+e accent
 f text.bright
 g state.warning
+h text.secondary

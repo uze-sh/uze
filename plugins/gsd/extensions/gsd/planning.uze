@@ -57,6 +57,12 @@ fn checkpoint_title(plan) {
     if found.len() > 0 { found[0][1] } else { "the plan waits for you" }
 }
 
+// A phase's four steps as marks, discuss, plan, execute and verify, each
+// done, current or pending: the D P E V columns of the drawer.
+fn step_marks(state) {
+    steps().map(|name| #{ state: state })
+}
+
 // The phase in front: its steps, its plans in waves, and the checkpoint
 // that waits, if one does.
 fn in_front(phase, folder, files, executing) {
@@ -218,10 +224,25 @@ fn answer(input, context) {
             fill = 1.0;
             phase.state = "done";
             phase.finished = true;
+            phase.marks = step_marks("done");
+            phase.status = "done";
+            phase.tone = "success";
         } else if current == () {
             current = in_front(phase, folder, files, executing);
             phase.state = "current";
             phase.front = current;
+            phase.marks = current.steps.map(|step| #{ state: step.state });
+            phase.plans = if current.plans > 0 { `${current.ran}/${current.plans}` } else { "" };
+            if current.waiting != () {
+                phase.status = "needs you";
+                phase.tone = "danger";
+            } else if current.step == "execute" && current.ran > 0 {
+                phase.status = "executing";
+                phase.tone = "warning";
+            } else {
+                phase.status = current.step;
+                phase.tone = "info";
+            }
             if current.step == "execute" || current.step == "verify" {
                 if current.plans > 0 { fill = current.ran.to_float() / current.plans.to_float(); }
             }
@@ -229,6 +250,9 @@ fn answer(input, context) {
         } else {
             phase.state = "later";
             phase.ahead = true;
+            phase.marks = step_marks("pending");
+            phase.status = phase.after;
+            phase.tone = "muted";
         }
         if is_done { progress += 1.0; }
         // One equal step per phase: the bar reads as the roadmap, phase by

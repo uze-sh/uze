@@ -10,46 +10,126 @@
       "after": "after ",
       "finished": true,
       "goal": "keep the cart across sessions",
+      "marks": [
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        }
+      ],
       "name": "Cart service",
       "number": "1",
       "plans": "3/3",
-      "state": "done"
+      "state": "done",
+      "status": "done",
+      "tone": "success"
     },
     {
       "after": "after 1",
       "finished": true,
       "goal": "one order from a cart",
+      "marks": [
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        }
+      ],
       "name": "Checkout API",
       "number": "2",
       "plans": "4/4",
-      "state": "done"
+      "state": "done",
+      "status": "done",
+      "tone": "success"
     },
     {
       "after": "after 2",
       "finished": true,
       "goal": "pay with a card",
+      "marks": [
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        }
+      ],
       "name": "Payment form",
       "number": "3",
       "plans": "5/5",
-      "state": "done"
+      "state": "done",
+      "status": "done",
+      "tone": "success"
     },
     {
       "after": "after 3",
       "finished": true,
       "goal": "a receipt once paid",
+      "marks": [
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        }
+      ],
       "name": "Order emails",
       "number": "4",
       "plans": "",
-      "state": "done"
+      "state": "done",
+      "status": "done",
+      "tone": "success"
     },
     {
       "after": "after 4",
       "finished": true,
       "goal": "behind a flag, then for everyone",
+      "marks": [
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        },
+        {
+          "state": "done"
+        }
+      ],
       "name": "Rollout",
       "number": "5",
       "plans": "",
-      "state": "done"
+      "state": "done",
+      "status": "done",
+      "tone": "success"
     }
   ],
   "segments": [

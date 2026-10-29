@@ -6,12 +6,11 @@
  │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
  │  2 of 5 phases · phase 3 next             │
  │                                           │
- │  ✓  1   Cart service                 3/3  │
- │  ✓  2   Checkout API                 4/4  │
- │  ▶  3   Payment form                 2/5  │
+ │                   DPEV                    │
+ │  ✓  1   Cart se…  ▮▮▮▮  3/3    done       │
+ │  ✓  2   Checkou…  ▮▮▮▮  4/4    done       │
+ │  ▶  3   Payment…  ▮▮▮▮  2/5    executing  │
  │         pay with a card                   │
- │         ✓ discuss ✓ plan ◆ execute        │
- │         ○ verify                          │
  │                                           │
  │         wave 1  ✓ 3-01  Card fields wit…  │
  │                 ✓ 3-02  Tokenize the ca…  │
@@ -21,8 +20,9 @@
  │                                           │
  │                        execute phase 3    │
  │                                           │
- │  ·  4   Order emails             after 3  │
- │  ·  5   Rollout                  after 4  │
+ │  ·  4   Order e…  ▮▮▮▮         after 3    │
+ │  ·  5   Rollout   ▮▮▮▮         after 4    │
+ │                                           │
  │                                           │
  │                                           │
  │                                           │
@@ -37,12 +37,11 @@
  a  eeeeeeeeeeeeeeeefffgggggggggggggggggggg  a
  a  b bb b bbbbbb b bbbbb b bbbb             a
  a                                           a
- a  e  b   bbbb bbbbbbb                 bbb  a
- a  e  b   bbbbbbbb bbb                 bbb  a
- a  f  c   ccccccc cccc                 ddd  a
+ a                   gggg                    a
+ a  e  b   dddd ddd  eeee  bbb    eeee       a
+ a  e  b   dddddddd  eeee  bbb    eeee       a
+ a  f  b   cccccccc  eehg  bbb    fffffffff  a
  a         bbb bbbb b bbbb                   a
- a         e eeeeeee e eeee f fffffff        a
- a         g gggggg                          a
  a                                           a
  a         gggg g  e bbbb  dddd dddddd dddd  a
  a                 e bbbb  dddddddd ddd ddd  a
@@ -50,10 +49,11 @@
  a                 g bbbb  ggg g gggg ggggg  a
  a         gggg g  g bbbb  gggg g ggggggggg  a
  a                                           a
- a                        ddddddd ddddd d    a
+ a                        iiiiiii iiiii i    a
  a                                           a
- a  g  g   ggggg gggggg             ggggg g  a
- a  g  g   ggggggg                  ggggg g  a
+ a  g  b   bbbbb bb  gggg         bbbbb b    a
+ a  g  b   bbbbbbb   gggg         bbbbb b    a
+ a                                           a
  a                                           a
  a                                           a
  a                                           a
@@ -68,3 +68,5 @@ d text.secondary
 e state.success
 f state.warning
 g text.faint
+h state.info
+i accent
