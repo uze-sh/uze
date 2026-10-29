@@ -90,10 +90,23 @@ impl Workspace<'_> {
         }
         let target = declared_target(&primary, &policy)?;
         let sync = landing::sync_target(&primary, &target);
-        if matches!(sync, landing::TargetSync::FastForwarded { .. })
-            && let Ok(store) = task::load(&self.0.home, &primary)
-        {
-            checkout::slots(&primary, &store, &checkout::Presence::observe());
+        if let Ok(store) = task::load(&self.0.home, &primary) {
+            if matches!(sync, landing::TargetSync::FastForwarded { .. }) {
+                checkout::slots(&primary, &store, &checkout::Presence::observe());
+            }
+            // On this clock because it is the one already paying for the
+            // network: a branch deleted on the forge is learned here or
+            // never.
+            if !matches!(sync, landing::TargetSync::Unpublished) {
+                landing::forget_unpublished(
+                    &primary,
+                    store
+                        .agents
+                        .iter()
+                        .filter(|agent| agent.is_live())
+                        .filter_map(Agent::isolation),
+                );
+            }
         }
         Some(TargetSyncReport {
             concern: sync.concern(&target),

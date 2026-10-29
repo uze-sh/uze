@@ -1250,6 +1250,168 @@ fn a_branch_its_own_agent_pushed_is_published_and_in_sync() {
     );
 }
 
+/// Following the target rewrites every commit of the branch, and a
+/// published branch rewritten behind its request read as all of its
+/// commits waiting to be pushed — and refused the agent's next plain push.
+#[test]
+fn a_published_branch_is_not_rewritten_to_follow_the_target() {
+    let (repository, _other) = published("landing-refresh-published");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let mut isolation = launch(&repository, &mut store, "refresh published");
+    agent_commits(&repository, work(&isolation), "mine.rs", "");
+    let slot = slot_path(primary, work(&isolation)).unwrap();
+    repository.git_in(&slot, &["push", "--quiet", REMOTE, "HEAD"]);
+    let pushed = tip_of(primary, &work(&isolation).branch);
+    repository.commit_file("theirs.rs", "");
+
+    assert_eq!(
+        refresh(
+            primary,
+            &mut isolation.state,
+            isolation.isolation.as_mut().unwrap()
+        ),
+        Ok(false)
+    );
+    assert_eq!(tip_of(primary, &work(&isolation).branch), pushed);
+}
+
+/// Delivery rebases a branch its agent pushed onto the moved target, and a
+/// plain push of the rebased branch is refused. The remote holds nothing
+/// the branch did not already carry, so it is overwritten under a lease.
+#[test]
+fn a_branch_its_agent_pushed_is_delivered_onto_a_moved_target() {
+    let (repository, other) = published("landing-push-agent-pushed");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let mut isolation = launch(&repository, &mut store, "agent pushed");
+    agent_commits(&repository, work(&isolation), "mine.rs", "");
+    let slot = slot_path(primary, work(&isolation)).unwrap();
+    repository.git_in(&slot, &["push", "--quiet", REMOTE, "HEAD"]);
+    push_from(&repository, &other, "theirs.rs");
+
+    let gate = steps(&[]);
+    let policy = Policy {
+        completion: CompletionBehavior::Push,
+        gate: Some(Approved::assumed(&gate)),
+        vocabulary: &BranchVocabulary::Unset,
+    };
+    deliver(primary, &mut isolation, &policy).unwrap();
+    let branch = work(&isolation).branch.clone();
+    let remote = repository.git_in(
+        &other,
+        &["ls-remote", REMOTE, &format!("refs/heads/{branch}")],
+    );
+    assert!(remote.starts_with(&tip_of(primary, &branch)), "{remote}");
+    assert!(slot.join("theirs.rs").is_file(), "rebased onto the target");
+}
+
+/// The agent adds to a request UZE published: the remote tip is no
+/// longer the commit UZE recorded pushing, but the branch carries it, so
+/// the next delivery still lands.
+#[test]
+fn a_redelivery_lands_over_commits_the_agent_pushed_since() {
+    let (repository, other) = published("landing-push-after-publish");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let mut isolation = launch(&repository, &mut store, "added to");
+    agent_commits_saying(&repository, work(&isolation), "a.rs", "fix(a): first");
+    let policy = Policy {
+        completion: CompletionBehavior::Push,
+        gate: Some(Approved::assumed(&[])),
+        vocabulary: &BranchVocabulary::Unset,
+    };
+    let Delivered::Published { branch, .. } = deliver(primary, &mut isolation, &policy).unwrap()
+    else {
+        panic!("published");
+    };
+    agent_commits(&repository, work(&isolation), "b.rs", "");
+    let slot = slot_path(primary, work(&isolation)).unwrap();
+    repository.git_in(
+        &slot,
+        &["push", "--quiet", REMOTE, &format!("HEAD:{branch}")],
+    );
+    push_from(&repository, &other, "target-moved.rs");
+
+    deliver(primary, &mut isolation, &policy).unwrap();
+    let remote = repository.git_in(
+        &other,
+        &["ls-remote", REMOTE, &format!("refs/heads/{branch}")],
+    );
+    assert!(
+        remote.starts_with(&tip_of(primary, &work(&isolation).branch)),
+        "{remote}"
+    );
+}
+
+/// A request closed and its branch deleted on the forge leaves the
+/// remote-tracking ref behind, and a branch read as published for good
+/// never followed the target again.
+#[test]
+fn a_branch_gone_from_the_remote_is_no_longer_published() {
+    let (repository, other) = published("landing-forget-unpublished");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let gone = launch(&repository, &mut store, "gone");
+    let kept = launch(&repository, &mut store, "kept");
+    for agent in [&gone, &kept] {
+        agent_commits(&repository, work(agent), &format!("{}.rs", agent.label), "");
+        let slot = slot_path(primary, work(agent)).unwrap();
+        repository.git_in(&slot, &["push", "--quiet", REMOTE, "HEAD"]);
+    }
+    repository.git_in(
+        &other,
+        &["push", "--quiet", REMOTE, "--delete", &work(&gone).branch],
+    );
+
+    forget_unpublished(primary, [work(&gone), work(&kept)]);
+    assert_eq!(publication(primary, work(&gone)), None);
+    assert!(publication(primary, work(&kept)).is_some());
+}
+
+/// A remote that cannot be asked says nothing about what it holds.
+#[test]
+fn nothing_is_forgotten_when_the_remote_cannot_be_asked() {
+    let (repository, _other) = published("landing-forget-unreachable");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let agent = launch(&repository, &mut store, "offline");
+    agent_commits(&repository, work(&agent), "a.rs", "");
+    let slot = slot_path(primary, work(&agent)).unwrap();
+    repository.git_in(&slot, &["push", "--quiet", REMOTE, "HEAD"]);
+    let unreachable = primary.join("no-such-remote.git");
+    repository.git(&["remote", "set-url", REMOTE, unreachable.to_str().unwrap()]);
+
+    forget_unpublished(primary, [work(&agent)]);
+    assert!(publication(primary, work(&agent)).is_some());
+}
+
+/// A fork workflow fetches from one repository and pushes to another, and
+/// a branch is on the remote where it was pushed.
+#[test]
+fn a_branch_is_asked_about_where_it_was_pushed() {
+    let (repository, _other) = published("landing-forget-pushurl");
+    let primary = repository.root();
+    let origin = repository.git(&["remote", "get-url", REMOTE]);
+    let fork = primary.with_file_name("fork.git");
+    repository.git(&[
+        "clone",
+        "--quiet",
+        "--bare",
+        origin.trim(),
+        fork.to_str().unwrap(),
+    ]);
+    repository.git(&["config", "remote.origin.pushurl", fork.to_str().unwrap()]);
+    let mut store = AgentStore::default();
+    let agent = launch(&repository, &mut store, "forked");
+    agent_commits(&repository, work(&agent), "a.rs", "");
+    let slot = slot_path(primary, work(&agent)).unwrap();
+    repository.git_in(&slot, &["push", "--quiet", REMOTE, "HEAD"]);
+
+    forget_unpublished(primary, [work(&agent)]);
+    assert!(publication(primary, work(&agent)).is_some());
+}
+
 /// The other half the agent can do alone. UZE learns the number from
 /// the remote on the pass that already runs, so a request opened
 /// outside a delivery is still the request this branch has.

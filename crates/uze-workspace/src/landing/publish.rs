@@ -10,10 +10,13 @@ use super::*;
 /// agent that wrote the change is the only party holding it — a generated
 /// one-liner is a worse request than none. Whether the agent is asked to
 /// open one at all is the project's instruction for a published branch.
+///
+/// `carried` is the branch's tip before the delivery rebased it.
 pub(super) fn publish(
     primary: &Path,
     isolation: &mut Isolation,
     vocabulary: &crate::worktree::BranchVocabulary,
+    carried: &str,
 ) -> Result<Delivered, DeliveryFailure> {
     let published = publication(primary, isolation);
     let name = published
@@ -39,17 +42,28 @@ pub(super) fn publish(
     let tip = checkout::tip_of(primary, &isolation.branch);
     // A branch already on the remote is one a delivery has since rebased,
     // so its history no longer descends from what the remote holds and a
-    // plain push is refused. It is overwritten only when the remote still
-    // holds exactly the commit UZE pushed there last, and the lease names
-    // that commit rather than the remote-tracking ref: a tracking ref says
+    // plain push is refused. It is overwritten under a lease naming a
+    // commit, never the remote-tracking ref as such: a tracking ref says
     // what the remote held at the last fetch, not who put it there, and a
-    // colleague's branch of the same name passes that test. Anything else
-    // on the remote is pushed to only by fast-forward.
-    let lease = isolation
-        .published_tip
+    // colleague's branch of the same name passes that test. The commit is
+    // the remote's tip when the branch carried it before the rebase,
+    // whoever pushed it — the agent adding to its own request, usually —
+    // since every commit there is one the rebased branch still holds; and
+    // otherwise the one UZE pushed there last. Anything else on the remote
+    // is pushed to only by fast-forward.
+    let lease = published
         .as_ref()
-        .filter(|_| published.is_some() && isolation.published_as.as_deref() == Some(&name))
-        .map(|pushed| format!("--force-with-lease=refs/heads/{name}:{pushed}"));
+        .and_then(|published| {
+            (!carried.is_empty() && is_ancestor(primary, &published.tip, carried))
+                .then_some(&published.tip)
+                .or_else(|| {
+                    isolation
+                        .published_tip
+                        .as_ref()
+                        .filter(|_| isolation.published_as.as_deref() == Some(&name))
+                })
+        })
+        .map(|leased| format!("--force-with-lease=refs/heads/{name}:{leased}"));
     let mut push = vec!["push", "--quiet"];
     push.extend(lease.as_deref());
     push.extend([REMOTE, refspec.as_str()]);
