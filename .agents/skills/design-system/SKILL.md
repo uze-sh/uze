@@ -208,6 +208,17 @@ on "cancel" must not save first.
   with `review` at its far end, and the whole row opens the Extensions
   screen on that extension. A state the person can act on is never a
   bare warning they have to go find the answer to.
+- Marketplace says what a package brings; Extensions says what runs.
+  Each links to the other and neither repeats the other's actions. A
+  package's tree lists the extensions it declares as a kind like any
+  other (`extensions 1`, its rows carrying no status, since whether one
+  runs is the Extensions screen's to say), and `⊘` stands only under a
+  package that brings nothing at all. Enter on one, or its panel's `open
+  Extensions`, opens the Extensions screen on it; a declared extension's
+  drawer names its plugin on its `from` line, a link that opens the
+  Marketplace on that plugin unfolded on the extension. A way across is a
+  link and an index entry (`Show plugin`, `Show extension`), never a
+  drawer button beside the actions.
 - A plugin never writes an icon glyph either: it names one with `Icon`
   and the host draws it in the operator's glyph set, as UZE's own chrome
   names a `Symbol`. The check refuses a Nerd Font codepoint or a

@@ -5,7 +5,9 @@
 //! marketplace is a group (the embedded `uze-official` snapshot as `uze`,
 //! and a `local` group for ad-hoc installs no catalogue knows about, so a
 //! direct install never disappears from the TUI), its plugins under it,
-//! and under an unfolded plugin its resources by kind. A fixed set of
+//! and under an unfolded plugin its resources by kind, the extensions it
+//! declares among them: what a package brings, whose running the
+//! Extensions screen decides, a step away from either. A fixed set of
 //! columns runs down the right of every row, and the group the keyboard is
 //! in stands on a recessed ground. A detail panel on the right describes
 //! the row the keyboard is on and ends in what can be done about it. A
