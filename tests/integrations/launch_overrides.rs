@@ -371,6 +371,11 @@ fn a_value_that_gives_up_safety_is_said_as_its_switch_is() {
         ("codex", "-s danger-full-access"),
         ("codex", "--ask-for-approval never"),
         ("codex", "-a never"),
+        ("codex", r#"-c 'sandbox_mode="danger-full-access"'"#),
+        ("codex", "-c sandbox_mode=danger-full-access"),
+        ("codex", "--config sandbox_mode='danger-full-access'"),
+        ("codex", "-c approval_policy=never"),
+        ("codex", r#"--config 'approval_policy = "never"'"#),
     ] {
         let integration = registry
             .iter()

@@ -313,3 +313,14 @@
 - decided:  `flag_catalog()` returns a `FlagCatalog { grammar, flags }`, dereferencing to the specs, with `FlagGrammar::{Posix, GoFlag, EffectCli}` named after the parser family; Claude Code and Codex are `Posix`, agy `GoFlag`, OpenCode `EffectCli` (probed on 2.1.3: `-sabc` is a missing `--session` value and unknown `-a`, `-log-level=x` is `--log-level`). The check reads a flag word once per use, from its first word, so entries and verdicts agree.
 - rejected: A separate `IntegrationPort::flag_grammar()`: every function taking the catalog would take the grammar beside it, and nothing keeps the two from coming from different harnesses. Reading OpenCode as `Posix`: `-prompt=hi` would pass as an unknown cluster while OpenCode reads it as `--prompt`.
 - blast:    `uze-core`'s catalog types and port default; the four integrations' catalogs; `check.rs`'s reader; every signature that took `&[FlagSpec]`.
+
+## D32 — A configuration flag's weakening settings are its `weakening_values`
+
+- status:   pending
+- task:     2.8
+- commit:
+- trigger:  Codex `-c sandbox_mode="danger-full-access"` and `-c approval_policy=never` give up what `--sandbox danger-full-access` and `-a never` do, and passed unmarked.
+- decided:  `weakening_values` on a `Keyed` flag holds `key=value` settings; a key the check accepts is compared as `key=value`, the key read as every other key is and the value without the spaces and quotes TOML lets it carry, and a match is `Weakens`. Codex names `sandbox_mode=danger-full-access` and `approval_policy=never`. A refusal or a conditional key's warning still wins.
+- rejected: A third list on `FlagOwner::Keyed`: every keyed catalog and test would spell an empty list, for the one field that already means "values that give up safety". Parsing the value as TOML: a dependency for two string compares.
+- blast:    One `flag_verdict` arm and a `setting` helper in `check.rs`; Codex's `-c` entry; the help check accepts a keyed flag's `key=value`.
+

@@ -197,7 +197,13 @@ fn flag_verdict(
         FlagOwner::Degrades(what) => Verdict::Degrades(what),
         FlagOwner::Uze(_) => unreachable!("refused above"),
         FlagOwner::Keyed { owned, conditional } => {
-            return keyed_verdict(value.unwrap_or_default(), owned, conditional, composed_keys);
+            let value = value.unwrap_or_default();
+            return match keyed_verdict(value, owned, conditional, composed_keys) {
+                Verdict::Accepted => setting(value)
+                    .and_then(|setting| spec.what_value_weakens(&setting))
+                    .map_or(Verdict::Accepted, Verdict::Weakens),
+                verdict => verdict,
+            };
         }
     };
     match spec.key_set_by(value.unwrap_or_default()) {
@@ -290,6 +296,15 @@ fn config_key(value: &str) -> Option<String> {
         .collect::<Vec<_>>()
         .join(".");
     (!key.is_empty()).then_some(key)
+}
+
+/// `key=value` as `key=value`, the key as [`config_key`] reads it and the
+/// value without the spaces and quotes TOML lets it carry:
+/// `sandbox_mode = "danger-full-access"` is `sandbox_mode=danger-full-access`.
+fn setting(value: &str) -> Option<String> {
+    let key = config_key(value)?;
+    let (_, value) = value.split_once('=')?;
+    Some(format!("{key}={}", value.trim().trim_matches(['"', '\''])))
 }
 
 /// Whether setting `key` sets `other` or part of it: the same key, a table
@@ -499,6 +514,7 @@ mod tests {
                 conditional: &["notify", "features.memories"],
             },
         )
+        .weakens_with(&[("guard.mode=off", "the guard")])
         .repeatable(),
         FlagSpec::new(&["--enable"], FlagValue::Free("feature"), "on", Operator)
             .sets_key_in("features"),
@@ -828,6 +844,24 @@ mod tests {
             planned("-c features.web=true", &["-c", "features.memories=false"]),
             [Verdict::Accepted]
         );
+    }
+
+    #[test]
+    fn a_setting_that_gives_up_safety_is_marked_however_it_is_quoted() {
+        for line in [
+            "-c guard.mode=off",
+            r#"-c 'guard.mode="off"'"#,
+            r#"--config '"guard" . mode = 'off''"#,
+            "-cguard.mode=off",
+        ] {
+            assert_eq!(
+                verdicts(line, KEYED),
+                [Verdict::Weakens("the guard")],
+                "{line}"
+            );
+        }
+        assert_eq!(verdicts("-c guard.mode=on", KEYED), [Verdict::Accepted]);
+        assert_eq!(verdicts("-c guard=off", KEYED), [Verdict::Accepted]);
     }
 
     #[test]

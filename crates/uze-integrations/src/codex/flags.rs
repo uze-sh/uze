@@ -38,6 +38,12 @@ const FLAGS: &[FlagSpec] = &[
             conditional: &["notify", "features.memories"],
         },
     )
+    // The settings `--sandbox` and `--ask-for-approval` stand for, which
+    // give up as much as their weakening values.
+    .weakens_with(&[
+        ("sandbox_mode=danger-full-access", "the sandbox"),
+        ("approval_policy=never", "approval prompts"),
+    ])
     .repeatable(),
     FlagSpec::new(
         &["--model", "-m"],

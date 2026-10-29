@@ -70,7 +70,9 @@ pub struct FlagSpec {
     pub sets_key_in: Option<&'static str>,
     /// Values of a [`FlagValue::OneOf`] that give up the harness's own
     /// safety as a [`FlagOwner::Weakens`] switch does, each with what it
-    /// gives up: `--sandbox danger-full-access` is no sandbox.
+    /// gives up: `--sandbox danger-full-access` is no sandbox. For a
+    /// [`FlagOwner::Keyed`] flag each is a `key=value` setting, unquoted:
+    /// `-c sandbox_mode="danger-full-access"` gives up as much.
     pub weakening_values: &'static [(&'static str, &'static str)],
 }
 

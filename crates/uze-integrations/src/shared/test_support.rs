@@ -139,8 +139,13 @@ pub(crate) fn assert_catalog_in_help(catalog: &[uze_core::flag_catalog::FlagSpec
             flag.value
         );
         for (value, _) in flag.weakening_values {
+            let taken = match (flag.value, flag.owner) {
+                (_, uze_core::flag_catalog::FlagOwner::Keyed { .. }) => value.contains('='),
+                (uze_core::flag_catalog::FlagValue::OneOf(values), _) => values.contains(value),
+                _ => false,
+            };
             assert!(
-                matches!(flag.value, uze_core::flag_catalog::FlagValue::OneOf(values) if values.contains(value)),
+                taken,
                 "{} weakens with {value}, which it does not take",
                 flag.name()
             );

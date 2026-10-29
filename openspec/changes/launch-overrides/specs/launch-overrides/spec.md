@@ -169,6 +169,10 @@ say so on the agent's tab.
 - **WHEN** the operator adds a flag whose value gives up what a skip-permissions flag would, such as Codex's `--sandbox danger-full-access`
 - **THEN** the entry is marked as weakening safety, as that flag would be
 
+#### Scenario: A configuration setting that gives up safety
+- **WHEN** the operator adds a configuration override setting what such a flag stands for, such as Codex's `-c sandbox_mode="danger-full-access"`, quoted or not
+- **THEN** the entry is marked as weakening safety, as the flag would be
+
 #### Scenario: Dropping delivered MCP servers
 - **WHEN** the operator adds a flag that makes the harness ignore the MCP servers UZE installed
 - **THEN** the entry is accepted and marked, saying the installed MCP servers will not load

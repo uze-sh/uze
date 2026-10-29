@@ -152,7 +152,10 @@ defaults:
     A `OneOf` flag of the operator's may name some of its values as
     weakening (`weakening_values`): `--permission-mode bypassPermissions`,
     Codex `--sandbox danger-full-access` and `--ask-for-approval never`
-    give up what the switch would, and are marked the same way.
+    give up what the switch would, and are marked the same way. A
+    `Keyed` flag names `key=value` settings the same way, compared with
+    the value's quotes and spaces dropped: Codex `-c
+    sandbox_mode="danger-full-access"` and `-c approval_policy=never`.
   - `Degrades(what)`: offered, passed, marked warning naming what UZE
     delivers that stops loading (`--strict-mcp-config`, `--bare`,
     `--setting-sources`, `--disable-slash-commands`; Codex `--disable`).
