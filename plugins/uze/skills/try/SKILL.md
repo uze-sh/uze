@@ -19,7 +19,7 @@ it. The person then opens the workspace.
 |---|---|---|
 | `gsd` | bar, drawer, band | a GSD milestone in phases; asks the agent for the next step, and takes a checkpoint's answer over its pane. Its steps need GSD itself, installed by the person |
 | `focus` | bar, drawer | a pomodoro, with the last seven days |
-| `contributions` | bar, view | a heatmap of twelve weeks of commits; click a day for its commits |
+| `contributions` | bar, drawer | a map of twenty weeks of commits; click a day for its commits |
 | `pingpong` | the harness | one of every capability a plugin delivers; its MCP server is built from a uze checkout |
 
 ## Steps
@@ -35,7 +35,7 @@ it. The person then opens the workspace.
    It must be new or empty: never reuse a directory with something in it.
 4. **Make the project.** Run the `demo.py` beside this file with Python 3:
    `python3 <this skill's directory>/demo.py <directory>`. It makes a Git
-   repository with twelve weeks of commits, a GSD milestone in `.planning/`
+   repository with twenty weeks of commits, a GSD milestone in `.planning/`
    and an empty `agents.yaml`, touches nothing outside the directory, and
    prints its path.
 5. **Install the examples into it**, one command each, from inside the

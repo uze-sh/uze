@@ -5,7 +5,7 @@
 The directory must not exist yet, or be empty. It becomes a small Git
 repository, a tasks CLI, holding what each example reads:
 
-- twelve weeks of commits by three authors, for `contributions`' graph;
+- twenty weeks of commits by three authors, for `contributions`' graph;
 - a GSD milestone in `.planning/`, written the way GSD writes it, one phase
   done and the next one planned, for `gsd`, whose drawer then offers to
   execute it (the second plan stops at a checkpoint);
@@ -176,13 +176,13 @@ def write(directory, path, text):
 
 
 def history(directory):
-    """Commits on most weekdays of the last twelve weeks, a few on weekends,
-    and a few earlier today: enough for the heatmap to have quiet days, busy
+    """Commits on most weekdays of the last twenty weeks, a few on weekends,
+    and a few earlier today: enough for the map to have quiet days, busy
     days and every tone, and for today to have some."""
     chance = random.Random(12)
     now = datetime.datetime.now().replace(microsecond=0)
     today = now.date()
-    day = today - datetime.timedelta(weeks=12)
+    day = today - datetime.timedelta(weeks=20)
     log = os.path.join(directory, "CHANGELOG.md")
     while day <= today:
         weekend = day.weekday() >= 5
@@ -206,7 +206,7 @@ def main(argv):
         sys.exit(f"{directory} is not empty: give a new directory")
     os.makedirs(directory, exist_ok=True)
     git(directory, "init", "-q", "-b", "main")
-    start = datetime.datetime.combine(datetime.date.today() - datetime.timedelta(weeks=12, days=1),
+    start = datetime.datetime.combine(datetime.date.today() - datetime.timedelta(weeks=20, days=1),
                                       datetime.time(9))
     for path, text in FILES.items():
         write(directory, path, text)

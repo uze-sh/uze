@@ -30,7 +30,7 @@ sandbox:
   provision:
     - mkdir -p {root}/tmp
     # The project `uze:try` makes, by the same script, so the demos show
-    # what a person trying uze sees: twelve weeks of commits for contributions and a
+    # what a person trying uze sees: twenty weeks of commits for contributions and a
     # GSD milestone in .planning/ for gsd. Made again on every seed, so its
     # dates stay relative to the day the demos are recorded; the base's reset
     # rewinds it between takes like the other fixtures.
