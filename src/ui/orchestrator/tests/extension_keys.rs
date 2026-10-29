@@ -40,6 +40,7 @@ impl Extension for Keyed {
                     NodeKind::Text {
                         spans: vec![Span::new("a board", Role::Default)],
                         truncate: true,
+                        still: false,
                     },
                 ),
             },

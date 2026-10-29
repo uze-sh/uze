@@ -791,6 +791,9 @@ fn leaf<'a>(
             NodeKind::Text {
                 spans: vec![span],
                 truncate,
+                still: builder
+                    .prop(node, scopes, "marquee")
+                    .is_some_and(|value| !as_flag(&value)),
             }
         }
         NodeName::Badge => NodeKind::Badge {
@@ -822,6 +825,7 @@ fn leaf<'a>(
             builder.acts.insert(id, Act::Button { action, item });
             NodeKind::Button {
                 label: control_label(builder.label(node, scopes)),
+                primary: builder.flag_prop(node, scopes, "primary"),
             }
         }
         NodeName::Activity => NodeKind::Activity {

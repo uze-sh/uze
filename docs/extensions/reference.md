@@ -262,6 +262,7 @@ Text in a role, `strong` for emphasis; with `truncate` one line cut with an elli
 | `role` | role | The semantic colour, or `{table:field}` to look one up. |
 | `strong` | flag | Emphasis. |
 | `truncate` | flag | One line, cut with an ellipsis, instead of a paragraph that wraps. |
+| `marquee` | flag | A cut line slides sideways under the pointer to show all of itself; `marquee=#false` keeps it cut. |
 
 ### `Badge`
 
@@ -393,6 +394,7 @@ A label that records its `action` with its `item` when pressed.
 |---|---|---|
 | `action` | name | The action a press records, by name. |
 | `item` | any value | What the action receives: a field, or `{.}` for the whole item. |
+| `primary` | flag | The button the surface means to be pressed next, drawn in the accent; one per surface. |
 
 ### `Activity`
 

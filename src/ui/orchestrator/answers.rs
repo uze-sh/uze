@@ -258,12 +258,27 @@ impl WorkspaceModel {
         use uze_extensions::contract::Outcome;
         // What the gesture said while it waited ("Say done…") is over once
         // its extension answers: the answer says what there is to say.
-        if self
-            .slot_in_pane()
-            .is_some_and(|slot| slot.owner == answer.extension)
-            && !matches!(outcome, Outcome::Notice(_))
-        {
-            self.open_notice = None;
+        // So for the view in front, the drawer open beside it and the
+        // overlay over it, each of which says it along its own foot.
+        if !matches!(outcome, Outcome::Notice(_)) {
+            if self
+                .slot_in_pane()
+                .is_some_and(|slot| slot.owner == answer.extension)
+            {
+                self.open_notice = None;
+            }
+            if self
+                .open_drawer_slot()
+                .is_some_and(|slot| slot.owner == answer.extension)
+            {
+                self.dock_notice = None;
+            }
+            if self
+                .overlay_slot()
+                .is_some_and(|slot| slot.owner == answer.extension)
+            {
+                self.overlay_notice = None;
+            }
         }
         match outcome {
             Outcome::Failed { title, detail } => self.say_failed(&title, detail),
@@ -280,6 +295,13 @@ impl WorkspaceModel {
                     .is_some_and(|slot| slot.owner == answer.extension) =>
             {
                 self.open_notice = Some(span);
+            }
+            Outcome::Notice(span)
+                if self
+                    .open_drawer_slot()
+                    .is_some_and(|slot| slot.owner == answer.extension) =>
+            {
+                self.dock_notice = Some(span);
             }
             _ => {}
         }

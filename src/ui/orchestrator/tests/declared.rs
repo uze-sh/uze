@@ -60,6 +60,7 @@ impl Extension for Board {
                         Role::Default,
                     )],
                     truncate: true,
+                    still: false,
                 },
             ),
         ];
@@ -2430,4 +2431,28 @@ fn esc_closes_a_floating_drawer_without_reaching_the_agent() {
         )),
         "and the agent never saw it"
     );
+}
+
+/// What a drawer's action said while it waited ("Start a session…") is
+/// over once its extension answers, as a view's is: it never stays on the
+/// drawer's foot after the action ran.
+#[test]
+fn a_drawers_waiting_notice_goes_once_its_extension_answers() {
+    let mut model = hosting_the_drawer();
+    let slot = drawer_slot(&model);
+    model.toggle_drawer(slot, ratatui::layout::Rect::new(0, 0, 200, 60));
+    model.dock_notice = Some(uze_extensions::view::Span::new(
+        "Start a session…",
+        uze_extensions::view::Role::Muted,
+    ));
+    let owner = model
+        .open_drawer_slot()
+        .expect("the drawer is open")
+        .owner
+        .clone();
+    assert!(model.absorb_engine_answer(super::reads::EngineAnswer {
+        extension: owner,
+        answer: uze_extensions::contract::Opaque::new(()),
+    }));
+    assert_eq!(model.dock_notice, None, "the answer ends the waiting");
 }

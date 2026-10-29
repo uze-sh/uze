@@ -170,6 +170,7 @@ pub(super) fn render_tree(
         folded: None,
         gauge_labels: None,
         ink: None,
+        sliding: false,
     };
     painter.node(root, area.x, area.width, 0);
     if held.fold && overflows {
@@ -177,7 +178,7 @@ pub(super) fn render_tree(
         painter.more(at.min(scroll + rows), more);
     }
     TreeDrawn {
-        animates: tree_animates(root),
+        animates: tree_animates(root) || painter.sliding,
         bar: None,
         at_end: !overflows,
     }
@@ -268,6 +269,29 @@ pub(crate) fn tree_width(root: &Node) -> u16 {
 
 pub(crate) fn tree_height(root: &Node, width: u16) -> u16 {
     u16::try_from(height(root, width)).unwrap_or(u16::MAX)
+}
+
+/// Where a cut line is drawn: its node, its column and its row.
+type LineAt = (usize, u16, usize);
+
+thread_local! {
+    /// The cut line the pointer rests on, and the beat it came to rest
+    /// there: what its slide counts from, so it holds still before it
+    /// moves however long the clock has run.
+    static READING: std::cell::Cell<Option<(LineAt, usize)>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// The beats since the pointer came to rest on the line `at`, now `tick`;
+/// none for a line it has just reached.
+fn reading_for(at: LineAt, tick: usize) -> usize {
+    READING.with(|reading| match reading.get() {
+        Some((line, since)) if line == at => tick.saturating_sub(since),
+        _ => {
+            reading.set(Some((at, tick)));
+            0
+        }
+    })
 }
 
 /// Whether anything in `root` moves with the clock.
@@ -426,7 +450,7 @@ fn natural(node: &Node) -> u16 {
         NodeKind::Toggle { label, .. } => toggle_mark_width()
             .saturating_add(1)
             .saturating_add(cells_of(text::columns(label))),
-        NodeKind::Button { label } => button(label, false).width(),
+        NodeKind::Button { label, primary } => button(label, *primary, false).width(),
         NodeKind::Select { label, options, .. } => select_width(label, options),
         NodeKind::Field {
             label,
@@ -445,7 +469,7 @@ fn natural(node: &Node) -> u16 {
             .map(natural)
             .max()
             .unwrap_or(0)
-            .max(button(submit, false).width()),
+            .max(button(submit, false, false).width()),
         NodeKind::Activity { .. } => {
             theme::width(Symbol::ActivityBusy).max(theme::width(Symbol::ActivityIdle))
         }
@@ -535,7 +559,9 @@ fn height(node: &Node, width: u16) -> usize {
                 .max()
                 .unwrap_or(0)
         }
-        NodeKind::Text { spans, truncate } => match truncate {
+        NodeKind::Text {
+            spans, truncate, ..
+        } => match truncate {
             true => 1,
             false => wrapped(spans, width).len().max(1),
         },
@@ -1095,8 +1121,14 @@ fn glyph_runs(glyphs: &[CellGlyph]) -> Vec<TextSpan<'static>> {
 
 /// The house button, in the neutral hue: what a declared button does is
 /// recorded, never run, so none of them builds or destroys anything.
-fn button(label: &str, hovered: bool) -> Button {
-    Button::new(label, Token::TextSecondary).strong(hovered)
+/// A plugin's button: neutral, or in the accent for the one it means to be
+/// pressed next, the hue UZE's own buttons use for what builds.
+fn button(label: &str, primary: bool, hovered: bool) -> Button {
+    let hue = match primary {
+        true => Token::Accent,
+        false => Token::TextSecondary,
+    };
+    Button::new(label, hue).strong(hovered)
 }
 
 /// A segmented bar `width` cells wide: each segment as wide as its weight
@@ -1229,9 +1261,48 @@ struct Painter<'p, 'f> {
     /// The ink every line takes while it is drawn on a box's ground, so a
     /// role never sits unreadable on another's hue.
     ink: Option<Color>,
+    /// Whether a cut line slid under the pointer: the clock turns for it.
+    sliding: bool,
 }
 
 impl Painter<'_, '_> {
+    /// One line cut to `width` at row `y`. Too long for it, and not
+    /// `still`, it answers the pointer: resting on it, the line slides
+    /// sideways to show all of itself, after a pause, as the sidebar's
+    /// captions do; at rest it is cut with an ellipsis.
+    fn cut_line(&mut self, node: usize, spans: &[Span], still: bool, at: (u16, u16), y: usize) {
+        let (x, width) = at;
+        let drawn: Vec<TextSpan<'static>> = spans.iter().map(styled).collect();
+        let long = drawn.iter().map(TextSpan::width).sum::<usize>() > usize::from(width);
+        if still || !long {
+            self.line(y, x, width, elided(spans, width));
+            return;
+        }
+        let hit = ViewHit::Node {
+            node,
+            act: NodeAct::Read,
+        };
+        if let Some(rect) = self.visible(y, 1, x, width) {
+            self.hits.push((rect, hit));
+        }
+        if !self.hovered(hit) {
+            self.line(y, x, width, elided(spans, width));
+            return;
+        }
+        let pieces: Vec<(&str, Style)> = drawn
+            .iter()
+            .map(|span| (span.content.as_ref(), span.style))
+            .collect();
+        let ticks = reading_for((node, x, y), self.held.clock.tick());
+        match crate::ui::widget::row::marquee(&pieces, usize::from(width), ticks) {
+            Some(window) => {
+                self.sliding = true;
+                self.line(y, x, width, Line::from(window));
+            }
+            None => self.line(y, x, width, elided(spans, width)),
+        }
+    }
+
     fn screen_row(&self, y: usize) -> Option<u16> {
         let below = y.checked_sub(self.scroll)?;
         (below < self.rows).then(|| self.area.y.saturating_add(cells_of(below)))
@@ -1360,8 +1431,12 @@ impl Painter<'_, '_> {
                     at = at.saturating_add(width).saturating_add(*gap);
                 }
             }
-            NodeKind::Text { spans, truncate } => match truncate {
-                true => self.line(y, x, width, elided(spans, width)),
+            NodeKind::Text {
+                spans,
+                truncate,
+                still,
+            } => match truncate {
+                true => self.cut_line(node.id, spans, *still, (x, width), y),
                 false => {
                     for (row, line) in wrapped(spans, width).into_iter().enumerate() {
                         self.line(y + row, x, width, line);
@@ -1442,12 +1517,12 @@ impl Painter<'_, '_> {
                 return self.form(node, submit, *focused, (x, width), y);
             }
             NodeKind::Toggle { label, on } => self.toggle(node, label, *on, (x, width), y),
-            NodeKind::Button { label } => {
+            NodeKind::Button { label, primary } => {
                 let hit = ViewHit::Node {
                     node: node.id,
                     act: NodeAct::Press,
                 };
-                let drawn = button(label, self.hovered(hit));
+                let drawn = button(label, *primary, self.hovered(hit));
                 if let Some(rect) = self.visible(y, 1, x, drawn.width().min(width)) {
                     drawn.render(self.frame, rect);
                     self.hits.push((rect, hit));

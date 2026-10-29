@@ -563,6 +563,9 @@ pub enum NodeKind {
     Text {
         spans: Vec<Span>,
         truncate: bool,
+        /// A cut line that never slides: by default one the pointer rests
+        /// on slides sideways to show all of itself.
+        still: bool,
     },
     /// A short label set apart from the text around it.
     Badge {
@@ -608,6 +611,9 @@ pub enum NodeKind {
     },
     Button {
         label: String,
+        /// The one button a surface means to be pressed next, drawn in
+        /// the accent rather than the neutral of every other button.
+        primary: bool,
     },
     /// A mark the host animates while `busy`, on its own clock.
     Activity {
@@ -903,6 +909,9 @@ pub enum NodeAct {
     Edit,
     /// A [`NodeKind::Withheld`] followed to where it is answered.
     Review,
+    /// A cut [`NodeKind::Text`] the pointer rests on, to slide it: a
+    /// target for the pointer only, which a press does nothing with.
+    Read,
 }
 
 /// An image as straight-alpha RGBA, row by row from the top-left.

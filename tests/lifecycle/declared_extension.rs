@@ -232,7 +232,7 @@ fn the_gsd_band_is_found_in_the_working_tree_compiled_once_and_drawn_from_its_fi
     assert!(
         all.iter().any(|node| matches!(
             &node.kind,
-            NodeKind::Button { label } if label == "run phase 12"
+            NodeKind::Button { label, .. } if label == "run phase 12"
         )),
         "the next step, labelled in the operator's locale"
     );
@@ -376,7 +376,7 @@ fn the_panel_is_a_drawer_whose_story_is_told_whole() {
     assert!(
         nodes(&root).iter().any(|node| matches!(
             &node.kind,
-            NodeKind::Button { label } if label == "▶ /gsd-discuss-phase 43"
+            NodeKind::Button { label, .. } if label == "▶ /gsd-discuss-phase 43"
         )),
         "the next step"
     );

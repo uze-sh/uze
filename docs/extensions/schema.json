@@ -2544,6 +2544,10 @@
               "type": "boolean",
               "description": "One line, cut with an ellipsis, instead of a paragraph that wraps."
             },
+            "marquee": {
+              "type": "boolean",
+              "description": "A cut line slides sideways under the pointer to show all of itself; `marquee=#false` keeps it cut."
+            },
             "grow": {
               "type": "boolean",
               "description": "Take a share of what is left of the row."
@@ -3347,6 +3351,10 @@
             },
             "item": {
               "description": "What the action receives: a field, or `{.}` for the whole item."
+            },
+            "primary": {
+              "type": "boolean",
+              "description": "The button the surface means to be pressed next, drawn in the accent; one per surface."
             },
             "grow": {
               "type": "boolean",

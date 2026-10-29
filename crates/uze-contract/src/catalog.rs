@@ -249,6 +249,7 @@ pub const CATALOG: &[NodeSpec] = &[
             ("role", PropKind::Role),
             ("strong", PropKind::Flag),
             ("truncate", PropKind::Flag),
+            ("marquee", PropKind::Flag),
         ],
         children: None,
     },
@@ -355,7 +356,11 @@ pub const CATALOG: &[NodeSpec] = &[
         name: NodeName::Button,
         args: &[PropKind::Text],
         required_args: 1,
-        props: &[("action", PropKind::Identity), ("item", PropKind::Value)],
+        props: &[
+            ("action", PropKind::Identity),
+            ("item", PropKind::Value),
+            ("primary", PropKind::Flag),
+        ],
         children: None,
     },
     NodeSpec {
@@ -844,6 +849,12 @@ pub fn prop_doc(prop: &str) -> Option<&'static str> {
         "submit" => "The form's button label; `Send` when it names none.",
         "on" => "Whether the switch starts on.",
         "action" => "The action a press records, by name.",
+        "marquee" => {
+            "A cut line slides sideways under the pointer to show all of itself; `marquee=#false` keeps it cut."
+        }
+        "primary" => {
+            "The button the surface means to be pressed next, drawn in the accent; one per surface."
+        }
         "item" => "What the action receives: a field, or `{.}` for the whole item.",
         "agent" => "The agent whose activity this mark follows.",
         "busy" => "Whether the mark is animated.",

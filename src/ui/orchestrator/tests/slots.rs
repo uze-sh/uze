@@ -31,6 +31,7 @@ fn text(id: usize, said: &str) -> Node {
         NodeKind::Text {
             spans: vec![Span::new(said.to_owned(), Role::Default)],
             truncate: false,
+            still: false,
         },
     )
 }
@@ -54,6 +55,7 @@ impl Extension for Probe {
                 COPY,
                 NodeKind::Button {
                     label: "Copy the note".to_owned(),
+                    primary: false,
                 },
             ));
         }

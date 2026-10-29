@@ -109,6 +109,7 @@ fn words(id: usize, said: &str, role: Role) -> Node {
         NodeKind::Text {
             spans: vec![Span::new(said, role)],
             truncate: true,
+            still: false,
         },
     )
 }
@@ -203,6 +204,7 @@ fn a_crowded_row_wraps_its_widest_text_and_keeps_the_last_whole() {
             NodeKind::Text {
                 spans: vec![Span::new(said, role)],
                 truncate: false,
+                still: false,
             },
         )
     };
@@ -259,6 +261,7 @@ fn text_that_does_not_fit_elides_with_the_house_ellipsis_or_wraps() {
             NodeKind::Text {
                 spans: vec![Span::new("one two three", Role::Default)],
                 truncate: false,
+                still: false,
             },
         );
         assert_eq!(
@@ -728,6 +731,7 @@ fn a_button_is_the_house_button_and_a_click_anywhere_on_it_presses_it() {
             6,
             NodeKind::Button {
                 label: "next".into(),
+                primary: false,
             },
         );
         let drawn = draw(&button, 20, 1, 0, at(0));
@@ -754,6 +758,7 @@ fn a_button_under_the_pointer_fills_the_way_a_hovered_offer_does() {
         6,
         NodeKind::Button {
             label: "next".into(),
+            primary: false,
         },
     );
     let held = TreeFrame {
@@ -1051,6 +1056,7 @@ fn nothing_is_drawn_outside_the_area_it_was_given() {
                 2,
                 NodeKind::Button {
                     label: "a wide button".into(),
+                    primary: false,
                 },
             ),
             words(3, "below", Role::Default),
@@ -1307,6 +1313,7 @@ fn a_gsd_band_board_draws_every_part_and_answers_every_control() {
                         31,
                         NodeKind::Button {
                             label: "next".into(),
+                            primary: false,
                         },
                     ),
                     node(
@@ -1414,6 +1421,7 @@ fn a_text_a_row_squeezes_to_nothing_takes_no_rows_and_folds_nothing_away() {
         NodeKind::Text {
             spans: vec![Span::new("GSD · v1.23 Assistente do lojista", Role::Muted)],
             truncate: false,
+            still: false,
         },
     ));
     let header = row(
@@ -1433,12 +1441,14 @@ fn a_text_a_row_squeezes_to_nothing_takes_no_rows_and_folds_nothing_away() {
                 4,
                 NodeKind::Button {
                     label: "clear".into(),
+                    primary: false,
                 },
             ),
             node(
                 5,
                 NodeKind::Button {
                     label: "▶ run phase 12".into(),
+                    primary: false,
                 },
             ),
         ],
@@ -1945,4 +1955,57 @@ fn an_icon_draws_in_the_glyph_set_the_operator_chose() {
             assert_eq!(drawn.fg(0, 0), color(Role::Info), "{set}");
         });
     }
+}
+
+/// A cut line answers the pointer: resting on it, it holds still, then
+/// slides sideways to show all of itself; off it, it is cut with an
+/// ellipsis; `marquee=#false` keeps it cut and gives it no target.
+#[test]
+fn a_cut_line_slides_under_the_pointer_after_a_pause_unless_it_is_still() {
+    let line = |still: bool| {
+        node(
+            7,
+            NodeKind::Text {
+                spans: vec![Span::new(
+                    "Tokenize the card with the payment provider",
+                    Role::Default,
+                )],
+                truncate: true,
+                still,
+            },
+        )
+    };
+    let read = ViewHit::Node {
+        node: 7,
+        act: NodeAct::Read,
+    };
+    let at_rest = draw(&line(false), 20, 1, 0, at(0));
+    assert_eq!(at_rest.rows()[0].trim_end(), "Tokenize the card w…");
+    assert!(
+        at_rest.hits.iter().any(|(_, hit)| *hit == read),
+        "a target for the pointer"
+    );
+    assert!(!at_rest.tree.animates, "nothing moves at rest");
+
+    let hovered = |now_ms| TreeFrame {
+        hovered: Some(read),
+        ..at(now_ms)
+    };
+    let arrived = draw(&line(false), 20, 1, 0, hovered(0));
+    assert_eq!(
+        arrived.rows()[0].trim_end(),
+        "Tokenize the card wi",
+        "the start, held still"
+    );
+    assert!(arrived.tree.animates, "the clock turns for it");
+    let later = draw(&line(false), 20, 1, 0, hovered(120 * 40));
+    assert!(
+        !later.rows()[0].starts_with("Tokenize"),
+        "it slid: {:?}",
+        later.rows()[0]
+    );
+
+    let still = draw(&line(true), 20, 1, 0, hovered(120 * 40));
+    assert_eq!(still.rows()[0].trim_end(), "Tokenize the card w…");
+    assert!(still.hits.is_empty(), "no target for a still line");
 }

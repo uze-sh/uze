@@ -79,6 +79,9 @@ on "cancel" must not save first.
   word that is not never turns bold under the pointer or while pressed.
   Manage's version and health are the reference.
 - Text-only affordances start muted and brighten.
+- A plugin's surface has at most one button in the accent, the one it
+  means to be pressed next (`Button primary=#true`), as UZE's own buttons
+  are for what builds; every other button stays neutral.
 - What a plugin draws follows the same rule, without the plugin asking:
   every element of the catalog that answers a click lifts under the
   pointer in its own hue (`theme::lifted_ink`, `widget::lift`), and a
@@ -270,6 +273,9 @@ Toasts:
   their maximum.
 - Appear only for something that happened. Never raise a toast for a
   no-op, a save, or an error flood at startup.
+- What a plugin's action says while it waits ("Start a session…") is gone
+  the moment its extension answers, on a view, a drawer or an overlay
+  alike: it never stays on a foot after the action ran.
 - A gesture with nothing to act on runs nothing and says so in a toast
   that names what is missing (`Copy hash did not run` · `select a row
   first`). It never acts on emptiness: a copy of empty text never reaches
@@ -392,7 +398,9 @@ operator rather than assume.
 **Narrow widths:**
 - Nothing clips the header, the footer or the first line.
 - Text that is too long marquees (slowly, after a pause) or elides. It
-  never cuts mid-word in a hint.
+  never cuts mid-word in a hint. A plugin's cut line (`Text truncate`)
+  slides only while the pointer rests on it, never on its own; at rest it
+  ends in an ellipsis. `marquee=#false` keeps a line cut for good.
 - Drop unimportant columns first and keep the drawer.
 - Footers stay on one line, with the two key actions, the rest behind F1.
 

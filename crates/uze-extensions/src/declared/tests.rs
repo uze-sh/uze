@@ -588,7 +588,8 @@ fn a_pressed_button_records_its_action_with_the_item_and_runs_nothing() {
     assert_eq!(
         button.kind,
         NodeKind::Button {
-            label: "run 12".into()
+            label: "run 12".into(),
+            primary: false,
         }
     );
     let outcome = extension.hit(VIEW, act(button.id, NodeAct::Press), SPACE);
@@ -787,7 +788,7 @@ fn every_node_kind_reads_its_properties() {
     let text = &row.children[0];
     assert!(text.grow);
     assert_eq!(text.min_width, 3);
-    let NodeKind::Text { spans, truncate } = &text.kind else {
+    let NodeKind::Text { spans, truncate, .. } = &text.kind else {
         panic!("{text:?}")
     };
     assert!(*truncate && spans[0].bold && spans[0].role == Role::Accent);

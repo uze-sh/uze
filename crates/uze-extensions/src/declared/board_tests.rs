@@ -186,20 +186,23 @@ fn the_board_is_drawn_from_its_fixture() {
                 0,
                 NodeKind::Text {
                     spans: Vec::new(),
-                    truncate: false
+                    truncate: false,
+                    still: false,
                 }
             ),
             view::Node::new(0, NodeKind::Tabs { tabs: Vec::new() }),
             view::Node::new(
                 0,
                 NodeKind::Button {
-                    label: String::new()
+                    label: String::new(),
+                    primary: false,
                 }
             ),
             view::Node::new(
                 0,
                 NodeKind::Button {
-                    label: String::new()
+                    label: String::new(),
+                    primary: false,
                 }
             ),
         ])
@@ -220,7 +223,8 @@ fn the_board_is_drawn_from_its_fixture() {
     assert_eq!(
         header.children[4].kind,
         NodeKind::Button {
-            label: "▶ executar fase 12".into()
+            label: "▶ executar fase 12".into(),
+            primary: false,
         }
     );
 
@@ -326,7 +330,7 @@ fn the_next_step_is_recorded_with_its_phase() {
     let root = tree(&extension);
     let next = nodes(&root)
         .into_iter()
-        .find(|node| matches!(&node.kind, NodeKind::Button { label } if label.contains("12")))
+        .find(|node| matches!(&node.kind, NodeKind::Button { label, .. } if label.contains("12")))
         .expect("the next button")
         .id;
     extension.hit(VIEW, act(next, NodeAct::Press), SPACE);
