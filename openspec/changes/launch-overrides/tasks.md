@@ -58,4 +58,4 @@
 
 - [x] 6.1 `design-system` skill: write the rules this settled (field row opening a step ends in `›`, popup height fixed across steps, history not prefilled)
 - [x] 6.2 `docs/architecture/invariants.md`: overrides never displace what UZE composes, tied to the check's tests
-- [ ] 6.3 `make check` and `openspec validate --all --strict` green
+- [x] 6.3 `make check` and `openspec validate --all --strict` green
