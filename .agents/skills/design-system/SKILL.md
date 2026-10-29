@@ -136,8 +136,8 @@ on "cancel" must not save first.
 - Dropdowns float over content and never push it down.
 - A breadcrumb names levels, short and generic (`Context › Containers ›
   Components ▾`), the step on show included. An item's own long name goes
-  in the list that step opens and stays pinned over the content it names,
-  never in the step itself.
+  in the list that step opens and, muted and in its own case, on the row
+  of the content's modes (`View::label`), never in the step itself.
 - A modal keeps its height while you filter inside it.
 - A popover's rows stand on its own ground: no raised band under the line
   typed into or under its list. The row Enter takes is the one marked.

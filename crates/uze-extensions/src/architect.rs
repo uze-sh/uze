@@ -46,7 +46,7 @@ use crate::{
     },
 };
 
-use crate::shared::canvas::{self, Canvas, Frame, Glyphs};
+use crate::shared::canvas::{Canvas, Frame, Glyphs};
 use crate::shared::checkout;
 use crate::shared::nearest;
 use crate::shared::places::{ArtifactRoot, ArtifactSource};
@@ -632,7 +632,7 @@ impl ArchitectView {
     /// step by the level it is, the view on show included, which opens
     /// onto the views that share its parent by their titles. A title names
     /// a view's type and scope, which is a sentence, and a row of them is
-    /// a row cut short; the title on show is written over the drawing
+    /// a row cut short; the title on show is the view's [`View::label`]
     /// instead. Empty off C4, where the area is a set to pick from.
     fn steps(&self) -> Vec<TrailStep> {
         let zoom = self.zoom();
@@ -656,6 +656,19 @@ impl ArchitectView {
         };
         steps.push(TrailStep::new(name, true).choosing(choices));
         steps
+    }
+
+    /// The title of the C4 view on show, which C4 asks every diagram to
+    /// carry and the trail names only by its level.
+    fn label(&self) -> String {
+        match self.zoom().place(self.selected) {
+            Some(_) => self
+                .catalog
+                .get(self.selected)
+                .map(|artifact| artifact.name.clone())
+                .unwrap_or_default(),
+            None => String::new(),
+        }
     }
 
     /// A step of the way down, pressed: an ancestor is gone back up to,
@@ -732,9 +745,6 @@ impl ArchitectView {
     fn draw(&self, artifact: usize) -> Drawing {
         match self.catalog.get(artifact) {
             Some(artifact) => match mermaid::parse(artifact.diagram()) {
-                Ok(Diagram::Graph(graph)) if graph.view.is_some() => {
-                    Drawing::Graph(Box::new(Scene::titled(graph, artifact.name.clone())))
-                }
                 Ok(Diagram::Graph(graph)) => Drawing::Graph(Box::new(Scene::of(graph))),
                 Ok(Diagram::Sequence(sequence)) => Drawing::Sequence(sequence),
                 Err(reason) => Drawing::Unreadable(reason),
@@ -1088,15 +1098,6 @@ impl ArchitectView {
                 }
             }
         }
-        if let Drawing::Graph(scene) = &self.drawing
-            && let Some(title) = &scene.title
-        {
-            let pinned = format!(" {title} ");
-            for x in 0..canvas::text_width(&pinned).min(columns) {
-                screen.put(x, 0, ' ', Role::Default, false);
-            }
-            screen.text(0, 0, &pinned, Role::Bright, true);
-        }
         if let Some(map) = self.minimap(space) {
             let boxes: &[Frame] = match &self.drawing {
                 Drawing::Graph(scene) => &scene.placement.nodes,
@@ -1178,6 +1179,7 @@ pub fn view(state: &ArchitectView, space: Size) -> View {
         subjects: Vec::new(),
         layout: Layout::Board,
         trail: state.steps(),
+        label: state.label(),
     }
 }
 

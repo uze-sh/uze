@@ -1462,6 +1462,7 @@ impl WorkspaceModel {
                 subjects: Vec::new(),
                 layout: uze_extensions::view::Layout::Sidebar,
                 trail: Vec::new(),
+                label: String::new(),
             }
         })
     }

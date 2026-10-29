@@ -1224,6 +1224,7 @@ impl Extension for DeclaredExtension {
             subjects: Vec::new(),
             layout: Layout::default(),
             trail: Vec::new(),
+            label: String::new(),
         })
     }
 

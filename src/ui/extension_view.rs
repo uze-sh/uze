@@ -483,6 +483,23 @@ fn render_board(
     // [`render_navigation`]); its own first row keeps only the ways of
     // drawing it.
     render_modes(frame, menu, &view.modes, hits);
+    // What the board shows, on the row of the ways it can be drawn: the
+    // trail above names only its level.
+    if !view.label.is_empty() {
+        let room = menu
+            .width
+            .saturating_sub(lines::modes_width(&view.modes))
+            .saturating_sub(2);
+        let mut label = ratatui::text::Line::from(TextSpan::styled(
+            view.label.clone(),
+            theme::fg(Token::TextDim),
+        ));
+        widget::text::clip(&mut label, usize::from(room));
+        frame.render_widget(
+            Paragraph::new(label),
+            Rect::new(menu.x + 1, menu.y, room, 1),
+        );
+    }
     match &view.content {
         Content::Message { text, hint, role } => {
             render_message(frame, board, text, hint.as_deref(), color(*role));

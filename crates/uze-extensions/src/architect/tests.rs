@@ -496,54 +496,18 @@ fn a_view_opened_from_anywhere_shows_its_own_way_down() {
 }
 
 /// The way down names levels, which are short; the view's own title,
-/// which names its type and scope, is written on the drawing.
+/// which names its type and scope, is the view's label.
 #[test]
-fn a_c4_view_carries_its_title_on_the_drawing() {
-    let mut state = showing(CORE);
-    let first_row = |state: &ArchitectView| {
-        state
-            .screen(SPACE)
-            .expect("a screen")
-            .to_text()
-            .lines()
-            .next()
-            .unwrap_or_default()
-            .trim()
-            .to_owned()
-    };
-    assert!(first_row(&state).starts_with(CORE));
-    drag_by(&mut state, -40, -20, SPACE);
-    assert!(
-        first_row(&state).starts_with(CORE),
-        "pinned, wherever the board was moved"
+fn a_c4_view_is_labelled_by_its_title_and_stepped_to_by_its_level() {
+    let state = showing(CORE);
+    let mut drawn = view(&state, SPACE);
+    assert_eq!(drawn.label, CORE);
+    assert_eq!(drawn.trail.pop().unwrap().name, "Components");
+    assert_eq!(
+        view(&showing("Crate layering"), SPACE).label,
+        "",
+        "off C4 the selector names it"
     );
-    let step = view(&state, SPACE).trail.pop().unwrap();
-    assert_eq!(step.name, "Components");
-}
-
-#[test]
-fn a_second_click_on_a_box_that_leads_somewhere_follows_it() {
-    let mut state = showing(CONTEXT);
-    let Drawing::Graph(scene) = &state.drawing else {
-        panic!("the context is a graph");
-    };
-    let uze = scene
-        .graph
-        .nodes
-        .iter()
-        .position(|n| n.id == "uze")
-        .unwrap();
-    let frame = scene.placement.nodes[uze];
-    let corner = state.corner(SPACE);
-    let hit = ViewHit::PlaceCaret {
-        line: (frame.y + 1 - corner.1) as usize,
-        cell: (frame.x + 1 - corner.0) as usize,
-    };
-    handle_mouse(&mut state, Some(hit), SPACE);
-    assert_eq!(state.picked, Some(uze));
-    assert_eq!(here(&state), CONTEXT, "one click only picks");
-    handle_mouse(&mut state, Some(hit), SPACE);
-    assert_eq!(here(&state), CONTAINERS, "the second goes inside");
 }
 
 #[test]

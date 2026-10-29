@@ -204,6 +204,10 @@ pub struct View {
     /// which is how a fixed ladder (a model's own levels) differs from a
     /// way in that was made by entering (a directory drilled into).
     pub trail: Vec<TrailStep>,
+    /// What the content on show is called, set on the row of the
+    /// [`View::modes`] that say how it is drawn: a board's diagram by its
+    /// title, which a trail names only by its level. Empty for none.
+    pub label: String,
 }
 
 /// One step of a [`View::trail`].

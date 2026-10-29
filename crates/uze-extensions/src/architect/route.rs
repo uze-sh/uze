@@ -75,18 +75,6 @@ pub struct Routes {
 }
 
 impl Routes {
-    /// The same routes, `rows` further down the board.
-    pub fn lowered(&mut self, rows: i32) {
-        for route in &mut self.routes {
-            for cell in &mut route.cells {
-                cell.1 += rows;
-            }
-        }
-        let mut usage = vec![0; (rows * self.width).max(0) as usize];
-        usage.append(&mut self.usage);
-        self.usage = usage;
-    }
-
     /// Whether more than one edge runs through this cell — a trunk, where
     /// a label would not say whose it is.
     pub fn is_shared(&self, x: i32, y: i32) -> bool {

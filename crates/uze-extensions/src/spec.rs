@@ -781,6 +781,7 @@ pub fn view(state: &SpecView, space: Size) -> View {
         subjects: Vec::new(),
         layout: Layout::Sidebar,
         trail: Vec::new(),
+        label: String::new(),
     };
     match &state.state {
         State::Reading => View {

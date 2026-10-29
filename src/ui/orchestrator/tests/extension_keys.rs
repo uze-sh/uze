@@ -51,6 +51,7 @@ impl Extension for Keyed {
             subjects: Vec::new(),
             layout: Layout::Sidebar,
             trail: Vec::new(),
+            label: String::new(),
         })
     }
 
