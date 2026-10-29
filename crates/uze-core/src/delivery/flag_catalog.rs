@@ -23,6 +23,29 @@ pub struct FlagSpec {
 }
 
 impl FlagSpec {
+    /// A flag given once per launch; [`Self::repeatable`] says otherwise.
+    pub const fn new(
+        spellings: &'static [&'static str],
+        value: FlagValue,
+        summary: &'static str,
+        owner: FlagOwner,
+    ) -> Self {
+        Self {
+            spellings,
+            value,
+            repeatable: false,
+            summary,
+            owner,
+        }
+    }
+
+    pub const fn repeatable(self) -> Self {
+        Self {
+            repeatable: true,
+            ..self
+        }
+    }
+
     /// The spelling a person is shown.
     pub fn name(&self) -> &'static str {
         self.spellings[0]
@@ -74,13 +97,18 @@ pub enum FlagOwner {
 mod tests {
     use super::*;
 
-    const MODEL: FlagSpec = FlagSpec {
-        spellings: &["--model", "-m"],
-        value: FlagValue::Free("model"),
-        repeatable: false,
-        summary: "model for the session",
-        owner: FlagOwner::Operator,
-    };
+    const MODEL: FlagSpec = FlagSpec::new(
+        &["--model", "-m"],
+        FlagValue::Free("model"),
+        "model for the session",
+        FlagOwner::Operator,
+    );
+
+    #[test]
+    fn a_flag_is_given_once_unless_declared_repeatable() {
+        assert!(!MODEL.repeatable);
+        assert!(MODEL.repeatable().repeatable);
+    }
 
     #[test]
     fn a_flag_is_shown_by_its_first_spelling() {
