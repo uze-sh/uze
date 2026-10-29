@@ -142,8 +142,9 @@ pub struct Notify {
     pub sound: Option<uze_contract::Sound>,
 }
 
-/// How a full-frame surface is entered: by one of the doors it offers, or
-/// sent to a path another surface pointed at.
+/// How a full-frame surface is entered: by one of the doors it offers,
+/// sent to a path another surface pointed at, or brought back to the tab
+/// it was left standing in.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Entry {
     /// The extension's own name for a way in, which a person chose before
@@ -151,6 +152,9 @@ pub enum Entry {
     Door(String),
     /// `target`, inside the checkout the surface opens on.
     Path { target: PathBuf, directory: bool },
+    /// The tab this surface was put away for came back to the front: what
+    /// [`Extension::hold`] took is handed to `resume` right after `open`.
+    Return,
 }
 
 /// The checkout a full-frame surface opens on, as the host found it in
@@ -413,11 +417,26 @@ pub trait Extension: Send {
         Outcome::Stay
     }
 
-    /// Where the viewer was on `surface`, handed back on reopening.
+    /// Where the viewer was on `surface`, kept per checkout and handed
+    /// back when a door opens it there again.
+    ///
+    /// Arriving is `enter`, then `open`, then `resume`; leaving is `place`
+    /// (and `hold`, when the surface is put away for its tab), then
+    /// `close`.
     fn place(&self, _surface: &str) -> Option<Opaque> {
         None
     }
 
+    /// Everything `surface` keeps for the tab it stands in, taken as it is
+    /// put away because another tab came to the front, never on a close:
+    /// handed back to `resume` after [`Entry::Return`]. It may carry what
+    /// a door must decide afresh and `place` therefore leaves out. Kept in
+    /// memory for the client's run, never written down.
+    fn hold(&self, surface: &str) -> Option<Opaque> {
+        self.place(surface)
+    }
+
+    /// What `place` kept, or after [`Entry::Return`] what `hold` took.
     fn resume(&mut self, _surface: &str, _place: Opaque) {}
 
     /// State that outlives every surface: a cache, a measure. Kept by the

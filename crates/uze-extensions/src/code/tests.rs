@@ -3407,6 +3407,56 @@ mod hosted {
         );
     }
 
+    /// A return is not a door: the surface stands again on the half it
+    /// was put away on, the map with the rendering it had, and a door
+    /// pressed afterwards still decides.
+    #[test]
+    fn a_return_puts_back_the_half_it_was_left_on_and_a_door_still_decides() {
+        let mut extension = opened(FILES, "/w");
+        let view = extension.code_view_mut().unwrap();
+        view.selected = Some(PathBuf::from("/w/README.md"));
+        view.content = ContentMode::Map;
+        view.before_map = ContentMode::Contents;
+        view.map_showing = MapShowing::Ranking;
+        let held = extension.hold(SURFACE).expect("an open surface holds");
+        extension.close(SURFACE);
+
+        extension.enter(SURFACE, Entry::Return);
+        extension.open(SURFACE, &checkout("/w"));
+        extension.resume(SURFACE, held);
+        let view = extension.code_view().unwrap();
+        assert_eq!(view.showing(), ContentMode::Map);
+        assert_eq!(view.before_map, ContentMode::Contents);
+        assert_eq!(view.map_showing, MapShowing::Ranking);
+        assert_eq!(view.selected(), Some(Path::new("/w/README.md")));
+
+        assert_eq!(
+            extension.enter(SURFACE, Entry::Door(CHANGES.to_owned())),
+            Outcome::Stay
+        );
+        assert_eq!(
+            extension.code_view().unwrap().showing(),
+            ContentMode::Diff,
+            "the door switched the half"
+        );
+    }
+
+    /// What is held for a tab never reaches an arrival through a door:
+    /// the door opens its own half, on the checkout's place.
+    #[test]
+    fn a_door_after_a_return_is_handed_the_place_not_what_was_held() {
+        let mut extension = opened(FILES, "/w");
+        let place = extension
+            .place(SURFACE)
+            .expect("an open surface has a place");
+        extension.close(SURFACE);
+
+        extension.enter(SURFACE, Entry::Door(CHANGES.to_owned()));
+        extension.open(SURFACE, &checkout("/w"));
+        extension.resume(SURFACE, place);
+        assert_eq!(extension.code_view().unwrap().showing(), ContentMode::Diff);
+    }
+
     #[test]
     fn a_save_waits_for_the_read_before_it_while_listings_go_alongside() {
         let mut extension = opened(FILES, "/w");

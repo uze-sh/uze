@@ -14,10 +14,10 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use super::{
-    CATALOG, CodeOutcome, CodePlace, CodeView, ContentMode, DiffAnswer, DiffRequest, FileAnswer,
-    FileRequest, Measure, RefreshedChanges, Timeline, fulfill, handle_command, handle_hover,
-    handle_mouse, handle_scroll, measure, scroll_to, text, timeline, timeline_section, unanswered,
-    view,
+    CATALOG, CodeHeld, CodeOutcome, CodePlace, CodeView, ContentMode, DiffAnswer, DiffRequest,
+    FileAnswer, FileRequest, Measure, RefreshedChanges, Timeline, fulfill, handle_command,
+    handle_hover, handle_mouse, handle_scroll, measure, scroll_to, text, timeline,
+    timeline_section, unanswered, view,
 };
 use crate::contract::{
     Checkout, Entry, Extension, Job, Lanes, Opaque, Outcome, SurfaceInfo, SurfaceSlot,
@@ -88,18 +88,31 @@ struct History {
     at: Instant,
 }
 
-/// How the next opening goes: the mode a door means, or a path another
-/// surface sent the viewer to, which wins over where they last were.
+/// How the next opening goes: the mode a door means, a path another
+/// surface sent the viewer to, which wins over where they last were, or a
+/// return to the tab the surface was put away for.
 enum Arrival {
     Door(ContentMode),
     Sent { target: PathBuf, directory: bool },
+    Return,
+}
+
+/// What the `resume` following an opening is handed, as the opening
+/// decided: the checkout's place, what was held for the tab, or nothing
+/// worth taking, since a path that was sent wins.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum Awaiting {
+    #[default]
+    Place,
+    Held,
+    Nothing,
 }
 
 #[derive(Default)]
 pub struct CodeExtension {
     open: Option<CodeView>,
     arrival: Option<Arrival>,
-    sent: bool,
+    awaiting: Awaiting,
     /// A read or write of a file is out: the next waits for it.
     file_pending: bool,
     diff_pending: bool,
@@ -546,6 +559,7 @@ impl Extension for CodeExtension {
                 Arrival::Door(wanted)
             }
             Entry::Path { target, directory } => Arrival::Sent { target, directory },
+            Entry::Return => Arrival::Return,
         };
         self.arrival = Some(arrival);
         Outcome::Stay
@@ -562,16 +576,18 @@ impl Extension for CodeExtension {
         if surface != SURFACE {
             return;
         }
-        let (mode, sent) = match self.arrival.take() {
-            Some(Arrival::Door(mode)) => (mode, None),
+        let (mode, sent, awaiting) = match self.arrival.take() {
+            Some(Arrival::Door(mode)) => (mode, None, Awaiting::Place),
             Some(Arrival::Sent { target, directory }) => (
                 ContentMode::Contents,
                 Some(CodePlace::at(&checkout.root, &target, directory)),
+                Awaiting::Nothing,
             ),
-            None => (ContentMode::Diff, None),
+            Some(Arrival::Return) => (ContentMode::Diff, None, Awaiting::Held),
+            None => (ContentMode::Diff, None, Awaiting::Place),
         };
         let mut view = CodeView::opening(checkout.root.clone(), checkout.display.clone(), mode);
-        self.sent = sent.is_some();
+        self.awaiting = awaiting;
         if let Some(place) = sent {
             view = view.resuming(place);
         }
@@ -686,18 +702,30 @@ impl Extension for CodeExtension {
         self.view_ref(surface).map(CodeView::place).map(Opaque::new)
     }
 
-    /// Where the viewer last was, unless another surface sent them
-    /// somewhere. The scroll of the list is not part of it: the first
-    /// frame reveals whatever is selected.
+    fn hold(&self, surface: &str) -> Option<Opaque> {
+        self.view_ref(surface).map(CodeView::held).map(Opaque::new)
+    }
+
+    /// Where the viewer last was, or after a return what stood, unless
+    /// another surface sent them somewhere.
     fn resume(&mut self, surface: &str, place: Opaque) {
-        if std::mem::take(&mut self.sent) || surface != SURFACE {
+        let awaiting = std::mem::take(&mut self.awaiting);
+        if surface != SURFACE {
             return;
         }
-        let Some(place) = place.downcast::<CodePlace>() else {
+        let Some(view) = self.open.take() else {
             return;
         };
-        if let Some(view) = self.open.take() {
-            self.open = Some(view.resuming(place));
-        }
+        self.open = Some(match awaiting {
+            Awaiting::Place => match place.downcast::<CodePlace>() {
+                Some(place) => view.resuming(place),
+                None => view,
+            },
+            Awaiting::Held => match place.downcast::<CodeHeld>() {
+                Some(held) => view.returning(held),
+                None => view,
+            },
+            Awaiting::Nothing => view,
+        });
     }
 }
