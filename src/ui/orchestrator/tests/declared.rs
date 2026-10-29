@@ -1903,7 +1903,13 @@ fn checkout_outside_the_temporary_directory(label: &str) -> PathBuf {
         .to_path_buf();
     std::fs::create_dir_all(checkout.join(".planning")).unwrap();
     uze_testkit::git::isolated_git_in(&checkout, &["init", "-q"]);
-    uze_platform::path::canonical(&checkout).unwrap()
+    let checkout = uze_platform::path::canonical(&checkout).unwrap();
+    assert_eq!(
+        uze_application::project_root_of(&checkout),
+        checkout,
+        "the checkout is a project of its own, never one it sits inside"
+    );
+    checkout
 }
 
 /// Every engine job asked now and the answers they give, absorbed until

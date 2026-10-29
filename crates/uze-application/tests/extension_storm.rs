@@ -52,7 +52,13 @@ fn checkout(label: &str) -> PathBuf {
     std::fs::create_dir_all(checkout.join(".planning")).unwrap();
     std::fs::write(checkout.join(".planning/STATE.md"), "one\ntwo\nthree").unwrap();
     uze_testkit::git::isolated_git_in(&checkout, &["init", "-q"]);
-    uze_platform::path::canonical(&checkout).unwrap()
+    let checkout = uze_platform::path::canonical(&checkout).unwrap();
+    assert_eq!(
+        uze_application::project_root_of(&checkout),
+        checkout,
+        "the checkout is a project of its own, never one it sits inside"
+    );
+    checkout
 }
 
 /// Fifteen plugins carrying the `gsd` fixture's band, installed from one
