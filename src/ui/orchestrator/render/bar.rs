@@ -156,7 +156,11 @@ fn render_item(
     view: &View,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) -> bool {
+    let drawn_from = hits.len();
     let animates = render_docked_slot(frame, rect, model, slot.id, view, hits);
+    if matches!(slot.surface.slot, SurfaceSlot::Bar { right: true }) {
+        flush_right(frame, rect, &mut hits[drawn_from..]);
+    }
     if let Some(target) = model.bar_target(slot) {
         // A door like the bar's own: held back at rest, lifted in its
         // own hues under the pointer.
@@ -167,6 +171,43 @@ fn render_item(
         hits.push((rect, target));
     }
     animates
+}
+
+/// Moves what an item on the right drew against the bar's right end. Its
+/// width is what it asks for, and a field that can grow (an `Elapsed`
+/// keeping room for `1h04m`) asks for more than it draws now: the room it
+/// keeps then stood at the end, a gap between the item and the edge. Kept
+/// on the inside instead, the item never moves while its text grows into
+/// it. Its targets move with it.
+fn flush_right(frame: &mut ratatui::Frame<'_>, rect: Rect, hits: &mut [(Rect, WorkspaceHit)]) {
+    let buffer = frame.buffer_mut();
+    let row = rect.y;
+    let last = (rect.x..rect.right()).rev().find(|&x| {
+        buffer
+            .cell((x, row))
+            .is_some_and(|cell| cell.symbol() != " ")
+    });
+    let Some(last) = last else {
+        return;
+    };
+    let shift = rect.right().saturating_sub(1).saturating_sub(last);
+    if shift == 0 {
+        return;
+    }
+    let blank = buffer[(rect.right() - 1, row)].clone();
+    for x in (rect.x..=last).rev() {
+        let cell = buffer[(x, row)].clone();
+        buffer[(x + shift, row)] = cell;
+    }
+    for x in rect.x..rect.x + shift {
+        buffer[(x, row)] = blank.clone();
+    }
+    for (hit, _) in hits {
+        hit.x = hit
+            .x
+            .saturating_add(shift)
+            .min(rect.right().saturating_sub(hit.width));
+    }
 }
 
 /// A door's label: its surface's title in lowercase, cut to fit.
