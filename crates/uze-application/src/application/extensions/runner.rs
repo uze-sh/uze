@@ -64,6 +64,9 @@ pub struct ExtensionRunner {
     /// Counts what was remembered, ordering it.
     remembered: AtomicU64,
     scripts: Mutex<ScriptCache>,
+    /// The digest each extension's script file was last compiled from, so
+    /// an edited file lets go of the script it replaced.
+    compiled_from: Mutex<HashMap<(Identity, String), String>>,
     runs: AtomicU64,
     /// What it answered for each extension, for the inspector.
     book: Mutex<RunBook>,
@@ -129,6 +132,7 @@ impl ExtensionRunner {
         Self {
             answered: Mutex::default(),
             scripts: Mutex::default(),
+            compiled_from: Mutex::default(),
             runs: AtomicU64::default(),
             remembered: AtomicU64::default(),
             book: Mutex::default(),
@@ -983,6 +987,28 @@ impl ExtensionRunner {
         }
     }
 
+    /// The script `file` of `identity` compiles to, compiled once per
+    /// digest. A file edited while the session runs compiles under a new
+    /// one, and the script it replaced goes unless another file still has it.
+    fn compiled(
+        &self,
+        identity: &Identity,
+        file: &str,
+        digest: String,
+        bytes: &[u8],
+    ) -> Result<Arc<uze_script::Script>, uze_script::ScriptError> {
+        let mut compiled_from = lock(&self.compiled_from);
+        let mut scripts = lock(&self.scripts);
+        let replaced = compiled_from.insert((identity.clone(), file.to_owned()), digest.clone());
+        if let Some(replaced) = replaced
+            && replaced != digest
+            && !compiled_from.values().any(|kept| *kept == replaced)
+        {
+            scripts.forget(&replaced);
+        }
+        scripts.get_or_compile(&digest, bytes)
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn run_script(
         &self,
@@ -1014,8 +1040,8 @@ impl ExtensionRunner {
             Ok(bytes) => bytes,
             Err(error) => return failed(format!("{file}: {error}")),
         };
-        let compiled =
-            lock(&self.scripts).get_or_compile(&uze_core::digest::sha256(&bytes), &bytes);
+        let digest = uze_core::digest::sha256(&bytes);
+        let compiled = self.compiled(&asked.identity, file, digest, &bytes);
         let script = match compiled {
             Ok(script) => script,
             Err(error) => return failed(format!("{file}: {error}")),
@@ -1297,6 +1323,38 @@ pub(super) mod tests {
             Answer::Withheld { reason } => reason,
             other => panic!("not withheld: {other:?}"),
         }
+    }
+
+    /// A script file edited while the session runs compiles again, and the
+    /// script it replaced is let go rather than kept for the session; one
+    /// another file still compiles from stays.
+    #[test]
+    fn an_edited_script_lets_go_of_the_one_it_replaced() {
+        let runner = ExtensionRunner::new();
+        let band = Identity {
+            marketplace: "studio".to_owned(),
+            plugin: "gsd".to_owned(),
+            id: "gsd-band".to_owned(),
+        };
+        let compile = |file: &str, bytes: &[u8]| {
+            runner
+                .compiled(&band, file, uze_core::digest::sha256(bytes), bytes)
+                .unwrap();
+        };
+        let first = b"fn state(input, context) { 1 }";
+        let shared = b"fn state(input, context) { 2 }";
+        compile("state.uze", first);
+        compile("other.uze", shared);
+        compile("state.uze", shared);
+        compile("state.uze", b"fn state(input, context) { 3 }");
+
+        let cached = |bytes: &[u8]| {
+            lock(&runner.scripts)
+                .get_or_compile(&uze_core::digest::sha256(bytes), b"not a script (")
+                .is_ok()
+        };
+        assert!(!cached(first), "the script an edit replaced is let go");
+        assert!(cached(shared), "one another file compiles from stays");
     }
 
     #[test]
