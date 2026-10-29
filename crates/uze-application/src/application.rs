@@ -254,10 +254,27 @@ impl UzeApplication {
         }
     }
 
+    /// The installed packages among `names` that carry only workspace
+    /// extensions, each named as it was given.
+    pub(crate) fn extensions_among<'a>(&self, names: impl Iterator<Item = &'a str>) -> Vec<String> {
+        names
+            .filter(|name| {
+                self.package_by_name(name).is_ok_and(|package| {
+                    uze_core::engine::package_resources(&package).is_ok_and(|resources| {
+                        PackageKind::of(&package, &resources.iter().collect::<Vec<_>>())
+                            == PackageKind::Extension
+                    })
+                })
+            })
+            .map(str::to_owned)
+            .collect()
+    }
+
     pub(crate) fn plugin_summary(&self, package: &StoredPackage) -> Result<PluginSummary> {
         let resources = uze_core::engine::package_resources(package)?;
         Ok(PluginSummary {
             id: package.id.as_str().to_owned(),
+            kind: PackageKind::of(package, &resources.iter().collect::<Vec<_>>()),
             active_name: package.active_name.clone(),
             source: package.provenance.requested.display(),
             store_path: package.root.clone(),

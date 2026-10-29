@@ -98,6 +98,8 @@ impl Plugins<'_> {
         for reconciled in &final_report.receipts {
             state::forget_receipt(&self.0.home, &reconciled.receipt)?;
         }
+        let resources = uze_core::engine::package_resources(&package).unwrap_or_default();
+        let kind = PackageKind::of(&package, &resources.iter().collect::<Vec<_>>());
         self.0.store.remove_package(&package.id)?;
         state::forget_undelivered(&self.0.home, package.id.as_str(), None)?;
         // The package is gone: what its extensions leave behind is
@@ -122,6 +124,7 @@ impl Plugins<'_> {
         }
         Ok(RemovePluginReport::Removed {
             plugin: package.id.as_str().to_owned(),
+            kind,
             detached_receipts,
             already_missing_receipts,
             unforgotten,

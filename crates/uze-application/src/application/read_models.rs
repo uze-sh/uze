@@ -130,6 +130,9 @@ impl Plugins<'_> {
 #[derive(Clone, Debug, Serialize)]
 pub struct PluginSummary {
     pub id: String,
+    /// What a person reads it as: a plugin, or an extension when it carries
+    /// only workspace extensions and reaches no harness.
+    pub kind: PackageKind,
     /// The local name this plugin currently invokes under (ADR-036) — its
     /// own bare plugin name unless an install-time `alias` resolution gave
     /// it a different one to coexist with another marketplace's same-named
@@ -157,6 +160,31 @@ pub struct PluginSummary {
     /// What the package needs from the machine and the machine lacks, each
     /// with the command that installs it. Empty when nothing is missing.
     pub requirement_gaps: Vec<super::RequirementLine>,
+}
+
+/// What a package is to the person reading about it.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PackageKind {
+    /// It carries something a harness reads.
+    #[default]
+    Plugin,
+    /// It carries only workspace extensions: UZE's own, delivered to no
+    /// harness.
+    Extension,
+}
+
+impl PackageKind {
+    /// The kind of `package`, whose harness capabilities are `resources`.
+    pub(crate) fn of(package: &StoredPackage, resources: &[&uze_core::Resource]) -> Self {
+        let extensions_only = !super::lifecycle::attach::reaches_a_harness(resources)
+            && !uze_core::capability::extension::discover(&package.root).is_empty();
+        if extensions_only {
+            Self::Extension
+        } else {
+            Self::Plugin
+        }
+    }
 }
 
 /// One harness a package stayed installed without reaching, and the error
@@ -670,6 +698,7 @@ pub enum RemovePluginReport {
     AlreadyAbsent { plugin: String },
     Removed {
         plugin: String,
+        kind: PackageKind,
         detached_receipts: Vec<String>,
         already_missing_receipts: Vec<String>,
         /// Why what its extensions were given or kept (consents, stores,
