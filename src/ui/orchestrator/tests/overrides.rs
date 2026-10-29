@@ -172,6 +172,158 @@ fn the_overrides_row_and_its_key_open_the_same_step() {
     );
 }
 
+/// The popup's own rows, its border included, cut out of the screen.
+fn popup_rows(driven: &mut Driven<'_>) -> (Rect, Vec<String>) {
+    let rows = screen(driven);
+    let popup = popup_rect(driven);
+    let cut = rows[usize::from(popup.y)..usize::from(popup.bottom())]
+        .iter()
+        .map(|row| {
+            row.chars()
+                .skip(usize::from(popup.x))
+                .take(usize::from(popup.width))
+                .collect()
+        })
+        .collect();
+    (popup, cut)
+}
+
+/// A row that is one of the popup's hairlines, between its border's sides.
+fn is_rule(row: &str) -> bool {
+    let inside: Vec<char> = row.chars().skip(1).collect();
+    let inside = &inside[..inside.len().saturating_sub(1)];
+    !inside.is_empty() && inside.iter().all(|cell| *cell == '─')
+}
+
+/// The column of the last thing drawn on a row, its border left out.
+fn end_of(row: &str) -> usize {
+    let inside: Vec<char> = row.chars().collect();
+    let inside = &inside[..inside.len().saturating_sub(1)];
+    inside
+        .iter()
+        .rposition(|cell| !cell.is_whitespace())
+        .unwrap_or(0)
+}
+
+/// The harness heads the popup alone, under the title; the `overrides`
+/// row is the last before the foot, under a rule of its own and over the
+/// foot's, its value against the same end as the harness's and its label
+/// in the harness's column.
+#[test]
+fn the_overrides_row_sits_at_the_foot_under_a_rule() {
+    let mut popup = popup("overrides-at-foot");
+    let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
+    let (_, rows) = popup_rows(&mut driven);
+    let last = rows.len() - 1;
+    assert!(rows[1].contains(" harness "), "{}", rows.join("\n"));
+    assert!(
+        is_rule(&rows[2]),
+        "a rule under the harness:\n{}",
+        rows.join("\n")
+    );
+    let field = &rows[last - 3];
+    assert!(field.contains(" overrides "), "{}", rows.join("\n"));
+    assert!(
+        field
+            .trim_end_matches('│')
+            .trim_end()
+            .ends_with(&theme::glyph(Symbol::Submenu))
+    );
+    assert!(
+        is_rule(&rows[last - 4]),
+        "a rule over the field:\n{}",
+        rows.join("\n")
+    );
+    assert!(
+        is_rule(&rows[last - 2]),
+        "the foot's rule:\n{}",
+        rows.join("\n")
+    );
+    assert!(rows[last - 1].contains("esc close"), "{}", rows.join("\n"));
+    assert_eq!(
+        rows.iter()
+            .filter(|row| row
+                .trim_start_matches('│')
+                .trim_start()
+                .starts_with("overrides"))
+            .count(),
+        1,
+        "the field is drawn once:\n{}",
+        rows.join("\n")
+    );
+    assert_eq!(end_of(field), end_of(&rows[1]), "the values end together");
+    assert_eq!(field.find("overrides"), rows[1].find("harness"));
+
+    // The step takes the field's rows with the listing's: its heading
+    // stands where the harness did, and the field is not drawn under it.
+    open_by_key(&mut driven);
+    type_text(&mut driven, "--model opus");
+    driven.press_key(chord(Action::Activate, Scope::LaunchOverrides));
+    type_text(&mut driven, "DEBUG=1");
+    driven.press_key(chord(Action::Activate, Scope::LaunchOverrides));
+    let (_, step) = popup_rows(&mut driven);
+    let heading = format!("{} overrides", theme::glyph(Symbol::StepPrevious));
+    assert!(step[1].contains(&heading), "{}", step.join("\n"));
+    assert!(
+        !step[last - 3].contains(" overrides "),
+        "{}",
+        step.join("\n")
+    );
+    assert!(step[last - 1].contains("esc back"), "{}", step.join("\n"));
+
+    driven.press_key(chord(Action::Dismiss, Scope::LaunchOverrides));
+    let (_, rows) = popup_rows(&mut driven);
+    let field = &rows[last - 3];
+    assert!(
+        field.contains("--model opus") && field.contains("DEBUG=1"),
+        "{}",
+        rows.join("\n")
+    );
+    assert_eq!(end_of(field), end_of(&rows[1]), "{}", rows.join("\n"));
+}
+
+/// The field's label is in the row's own ink and its value muted at its
+/// end; under the pointer the whole row lights, in colour alone. In the
+/// light theme too.
+#[test]
+fn the_overrides_row_rests_quiet_and_lights_under_the_pointer() {
+    for name in ["dark", "light"] {
+        let palette = uze_theme::builtin(name).expect("bundled").clone();
+        uze_theme::with_active(palette, || {
+            let mut popup = popup(&format!("overrides-ink-{name}"));
+            let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
+            driven.frame();
+            let row = driven
+                .attach
+                .model
+                .hits
+                .iter()
+                .filter(|(_, hit)| *hit == WorkspaceHit::HintAction(Action::OpenOverrides))
+                .map(|(rect, _)| *rect)
+                .max_by_key(|rect| rect.width)
+                .expect("the row is a target");
+            let inks = |driven: &mut Driven<'_>| {
+                let buffer = frame_buffer_at(&mut driven.attach.model, driven.area);
+                let line = &buffer_rows(&buffer)[usize::from(row.y)];
+                let at = |word: &str| {
+                    let column = line[..line.find(word).unwrap()].chars().count() as u16;
+                    buffer[(column, row.y)].clone()
+                };
+                (at("overrides"), at("none"))
+            };
+            let (label, value) = inks(&mut driven);
+            assert_eq!(label.fg, theme::color(Token::TextPrimary), "{name}");
+            assert_eq!(value.fg, theme::color(Token::TextMuted), "{name}");
+            driven.mouse(row.x + 2, row.y, crossterm::event::MouseEventKind::Moved);
+            let (lit_label, lit_value) = inks(&mut driven);
+            assert_eq!(lit_label.fg, theme::color(Token::TextBright), "{name}");
+            assert_eq!(lit_value.fg, theme::color(Token::TextBright), "{name}");
+            assert_eq!(lit_label.modifier, label.modifier, "the weight is kept");
+            assert_eq!(lit_label.bg, label.bg, "no band under the pointer");
+        });
+    }
+}
+
 impl Popup {
     fn model_take(&mut self) -> WorkspaceModel {
         std::mem::replace(&mut self.model, agent_session_in("/repo"))
@@ -679,8 +831,16 @@ fn long_values_are_cut_at_their_end_and_narrow_widths_hold() {
         rows.join("\n")
     );
     driven.press_key(chord(Action::Dismiss, Scope::LaunchOverrides));
-    let rows = screen(&mut driven);
-    let field = rows.iter().find(|row| row.contains(" overrides ")).unwrap();
+    let (popup, rows) = popup_rows(&mut driven);
+    assert_eq!(popup.width, 46, "the popup gives way to the terminal");
+    let field = &rows[rows.len() - 4];
+    assert!(is_rule(&rows[rows.len() - 5]), "{}", rows.join("\n"));
+    assert!(
+        field.contains(" overrides "),
+        "still at the foot:\n{}",
+        rows.join("\n")
+    );
+    assert_eq!(end_of(field), end_of(&rows[1]), "{}", rows.join("\n"));
     assert!(field.contains("LONG=x"), "{field}");
     assert!(field.contains('…'), "cut at its end: {field}");
     assert!(field.contains(&theme::glyph(Symbol::Submenu)), "{field}");

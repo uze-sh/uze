@@ -148,6 +148,16 @@ on "cancel" must not save first.
   (`Symbol::Submenu`) against its right edge (`overrides --model opus ›`),
   never a disclosure arrow: `▸`/`▾` say a group unfolds in place, and a
   step takes the list's place instead.
+- A popover's fields are placed by how they are used. A choice that rarely
+  changes (`harness ‹ Claude Code ›`) sits alone at its head, under the
+  title, a rule under it. A field that opens a step of its own
+  (`overrides`) sits at its foot, under a rule and above the keys, its
+  label in the row's own ink and its value muted against its end, ending
+  in `›`, `none` at rest. Never stack the two at the head in one dim ink.
+  The step takes the rows of both and of the list between them, so the
+  popover's height never moves; the field is not drawn under its own
+  step. Every field's value ends on one column, the one the head's ends
+  on.
 - Dropdowns float over content and never push it down.
 - A breadcrumb names levels, short and generic (`Context › Containers ›
   Components ▾`), the step on show included. An item's own long name goes

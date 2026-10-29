@@ -12,9 +12,11 @@ const LINE_PLACEHOLDER: &str = "a flag, or NAME=value";
 /// The list says this while there is nothing to offer and nothing added.
 const NOTHING_USED_YET: &str = "no overrides used before";
 
-/// The `overrides` field under `harness`: what the agent's launch is
-/// given, cut at its end, and the arrow saying the row opens a step. The
-/// whole row is the key's target.
+/// The `overrides` field at the popup's foot, under a rule and above the
+/// keys: its label in the row's own ink, what the agent's launch is given
+/// muted against its end, cut at its end, and the arrow saying the row
+/// opens a step. The whole row is the key's target, and lights under the
+/// pointer.
 pub(super) fn render_overrides_field(
     frame: &mut ratatui::Frame<'_>,
     rect: Rect,
@@ -35,15 +37,14 @@ pub(super) fn render_overrides_field(
             theme::fg(if hovered {
                 Token::TextBright
             } else {
-                Token::TextDim
+                Token::TextPrimary
             }),
         ),
     ];
     let value_tone = match () {
         _ if hovered => Token::TextBright,
         _ if costly => Token::StateWarning,
-        _ if entries.is_empty() => Token::TextMuted,
-        _ => Token::TextPrimary,
+        _ => Token::TextMuted,
     };
     let arrow = if opens {
         format!(" {}", theme::glyph(Symbol::Submenu))
@@ -83,9 +84,10 @@ pub(super) fn render_overrides_field(
     frame.render_widget(Paragraph::new(spread(rect, label, right)), rect);
 }
 
-/// The overrides step, in the rows the listing takes on the first step:
-/// its heading, the line typed into, the entries added and the list under
-/// them, and the marked row's detail.
+/// The overrides step, in the rows the harness, the listing and the
+/// `overrides` field take on the first step: its heading, the line typed
+/// into, the entries added and the list under them, and the marked row's
+/// detail.
 pub(super) fn render_overrides_step(
     frame: &mut ratatui::Frame<'_>,
     model: &WorkspaceModel,
@@ -105,7 +107,8 @@ pub(super) fn render_overrides_step(
     if let Some(rect) = rows.next(1) {
         let _ = Rule::new(Edge::Top).tone(Token::Accent).render(frame, rect);
     }
-    if let Some(body) = rows.next(step.rows) {
+    // The rule and the detail under the body keep their rows.
+    if let Some(body) = rows.next(rows.remaining().saturating_sub(2)) {
         let list = render_entries(frame, model, step, body, hits);
         render_list(frame, model, step, list, popup, hits);
     }

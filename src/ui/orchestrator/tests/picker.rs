@@ -58,14 +58,14 @@ fn drawn(model: &mut WorkspaceModel) -> (Vec<String>, Buffer) {
     (buffer_rows(&buffer), buffer)
 }
 
-/// The line typed into: under the harness and overrides fields, past the
-/// rule closing them.
+/// The line typed into: under the harness field, past the rule closing
+/// it.
 fn prompt_row_of(rows: &[String]) -> String {
     let harness = rows
         .iter()
         .position(|row| row.contains(" harness "))
         .expect("the popup is drawn");
-    rows[harness + 3].clone()
+    rows[harness + 2].clone()
 }
 
 /// Enter on the directory step, as the keyboard sends it.

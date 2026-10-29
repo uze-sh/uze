@@ -5,26 +5,31 @@ use super::*;
 /// The directories the new agent's popup lists at once: as many as match,
 /// between [`NEW_AGENT_POPUP_MIN_ROWS`] and [`NEW_AGENT_POPUP_MAX_ROWS`].
 ///
-/// The overrides step stands in the same rows, so the popup is fixed at
-/// opening as the taller of what the two steps need, and switching
-/// between them never resizes it.
+/// The overrides step stands in the same rows, and in the harness's and
+/// the `overrides` row's above and below them, so the popup is fixed at
+/// opening and switching between the steps never resizes it.
 pub(in crate::ui::orchestrator) fn new_agent_popup_rows(directories: usize) -> u16 {
     let rows = u16::try_from(directories).unwrap_or(u16::MAX);
     rows.clamp(NEW_AGENT_POPUP_MIN_ROWS, NEW_AGENT_POPUP_MAX_ROWS)
-        .max(OVERRIDES_LEAST_ROWS)
 }
 
+/// As few as the overrides step needs: it takes the listing's rows and the
+/// `overrides` row's, which is one more, for its entries and the list
+/// under them.
 const NEW_AGENT_POPUP_MIN_ROWS: u16 = 4;
-/// The rows the overrides step needs for its entries and the list under
-/// them.
-const OVERRIDES_LEAST_ROWS: u16 = 5;
 const NEW_AGENT_POPUP_MAX_ROWS: u16 = 9;
 /// Wide enough for a directory's name beside what is known about it, and
 /// for the foot's keys.
 const NEW_AGENT_POPUP_WIDTH: u16 = 60;
-/// The rows around the listing: the harness, the overrides, the line
-/// typed into and the foot, each part closed off by a rule.
-const NEW_AGENT_POPUP_CHROME: u16 = 7;
+/// The rows around the listing: the harness at the head, the line typed
+/// into, the `overrides` row and the foot, each part closed off by a rule.
+const NEW_AGENT_POPUP_CHROME: u16 = 8;
+/// The rows at the foot, under the part that changes with the step: the
+/// rule and the keys.
+const NEW_AGENT_POPUP_FOOT: u16 = 2;
+/// The rows the `overrides` field takes above the foot on the first step:
+/// its rule and itself. The overrides step takes them back.
+const OVERRIDES_FIELD: u16 = 2;
 
 /// Where a popup of `width` by `height` floats beside `anchor`: under it,
 /// pushed back inside `area` at its edges.
@@ -104,26 +109,41 @@ pub(in crate::ui::orchestrator) fn render_directory_step(
     let height = step.rows + NEW_AGENT_POPUP_CHROME + 2;
     let popup = popup_beside(area, step.anchor, NEW_AGENT_POPUP_WIDTH, height);
     let inner = new_agent_card(frame, popup, hits);
-    let foot = Rect::new(inner.x, inner.bottom().saturating_sub(1), inner.width, 1);
-    let mut rows = Rows::over(Rect {
-        height: inner.height.saturating_sub(1),
-        ..inner
-    });
+    let (body, mut foot) = split_bottom(inner, NEW_AGENT_POPUP_FOOT);
     if step.overrides.is_some() {
-        render_overrides_step(frame, model, step, popup, &mut rows, hits);
+        render_overrides_step(frame, model, step, popup, &mut Rows::over(body), hits);
     } else {
+        let (listing, mut field) = split_bottom(body, OVERRIDES_FIELD);
+        let mut rows = Rows::over(listing);
         if let Some(rect) = rows.next(1) {
             render_harness_field(frame, rect, model, step, hits);
         }
-        if let Some(rect) = rows.next(1) {
-            render_overrides_field(frame, rect, model, step, hits);
-        }
         popup_rule(frame, &mut rows);
         render_root_picker(frame, model, step, &mut rows, hits);
+        popup_rule(frame, &mut field);
+        if let Some(rect) = field.next(1) {
+            render_overrides_field(frame, rect, model, step, hits);
+        }
     }
-    let mut above_foot = Rows::over(Rect::new(foot.x, foot.y.saturating_sub(1), foot.width, 1));
-    popup_rule(frame, &mut above_foot);
-    render_new_agent_foot(frame, foot, model, step, hits);
+    popup_rule(frame, &mut foot);
+    if let Some(rect) = foot.next(1) {
+        render_new_agent_foot(frame, rect, model, step, hits);
+    }
+}
+
+/// `area` split `rows` above its bottom: what stands over them, and them.
+fn split_bottom(area: Rect, rows: u16) -> (Rect, Rows) {
+    let rows = rows.min(area.height);
+    let over = Rect {
+        height: area.height - rows,
+        ..area
+    };
+    let under = Rect {
+        y: over.bottom(),
+        height: rows,
+        ..area
+    };
+    (over, Rows::over(under))
 }
 
 /// The scopes the popup's keys are read from.

@@ -265,11 +265,15 @@ Against the operator's mockup and the design-system rules:
   target), esc `back`, esc again closes. The popup's height is fixed when
   it opens as the larger of what the two steps need, so switching never
   resizes it.
-- **The first step gains one field row, under `harness`:** `overrides
-  none` at rest, `overrides  --model opus · DEBUG=1` (cut at its end) once
-  set, ending in `›` (`Symbol::Submenu`), since it opens a step. The
-  mockup's `›`/`v` disclosure is an arrow the rules do not allow. The
-  click on the row, or a new RootPicker-scoped `Action`, opens the step.
+- **The first step gains one field row, at its foot:** `harness` stays
+  alone at the head; the `overrides` row is the last before the foot's
+  keys, under a rule, its label in the row's own ink and its value muted
+  against its end: `none` at rest, `--model opus · DEBUG=1` (cut at its
+  end) once set, ending in `›` (`Symbol::Submenu`), since it opens a step.
+  Its value ends on the harness value's column. The mockup's `›`/`v`
+  disclosure is an arrow the rules do not allow. The click on the row, or
+  a new RootPicker-scoped `Action`, opens the step, which takes the rows
+  from the harness down to this one.
 - **Not `ctrl+o`.** It is the Global `SwitchMode` and reaches Global even
   while a filter is typed into; `tab` is the picker's `Expand`, `←→` the
   harness. The new action's default chord is the operator's call.
