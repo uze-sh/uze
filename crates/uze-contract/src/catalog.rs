@@ -850,7 +850,7 @@ pub fn prop_doc(prop: &str) -> Option<&'static str> {
         "on" => "Whether the switch starts on.",
         "action" => "The action a press records, by name.",
         "marquee" => {
-            "A cut line slides sideways under the pointer to show all of itself; `marquee=#false` keeps it cut."
+            "A cut line slides sideways under the pointer to show all of itself, unless it stands in something the pointer presses (a list's row), which keeps the pointer; `marquee=#false` keeps it cut."
         }
         "primary" => {
             "The button the surface means to be pressed next, drawn in the accent; one per surface."

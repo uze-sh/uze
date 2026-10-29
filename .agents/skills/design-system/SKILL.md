@@ -414,7 +414,9 @@ operator rather than assume.
 - Text that is too long marquees (slowly, after a pause) or elides. It
   never cuts mid-word in a hint. A plugin's cut line (`Text truncate`)
   slides only while the pointer rests on it, never on its own; at rest it
-  ends in an ellipsis. `marquee=#false` keeps a line cut for good.
+  ends in an ellipsis. Inside something the pointer presses (a list's
+  row), the press wins and the line stays cut. `marquee=#false` keeps a
+  line cut for good.
 - Drop unimportant columns first and keep the drawer.
 - Footers stay on one line, with the two key actions, the rest behind F1.
 

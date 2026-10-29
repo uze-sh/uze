@@ -2546,7 +2546,7 @@
             },
             "marquee": {
               "type": "boolean",
-              "description": "A cut line slides sideways under the pointer to show all of itself; `marquee=#false` keeps it cut."
+              "description": "A cut line slides sideways under the pointer to show all of itself, unless it stands in something the pointer presses (a list's row), which keeps the pointer; `marquee=#false` keeps it cut."
             },
             "grow": {
               "type": "boolean",

@@ -262,7 +262,7 @@ Text in a role, `strong` for emphasis; with `truncate` one line cut with an elli
 | `role` | role | The semantic colour, or `{table:field}` to look one up. |
 | `strong` | flag | Emphasis. |
 | `truncate` | flag | One line, cut with an ellipsis, instead of a paragraph that wraps. |
-| `marquee` | flag | A cut line slides sideways under the pointer to show all of itself; `marquee=#false` keeps it cut. |
+| `marquee` | flag | A cut line slides sideways under the pointer to show all of itself, unless it stands in something the pointer presses (a list's row), which keeps the pointer; `marquee=#false` keeps it cut. |
 
 ### `Badge`
 
