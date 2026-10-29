@@ -2793,3 +2793,63 @@ fn a_flat_rows_detail_slides_with_its_name() {
         "the marker stays pinned: {first:?} {later:?}"
     );
 }
+
+/// A cut line in a sidebar section slides by the beats the host says the
+/// pointer has rested on it: held at its start when the pointer arrives,
+/// moved on once it has rested a while.
+#[test]
+fn a_sections_cut_line_slides_by_the_hosts_hover_beat() {
+    let line = |beats: usize| {
+        let mut root =
+            uze_extensions::view::Node::new(0, uze_extensions::view::NodeKind::Stack { gap: 0 });
+        root.children = vec![uze_extensions::view::Node::new(
+            7,
+            uze_extensions::view::NodeKind::Text {
+                spans: vec![Span::new(
+                    "Tokenize the card with the payment provider",
+                    Role::Default,
+                )],
+                truncate: true,
+                still: false,
+            },
+        )];
+        let section = Section {
+            title: "plans".to_owned(),
+            caption: Span::new("", Role::Muted),
+            collapsed: false,
+            scroll: 0,
+            tree: Some(root),
+            lit: Vec::new(),
+            rows: Vec::new(),
+        };
+        let mut terminal = Terminal::new(TestBackend::new(24, 4)).unwrap();
+        let read = ViewHit::Node {
+            node: 7,
+            act: uze_extensions::view::NodeAct::Read,
+        };
+        terminal
+            .draw(|frame| {
+                let mut rows = crate::ui::Rows::over(frame.area());
+                render_section(
+                    frame,
+                    &section,
+                    &mut rows,
+                    SectionState {
+                        sliding: Some((read, beats)),
+                        ..SectionState::default()
+                    },
+                    &mut Vec::new(),
+                );
+            })
+            .unwrap();
+        (0..24)
+            .map(|column| terminal.backend().buffer()[(column, 1)].symbol())
+            .collect::<String>()
+    };
+    assert!(
+        line(0).contains("Tokenize"),
+        "held at its start: {:?}",
+        line(0)
+    );
+    assert!(!line(40).contains("Tokenize"), "moved on: {:?}", line(40));
+}

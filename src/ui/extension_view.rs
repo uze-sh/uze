@@ -237,8 +237,7 @@ fn render_surface(
     frame.render_widget(Clear, area);
     widget::fill(frame, area, Token::SurfaceBackground);
     if view.layout == ViewLayout::Board {
-        let hovered = held.sliding.map(|(hit, _)| hit);
-        let mut rendered = render_board(frame, view, area, keys, hovered, selection, hits);
+        let mut rendered = render_board(frame, view, area, keys, held.sliding, selection, hits);
         rendered.content_space = board_space(area);
         rendered.content_area = geometry::board_rows(area).1;
         return rendered;
@@ -474,7 +473,7 @@ fn render_board(
     view: &View,
     area: Rect,
     keys: FooterKeys<'_>,
-    hovered: Option<ViewHit>,
+    sliding: Option<(ViewHit, usize)>,
     selection: Option<&TextSelection>,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> Rendered {
@@ -499,7 +498,7 @@ fn render_board(
                 board,
                 ("", *scroll, root),
                 &[],
-                tree::TreeFrame::now(hovered),
+                tree::TreeFrame::resting(sliding),
                 hits,
             );
             rendered.content_bar = drawn.bar;

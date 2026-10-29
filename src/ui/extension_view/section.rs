@@ -124,8 +124,7 @@ pub(crate) fn render_section(
         return slid;
     }
     if let Some(root) = &section.tree {
-        let hovered = sliding.map(|(hit, _)| hit);
-        return render_tree_rows(frame, root, section.scroll, rows, hovered, hits) || slid;
+        return render_tree_rows(frame, root, section.scroll, rows, sliding, hits) || slid;
     }
     // Scrolled by whole rows, never past the page that ends on the last
     // one — so the section is always full when its content is.
@@ -190,7 +189,7 @@ fn render_tree_rows(
     root: &uze_extensions::view::Node,
     scroll: usize,
     rows: &mut crate::ui::Rows,
-    hovered: Option<ViewHit>,
+    sliding: Option<(ViewHit, usize)>,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> bool {
     let Some(column) = rows.next(0) else {
@@ -203,7 +202,7 @@ fn render_tree_rows(
     };
     let held = tree::TreeFrame {
         fold: true,
-        ..tree::TreeFrame::now(hovered)
+        ..tree::TreeFrame::resting(sliding)
     };
     let area = Rect::new(
         area.x.saturating_add(TRAILING_PAD),
