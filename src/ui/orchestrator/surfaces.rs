@@ -63,11 +63,6 @@ impl WorkspaceModel {
         self.dirty = true;
     }
 
-    /// Closes whichever surface is standing in the pane.
-    pub(super) fn close_extension(&mut self) {
-        self.close_surface();
-    }
-
     /// Follows the tab in front: the surface standing for another tab is
     /// put away for it, and the tab in front gets back what it was left
     /// with, unless the overview holds the pane. Answers the session and

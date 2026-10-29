@@ -645,7 +645,7 @@ fn a_tab_coming_back_to_the_front_shows_the_surface_it_was_left_with() {
         "the first agent's surface stands again"
     );
 
-    model.close_extension();
+    model.close_surface();
     bring_to_front(&mut model, second);
     bring_to_front(&mut model, first);
     assert!(

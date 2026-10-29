@@ -1599,7 +1599,7 @@ pub(super) fn open_surface_with(
     if !slot.is_view() || !model.offers_declared(&slot.owner) {
         return false;
     }
-    model.close_extension();
+    model.close_surface();
     model.stand_extension_in_front();
     let checkout = Checkout {
         root: root.clone(),

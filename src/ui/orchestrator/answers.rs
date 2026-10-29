@@ -359,10 +359,7 @@ impl WorkspaceModel {
         // A view whose extension went, or whose surface it stopped
         // declaring, is put away rather than drawn from nothing.
         if self.open_slot.is_some() && self.slot_in_pane().is_none() {
-            self.open_slot = None;
-            self.open_root = None;
-            self.inspecting = false;
-            self.reset_inspector();
+            self.close_surface();
         }
         self.register_extension_keys();
         changed
