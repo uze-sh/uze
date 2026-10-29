@@ -63,9 +63,9 @@ fn drawn(model: &mut WorkspaceModel) -> (Vec<String>, Buffer) {
 fn prompt_row_of(rows: &[String]) -> String {
     let head = rows
         .iter()
-        .position(|row| row.contains(" path ") && row.contains(" overrides "))
+        .position(|row| row.contains("new agent") && row.contains("overrides"))
         .expect("the popup is drawn");
-    rows[head + 2].clone()
+    rows[head + 1].clone()
 }
 
 /// Enter on the directory step, as the keyboard sends it.

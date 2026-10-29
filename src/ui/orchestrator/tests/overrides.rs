@@ -118,19 +118,19 @@ fn open_by_key(driven: &mut Driven<'_>) {
 
 /// The head's `overrides` segment opens the overrides view on a click,
 /// exactly as its key does; the foot names that key too, its hint the
-/// same gesture, and the border says there are none yet.
+/// same gesture, and the note says there are none yet.
 #[test]
 fn the_overrides_segment_and_its_key_open_the_same_view() {
     let mut by_key = popup("overrides-open-key");
     let mut by_key = driven(by_key.model_take(), &by_key.home).on_a_roomy_terminal();
     let (_, rows) = popup_rows(&mut by_key);
     assert!(
-        rows[1].contains(" path ") && rows[1].contains(" overrides "),
+        rows[0].contains("new agent") && rows[0].contains("overrides"),
         "{}",
         rows.join("\n")
     );
     assert!(
-        rows.last().unwrap().contains(" none "),
+        rows.iter().any(|row| row.contains("no overrides")),
         "{}",
         rows.join("\n")
     );
@@ -199,33 +199,44 @@ fn is_rule(row: &str) -> bool {
     !inside.is_empty() && inside.iter().all(|cell| *cell == '─')
 }
 
-/// The head names the popup's two views, `path` and `overrides`, with
-/// the harness against its end; the body below is the one in front, and
-/// the bottom border alone says how many overrides the launch is given.
+/// The top border names the popup's two views, `new agent` and
+/// `overrides`, where its title would be, with the harness against its
+/// end; the body below is the one in front, and at its foot, with air over
+/// and under it, a note counts the overrides the launch is given.
 #[test]
-fn the_head_chooses_the_view_and_the_border_counts_the_overrides() {
+fn the_head_chooses_the_view_and_a_note_counts_the_overrides() {
     let mut popup = popup("overrides-head");
     let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
     let (_, rows) = popup_rows(&mut driven);
     let last = rows.len() - 1;
     let all = rows.join("\n");
     assert!(
-        rows[1].contains(" path ") && rows[1].contains(" overrides "),
+        rows[0].contains("new agent") && rows[0].contains("overrides"),
         "{all}"
     );
     assert!(
-        rows[1].contains("Claude Code"),
+        rows[0].contains("Claude Code"),
         "the harness at the end:\n{all}"
     );
-    assert!(!rows[1].contains("harness"), "no label for it:\n{all}");
-    assert!(is_rule(&rows[2]), "a rule under the head:\n{all}");
+    assert!(!rows[0].contains("harness"), "no label for it:\n{all}");
+    assert!(
+        rows[1].contains("filter directories"),
+        "the line first:\n{all}"
+    );
+    assert!(is_rule(&rows[2]), "a rule under the line:\n{all}");
     assert!(
         all.contains("filter directories"),
         "path is in front:\n{all}"
     );
     assert!(is_rule(&rows[last - 2]), "the foot's rule:\n{all}");
     assert!(rows[last - 1].contains("ctrl+f overrides"), "{all}");
-    assert!(rows[last].contains(" none "), "{all}");
+    assert!(rows[last - 4].contains("no overrides"), "{all}");
+    for air in [last - 5, last - 3] {
+        assert!(
+            rows[air].trim_matches('│').trim().is_empty(),
+            "air over and under the note:\n{all}"
+        );
+    }
 
     open_by_key(&mut driven);
     type_text(&mut driven, "--model opus");
@@ -236,7 +247,7 @@ fn the_head_chooses_the_view_and_the_border_counts_the_overrides() {
     let all = view.join("\n");
     assert_eq!(view.len(), rows.len(), "the same height:\n{all}");
     assert!(
-        view[1].contains(" path ") && view[1].contains(" overrides "),
+        view[0].contains("new agent") && view[0].contains("overrides"),
         "{all}"
     );
     assert!(!all.contains("filter directories"), "{all}");
@@ -246,11 +257,11 @@ fn the_head_chooses_the_view_and_the_border_counts_the_overrides() {
     );
     assert!(view[last - 1].contains("esc back"), "{all}");
     assert!(
-        view[last].contains("1 flag") && view[last].contains("1 var"),
+        view[last - 4].contains("1 flag") && view[last - 4].contains("1 var"),
         "{all}"
     );
 
-    // A click on `path` is Esc there: back to the listing.
+    // A click on `new agent` is Esc there: back to the listing.
     driven.frame();
     let path = driven
         .attach
@@ -260,19 +271,19 @@ fn the_head_chooses_the_view_and_the_border_counts_the_overrides() {
         .filter(|(_, hit)| *hit == WorkspaceHit::HintAction(Action::Dismiss))
         .map(|(rect, _)| *rect)
         .min_by_key(|rect| rect.y)
-        .expect("the path segment is a target");
+        .expect("the new agent segment is a target");
     driven.press(path.x + 1, path.y);
-    assert!(!in_step(&driven), "a click on path goes back");
+    assert!(!in_step(&driven), "a click on new agent goes back");
     let (_, rows) = popup_rows(&mut driven);
     assert!(rows.join("\n").contains("filter directories"));
-    assert!(rows[last].contains("1 flag") && rows[last].contains("1 var"));
+    assert!(rows[last - 4].contains("1 flag") && rows[last - 4].contains("1 var"));
 }
 
-/// The segment in front stands on the raised ground in the brightest
-/// ink; the other rests held back and lights under the pointer, in colour
-/// alone, its ground and weight kept. In the light theme too.
+/// The segment in front is in the accent; the other rests held back and
+/// lights under the pointer. Colour alone tells them apart: no ground and
+/// no weight. In the light theme too.
 #[test]
-fn the_segments_rest_quiet_and_light_under_the_pointer() {
+fn the_segments_are_told_apart_by_colour_alone() {
     for name in ["dark", "light"] {
         let palette = uze_theme::builtin(name).expect("bundled").clone();
         uze_theme::with_active(palette, || {
@@ -295,12 +306,27 @@ fn the_segments_rest_quiet_and_light_under_the_pointer() {
                     let column = line[..line.find(word).unwrap()].chars().count() as u16;
                     buffer[(column, segment.y)].clone()
                 };
-                (at("path"), at("overrides"))
+                (at("new agent"), at("overrides"))
             };
             let (open, other) = inks(&mut driven);
-            assert_eq!(open.fg, theme::color(Token::TextBright), "{name}");
-            assert_eq!(open.bg, theme::color(Token::SurfaceRaised), "{name}");
-            assert_eq!(other.fg, theme::color(Token::TextSecondary), "{name}");
+            assert_eq!(open.fg, theme::color(Token::Accent), "{name}");
+            assert_eq!(other.fg, theme::color(Token::TextMuted), "{name}");
+            assert_eq!(open.bg, other.bg, "no ground for the one in front: {name}");
+            assert_eq!(open.modifier, other.modifier, "no weight either: {name}");
+            assert_eq!(
+                driven
+                    .attach
+                    .model
+                    .hits
+                    .iter()
+                    .find(|(rect, hit)| {
+                        *hit == WorkspaceHit::HintAction(Action::OpenOverrides)
+                            && rect.y == segment.y
+                    })
+                    .map(|(rect, _)| rect.width),
+                Some("overrides".len() as u16),
+                "the segment's target is its word"
+            );
             driven.mouse(
                 segment.x + 2,
                 segment.y,
@@ -308,7 +334,6 @@ fn the_segments_rest_quiet_and_light_under_the_pointer() {
             );
             let (_, lit) = inks(&mut driven);
             assert_eq!(lit.fg, theme::color(Token::TextBright), "{name}");
-            assert_eq!(lit.modifier, other.modifier, "the weight is kept");
             assert_eq!(lit.bg, other.bg, "no band under the pointer");
         });
     }
@@ -369,12 +394,12 @@ fn entries_are_added_named_and_taken_away() {
     driven.press_key(chord(Action::EraseBack, Scope::LaunchOverrides));
     assert_eq!(entries(&driven), vec![vec!["DEBUG=1".to_owned()]]);
 
-    // Back on `path`, the border counts what the launch is given.
+    // Back on `new agent`, the note counts what the launch is given.
     driven.press_key(chord(Action::Dismiss, Scope::LaunchOverrides));
     assert!(!in_step(&driven), "esc goes back before it closes");
     let (_, rows) = popup_rows(&mut driven);
     assert!(
-        rows.last().unwrap().contains(" 1 var "),
+        rows.iter().any(|row| row.contains("1 var")),
         "{}",
         rows.join("\n")
     );
@@ -813,7 +838,7 @@ fn long_values_are_cut_at_their_end_and_narrow_widths_hold() {
     driven.press_key(chord(Action::Activate, Scope::LaunchOverrides));
     let (_, rows) = popup_rows(&mut driven);
     assert!(
-        rows[1].contains(" path ") && rows[1].contains(" overrides "),
+        rows[0].contains("new agent") && rows[0].contains("overrides"),
         "the segments are whole:\n{}",
         rows.join("\n")
     );
@@ -830,9 +855,9 @@ fn long_values_are_cut_at_their_end_and_narrow_widths_hold() {
     driven.press_key(chord(Action::Dismiss, Scope::LaunchOverrides));
     let (popup, rows) = popup_rows(&mut driven);
     assert_eq!(popup.width, 46, "the popup gives way to the terminal");
-    assert!(rows[1].contains("Claude Code"), "{}", rows.join("\n"));
+    assert!(rows[0].contains("Claude Code"), "{}", rows.join("\n"));
     assert!(
-        rows.last().unwrap().contains(" 1 var "),
+        rows.iter().any(|row| row.contains("1 var")),
         "{}",
         rows.join("\n")
     );

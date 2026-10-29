@@ -1,21 +1,19 @@
-//! A segmented control: a few views of one place side by side, the one in
-//! front on a ground of its own, choosing which the place below shows.
+//! A segmented control: a few views of one place side by side, choosing
+//! which the place below shows, said in colour alone.
 //!
 //! Not a [`tabs`](super::tabs) strip: a tab is a screen reached by its
 //! number, while a segment is a view of the same thing, two or three of
-//! them, named and nothing else.
+//! them, named and nothing else. It is drawn as a line rather than into a
+//! rect so it can ride a surface's top border, where a dialog's title
+//! would stand.
 
-use ratatui::{
-    layout::Rect,
-    text::{Line, Span},
-    widgets::Paragraph,
-};
+use ratatui::text::{Line, Span};
 use uze_theme::Token;
 
 use crate::ui::theme;
 
-/// Between one segment and the next.
-const GAP: u16 = 1;
+/// Between one segment's name and the next.
+const GAP: &str = "  ";
 
 /// One segment: its name, what a click on it answers (`None` for the one
 /// in front, which a click leaves where it is), and whether the pointer
@@ -26,45 +24,35 @@ pub(crate) struct Segment<'a, T> {
     pub(crate) hovered: bool,
 }
 
-/// Draws `segments` from `row`'s start, the one at `open` on the raised
-/// ground in the brightest ink, the rest held back until the pointer
-/// lights them. Answers with the rect of each segment that has a target.
+/// `segments` as one line, with a space of air at each end: the one at
+/// `open` in the accent, the rest held back until the pointer lights
+/// them. No ground and no weight tell them apart, only the ink. Answers
+/// with the line and, for each segment with a target, its column from the
+/// line's start and its width.
 pub(crate) fn segmented<T: Clone>(
-    frame: &mut ratatui::Frame<'_>,
-    row: Rect,
     segments: &[Segment<'_, T>],
     open: usize,
-) -> Vec<(Rect, T)> {
-    let mut x = row.x;
+) -> (Line<'static>, Vec<(u16, u16, T)>) {
+    let mut spans = vec![Span::raw(" ")];
+    let mut at = 1u16;
     let mut placed = Vec::new();
     for (index, segment) in segments.iter().enumerate() {
-        let text = format!(" {} ", segment.label);
-        let width = text.chars().count() as u16;
-        if x + width > row.right() {
-            break;
+        if index > 0 {
+            spans.push(Span::raw(GAP));
+            at += GAP.len() as u16;
         }
-        let style = if index == open {
-            theme::fg_bold(Token::TextBright).bg(theme::color(Token::SurfaceRaised))
-        } else if segment.hovered {
-            theme::fg(Token::TextBright)
-        } else {
-            theme::fg(Token::TextSecondary)
+        let tone = match () {
+            _ if index == open => Token::Accent,
+            _ if segment.hovered => Token::TextBright,
+            _ => Token::TextMuted,
         };
-        let rect = Rect::new(x, row.y, width, 1);
-        frame.render_widget(Paragraph::new(Line::from(Span::styled(text, style))), rect);
+        let width = segment.label.chars().count() as u16;
+        spans.push(Span::styled(segment.label.to_owned(), theme::fg(tone)));
         if let Some(target) = &segment.target {
-            placed.push((rect, target.clone()));
+            placed.push((at, width, target.clone()));
         }
-        x += width + GAP;
+        at += width;
     }
-    placed
-}
-
-/// How many columns `segments` take, drawn by [`segmented`].
-pub(crate) fn width<T>(segments: &[Segment<'_, T>]) -> u16 {
-    segments
-        .iter()
-        .map(|segment| segment.label.chars().count() as u16 + 2)
-        .sum::<u16>()
-        + GAP * segments.len().saturating_sub(1) as u16
+    spans.push(Span::raw(" "));
+    (Line::from(spans), placed)
 }

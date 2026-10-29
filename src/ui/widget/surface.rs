@@ -44,6 +44,10 @@ pub(crate) struct Surface {
     tone: Token,
     ground: Option<Token>,
     title: Option<Line<'static>>,
+    /// The title is the caller's own line, coloured as it says, rather
+    /// than a name in the accent.
+    title_as_drawn: bool,
+    aside: Option<Line<'static>>,
     hint: Option<Line<'static>>,
     padding: Padding,
 }
@@ -62,6 +66,8 @@ impl Surface {
             tone: Token::BorderDefault,
             ground: Some(Token::SurfaceBackground),
             title: None,
+            title_as_drawn: false,
+            aside: None,
             hint: None,
             padding: FLOATING_PADDING,
         }
@@ -129,6 +135,22 @@ impl Surface {
         self
     }
 
+    /// A line along the top in place of a title, drawn in the colours its
+    /// spans carry: a control that rides the border (a segmented control
+    /// choosing what the surface shows) rather than a name for it.
+    pub(crate) fn title_line(mut self, line: impl Into<Line<'static>>) -> Self {
+        self.title = Some(line.into());
+        self.title_as_drawn = true;
+        self
+    }
+
+    /// A line along the top edge, right-aligned, in its spans' own colours:
+    /// a choice the surface carries beside its title.
+    pub(crate) fn aside(mut self, aside: impl Into<Line<'static>>) -> Self {
+        self.aside = Some(aside.into());
+        self
+    }
+
     /// A note along the bottom edge, right-aligned: what this surface
     /// answers to, or that its content is longer than the box.
     pub(crate) fn hint(mut self, hint: impl Into<Line<'static>>) -> Self {
@@ -169,12 +191,19 @@ impl Surface {
         if let Some(ground) = self.ground {
             block = block.style(theme::bg(ground));
         }
-        if let Some(title) = self.title {
-            block = block.title(title).title_style(
-                Style::default()
-                    .fg(theme::color(Token::Accent))
-                    .add_modifier(Modifier::BOLD),
-            );
+        match self.title {
+            Some(title) if self.title_as_drawn => block = block.title(title),
+            Some(title) => {
+                block = block.title(title).title_style(
+                    Style::default()
+                        .fg(theme::color(Token::Accent))
+                        .add_modifier(Modifier::BOLD),
+                );
+            }
+            None => {}
+        }
+        if let Some(aside) = self.aside {
+            block = block.title_top(aside.right_aligned());
         }
         if let Some(hint) = self.hint {
             block = block.title_bottom(hint.right_aligned());

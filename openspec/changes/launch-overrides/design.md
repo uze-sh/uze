@@ -300,19 +300,22 @@ Against the operator's mockup and the design-system rules:
   target), esc `back`, esc again closes. The popup's height is fixed when
   it opens as the larger of what the two steps need, so switching never
   resizes it.
-- **Two views, chosen on the head:** the popup's head row is a
-  segmented control, `path · overrides`, with the harness `‹ Claude Code ›`
-  against its end and no `harness` label (the operator's call, after a
-  field row, a container and a flattened layout each read as too many
-  lines or as one more directory). The body is the view in front: `path`
-  is the filter and the listing, `overrides` the line, the entries and the
-  list, in the same rows. The bottom border alone says what the launch is
-  given: `none`, or `3 flags · 2 vars`, in the warning hue when one gives
-  something up. A click on `overrides`, or `ctrl+f`, opens that view; a
-  click on `path`, or Esc, goes back. On `overrides` the arrows move the
-  caret, so the harness is named there without its arrows. The popup is
-  52 columns with 8 to 12 listing rows; `esc close` gives way to `ctrl+f
-  overrides` in the foot.
+- **Two views, named on the top border:** `new agent · overrides` stand
+  where the title would be, the first one standing for it, the one in
+  front in the accent and the other held back (colour only, no ground);
+  the harness `‹ Claude Code ›` rides the top border's end, with no
+  `harness` label and no head row (the operator's call, after a field
+  row, a container, a flattened layout and a segmented head row). The
+  body is the view in front: `new agent` is the filter and the listing,
+  `overrides` the line, the entries and the list, in the same rows, each
+  line typed into in the same look. At the body's foot, with air over and
+  under it, one muted line counts the overrides: `no overrides`, or `3
+  flags · 2 vars`, in the warning hue when one gives something up. A
+  click on `overrides`, or `ctrl+f`, opens that view; a click on `new
+  agent`, or Esc, goes back. On `overrides` the arrows move the caret, so
+  the harness is named there without its arrows. The popup is 52 columns
+  with 8 to 12 listing rows; `esc close` gives way to `ctrl+f overrides`
+  in the foot.
 - **Not `ctrl+o`.** It is the Global `SwitchMode` and reaches Global even
   while a filter is typed into; `tab` is the picker's `Expand`, `←→` the
   harness. The new action's default chord is the operator's call.

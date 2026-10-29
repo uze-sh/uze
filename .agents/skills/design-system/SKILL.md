@@ -145,15 +145,21 @@ on "cancel" must not save first.
   an entry that asks before acting (`Discard…`). Two entries for one verb
   side by side (`Rename`, `Rename project`) become one that opens both.
 - A popover that holds more than one view of what it asks (the new
-  agent's `path` and `overrides`) names them in a segmented control on its
-  head row (`widget::segmented`), the one in front on the raised ground in
-  the brightest ink, the rest held back and lit under the pointer; a click
-  on one is the key that reaches it. No label row heads it: a choice that
-  rarely changes (`‹ Claude Code ›`) stands against the head row's end.
-  The body under the head is the view in front, every view in the same
-  rows, so switching never resizes it. What a view holds that the other
-  should know is said on the bottom border, briefly (`none`, `3 flags · 2
-  vars`), never as a row of its own.
+  agent's `new agent` and `overrides`) names them on its top border, where
+  its title would be, the first view's name standing for the title
+  (`widget::segmented`, drawn with `Surface::title_line`). The one in
+  front is in the accent and the rest held back, lit under the pointer:
+  colour alone tells them apart, never a ground, a weight or a button's
+  look. A click on one is the key that reaches it. A choice that rarely
+  changes (`‹ Claude Code ›`) stands against the top border's end
+  (`Surface::aside`); no label row heads the body. The body is the view in
+  front, every view in the same rows, so switching never resizes it.
+  What a view holds that the other should know is one muted line at the
+  body's foot, with a row of air over and under it so it rests against
+  neither the list nor the keys (`no overrides`, `3 flags · 2 vars`).
+- Every line typed into in one popover looks the same: the typed text
+  bright, the accent caret, a faint placeholder and a plain rule under
+  it. A view's line never wears a lit underline the other's does not.
 - A popover is narrow and tall rather than wide: as wide as a
   directory's name and what is known about it need (52 columns for the
   new agent), with the room for its list given in height.

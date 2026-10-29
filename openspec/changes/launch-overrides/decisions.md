@@ -339,3 +339,8 @@
 > no label; the body is the view in front; the bottom border counts the
 > overrides (`none`, `3 flags · 2 vars`). The container and the field row
 > are gone. New widget `widget::segmented`.
+> D22 note (fourth pass): at the operator's word the views ride the top
+> border as `new agent · overrides`, told apart by colour alone, the
+> harness at the border's end and no head row; the overrides line looks
+> like the directory's; the count is a muted line at the body's foot with
+> air over and under it, not on the border.

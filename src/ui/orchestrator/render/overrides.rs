@@ -27,9 +27,9 @@ pub(super) fn render_overrides_step(
     if let Some(rect) = rows.next(1) {
         render_line(frame, rect, over);
     }
-    // The line's own underline, lit: it is the field the keys land in.
+    // The rule under the line, as under the directory's.
     if let Some(rect) = rows.next(1) {
-        let _ = Rule::new(Edge::Top).tone(Token::Accent).render(frame, rect);
+        let _ = Rule::new(Edge::Top).render(frame, rect);
     }
     // The detail under the body keeps its row, over the foot's rule.
     if let Some(body) = rows.next(rows.remaining().saturating_sub(1)) {
@@ -51,10 +51,11 @@ pub(super) fn render_overrides_step(
 /// refused stays here in the danger hue until it is changed.
 fn render_line(frame: &mut ratatui::Frame<'_>, rect: Rect, over: &OverridesStep) {
     let (before, after) = over.line.split();
+    // Typed as the directory's line is typed: bright, unless refused.
     let tone = if over.refusal.is_some() {
         Token::StateDanger
     } else {
-        Token::TextPrimary
+        Token::TextBright
     };
     let mut spans = vec![picker_lead()];
     let room = usize::from(rect.width)
@@ -62,13 +63,13 @@ fn render_line(frame: &mut ratatui::Frame<'_>, rect: Rect, over: &OverridesStep)
         .saturating_sub(text::columns(after).min(usize::from(rect.width) / 3));
     spans.push(Span::styled(
         text::elide_head(before, room),
-        theme::fg(tone),
+        theme::fg_bold(tone),
     ));
     spans.push(crate::ui::widget::field::caret());
     if over.line.text().is_empty() {
         spans.push(Span::styled(LINE_PLACEHOLDER, theme::fg(Token::TextFaint)));
     } else {
-        spans.push(Span::styled(after.to_owned(), theme::fg(tone)));
+        spans.push(Span::styled(after.to_owned(), theme::fg_bold(tone)));
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), rect);
 }
@@ -449,8 +450,8 @@ fn row_detail(step: &DirectoryStep, row: OverrideRow) -> (String, Token) {
     }
 }
 
-/// How many overrides `entries` hold, as the popup's border says it:
-/// `none`, or the flags and the variables counted apart.
+/// How many overrides `entries` hold, the flags and the variables counted
+/// apart: `3 flags · 2 vars`. Empty for none.
 pub(super) fn overrides_count(entries: &[OverrideEntry]) -> String {
     let variables = entries
         .iter()
@@ -469,9 +470,5 @@ pub(super) fn overrides_count(entries: &[OverrideEntry]) -> String {
     .into_iter()
     .flatten()
     .collect();
-    if said.is_empty() {
-        "none".to_owned()
-    } else {
-        said.join(&theme::glyph(Symbol::HintSeparator))
-    }
+    said.join(&theme::glyph(Symbol::HintSeparator))
 }

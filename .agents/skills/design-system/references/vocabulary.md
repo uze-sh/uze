@@ -24,7 +24,7 @@ ratatui primitives (`chrome_is_built_from_the_widget_vocabulary`).
 | what an empty surface says | `message::render_message`, `message_lines` |
 | a grid of cards | `grid::Shape::fitting(...).lay(...)` |
 | tabs | `Tab`, `tab_bar` |
-| segmented | `Segment`, `segmented`: a few views of one place, the one in front raised |
+| segmented | `Segment`, `segmented`: a few views of one place as a line, the one in front in the accent; rides a top border through `Surface::title_line` |
 | a detail column | `drawer::render`, `drawer::foot` |
 | a drawer docked beside a live pane | `drawer::render_docked`, `drawer::docked_width` |
 | a question or notice | `dialog::Dialog`, `render_choice`, `shell` |
