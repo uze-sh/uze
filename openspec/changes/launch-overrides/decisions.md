@@ -41,15 +41,15 @@
 - rejected: Marking only the design's list: the operator would see Claude's skip flag marked and Codex's equivalent not.
 - blast:    Owner fields in the four `flags.rs`; a mark in the popup, never a refusal.
 
-## D5 — A flag whose value is optional is catalogued as a switch
+## D5 — A flag whose value is optional is offered as a switch and takes only an attached value
 
 - status:   pending
 - task:     2.2
 - commit:   4fb4d844
-- trigger:  `FlagValue` has no optional-value case, and Claude Code's `-d, --debug [filter]` takes one.
-- decided:  `FlagValue::None`, with the summary naming `--debug=<filter>`: the attached form is the only one that cannot be read as a stray positional, which the check refuses.
-- rejected: A fourth `FlagValue` variant for one flag; `Free`, which would swallow the next entry as its value.
-- blast:    One entry; a variant added later replaces it.
+- trigger:  Claude Code's `-d, --debug [filter]` takes a value it may go without; catalogued as a switch, `-dmcp` was read as the cluster `-d -m -c` and refused for `-c`, while commander reads it as `--debug mcp`.
+- decided:  `FlagValue::Optional(hint)`: only an attached value is the flag's (`--debug=mcp`, `-dmcp`, which takes the rest of its word as a value-taking short flag does), the word after it is never taken, and completion offers it as a switch whose summary names `--debug=<filter>`. Every flag a snapshot shows with a bracketed value is `Optional`, and `assert_catalog_in_help` fails otherwise: Claude Code's `--cloud`, `--debug`, `--from-pr`, `--prompt-suggestions`, `--remote-control`, `--resume`, `--teleport`, `--worktree`.
+- rejected: `Free`, which would swallow the next entry as its value; a switch, which reads the filter's letters as short flags.
+- blast:    One `FlagValue` variant, eight Claude Code entries, the help check, the reader's two value tests.
 
 ## D6 — A snapshot defines only the flags opening an option's own line
 

@@ -42,7 +42,7 @@ fn an_operator_flag(integration: &dyn IntegrationPort) -> Vec<String> {
         .unwrap_or_else(|| panic!("{} offers a flag of the operator's", integration.id()));
     let mut words = vec![spec.name().to_owned()];
     match spec.value {
-        FlagValue::None => {}
+        FlagValue::None | FlagValue::Optional(_) => {}
         FlagValue::Free(_) => words.push("probe-value".to_owned()),
         FlagValue::OneOf(values) => words.push(values[0].to_owned()),
     }
@@ -458,4 +458,32 @@ fn a_go_flag_harness_reads_one_dash_as_its_long_flag_and_never_as_letters() {
             "{line}"
         );
     }
+}
+
+/// commander gives a short flag whose value is optional the rest of its
+/// word, as it does one that takes a value: `-dmcp` is `--debug mcp`, not
+/// `-d -m -c`, so the letters of a filter refuse nothing.
+#[test]
+fn a_short_flag_with_an_optional_value_takes_the_rest_of_its_word() {
+    use overrides::Verdict::{Accepted, Refused};
+    let registry = registry("overrides-optional-value");
+    let claude = harness(&registry, "claude-code");
+
+    for line in [
+        "-d",
+        "-dmcp",
+        "-dapi",
+        "-dhooks,mcp",
+        "--debug=mcp",
+        "-vdmcp",
+    ] {
+        let expected: &[_] = if line == "-vdmcp" {
+            &[overrides::Verdict::Unknown]
+        } else {
+            &[Accepted]
+        };
+        assert_eq!(verdicts(claude, line), expected, "{line}");
+    }
+    assert!(matches!(verdicts(claude, "-dc").as_slice(), [Accepted]));
+    assert!(matches!(verdicts(claude, "-wfoo").as_slice(), [Refused(_)]));
 }

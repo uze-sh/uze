@@ -95,7 +95,9 @@ impl From<&FlagSpec> for OverrideFlag {
             name: spec.name(),
             spellings: spec.spellings,
             value: match spec.value {
-                FlagValue::None => OverrideValue::Switch,
+                // Offered as a switch: a value it may take goes attached,
+                // which the summary names.
+                FlagValue::None | FlagValue::Optional(_) => OverrideValue::Switch,
                 FlagValue::Free(hint) => OverrideValue::Free(hint),
                 FlagValue::OneOf(values) => OverrideValue::OneOf(values),
             },

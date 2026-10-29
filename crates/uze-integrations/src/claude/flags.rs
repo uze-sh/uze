@@ -127,7 +127,7 @@ const FLAGS: &[FlagSpec] = &[
     .repeatable(),
     FlagSpec::new(
         &["--debug", "-d"],
-        FlagValue::None,
+        FlagValue::Optional("filter"),
         "debug mode; --debug=<filter> picks categories",
         Operator,
     ),
@@ -209,7 +209,7 @@ const FLAGS: &[FlagSpec] = &[
     .repeatable(),
     FlagSpec::new(
         &["--prompt-suggestions"],
-        FlagValue::None,
+        FlagValue::Optional("value"),
         "prompt suggestions on; --prompt-suggestions=off turns them off",
         Operator,
     ),
@@ -221,7 +221,7 @@ const FLAGS: &[FlagSpec] = &[
     ),
     FlagSpec::new(
         &["--remote-control"],
-        FlagValue::None,
+        FlagValue::Optional("name"),
         "Remote Control on; --remote-control=<name> names the session",
         Operator,
     ),
@@ -287,7 +287,7 @@ const FLAGS: &[FlagSpec] = &[
     ),
     FlagSpec::new(
         &[RESUME_FLAG, "-r"],
-        FlagValue::Free("session"),
+        FlagValue::Optional("session"),
         "resume a conversation",
         Uze(CONTINUITY),
     ),
@@ -305,19 +305,19 @@ const FLAGS: &[FlagSpec] = &[
     ),
     FlagSpec::new(
         &["--from-pr"],
-        FlagValue::Free("pr"),
+        FlagValue::Optional("pr"),
         "resume a session linked to a PR",
         Uze(CONTINUITY),
     ),
     FlagSpec::new(
         &["--teleport"],
-        FlagValue::Free("session"),
+        FlagValue::Optional("session"),
         "resume a teleport session",
         Uze(CONTINUITY),
     ),
     FlagSpec::new(
         &["--worktree", "-w"],
-        FlagValue::None,
+        FlagValue::Optional("name"),
         "a new git worktree for the session",
         Uze(IN_ITS_CHECKOUT),
     ),
@@ -341,7 +341,7 @@ const FLAGS: &[FlagSpec] = &[
     ),
     FlagSpec::new(
         &["--cloud"],
-        FlagValue::None,
+        FlagValue::Optional("description-session-or-url"),
         "create or attach to a cloud session",
         Uze(IN_ITS_PANE),
     ),

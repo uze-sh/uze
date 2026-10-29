@@ -143,7 +143,9 @@ detail line says that secrets belong in variables.
 defaults:
 
 - `flag_catalog() -> FlagCatalog`: `spellings` (`--model`, `-m`),
-  `value` (`None` / `Free(hint)` / `OneOf(&[..])`), `repeatable`,
+  `value` (`None` / `Free(hint)` / `OneOf(&[..])` / `Optional(hint)`, a
+  value only ever attached — `--debug=mcp`, `-dmcp` — and offered as a
+  switch), `repeatable`,
   `summary`, and `owner`:
   - `Operator`: offered, passed.
   - `Weakens(what)`: offered, passed, marked warning (`--dangerously-skip-permissions`).

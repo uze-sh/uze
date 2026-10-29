@@ -76,6 +76,27 @@ pub(crate) fn flags_in_help(help: &str) -> BTreeSet<&str> {
         .collect()
 }
 
+/// Every spelling of a flag whose definition shows its value in brackets
+/// (`-d, --debug [filter]`): a value it may go without.
+pub(crate) fn optional_values_in_help(help: &str) -> BTreeSet<&str> {
+    const DEFINITION_INDENT: usize = 6;
+    help.lines()
+        .filter(|line| line.len() - line.trim_start().len() <= DEFINITION_INDENT)
+        .flat_map(|line| {
+            let flags: Vec<&str> = line
+                .split_whitespace()
+                .map(|word| word.trim_end_matches(','))
+                .take_while(|word| is_flag(word))
+                .collect();
+            let optional = line
+                .split_whitespace()
+                .nth(flags.len())
+                .is_some_and(|value| value.starts_with('['));
+            if optional { flags } else { Vec::new() }
+        })
+        .collect()
+}
+
 fn is_flag(word: &str) -> bool {
     let name = word.trim_start_matches('-');
     let dashes = word.len() - name.len();
@@ -104,7 +125,19 @@ pub(crate) fn assert_catalog_in_help(catalog: &[uze_core::flag_catalog::FlagSpec
     assert!(missing.is_empty(), "not in the snapshot: {missing:?}");
     let unique: BTreeSet<&str> = spellings.iter().copied().collect();
     assert_eq!(unique.len(), spellings.len(), "a spelling is listed twice");
+    let optional = optional_values_in_help(help);
     for flag in catalog {
+        let shown_optional = flag
+            .spellings
+            .iter()
+            .any(|spelling| optional.contains(spelling));
+        assert_eq!(
+            matches!(flag.value, uze_core::flag_catalog::FlagValue::Optional(_)),
+            shown_optional,
+            "{} is catalogued as {:?}, its help shows an optional value: {shown_optional}",
+            flag.name(),
+            flag.value
+        );
         for (value, _) in flag.weakening_values {
             assert!(
                 matches!(flag.value, uze_core::flag_catalog::FlagValue::OneOf(values) if values.contains(value)),
@@ -230,5 +263,15 @@ fn the_shared_help_fixture_defines_exactly_its_expected_flags() {
     assert_eq!(
         flags_in_help(include_str!("help_fixture/help.txt")),
         expected
+    );
+}
+
+#[test]
+fn a_value_in_brackets_is_one_a_flag_may_go_without() {
+    let help = "Options:\n  -d, --debug [filter]   debug\n  --model <m>   model [default]\n  --bare   bare\n";
+
+    assert_eq!(
+        optional_values_in_help(help),
+        BTreeSet::from(["-d", "--debug"])
     );
 }

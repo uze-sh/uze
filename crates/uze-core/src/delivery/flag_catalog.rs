@@ -150,6 +150,24 @@ pub enum FlagValue {
     Free(&'static str),
     /// One of a fixed set, the only values checked before launch.
     OneOf(&'static [&'static str]),
+    /// A value that may be left out (`--debug [filter]`): only an attached
+    /// one is its (`--debug=mcp`, `-dmcp`), so the word after it is never
+    /// taken. Offered as a switch; the summary names the attached form.
+    Optional(&'static str),
+}
+
+impl FlagValue {
+    /// Whether a value may be attached to the flag, which a short flag in
+    /// a cluster then takes as the rest of its word.
+    pub fn takes_a_value(&self) -> bool {
+        !matches!(self, Self::None)
+    }
+
+    /// Whether the flag needs a value, and so takes the word after it when
+    /// none is attached.
+    pub fn needs_a_value(&self) -> bool {
+        matches!(self, Self::Free(_) | Self::OneOf(_))
+    }
 }
 
 /// Whose flag it is, which decides whether an override carrying it is

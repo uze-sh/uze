@@ -97,9 +97,7 @@ pub fn entries(words: &[String], catalog: FlagCatalog) -> Vec<Entry> {
             });
         } else if word.len() > 1 && word.starts_with('-') {
             let reading = read(word, catalog);
-            let takes_value = reading
-                .spec
-                .is_some_and(|spec| spec.value != FlagValue::None);
+            let takes_value = reading.spec.is_some_and(|spec| spec.value.needs_a_value());
             let mut flag_words = vec![word.clone()];
             let value = match reading.attached {
                 Some(value) => Some(value.to_owned()),
@@ -362,8 +360,9 @@ fn read<'w>(word: &'w str, catalog: FlagCatalog) -> Reading<'w, 'static> {
 }
 
 /// A single-dash word as getopt's family reads it: `-m=opus` names `-m`; a
-/// first short flag that takes a value takes the rest of the word
-/// (`-mopus`, so `-model` is `-m odel`); anything else is a cluster.
+/// first short flag that takes a value, even an optional one, takes the
+/// rest of the word (`-mopus`, so `-model` is `-m odel`; `-dmcp`); anything
+/// else is a cluster.
 fn read_posix<'w>(word: &'w str, catalog: FlagCatalog) -> Reading<'w, 'static> {
     if let Some((name, value)) = word.split_once('=')
         && let Some(spec) = spelled(catalog, name)
@@ -372,7 +371,7 @@ fn read_posix<'w>(word: &'w str, catalog: FlagCatalog) -> Reading<'w, 'static> {
     }
     if let Some((at, _)) = word.char_indices().nth(2) {
         let (short, attached) = word.split_at(at);
-        if let Some(spec) = spelled(catalog, short).filter(|spec| spec.value != FlagValue::None) {
+        if let Some(spec) = spelled(catalog, short).filter(|spec| spec.value.takes_a_value()) {
             return Reading::flag(short, Some(attached), Some(spec));
         }
     }
@@ -399,7 +398,7 @@ fn cluster<'w>(word: &'w str, catalog: FlagCatalog, value_ends_it: bool) -> Read
                 reading.refusal = Some(Verdict::Refused("takes key=value".to_owned()));
                 break;
             }
-            _ if value_ends_it && spec.value != FlagValue::None => break,
+            _ if value_ends_it && spec.value.takes_a_value() => break,
             _ => {}
         }
     }
@@ -456,6 +455,12 @@ mod tests {
         )
         .weakens_with(&[("bypass", "permission prompts")]),
         FlagSpec::new(&["--verbose", "-v"], FlagValue::None, "verbose", Operator),
+        FlagSpec::new(
+            &["--debug", "-d"],
+            FlagValue::Optional("filter"),
+            "debug",
+            Operator,
+        ),
         FlagSpec::new(
             &["--resume", "-r"],
             FlagValue::Free("id"),
@@ -642,6 +647,35 @@ mod tests {
         assert_eq!(verdicts("-vx", CATALOG), [Verdict::Unknown]);
         // What follows a switch that takes a value is that value.
         assert_eq!(verdicts("-vmc", CATALOG), [Verdict::Unknown]);
+    }
+
+    #[test]
+    fn an_optional_value_is_only_ever_attached() {
+        assert_eq!(
+            entries(&words("-dc --debug=hooks --debug mcp"), CATALOG),
+            [
+                Entry::Flag {
+                    name: "-d".into(),
+                    value: Some("c".into()),
+                    words: vec!["-dc".into()]
+                },
+                Entry::Flag {
+                    name: "--debug".into(),
+                    value: Some("hooks".into()),
+                    words: vec!["--debug=hooks".into()]
+                },
+                Entry::Flag {
+                    name: "--debug".into(),
+                    value: None,
+                    words: vec!["--debug".into()]
+                },
+                Entry::Positional("mcp".into()),
+            ]
+        );
+        assert_eq!(verdicts("-d", CATALOG), [Verdict::Accepted]);
+        assert_eq!(verdicts("-dc", CATALOG), [Verdict::Accepted]);
+        // A switch before it leaves it the rest of the word.
+        assert_eq!(verdicts("-vdc", CATALOG), [Verdict::Unknown]);
     }
 
     /// The test catalog, read as Go's `flag` package reads a command line.
