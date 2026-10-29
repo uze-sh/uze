@@ -142,7 +142,8 @@ scenes:
         say: the question shows the skill in the harness's spelling, with the phase
       - click: "Type it"
         say: allow it
-        refuse: "Type this into agent 1"
+        expect: '(?s)\A(?!.*Type this into agent 1)'
+        expect_timeout: 10
       - wait: shell
         until: "grep -q 'gsd:execute-phase' {home}/.claude/projects/*/*.jsonl"
         timeout: 10
