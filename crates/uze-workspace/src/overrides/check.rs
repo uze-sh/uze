@@ -279,8 +279,15 @@ fn flag_and_attached<'w>(word: &'w str, catalog: &[FlagSpec]) -> (&'w str, Optio
             None => (word, None),
         };
     }
-    if spec(catalog, word).is_some() {
+    if spelled(catalog, word).is_some() {
         return (word, None);
+    }
+    let (name, attached) = match word.split_once('=') {
+        Some((name, value)) => (name, Some(value)),
+        None => (word, None),
+    };
+    if spec(catalog, name).is_some() {
+        return (name, attached);
     }
     let Some((at, _)) = word.char_indices().nth(2) else {
         return (word, None);
@@ -300,11 +307,11 @@ fn cluster_refusal(word: &str, catalog: &[FlagSpec]) -> Option<Verdict> {
     let letters = word
         .strip_prefix('-')
         .filter(|letters| !letters.starts_with('-') && letters.chars().count() > 1)?;
-    if spec(catalog, word).is_some_and(|spec| spec.spellings.contains(&word)) {
+    if spelled(catalog, word).is_some() {
         return None;
     }
     for letter in letters.chars() {
-        let Some(spec) = spec(catalog, &format!("-{letter}")) else {
+        let Some(spec) = spelled(catalog, &format!("-{letter}")) else {
             continue;
         };
         match spec.owner {
@@ -317,7 +324,18 @@ fn cluster_refusal(word: &str, catalog: &[FlagSpec]) -> Option<Verdict> {
     None
 }
 
-fn spec<'c>(catalog: &'c [FlagSpec], spelling: &str) -> Option<&'c FlagSpec> {
+/// The flag `word` names: one of its spellings, or one of its long
+/// spellings written with a single dash (`-print` for `--print`), which
+/// some harnesses read as the long flag.
+fn spec<'c>(catalog: &'c [FlagSpec], word: &str) -> Option<&'c FlagSpec> {
+    spelled(catalog, word).or_else(|| {
+        word.strip_prefix('-')
+            .filter(|name| name.len() > 1 && !name.starts_with('-'))
+            .and_then(|name| spelled(catalog, &format!("--{name}")))
+    })
+}
+
+fn spelled<'c>(catalog: &'c [FlagSpec], spelling: &str) -> Option<&'c FlagSpec> {
     catalog
         .iter()
         .find(|spec| spec.spellings.contains(&spelling))
@@ -517,6 +535,26 @@ mod tests {
         assert_eq!(verdicts("-vx", CATALOG), [Verdict::Unknown]);
         // What follows a switch that takes a value is that value.
         assert_eq!(verdicts("-vmc", CATALOG), [Verdict::Unknown]);
+    }
+
+    #[test]
+    fn a_long_flag_written_with_one_dash_is_read_as_that_flag() {
+        assert_eq!(verdicts("-resume abc", CATALOG), [refused(CONTINUITY)]);
+        assert_eq!(verdicts("-resume=abc", CATALOG), [refused(CONTINUITY)]);
+        assert_eq!(verdicts("-continue", CATALOG), [refused(CONTINUITY)]);
+        assert_eq!(
+            verdicts("-model", CATALOG),
+            [refused("takes a value: model")]
+        );
+        assert_eq!(
+            entries(&words("-model opus"), CATALOG),
+            [Entry::Flag {
+                name: "-model".into(),
+                value: Some("opus".into()),
+                words: vec!["-model".into(), "opus".into()]
+            }]
+        );
+        assert_eq!(verdicts("-model=opus", CATALOG), [Verdict::Accepted]);
     }
 
     #[test]

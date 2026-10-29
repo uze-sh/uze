@@ -58,7 +58,8 @@ The system SHALL refuse a flag the chosen harness's catalog marks as UZE's:
 the session, resume, continue and first-prompt flags and every flag UZE
 composes for a launch. A flag SHALL be matched in every spelling the
 harness accepts: long, short, `--flag=value`, a short flag's attached
-value and a short flag inside a cluster of switches.
+value, a short flag inside a cluster of switches, and a long flag written
+with one dash.
 
 #### Scenario: A resume flag
 - **WHEN** the operator adds `--resume abc` for a harness whose continuity UZE manages
@@ -71,6 +72,10 @@ value and a short flag inside a cluster of switches.
 #### Scenario: An owned flag inside a cluster of switches
 - **WHEN** the operator adds a single-dash word the catalog does not spell, such as `-cd`, holding the short spelling of a flag the catalog marks as UZE's
 - **THEN** it is refused with that flag's reason
+
+#### Scenario: A long owned flag written with one dash
+- **WHEN** the operator adds `-continue` or `-conversation=abc` and the catalog spells that flag `--continue` or `--conversation`
+- **THEN** it is refused exactly as its long spelling is
 
 #### Scenario: A configuration key UZE composes
 - **WHEN** the operator adds a configuration override setting a key UZE composes on that harness's launch

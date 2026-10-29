@@ -223,13 +223,21 @@ fn an_override_of_what_uze_composes_never_reaches_any_harness() {
 }
 
 /// Every spelling a harness would read as one of its owned flags: a short
-/// one inside a cluster of switches (`-zc` as `-z -c`).
+/// one inside a cluster of switches (`-zc` as `-z -c`), and a long one
+/// written with one dash (`-continue`, `-resume=id`).
 fn owned_spellings_in_disguise(spec: &FlagSpec) -> Vec<String> {
+    let value = if spec.value == FlagValue::None {
+        ""
+    } else {
+        "=elsewhere"
+    };
     spec.spellings
         .iter()
         .filter_map(|spelling| spelling.strip_prefix('-'))
-        .filter(|letter| letter.chars().count() == 1)
-        .map(|letter| format!("-z{letter}"))
+        .map(|name| match name.strip_prefix('-') {
+            Some(long) => format!("-{long}{value}"),
+            None => format!("-z{name}"),
+        })
         .collect()
 }
 
@@ -263,8 +271,9 @@ fn an_owned_flag_in_disguise_never_reaches_any_harness() {
                     "{} {word}",
                     integration.id()
                 );
+                let label = word.split('=').next().unwrap_or_default();
                 assert!(
-                    note.is_some_and(|note| note.starts_with(&format!("{word} left out ("))),
+                    note.is_some_and(|note| note.starts_with(&format!("{label} left out ("))),
                     "{} {word}",
                     integration.id()
                 );
@@ -272,5 +281,5 @@ fn an_owned_flag_in_disguise_never_reaches_any_harness() {
             }
         }
     }
-    assert!(asked > 0, "some harness owns a short flag");
+    assert!(asked > 0, "some harness owns a flag");
 }
