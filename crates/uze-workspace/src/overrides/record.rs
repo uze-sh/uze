@@ -31,18 +31,14 @@ use crate::{
 const RECENT_PER_HARNESS: usize = 20;
 /// How long a write waits for another one, each a small rewrite.
 const LOCK_PATIENCE: Duration = Duration::from_secs(2);
-/// A variable whose name has one of these as a `_`-separated part reads as
-/// a secret, and is not remembered in the history.
-const SECRET_PARTS: &[&str] = &[
-    "TOKEN",
-    "KEY",
-    "SECRET",
-    "PASSWORD",
-    "PASS",
-    "CREDENTIAL",
-    "CREDENTIALS",
-    "AUTH",
-];
+/// A variable whose name, upper-cased, holds one of these anywhere reads as
+/// a secret, and is not remembered in the history: `GH_TOKEN`,
+/// `OPENAI_APIKEY`, `DB_PASSWD`. Remembering one too few is the cost to
+/// avoid; `AUTHOR` withheld too is the price.
+const SECRET_FRAGMENTS: &[&str] = &["TOKEN", "SECRET", "PASS", "CRED", "KEY", "AUTH"];
+/// Too short to look for anywhere, so read as a secret only as a whole
+/// `_`-separated part: `GH_PAT`, not `PATH`.
+const SECRET_PARTS: &[&str] = &["PAT"];
 
 /// A set of overrides used before, as the history offers it again.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -260,11 +256,13 @@ fn without_secrets(tokens: &[String]) -> (Vec<String>, usize) {
 
 fn reads_as_secret(token: &str) -> bool {
     match super::entries(&[token.to_owned()], &[]).as_slice() {
-        [super::Entry::Variable { name, .. }] => name.split('_').any(|part| {
-            SECRET_PARTS
+        [super::Entry::Variable { name, .. }] => {
+            let name = name.to_ascii_uppercase();
+            SECRET_FRAGMENTS
                 .iter()
-                .any(|secret| secret.eq_ignore_ascii_case(part))
-        }),
+                .any(|fragment| name.contains(fragment))
+                || name.split('_').any(|part| SECRET_PARTS.contains(&part))
+        }
         _ => false,
     }
 }
@@ -499,14 +497,20 @@ mod tests {
             "PASS=x",
             "GOOGLE_APPLICATION_CREDENTIALS=x",
             "GH_AUTH=x",
+            "GH_PAT=x",
+            "OPENAI_APIKEY=x",
+            "DB_PASSWD=x",
+            "MY_CREDS=x",
+            "githubtoken=x",
+            "OAUTH_CLIENT=x",
         ] {
             assert!(reads_as_secret(secret), "{secret}");
         }
         for plain in [
             "DEBUG=1",
-            "KEYBOARD=us",
-            "PASSPORT_DIR=x",
-            "AUTHOR=x",
+            "LOG_LEVEL=debug",
+            "PATCH_DIR=x",
+            "EXTRA_PATH=x",
             "--api-key=x",
         ] {
             assert!(!reads_as_secret(plain), "{plain}");

@@ -201,8 +201,9 @@ hue. Backspace on an empty line removes the last entry.
 Up to 20 sets per harness, this project's first and then the rest, each
 group most recent first, identified by their normalized tokens so the
 same set moves to the top and takes the project it was last used in. A variable whose name
-reads as a secret (`TOKEN`, `KEY`, `SECRET`, `PASSWORD`, `PASS`,
-`CREDENTIAL`, `AUTH` as a `_`-separated part) is not kept: the set counts
+reads as a secret (`TOKEN`, `SECRET`, `PASS`, `CRED`, `KEY` or `AUTH`
+anywhere in it, upper-cased, or `PAT` as a `_`-separated part; withholding
+`AUTHOR` too is the price of never keeping `GH_PAT`) is not kept: the set counts
 it in `withheld` and its row says `1 variable not kept`. Spans carry
 `overrides = <count>`, never a token.
 
