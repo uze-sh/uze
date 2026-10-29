@@ -589,22 +589,28 @@ fn drawer(
             }
         },
     };
-    let size = match size {
-        None => uze_contract::DrawerSize::Fill,
+    let fit = match size {
+        None => false,
         Some(entry) => {
             let written = string_prop("size", entry, report)?;
-            let Some(size) = uze_contract::DrawerSize::parse(&written) else {
+            if !uze_contract::DRAWER_SIZES.contains(&written.as_str()) {
                 report.on(
                     entry,
-                    format!("a drawer's size is `fill` or `fit`, not `{written}`"),
+                    format!(
+                        "a drawer's size is {}, not `{written}`",
+                        uze_contract::DRAWER_SIZES
+                            .iter()
+                            .map(|name| format!("`{name}`"))
+                            .collect::<Vec<_>>()
+                            .join(" or ")
+                    ),
                     None,
                 );
                 return None;
-            };
-            size
+            }
+            written == "fit"
         }
     };
-    let fit = size == uze_contract::DrawerSize::Fit;
     if fit && !float {
         report.on(
             prop(parts, "size")?,

@@ -352,26 +352,9 @@ impl DrawerSide {
     }
 }
 
-/// How much of its side a floating drawer takes.
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum DrawerSize {
-    #[default]
-    Fill,
-    Fit,
-}
-
-impl DrawerSize {
-    pub const NAMES: &'static [&'static str] = &["fill", "fit"];
-
-    pub fn parse(name: &str) -> Option<Self> {
-        match name {
-            "fill" => Some(Self::Fill),
-            "fit" => Some(Self::Fit),
-            _ => None,
-        }
-    }
-}
+/// What a drawer's `size=` may say: `fill`, its whole side, or `fit`, a
+/// floating card as big as what it holds.
+pub const DRAWER_SIZES: &[&str] = &["fill", "fit"];
 
 /// Where an item of the bar stands, and the surface of its own extension a
 /// click on it opens.
