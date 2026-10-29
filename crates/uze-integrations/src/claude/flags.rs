@@ -50,7 +50,8 @@ pub(super) const CATALOG: &[FlagSpec] = &[
         ]),
         "permission mode for the session; bypassPermissions skips every prompt",
         Operator,
-    ),
+    )
+    .weakens_with(&[("bypassPermissions", "permission prompts")]),
     FlagSpec::new(
         &[ADD_DIR_FLAG],
         FlagValue::Free("dir"),

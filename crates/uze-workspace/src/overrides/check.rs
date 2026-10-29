@@ -184,7 +184,10 @@ fn flag_verdict(
         (_, value) => value,
     };
     let own = match spec.owner {
-        FlagOwner::Operator => Verdict::Accepted,
+        FlagOwner::Operator => match value.and_then(|value| spec.what_value_weakens(value)) {
+            Some(what) => Verdict::Weakens(what),
+            None => Verdict::Accepted,
+        },
         FlagOwner::Weakens(what) => Verdict::Weakens(what),
         FlagOwner::Degrades(what) => Verdict::Degrades(what),
         FlagOwner::Uze(_) => unreachable!("refused above"),
@@ -392,10 +395,11 @@ mod tests {
         ),
         FlagSpec::new(
             &["--permission-mode"],
-            FlagValue::OneOf(&["default", "plan"]),
+            FlagValue::OneOf(&["default", "plan", "bypass"]),
             "permission mode",
             Operator,
-        ),
+        )
+        .weakens_with(&[("bypass", "permission prompts")]),
         FlagSpec::new(&["--verbose", "-v"], FlagValue::None, "verbose", Operator),
         FlagSpec::new(
             &["--resume", "-r"],
@@ -738,6 +742,18 @@ mod tests {
     }
 
     #[test]
+    fn a_value_that_weakens_safety_is_passed_and_marked() {
+        assert_eq!(
+            verdicts("--permission-mode bypass", CATALOG),
+            [Verdict::Weakens("permission prompts")]
+        );
+        assert_eq!(
+            verdicts("--permission-mode=plan", CATALOG),
+            [Verdict::Accepted]
+        );
+    }
+
+    #[test]
     fn a_flag_that_drops_what_uze_delivers_is_passed_and_marked() {
         assert_eq!(
             verdicts("--strict-mcp-config", CATALOG),
@@ -753,7 +769,7 @@ mod tests {
         );
         assert_eq!(
             verdicts("--permission-mode yolo", CATALOG),
-            [refused("takes one of default, plan")]
+            [refused("takes one of default, plan, bypass")]
         );
         assert_eq!(
             verdicts("--model", CATALOG),

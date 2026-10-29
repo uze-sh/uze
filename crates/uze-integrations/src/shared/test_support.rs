@@ -87,8 +87,9 @@ fn is_flag(word: &str) -> bool {
 }
 
 /// Fails naming every spelling `catalog` lists that `help` does not define,
-/// and every spelling listed twice: a catalog describes the release its
-/// snapshot was taken from, and one spelling means one flag.
+/// every spelling listed twice, and a weakening value its flag does not
+/// take: a catalog describes the release its snapshot was taken from, and
+/// one spelling means one flag.
 pub(crate) fn assert_catalog_in_help(catalog: &[uze_core::flag_catalog::FlagSpec], help: &str) {
     let defined = flags_in_help(help);
     let spellings: Vec<&str> = catalog
@@ -103,6 +104,15 @@ pub(crate) fn assert_catalog_in_help(catalog: &[uze_core::flag_catalog::FlagSpec
     assert!(missing.is_empty(), "not in the snapshot: {missing:?}");
     let unique: BTreeSet<&str> = spellings.iter().copied().collect();
     assert_eq!(unique.len(), spellings.len(), "a spelling is listed twice");
+    for flag in catalog {
+        for (value, _) in flag.weakening_values {
+            assert!(
+                matches!(flag.value, uze_core::flag_catalog::FlagValue::OneOf(values) if values.contains(value)),
+                "{} weakens with {value}, which it does not take",
+                flag.name()
+            );
+        }
+    }
 }
 
 #[test]

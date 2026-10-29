@@ -46,13 +46,15 @@ pub(super) const CATALOG: &[FlagSpec] = &[
         FlagValue::OneOf(&["read-only", "workspace-write", "danger-full-access"]),
         "sandbox for model-run commands; danger-full-access runs them unsandboxed",
         Operator,
-    ),
+    )
+    .weakens_with(&[("danger-full-access", "the sandbox")]),
     FlagSpec::new(
         &["--ask-for-approval", "-a"],
         FlagValue::OneOf(&["on-request", "never"]),
         "when a command asks for approval",
         Operator,
-    ),
+    )
+    .weakens_with(&[("never", "approval prompts")]),
     FlagSpec::new(
         &["--approve-for-me"],
         FlagValue::None,

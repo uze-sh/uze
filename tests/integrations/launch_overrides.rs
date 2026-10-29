@@ -353,3 +353,41 @@ fn a_feature_switched_on_by_name_is_checked_as_the_key_it_sets() {
     assert!(note.starts_with("--enable left out ("), "{note}");
     assert!(note.contains("--disable left out ("), "{note}");
 }
+
+/// A value that gives up as much as a `--dangerously-…` switch is said
+/// as the switch is.
+#[test]
+fn a_value_that_gives_up_safety_is_said_as_its_switch_is() {
+    let registry = registry("overrides-weakening-values");
+    for (harness, line) in [
+        ("claude-code", "--permission-mode bypassPermissions"),
+        ("codex", "--sandbox danger-full-access"),
+        ("codex", "-s danger-full-access"),
+        ("codex", "--ask-for-approval never"),
+        ("codex", "-a never"),
+    ] {
+        let integration = registry
+            .iter()
+            .find(|integration| integration.id() == harness)
+            .unwrap_or_else(|| panic!("{harness} is registered"));
+        let words = overrides::split(line).unwrap();
+
+        let composed = overrides::compose(
+            &words,
+            integration.flag_catalog(),
+            integration.managed_environment(),
+            &[],
+        );
+
+        assert_eq!(
+            composed.args,
+            os(&words.iter().map(String::as_str).collect::<Vec<_>>())
+        );
+        assert_eq!(composed.weakens.len(), 1, "{harness} {line}");
+        assert!(
+            composed.weakens[0].starts_with(&format!("{} gives up ", words[0])),
+            "{harness} {line}: {:?}",
+            composed.weakens
+        );
+    }
+}

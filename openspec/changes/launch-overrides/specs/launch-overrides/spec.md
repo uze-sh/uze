@@ -135,14 +135,18 @@ when a catalog lists a flag the harness no longer accepts.
 - **THEN** that harness's check fails naming the flag
 
 ### Requirement: A flag that weakens safety or switches off delivery says so
-The system SHALL mark, wherever an override is shown, a flag that weakens
-the harness's safety or switches off something UZE delivers, naming what
-is lost, and SHALL still accept it. A launch or relaunch carrying one SHALL
+The system SHALL mark, wherever an override is shown, a flag, or a flag
+with a value, that weakens the harness's safety or switches off something
+UZE delivers, naming what is lost, and SHALL still accept it. A launch or relaunch carrying one SHALL
 say so on the agent's tab.
 
 #### Scenario: Skipping permissions
 - **WHEN** the operator adds Claude Code's flag that skips permission prompts
 - **THEN** the entry is marked as weakening safety, in the popup and in the history row that later holds it
+
+#### Scenario: A value that gives up safety
+- **WHEN** the operator adds a flag whose value gives up what a skip-permissions flag would, such as Codex's `--sandbox danger-full-access`
+- **THEN** the entry is marked as weakening safety, as that flag would be
 
 #### Scenario: Dropping delivered MCP servers
 - **WHEN** the operator adds a flag that makes the harness ignore the MCP servers UZE installed

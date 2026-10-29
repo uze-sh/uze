@@ -147,6 +147,10 @@ defaults:
   `summary`, and `owner`:
   - `Operator`: offered, passed.
   - `Weakens(what)`: offered, passed, marked warning (`--dangerously-skip-permissions`).
+    A `OneOf` flag of the operator's may name some of its values as
+    weakening (`weakening_values`): `--permission-mode bypassPermissions`,
+    Codex `--sandbox danger-full-access` and `--ask-for-approval never`
+    give up what the switch would, and are marked the same way.
   - `Degrades(what)`: offered, passed, marked warning naming what UZE
     delivers that stops loading (`--strict-mcp-config`, `--bare`,
     `--setting-sources`, `--disable-slash-commands`; Codex `--disable`).

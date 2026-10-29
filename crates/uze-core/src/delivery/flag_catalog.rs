@@ -25,6 +25,10 @@ pub struct FlagSpec {
     /// `features.<feature>`): that key is then checked as the catalog's
     /// [`FlagOwner::Keyed`] flag checks its own.
     pub sets_key_in: Option<&'static str>,
+    /// Values of a [`FlagValue::OneOf`] that give up the harness's own
+    /// safety as a [`FlagOwner::Weakens`] switch does, each with what it
+    /// gives up: `--sandbox danger-full-access` is no sandbox.
+    pub weakening_values: &'static [(&'static str, &'static str)],
 }
 
 impl FlagSpec {
@@ -42,7 +46,25 @@ impl FlagSpec {
             summary,
             owner,
             sets_key_in: None,
+            weakening_values: &[],
         }
+    }
+
+    /// A flag some of whose values give up the harness's own safety, each
+    /// with what it gives up.
+    pub const fn weakens_with(self, values: &'static [(&'static str, &'static str)]) -> Self {
+        Self {
+            weakening_values: values,
+            ..self
+        }
+    }
+
+    /// What `value` gives up, when it is one of the values that weaken.
+    pub fn what_value_weakens(&self, value: &str) -> Option<&'static str> {
+        self.weakening_values
+            .iter()
+            .find(|(weakening, _)| *weakening == value)
+            .map(|(_, what)| *what)
     }
 
     /// A flag whose value names a key in the configuration table `table`.
@@ -145,6 +167,20 @@ mod tests {
             enable.sets_key_in("features").key_set_by("web").as_deref(),
             Some("features.web")
         );
+    }
+
+    #[test]
+    fn only_a_value_declared_weakening_gives_anything_up() {
+        let sandbox = FlagSpec::new(
+            &["--sandbox"],
+            FlagValue::OneOf(&["read-only", "off"]),
+            "sandbox",
+            FlagOwner::Operator,
+        )
+        .weakens_with(&[("off", "the sandbox")]);
+
+        assert_eq!(sandbox.what_value_weakens("off"), Some("the sandbox"));
+        assert_eq!(sandbox.what_value_weakens("read-only"), None);
     }
 
     #[test]
