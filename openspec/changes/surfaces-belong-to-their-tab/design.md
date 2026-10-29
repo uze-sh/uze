@@ -24,8 +24,14 @@ keeps for a return is asked separately from its place.
 - One `settle_pane` follows the session: it puts the live surface away for
   its tab when another comes to the front and, while no overview holds the
   pane, restores the record of the tab in front. It runs after the
-  overview's own follow-up, and on every frame, so a pane given back by the
-  overview stands again without each way out naming it.
+  overview's own follow-up, and when the operator dismisses the overview
+  over the tab it stood on — never on a frame, where a tab being left from
+  under the overview would get its surface back before the move is
+  confirmed.
+- A record restores only where the tab in front still answers for the
+  agent directory the surface was opened on: the server paints a set-aside
+  workspace, whose tab numbers start again, before it says it was set
+  aside.
 
 ## Alternatives
 
