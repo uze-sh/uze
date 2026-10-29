@@ -11,6 +11,10 @@ use std::path::{Path, PathBuf};
 
 use crate::Host;
 
+use super::mermaid;
+use super::model::{Diagram, Graph};
+use super::zoom::{Place, Viewed, Zoom};
+
 /// How deep the declared directory is read. Deep enough for a project
 /// that sorts its diagrams into folders; bounded, because the path is
 /// the project's to declare and a walk with no floor is how a surface
@@ -39,24 +43,6 @@ impl Kind {
         }
     }
 
-    /// How far down the model a diagram sits, for the kinds that are a
-    /// model of levels. C4 is read from the outside in — the system, what
-    /// is in it, what is in that — and its views are listed the way they
-    /// are read; the two that are not a level of that descent come after
-    /// the three that are. Everything else is on one level.
-    fn depth(self, diagram: &str) -> u8 {
-        if self != Self::C4 {
-            return 0;
-        }
-        match first_word(diagram) {
-            "C4Context" => 1,
-            "C4Container" => 2,
-            "C4Component" => 3,
-            "C4Dynamic" => 4,
-            _ => 5,
-        }
-    }
-
     pub fn name(self) -> &'static str {
         match self {
             Self::C4 => "C4",
@@ -81,10 +67,12 @@ fn first_word(diagram: &str) -> &str {
 pub struct Artifact {
     pub name: String,
     pub kind: Kind,
-    /// Its level within its area; see [`Kind::depth`].
-    depth: u8,
     /// Where it lives, as the project would say it.
     pub origin: String,
+    /// Where it lives, as a link in another diagram would name it:
+    /// relative to the project, or absolute once it has been read from
+    /// a directory.
+    pub path: PathBuf,
     /// The file as written, front matter and all — what `Source` shows.
     pub source: String,
 }
@@ -100,16 +88,10 @@ impl Artifact {
         Self {
             name,
             kind,
-            depth: kind.depth(diagram),
+            path: PathBuf::from(&origin),
             origin,
             source,
         }
-    }
-
-    /// Which level of its area's model this is, or zero where the area
-    /// is not a model of levels. See [`Kind::depth`].
-    pub fn level(&self) -> u8 {
-        self.depth
     }
 
     /// The diagram without its front matter, which Mermaid reads as
@@ -143,18 +125,61 @@ fn name_from_path(origin: &str) -> String {
     }
 }
 
-/// Every artifact, ordered by area, then by level, then by name — which
-/// is also the order the menu is in, so an index into this is an
-/// artifact's identity for as long as the catalog is.
+/// Every artifact, ordered by area and within one by name — except C4,
+/// whose views are in the order their zoom tree is walked, each before
+/// what zooms into it. That is also the order the menu is in, so an index
+/// into this is an artifact's identity for as long as the catalog is.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Catalog {
     artifacts: Vec<Artifact>,
+    zoom: Zoom,
 }
 
 impl Catalog {
-    pub fn of(mut artifacts: Vec<Artifact>) -> Self {
-        artifacts.sort_by(|a, b| (a.kind, a.depth, &a.name).cmp(&(b.kind, b.depth, &b.name)));
-        Self { artifacts }
+    /// `project` is what a diagram's links are relative to.
+    pub fn of(mut artifacts: Vec<Artifact>, project: &Path) -> Self {
+        artifacts.sort_by(|a, b| (a.kind, &a.name).cmp(&(b.kind, &b.name)));
+        let graphs: Vec<Option<Graph>> = artifacts
+            .iter()
+            .map(
+                |artifact| match (artifact.kind, mermaid::parse(artifact.diagram())) {
+                    (Kind::C4, Ok(Diagram::Graph(graph))) => Some(graph),
+                    _ => None,
+                },
+            )
+            .collect();
+        let views: Vec<Option<Viewed<'_>>> = graphs
+            .iter()
+            .zip(&artifacts)
+            .map(|(graph, artifact)| {
+                graph.as_ref().map(|graph| Viewed {
+                    graph,
+                    path: artifact.path.clone(),
+                })
+            })
+            .collect();
+        let zoom = Zoom::of(&views, project);
+        let mut order = zoom.walk(|view| {
+            (
+                zoom.place(view).unwrap_or(Place::Deployment),
+                artifacts[view].name.clone(),
+            )
+        });
+        let rest: Vec<usize> = (0..artifacts.len())
+            .filter(|index| !order.contains(index))
+            .collect();
+        order.extend(rest);
+        let zoom = zoom.reordered(&order);
+        let mut taken: Vec<Option<Artifact>> = artifacts.into_iter().map(Some).collect();
+        let artifacts = order
+            .iter()
+            .filter_map(|&index| taken[index].take())
+            .collect();
+        Self { artifacts, zoom }
+    }
+
+    pub fn zoom(&self) -> &Zoom {
+        &self.zoom
     }
 
     pub fn artifacts(&self) -> &[Artifact] {
@@ -245,40 +270,136 @@ mod tests {
         assert_eq!(artifact.name, "X");
     }
 
-    #[test]
-    fn c4_views_are_listed_from_the_outside_in() {
-        let catalog = Catalog::of(vec![
-            Artifact::read("a.mmd", "---\ntitle: Core components\n---\nC4Component\n"),
-            Artifact::read("b.mmd", "---\ntitle: Containers\n---\nC4Container\n"),
-            Artifact::read("c.mmd", "---\ntitle: Deployment\n---\nC4Deployment\n"),
-            Artifact::read("d.mmd", "---\ntitle: System context\n---\nC4Context\n"),
-            Artifact::read("e.mmd", "---\ntitle: Agent components\n---\nC4Component\n"),
-        ]);
-        let names: Vec<&str> = catalog
+    fn names(catalog: &Catalog) -> Vec<&str> {
+        catalog
             .artifacts()
             .iter()
             .map(|a| a.name.as_str())
-            .collect();
+            .collect()
+    }
+
+    /// Each view before what zooms into it, whatever the names say, and a
+    /// view that is not a level after the ones that are.
+    #[test]
+    fn c4_views_are_listed_as_their_zooms_are_walked() {
+        let catalog = Catalog::of(
+            vec![
+                Artifact::read(
+                    "a.mmd",
+                    "---\ntitle: A components\n---\nC4Component\n\
+                     Container_Boundary(cli, \"CLI\") {\n}\n",
+                ),
+                Artifact::read(
+                    "b.mmd",
+                    "---\ntitle: Containers\n---\nC4Container\n\
+                     System_Boundary(uze, \"uze\") {\nContainer(cli, \"CLI\", \"Rust\")\n}\n",
+                ),
+                Artifact::read("c.mmd", "---\ntitle: Deployment\n---\nC4Deployment\n"),
+                Artifact::read(
+                    "d.mmd",
+                    "---\ntitle: System context\n---\nC4Context\nSystem(uze, \"uze\")\n",
+                ),
+                Artifact::read(
+                    "e.mmd",
+                    "---\ntitle: Flow\n---\nC4Dynamic\n\
+                     System_Boundary(uze, \"uze\") {\n}\n",
+                ),
+                Artifact::read(
+                    "f.mmd",
+                    "---\ntitle: B components\n---\nC4Component\n\
+                     Container_Boundary(cli, \"CLI\") {\n}\n",
+                ),
+            ],
+            Path::new("/project"),
+        );
         assert_eq!(
-            names,
+            names(&catalog),
             [
                 "System context",
                 "Containers",
-                "Agent components",
-                "Core components",
+                "A components",
+                "B components",
+                "Flow",
                 "Deployment"
+            ]
+        );
+        let zoom = catalog.zoom();
+        assert_eq!(zoom.parent(1), Some(0));
+        assert_eq!((zoom.parent(2), zoom.parent(3)), (Some(1), Some(1)));
+        assert_eq!(
+            zoom.parent(4),
+            Some(0),
+            "a dynamic view sits by the containers"
+        );
+        assert_eq!(zoom.parent(5), None, "a deployment view is a root");
+        assert_eq!(zoom.inside(1, "cli"), [2, 3]);
+        assert_eq!(zoom.path(3), [0, 1, 3]);
+        assert_eq!(zoom.siblings(2), [2, 3]);
+    }
+
+    /// The old rule joined any box to any boundary with its alias, so a
+    /// system box skipped the containers and landed in a component view.
+    #[test]
+    fn a_view_zooms_only_into_an_element_of_its_kind_one_level_up() {
+        let catalog = Catalog::of(
+            vec![
+                Artifact::read(
+                    "a.mmd",
+                    "C4Context\nSystem(uze, \"uze\")\nSystem_Ext(git, \"Git\")\n",
+                ),
+                Artifact::read(
+                    "b.mmd",
+                    "C4Component\nContainer_Boundary(uze, \"uze\") {\n}\n",
+                ),
+                Artifact::read("c.mmd", "C4Container\nSystem_Boundary(git, \"Git\") {\n}\n"),
             ],
-            "by level, and by name only within one"
+            Path::new("/project"),
+        );
+        let zoom = catalog.zoom();
+        assert_eq!(zoom.inside(0, "uze"), Vec::<usize>::new());
+        assert!(
+            (1..3).all(|view| zoom.parent(view).is_none()),
+            "a component view needs a container, an external system no inside"
         );
     }
 
     #[test]
+    fn a_link_to_another_view_is_its_inside() {
+        let catalog = Catalog::of(
+            vec![
+                Artifact::read(
+                    "docs/a.mmd",
+                    "C4Context\nSystem(pay, \"Payments\", $link=\"docs/b.mmd\")\n",
+                ),
+                Artifact::read("docs/b.mmd", "C4Container\n"),
+            ],
+            Path::new("/project"),
+        );
+        assert_eq!(catalog.zoom().inside(0, "pay"), [1]);
+    }
+
+    #[test]
+    fn a_context_with_several_systems_is_a_landscape() {
+        let catalog = Catalog::of(
+            vec![Artifact::read(
+                "a.mmd",
+                "C4Context\nSystem(a, \"A\")\nSystem(b, \"B\")\n",
+            )],
+            Path::new("/project"),
+        );
+        assert_eq!(catalog.zoom().place(0), Some(Place::Landscape));
+    }
+
+    #[test]
     fn the_catalog_is_ordered_by_area_then_by_name() {
-        let catalog = Catalog::of(vec![
-            Artifact::read("b.mmd", "flowchart TD\n a --> b"),
-            Artifact::read("z.mmd", "C4Context\n"),
-            Artifact::read("a.mmd", "C4Context\n"),
-        ]);
+        let catalog = Catalog::of(
+            vec![
+                Artifact::read("b.mmd", "flowchart TD\n a --> b"),
+                Artifact::read("z.mmd", "C4Context\n"),
+                Artifact::read("a.mmd", "C4Context\n"),
+            ],
+            Path::new("/project"),
+        );
         let names: Vec<&str> = catalog
             .artifacts()
             .iter()

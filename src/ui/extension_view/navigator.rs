@@ -62,7 +62,17 @@ pub(super) fn render_menu(
     // Which of the two the second half is, is the view's answer: a
     // descent is walked, and where there is none there is a list to pick
     // from. One control, never both — an area is one thing or the other.
-    let opens_items = trail.is_empty() && items.len() > 1;
+    // A step of a descent can stand for several things at once — views
+    // that share a parent — and then it opens onto them as the selector
+    // would.
+    let alternatives = trail
+        .iter()
+        .find(|step| step.current)
+        .map_or(&[][..], |step| step.choices.as_slice());
+    let opens_items = match trail.is_empty() {
+        true => items.len() > 1,
+        false => alternatives.len() > 1,
+    };
     let item_selector = match trail.is_empty() {
         true => render_selector(frame, rest, on_show, None, opens_items),
         false => render_trail(frame, rest, trail, hits),
@@ -92,15 +102,26 @@ pub(super) fn render_menu(
             );
         }
         Some(Choosing::Item(highlighted)) => {
-            let rows: Vec<ChoiceRow<'_>> = items
-                .iter()
-                .map(|item| ChoiceRow {
-                    hit: ViewHit::SelectItem(item.id),
-                    name: item.name,
-                    trailing: String::new(),
-                    highlighted: item.id == highlighted,
-                })
-                .collect();
+            let rows: Vec<ChoiceRow<'_>> = match trail.is_empty() {
+                true => items
+                    .iter()
+                    .map(|item| ChoiceRow {
+                        hit: ViewHit::SelectItem(item.id),
+                        name: item.name,
+                        trailing: String::new(),
+                        highlighted: item.id == highlighted,
+                    })
+                    .collect(),
+                false => alternatives
+                    .iter()
+                    .map(|choice| ChoiceRow {
+                        hit: ViewHit::SelectItem(choice.id),
+                        name: choice.name.as_str(),
+                        trailing: String::new(),
+                        highlighted: choice.id == highlighted,
+                    })
+                    .collect(),
+            };
             render_choice_list(
                 frame,
                 item_selector,
@@ -299,7 +320,7 @@ pub(super) fn render_trail(
                 Rect::new(x, area.y, area.right().saturating_sub(x), 1),
                 &name.name,
                 None,
-                false,
+                name.choices.len() > 1,
             );
             x = here.right();
         } else {

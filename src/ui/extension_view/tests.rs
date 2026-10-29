@@ -1549,9 +1549,9 @@ fn a_board_is_drawn_as_it_was_cut_and_a_click_lands_in_the_box_under_it() {
     assert!(
         rows[MENU_ROW].contains("C4")
             && !rows[MENU_ROW].contains("C4 2")
-            && rows[MENU_ROW].contains("System context")
-            && rows[MENU_ROW].contains("Containers"),
-        "one row: the area on show, then its levels, the one on show among them: {}",
+            && rows[MENU_ROW].contains("Context")
+            && rows[MENU_ROW].contains("Container diagram for uze"),
+        "one row: the area on show, then the way down to the view on show: {}",
         rows[MENU_ROW]
     );
     assert!(
@@ -1569,12 +1569,10 @@ fn a_board_is_drawn_as_it_was_cut_and_a_click_lands_in_the_box_under_it() {
 
     let title_row = rows
         .iter()
-        .position(|row| row.contains("Workspace TUI"))
+        .position(|row| row.contains("uze CLI"))
         .expect("the box is drawn") as u16;
     let drawn = &rows[usize::from(title_row)];
-    let title_column = drawn[..drawn.find("Workspace TUI").unwrap()]
-        .chars()
-        .count() as u16;
+    let title_column = drawn[..drawn.find("uze CLI").unwrap()].chars().count() as u16;
     let (rect, hit) = hits
         .iter()
         .find(|(rect, hit)| {
@@ -1598,7 +1596,7 @@ fn a_board_is_drawn_as_it_was_cut_and_a_click_lands_in_the_box_under_it() {
     let Content::Lines { heading, .. } = architect::view(&state, space).content else {
         panic!("a diagram is lines");
     };
-    assert!(heading.starts_with("Workspace TUI"), "{heading}");
+    assert!(heading.starts_with("uze CLI"), "{heading}");
 }
 
 /// The whole point of the contract: an extension names a row, the host

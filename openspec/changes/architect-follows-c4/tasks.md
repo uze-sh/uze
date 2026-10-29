@@ -7,10 +7,10 @@
 
 ## 2. The zoom tree
 
-- [ ] 2.1 Scope and parent per C4 view, by boundary and kind; explicit `$link` to a catalogued `.mmd`; supplementary views beside their scope
-- [ ] 2.2 The C4 area ordered depth first; siblings levels first
-- [ ] 2.3 A box leads inside only to its children; both marks on a box that leads both ways
-- [ ] 2.4 The trail is the path of ancestors; the step on show opens its siblings (`TrailStep::choices`, host renderer); going up selects the zoomed box
+- [x] 2.1 Scope and parent per C4 view, by boundary and kind; explicit `$link` to a catalogued `.mmd`; supplementary views beside their scope
+- [x] 2.2 The C4 area ordered depth first; siblings levels first
+- [x] 2.3 A box leads inside only to its children; both marks on a box that leads both ways
+- [x] 2.4 The trail is the path of ancestors; the step on show opens its siblings (`TrailStep::choices`, host renderer); going up selects the zoomed box
 
 ## 3. Drawing every relation and a key
 

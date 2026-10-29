@@ -298,7 +298,7 @@ fn has_enterprise(graph: &Graph) -> bool {
 
 fn scope_of(graph: &Graph, place: Place) -> Option<Scope> {
     let outermost = |kinds: &[Abstraction]| {
-        graph.clusters.iter().enumerate().find_map(|(index, cluster)| {
+        graph.clusters.iter().find_map(|cluster| {
             let kind = bounds(cluster.boundary.as_ref()?)?;
             let nested = std::iter::successors(cluster.parent, |&up| graph.clusters[up].parent)
                 .any(|up| {
@@ -308,7 +308,7 @@ fn scope_of(graph: &Graph, place: Place) -> Option<Scope> {
                         .and_then(bounds)
                         .is_some_and(|up| kinds.contains(&up))
                 });
-            (kinds.contains(&kind) && !nested && index == index).then(|| Scope {
+            (kinds.contains(&kind) && !nested).then(|| Scope {
                 alias: cluster.id.clone(),
                 kind,
             })

@@ -28,6 +28,7 @@ mod model;
 mod paint;
 mod route;
 mod sequence;
+mod zoom;
 
 use std::{
     collections::HashMap,
@@ -40,7 +41,7 @@ use crate::{
     view::{
         Choosing, Command, Content, ContentLine, Layout, LineTone, MarkerSide, Medium, Mode,
         Navigator, NavigatorRow, PanDirection, Role, RowIcon, ScrollDirection, Size, Span,
-        TrailStep, View, ViewHit,
+        TrailChoice, TrailStep, View, ViewHit,
     },
 };
 
@@ -70,22 +71,6 @@ const PAN_ROWS: i32 = 3;
 /// through and regular enough that moving the board is visible even
 /// where there is nothing drawn.
 const GRID: (i32, i32) = (6, 3);
-
-/// How an area offers what is in it. Which of the two an area gets is
-/// read off the area itself rather than declared: some things are levels
-/// of one model and are *walked*, and some sit beside one another and are
-/// *picked from*. A ladder drawn as a list hides that there is a descent
-/// at all; a set drawn as a ladder invents an order nobody meant.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Offering {
-    /// Levels of one descent, all of them shown at once with the one on
-    /// show marked — so the ones not yet reached are as visible as the
-    /// way back. The C4 views are the written kind; the code map's
-    /// directories are the measured kind, made a step at a time.
-    Ladder,
-    /// Artifacts that stand beside one another: a list to choose from.
-    Set,
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Showing {
@@ -137,14 +122,6 @@ pub struct ArchitectView {
     /// it: an area — by the index of its first artifact, which is how an
     /// area is named everywhere here — or an artifact of the area on show.
     choosing: Option<Choosing>,
-    /// The levels entered to reach what is on show: each the artifact
-    /// that was left and the box it was left through, so coming back can
-    /// put the viewer where they were standing.
-    trail: Vec<(usize, String)>,
-    /// The boundaries each artifact draws the inside of, by alias. What
-    /// joins one level to the next is only this: the boundary `core` is
-    /// the inside of the box `core`, wherever that box is drawn.
-    insides: Vec<Vec<String>>,
     /// What a box's link is relative to — where the artifacts were
     /// declared, which is not necessarily the checkout the title names.
     project: PathBuf,
@@ -167,9 +144,10 @@ pub struct ArchitectView {
 /// back to a diagram that was deleted is the one case where starting at
 /// the top is right.
 ///
-/// What it holds is navigation and nothing else: which diagram, the
-/// levels entered to reach it, the box that was selected and where the
-/// board was moved to. Not the notation — Unicode, ASCII and Source are
+/// What it holds is navigation and nothing else: which diagram, the box
+/// that was selected and where the board was moved to. The way down to
+/// the diagram is not kept: it is the diagram's own ancestors, read again
+/// from the artifacts. Not the notation — Unicode, ASCII and Source are
 /// how the drawing is being *read*, which is a question the viewer
 /// answers again each time they arrive.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -177,8 +155,6 @@ pub struct ArchitectPlace {
     artifact: String,
     corner: Option<(i32, i32)>,
     picked: Option<String>,
-    /// The levels entered, as the artifact left and the box left through.
-    trail: Vec<(String, String)>,
 }
 
 /// How the project spells the directories it declared, for a sentence.
@@ -198,8 +174,9 @@ fn read_roots(host: &dyn Host, roots: &[ArtifactRoot]) -> Result<Vec<Artifact>, 
     for root in roots {
         let mut found =
             catalog::read(host, &root.path).map_err(|reason| (root.declared.clone(), reason))?;
-        if roots.len() > 1 {
-            for artifact in &mut found {
+        for artifact in &mut found {
+            artifact.path = root.path.join(&artifact.origin);
+            if roots.len() > 1 {
                 artifact.origin = format!("{}/{}", root.declared, artifact.origin);
             }
         }
@@ -372,7 +349,7 @@ pub fn check(host: &dyn Host, source: ArtifactSource) -> Checkup {
                     .map(|root| root.declared.clone())
                     .collect::<Vec<_>>()
                     .join(", "),
-                artifacts: Catalog::of(artifacts)
+                artifacts: Catalog::of(artifacts, &project)
                     .artifacts()
                     .iter()
                     .map(|artifact| checked(host, &project, artifact))
@@ -394,12 +371,14 @@ fn checked(host: &dyn Host, project: &Path, artifact: &Artifact) -> Checked {
                 .nodes
                 .iter()
                 .filter_map(|node| node.link.as_deref())
-                .filter_map(|link| match within_project(link) {
+                .filter_map(|link| match zoom::project_path(link) {
                     None => Some(format!("`{link}` leaves the project")),
-                    Some(path) => host
-                        .read_file(&project.join(path))
-                        .is_err()
-                        .then(|| format!("`{link}` is not a file in the project")),
+                    Some(path) => {
+                        let target = project.join(path);
+                        let missing =
+                            host.read_file(&target).is_err() && !is_directory(host, &target);
+                        missing.then(|| format!("`{link}` is not a file in the project"))
+                    }
                 })
                 .collect();
             match Scene::of(graph).routes.unrouted {
@@ -419,21 +398,17 @@ fn checked(host: &dyn Host, project: &Path, artifact: &Artifact) -> Checked {
     }
 }
 
-/// `link` as a path inside the project, or `None` for one that leaves it.
-///
-/// The diagram is repository content, and the code surface a link opens
-/// offers to edit and delete what it lands on — so an absolute path or a
-/// `..` is not followed anywhere, and the box is drawn as leading nowhere.
-fn within_project(link: &str) -> Option<&Path> {
-    let path = Path::new(link);
-    path.components()
-        .all(|component| {
-            matches!(
-                component,
-                std::path::Component::Normal(_) | std::path::Component::CurDir
-            )
-        })
-        .then_some(path)
+/// Whether `path` is a directory, as its parent lists it — a component
+/// may stand for a module's directory, which the code surface opens.
+fn is_directory(host: &dyn Host, path: &Path) -> bool {
+    let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
+        return false;
+    };
+    host.list_dir(parent).is_ok_and(|entries| {
+        entries
+            .iter()
+            .any(|entry| entry.directory && std::ffi::OsStr::new(&entry.name) == name)
+    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -471,8 +446,6 @@ impl ArchitectView {
             canvas: None,
             nothing: Some(("Reading the project's artifacts".to_owned(), None)),
             choosing: None,
-            trail: Vec::new(),
-            insides: Vec::new(),
             project: PathBuf::new(),
             trouble: None,
             resuming: None,
@@ -508,11 +481,6 @@ impl ArchitectView {
             artifact: named(self.selected).unwrap_or_default(),
             corner: self.corner,
             picked,
-            trail: self
-                .trail
-                .iter()
-                .filter_map(|(artifact, through)| Some((named(*artifact)?, through.clone())))
-                .collect(),
         }
     }
 
@@ -522,24 +490,7 @@ impl ArchitectView {
         self.laid_out.clear();
         match answer.artifacts {
             Artifacts::Found { artifacts, project } => {
-                self.catalog = Catalog::of(artifacts);
-                self.insides = self
-                    .catalog
-                    .artifacts()
-                    .iter()
-                    // Only a C4 view is the inside of something: levels are
-                    // that model's idea, and a flowchart's subgraph sharing
-                    // a name with a container is a coincidence, not a zoom.
-                    .map(|artifact| match mermaid::parse(artifact.diagram()) {
-                        Ok(Diagram::Graph(graph)) if artifact.kind == catalog::Kind::C4 => graph
-                            .clusters
-                            .into_iter()
-                            .map(|cluster| cluster.id)
-                            .filter(|id| !id.is_empty())
-                            .collect(),
-                        _ => Vec::new(),
-                    })
-                    .collect();
+                self.catalog = Catalog::of(artifacts, &project);
                 self.project = project;
                 self.nothing = None;
                 self.trouble = None;
@@ -568,8 +519,21 @@ impl ArchitectView {
             .last()
     }
 
+    /// What the artifact selector offers: the views that share the C4 view
+    /// on show's parent, or else the artifacts of the area on show.
+    fn choices(&self) -> Vec<usize> {
+        match self.zoom().place(self.selected) {
+            Some(_) => self.zoom().siblings(self.selected),
+            None => self.area_artifacts(),
+        }
+    }
+
+    fn zoom(&self) -> &zoom::Zoom {
+        self.catalog.zoom()
+    }
+
     /// The artifacts of the area on show, by index.
-    fn siblings(&self) -> Vec<usize> {
+    fn area_artifacts(&self) -> Vec<usize> {
         let areas = self.areas();
         let Some(first) = self.area() else {
             return Vec::new();
@@ -586,7 +550,7 @@ impl ArchitectView {
     fn highlight(&mut self, step: isize) {
         let (list, at) = match self.choosing {
             Some(Choosing::Group(at)) => (self.areas(), at),
-            Some(Choosing::Item(at)) => (self.siblings(), at),
+            Some(Choosing::Item(at)) => (self.choices(), at),
             None => return,
         };
         let Some(position) = list.iter().position(|&entry| entry == at) else {
@@ -610,7 +574,7 @@ impl ArchitectView {
     }
 
     fn choose_artifact(&mut self) {
-        if self.siblings().len() > 1 {
+        if self.choices().len() > 1 {
             self.choosing = Some(Choosing::Item(self.selected));
         }
     }
@@ -625,10 +589,10 @@ impl ArchitectView {
         if self.let_go() {
             return ArchitectOutcome::Stay;
         }
-        match self.depth() {
-            0 => ArchitectOutcome::Close,
-            depth => {
-                self.back_to(depth - 1, space);
+        match self.zoom().parent(self.selected) {
+            None => ArchitectOutcome::Close,
+            Some(_) => {
+                self.up(space);
                 ArchitectOutcome::Stay
             }
         }
@@ -643,61 +607,43 @@ impl ArchitectView {
         false
     }
 
-    /// How many levels were entered to reach what is on show.
-    fn depth(&self) -> usize {
-        self.trail.len()
-    }
-
-    /// Whether the area on show is a descent or a set.
-    ///
-    /// A descent is an area whose artifacts are each a level of one
-    /// model, no two on the same one — which is what C4's views are and
-    /// what nothing else declares. The code map is one by construction:
-    /// its levels are the directories, and they are made by entering.
-    fn offering(&self) -> Offering {
-        let artifacts = self.catalog.artifacts();
-        let mut levels: Vec<u8> = self
-            .siblings()
-            .iter()
-            .filter_map(|&artifact| artifacts.get(artifact))
-            .map(|artifact| artifact.level())
-            .collect();
-        let count = levels.len();
-        levels.sort_unstable();
-        levels.dedup();
-        match count > 1 && levels.len() == count && levels.first() != Some(&0) {
-            true => Offering::Ladder,
-            false => Offering::Set,
-        }
-    }
-
-    /// The descent the viewer is in, for the menu to draw.
+    /// The way down to the C4 view on show, for the menu to draw: its
+    /// ancestors by the level each is, and the view itself by its name,
+    /// opening onto the views that share its parent. Empty off C4, where
+    /// the area is a set to pick from.
     fn steps(&self) -> Vec<TrailStep> {
-        if self.offering() == Offering::Set {
+        let zoom = self.zoom();
+        let Some(place) = zoom.place(self.selected) else {
             return Vec::new();
-        }
-        self.siblings()
+        };
+        let mut steps: Vec<TrailStep> = zoom
+            .path(self.selected)
             .into_iter()
-            .filter_map(|artifact| Some((artifact, self.catalog.get(artifact)?)))
-            .map(|(artifact, at)| TrailStep::new(&at.name, artifact == self.selected))
-            .collect()
+            .filter(|&view| view != self.selected)
+            .filter_map(|view| Some(TrailStep::new(zoom.place(view)?.name(), false)))
+            .collect();
+        let name = self
+            .catalog
+            .get(self.selected)
+            .map_or(place.name(), |artifact| artifact.name.as_str());
+        let siblings = zoom.siblings(self.selected);
+        let choices = match siblings.len() > 1 {
+            true => siblings
+                .into_iter()
+                .filter_map(|view| Some(TrailChoice::new(view, &self.catalog.get(view)?.name)))
+                .collect(),
+            false => Vec::new(),
+        };
+        steps.push(TrailStep::new(name, true).choosing(choices));
+        steps
     }
 
-    /// A step of the descent, pressed. A level already walked is gone
-    /// back to, standing where the viewer stood; one the descent reaches
-    /// but nobody entered is simply shown.
+    /// A step of the way down, pressed: an ancestor is gone back up to,
+    /// standing on the box that leads down towards where the viewer was.
     fn go_to(&mut self, step: usize, space: Size) {
-        let Some(&target) = self.siblings().get(step) else {
-            return;
-        };
-        match self
-            .trail
-            .iter()
-            .position(|(artifact, _)| *artifact == target)
-        {
-            Some(depth) => self.back_to(depth, space),
-            None if target != self.selected => self.open(target),
-            None => {}
+        let path = self.zoom().path(self.selected);
+        if step + 1 < path.len() {
+            self.up_to(path[step], path[step + 1], space);
         }
     }
 
@@ -736,13 +682,7 @@ impl ArchitectView {
             self.open(0);
             return;
         };
-        let trail: Vec<(usize, String)> = place
-            .trail
-            .iter()
-            .filter_map(|(origin, through)| Some((named(origin)?, through.clone())))
-            .collect();
         self.open(artifact);
-        self.trail = trail;
         if let (Drawing::Graph(scene), Some(id)) = (&self.drawing, &place.picked) {
             self.picked = scene.graph.nodes.iter().position(|node| &node.id == id);
         }
@@ -750,14 +690,7 @@ impl ArchitectView {
         self.repaint();
     }
 
-    /// Shows an artifact chosen from the menu: a fresh start, so whatever
-    /// was entered to reach the last one is no longer the way here.
     fn open(&mut self, artifact: usize) {
-        self.trail.clear();
-        self.show_artifact(artifact);
-    }
-
-    fn show_artifact(&mut self, artifact: usize) {
         self.choosing = None;
         let count = self.catalog.artifacts().len().max(1);
         self.selected = artifact % count;
@@ -902,14 +835,20 @@ impl ArchitectView {
         // or by a second click on the box — which is what a double click
         // is. One that leads nowhere is let go of by that second click,
         // so the diagram can be read whole again without a key.
-        let follows = node.is_some_and(|node| {
-            let leads = self.leads(scene, node) != Leads::Nowhere;
-            let on_mark = paint::mark_cells(scene.placement.nodes[node]).contains(at.0, at.1);
-            leads && (on_mark || self.picked == Some(node))
-        });
-        if follows {
-            self.picked = node;
-            return self.enter();
+        if let Some(node) = node {
+            let leads = self.leads(scene, node);
+            let frame = scene.placement.nodes[node];
+            let on_code_mark = paint::code_mark_cells(frame, leads)
+                .is_some_and(|cells| cells.contains(at.0, at.1));
+            let on_mark = paint::mark_cells(frame).contains(at.0, at.1);
+            if leads != Leads::Nowhere && on_code_mark {
+                self.picked = Some(node);
+                return self.to_code();
+            }
+            if leads != Leads::Nowhere && (on_mark || self.picked == Some(node)) {
+                self.picked = Some(node);
+                return self.enter();
+            }
         }
         self.picked = if node == self.picked { None } else { node };
         self.repaint();
@@ -918,59 +857,78 @@ impl ArchitectView {
 
     fn leads(&self, scene: &Scene, node: usize) -> Leads {
         let node = &scene.graph.nodes[node];
-        if self.inside_of(&node.id).is_some() {
-            Leads::Inside
-        } else if node.link.as_deref().and_then(within_project).is_some() {
-            Leads::ToCode
-        } else {
-            Leads::Nowhere
+        let inside = self.inside_of(node).is_some();
+        let code = self.code_link(node).is_some();
+        match (inside, code) {
+            (true, true) => Leads::Both,
+            (true, false) => Leads::Inside,
+            (false, true) => Leads::ToCode,
+            (false, false) => Leads::Nowhere,
         }
     }
 
-    /// The artifact that draws the inside of the box `alias` names.
-    fn inside_of(&self, alias: &str) -> Option<usize> {
-        self.insides
-            .iter()
-            .enumerate()
-            .find(|(artifact, insides)| {
-                *artifact != self.selected && insides.iter().any(|inside| inside == alias)
-            })
-            .map(|(artifact, _)| artifact)
+    /// The view a box leads into: the first that zooms into it.
+    fn inside_of(&self, node: &model::Node) -> Option<usize> {
+        self.zoom().inside(self.selected, &node.id).first().copied()
     }
 
-    /// Follows the picked box: into the level below it, or out to the
-    /// code it names.
+    /// The path a box's link names in the project, unless it names
+    /// another view — that link is the way inside, not to the code.
+    fn code_link(&self, node: &model::Node) -> Option<PathBuf> {
+        let path = zoom::project_path(node.link.as_deref()?)?;
+        let names_a_view = self
+            .catalog
+            .artifacts()
+            .iter()
+            .any(|artifact| self.project.join(&artifact.path) == self.project.join(&path));
+        (!names_a_view).then(|| self.project.join(path))
+    }
+
+    /// Follows the picked box: into the view below it, or out to the code
+    /// it names.
     fn enter(&mut self) -> ArchitectOutcome {
         let (Drawing::Graph(scene), Some(picked)) = (&self.drawing, self.picked) else {
             return ArchitectOutcome::Stay;
         };
         let node = &scene.graph.nodes[picked];
-        if let Some(below) = self.inside_of(&node.id) {
-            self.trail.push((self.selected, node.id.clone()));
-            self.show_artifact(below);
+        if let Some(below) = self.inside_of(node) {
+            self.open(below);
             return ArchitectOutcome::Stay;
         }
-        match node.link.as_deref().and_then(within_project) {
-            Some(link) => ArchitectOutcome::OpenPath {
+        self.to_code()
+    }
+
+    /// The code the picked box names, whatever else it leads to.
+    fn to_code(&self) -> ArchitectOutcome {
+        let (Drawing::Graph(scene), Some(picked)) = (&self.drawing, self.picked) else {
+            return ArchitectOutcome::Stay;
+        };
+        match self.code_link(&scene.graph.nodes[picked]) {
+            Some(target) => ArchitectOutcome::OpenPath {
                 project: self.project.clone(),
-                target: self.project.join(link),
+                target,
             },
             None => ArchitectOutcome::Stay,
         }
     }
 
-    /// Back to the level `depth` steps in, with the box that was entered
+    /// Up one level, to the view the one on show zooms out to.
+    fn up(&mut self, space: Size) {
+        if let Some(parent) = self.zoom().parent(self.selected) {
+            self.up_to(parent, self.selected, space);
+        }
+    }
+
+    /// Opens `ancestor`, with the box that leads down towards `towards`
     /// picked and in the middle of the screen — where the viewer stood.
-    fn back_to(&mut self, depth: usize, space: Size) {
-        let Some((artifact, through)) = self.trail.get(depth).cloned() else {
-            return;
-        };
-        self.trail.truncate(depth);
-        self.show_artifact(artifact);
+    fn up_to(&mut self, ancestor: usize, towards: usize, space: Size) {
+        let through = self.zoom().through(towards).map(str::to_owned);
+        self.open(ancestor);
         let Drawing::Graph(scene) = &self.drawing else {
             return;
         };
-        if let Some(node) = scene.graph.nodes.iter().position(|node| node.id == through) {
+        let at = through.and_then(|id| scene.graph.nodes.iter().position(|node| node.id == id));
+        if let Some(node) = at {
             self.picked = Some(node);
             self.bring_into_view(node, space, true);
             self.repaint();
@@ -1058,12 +1016,14 @@ impl ArchitectView {
     fn caption(&self) -> String {
         let origin = self.catalog.get(self.selected).map(|a| a.origin.as_str());
         if let (Drawing::Graph(scene), Some(picked)) = (&self.drawing, self.picked) {
+            let link = scene.graph.nodes[picked]
+                .link
+                .as_deref()
+                .unwrap_or_default();
             let said = match self.leads(scene, picked) {
                 Leads::Inside => Some("enter goes inside".to_owned()),
-                Leads::ToCode => scene.graph.nodes[picked]
-                    .link
-                    .as_ref()
-                    .map(|link| format!("enter opens {link}")),
+                Leads::ToCode => Some(format!("enter opens {link}")),
+                Leads::Both => Some(format!("enter goes inside · its code mark opens {link}")),
                 Leads::Nowhere => None,
             };
             if let Some(said) = said {
@@ -1215,7 +1175,7 @@ fn footer(state: &ArchitectView) -> Vec<Command> {
         return Vec::new();
     }
     let mut commands = vec![Command::Close];
-    if state.depth() > 0 {
+    if state.zoom().parent(state.selected).is_some() {
         commands.push(Command::Back);
     }
     commands.extend([Command::ChooseItem, Command::NextView, Command::NextMode]);
@@ -1320,7 +1280,7 @@ pub fn handle_command(
         Command::ChooseItem => state.choose_artifact(),
         Command::SelectToward(direction) => state.pick_toward(direction, space),
         Command::Activate => return state.enter(),
-        Command::Back => state.back_to(state.depth().saturating_sub(1), space),
+        Command::Back => state.up(space),
         // Nothing to move on a map that fits: the arrows walk its tiles.
         Command::NextView => state.open(state.selected + 1),
         Command::PreviousView => state.open(state.selected + count - 1),

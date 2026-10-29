@@ -62,6 +62,8 @@ pub enum Leads {
     Inside,
     /// To the code it stands for.
     ToCode,
+    /// Both: inside when followed, to the code by its own mark.
+    Both,
 }
 
 /// The cells of a box's border that carry its mark, which are also what
@@ -73,6 +75,17 @@ pub fn mark_cells(frame: Frame) -> Frame {
         w: 4,
         h: 1,
     }
+}
+
+/// The cells of the second mark a box that leads both ways carries, left
+/// of the first, where the box is wide enough for two.
+pub fn code_mark_cells(frame: Frame, leads: Leads) -> Option<Frame> {
+    (leads == Leads::Both && frame.w >= 11).then(|| Frame {
+        x: frame.x + frame.w - 9,
+        y: frame.y + frame.h - 1,
+        w: 4,
+        h: 1,
+    })
 }
 
 pub fn paint(scene: &Scene, glyphs: Glyphs, selected: Option<usize>, leads: &[Leads]) -> Canvas {
@@ -171,9 +184,14 @@ pub fn paint(scene: &Scene, glyphs: Glyphs, selected: Option<usize>, leads: &[Le
             selected == Some(index),
         );
         let leads = leads.get(index).copied().unwrap_or_default();
+        let frame = scene.placement.nodes[index];
         if leads != Leads::Nowhere {
-            let cells = mark_cells(scene.placement.nodes[index]);
+            let cells = mark_cells(frame);
             let glyph = canvas::leads_glyph(leads == Leads::ToCode, glyphs);
+            canvas.text(cells.x, cells.y, &format!(" {glyph} "), Role::Accent, true);
+        }
+        if let Some(cells) = code_mark_cells(frame, leads) {
+            let glyph = canvas::leads_glyph(true, glyphs);
             canvas.text(cells.x, cells.y, &format!(" {glyph} "), Role::Accent, true);
         }
     }

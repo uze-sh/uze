@@ -212,6 +212,12 @@ pub struct TrailStep {
     pub name: String,
     /// The one the viewer is standing on. Exactly one step is.
     pub current: bool,
+    /// What the step on show can be swapped for, itself included: the
+    /// other ways down to the same place. Empty where there are none, and
+    /// then the step is a label rather than a selector. Chosen through
+    /// [`ViewHit::ChooseItem`] and [`ViewHit::SelectItem`], as the item
+    /// selector is.
+    pub choices: Vec<TrailChoice>,
 }
 
 impl TrailStep {
@@ -219,6 +225,29 @@ impl TrailStep {
         Self {
             name: name.into(),
             current,
+            choices: Vec::new(),
+        }
+    }
+
+    pub fn choosing(mut self, choices: Vec<TrailChoice>) -> Self {
+        self.choices = choices;
+        self
+    }
+}
+
+/// One of a [`TrailStep::choices`]: the item it opens, by the id a
+/// [`ViewHit::SelectItem`] carries, and its name.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct TrailChoice {
+    pub id: usize,
+    pub name: String,
+}
+
+impl TrailChoice {
+    pub fn new(id: usize, name: impl Into<String>) -> Self {
+        Self {
+            id,
+            name: name.into(),
         }
     }
 }
