@@ -20,9 +20,9 @@
 - [x] 2.1 Commit a `--help` snapshot per harness, plus `codex resume --help`, beside each integration
 - [x] 2.2 Claude Code catalog, reusing `session.rs` constants; owned: `--session-id`, `--resume`/`-r`, `--continue`/`-c`, `--fork-session`, `--print`/`-p`, `--settings`; `Degrades`: `--strict-mcp-config`, `--bare`, `--setting-sources`, `--disable-slash-commands`; `Weakens`: `--dangerously-skip-permissions`; managed env: `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD`, `CLAUDE_CONFIG_DIR`
 - [x] 2.3 Codex catalog, with `-c`/`--config` as `Keyed` (always `agents`, `hooks.SessionStart`, `hooks.state`; conditionally `notify`, `features.memories`), `--disable` as `Degrades`; managed env `CODEX_HOME`
-- [ ] 2.4 OpenCode catalog (owned `--session`, `--continue`, `--prompt`); managed env `XDG_CONFIG_HOME`, `XDG_DATA_HOME`
-- [ ] 2.5 Antigravity CLI catalog (owned `--conversation`, `-i`; `--add-dir` operator, repeatable)
-- [ ] 2.6 Unit test per harness: every catalog spelling appears in its snapshot; every Codex catalog flag appears in the `resume` snapshot
+- [x] 2.4 OpenCode catalog (owned `--session`, `--continue`, `--prompt`); managed env `XDG_CONFIG_HOME`, `XDG_DATA_HOME`
+- [x] 2.5 Antigravity CLI catalog (owned `--conversation`, `-i`; `--add-dir` operator, repeatable)
+- [x] 2.6 Unit test per harness: every catalog spelling appears in its snapshot; every Codex catalog flag appears in the `resume` snapshot
 - [ ] 2.7 Lab: diff each snapshot against the live binary's `--help` and fail naming the flags that drifted
 
 ## 3. Check and record (uze-workspace)

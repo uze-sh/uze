@@ -77,6 +77,7 @@ use uze_core::{
 };
 
 mod agent_context;
+mod flags;
 mod generate;
 mod hooks;
 mod mcp;
@@ -333,6 +334,10 @@ impl IntegrationPort for AntigravityIntegration {
 
     fn hook_capabilities(&self) -> uze_core::hook::HookCapabilities {
         HOOKS.capabilities()
+    }
+
+    fn flag_catalog(&self) -> &'static [uze_core::flag_catalog::FlagSpec] {
+        flags::CATALOG
     }
 
     fn session_continuity(&self) -> uze_core::integration::SessionContinuity {
