@@ -111,8 +111,9 @@ pub(super) fn deliver_locked(
 }
 
 /// Rebases a live task onto the target when the target has moved, under
-/// the same rules as delivery. Only for a clean, ready checkout: never
-/// under an agent mid-edit. Returns whether anything moved.
+/// the same rules as delivery. Only for a clean, ready checkout that is
+/// not on the remote yet: never under an agent mid-edit, and never under
+/// an open request. Returns whether anything moved.
 ///
 /// Never a fetch, whatever the completion behaviour: this runs whenever a
 /// pane goes quiet, and a fetch on that cadence would be paid for on every
@@ -144,6 +145,13 @@ pub fn refresh(
             // the agent nothing.
             Readiness::Running => {}
             other => return Err(DeliveryFailure::NotReady(other)),
+        }
+        // A published branch is what its request shows. Rewritten here, it
+        // no longer matches the remote: every commit reads as unpushed and
+        // the agent's next plain push is refused. Delivery still rebases
+        // it, and pushes it with a lease.
+        if publication(primary, isolation).is_some() {
+            return Ok(false);
         }
         let tip = target_tip(primary, isolation, TargetSource::Local)?;
         // The target already holds this work under commits of its own — a

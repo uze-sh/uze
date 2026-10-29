@@ -1250,6 +1250,32 @@ fn a_branch_its_own_agent_pushed_is_published_and_in_sync() {
     );
 }
 
+/// Following the target rewrites every commit of the branch, and a
+/// published branch rewritten behind its request read as all of its
+/// commits waiting to be pushed — and refused the agent's next plain push.
+#[test]
+fn a_published_branch_is_not_rewritten_to_follow_the_target() {
+    let (repository, _other) = published("landing-refresh-published");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let mut isolation = launch(&repository, &mut store, "refresh published");
+    agent_commits(&repository, work(&isolation), "mine.rs", "");
+    let slot = slot_path(primary, work(&isolation)).unwrap();
+    repository.git_in(&slot, &["push", "--quiet", REMOTE, "HEAD"]);
+    let pushed = tip_of(primary, &work(&isolation).branch);
+    repository.commit_file("theirs.rs", "");
+
+    assert_eq!(
+        refresh(
+            primary,
+            &mut isolation.state,
+            isolation.isolation.as_mut().unwrap()
+        ),
+        Ok(false)
+    );
+    assert_eq!(tip_of(primary, &work(&isolation).branch), pushed);
+}
+
 /// The other half the agent can do alone. UZE learns the number from
 /// the remote on the pass that already runs, so a request opened
 /// outside a delivery is still the request this branch has.

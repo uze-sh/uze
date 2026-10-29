@@ -500,6 +500,11 @@ The system SHALL deliver a ready task only on an explicit operator action, in a 
 - **AND** a conflict pauses there, reads as conflicted, and the target is unchanged
 - **AND** this holds under every completion behavior, from the target this machine already has and without a fetch of its own
 
+#### Scenario: A published branch does not follow the target
+- **WHEN** the target has moved and a live task's branch is already on the remote
+- **THEN** its branch is not rebased, so it stays level with what its request shows and reads as having nothing to push
+- **AND** a delivery still rebases it onto the target and pushes it under the lease
+
 #### Scenario: Work the target already holds is delivered, not replayed
 - **WHEN** a live task's work reached the target as a squash or a rebase merge, so the target moved but none of the branch's commits is reachable from it
 - **THEN** the task is read as delivered from the patch the target carries
