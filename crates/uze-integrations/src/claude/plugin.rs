@@ -1522,6 +1522,7 @@ mod recorded_state_tests {
     /// Where Claude's settings say nothing explicit, its CLI answers — and
     /// a plugin it lists as disabled is the same choice of the person's as
     /// one the settings list as off.
+    // The stand-in for Claude's CLI is a POSIX shell script, which only Unix runs as a program.
     #[cfg(unix)]
     #[test]
     fn a_plugin_claudes_cli_lists_as_disabled_is_matched_and_known_to_be_off() {

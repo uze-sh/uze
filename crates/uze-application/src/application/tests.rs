@@ -1550,6 +1550,7 @@ fn the_install_report_names_the_envelope_and_every_attachment_beside_it() {
 
 /// A harness where the person switched UZE's plugin off, and that counts
 /// each time UZE switches it off again.
+// Wraps the enveloping stand-in, whose envelope is a symbolic link only Unix makes without a privilege.
 #[cfg(unix)]
 struct SwitchedOffIntegration {
     envelope: EnvelopingIntegration,
@@ -1557,6 +1558,7 @@ struct SwitchedOffIntegration {
     switched_off_again: Arc<AtomicUsize>,
 }
 
+// Wraps the enveloping stand-in above, Unix only.
 #[cfg(unix)]
 impl IntegrationPort for SwitchedOffIntegration {
     fn id(&self) -> &'static str {
@@ -1601,6 +1603,7 @@ impl IntegrationPort for SwitchedOffIntegration {
 
 /// Switching UZE's plugin off in a harness is the person's choice: an
 /// update goes ahead, brings the new bytes, and leaves the plugin off.
+// Uses the linking stand-in integration above, Unix only.
 #[cfg(unix)]
 #[test]
 fn an_update_keeps_a_plugin_the_person_switched_off_switched_off() {
