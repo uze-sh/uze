@@ -171,7 +171,7 @@ impl Plugins<'_> {
         //
         // A package that reaches no harness is delivered to none: what an
         // earlier build delivered of it is taken back off instead.
-        let reaches_a_harness = super::attach::reaches_a_harness(&resources);
+        let reaches_a_harness = super::attach::reaches_a_harness(&installed, &resources);
         if !reaches_a_harness {
             for integration in &self.0.integrations {
                 self.0

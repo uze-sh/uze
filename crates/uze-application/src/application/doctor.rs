@@ -131,7 +131,7 @@ impl Health<'_> {
             return Vec::new();
         };
         let resources: Vec<_> = resources.iter().collect();
-        if !super::lifecycle::attach::reaches_a_harness(&resources) {
+        if !super::lifecycle::attach::reaches_a_harness(&package, &resources) {
             return Vec::new();
         }
         self.0

@@ -79,7 +79,7 @@ impl Plugins<'_> {
             .transpose()?;
         let resources = uze_core::engine::package_resources(&package)?;
         let resources: Vec<_> = resources.iter().collect();
-        let reaches_a_harness = super::lifecycle::attach::reaches_a_harness(&resources);
+        let reaches_a_harness = super::lifecycle::attach::reaches_a_harness(&package, &resources);
         let deliveries = self
             .0
             .integrations
@@ -177,8 +177,7 @@ pub enum PackageKind {
 impl PackageKind {
     /// The kind of `package`, whose harness capabilities are `resources`.
     pub(crate) fn of(package: &StoredPackage, resources: &[&uze_core::Resource]) -> Self {
-        let extensions_only = !super::lifecycle::attach::reaches_a_harness(resources)
-            && !uze_core::capability::extension::discover(&package.root).is_empty();
+        let extensions_only = !super::lifecycle::attach::reaches_a_harness(package, resources);
         if extensions_only {
             Self::Extension
         } else {

@@ -337,3 +337,37 @@ fn a_plugin_with_skills_beside_its_extensions_is_still_delivered() {
     assert_eq!(world.attached.load(Ordering::SeqCst), 1);
     assert_eq!(world.receipts().len(), 1);
 }
+
+/// What decides is the extensions, not the lack of resources UZE reads: a
+/// plugin of the harness's own envelope that carries only what no resource
+/// names (`commands/`, here) and no extension is a plugin for the harness,
+/// delivered as it always was.
+#[test]
+fn a_plugin_of_no_resource_and_no_extension_is_still_delivered() {
+    let world = world("no-resource-no-extension");
+    let source = world.harness_root.parent().unwrap().join("commands-only");
+    fs::create_dir_all(source.join(".claude-plugin")).unwrap();
+    fs::create_dir_all(source.join("commands")).unwrap();
+    fs::write(
+        source.join(".claude-plugin/plugin.json"),
+        r#"{"name":"commands-only","description":"one command"}"#,
+    )
+    .unwrap();
+    fs::write(source.join("commands/hello.md"), "Say hello.\n").unwrap();
+    fs::write(
+        source.join("plugin.json"),
+        r#"{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"commands-only","description":"one command"}"#,
+    )
+    .unwrap();
+
+    let report = world.install(&source);
+
+    assert_eq!(report.plugin.kind, PackageKind::Plugin);
+    assert_eq!(
+        world.attached.load(Ordering::SeqCst),
+        1,
+        "the harness takes it: {:?}",
+        report.deliveries
+    );
+    assert_eq!(world.harness_files().len(), 1);
+}

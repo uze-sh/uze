@@ -94,12 +94,15 @@ pub(crate) fn refuses_one_name(error: &uze_core::UzeError) -> bool {
     )
 }
 
-/// Whether a package carries anything a harness reads. One that carries
-/// only workspace extensions is UZE's own: stored, locked and discovered by
-/// the workspace, and never delivered to a harness — no plugin generated
-/// for it, no receipt, on any harness.
-pub(crate) fn reaches_a_harness(resources: &[&Resource]) -> bool {
-    !resources.is_empty()
+/// Whether a package is one for a harness. One that carries only workspace
+/// extensions is UZE's own: stored, locked and discovered by the workspace,
+/// and never delivered to a harness — no plugin generated for it, no
+/// receipt, on any harness. What decides is that it carries extensions and
+/// nothing UZE reads for a harness: a plugin of a harness's own envelope
+/// holding only what no resource names (`commands/`, an LSP) carries none
+/// either, and is the harness's to read.
+pub(crate) fn reaches_a_harness(package: &StoredPackage, resources: &[&Resource]) -> bool {
+    !resources.is_empty() || uze_core::capability::extension::discover(&package.root).is_empty()
 }
 
 impl UzeApplication {
@@ -171,7 +174,7 @@ impl UzeApplication {
             package = %package.id.as_str()
         )
         .entered();
-        if !reaches_a_harness(resources) {
+        if !reaches_a_harness(package, resources) {
             self.retire_package_receipts(package, integration)?;
             return Ok(PackageDelivery::default());
         }
