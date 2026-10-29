@@ -261,9 +261,9 @@ fn an_override_of_what_uze_composes_never_reaches_any_harness() {
 }
 
 /// Every spelling a harness would read as one of its owned flags: a short
-/// one inside a cluster of switches (`-zc` as `-z -c`), and a long one
-/// written with one dash (`-continue`, `-resume=id`) where the harness's
-/// grammar reads one dash as two.
+/// one inside a cluster of switches (`-zc` as `-z -c`) where the harness's
+/// grammar has clusters, and a long one written with one dash
+/// (`-continue`, `-resume=id`) where it reads one dash as two.
 fn owned_spellings_in_disguise(spec: &FlagSpec, catalog: FlagCatalog) -> Vec<String> {
     let value = if spec.value == FlagValue::None {
         ""
@@ -271,12 +271,13 @@ fn owned_spellings_in_disguise(spec: &FlagSpec, catalog: FlagCatalog) -> Vec<Str
         "=elsewhere"
     };
     let one_dash_is_long = catalog.grammar != FlagGrammar::Posix;
+    let clusters = catalog.grammar != FlagGrammar::GoFlag;
     spec.spellings
         .iter()
         .filter_map(|spelling| spelling.strip_prefix('-'))
         .filter_map(|name| match name.strip_prefix('-') {
             Some(long) => one_dash_is_long.then(|| format!("-{long}{value}")),
-            None => Some(format!("-z{name}")),
+            None => clusters.then(|| format!("-z{name}")),
         })
         .collect()
 }
@@ -434,4 +435,27 @@ fn a_long_flag_written_with_one_dash_is_short_letters_to_a_posix_harness() {
             prompt()
         ]
     );
+}
+
+/// Go's `flag` reads `-add-dir` as `--add-dir`, never as letters, so a
+/// letter one of agy's owned short flags spells inside it refuses nothing.
+#[test]
+fn a_go_flag_harness_reads_one_dash_as_its_long_flag_and_never_as_letters() {
+    use overrides::Verdict::{Accepted, Refused, Weakens};
+    let registry = registry("overrides-go-flag");
+    let agy = harness(&registry, "antigravity");
+
+    for line in ["-add-dir /x", "-settings {}", "-log-file f", "-mode=plan"] {
+        assert_eq!(verdicts(agy, line), [Accepted], "{line}");
+    }
+    assert_eq!(
+        verdicts(agy, "-dangerously-skip-permissions"),
+        [Weakens("permission prompts")]
+    );
+    for line in ["-conversation=abc", "-continue", "-print", "-c", "-i hi"] {
+        assert!(
+            matches!(verdicts(agy, line).as_slice(), [Refused(_)]),
+            "{line}"
+        );
+    }
 }

@@ -166,7 +166,7 @@ harness's parser reads a single-dash word in, since the same word is a
 different flag to each. `Posix` (clap, commander): one dash starts a
 cluster of short switches and a short flag that takes a value takes the
 rest of its word, so `-model` is `-m odel`. `GoFlag` (Go's `flag`): one
-dash names a long flag as two do. `EffectCli` (Effect's CLI): `-name=value`
+dash names a long flag as two do, and no word is a cluster. `EffectCli` (Effect's CLI): `-name=value`
 names a flag, and a single-dash word without `=` is a cluster.
 
 The integration reuses its `session.rs` constants, so `--resume` is

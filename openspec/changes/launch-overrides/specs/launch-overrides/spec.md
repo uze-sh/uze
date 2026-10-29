@@ -76,12 +76,16 @@ cluster of switches, and a long flag written with one dash.
 - **THEN** it is refused exactly as its long spelling is
 
 #### Scenario: An owned flag inside a cluster of switches
-- **WHEN** the operator adds a single-dash word the catalog does not spell, such as `-cd`, holding the short spelling of a flag the catalog marks as UZE's
+- **WHEN** the operator adds a single-dash word the catalog does not spell, such as `-cd`, holding the short spelling of a flag the catalog marks as UZE's, for a harness whose parser reads such a word as a cluster
 - **THEN** it is refused with that flag's reason
 
 #### Scenario: A long owned flag written with one dash
 - **WHEN** the operator adds `-continue` or `-conversation=abc` for a harness whose parser reads one dash as two, and the catalog spells that flag `--continue` or `--conversation`
 - **THEN** it is refused exactly as its long spelling is
+
+#### Scenario: A long flag written with one dash, to a parser without clusters
+- **WHEN** the operator adds `-add-dir /x` for a harness whose parser reads one dash as two and has no clusters
+- **THEN** it gets the verdict `--add-dir /x` gets, whatever short flags its letters spell
 
 #### Scenario: One dash before a long name, to a parser that reads short letters
 - **WHEN** the operator adds `-model opus` for a harness whose parser reads `-model` as `-m` with the value `odel`

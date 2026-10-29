@@ -350,10 +350,7 @@ fn read<'w>(word: &'w str, catalog: FlagCatalog) -> Reading<'w, 'static> {
         FlagGrammar::Posix => read_posix(word, catalog),
         FlagGrammar::GoFlag => {
             let (name, attached) = split_assignment(word);
-            match spelled_with_one_dash(catalog, name) {
-                Some(spec) => Reading::flag(name, attached, Some(spec)),
-                None => read_posix(word, catalog),
-            }
+            Reading::flag(name, attached, spelled_with_one_dash(catalog, name))
         }
         FlagGrammar::EffectCli => match word.split_once('=') {
             Some((name, value)) => {
@@ -668,6 +665,22 @@ mod tests {
             }]
         );
         assert_eq!(verdicts("-model=opus", GO_FLAG), [Verdict::Accepted]);
+    }
+
+    #[test]
+    fn a_go_flag_harness_reads_no_cluster_and_no_attached_short_value() {
+        assert_eq!(
+            verdicts("-skip-permissions", GO_FLAG),
+            [Verdict::Weakens("permission prompts")]
+        );
+        assert_eq!(
+            verdicts("-strict-mcp-config", GO_FLAG),
+            [Verdict::Degrades("the MCP servers uze delivers")]
+        );
+        assert_eq!(verdicts("-vc", GO_FLAG), [Verdict::Unknown]);
+        assert_eq!(verdicts("-rabc", GO_FLAG), [Verdict::Unknown]);
+        assert_eq!(verdicts("-c", GO_FLAG), [refused(CONTINUITY)]);
+        assert_eq!(verdicts("-r=abc", GO_FLAG), [refused(CONTINUITY)]);
     }
 
     /// The test catalog, read as Effect's CLI reads a command line.
