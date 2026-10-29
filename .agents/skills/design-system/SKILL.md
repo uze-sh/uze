@@ -153,8 +153,8 @@ on "cancel" must not save first.
   button's look, and they take no hover. A click on one is the key that
   reaches it, through a target of its own (`WorkspaceHit::ViewAction`), so
   pointing at a view never lights the foot's hint for the same key. The
-  body under the border starts with its field (`harness ‹ Claude Code ›`)
-  and a rule, then the view in front, every view in the same rows, so
+  body under the border starts with its field, unlabelled against the
+  row's end (`‹ Claude Code ›`), and a rule, then the view in front, every view in the same rows, so
   switching never resizes it. What a view holds that the other should
   know is one muted line at the body's foot, with a row of air over and
   under it so it rests against neither the list nor the keys (`3 flags ·
@@ -181,7 +181,7 @@ on "cancel" must not save first.
   Hovering a row only lights it: the pointer resting there never changes
   what Enter does.
 - A choice that rarely changes is a field prefilled with the last answer
-  (`harness ‹ Claude Code ›`, moved with `←` `→`), never a step of its own:
+  (`‹ Claude Code ›`, moved with `←` `→`), never a step of its own:
   the common case is the one question and Enter. Its arrows are its keys.
 - A field whose wrong value is unsafe, or invisible once the thing has
   started (a new agent's launch overrides), is never prefilled from last

@@ -305,7 +305,8 @@ Against the operator's mockup and the design-system rules:
   hint bar's separator, the one in front in the accent and the other held
   back (colour only: no ground and no hover; their own hit target, so
   pointing at one never lights the foot's `ctrl+f` hint). Under the border
-  the `harness ‹ Claude Code ›` row and a rule, then the view in front:
+  the harness row, `‹ Claude Code ›` unlabelled against its end, and a
+  rule, then the view in front:
   `new agent` is the filter and the listing, `overrides` the line, the
   entries and the list, in the same rows, each line typed into in the
   same look. At the body's foot, with air over and under it, one muted

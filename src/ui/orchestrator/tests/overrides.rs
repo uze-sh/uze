@@ -225,8 +225,8 @@ fn the_head_chooses_the_view_and_a_note_counts_the_overrides() {
         "the harness at the end:\n{all}"
     );
     assert!(
-        rows[1].contains("harness"),
-        "the harness under the border:\n{all}"
+        !rows[1].contains("harness"),
+        "the harness row carries no label:\n{all}"
     );
     assert!(
         rows[3].contains("filter directories"),

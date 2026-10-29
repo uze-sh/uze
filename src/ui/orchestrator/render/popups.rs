@@ -200,8 +200,8 @@ fn card_views(
     views
 }
 
-/// The harness the agent will run, on the body's first row, in both
-/// views. On `new agent` it sits between the arrows that change it, a
+/// The harness the agent will run, on the body's first row against its
+/// end, unlabelled: its name and arrows say what it is. In both views. On `new agent` it sits between the arrows that change it, a
 /// click on either being its key; on `overrides` the arrows move the
 /// caret, so the harness is only named, the one the flags are for.
 fn render_harness_field(
@@ -219,10 +219,7 @@ fn render_harness_field(
             Token::TextFaint
         }
     };
-    let left = vec![
-        picker_lead(),
-        Span::styled("harness", theme::fg(Token::TextDim)),
-    ];
+    let left = vec![picker_lead()];
     let right = match step.chosen_harness() {
         Some(option) if on_overrides => vec![Span::styled(
             option.display_name.clone(),
