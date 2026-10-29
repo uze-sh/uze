@@ -459,6 +459,21 @@ pub fn count(n: usize, noun: &str) -> String {
     }
 }
 
+/// `1 plugin`, `2 extensions`, `1 plugin and 1 extension`: packages
+/// counted by what they are, a plugin reaching a harness and an extension
+/// only the workspace. A kind with none is left out, unless both are.
+pub fn count_packages(plugins: usize, extensions: usize) -> String {
+    match (plugins, extensions) {
+        (_, 0) => count(plugins, "plugin"),
+        (0, _) => count(extensions, "extension"),
+        _ => format!(
+            "{} and {}",
+            count(plugins, "plugin"),
+            count(extensions, "extension")
+        ),
+    }
+}
+
 /// When the command began, for the time its closing line reports.
 static STARTED: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
 

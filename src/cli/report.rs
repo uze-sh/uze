@@ -28,7 +28,7 @@ pub(crate) fn render_update_summary(report: &uze_application::application::Updat
     use progress::Change;
     use uze_application::application::{UpdateOutcome, UpdateScope};
     let mut lines = String::new();
-    let mut moved = 0;
+    let mut moved = Vec::new();
     for outcome in &report.outcomes {
         match outcome {
             UpdateOutcome::Moved {
@@ -36,7 +36,7 @@ pub(crate) fn render_update_summary(report: &uze_application::application::Updat
                 revision,
                 deliveries,
             } => {
-                moved += 1;
+                moved.push(plugin.as_str());
                 lines.push_str(&progress::change(
                     Change::Updated,
                     plugin,
@@ -49,7 +49,7 @@ pub(crate) fn render_update_summary(report: &uze_application::application::Updat
                 linked_source: checkout,
                 deliveries,
             } => {
-                moved += 1;
+                moved.push(plugin.as_str());
                 let detail = match report.scope {
                     UpdateScope::Machine => {
                         format!(
@@ -86,16 +86,39 @@ pub(crate) fn render_update_summary(report: &uze_application::application::Updat
             UpdateScope::Project => "this project declares no plugins".to_owned(),
             UpdateScope::Machine => "no plugins installed on this machine".to_owned(),
         }
-    } else if moved == 0 {
+    } else if moved.is_empty() {
+        let considered = report.outcomes.iter().map(UpdateOutcome::plugin);
         format!(
             "{} up to date {}",
             progress::success_icon(),
-            progress::label(format!("· {}", count(report.outcomes.len(), "plugin")))
+            progress::label(format!(
+                "· {}",
+                counted_by_kind(considered, &report.extensions)
+            ))
         )
     } else {
-        format!("{} updated", count(moved, "plugin"))
+        format!(
+            "{} updated",
+            counted_by_kind(moved.into_iter(), &report.extensions)
+        )
     };
     progress::change_report("update", &lines, &outcome)
+}
+
+/// `names` counted as plugins, or as extensions where `extensions` says
+/// they carry only that.
+fn counted_by_kind<'a>(names: impl Iterator<Item = &'a str>, extensions: &[String]) -> String {
+    let (extensions, plugins): (Vec<&str>, Vec<&str>) =
+        names.partition(|name| extensions.iter().any(|extension| extension == name));
+    progress::count_packages(plugins.len(), extensions.len())
+}
+
+/// The noun one package is reported under.
+fn kind_noun(kind: uze_application::application::PackageKind) -> &'static str {
+    match kind {
+        uze_application::application::PackageKind::Plugin => "plugin",
+        uze_application::application::PackageKind::Extension => "extension",
+    }
 }
 
 /// What `uze update` moved, and what it deliberately did not.
@@ -660,12 +683,13 @@ pub(crate) fn render_add_summary(report: &AddPluginReport) -> String {
         lines.push('\n');
         lines.push_str(&issues);
     }
+    let noun = kind_noun(report.plugin.kind);
     let scope = if report.declared {
-        "1 plugin added to this project"
+        format!("1 {noun} added to this project")
     } else {
-        "1 plugin installed on this machine only"
+        format!("1 {noun} installed on this machine only")
     };
-    progress::change_report("install", &lines, scope)
+    progress::change_report("install", &lines, &scope)
 }
 
 /// What a lifecycle operation did to each plugin's rules in the checkout:
@@ -994,13 +1018,14 @@ pub(crate) fn render_remove(report: &RemovePluginReport) -> String {
         ),
         RemovePluginReport::Removed {
             plugin,
+            kind,
             unforgotten,
             ..
         } => {
             let mut text = progress::change_report(
                 "remove",
                 &progress::change(progress::Change::Removed, plugin, None),
-                "1 plugin removed from this machine",
+                &format!("1 {} removed from this machine", kind_noun(*kind)),
             );
             if let Some(why) = unforgotten {
                 text.push_str(&format!(
@@ -1057,6 +1082,7 @@ pub(crate) fn render_install(report: &uze_application::application::InstallRepor
             skipped,
             reconciled,
             rules,
+            extensions,
             ..
         } => {
             let mut lines = String::new();
@@ -1083,10 +1109,16 @@ pub(crate) fn render_install(report: &uze_application::application::InstallRepor
             }
             let mut outcome = Vec::new();
             if !plugins.is_empty() {
-                outcome.push(format!("{} installed", count(plugins.len(), "plugin")));
+                outcome.push(format!(
+                    "{} installed",
+                    counted_by_kind(plugins.iter().map(String::as_str), extensions)
+                ));
             }
             if !removed.is_empty() {
-                outcome.push(format!("{} removed", count(removed.len(), "plugin")));
+                outcome.push(format!(
+                    "{} removed",
+                    counted_by_kind(removed.iter().map(String::as_str), extensions)
+                ));
             }
             if outcome.is_empty() {
                 outcome.push(format!("{} up to date", progress::success_icon()));
@@ -1110,6 +1142,7 @@ mod tests {
                 revision: revision.to_owned(),
                 deliveries: Vec::new(),
             }],
+            extensions: Vec::new(),
             rules: Vec::new(),
         }
     }

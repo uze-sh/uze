@@ -15,6 +15,7 @@ use crate::ui::model::{Focus, PluginPane, Remembered, Route, TuiModel};
 pub(super) fn plugin(id: &str) -> PluginSummary {
     PluginSummary {
         id: id.to_owned(),
+        kind: uze_application::application::PackageKind::Plugin,
         active_name: id.to_owned(),
         source: "embedded:example".to_owned(),
         store_path: PathBuf::from("/store/example"),

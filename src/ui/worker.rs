@@ -2026,6 +2026,7 @@ mod tests {
             .iter()
             .map(|id| uze_application::application::PluginSummary {
                 id: (*id).to_owned(),
+                kind: uze_application::application::PackageKind::Plugin,
                 active_name: (*id).to_owned(),
                 source: "embedded:example".to_owned(),
                 store_path: PathBuf::from("/store/example"),
