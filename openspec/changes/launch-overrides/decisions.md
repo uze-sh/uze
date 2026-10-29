@@ -45,7 +45,7 @@
 
 - status:   pending
 - task:     2.2
-- commit:   4fb4d844
+- commit:   4fb4d844, d2a5e2a9
 - trigger:  Claude Code's `-d, --debug [filter]` takes a value it may go without; catalogued as a switch, `-dmcp` was read as the cluster `-d -m -c` and refused for `-c`, while commander reads it as `--debug mcp`.
 - decided:  `FlagValue::Optional(hint)`: only an attached value is the flag's (`--debug=mcp`, `-dmcp`, which takes the rest of its word as a value-taking short flag does), the word after it is never taken, and completion offers it as a switch whose summary names `--debug=<filter>`. Every flag a snapshot shows with a bracketed value is `Optional`, and `assert_catalog_in_help` fails otherwise: Claude Code's `--cloud`, `--debug`, `--from-pr`, `--prompt-suggestions`, `--remote-control`, `--resume`, `--teleport`, `--worktree`.
 - rejected: `Free`, which would swallow the next entry as its value; a switch, which reads the filter's letters as short flags.
@@ -308,7 +308,7 @@
 
 - status:   pending
 - task:     2.8
-- commit:   26f8c771
+- commit:   26f8c771, 553e6426
 - trigger:  The check read every single-dash word one way, falling back to a long flag written with one dash; clap and commander read `-model` as `-m odel`, Go's `flag` reads it as `--model`, and Effect's CLI only reads `-name=value` so.
 - decided:  `flag_catalog()` returns a `FlagCatalog { grammar, flags }`, dereferencing to the specs, with `FlagGrammar::{Posix, GoFlag, EffectCli}` named after the parser family; Claude Code and Codex are `Posix`, agy `GoFlag`, OpenCode `EffectCli` (probed on 2.1.3: `-sabc` is a missing `--session` value and unknown `-a`, `-log-level=x` is `--log-level`). The check reads a flag word once per use, from its first word, so entries and verdicts agree.
 - rejected: A separate `IntegrationPort::flag_grammar()`: every function taking the catalog would take the grammar beside it, and nothing keeps the two from coming from different harnesses. Reading OpenCode as `Posix`: `-prompt=hi` would pass as an unknown cluster while OpenCode reads it as `--prompt`.
@@ -318,7 +318,7 @@
 
 - status:   pending
 - task:     2.8
-- commit:
+- commit:   5774caa6
 - trigger:  Codex `-c sandbox_mode="danger-full-access"` and `-c approval_policy=never` give up what `--sandbox danger-full-access` and `-a never` do, and passed unmarked.
 - decided:  `weakening_values` on a `Keyed` flag holds `key=value` settings; a key the check accepts is compared as `key=value`, the key read as every other key is and the value without the spaces and quotes TOML lets it carry, and a match is `Weakens`. Codex names `sandbox_mode=danger-full-access` and `approval_policy=never`. A refusal or a conditional key's warning still wins.
 - rejected: A third list on `FlagOwner::Keyed`: every keyed catalog and test would spell an empty list, for the one field that already means "values that give up safety". Parsing the value as TOML: a dependency for two string compares.
