@@ -290,7 +290,11 @@ mod tests {
             said,
             vec!["gsd-band · gsd@market", "gsd-panel · gsd@market"]
         );
-        assert!(offered.capabilities.is_empty(), "{:?}", offered.capabilities);
+        assert!(
+            offered.capabilities.is_empty(),
+            "{:?}",
+            offered.capabilities
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }

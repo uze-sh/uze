@@ -1008,7 +1008,10 @@ fn an_extension_only_plugin_lists_its_extension_as_a_kind() {
     // column, the heading at their indent.
     let skills = tree_rows(&unfolded_gsd(&["plan"]));
     let skills_row = skills.iter().find(|row| row.contains("skills")).unwrap();
-    let extensions_row = skills.iter().find(|row| row.contains("extensions")).unwrap();
+    let extensions_row = skills
+        .iter()
+        .find(|row| row.contains("extensions"))
+        .unwrap();
     assert_eq!(skills_row.find("skills"), extensions_row.find("extensions"));
     assert_eq!(skills_row.find(" 1 "), extensions_row.find(" 1 "));
 }
@@ -1031,10 +1034,14 @@ fn a_plugin_with_skills_and_an_extension_shows_both_kinds() {
 #[test]
 fn a_plugin_that_provides_nothing_still_says_so() {
     let mut model = unfolded_gsd(&[]);
-    model.plugin_extensions.insert("gsd@uze".to_owned(), Vec::new());
+    model
+        .plugin_extensions
+        .insert("gsd@uze".to_owned(), Vec::new());
     let unsupported = theme::glyph(theme::Symbol::MarkUnsupported);
     assert!(
-        tree_rows(&model).iter().any(|row| row.contains(unsupported.as_str())),
+        tree_rows(&model)
+            .iter()
+            .any(|row| row.contains(unsupported.as_str())),
         "{:#?}",
         tree_rows(&model)
     );
@@ -1082,7 +1089,8 @@ fn enter_on_a_plugins_extension_opens_the_extensions_screen_on_it() {
     );
     let rows = buffer_rows(&drawn_at(&model, 140, 40).0);
     assert!(
-        rows.iter().any(|row| row.contains("open") && row.contains("Extensions")),
+        rows.iter()
+            .any(|row| row.contains("open") && row.contains("Extensions")),
         "the panel's way across: {rows:#?}"
     );
     model.apply_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
@@ -1113,10 +1121,7 @@ fn clicking_the_panels_extensions_link_is_pressing_enter_on_the_row() {
         modifiers: KeyModifiers::NONE,
     };
     clicked.apply_mouse(at(MouseEventKind::Moved), Rect::new(0, 0, 140, 40));
-    assert_eq!(
-        clicked.hovered_offer,
-        Some(uze_keys::Action::ShowExtension)
-    );
+    assert_eq!(clicked.hovered_offer, Some(uze_keys::Action::ShowExtension));
     clicked.apply_mouse(
         at(MouseEventKind::Down(crossterm::event::MouseButton::Left)),
         Rect::new(0, 0, 140, 40),

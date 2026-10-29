@@ -252,7 +252,14 @@ fn clicking_the_drawers_switch_on_a_declared_extension_is_pressing_its_key() {
     let (_, hits) = super::support::drawn_at(&model, 140, 40);
     let (rect, _) = *hits
         .iter()
-        .find(|(_, hit)| matches!(hit, Hit::OfferedAction(_)))
+        .find(|(_, hit)| {
+            matches!(
+                hit,
+                Hit::OfferedAction(
+                    uze_keys::Action::EnableExtension | uze_keys::Action::DisableExtension
+                )
+            )
+        })
         .expect("the drawer's switch is drawn");
     model.hits = hits;
     let intent = model.apply_mouse(
@@ -1111,4 +1118,107 @@ fn revealing_an_extension_selects_it_now_or_once_the_list_holds_it() {
         model.selected_extension().expect("a selection").id(),
         "gsd@market/gpu-meter"
     );
+}
+
+/// The drawer names the plugin an extension comes with, and that line is
+/// the way to it: hovered it lights, clicked it opens the Marketplace on
+/// that plugin, unfolded on the extension, as the index's entry does.
+#[test]
+fn clicking_the_drawers_plugin_line_is_the_index_entry_that_shows_the_plugin() {
+    let start = || {
+        let mut model = listing_a_declared_extension(&[]);
+        model.remembered.marketplace_plugins =
+            vec![super::support::marketplace_plugin("market", "gsd", true)];
+        model
+    };
+    let mut clicked = start();
+    let (terminal, hits) = super::support::drawn_at(&clicked, 140, 40);
+    let (rect, _) = *hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::ShowPlugin))
+        .expect("the plugin line is a target");
+    let row = &super::support::buffer_rows(&terminal)[rect.y as usize];
+    assert!(row.contains("gsd-band · gsd@market"), "{row}");
+    clicked.hits = hits;
+    let at = |kind| MouseEvent {
+        kind,
+        column: rect.x + 1,
+        row: rect.y,
+        modifiers: KeyModifiers::NONE,
+    };
+    clicked.apply_mouse(at(MouseEventKind::Moved), Rect::new(0, 0, 140, 40));
+    assert_eq!(clicked.hovered_offer, Some(uze_keys::Action::ShowPlugin));
+    let lit = super::support::drawn(&clicked);
+    let resting = super::support::drawn(&start());
+    let cell = |buffer: &ratatui::buffer::Buffer| {
+        // The drawn buffer is 100 wide; find the line there.
+        let rows: Vec<String> = (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect()
+            })
+            .collect();
+        let y = rows
+            .iter()
+            .position(|row| row.contains("gsd-band · gsd@market") && !row.contains("linked"))
+            .expect("the plugin line");
+        let x = rows[y].find("gsd@market").unwrap();
+        let x = rows[y][..x].chars().count() as u16;
+        buffer[(x, y as u16)].fg
+    };
+    assert_ne!(cell(&lit), cell(&resting), "the hover lights the line");
+    assert_eq!(
+        cell(&lit),
+        crate::ui::theme::color(crate::ui::theme::Token::TextBright)
+    );
+    clicked.apply_mouse(
+        at(MouseEventKind::Down(MouseButton::Left)),
+        Rect::new(0, 0, 140, 40),
+    );
+
+    let mut pressed = start();
+    let scopes = pressed.scopes();
+    assert!(
+        pressed
+            .action_index_rows(&scopes, "")
+            .iter()
+            .any(|(action, _)| *action == uze_keys::Action::ShowPlugin),
+        "the keyboard's way across is the index"
+    );
+    pressed.act(uze_keys::Action::ShowPlugin);
+
+    for model in [&mut clicked, &mut pressed] {
+        assert_eq!(model.route, Route::Plugins);
+        assert_eq!(
+            model
+                .selected_marketplace_plugin()
+                .map(|plugin| plugin.name)
+                .as_deref(),
+            Some("gsd")
+        );
+        assert!(model.expanded_plugins.contains("gsd@market"));
+        // Its contents arrive, and the keyboard stands on the extension.
+        model
+            .plugin_extensions
+            .insert("gsd@market".to_owned(), vec![declared(&[]).identity]);
+        assert_eq!(
+            model.plugin_tree_cursor(),
+            crate::ui::model::PluginTreeRow::Extension(0, declared(&[]).identity)
+        );
+    }
+}
+
+/// A built-in comes with no plugin: nothing leads to the Marketplace.
+#[test]
+fn a_built_in_extension_links_to_no_plugin() {
+    let mut model = listing_a_declared_extension(&[]);
+    model.remembered.extension_screen.selected = 0;
+    let (_, hits) = super::support::drawn_at(&model, 140, 40);
+    assert!(
+        !hits
+            .iter()
+            .any(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::ShowPlugin))
+    );
+    assert_eq!(model.selected_link(), None);
 }
