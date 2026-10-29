@@ -81,6 +81,10 @@ with one dash.
 - **WHEN** the operator adds a configuration override setting a key UZE composes on that harness's launch
 - **THEN** it is refused, while a configuration override of a key UZE does not compose is accepted
 
+#### Scenario: A flag that sets a configuration key by name
+- **WHEN** the operator adds a flag the harness documents as setting a configuration key, such as `--enable memories` for `features.memories`
+- **THEN** it is judged as a configuration override of that key would be
+
 ### Requirement: Positional arguments are refused
 The system SHALL refuse a bare argument that is not the value of the flag
 before it, and a literal `--`, since the harness would read either as a

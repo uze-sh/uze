@@ -138,7 +138,7 @@ pub fn check(
                     (Some(refusal), _) => refusal,
                     (None, None) => Verdict::Unknown,
                     (None, Some(spec)) => {
-                        flag_verdict(spec, value.as_deref(), composed_keys.as_deref())
+                        flag_verdict(spec, value.as_deref(), catalog, composed_keys.as_deref())
                     }
                 }
             }
@@ -164,7 +164,12 @@ fn variable_verdict(name: &str, managed: &[&str]) -> Verdict {
     }
 }
 
-fn flag_verdict(spec: &FlagSpec, value: Option<&str>, composed_keys: Option<&[String]>) -> Verdict {
+fn flag_verdict(
+    spec: &FlagSpec,
+    value: Option<&str>,
+    catalog: &[FlagSpec],
+    composed_keys: Option<&[String]>,
+) -> Verdict {
     if let FlagOwner::Uze(reason) = spec.owner {
         return Verdict::Refused(reason.to_owned());
     }
@@ -178,14 +183,43 @@ fn flag_verdict(spec: &FlagSpec, value: Option<&str>, composed_keys: Option<&[St
         }
         (_, value) => value,
     };
-    match spec.owner {
+    let own = match spec.owner {
         FlagOwner::Operator => Verdict::Accepted,
         FlagOwner::Weakens(what) => Verdict::Weakens(what),
         FlagOwner::Degrades(what) => Verdict::Degrades(what),
         FlagOwner::Uze(_) => unreachable!("refused above"),
         FlagOwner::Keyed { owned, conditional } => {
-            keyed_verdict(value.unwrap_or_default(), owned, conditional, composed_keys)
+            return keyed_verdict(value.unwrap_or_default(), owned, conditional, composed_keys);
         }
+    };
+    match spec.key_set_by(value.unwrap_or_default()) {
+        Some(key) => key_in_disguise_verdict(&key, own, catalog, composed_keys),
+        None => own,
+    }
+}
+
+/// The verdict of a flag that sets `key` as the catalog's configuration
+/// flag would: refused when that flag would refuse the key, warned about
+/// when the key or the flag itself warns, and the flag's own otherwise.
+fn key_in_disguise_verdict(
+    key: &str,
+    own: Verdict,
+    catalog: &[FlagSpec],
+    composed_keys: Option<&[String]>,
+) -> Verdict {
+    let keyed = catalog.iter().find_map(|spec| match spec.owner {
+        FlagOwner::Keyed { owned, conditional } => Some(keyed_verdict(
+            &format!("{key}="),
+            owned,
+            conditional,
+            composed_keys,
+        )),
+        _ => None,
+    });
+    match (keyed, own) {
+        (Some(refused @ Verdict::Refused(_)), _) => refused,
+        (Some(warned @ Verdict::Degrades(_)), Verdict::Accepted) => warned,
+        (_, own) => own,
     }
 }
 
@@ -389,16 +423,28 @@ mod tests {
         ),
     ];
 
-    const KEYED: &[FlagSpec] = &[FlagSpec::new(
-        &["--config", "-c"],
-        FlagValue::Free("key=value"),
-        "config",
-        Keyed {
-            owned: &["agents", "hooks.SessionStart", "hooks.state"],
-            conditional: &["notify", "features.memories"],
-        },
-    )
-    .repeatable()];
+    const KEYED: &[FlagSpec] = &[
+        FlagSpec::new(
+            &["--config", "-c"],
+            FlagValue::Free("key=value"),
+            "config",
+            Keyed {
+                owned: &["agents", "hooks.SessionStart", "hooks.state"],
+                conditional: &["notify", "features.memories"],
+            },
+        )
+        .repeatable(),
+        FlagSpec::new(&["--enable"], FlagValue::Free("feature"), "on", Operator)
+            .sets_key_in("features"),
+        FlagSpec::new(
+            &["--disable"],
+            FlagValue::Free("feature"),
+            "off",
+            Degrades("hooks"),
+        )
+        .sets_key_in("features"),
+        FlagSpec::new(&["--hook"], FlagValue::Free("hook"), "hook", Operator).sets_key_in("hooks"),
+    ];
 
     const MANAGED: &[&str] = &["CLAUDE_CONFIG_DIR"];
 
@@ -630,6 +676,34 @@ mod tests {
         assert_eq!(
             planned("-c features.web=true", &["-c", "features.memories=false"]),
             [Verdict::Accepted]
+        );
+    }
+
+    #[test]
+    fn a_flag_setting_a_key_by_name_is_judged_as_that_key() {
+        assert_eq!(
+            verdicts("--hook state", KEYED),
+            [refused("uze composes hooks.state on every launch")]
+        );
+        assert_eq!(
+            verdicts("--enable memories --enable web", KEYED),
+            [Verdict::Degrades("uze may set this"), Verdict::Accepted]
+        );
+        assert_eq!(
+            verdicts("--disable web", KEYED),
+            [Verdict::Degrades("hooks")]
+        );
+        let composed = ["-c", "features.memories=false"];
+        assert_eq!(
+            planned(
+                "--enable memories --disable=memories --enable web",
+                &composed
+            ),
+            [
+                refused("uze composes features.memories on this launch"),
+                refused("uze composes features.memories on this launch"),
+                Verdict::Accepted
+            ]
         );
     }
 

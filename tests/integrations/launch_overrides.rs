@@ -283,3 +283,37 @@ fn an_owned_flag_in_disguise_never_reaches_any_harness() {
     }
     assert!(asked > 0, "some harness owns a flag");
 }
+
+#[test]
+fn a_feature_switched_on_by_name_is_checked_as_the_key_it_sets() {
+    let registry = registry("overrides-feature");
+    let codex = registry
+        .iter()
+        .find(|integration| integration.id() == "codex")
+        .expect("Codex is registered");
+    let catalog = codex.flag_catalog();
+    let words: Vec<String> = ["--enable", "memories", "--disable", "memories"]
+        .map(str::to_owned)
+        .to_vec();
+    let entries = overrides::entries(&words, catalog);
+
+    let unplanned = overrides::check(&entries, catalog, codex.managed_environment(), None);
+    assert!(
+        unplanned
+            .iter()
+            .all(|verdict| matches!(verdict, overrides::Verdict::Degrades(_))),
+        "{unplanned:?}"
+    );
+
+    let off = codex.memory_off().expect("Codex turns its memory off");
+    let session = plan(codex, Vec::new(), Vec::new(), &words);
+    let mut launch = contribution();
+    let note = session
+        .compose(&mut launch, Some(off.clone()), catalog)
+        .expect("what memory-off left out is said");
+
+    let expected: Vec<OsString> = os(&[CONTRIBUTION]).into_iter().chain(off.args).collect();
+    assert_eq!(launch.extra_args, expected);
+    assert!(note.starts_with("--enable left out ("), "{note}");
+    assert!(note.contains("--disable left out ("), "{note}");
+}

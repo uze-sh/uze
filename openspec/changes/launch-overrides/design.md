@@ -158,6 +158,10 @@ Codex keys: `agents`, `hooks.SessionStart`, `hooks.state` always owned;
 `notify` and `features.memories` owned *when the plan composes them*.
 Matching covers `-c k=v`, `-ck=v`, `--config k=v`, and a parent table
 (`-c hooks={..}`, `-c features={..}` collide with an owned child).
+`--enable <feature>` and `--disable <feature>` are `-c
+features.<feature>=true|false` by Codex's own `--help`, so their spec names
+the table their value is a key in (`sets_key_in`), and that key is judged
+as `-c`'s is; `--disable` stays `Degrades` on top.
 
 Rejected: a TOML catalog under `conformance/` or the Store. Only
 `uze-integrations` names a harness, and the catalog is the same kind of

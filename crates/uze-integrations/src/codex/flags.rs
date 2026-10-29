@@ -14,6 +14,10 @@ use uze_core::flag_catalog::{
     FlagSpec, FlagValue,
 };
 
+/// `--enable <feature>` and `--disable <feature>` are, as `--help` says,
+/// `-c features.<feature>=true|false`.
+const FEATURES: &str = "features";
+
 pub(super) const CATALOG: &[FlagSpec] = &[
     FlagSpec::new(
         &["--config", "-c"],
@@ -75,6 +79,7 @@ pub(super) const CATALOG: &[FlagSpec] = &[
         "a feature on",
         Operator,
     )
+    .sets_key_in(FEATURES)
     .repeatable(),
     FlagSpec::new(&["--search"], FlagValue::None, "live web search", Operator),
     FlagSpec::new(
@@ -113,6 +118,7 @@ pub(super) const CATALOG: &[FlagSpec] = &[
         "a feature off",
         Degrades("what uze delivers through that feature, such as hooks or plugins"),
     )
+    .sets_key_in(FEATURES)
     .repeatable(),
     FlagSpec::new(
         &["--dangerously-bypass-approvals-and-sandbox"],

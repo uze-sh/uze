@@ -20,6 +20,11 @@ pub struct FlagSpec {
     /// A short description, lowercase, as a completion row shows it.
     pub summary: &'static str,
     pub owner: FlagOwner,
+    /// The configuration table whose key the flag's value names, when the
+    /// flag is a configuration key in disguise (`--enable <feature>` sets
+    /// `features.<feature>`): that key is then checked as the catalog's
+    /// [`FlagOwner::Keyed`] flag checks its own.
+    pub sets_key_in: Option<&'static str>,
 }
 
 impl FlagSpec {
@@ -36,7 +41,21 @@ impl FlagSpec {
             repeatable: false,
             summary,
             owner,
+            sets_key_in: None,
         }
+    }
+
+    /// A flag whose value names a key in the configuration table `table`.
+    pub const fn sets_key_in(self, table: &'static str) -> Self {
+        Self {
+            sets_key_in: Some(table),
+            ..self
+        }
+    }
+
+    /// The configuration key `value` sets through this flag, if it sets one.
+    pub fn key_set_by(&self, value: &str) -> Option<String> {
+        self.sets_key_in.map(|table| format!("{table}.{value}"))
     }
 
     pub const fn repeatable(self) -> Self {
@@ -110,6 +129,22 @@ mod tests {
 
         assert!(!model.repeatable);
         assert!(model.repeatable().repeatable);
+    }
+
+    #[test]
+    fn a_flag_naming_a_key_in_a_table_sets_that_key() {
+        let enable = FlagSpec::new(
+            &["--enable"],
+            FlagValue::Free("feature"),
+            "a feature on",
+            FlagOwner::Operator,
+        );
+
+        assert_eq!(enable.key_set_by("web"), None);
+        assert_eq!(
+            enable.sets_key_in("features").key_set_by("web").as_deref(),
+            Some("features.web")
+        );
     }
 
     #[test]
