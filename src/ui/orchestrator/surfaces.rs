@@ -57,15 +57,44 @@ impl WorkspaceModel {
         self.close_surface();
     }
 
-    /// Closes the open surface once its tab is no longer the one in front.
+    /// Puts the open surface away once its tab is no longer the one in
+    /// front, remembered for that tab, and opens again the one the tab now
+    /// in front was showing when it was left.
     pub(super) fn close_extension_left_behind(&mut self) {
         let in_front = self
             .session
             .as_ref()
             .map(|session| session.selected_tab().id);
-        if in_front != self.extension_tab {
-            self.close_extension();
+        if in_front == self.extension_tab {
+            return;
         }
+        if let (Some(tab), Some(slot), Some(root)) =
+            (self.extension_tab, self.open_slot, self.open_root.clone())
+        {
+            self.left_open.insert(tab, (slot, root));
+        }
+        self.close_extension();
+        self.extension_tab = in_front;
+        self.forget_surfaces_of_closed_tabs();
+        let returning = in_front.and_then(|tab| self.left_open.remove(&tab));
+        if let Some((slot, root)) = returning
+            && self.space_overview.is_none()
+        {
+            open_surface_on(self, slot, root);
+        }
+    }
+
+    fn forget_surfaces_of_closed_tabs(&mut self) {
+        let Some(session) = self.session.as_ref() else {
+            return;
+        };
+        let live: std::collections::BTreeSet<TabId> = session
+            .workspace
+            .spaces
+            .iter()
+            .flat_map(|space| space.tabs.iter().map(|tab| tab.id))
+            .collect();
+        self.left_open.retain(|tab, _| live.contains(tab));
     }
 
     /// Notes the tab in front as the one a surface opening now stands in

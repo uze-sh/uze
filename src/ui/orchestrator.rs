@@ -2043,6 +2043,10 @@ struct WorkspaceModel {
     /// to the front — however it got there — puts it away rather than
     /// leaving it answering for a checkout nobody is looking at.
     extension_tab: Option<TabId>,
+    /// The view each tab had standing when another tab came to the front,
+    /// and the checkout it was on: the tab coming back opens it again, so
+    /// moving between agents never closes what one of them was showing.
+    left_open: BTreeMap<TabId, (SlotId, PathBuf)>,
     /// The overview of a space, standing where the pane is. It belongs to
     /// its space rather than to [`Self::extension_tab`]: the broadcast that
     /// confirms the space changes the tab in front.

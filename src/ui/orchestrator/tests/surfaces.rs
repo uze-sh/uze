@@ -619,6 +619,41 @@ fn another_tab_in_front_puts_the_open_surface_away() {
     assert!(!model.showing(uze_extensions::architect::CATALOG.id));
 }
 
+/// Moving between agents never closes what one of them was showing: the
+/// tab coming back to the front has its surface standing again, and the
+/// tab that never had one stays bare.
+#[test]
+fn a_tab_coming_back_to_the_front_shows_the_surface_it_was_left_with() {
+    let (mut model, first, second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    open_architect(&mut model);
+    let bring_to_front = |model: &mut WorkspaceModel, tab| {
+        let mut session = model.session.clone().expect("session");
+        session.select_tab(tab);
+        model.apply(
+            ClientEvent::SessionUpdated { session },
+            &identities_fixture(),
+        );
+    };
+
+    bring_to_front(&mut model, second);
+    assert!(!model.showing(uze_extensions::architect::CATALOG.id));
+
+    bring_to_front(&mut model, first);
+    assert!(
+        model.showing(uze_extensions::architect::CATALOG.id),
+        "the first agent's surface stands again"
+    );
+
+    model.close_extension();
+    bring_to_front(&mut model, second);
+    bring_to_front(&mut model, first);
+    assert!(
+        !model.showing(uze_extensions::architect::CATALOG.id),
+        "a surface closed by hand stays closed"
+    );
+}
+
 /// A group of buttons is one ground with a seam where the fills
 /// meet, and the seam is the only divider it has. A glyph drawn
 /// between two members belongs to neither: hovering one leaves that
