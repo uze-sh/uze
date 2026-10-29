@@ -130,6 +130,7 @@ fn in_front(phase, folder, files, executing) {
     // phase is made of, and which of them is where.
     let listed = [];
     for number in numbers {
+        let lead = `wave ${number}`;
         for plan in plans.filter(|plan| plan.wave == number) {
             let state = if plan.ran {
                 "done"
@@ -141,12 +142,15 @@ fn in_front(phase, folder, files, executing) {
             listed.push(#{
                 id: plan.id,
                 title: plan.title,
-                wave: `wave ${number}`,
+                // The wave's label on its first plan only: the plans read
+                // as a table grouped by wave.
+                lead: lead,
                 state: state,
                 done: state == "done",
                 waiting: state == "waiting",
                 pending: state == "pending",
             });
+            lead = "";
         }
     }
 

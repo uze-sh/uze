@@ -37,47 +37,47 @@
           {
             "done": true,
             "id": "3-01",
+            "lead": "wave 1",
             "pending": false,
             "state": "done",
             "title": "Card fields with inline validation",
-            "waiting": false,
-            "wave": "wave 1"
+            "waiting": false
           },
           {
             "done": true,
             "id": "3-02",
+            "lead": "",
             "pending": false,
             "state": "done",
             "title": "Tokenize the card with the payment provider",
-            "waiting": false,
-            "wave": "wave 1"
+            "waiting": false
           },
           {
             "done": false,
             "id": "3-03",
+            "lead": "wave 2",
             "pending": true,
             "state": "pending",
             "title": "Charge the order and record the payment",
-            "waiting": false,
-            "wave": "wave 2"
+            "waiting": false
           },
           {
             "done": false,
             "id": "3-04",
+            "lead": "",
             "pending": true,
             "state": "pending",
             "title": "Pay a test order end to end",
-            "waiting": false,
-            "wave": "wave 2"
+            "waiting": false
           },
           {
             "done": false,
             "id": "3-05",
+            "lead": "wave 3",
             "pending": true,
             "state": "pending",
             "title": "Show a declined card's reason",
-            "waiting": false,
-            "wave": "wave 3"
+            "waiting": false
           }
         ],
         "name": "Payment form",

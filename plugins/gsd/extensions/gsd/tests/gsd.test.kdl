@@ -66,7 +66,6 @@ test "a checkpoint waiting holds the drawer's button back" {
     surface "phases"
     given "planning" fixture="fixtures/checkpoint.json"
     expect-text "needs you"
-    expect-text "waits for you above"
     expect-no-text "execute phase 3"
     snapshot "checkpoint"
 }

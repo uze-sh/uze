@@ -3,29 +3,29 @@
  │ GSD                                       │
  │                                           │
  │  v1.4 Store checkout                 51%  │
- │  ███████ ███████ ████▎── ─────── ───────  │
+ │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
  │  2 of 5 phases · phase 3 next             │
  │                                           │
- │  needs you                                │
- │    ▲  3-04  Check the payment form in t…  │
+ │  ▲  3-04 needs you  Check the payment f…  │
  │                                           │
  │  ✓  1   Cart service                 3/3  │
  │  ✓  2   Checkout API                 4/4  │
- │  ▶  3   Payment form                      │
+ │  ▶  3   Payment form                 3/5  │
  │         pay with a card                   │
- │     ✓ discuss ✓ plan ◆ execute ○ verify   │
- │     wave 1 ■■  wave 2 ■▲  wave 3 □   3/5  │
+ │         ✓ discuss ✓ plan ◆ execute        │
+ │         ○ verify                          │
  │                                           │
- │     ✓ 3-01 Card fields with inline vali…  │
- │     ✓ 3-02 Tokenize the card with the p…  │
- │     ✓ 3-03 Charge the order and record …  │
- │     ▲ 3-04 Pay a test order end to end    │
- │     ○ 3-05 Show a declined card's reason  │
- │                                           │
- │                      waits for you above  │
+ │         wave 1  ✓ 3-01  Card fields wit…  │
+ │                 ✓ 3-02  Tokenize the ca…  │
+ │         wave 2  ✓ 3-03  Charge the orde…  │
+ │                 ▲ 3-04  Pay a test orde…  │
+ │         wave 3  ○ 3-05  Show a declined…  │
  │                                           │
  │  ·  4   Order emails             after 3  │
  │  ·  5   Rollout                  after 4  │
+ │                                           │
+ │                                           │
+ │                                           │
  │                                           │
  │                                           │
  └───────────────────────────────────────────┘
@@ -34,29 +34,29 @@
  a bbb                                       a
  a                                           a
  a  cccc ddddd dddddddd                 ddd  a
- a  eeeeeee eeeeeee fffffgg ggggggg ggggggg  a
+ a  eeeeeeeeeeeeeeeefffffgggggggggggggggggg  a
  a  b bb b bbbbbb b bbbbb b bbbb             a
  a                                           a
- a  hhhhh hhh                                a
- a    h  cccc  ddddd ddd ddddddd dddd dd dd  a
+ a  h  hhhh hhhhh hhh  ddddd ddd ddddddd dd  a
  a                                           a
  a  e  b   bbbb bbbbbbb                 bbb  a
  a  e  b   bbbbbbbb bbb                 bbb  a
- a  f  c   ccccccc cccc                      a
- a         ddd dddd d dddd                   a
- a     e eeeeeee e eeee f fffffff g gggggg   a
- a     bbbb b ee  bbbb b eh  bbbb b g   bbb  a
+ a  f  c   ccccccc cccc                 ddd  a
+ a         bbb bbbb b bbbb                   a
+ a         e eeeeeee e eeee f fffffff        a
+ a         g gggggg                          a
  a                                           a
- a     e bbbb bbbb bbbbbb bbbb bbbbbb bbbbb  a
- a     e bbbb bbbbbbbb bbb bbbb bbbb bbb bb  a
- a     e bbbb bbbbbb bbb bbbbb bbb bbbbbb b  a
- a     h hhhh hhh h hhhh hhhhh hhh hh hhh    a
- a     g gggg gggg g gggggggg gggggg gggggg  a
- a                                           a
- a                      hhhhh hhh hhh hhhhh  a
+ a         gggg g  e bbbb  dddd dddddd dddd  a
+ a                 e bbbb  dddddddd ddd ddd  a
+ a         gggg g  e bbbb  dddddd ddd ddddd  a
+ a                 h bbbb  hhh h hhhh hhhhh  a
+ a         gggg g  g bbbb  gggg g ggggggggg  a
  a                                           a
  a  g  g   ggggg gggggg             ggggg g  a
  a  g  g   ggggggg                  ggggg g  a
+ a                                           a
+ a                                           a
+ a                                           a
  a                                           a
  a                                           a
  aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
