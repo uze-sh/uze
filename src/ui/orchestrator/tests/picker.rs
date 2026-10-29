@@ -58,8 +58,8 @@ fn drawn(model: &mut WorkspaceModel) -> (Vec<String>, Buffer) {
     (buffer_rows(&buffer), buffer)
 }
 
-/// The line typed into: under the harness field, past the rule closing
-/// it.
+/// The line typed into: under the harness field, past the row of air
+/// parting them.
 fn prompt_row_of(rows: &[String]) -> String {
     let harness = rows
         .iter()
@@ -492,8 +492,8 @@ fn the_directory_step_lines_its_rows_up_in_one_column() {
         .position(|row| row.contains(&format!("cr{cursor}")))
         .expect("the prompt is drawn");
     let column = |row: &str, text: &str| row[..row.find(text).unwrap()].chars().count();
-    // The first row past the rule under the line typed into.
-    let first = prompt + 2;
+    // The row right under the line typed into.
+    let first = prompt + 1;
     let values = column(&rows[first], "craude");
     assert_eq!(column(&rows[first + 1], "scribble"), values, "{rows:?}");
     // "craude", which "cr" is the head of, is the one Enter takes, so it
@@ -680,8 +680,8 @@ fn the_foot_names_the_keys_and_its_new_starts_the_agent() {
     let (rows, _) = drawn(&mut model);
     let foot = rows
         .iter()
-        .find(|row| row.contains("harness") && row.contains("close"))
-        .expect("the foot is drawn");
+        .find(|row| row.contains("harness") && row.contains("enter"))
+        .expect("the keys are drawn");
     assert!(foot.contains("new"), "{foot}");
     assert!(!foot.contains("engine"), "no sentence about where: {foot}");
 

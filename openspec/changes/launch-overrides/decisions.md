@@ -220,6 +220,7 @@
 - decided:  Width 54 → 60. The first step is harness, overrides, rule, query, rule, listing; the overrides step is `‹ overrides`, the line, its lit underline, entries and list, rule, detail: both are the listing's rows plus five, so the step takes exactly the listing's rows. `new_agent_popup_rows` keeps its 4–9 clamp and raises the floor to 5 for the step, fixed when the popup opens. The entries come first; past the rows left for one list row, the earliest give way to a muted `N more` row.
 - rejected: A rule under the heading as well: it would cost the list a row, and the line's own underline already closes the heading.
 - blast:    Two constants in `popups.rs`; the picker tests' row arithmetic.
+- note:     Superseded in part after the operator saw it in the TUI ("too many lines; flatter, narrower, taller"): the popup is 52 wide and flat, its groups parted by air and its keys on the bottom border (`BorderHint::fitting`), with no `esc close` on the first step; the listing clamps to 10–14 rows, and the step's body takes exactly the listing's rows (heading, air, line, body, air, detail), the line's underline gone.
 
 ## D23 — Recent sets are read for the directory the popup is on, and entries show their values
 

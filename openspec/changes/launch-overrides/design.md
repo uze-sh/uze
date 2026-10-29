@@ -265,9 +265,15 @@ Against the operator's mockup and the design-system rules:
   target), esc `back`, esc again closes. The popup's height is fixed when
   it opens as the larger of what the two steps need, so switching never
   resizes it.
+- **The popup is flat, 52 wide and taller:** its groups (harness; the
+  line typed into and its listing; the `overrides` row) are parted by a
+  row of air, never a rule, and its keys ride the bottom border
+  (`dialog::BorderHint`, `enter new · ←→ harness · ctrl+f overrides`;
+  the step's `enter … · tab complete · esc back`). The listing takes 10
+  to 14 rows, fixed when the popup opens.
 - **The first step gains one field row, at its foot:** `harness` stays
-  alone at the head; the `overrides` row is the last before the foot's
-  keys, under a rule, its label in the row's own ink and its value muted
+  alone at the head; the `overrides` row is the last, a row of air above
+  it and the keys' border under it, its label in the row's own ink and its value muted
   against its end: `none` at rest, `--model opus · DEBUG=1` (cut at its
   end) once set, ending in `›` (`Symbol::Submenu`), since it opens a step.
   Its value ends on the harness value's column. The mockup's `›`/`v`
@@ -283,12 +289,12 @@ Against the operator's mockup and the design-system rules:
   wrong harness is visible and harmless; a sticky
   `--dangerously-skip-permissions` is neither. The last set heads the
   history instead.
-- **The step, top to bottom:** the typed line (underline, caret, no raised
-  band, which the mockup has); the entries added, one row each with an `x`
+- **The step, top to bottom:** its heading, air, the typed line (caret, no
+  underline and no raised band, which the mockup has); the entries added, one row each with an `x`
   in `mark::close_tone`; then a list: `recent` sets for this harness while
   the line is empty (this project's first, another project's sets naming
   it, muted, at their end), the catalog's completions while typing, a flag's
-  accepted values after a `OneOf` flag and a space. Under a rule, a detail
+  accepted values after a `OneOf` flag and a space. Under a row of air, a detail
   line of fixed height for the marked row (`Permission mode · default,
   acceptEdits, plan`) instead of the mockup's right column cut mid-word.
   Rows say at their end only what is known: `value`, `repeatable`,
