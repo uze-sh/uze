@@ -1057,3 +1057,53 @@ fn the_spec_summary_is_counted_as_a_job_for_the_checkout_in_front() {
     assert_eq!(section.rows.len(), 1);
     assert_eq!(model.schedule_engine_jobs(&home, &sender), 0, "fresh");
 }
+
+/// The wheel moves the architect's board down as well as up, wherever on
+/// it the pointer is. A drawing hands over only its screen, which always
+/// read as its end, so the host dropped every notch down.
+#[test]
+fn the_wheel_moves_the_architects_board_down() {
+    use uze_extensions::architect;
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-architect-wheel"));
+    let mut model = agent_session_in("/repo");
+    open_architect_with(
+        &mut model,
+        vec![architect::Artifact::read(
+            "crate-layering.mmd",
+            include_str!("../../../../docs/architecture/crate-layering.mmd"),
+        )],
+    );
+    let slot = architect_slot(&model);
+    let mut driven = driven(model, &home);
+    driven.frame();
+    let board = driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .find(|(_, hit)| {
+            matches!(
+                hit,
+                WorkspaceHit::Extension(ExtensionHit {
+                    slot: hit_slot,
+                    hit: ViewHit::PlaceCaret { .. },
+                }) if *hit_slot == slot
+            )
+        })
+        .map(|(rect, _)| *rect)
+        .expect("the board is drawn");
+    // The middle, and the columns a navigator would take beside a list:
+    // a board's list is a row of tabs, so they are the drawing's too.
+    for (column, row) in [
+        (board.x + board.width / 2, board.y + board.height / 2),
+        (board.x + 2, board.y + 2),
+    ] {
+        let before = architect_place(&driven.attach.model);
+        driven.mouse(column, row, MouseEventKind::ScrollDown);
+        assert_ne!(
+            architect_place(&driven.attach.model),
+            before,
+            "a notch down at {column},{row} moved the board"
+        );
+    }
+}

@@ -565,7 +565,10 @@ fn render_board(
                 usize::from(board.height),
                 *total,
             );
-            rendered.content_at_end = scroll.saturating_add(usize::from(board.height)) >= *total;
+            // A drawing hands over only its screen, so it is always "all on
+            // show"; where its edge lies is the extension's to say.
+            rendered.content_at_end = *medium != Medium::Drawing
+                && scroll.saturating_add(usize::from(board.height)) >= *total;
             rendered.content_bar =
                 render_scrollbar(frame, bar, *scroll, hits, ViewHit::DragContentScrollbar);
         }
