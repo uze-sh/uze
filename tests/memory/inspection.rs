@@ -185,6 +185,53 @@ fn a_space_outside_every_repository_has_its_memory_and_no_project() {
     assert!(!bare.join("agents.yaml").exists());
 }
 
+/// A repository whose project cannot be read is still a repository: the
+/// overview says why its project is missing, and the memory that reaches
+/// its agents anyway is still listed.
+#[test]
+fn a_repository_whose_project_cannot_be_read_keeps_its_memory() {
+    use uze_application::application::memory::{Kind, MemoryCaller, MemoryScope};
+    let root = temp("space-overview-unreadable");
+    let application = app(&root, true);
+    let project = root.join("project");
+    uze_testkit::git::mark_repository(&project);
+    // A Store index nobody can read: the project's plugins cannot be
+    // listed, which is the project's part of the overview alone.
+    let registry = UzeHome::at(root.join("uze-home")).registry_path();
+    fs::create_dir_all(registry.parent().unwrap()).unwrap();
+    fs::write(registry, "{ not json").unwrap();
+    application
+        .memory()
+        .remember(
+            MemoryCaller::Operator { cwd: &root },
+            MemoryScope::Machine,
+            "everywhere",
+            Kind::User,
+            "a fact for every project",
+            "body",
+        )
+        .unwrap();
+
+    let SpaceOverview::Directory(space) = application.workspace().space_overview(&project).unwrap()
+    else {
+        panic!("a directory that exists is overviewed");
+    };
+    assert!(
+        matches!(&space.project, Some(Err(_))),
+        "{:?}",
+        space.project
+    );
+    assert!(
+        space
+            .memory
+            .machine
+            .iter()
+            .any(|fact| fact.name == "everywhere"),
+        "the machine's facts reach it: {:?}",
+        space.memory.machine
+    );
+}
+
 #[test]
 fn a_space_whose_directory_is_gone_is_answered_as_such() {
     let root = temp("space-overview-gone");
