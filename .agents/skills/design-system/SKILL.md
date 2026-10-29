@@ -421,6 +421,10 @@ operator rather than assume.
 - No hint bar, no stray esc, no empty sidebar slot.
 - The drawer goes away.
 - The same shape in every extension and section.
+- A part that cannot be read empties its own section, never the screen:
+  the section bar stays, and each section is gated on what it needs alone.
+  A missing precondition that a first edit creates (`agents.yaml`) is a
+  default, not a warning.
 
 **Narrow widths:**
 - Nothing clips the header, the footer or the first line.

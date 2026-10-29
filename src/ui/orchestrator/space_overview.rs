@@ -1022,14 +1022,14 @@ impl SpaceOverviewView {
                 }
             }
             Section::Settings => {
-                let failing = !project.status.steps_not_spelled_here.is_empty()
+                let failing = !project.steps_not_spelled_here().is_empty()
                     || project
                         .workspace
                         .as_ref()
                         .map_or(true, |declaration| !declaration.problems.is_empty());
                 if failing {
                     Health::Failing
-                } else if project.status.commands_awaiting_approval.is_some() {
+                } else if project.commands_awaiting_approval().is_some() {
                     Health::Warning
                 } else {
                     Health::Fine
@@ -1072,25 +1072,28 @@ impl SpaceOverviewView {
             detail,
         };
         let mut issues = Vec::new();
-        let report = &project.status.report;
-        if !report.instructions.exists {
-            issues.push(alert(
-                Severity::Low,
-                "No AGENTS.md".to_owned(),
-                "Harnesses get no project context here.".to_owned(),
-            ));
-        }
-        for harness in &report.harnesses {
-            for issue in harness_issues(harness) {
+        // Outside a project there is no context to deliver, so nothing
+        // about delivering it is an issue.
+        if let Some(report) = project.status.as_ref().map(|status| &status.report) {
+            if !report.instructions.exists {
                 issues.push(alert(
-                    Severity::Medium,
-                    harness.display_name.clone(),
-                    issue.to_owned(),
+                    Severity::Low,
+                    "No AGENTS.md".to_owned(),
+                    "Harnesses get no project context here.".to_owned(),
                 ));
             }
-        }
-        for issue in &report.issues {
-            issues.push(alert(Severity::Medium, "Context".to_owned(), issue.clone()));
+            for harness in &report.harnesses {
+                for issue in harness_issues(harness) {
+                    issues.push(alert(
+                        Severity::Medium,
+                        harness.display_name.clone(),
+                        issue.to_owned(),
+                    ));
+                }
+            }
+            for issue in &report.issues {
+                issues.push(alert(Severity::Medium, "Context".to_owned(), issue.clone()));
+            }
         }
         let plugins = &project.plugins;
         if let Some(problem) = &plugins.lock_problem {
@@ -1129,7 +1132,7 @@ impl SpaceOverviewView {
                     .to_owned(),
             ));
         }
-        for step in &project.status.steps_not_spelled_here {
+        for step in project.steps_not_spelled_here() {
             issues.push(alert(
                 Severity::High,
                 format!("`{}` never runs here", step.command),
@@ -1161,7 +1164,7 @@ impl SpaceOverviewView {
                 }
             }
         }
-        if let Some(awaiting) = &project.status.commands_awaiting_approval {
+        if let Some(awaiting) = project.commands_awaiting_approval() {
             issues.push(alert(
                 Severity::Medium,
                 match awaiting.commands.len() {
@@ -1365,7 +1368,7 @@ impl WorkspaceModel {
             .tabs()
             .filter_map(|tab| launched_agent_id(tab).map(|id| (id, tab.label.as_str())))
             .collect();
-        let primary = evaluation_key(&project.status.report.root);
+        let primary = evaluation_key(&project.root);
         let ready: BTreeSet<&str> =
             self.remembered
                 .tasks
@@ -2138,7 +2141,7 @@ impl Attach<'_> {
             .space_overview
             .as_ref()
             .and_then(|overview| overview.project())
-            .and_then(|project| project.status.commands_awaiting_approval.as_ref())
+            .and_then(|project| project.commands_awaiting_approval())
             .map(|awaiting| awaiting.project.clone())
         else {
             return;

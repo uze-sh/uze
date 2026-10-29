@@ -930,13 +930,14 @@ fn project_space(
         plugin_rules: Default::default(),
     };
     uze_application::SpaceOverview::Project(Box::new(uze_application::ProjectSpace {
-        status: uze_application::application::ProjectStatus {
+        root: PathBuf::from("/repo"),
+        status: Some(uze_application::application::ProjectStatus {
             report,
             steps_not_spelled_here: Vec::new(),
             steps_only_in_sh: Vec::new(),
             commands_awaiting_approval: None,
             extensions: Vec::new(),
-        },
+        }),
         plugins: Default::default(),
         memory,
         workspace,
@@ -2919,6 +2920,8 @@ fn the_count_in_the_foot_lists_the_space_s_issues() {
     if let uze_application::SpaceOverview::Project(project) = &mut answer {
         project
             .status
+            .as_mut()
+            .expect("a project has a status")
             .report
             .harnesses
             .push(uze_application::application::StatusHarness {
@@ -3401,7 +3404,11 @@ fn commands_waiting_are_reviewed_from_the_keyboard() {
         .expect("an unapproved project waits");
     let mut answer = project_space(Default::default(), Err("not read".to_owned()));
     if let uze_application::SpaceOverview::Project(space) = &mut answer {
-        space.status.commands_awaiting_approval = Some(awaiting.clone());
+        space
+            .status
+            .as_mut()
+            .expect("a project has a status")
+            .commands_awaiting_approval = Some(awaiting.clone());
     }
     let mut driven = overview_answered(&home, Some(Ok(answer)));
     driven.attach.model.commands_await(awaiting, false);
@@ -3511,4 +3518,32 @@ fn a_worktrees_settings_say_they_apply_once_delivered() {
         screen.contains("worktree copy · applies once delivered"),
         "the file is said to be the worktree's: {screen}"
     );
+}
+
+/// An agent outside every project has the whole overview, with nothing
+/// marked: its settings say the first change creates `agents.yaml`, and no
+/// section warns that there is no project.
+#[test]
+fn an_agent_outside_every_project_has_every_section_unmarked() {
+    use crate::ui::orchestrator::space_overview::Health;
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-loose"));
+    let mut answer = project_space(Default::default(), Ok(undeclared(false)));
+    if let uze_application::SpaceOverview::Project(space) = &mut answer {
+        space.status = None;
+    }
+    let mut driven = overview_answered(&home, Some(Ok(answer)));
+    for section in Section::ALL {
+        assert_eq!(
+            overview_of(&driven).health(section),
+            Health::Fine,
+            "{section:?}"
+        );
+    }
+    assert!(overview_of(&driven).issues().is_empty());
+    let settings =
+        driven.hit(|hit| *hit == WorkspaceHit::OverviewSection(Section::Settings.index()));
+    driven.press(settings.x + 1, settings.y);
+    driven.frame();
+    let screen = frame_rows(&mut driven.attach.model).join("\n");
+    assert!(screen.contains("The first change creates it."), "{screen}");
 }

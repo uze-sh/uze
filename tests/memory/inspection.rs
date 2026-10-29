@@ -92,7 +92,10 @@ fn the_space_overview_agrees_with_status() {
         ))
         .unwrap()
     };
-    assert_eq!(context_of(&space.status), context_of(&status));
+    assert_eq!(
+        context_of(space.status.as_ref().expect("a project has a status")),
+        context_of(&status)
+    );
     let summary = application.project().summary(&project).unwrap();
     assert_eq!(
         summary.project.context == ContextState::Ready,
@@ -129,17 +132,46 @@ fn the_space_overview_agrees_with_status() {
     );
 }
 
+/// A directory outside every project is still overviewed: no status to
+/// say, nothing locked, and settings that create the `agents.yaml` the
+/// first one written needs.
 #[test]
-fn a_space_with_no_project_or_no_root_is_answered_as_such() {
-    let root = temp("space-overview-absent");
+fn a_space_outside_every_project_keeps_its_settings_and_memory() {
+    use uze_application::{DeclarationApplied, DeclarationKey, DeclaredValue, Edit};
+    let root = temp("space-overview-loose");
     let application = app(&root, true);
     let bare = root.join("bare");
     fs::create_dir_all(&bare).unwrap();
 
-    assert!(matches!(
-        application.workspace().space_overview(&bare).unwrap(),
-        SpaceOverview::NotAProject { .. }
-    ));
+    let SpaceOverview::Project(space) = application.workspace().space_overview(&bare).unwrap()
+    else {
+        panic!("a directory that exists is overviewed");
+    };
+    assert!(space.status.is_none(), "no project has no status");
+    assert!(space.plugins.plugins.is_empty());
+    assert!(space.workspace.is_ok(), "{:?}", space.workspace);
+
+    let applied = application
+        .workspace()
+        .apply_declaration(
+            &bare,
+            &[Edit::Set {
+                key: DeclarationKey::Slots,
+                value: DeclaredValue::Number(2),
+            }],
+        )
+        .unwrap();
+    assert!(
+        matches!(applied, DeclarationApplied::Written { created: true, .. }),
+        "{applied:?}"
+    );
+    assert!(bare.join("agents.yaml").is_file());
+}
+
+#[test]
+fn a_space_whose_directory_is_gone_is_answered_as_such() {
+    let root = temp("space-overview-gone");
+    let application = app(&root, true);
     assert!(matches!(
         application
             .workspace()

@@ -8,26 +8,33 @@ use std::path::{Path, PathBuf};
 use uze_core::{Result, UzeError};
 use uze_workspace::worktree::isolated_checkout;
 
-use super::{DeclarationView, PreservedWork, Workspace};
+use super::{
+    CommandsAwaitingApproval, DeclarationView, PreservedWork, StepNotSpelledHere, Workspace,
+};
 use crate::application::{
     EnvironmentDrift, Freshness, PluginSummary, ProjectLockStatus, ProjectStatus,
-    memory::{Entry, MemoryScope, UnreadableFact},
+    memory::{Entry, MemoryReport, MemoryScope, UnreadableFact},
 };
 
-/// The overview of the project an agent works in. A directory that is gone
-/// and one that is no project are answers the screen shows, never failures.
+/// The overview of the directory an agent works in. A directory that is
+/// gone is an answer the screen shows, never a failure; one outside every
+/// project still has its memory and its settings.
 #[derive(Clone, Debug)]
 pub enum SpaceOverview {
     DirectoryGone { directory: PathBuf },
-    NotAProject { directory: PathBuf },
     Project(Box<ProjectSpace>),
 }
 
-/// A project's overview.
+/// What the overview reads of a directory, each part on its own: only the
+/// parts `uze status` answers need a project around it.
 #[derive(Clone, Debug)]
 pub struct ProjectSpace {
-    /// Exactly what `uze status` answers here.
-    pub status: ProjectStatus,
+    /// The directory read: the project's root, or the directory itself
+    /// outside every project.
+    pub root: PathBuf,
+    /// Exactly what `uze status` answers here, or `None` outside every
+    /// project, where it has nothing to answer.
+    pub status: Option<ProjectStatus>,
     pub plugins: SpacePlugins,
     pub memory: SpaceMemory,
     /// The `workspace:` declaration key by key, or why `agents.yaml` could
@@ -36,6 +43,21 @@ pub struct ProjectSpace {
     /// Every agent recorded for this project, oldest first. Which of them
     /// a live agent is still in front of is the client's to subtract.
     pub preserved: Vec<PreservedWork>,
+}
+
+impl ProjectSpace {
+    /// The commands waiting for the operator's approval: none outside a
+    /// project, which declares none.
+    pub fn commands_awaiting_approval(&self) -> Option<&CommandsAwaitingApproval> {
+        self.status.as_ref()?.commands_awaiting_approval.as_ref()
+    }
+
+    /// The declared steps with no spelling for this platform.
+    pub fn steps_not_spelled_here(&self) -> &[StepNotSpelledHere] {
+        self.status
+            .as_ref()
+            .map_or(&[], |status| status.steps_not_spelled_here.as_slice())
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -118,32 +140,40 @@ impl Workspace<'_> {
             });
         }
         let status = match self.0.health().project_status(root) {
-            Ok(status) => status,
-            Err(UzeError::NoProject { .. }) => {
-                return Ok(SpaceOverview::NotAProject {
-                    directory: root.to_path_buf(),
-                });
-            }
+            Ok(status) => Some(status),
+            Err(UzeError::NoProject { .. }) => None,
             Err(error) => return Err(error),
         };
-        let installed = self.0.plugins().list()?;
-        let primary = isolated_checkout(&status.report.root).map_or_else(
-            || status.report.root.clone(),
-            |checkout| checkout.primary.to_path_buf(),
-        );
+        // Outside a project the directory itself is what its settings
+        // declare and its harnesses remember: writing a setting there is
+        // what makes it one.
+        let root = status
+            .as_ref()
+            .map_or_else(|| root.to_path_buf(), |status| status.report.root.clone());
+        let plugins = match &status {
+            Some(status) => space_plugins(status, &self.0.plugins().list()?),
+            None => SpacePlugins::default(),
+        };
+        let memory = match &status {
+            Some(status) => space_memory(&status.report.memory),
+            None => space_memory(&self.0.memory().report_at(&root)),
+        };
+        let primary = isolated_checkout(&root)
+            .map_or_else(|| root.clone(), |checkout| checkout.primary.to_path_buf());
         let preserved = self
             .preserved_work()
             .into_iter()
             .filter(|work| work.project == primary)
             .collect();
         Ok(SpaceOverview::Project(Box::new(ProjectSpace {
-            plugins: space_plugins(&status, &installed),
-            memory: space_memory(&status),
+            plugins,
+            memory,
             workspace: self
-                .declaration_view(&status.report.root)
+                .declaration_view(&root)
                 .map_err(|error| error.to_string()),
             preserved,
             status,
+            root,
         })))
     }
 }
@@ -178,8 +208,7 @@ fn space_plugins(status: &ProjectStatus, installed: &[PluginSummary]) -> SpacePl
     }
 }
 
-fn space_memory(status: &ProjectStatus) -> SpaceMemory {
-    let memory = &status.report.memory;
+fn space_memory(memory: &MemoryReport) -> SpaceMemory {
     SpaceMemory {
         project: memory
             .entries

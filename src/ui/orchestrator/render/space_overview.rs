@@ -159,16 +159,13 @@ fn render_overview_frame(
             "Directory gone",
             format!("{} no longer exists", display_path(directory)),
         )),
-        Some(Ok(SpaceOverview::NotAProject { directory })) => Some((
-            "Not a project",
-            format!("{} is not inside a project", display_path(directory)),
-        )),
         Some(Err(reason)) => Some(("Project not read", reason.clone())),
         _ => None,
     };
-    // The bar stands whatever the read said: a project that could not be
-    // read is still the one each section is about, and every section says
-    // why it is empty rather than the overview losing all but one.
+    // The bar stands whatever the read said: a directory that is gone or
+    // could not be read is still the one each section is about, and every
+    // section says why it is empty rather than the overview losing all but
+    // one.
     let bar = Rect::new(inner.x, inner.y + BAR_ROW, inner.width, 1);
     let open = Some(overview.section.index());
     for (rect, index) in tabs::tab_bar(frame, bar, &section_tabs(model, overview), open, false) {
@@ -418,11 +415,11 @@ fn cause_line(overview: &SpaceOverviewView, project: &ProjectSpace) -> (String, 
         }
         Section::Settings => {
             let mut causes = Vec::new();
-            let unspelled = project.status.steps_not_spelled_here.len();
+            let unspelled = project.steps_not_spelled_here().len();
             if unspelled > 0 {
                 causes.push(format!("{} never run here", plural(unspelled, "command")));
             }
-            if let Some(awaiting) = &project.status.commands_awaiting_approval {
+            if let Some(awaiting) = project.commands_awaiting_approval() {
                 causes.push(format!(
                     "{} waiting for approval",
                     plural(awaiting.commands.len(), "command")
@@ -2294,7 +2291,7 @@ fn settings_answer(overview: &SpaceOverviewView, project: &ProjectSpace) -> Opti
             Token::StateDanger,
             vec![("Discard", WorkspaceHit::OverviewDiscard, Token::StateDanger)],
         )
-    } else if let Some(awaiting) = &project.status.commands_awaiting_approval {
+    } else if let Some(awaiting) = project.commands_awaiting_approval() {
         let title = format!(
             "{} waiting for approval",
             plural(awaiting.commands.len(), "command")
@@ -2931,7 +2928,7 @@ fn foot_keys(
                 keys.push((Action::DiscardChanges, "discard"));
             } else if overview
                 .project()
-                .is_some_and(|project| project.status.commands_awaiting_approval.is_some())
+                .is_some_and(|project| project.commands_awaiting_approval().is_some())
             {
                 keys.push((Action::ReviewCommands, "review"));
             }
