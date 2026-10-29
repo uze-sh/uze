@@ -162,12 +162,14 @@ pub(super) fn flag_detail(flag: &OverrideFlag) -> String {
 /// every process on the machine sees a launch's arguments.
 pub(super) const FLAG_VALUES_ARE_SEEN: &str = "other users can see flag values · use a variable";
 
-/// `word`, quoted when it would not read back as one word.
+/// `word`, quoted when it would not read back as one word: single quotes
+/// keep a backslash, a quote and a space as they are, and an embedded
+/// single quote closes them, is escaped, and opens them again.
 fn quoted(word: &str) -> String {
     if word.is_empty()
         || word
             .chars()
-            .any(|c| c.is_whitespace() || c == '"' || c == '\'')
+            .any(|c| c.is_whitespace() || matches!(c, '"' | '\'' | '\\'))
     {
         format!("'{}'", word.replace('\'', r"'\''"))
     } else {
@@ -506,5 +508,42 @@ impl DirectoryStep {
         step.refusal = refusal;
         step.marked = None;
         self.entries_mut().extend(added);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A refused word goes back into the line, and the next Enter splits
+    /// the line again: the word must read back as itself.
+    #[test]
+    fn a_word_put_back_in_the_line_reads_back_as_itself() {
+        let catalog = OverrideCatalog::default();
+        for word in [
+            r"C:\dir",
+            r"C:\Program Files\x",
+            r"trailing\",
+            r"\\server\share",
+            "it's",
+            r#"say "hi""#,
+            r#"'\''"#,
+            "a b",
+            "tab\there",
+            "",
+            "$HOME",
+            "plain",
+        ] {
+            let line = quoted(word);
+
+            let read: Vec<String> = catalog
+                .check(&line)
+                .unwrap_or_else(|open| panic!("{word:?} as {line:?}: {open}"))
+                .into_iter()
+                .flat_map(|entry| entry.words)
+                .collect();
+
+            assert_eq!(read, [word], "{word:?} as {line:?}");
+        }
     }
 }
