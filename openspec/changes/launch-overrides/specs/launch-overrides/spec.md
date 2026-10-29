@@ -203,7 +203,8 @@ entries being edited.
 ### Requirement: Overrides stay private to the operator
 The system SHALL keep recorded and remembered overrides readable by the
 operator alone, SHALL NOT write a value to a log or a trace, and SHALL NOT
-remember in the history a variable whose name reads as a secret.
+remember in the history a variable whose name reads as a secret or whose
+value holds a URL with credentials before its host.
 
 #### Scenario: Tracing a launch with overrides
 - **WHEN** a launch carrying `API_TOKEN=secret` is traced
@@ -212,6 +213,10 @@ remember in the history a variable whose name reads as a secret.
 #### Scenario: A secret in a remembered set
 - **WHEN** a launch carrying `API_TOKEN=secret` and `--model opus` is remembered
 - **THEN** the history holds `--model opus` and says one variable was not kept
+
+#### Scenario: Credentials in a variable's value
+- **WHEN** a launch carrying `DATABASE_URL=postgres://u:pw@h/db` is remembered
+- **THEN** the history does not hold the variable, whatever its name
 
 ### Requirement: An agent keeps the overrides it was launched with
 The system SHALL record an agent's overrides per harness, so a pane

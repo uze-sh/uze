@@ -33,9 +33,11 @@ const RECENT_PER_HARNESS: usize = 20;
 const LOCK_PATIENCE: Duration = Duration::from_secs(2);
 /// A variable whose name, upper-cased, holds one of these anywhere reads as
 /// a secret, and is not remembered in the history: `GH_TOKEN`,
-/// `OPENAI_APIKEY`, `DB_PASSWD`. Remembering one too few is the cost to
-/// avoid; `AUTHOR` withheld too is the price.
-const SECRET_FRAGMENTS: &[&str] = &["TOKEN", "SECRET", "PASS", "CRED", "KEY", "AUTH"];
+/// `OPENAI_APIKEY`, `DB_PASSWD`, `DB_PWD`, `SENTRY_DSN`. Remembering one
+/// too few is the cost to avoid; `AUTHOR` withheld too is the price.
+const SECRET_FRAGMENTS: &[&str] = &[
+    "TOKEN", "SECRET", "PASS", "PWD", "CRED", "KEY", "AUTH", "DSN",
+];
 /// Too short to look for anywhere, so read as a secret only as a whole
 /// `_`-separated part: `GH_PAT`, not `PATH`.
 const SECRET_PARTS: &[&str] = &["PAT"];
@@ -246,8 +248,8 @@ fn remember(
     sets.truncate(RECENT_PER_HARNESS);
 }
 
-/// `tokens` without the variables whose name reads as a secret, and how
-/// many there were.
+/// `tokens` without the variables that read as a secret, by name or by a
+/// URL with credentials in their value, and how many there were.
 fn without_secrets(tokens: &[String]) -> (Vec<String>, usize) {
     let (secrets, kept): (Vec<&String>, Vec<&String>) =
         tokens.iter().partition(|token| reads_as_secret(token));
@@ -256,15 +258,27 @@ fn without_secrets(tokens: &[String]) -> (Vec<String>, usize) {
 
 fn reads_as_secret(token: &str) -> bool {
     match super::entries(&[token.to_owned()], FlagCatalog::default()).as_slice() {
-        [super::Entry::Variable { name, .. }] => {
+        [super::Entry::Variable { name, value }] => {
             let name = name.to_ascii_uppercase();
             SECRET_FRAGMENTS
                 .iter()
                 .any(|fragment| name.contains(fragment))
                 || name.split('_').any(|part| SECRET_PARTS.contains(&part))
+                || carries_credentials(value)
         }
         _ => false,
     }
+}
+
+/// Whether `value` holds a URL with credentials before its host
+/// (`postgres://user:pw@host`, `https://key@host`), whatever the
+/// variable is called.
+fn carries_credentials(value: &str) -> bool {
+    value.match_indices("://").any(|(at, scheme_end)| {
+        let rest = &value[at + scheme_end.len()..];
+        let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+        authority.contains('@')
+    })
 }
 
 /// The record, or none when it is absent or does not read: what a read
@@ -503,6 +517,8 @@ mod tests {
             "MY_CREDS=x",
             "githubtoken=x",
             "OAUTH_CLIENT=x",
+            "DB_PWD=x",
+            "SENTRY_DSN=x",
         ] {
             assert!(reads_as_secret(secret), "{secret}");
         }
@@ -512,6 +528,26 @@ mod tests {
             "PATCH_DIR=x",
             "EXTRA_PATH=x",
             "--api-key=x",
+        ] {
+            assert!(!reads_as_secret(plain), "{plain}");
+        }
+    }
+
+    #[test]
+    fn a_value_carrying_credentials_in_a_url_reads_as_a_secret() {
+        for secret in [
+            "DATABASE_URL=postgres://u:pw@h/db",
+            "UPSTREAM=https://key@o1.ingest.example.io/42",
+            "PROXY=http://user@proxy:8080",
+            "MIRRORS=a,https://u:p@m.example/x",
+        ] {
+            assert!(reads_as_secret(secret), "{secret}");
+        }
+        for plain in [
+            "HOMEPAGE=https://example.com/a@b",
+            "UPSTREAM=https://example.com?to=a@b",
+            "MAILTO=me@example.com",
+            "REPO=git@github.com:o/r",
         ] {
             assert!(!reads_as_secret(plain), "{plain}");
         }
