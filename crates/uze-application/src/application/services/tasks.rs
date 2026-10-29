@@ -64,6 +64,7 @@ impl Workspace<'_> {
                     .unwrap_or(integration.id());
                 let (launch, continuity_gap) = self.launcher(integration.as_ref(), binary);
                 AgentIdentity {
+                    through_launcher: launch != std::path::Path::new(binary),
                     binary,
                     integration: integration.id(),
                     display_name: integration.display_name(),

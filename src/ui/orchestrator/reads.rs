@@ -1143,11 +1143,30 @@ pub(super) fn spawn_commit_detail(
     });
 }
 
+/// What an agent's tab runs, as the client read it when it attached.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct TabCommand {
+    pub(super) argv: Vec<String>,
+    /// Whether `argv` starts UZE's launcher, which carries the agent's
+    /// overrides itself; a plain binary is handed them with its tab.
+    pub(super) through_launcher: bool,
+}
+
+impl TabCommand {
+    /// The command an agent of `identity` is launched by.
+    pub(super) fn of(identity: &uze_application::AgentIdentity) -> Self {
+        Self {
+            argv: vec![identity.launch.to_string_lossy().into_owned()],
+            through_launcher: identity.through_launcher,
+        }
+    }
+}
+
 /// The answer to a placement request: where the agent goes, or why it
 /// cannot — in which case no tab opens.
 pub(super) struct PlacementResolution {
     pub(super) label: String,
-    pub(super) command: Vec<String>,
+    pub(super) command: TabCommand,
     pub(super) placement: std::result::Result<uze_application::AgentPlacement, String>,
     /// The tab this placement takes over from: the agent standing in a
     /// checkout that is gone, whose row the resume was clicked on. Closed
@@ -1228,7 +1247,7 @@ pub(super) fn spawn_agent_placement(
     request: PlacementRequest,
     occupied: Vec<PathBuf>,
     label: String,
-    command: Vec<String>,
+    command: TabCommand,
     replacing: Option<TabId>,
     sender: mpsc::Sender<PlacementResolution>,
 ) {

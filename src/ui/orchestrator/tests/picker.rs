@@ -985,7 +985,10 @@ fn a_new_agent_opens_in_the_space_it_was_asked_from() {
 
     driven.placements_answered(PlacementResolution {
         label: "agent 2".to_owned(),
-        command: vec!["claude".to_owned()],
+        command: super::TabCommand {
+            argv: vec!["claude".to_owned()],
+            through_launcher: false,
+        },
         placement: Ok(placement),
         replacing: None,
         space: Some(origin),

@@ -15,7 +15,7 @@ pub(super) struct AgentOption {
     /// The integration the harness belongs to — what an agent is recorded
     /// as running.
     pub(super) integration: String,
-    pub(super) command: Vec<String>,
+    pub(super) command: TabCommand,
     /// Said on the tab when the agent starts a conversation it will not be
     /// able to continue.
     pub(super) continuity_gap: Option<String>,

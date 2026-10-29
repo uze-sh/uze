@@ -1117,7 +1117,7 @@ fn agent_options(home: &UzeHome) -> Vec<AgentOption> {
         .map(|identity| AgentOption {
             display_name: identity.display_name.to_owned(),
             integration: identity.integration.to_owned(),
-            command: vec![identity.launch.to_string_lossy().into_owned()],
+            command: TabCommand::of(&identity),
             continuity_gap: identity.continuity_gap,
             overrides: identity.overrides,
         })

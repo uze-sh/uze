@@ -64,6 +64,7 @@ fn a_long_caption_is_elided_rather_than_run_off_the_sidebar() {
         integration: "long",
         display_name: "Long",
         launch: std::path::PathBuf::from(LONG),
+        through_launcher: false,
         continuity_gap: None,
         configured: true,
         skill_prefix: Some("/"),
@@ -956,7 +957,10 @@ fn resumed_work_takes_the_operator_to_its_space() {
 
     driven.placements_answered(super::PlacementResolution {
         label: "agent 2".to_owned(),
-        command: vec!["claude".to_owned()],
+        command: super::TabCommand {
+            argv: vec!["claude".to_owned()],
+            through_launcher: false,
+        },
         placement: Ok(place()),
         replacing: None,
         space: Some(origin),
@@ -966,7 +970,10 @@ fn resumed_work_takes_the_operator_to_its_space() {
 
     driven.placements_answered(super::PlacementResolution {
         label: "agent 3".to_owned(),
-        command: vec!["claude".to_owned()],
+        command: super::TabCommand {
+            argv: vec!["claude".to_owned()],
+            through_launcher: false,
+        },
         placement: Ok(place()),
         replacing: None,
         space: None,

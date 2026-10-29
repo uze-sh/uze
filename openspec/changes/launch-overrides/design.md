@@ -69,7 +69,11 @@ that verifies the claim. The pane's command stays `[launch]`.
 
 When `launch` is the bare binary (no shim placed), the client appends the
 override flags to the argv and the variables to the launch environment
-itself: there is no continuity to lose there. Under `UZE_BYPASS` the shim
+itself: there is no continuity to lose there. Which of the two applies
+follows the command the tab runs, read when the client attached, never a
+fresh look for the launcher at placement: a launcher set up in between
+would otherwise have the overrides recorded for a launch that never reads
+them. Under `UZE_BYPASS` the shim
 launches without them and says so once. A claim `owner_of` refuses
 launches without them and says so.
 

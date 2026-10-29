@@ -3747,14 +3747,46 @@ mod overrides_tests {
             app.workspace().agent_overrides(&root, agent, "one"),
             words("--model opus DEBUG=1")
         );
-        assert_eq!(
-            placement.bare_launch,
-            BareLaunch::default(),
-            "the launcher carries them"
+        assert!(
+            placement.warnings.is_empty(),
+            "the launcher says what it leaves out: {:?}",
+            placement.warnings
         );
         let recent = app.workspace().recent_overrides("one", &root);
         assert_eq!(recent.len(), 1);
         assert_eq!(recent[0].tokens, words("--model opus DEBUG=1"));
+    }
+
+    /// The client's harness list is read when it attaches, and its tab runs
+    /// the command read then: a launcher set up in between must not leave
+    /// the overrides recorded for a launcher the tab never runs.
+    #[test]
+    fn a_launcher_set_up_after_the_client_attached_never_strands_the_overrides() {
+        let repository = uze_testkit::git::Repository::new("overrides-late-launcher");
+        let root = repository.root().canonical().unwrap();
+        let app = application("overrides-late-launcher-home");
+        let launcher = app.home.shim_path("one");
+        std::fs::remove_file(&launcher).unwrap();
+        let attached = app
+            .workspace()
+            .agent_identities()
+            .into_iter()
+            .find(|identity| identity.integration == "one")
+            .unwrap();
+        assert_ne!(attached.launch, launcher);
+        assert!(
+            !attached.through_launcher,
+            "the client attached to the bare binary"
+        );
+        std::fs::write(&launcher, "").unwrap();
+
+        let placement = placed(&app, &root, "one", "--model opus DEBUG=1");
+
+        assert_eq!(placement.bare_launch.args, ["--model", "opus"]);
+        assert_eq!(
+            placement.bare_launch.env,
+            [("DEBUG".to_owned(), "1".to_owned())]
+        );
     }
 
     #[test]
@@ -3786,7 +3818,7 @@ mod overrides_tests {
             placement.bare_launch.env,
             [("DEBUG".to_owned(), "1".to_owned())]
         );
-        let said = placement.warnings.join("\n");
+        let said = placement.bare_launch.said.unwrap_or_default();
         assert!(said.contains("--resume left out"), "{said}");
         assert!(said.contains("HARNESS_HOME left out"), "{said}");
         assert!(

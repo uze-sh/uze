@@ -1150,7 +1150,10 @@ mod tests {
         let option = |name: &str| crate::ui::orchestrator::AgentOption {
             display_name: name.to_owned(),
             integration: "claude-code".to_owned(),
-            command: vec!["claude".to_owned()],
+            command: crate::ui::orchestrator::TabCommand {
+                argv: vec!["claude".to_owned()],
+                through_launcher: true,
+            },
             continuity_gap: None,
             overrides: Default::default(),
         };

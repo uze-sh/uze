@@ -9,7 +9,8 @@ use super::*;
 impl Workspace<'_> {
     /// `placed`, with `overrides` recorded as its agent's on the harness its
     /// record now names, when the launch was given any, and with what the
-    /// client adds itself when that harness starts without UZE's launcher.
+    /// client adds itself if its tab runs that harness without UZE's
+    /// launcher, which only the client knows.
     /// Recorded before the answer, so before the tab that launches it: the
     /// launcher reads them back at that launch. Best-effort like the rest of
     /// a placement's preparation: an agent whose overrides could not be
@@ -44,32 +45,20 @@ impl Workspace<'_> {
             ));
             return placed;
         }
-        if let Some(integration) = self.integration(&harness)
-            && !self.launches_through_launcher(integration)
-        {
-            placed.bare_launch =
-                self.bare_launch(&placed.project, &agent, integration, &mut placed.warnings);
+        if let Some(integration) = self.integration(&harness) {
+            placed.bare_launch = self.bare_launch(&placed.project, &agent, integration);
         }
         placed
     }
 
-    /// Whether an agent of `integration` starts through UZE's launcher,
-    /// which carries its overrides itself: the same rule that names the
-    /// launch, read off the gap it reports, so the two never disagree.
-    fn launches_through_launcher(&self, integration: &dyn IntegrationPort) -> bool {
-        self.launcher(integration, integration.id()).1.is_none()
-    }
-
     /// The agent's recorded overrides on `integration`, checked as the
-    /// launcher would check them on a launch it composed nothing for. What
-    /// is left out, and what a flag passed gives up, is said with the
-    /// placement's warnings.
+    /// launcher would check them on a launch it composed nothing for, with
+    /// what is left out and what a flag passed gives up.
     fn bare_launch(
         &self,
         project: &Path,
         agent: &AgentId,
         integration: &dyn IntegrationPort,
-        warnings: &mut Vec<String>,
     ) -> BareLaunch {
         let words = overrides::record::recorded(&self.0.home, project, agent, integration.id());
         if words.is_empty() {
@@ -87,9 +76,6 @@ impl Workspace<'_> {
             .chain(&checked.weakens)
             .cloned()
             .collect();
-        if !said.is_empty() {
-            warnings.push(said.join("; "));
-        }
         let text = |word: std::ffi::OsString| word.to_string_lossy().into_owned();
         BareLaunch {
             args: checked.args.into_iter().map(text).collect(),
@@ -98,6 +84,7 @@ impl Workspace<'_> {
                 .into_iter()
                 .map(|(name, value)| (text(name), text(value)))
                 .collect(),
+            said: (!said.is_empty()).then(|| said.join("; ")),
         }
     }
 

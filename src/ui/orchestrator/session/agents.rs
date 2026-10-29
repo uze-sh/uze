@@ -151,7 +151,7 @@ impl Attach<'_> {
     pub(super) fn launch_agent(
         &mut self,
         label: String,
-        command: Vec<String>,
+        command: TabCommand,
         harness: String,
         launch: AgentLaunch,
     ) {
@@ -418,7 +418,7 @@ impl Attach<'_> {
             .identities
             .iter()
             .find(|identity| identity.integration == choice.integration)
-            .map(|identity| identity.launch.to_string_lossy().into_owned())
+            .map(TabCommand::of)
         else {
             return;
         };
@@ -442,7 +442,7 @@ impl Attach<'_> {
             },
             Vec::new(),
             label,
-            vec![launch],
+            launch,
             Some(tab),
             self.channels.placements.sender.clone(),
         );
@@ -466,13 +466,13 @@ impl Attach<'_> {
                 // recorded against.
                 launched_agent_id(found)?.to_owned(),
                 found.label.clone(),
-                agent_for_tab(&self.identities, found)?.launch.clone(),
+                TabCommand::of(agent_for_tab(&self.identities, found)?),
                 named_checkout(&found.pane.cwd),
             ))
         }) else {
             return;
         };
-        let command = vec![harness.to_string_lossy().into_owned()];
+        let command = harness;
         if self.model.placement_pending {
             return;
         }
@@ -551,7 +551,7 @@ impl Attach<'_> {
         } = resolution;
         // A resume with nowhere to go opens nothing: the task keeps its
         // branch and stays in the preserved list, and the reason is said.
-        let placement = match placement {
+        let mut placement = match placement {
             Ok(placement) => placement,
             Err(reason) => {
                 self.model
@@ -559,6 +559,21 @@ impl Attach<'_> {
                 return;
             }
         };
+        // A plain binary is handed the agent's overrides here, since nothing
+        // between the tab and the binary would add them; UZE's launcher adds
+        // them itself. Decided by the command this tab runs, never by
+        // whether a launcher exists now.
+        let TabCommand {
+            argv: mut command,
+            through_launcher,
+        } = command;
+        let bare_launch = std::mem::take(&mut placement.bare_launch);
+        let mut launch_env = Vec::new();
+        if !through_launcher {
+            command.extend(bare_launch.args);
+            launch_env = bare_launch.env;
+            placement.warnings.extend(bare_launch.said);
+        }
         // What preparing the checkout could not do, said once — the tab
         // opens either way. A placement that could not do what was asked
         // never reaches here: it answered `Err` above and opened nothing.
@@ -622,11 +637,6 @@ impl Attach<'_> {
             space = space.0,
             "placing an agent's tab"
         );
-        // A harness with no UZE launcher in front of it is handed the
-        // agent's overrides here, since nothing between the tab and the
-        // binary would add them.
-        let mut command = command;
-        command.extend(placement.bare_launch.args);
         self.open_agent_tab(AgentTab {
             space,
             label,
@@ -634,7 +644,7 @@ impl Attach<'_> {
             cwd: placement.cwd,
             agent,
             launch_key: placement.launch_key,
-            env: placement.bare_launch.env,
+            env: launch_env,
             size,
         });
         if follow {

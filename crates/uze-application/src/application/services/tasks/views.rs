@@ -580,20 +580,24 @@ pub struct AgentPlacement {
     /// beside its identity, issued by the placement and recorded only as a
     /// digest. Empty until the placement is complete.
     pub launch_key: String,
-    /// What the client adds to the launch itself, because nothing else
-    /// will: the agent's overrides, when its harness starts by its plain
-    /// binary rather than through UZE's launcher, which carries them on its
-    /// own. Empty for every launch that goes through the launcher.
+    /// The agent's overrides as a launch with no UZE launcher in front of
+    /// it takes them. Whether the client hands them over follows the
+    /// command its tab runs, which the client read when it attached: UZE's
+    /// launcher carries them on its own, a plain binary is given these.
+    /// Empty when the agent has none on its harness.
     pub bare_launch: BareLaunch,
 }
 
 /// An agent's overrides as a launch with no UZE launcher in front of it
 /// takes them: flags after the binary, variables in the tab's launch
-/// environment.
+/// environment, and what such a launch says of them.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct BareLaunch {
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
+    /// What was left out and what a flag passed gives up, as the launcher
+    /// would have said it.
+    pub said: Option<String>,
 }
 
 /// What an agent was placed as. There is no third case: a placement that

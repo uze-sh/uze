@@ -154,6 +154,9 @@ pub struct AgentIdentity {
     /// is what keeps a conversation carrying over without asking the
     /// operator to reorder their own environment.
     pub launch: std::path::PathBuf,
+    /// Whether `launch` is UZE's launcher, which carries an agent's
+    /// overrides itself; a plain binary is handed them by the client.
+    pub through_launcher: bool,
     /// Why an agent of this harness starts a conversation it will not be
     /// able to continue, when that is the case. `None` is the ordinary
     /// answer; a value is meant to be said once, on the tab.
