@@ -92,8 +92,10 @@ pub(crate) fn find_upward<T>(
 
 /// The top of the Git repository `directory` stands in, or `None` outside
 /// every one: read from the markers alone, as [`resolve_project_root`]
-/// reads them, with no Git run.
+/// reads them, with no Git run, and from where the directory really is,
+/// so a link into a repository is in it as `uze status` finds it.
 pub fn repository_root_of(directory: &Path) -> Option<PathBuf> {
+    let directory = directory.canonical().ok()?;
     directory
         .ancestors()
         .find(|ancestor| is_repository_root(ancestor))
@@ -162,6 +164,29 @@ mod tests {
             Some(worktree.clone())
         );
         assert_eq!(repository_root_of(&loose), None);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_linked_into_a_repository_is_in_it() {
+        let root = uze_testkit::temp::scratch("repository-root-linked");
+        let repository = root.join("repository");
+        fs::create_dir_all(repository.join(GIT_MARKER)).unwrap();
+        fs::write(
+            repository.join(GIT_MARKER).join("HEAD"),
+            "ref: refs/heads/main\n",
+        )
+        .unwrap();
+        fs::create_dir_all(repository.join("sub")).unwrap();
+        let link = root.join("work");
+        std::os::unix::fs::symlink(repository.join("sub"), &link).unwrap();
+
+        assert_eq!(
+            repository_root_of(&link),
+            Some(repository.canonical().unwrap())
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
