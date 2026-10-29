@@ -110,6 +110,8 @@ deployment that differs from the obvious one.
   No `BiRel`: draw the two directions as two relationships.
 - A technology is a property of an edge, not a box: Git, HTTPS or a socket
   is how two things talk, not an external system of its own.
+- Draw no legend of your own: the surface draws each view's key under it,
+  from the notation that view uses.
 
 ### One model, many views: aliases are join keys
 
@@ -186,7 +188,7 @@ It reads every declared file and **draws** it the way the surface would,
 then reports each one. It exits non-zero when any of them fails, so it is
 a gate and not a report to skim.
 
-Run it after every change to a diagram. Four things it catches that
+Run it after every change to a diagram. Five things it catches that
 reading the file does not:
 
 1. **A diagram type that is listed but not drawn.** The surface draws the
@@ -200,10 +202,16 @@ reading the file does not:
    catches by looking, and it usually means the view is carrying more
    relationships than it can show. Split it, or raise its altitude.
 4. **A link that opens nothing.** A box's `$link` or `click … href` is
-   opened as a file: a module's directory, a file that moved or a path
-   that leaves the project looks like a working link on the board and
-   opens nothing. Link a Rust module by its file (`src/delivery.rs`), not
-   its directory.
+   opened in the project: a file that moved, a URL or a path that leaves
+   the project looks like a working link on the board and opens nothing.
+   A directory opens, but link a Rust module by its file
+   (`src/delivery.rs`), which is where its documentation starts.
+5. **C4 notes.** Beside a C4 view that draws, the check lists where it
+   departs from the notation above: a title that does not name the view's
+   type, a box with no description, a container or component with no
+   technology, a line with no label or running both ways, a view that
+   zooms into nothing, an alias naming another kind of element elsewhere.
+   A note fails nothing; leave none.
 
 **Never describe the accepted syntax from memory, including from this
 page.** The parser is the only authority on what draws, it moves, and a
