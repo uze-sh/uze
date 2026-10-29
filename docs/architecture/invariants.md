@@ -1332,7 +1332,7 @@ intact, so one attached hook does not reshuffle a hand-organised file.
 > `tests/integrations/hooks.rs::foreign_codex_hooks_survive_attach_and_detach`
 > `crates/uze-integrations/src/hooks/tests.rs::drift_blocks_removal_and_an_empty_file_is_removed`
 > `crates/uze-integrations/src/hooks/tests.rs::a_merge_keeps_the_users_own_key_order`
-> `crates/uze-integrations/src/shared/json_config.rs::a_merge_keeps_the_users_own_key_order`
+> `crates/uze-integrations/src/shared/json_config.rs::a_write_keeps_the_users_own_key_order`
 
 ### A package's hooks attach once per harness, idempotently
 
