@@ -27,13 +27,18 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use uze_core::flag_catalog::FlagSpec;
+
 use crate::{
     agent_context::{self, Section, SectionAsk},
     briefing, checkout,
     conversation::{self, Claim, ConversationOrigin, ConversationRecord, SessionId},
     declaration,
+    harness_runtime::HarnessRuntimeContribution,
     home::UzeHome,
-    integration::{AgentContext, IntegrationPort, ObservationContext, SessionContinuity},
+    integration::{
+        AgentContext, ContextContribution, IntegrationPort, ObservationContext, SessionContinuity,
+    },
     overrides::{self, LaunchOverrides},
     worktree::{self, Placement},
 };
@@ -79,6 +84,55 @@ impl LaunchPlan {
         });
     }
 
+    /// Folds this plan into what the harness's runtime `contribution`
+    /// already carries, and, when the operator turned the harness's memory
+    /// off, what turning it off adds; answers what the launch should say,
+    /// once.
+    ///
+    /// The argv is the resume, the contribution's own arguments, the
+    /// operator's overrides, the first turn, then memory-off: a resume
+    /// spelled as a subcommand needs the front of the line, a first turn
+    /// may end the harness's options so overrides precede it, and nothing
+    /// an override says reaches past what UZE composes. Variables go the
+    /// same way round: the overrides' first, so any later setting of the
+    /// same name is UZE's.
+    pub fn compose(
+        self,
+        contribution: &mut HarnessRuntimeContribution,
+        memory_off: Option<ContextContribution>,
+        catalog: &[FlagSpec],
+    ) -> Option<String> {
+        let mut notes: Vec<String> = self.note.into_iter().collect();
+        let mut overrides = self.overrides;
+        if let Some(off) = &memory_off {
+            // Composed after the plan was made, so the plan's own check
+            // could not see it: what this leaves out is new, while what the
+            // plan left out is already in its note.
+            let said = overrides.left_out.len();
+            overrides.leave_out_composed(catalog, &off.args);
+            notes.extend(overrides.left_out.drain(said..));
+        }
+        notes.extend(overrides.weakens);
+        contribution.extra_args = self
+            .args
+            .into_iter()
+            .chain(std::mem::take(&mut contribution.extra_args))
+            .chain(overrides.args)
+            .chain(self.trailing)
+            .collect();
+        contribution.extra_env = overrides
+            .env
+            .into_iter()
+            .chain(std::mem::take(&mut contribution.extra_env))
+            .chain(self.env)
+            .collect();
+        if let Some(off) = memory_off {
+            contribution.extra_args.extend(off.args);
+            contribution.extra_env.extend(off.env);
+        }
+        (!notes.is_empty()).then(|| notes.join("; "))
+    }
+
     fn args(args: Vec<OsString>) -> Self {
         Self {
             args,
@@ -115,7 +169,13 @@ pub fn plan_with(
             cwd = %claim.cwd.display(),
             "no record backs this launch's claim; launched as an ordinary invocation"
         );
-        return LaunchPlan::nothing();
+        let mut plan = LaunchPlan::nothing();
+        if let Some(note) =
+            overrides_left_behind(home, claim, integration, "no record backs this launch")
+        {
+            plan.add_note(note);
+        }
+        return plan;
     };
     let mut plan = plan_for(home, claim, integration, &owner, sections);
     plan.owned = true;
@@ -156,6 +216,39 @@ fn overrides_for(
         "launching with the agent's overrides"
     );
     overrides
+}
+
+/// What a launch that carries none of the overrides recorded for the agent
+/// `claim` names on `integration` says about them and `why`; `None` when
+/// it has none. For a launch UZE does not compose — bypassed, or a claim
+/// no record backs — so it never fails one and stays cheap: a missing
+/// record is one `stat`, and otherwise a few more and one small read.
+/// Counts them and never names one: whoever makes the claim need not be
+/// the operator who typed them.
+pub fn overrides_left_behind(
+    home: &UzeHome,
+    claim: Claim<'_>,
+    integration: &dyn IntegrationPort,
+    why: &str,
+) -> Option<String> {
+    if claim.id.is_empty() || !home.launch_overrides_path().exists() {
+        return None;
+    }
+    let root = conversation::project_of(home, claim.cwd)?;
+    let words = overrides::record::recorded(
+        home,
+        &root,
+        &crate::task::AgentId::adopted(claim.id),
+        integration.id(),
+    );
+    let count = overrides::entries(&words, integration.flag_catalog()).len();
+    match count {
+        0 => None,
+        1 => Some(format!("the agent's override was left out ({why})")),
+        count => Some(format!(
+            "the agent's {count} overrides were left out ({why})"
+        )),
+    }
 }
 
 fn plan_for(
@@ -1654,6 +1747,131 @@ mod tests {
 
         assert!(!stranger.owned);
         assert!(stranger.overrides.is_empty());
+        assert_eq!(
+            stranger.note.as_deref(),
+            Some("the agent's override was left out (no record backs this launch)")
+        );
+    }
+
+    #[test]
+    fn a_launch_composed_of_nothing_counts_the_overrides_it_left_behind() {
+        let (home, primary, slot, id) = managed("continuity-overrides-behind");
+        let harness = Harness::new(SessionContinuity::Assigned);
+        let bypassed = |home: &UzeHome| {
+            overrides_left_behind(home, claim(&id, &slot), &harness, "uze is bypassed")
+        };
+        assert_eq!(bypassed(&home), None);
+
+        with_overrides(&home, &primary, "--model opus API_TOKEN=hunter2");
+
+        assert_eq!(
+            bypassed(&home).as_deref(),
+            Some("the agent's 2 overrides were left out (uze is bypassed)")
+        );
+    }
+
+    fn words(line: &str) -> Vec<OsString> {
+        line.split_whitespace().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn a_composed_launch_puts_overrides_between_what_uze_prepends_and_the_first_turn() {
+        let plan = LaunchPlan {
+            args: words("--resume abc"),
+            env: vec![("CONTEXT_FLAG".into(), "plan".into())],
+            trailing: words("-- turn"),
+            overrides: overrides::compose(
+                &overrides::split("--model opus CONTEXT_FLAG=operator DEBUG=1").unwrap(),
+                HARNESS_FLAGS,
+                &[],
+                &words("--resume abc -- turn"),
+            ),
+            owned: true,
+            ..LaunchPlan::default()
+        };
+        let mut contribution = HarnessRuntimeContribution {
+            extra_args: words("--add-dir runtime"),
+            extra_env: vec![("RUNTIME".into(), "1".into())],
+            note: None,
+        };
+        let off = ContextContribution {
+            args: words("--memory off"),
+            env: vec![("MEMORY".into(), "0".into())],
+        };
+
+        let note = plan.compose(&mut contribution, Some(off), HARNESS_FLAGS);
+
+        assert_eq!(
+            contribution.extra_args,
+            words("--resume abc --add-dir runtime --model opus -- turn --memory off")
+        );
+        let env: Vec<(OsString, OsString)> = [
+            ("CONTEXT_FLAG", "operator"),
+            ("DEBUG", "1"),
+            ("RUNTIME", "1"),
+            ("CONTEXT_FLAG", "plan"),
+            ("MEMORY", "0"),
+        ]
+        .into_iter()
+        .map(|(name, value)| (name.into(), value.into()))
+        .collect();
+        assert_eq!(contribution.extra_env, env, "a later setting is UZE's");
+        assert_eq!(note, None);
+    }
+
+    #[test]
+    fn a_composed_launch_says_what_memory_off_left_out_and_what_weakens_once() {
+        const CATALOG: &[uze_core::flag_catalog::FlagSpec] = {
+            use uze_core::flag_catalog::{FlagOwner, FlagSpec, FlagValue};
+            &[
+                FlagSpec::new(
+                    &["--config", "-c"],
+                    FlagValue::Free("key=value"),
+                    "config",
+                    FlagOwner::Keyed {
+                        owned: &[],
+                        conditional: &["features.memories"],
+                    },
+                ),
+                FlagSpec::new(
+                    &["--yolo"],
+                    FlagValue::None,
+                    "yolo",
+                    FlagOwner::Weakens("permission prompts"),
+                ),
+            ]
+        };
+        let mut plan = LaunchPlan {
+            overrides: overrides::compose(
+                &overrides::split("-c features.memories=true --yolo").unwrap(),
+                CATALOG,
+                &[],
+                &[],
+            ),
+            owned: true,
+            ..LaunchPlan::default()
+        };
+        plan.add_note("the recorded conversation is no longer there".to_owned());
+        let mut contribution = HarnessRuntimeContribution::passthrough();
+        let off = ContextContribution {
+            args: words("-c features.memories=false"),
+            env: Vec::new(),
+        };
+
+        let note = plan.compose(&mut contribution, Some(off), CATALOG).unwrap();
+
+        assert_eq!(
+            contribution.extra_args,
+            words("--yolo -c features.memories=false")
+        );
+        assert!(
+            note.starts_with("the recorded conversation is no longer there; -c left out ("),
+            "{note}"
+        );
+        assert!(
+            note.ends_with("; --yolo gives up permission prompts"),
+            "{note}"
+        );
     }
 
     /// Every value a span or an event recorded, by field.
