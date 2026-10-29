@@ -82,8 +82,8 @@ pub(crate) fn docked_width(requested: Option<u16>, room: u16) -> Option<u16> {
     Some(requested.unwrap_or(rest).clamp(DOCKED_MIN_WIDTH, ceiling))
 }
 
-/// A drawer along the top or bottom of the agent area: the fewest and
-/// most rows it takes, and the fewest the pane keeps beside it.
+/// A drawer along the top or bottom of the agent area: the fewest rows it
+/// takes, and the fewest the pane keeps beside it.
 pub(crate) const DOCKED_MIN_ROWS: u16 = 10;
 pub(crate) const DOCKED_PANE_MIN_ROWS: u16 = 8;
 

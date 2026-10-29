@@ -53,7 +53,7 @@ pub(super) fn render_declared_overlays(
 }
 
 /// The rows of a raised card's chrome around what it holds: its two
-/// hairlines and its title with the air under it.
+/// hairlines and its title.
 const CARD_CHROME_ROWS: u16 = 2 + crate::ui::extension_view::tree::TITLE_ROWS;
 
 /// The open drawer, where `compute_layout` placed it: a raised card, its

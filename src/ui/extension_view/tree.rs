@@ -1122,10 +1122,10 @@ fn glyph_runs(glyphs: &[CellGlyph]) -> Vec<TextSpan<'static>> {
     spans
 }
 
-/// The house button, in the neutral hue: what a declared button does is
-/// recorded, never run, so none of them builds or destroys anything.
-/// A plugin's button: neutral, or in the accent for the one it means to be
-/// pressed next, the hue UZE's own buttons use for what builds.
+/// A plugin's button: what it does is recorded, never run, so none of
+/// them builds or destroys anything, and each is neutral, save the one the
+/// surface means to be pressed next, in the accent UZE's own buttons wear
+/// for what builds.
 fn button(label: &str, primary: bool, hovered: bool) -> Button {
     let hue = match primary {
         true => Token::Accent,
