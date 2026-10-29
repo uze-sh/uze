@@ -1419,6 +1419,7 @@ pub(super) fn spawn_spec_read(home: &UzeHome, root: PathBuf, sender: mpsc::Sende
             theme: String::new(),
             found: spec::Found::NoLayout,
             subjects: Vec::new(),
+            milestone: None,
         };
         let answer = answered_or(
             || {

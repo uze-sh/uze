@@ -463,12 +463,27 @@ impl Attach<'_> {
     }
 
     /// What the spec surface asked for by answering: to stay, to be
-    /// closed, or to hand a document to the code surface.
+    /// closed, to hand a document to the code surface, or to put a step
+    /// in front of the agent.
     pub(super) fn follow_spec(&mut self, outcome: Option<spec::SpecOutcome>) {
         match outcome {
             Some(spec::SpecOutcome::Close) => self.model.close_spec(),
             Some(spec::SpecOutcome::OpenPath { project, target }) => {
                 open_code_at(&mut self.model, &project, &target);
+            }
+            // Typed as a paste and left unsubmitted: the agent in front is
+            // the one working in the checkout the surface read, and the
+            // operator sends it, or does not, from the pane.
+            Some(spec::SpecOutcome::Prompt { skill, arguments }) => {
+                self.model.close_spec();
+                let sigil = self.model.focused_agent_skill_sigil(&self.identities);
+                let call = format!("{sigil}{skill} {arguments}");
+                let text: String = call
+                    .trim_end()
+                    .chars()
+                    .filter(|c| !c.is_control())
+                    .collect();
+                self.paste(text);
             }
             Some(spec::SpecOutcome::Stay) | None => {}
         }

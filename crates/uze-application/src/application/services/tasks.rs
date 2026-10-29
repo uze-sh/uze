@@ -65,6 +65,7 @@ impl Workspace<'_> {
                     binary,
                     integration: integration.id(),
                     display_name: integration.display_name(),
+                    skill_sigil: integration.skill_sigil(),
                     launch,
                     continuity_gap,
                     configured: self.is_set_up(integration.as_ref()),

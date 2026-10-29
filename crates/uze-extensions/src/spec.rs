@@ -28,10 +28,20 @@
 //! surface, which already holds the write grant and the rule about what
 //! it may write (ADR-048) — a second editor would be a second place to
 //! keep that rule.
+//!
+//! # The milestone, and its next step
+//!
+//! GSD keeps more than units: an open milestone, its phases and waves,
+//! and a next step it would run. That reading is GSD's own, so it lives
+//! in [`milestone`] and not in a table. Its steps are the one thing the
+//! surface hands to the agent: picking one asks the host to type the
+//! skill into the focused agent's prompt, unsent ([`SpecOutcome::Prompt`]),
+//! spelled the way that agent calls a skill. The operator presses Enter.
 
 mod catalog;
 mod decision;
 mod dialect;
+mod milestone;
 mod ownership;
 mod progress;
 mod summary;
@@ -50,13 +60,14 @@ use crate::{
     shared::{checkout, highlight, markdown},
     view::{
         Command, Content, ContentLine, Layout, LineTone, MarkerSide, Medium, Mode, Navigator,
-        NavigatorRow, Role as Tone, RowIcon, ScrollDirection, Size, Span, View, ViewHit,
+        NavigatorRow, Role as Tone, RowIcon, RowMenu, ScrollDirection, Size, Span, View, ViewHit,
     },
 };
 
 pub use catalog::{Artifact, Found, Unit};
 pub use decision::Standing;
 pub use dialect::{Role, Subject};
+pub use milestone::{Ask, Milestone, Phase, Step};
 pub use progress::Progress;
 pub use summary::{ChangeSummary, Summary, summary, summary_section};
 
@@ -79,6 +90,14 @@ pub enum SpecOutcome {
         project: PathBuf,
         target: PathBuf,
     },
+    /// A step was asked of the agent: the host closes the surface and
+    /// types a call of `skill` with `arguments` into the prompt of the
+    /// agent in front, in the way that agent's harness calls a Skill, and
+    /// does not submit it, so the operator reads it before it is sent.
+    Prompt {
+        skill: String,
+        arguments: String,
+    },
 }
 
 /// What reading a checkout produced — everything the surface needs to stop
@@ -93,6 +112,8 @@ pub struct SpecAnswer {
     /// The subjects the detected dialects declare, whether or not each
     /// holds anything yet.
     pub subjects: Vec<Subject>,
+    /// The GSD milestone the checkout has open, when it has one.
+    pub milestone: Option<Milestone>,
 }
 
 /// Reads `checkout` for the shipped dialects, and `places` — where the
@@ -133,6 +154,7 @@ fn read_with(
         }
     }
     let mut subjects = Vec::new();
+    let mut milestone = None;
     if let Found::Units {
         dialects: names,
         units,
@@ -150,6 +172,12 @@ fn read_with(
                     .any(|dialect| dialect.collections.iter().any(|c| c.subject == *subject)),
             })
             .collect();
+        if names.contains(&dialect::GSD.name) {
+            milestone = milestone::read(host, &root);
+        }
+        if milestone.is_some() {
+            subjects.insert(0, Subject::Milestone);
+        }
     }
     SpecAnswer {
         branch: checkout::branch_of(host, &root),
@@ -157,6 +185,7 @@ fn read_with(
         root,
         found,
         subjects,
+        milestone,
     }
 }
 
@@ -276,7 +305,23 @@ enum State {
         units: Vec<Unit>,
         subjects: Vec<Subject>,
         dialects: Vec<&'static str>,
+        milestone: Option<Box<Milestone>>,
     },
+}
+
+/// A row of the milestone's navigator, which is also what its `id` names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Stage {
+    Overview,
+    Gap,
+    Phase(usize),
+}
+
+/// The steps open on the selected milestone row, and the one the keyboard
+/// is on.
+struct StepMenu {
+    asks: Vec<Ask>,
+    highlighted: usize,
 }
 
 /// Where a viewer was on a checkout's spec surface, by name: the fourth
@@ -322,6 +367,9 @@ pub struct SpecView {
     /// view is drawn, and drawing is through a shared reference.
     lines: RefCell<Shown>,
     resuming: Option<SpecPlace>,
+    /// What is selected on the milestone: the overview, or a phase.
+    stage: Stage,
+    menu: Option<StepMenu>,
 }
 
 /// Lines, and the width a rendered document was laid out at.
@@ -349,6 +397,8 @@ impl SpecView {
             scroll: 0,
             lines: RefCell::default(),
             resuming: None,
+            stage: Stage::Overview,
+            menu: None,
         }
     }
 
@@ -370,6 +420,16 @@ impl SpecView {
     pub fn place(&self) -> Option<SpecPlace> {
         if let Some(place) = &self.resuming {
             return Some(place.clone());
+        }
+        if self.subject == Subject::Milestone {
+            return Some(SpecPlace {
+                subject: Subject::Milestone,
+                unit: match self.stage {
+                    Stage::Phase(at) => self.milestone()?.phases.get(at)?.number.clone(),
+                    Stage::Overview | Stage::Gap => String::new(),
+                },
+                artifact: None,
+            });
         }
         let target = self.selected?;
         let unit = self.units().get(target.unit())?;
@@ -396,6 +456,7 @@ impl SpecView {
                 units,
                 subjects: answer.subjects,
                 dialects,
+                milestone: answer.milestone.map(Box::new),
             },
         };
         let place = self.resuming.take();
@@ -416,6 +477,18 @@ impl SpecView {
     }
 
     fn restore(&mut self, place: &SpecPlace) -> bool {
+        if place.subject == Subject::Milestone {
+            let Some(milestone) = self.milestone() else {
+                return false;
+            };
+            self.stage = milestone
+                .phases
+                .iter()
+                .position(|phase| phase.number == place.unit)
+                .map_or(Stage::Overview, Stage::Phase);
+            self.subject = Subject::Milestone;
+            return true;
+        }
         let Some(unit) = self
             .units()
             .iter()
@@ -453,6 +526,12 @@ impl SpecView {
         };
         let listed = self.listed(self.subject);
         let own = listed.iter().copied().find(|&unit| self.units()[unit].own);
+        // With nothing of its own in flight, the checkout is best met by
+        // where its milestone stands.
+        if own.is_none() && subjects.contains(&Subject::Milestone) {
+            self.subject = Subject::Milestone;
+            self.stage = Stage::Overview;
+        }
         self.selected = match own {
             Some(unit) if !self.units()[unit].artifacts.is_empty() => {
                 self.expanded.insert(unit);
@@ -466,6 +545,97 @@ impl SpecView {
         match &self.state {
             State::Found { units, .. } => units,
             _ => &[],
+        }
+    }
+
+    fn milestone(&self) -> Option<&Milestone> {
+        match &self.state {
+            State::Found { milestone, .. } => milestone.as_deref(),
+            _ => None,
+        }
+    }
+
+    fn stages(&self) -> Vec<Stage> {
+        let phases = self
+            .milestone()
+            .map_or(0, |milestone| milestone.phases.len());
+        let mut stages = vec![Stage::Overview];
+        if phases > 0 {
+            stages.push(Stage::Gap);
+            stages.extend((0..phases).map(Stage::Phase));
+        }
+        stages
+    }
+
+    fn step_stage(&mut self, forward: bool) {
+        let selectable: Vec<Stage> = self
+            .stages()
+            .into_iter()
+            .filter(|stage| *stage != Stage::Gap)
+            .collect();
+        let at = selectable.iter().position(|stage| *stage == self.stage);
+        let next = match at {
+            None => selectable.first(),
+            Some(at) if forward => selectable.get(at + 1),
+            Some(at) => at.checked_sub(1).and_then(|at| selectable.get(at)),
+        };
+        if let Some(&next) = next {
+            self.select_stage(next);
+        }
+    }
+
+    fn select_stage(&mut self, stage: Stage) {
+        if self.stage != stage && stage != Stage::Gap {
+            self.stage = stage;
+            self.scroll = 0;
+            self.redraw();
+        }
+    }
+
+    /// Opens the steps that can be asked of the agent about the row in
+    /// front, on the one the files say is next.
+    fn open_menu(&mut self) {
+        let Some(milestone) = self.milestone() else {
+            return;
+        };
+        let (asks, next) = match self.stage {
+            Stage::Phase(at) => {
+                let phase = &milestone.phases[at];
+                let asks: Vec<Ask> = Step::PHASE
+                    .into_iter()
+                    .map(|step| Ask {
+                        step,
+                        phase: Some(phase.number.clone()),
+                    })
+                    .collect();
+                (asks, phase.next.clone())
+            }
+            Stage::Overview | Stage::Gap => {
+                let progress = Ask {
+                    step: Step::Progress,
+                    phase: None,
+                };
+                (
+                    vec![milestone.next.clone(), progress],
+                    milestone.next.clone(),
+                )
+            }
+        };
+        let highlighted = asks.iter().position(|ask| *ask == next).unwrap_or(0);
+        self.menu = Some(StepMenu { asks, highlighted });
+    }
+
+    fn pick(&mut self, entry: usize) -> SpecOutcome {
+        match self
+            .menu
+            .take()
+            .and_then(|menu| menu.asks.into_iter().nth(entry))
+        {
+            Some(ask) => SpecOutcome::Prompt {
+                skill: ask.skill().to_owned(),
+                arguments: ask.arguments(),
+            },
+            None => SpecOutcome::Stay,
         }
     }
 
@@ -590,8 +760,11 @@ impl SpecView {
             return;
         }
         self.subject = subject;
+        self.menu = None;
+        self.scroll = 0;
         let first = self.listed(subject).first().map(|&unit| Target::Unit(unit));
         self.select(first);
+        self.redraw();
     }
 
     fn next_subject(&mut self) {
@@ -637,13 +810,34 @@ impl SpecView {
     }
 
     fn renders_markdown(&self) -> bool {
+        if self.subject == Subject::Milestone {
+            return true;
+        }
         self.showing == Showing::Preview
             && self
                 .on_show()
                 .is_some_and(|(_, artifact)| catalog::is_markdown(&artifact.path))
     }
 
+    /// The milestone document on show: the overview, or one phase.
+    fn milestone_document(&self, width: usize) -> Option<String> {
+        let milestone = self.milestone()?;
+        Some(match self.stage {
+            Stage::Phase(at) => milestone::detail(milestone.phases.get(at)?, width),
+            Stage::Overview | Stage::Gap => milestone::overview(milestone, width),
+        })
+    }
+
     fn lay_out(&self, width: Option<usize>) {
+        if self.subject == Subject::Milestone {
+            let columns = width.unwrap_or(usize::MAX);
+            let lines = self
+                .milestone_document(columns)
+                .map(|text| markdown::render(&text, &self.theme, columns))
+                .unwrap_or_default();
+            *self.lines.borrow_mut() = Shown { width, lines };
+            return;
+        }
         let lines = match self.on_show() {
             Some((unit, artifact)) => match &artifact.text {
                 Ok(text) => match self.showing {
@@ -767,6 +961,18 @@ pub fn view(state: &SpecView, space: Size) -> View {
             content: message("No specs found", Some(supported_tools(dialect::SHIPPED))),
             ..base
         },
+        State::Found { .. } if state.subject == Subject::Milestone => View {
+            navigator: Some(milestone_navigator(state)),
+            content: milestone_content(state, space),
+            footer: vec![
+                Command::SelectNext,
+                Command::Activate,
+                Command::FocusNext,
+                Command::Close,
+            ],
+            subjects: subject_tabs(state),
+            ..base
+        },
         State::Found { .. } => View {
             navigator: Some(navigator(state)),
             content: content(state, space),
@@ -786,22 +992,128 @@ pub fn view(state: &SpecView, space: Size) -> View {
                     icon: RowIcon::None,
                 })
                 .collect(),
-            subjects: state
-                .subjects()
-                .into_iter()
-                .map(|subject| Mode {
-                    label: subject.label().to_owned(),
-                    active: subject == state.subject,
-                    icon: match subject {
-                        Subject::Changes => RowIcon::InFlight,
-                        Subject::Specs => RowIcon::Contract,
-                        Subject::Archive => RowIcon::Finished,
-                        Subject::Decisions => RowIcon::Decision,
-                    },
-                })
-                .collect(),
+            subjects: subject_tabs(state),
             ..base
         },
+    }
+}
+
+fn subject_tabs(state: &SpecView) -> Vec<Mode> {
+    state
+        .subjects()
+        .into_iter()
+        .map(|subject| Mode {
+            label: subject.label().to_owned(),
+            active: subject == state.subject,
+            icon: match subject {
+                Subject::Changes => RowIcon::InFlight,
+                Subject::Specs => RowIcon::Contract,
+                Subject::Archive | Subject::Milestone => RowIcon::Finished,
+                Subject::Decisions => RowIcon::Decision,
+            },
+        })
+        .collect()
+}
+
+/// The milestone's rows: the overview, then its phases in roadmap order.
+fn milestone_navigator(state: &SpecView) -> Navigator {
+    let stages = state.stages();
+    let selected = stages.iter().position(|stage| *stage == state.stage);
+    let Some(milestone) = state.milestone() else {
+        return Navigator::default();
+    };
+    // Phase numbers right-aligned, so `9` and `10` start their names in
+    // one column.
+    let width = milestone
+        .phases
+        .iter()
+        .map(|phase| phase.number.chars().count())
+        .max()
+        .unwrap_or(0);
+    Navigator {
+        heading: milestone.version.clone(),
+        badge: format!("{}%", milestone.percent),
+        focused: true,
+        rows: stages
+            .iter()
+            .enumerate()
+            .map(|(id, stage)| match *stage {
+                Stage::Gap => NavigatorRow::Gap,
+                Stage::Overview => NavigatorRow::Item {
+                    id,
+                    name: "Overview".to_owned(),
+                    depth: 0,
+                    marker: Span::new(milestone.status.clone(), Tone::Muted),
+                    marker_side: MarkerSide::Trailing,
+                    detail: String::new(),
+                    selected: selected == Some(id),
+                    icon: RowIcon::None,
+                },
+                Stage::Phase(at) => {
+                    let phase = &milestone.phases[at];
+                    let current = milestone.current == Some(at);
+                    NavigatorRow::Item {
+                        id,
+                        name: format!("{:>width$}  {}", phase.number, phase.name),
+                        depth: 0,
+                        marker: phase_marker(phase),
+                        marker_side: MarkerSide::Trailing,
+                        detail: String::new(),
+                        selected: selected == Some(id),
+                        icon: if phase.done {
+                            RowIcon::Finished
+                        } else if current {
+                            RowIcon::InFlight
+                        } else {
+                            RowIcon::None
+                        },
+                    }
+                }
+            })
+            .collect(),
+        anchor: selected,
+        choosing: None,
+        menu: state
+            .menu
+            .as_ref()
+            .zip(selected)
+            .map(|(menu, row)| RowMenu {
+                row,
+                entries: menu.asks.iter().map(Ask::entry).collect(),
+                highlighted: menu.highlighted,
+            }),
+    }
+}
+
+fn phase_marker(phase: &Phase) -> Span {
+    if phase.done {
+        return Span::new("done".to_owned(), Tone::Success);
+    }
+    if phase.plans.is_empty() {
+        return Span::new("—".to_owned(), Tone::Faint);
+    }
+    Span::new(
+        format!("{}/{}", phase.finished_plans(), phase.plans.len()),
+        Tone::Muted,
+    )
+}
+
+fn milestone_content(state: &SpecView, space: Size) -> Content {
+    let heading = match (state.stage, state.milestone()) {
+        (Stage::Phase(at), Some(milestone)) => format!("phase {}", milestone.phases[at].number),
+        _ => ".planning/STATE.md".to_owned(),
+    };
+    let window = usize::from(space.height).saturating_mul(2);
+    let shown = state.shown(Some(crate::view::prose_width(space)));
+    let first = state.scroll.min(shown.len().saturating_sub(1));
+    Content::Lines {
+        heading,
+        scroll: first,
+        first,
+        lines: shown.iter().skip(first).take(window).cloned().collect(),
+        total: shown.len(),
+        caret: None,
+        medium: Medium::Text,
     }
 }
 
@@ -976,6 +1288,7 @@ fn content(state: &SpecView, space: Size) -> Content {
             Subject::Specs => message("No specs yet", None),
             Subject::Archive => message("Nothing archived yet", None),
             Subject::Decisions => message("No decisions yet", None),
+            Subject::Milestone => message("No milestone open", None),
         };
     }
     let Some((unit, artifact)) = state.on_show() else {
@@ -1023,6 +1336,22 @@ pub fn handle_command(state: &mut SpecView, command: Command, space: Size) -> Sp
         .unwrap_or(isize::MAX)
         .saturating_sub(1)
         .max(1);
+    if state.menu.is_some() {
+        return menu_command(state, command);
+    }
+    if state.subject == Subject::Milestone {
+        match command {
+            Command::Close => return SpecOutcome::Close,
+            Command::SelectNext => state.step_stage(true),
+            Command::SelectPrevious => state.step_stage(false),
+            Command::Activate | Command::OpenMenu | Command::Expand => state.open_menu(),
+            Command::FocusNext => state.next_subject(),
+            Command::ScrollPageDown => state.scroll_by(page),
+            Command::ScrollPageUp => state.scroll_by(-page),
+            _ => {}
+        }
+        return SpecOutcome::Stay;
+    }
     match command {
         Command::Close => return SpecOutcome::Close,
         Command::SelectNext => state.step(true),
@@ -1039,8 +1368,66 @@ pub fn handle_command(state: &mut SpecView, command: Command, space: Size) -> Sp
     SpecOutcome::Stay
 }
 
+/// A command while the steps are open. Every command is the menu's: one
+/// that does not move or pick shuts it, the way a click outside it does.
+fn menu_command(state: &mut SpecView, command: Command) -> SpecOutcome {
+    let Some(menu) = state.menu.as_mut() else {
+        return SpecOutcome::Stay;
+    };
+    match command {
+        Command::SelectNext => {
+            menu.highlighted = (menu.highlighted + 1).min(menu.asks.len().saturating_sub(1));
+        }
+        Command::SelectPrevious => menu.highlighted = menu.highlighted.saturating_sub(1),
+        Command::Activate => {
+            let picked = menu.highlighted;
+            return state.pick(picked);
+        }
+        _ => state.menu = None,
+    }
+    SpecOutcome::Stay
+}
+
+/// A click on the milestone: a row selects, the selected row opens its
+/// steps, and a step picked is asked of the agent.
+fn milestone_mouse(state: &mut SpecView, hit: Option<ViewHit>) -> SpecOutcome {
+    if state.menu.is_some() {
+        return match hit {
+            Some(ViewHit::MenuEntry(entry)) => state.pick(entry),
+            _ => {
+                state.menu = None;
+                SpecOutcome::Stay
+            }
+        };
+    }
+    match hit {
+        Some(ViewHit::SelectItem(id)) => {
+            if let Some(&stage) = state.stages().get(id) {
+                state.select_stage(stage);
+            }
+        }
+        Some(ViewHit::OpenMenu(id)) => {
+            if let Some(&stage) = state.stages().get(id) {
+                state.select_stage(stage);
+                state.open_menu();
+            }
+        }
+        Some(ViewHit::SelectSubject(index)) => {
+            if let Some(subject) = state.subjects().get(index).copied() {
+                state.switch_subject(subject);
+            }
+        }
+        Some(ViewHit::Close) => return SpecOutcome::Close,
+        _ => {}
+    }
+    SpecOutcome::Stay
+}
+
 /// Answers a click the host resolved to one of this surface's hits.
 pub fn handle_mouse(state: &mut SpecView, hit: Option<ViewHit>, _space: Size) -> SpecOutcome {
+    if state.subject == Subject::Milestone || state.menu.is_some() {
+        return milestone_mouse(state, hit);
+    }
     match hit {
         Some(ViewHit::SelectItem(id)) => match state.rows().get(id).copied() {
             Some(Row::Unit(unit)) => {

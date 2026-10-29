@@ -518,6 +518,7 @@ fn a_spec_answer_for_a_surface_since_closed_or_moved_is_dropped() {
             theme: String::new(),
             found: uze_extensions::spec::Found::NoLayout,
             subjects: Vec::new(),
+            milestone: None,
         },
     };
     select_tab(&mut model, first);
@@ -577,6 +578,7 @@ fn coming_back_to_a_checkouts_spec_returns_to_the_document_it_was_left_on() {
                 }],
             },
             subjects: vec![spec::Subject::Changes],
+            milestone: None,
         });
     };
     let space = uze_extensions::view::Size {
@@ -874,4 +876,97 @@ fn the_architects_source_is_marked_and_copied_and_its_diagram_is_not() {
         driven.attach.model.clipboard.as_deref(),
         Some(expected.join("\n").as_str())
     );
+}
+
+/// Picks the next step on a spec surface opened on a GSD milestone,
+/// with the agent in front calling a Skill with `sigil`, and answers
+/// whether the surface stayed open and what reached the agent's pane.
+fn milestone_step_typed_for(label: &str, sigil: &'static str) -> (bool, String) {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use uze_extensions::spec;
+    use uze_terminal::ClientRequest;
+
+    let home = UzeHome::at(uze_testkit::temp::scratch(label));
+    let (mut model, first, _second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    let pane = model.focused_pane();
+    model.apply(painted(pane), &[]);
+    open_spec(&mut model);
+    let ask = |step| spec::Ask {
+        step,
+        phase: Some("3".to_owned()),
+    };
+    model.spec.as_mut().expect("open").absorb(spec::SpecAnswer {
+        root: PathBuf::from("/repo"),
+        branch: "main".to_owned(),
+        theme: String::new(),
+        found: spec::Found::Units {
+            dialects: vec!["GSD"],
+            units: Vec::new(),
+        },
+        subjects: vec![spec::Subject::Milestone, spec::Subject::Changes],
+        milestone: Some(spec::Milestone {
+            version: "v1.1".to_owned(),
+            name: "Sync".to_owned(),
+            status: "executing".to_owned(),
+            percent: 40,
+            plans_done: 2,
+            plans_total: 5,
+            stopped_at: None,
+            blockers: Vec::new(),
+            todos: 0,
+            phases: vec![spec::Phase {
+                number: "3".to_owned(),
+                name: "Sync Engine".to_owned(),
+                done: false,
+                goal: String::new(),
+                criteria: Vec::new(),
+                plans: Vec::new(),
+                documents: Vec::new(),
+                next: ask(spec::Step::Plan),
+            }],
+            current: Some(0),
+            next: ask(spec::Step::Plan),
+        }),
+    });
+    let mut driven = driven(model, &home);
+    driven.attach.identities[0].skill_sigil = sigil;
+    driven.frame();
+    driven.sent();
+
+    let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+    driven.press_key(enter);
+    driven.press_key(enter);
+
+    let typed: Vec<u8> = driven
+        .sent()
+        .into_iter()
+        .filter_map(|request| match request {
+            ClientRequest::Input { bytes, .. } => Some(bytes),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    (
+        driven.attach.model.spec.is_some(),
+        String::from_utf8_lossy(&typed).into_owned(),
+    )
+}
+
+/// A step picked on the spec surface's milestone is typed into the agent
+/// in front and left for the operator to send: the surface closes, the
+/// pane receives the words, and no carriage return follows them.
+#[test]
+fn a_milestone_step_is_typed_into_the_agent_unsent() {
+    let (open, typed) = milestone_step_typed_for("orchestrator-spec-prompt", "/");
+    assert!(!open, "the surface stepped aside");
+    assert_eq!(typed, "/gsd-plan-phase 3");
+}
+
+/// The step is spelled the way the agent in front calls a Skill, which
+/// its harness's integration says and the surface never knows.
+#[test]
+fn a_milestone_step_is_spelled_the_way_the_agent_calls_a_skill() {
+    let (_, typed) = milestone_step_typed_for("orchestrator-spec-prompt-sigil", "$");
+    assert_eq!(typed, "$gsd-plan-phase 3");
 }

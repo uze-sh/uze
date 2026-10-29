@@ -63,6 +63,7 @@ fn a_long_caption_is_elided_rather_than_run_off_the_sidebar() {
         binary: LONG,
         integration: "long",
         display_name: "Long",
+        skill_sigil: "/",
         launch: std::path::PathBuf::from(LONG),
         continuity_gap: None,
         configured: true,
