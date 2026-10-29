@@ -221,3 +221,56 @@ fn an_override_of_what_uze_composes_never_reaches_any_harness() {
         }
     }
 }
+
+/// Every spelling a harness would read as one of its owned flags: a short
+/// one inside a cluster of switches (`-zc` as `-z -c`).
+fn owned_spellings_in_disguise(spec: &FlagSpec) -> Vec<String> {
+    spec.spellings
+        .iter()
+        .filter_map(|spelling| spelling.strip_prefix('-'))
+        .filter(|letter| letter.chars().count() == 1)
+        .map(|letter| format!("-z{letter}"))
+        .collect()
+}
+
+#[test]
+fn an_owned_flag_in_disguise_never_reaches_any_harness() {
+    let mut asked = 0;
+    for integration in registry("overrides-disguised").iter() {
+        let catalog = integration.flag_catalog();
+        assert!(
+            !catalog.iter().any(|spec| spec.spellings.contains(&"-z")),
+            "-z stays a letter no harness knows"
+        );
+        for spec in catalog
+            .iter()
+            .filter(|spec| matches!(spec.owner, FlagOwner::Uze(_)))
+        {
+            for word in owned_spellings_in_disguise(spec) {
+                let session = plan(
+                    integration,
+                    Vec::new(),
+                    Vec::new(),
+                    std::slice::from_ref(&word),
+                );
+                let mut launch = contribution();
+
+                let note = session.compose(&mut launch, None, catalog);
+
+                assert_eq!(
+                    launch.extra_args,
+                    os(&[CONTRIBUTION]),
+                    "{} {word}",
+                    integration.id()
+                );
+                assert!(
+                    note.is_some_and(|note| note.starts_with(&format!("{word} left out ("))),
+                    "{} {word}",
+                    integration.id()
+                );
+                asked += 1;
+            }
+        }
+    }
+    assert!(asked > 0, "some harness owns a short flag");
+}

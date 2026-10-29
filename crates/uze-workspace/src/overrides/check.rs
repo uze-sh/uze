@@ -133,10 +133,15 @@ pub fn check(
         .iter()
         .map(|entry| match entry {
             Entry::Variable { name, .. } => variable_verdict(name, managed),
-            Entry::Flag { name, value, .. } => match spec(catalog, name) {
-                None => Verdict::Unknown,
-                Some(spec) => flag_verdict(spec, value.as_deref(), composed_keys.as_deref()),
-            },
+            Entry::Flag { name, value, .. } => {
+                match (cluster_refusal(name, catalog), spec(catalog, name)) {
+                    (Some(refusal), _) => refusal,
+                    (None, None) => Verdict::Unknown,
+                    (None, Some(spec)) => {
+                        flag_verdict(spec, value.as_deref(), composed_keys.as_deref())
+                    }
+                }
+            }
             Entry::Positional(_) => Verdict::Refused(A_PROMPT.to_owned()),
             Entry::EndOfOptions => Verdict::Refused(ENDS_OPTIONS.to_owned()),
         })
@@ -287,6 +292,31 @@ fn flag_and_attached<'w>(word: &'w str, catalog: &[FlagSpec]) -> (&'w str, Optio
     }
 }
 
+/// The refusal a single-dash word earns when a harness would read it as
+/// several short switches (`-cd` as `-c -d`) and one of them is UZE's or a
+/// configuration flag, whose key cannot be checked inside a cluster. The
+/// switches are read until one that takes a value, which takes the rest.
+fn cluster_refusal(word: &str, catalog: &[FlagSpec]) -> Option<Verdict> {
+    let letters = word
+        .strip_prefix('-')
+        .filter(|letters| !letters.starts_with('-') && letters.chars().count() > 1)?;
+    if spec(catalog, word).is_some_and(|spec| spec.spellings.contains(&word)) {
+        return None;
+    }
+    for letter in letters.chars() {
+        let Some(spec) = spec(catalog, &format!("-{letter}")) else {
+            continue;
+        };
+        match spec.owner {
+            FlagOwner::Uze(reason) => return Some(Verdict::Refused(reason.to_owned())),
+            FlagOwner::Keyed { .. } => return Some(Verdict::Refused("takes key=value".to_owned())),
+            _ if spec.value != FlagValue::None => return None,
+            _ => {}
+        }
+    }
+    None
+}
+
 fn spec<'c>(catalog: &'c [FlagSpec], spelling: &str) -> Option<&'c FlagSpec> {
     catalog
         .iter()
@@ -314,7 +344,7 @@ mod tests {
             "permission mode",
             Operator,
         ),
-        FlagSpec::new(&["--verbose"], FlagValue::None, "verbose", Operator),
+        FlagSpec::new(&["--verbose", "-v"], FlagValue::None, "verbose", Operator),
         FlagSpec::new(
             &["--resume", "-r"],
             FlagValue::Free("id"),
@@ -477,6 +507,16 @@ mod tests {
         assert_eq!(verdicts("-r abc", CATALOG), [refused(CONTINUITY)]);
         assert_eq!(verdicts("-rabc", CATALOG), [refused(CONTINUITY)]);
         assert_eq!(verdicts("-c", CATALOG), [refused(CONTINUITY)]);
+    }
+
+    #[test]
+    fn a_cluster_of_switches_holding_an_owned_one_is_refused_with_its_reason() {
+        assert_eq!(verdicts("-vc", CATALOG), [refused(CONTINUITY)]);
+        assert_eq!(verdicts("-cv", CATALOG), [refused(CONTINUITY)]);
+        assert_eq!(verdicts("-xc", KEYED), [refused("takes key=value")]);
+        assert_eq!(verdicts("-vx", CATALOG), [Verdict::Unknown]);
+        // What follows a switch that takes a value is that value.
+        assert_eq!(verdicts("-vmc", CATALOG), [Verdict::Unknown]);
     }
 
     #[test]
