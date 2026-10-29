@@ -26,9 +26,6 @@ pub enum SpaceOverview {
 /// around it when it works inside a Git repository.
 #[derive(Clone, Debug)]
 pub struct DirectorySpace {
-    /// The directory read: the project's root inside a repository, the
-    /// agent's own directory outside every one.
-    pub root: PathBuf,
     pub memory: SpaceMemory,
     /// `None` outside every Git repository, where nothing is declared,
     /// locked or checked out for the agent; why the project could not be
@@ -133,19 +130,16 @@ impl Workspace<'_> {
         if repository_root_of(root).is_none() {
             return Ok(SpaceOverview::Directory(Box::new(DirectorySpace {
                 memory: space_memory(&self.0.memory().report_at(root)),
-                root: root.to_path_buf(),
                 project: None,
             })));
         }
         let space = match self.project_space(root) {
             Ok(project) => DirectorySpace {
-                root: project.status.report.root.clone(),
                 memory: space_memory(&project.status.report.memory),
                 project: Some(Ok(project)),
             },
             Err(error) => DirectorySpace {
                 memory: space_memory(&self.0.memory().report_at(root)),
-                root: root.to_path_buf(),
                 project: Some(Err(error.to_string())),
             },
         };

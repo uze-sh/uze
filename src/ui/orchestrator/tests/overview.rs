@@ -930,7 +930,6 @@ fn project_space(
         plugin_rules: Default::default(),
     };
     uze_application::SpaceOverview::Directory(Box::new(uze_application::DirectorySpace {
-        root: PathBuf::from("/repo"),
         memory,
         project: Some(Ok(uze_application::ProjectSpace {
             status: uze_application::application::ProjectStatus {
