@@ -761,3 +761,53 @@ fn setup_ages_out_what_each_session_was_handed() {
         "a record younger than a week stays"
     );
 }
+
+/// Every file under `dir`, by its path below it, with its bytes.
+fn files_under(dir: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+    let mut files = std::collections::BTreeMap::new();
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(next) = pending.pop() {
+        for entry in fs::read_dir(&next).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                pending.push(path);
+            } else {
+                let bytes = fs::read(&path).unwrap();
+                files.insert(path.strip_prefix(dir).unwrap().to_path_buf(), bytes);
+            }
+        }
+    }
+    files
+}
+
+#[test]
+fn a_machine_sheds_the_profiles_record_and_nothing_else_under_state() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("retired-profiles").join("uze"));
+    fs::create_dir_all(home.state_dir().join("conversations")).unwrap();
+    fs::write(
+        home.retired_profiles_path(),
+        r#"{"active":"default","profiles":{"default":{}}}"#,
+    )
+    .unwrap();
+    fs::write(home.client_layout_path(), r#"{"sidebar":{"width":30}}"#).unwrap();
+    fs::write(home.state_dir().join("conversations/a.json"), "{}").unwrap();
+    let mut kept = files_under(&home.state_dir());
+    kept.remove(Path::new("profiles.json"));
+    let app = UzeApplication::new(home.clone(), Vec::new());
+
+    app.retire_records_of_earlier_releases();
+    app.retire_records_of_earlier_releases();
+
+    assert!(!home.retired_profiles_path().exists());
+    assert_eq!(files_under(&home.state_dir()), kept);
+}
+
+#[test]
+fn the_seeding_every_command_runs_first_retires_the_profiles_record() {
+    let world = World::new("retired-profiles-bootstrap", Machine::default(), None);
+    fs::write(world.home.retired_profiles_path(), "{}").unwrap();
+
+    world.app.ensure_default_plugins().unwrap();
+
+    assert!(!world.home.retired_profiles_path().exists());
+}
