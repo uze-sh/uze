@@ -73,32 +73,19 @@
         "step": "plan",
         "steps": [
           {
-            "done": true,
-            "mark": "○",
-            "name": "discuss",
             "state": "done"
           },
           {
-            "done": false,
-            "mark": "◆",
-            "name": "plan",
             "state": "current"
           },
           {
-            "done": false,
-            "mark": "○",
-            "name": "execute",
             "state": "pending"
           },
           {
-            "done": false,
-            "mark": "○",
-            "name": "verify",
             "state": "pending"
           }
         ],
-        "waiting": null,
-        "waves": []
+        "waiting": null
       },
       "goal": "pay with a card",
       "marks": [

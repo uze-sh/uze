@@ -57,10 +57,10 @@ fn checkpoint_title(plan) {
     if found.len() > 0 { found[0][1] } else { "the plan waits for you" }
 }
 
-// A phase's four steps as marks, discuss, plan, execute and verify, each
-// done, current or pending: the D P E V columns of the drawer.
+// A phase's four steps as marks, discuss, plan, execute and verify, all
+// in one state: the D P E V columns of a phase done or still ahead.
 fn step_marks(state) {
-    steps().map(|name| #{ state: state })
+    steps().map(|step| #{ state: state })
 }
 
 // The phase in front: its steps, its plans in waves, and the checkpoint
@@ -110,30 +110,14 @@ fn in_front(phase, folder, files, executing) {
         }
     }
 
-    // The plans wave by wave, as one flat row of marks: a view nests
-    // `each` two deep at most, and the phase is already one.
-    let waves = [];
     let numbers = [];
     for plan in plans {
         if !numbers.contains(plan.wave) { numbers.push(plan.wave); }
     }
     numbers.sort();
-    for number in numbers {
-        if waves.len() > 0 { waves.push(#{ text: "  ", kind: "label" }); }
-        waves.push(#{ text: `wave ${number} `, kind: "label" });
-        for plan in plans.filter(|plan| plan.wave == number) {
-            if plan.ran {
-                waves.push(#{ text: "■", kind: "done" });
-            } else if waiting != () && waiting.plan == plan.id {
-                waves.push(#{ text: "", kind: "waiting", waiting: true });
-            } else {
-                waves.push(#{ text: "□", kind: "pending" });
-            }
-        }
-    }
 
-    // The same plans one under another, by name, in wave order: what the
-    // phase is made of, and which of them is where.
+    // The plans one under another, by name, in wave order: what the phase
+    // is made of, and which of them is where.
     let listed = [];
     for number in numbers {
         let lead = `wave ${number}`;
@@ -165,7 +149,7 @@ fn in_front(phase, folder, files, executing) {
     for name in steps() {
         let index = steps().index_of(name);
         let state = if index < at { "done" } else if index == at { "current" } else { "pending" };
-        marks.push(#{ name: name, state: state, done: state == "done", mark: if state == "current" { "◆" } else { "○" } });
+        marks.push(#{ state: state });
     }
 
     #{
@@ -175,7 +159,6 @@ fn in_front(phase, folder, files, executing) {
         command: commands()[step],
         label: `${step} phase ${phase.number}`,
         steps: marks,
-        waves: waves,
         listed: listed,
         goal: phase.goal,
         plans: plans.len(),
@@ -246,6 +229,9 @@ fn answer(input, context) {
             if current.step == "execute" || current.step == "verify" {
                 if current.plans > 0 { fill = current.ran.to_float() / current.plans.to_float(); }
             }
+            // The phase in front counts for most of its share once its
+            // plans have run, never all of it: it is done only verified,
+            // and the milestone never reads complete before that.
             progress += fill * 0.9;
         } else {
             phase.state = "later";

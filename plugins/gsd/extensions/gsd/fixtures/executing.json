@@ -119,73 +119,19 @@
         "step": "execute",
         "steps": [
           {
-            "done": true,
-            "mark": "○",
-            "name": "discuss",
             "state": "done"
           },
           {
-            "done": true,
-            "mark": "○",
-            "name": "plan",
             "state": "done"
           },
           {
-            "done": false,
-            "mark": "◆",
-            "name": "execute",
             "state": "current"
           },
           {
-            "done": false,
-            "mark": "○",
-            "name": "verify",
             "state": "pending"
           }
         ],
-        "waiting": null,
-        "waves": [
-          {
-            "kind": "label",
-            "text": "wave 1 "
-          },
-          {
-            "kind": "done",
-            "text": "■"
-          },
-          {
-            "kind": "done",
-            "text": "■"
-          },
-          {
-            "kind": "label",
-            "text": "  "
-          },
-          {
-            "kind": "label",
-            "text": "wave 2 "
-          },
-          {
-            "kind": "pending",
-            "text": "□"
-          },
-          {
-            "kind": "pending",
-            "text": "□"
-          },
-          {
-            "kind": "label",
-            "text": "  "
-          },
-          {
-            "kind": "label",
-            "text": "wave 3 "
-          },
-          {
-            "kind": "pending",
-            "text": "□"
-          }
-        ]
+        "waiting": null
       },
       "goal": "pay with a card",
       "marks": [
