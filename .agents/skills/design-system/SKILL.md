@@ -273,6 +273,9 @@ Toasts:
   their maximum.
 - Appear only for something that happened. Never raise a toast for a
   no-op, a save, or an error flood at startup.
+- Never for what the person already sees happen: a prompt typed into the
+  agent in front stands in its pane, so "sent to agent" is said only of
+  one typed into an agent out of sight.
 - What a plugin's action says while it waits ("Start a session…") is gone
   the moment its extension answers, on a view, a drawer or an overlay
   alike: it never stays on a foot after the action ran.

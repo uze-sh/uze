@@ -383,12 +383,17 @@ impl Attach<'_> {
                 write.unattended,
                 Instant::now(),
             );
-            self.model.raise_toast(
-                ToastKind::Done,
-                "sent to agent",
-                format!("{by}: {}", crate::ui::widget::text::elide(&write.text, 32)),
-                None,
-            );
+            // Typed into the agent in front, the prompt is its own news: it
+            // stands in the pane the person is looking at. Only one typed
+            // somewhere out of sight is said.
+            if pane != self.model.focused_pane() {
+                self.model.raise_toast(
+                    ToastKind::Done,
+                    "sent to agent",
+                    format!("{by}: {}", crate::ui::widget::text::elide(&write.text, 32)),
+                    None,
+                );
+            }
         }
     }
 

@@ -44,12 +44,15 @@ impl Attach<'_> {
                 self.submit_notice(pane, &instruction);
                 self.model
                     .note_agent_prompt_submission(pane, &self.identities, None);
-                self.model.raise_toast(
-                    ToastKind::Done,
-                    "sent to agent",
-                    crate::ui::widget::text::elide(&instruction, QUOTED),
-                    None,
-                );
+                // Into the agent in front, what was typed is its own news.
+                if pane != self.model.focused_pane() {
+                    self.model.raise_toast(
+                        ToastKind::Done,
+                        "sent to agent",
+                        crate::ui::widget::text::elide(&instruction, QUOTED),
+                        None,
+                    );
+                }
             }
             Some((reason, _)) if automatic => {
                 self.model.raise_toast(
