@@ -5,7 +5,12 @@ use uze_application::{CheckedOverride, OverrideFlag, OverrideValue, OverrideVerd
 
 use super::popups::{PICKER_LEAD, picker_lead, popup_rule, render_agent_picker_row, spread};
 use super::*;
-use crate::ui::widget::Scrollbar;
+use crate::ui::widget::{Scrollbar, fill};
+
+/// The ground the overrides stand on in the popup, the field and the step
+/// alike: a container of their own, lifted off the card, so no rule has to
+/// part them from the listing.
+const CONTAINER_GROUND: Token = Token::SurfaceRaised;
 
 /// What the line says while nothing is typed into it.
 const LINE_PLACEHOLDER: &str = "a flag, or NAME=value";
@@ -81,6 +86,7 @@ pub(super) fn render_overrides_field(
     if opens {
         hits.push((rect, WorkspaceHit::HintAction(Action::OpenOverrides)));
     }
+    fill(frame, rect, CONTAINER_GROUND);
     frame.render_widget(Paragraph::new(spread(rect, label, right)), rect);
 }
 
@@ -97,6 +103,9 @@ pub(super) fn render_overrides_step(
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
     let Some(over) = &step.overrides else { return };
+    if let Some(container) = rows.peek(rows.remaining()) {
+        fill(frame, container, CONTAINER_GROUND);
+    }
     if let Some(rect) = rows.next(1) {
         render_heading(frame, rect, model, step, hits);
     }

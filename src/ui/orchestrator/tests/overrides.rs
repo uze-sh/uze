@@ -206,11 +206,11 @@ fn end_of(row: &str) -> usize {
 }
 
 /// The harness heads the popup alone, under the title; the `overrides`
-/// row is the last before the foot, under a rule of its own and over the
-/// foot's, its value against the same end as the harness's and its label
-/// in the harness's column.
+/// row is the last before the foot, in a container of its own straight
+/// under the listing with no rule over it, its value against the same end
+/// as the harness's and its label in the harness's column.
 #[test]
-fn the_overrides_row_sits_at_the_foot_under_a_rule() {
+fn the_overrides_row_sits_at_the_foot_in_its_own_container() {
     let mut popup = popup("overrides-at-foot");
     let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
     let (_, rows) = popup_rows(&mut driven);
@@ -230,8 +230,8 @@ fn the_overrides_row_sits_at_the_foot_under_a_rule() {
             .ends_with(&theme::glyph(Symbol::Submenu))
     );
     assert!(
-        is_rule(&rows[last - 4]),
-        "a rule over the field:\n{}",
+        !is_rule(&rows[last - 4]),
+        "no rule over the field, its ground parts it:\n{}",
         rows.join("\n")
     );
     assert!(
@@ -313,6 +313,11 @@ fn the_overrides_row_rests_quiet_and_lights_under_the_pointer() {
             };
             let (label, value) = inks(&mut driven);
             assert_eq!(label.fg, theme::color(Token::TextPrimary), "{name}");
+            assert_eq!(
+                label.bg,
+                theme::color(Token::SurfaceRaised),
+                "the row stands in its own container: {name}"
+            );
             assert_eq!(value.fg, theme::color(Token::TextMuted), "{name}");
             driven.mouse(row.x + 2, row.y, crossterm::event::MouseEventKind::Moved);
             let (lit_label, lit_value) = inks(&mut driven);
@@ -834,7 +839,7 @@ fn long_values_are_cut_at_their_end_and_narrow_widths_hold() {
     let (popup, rows) = popup_rows(&mut driven);
     assert_eq!(popup.width, 46, "the popup gives way to the terminal");
     let field = &rows[rows.len() - 4];
-    assert!(is_rule(&rows[rows.len() - 5]), "{}", rows.join("\n"));
+    assert!(!is_rule(&rows[rows.len() - 5]), "{}", rows.join("\n"));
     assert!(
         field.contains(" overrides "),
         "still at the foot:\n{}",
@@ -868,6 +873,11 @@ fn the_light_theme_colours_the_step() {
             .expect("the line is drawn");
         let x = row[..row.find("PATH").unwrap()].chars().count() as u16;
         assert_eq!(buffer[(x, y as u16)].fg, theme::color(Token::StateDanger));
+        assert_eq!(
+            buffer[(x, y as u16)].bg,
+            theme::color(Token::SurfaceRaised),
+            "the step stands in the overrides' container"
+        );
     });
 }
 

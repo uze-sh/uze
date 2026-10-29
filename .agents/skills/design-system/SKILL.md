@@ -151,13 +151,15 @@ on "cancel" must not save first.
 - A popover's fields are placed by how they are used. A choice that rarely
   changes (`harness ‹ Claude Code ›`) sits alone at its head, under the
   title, a rule under it. A field that opens a step of its own
-  (`overrides`) sits at its foot, under a rule and above the keys, its
-  label in the row's own ink and its value muted against its end, ending
-  in `›`, `none` at rest. Never stack the two at the head in one dim ink.
-  The step takes the rows of both and of the list between them, so the
-  popover's height never moves; the field is not drawn under its own
-  step. Every field's value ends on one column, the one the head's ends
-  on.
+  (`overrides`) sits at its foot, above the keys, in a container of its
+  own on the raised ground (`SurfaceRaised`), never boxed in by rules of
+  its own: the ground is what parts it from the list. Its label is in the
+  row's own ink and its value muted against its end, ending in `›`,
+  `none` at rest. Never stack the two at the head in one dim ink. The
+  step stands in that same container, grown over the rows of both fields
+  and of the list between them, so the popover's height never moves; the
+  field is not drawn under its own step. Every field's value ends on one
+  column, the one the head's ends on.
 - Dropdowns float over content and never push it down.
 - A breadcrumb names levels, short and generic (`Context › Containers ›
   Components ▾`), the step on show included. An item's own long name goes
@@ -167,7 +169,9 @@ on "cancel" must not save first.
 - A popover with steps fixes its height when it opens, as the largest any
   of its steps needs: going into a step and back never resizes it.
 - A popover's rows stand on its own ground: no raised band under the line
-  typed into or under its list. The row Enter takes is the one marked.
+  typed into or under its list. A container of its own (the field that
+  opens a step, and that step) is the one region on another ground, and
+  everything inside it stands on that ground alike. The row Enter takes is the one marked.
 - A list under a line typed into opens with nothing marked, so Enter acts
   on the line; `↓` marks the first row, and `↑` on it unmarks again.
   Hovering a row only lights it: the pointer resting there never changes

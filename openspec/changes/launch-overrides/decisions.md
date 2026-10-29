@@ -323,3 +323,8 @@
 - rejected: A third list on `FlagOwner::Keyed`: every keyed catalog and test would spell an empty list, for the one field that already means "values that give up safety". Parsing the value as TOML: a dependency for two string compares.
 - blast:    One `flag_verdict` arm and a `setting` helper in `check.rs`; Codex's `-c` entry; the help check accepts a keyed flag's `key=value`.
 
+> D22 note (popup-overlay): the flattened 52-column popup (cbefbcc4) was
+> reverted at the operator's word ("the earlier version was prettier; the
+> only problem is fitting overrides"). The 60-column popup with its rules
+> is back, and the `overrides` field and its step stand in a container of
+> their own on `SurfaceRaised` instead of between two rules.

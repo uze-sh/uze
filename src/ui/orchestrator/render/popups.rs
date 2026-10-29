@@ -22,14 +22,16 @@ const NEW_AGENT_POPUP_MAX_ROWS: u16 = 9;
 /// for the foot's keys.
 const NEW_AGENT_POPUP_WIDTH: u16 = 60;
 /// The rows around the listing: the harness at the head, the line typed
-/// into, the `overrides` row and the foot, each part closed off by a rule.
-const NEW_AGENT_POPUP_CHROME: u16 = 8;
+/// into, the `overrides` container and the foot. A rule closes off the
+/// harness, the line and the listing; the container needs none, its ground
+/// is what parts it.
+const NEW_AGENT_POPUP_CHROME: u16 = 7;
 /// The rows at the foot, under the part that changes with the step: the
 /// rule and the keys.
 const NEW_AGENT_POPUP_FOOT: u16 = 2;
-/// The rows the `overrides` field takes above the foot on the first step:
-/// its rule and itself. The overrides step takes them back.
-const OVERRIDES_FIELD: u16 = 2;
+/// The rows the `overrides` container takes above the foot on the first
+/// step. The overrides step takes them back.
+const OVERRIDES_FIELD: u16 = 1;
 
 /// Where a popup of `width` by `height` floats beside `anchor`: under it,
 /// pushed back inside `area` at its edges.
@@ -120,7 +122,6 @@ pub(in crate::ui::orchestrator) fn render_directory_step(
         }
         popup_rule(frame, &mut rows);
         render_root_picker(frame, model, step, &mut rows, hits);
-        popup_rule(frame, &mut field);
         if let Some(rect) = field.next(1) {
             render_overrides_field(frame, rect, model, step, hits);
         }
