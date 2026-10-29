@@ -29,8 +29,8 @@ a harness reads (ADR-041).
   is a new method with a default that does nothing, not a branch on which
   extension it is.
 - A surface keeps two things for the host: `place`, per checkout, handed
-  back when a door opens it there again, and `hold`, per tab, taken when
-  another tab comes to the front and handed back after `Entry::Return`
+  back when a door opens it there again, and `hold`, per agent, taken when
+  another agent comes to the front and handed back after `Entry::Return`
   (`src/ui/orchestrator/surfaces.rs`, `settle_pane`). What a door must
   decide afresh (code's half) goes in `hold`, never in `place`. Both stay
   in memory; neither is written down.

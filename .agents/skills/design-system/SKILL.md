@@ -72,16 +72,27 @@ on "cancel" must not save first.
   never quietly flips a switch that is already on.
 
 **Moving between agents:**
-- A surface belongs to the tab it was opened on. Going to another agent,
-  however it got there (a click, a key, another space's header, an
-  extension asking for an agent), puts it away for that tab, and the tab
-  coming back has it standing again *as it was left*: the same half, the
+- A surface belongs to the agent it was opened on: its own tab and the
+  shells beside it are one place, as the sidebar marks the agent whichever
+  of them is in front. Going to another agent, however it got there (a
+  click, a key, another space's header, an extension asking for an agent),
+  puts it away for that agent, and the agent coming back, on whichever of
+  its tabs, has it standing again *as it was left*: the same half, the
   same selection, the same scroll, whatever the extension. A return is not
   a door; a door still decides the half on a fresh opening.
 - The space overview opened over a surface puts it away the same way, and
   putting the overview away gives it back. A reattach does too.
-- Only choosing the tab or space already in front takes the pane back
-  from it, and forgets it. `each_agent_keeps_its_own_surface` and
+- Only choosing the tab or space already in front, or another terminal of
+  the agent in front (its tab from its shell, a shell from its tab), takes
+  the pane back from it, and forgets it: an agent never keeps a surface
+  waiting on one of its tabs while showing another. A shell is a terminal
+  wherever it is chosen, the overview put away first. A shell the
+  overview's own "+" opens is not chosen: the overview follows the agent
+  to it, and putting it away gives back what it put away.
+  `each_agent_keeps_its_own_surface`,
+  `an_agent_and_its_shell_never_keep_two_surfaces`,
+  `clicking_the_agents_shell_under_the_overview_shows_the_shell`,
+  `moving_to_the_agents_shell_under_the_overview_keeps_the_surface` and
   `returning_to_an_agent_shows_code_on_the_half_it_was_left_on` hold it.
 
 **Hover:**

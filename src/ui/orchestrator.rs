@@ -1983,7 +1983,7 @@ struct WorkspaceModel {
     open_slot: Option<SlotId>,
     open_root: Option<PathBuf>,
     /// The agent directory in front when it opened, kept with it when it
-    /// is put away for its tab.
+    /// is put away for its agent.
     open_context: Option<PathBuf>,
     /// Whether the inspector stands beside it.
     inspecting: bool,
@@ -2051,12 +2051,12 @@ struct WorkspaceModel {
     /// The room each status row, band and overlay had on the last frame:
     /// what its engine is told it has when a click reaches it.
     slot_spaces: std::cell::RefCell<BTreeMap<SlotId, uze_extensions::view::Size>>,
-    /// The tab the pane was last settled for, and so the one the open
+    /// The tab the pane was last settled for, and the agent the open
     /// surface stands in for. It is drawn where that tab's pane is, about
-    /// that tab's checkout, so a different tab coming to the front —
+    /// that agent's checkout, so another agent coming to the front —
     /// however it got there — puts it away for this one rather than
     /// leaving it answering for a checkout nobody is looking at.
-    extension_tab: Option<TabId>,
+    extension_tab: Option<InFront>,
     /// The overview of a space, standing where the pane is. It belongs to
     /// its space rather than to [`Self::extension_tab`]: the broadcast that
     /// confirms the space changes the tab in front.

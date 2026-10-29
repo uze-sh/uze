@@ -1345,9 +1345,10 @@ impl Attach<'_> {
                 };
                 // Choosing the tab already in front is choosing to see it:
                 // that is how the pane is had back from a surface standing
-                // in it. Choosing another one leaves the surface to the tab
-                // it belongs to, put away when the server confirms the move
-                // and standing again when that tab comes back.
+                // in it. Choosing another agent's leaves the surface to the
+                // agent it belongs to, put away when the server confirms the
+                // move and standing again when that agent comes back; another
+                // tab of the same agent takes the pane back once confirmed.
                 if self.model.selected_tab() == Some(selected) {
                     self.model.take_pane_back();
                 }
@@ -1403,7 +1404,7 @@ impl Attach<'_> {
             }
             WorkspaceHit::SelectSpace(space) => {
                 // Another space's tab coming to the front puts the surface
-                // away for the tab it belongs to; its own space's header is
+                // away for the agent it belongs to; its own space's header is
                 // the way back to the pane.
                 let current = self
                     .model
