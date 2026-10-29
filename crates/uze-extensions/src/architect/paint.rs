@@ -62,6 +62,8 @@ pub enum Leads {
     Inside,
     /// To the code it stands for.
     ToCode,
+    /// Both: inside when followed, to the code by its own mark.
+    Both,
 }
 
 /// The cells of a box's border that carry its mark, which are also what
@@ -73,6 +75,17 @@ pub fn mark_cells(frame: Frame) -> Frame {
         w: 4,
         h: 1,
     }
+}
+
+/// The cells of the second mark a box that leads both ways carries, left
+/// of the first, where the box is wide enough for two.
+pub fn code_mark_cells(frame: Frame, leads: Leads) -> Option<Frame> {
+    (leads == Leads::Both && frame.w >= 11).then(|| Frame {
+        x: frame.x + frame.w - 9,
+        y: frame.y + frame.h - 1,
+        w: 4,
+        h: 1,
+    })
 }
 
 pub fn paint(scene: &Scene, glyphs: Glyphs, selected: Option<usize>, leads: &[Leads]) -> Canvas {
@@ -119,6 +132,9 @@ pub fn paint(scene: &Scene, glyphs: Glyphs, selected: Option<usize>, leads: &[Le
         for (position, &(x, y, heading)) in route.cells.iter().enumerate() {
             let index = lines.index(x, y);
             let back = 1 << ((heading + 2) % 4);
+            if position == 0 && edge.arrow_back {
+                arrows.push((x, y, back, lit));
+            }
             let onward = match route.cells.get(position + 1) {
                 Some(&(_, _, next)) => 1 << next,
                 None if edge.arrow => {
@@ -168,25 +184,185 @@ pub fn paint(scene: &Scene, glyphs: Glyphs, selected: Option<usize>, leads: &[Le
             selected == Some(index),
         );
         let leads = leads.get(index).copied().unwrap_or_default();
+        let frame = scene.placement.nodes[index];
         if leads != Leads::Nowhere {
-            let cells = mark_cells(scene.placement.nodes[index]);
+            let cells = mark_cells(frame);
             let glyph = canvas::leads_glyph(leads == Leads::ToCode, glyphs);
             canvas.text(cells.x, cells.y, &format!(" {glyph} "), Role::Accent, true);
         }
+        if let Some(cells) = code_mark_cells(frame, leads) {
+            let glyph = canvas::leads_glyph(true, glyphs);
+            canvas.text(cells.x, cells.y, &format!(" {glyph} "), Role::Accent, true);
+        }
     }
+    let mut markers = Vec::new();
     for route in &scene.routes.routes {
-        if let Some(label) = scene.graph.edges[route.edge].label.as_deref() {
+        let edge = &scene.graph.edges[route.edge];
+        if let Some(label) = edge.label.as_deref() {
             let role = if scene.touches(route, selected) {
                 Role::Accent
             } else {
                 Role::Secondary
             };
-            // A label with nowhere to go is left off rather than written
-            // over a line: a missing word costs less than a wrong edge.
-            if !write_inline(&mut canvas, &mut lines, &scene.routes, route, label, role) {
-                write_beside(&mut canvas, &lines, &scene.routes, route, label, role);
+            // A label with nowhere to go is not written over a line: a
+            // marker stands for it, and the key says what it was. C4 asks
+            // for every line to be labelled, and a missing word is a line
+            // that says nothing.
+            if write_inline(&mut canvas, &mut lines, &scene.routes, route, label, role)
+                || write_beside(&mut canvas, &lines, &scene.routes, route, label, role)
+            {
+                continue;
+            }
+            let placed_so_far = markers
+                .iter()
+                .filter(|m: &&Marker| m.marker.is_some())
+                .count();
+            let marker = marker_for(label, placed_so_far + 1);
+            let placed = write_inline(&mut canvas, &mut lines, &scene.routes, route, &marker, role)
+                || write_beside(&mut canvas, &lines, &scene.routes, route, &marker, role);
+            markers.push(Marker {
+                marker: placed.then_some(marker),
+                from: scene.graph.nodes[edge.from].title.clone(),
+                to: scene.graph.nodes[edge.to].title.clone(),
+                label: label.to_owned(),
+            });
+        }
+    }
+    let entries = key(scene, leads, &markers, glyphs);
+    with_key(canvas, &entries)
+}
+
+/// A label left off its line, and what stands for it there, if anything
+/// found room.
+struct Marker {
+    marker: Option<String>,
+    from: String,
+    to: String,
+    label: String,
+}
+
+/// What stands on a line for its label: a dynamic step's own number, or a
+/// count of the labels moved to the key so far.
+fn marker_for(label: &str, count: usize) -> String {
+    let step = label
+        .split_once(". ")
+        .map(|(step, _)| step)
+        .filter(|step| !step.is_empty() && step.chars().all(|c| c.is_ascii_digit()));
+    match step {
+        Some(step) => format!("{step}."),
+        None => format!("[{count}]"),
+    }
+}
+
+/// The key C4 asks every diagram to carry: what the drawing's notation
+/// means, a line each, and only for what this drawing uses. Mermaid has no
+/// way to write one, so it is read off the drawing itself.
+fn key(
+    scene: &Scene,
+    leads: &[Leads],
+    markers: &[Marker],
+    glyphs: Glyphs,
+) -> Vec<(String, String)> {
+    let graph = &scene.graph;
+    let c4 = graph.view.is_some();
+    let uses = |shape: Shape| graph.nodes.iter().any(|node| node.shape == shape);
+    let leading = |wanted: &[Leads]| leads.iter().any(|lead| wanted.contains(lead));
+    let mut entries: Vec<(String, String)> = Vec::new();
+    if c4 && !graph.edges.is_empty() {
+        let arrow = arrow_glyph(EAST, glyphs);
+        entries.push((
+            format!("{arrow}"),
+            "a relationship, pointing the way it runs: what it does [and how]".to_owned(),
+        ));
+    }
+    if c4 && graph.edges.iter().any(|edge| edge.arrow_back) {
+        entries.push((
+            "two heads".to_owned(),
+            "a relationship both ways".to_owned(),
+        ));
+    }
+    if c4 && uses(Shape::Person) {
+        entries.push(("rounded".to_owned(), "a person".to_owned()));
+    }
+    if uses(Shape::Database) {
+        entries.push(("lid".to_owned(), "a store of data".to_owned()));
+    }
+    if uses(Shape::Queue) {
+        entries.push(("second wall".to_owned(), "a queue".to_owned()));
+    }
+    if c4 && graph.nodes.iter().any(|node| node.external) {
+        entries.push((
+            "faint border".to_owned(),
+            "outside the system being described".to_owned(),
+        ));
+    }
+    if c4 && !graph.clusters.is_empty() {
+        entries.push((
+            "frame".to_owned(),
+            "a boundary, its kind in brackets".to_owned(),
+        ));
+    }
+    if leading(&[Leads::Inside, Leads::Both]) {
+        entries.push((
+            canvas::leads_glyph(false, glyphs).to_owned(),
+            "another view zooms into it".to_owned(),
+        ));
+    }
+    if leading(&[Leads::ToCode, Leads::Both]) {
+        entries.push((
+            canvas::leads_glyph(true, glyphs).to_owned(),
+            "opens its code".to_owned(),
+        ));
+    }
+    for marker in markers {
+        let arrow = arrow_glyph(EAST, glyphs);
+        entries.push((
+            marker.marker.clone().unwrap_or_else(|| {
+                match glyphs {
+                    Glyphs::Unicode => "—",
+                    Glyphs::Ascii => "-",
+                }
+                .to_owned()
+            }),
+            format!("{} {arrow} {}: {}", marker.from, marker.to, marker.label),
+        ));
+    }
+    entries
+}
+
+/// The drawing with its key under it, a row apart.
+fn with_key(drawing: Canvas, entries: &[(String, String)]) -> Canvas {
+    if entries.is_empty() {
+        return drawing;
+    }
+    let sample = entries
+        .iter()
+        .map(|(sample, _)| text_width(sample))
+        .max()
+        .unwrap_or(0);
+    let widest = entries
+        .iter()
+        .map(|(_, meaning)| sample + 2 + text_width(meaning))
+        .max()
+        .unwrap_or(0);
+    let top = drawing.height + 1;
+    let mut canvas = Canvas::new(
+        drawing.width.max(widest + 2),
+        top + 1 + entries.len() as i32,
+        drawing.glyphs,
+    );
+    for y in 0..drawing.height {
+        for x in 0..drawing.width {
+            if let Some(cell) = drawing.cell(x, y) {
+                canvas.set(x, y, cell);
             }
         }
+    }
+    canvas.text(1, top, "Key", Role::Secondary, true);
+    for (row, (glyph, meaning)) in entries.iter().enumerate() {
+        let y = top + 1 + row as i32;
+        canvas.text(1, y, glyph, Role::Accent, false);
+        canvas.text(1 + sample + 2, y, meaning, Role::Muted, false);
     }
     canvas
 }
@@ -195,7 +371,7 @@ fn paint_node(canvas: &mut Canvas, node: &Node, frame: Frame, selected: bool) {
     let corners = match node.shape {
         Shape::Box => Corners::Square,
         Shape::Decision => Corners::Marked,
-        Shape::Round | Shape::Database | Shape::Person => Corners::Rounded,
+        Shape::Round | Shape::Database | Shape::Person | Shape::Queue => Corners::Rounded,
     };
     let border = match (selected, node.external) {
         (true, _) => Role::Accent,
@@ -218,6 +394,13 @@ fn paint_node(canvas: &mut Canvas, node: &Node, frame: Frame, selected: bool) {
         }
         row += 1;
     }
+    let wall = layout::queue_wall(node);
+    if wall > 0 {
+        let x = frame.x + frame.w - 2;
+        for y in frame.y + 1..frame.y + frame.h - 1 {
+            canvas.line(x, y, NORTH | SOUTH, Stroke::Solid, border);
+        }
+    }
     for (kind, text) in layout::node_text(node) {
         let (role, bold) = match (kind, selected, node.external) {
             (TextKind::Title, true, _) => (Role::Accent, true),
@@ -226,7 +409,7 @@ fn paint_node(canvas: &mut Canvas, node: &Node, frame: Frame, selected: bool) {
             (TextKind::Kind, ..) => (Role::Dim, false),
             _ => (Role::Muted, false),
         };
-        let x = frame.x + 1 + (frame.w - 2 - text_width(&text)) / 2;
+        let x = frame.x + 1 + (frame.w - 2 - wall - text_width(&text)) / 2;
         canvas.text(x, row, &text, role, bold);
         row += 1;
     }

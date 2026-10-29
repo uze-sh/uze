@@ -49,6 +49,7 @@ pub fn view(code: &CodeView, space: Size) -> View {
             subjects: Vec::new(),
             layout: Layout::Sidebar,
             trail: Vec::new(),
+            label: String::new(),
         };
     }
 
@@ -69,6 +70,7 @@ pub fn view(code: &CodeView, space: Size) -> View {
             subjects: subjects(code),
             layout: Layout::Board,
             trail: map_trail(code),
+            label: String::new(),
         };
     }
 
@@ -94,6 +96,7 @@ pub fn view(code: &CodeView, space: Size) -> View {
         subjects: subjects(code),
         layout: Layout::Sidebar,
         trail: Vec::new(),
+        label: String::new(),
     }
 }
 

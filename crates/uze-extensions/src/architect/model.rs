@@ -19,6 +19,54 @@ pub enum Shape {
     Database,
     Decision,
     Person,
+    /// A message queue: a second wall on the right, which is what keeps it
+    /// from reading as a person, the other rounded thing.
+    Queue,
+}
+
+/// Which of C4's abstractions an element is. Read for what joins one view
+/// to the next and for the check, never for how a box is drawn.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Abstraction {
+    Person,
+    System,
+    Container,
+    Component,
+}
+
+/// What a C4 boundary bounds, which is what says which element a view is
+/// the inside of.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Boundary {
+    System,
+    Container,
+    Enterprise,
+    /// A plain `Boundary`, with the type it was given, if any.
+    Typed(Option<String>),
+    Deployment,
+}
+
+/// Which C4 view a diagram is, from its first word.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum View {
+    Context,
+    Container,
+    Component,
+    Dynamic,
+    Deployment,
+}
+
+impl View {
+    pub fn of(keyword: &str) -> Option<Self> {
+        Some(match keyword {
+            "C4Context" => Self::Context,
+            "C4Container" => Self::Container,
+            "C4Component" => Self::Component,
+            "C4Dynamic" => Self::Dynamic,
+            "C4Deployment" => Self::Deployment,
+            _ => return None,
+        })
+    }
 }
 
 pub use crate::shared::canvas::Stroke;
@@ -38,6 +86,8 @@ pub struct Node {
     /// Where in the project this is, when the diagram says — Mermaid's
     /// own `$link` on a C4 element, or a flowchart's `click … href`.
     pub link: Option<String>,
+    /// The C4 abstraction it is, for a C4 element.
+    pub abstraction: Option<Abstraction>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -45,8 +95,12 @@ pub struct Edge {
     pub from: usize,
     pub to: usize,
     pub label: Option<String>,
+    /// What a C4 relation says beyond its label.
+    pub description: Option<String>,
     pub stroke: Stroke,
     pub arrow: bool,
+    /// A head at the start as well: C4's `BiRel`.
+    pub arrow_back: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -57,11 +111,15 @@ pub struct Cluster {
     pub id: String,
     pub title: String,
     pub parent: Option<usize>,
+    /// What it bounds, for a C4 boundary.
+    pub boundary: Option<Boundary>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Graph {
     pub flow: Flow,
+    /// Which C4 view this is, for a C4 diagram.
+    pub view: Option<View>,
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
     pub clusters: Vec<Cluster>,
@@ -71,6 +129,7 @@ impl Graph {
     pub fn new(flow: Flow) -> Self {
         Self {
             flow,
+            view: None,
             nodes: Vec::new(),
             edges: Vec::new(),
             clusters: Vec::new(),

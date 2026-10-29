@@ -1095,10 +1095,11 @@ impl Attach<'_> {
                     ScrollDirection::Down
                 };
                 let space = self.surface_space();
-                let navigated = self
-                    .model
-                    .view_in_pane(space)
-                    .is_some_and(|view| view.navigator.is_some());
+                // A board draws its list as a row of tabs, not a column,
+                // so nothing beside the drawing is the list's to scroll.
+                let navigated = self.model.view_in_pane(space).is_some_and(|view| {
+                    view.navigator.is_some() && view.layout != uze_extensions::view::Layout::Board
+                });
                 let target = match on_content_scrollbar || !navigated {
                     true => Some(uze_extensions::view::ScrollTarget::Content),
                     false => crate::ui::extension_view::scroll_target(

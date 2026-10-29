@@ -409,6 +409,7 @@ fn sample() -> View {
         subjects: Vec::new(),
         layout: ViewLayout::Sidebar,
         trail: Vec::new(),
+        label: String::new(),
     }
 }
 
@@ -829,6 +830,7 @@ fn the_navigation_is_the_bars_and_does_not_move_with_the_layout() {
         ],
         layout: ViewLayout::Sidebar,
         trail: Vec::new(),
+        label: String::new(),
     };
     let (rows, hits) = draw_sized(&sidebar, 80, 12);
     assert!(
@@ -914,6 +916,7 @@ fn a_row_menu_lies_under_its_row_and_takes_the_click() {
         subjects: Vec::new(),
         layout: ViewLayout::Sidebar,
         trail: Vec::new(),
+        label: String::new(),
     };
     let (rows, hits) = draw_with_menu(&view, None);
 
@@ -977,6 +980,7 @@ fn a_surfaces_question_is_drawn_as_the_products_dialog() {
         subjects: Vec::new(),
         layout: ViewLayout::Sidebar,
         trail: Vec::new(),
+        label: String::new(),
     };
     let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
     let mut answers = Vec::new();
@@ -1120,6 +1124,7 @@ fn a_boards_hints_stop_before_its_caption() {
         subjects: Vec::new(),
         layout: ViewLayout::Board,
         trail: Vec::new(),
+        label: String::new(),
     };
 
     for width in [70, 90, 118] {
@@ -1201,6 +1206,7 @@ fn a_board_click_resolves_in_the_space_the_frame_drew_in() {
             subjects: Vec::new(),
             layout: ViewLayout::Board,
             trail: Vec::new(),
+            label: String::new(),
         };
 
         let mut hits = Vec::new();
@@ -1324,6 +1330,7 @@ fn board(groups: usize, items: usize, trail: &[(&str, bool)]) -> View {
             .iter()
             .map(|&(name, current)| TrailStep::new(name, current))
             .collect(),
+        label: String::new(),
     }
 }
 
@@ -1478,6 +1485,7 @@ fn a_list_longer_than_the_board_keeps_the_highlight_in_view_and_says_where_it_is
         subjects: Vec::new(),
         layout: ViewLayout::Board,
         trail: Vec::new(),
+        label: String::new(),
     };
     let (drawn, hits) = draw_sized(&view, 80, 20);
     let text = drawn.join("\n");
@@ -1549,10 +1557,18 @@ fn a_board_is_drawn_as_it_was_cut_and_a_click_lands_in_the_box_under_it() {
     assert!(
         rows[MENU_ROW].contains("C4")
             && !rows[MENU_ROW].contains("C4 2")
-            && rows[MENU_ROW].contains("System context")
+            && rows[MENU_ROW].contains("Context")
             && rows[MENU_ROW].contains("Containers"),
-        "one row: the area on show, then its levels, the one on show among them: {}",
+        "one row: the area on show, then the way down to the view on show: {}",
         rows[MENU_ROW]
+    );
+    let modes_row = rows
+        .iter()
+        .find(|row| row.contains("Unicode"))
+        .expect("the modes are drawn");
+    assert!(
+        modes_row.trim_start().starts_with("uze ") && rows[MENU_ROW].contains("Containers"),
+        "the title is on the row of the modes, not on the way down: {modes_row}"
     );
     assert!(
         !rows[MENU_ROW].contains("Sequence") && !rows[MENU_ROW].contains("Install"),
@@ -1569,12 +1585,10 @@ fn a_board_is_drawn_as_it_was_cut_and_a_click_lands_in_the_box_under_it() {
 
     let title_row = rows
         .iter()
-        .position(|row| row.contains("Workspace TUI"))
+        .position(|row| row.contains("uze CLI"))
         .expect("the box is drawn") as u16;
     let drawn = &rows[usize::from(title_row)];
-    let title_column = drawn[..drawn.find("Workspace TUI").unwrap()]
-        .chars()
-        .count() as u16;
+    let title_column = drawn[..drawn.find("uze CLI").unwrap()].chars().count() as u16;
     let (rect, hit) = hits
         .iter()
         .find(|(rect, hit)| {
@@ -1598,7 +1612,7 @@ fn a_board_is_drawn_as_it_was_cut_and_a_click_lands_in_the_box_under_it() {
     let Content::Lines { heading, .. } = architect::view(&state, space).content else {
         panic!("a diagram is lines");
     };
-    assert!(heading.starts_with("Workspace TUI"), "{heading}");
+    assert!(heading.starts_with("uze CLI"), "{heading}");
 }
 
 /// The whole point of the contract: an extension names a row, the host

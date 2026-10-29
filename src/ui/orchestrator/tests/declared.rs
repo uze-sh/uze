@@ -94,6 +94,7 @@ impl Extension for Board {
             subjects: Vec::new(),
             layout: Layout::Sidebar,
             trail: Vec::new(),
+            label: String::new(),
         })
     }
 

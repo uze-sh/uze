@@ -69,7 +69,12 @@ fn node_size(node: &Node) -> (i32, i32) {
         .max()
         .unwrap_or(0);
     let lid = i32::from(node.shape == Shape::Database);
-    (widest + 4, lines.len() as i32 + 2 + lid)
+    (widest + 4 + queue_wall(node), lines.len() as i32 + 2 + lid)
+}
+
+/// The column a queue's second wall takes inside its box.
+pub fn queue_wall(node: &Node) -> i32 {
+    i32::from(node.shape == Shape::Queue)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -11,7 +11,8 @@
 //! clears this workspace's bar for a new dependency.
 
 use super::model::{
-    Cluster, Diagram, Edge, Flow, Graph, Participant, Sequence, SequenceStep, Shape, Stroke,
+    Abstraction, Boundary, Cluster, Diagram, Edge, Flow, Graph, Participant, Sequence,
+    SequenceStep, Shape, Stroke, View,
 };
 
 pub fn parse(source: &str) -> Result<Diagram, String> {
@@ -24,7 +25,7 @@ pub fn parse(source: &str) -> Result<Diagram, String> {
     match keyword {
         "flowchart" | "graph" => Ok(Diagram::Graph(flowchart(header, lines)?)),
         "sequenceDiagram" => Ok(Diagram::Sequence(sequence(lines))),
-        _ if keyword.starts_with("C4") => Ok(Diagram::Graph(c4(lines)?)),
+        _ if keyword.starts_with("C4") => Ok(Diagram::Graph(c4(View::of(keyword), lines)?)),
         other => Err(format!("`{other}` diagrams are not drawn yet")),
     }
 }
@@ -53,6 +54,7 @@ fn flowchart<'a>(header: &str, lines: impl Iterator<Item = &'a str>) -> Result<G
                         .to_owned(),
                     title: subgraph_title(declared),
                     parent: open.last().copied(),
+                    boundary: None,
                 });
                 open.push(graph.clusters.len() - 1);
             }
@@ -150,8 +152,10 @@ impl Statement {
                         from,
                         to,
                         label: link.label.clone(),
+                        description: None,
                         stroke: link.stroke,
                         arrow: link.arrow,
+                        arrow_back: false,
                     });
                 }
             }
@@ -282,9 +286,14 @@ impl Statement {
     }
 }
 
-fn c4<'a>(lines: impl Iterator<Item = &'a str>) -> Result<Graph, String> {
+fn c4<'a>(view: Option<View>, lines: impl Iterator<Item = &'a str>) -> Result<Graph, String> {
     let mut graph = Graph::new(Flow::TopDown);
+    graph.view = view;
     let mut open: Vec<usize> = Vec::new();
+    // Mermaid numbers a dynamic view's relations in the order they are
+    // written, whatever index a `RelIndex` gives: the number drawn is the
+    // one the reader can count to.
+    let mut steps = 0;
     for line in lines {
         if line.starts_with('}') {
             open.pop();
@@ -295,125 +304,234 @@ fn c4<'a>(lines: impl Iterator<Item = &'a str>) -> Result<Graph, String> {
         };
         let name = name.trim();
         let inside = rest.rsplit_once(')').map_or(rest, |(inside, _)| inside);
-        let link = named_argument(inside, "$link");
-        let mut arguments = arguments(inside);
-        // A dynamic view numbers its relations: `RelIndex(1, a, b, …)`.
-        // The number is part of what the edge says, not one of its ends.
-        let step = name
-            .starts_with("RelIndex")
-            .then(|| (!arguments.is_empty()).then(|| arguments.remove(0)))
-            .flatten();
-        let argument = |index: usize| arguments.get(index).cloned().filter(|a| !a.is_empty());
-        // A deployment node holds things the way a boundary does, and is
-        // drawn the same: what it is goes in the brackets.
+        let Some(signature) = Signature::of(name) else {
+            continue;
+        };
+        let arguments = Arguments::read(inside, signature.parameters);
         let is_node = name == "Node" || name.starts_with("Node_") || name == "Deployment_Node";
-        if name.ends_with("Boundary") || is_node {
-            let kind = argument(2).or_else(|| {
-                name.strip_suffix("_Boundary")
-                    .map(|prefix| prefix.replace('_', " "))
-            });
-            let label = argument(1).or_else(|| argument(0)).unwrap_or_default();
-            graph.clusters.push(Cluster {
-                id: argument(0).unwrap_or_default(),
-                title: match kind {
-                    Some(kind) => format!("{label} [{kind}]"),
-                    None => label,
-                },
-                parent: open.last().copied(),
-            });
-            open.push(graph.clusters.len() - 1);
-        } else if name.starts_with("Rel") || name.starts_with("BiRel") {
-            let (Some(from), Some(to)) = (argument(0), argument(1)) else {
-                return Err(format!("`{line}` names no two ends"));
-            };
-            let from = graph.node_named(&from, None);
-            let to = graph.node_named(&to, None);
-            graph.edges.push(Edge {
-                from,
-                to,
-                label: match (step, argument(2), argument(3)) {
-                    (Some(step), Some(label), _) => Some(format!("{step}. {label}")),
-                    (None, Some(label), Some(technology)) => {
-                        Some(format!("{label} [{technology}]"))
+        match signature.form {
+            Form::Boundary => {
+                let boundary = match name {
+                    "System_Boundary" => Boundary::System,
+                    "Container_Boundary" => Boundary::Container,
+                    "Enterprise_Boundary" => Boundary::Enterprise,
+                    _ if is_node => Boundary::Deployment,
+                    _ => Boundary::Typed(arguments.get("type")),
+                };
+                let kind = match &boundary {
+                    Boundary::System => Some("Software System".to_owned()),
+                    Boundary::Container => Some("Container".to_owned()),
+                    Boundary::Enterprise => Some("Enterprise".to_owned()),
+                    Boundary::Typed(kind) => kind.clone(),
+                    Boundary::Deployment => arguments.get("type"),
+                };
+                let alias = arguments.get("alias").unwrap_or_default();
+                let label = arguments.get("label").unwrap_or_else(|| alias.clone());
+                graph.clusters.push(Cluster {
+                    id: alias,
+                    title: match kind {
+                        Some(kind) => format!("{label} [{kind}]"),
+                        None => label,
+                    },
+                    parent: open.last().copied(),
+                    boundary: Some(boundary),
+                });
+                open.push(graph.clusters.len() - 1);
+            }
+            Form::Relation => {
+                let (Some(first), Some(second)) = (arguments.get("from"), arguments.get("to"))
+                else {
+                    return Err(format!("`{line}` names no two ends"));
+                };
+                // `Rel_Back(a, b)` is C4-PlantUML's `a <- b`: the relation
+                // runs from its second end to its first.
+                let (from, to) = match name.starts_with("Rel_Back") {
+                    true => (second, first),
+                    false => (first, second),
+                };
+                let from = graph.node_named(&from, None);
+                let to = graph.node_named(&to, None);
+                let said = match (arguments.get("label"), arguments.get("techn")) {
+                    (Some(label), Some(technology)) => Some(format!("{label} [{technology}]")),
+                    (label, _) => label,
+                };
+                let label = match view == Some(View::Dynamic) {
+                    true => {
+                        steps += 1;
+                        Some(match said {
+                            Some(said) => format!("{steps}. {said}"),
+                            None => format!("{steps}."),
+                        })
                     }
-                    (_, label, _) => label,
-                },
-                stroke: Stroke::Solid,
-                arrow: true,
-            });
-        } else if let Some(element) = C4Element::named(name) {
-            let Some(alias) = argument(0) else {
-                return Err(format!("`{line}` has no alias"));
-            };
-            let index = graph.node_named(&alias, open.last().copied());
-            let technology = element.has_technology.then(|| argument(2)).flatten();
-            let description = argument(if element.has_technology { 3 } else { 2 });
-            let node = &mut graph.nodes[index];
-            node.title = argument(1).unwrap_or(alias);
-            node.kind = Some(match technology {
-                Some(technology) => format!("{}: {technology}", element.kind),
-                None => element.kind.to_owned(),
-            });
-            node.description = description;
-            node.shape = element.shape;
-            node.external = name.ends_with("_Ext");
-            node.cluster = open.last().copied();
-            node.link = link;
+                    false => said,
+                };
+                graph.edges.push(Edge {
+                    from,
+                    to,
+                    label,
+                    description: arguments.get("descr"),
+                    stroke: Stroke::Solid,
+                    arrow: true,
+                    arrow_back: name.starts_with("BiRel"),
+                });
+            }
+            Form::Element => {
+                let Some(element) = C4Element::named(name) else {
+                    continue;
+                };
+                let Some(alias) = arguments.get("alias") else {
+                    return Err(format!("`{line}` has no alias"));
+                };
+                let index = graph.node_named(&alias, open.last().copied());
+                let external = name.ends_with("_Ext");
+                let kind = match external {
+                    true => format!("External {}", element.kind),
+                    false => element.kind.to_owned(),
+                };
+                let node = &mut graph.nodes[index];
+                node.title = arguments.get("label").unwrap_or(alias);
+                node.kind = Some(match arguments.get("techn") {
+                    Some(technology) => format!("{kind}: {technology}"),
+                    None => kind,
+                });
+                node.description = arguments.get("descr");
+                node.shape = element.shape;
+                node.external = external;
+                node.cluster = open.last().copied();
+                node.link = arguments.get("link");
+                node.abstraction = Some(element.abstraction);
+            }
         }
     }
     Ok(graph)
 }
 
+/// The parameters of each C4 macro, in Mermaid's order. Named here once so
+/// a `$techn=` lands where the fourth positional argument would.
+const ELEMENT: &[&str] = &["alias", "label", "descr", "sprite", "tags", "link"];
+const TECHNICAL_ELEMENT: &[&str] = &["alias", "label", "techn", "descr", "sprite", "tags", "link"];
+const BOUNDARY: &[&str] = &["alias", "label", "tags", "link"];
+const TYPED_BOUNDARY: &[&str] = &["alias", "label", "type", "tags", "link"];
+const DEPLOYMENT_NODE: &[&str] = &["alias", "label", "type", "descr", "sprite", "tags", "link"];
+const RELATION: &[&str] = &[
+    "from", "to", "label", "techn", "descr", "sprite", "tags", "link",
+];
+const INDEXED_RELATION: &[&str] = &[
+    "index", "from", "to", "label", "techn", "descr", "sprite", "tags", "link",
+];
+
+/// What a macro declares, which decides what is read from it.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Form {
+    Element,
+    Boundary,
+    Relation,
+}
+
+struct Signature {
+    form: Form,
+    parameters: &'static [&'static str],
+}
+
+impl Signature {
+    /// The signature of a macro this surface reads; `None` for one it
+    /// does not, which is skipped — styling among them.
+    fn of(name: &str) -> Option<Self> {
+        let (form, parameters) = match name {
+            "Boundary" => (Form::Boundary, TYPED_BOUNDARY),
+            _ if name.ends_with("_Boundary") => (Form::Boundary, BOUNDARY),
+            "Node" | "Deployment_Node" => (Form::Boundary, DEPLOYMENT_NODE),
+            _ if name.starts_with("Node_") => (Form::Boundary, DEPLOYMENT_NODE),
+            _ if name.starts_with("RelIndex") => (Form::Relation, INDEXED_RELATION),
+            _ if name.starts_with("Rel") || name.starts_with("BiRel") => (Form::Relation, RELATION),
+            _ => match C4Element::named(name)?.abstraction {
+                Abstraction::Person | Abstraction::System => (Form::Element, ELEMENT),
+                Abstraction::Container | Abstraction::Component => {
+                    (Form::Element, TECHNICAL_ELEMENT)
+                }
+            },
+        };
+        Some(Self { form, parameters })
+    }
+}
+
+/// A macro's arguments, matched to its parameters: positionally, then by
+/// `$name=`, which Mermaid accepts for any of them.
+struct Arguments {
+    values: Vec<(&'static str, String)>,
+}
+
+impl Arguments {
+    fn read(inside: &str, parameters: &'static [&'static str]) -> Self {
+        let mut values = Vec::new();
+        let mut position = 0;
+        for argument in split_arguments(inside) {
+            match argument.strip_prefix('$') {
+                Some(named) => {
+                    let (key, value) = named.split_once('=').unwrap_or((named, ""));
+                    if let Some(&key) = parameters.iter().find(|&&known| known == key.trim()) {
+                        values.push((key, value.trim().to_owned()));
+                    }
+                }
+                None => {
+                    if let Some(&key) = parameters.get(position) {
+                        values.push((key, argument));
+                    }
+                    position += 1;
+                }
+            }
+        }
+        Self { values }
+    }
+
+    /// The value given for `key`; an empty one is no value.
+    fn get(&self, key: &str) -> Option<String> {
+        self.values
+            .iter()
+            .rev()
+            .find(|(known, value)| *known == key && !value.is_empty())
+            .map(|(_, value)| value.clone())
+    }
+}
+
 struct C4Element {
     kind: &'static str,
+    abstraction: Abstraction,
     shape: Shape,
-    has_technology: bool,
 }
 
 impl C4Element {
     fn named(name: &str) -> Option<Self> {
         let base = name.strip_suffix("_Ext").unwrap_or(name);
-        let (kind, has_technology, stem) = if base.starts_with("Person") {
-            ("Person", false, "Person")
+        let (kind, abstraction, stem) = if base.starts_with("Person") {
+            ("Person", Abstraction::Person, "Person")
         } else if base.starts_with("System") {
-            ("Software System", false, "System")
+            ("Software System", Abstraction::System, "System")
         } else if base.starts_with("Container") {
-            ("Container", true, "Container")
+            ("Container", Abstraction::Container, "Container")
         } else if base.starts_with("Component") {
-            ("Component", true, "Component")
+            ("Component", Abstraction::Component, "Component")
         } else {
             return None;
         };
         let shape = match &base[stem.len()..] {
-            "" if kind == "Person" => Shape::Person,
+            "" if abstraction == Abstraction::Person => Shape::Person,
             "" => Shape::Box,
             "Db" => Shape::Database,
-            "Queue" => Shape::Round,
+            "Queue" => Shape::Queue,
             _ => return None,
         };
         Some(Self {
             kind,
+            abstraction,
             shape,
-            has_technology,
         })
     }
 }
 
-/// One `$key="value"` argument, which the positional ones leave out.
-fn named_argument(inside: &str, key: &str) -> Option<String> {
-    let (_, rest) = inside.split_once(key)?;
-    let value = rest.trim_start().strip_prefix('=')?.trim_start();
-    let value = match value.strip_prefix('"') {
-        Some(quoted) => quoted.split_once('"').map_or(quoted, |(value, _)| value),
-        None => value.split(',').next().unwrap_or_default(),
-    };
-    let value = value.trim();
-    (!value.is_empty()).then(|| value.to_owned())
-}
-
-/// A macro's arguments: comma-separated, quotes optional, and a comma
-/// inside quotes is text. `$key=value` arguments are styling, so skipped.
-fn arguments(inside: &str) -> Vec<String> {
+/// A macro's arguments as written: comma-separated, quotes optional, and
+/// a comma inside quotes is text.
+fn split_arguments(inside: &str) -> Vec<String> {
     let mut arguments = Vec::new();
     let mut current = String::new();
     let mut quoted = false;
@@ -428,7 +546,6 @@ fn arguments(inside: &str) -> Vec<String> {
     arguments
         .into_iter()
         .map(|argument| argument.trim().to_owned())
-        .filter(|argument| !argument.starts_with('$'))
         .collect()
 }
 
@@ -575,7 +692,13 @@ mod tests {
         );
         assert_eq!(graph.nodes[1].cluster, Some(0));
         assert!(graph.nodes[2].external);
-        assert_eq!(graph.clusters[0].title, "uze [System]");
+        assert_eq!(
+            graph.nodes[2].kind.as_deref(),
+            Some("External Software System")
+        );
+        assert_eq!(graph.clusters[0].title, "uze [Software System]");
+        assert_eq!(graph.clusters[0].boundary, Some(Boundary::System));
+        assert_eq!(graph.nodes[1].abstraction, Some(Abstraction::Container));
         assert_eq!(graph.clusters[0].id, "uze");
         assert_eq!(graph.edges[0].label.as_deref(), Some("Installs [CLI]"));
     }
@@ -588,6 +711,62 @@ mod tests {
         assert_eq!((graph.edges[0].from, graph.edges[0].to), (0, 1));
         assert_eq!(graph.edges[0].label.as_deref(), Some("1. Asks"));
         assert_eq!(graph.nodes.len(), 2, "the index did not become a box");
+    }
+
+    /// Mermaid draws a dynamic view's steps in the order they are written,
+    /// whatever a `RelIndex` says, and numbers a plain `Rel` there too.
+    #[test]
+    fn a_dynamic_view_counts_its_steps_as_they_are_written() {
+        let graph = graph(
+            "C4Dynamic\n  Container(a, \"A\")\n  Container(b, \"B\")\n  \
+             RelIndex(7, a, b, \"Asks\")\n  Rel(b, a, \"Answers\", \"JSON\")",
+        );
+        let labels: Vec<_> = graph.edges.iter().map(|e| e.label.as_deref()).collect();
+        assert_eq!(labels, [Some("1. Asks"), Some("2. Answers [JSON]")]);
+    }
+
+    #[test]
+    fn a_named_argument_lands_where_its_position_would() {
+        let graph = graph(
+            "C4Container\n  Container(api, \"API\", $descr=\"Serves\", $techn=\"Rust\")\n  \
+             Container(db, \"DB\")\n  Rel(api, db, \"Reads\", $techn=\"SQL\", $descr=\"rows\")",
+        );
+        assert_eq!(graph.nodes[0].kind.as_deref(), Some("Container: Rust"));
+        assert_eq!(graph.nodes[0].description.as_deref(), Some("Serves"));
+        assert_eq!(graph.edges[0].label.as_deref(), Some("Reads [SQL]"));
+        assert_eq!(graph.edges[0].description.as_deref(), Some("rows"));
+    }
+
+    /// A typed boundary's third argument is its tags, not a kind to print.
+    #[test]
+    fn a_boundary_reads_tags_where_a_plain_one_reads_a_type() {
+        let graph = graph(
+            "C4Component\n  Container_Boundary(cli, \"CLI\", \"v2\") {\n  }\n  \
+             Boundary(core, \"uze-core\", \"Crate\") {\n  }",
+        );
+        assert_eq!(graph.clusters[0].title, "CLI [Container]");
+        assert_eq!(graph.clusters[1].title, "uze-core [Crate]");
+        assert_eq!(
+            graph.clusters[1].boundary,
+            Some(Boundary::Typed(Some("Crate".to_owned())))
+        );
+    }
+
+    #[test]
+    fn a_relation_back_runs_the_other_way_and_a_bidirectional_one_both() {
+        let graph = graph(
+            "C4Context\n  System(a, \"A\")\n  System(b, \"B\")\n  \
+             Rel_Back(a, b, \"Feeds\")\n  BiRel(a, b, \"Syncs\")",
+        );
+        assert_eq!((graph.edges[0].from, graph.edges[0].to), (1, 0));
+        assert!(!graph.edges[0].arrow_back);
+        assert!(graph.edges[1].arrow && graph.edges[1].arrow_back);
+    }
+
+    #[test]
+    fn a_queue_is_its_own_shape() {
+        let graph = graph("C4Container\n  ContainerQueue(q, \"Jobs\", \"Redis\")");
+        assert_eq!(graph.nodes[0].shape, Shape::Queue);
     }
 
     #[test]

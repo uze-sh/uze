@@ -204,6 +204,10 @@ pub struct View {
     /// which is how a fixed ladder (a model's own levels) differs from a
     /// way in that was made by entering (a directory drilled into).
     pub trail: Vec<TrailStep>,
+    /// What the content on show is called, set on the row of the
+    /// [`View::modes`] that say how it is drawn: a board's diagram by its
+    /// title, which a trail names only by its level. Empty for none.
+    pub label: String,
 }
 
 /// One step of a [`View::trail`].
@@ -212,6 +216,12 @@ pub struct TrailStep {
     pub name: String,
     /// The one the viewer is standing on. Exactly one step is.
     pub current: bool,
+    /// What the step on show can be swapped for, itself included: the
+    /// other ways down to the same place. Empty where there are none, and
+    /// then the step is a label rather than a selector. Chosen through
+    /// [`ViewHit::ChooseItem`] and [`ViewHit::SelectItem`], as the item
+    /// selector is.
+    pub choices: Vec<TrailChoice>,
 }
 
 impl TrailStep {
@@ -219,6 +229,29 @@ impl TrailStep {
         Self {
             name: name.into(),
             current,
+            choices: Vec::new(),
+        }
+    }
+
+    pub fn choosing(mut self, choices: Vec<TrailChoice>) -> Self {
+        self.choices = choices;
+        self
+    }
+}
+
+/// One of a [`TrailStep::choices`]: the item it opens, by the id a
+/// [`ViewHit::SelectItem`] carries, and its name.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct TrailChoice {
+    pub id: usize,
+    pub name: String,
+}
+
+impl TrailChoice {
+    pub fn new(id: usize, name: impl Into<String>) -> Self {
+        Self {
+            id,
+            name: name.into(),
         }
     }
 }

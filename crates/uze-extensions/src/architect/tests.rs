@@ -7,6 +7,13 @@ const SPACE: Size = Size {
 
 /// uze's own architecture, as the repository keeps it. Living fixtures:
 /// what is checked here is also that the project's real artifacts draw.
+// The C4 views, by file: two of them share the title `uze`, since a
+// title names a scope and both are views of the system.
+const CONTEXT: &str = "system-context.mmd";
+const CONTAINERS: &str = "containers.mmd";
+const CORE: &str = "core-components.mmd";
+const WORKSPACE: &str = "workspace-components.mmd";
+
 fn opened() -> ArchitectView {
     filled(ArchitectView::opening("~/project".to_owned()))
 }
@@ -38,6 +45,10 @@ fn filled(mut state: ArchitectView) -> ArchitectView {
         Artifact::read(
             "core-components.mmd",
             include_str!("../../../../docs/architecture/core-components.mmd"),
+        ),
+        Artifact::read(
+            "workspace-components.mmd",
+            include_str!("../../../../docs/architecture/workspace-components.mmd"),
         ),
         Artifact::read(
             "agent-lifecycle.mmd",
@@ -72,7 +83,7 @@ fn showing(name: &str) -> ArchitectView {
         .catalog
         .artifacts()
         .iter()
-        .position(|artifact| artifact.name == name)
+        .position(|artifact| artifact.name == name || artifact.origin == name)
         .expect("the artifact exists");
     state.open(index);
     state
@@ -132,7 +143,7 @@ fn the_screen_is_exactly_the_space_it_was_given() {
 
 #[test]
 fn a_drawing_smaller_than_the_screen_opens_in_the_middle_of_it() {
-    let state = showing("System context");
+    let state = showing(CONTEXT);
     let wide = Size {
         width: 200,
         height: 30,
@@ -152,7 +163,7 @@ fn every_edge_of_the_board_can_be_brought_to_the_middle_of_the_screen() {
 
 #[test]
 fn a_board_that_fits_the_screen_still_moves() {
-    let mut state = showing("System context");
+    let mut state = showing(CONTEXT);
     let wide = Size {
         width: 200,
         height: 30,
@@ -310,7 +321,7 @@ fn a_surface_with_nothing_to_draw_says_why_and_what_to_do() {
 
 #[test]
 fn the_list_of_artifacts_opens_on_the_one_on_show_and_steps_over_to_the_areas() {
-    let mut state = showing("Containers");
+    let mut state = showing(CORE);
     let areas = state.areas();
     handle_command(&mut state, Command::ChooseItem, SPACE);
     assert_eq!(state.choosing, Some(Choosing::Item(state.selected)));
@@ -318,8 +329,8 @@ fn the_list_of_artifacts_opens_on_the_one_on_show_and_steps_over_to_the_areas() 
     handle_command(&mut state, Command::Pan(PanDirection::Down), SPACE);
     assert_eq!(
         state.choosing,
-        Some(Choosing::Item(areas[0])),
-        "three C4 views, so two steps down from the second is the first again"
+        Some(Choosing::Item(state.selected)),
+        "two views share the CLI, so two steps down is where it started"
     );
 
     handle_command(&mut state, Command::Pan(PanDirection::Left), SPACE);
@@ -337,7 +348,7 @@ fn the_list_of_artifacts_opens_on_the_one_on_show_and_steps_over_to_the_areas() 
 fn a_list_offers_only_the_area_on_show() {
     let state = showing("Crate layering");
     let names: Vec<&str> = state
-        .siblings()
+        .choices()
         .into_iter()
         .map(|artifact| state.catalog.get(artifact).unwrap().name.as_str())
         .collect();
@@ -354,7 +365,7 @@ fn a_list_offers_only_the_area_on_show() {
 
 #[test]
 fn leaving_a_list_leaves_the_surface_open() {
-    let mut state = opened();
+    let mut state = showing(CORE);
     handle_command(&mut state, Command::ChooseItem, SPACE);
     let outcome = handle_command(&mut state, Command::Close, SPACE);
     assert_eq!((outcome, state.choosing), (ArchitectOutcome::Stay, None));
@@ -389,7 +400,7 @@ fn pick(state: &mut ArchitectView, alias: &str) {
     assert!(state.picked.is_some(), "`{alias}` is drawn here");
 }
 
-/// The descent the menu offers, as names.
+/// The way down the menu shows, as names.
 fn trail(state: &ArchitectView) -> Vec<String> {
     view(state, SPACE)
         .trail
@@ -398,35 +409,35 @@ fn trail(state: &ArchitectView) -> Vec<String> {
         .collect()
 }
 
-/// The step of it the viewer is standing on.
+/// The file of the view on show.
 fn here(state: &ArchitectView) -> String {
-    view(state, SPACE)
-        .trail
-        .into_iter()
-        .find(|step| step.current)
-        .map(|step| step.name)
+    state
+        .catalog
+        .get(state.selected)
+        .map(|artifact| artifact.origin.clone())
         .unwrap_or_default()
 }
 
-const LEVELS: [&str; 3] = ["System context", "Containers", "Core components"];
-
 #[test]
-fn the_levels_are_joined_by_alias_from_the_context_down_to_the_code() {
-    let mut state = showing("System context");
-    assert_eq!(trail(&state), LEVELS, "a model's levels are all on show");
-    assert_eq!(here(&state), "System context", "at the outermost of them");
+fn the_views_are_joined_by_zoom_from_the_context_down_to_the_code() {
+    let mut state = showing(CONTEXT);
+    assert_eq!(trail(&state), ["Context"], "the root has no way down to it");
 
     pick(&mut state, "uze");
     assert_eq!(
         handle_command(&mut state, Command::Activate, SPACE),
         ArchitectOutcome::Stay
     );
-    assert_eq!(trail(&state), LEVELS, "the levels do not change");
-    assert_eq!(here(&state), "Containers", "only where the viewer stands");
+    assert_eq!(trail(&state), ["Context", "Containers"]);
 
-    pick(&mut state, "core");
+    pick(&mut state, "cli");
     handle_command(&mut state, Command::Activate, SPACE);
-    assert_eq!(here(&state), "Core components");
+    assert_eq!(trail(&state), ["Context", "Containers", "Components"]);
+    assert_eq!(
+        here(&state),
+        CORE,
+        "the first of the views that zoom into the CLI"
+    );
 
     pick(&mut state, "package");
     assert_eq!(
@@ -435,80 +446,75 @@ fn the_levels_are_joined_by_alias_from_the_context_down_to_the_code() {
             project: PathBuf::from("/project"),
             target: PathBuf::from("/project/crates/uze-core/src/package.rs"),
         },
-        "the last level down is the code itself"
+        "below a component is the code itself"
     );
 }
 
+/// C4 splits a large container's components over several views; they
+/// share the container's place in the tree, and its step offers them.
 #[test]
-fn coming_back_puts_the_viewer_where_they_were_standing() {
-    let mut state = showing("System context");
-    pick(&mut state, "uze");
-    handle_command(&mut state, Command::Activate, SPACE);
-    pick(&mut state, "core");
-    handle_command(&mut state, Command::Activate, SPACE);
+fn views_that_zoom_into_one_container_are_offered_on_its_step() {
+    let mut state = showing(CORE);
+    let step = view(&state, SPACE).trail.pop().expect("a way down");
+    let offered: Vec<&str> = step.choices.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(offered, ["uze CLI: uze-core", "uze CLI: uze-workspace"]);
 
+    handle_mouse(&mut state, Some(ViewHit::ChooseItem), SPACE);
+    assert_eq!(state.choosing, Some(Choosing::Item(state.selected)));
+    handle_mouse(
+        &mut state,
+        Some(ViewHit::SelectItem(step.choices[1].id)),
+        SPACE,
+    );
+    assert_eq!(trail(&state), ["Context", "Containers", "Components"]);
+    assert_eq!(here(&state), WORKSPACE);
+}
+
+#[test]
+fn coming_back_puts_the_viewer_on_the_box_that_led_down() {
+    let mut state = showing(CORE);
     handle_command(&mut state, Command::Back, SPACE);
-    assert_eq!(here(&state), "Containers");
-    let Drawing::Graph(scene) = &state.drawing else {
-        panic!("containers is a graph");
-    };
-    let core = scene.graph.nodes.iter().position(|n| n.id == "core");
+    assert_eq!(here(&state), CONTAINERS);
     assert_eq!(
-        state.picked, core,
-        "the box that was entered is picked again"
+        state.picked,
+        node_named_in(&state, "cli"),
+        "the box the view below zooms into is picked"
     );
 
-    handle_mouse(&mut state, Some(ViewHit::SelectTrail(0)), SPACE);
-    assert!(
-        state.trail.is_empty(),
-        "back at the top, nothing is entered"
-    );
-    assert_eq!(here(&state), "System context");
-
-    // And the other way: a level this descent reaches that nobody
-    // entered is a step forward, not a step back.
-    handle_mouse(&mut state, Some(ViewHit::SelectTrail(2)), SPACE);
-    assert_eq!(here(&state), "Core components");
-    assert!(state.trail.is_empty(), "jumped to, not descended into");
-}
-
-#[test]
-fn choosing_from_the_menu_forgets_the_way_in() {
-    let mut state = showing("System context");
-    pick(&mut state, "uze");
-    handle_command(&mut state, Command::Activate, SPACE);
     handle_command(&mut state, Command::NextView, SPACE);
-    assert!(state.trail.is_empty());
+    handle_mouse(&mut state, Some(ViewHit::SelectTrail(0)), SPACE);
+    assert_eq!(here(&state), CONTEXT);
+    assert_eq!(state.picked, node_named_in(&state, "uze"));
 }
 
+/// The way down is the view's own ancestors, however it was reached.
 #[test]
-fn a_second_click_on_a_box_that_leads_somewhere_follows_it() {
-    let mut state = showing("System context");
-    let Drawing::Graph(scene) = &state.drawing else {
-        panic!("the context is a graph");
-    };
-    let uze = scene
-        .graph
-        .nodes
-        .iter()
-        .position(|n| n.id == "uze")
-        .unwrap();
-    let frame = scene.placement.nodes[uze];
-    let corner = state.corner(SPACE);
-    let hit = ViewHit::PlaceCaret {
-        line: (frame.y + 1 - corner.1) as usize,
-        cell: (frame.x + 1 - corner.0) as usize,
-    };
-    handle_mouse(&mut state, Some(hit), SPACE);
-    assert_eq!(state.picked, Some(uze));
-    assert_eq!(here(&state), "System context", "one click only picks");
-    handle_mouse(&mut state, Some(hit), SPACE);
-    assert_eq!(here(&state), "Containers", "the second goes inside");
+fn a_view_opened_from_anywhere_shows_its_own_way_down() {
+    let mut state = showing(CONTEXT);
+    handle_command(&mut state, Command::NextView, SPACE);
+    handle_command(&mut state, Command::NextView, SPACE);
+    assert_eq!(trail(&state), ["Context", "Containers", "Components"]);
+    assert_eq!(here(&state), CORE);
+}
+
+/// The way down names levels, which are short; the view's own title,
+/// which names its type and scope, is the view's label.
+#[test]
+fn a_c4_view_is_labelled_by_its_title_and_stepped_to_by_its_level() {
+    let state = showing(CORE);
+    let mut drawn = view(&state, SPACE);
+    assert_eq!(drawn.label, "uze CLI: uze-core");
+    assert_eq!(drawn.trail.pop().unwrap().name, "Components");
+    assert_eq!(
+        view(&showing("Crate layering"), SPACE).label,
+        "",
+        "off C4 the selector names it"
+    );
 }
 
 #[test]
 fn the_keys_walk_from_box_to_box() {
-    let mut state = showing("System context");
+    let mut state = showing(CONTEXT);
     handle_command(&mut state, Command::SelectToward(PanDirection::Down), SPACE);
     let first = state
         .picked
@@ -531,14 +537,14 @@ fn the_keys_walk_from_box_to_box() {
 /// the viewer is back where they started with three levels of work gone.
 #[test]
 fn the_key_that_closes_goes_up_a_level_until_there_is_none_left() {
-    let mut state = showing("System context");
+    let mut state = showing(CONTEXT);
     pick(&mut state, "uze");
     handle_command(&mut state, Command::Activate, SPACE);
-    pick(&mut state, "core");
+    pick(&mut state, "cli");
     handle_command(&mut state, Command::Activate, SPACE);
-    assert_eq!(here(&state), "Core components");
+    assert_eq!(here(&state), CORE);
 
-    for left in ["Containers", "System context"] {
+    for left in [CONTAINERS, CONTEXT] {
         assert_eq!(
             handle_command(&mut state, Command::Close, SPACE),
             ArchitectOutcome::Stay
@@ -551,7 +557,6 @@ fn the_key_that_closes_goes_up_a_level_until_there_is_none_left() {
         );
         assert_eq!(here(&state), left);
     }
-    assert!(state.trail.is_empty(), "back at the top");
     assert_eq!(
         handle_command(&mut state, Command::Close, SPACE),
         ArchitectOutcome::Close,
@@ -562,7 +567,7 @@ fn the_key_that_closes_goes_up_a_level_until_there_is_none_left() {
 /// The way up is named in the footer only where there is one.
 #[test]
 fn the_footer_offers_the_way_up_only_once_something_has_been_entered() {
-    let mut state = showing("System context");
+    let mut state = showing(CONTEXT);
     assert!(!view(&state, SPACE).footer.contains(&Command::Back));
 
     pick(&mut state, "uze");
@@ -604,7 +609,7 @@ fn hovering_a_row_of_an_open_list_highlights_it() {
         panic!("the artifacts of the area are offered");
     };
     let other = *state
-        .siblings()
+        .choices()
         .iter()
         .find(|&&artifact| artifact != first)
         .expect("the area holds two");
@@ -682,16 +687,15 @@ fn a_region_stands_on_its_own_ground() {
 /// moved to are all where they were left.
 #[test]
 fn coming_back_stands_where_the_viewer_stood() {
-    let mut left = showing("Containers");
-    left.picked = node_named_in(&left, "core");
+    let mut left = showing(CONTAINERS);
+    left.picked = node_named_in(&left, "cli");
     let outcome = left.enter();
-    assert_eq!(outcome, ArchitectOutcome::Stay, "core goes inside");
+    assert_eq!(outcome, ArchitectOutcome::Stay, "the CLI goes inside");
     left.picked = node_named_in(&left, "delivery");
     left.corner = Some((12, 34));
 
     let back = filled(ArchitectView::opening("~/project".to_owned()).resuming(left.place()));
     assert_eq!(back.selected, left.selected);
-    assert_eq!(back.trail, left.trail);
     assert_eq!(back.picked, left.picked);
     assert_eq!(back.corner, Some((12, 34)));
 }
@@ -706,7 +710,6 @@ fn a_place_naming_a_diagram_that_is_gone_opens_at_the_top() {
     };
     let back = filled(ArchitectView::opening("~/project".to_owned()).resuming(place));
     assert_eq!(back.selected, 0);
-    assert!(back.trail.is_empty());
 }
 
 /// The frame's two edges: what the surface is at the top, where it is
@@ -958,13 +961,13 @@ fn a_diagram_already_laid_out_is_not_laid_out_again() {
         Drawing::Graph(scene) => &**scene as *const Scene,
         _ => panic!("a graph is on show"),
     };
-    let mut state = showing("System context");
+    let mut state = showing(CONTEXT);
     let first = laid_out(&state);
     pick(&mut state, "uze");
     handle_command(&mut state, Command::Activate, SPACE);
-    assert_eq!(here(&state), "Containers");
+    assert_eq!(here(&state), CONTAINERS);
     handle_command(&mut state, Command::Back, SPACE);
-    assert_eq!(here(&state), "System context");
+    assert_eq!(here(&state), CONTEXT);
     assert_eq!(laid_out(&state), first, "the same layout, not a new one");
 
     assert!(!state.laid_out.is_empty(), "the level left is kept");
@@ -1109,5 +1112,192 @@ mod hosted {
             extension.absorb(answer);
         }
         assert!(!reading(&extension));
+    }
+}
+
+fn drawing(artifacts: Vec<Artifact>) -> ArchitectView {
+    let mut state = ArchitectView::opening("~/project".to_owned());
+    state.absorb(ArtifactsAnswer {
+        branch: "main".to_owned(),
+        artifacts: Artifacts::Found {
+            artifacts,
+            project: PathBuf::from("/project"),
+        },
+    });
+    state
+}
+
+/// A container with a view of its own components and a link to its code
+/// leads both ways: inside when followed, to the code by its own mark.
+#[test]
+fn a_box_that_leads_both_ways_carries_both_marks() {
+    let mut state = drawing(vec![
+        Artifact::read(
+            "a.mmd",
+            "C4Container\nSystem_Boundary(s, \"S\") {\n\
+             Container(api, \"The API server\", \"Rust\", \"Serves\", $link=\"src/api.rs\")\n}\n",
+        ),
+        Artifact::read(
+            "b.mmd",
+            "C4Component\nContainer_Boundary(api, \"API\") {\n}\n",
+        ),
+    ]);
+    let Drawing::Graph(scene) = &state.drawing else {
+        panic!("a graph is on show");
+    };
+    let api = node_named_in(&state, "api").unwrap();
+    assert_eq!(state.leads(scene, api), Leads::Both);
+    let frame = scene.placement.nodes[api];
+    let code = paint::code_mark_cells(frame, Leads::Both).expect("room for two marks");
+    let corner = state.corner(SPACE);
+    let on_code = ViewHit::PlaceCaret {
+        line: (code.y - corner.1) as usize,
+        cell: (code.x + 1 - corner.0) as usize,
+    };
+    assert_eq!(
+        handle_mouse(&mut state, Some(on_code), SPACE),
+        ArchitectOutcome::OpenPath {
+            project: PathBuf::from("/project"),
+            target: PathBuf::from("/project/src/api.rs"),
+        }
+    );
+    state.picked = Some(api);
+    handle_command(&mut state, Command::Activate, SPACE);
+    assert_eq!(state.selected, 1, "followed, it goes inside");
+}
+
+#[test]
+fn a_link_that_is_a_url_leads_nowhere() {
+    let state = drawing(vec![Artifact::read(
+        "a.mmd",
+        "C4Component\nComponent(x, \"X\", \"Rust\", \"x\", $link=\"https://example.com/x\")\n",
+    )]);
+    let Drawing::Graph(scene) = &state.drawing else {
+        panic!("a graph is on show");
+    };
+    assert_eq!(state.leads(scene, 0), Leads::Nowhere);
+    assert_eq!(
+        zoom::project_path("src/lib.rs#L42"),
+        Some(PathBuf::from("src/lib.rs")),
+        "a fragment is dropped, not followed"
+    );
+}
+
+/// The text of the key under the drawing on show.
+fn key_of(state: &ArchitectView) -> String {
+    let text = state.canvas.as_ref().expect("a drawing").to_text();
+    text.split_once("\n Key\n")
+        .map(|(_, key)| key.to_owned())
+        .unwrap_or_default()
+}
+
+#[test]
+fn the_key_explains_only_what_the_drawing_uses() {
+    let state = drawing(vec![Artifact::read(
+        "a.mmd",
+        "C4Container\nSystem_Boundary(s, \"S\") {\n\
+         ContainerDb(db, \"Store\", \"Files\", \"Bytes\")\n}\n\
+         System_Ext(git, \"Git\", \"Remote\")\nRel(db, git, \"Mirrors\", \"Git\")\n",
+    )]);
+    let key = key_of(&state);
+    assert!(key.contains("a store of data"), "{key}");
+    assert!(key.contains("outside the system being described"), "{key}");
+    assert!(key.contains("a boundary"), "{key}");
+    assert!(
+        !key.contains("a queue") && !key.contains("a person"),
+        "{key}"
+    );
+}
+
+/// A label with no room on its line leaves a marker the key reads out.
+#[test]
+fn a_label_with_no_room_is_kept_in_the_key() {
+    let long = "a relationship whose label is far too long to fit on any line of this board at all";
+    let state = drawing(vec![Artifact::read(
+        "a.mmd",
+        &format!("C4Context\nSystem(a, \"A\")\nSystem(b, \"B\")\nRel(a, b, \"{long}\")\n"),
+    )]);
+    let key = key_of(&state);
+    assert!(key.contains(&format!("A ► B: {long}")), "{key}");
+}
+
+fn notes_of(files: Vec<(&'static str, &'static str)>, origin: &str) -> Vec<String> {
+    let Checkup::Checked { artifacts, .. } = check(&Written(files), declared()) else {
+        panic!("a directory of diagrams is checked");
+    };
+    artifacts
+        .into_iter()
+        .find(|artifact| artifact.origin.ends_with(origin))
+        .expect("the diagram is checked")
+        .notes
+}
+
+#[test]
+fn the_check_notes_where_a_view_departs_from_c4_notation() {
+    let notes = notes_of(
+        vec![
+            (
+                "context.mmd",
+                "---\ntitle: Context for shop\n---\nC4Context\n\
+                 System(shop, \"Shop\", \"Sells\")\nPerson(api, \"API user\", \"Calls\")\n",
+            ),
+            (
+                "views.mmd",
+                "---\ntitle: Shop parts\n---\nC4Container\n\
+                 Container(api, \"API\")\nContainerDb(db, \"DB\", \"SQL\", \"Rows\")\n\
+                 Rel(api, db)\nBiRel(db, api, \"Syncs\")\n",
+            ),
+        ],
+        "views.mmd",
+    );
+    for wanted in [
+        "the view is drawn inside no `System_Boundary`, so it zooms into nothing",
+        "`api` has no description",
+        "`api` names no technology",
+        "`api` is a container here and a person in context.mmd",
+        "the line from `api` to `db` has no label",
+        "the line between `db` and `api` runs both ways; C4 lines run one way",
+    ] {
+        assert!(
+            notes.iter().any(|note| note == wanted),
+            "{wanted}: {notes:?}"
+        );
+    }
+    assert_eq!(notes.len(), 6, "{notes:?}");
+}
+
+/// The repository's own C4 views are the model's example: they are held
+/// to no notes at all.
+#[test]
+fn the_repositorys_own_c4_views_follow_the_notation() {
+    let files = vec![
+        (
+            "system-context.mmd",
+            include_str!("../../../../docs/architecture/system-context.mmd"),
+        ),
+        (
+            "containers.mmd",
+            include_str!("../../../../docs/architecture/containers.mmd"),
+        ),
+        (
+            "core-components.mmd",
+            include_str!("../../../../docs/architecture/core-components.mmd"),
+        ),
+        (
+            "workspace-components.mmd",
+            include_str!("../../../../docs/architecture/workspace-components.mmd"),
+        ),
+    ];
+    for origin in [
+        "system-context.mmd",
+        "containers.mmd",
+        "core-components.mmd",
+        "workspace-components.mmd",
+    ] {
+        assert_eq!(
+            notes_of(files.clone(), origin),
+            Vec::<String>::new(),
+            "{origin}"
+        );
     }
 }

@@ -227,4 +227,32 @@ fn an_agent_is_told_whether_the_diagrams_it_wrote_draw() {
         "both draw now: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+
+    // A C4 view that departs from the notation is told where, and still
+    // passes: C4 is guidance, not grammar.
+    std::fs::write(
+        diagrams.join("context.mmd"),
+        "---\ntitle: shop\n---\nC4Context\n  System(shop, \"Shop\")\n",
+    )
+    .unwrap();
+    let output = env.run(
+        uze_bin(),
+        &["agent", "artifacts", "check", "--format", "json"],
+    );
+    assert!(output.status.success(), "a note fails nothing");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let notes = report["artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|artifact| artifact["origin"] == "context.mmd")
+        .map(|artifact| artifact["notes"].clone())
+        .unwrap();
+    assert_eq!(notes, serde_json::json!(["`shop` has no description"]));
+    let text = env.run(uze_bin(), &["agent", "artifacts", "check"]);
+    let text = String::from_utf8_lossy(&text.stdout);
+    assert!(
+        text.contains("1 C4 note") && text.contains("`shop` has no description"),
+        "{text}"
+    );
 }

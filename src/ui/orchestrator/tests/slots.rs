@@ -75,6 +75,7 @@ impl Extension for Probe {
             subjects: Vec::new(),
             layout: Layout::Sidebar,
             trail: Vec::new(),
+            label: String::new(),
         })
     }
 
