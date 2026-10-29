@@ -131,6 +131,10 @@ with its reason; a flag that collides with UZE SHALL be catalogued as UZE's.
 - **WHEN** the operator types `--perm` in the overrides step of a Claude Code agent, completes it and types a space
 - **THEN** the flag `--permission-mode` is completed and the list offers its accepted values
 
+#### Scenario: A flag found by a word of its name
+- **WHEN** the operator types `--mode` in the overrides step of a Claude Code agent
+- **THEN** `--model` is offered first and `--permission-mode` after it, flags starting with what is typed ahead of those with a word starting so, and those ahead of ones holding it anywhere
+
 #### Scenario: A flag UZE owns is not offered
 - **WHEN** the operator lists the catalog in the overrides step
 - **THEN** no flag the catalog marks as UZE's is offered for completion

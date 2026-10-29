@@ -449,11 +449,12 @@ impl DirectoryStep {
             .map(|flag| flag.value)
             && !current.starts_with('-')
         {
-            return values
-                .iter()
-                .filter(|value| value.starts_with(current))
-                .map(|value| OverrideRow::Value(value))
-                .collect();
+            return ranked(values.iter().copied(), |value| {
+                match_rank(&[value], current)
+            })
+            .into_iter()
+            .map(OverrideRow::Value)
+            .collect();
         }
         if !current.starts_with('-') {
             return Vec::new();
@@ -463,14 +464,11 @@ impl DirectoryStep {
             .iter()
             .filter_map(|entry| entry.first().map(String::as_str))
             .collect();
-        catalog
+        let offered = catalog
             .flags()
-            .filter(|flag| {
-                flag.spellings
-                    .iter()
-                    .any(|spelling| spelling.starts_with(current))
-            })
-            .filter(|flag| flag.repeatable || !flag.spellings.iter().any(|s| added.contains(s)))
+            .filter(|flag| flag.repeatable || !flag.spellings.iter().any(|s| added.contains(s)));
+        ranked(offered, |flag| match_rank(&flag.spellings, current))
+            .into_iter()
             .map(OverrideRow::Flag)
             .collect()
     }
@@ -680,9 +678,104 @@ impl DirectoryStep {
     }
 }
 
+/// `items` that `rank` matches, the closest first and, among equals, in
+/// the order given: the catalog's own, which puts the common flags first.
+fn ranked<T>(items: impl Iterator<Item = T>, rank: impl Fn(&T) -> Option<u8>) -> Vec<T> {
+    let mut matched: Vec<(u8, T)> = items
+        .filter_map(|item| rank(&item).map(|at| (at, item)))
+        .collect();
+    matched.sort_by_key(|(at, _)| *at);
+    matched.into_iter().map(|(_, item)| item).collect()
+}
+
+/// How closely what is typed matches any of `spellings`, dashes aside and
+/// case aside: `0` for a spelling it starts, `1` for one with a word it
+/// starts (`mode` in `--permission-mode`, `tools` in `--allowedTools`),
+/// `2` for one it is anywhere in; `None` for none. Only dashes typed match
+/// every spelling, first-come.
+fn match_rank(spellings: &[&str], typed: &str) -> Option<u8> {
+    let needle = typed.trim_start_matches('-').to_lowercase();
+    if needle.is_empty() {
+        return Some(0);
+    }
+    spellings
+        .iter()
+        .filter_map(|spelling| {
+            let name = spelling.trim_start_matches('-');
+            let lower = name.to_lowercase();
+            if lower.starts_with(&needle) {
+                Some(0)
+            } else if words_of_name(name).any(|word| word.starts_with(&needle)) {
+                Some(1)
+            } else if lower.contains(&needle) {
+                Some(2)
+            } else {
+                None
+            }
+        })
+        .min()
+}
+
+/// The words a flag's name is made of, lowercased: parted by dashes,
+/// underscores and dots, and where a lowercase letter meets an uppercase
+/// one (`allowedTools` is `allowed`, `tools`).
+fn words_of_name(name: &str) -> impl Iterator<Item = String> + '_ {
+    let mut words = Vec::new();
+    let mut word = String::new();
+    let mut previous_lower = false;
+    for character in name.chars() {
+        if matches!(character, '-' | '_' | '.') {
+            words.push(std::mem::take(&mut word));
+            previous_lower = false;
+            continue;
+        }
+        if character.is_uppercase() && previous_lower {
+            words.push(std::mem::take(&mut word));
+        }
+        previous_lower = character.is_lowercase();
+        word.extend(character.to_lowercase());
+    }
+    words.push(word);
+    words.into_iter().filter(|word| !word.is_empty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What is typed matches a flag's start first, then a word of it, then
+    /// anywhere in it, dashes and case aside.
+    #[test]
+    fn a_typed_word_matches_the_start_then_a_word_then_anywhere() {
+        assert_eq!(match_rank(&["--model", "-m"], "--mode"), Some(0));
+        assert_eq!(match_rank(&["--permission-mode"], "--mode"), Some(1));
+        assert_eq!(match_rank(&["--allowedTools"], "--tools"), Some(1));
+        assert_eq!(match_rank(&["--allowedTools"], "--TOOL"), Some(1));
+        assert_eq!(match_rank(&["--verbose"], "--erbo"), Some(2));
+        assert_eq!(match_rank(&["--verbose"], "--model"), None);
+        assert_eq!(match_rank(&["--verbose"], "--"), Some(0));
+        assert_eq!(match_rank(&["plan"], "an"), Some(2));
+    }
+
+    #[test]
+    fn a_flags_name_parts_at_dashes_and_where_case_turns() {
+        let words: Vec<String> = words_of_name("allowedTools").collect();
+        assert_eq!(words, ["allowed", "tools"]);
+        let words: Vec<String> = words_of_name("dangerously-skip-permissions").collect();
+        assert_eq!(words, ["dangerously", "skip", "permissions"]);
+    }
+
+    #[test]
+    fn the_closest_matches_come_first_the_rest_in_their_order() {
+        let flags = [
+            "--permission-mode",
+            "--verbose",
+            "--model",
+            "--fallback-model",
+        ];
+        let found = ranked(flags.into_iter(), |flag| match_rank(&[flag], "--mode"));
+        assert_eq!(found, ["--model", "--permission-mode", "--fallback-model"]);
+    }
 
     /// A refused word goes back into the line, and the next Enter splits
     /// the line again: the word must read back as itself.

@@ -1018,6 +1018,28 @@ fn an_unchecked_flag_stays_listed_until_its_close_mark() {
     );
 }
 
+/// A word typed finds a flag by any word of its name, not only by its
+/// start: `--mode` offers `--model` first, then `--permission-mode`.
+#[test]
+fn a_flag_is_found_by_a_word_of_its_name() {
+    let mut popup = popup("overrides-match-word");
+    let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
+    driven.frame();
+    open_by_key(&mut driven);
+    type_text(&mut driven, "--mode");
+    let (_, rows) = popup_rows(&mut driven);
+    let at = |name: &str| {
+        rows.iter()
+            .position(|row| row.contains(&format!(" {name} ")) || row.ends_with(name))
+            .unwrap_or_else(|| panic!("{name} is offered:\n{}", rows.join("\n")))
+    };
+    assert!(
+        at("--model") < at("--permission-mode"),
+        "{}",
+        rows.join("\n")
+    );
+}
+
 /// Enter on an empty line with nothing marked starts the agent, with the
 /// entries the step holds.
 #[test]
