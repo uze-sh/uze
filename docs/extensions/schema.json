@@ -1924,7 +1924,12 @@
                 "info",
                 "success",
                 "warning",
-                "danger"
+                "danger",
+                "heat-0",
+                "heat-1",
+                "heat-2",
+                "heat-3",
+                "heat-4"
               ],
               "description": "The semantic colour, or `{table:field}` to look one up."
             },
@@ -2028,7 +2033,12 @@
                 "info",
                 "success",
                 "warning",
-                "danger"
+                "danger",
+                "heat-0",
+                "heat-1",
+                "heat-2",
+                "heat-3",
+                "heat-4"
               ],
               "description": "The role whose hue fills the box; text on it takes an ink chosen to read on it."
             },
@@ -2061,7 +2071,12 @@
                 "info",
                 "success",
                 "warning",
-                "danger"
+                "danger",
+                "heat-0",
+                "heat-1",
+                "heat-2",
+                "heat-3",
+                "heat-4"
               ],
               "description": "The role the border is drawn in."
             },
@@ -2512,7 +2527,12 @@
                 "info",
                 "success",
                 "warning",
-                "danger"
+                "danger",
+                "heat-0",
+                "heat-1",
+                "heat-2",
+                "heat-3",
+                "heat-4"
               ],
               "description": "The semantic colour, or `{table:field}` to look one up."
             },
@@ -2580,7 +2600,12 @@
                 "info",
                 "success",
                 "warning",
-                "danger"
+                "danger",
+                "heat-0",
+                "heat-1",
+                "heat-2",
+                "heat-3",
+                "heat-4"
               ],
               "description": "The semantic colour, or `{table:field}` to look one up."
             },
@@ -2664,7 +2689,12 @@
                 "info",
                 "success",
                 "warning",
-                "danger"
+                "danger",
+                "heat-0",
+                "heat-1",
+                "heat-2",
+                "heat-3",
+                "heat-4"
               ],
               "description": "The semantic colour, or `{table:field}` to look one up."
             },
@@ -2751,7 +2781,12 @@
                 "info",
                 "success",
                 "warning",
-                "danger"
+                "danger",
+                "heat-0",
+                "heat-1",
+                "heat-2",
+                "heat-3",
+                "heat-4"
               ],
               "description": "The semantic colour, or `{table:field}` to look one up."
             },
@@ -2821,7 +2856,12 @@
                 "info",
                 "success",
                 "warning",
-                "danger"
+                "danger",
+                "heat-0",
+                "heat-1",
+                "heat-2",
+                "heat-3",
+                "heat-4"
               ],
               "description": "The semantic colour, or `{table:field}` to look one up."
             },
@@ -3405,7 +3445,12 @@
                 "info",
                 "success",
                 "warning",
-                "danger"
+                "danger",
+                "heat-0",
+                "heat-1",
+                "heat-2",
+                "heat-3",
+                "heat-4"
               ],
               "description": "The semantic colour, or `{table:field}` to look one up."
             },
@@ -3495,7 +3540,12 @@
                 "info",
                 "success",
                 "warning",
-                "danger"
+                "danger",
+                "heat-0",
+                "heat-1",
+                "heat-2",
+                "heat-3",
+                "heat-4"
               ],
               "description": "The semantic colour, or `{table:field}` to look one up."
             },
@@ -3599,7 +3649,12 @@
                 "info",
                 "success",
                 "warning",
-                "danger"
+                "danger",
+                "heat-0",
+                "heat-1",
+                "heat-2",
+                "heat-3",
+                "heat-4"
               ],
               "description": "The semantic colour, or `{table:field}` to look one up."
             },
@@ -3757,7 +3812,12 @@
                 "info",
                 "success",
                 "warning",
-                "danger"
+                "danger",
+                "heat-0",
+                "heat-1",
+                "heat-2",
+                "heat-3",
+                "heat-4"
               ],
               "description": "The semantic colour, or `{table:field}` to look one up."
             },
@@ -3825,7 +3885,12 @@
                 "info",
                 "success",
                 "warning",
-                "danger"
+                "danger",
+                "heat-0",
+                "heat-1",
+                "heat-2",
+                "heat-3",
+                "heat-4"
               ],
               "description": "The semantic colour, or `{table:field}` to look one up."
             },
@@ -3899,7 +3964,12 @@
                 "info",
                 "success",
                 "warning",
-                "danger"
+                "danger",
+                "heat-0",
+                "heat-1",
+                "heat-2",
+                "heat-3",
+                "heat-4"
               ],
               "description": "The semantic colour, or `{table:field}` to look one up."
             },

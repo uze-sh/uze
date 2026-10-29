@@ -53,6 +53,14 @@ pub enum Role {
     Success,
     Warning,
     Danger,
+    /// How much, in five steps of one hue, from none ([`Heat0`](Self::Heat0))
+    /// to the most ([`Heat4`](Self::Heat4)): a quantity compared by
+    /// brightness, where a state hue would say what kind it is.
+    Heat0,
+    Heat1,
+    Heat2,
+    Heat3,
+    Heat4,
 }
 
 /// Colour an extension supplies itself, as `(r, g, b)`.

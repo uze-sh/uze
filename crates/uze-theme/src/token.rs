@@ -139,6 +139,26 @@ vocabulary! {
         /// The wash behind a removed line in a diff.
         StateDiffRemoved = "state.diff-removed",
 
+        // ── heat ───────────────────────────────────────────────────────
+        // A sequential ramp: how much of one thing, in five steps of one
+        // hue, from none to the most. Where the state hues say *what kind*
+        // a thing is, these say *how much* of it there is, so a reader
+        // compares two cells by brightness alone: a contribution map, a
+        // load chart, a histogram. Each step is a tint of the success hue
+        // over the background by default, which keeps the ramp one hue in
+        // every theme that repaints either.
+        /// None: an empty cell of the ramp, apart from the background but
+        /// barely.
+        Heat0 = "heat.0",
+        /// The least of something.
+        Heat1 = "heat.1",
+        /// More.
+        Heat2 = "heat.2",
+        /// More still.
+        Heat3 = "heat.3",
+        /// The most.
+        Heat4 = "heat.4",
+
         // ── command groups ─────────────────────────────────────────────
         // The root help lists commands flat, and each group is told apart
         // by its hue as well as by the blank line above it. Each borrows a
@@ -194,6 +214,15 @@ impl Token {
         Token::Ansi13,
         Token::Ansi14,
         Token::Ansi15,
+    ];
+
+    /// The heat ramp, from none to the most.
+    pub const HEAT: [Token; 5] = [
+        Token::Heat0,
+        Token::Heat1,
+        Token::Heat2,
+        Token::Heat3,
+        Token::Heat4,
     ];
 
     /// Whether this token is drawn *behind* content rather than as content.

@@ -26,6 +26,11 @@ pub(super) fn token(role: Role) -> Token {
         Role::Success => Token::StateSuccess,
         Role::Warning => Token::StateWarning,
         Role::Danger => Token::StateDanger,
+        Role::Heat0 => Token::Heat0,
+        Role::Heat1 => Token::Heat1,
+        Role::Heat2 => Token::Heat2,
+        Role::Heat3 => Token::Heat3,
+        Role::Heat4 => Token::Heat4,
     }
 }
 

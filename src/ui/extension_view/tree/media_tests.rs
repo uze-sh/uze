@@ -234,3 +234,40 @@ fn a_sprite_shows_the_frame_of_its_state_on_the_clock() {
         "a quarter second into a state begun later"
     );
 }
+
+#[test]
+fn the_heat_roles_draw_the_themes_ramp_five_steps_apart() {
+    let ramp = [
+        Role::Heat0,
+        Role::Heat1,
+        Role::Heat2,
+        Role::Heat3,
+        Role::Heat4,
+    ];
+    let root = Node::new(
+        1,
+        NodeKind::Cells {
+            rows: vec![ramp.iter().map(|role| glyph('■', *role)).collect()],
+            regions: Vec::new(),
+        },
+    );
+    let mut terminal = Terminal::new(TestBackend::new(5, 1)).unwrap();
+    terminal
+        .draw(|frame| {
+            render_tree(frame, frame.area(), 0, &root, at(0), &mut Vec::new());
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let drawn: Vec<_> = (0..5).map(|x| buffer[(x, 0)].fg).collect();
+    let expected: Vec<_> = Token::HEAT
+        .iter()
+        .map(|token| theme::color(*token))
+        .collect();
+    assert_eq!(drawn, expected);
+    for (index, step) in drawn.iter().enumerate() {
+        assert!(
+            !drawn[index + 1..].contains(step),
+            "two steps share a colour"
+        );
+    }
+}

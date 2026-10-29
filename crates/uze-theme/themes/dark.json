@@ -42,6 +42,12 @@
     "state.diff-added": "@state.success/1a",
     "state.diff-removed": "@state.danger/1a",
 
+    "heat.0": "~22",
+    "heat.1": "@state.success/4d",
+    "heat.2": "@state.success/80",
+    "heat.3": "@state.success/b3",
+    "heat.4": "@state.success",
+
     "command.packages": "@accent",
     "command.workspace": "@state.warning",
     "command.machine": "@text.secondary",

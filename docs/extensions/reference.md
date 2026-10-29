@@ -638,4 +638,9 @@ Its `Field`s and `Select`s, and a button (`submit`) running `action` with them a
 | `success` | Done, passing, healthy. |
 | `warning` | In progress, waiting, needs attention. |
 | `danger` | Failed, blocked, destructive. |
+| `heat-0` | How much, in one hue from `heat-0` (none) to `heat-4` (the most): a map's empty cell. |
+| `heat-1` | How much: the least of something. |
+| `heat-2` | How much: more. |
+| `heat-3` | How much: more still. |
+| `heat-4` | How much: the most. |
 

@@ -643,7 +643,10 @@ the language server's hover:
 - icons: `Icon` (one of the host's icons by name, or one the manifest declares)
 
 Colour is always a role (`muted`, `warning`, `{tone:state}`), never a
-value. `ui.` and `context.` are scopes: a fixture field named `context`
+value. A state role says what kind a thing is; to say how much of it there
+is, use the heat ramp, `heat-0` (none) to `heat-4` (the most), five steps of
+one hue the theme keeps apart in light and dark: a contribution map, a load
+chart. `ui.` and `context.` are scopes: a fixture field named `context`
 is not reachable as `{context.…}`.
 
 ### A free-form area: `Box`

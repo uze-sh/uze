@@ -195,5 +195,10 @@ fn role(name: RoleName) -> Role {
         RoleName::Success => Role::Success,
         RoleName::Warning => Role::Warning,
         RoleName::Danger => Role::Danger,
+        RoleName::Heat0 => Role::Heat0,
+        RoleName::Heat1 => Role::Heat1,
+        RoleName::Heat2 => Role::Heat2,
+        RoleName::Heat3 => Role::Heat3,
+        RoleName::Heat4 => Role::Heat4,
     }
 }

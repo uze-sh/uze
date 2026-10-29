@@ -293,6 +293,10 @@ Toasts:
 - Every colour is a `Token`; content colour goes through `theme::content`.
 - Colour carries meaning. Don't colour names for decoration, and don't
   spray the accent everywhere.
+- A quantity is drawn in the heat ramp (`Heat0`…`Heat4`, `heat-0`…`heat-4`
+  for an extension): one hue, brighter for more. Never stand the state hues
+  in for amounts: info, success and warning in a row read as three kinds,
+  not as less and more.
 - The default theme (`dark`) is monochrome: a near-black ground, off-white
   text, a white accent, and hue spent only where it means something (the
   `State*` tokens, of which the warning gold is the workspace's own).

@@ -94,8 +94,9 @@ pointer lands (`tests/architecture/affordances.rs`).
 ### Colour and glyphs
 
 `crates/uze-theme` defines `Token` (`Surface*`, `Text*`, `Border*`,
-`Accent`/`AccentMuted`, `State*` with `StateDiff*` among them, `Command*`,
-`Ansi*` for a pane's own output) and `Symbol`.
+`Accent`/`AccentMuted`, `State*` with `StateDiff*` among them, `Heat0`…`Heat4`
+(`Token::HEAT`, a sequential ramp of one hue: how much, never what kind),
+`Command*`, `Ansi*` for a pane's own output) and `Symbol`.
 
 `src/ui/theme.rs` adapts them for drawing:
 

@@ -734,6 +734,11 @@ pub enum RoleName {
     Success,
     Warning,
     Danger,
+    Heat0,
+    Heat1,
+    Heat2,
+    Heat3,
+    Heat4,
 }
 
 impl RoleName {
@@ -750,6 +755,11 @@ impl RoleName {
         Self::Success,
         Self::Warning,
         Self::Danger,
+        Self::Heat0,
+        Self::Heat1,
+        Self::Heat2,
+        Self::Heat3,
+        Self::Heat4,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -766,6 +776,11 @@ impl RoleName {
             Self::Success => "success",
             Self::Warning => "warning",
             Self::Danger => "danger",
+            Self::Heat0 => "heat-0",
+            Self::Heat1 => "heat-1",
+            Self::Heat2 => "heat-2",
+            Self::Heat3 => "heat-3",
+            Self::Heat4 => "heat-4",
         }
     }
 
@@ -788,6 +803,13 @@ impl RoleName {
             Self::Success => "Done, passing, healthy.",
             Self::Warning => "In progress, waiting, needs attention.",
             Self::Danger => "Failed, blocked, destructive.",
+            Self::Heat0 => {
+                "How much, in one hue from `heat-0` (none) to `heat-4` (the most): a map's empty cell."
+            }
+            Self::Heat1 => "How much: the least of something.",
+            Self::Heat2 => "How much: more.",
+            Self::Heat3 => "How much: more still.",
+            Self::Heat4 => "How much: the most.",
         }
     }
 }
@@ -920,6 +942,7 @@ mod tests {
     fn a_colour_value_is_not_a_role() {
         assert_eq!(RoleName::parse("warning"), Some(RoleName::Warning));
         assert_eq!(RoleName::parse("#ff0000"), None);
-        assert_eq!(RoleName::ALL.len(), 12);
+        assert_eq!(RoleName::parse("heat-4"), Some(RoleName::Heat4));
+        assert_eq!(RoleName::ALL.len(), 17);
     }
 }
