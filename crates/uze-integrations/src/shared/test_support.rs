@@ -59,24 +59,38 @@ pub(crate) fn walk(root: &Path) -> BTreeSet<PathBuf> {
     out
 }
 
-/// Every flag a `--help` text names, in each spelling it shows: a word that
-/// starts with `-` or `--` and a letter, up to its value (`--debug=hooks`
-/// names `--debug`).
+/// Every flag a `--help` text defines, in each spelling it shows: the
+/// dash-led words opening an option's own line (`-c, --continue`,
+/// `--session, -s string`), up to its value. A flag only mentioned in
+/// another's description is not defined by it, which is why the
+/// description's deeper indent is not read.
 pub(crate) fn flags_in_help(help: &str) -> BTreeSet<&str> {
-    help.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'))
-        .filter(|word| {
-            let name = word.trim_start_matches('-');
-            let dashes = word.len() - name.len();
-            (dashes == 1 || dashes == 2) && name.starts_with(|c: char| c.is_ascii_alphabetic())
+    const DEFINITION_INDENT: usize = 6;
+    help.lines()
+        .filter(|line| line.len() - line.trim_start().len() <= DEFINITION_INDENT)
+        .flat_map(|line| {
+            line.split_whitespace()
+                .map(|word| word.trim_end_matches(','))
+                .take_while(|word| is_flag(word))
         })
         .collect()
 }
 
-/// Fails naming every spelling `catalog` lists that `help` does not, and
-/// every spelling listed twice: a catalog describes the release its
+fn is_flag(word: &str) -> bool {
+    let name = word.trim_start_matches('-');
+    let dashes = word.len() - name.len();
+    (dashes == 1 || dashes == 2)
+        && name.starts_with(|c: char| c.is_ascii_alphabetic())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// Fails naming every spelling `catalog` lists that `help` does not define,
+/// and every spelling listed twice: a catalog describes the release its
 /// snapshot was taken from, and one spelling means one flag.
 pub(crate) fn assert_catalog_in_help(catalog: &[uze_core::flag_catalog::FlagSpec], help: &str) {
-    let offered = flags_in_help(help);
+    let defined = flags_in_help(help);
     let spellings: Vec<&str> = catalog
         .iter()
         .flat_map(|flag| flag.spellings.iter().copied())
@@ -84,9 +98,19 @@ pub(crate) fn assert_catalog_in_help(catalog: &[uze_core::flag_catalog::FlagSpec
     let missing: Vec<&str> = spellings
         .iter()
         .copied()
-        .filter(|spelling| !offered.contains(spelling))
+        .filter(|spelling| !defined.contains(spelling))
         .collect();
     assert!(missing.is_empty(), "not in the snapshot: {missing:?}");
     let unique: BTreeSet<&str> = spellings.iter().copied().collect();
     assert_eq!(unique.len(), spellings.len(), "a spelling is listed twice");
+}
+
+#[test]
+fn a_flag_named_only_in_a_description_is_not_defined() {
+    let help = "Usage: x [--last]\n\nOptions:\n  -c, --continue <id>    resume; see --last\n      --enable <F>\n          like --other\n";
+
+    assert_eq!(
+        flags_in_help(help),
+        BTreeSet::from(["-c", "--continue", "--enable"])
+    );
 }
