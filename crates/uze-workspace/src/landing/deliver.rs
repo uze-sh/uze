@@ -64,6 +64,7 @@ pub(super) fn deliver_locked(
         mark_delivered(primary, state, isolation);
         return Err(DeliveryFailure::AlreadyDelivered);
     }
+    let carried = checkout::tip_of(primary, &isolation.branch);
     rebase_in_slot(primary, &slot, state, isolation, &tip)?;
     for step in gate {
         // A gate with no spelling for this platform refuses delivery: it
@@ -103,7 +104,7 @@ pub(super) fn deliver_locked(
             })
         }
         CompletionBehavior::Push => {
-            let published = publish(primary, isolation, policy.vocabulary)?;
+            let published = publish(primary, isolation, policy.vocabulary, &carried)?;
             *state = WorkState::Ready;
             Ok(published)
         }

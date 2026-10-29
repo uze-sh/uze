@@ -1276,6 +1276,36 @@ fn a_published_branch_is_not_rewritten_to_follow_the_target() {
     assert_eq!(tip_of(primary, &work(&isolation).branch), pushed);
 }
 
+/// Delivery rebases a branch its agent pushed onto the moved target, and a
+/// plain push of the rebased branch is refused. The remote holds nothing
+/// the branch did not already carry, so it is overwritten under a lease.
+#[test]
+fn a_branch_its_agent_pushed_is_delivered_onto_a_moved_target() {
+    let (repository, other) = published("landing-push-agent-pushed");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let mut isolation = launch(&repository, &mut store, "agent pushed");
+    agent_commits(&repository, work(&isolation), "mine.rs", "");
+    let slot = slot_path(primary, work(&isolation)).unwrap();
+    repository.git_in(&slot, &["push", "--quiet", REMOTE, "HEAD"]);
+    push_from(&repository, &other, "theirs.rs");
+
+    let gate = steps(&[]);
+    let policy = Policy {
+        completion: CompletionBehavior::Push,
+        gate: Some(Approved::assumed(&gate)),
+        vocabulary: &BranchVocabulary::Unset,
+    };
+    deliver(primary, &mut isolation, &policy).unwrap();
+    let branch = work(&isolation).branch.clone();
+    let remote = repository.git_in(
+        &other,
+        &["ls-remote", REMOTE, &format!("refs/heads/{branch}")],
+    );
+    assert!(remote.starts_with(&tip_of(primary, &branch)), "{remote}");
+    assert!(slot.join("theirs.rs").is_file(), "rebased onto the target");
+}
+
 /// The other half the agent can do alone. UZE learns the number from
 /// the remote on the pass that already runs, so a request opened
 /// outside a delivery is still the request this branch has.
