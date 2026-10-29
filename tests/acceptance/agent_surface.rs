@@ -232,7 +232,7 @@ fn an_agent_is_told_whether_the_diagrams_it_wrote_draw() {
     // passes: C4 is guidance, not grammar.
     std::fs::write(
         diagrams.join("context.mmd"),
-        "---\ntitle: System context diagram for shop\n---\nC4Context\n  System(shop, \"Shop\")\n",
+        "---\ntitle: shop\n---\nC4Context\n  System(shop, \"Shop\")\n",
     )
     .unwrap();
     let output = env.run(
