@@ -2,9 +2,11 @@
 
 Each integration declares the flags an operator may add to an agent's
 launch, and which of them UZE composes itself (`IntegrationPort::flag_catalog`).
-That catalog is proven against a committed `--help` snapshot by the Rust
-suite; this contract proves the snapshot against the release, so a flag a
-vendor removed or added cannot sit unseen behind a green unit test. It
+That catalog covers a committed `--help` snapshot whole, every flag it
+defines catalogued or left out by name, as the Rust suite proves; this
+contract proves the snapshot against the release, so a flag a vendor
+removed or added cannot sit unseen behind a green unit test: refreshed,
+the snapshot fails the Rust suite until the new flag is classified. It
 compares the flags each help text defines, never its wording: a reworded
 description is not drift, a flag that appeared or vanished is.
 

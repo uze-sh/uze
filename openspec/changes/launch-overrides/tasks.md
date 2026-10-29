@@ -24,6 +24,7 @@
 - [x] 2.5 Antigravity CLI catalog (owned `--conversation`, `-i`; `--add-dir` operator, repeatable)
 - [x] 2.6 Unit test per harness: every catalog spelling appears in its snapshot; every Codex catalog flag appears in the `resume` snapshot
 - [x] 2.7 Lab: diff each snapshot against the live binary's `--help` and fail naming the flags that drifted
+- [x] 2.8 Complete each catalog: every flag its snapshot defines is catalogued or left out by name as a meta or print-only flag, proven both ways by a unit test per harness; flags that collide with UZE are catalogued as `Uze`
 
 ## 3. Check and record (uze-workspace)
 

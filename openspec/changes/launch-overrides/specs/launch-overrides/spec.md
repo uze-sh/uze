@@ -110,12 +110,12 @@ when written `--flag=value`.
 - **THEN** the harness receives `--brand-new-flag=x` and the entry was shown as not in the catalog
 
 ### Requirement: Each harness declares a flag catalog
-Every harness integration SHALL declare the flags of its harness worth
-offering, each with its spellings, whether it takes a value, the values it
-accepts when they are a fixed set, a short description, and whether it is
-UZE's, the operator's, the operator's but weakening safety, or the
-operator's but switching off something UZE delivers. The catalog SHALL
-describe the harness's latest release.
+Every harness integration SHALL catalog every flag its latest release's
+interactive `--help` defines, each with its spellings, value, accepted
+values, a short description and whether it is UZE's, the operator's, or
+the operator's but weakening safety or switching off delivery. Only a flag
+that ends the launch or acts only in print mode SHALL be left out, named
+with its reason; a flag that collides with UZE SHALL be catalogued as UZE's.
 
 #### Scenario: The catalog completes a flag and its value
 - **WHEN** the operator types `--perm` in the overrides step of a Claude Code agent, completes it and types a space
@@ -124,6 +124,18 @@ describe the harness's latest release.
 #### Scenario: A flag UZE owns is not offered
 - **WHEN** the operator lists the catalog in the overrides step
 - **THEN** no flag the catalog marks as UZE's is offered for completion
+
+#### Scenario: A flag that collides with UZE is catalogued and refused
+- **WHEN** the operator adds `--worktree` to a Claude Code agent's launch
+- **THEN** the entry is refused, saying UZE starts the agent in its own checkout, rather than passed as unknown
+
+#### Scenario: Only meta and print-only flags are left out
+- **WHEN** a harness's snapshot defines `--version` and `--output-format`, which only works with `--print`
+- **THEN** both are left out of its catalog, each named with its reason, and every other flag the snapshot defines is in the catalog
+
+#### Scenario: A release adds a flag
+- **WHEN** the snapshot is refreshed and defines a flag neither catalogued nor left out
+- **THEN** that harness's check fails naming the flag until it is classified
 
 ### Requirement: Every catalog is proven against its real binary
 The system SHALL keep, per harness, the flags its current release accepts,

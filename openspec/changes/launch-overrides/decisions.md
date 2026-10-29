@@ -29,6 +29,7 @@
 - decided:  All three are `Uze`, refused with the continuity reason (`--cd` with "uze starts the agent in its own checkout"). Launch modes that take the session out of the pane (`--bg`, `--desktop`, `--cloud`, `--remote-control`, `--worktree`; Codex `--worktree`, `--remote`; OpenCode `--standalone`, `--server`; agy `--project`, `--new-project`, `--remote-control`) are left out of the catalogs, so they pass as unknown, as the spec says an uncatalogued flag does.
 - rejected: Leaving `--from-pr`/`--teleport`/`--cd` out too: typed, they pass silently and the agent's continuity ends without a word. Owning the launch modes as well: each is a product decision (an operator may want `--remote-control`), not a collision with what UZE composes.
 - blast:    Three entries across `claude/flags.rs` and `codex/flags.rs`; the left-out list is only module docs.
+- amended:  by D25, D26 and D29. Launch modes are no longer left out: those that take the agent out of its pane, checkout or machine are `Uze`, remote control and agy's projects the operator's.
 
 ## D4 — Mark more flags than the design named as weakening or degrading
 
@@ -241,3 +242,64 @@
 - decided:  An `overrides` pair between `harness` and `path` once `agent_overrides` (read off-thread when the overview opens, keyed by project, agent and harness, the answer dropped unless the section is still that agent's) answers with words; nothing when it answers none.
 - rejected: `overrides none`: the section already says what reaches the agent, and a row that says nothing is clutter.
 - blast:    One field on `AgentSupportDropdown`, one read and its absorb.
+
+## D25 — A catalog covers its harness's whole interactive `--help`
+
+- status:   pending
+- task:     2.8
+- commit:   63cf43a9, 95a1e2ad, 5f239e2b, f8cc009c
+- trigger:  The operator set the criterion: the catalogs were a curated subset (Claude Code 37 of 66 flags, Codex 19 of 24, OpenCode 6 of 12, agy 13 of 21), and a flag left out passed as unknown, with no completion and no refusal.
+- decided:  Every flag a snapshot defines is catalogued, or named per harness in a `LeftOut` list as `EndsTheLaunch` (help, version, completions, wizard) or `PrintOnly(reason quoting the help)`; `assert_catalog_covers_help` proves both ways that the snapshot's flags are exactly the two. A flag that collides with UZE is catalogued and classified, never left out. A flag whose value is optional is a switch, as D5 says (`--cloud`, `--worktree`, `--remote-control`, `--prompt-suggestions`). Every new Codex flag is also in `codex resume --help`, so the resume test stands unchanged.
+- rejected: Keeping the curated subset: a release's new flag stays invisible until someone thinks to add it. A free-text reason for leaving out: two categories keep "left out" from becoming a second way to hide a conflict.
+- blast:    The four `flags.rs`, `LeftOut` and `assert_catalog_covers_help` in `shared/test_support.rs`; the catalogs grow to Claude Code 54 entries, Codex 22, OpenCode 8, agy 16.
+- amends:   D3's launch modes, which were left out to pass as unknown (D26, D29).
+
+## D26 — A launch mode that takes the agent out of its pane, checkout or machine is UZE's
+
+- status:   pending
+- task:     2.8
+- commit:   63cf43a9, 95a1e2ad, 5f239e2b
+- trigger:  D3 left the launch modes out so they passed as unknown; the new criterion catalogs them, so each needs an owner.
+- decided:  `Uze`: Claude Code `--bg`/`--background`, `--desktop`, `--cloud`, `--environment` ("a workspace agent runs in its own pane") and `--worktree`/`-w` (its own checkout, as Codex `--cd`); Codex `--worktree` (checkout) and `--remote` (the conversation is looked for among this machine's sessions); OpenCode `--server` (the read-back asks the background service).
+- rejected: `Degrades`: they switch off no delivery, the agent leaves; marked and passed, the pane would close or the conversation be lost with only a mark. `Operator`, as D3 had it in effect: the same silent loss D3 refused for `--from-pr`.
+- blast:    Ten entries; an operator who wants one of these launches the harness outside the workspace.
+
+## D27 — A flag that only acts with a refused one is refused with it
+
+- status:   pending
+- task:     2.8
+- commit:   63cf43a9, 95a1e2ad
+- trigger:  Claude Code's `--tmux` "requires --worktree", and Codex's `--remote-auth-token-env` is the token for `--remote`; both are refused.
+- decided:  Both `Uze`, the reason naming the flag they take ("it takes --worktree, and uze starts the agent in its own checkout").
+- rejected: `Operator`: completion would offer a flag that does nothing alone.
+- blast:    Two entries.
+
+## D28 — OpenCode's `--standalone` is marked, not refused
+
+- status:   pending
+- task:     2.8
+- commit:   5f239e2b
+- trigger:  A private server instead of the background service: the plugin still loads (the Lab's `experiments/opencode/launch-hook.py` runs launches with it), but the read-back asks the background service, and whether that one sees the private server's sessions is unmeasured.
+- decided:  `Degrades("uze continuing this conversation, which it asks the background service for")`: passed and marked.
+- rejected: `Uze` like `--server`: refusing a flag that may well work, on a guess. Measuring first is a Lab experiment; if it shows the session is lost, it becomes `Uze`.
+- blast:    One owner field.
+
+## D29 — Remote control and agy's projects are the operator's
+
+- status:   pending
+- task:     2.8
+- commit:   63cf43a9, f8cc009c
+- trigger:  D3 left Claude Code `--remote-control` and agy `--remote-control`, `--project`, `--new-project` out as launch modes.
+- decided:  `Operator`, with Claude Code `--remote-control-session-name-prefix`: remote control keeps the session in its pane and adds a way in; agy's project names the vendor's project, while its continuity reads the per-directory index (`cache/last_conversations.json`), which a project does not move.
+- rejected: `Uze`: neither moves the session nor its checkout as far as the help says; unmeasured, so a later measurement may reclassify the agy pair.
+- blast:    Five entries.
+
+## D30 — Print-only is read off the help's words, including when they say it through another flag
+
+- status:   pending
+- task:     2.8
+- commit:   63cf43a9, f8cc009c
+- trigger:  Most print-only flags say "only works with --print"; four say it less directly.
+- decided:  Left out as `PrintOnly`: Claude Code `--include-hook-events` (only with `--output-format=stream-json`, itself print-only), `--replay-user-messages` (stream-json input and output), `--permission-prompts` ("who answers permission prompts with --print"); agy `--json-schema` (structured output, which only print mode's `--output-format` gives). Claude Code `--exclude-dynamic-system-prompt-sections` and `--prompt-suggestions` mention print or SDK use but act in a session too, so they are catalogued.
+- rejected: Cataloguing the four: completion would offer flags that do nothing in a pane.
+- blast:    Four `LeftOut` rows; a release that makes one interactive is a reclassification.

@@ -22,8 +22,9 @@ repeated, so typing them again on every launch is the cost that matters.
   configuration keys), is refused as it is typed, with the reason. A flag
   that weakens safety or switches off something UZE delivers is accepted
   and marked.
-- **Each harness declares its flag catalog.** An integration names the
-  flags its harness takes that are worth offering (name, whether it takes a
+- **Each harness declares its flag catalog.** An integration names
+  every flag its harness's interactive `--help` defines, leaving out only
+  those that end the launch or act only in print mode (name, whether it takes a
   value, the values it accepts, a short description, whether it weakens
   safety or switches off delivery) and which of them UZE owns. The catalog
   drives completion and the refusal alike; a flag outside it is still

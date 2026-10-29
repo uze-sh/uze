@@ -175,6 +175,21 @@ features.<feature>=true|false` by Codex's own `--help`, so their spec names
 the table their value is a key in (`sets_key_in`), and that key is judged
 as `-c`'s is; `--disable` stays `Degrades` on top.
 
+What a catalog holds is the whole interactive `--help` of the release:
+every flag its snapshot defines is catalogued, unless it ends the launch
+(help, version, completions, a wizard) or acts only on non-interactive
+output (Claude Code's `--output-format`, `--json-schema`, `--max-budget-usd`
+and the rest the help says work only with `--print`; agy's print-mode
+flags), and each one left out is named, per harness, with its reason. A
+flag that collides with UZE is not left out to be passed unseen: it is
+catalogued and classified, `Uze` when it moves the session out of its pane,
+its checkout or this machine (Claude Code `--bg`, `--desktop`, `--cloud`,
+`--environment`, `--worktree`, `--from-pr`, `--teleport`; Codex `--cd`,
+`--worktree`, `--remote`; OpenCode `--server`), `Weakens` or `Degrades`
+when it gives up safety or switches off a delivery. The `Uze` reason is
+what a refused entry says, so the operator learns why rather than meeting
+an agent that left its pane.
+
 Rejected: a TOML catalog under `conformance/` or the Store. Only
 `uze-integrations` names a harness, and the catalog is the same kind of
 fact as `session.rs`'s constants.
@@ -214,11 +229,16 @@ it in `withheld` and its row says `1 variable not kept`. Spans carry
 ### 8. Proving the catalog
 
 One committed `--help` snapshot per harness (and `codex resume --help`)
-under `crates/uze-integrations/src/<harness>/`. A Rust unit test asserts
-every catalog spelling appears in its snapshot, so the build fails on a
-catalog that drifts from the snapshot. The Lab diffs each snapshot against
-the live binary, so the snapshot cannot drift from the release unseen;
-`harness-watch` refreshes both. `-c` keys are not in `--help` and are
+under `crates/uze-integrations/src/<harness>/`. A Rust unit test per
+harness asserts, both ways, that the flags its snapshot defines are exactly
+the catalog's spellings and the ones it names as left out: nothing
+unclassified, nothing catalogued or left out that the snapshot does not
+define. The Codex catalog is also held to `codex resume --help`, since
+overrides follow `resume <id>`. The Lab diffs each snapshot against the
+live binary, so the snapshot cannot drift from the release unseen; a flag
+that appears live fails the Lab, the refreshed snapshot then fails the
+unit test until the flag is classified, and `harness-watch` refreshes
+both. `-c` keys are not in `--help` and are
 proven by the existing Codex conformance instead.
 
 ### 9. Removing Profiles first, and what it leaves on disk
