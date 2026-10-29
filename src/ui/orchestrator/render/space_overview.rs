@@ -14,8 +14,8 @@ use crate::ui::widget::{
 use uze_application::ShellCommand;
 use uze_application::application::{FreshnessState, memory::Entry as MemoryEntry};
 use uze_application::{
-    ActionState, CheckoutOwner, DeclarationKey, DeclaredValue, ProjectSpace, SpaceOverview,
-    SpacePlugin,
+    ActionState, CheckoutOwner, DeclarationKey, DeclaredValue, DirectorySpace, ProjectSpace,
+    SpaceMemory, SpaceOverview, SpacePlugin,
 };
 
 /// The width under which the drawer stands over the section instead of
@@ -143,60 +143,84 @@ fn render_overview_frame(
         .and_then(|agent| model.tab(agent.tab))
         .map_or_else(String::new, |tab| tab.label.clone());
     let foot = Rect::new(inner.x, inner.bottom() - 1, inner.width, 1);
-    let project = match &overview.answer {
-        Some(Ok(SpaceOverview::Project(project))) => Some(project.as_ref()),
-        _ => None,
-    };
     render_header(
         frame,
         Rect::new(inner.x, inner.y + HEADER_ROW, inner.width, 1),
         &name,
         overview,
     );
-    // What stands in for the project, as a title and what it is about.
-    let message = match &overview.answer {
-        Some(Ok(SpaceOverview::DirectoryGone { directory })) => Some((
-            "Directory gone",
-            format!("{} no longer exists", display_path(directory)),
-        )),
-        Some(Err(reason)) => Some(("Project not read", reason.clone())),
-        _ => None,
-    };
-    // The bar stands whatever the read said: a directory that is gone or
-    // could not be read is still the one each section is about, and every
-    // section says why it is empty rather than the overview losing all but
-    // one.
     let bar = Rect::new(inner.x, inner.y + BAR_ROW, inner.width, 1);
-    let open = Some(overview.section.index());
+    let open = overview
+        .sections()
+        .iter()
+        .position(|section| *section == overview.section);
     for (rect, index) in tabs::tab_bar(frame, bar, &section_tabs(model, overview), open, false) {
         hits.push((rect, WorkspaceHit::OverviewSection(index)));
     }
     Rule::new(Edge::Top).render(frame, Rect::new(area.x, inner.y + RULE_ROW, area.width, 1));
-    let Some(project) = project else {
-        let cause = Rect::new(inner.x, inner.y + CAUSE_ROW, inner.width, 1);
-        match (&message, overview.section) {
-            // The agent is still the agent, wherever it stands: its
-            // prompts are listed with no project to describe around them.
-            (_, Section::Agent) => {
-                let said = match &message {
-                    Some((_, message)) => Line::from(Span::styled(
-                        text::elide(message, usize::from(cause.width)),
-                        theme::fg(Token::TextPrimary),
-                    )),
-                    None => reading_the_project(model),
-                };
-                frame.render_widget(Paragraph::new(said), cause);
-                let top = inner.y + BODY_ROW;
-                let body = Rect::new(inner.x, top, inner.width, foot.y.saturating_sub(top + 1));
-                render_agent(frame, body, model, overview, hits, Track::default());
+    let cause = Rect::new(inner.x, inner.y + CAUSE_ROW, inner.width, 1);
+    // What stands in for a section that could not be read, as a title and
+    // what it is about: the whole directory, or only the repository's
+    // part of it.
+    let unread = match &overview.answer {
+        Some(Ok(SpaceOverview::DirectoryGone { directory })) => Some((
+            "Directory gone",
+            format!("{} no longer exists", display_path(directory)),
+        )),
+        Some(Err(reason)) => Some(("Not read", reason.clone())),
+        _ => None,
+    };
+    let space = match overview.directory() {
+        Some(space) => space,
+        None => {
+            match (&unread, overview.section) {
+                // The agent is still the agent, wherever it stands: its
+                // prompts are listed with nothing read around them.
+                (_, Section::Agent) => {
+                    let said = match &unread {
+                        Some((_, reason)) => Line::from(Span::styled(
+                            text::elide(reason, usize::from(cause.width)),
+                            theme::fg(Token::TextPrimary),
+                        )),
+                        None => reading_the_project(model),
+                    };
+                    frame.render_widget(Paragraph::new(said), cause);
+                    let top = inner.y + BODY_ROW;
+                    let body = Rect::new(inner.x, top, inner.width, foot.y.saturating_sub(top + 1));
+                    render_agent(frame, body, model, overview, hits, Track::default());
+                }
+                (Some((title, reason)), _) => {
+                    let body = Rect::new(
+                        inner.x,
+                        cause.y,
+                        inner.width,
+                        foot.y.saturating_sub(cause.y + 1),
+                    );
+                    empty(frame, body, title, Some(reason));
+                }
+                (None, _) => frame.render_widget(Paragraph::new(reading_the_project(model)), cause),
             }
-            (Some((title, message)), _) => {
-                let top = cause.y;
-                let body = Rect::new(inner.x, top, inner.width, foot.y.saturating_sub(top + 1));
-                empty(frame, body, title, Some(message));
-            }
-            (None, _) => frame.render_widget(Paragraph::new(reading_the_project(model)), cause),
+            render_foot(
+                frame,
+                foot,
+                model,
+                overview,
+                &[(Action::Refresh, "refresh")],
+                hits,
+            );
+            return;
         }
+    };
+    if let (Section::Plugins | Section::Settings | Section::Worktrees, Some(Err(reason))) =
+        (overview.section, &space.project)
+    {
+        let body = Rect::new(
+            inner.x,
+            cause.y,
+            inner.width,
+            foot.y.saturating_sub(cause.y + 1),
+        );
+        empty(frame, body, "Project not read", Some(reason));
         render_foot(
             frame,
             foot,
@@ -206,13 +230,12 @@ fn render_overview_frame(
             hits,
         );
         return;
-    };
+    }
     // A section with nothing to list says so once, in the middle of the
     // whole body: no cause line repeating it, no drawer about nothing.
-    let empty = nothing_to_list(model, overview, project);
-    let cause = Rect::new(inner.x, inner.y + CAUSE_ROW, inner.width, 1);
+    let empty = nothing_to_list(model, overview, space);
     if !empty {
-        let (cause_text, cause_tone) = cause_line(overview, project);
+        let (cause_text, cause_tone) = cause_line(overview, space);
         frame.render_widget(
             Paragraph::new(Span::styled(
                 text::elide(&cause_text, usize::from(cause.width)),
@@ -252,7 +275,7 @@ fn render_overview_frame(
             drawer_inner,
             model,
             overview,
-            project,
+            space,
             scrolled.drawer,
             hits,
         );
@@ -280,7 +303,7 @@ fn render_overview_frame(
             drawer_inner,
             model,
             overview,
-            project,
+            space,
             scrolled.drawer,
             hits,
         );
@@ -299,7 +322,7 @@ fn render_overview_frame(
             pointer: model.hovered,
             ..track
         };
-        let rows = render_section(frame, section_area, model, overview, project, hits, track);
+        let rows = render_section(frame, section_area, model, overview, space, hits, track);
         for (rect, index) in rows {
             hits.push((rect, WorkspaceHit::OverviewRow(index)));
         }
@@ -320,7 +343,8 @@ fn render_overview_frame(
 
 /// The section bar's tabs, each marked with how its section stands.
 fn section_tabs(model: &WorkspaceModel, overview: &SpaceOverviewView) -> Vec<(Tab, usize)> {
-    Section::ALL
+    overview
+        .sections()
         .iter()
         .enumerate()
         .map(|(index, section)| {
@@ -374,13 +398,13 @@ fn reading_the_project(model: &WorkspaceModel) -> Line<'static> {
 }
 
 /// The first line of the section: what its state comes from.
-fn cause_line(overview: &SpaceOverviewView, project: &ProjectSpace) -> (String, Token) {
-    match overview.section {
-        Section::Agent => (
+fn cause_line(overview: &SpaceOverviewView, space: &DirectorySpace) -> (String, Token) {
+    match (overview.section, project_of(space)) {
+        (Section::Agent, _) => (
             "prompts this agent was given, newest first".to_owned(),
             Token::TextSecondary,
         ),
-        Section::Plugins => {
+        (Section::Plugins, Some(project)) => {
             let plugins = &project.plugins;
             let mut causes = Vec::new();
             if let Some(problem) = &plugins.lock_problem {
@@ -413,13 +437,13 @@ fn cause_line(overview: &SpaceOverviewView, project: &ProjectSpace) -> (String, 
                 (causes.join(" · "), Token::StateWarning)
             }
         }
-        Section::Settings => {
+        (Section::Settings, Some(project)) => {
             let mut causes = Vec::new();
-            let unspelled = project.steps_not_spelled_here().len();
+            let unspelled = project.status.steps_not_spelled_here.len();
             if unspelled > 0 {
                 causes.push(format!("{} never run here", plural(unspelled, "command")));
             }
-            if let Some(awaiting) = project.commands_awaiting_approval() {
+            if let Some(awaiting) = project.status.commands_awaiting_approval.as_ref() {
                 causes.push(format!(
                     "{} waiting for approval",
                     plural(awaiting.commands.len(), "command")
@@ -466,9 +490,12 @@ fn cause_line(overview: &SpaceOverviewView, project: &ProjectSpace) -> (String, 
                 )
             }
         }
-        Section::Worktrees => worktrees_cause(overview),
-        Section::Memory => {
-            let memory = &project.memory;
+        (Section::Worktrees, _) => worktrees_cause(overview),
+        // Not on the bar outside a repository, and said in their place
+        // when the project could not be read.
+        (Section::Plugins | Section::Settings, None) => (String::new(), Token::TextSecondary),
+        (Section::Memory, _) => {
+            let memory = &space.memory;
             if !memory.unreadable.is_empty() {
                 (
                     format!("{} unreadable", plural(memory.unreadable.len(), "file")),
@@ -499,7 +526,7 @@ fn render_section(
     area: Rect,
     model: &WorkspaceModel,
     overview: &SpaceOverviewView,
-    project: &ProjectSpace,
+    space: &DirectorySpace,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
     track: Track,
 ) -> Vec<(Rect, usize)> {
@@ -509,9 +536,20 @@ fn render_section(
         Some(_) => area.width,
         None => area.width.saturating_sub(Scrollbar::width() + 1),
     };
-    let lines = match overview.section {
-        Section::Agent => return render_agent(frame, area, model, overview, hits, track),
-        Section::Plugins
+    let lines = match (overview.section, project_of(space)) {
+        (Section::Agent, _) => return render_agent(frame, area, model, overview, hits, track),
+        (Section::Memory, _) if no_facts(&space.memory) => {
+            return empty(
+                frame,
+                area,
+                "No facts kept",
+                Some("What its agents learn, about this project or about you, is kept here."),
+            );
+        }
+        (Section::Memory, _) => {
+            return render_memory(frame, area, overview, &space.memory, hits, track, room);
+        }
+        (Section::Plugins, Some(project))
             if project.plugins.plugins.is_empty() && project.plugins.lock_problem.is_none() =>
         {
             return empty(
@@ -521,24 +559,14 @@ fn render_section(
                 Some("`uze <plugin>@<market>` adds one to this project."),
             );
         }
-        Section::Memory if no_facts(project) => {
-            return empty(
-                frame,
-                area,
-                "No facts kept",
-                Some("What its agents learn, about this project or about you, is kept here."),
-            );
-        }
-        Section::Plugins => plugin_lines(project, room),
-        Section::Settings => {
+        (Section::Plugins, Some(project)) => plugin_lines(project, room),
+        (Section::Settings, Some(project)) => {
             return render_workspace(frame, area, overview, project, hits, track);
         }
-        Section::Memory => {
-            return render_memory(frame, area, overview, project, hits, track, room);
-        }
-        Section::Worktrees => {
+        (Section::Worktrees, Some(project)) => {
             return render_worktrees(frame, area, model, overview, project, track);
         }
+        (Section::Plugins | Section::Settings | Section::Worktrees, None) => return Vec::new(),
     };
     draw_lines(frame, area, &lines, Some(overview.row()), track)
 }
@@ -548,7 +576,7 @@ fn render_section(
 fn nothing_to_list(
     model: &WorkspaceModel,
     overview: &SpaceOverviewView,
-    project: &ProjectSpace,
+    space: &DirectorySpace,
 ) -> bool {
     match overview.section {
         Section::Agent => overview.agent.as_ref().is_some_and(|agent| {
@@ -560,10 +588,10 @@ fn nothing_to_list(
                     agent.prompts.as_ref() == Some(&history.of) && history.entries.is_empty()
                 })
         }),
-        Section::Plugins => {
+        Section::Plugins => project_of(space).is_none_or(|project| {
             project.plugins.plugins.is_empty() && project.plugins.lock_problem.is_none()
-        }
-        Section::Memory => no_facts(project),
+        }),
+        Section::Memory => no_facts(&space.memory),
         Section::Worktrees => {
             !matches!(&overview.worktrees.answer, Some(Some(_))) || overview.worktrees().is_empty()
         }
@@ -840,8 +868,7 @@ fn plugin_state(plugin: &SpacePlugin) -> (String, Token) {
 
 /// Whether the Memory section has neither a fact nor a file it could not
 /// read as one.
-fn no_facts(project: &ProjectSpace) -> bool {
-    let memory = &project.memory;
+fn no_facts(memory: &SpaceMemory) -> bool {
     memory.project.is_empty() && memory.machine.is_empty() && memory.unreadable.is_empty()
 }
 
@@ -851,7 +878,7 @@ fn render_memory(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     overview: &SpaceOverviewView,
-    project: &ProjectSpace,
+    memory: &SpaceMemory,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
     track: Track,
     room: u16,
@@ -877,16 +904,11 @@ fn render_memory(
         height: area.height.saturating_sub(SEARCH_ROWS),
         ..area
     };
-    let lines = memory_lines(overview, project, room);
+    let lines = memory_lines(overview, memory, room);
     draw_lines(frame, table, &lines, Some(overview.row()), track)
 }
 
-fn memory_lines(
-    overview: &SpaceOverviewView,
-    project: &ProjectSpace,
-    room: u16,
-) -> Vec<SectionLine> {
-    let memory = &project.memory;
+fn memory_lines(overview: &SpaceOverviewView, memory: &SpaceMemory, room: u16) -> Vec<SectionLine> {
     let facts = overview.memory_facts();
     let mut lines = Vec::new();
     if memory.project.is_empty() && memory.machine.is_empty() {
@@ -2291,7 +2313,7 @@ fn settings_answer(overview: &SpaceOverviewView, project: &ProjectSpace) -> Opti
             Token::StateDanger,
             vec![("Discard", WorkspaceHit::OverviewDiscard, Token::StateDanger)],
         )
-    } else if let Some(awaiting) = project.commands_awaiting_approval() {
+    } else if let Some(awaiting) = project.status.commands_awaiting_approval.as_ref() {
         let title = format!(
             "{} waiting for approval",
             plural(awaiting.commands.len(), "command")
@@ -2390,7 +2412,7 @@ fn render_drawer(
     area: Rect,
     model: &WorkspaceModel,
     overview: &SpaceOverviewView,
-    project: &ProjectSpace,
+    space: &DirectorySpace,
     scroll: &std::cell::Cell<u16>,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
@@ -2399,26 +2421,26 @@ fn render_drawer(
         width: usize::from(area.width),
     };
     let row = overview.row();
-    match overview.section {
-        Section::Agent => {
+    match (overview.section, project_of(space)) {
+        (Section::Agent, _) => {
             let Some(agent) = &overview.agent else {
                 return;
             };
             drawer.agent(agent);
         }
-        Section::Plugins => {
+        (Section::Plugins, Some(project)) => {
             let Some(plugin) = project.plugins.plugins.get(row) else {
                 return;
             };
             drawer.plugin(plugin);
         }
-        Section::Memory => {
+        (Section::Memory, _) => {
             let Some(entry) = overview.memory_facts().get(row).copied() else {
                 return;
             };
             drawer.fact(entry, overview.fact.as_ref());
         }
-        Section::Worktrees => {
+        (Section::Worktrees, Some(project)) => {
             let cards = model.worktree_cards(overview, project);
             let Some(card) = cards.get(row) else {
                 return;
@@ -2429,7 +2451,7 @@ fn render_drawer(
             draw_drawer_text(frame, body, drawer.lines, scroll, hits);
             return;
         }
-        Section::Settings => {
+        (Section::Settings, Some(project)) => {
             if drawer.setting(overview).is_none() {
                 return;
             }
@@ -2438,8 +2460,14 @@ fn render_drawer(
             draw_drawer_text(frame, body, drawer.lines, scroll, hits);
             return;
         }
+        (Section::Plugins | Section::Settings | Section::Worktrees, None) => return,
     }
     draw_drawer_text(frame, area, drawer.lines, scroll, hits);
+}
+
+/// The project a repository's sections are drawn from, when it was read.
+fn project_of(space: &DirectorySpace) -> Option<&ProjectSpace> {
+    space.project.as_ref()?.as_ref().ok()
 }
 
 /// The drawer's text in `area`, `scroll` rows down and settled there so
@@ -2928,7 +2956,7 @@ fn foot_keys(
                 keys.push((Action::DiscardChanges, "discard"));
             } else if overview
                 .project()
-                .is_some_and(|project| project.commands_awaiting_approval().is_some())
+                .is_some_and(|project| project.status.commands_awaiting_approval.as_ref().is_some())
             {
                 keys.push((Action::ReviewCommands, "review"));
             }

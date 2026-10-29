@@ -78,9 +78,16 @@ fn the_space_overview_agrees_with_status() {
     .unwrap();
 
     let status = application.health().project_status(&project).unwrap();
-    let SpaceOverview::Project(space) = application.workspace().space_overview(&project).unwrap()
+    let SpaceOverview::Directory(directory) =
+        application.workspace().space_overview(&project).unwrap()
     else {
         panic!("a project answers with its overview");
+    };
+    let Some(Ok(space)) = directory.project else {
+        panic!(
+            "a repository is read as its project: {:?}",
+            directory.project
+        );
     };
 
     let context_of = |status: &uze_application::application::ProjectStatus| {
@@ -92,10 +99,7 @@ fn the_space_overview_agrees_with_status() {
         ))
         .unwrap()
     };
-    assert_eq!(
-        context_of(space.status.as_ref().expect("a project has a status")),
-        context_of(&status)
-    );
+    assert_eq!(context_of(&space.status), context_of(&status));
     let summary = application.project().summary(&project).unwrap();
     assert_eq!(
         summary.project.context == ContextState::Ready,
@@ -132,13 +136,13 @@ fn the_space_overview_agrees_with_status() {
     );
 }
 
-/// A directory outside every project is still overviewed: no status to
-/// say, nothing locked, and settings that create the `agents.yaml` the
-/// first one written needs.
+/// A directory outside every Git repository is overviewed for what reaches
+/// its agents anyway, the machine's memory, and has no project: nothing to
+/// read for it, and no settings to write there.
 #[test]
-fn a_space_outside_every_project_keeps_its_settings_and_memory() {
+fn a_space_outside_every_repository_has_its_memory_and_no_project() {
     use uze_application::application::memory::{Kind, MemoryCaller, MemoryScope};
-    use uze_application::{DeclarationApplied, DeclarationKey, DeclaredValue, Edit};
+    use uze_application::{DeclarationKey, DeclaredValue, Edit};
     let root = temp("space-overview-loose");
     let application = app(&root, true);
     let bare = root.join("bare");
@@ -155,13 +159,11 @@ fn a_space_outside_every_project_keeps_its_settings_and_memory() {
         )
         .unwrap();
 
-    let SpaceOverview::Project(space) = application.workspace().space_overview(&bare).unwrap()
+    let SpaceOverview::Directory(space) = application.workspace().space_overview(&bare).unwrap()
     else {
         panic!("a directory that exists is overviewed");
     };
-    assert!(space.status.is_none(), "no project has no status");
-    assert!(space.plugins.plugins.is_empty());
-    assert!(space.workspace.is_ok(), "{:?}", space.workspace);
+    assert!(space.project.is_none(), "{:?}", space.project);
     assert!(
         space
             .memory
@@ -172,21 +174,15 @@ fn a_space_outside_every_project_keeps_its_settings_and_memory() {
         space.memory.machine
     );
 
-    let applied = application
-        .workspace()
-        .apply_declaration(
-            &bare,
-            &[Edit::Set {
-                key: DeclarationKey::Slots,
-                value: DeclaredValue::Number(2),
-            }],
-        )
-        .unwrap();
-    assert!(
-        matches!(applied, DeclarationApplied::Written { created: true, .. }),
-        "{applied:?}"
+    let applied = application.workspace().apply_declaration(
+        &bare,
+        &[Edit::Set {
+            key: DeclarationKey::Slots,
+            value: DeclaredValue::Number(2),
+        }],
     );
-    assert!(bare.join("agents.yaml").is_file());
+    assert!(applied.is_err(), "{applied:?}");
+    assert!(!bare.join("agents.yaml").exists());
 }
 
 #[test]

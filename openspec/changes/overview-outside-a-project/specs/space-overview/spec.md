@@ -1,24 +1,23 @@
 ## REMOVED Requirements
 
 ### Requirement: An agent outside a project says so
-**Reason**: It hid Memory and Settings, which need no project.
-**Migration**: Replaced by "Every section stands outside a project".
+**Reason**: It hid Memory, which needs no project.
+**Migration**: Replaced by "The sections follow the directory".
 
 ## ADDED Requirements
 
-### Requirement: Every section stands outside a project
-The overview SHALL draw every section whatever its read answered. A
-directory outside every project SHALL be overviewed as itself: Memory
-lists what reaches its agents, Settings shows the defaults and its first
-change creates `agents.yaml` there, Plugins and Worktrees show their empty
-states, and no section is marked. A directory that is gone, or a read that
-failed, SHALL be said in each section that cannot be read, which its tab
-marks, while the Agent section keeps listing the prompts.
+### Requirement: The sections follow the directory
+Inside a Git repository the overview SHALL show all five sections. Outside
+every Git repository it SHALL show the Agent and Memory sections alone,
+mark neither for what is missing, and write no settings: applying a
+`workspace:` edit there SHALL be refused. A project that could not be read
+SHALL be said in Settings, Plugins and Worktrees, which their tabs mark,
+while Memory is still listed.
 
-#### Scenario: A directory that is not a project
-- **WHEN** the agent runs in a plain directory with no project in or above it
-- **THEN** every section is drawn unmarked, and changing a setting creates `agents.yaml` in that directory
+#### Scenario: A directory outside every repository
+- **WHEN** the agent runs in a plain directory with no Git repository in or above it
+- **THEN** the bar shows Agent and Memory, unmarked, and the machine's facts are listed
 
-#### Scenario: A directory that is gone
-- **WHEN** the agent's directory was deleted
-- **THEN** every section is offered, each but Agent saying the directory no longer exists
+#### Scenario: A project that could not be read
+- **WHEN** the agent's repository cannot be read as a project
+- **THEN** all five sections are shown, and Settings, Plugins and Worktrees say why
