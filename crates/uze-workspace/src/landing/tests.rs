@@ -1306,6 +1306,44 @@ fn a_branch_its_agent_pushed_is_delivered_onto_a_moved_target() {
     assert!(slot.join("theirs.rs").is_file(), "rebased onto the target");
 }
 
+/// The agent adds to a request UZE published: the remote tip is no
+/// longer the commit UZE recorded pushing, but the branch carries it, so
+/// the next delivery still lands.
+#[test]
+fn a_redelivery_lands_over_commits_the_agent_pushed_since() {
+    let (repository, other) = published("landing-push-after-publish");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let mut isolation = launch(&repository, &mut store, "added to");
+    agent_commits_saying(&repository, work(&isolation), "a.rs", "fix(a): first");
+    let policy = Policy {
+        completion: CompletionBehavior::Push,
+        gate: Some(Approved::assumed(&[])),
+        vocabulary: &BranchVocabulary::Unset,
+    };
+    let Delivered::Published { branch, .. } = deliver(primary, &mut isolation, &policy).unwrap()
+    else {
+        panic!("published");
+    };
+    agent_commits(&repository, work(&isolation), "b.rs", "");
+    let slot = slot_path(primary, work(&isolation)).unwrap();
+    repository.git_in(
+        &slot,
+        &["push", "--quiet", REMOTE, &format!("HEAD:{branch}")],
+    );
+    push_from(&repository, &other, "target-moved.rs");
+
+    deliver(primary, &mut isolation, &policy).unwrap();
+    let remote = repository.git_in(
+        &other,
+        &["ls-remote", REMOTE, &format!("refs/heads/{branch}")],
+    );
+    assert!(
+        remote.starts_with(&tip_of(primary, &work(&isolation).branch)),
+        "{remote}"
+    );
+}
+
 /// A request closed and its branch deleted on the forge leaves the
 /// remote-tracking ref behind, and a branch read as published for good
 /// never followed the target again.

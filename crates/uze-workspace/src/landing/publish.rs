@@ -42,25 +42,25 @@ pub(super) fn publish(
     let tip = checkout::tip_of(primary, &isolation.branch);
     // A branch already on the remote is one a delivery has since rebased,
     // so its history no longer descends from what the remote holds and a
-    // plain push is refused. It is overwritten only when the remote still
-    // holds exactly the commit UZE pushed there last, and the lease names
-    // that commit rather than the remote-tracking ref: a tracking ref says
+    // plain push is refused. It is overwritten under a lease naming a
+    // commit, never the remote-tracking ref as such: a tracking ref says
     // what the remote held at the last fetch, not who put it there, and a
-    // colleague's branch of the same name passes that test. A remote tip
-    // the branch already carried before the rebase is overwritten too,
-    // whoever pushed it — the agent, usually — since every commit there
-    // is one the rebased branch still holds. Anything else on the remote
+    // colleague's branch of the same name passes that test. The commit is
+    // the remote's tip when the branch carried it before the rebase,
+    // whoever pushed it — the agent adding to its own request, usually —
+    // since every commit there is one the rebased branch still holds; and
+    // otherwise the one UZE pushed there last. Anything else on the remote
     // is pushed to only by fast-forward.
     let lease = published
         .as_ref()
         .and_then(|published| {
-            isolation
-                .published_tip
-                .as_ref()
-                .filter(|_| isolation.published_as.as_deref() == Some(&name))
+            (!carried.is_empty() && is_ancestor(primary, &published.tip, carried))
+                .then_some(&published.tip)
                 .or_else(|| {
-                    (!carried.is_empty() && is_ancestor(primary, &published.tip, carried))
-                        .then_some(&published.tip)
+                    isolation
+                        .published_tip
+                        .as_ref()
+                        .filter(|_| isolation.published_as.as_deref() == Some(&name))
                 })
         })
         .map(|leased| format!("--force-with-lease=refs/heads/{name}:{leased}"));
