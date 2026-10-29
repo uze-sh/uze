@@ -19,6 +19,8 @@ pub(super) struct AgentOption {
     /// Said on the tab when the agent starts a conversation it will not be
     /// able to continue.
     pub(super) continuity_gap: Option<String>,
+    /// What its launch takes beyond what UZE composes.
+    pub(super) overrides: uze_application::OverrideCatalog,
 }
 
 /// Open state of the harness picker a resume asks with when the harness its
@@ -70,6 +72,27 @@ pub(super) struct DirectoryStep {
     pub(super) harnesses: Vec<AgentOption>,
     /// Index into `harnesses` of the one the agent will run.
     pub(super) harness: usize,
+    /// The overrides step, while it stands in the listing's place.
+    pub(super) overrides: Option<OverridesStep>,
+    /// The overrides added in this popup, by harness: moving the harness
+    /// shows that harness's, never another's flags.
+    pub(super) drafts: BTreeMap<String, Vec<OverrideEntry>>,
+    /// The sets used lately, as last read.
+    pub(super) recent: Option<RecentOverridesRead>,
+    /// The read of them that is out, so a step opened again before it
+    /// answers asks nothing more.
+    pub(super) recent_asked: Option<(String, PathBuf)>,
+}
+
+impl AgentSupportDropdown {
+    /// Whose recorded overrides the section names: an agent UZE launched,
+    /// on the harness it runs.
+    pub(super) fn overrides_of(&self) -> Option<OverridesOf> {
+        Some(OverridesOf {
+            prompts: self.prompts.clone()?,
+            harness: self.key.as_ref()?.0.clone(),
+        })
+    }
 }
 
 impl DirectoryStep {
@@ -125,6 +148,9 @@ pub(super) struct AgentSupportDropdown {
     pub(super) prompts: Option<PromptsOf>,
     /// The agent's directory as the operator reads it.
     pub(super) path: String,
+    /// What the agent was launched with on its harness beyond what UZE
+    /// composes, once read.
+    pub(super) overrides: Option<Vec<String>>,
     /// Index into the agent's prompts, newest first.
     pub(super) selected: usize,
 }

@@ -179,3 +179,63 @@
 - decided:  `OverrideCatalog` (the integration's static catalog and managed variables) is a `Copy` field of `AgentIdentity` and also `Workspace::override_catalog`; `flags()` yields `OverrideFlag`s (offered ones only, with `OverrideValue` and an `OverrideMark` of `Plain`/`Weakens`/`Degrades`), `check(line)`/`check_words` are pure and answer `CheckedOverride`s with the workspace's `Verdict` (re-exported as `OverrideVerdict`). Recent sets (`recent_overrides`, `forget_recent_overrides`, re-exported `RecentOverrides`) and `agent_overrides` read the record and belong on a thread.
 - rejected: Re-exporting `FlagSpec`/`FlagOwner`: `Keyed { owned, conditional }` is the check's concern, not something a row draws.
 - blast:    `services/overrides.rs`, one field on `AgentIdentity` and its test fixtures.
+
+## D19 — Overrides open on `ctrl+f` in the directory picker, for the operator to confirm
+
+- status:   pending
+- task:     5.1
+- commit:   d61a75ea
+- trigger:  The design leaves the new action's default chord to the operator; `ctrl+o` is the Global `SwitchMode`, `tab` the picker's `Expand`, `←→` the harness, and the picker takes typing, so a bare letter is text.
+- decided:  `Action::OpenOverrides` ("open-overrides"), bound to `ctrl+f` in `Scope::RootPicker` only. A Ctrl letter is the one register every terminal delivers (`Tier::Universal`); `f` is not a control byte a terminal keeps (`ctrl+s`/`ctrl+q` flow control, `ctrl+i`/`ctrl+m`/`ctrl+h` are tab, enter, backspace), and no Global binding uses it, so it cannot collide while the picker is sealed. Mnemonic: flags. The operator should confirm or rebind it; the Keys screen already can.
+- rejected: `alt+o`: `alt` is the extensions' family and host-conditional. `shift+tab`: reads as the reverse of completion. `f2`: no mnemonic, and function keys are the workspace's register for global doors.
+- blast:    One binding in `load.rs` and the foot's hint text, which reads the keymap.
+
+## D20 — The overrides step has its own scope, and Delete forgets the marked set
+
+- status:   pending
+- task:     5.4, 5.6
+- commit:
+- trigger:  The step needs `←→` for the caret while `RootPicker` spends them on the harness, and forgetting a set is drawn as a row's `x`, which keyboard users would otherwise lose.
+- decided:  `Scope::LaunchOverrides` (sealed, takes text): `↑↓` mark (`↑` on the first row unmarks, so Enter launches again), `tab` `Expand` (completion, as in the picker), `enter`, `esc` back, `backspace` (on an empty line it takes the last entry back), `delete` (on an empty line with a set marked it forgets that set; otherwise it erases forward), `←→`/`home`/`end` the caret. A click on a list row takes it as Enter takes it marked; hovering a row only lights it, so the pointer resting there never changes what Enter does.
+- rejected: Reusing `RootPicker` with `←→` meaning two things by step: one key per meaning per scope is the keymap's rule, and the Keys screen could not list it.
+- blast:    Twelve bindings and the scope row; `scopes()` and `type_character` gain one branch each.
+
+## D21 — `Symbol::MarkAttention` marks what weakens or degrades
+
+- status:   pending
+- task:     5.5
+- commit:
+- trigger:  The design names `Symbol::Warning`, which the vocabulary does not have; "needs attention" is one meaning there, `MarkAttention`, and `IconWarning` is an icon for running text.
+- decided:  Entries, history rows, completion rows and the first step's field carry `MarkAttention` in `Token::StateWarning` when a flag weakens safety or switches off delivery; the detail line says `gives up …` or `turns off …`, the catalog's own words.
+- rejected: Adding a `Symbol::Warning`: a second glyph for the same meaning is what the symbol's own doc says was removed.
+- blast:    The glyph choice in `render/overrides.rs`.
+
+## D22 — The popup is 60 wide and lists at least 5 rows, so both steps share one height
+
+- status:   pending
+- task:     5.3, 5.7
+- commit:
+- trigger:  The first step gains a row and its foot gains `ctrl+f overrides`, which did not fit 54 columns and was left out whole; the overrides step needs room for entries and a list in the listing's rows.
+- decided:  Width 54 → 60. The first step is harness, overrides, rule, query, rule, listing; the overrides step is `‹ overrides`, the line, its lit underline, entries and list, rule, detail: both are the listing's rows plus five, so the step takes exactly the listing's rows. `new_agent_popup_rows` keeps its 4–9 clamp and raises the floor to 5 for the step, fixed when the popup opens. The entries come first; past the rows left for one list row, the earliest give way to a muted `N more` row.
+- rejected: A rule under the heading as well: it would cost the list a row, and the line's own underline already closes the heading.
+- blast:    Two constants in `popups.rs`; the picker tests' row arithmetic.
+
+## D23 — Recent sets are read for the directory the popup is on, and entries show their values
+
+- status:   pending
+- task:     5.5, 5.6
+- commit:
+- trigger:  `recent_overrides` asks for a project root; the popup has a directory, which may not be chosen yet when the step opens.
+- decided:  The root is the directory chosen, or the one listed, read when the step opens (one read per harness and root, the answer carrying its question; one that answers an earlier question is dropped). Forgetting is the same read with the set forgotten first, so the list redraws from disk. Entries and the first step's field show each entry's words in full (`--model opus · DEBUG=1`), as the design's example does: the popup is the operator's own screen; only spans and the record's history hold values back.
+- rejected: Reading recents for every harness when the popup opens: most popups never open the step.
+- blast:    `spawn_recent_overrides` and `absorb_recent_overrides`.
+
+## D24 — The agent's overview names its overrides only when it has some
+
+- status:   pending
+- task:     5.8
+- commit:
+- trigger:  The overview's agent section heads with `harness` then `path`; an agent launched with nothing would show an empty row.
+- decided:  An `overrides` pair between `harness` and `path` once `agent_overrides` (read off-thread when the overview opens, keyed by project, agent and harness, the answer dropped unless the section is still that agent's) answers with words; nothing when it answers none.
+- rejected: `overrides none`: the section already says what reaches the agent, and a row that says nothing is clutter.
+- blast:    One field on `AgentSupportDropdown`, one read and its absorb.

@@ -4,18 +4,27 @@ use super::*;
 
 /// The directories the new agent's popup lists at once: as many as match,
 /// between [`NEW_AGENT_POPUP_MIN_ROWS`] and [`NEW_AGENT_POPUP_MAX_ROWS`].
+///
+/// The overrides step stands in the same rows, so the popup is fixed at
+/// opening as the taller of what the two steps need, and switching
+/// between them never resizes it.
 pub(in crate::ui::orchestrator) fn new_agent_popup_rows(directories: usize) -> u16 {
     let rows = u16::try_from(directories).unwrap_or(u16::MAX);
     rows.clamp(NEW_AGENT_POPUP_MIN_ROWS, NEW_AGENT_POPUP_MAX_ROWS)
+        .max(OVERRIDES_LEAST_ROWS)
 }
 
 const NEW_AGENT_POPUP_MIN_ROWS: u16 = 4;
+/// The rows the overrides step needs for its entries and the list under
+/// them.
+const OVERRIDES_LEAST_ROWS: u16 = 5;
 const NEW_AGENT_POPUP_MAX_ROWS: u16 = 9;
-/// Wide enough for a directory's name beside what is known about it.
-const NEW_AGENT_POPUP_WIDTH: u16 = 54;
-/// The rows around the listing: the harness, the line typed into and the
-/// foot, each closed off by a rule.
-const NEW_AGENT_POPUP_CHROME: u16 = 6;
+/// Wide enough for a directory's name beside what is known about it, and
+/// for the foot's keys.
+const NEW_AGENT_POPUP_WIDTH: u16 = 60;
+/// The rows around the listing: the harness, the overrides, the line
+/// typed into and the foot, each part closed off by a rule.
+const NEW_AGENT_POPUP_CHROME: u16 = 7;
 
 /// Where a popup of `width` by `height` floats beside `anchor`: under it,
 /// pushed back inside `area` at its edges.
@@ -50,7 +59,11 @@ fn new_agent_card(
 
 /// A line with `left` at its start and `right` against its end, `right`
 /// kept whole and `left` cut to what is left over.
-fn spread(rect: Rect, left: Vec<Span<'static>>, right: Vec<Span<'static>>) -> Line<'static> {
+pub(super) fn spread(
+    rect: Rect,
+    left: Vec<Span<'static>>,
+    right: Vec<Span<'static>>,
+) -> Line<'static> {
     let right_width: usize = right.iter().map(Span::width).sum();
     let room = usize::from(rect.width).saturating_sub(right_width + usize::from(TRAILING_PAD));
     let mut spans = Vec::new();
@@ -72,7 +85,7 @@ fn spread(rect: Rect, left: Vec<Span<'static>>, right: Vec<Span<'static>>) -> Li
 }
 
 /// A hairline across the popup, between two of its parts.
-fn popup_rule(frame: &mut ratatui::Frame<'_>, rows: &mut Rows) {
+pub(super) fn popup_rule(frame: &mut ratatui::Frame<'_>, rows: &mut Rows) {
     if let Some(rect) = rows.next(1) {
         let _ = Rule::new(Edge::Top).render(frame, rect);
     }
@@ -96,11 +109,18 @@ pub(in crate::ui::orchestrator) fn render_directory_step(
         height: inner.height.saturating_sub(1),
         ..inner
     });
-    if let Some(rect) = rows.next(1) {
-        render_harness_field(frame, rect, model, step, hits);
+    if step.overrides.is_some() {
+        render_overrides_step(frame, model, step, popup, &mut rows, hits);
+    } else {
+        if let Some(rect) = rows.next(1) {
+            render_harness_field(frame, rect, model, step, hits);
+        }
+        if let Some(rect) = rows.next(1) {
+            render_overrides_field(frame, rect, model, step, hits);
+        }
+        popup_rule(frame, &mut rows);
+        render_root_picker(frame, model, step, &mut rows, hits);
     }
-    popup_rule(frame, &mut rows);
-    render_root_picker(frame, model, step, &mut rows, hits);
     let mut above_foot = Rows::over(Rect::new(foot.x, foot.y.saturating_sub(1), foot.width, 1));
     popup_rule(frame, &mut above_foot);
     render_new_agent_foot(frame, foot, model, step, hits);
@@ -109,6 +129,9 @@ pub(in crate::ui::orchestrator) fn render_directory_step(
 /// The scopes the popup's keys are read from.
 const NEW_AGENT_SCOPES: [uze_keys::Scope; 2] =
     [uze_keys::Scope::Global, uze_keys::Scope::RootPicker];
+/// The scopes the overrides step's keys are read from.
+const OVERRIDES_SCOPES: [uze_keys::Scope; 2] =
+    [uze_keys::Scope::Global, uze_keys::Scope::LaunchOverrides];
 
 /// The harness the agent will run, between the arrows that change it. A
 /// click on either arrow is its key.
@@ -177,18 +200,34 @@ fn render_new_agent_foot(
         Some(WorkspaceHit::HintAction(action)) => Some(action),
         _ => None,
     };
-    let enter = if step.chosen_harness().is_some() {
-        "new"
+    let (keys, close) = if step.overrides.is_some() {
+        (
+            crate::ui::widget::hint::Hints::new(&OVERRIDES_SCOPES)
+                .named(Action::Activate, "add")
+                .named(Action::Expand, "complete"),
+            crate::ui::widget::hint::Hints::new(&OVERRIDES_SCOPES).named(Action::Dismiss, "back"),
+        )
     } else {
-        SET_ONE_UP
+        let mut keys = crate::ui::widget::hint::Hints::new(&NEW_AGENT_SCOPES);
+        if step.chosen_harness().is_some() {
+            keys = keys
+                .named(Action::Activate, "new")
+                .run(Action::FocusPrevious, Action::FocusNext, "harness")
+                .named(Action::OpenOverrides, "overrides");
+        } else {
+            keys = keys.named(Action::Activate, SET_ONE_UP).run(
+                Action::FocusPrevious,
+                Action::FocusNext,
+                "harness",
+            );
+        }
+        (
+            keys,
+            crate::ui::widget::hint::Hints::new(&NEW_AGENT_SCOPES).named(Action::Dismiss, "close"),
+        )
     };
-    let keys = crate::ui::widget::hint::Hints::new(&NEW_AGENT_SCOPES)
-        .named(Action::Activate, enter)
-        .run(Action::FocusPrevious, Action::FocusNext, "harness")
-        .hovered(hovered);
-    let close = crate::ui::widget::hint::Hints::new(&NEW_AGENT_SCOPES)
-        .named(Action::Dismiss, "close")
-        .hovered(hovered);
+    let keys = keys.hovered(hovered);
+    let close = close.hovered(hovered);
     let close_width = close.width();
     let end = rect.right().saturating_sub(TRAILING_PAD);
     let start = rect.x + PICKER_LEAD as u16;
@@ -1113,6 +1152,7 @@ mod tests {
             integration: "claude-code".to_owned(),
             command: vec!["claude".to_owned()],
             continuity_gap: None,
+            overrides: Default::default(),
         };
         let drawn = |names: &[&str]| {
             let picker = crate::ui::orchestrator::AgentPicker {

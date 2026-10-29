@@ -1408,6 +1408,87 @@ pub(super) fn spawn_prompt_history(
     });
 }
 
+/// Reads the sets of overrides used lately on `harness`, as seen from
+/// `root`, having first forgotten `forget` when one is given: a file, and
+/// nothing the popup draws waits on one. The answer names its question.
+pub(super) fn spawn_recent_overrides(
+    home: &UzeHome,
+    harness: String,
+    root: PathBuf,
+    forget: Option<Vec<String>>,
+    sender: mpsc::Sender<RecentOverridesRead>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _pass = crate::telemetry::background_pass!("tui.recent_overrides", parent: &parent);
+        let sets = answered_or(
+            || {
+                tui_application(home)
+                    .map(|app| {
+                        if let Some(words) = &forget
+                            && let Err(error) =
+                                app.workspace().forget_recent_overrides(&harness, words)
+                        {
+                            tracing::warn!(%error, "a set of overrides could not be forgotten");
+                        }
+                        app.workspace().recent_overrides(&harness, &root)
+                    })
+                    .unwrap_or_default()
+            },
+            Vec::new(),
+        );
+        let _ = sender.send(RecentOverridesRead {
+            harness,
+            root,
+            sets,
+        });
+    });
+}
+
+/// Whose recorded overrides are asked for: an agent of a project, on one
+/// harness.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct OverridesOf {
+    pub(super) prompts: PromptsOf,
+    pub(super) harness: String,
+}
+
+/// An agent's recorded overrides, tagged with whose they are.
+pub(super) struct AgentOverridesResolution {
+    pub(super) of: OverridesOf,
+    pub(super) words: Vec<String>,
+}
+
+/// Reads the overrides an agent was launched with on its harness, for the
+/// overview to name under it.
+pub(super) fn spawn_agent_overrides(
+    home: &UzeHome,
+    of: OverridesOf,
+    sender: mpsc::Sender<AgentOverridesResolution>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _pass = crate::telemetry::background_pass!("tui.agent_overrides", parent: &parent);
+        let words = answered_or(
+            || {
+                tui_application(home)
+                    .map(|app| {
+                        app.workspace().agent_overrides(
+                            &of.prompts.project,
+                            &of.prompts.agent,
+                            &of.harness,
+                        )
+                    })
+                    .unwrap_or_default()
+            },
+            Vec::new(),
+        );
+        let _ = sender.send(AgentOverridesResolution { of, words });
+    });
+}
+
 /// Forgets an agent's prompts, and answers with the empty history that
 /// leaves, so the overview redraws from what is on disk rather than from a
 /// guess about it.

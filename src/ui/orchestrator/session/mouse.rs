@@ -275,6 +275,12 @@ impl Attach<'_> {
                     // The harness field's arrows and the foot's hints are
                     // their keys, in the popup's own scope.
                     Some(WorkspaceHit::HintAction(action)) => self.directory_step_action(action),
+                    Some(
+                        hit @ (WorkspaceHit::OverrideRow(_)
+                        | WorkspaceHit::OverrideEntryClose(_)
+                        | WorkspaceHit::ForgetOverrides(_)
+                        | WorkspaceHit::OverridesScroll),
+                    ) => self.press_overrides(hit, mouse.row),
                     Some(WorkspaceHit::NewAgentBody) => {}
                     // Click outside the popup discards it — same rule
                     // `renaming` uses.
@@ -461,6 +467,15 @@ impl Attach<'_> {
             _ if self.model.board_grab.is_some() => {
                 self.drag_board(mouse.column, mouse.row);
             }
+            _ if self
+                .model
+                .directory_step
+                .as_ref()
+                .and_then(|step| step.overrides.as_ref())
+                .is_some_and(|over| over.grabbed) =>
+            {
+                self.scroll_overrides_to(mouse.row);
+            }
             _ if self.model.dragging_content => {
                 self.scroll_content_to(mouse.row);
             }
@@ -583,6 +598,17 @@ impl Attach<'_> {
     /// it would.
     pub(super) fn release(&mut self, mouse: MouseEvent, viewport: &Viewport) -> Flow {
         let Viewport { ref layout, .. } = *viewport;
+        if let Some(over) = self
+            .model
+            .directory_step
+            .as_mut()
+            .and_then(|step| step.overrides.as_mut())
+            .filter(|over| over.grabbed)
+        {
+            over.grabbed = false;
+            self.model.dirty = true;
+            return Flow::Continue;
+        }
         match &self.model.selection {
             Some(Selection::Pane(_)) => {
                 self.release_selection(mouse, layout.pane);
@@ -869,6 +895,51 @@ impl Attach<'_> {
         Flow::Continue
     }
 
+    /// A press on one of the overrides step's own targets: a list row is
+    /// taken as Enter takes it marked, a close mark takes its entry away or
+    /// forgets its set, and the scrollbar is held.
+    fn press_overrides(&mut self, hit: WorkspaceHit, row: u16) {
+        let Some(step) = self.model.directory_step.as_mut() else {
+            return;
+        };
+        match hit {
+            WorkspaceHit::OverrideRow(index) => {
+                if let Some(taken) = step.override_rows().get(index).copied() {
+                    step.take_row(taken);
+                }
+            }
+            WorkspaceHit::OverrideEntryClose(index) => step.remove_entry(index),
+            WorkspaceHit::ForgetOverrides(index) => {
+                if let OverridesOutcome::Forget(words) = step.forget(index) {
+                    self.forget_recent_overrides(words);
+                }
+            }
+            WorkspaceHit::OverridesScroll => {
+                if let Some(over) = step.overrides.as_mut() {
+                    over.grabbed = true;
+                }
+                self.scroll_overrides_to(row);
+            }
+            _ => {}
+        }
+        self.model.dirty = true;
+    }
+
+    /// Moves the overrides list to where the pointer holds its scrollbar.
+    fn scroll_overrides_to(&mut self, row: u16) {
+        if let Some(over) = self
+            .model
+            .directory_step
+            .as_mut()
+            .and_then(|step| step.overrides.as_mut())
+            && let Some(bar) = over.bar.get()
+        {
+            over.marked = None;
+            over.top.set(bar.first_at(row));
+            self.model.dirty = true;
+        }
+    }
+
     /// Pointer motion. Only the three list-shaped overlays follow it —
     /// moving the highlight under the pointer is what makes them read as
     /// menus rather than as keyboard-only lists.
@@ -879,7 +950,15 @@ impl Attach<'_> {
                 // agent picker and the sidebar context menu already do, and
                 // the popup's controls light under it.
                 let hit = hit_at(&self.model, mouse.column, mouse.row);
-                let control = hit.filter(|hit| matches!(hit, WorkspaceHit::HintAction(_)));
+                let control = hit.filter(|hit| {
+                    matches!(
+                        hit,
+                        WorkspaceHit::HintAction(_)
+                            | WorkspaceHit::OverrideRow(_)
+                            | WorkspaceHit::OverrideEntryClose(_)
+                            | WorkspaceHit::ForgetOverrides(_)
+                    )
+                });
                 if self.model.hovered != control {
                     self.model.hovered = control;
                     self.model.dirty = true;
@@ -1135,6 +1214,30 @@ impl Attach<'_> {
                     } else {
                         popup.scroll.saturating_add(1).min(limit)
                     };
+                    self.model.dirty = true;
+                }
+            }
+            // The wheel over the overrides list scrolls it, and leaves
+            // what is marked alone.
+            _ if self.model.directory_step.is_some()
+                && matches!(
+                    hit_at(&self.model, mouse.column, mouse.row),
+                    Some(WorkspaceHit::OverrideRow(_) | WorkspaceHit::OverridesScroll)
+                ) =>
+            {
+                if let Some(over) = self
+                    .model
+                    .directory_step
+                    .as_mut()
+                    .and_then(|step| step.overrides.as_mut())
+                {
+                    let top = over.top.get();
+                    over.marked = None;
+                    over.top.set(if mouse.kind == MouseEventKind::ScrollUp {
+                        top.saturating_sub(1)
+                    } else {
+                        top + 1
+                    });
                     self.model.dirty = true;
                 }
             }
@@ -1482,7 +1585,11 @@ impl Attach<'_> {
                 // agent picker.
             }
             WorkspaceHit::NewSpace => self.open_new_space(columns, rows),
-            WorkspaceHit::PickDirectory(_) => {
+            WorkspaceHit::PickDirectory(_)
+            | WorkspaceHit::OverrideRow(_)
+            | WorkspaceHit::OverrideEntryClose(_)
+            | WorkspaceHit::ForgetOverrides(_)
+            | WorkspaceHit::OverridesScroll => {
                 // Only reachable while the directory step is open,
                 // which the guarded arm above already handles —
                 // same as `PickAgent` for the agent picker.

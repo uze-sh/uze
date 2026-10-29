@@ -43,8 +43,12 @@ impl Attach<'_> {
             scopes.push(Scope::Declared);
             return scopes;
         }
-        let surface = if self.model.directory_step.is_some() {
-            Scope::RootPicker
+        let surface = if let Some(step) = &self.model.directory_step {
+            if step.overrides.is_some() {
+                Scope::LaunchOverrides
+            } else {
+                Scope::RootPicker
+            }
         } else if self.model.renaming.is_some() {
             Scope::Rename
         } else if self.model.agent_picker.is_some() {
@@ -228,7 +232,11 @@ impl Attach<'_> {
             index.filter.push(character);
             index.selected = 0;
         } else if let Some(step) = self.model.directory_step.as_mut() {
-            step.picker.typed(character);
+            if step.overrides.is_some() {
+                step.type_override(character);
+            } else {
+                step.picker.typed(character);
+            }
         } else if let Some((_, buffer)) = self.model.renaming.as_mut() {
             buffer.insert(character);
         } else if let Some((_, buffer)) = self.model.inspector.edit.as_mut() {

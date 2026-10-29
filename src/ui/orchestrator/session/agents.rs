@@ -45,14 +45,9 @@ impl Attach<'_> {
                     .position(|option| option.integration == last)
             })
             .unwrap_or(0);
-        self.model.directory_step = Some(DirectoryStep {
-            picker,
-            space,
-            anchor,
-            rows,
-            harnesses,
-            harness,
-        });
+        self.model.directory_step = Some(DirectoryStep::new(
+            picker, space, anchor, rows, harnesses, harness,
+        ));
         self.model.dirty = true;
     }
 
@@ -69,15 +64,16 @@ impl Attach<'_> {
             self.model.dirty = true;
             return;
         };
-        let Some(DirectoryStep {
+        let Some(step) = self.model.directory_step.take() else {
+            return;
+        };
+        let overrides = step.launch_words();
+        let DirectoryStep {
             space,
             mut harnesses,
             harness,
             ..
-        }) = self.model.directory_step.take()
-        else {
-            return;
-        };
+        } = step;
         self.model.dirty = true;
         if harness >= harnesses.len() {
             self.open_manage_at(Route::Harnesses);
@@ -89,7 +85,7 @@ impl Attach<'_> {
             AgentLaunch::New(NewPlace {
                 space,
                 directory,
-                overrides: Vec::new(),
+                overrides,
             }),
         );
     }

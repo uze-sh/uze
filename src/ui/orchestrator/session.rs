@@ -257,6 +257,22 @@ impl Attach<'_> {
             self.model.remembered.agent_support = Some(resolution);
             self.model.dirty = true;
         }
+        self.absorb_recent_overrides();
+        while let Ok(resolution) = self.channels.agent_overrides.receiver.try_recv() {
+            if self.model.remembered.agent_overrides_pending.as_ref() == Some(&resolution.of) {
+                self.model.remembered.agent_overrides_pending = None;
+            }
+            if let Some(agent) = self
+                .model
+                .space_overview
+                .as_mut()
+                .and_then(|overview| overview.agent.as_mut())
+                .filter(|agent| agent.overrides_of().as_ref() == Some(&resolution.of))
+            {
+                agent.overrides = Some(resolution.words);
+                self.model.dirty = true;
+            }
+        }
         while let Ok(resolution) = self.channels.prompts.receiver.try_recv() {
             if self.model.remembered.prompt_history_pending.as_ref() == Some(&resolution.of) {
                 self.model.remembered.prompt_history_pending = None;

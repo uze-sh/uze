@@ -23,14 +23,14 @@ fn directory_step_over(model: &mut WorkspaceModel, directory: &Path, home: &UzeH
     let picker = RootPicker::opened_in(&directory.display().to_string(), None);
     let rows = render::new_agent_popup_rows(picker.match_count());
     let space = model.session.as_ref().unwrap().selected_space().id;
-    model.directory_step = Some(DirectoryStep {
+    model.directory_step = Some(DirectoryStep::new(
         picker,
         space,
-        anchor: Rect::new(20, 1, 3, 1),
+        Rect::new(20, 1, 3, 1),
         rows,
-        harnesses: super::agent_options(home),
-        harness: 0,
-    });
+        super::agent_options(home),
+        0,
+    ));
 }
 
 /// A home with nothing set up, for a popup whose harnesses do not matter.
@@ -58,13 +58,14 @@ fn drawn(model: &mut WorkspaceModel) -> (Vec<String>, Buffer) {
     (buffer_rows(&buffer), buffer)
 }
 
-/// The line typed into: under the harness field, past the rule closing it.
+/// The line typed into: under the harness and overrides fields, past the
+/// rule closing them.
 fn prompt_row_of(rows: &[String]) -> String {
     let harness = rows
         .iter()
         .position(|row| row.contains(" harness "))
         .expect("the popup is drawn");
-    rows[harness + 2].clone()
+    rows[harness + 3].clone()
 }
 
 /// Enter on the directory step, as the keyboard sends it.

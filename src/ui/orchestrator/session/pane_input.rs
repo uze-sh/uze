@@ -50,13 +50,14 @@ impl Attach<'_> {
     pub(super) fn paste(&mut self, text: String) -> Flow {
         match text {
             _ if self.model.directory_step.is_some() => {
-                if let Some(picker) = self
-                    .model
-                    .directory_step
-                    .as_mut()
-                    .map(|step| &mut step.picker)
-                {
-                    picker.pasted(text.trim_end_matches(['\r', '\n']));
+                if let Some(step) = self.model.directory_step.as_mut() {
+                    let text = text.trim_end_matches(['\r', '\n']);
+                    if step.overrides.is_some() {
+                        text.chars()
+                            .for_each(|character| step.type_override(character));
+                    } else {
+                        step.picker.pasted(text);
+                    }
                 }
                 self.model.dirty = true;
             }

@@ -1702,6 +1702,12 @@ impl Attach<'_> {
             remembered.prompt_history_pending = Some(of.clone());
             spawn_prompt_history(self.home, of.clone(), self.channels.prompts.sender.clone());
         }
+        if let Some(of) = agent.overrides_of()
+            && remembered.agent_overrides_pending.as_ref() != Some(&of)
+        {
+            remembered.agent_overrides_pending = Some(of.clone());
+            spawn_agent_overrides(self.home, of, self.channels.agent_overrides.sender.clone());
+        }
         if let Some(overview) = self.model.space_overview.as_mut() {
             // The prompt it was on stays chosen when the agent is the same.
             let selected = overview

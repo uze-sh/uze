@@ -15,6 +15,7 @@ use crate::ui::widget::{
 
 mod bar;
 mod declared;
+mod overrides;
 mod pane;
 mod popups;
 mod recent;
@@ -26,6 +27,7 @@ use bar::*;
 #[cfg(test)]
 pub(super) use declared::overlay_card;
 use declared::*;
+use overrides::*;
 pub(super) use pane::*;
 pub(super) use popups::*;
 use recent::*;

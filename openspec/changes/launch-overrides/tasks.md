@@ -45,14 +45,14 @@
 
 ## 5. Popup (src/ui)
 
-- [ ] 5.1 Read `design-system` first; new RootPicker-scoped `Action` for overrides (default chord decided by the operator), never `ctrl+o`
-- [ ] 5.2 `overrides` field row under `harness`, summary cut at its end, `›`; click or key opens the step
-- [ ] 5.3 Overrides step in the list's place: `‹ overrides` heading as target, esc back, popup height fixed at open as the larger of both steps
-- [ ] 5.4 Typed line with caret scope (`←→` caret), entries with `x` in `mark::close_tone`, Backspace on empty removes last, refused token stays in the line in the danger hue
-- [ ] 5.5 List: recent sets (nothing marked), catalog completions, `OneOf` values after a flag and a space; fixed-height detail line; `Weakens`/`Degrades` marked with `Symbol::Warning`
-- [ ] 5.6 Draft per harness inside the popup; applying a recent set replaces the entries; forgetting a set from its row
-- [ ] 5.7 Foot hints for both steps with click == key tests; empty, narrow-width and light-mode `TestBackend` tests
-- [ ] 5.8 The agent's overview names its overrides under its harness
+- [x] 5.1 Read `design-system` first; new RootPicker-scoped `Action` for overrides (default chord decided by the operator), never `ctrl+o`
+- [x] 5.2 `overrides` field row under `harness`, summary cut at its end, `›`; click or key opens the step
+- [x] 5.3 Overrides step in the list's place: `‹ overrides` heading as target, esc back, popup height fixed at open as the larger of both steps
+- [x] 5.4 Typed line with caret scope (`←→` caret), entries with `x` in `mark::close_tone`, Backspace on empty removes last, refused token stays in the line in the danger hue
+- [x] 5.5 List: recent sets (nothing marked), catalog completions, `OneOf` values after a flag and a space; fixed-height detail line; `Weakens`/`Degrades` marked with `Symbol::Warning`
+- [x] 5.6 Draft per harness inside the popup; applying a recent set replaces the entries; forgetting a set from its row
+- [x] 5.7 Foot hints for both steps with click == key tests; empty, narrow-width and light-mode `TestBackend` tests
+- [x] 5.8 The agent's overview names its overrides under its harness
 
 ## 6. Close
 
