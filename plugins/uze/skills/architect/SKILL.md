@@ -48,13 +48,13 @@ The single most common mistake is drawing at the wrong level, and nothing
 catches it: a diagram full of components under `C4Context` draws perfectly
 and tells the reader something false about the system's boundary.
 
-- **`C4Context`** — the system as one box, and who and what is outside it.
-  Nothing internal appears here. If you are naming a crate, you are in the
-  wrong view.
-- **`C4Container`** — the deployable or runnable pieces *inside* the
-  system: a CLI, a server, a database, a shared library.
-- **`C4Component`** — what one container is made of. One view per
-  container, never all of them at once.
+- **`C4Context`** — the system as one box, and the people and software
+  systems directly connected to it. Nothing internal appears here. If you
+  are naming a crate, you are in the wrong view.
+- **`C4Container`** — the applications and data stores *inside* the
+  system, and the people and systems directly connected to them.
+- **`C4Component`** — what one container is made of, with the other
+  containers, people and systems its components touch around it.
 - **`sequenceDiagram`** — an interaction over time. Use it when the claim
   is about **order**; a structure drawn as a sequence hides that it has no
   order.
@@ -65,7 +65,72 @@ and tells the reader something false about the system's boundary.
 The first word of the file decides which area the surface lists it under,
 so the choice above is also the choice of that first word. The C4 views
 are listed from the outside in — context, then container, then component —
-which is the order a reader meets them.
+which is the order a reader meets them. `C4Dynamic` (one feature or use
+case at runtime, steps numbered) and `C4Deployment` (where containers run
+in one environment) are supplementary views, not levels: draw one only when
+the static views cannot show an interaction that keeps recurring, or a
+deployment that differs from the obvious one.
+
+### What each C4 box is
+
+- **Person** — a human: a user, a role, a persona. A program acting for
+  somebody is not a person; an agent's actions are performed by the
+  process running it, so that process (or the system it belongs to) is
+  the box.
+- **Software system** — what one team builds, owns and releases together.
+  One binary with one release is one system, however many bounded
+  contexts it has inside; a context is a container or a component, never
+  a second system.
+- **Container** — a runtime boundary: a process (a CLI, a server, a
+  daemon, a helper the binary re-executes as) or a data store (a
+  database, a directory of files). Ask *does it run, or hold data, on its
+  own?* A crate, a library, a package or a module never is one — it
+  organises code inside a container. Two commands of one binary that run
+  in one process are one container; the same binary started as a separate
+  long-lived process is another.
+- **Component** — a grouping of code inside one container, sharing its
+  process: a module, a crate, a service behind an interface. Not
+  separately deployable. A container too big for one component view is
+  drawn as several, each filtered to one part (one crate's modules, say)
+  and saying so in its title.
+
+### The notation, every time
+
+- The title states the type and the scope: `System context diagram for
+  shop`, `Container diagram for shop`, `Component diagram for shop API`.
+  A view showing only part of its scope says so in the title.
+- Every element is the macro of its type, with a short description of its
+  responsibility; every container and component carries a real technology
+  (`Rust, clap`, `PostgreSQL`, `Filesystem, JSON`) — never a crate name or a
+  file path.
+- Every relationship is one-way, with a label that says what happens in
+  that direction — never `Uses`, `Calls` or `Runs` alone. Between
+  containers, and from a container to a system, name the protocol in
+  `Rel`'s fourth argument: `Rel(api, db, "Reads orders from", "SQL/TCP")`.
+  No `BiRel`: draw the two directions as two relationships.
+- A technology is a property of an edge, not a box: Git, HTTPS or a socket
+  is how two things talk, not an external system of its own.
+
+### One model, many views: aliases are join keys
+
+Every C4 view is a projection of the same model, so a person or system
+appears with the **same alias, name and description** in every view that
+shows it, and an alias names **one element** across every file — never a
+system here and a container or boundary there. The surface joins levels by
+alias:
+
+- a `C4Container` view's scope is its outermost `System_Boundary`; it is
+  the inside of the `System` with that alias in the context view;
+- a `C4Component` view's scope is its outermost `Container_Boundary`; it
+  is the inside of the `Container` (or `ContainerDb`, `ContainerQueue`)
+  with that alias in the container view. Several component views of one
+  container are siblings;
+- nested `Boundary` blocks inside a scope group elements and join nothing.
+
+Where an alias cannot say it, declare the zoom: `$link` on an element to
+another catalogued `.mmd` (`$link="docs/architecture/api-components.mmd"`)
+opens that file as its inside. Prefer the alias; it is what other Mermaid
+readers understand too.
 
 ## Name it for the reader, not for the filesystem
 
@@ -75,19 +140,30 @@ it a title:
 
 ```
 ---
-title: Containers
+title: Container diagram for shop
 ---
 C4Container
   ...
 ```
 
 A name is what somebody scanning a list of a dozen diagrams reads. Name
-the view (`Containers`, `Install pipeline`, `Agent lifecycle`), not the
-occasion for drawing it.
+the view (`Container diagram for shop`, `Install pipeline`, `Agent
+lifecycle`), not the occasion for drawing it. A title holding a colon is
+YAML, so quote it: `title: "Component diagram for shop API: billing"`.
 
 ## Join a box to the code it stands for
 
-In a flowchart, a node can point at a real path in the checkout:
+The code is the level below the last diagram, and it is not drawn: it is
+linked. In C4, `$link` names the file an element stands for:
+
+```
+Component(delivery, "delivery", "Rust module", "Routes capabilities", $link="crates/core/src/delivery.rs")
+```
+
+Link every component, and every container that has no component view of
+its own, to its entry or module file; a data store may link to the code
+that names its paths. A container that *has* a component view is entered,
+not linked. In a flowchart, a node does the same with `click`:
 
 ```
 flowchart LR
@@ -95,10 +171,9 @@ flowchart LR
   click core href "crates/uze-core/src/lib.rs"
 ```
 
-The surface opens it. This is the one thing that turns a diagram from a
-picture into a way into the code, and nothing else in the file offers it —
-use it wherever a box stands for something a reader would then want to go
-and read. Paths are relative to the project.
+The surface opens it. This is what turns a diagram from a picture into a
+way into the code — use it wherever a box stands for something a reader
+would then want to go and read. Paths are relative to the project.
 
 ## Prove it draws — this is not optional
 
