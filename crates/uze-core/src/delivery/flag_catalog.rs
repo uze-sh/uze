@@ -106,8 +106,10 @@ mod tests {
 
     #[test]
     fn a_flag_is_given_once_unless_declared_repeatable() {
-        assert!(!MODEL.repeatable);
-        assert!(MODEL.repeatable().repeatable);
+        let model = MODEL;
+
+        assert!(!model.repeatable);
+        assert!(model.repeatable().repeatable);
     }
 
     #[test]
