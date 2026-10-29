@@ -714,6 +714,41 @@ fn the_harness_changes_on_the_overrides_view_and_the_overrides_follow() {
     assert_eq!(entries(&driven), vec![vec!["DEBUG=1".to_owned()]]);
 }
 
+/// While a free value is typed there is nothing to list, so the list's
+/// room says what the flag is and that other users can read its value,
+/// once, centred as an empty state is, and the detail row stays empty.
+#[test]
+fn a_free_value_being_typed_is_said_centred_in_the_lists_room() {
+    let mut popup = popup("overrides-free-value");
+    let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
+    driven.frame();
+    open_by_key(&mut driven);
+    type_text(&mut driven, "--model ");
+    let (_, rows) = popup_rows(&mut driven);
+    let all = rows.join("\n");
+    let said: Vec<usize> = rows
+        .iter()
+        .enumerate()
+        .filter(|(_, row)| row.contains("other users can see flag values"))
+        .map(|(at, _)| at)
+        .collect();
+    assert_eq!(said.len(), 1, "said once:\n{all}");
+    let at = said[0];
+    assert!(at > 6 && at < rows.len() - 6, "centred down:\n{all}");
+    let row = &rows[at];
+    let inside = &row[row.find('│').unwrap() + '│'.len_utf8()..row.rfind('│').unwrap()];
+    let text = inside.trim();
+    let (before, after) = inside.split_once(text).unwrap();
+    assert!(
+        before.chars().count().abs_diff(after.chars().count()) <= 1,
+        "centred across: {row}"
+    );
+    assert!(
+        !rows[at - 1].trim_matches('│').trim().is_empty(),
+        "what the flag is, over it:\n{all}"
+    );
+}
+
 /// Enter on an empty line with nothing marked starts the agent, with the
 /// entries the step holds.
 #[test]

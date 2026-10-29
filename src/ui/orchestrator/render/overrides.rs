@@ -174,6 +174,12 @@ fn render_list(
         return;
     }
     let list = step.override_rows();
+    if list.is_empty()
+        && let Some(flag) = free_flag_being_valued(step)
+    {
+        render_value_wanted(frame, area, &flag);
+        return;
+    }
     if list.is_empty() {
         let nothing = over.line.text().trim().is_empty()
             && step.entries().is_empty()
@@ -380,6 +386,35 @@ fn render_list_row(
 /// The detail line: why the line was refused, the marked row's detail,
 /// a word on secrets while a flag's value is typed, or what an entry
 /// gives up.
+/// The flag whose free value is being typed, when one is: nothing to
+/// offer under the line then but what the flag is and who sees its value.
+fn free_flag_being_valued(step: &DirectoryStep) -> Option<OverrideFlag> {
+    step.flag_being_valued()
+        .filter(|flag| matches!(flag.value, OverrideValue::Free(_)))
+}
+
+/// While a free value is typed, what the list's room says instead of a
+/// list, centred as an empty state is: what the flag is, and under it,
+/// held back, that every user on the machine can read a flag's value.
+fn render_value_wanted(frame: &mut ratatui::Frame<'_>, area: Rect, flag: &OverrideFlag) {
+    let lines = vec![
+        Line::from(Span::styled(
+            flag_detail(flag),
+            theme::fg(Token::TextSecondary),
+        )),
+        Line::from(Span::styled(
+            FLAG_VALUES_ARE_SEEN,
+            theme::fg(Token::TextFaint),
+        )),
+    ];
+    let height = (lines.len() as u16).min(area.height);
+    let top = area.y + (area.height - height) / 2;
+    frame.render_widget(
+        Paragraph::new(lines).alignment(ratatui::layout::Alignment::Center),
+        Rect::new(area.x, top, area.width, height),
+    );
+}
+
 fn detail(step: &DirectoryStep) -> Option<(String, Token)> {
     let over = step.overrides.as_ref()?;
     if let Some(refusal) = &over.refusal {
@@ -389,10 +424,9 @@ fn detail(step: &DirectoryStep) -> Option<(String, Token)> {
     if let Some(row) = over.marked.and_then(|marked| rows.get(marked)) {
         return Some(row_detail(step, *row));
     }
-    if let Some(flag) = step.flag_being_valued()
-        && matches!(flag.value, OverrideValue::Free(_))
-    {
-        return Some((FLAG_VALUES_ARE_SEEN.to_owned(), Token::TextSecondary));
+    // A free value being typed is said where the list would be.
+    if free_flag_being_valued(step).is_some() {
+        return None;
     }
     if let Some(flag) = step.flag_typed().or_else(|| step.flag_being_valued()) {
         let tone = if cost(flag.mark).is_some() {

@@ -485,6 +485,11 @@ operator rather than assume.
   matches, no overrides used before) says so centred in the list's own
   room, across and down (`message::render_message`), never on its first
   row.
+- The same holds while a line typed into wants a free value and so has
+  nothing to list: what is said about it (the flag's summary, and under
+  it, held back, that other users can read flag values) stands centred in
+  the list's room, never floating on a detail row with empty rows around
+  it.
 - Minimal: one centred short title, with an optional muted line.
 - No hint bar, no stray esc, no empty sidebar slot.
 - The drawer goes away.
