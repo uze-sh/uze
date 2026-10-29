@@ -303,8 +303,9 @@ Against the operator's mockup and the design-system rules:
 - **Two views, named on the top border:** `new agent · overrides` stand
   where the title would be, the first one standing for it, parted by the
   hint bar's separator, the one in front in the accent and the other held
-  back (colour only: no ground and no hover; their own hit target, so
-  pointing at one never lights the foot's `ctrl+f` hint). Under the border
+  back (colour only, no ground; the held-back one lit under the pointer,
+  through a hit target of its own, so pointing at it never lights the
+  foot's `ctrl+f` hint). Under the border
   the harness row, `‹ Claude Code ›` unlabelled against its end, and a
   rule, then the view in front:
   `new agent` is the filter and the listing, `overrides` the line, the

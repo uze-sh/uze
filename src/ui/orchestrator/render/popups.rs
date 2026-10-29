@@ -120,7 +120,7 @@ pub(in crate::ui::orchestrator) fn render_directory_step(
     // The border's targets go in after the card's own, which covers the
     // whole popup and must not answer a click on them.
     let mut on_border = Vec::new();
-    let views = card_views(step, popup, &mut on_border);
+    let views = card_views(model, step, popup, &mut on_border);
     let inner = new_agent_card(frame, popup, Some(views), hits);
     hits.extend(on_border);
     let (body, mut foot) = split_bottom(inner, NEW_AGENT_POPUP_FOOT);
@@ -173,20 +173,26 @@ const OVERRIDES_SCOPES: [uze_keys::Scope; 2] =
 /// (the directory) or `overrides`, where its title would be and standing
 /// for it, the one in front in the accent.
 fn card_views(
+    model: &WorkspaceModel,
     step: &DirectoryStep,
     popup: Rect,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) -> Line<'static> {
     let on_overrides = step.overrides.is_some();
+    // Lit by pointing at the view itself, never at the foot's hint for
+    // the same key: each answers the pointer on its own.
+    let hovered = |action: Action| model.hovered == Some(WorkspaceHit::ViewAction(action));
     let segments = [
         Segment {
             label: "new agent",
             target: on_overrides.then_some(Action::Dismiss),
+            hovered: on_overrides && hovered(Action::Dismiss),
         },
         Segment {
             label: "overrides",
             target: (!on_overrides && step.chosen_harness().is_some())
                 .then_some(Action::OpenOverrides),
+            hovered: !on_overrides && hovered(Action::OpenOverrides),
         },
     ];
     let (views, targets) = segmented(&segments, usize::from(on_overrides));

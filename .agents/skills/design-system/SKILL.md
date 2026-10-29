@@ -151,9 +151,10 @@ on "cancel" must not save first.
   separator glyph alone (`new agent · overrides`), closer than a hint
   bar's keys. The one in front is in the accent and the rest held
   back: colour alone tells them apart, never a ground, a weight or a
-  button's look, and they take no hover. A click on one is the key that
-  reaches it, through a target of its own (`WorkspaceHit::ViewAction`), so
-  pointing at a view never lights the foot's hint for the same key. The
+  button's look; the held-back ones light under the pointer, in colour
+  alone. A click on one is the key that reaches it, through a target of
+  its own (`WorkspaceHit::ViewAction`), so pointing at a view lights that
+  view and never the foot's hint for the same key. The
   body under the border starts with its field, unlabelled against the
   row's end (`‹ Claude Code ›`), drawn alike on every view so nothing
   shifts when they switch, and changeable on every view (what a view

@@ -958,6 +958,7 @@ impl Attach<'_> {
                     matches!(
                         hit,
                         WorkspaceHit::HintAction(_)
+                            | WorkspaceHit::ViewAction(_)
                             | WorkspaceHit::HarnessArrow(_)
                             | WorkspaceHit::OverrideRow(_)
                             | WorkspaceHit::OverrideEntryClose(_)

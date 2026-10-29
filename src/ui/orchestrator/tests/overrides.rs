@@ -289,10 +289,10 @@ fn the_head_chooses_the_view_and_a_note_counts_the_overrides() {
     assert!(rows[last - 4].contains("1 flag") && rows[last - 4].contains("1 var"));
 }
 
-/// The segment in front is in the accent and the other held back, parted
-/// by the hint bar's separator. Colour alone tells them apart: no ground,
-/// no weight, and nothing under the pointer; and pointing at one never
-/// lights the foot's hint for the same key. In the light theme too.
+/// The segment in front is in the accent and the other held back, lit
+/// under the pointer, parted by the separator. Colour alone tells them
+/// apart: no ground and no weight; and pointing at one never lights the
+/// foot's hint for the same key. In the light theme too.
 #[test]
 fn the_segments_are_told_apart_by_colour_alone() {
     for name in ["dark", "light"] {
@@ -347,7 +347,12 @@ fn the_segments_are_told_apart_by_colour_alone() {
                 crossterm::event::MouseEventKind::Moved,
             );
             let (_, pointed, pointed_foot) = cells(&mut driven);
-            assert_eq!(pointed.fg, other.fg, "no hover on a segment: {name}");
+            assert_eq!(
+                pointed.fg,
+                theme::color(Token::TextBright),
+                "the segment lights: {name}"
+            );
+            assert_eq!(pointed.bg, other.bg, "in colour alone: {name}");
             assert_eq!(
                 pointed_foot.fg, foot.fg,
                 "the foot's hint stays put: {name}"
