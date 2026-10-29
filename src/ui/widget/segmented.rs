@@ -34,7 +34,9 @@ pub(crate) fn segmented<T: Clone>(
     let mut placed = Vec::new();
     for (index, segment) in segments.iter().enumerate() {
         if index > 0 {
-            let gap = format!(" {} ", theme::glyph(Symbol::HintSeparator));
+            // The separator alone, its own air and no more: a hint bar's
+            // keys are spread wider, views on a border sit close.
+            let gap = theme::glyph(Symbol::HintSeparator);
             at += gap.chars().count() as u16;
             spans.push(Span::styled(gap, theme::fg(Token::TextFaint)));
         }

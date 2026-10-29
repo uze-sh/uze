@@ -148,7 +148,8 @@ on "cancel" must not save first.
   agent's `new agent · overrides`) names them on its top border, where its
   title would be, the first view's name standing for the title
   (`widget::segmented`, drawn with `Surface::title_line`), parted by the
-  hint bar's ` · `. The one in front is in the accent and the rest held
+  separator glyph alone (`new agent · overrides`), closer than a hint
+  bar's keys. The one in front is in the accent and the rest held
   back: colour alone tells them apart, never a ground, a weight or a
   button's look, and they take no hover. A click on one is the key that
   reaches it, through a target of its own (`WorkspaceHit::ViewAction`), so
@@ -477,6 +478,10 @@ operator rather than assume.
 - Counts are minimal (`1/5`). There are no raw logs in the UI.
 
 **Empty states:**
+- A list inside a popover that has nothing to show (no directory
+  matches, no overrides used before) says so centred in the list's own
+  room, across and down (`message::render_message`), never on its first
+  row.
 - Minimal: one centred short title, with an optional muted line.
 - No hint bar, no stray esc, no empty sidebar slot.
 - The drawer goes away.

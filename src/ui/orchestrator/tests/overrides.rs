@@ -327,7 +327,7 @@ fn the_segments_are_told_apart_by_colour_alone() {
                 };
                 let separator = theme::glyph(Symbol::HintSeparator);
                 assert!(
-                    line.contains(&format!("new agent {separator} overrides")),
+                    line.contains(&format!("new agent{separator}overrides")),
                     "parted as the keys are: {line}"
                 );
                 (
@@ -824,11 +824,18 @@ fn an_empty_history_and_an_empty_catalog_say_little() {
             sets: Vec::new(),
         });
     }
-    let rows = screen(&mut driven);
+    let (_, rows) = popup_rows(&mut driven);
+    let at = rows
+        .iter()
+        .position(|row| row.contains("no overrides used before"))
+        .unwrap_or_else(|| panic!("{}", rows.join("\n")));
+    let row = &rows[at];
+    let (before, after) = row.split_once("no overrides used before").unwrap();
+    let (before, after) = (before.chars().count(), after.chars().count());
+    assert!(before.abs_diff(after) <= 1, "centred across: {row}");
     assert!(
-        rows.iter()
-            .any(|row| row.contains("no overrides used before")),
-        "{}",
+        at > 6 && at < rows.len() - 6,
+        "centred down the list:\n{}",
         rows.join("\n")
     );
     type_text(&mut driven, "--");

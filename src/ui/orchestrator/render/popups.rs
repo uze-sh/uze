@@ -875,12 +875,14 @@ fn render_root_picker(
     render_query_row(frame, picker, rows);
     popup_rule(frame, rows);
     if picker.match_count() == 0 {
-        if let Some(rect) = rows.next(1) {
-            let spans = vec![
-                picker_lead(),
-                Span::styled("no directory matches", theme::fg(Token::TextFaint)),
-            ];
-            frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+        if let Some(rect) = rows.next(rows.remaining()) {
+            crate::ui::widget::message::render_message(
+                frame,
+                rect,
+                "no directory matches",
+                None,
+                theme::color(Token::TextFaint),
+            );
         }
         return;
     }

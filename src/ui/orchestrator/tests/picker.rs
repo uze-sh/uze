@@ -1009,3 +1009,36 @@ fn a_new_agent_opens_in_the_space_it_was_asked_from() {
         "and no space is opened for its project: {sent:?}"
     );
 }
+
+/// A filter nothing matches says so once, centred in the listing's room,
+/// as an empty state does, never against its first row.
+#[test]
+fn a_filter_nothing_matches_says_so_centred() {
+    let root = uze_testkit::temp::TempDir::new("popup-empty-root");
+    std::fs::create_dir_all(root.join("engine")).unwrap();
+    let mut model = agent_session_in("/repo");
+    directory_step_over(&mut model, root.path(), &bare_home("popup-empty"));
+    if let Some(step) = model.directory_step.as_mut() {
+        for character in "zzz".chars() {
+            step.picker.typed(character);
+        }
+    }
+
+    let (rows, _) = drawn(&mut model);
+    let prompt = rows
+        .iter()
+        .position(|row| row.contains("zzz"))
+        .expect("the line is drawn");
+    let at = rows
+        .iter()
+        .position(|row| row.contains("no directory matches"))
+        .unwrap_or_else(|| panic!("{rows:#?}"));
+    assert!(at > prompt + 3, "centred down the listing: {rows:#?}");
+    let row = &rows[at];
+    let inside = &row[row.find('│').unwrap() + '│'.len_utf8()..row.rfind('│').unwrap()];
+    let (before, after) = inside.split_once("no directory matches").unwrap();
+    assert!(
+        before.chars().count().abs_diff(after.chars().count()) <= 1,
+        "centred across: {row}"
+    );
+}

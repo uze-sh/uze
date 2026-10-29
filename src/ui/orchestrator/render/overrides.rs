@@ -179,11 +179,13 @@ fn render_list(
             && step.entries().is_empty()
             && step.recent_sets().is_some_and(<[_]>::is_empty);
         if nothing {
-            let line = Line::from(vec![
-                picker_lead(),
-                Span::styled(NOTHING_USED_YET, theme::fg(Token::TextFaint)),
-            ]);
-            frame.render_widget(Paragraph::new(line), Rect { height: 1, ..area });
+            crate::ui::widget::message::render_message(
+                frame,
+                area,
+                NOTHING_USED_YET,
+                None,
+                theme::color(Token::TextFaint),
+            );
         }
         return;
     }
