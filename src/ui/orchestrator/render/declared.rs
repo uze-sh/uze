@@ -73,9 +73,16 @@ pub(super) fn render_declared_drawer(
     let Some(place) = slot.drawer_place() else {
         return false;
     };
-    let area = match place.fit {
-        true => fitted(area, place.side, model, slot),
-        false => area,
+    // A card that fits what it holds is measured from the view it then
+    // draws: one build at one room each frame, which the engine keeps
+    // between frames, where measuring at one room and drawing at another
+    // built it twice every frame.
+    let (area, measured) = match place.fit {
+        true => {
+            let (area, view, space) = fitted(area, place.side, model, slot);
+            (area, Some((view, space)))
+        }
+        false => (area, None),
     };
     model.dock_drawn.set(Some(area));
     let gap = match place.float {
@@ -100,12 +107,14 @@ pub(super) fn render_declared_drawer(
         Some(_) => crate::ui::extension_view::tree::render_title(frame, inner, &slot.surface.title),
         None => inner,
     };
-    let space = uze_extensions::view::Size {
-        width: content.width,
-        height: content.height,
-    };
+    let (view, space) = measured.unwrap_or_else(|| {
+        let space = uze_extensions::view::Size {
+            width: content.width,
+            height: content.height,
+        };
+        (model.surface_view(slot, space), space)
+    });
     model.dock_space.set(space);
-    let view = model.surface_view(slot, space);
     let hovered = match model.hovered {
         Some(WorkspaceHit::Extension(ExtensionHit { slot: hovered, hit }))
             if hovered == slot.id =>
@@ -152,14 +161,15 @@ pub(super) fn render_declared_drawer(
 
 /// `area` cut to the rows `slot`'s view needs, against `side`: its foot
 /// on the bottom or a side, where the bar item that opens it stands, its
-/// head on the top. The view is asked at the card's width, as it will be
-/// drawn.
+/// head on the top; with the view it measured and the room it was asked
+/// at, which is what is drawn. The view is asked at the card's width, as
+/// it will be drawn, and at the most rows it may have.
 fn fitted(
     area: Rect,
     side: uze_contract::DrawerSide,
     model: &WorkspaceModel,
     slot: &HostedSlot,
-) -> Rect {
+) -> (Rect, uze_extensions::view::View, uze_extensions::view::Size) {
     let width = area.width.saturating_sub(2);
     let space = uze_extensions::view::Size {
         width,
@@ -167,17 +177,18 @@ fn fitted(
     };
     let view = model.surface_view(slot, space);
     let Some(rows) = crate::ui::extension_view::docked_rows(&view, width) else {
-        return area;
+        return (area, view, space);
     };
     let height = rows.saturating_add(CARD_CHROME_ROWS).min(area.height);
-    match side {
+    let card = match side {
         uze_contract::DrawerSide::Top => Rect { height, ..area },
         _ => Rect {
             y: area.bottom() - height,
             height,
             ..area
         },
-    }
+    };
+    (card, view, space)
 }
 
 /// The status rows, one under another from where `rows` stands, each

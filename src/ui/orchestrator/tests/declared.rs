@@ -27,6 +27,11 @@ struct Board {
     compiles: usize,
 }
 
+thread_local! {
+    /// How many times the board was asked for its view on this thread.
+    static BOARD_VIEWS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 impl Extension for Board {
     fn identity(&self) -> String {
         "board".to_owned()
@@ -45,6 +50,7 @@ impl Extension for Board {
     }
 
     fn view(&self, _surface: &str, _space: Size) -> Option<View> {
+        BOARD_VIEWS.with(|built| built.set(built.get() + 1));
         let mut root = Node::new(0, NodeKind::Stack { gap: 0 });
         root.children = vec![
             Node::new(
@@ -2581,4 +2587,23 @@ fn a_docked_drawers_dragged_width_is_not_a_floating_ones() {
             assert_eq!(after, expected);
         }
     }
+}
+
+/// A drawer that fits what it holds is measured from the view it draws:
+/// one view a frame, not one to measure and another to draw.
+#[test]
+fn a_fitted_drawer_asks_for_its_view_once_a_frame() {
+    let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("drawer-fit-once"));
+    let mut model = hosting_a_drawer(Some(uze_contract::DrawerDecl {
+        side: uze_contract::DrawerSide::Right,
+        float: true,
+        fit: true,
+    }));
+    let slot = drawer_slot(&model);
+    model.toggle_drawer(slot, ratatui::layout::Rect::new(0, 0, 200, 60));
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    driven.frame();
+    BOARD_VIEWS.with(|built| built.set(0));
+    driven.frame();
+    assert_eq!(BOARD_VIEWS.with(std::cell::Cell::get), 1);
 }
