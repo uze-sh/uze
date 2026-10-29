@@ -29,9 +29,10 @@ repeated, so typing them again on every launch is the cost that matters.
   safety or switches off delivery) and which of them UZE owns. The catalog
   drives completion and the refusal alike; a flag outside it is still
   accepted as typed.
-- **Recent overrides are remembered.** Each launch that carried overrides
-  is kept per harness, across projects, in a short history the popup
-  offers first (this project's sets ahead of the rest), so a set used before is applied again in one gesture.
+- **Recent overrides are remembered.** Each flag and variable a launch
+  carried is kept per harness, across projects, in a short history the
+  popup offers as choices (this project's entries ahead of the rest), so
+  one used before is included again in one gesture, one at a time.
 - **An agent keeps the overrides it was launched with.** A private
   record holds them, so a respawned pane and a resumed task start the same way; an
   agent continued on another harness drops them, and says so.
@@ -84,7 +85,7 @@ repeated, so typing them again on every launch is the cost that matters.
 - `uze-integrations`: one catalog per harness (Claude Code, Codex,
   OpenCode, Antigravity CLI), kept to each harness's latest release.
 - `uze-workspace`: one owner-only record (`state/launch-overrides.json`)
-  holding each agent's overrides and the recent sets; the check; `LaunchPlan` carries the
+  holding each agent's overrides and the recent entries; the check; `LaunchPlan` carries the
   overrides the shim splices. `agents.json` is not touched.
 - `uze-application`: read models for the catalog and the history, a
   validation service, and launches that take overrides.

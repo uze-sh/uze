@@ -2,7 +2,8 @@
 
 Lets the operator give one agent's launch extra harness flags and
 environment variables from the workspace, without ever displacing what UZE
-composes for that launch, and apply a set used before in one gesture.
+composes for that launch, and include again, one by one, the flags and
+variables used before.
 
 ## ADDED Requirements
 
@@ -178,27 +179,31 @@ say so on the agent's tab.
 - **THEN** the entry is accepted and marked, saying the installed MCP servers will not load
 
 ### Requirement: Recent overrides are offered again
-The system SHALL remember each distinct set of overrides a launch carried,
-per harness across projects, keeping a bounded number, and SHALL offer
-them in the overrides step with none marked, so Enter still launches,
-those last used in this project first. Taking one SHALL replace the
-entries being edited.
+The system SHALL remember each flag, with its value, and each variable a
+launch carried as an entry of its own, per harness across projects,
+keeping a bounded number, and SHALL offer each in the overrides step as a
+choice the launch includes or leaves out, none marked, so Enter still
+launches, those last used in this project first.
 
-#### Scenario: Applying a recent set
-- **WHEN** the operator has `--verbose` entered, marks a remembered set and takes it
-- **THEN** the set's flags and variables replace `--verbose` and can still be edited before launching
+#### Scenario: A recent entry is offered per harness, this project's first
+- **WHEN** the operator opens the overrides step after launches on that harness here and in another project
+- **THEN** each flag and variable used is one row, left out, this project's first, another project's naming it
 
-#### Scenario: The same set twice
-- **WHEN** a set already remembered is launched again
+#### Scenario: Including and leaving out an entry
+- **WHEN** the operator checks `--model opus` and leaves `--verbose` unchecked, then launches
+- **THEN** the agent starts with `--model opus` and without `--verbose`
+
+#### Scenario: The same entry twice
+- **WHEN** an entry already remembered is launched again
 - **THEN** the history holds it once, at the top
 
-#### Scenario: A set from another project
-- **WHEN** the operator opens the overrides step in a project where `--model opus` was never used, after using it in another project
-- **THEN** `--model opus` is offered after this project's own sets, naming the project it was last used in
+#### Scenario: Forgetting an entry
+- **WHEN** the operator removes a remembered entry from the list
+- **THEN** it is no longer offered for that harness in any project, and this launch leaves it out
 
-#### Scenario: Forgetting a set
-- **WHEN** the operator removes a remembered set from the list
-- **THEN** it is no longer offered for that harness in any project
+#### Scenario: Space switches the marked row
+- **WHEN** the operator marks a row with the arrows and presses space
+- **THEN** that entry is included or left out, and with no row marked space is typed into the line
 
 ### Requirement: Overrides stay private to the operator
 The system SHALL keep recorded and remembered overrides readable by the
@@ -210,9 +215,9 @@ value holds a URL with credentials before its host.
 - **WHEN** a launch carrying `API_TOKEN=secret` is traced
 - **THEN** the trace says how many overrides it carried and never the value
 
-#### Scenario: A secret in a remembered set
+#### Scenario: A secret among remembered entries
 - **WHEN** a launch carrying `API_TOKEN=secret` and `--model opus` is remembered
-- **THEN** the history holds `--model opus` and says one variable was not kept
+- **THEN** the history holds `--model opus` and not the variable
 
 #### Scenario: Credentials in a variable's value
 - **WHEN** a launch carrying `DATABASE_URL=postgres://u:pw@h/db` is remembered

@@ -54,6 +54,7 @@
 - [x] 5.6 Draft per harness inside the popup; applying a recent set replaces the entries; forgetting a set from its row
 - [x] 5.7 Foot hints for both steps with click == key tests; empty, narrow-width and light-mode `TestBackend` tests
 - [x] 5.8 The agent's overview names its overrides under its harness
+- [x] 5.9 Recent overrides one entry at a time: the history keeps each flag (with its value) and variable, split against the catalog; the list under the line is a list of choices (`◉`/`○`, `✕` forgets), the entries added first, space switching the marked row and Delete its `✕`; click == key tests
 
 ## 6. Close
 

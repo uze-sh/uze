@@ -344,3 +344,33 @@
 > harness at the border's end and no head row; the overrides line looks
 > like the directory's; the count is a muted line at the body's foot with
 > air over and under it, not on the border.
+
+## D33 — The history keeps entries, split against the catalog at the launch
+
+- status:   pending
+- task:     5.9
+- commit:   bdeeead9
+- trigger:  The operator asked for recent overrides one flag or variable per row with a checkbox ("I may have five flags used recently but want only three"); the history kept whole sets, and a word list alone does not say whether `opus` after `--model` is its value.
+- decided:  `recent` holds `RecentEntry { words, project, last_used_unix }`, one per flag-with-value or variable; `record_launch` takes the harness's `FlagCatalog` and splits the launch with `overrides::entries`, keeping flags and variables, never a variable that reads as a secret, and puts them at the top in the launch's order. Shape stays 1: the record is unreleased. `withheld` goes, with nothing left to count against. A recent entry the catalog of today refuses is not offered.
+- rejected: Grouping words by a heuristic (a word after a flag is its value) without the catalog: an optional-value or unknown flag would swallow the next one. Splitting at read time: the record would need the catalog of the day it was written to read back.
+- blast:    `record.rs` (type, `record_launch` signature, `recent_entries`, `forget_recent_entry`); `launching_with` passes the integration's catalog; the application's `recent_overrides`/`forget_recent_override` and the `RecentOverride` re-export.
+
+## D34 — The list under the line is the entries: one list of choices
+
+- status:   pending
+- task:     5.9
+- commit:   bdeeead9
+- trigger:  With each entry a choice, the block of entries added above the list would show every checked entry twice.
+- decided:  The block goes. The list is the entries added that the history does not hold, in the order added, then the entries used lately, each `◉` when the harness's draft holds it; leaving out one only added takes it off the list. While a flag is typed the list holds completions instead; when the line has no completion (a variable being typed) the choices stay in view. Enter on the line adds its entries checked, an exact duplicate not twice.
+- rejected: Keeping the block and a separate recent list with checkboxes: two places for one entry, and the checkbox and the block's `✕` would say the same thing.
+- blast:    `launch_overrides.rs` (`choices`, `toggle_choice`, `close_choice`), `render/overrides.rs` (`render_choice_row`; `render_entries` gone), hits `OverrideToggle`/`OverrideClose` in place of `OverrideEntryClose`/`ForgetOverrides`.
+
+## D35 — Space switches a marked choice; Enter still launches
+
+- status:   pending
+- task:     5.9
+- commit:   bdeeead9
+- trigger:  The step is a line typed into, so space is text there, and the design system's lists of choices switch with space; Enter on a marked row used to take a set.
+- decided:  `space` is bound to `ToggleChoice` in `LaunchOverrides`: it switches the marked choice and, with none marked, types a space. Enter with a choice marked answers the whole question, as in the `Choose` scope (`new` on an empty line, `add` with text), and takes only a marked completion. Delete on a marked choice is its `✕` (`forget` for one used before, `remove` for one only added). The foot names `space toggle · delete <word>` only while a choice is marked, and `tab complete` only while there are completions; `esc back` gives way when the keys need the room.
+- rejected: Enter switching the marked choice too: two keys for one thing, and ↓ space ↓ space Enter could no longer launch from the list. Space always typed: the operator asked for space to switch the marked row.
+- blast:    One binding in `uze-keys/load.rs`; `overrides_action`'s `ToggleChoice`/`EraseForward` arms; the overrides foot in `popups.rs`.

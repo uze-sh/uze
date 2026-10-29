@@ -45,7 +45,7 @@ the approach:
 - Overrides reach the harness without turning off continuity, the agent
   context, the reporter or memory-off.
 - One place, the integration, says which flags and variables are UZE's.
-- A set used before is one gesture away.
+- A flag or variable used before is one gesture away, one at a time.
 
 **Non-Goals:**
 - Project-declared defaults (a `workspace:` key in `agents.yaml` naming
@@ -93,7 +93,7 @@ beside its siblings `provisioning.json` and `hosts.json`, and named after `theme
 
 ```
 { agents: { <project id>: { <agent id>: { <integration>: [tokens] } } },
-  recent: { <integration>: [ { tokens, withheld: n, project, last_used_unix } ] } }
+  recent: { <integration>: [ { words, project, last_used_unix } ] } }
 ```
 
 Read-modify-write under a lock beside it. Tier: *record*, since losing it
@@ -103,8 +103,8 @@ Global rather than per project because most overrides are habits of the
 operator (`--model`, `--permission-mode`, `--verbose`), not of a project;
 a per-project history would have them typed again in every repository.
 The few that are a project's (`--add-dir ../lib`, `DATABASE_URL=…`) are
-handled by order, not by scope: each set remembers the project it was
-last used in, and the list shows this project's sets first, then the
+handled by order, not by scope: each entry remembers the project it was
+last used in, and the list shows this project's entries first, then the
 others.
 
 Rejected: a field on `Agent`. `agents.json` is world-readable, and a shape
@@ -230,15 +230,20 @@ hue. Backspace on an empty line removes the last entry.
 
 ### 7. History
 
-Up to 20 sets per harness, this project's first and then the rest, each
-group most recent first, identified by their normalized tokens so the
-same set moves to the top and takes the project it was last used in. A variable whose name
+The history keeps entries, not launches: a flag with the value it took
+(`--model opus`) or a variable (`DEBUG=1`), split from the launch's words
+against the harness's catalog, so one launch's five flags can be taken
+back three at a time. Up to 20 entries per harness, this project's first
+and then the rest, each group most recent first, identified by their
+words so the same entry moves to the top and takes the project it was
+last used in; a launch puts its entries at the top in its own order, and
+the same flag with another value is another entry. A variable whose name
 reads as a secret (`TOKEN`, `SECRET`, `PASS`, `PWD`, `CRED`, `KEY`,
 `AUTH` or `DSN` anywhere in it, upper-cased, or `PAT` as a `_`-separated
 part; withholding `AUTHOR` too is the price of never keeping `GH_PAT`),
 or whose value holds a URL with credentials before its host
-(`DATABASE_URL=postgres://u:pw@h/db`, `https://key@host`), is not kept:
-the set counts it in `withheld` and its row says `1 variable not kept`. Spans carry
+(`DATABASE_URL=postgres://u:pw@h/db`, `https://key@host`), is never
+kept as an entry. Spans carry
 `overrides = <count>`, never a token.
 
 ### 8. Proving the catalog
@@ -308,15 +313,15 @@ Against the operator's mockup and the design-system rules:
   foot's `ctrl+f` hint). Under the border
   the harness row, `‹ Claude Code ›` unlabelled against its end, and a
   rule, then the view in front:
-  `new agent` is the filter and the listing, `overrides` the line, the
-  entries and the list, in the same rows, each line typed into in the
+  `new agent` is the filter and the listing, `overrides` the line and
+  the list of choices, in the same rows, each line typed into in the
   same look. At the body's foot, with air over and under it, one muted
   line counts the overrides once there are any (`3 flags · 2 vars`, in
   the warning hue when one gives something up); with none it says
   nothing. A click on `overrides`, or `ctrl+f`, opens that view; a click
   on `new agent`, or Esc, goes back. On `overrides` the arrow keys move the
   caret, but the harness keeps its arrows, drawn alike, and a click on
-  one changes the harness there: the entries, the catalog and the sets
+  one changes the harness there: the entries, the catalog and the entries
   used lately follow it, each kept per harness. The popup is
   52 columns with 8 to 12 listing rows; `esc close` gives way to `ctrl+f
   overrides` in the foot.
@@ -325,34 +330,42 @@ Against the operator's mockup and the design-system rules:
   harness. The new action's default chord is the operator's call.
 - **A draft per harness inside the popup**, so going back and moving the
   harness shows that harness's entries, never another harness's flags.
-- **Not prefilled with the last set.** The harness is prefilled because a
-  wrong harness is visible and harmless; a sticky
-  `--dangerously-skip-permissions` is neither. The last set heads the
-  history instead.
+- **Not prefilled with the last launch.** The harness is prefilled because
+  a wrong harness is visible and harmless; a sticky
+  `--dangerously-skip-permissions` is neither. What was used lately is
+  offered unchecked instead.
 - **The step, top to bottom:** the typed line (underline, caret, no raised
-  band, which the mockup has); the entries added, one row each with an `x`
-  in `mark::close_tone`; then a list: `recent` sets for this harness while
-  the line is empty (this project's first, another project's sets naming
-  it, muted, at their end), the catalog's completions while typing, a flag's
-  accepted values after a `OneOf` flag and a space. Under a rule, a detail
+  band, which the mockup has); then a list of choices, one row per entry:
+  the entries added that the history does not hold, in the order added,
+  then the entries used lately on this harness (this project's first,
+  another project's naming it, muted, at their end), each `◉` when the
+  launch carries it and `○` when not, with a `✕` in `mark::close_tone`
+  against its end. An entry the catalog of today refuses is not offered.
+  While a flag is typed the list holds the catalog's completions instead,
+  and a flag's accepted values after a `OneOf` flag and a space. Under a rule, a detail
   line of fixed height for the marked row (`Permission mode · default,
   acceptEdits, plan`) instead of the mockup's right column cut mid-word.
   Rows say at their end only what is known: `value`, `repeatable`,
   `unknown`.
 - **Keys in the step:** `←→` move the caret (its own scope), `↑↓` mark in
   the list, which opens with nothing marked; Tab completes; Enter adds the
-  line, takes the marked row, or, with an empty line and nothing marked,
-  launches.
+  line (its entries checked), takes the marked completion, or, with an
+  empty line, launches, a choice marked included. Space switches the
+  marked choice and is typed when none is; Delete on a marked choice is
+  its `✕`, which leaves it out and forgets one used before. A click on a
+  choice's row marks it, on its mark switches it, on its `✕` closes it.
 - **States by token:** `Weakens` and `Degrades` carry the warning hue and
-  `Symbol::Warning` on the entry and on the history row, and the detail
+  `Symbol::Warning` on the choice's row, and the detail
   line names what is lost; a refused token the danger hue, the detail line
   says why (`managed by uze · conversations continue on their own`).
 - **Words in English**, lowercase: the mockup's Portuguese (`adicionar`,
   `escolher`, `voltar`, the flag descriptions) becomes English.
 - **Foot:** first step `enter new · ←→ harness · <key> overrides`, `esc
   close`; overrides step `enter add · tab complete · esc back`, Enter named
-  by what it does there: `new` on an empty line with nothing marked,
-  `take` with a row marked, `add` otherwise. Every hint
+  by what it does there: `new` on an empty line, `take` with a completion
+  marked, `add` otherwise; with a choice marked, `space toggle · delete
+  forget` (`remove` for one only added), `tab complete` only while there
+  are completions. Every hint
   a click target with a click == key test.
 - **After launch:** the agent's overview names its overrides under its
   harness. A launch carrying a `Weakens` flag, a respawn included, says so
