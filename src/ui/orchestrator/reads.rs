@@ -1427,7 +1427,7 @@ pub(super) fn spawn_prompt_history(
     });
 }
 
-/// Reads the sets of overrides used lately on `harness`, as seen from
+/// Reads the overrides used lately on `harness`, one entry each, as seen from
 /// `root`, having first forgotten `forget` when one is given: a file, and
 /// nothing the popup draws waits on one. The answer names its question.
 pub(super) fn spawn_recent_overrides(
@@ -1441,15 +1441,15 @@ pub(super) fn spawn_recent_overrides(
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _pass = crate::telemetry::background_pass!("tui.recent_overrides", parent: &parent);
-        let sets = answered_or(
+        let entries = answered_or(
             || {
                 tui_application(home)
                     .map(|app| {
                         if let Some(words) = &forget
                             && let Err(error) =
-                                app.workspace().forget_recent_overrides(&harness, words)
+                                app.workspace().forget_recent_override(&harness, words)
                         {
-                            tracing::warn!(%error, "a set of overrides could not be forgotten");
+                            tracing::warn!(%error, "an override used before could not be forgotten");
                         }
                         app.workspace().recent_overrides(&harness, &root)
                     })
@@ -1460,7 +1460,7 @@ pub(super) fn spawn_recent_overrides(
         let _ = sender.send(RecentOverridesRead {
             harness,
             root,
-            sets,
+            entries,
         });
     });
 }

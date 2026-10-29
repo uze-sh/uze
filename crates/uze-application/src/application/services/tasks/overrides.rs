@@ -37,6 +37,9 @@ impl Workspace<'_> {
                 &placed.project,
                 &agent,
                 &harness,
+                self.integration(&harness)
+                    .map(IntegrationPort::flag_catalog)
+                    .unwrap_or_default(),
                 words,
             )
         {

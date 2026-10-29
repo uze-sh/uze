@@ -952,7 +952,15 @@ mod tests {
         let (task, other) = (AgentId::generate(), AgentId::generate());
         let opus = ["--model".to_owned(), "opus".to_owned()];
         for agent in [&task, &other] {
-            crate::overrides::record::record_launch(&home, &root, agent, "codex", &opus).unwrap();
+            crate::overrides::record::record_launch(
+                &home,
+                &root,
+                agent,
+                "codex",
+                uze_core::flag_catalog::FlagCatalog::default(),
+                &opus,
+            )
+            .unwrap();
         }
 
         forget(&home, &root, &task);

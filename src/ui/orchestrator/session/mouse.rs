@@ -281,8 +281,8 @@ impl Attach<'_> {
                     Some(WorkspaceHit::HarnessArrow(step)) => self.cycle_popup_harness(step),
                     Some(
                         hit @ (WorkspaceHit::OverrideRow(_)
-                        | WorkspaceHit::OverrideEntryClose(_)
-                        | WorkspaceHit::ForgetOverrides(_)
+                        | WorkspaceHit::OverrideToggle(_)
+                        | WorkspaceHit::OverrideClose(_)
                         | WorkspaceHit::OverridesScroll),
                     ) => self.press_overrides(hit, mouse.row),
                     Some(WorkspaceHit::NewAgentBody) => {}
@@ -899,23 +899,28 @@ impl Attach<'_> {
         Flow::Continue
     }
 
-    /// A press on one of the overrides step's own targets: a list row is
-    /// taken as Enter takes it marked, a close mark takes its entry away or
-    /// forgets its set, and the scrollbar is held.
+    /// A press on one of the overrides step's own targets: a completion is
+    /// taken as Enter takes it marked, a choice's row is marked and its
+    /// mark switches it, as space does, a close mark leaves its entry out
+    /// and forgets one used before, and the scrollbar is held.
     fn press_overrides(&mut self, hit: WorkspaceHit, row: u16) {
         let Some(step) = self.model.directory_step.as_mut() else {
             return;
         };
         match hit {
-            WorkspaceHit::OverrideRow(index) => {
-                if let Some(taken) = step.override_rows().get(index).copied() {
-                    step.take_row(taken);
+            WorkspaceHit::OverrideRow(index) => match step.override_rows().get(index).copied() {
+                Some(OverrideRow::Choice(_)) => {
+                    if let Some(over) = step.overrides.as_mut() {
+                        over.marked = Some(index);
+                    }
                 }
-            }
-            WorkspaceHit::OverrideEntryClose(index) => step.remove_entry(index),
-            WorkspaceHit::ForgetOverrides(index) => {
-                if let OverridesOutcome::Forget(words) = step.forget(index) {
-                    self.forget_recent_overrides(words);
+                Some(taken) => step.take_row(taken),
+                None => {}
+            },
+            WorkspaceHit::OverrideToggle(index) => step.toggle_choice(index),
+            WorkspaceHit::OverrideClose(index) => {
+                if let OverridesOutcome::Forget(words) = step.close_choice(index) {
+                    self.forget_recent_override(words);
                 }
             }
             WorkspaceHit::OverridesScroll => {
@@ -961,8 +966,8 @@ impl Attach<'_> {
                             | WorkspaceHit::ViewAction(_)
                             | WorkspaceHit::HarnessArrow(_)
                             | WorkspaceHit::OverrideRow(_)
-                            | WorkspaceHit::OverrideEntryClose(_)
-                            | WorkspaceHit::ForgetOverrides(_)
+                            | WorkspaceHit::OverrideToggle(_)
+                            | WorkspaceHit::OverrideClose(_)
                     )
                 });
                 if self.model.hovered != control {
@@ -1596,8 +1601,8 @@ impl Attach<'_> {
             WorkspaceHit::NewSpace => self.open_new_space(columns, rows),
             WorkspaceHit::PickDirectory(_)
             | WorkspaceHit::OverrideRow(_)
-            | WorkspaceHit::OverrideEntryClose(_)
-            | WorkspaceHit::ForgetOverrides(_)
+            | WorkspaceHit::OverrideToggle(_)
+            | WorkspaceHit::OverrideClose(_)
             | WorkspaceHit::OverridesScroll => {
                 // Only reachable while the directory step is open,
                 // which the guarded arm above already handles —

@@ -182,7 +182,7 @@ scopes! {
     /// The directory picker a new space is born from.
     RootPicker => "root-picker", "Choosing a directory", Workspace, seals: true, text: true;
     /// The new agent's overrides step: a line typed into, whose caret the
-    /// sideways keys move, over the entries and the sets used lately.
+    /// sideways keys move, over the list of entries to include.
     LaunchOverrides => "launch-overrides", "Adding launch overrides", Workspace,
         seals: true, text: true;
     /// The inline rename buffer over a tab or space label.

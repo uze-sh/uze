@@ -106,7 +106,7 @@ pub use uze_workspace::{
     conversation::Claim,
     declaration::{ActionState, DeclarationKey, DeclarationProblem, DeclaredValue, Edit},
     notifications::{Chime, WrittenChime},
-    overrides::record::RecentSet as RecentOverrides,
+    overrides::record::RecentEntry as RecentOverride,
     overrides::{Unterminated as OverrideLineOpen, Verdict as OverrideVerdict},
     project_labels::{ProjectLabels, directory_name},
     prompt_history::{PromptAge, PromptClock, PromptEntry, PromptOrigin},

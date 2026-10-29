@@ -919,13 +919,16 @@ pub(super) enum WorkspaceHit {
     /// the harness step.
     PickDirectory(usize),
     /// One row of the overrides step's list, by its place in the list:
-    /// a click takes it, as Enter on it marked does.
+    /// a click takes a completion, as Enter on it marked does, and marks a
+    /// choice, as the arrows do.
     OverrideRow(usize),
-    /// The close mark of an entry the overrides step holds, by its place.
-    OverrideEntryClose(usize),
-    /// The close mark of a set used before, by its place among the sets
-    /// read: forgets it.
-    ForgetOverrides(usize),
+    /// The `◉`/`○` mark of a choice, by its place among the choices:
+    /// switches it, as space on it marked does.
+    OverrideToggle(usize),
+    /// The close mark of a choice, by its place among the choices: leaves
+    /// it out of the launch and forgets one used before, as Delete on it
+    /// marked does.
+    OverrideClose(usize),
     /// The overrides list's scrollbar, on the popup's edge.
     OverridesScroll,
     /// The tab strip's count of what the focused checkout's upstream has

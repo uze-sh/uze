@@ -191,13 +191,22 @@ on "cancel" must not save first.
   started (a new agent's launch overrides), is never prefilled from last
   time: it opens empty, and the last values head a history under it, to
   be taken back on purpose.
+- That history is a list of choices, one row per value, never per
+  bundle of them: the overrides list holds each flag or variable once
+  (`◉ --model opus ✕`), the ones added first, then the ones used lately,
+  `◉` when this launch carries it and `○` when not, its close mark
+  against the end leaving it out and forgetting one used before. Space
+  switches the row marked (and is typed when none is), Delete is the
+  close mark, Enter still answers the whole question (`new`), and the
+  foot names space and Delete only while a row is marked (`space toggle
+  · delete forget`, `remove` for one only added).
 - A popover's foot names its keys and nothing else (`enter new · ←→
   harness`), with `esc close` alone against its end. Where the keys that
   act there need its room, `esc close` is the one left unsaid: Esc closes
   everything anyway. A key whose job
   changes with the state is named by what it does now, from the same
   answer the key acts on (the overrides step's Enter: `new` on an empty
-  line, `take` with a row marked, `add` otherwise).
+  line, `take` with a completion marked, `add` otherwise).
 - `Tab` in a line typed into completes, as it does in a shell; it never
   takes another job there. What Enter acts on is already on screen, in the
   field and the row marked; a sentence repeating it crowds the keys out.

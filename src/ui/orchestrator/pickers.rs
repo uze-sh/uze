@@ -77,7 +77,7 @@ pub(super) struct DirectoryStep {
     /// The overrides added in this popup, by harness: moving the harness
     /// shows that harness's, never another's flags.
     pub(super) drafts: BTreeMap<String, Vec<OverrideEntry>>,
-    /// The sets used lately, as last read.
+    /// The entries used lately, as last read.
     pub(super) recent: Option<RecentOverridesRead>,
     /// The read of them that is out, so a step opened again before it
     /// answers asks nothing more.

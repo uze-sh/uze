@@ -1,12 +1,13 @@
 //! The record of launch overrides: what each agent was launched with, per
-//! harness, and the sets the operator used lately, per harness.
+//! harness, and the entries the operator used lately, per harness.
 //!
 //! One document for the machine rather than one per project: most
 //! overrides are the operator's habits (`--model`, `--verbose`), and a
 //! history per project would have them typed again in every repository.
-//! The few that belong to a project are handled by order instead: each set
-//! remembers the project it was last used in, and that project lists its
-//! own first. Owner-only, written under its lock, and read without it by
+//! The few that belong to a project are handled by order instead: each
+//! entry remembers the project it was last used in, and that project lists
+//! its own first. The history keeps entries, not whole launches, so one
+//! launch's five flags can be taken back three at a time. Owner-only, written under its lock, and read without it by
 //! a launch, which an atomic write never shows half-written.
 //!
 //! What is typed is kept as the words it split into, and read as entries
@@ -27,7 +28,7 @@ use crate::{
     task::AgentId,
 };
 
-/// Sets kept per harness, across every project.
+/// Entries kept per harness, across every project.
 const RECENT_PER_HARNESS: usize = 20;
 /// How long a write waits for another one, each a small rewrite.
 const LOCK_PATIENCE: Duration = Duration::from_secs(2);
@@ -42,21 +43,19 @@ const SECRET_FRAGMENTS: &[&str] = &[
 /// `_`-separated part: `GH_PAT`, not `PATH`.
 const SECRET_PARTS: &[&str] = &["PAT"];
 
-/// A set of overrides used before, as the history offers it again.
+/// One override used before, as the history offers it again: a flag with
+/// the value it took (`--model opus`), or a variable (`DEBUG=1`).
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RecentSet {
-    /// The words of the set, without the variables that read as secrets.
-    pub tokens: Vec<String>,
-    /// How many variables were not kept because they read as secrets.
-    #[serde(default)]
-    pub withheld: usize,
-    /// The project the set was last used in.
+pub struct RecentEntry {
+    /// The words of the entry, as typed.
+    pub words: Vec<String>,
+    /// The project the entry was last used in.
     pub project: PathBuf,
     pub last_used_unix: u64,
 }
 
-impl RecentSet {
-    /// Whether the set was last used in `project_root`.
+impl RecentEntry {
+    /// Whether the entry was last used in `project_root`.
     pub fn used_in(&self, project_root: &Path) -> bool {
         self.project == canonical(project_root)
     }
@@ -73,7 +72,7 @@ struct LaunchOverridesRecord {
     agents: BTreeMap<String, BTreeMap<String, ByHarness>>,
     /// By harness, most recent first.
     #[serde(default)]
-    recent: BTreeMap<String, Vec<RecentSet>>,
+    recent: BTreeMap<String, Vec<RecentEntry>>,
 }
 
 impl Default for LaunchOverridesRecord {
@@ -111,26 +110,50 @@ pub fn recorded(
 }
 
 /// Records that `agent` is launched on `integration` with `tokens`, and
-/// remembers the set among the recent ones. A launch with none clears what
-/// the agent had on that harness and remembers nothing.
+/// remembers each of their entries, read against `catalog`, among the
+/// recent ones. A launch with none clears what the agent had on that
+/// harness and remembers nothing.
 pub fn record_launch(
     home: &UzeHome,
     project_root: &Path,
     agent: &AgentId,
     integration: &str,
+    catalog: FlagCatalog,
     tokens: &[String],
 ) -> Result<()> {
-    record_launch_at(home, project_root, agent, integration, tokens, now_unix())
+    record_launch_at(
+        home,
+        project_root,
+        &Launch {
+            agent,
+            integration,
+            catalog,
+            tokens,
+        },
+        now_unix(),
+    )
+}
+
+/// One launch, as it is recorded.
+struct Launch<'a> {
+    agent: &'a AgentId,
+    integration: &'a str,
+    catalog: FlagCatalog,
+    tokens: &'a [String],
 }
 
 fn record_launch_at(
     home: &UzeHome,
     project_root: &Path,
-    agent: &AgentId,
-    integration: &str,
-    tokens: &[String],
+    launch: &Launch<'_>,
     now: u64,
 ) -> Result<()> {
+    let Launch {
+        agent,
+        integration,
+        catalog,
+        tokens,
+    } = *launch;
     rewrite(home, |record| {
         let project = project_id(project_root);
         if tokens.is_empty() {
@@ -144,7 +167,8 @@ fn record_launch_at(
             .entry(agent.as_str().to_owned())
             .or_default()
             .insert(integration.to_owned(), tokens.to_vec());
-        remember(record, integration, tokens, &canonical(project_root), now);
+        let entries = super::entries(tokens, catalog);
+        remember(record, integration, &entries, &canonical(project_root), now);
     })
 }
 
@@ -169,30 +193,30 @@ pub fn forget_agent(home: &UzeHome, project_root: &Path, agent: &AgentId) -> Res
     })
 }
 
-/// The sets used lately on `integration`: those last used in
+/// The entries used lately on `integration`: those last used in
 /// `project_root` first, then the others, each group most recent first.
-pub fn recent(home: &UzeHome, integration: &str, project_root: &Path) -> Vec<RecentSet> {
+pub fn recent_entries(home: &UzeHome, integration: &str, project_root: &Path) -> Vec<RecentEntry> {
     let project = canonical(project_root);
-    let (mut here, elsewhere): (Vec<RecentSet>, Vec<RecentSet>) = read(home)
+    let (mut here, elsewhere): (Vec<RecentEntry>, Vec<RecentEntry>) = read(home)
         .recent
         .remove(integration)
         .unwrap_or_default()
         .into_iter()
-        .partition(|set| set.project == project);
+        .partition(|entry| entry.project == project);
     here.extend(elsewhere);
     here
 }
 
-/// Forgets the set `tokens` on `integration`, in every project, and says
+/// Forgets the entry `words` on `integration`, in every project, and says
 /// whether there was one.
-pub fn forget_recent(home: &UzeHome, integration: &str, tokens: &[String]) -> Result<bool> {
+pub fn forget_recent_entry(home: &UzeHome, integration: &str, words: &[String]) -> Result<bool> {
     let mut forgotten = false;
     rewrite(home, |record| {
-        if let Some(sets) = record.recent.get_mut(integration) {
-            let before = sets.len();
-            sets.retain(|set| set.tokens != tokens);
-            forgotten = sets.len() != before;
-            if sets.is_empty() {
+        if let Some(entries) = record.recent.get_mut(integration) {
+            let before = entries.len();
+            entries.retain(|entry| entry.words != words);
+            forgotten = entries.len() != before;
+            if entries.is_empty() {
                 record.recent.remove(integration);
             }
         }
@@ -220,54 +244,57 @@ fn forget_harness(
     }
 }
 
-/// Puts the set at the top of `integration`'s history, taking the project
-/// it is used in now. A set is the words kept, so the same flags with a
-/// different secret are one set.
+/// Puts each of a launch's flags and variables at the top of
+/// `integration`'s history, in the launch's order, each taking the project
+/// it is used in now. An entry is its words, so the same flag with another
+/// value is another entry. A variable that reads as a secret is never
+/// remembered.
 fn remember(
     record: &mut LaunchOverridesRecord,
     integration: &str,
-    tokens: &[String],
+    entries: &[super::Entry],
     project: &Path,
     now: u64,
 ) {
-    let (tokens, withheld) = without_secrets(tokens);
-    if tokens.is_empty() {
+    let kept: Vec<Vec<String>> = entries
+        .iter()
+        .filter(|entry| match entry {
+            super::Entry::Variable { name, value } => !reads_as_secret(name, value),
+            super::Entry::Flag { .. } => true,
+            super::Entry::Positional(_) | super::Entry::EndOfOptions => false,
+        })
+        .map(super::Entry::words)
+        .fold(Vec::new(), |mut kept, words| {
+            if !kept.contains(&words) {
+                kept.push(words);
+            }
+            kept
+        });
+    if kept.is_empty() {
         return;
     }
-    let sets = record.recent.entry(integration.to_owned()).or_default();
-    sets.retain(|set| set.tokens != tokens);
-    sets.insert(
-        0,
-        RecentSet {
-            tokens,
-            withheld,
+    let history = record.recent.entry(integration.to_owned()).or_default();
+    history.retain(|entry| !kept.contains(&entry.words));
+    history.splice(
+        0..0,
+        kept.into_iter().map(|words| RecentEntry {
+            words,
             project: project.to_path_buf(),
             last_used_unix: now,
-        },
+        }),
     );
-    sets.truncate(RECENT_PER_HARNESS);
+    history.truncate(RECENT_PER_HARNESS);
 }
 
-/// `tokens` without the variables that read as a secret, by name or by a
-/// URL with credentials in their value, and how many there were.
-fn without_secrets(tokens: &[String]) -> (Vec<String>, usize) {
-    let (secrets, kept): (Vec<&String>, Vec<&String>) =
-        tokens.iter().partition(|token| reads_as_secret(token));
-    (kept.into_iter().cloned().collect(), secrets.len())
-}
-
-fn reads_as_secret(token: &str) -> bool {
-    match super::entries(&[token.to_owned()], FlagCatalog::default()).as_slice() {
-        [super::Entry::Variable { name, value }] => {
-            let name = name.to_ascii_uppercase();
-            SECRET_FRAGMENTS
-                .iter()
-                .any(|fragment| name.contains(fragment))
-                || name.split('_').any(|part| SECRET_PARTS.contains(&part))
-                || carries_credentials(value)
-        }
-        _ => false,
-    }
+/// Whether the variable `name=value` reads as a secret, by its name or by
+/// a URL with credentials in its value.
+fn reads_as_secret(name: &str, value: &str) -> bool {
+    let name = name.to_ascii_uppercase();
+    SECRET_FRAGMENTS
+        .iter()
+        .any(|fragment| name.contains(fragment))
+        || name.split('_').any(|part| SECRET_PARTS.contains(&part))
+        || carries_credentials(value)
 }
 
 /// Whether `value` holds a URL with credentials before its host
@@ -331,6 +358,26 @@ fn now_unix() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uze_core::flag_catalog::{FlagGrammar, FlagOwner, FlagSpec, FlagValue};
+
+    /// A catalog that knows which flags take a value, naming no harness.
+    const CATALOG: FlagCatalog = FlagCatalog::new(
+        FlagGrammar::Posix,
+        &[
+            FlagSpec::new(
+                &["--model"],
+                FlagValue::Free("model"),
+                "model",
+                FlagOwner::Operator,
+            ),
+            FlagSpec::new(
+                &["--add-dir"],
+                FlagValue::Free("dir"),
+                "dir",
+                FlagOwner::Operator,
+            ),
+        ],
+    );
 
     struct Fixture {
         home: UzeHome,
@@ -355,19 +402,30 @@ mod tests {
             record_launch_at(
                 &self.home,
                 project,
-                &AgentId::adopted(agent),
-                harness,
-                &crate::overrides::split(line).unwrap(),
+                &Launch {
+                    agent: &AgentId::adopted(agent),
+                    integration: harness,
+                    catalog: CATALOG,
+                    tokens: &crate::overrides::split(line).unwrap(),
+                },
                 at,
             )
             .unwrap();
         }
 
         fn recent_lines(&self, harness: &str, project: &Path) -> Vec<String> {
-            recent(&self.home, harness, project)
+            recent_entries(&self.home, harness, project)
                 .into_iter()
-                .map(|set| set.tokens.join(" "))
+                .map(|entry| entry.words.join(" "))
                 .collect()
+        }
+    }
+
+    /// Whether `word` is a variable the history would not keep.
+    fn remembered_as_secret(word: &str) -> bool {
+        match crate::overrides::entries(&[word.to_owned()], CATALOG).as_slice() {
+            [crate::overrides::Entry::Variable { name, value }] => reads_as_secret(name, value),
+            _ => false,
         }
     }
 
@@ -435,21 +493,55 @@ mod tests {
     }
 
     #[test]
-    fn the_same_set_twice_is_held_once_at_the_top_taking_the_later_project() {
-        let fixture = Fixture::new("overrides-same-set");
-        fixture.launch(&fixture.here, "a1", "first", "--model opus", 1);
-        fixture.launch(&fixture.here, "a2", "first", "--verbose", 2);
-        fixture.launch(&fixture.there, "a3", "first", "--model opus", 3);
+    fn a_launch_is_remembered_entry_by_entry_in_its_order() {
+        let fixture = Fixture::new("overrides-entries");
+        fixture.launch(&fixture.here, "a1", "first", "--verbose", 1);
+        fixture.launch(
+            &fixture.here,
+            "a2",
+            "first",
+            "--model opus DEBUG=1 --add-dir ../lib",
+            2,
+        );
 
-        let sets = recent(&fixture.home, "first", &fixture.there);
-        assert_eq!(sets.len(), 2);
-        assert_eq!(sets[0].tokens, ["--model", "opus"]);
-        assert!(sets[0].used_in(&fixture.there));
-        assert_eq!(sets[0].last_used_unix, 3);
+        assert_eq!(
+            fixture.recent_lines("first", &fixture.here),
+            ["--model opus", "DEBUG=1", "--add-dir ../lib", "--verbose"]
+        );
     }
 
     #[test]
-    fn this_projects_sets_come_first_then_the_others_each_most_recent_first() {
+    fn the_same_entry_twice_is_held_once_at_the_top_taking_the_later_project() {
+        let fixture = Fixture::new("overrides-same-entry");
+        fixture.launch(&fixture.here, "a1", "first", "--model opus --verbose", 1);
+        fixture.launch(&fixture.here, "a2", "first", "--debug", 2);
+        fixture.launch(&fixture.there, "a3", "first", "--model opus", 3);
+
+        let entries = recent_entries(&fixture.home, "first", &fixture.there);
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].words, ["--model", "opus"]);
+        assert!(entries[0].used_in(&fixture.there));
+        assert_eq!(entries[0].last_used_unix, 3);
+        assert_eq!(
+            fixture.recent_lines("first", &fixture.here),
+            ["--debug", "--verbose", "--model opus"]
+        );
+    }
+
+    #[test]
+    fn the_same_flag_with_another_value_is_another_entry() {
+        let fixture = Fixture::new("overrides-other-value");
+        fixture.launch(&fixture.here, "a1", "first", "--model opus", 1);
+        fixture.launch(&fixture.here, "a2", "first", "--model sonnet", 2);
+
+        assert_eq!(
+            fixture.recent_lines("first", &fixture.here),
+            ["--model sonnet", "--model opus"]
+        );
+    }
+
+    #[test]
+    fn this_projects_entries_come_first_then_the_others_each_most_recent_first() {
         let fixture = Fixture::new("overrides-order");
         fixture.launch(&fixture.there, "a1", "first", "--model opus", 1);
         fixture.launch(&fixture.here, "a2", "first", "--verbose", 2);
@@ -461,13 +553,13 @@ mod tests {
             fixture.recent_lines("first", &fixture.here),
             ["--add-dir ../lib", "--verbose", "--debug", "--model opus"]
         );
-        let sets = recent(&fixture.home, "first", &fixture.here);
-        assert!(!sets[2].used_in(&fixture.here));
-        assert_eq!(sets[2].project, fixture.there);
+        let entries = recent_entries(&fixture.home, "first", &fixture.here);
+        assert!(!entries[2].used_in(&fixture.here));
+        assert_eq!(entries[2].project, fixture.there);
     }
 
     #[test]
-    fn the_history_keeps_twenty_sets_per_harness() {
+    fn the_history_keeps_twenty_entries_per_harness() {
         let fixture = Fixture::new("overrides-cap");
         for index in 0..25 {
             fixture.launch(&fixture.here, "a1", "first", &format!("--n{index}"), index);
@@ -482,7 +574,7 @@ mod tests {
     }
 
     #[test]
-    fn a_secret_variable_is_not_remembered_and_is_counted() {
+    fn a_secret_variable_is_not_remembered() {
         let fixture = Fixture::new("overrides-secrets");
         fixture.launch(
             &fixture.here,
@@ -492,9 +584,10 @@ mod tests {
             1,
         );
 
-        let sets = recent(&fixture.home, "first", &fixture.here);
-        assert_eq!(sets[0].tokens, ["--model", "opus"]);
-        assert_eq!(sets[0].withheld, 1);
+        assert_eq!(
+            fixture.recent_lines("first", &fixture.here),
+            ["--model opus"]
+        );
         // The agent's own launch still carries it.
         assert_eq!(
             recorded(&fixture.home, &fixture.here, &agent("a1"), "first"),
@@ -520,7 +613,7 @@ mod tests {
             "DB_PWD=x",
             "SENTRY_DSN=x",
         ] {
-            assert!(reads_as_secret(secret), "{secret}");
+            assert!(remembered_as_secret(secret), "{secret}");
         }
         for plain in [
             "DEBUG=1",
@@ -529,7 +622,7 @@ mod tests {
             "EXTRA_PATH=x",
             "--api-key=x",
         ] {
-            assert!(!reads_as_secret(plain), "{plain}");
+            assert!(!remembered_as_secret(plain), "{plain}");
         }
     }
 
@@ -541,7 +634,7 @@ mod tests {
             "PROXY=http://user@proxy:8080",
             "MIRRORS=a,https://u:p@m.example/x",
         ] {
-            assert!(reads_as_secret(secret), "{secret}");
+            assert!(remembered_as_secret(secret), "{secret}");
         }
         for plain in [
             "HOMEPAGE=https://example.com/a@b",
@@ -549,27 +642,27 @@ mod tests {
             "MAILTO=me@example.com",
             "REPO=git@github.com:o/r",
         ] {
-            assert!(!reads_as_secret(plain), "{plain}");
+            assert!(!remembered_as_secret(plain), "{plain}");
         }
     }
 
     #[test]
-    fn a_set_of_secrets_only_is_not_remembered() {
+    fn a_launch_of_secrets_only_remembers_nothing() {
         let fixture = Fixture::new("overrides-secrets-only");
         fixture.launch(&fixture.here, "a1", "first", "API_KEY=x", 1);
 
-        assert!(recent(&fixture.home, "first", &fixture.here).is_empty());
+        assert!(recent_entries(&fixture.home, "first", &fixture.here).is_empty());
     }
 
     #[test]
-    fn a_forgotten_set_is_offered_in_no_project() {
-        let fixture = Fixture::new("overrides-forget-set");
-        fixture.launch(&fixture.here, "a1", "first", "--model opus", 1);
+    fn a_forgotten_entry_is_offered_in_no_project() {
+        let fixture = Fixture::new("overrides-forget-entry");
+        fixture.launch(&fixture.here, "a1", "first", "--model opus --verbose", 1);
         fixture.launch(&fixture.there, "a2", "first", "--verbose", 2);
 
         let opus = vec!["--model".to_owned(), "opus".to_owned()];
-        assert!(forget_recent(&fixture.home, "first", &opus).unwrap());
-        assert!(!forget_recent(&fixture.home, "first", &opus).unwrap());
+        assert!(forget_recent_entry(&fixture.home, "first", &opus).unwrap());
+        assert!(!forget_recent_entry(&fixture.home, "first", &opus).unwrap());
 
         assert_eq!(fixture.recent_lines("first", &fixture.here), ["--verbose"]);
         assert_eq!(fixture.recent_lines("first", &fixture.there), ["--verbose"]);

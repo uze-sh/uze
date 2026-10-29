@@ -3752,9 +3752,13 @@ mod overrides_tests {
             "the launcher says what it leaves out: {:?}",
             placement.warnings
         );
-        let recent = app.workspace().recent_overrides("one", &root);
-        assert_eq!(recent.len(), 1);
-        assert_eq!(recent[0].tokens, words("--model opus DEBUG=1"));
+        let recent: Vec<Vec<String>> = app
+            .workspace()
+            .recent_overrides("one", &root)
+            .into_iter()
+            .map(|entry| entry.words)
+            .collect();
+        assert_eq!(recent, [words("--model opus"), words("DEBUG=1")]);
     }
 
     /// The client's harness list is read when it attaches, and its tab runs

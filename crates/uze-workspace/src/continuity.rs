@@ -1700,6 +1700,7 @@ mod tests {
             primary,
             &store.agents[0].id,
             "harness",
+            uze_core::flag_catalog::FlagCatalog::default(),
             &overrides::split(line).unwrap(),
         )
         .unwrap();

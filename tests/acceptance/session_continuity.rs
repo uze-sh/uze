@@ -382,6 +382,7 @@ fn with_overrides(env: &TestEnvironment, primary: &Path, id: &str, line: &str) {
         primary,
         &uze_workspace::task::AgentId::adopted(id),
         INTEGRATION,
+        uze_core::flag_catalog::FlagCatalog::default(),
         &uze_workspace::overrides::split(line).unwrap(),
     )
     .unwrap();

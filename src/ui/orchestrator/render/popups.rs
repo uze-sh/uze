@@ -301,10 +301,22 @@ fn render_new_agent_foot(
         _ => None,
     };
     let (keys, close) = if step.overrides.is_some() {
+        let mut keys = crate::ui::widget::hint::Hints::new(&OVERRIDES_SCOPES)
+            .named(Action::Activate, step.enter_does().word());
+        if let Some(choice) = step.marked_choice() {
+            let close = match step.choices().get(choice).and_then(|it| it.recent) {
+                Some(_) => "forget",
+                None => "remove",
+            };
+            keys = keys
+                .named(Action::ToggleChoice, "toggle")
+                .named(Action::EraseForward, close);
+        }
+        if step.completes() {
+            keys = keys.named(Action::Expand, "complete");
+        }
         (
-            crate::ui::widget::hint::Hints::new(&OVERRIDES_SCOPES)
-                .named(Action::Activate, step.enter_does().word())
-                .named(Action::Expand, "complete"),
+            keys,
             crate::ui::widget::hint::Hints::new(&OVERRIDES_SCOPES).named(Action::Dismiss, "back"),
         )
     } else {

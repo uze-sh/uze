@@ -1,16 +1,18 @@
 //! The new agent's overrides: the entries the popup holds for each
 //! harness, the step they are added in, and what its list offers.
 //!
-//! Everything here is a judgement on what is in front of the operator and
-//! asks nothing of the machine: the catalog travels with the harness, and
-//! checking a line against it is pure. The sets used lately are the one
-//! read, asked for off this thread and absorbed into
+//! The list under the line is a list of choices: every entry added and
+//! every entry used lately, one row each, marked `◉` when this launch
+//! carries it. Everything here is a judgement on what is in front of the
+//! operator and asks nothing of the machine: the catalog travels with the
+//! harness, and checking a line against it is pure. The entries used
+//! lately are the one read, asked for off this thread and absorbed into
 //! [`DirectoryStep::recent`].
 
 use std::cell::Cell;
 
 use uze_application::{
-    OverrideCatalog, OverrideFlag, OverrideMark, OverrideValue, OverrideVerdict, RecentOverrides,
+    OverrideCatalog, OverrideFlag, OverrideMark, OverrideValue, OverrideVerdict, RecentOverride,
 };
 
 use super::*;
@@ -24,8 +26,8 @@ pub(super) type OverrideEntry = Vec<String>;
 /// kept a token back.
 pub(super) struct OverridesStep {
     pub(super) line: RenameBuffer,
-    /// The list row Enter takes; none until the arrows mark one, so Enter
-    /// on an empty line launches.
+    /// The list row the keys act on; none until the arrows mark one, so
+    /// Enter on an empty line launches and space types.
     pub(super) marked: Option<usize>,
     /// The first list row shown, kept where the list last scrolled to.
     pub(super) top: Cell<usize>,
@@ -94,19 +96,31 @@ impl OverridesStep {
     }
 }
 
-/// The sets used lately on one harness, as read from one directory: those
-/// last used in its project first.
+/// The entries used lately on one harness, as read from one directory:
+/// those last used in its project first.
 pub(super) struct RecentOverridesRead {
     pub(super) harness: String,
     pub(super) root: PathBuf,
-    pub(super) sets: Vec<RecentOverrides>,
+    pub(super) entries: Vec<RecentOverride>,
+}
+
+/// One row of the list of choices: an entry this launch may carry.
+pub(super) struct OverrideChoice<'a> {
+    /// The entry's words, as typed.
+    pub(super) words: &'a [String],
+    /// What the history knows of it, when it was used before.
+    pub(super) recent: Option<&'a RecentOverride>,
+    /// The launch carries it: it is among the entries of the harness in
+    /// front.
+    pub(super) checked: bool,
 }
 
 /// One row of the list under the line.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum OverrideRow {
-    /// A set used before, by its place among the sets read.
-    Recent(usize),
+    /// An entry to include or leave out, by its place among
+    /// [`DirectoryStep::choices`].
+    Choice(usize),
     /// A flag of the catalog the word typed is the head of.
     Flag(OverrideFlag),
     /// A value the flag before the word typed accepts.
@@ -116,9 +130,11 @@ pub(super) enum OverrideRow {
 /// What Enter does in the overrides step as it stands.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum EnterDoes {
-    /// Takes the row marked in the list.
+    /// Takes the completion marked in the list.
     Take(OverrideRow),
-    /// Starts the agent: the line is empty and nothing is marked.
+    /// Starts the agent: the line is empty and no completion is marked.
+    /// A choice marked is space's to switch, so Enter still launches, as it
+    /// answers a list of choices anywhere.
     Launch,
     /// Adds the line typed as entries.
     Add,
@@ -140,9 +156,9 @@ impl EnterDoes {
 pub(super) enum OverridesOutcome {
     /// The popup took it.
     Kept,
-    /// Enter on an empty line with nothing marked: start the agent.
+    /// Enter on an empty line with no completion marked: start the agent.
     Launch,
-    /// Forget the set of these words on the harness in front.
+    /// Forget the entry of these words on the harness in front.
     Forget(Vec<String>),
 }
 
@@ -254,27 +270,62 @@ impl DirectoryStep {
         self.entries().iter().flatten().cloned().collect()
     }
 
-    /// Where the sets used lately are read from: the directory chosen, or
-    /// the one being listed.
+    /// Where the entries used lately are read from: the directory chosen,
+    /// or the one being listed.
     pub(super) fn overrides_root(&self) -> PathBuf {
         self.picker
             .chosen()
             .unwrap_or_else(|| self.picker.origin().to_path_buf())
     }
 
-    /// The question a read of the sets used lately answers now.
+    /// The question a read of the entries used lately answers now.
     pub(super) fn recent_question(&self) -> Option<(String, PathBuf)> {
         let harness = self.chosen_harness()?.integration.clone();
         Some((harness, self.overrides_root()))
     }
 
-    /// The sets used lately on the harness in front, once read.
-    pub(super) fn recent_sets(&self) -> Option<&[RecentOverrides]> {
+    /// The entries used lately on the harness in front, once read.
+    pub(super) fn recent_entries(&self) -> Option<&[RecentOverride]> {
         let (harness, root) = self.recent_question()?;
         self.recent
             .as_ref()
             .filter(|read| read.harness == harness && read.root == root)
-            .map(|read| read.sets.as_slice())
+            .map(|read| read.entries.as_slice())
+    }
+
+    /// The list of choices: the entries added that the history does not
+    /// hold, in the order added, then the entries used lately, each checked
+    /// when the launch carries it. An entry used lately that the catalog
+    /// of today refuses is not offered.
+    pub(super) fn choices(&self) -> Vec<OverrideChoice<'_>> {
+        let added = self.entries();
+        let catalog = self.catalog();
+        let recent: Vec<&RecentOverride> = self
+            .recent_entries()
+            .unwrap_or_default()
+            .iter()
+            .filter(|entry| {
+                !catalog
+                    .check_words(&entry.words)
+                    .iter()
+                    .any(|checked| checked.verdict.is_refused())
+            })
+            .collect();
+        let mut choices: Vec<OverrideChoice<'_>> = added
+            .iter()
+            .filter(|words| !recent.iter().any(|entry| entry.words == **words))
+            .map(|words| OverrideChoice {
+                words,
+                recent: None,
+                checked: true,
+            })
+            .collect();
+        choices.extend(recent.into_iter().map(|entry| OverrideChoice {
+            words: &entry.words,
+            recent: Some(entry),
+            checked: added.contains(&entry.words),
+        }));
+        choices
     }
 
     pub(super) fn open_overrides(&mut self) {
@@ -283,27 +334,96 @@ impl DirectoryStep {
         }
     }
 
-    /// Takes away the entry at `index`.
-    pub(super) fn remove_entry(&mut self, index: usize) {
+    /// Switches the choice at `index`: a launch carrying it leaves it out,
+    /// and one leaving it out carries it, after the entries it has.
+    pub(super) fn toggle_choice(&mut self, index: usize) {
+        let Some((words, checked)) = self
+            .choices()
+            .get(index)
+            .map(|choice| (choice.words.to_vec(), choice.checked))
+        else {
+            return;
+        };
         let entries = self.entries_mut();
-        if index < entries.len() {
-            entries.remove(index);
+        if checked {
+            entries.retain(|entry| *entry != words);
+        } else {
+            entries.push(words);
+        }
+        self.keep_mark_in_the_list();
+    }
+
+    /// What the close mark of the choice at `index` asks: the launch leaves
+    /// it out, and one used before is forgotten too, which the session does
+    /// off this thread.
+    pub(super) fn close_choice(&mut self, index: usize) -> OverridesOutcome {
+        let Some((words, recent)) = self
+            .choices()
+            .get(index)
+            .map(|choice| (choice.words.to_vec(), choice.recent.is_some()))
+        else {
+            return OverridesOutcome::Kept;
+        };
+        self.entries_mut().retain(|entry| *entry != words);
+        self.keep_mark_in_the_list();
+        if recent {
+            OverridesOutcome::Forget(words)
+        } else {
+            OverridesOutcome::Kept
         }
     }
 
-    /// What the list under the line offers: the sets used lately while
-    /// nothing is typed, the catalog's flags while one is, and a flag's
-    /// values after it and a space.
+    /// A choice left out that the history does not hold leaves the list:
+    /// the mark moves onto the row that takes its place, or off the end.
+    fn keep_mark_in_the_list(&mut self) {
+        let rows = self.override_rows().len();
+        if let Some(step) = self.overrides.as_mut() {
+            step.marked = step.marked.and_then(|marked| match rows {
+                0 => None,
+                _ => Some(marked.min(rows - 1)),
+            });
+        }
+    }
+
+    /// The choice the arrows mark, when they mark one.
+    pub(super) fn marked_choice(&self) -> Option<usize> {
+        let marked = self.overrides.as_ref()?.marked?;
+        match self.override_rows().get(marked) {
+            Some(OverrideRow::Choice(index)) => Some(*index),
+            _ => None,
+        }
+    }
+
+    /// What the list under the line offers: while a flag is typed, the
+    /// catalog's flags it is the head of, or a flag's values after it and
+    /// a space; while a free value is typed, nothing; otherwise the list
+    /// of choices.
     pub(super) fn override_rows(&self) -> Vec<OverrideRow> {
         let Some(step) = &self.overrides else {
             return Vec::new();
         };
-        if step.line.text().trim().is_empty() {
-            return self
-                .recent_sets()
-                .map(|sets| (0..sets.len()).map(OverrideRow::Recent).collect())
-                .unwrap_or_default();
+        if !step.line.text().trim().is_empty() {
+            let completions = self.completions(step);
+            if !completions.is_empty() {
+                return completions;
+            }
+            if self.free_flag_being_valued().is_some() {
+                return Vec::new();
+            }
         }
+        (0..self.choices().len()).map(OverrideRow::Choice).collect()
+    }
+
+    /// Whether the list offers completions, which Tab takes.
+    pub(super) fn completes(&self) -> bool {
+        matches!(
+            self.override_rows().first(),
+            Some(OverrideRow::Flag(_) | OverrideRow::Value(_))
+        )
+    }
+
+    /// The catalog's completions of the word being typed.
+    fn completions(&self, step: &OverridesStep) -> Vec<OverrideRow> {
         let catalog = self.catalog();
         let (previous, current) = step.typing();
         if let Some(OverrideValue::OneOf(values)) = previous
@@ -335,6 +455,14 @@ impl DirectoryStep {
             .filter(|flag| flag.repeatable || !flag.spellings.iter().any(|s| added.contains(s)))
             .map(OverrideRow::Flag)
             .collect()
+    }
+
+    /// The flag whose free value is being typed, when one is: nothing to
+    /// offer under the line then but what the flag is and who sees its
+    /// value.
+    pub(super) fn free_flag_being_valued(&self) -> Option<OverrideFlag> {
+        self.flag_being_valued()
+            .filter(|flag| matches!(flag.value, OverrideValue::Free(_)))
     }
 
     /// The flag the word being typed is a value of, when it is one.
@@ -376,7 +504,7 @@ impl DirectoryStep {
         let Some(step) = self.overrides.as_ref() else {
             return EnterDoes::Launch;
         };
-        if let Some(row) = step
+        if let Some(row @ (OverrideRow::Flag(_) | OverrideRow::Value(_))) = step
             .marked
             .and_then(|marked| self.override_rows().get(marked).copied())
         {
@@ -392,6 +520,7 @@ impl DirectoryStep {
     pub(super) fn overrides_action(&mut self, action: Action) -> OverridesOutcome {
         let enter = self.enter_does();
         let rows = self.override_rows();
+        let choice = self.marked_choice();
         let Some(step) = self.overrides.as_mut() else {
             return OverridesOutcome::Kept;
         };
@@ -430,19 +559,19 @@ impl DirectoryStep {
                     step.line.erase_back();
                 }
             }
-            Action::EraseForward => {
-                if step.line.text().is_empty() {
-                    if let Some(OverrideRow::Recent(index)) =
-                        step.marked.and_then(|marked| rows.get(marked))
-                    {
-                        step.marked = None;
-                        return self.forget(*index);
-                    }
-                } else {
+            // Space switches the choice marked, as it does in every list
+            // of choices; with none marked it is typed.
+            Action::ToggleChoice => match choice {
+                Some(index) => self.toggle_choice(index),
+                None => self.type_override(' '),
+            },
+            Action::EraseForward => match choice {
+                Some(index) => return self.close_choice(index),
+                None => {
                     step.refusal = None;
                     step.line.erase_forward();
                 }
-            }
+            },
             Action::CaretLeft => step.line.left(),
             Action::CaretRight => step.line.right(),
             Action::CaretLineStart => step.line.home(),
@@ -452,36 +581,11 @@ impl DirectoryStep {
         OverridesOutcome::Kept
     }
 
-    /// What forgetting the set at `index` asks of the session.
-    pub(super) fn forget(&self, index: usize) -> OverridesOutcome {
-        self.recent_sets()
-            .and_then(|sets| sets.get(index))
-            .map_or(OverridesOutcome::Kept, |set| {
-                OverridesOutcome::Forget(set.tokens.clone())
-            })
-    }
-
-    /// Takes `row`: a set used before replaces the entries, a flag or a
-    /// value completes the word being typed.
+    /// Takes a completion: a flag or a value completes the word being
+    /// typed. A choice is never taken, only switched.
     pub(super) fn take_row(&mut self, row: OverrideRow) {
         match row {
-            OverrideRow::Recent(index) => {
-                let Some(set) = self.recent_sets().and_then(|sets| sets.get(index)) else {
-                    return;
-                };
-                let entries: Vec<OverrideEntry> = self
-                    .catalog()
-                    .check_words(&set.tokens)
-                    .into_iter()
-                    .filter(|checked| !checked.verdict.is_refused())
-                    .map(|checked| checked.words)
-                    .collect();
-                *self.entries_mut() = entries;
-                if let Some(step) = self.overrides.as_mut() {
-                    step.line = RenameBuffer::new(String::new());
-                    step.refusal = None;
-                }
-            }
+            OverrideRow::Choice(_) => return,
             OverrideRow::Flag(flag) => {
                 if let Some(step) = self.overrides.as_mut() {
                     let space = if flag.value == OverrideValue::Switch {
@@ -505,7 +609,8 @@ impl DirectoryStep {
     }
 
     /// Adds what the line holds: every entry the check accepts joins the
-    /// entries, and what it refuses stays in the line, saying why.
+    /// entries, checked, and what it refuses stays in the line, saying why.
+    /// An entry the launch carries already is not added twice.
     fn add_line(&mut self) {
         let catalog = self.catalog();
         let Some(step) = self.overrides.as_mut() else {
@@ -543,7 +648,12 @@ impl DirectoryStep {
         step.line = RenameBuffer::new(kept.join(" "));
         step.refusal = refusal;
         step.marked = None;
-        self.entries_mut().extend(added);
+        let entries = self.entries_mut();
+        for entry in added {
+            if !entries.contains(&entry) {
+                entries.push(entry);
+            }
+        }
     }
 }
 

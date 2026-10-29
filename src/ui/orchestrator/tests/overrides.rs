@@ -8,7 +8,7 @@ use super::{AgentOption, DirectoryStep, RecentOverridesRead, RootPicker, Workspa
 use crate::ui::theme::{self, Symbol, Token};
 use ratatui::layout::Rect;
 use std::path::PathBuf;
-use uze_application::{OverrideMark, OverrideValue, RecentOverrides};
+use uze_application::{OverrideMark, OverrideValue, RecentOverride};
 use uze_core::UzeHome;
 use uze_keys::{Action, Scope};
 use uze_testkit::temp::TempDir;
@@ -429,7 +429,7 @@ fn entries_are_added_named_and_taken_away() {
     // The close mark is the same taking away.
     open_by_key(&mut driven);
     driven.frame();
-    let close = driven.hit(|hit| *hit == WorkspaceHit::OverrideEntryClose(0));
+    let close = driven.hit(|hit| *hit == WorkspaceHit::OverrideClose(0));
     driven.press(close.x, close.y);
     assert!(entries(&driven).is_empty(), "the close mark took it away");
 }
@@ -606,12 +606,222 @@ fn tab_completes_a_flag_and_its_values_follow() {
     );
 }
 
-/// The sets used lately head the list with nothing marked, so Enter still
-/// launches; another project's says which, a set with a secret held back
-/// says so, and taking one replaces the entries.
+/// `words` used lately, last in `project`.
+fn used(words: &[&str], project: &str) -> RecentOverride {
+    RecentOverride {
+        words: words.iter().map(|word| (*word).to_owned()).collect(),
+        project: PathBuf::from(project),
+        last_used_unix: 1,
+    }
+}
+
+/// The popup on its overrides view, with `entries` read as used lately on
+/// its harness.
+fn with_recent(name: &str, entries: Vec<RecentOverride>) -> (Popup, (String, PathBuf)) {
+    let mut popup = popup(name);
+    let question = popup
+        .model
+        .directory_step
+        .as_ref()
+        .unwrap()
+        .recent_question()
+        .unwrap();
+    if let Some(step) = popup.model.directory_step.as_mut() {
+        step.open_overrides();
+        step.recent = Some(RecentOverridesRead {
+            harness: question.0.clone(),
+            root: question.1.clone(),
+            entries,
+        });
+    }
+    (popup, question)
+}
+
+fn words_of(line: &str) -> Vec<String> {
+    line.split_whitespace().map(str::to_owned).collect()
+}
+
+/// The entries used lately are a list of choices under the line, one row
+/// each with its `○` and its close mark, after the entries added that the
+/// history does not hold; another project's says which. Nothing is marked,
+/// so Enter still launches; the arrows mark a row, space switches it, and
+/// the launch carries what is checked.
 #[test]
-fn recent_sets_are_offered_and_replace_the_entries() {
-    let mut popup = popup("overrides-recent");
+fn recent_entries_are_choices_space_switches_the_marked_one() {
+    let (mut popup, _) = with_recent(
+        "overrides-recent",
+        vec![
+            used(&["--model", "opus"], "/nowhere/this-one"),
+            used(&["DEBUG=1"], "/elsewhere/other-project"),
+        ],
+    );
+    let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
+    type_text(&mut driven, "KEPT=1");
+    driven.press_key(chord(Action::Activate, Scope::LaunchOverrides));
+    let (on, off) = (
+        theme::glyph(Symbol::MarkToggleOn),
+        theme::glyph(Symbol::MarkToggleOff),
+    );
+    let close = theme::glyph(Symbol::MarkClose);
+    let rows = screen(&mut driven);
+    let all = rows.join("\n");
+    let at = |text: &str| {
+        rows.iter()
+            .position(|row| row.contains(text))
+            .unwrap_or_else(|| panic!("{text} is offered:\n{all}"))
+    };
+    assert!(at("KEPT=1") < at("--model opus") && at("--model opus") < at("DEBUG=1"));
+    assert!(
+        rows[at("KEPT=1")].contains(&format!("{on} KEPT=1")),
+        "{all}"
+    );
+    assert!(
+        rows[at("--model opus")].contains(&format!("{off} --model opus")),
+        "{all}"
+    );
+    assert!(rows[at("DEBUG=1")].contains("other-project"), "{all}");
+    for text in ["KEPT=1", "--model opus", "DEBUG=1"] {
+        assert!(rows[at(text)].contains(&close), "{text} has its close mark");
+    }
+    assert_eq!(step_of(&driven).overrides.as_ref().unwrap().marked, None);
+
+    // Space with nothing marked is typed.
+    driven.press_key(chord(Action::ToggleChoice, Scope::LaunchOverrides));
+    assert_eq!(
+        step_of(&driven).overrides.as_ref().unwrap().line.text(),
+        " "
+    );
+    driven.press_key(chord(Action::EraseBack, Scope::LaunchOverrides));
+
+    driven.press_key(chord(Action::SelectNext, Scope::LaunchOverrides));
+    driven.press_key(chord(Action::SelectNext, Scope::LaunchOverrides));
+    driven.press_key(chord(Action::ToggleChoice, Scope::LaunchOverrides));
+    assert_eq!(
+        entries(&driven),
+        vec![words_of("KEPT=1"), words_of("--model opus")]
+    );
+    let rows = screen(&mut driven);
+    assert!(
+        rows.iter()
+            .any(|row| row.contains(&format!("{on} --model opus"))),
+        "{}",
+        rows.join("\n")
+    );
+    assert!(
+        rows.iter()
+            .any(|row| row.contains("2 flags") || row.contains("1 flag")),
+        "the note counts what is checked:\n{}",
+        rows.join("\n")
+    );
+
+    // Space again leaves it out; it stays offered, as one used before.
+    driven.press_key(chord(Action::ToggleChoice, Scope::LaunchOverrides));
+    assert_eq!(entries(&driven), vec![words_of("KEPT=1")]);
+    assert_eq!(step_of(&driven).choices().len(), 3);
+
+    // An entry added that the history does not hold leaves the list once
+    // it is left out.
+    driven.press_key(chord(Action::SelectPrevious, Scope::LaunchOverrides));
+    driven.press_key(chord(Action::ToggleChoice, Scope::LaunchOverrides));
+    assert!(entries(&driven).is_empty());
+    assert_eq!(step_of(&driven).choices().len(), 2);
+
+    // With a choice marked, Enter still starts the agent.
+    driven.press_key(chord(Action::SelectNext, Scope::LaunchOverrides));
+    driven.press_key(chord(Action::ToggleChoice, Scope::LaunchOverrides));
+    driven.press_key(chord(Action::Activate, Scope::LaunchOverrides));
+    assert!(
+        driven.attach.model.placement_pending,
+        "the agent was started"
+    );
+}
+
+/// A click on a choice's row marks it and leaves it as it was; a click on
+/// its mark switches it, as space on it marked does.
+#[test]
+fn a_click_on_a_choices_mark_is_space_and_on_its_row_marks_it() {
+    let state = |click: bool| {
+        let (mut popup, _) = with_recent(
+            "overrides-toggle-click",
+            vec![used(&["--model", "opus"], "/nowhere")],
+        );
+        let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
+        driven.frame();
+        let row = driven.hit(|hit| *hit == WorkspaceHit::OverrideRow(0));
+        driven.press(row.x + row.width / 2, row.y);
+        let marked = step_of(&driven).overrides.as_ref().unwrap().marked;
+        assert_eq!(marked, Some(0), "the row is marked");
+        assert!(
+            entries(&driven).is_empty(),
+            "a click on the row switches nothing"
+        );
+        if click {
+            driven.frame();
+            let mark = driven.hit(|hit| *hit == WorkspaceHit::OverrideToggle(0));
+            driven.press(mark.x, mark.y);
+        } else {
+            driven.press_key(chord(Action::ToggleChoice, Scope::LaunchOverrides));
+        }
+        entries(&driven)
+    };
+    assert_eq!(state(true), state(false));
+    assert_eq!(state(true), vec![words_of("--model opus")]);
+}
+
+/// The foot names space, and Delete by what it does to the choice marked:
+/// `forget` one used before, `remove` one only added; each hint is its
+/// key.
+#[test]
+fn the_foot_names_the_keys_of_a_marked_choice_and_each_is_its_key() {
+    let foot = |driven: &mut Driven<'_>| {
+        screen(driven)
+            .into_iter()
+            .find(|row| row.contains("enter new"))
+            .expect("the step's foot is drawn")
+    };
+    {
+        let (mut popup, _) = with_recent("overrides-choice-foot", vec![used(&["--verbose"], "/x")]);
+        let mut shown = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
+        assert!(!foot(&mut shown).contains("toggle"), "{}", foot(&mut shown));
+        shown.press_key(chord(Action::SelectNext, Scope::LaunchOverrides));
+        let said = foot(&mut shown);
+        assert!(said.contains("space toggle"), "{said}");
+        assert!(said.contains("forget"), "{said}");
+    }
+
+    for action in [Action::ToggleChoice, Action::EraseForward] {
+        let state = |click: bool| {
+            let (mut popup, _) =
+                with_recent("overrides-choice-hint", vec![used(&["--verbose"], "/x")]);
+            let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
+            driven.press_key(chord(Action::SelectNext, Scope::LaunchOverrides));
+            if click {
+                driven.frame();
+                let target = driven
+                    .attach
+                    .model
+                    .hits
+                    .iter()
+                    .rev()
+                    .find(|(_, hit)| *hit == WorkspaceHit::HintAction(action))
+                    .map(|(rect, _)| *rect)
+                    .unwrap_or_else(|| panic!("{action} is a target"));
+                driven.press(target.x, target.y);
+            } else {
+                driven.press_key(chord(action, Scope::LaunchOverrides));
+            }
+            let step = step_of(&driven);
+            (step.entries().to_vec(), step.recent_asked.is_some())
+        };
+        assert_eq!(state(true), state(false), "{action}");
+    }
+}
+
+/// The overrides view as the operator sees it, with entries used lately,
+/// some carried by this launch.
+#[test]
+fn the_overrides_view_draws_its_choices() {
+    let mut popup = popup("overrides-drawn");
     let (harness, root) = popup
         .model
         .directory_step
@@ -619,44 +829,54 @@ fn recent_sets_are_offered_and_replace_the_entries() {
         .unwrap()
         .recent_question()
         .unwrap();
-    let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
-    driven.frame();
-    open_by_key(&mut driven);
-    if let Some(step) = driven.attach.model.directory_step.as_mut() {
+    let here = root.display().to_string();
+    if let Some(step) = popup.model.directory_step.as_mut() {
+        step.open_overrides();
         step.recent = Some(RecentOverridesRead {
             harness,
             root,
-            sets: vec![
-                RecentOverrides {
-                    tokens: vec!["HERE=1".to_owned()],
-                    withheld: 0,
-                    project: PathBuf::from("/nowhere/this-one"),
-                    last_used_unix: 2,
-                },
-                RecentOverrides {
-                    tokens: vec!["THERE=1".to_owned()],
-                    withheld: 1,
-                    project: PathBuf::from("/elsewhere/other-project"),
-                    last_used_unix: 1,
-                },
+            entries: vec![
+                used(&["--model", "opus"], &here),
+                used(&["--permission-mode", "plan"], &here),
+                used(&["--verbose"], &here),
+                used(&["DEBUG=1"], "/elsewhere/api"),
+                used(&["--add-dir", "../lib"], &here),
             ],
         });
     }
-    type_text(&mut driven, "KEPT=1");
-    driven.press_key(chord(Action::Activate, Scope::LaunchOverrides));
-    let rows = screen(&mut driven);
-    let there = rows
+    let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
+    for at in [0, 1, 3] {
+        driven
+            .attach
+            .model
+            .directory_step
+            .as_mut()
+            .unwrap()
+            .toggle_choice(at);
+    }
+    let (_, rows) = popup_rows(&mut driven);
+    let drawn = rows.join("\n");
+    let (on, off) = (
+        theme::glyph(Symbol::MarkToggleOn),
+        theme::glyph(Symbol::MarkToggleOff),
+    );
+    let close = theme::glyph(Symbol::MarkClose);
+    let listed: Vec<&String> = rows
         .iter()
-        .find(|row| row.contains("THERE=1"))
-        .unwrap_or_else(|| panic!("the set is offered:\n{}", rows.join("\n")));
-    assert!(there.contains("other-project"), "{there}");
-    assert!(there.contains("1 variable not kept"), "{there}");
-    assert_eq!(step_of(&driven).overrides.as_ref().unwrap().marked, None);
-
-    driven.press_key(chord(Action::SelectNext, Scope::LaunchOverrides));
-    driven.press_key(chord(Action::SelectNext, Scope::LaunchOverrides));
-    driven.press_key(chord(Action::Activate, Scope::LaunchOverrides));
-    assert_eq!(entries(&driven), vec![vec!["THERE=1".to_owned()]]);
+        .filter(|row| row.contains(&on) || row.contains(&off))
+        .collect();
+    assert_eq!(listed.len(), 5, "one row per entry:\n{drawn}");
+    assert!(listed[0].contains(&format!("{on} --model opus")), "{drawn}");
+    assert!(listed[2].contains(&format!("{off} --verbose")), "{drawn}");
+    assert!(
+        listed[3].contains("api") && !listed[0].contains("overrides-drawn"),
+        "only another project's entry names it:\n{drawn}"
+    );
+    assert!(listed.iter().all(|row| row.contains(&close)), "{drawn}");
+    assert!(
+        drawn.contains("2 flags") && drawn.contains("1 var"),
+        "{drawn}"
+    );
 }
 
 /// Each harness keeps its own entries in the popup: moving the harness
@@ -899,7 +1119,7 @@ fn an_empty_history_and_an_empty_catalog_say_little() {
         step.recent = Some(RecentOverridesRead {
             harness,
             root,
-            sets: Vec::new(),
+            entries: Vec::new(),
         });
     }
     let (_, rows) = popup_rows(&mut driven);
@@ -990,10 +1210,11 @@ fn the_light_theme_colours_the_step() {
     });
 }
 
-/// A set's close mark forgets it, as Delete does on the set marked: either
-/// way a read goes out that forgets it and reads the sets again.
+/// A recent entry's close mark forgets it and leaves it out of the launch,
+/// as Delete does on the entry marked: either way a read goes out that
+/// forgets it and reads the entries again.
 #[test]
-fn a_sets_close_mark_and_delete_both_forget_it() {
+fn a_recent_entrys_close_mark_and_delete_both_forget_it() {
     for click in [true, false] {
         let mut popup = popup("overrides-forget");
         let question = popup
@@ -1010,17 +1231,12 @@ fn a_sets_close_mark_and_delete_both_forget_it() {
             step.recent = Some(RecentOverridesRead {
                 harness: question.0.clone(),
                 root: question.1.clone(),
-                sets: vec![RecentOverrides {
-                    tokens: vec!["GONE=1".to_owned()],
-                    withheld: 0,
-                    project: PathBuf::from("/elsewhere"),
-                    last_used_unix: 1,
-                }],
+                entries: vec![used(&["GONE=1"], "/elsewhere")],
             });
         }
         if click {
             driven.frame();
-            let close = driven.hit(|hit| *hit == WorkspaceHit::ForgetOverrides(0));
+            let close = driven.hit(|hit| *hit == WorkspaceHit::OverrideClose(0));
             driven.press(close.x, close.y);
         } else {
             driven.press_key(chord(Action::SelectNext, Scope::LaunchOverrides));

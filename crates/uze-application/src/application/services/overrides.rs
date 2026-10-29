@@ -1,9 +1,9 @@
 //! Launch overrides as presentation sees them: what a harness's launch
-//! takes, a typed line checked against it, and the sets used lately.
+//! takes, a typed line checked against it, and the entries used lately.
 //!
 //! The catalog is static data the integration declares, so checking a line
 //! against it asks nothing of the machine: an overrides step checks on each
-//! keystroke without a thread. The sets used lately are a read of a record,
+//! keystroke without a thread. The entries used lately are a read of a record,
 //! and are asked for like any other.
 
 use std::path::Path;
@@ -56,8 +56,8 @@ impl OverrideCatalog {
         Ok(self.check_words(&overrides::split(line)?))
     }
 
-    /// [`Self::check`] for words already split: a set used before, or the
-    /// entries a step holds.
+    /// [`Self::check`] for words already split: an entry used before, or
+    /// the entries a step holds.
     pub fn check_words(&self, words: &[String]) -> Vec<CheckedOverride> {
         let entries = overrides::entries(words, self.flags);
         let verdicts = overrides::check(&entries, self.flags, self.managed, None);
@@ -179,24 +179,25 @@ impl Workspace<'_> {
         self.integration(harness).map(OverrideCatalog::of)
     }
 
-    /// The sets of overrides used lately on `harness`: those last used in
-    /// `project_root` first, then the others, each most recent first. A
-    /// read of a record: off the thread that draws.
+    /// The overrides used lately on `harness`, one entry each (`--model
+    /// opus`, `DEBUG=1`): those last used in `project_root` first, then the
+    /// others, each most recent first. A read of a record: off the thread
+    /// that draws.
     #[tracing::instrument(name = "workspace.recent_overrides", skip_all, fields(harness, project_root = %project_root.display()))]
-    pub fn recent_overrides(&self, harness: &str, project_root: &Path) -> Vec<record::RecentSet> {
-        record::recent(&self.0.home, harness, project_root)
+    pub fn recent_overrides(&self, harness: &str, project_root: &Path) -> Vec<record::RecentEntry> {
+        record::recent_entries(&self.0.home, harness, project_root)
     }
 
-    /// Forgets the set `words` on `harness`, in every project, and says
+    /// Forgets the entry `words` on `harness`, in every project, and says
     /// whether there was one.
     #[tracing::instrument(
-        name = "workspace.forget_recent_overrides",
+        name = "workspace.forget_recent_override",
         skip_all,
         fields(harness),
         err
     )]
-    pub fn forget_recent_overrides(&self, harness: &str, words: &[String]) -> Result<bool> {
-        record::forget_recent(&self.0.home, harness, words)
+    pub fn forget_recent_override(&self, harness: &str, words: &[String]) -> Result<bool> {
+        record::forget_recent_entry(&self.0.home, harness, words)
     }
 
     /// The overrides `agent` of `project_root` was last launched with on

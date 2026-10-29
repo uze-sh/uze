@@ -123,8 +123,8 @@ impl Attach<'_> {
     }
 
     /// A click on an arrow of the harness field, on either view. On the
-    /// overrides view the sets used lately are the new harness's, so they
-    /// are asked for.
+    /// overrides view the entries used lately are the new harness's, so
+    /// they are asked for.
     pub(super) fn cycle_popup_harness(&mut self, step: isize) {
         let Some(popup) = self.model.directory_step.as_mut() else {
             return;
@@ -153,12 +153,12 @@ impl Attach<'_> {
                     step.overrides = None;
                 }
             }
-            OverridesOutcome::Forget(words) => self.forget_recent_overrides(words),
+            OverridesOutcome::Forget(words) => self.forget_recent_override(words),
         }
         self.model.dirty = true;
     }
 
-    /// Asks for the sets used lately on the harness in the popup's field,
+    /// Asks for the entries used lately on the harness in the popup's field,
     /// from where it is, unless that is already asked or answered.
     pub(super) fn ask_recent_overrides(&mut self) {
         let Some(step) = self.model.directory_step.as_mut() else {
@@ -167,7 +167,7 @@ impl Attach<'_> {
         let Some(question) = step.recent_question() else {
             return;
         };
-        if step.recent_sets().is_some() || step.recent_asked.as_ref() == Some(&question) {
+        if step.recent_entries().is_some() || step.recent_asked.as_ref() == Some(&question) {
             return;
         }
         step.recent_asked = Some(question.clone());
@@ -181,9 +181,9 @@ impl Attach<'_> {
         );
     }
 
-    /// Forgets a set used before on the harness in front, then reads the
-    /// sets again, so the list is what is on disk.
-    pub(super) fn forget_recent_overrides(&mut self, words: Vec<String>) {
+    /// Forgets an entry used before on the harness in front, then reads
+    /// the entries again, so the list is what is on disk.
+    pub(super) fn forget_recent_override(&mut self, words: Vec<String>) {
         let Some(step) = self.model.directory_step.as_mut() else {
             return;
         };
@@ -201,7 +201,7 @@ impl Attach<'_> {
         );
     }
 
-    /// Takes the sets used lately into the popup when they answer what it
+    /// Takes the entries used lately into the popup when they answer what it
     /// asked last; an answer to an earlier question is dropped.
     pub(super) fn absorb_recent_overrides(&mut self) {
         while let Ok(answer) = self.channels.recent_overrides.receiver.try_recv() {

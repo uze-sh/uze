@@ -13,8 +13,8 @@ const LINE_PLACEHOLDER: &str = "a flag, or NAME=value";
 const NOTHING_USED_YET: &str = "no overrides used before";
 
 /// The `overrides` view, in the rows the `path` view gives its line and
-/// listing: the line typed into, the entries added and the list under
-/// them, and the marked row's detail.
+/// listing: the line typed into, the list under it, and the marked row's
+/// detail.
 pub(super) fn render_overrides_step(
     frame: &mut ratatui::Frame<'_>,
     model: &WorkspaceModel,
@@ -33,8 +33,7 @@ pub(super) fn render_overrides_step(
     }
     // The detail under the body keeps its row, over the foot's rule.
     if let Some(body) = rows.next(rows.remaining().saturating_sub(1)) {
-        let list = render_entries(frame, model, step, body, hits);
-        render_list(frame, model, step, list, popup, hits);
+        render_list(frame, model, step, body, popup, hits);
     }
     if let Some(rect) = rows.next(1) {
         let (said, tone) = detail(step).unwrap_or((String::new(), Token::TextSecondary));
@@ -83,83 +82,10 @@ fn checked(step: &DirectoryStep, entry: &OverrideEntry) -> Option<CheckedOverrid
     step.catalog().check_words(entry).into_iter().next()
 }
 
-/// The entries added, one row each with its close mark, from the top of
-/// `body`; answers with the rows left for the list. When there are more
-/// than fit beside a list row, the earliest give way to a count.
-fn render_entries(
-    frame: &mut ratatui::Frame<'_>,
-    model: &WorkspaceModel,
-    step: &DirectoryStep,
-    body: Rect,
-    hits: &mut Vec<(Rect, WorkspaceHit)>,
-) -> Rect {
-    let entries = step.entries();
-    let room = usize::from(body.height).saturating_sub(1).max(1);
-    let shown = entries.len().min(room);
-    let mut y = body.y;
-    let first = if shown < entries.len() {
-        let earlier = entries.len() + 1 - shown;
-        let line = Line::from(vec![
-            picker_lead(),
-            Span::styled(format!("{earlier} more"), theme::fg(Token::TextFaint)),
-        ]);
-        frame.render_widget(Paragraph::new(line), Rect::new(body.x, y, body.width, 1));
-        y += 1;
-        earlier
-    } else {
-        0
-    };
-    for (index, entry) in entries.iter().enumerate().skip(first) {
-        let rect = Rect::new(body.x, y, body.width, 1);
-        y += 1;
-        let checked = checked(step, entry);
-        let costly = checked
-            .as_ref()
-            .is_some_and(|checked| verdict_cost(&checked.verdict).is_some());
-        let tone = if costly {
-            Token::StateWarning
-        } else {
-            Token::TextPrimary
-        };
-        let mut left = vec![picker_lead()];
-        if costly {
-            left.push(Span::styled(
-                format!("{} ", theme::glyph(Symbol::MarkAttention)),
-                theme::fg(tone),
-            ));
-        }
-        left.push(Span::styled(entry.join(" "), theme::fg(tone)));
-        let close = WorkspaceHit::OverrideEntryClose(index);
-        let mut right = Vec::new();
-        if checked.is_some_and(|checked| checked.verdict == OverrideVerdict::Unknown) {
-            right.push(Span::styled("unknown ", theme::fg(Token::TextFaint)));
-        }
-        right.push(Span::styled(
-            theme::glyph(Symbol::MarkClose),
-            theme::fg(mark::close_tone(chip_state(model, close))),
-        ));
-        let mark_width = theme::width(Symbol::MarkClose).max(1);
-        hits.push((
-            Rect::new(
-                rect.right().saturating_sub(TRAILING_PAD + mark_width),
-                rect.y,
-                mark_width,
-                1,
-            ),
-            close,
-        ));
-        frame.render_widget(Paragraph::new(spread(rect, left, right)), rect);
-    }
-    Rect {
-        y,
-        height: body.bottom().saturating_sub(y),
-        ..body
-    }
-}
-
-/// The list under the entries: what Enter or Tab can take, the marked
-/// row on the bar a menu's row wears, a scrollbar on the popup's edge
-/// when it runs past its rows.
+/// The list under the line: the choices, each marked `◉` when the launch
+/// carries it, or the completions Enter or Tab can take; the marked row on
+/// the bar a menu's row wears, a scrollbar on the popup's edge when it
+/// runs past its rows.
 fn render_list(
     frame: &mut ratatui::Frame<'_>,
     model: &WorkspaceModel,
@@ -175,15 +101,14 @@ fn render_list(
     }
     let list = step.override_rows();
     if list.is_empty()
-        && let Some(flag) = free_flag_being_valued(step)
+        && let Some(flag) = step.free_flag_being_valued()
     {
         render_value_wanted(frame, area, &flag);
         return;
     }
     if list.is_empty() {
         let nothing = over.line.text().trim().is_empty()
-            && step.entries().is_empty()
-            && step.recent_sets().is_some_and(<[_]>::is_empty);
+            && step.recent_entries().is_some_and(<[_]>::is_empty);
         if nothing {
             crate::ui::widget::message::render_message(
                 frame,
@@ -197,10 +122,24 @@ fn render_list(
     }
     let visible = usize::from(area.height);
     let top = over.window_start(visible, list.len());
+    let choices = step.choices();
     for (offset, row) in list.iter().enumerate().skip(top).take(visible) {
         let rect = Rect::new(area.x, area.y + (offset - top) as u16, area.width, 1);
         hits.push((rect, WorkspaceHit::OverrideRow(offset)));
-        render_list_row(frame, model, step, rect, offset, *row, hits);
+        let marked = over.marked == Some(offset);
+        match row {
+            OverrideRow::Choice(index) => {
+                if let Some(choice) = choices.get(*index) {
+                    let row = ChoiceRow {
+                        index: *index,
+                        offset,
+                        marked,
+                    };
+                    render_choice_row(frame, model, step, rect, choice, row, hits);
+                }
+            }
+            _ => render_list_row(frame, model, step, rect, offset, *row),
+        }
     }
     let track = Rect::new(popup.right().saturating_sub(1), area.y, 1, area.height);
     if let Some(bar) = Scrollbar::measure(track, visible, list.len()) {
@@ -210,66 +149,148 @@ fn render_list(
     }
 }
 
-/// What a row of the list says: its words on the left, and against its
+/// Where a choice's row stands in the list, and whether the arrows mark it.
+#[derive(Clone, Copy)]
+struct ChoiceRow {
+    /// Its place among the choices, which its mark and close mark name.
+    index: usize,
+    /// Its place in the list, which its row names.
+    offset: usize,
+    marked: bool,
+}
+
+/// One choice: its `◉`/`○` mark, its words, and against its end what is
+/// known of it (`unknown`, the project another project's entry was last
+/// used in) and its close mark. Marked, the row wears the bar a menu's row
+/// wears, the marks on it included.
+fn render_choice_row(
+    frame: &mut ratatui::Frame<'_>,
+    model: &WorkspaceModel,
+    step: &DirectoryStep,
+    rect: Rect,
+    choice: &OverrideChoice<'_>,
+    row: ChoiceRow,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) {
+    let toggle = WorkspaceHit::OverrideToggle(row.index);
+    let close = WorkspaceHit::OverrideClose(row.index);
+    let checked = step.catalog().check_words(choice.words).into_iter().next();
+    let costly = checked
+        .as_ref()
+        .is_some_and(|checked| verdict_cost(&checked.verdict).is_some());
+    let on_bar = Style::default()
+        .bg(theme::color(Token::Accent))
+        .fg(theme::color(Token::SurfaceBackground));
+    let ink = |tone: Token, lit: bool| match (row.marked, lit) {
+        (true, _) => on_bar,
+        (false, true) => Style::default().fg(theme::lifted(tone)),
+        (false, false) => theme::fg(tone),
+    };
+    let (symbol, mark_tone) = if choice.checked {
+        (Symbol::MarkToggleOn, Token::Accent)
+    } else {
+        (Symbol::MarkToggleOff, Token::TextMuted)
+    };
+    let words_tone = match (costly, choice.checked) {
+        (true, _) => Token::StateWarning,
+        (false, true) => Token::TextPrimary,
+        (false, false) => Token::TextInactive,
+    };
+    let row_lit = model.hovered == Some(WorkspaceHit::OverrideRow(row.offset));
+    let mut left = vec![
+        picker_lead(),
+        Span::styled(
+            theme::glyph(symbol),
+            ink(mark_tone, model.hovered == Some(toggle)),
+        ),
+        Span::styled(" ", ink(words_tone, false)),
+    ];
+    if costly {
+        left.push(Span::styled(
+            format!("{} ", theme::glyph(Symbol::MarkAttention)),
+            ink(Token::StateWarning, row_lit),
+        ));
+    }
+    let mut words = ink(words_tone, row_lit);
+    if row.marked {
+        words = words.add_modifier(Modifier::BOLD);
+    }
+    left.push(Span::styled(choice.words.join(" "), words));
+
+    let mut known = Vec::new();
+    if checked.is_some_and(|checked| checked.verdict == OverrideVerdict::Unknown) {
+        known.push("unknown".to_owned());
+    }
+    if let Some(recent) = choice.recent
+        && !recent.used_in(&step.overrides_root())
+    {
+        known.push(recent.project.file_name().map_or_else(
+            || recent.project.display().to_string(),
+            |name| name.to_string_lossy().into_owned(),
+        ));
+    }
+    let mut right = Vec::new();
+    if !known.is_empty() {
+        right.push(Span::styled(
+            format!("{} ", known.join(&theme::glyph(Symbol::HintSeparator))),
+            ink(Token::TextFaint, false),
+        ));
+    }
+    let close_ink = if row.marked {
+        on_bar
+    } else {
+        theme::fg(mark::close_tone(chip_state(model, close)))
+    };
+    right.push(Span::styled(theme::glyph(Symbol::MarkClose), close_ink));
+
+    let mut paragraph = Paragraph::new(spread(rect, left, right));
+    if row.marked {
+        paragraph = paragraph.style(on_bar);
+    }
+    frame.render_widget(paragraph, rect);
+
+    let mark_width = theme::width(symbol).max(1);
+    hits.push((
+        Rect::new(rect.x + PICKER_LEAD as u16, rect.y, mark_width, 1),
+        toggle,
+    ));
+    let close_width = theme::width(Symbol::MarkClose).max(1);
+    hits.push((
+        Rect::new(
+            rect.right().saturating_sub(TRAILING_PAD + close_width),
+            rect.y,
+            close_width,
+            1,
+        ),
+        close,
+    ));
+}
+
+/// What a completion's row says: its words on the left, and against its
 /// end only what is known of it.
 struct RowWords {
     text: String,
     trailing: String,
     costly: bool,
-    /// The set's index among those read, for its close mark.
-    forgets: Option<usize>,
 }
 
-fn row_words(step: &DirectoryStep, row: OverrideRow) -> RowWords {
+fn row_words(row: OverrideRow) -> RowWords {
     let separator = theme::glyph(Symbol::HintSeparator);
     match row {
-        OverrideRow::Recent(index) => {
-            let Some(set) = step.recent_sets().and_then(|sets| sets.get(index)) else {
-                return RowWords {
-                    text: String::new(),
-                    trailing: String::new(),
-                    costly: false,
-                    forgets: None,
-                };
-            };
-            let costly = step
-                .catalog()
-                .check_words(&set.tokens)
-                .iter()
-                .any(|checked| verdict_cost(&checked.verdict).is_some());
-            let mut known = Vec::new();
-            if !set.used_in(&step.overrides_root()) {
-                known.push(set.project.file_name().map_or_else(
-                    || set.project.display().to_string(),
-                    |name| name.to_string_lossy().into_owned(),
-                ));
-            }
-            if set.withheld > 0 {
-                let noun = if set.withheld == 1 {
-                    "variable"
-                } else {
-                    "variables"
-                };
-                known.push(format!("{} {noun} not kept", set.withheld));
-            }
-            RowWords {
-                text: set.tokens.join(" "),
-                trailing: known.join(&separator),
-                costly,
-                forgets: Some(index),
-            }
-        }
         OverrideRow::Flag(flag) => RowWords {
             text: flag.name.to_owned(),
             trailing: flag_known(&flag).join(&separator),
             costly: cost(flag.mark).is_some(),
-            forgets: None,
         },
         OverrideRow::Value(value) => RowWords {
             text: value.to_owned(),
             trailing: String::new(),
             costly: false,
-            forgets: None,
+        },
+        OverrideRow::Choice(_) => RowWords {
+            text: String::new(),
+            trailing: String::new(),
+            costly: false,
         },
     }
 }
@@ -293,9 +314,8 @@ fn render_list_row(
     rect: Rect,
     offset: usize,
     row: OverrideRow,
-    hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
-    let words = row_words(step, row);
+    let words = row_words(row);
     let marked = step
         .overrides
         .as_ref()
@@ -306,29 +326,8 @@ fn render_list_row(
     } else {
         String::new()
     };
-    let close = words.forgets.map(WorkspaceHit::ForgetOverrides);
-    let close_glyph = theme::glyph(Symbol::MarkClose);
-    let mut trailing = words.trailing.clone();
-    if close.is_some() {
-        if !trailing.is_empty() {
-            trailing.push(' ');
-        }
-        trailing.push_str(&close_glyph);
-    }
-    if let Some(close) = close {
-        let width = theme::width(Symbol::MarkClose).max(1);
-        hits.push((
-            Rect::new(
-                rect.right().saturating_sub(TRAILING_PAD + width),
-                rect.y,
-                width,
-                1,
-            ),
-            close,
-        ));
-    }
     if marked {
-        let width = text::columns(&trailing) as u16;
+        let width = text::columns(&words.trailing) as u16;
         let gap = if width > 0 { width + 1 } else { 0 };
         let room = usize::from(
             rect.width
@@ -343,7 +342,7 @@ fn render_list_row(
         };
         frame.render_widget(
             Paragraph::new(Span::styled(
-                trailing,
+                words.trailing,
                 Style::default()
                     .bg(theme::color(Token::Accent))
                     .fg(theme::color(Token::SurfaceBackground)),
@@ -367,30 +366,8 @@ fn render_list_row(
         left.push(Span::styled(mark, ink));
     }
     left.push(Span::styled(words.text, ink));
-    let mut right = vec![Span::styled(
-        words.trailing.clone(),
-        theme::fg(Token::TextFaint),
-    )];
-    if let Some(close) = close {
-        if !words.trailing.is_empty() {
-            right.push(Span::raw(" "));
-        }
-        right.push(Span::styled(
-            close_glyph,
-            theme::fg(mark::close_tone(chip_state(model, close))),
-        ));
-    }
+    let right = vec![Span::styled(words.trailing, theme::fg(Token::TextFaint))];
     frame.render_widget(Paragraph::new(spread(rect, left, right)), rect);
-}
-
-/// The detail line: why the line was refused, the marked row's detail,
-/// a word on secrets while a flag's value is typed, or what an entry
-/// gives up.
-/// The flag whose free value is being typed, when one is: nothing to
-/// offer under the line then but what the flag is and who sees its value.
-fn free_flag_being_valued(step: &DirectoryStep) -> Option<OverrideFlag> {
-    step.flag_being_valued()
-        .filter(|flag| matches!(flag.value, OverrideValue::Free(_)))
 }
 
 /// While a free value is typed, what the list's room says instead of a
@@ -415,6 +392,8 @@ fn render_value_wanted(frame: &mut ratatui::Frame<'_>, area: Rect, flag: &Overri
     );
 }
 
+/// The detail line: why the line was refused, the marked row's detail,
+/// what a flag being typed is, or what an entry gives up.
 fn detail(step: &DirectoryStep) -> Option<(String, Token)> {
     let over = step.overrides.as_ref()?;
     if let Some(refusal) = &over.refusal {
@@ -425,7 +404,7 @@ fn detail(step: &DirectoryStep) -> Option<(String, Token)> {
         return Some(row_detail(step, *row));
     }
     // A free value being typed is said where the list would be.
-    if free_flag_being_valued(step).is_some() {
+    if step.free_flag_being_valued().is_some() {
         return None;
     }
     if let Some(flag) = step.flag_typed().or_else(|| step.flag_being_valued()) {
@@ -445,27 +424,33 @@ fn detail(step: &DirectoryStep) -> Option<(String, Token)> {
 
 fn row_detail(step: &DirectoryStep, row: OverrideRow) -> (String, Token) {
     match row {
-        OverrideRow::Recent(index) => {
-            let Some(set) = step.recent_sets().and_then(|sets| sets.get(index)) else {
+        OverrideRow::Choice(index) => {
+            let choices = step.choices();
+            let Some(choice) = choices.get(index) else {
                 return (String::new(), Token::TextSecondary);
             };
-            let costly = step
-                .catalog()
-                .check_words(&set.tokens)
-                .into_iter()
-                .find_map(|checked| {
-                    verdict_cost(&checked.verdict).map(|cost| format!("{} {cost}", checked.label))
-                });
-            match costly {
-                Some(said) => (said, Token::StateWarning),
-                None => (
+            let checked = step.catalog().check_words(choice.words).into_iter().next();
+            if let Some(said) = checked.as_ref().and_then(|checked| {
+                verdict_cost(&checked.verdict).map(|cost| format!("{} {cost}", checked.label))
+            }) {
+                return (said, Token::StateWarning);
+            }
+            if let Some(recent) = choice.recent {
+                return (
                     format!(
                         "last used in {}",
-                        crate::ui::display_project_path(&set.project)
+                        crate::ui::display_project_path(&recent.project)
                     ),
                     Token::TextSecondary,
-                ),
+                );
             }
+            choice
+                .words
+                .first()
+                .and_then(|word| step.catalog().flag(word))
+                .map_or((String::new(), Token::TextSecondary), |flag| {
+                    (flag_detail(&flag), Token::TextSecondary)
+                })
         }
         OverrideRow::Flag(flag) => {
             let tone = if cost(flag.mark).is_some() {

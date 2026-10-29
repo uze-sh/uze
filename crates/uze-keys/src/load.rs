@@ -587,7 +587,8 @@ fn default_bindings() -> Vec<Binding> {
         // way to manage. `f` for the flags most overrides are.
         bind(Scope::RootPicker, "ctrl+f", Action::OpenOverrides),
         // The overrides step is a line typed into: the sideways keys move
-        // its caret, the vertical ones mark in the list under it.
+        // its caret, the vertical ones mark in the list under it, and space
+        // switches the choice marked there (with none marked, it is typed).
         bind(Scope::LaunchOverrides, "down", Action::SelectNext),
         bind(Scope::LaunchOverrides, "up", Action::SelectPrevious),
         bind(Scope::LaunchOverrides, "tab", Action::Expand),
@@ -599,6 +600,7 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::LaunchOverrides, "right", Action::CaretRight),
         bind(Scope::LaunchOverrides, "home", Action::CaretLineStart),
         bind(Scope::LaunchOverrides, "end", Action::CaretLineEnd),
+        bind(Scope::LaunchOverrides, "space", Action::ToggleChoice),
         bind(Scope::Rename, "enter", Action::Activate),
         bind(Scope::Rename, "esc", Action::Dismiss),
         bind(Scope::Rename, "backspace", Action::EraseBack),
