@@ -1,0 +1,223 @@
+//! What an agent's overrides make of each harness's launch.
+//!
+//! Asked of every registered harness with its own catalog and its own
+//! continuity verbs: the resume it spells, the first turn it takes, and the
+//! arguments that switch its memory off. Read off the launch the plan
+//! composes, the same one the shim hands the real binary.
+
+use std::ffi::OsString;
+
+use uze_core::{
+    UzeHome,
+    flag_catalog::{FlagOwner, FlagSpec, FlagValue},
+    harness_runtime::HarnessRuntimeContribution,
+    integration::{IntegrationPort, SessionContinuity},
+    session::SessionId,
+};
+use uze_integrations::registry::IntegrationRegistry;
+use uze_testkit::temp::scratch;
+use uze_workspace::{continuity::LaunchPlan, overrides};
+
+const CONTRIBUTION: &str = "--from-the-contribution";
+const VARIABLE: (&str, &str) = ("OVERRIDE_PROBE", "1");
+
+fn registry(label: &str) -> IntegrationRegistry {
+    let root = scratch(label);
+    let home = UzeHome::at(root.join("uze"));
+    IntegrationRegistry::isolated(&root, &home)
+}
+
+fn os(words: &[&str]) -> Vec<OsString> {
+    words.iter().map(OsString::from).collect()
+}
+
+/// A flag of the operator's, with a value when it takes one, as an
+/// override spells it.
+fn an_operator_flag(integration: &dyn IntegrationPort) -> Vec<String> {
+    let spec = integration
+        .flag_catalog()
+        .iter()
+        .find(|spec| spec.owner == FlagOwner::Operator)
+        .unwrap_or_else(|| panic!("{} offers a flag of the operator's", integration.id()));
+    let mut words = vec![spec.name().to_owned()];
+    match spec.value {
+        FlagValue::None => {}
+        FlagValue::Free(_) => words.push("probe-value".to_owned()),
+        FlagValue::OneOf(values) => words.push(values[0].to_owned()),
+    }
+    words
+}
+
+/// The plan an owned launch of `integration` makes, carrying `words` as the
+/// agent's overrides, checked against what the plan composes.
+fn plan(
+    integration: &dyn IntegrationPort,
+    resume: Vec<OsString>,
+    trailing: Vec<OsString>,
+    words: &[String],
+) -> LaunchPlan {
+    let composed: Vec<OsString> = resume.iter().chain(&trailing).cloned().collect();
+    let overrides = overrides::compose(
+        words,
+        integration.flag_catalog(),
+        integration.managed_environment(),
+        &composed,
+    );
+    LaunchPlan {
+        // What the plan left out is on its note, as `plan_with` puts it.
+        note: (!overrides.left_out.is_empty()).then(|| overrides.left_out.join("; ")),
+        overrides,
+        args: resume,
+        trailing,
+        owned: true,
+        ..LaunchPlan::default()
+    }
+}
+
+fn contribution() -> HarnessRuntimeContribution {
+    HarnessRuntimeContribution {
+        extra_args: os(&[CONTRIBUTION]),
+        ..HarnessRuntimeContribution::passthrough()
+    }
+}
+
+fn with_variable(mut words: Vec<String>) -> Vec<String> {
+    words.push(format!("{}={}", VARIABLE.0, VARIABLE.1));
+    words
+}
+
+#[test]
+fn a_resumed_launch_takes_its_overrides_after_the_resume_on_every_harness() {
+    for integration in registry("overrides-resume").iter() {
+        if integration.session_continuity() == SessionContinuity::Unsupported {
+            continue;
+        }
+        let flag = an_operator_flag(integration);
+        let resume = integration.resume_session_args(&SessionId::new("recorded"));
+        assert!(!resume.is_empty(), "{} spells a resume", integration.id());
+        let session = plan(
+            integration,
+            resume.clone(),
+            Vec::new(),
+            &with_variable(flag.clone()),
+        );
+        let mut launch = contribution();
+
+        let note = session.compose(&mut launch, None, integration.flag_catalog());
+
+        let expected: Vec<OsString> = resume
+            .into_iter()
+            .chain(os(&[CONTRIBUTION]))
+            .chain(flag.iter().map(OsString::from))
+            .collect();
+        assert_eq!(launch.extra_args, expected, "{}", integration.id());
+        assert_eq!(
+            launch.extra_env.first(),
+            Some(&(VARIABLE.0.into(), VARIABLE.1.into())),
+            "{}: under everything UZE sets",
+            integration.id()
+        );
+        assert_eq!(note, None, "{}", integration.id());
+    }
+}
+
+#[test]
+fn a_first_turn_stays_after_the_overrides_on_every_harness() {
+    let mut asked = 0;
+    for integration in registry("overrides-first-turn").iter() {
+        let flag = an_operator_flag(integration);
+        let turn = integration.first_turn_args("read your briefing");
+        if turn.is_empty() {
+            continue;
+        }
+        let session = plan(integration, Vec::new(), turn.clone(), &flag);
+        let mut launch = contribution();
+
+        session.compose(&mut launch, None, integration.flag_catalog());
+
+        let expected: Vec<OsString> = os(&[CONTRIBUTION])
+            .into_iter()
+            .chain(flag.iter().map(OsString::from))
+            .chain(turn)
+            .collect();
+        assert_eq!(launch.extra_args, expected, "{}", integration.id());
+        asked += 1;
+    }
+    assert!(asked > 0, "some harness takes its first turn as arguments");
+}
+
+#[test]
+fn memory_off_comes_last_and_leaves_out_the_override_it_collides_with() {
+    let mut codex = false;
+    for integration in registry("overrides-memory-off").iter() {
+        let Some(off) = integration.memory_off() else {
+            continue;
+        };
+        let flag = an_operator_flag(integration);
+        let resume = integration.resume_session_args(&SessionId::new("recorded"));
+        let mut words = flag.clone();
+        if integration.id() == "codex" {
+            words.extend(["-c".to_owned(), "features.memories=true".to_owned()]);
+        }
+        let session = plan(integration, resume.clone(), Vec::new(), &words);
+        let mut launch = contribution();
+
+        let note = session.compose(&mut launch, Some(off.clone()), integration.flag_catalog());
+
+        let expected: Vec<OsString> = resume
+            .into_iter()
+            .chain(os(&[CONTRIBUTION]))
+            .chain(flag.iter().map(OsString::from))
+            .chain(off.args)
+            .collect();
+        assert_eq!(launch.extra_args, expected, "{}", integration.id());
+        if integration.id() == "codex" {
+            let note = note.expect("what memory-off left out is said");
+            assert!(note.starts_with("-c left out ("), "{note}");
+            assert!(!note.contains("features.memories=true"), "{note}");
+            codex = true;
+        }
+    }
+    assert!(codex, "Codex turns its memory off per launch");
+}
+
+#[test]
+fn an_override_of_what_uze_composes_never_reaches_any_harness() {
+    for integration in registry("overrides-owned").iter() {
+        let owned: Vec<&FlagSpec> = integration
+            .flag_catalog()
+            .iter()
+            .filter(|spec| matches!(spec.owner, FlagOwner::Uze(_)))
+            .collect();
+        assert!(
+            !owned.is_empty(),
+            "{} owns some of its flags",
+            integration.id()
+        );
+        for spec in owned {
+            for spelling in spec.spellings {
+                let mut words = vec![(*spelling).to_owned()];
+                if spec.value != FlagValue::None {
+                    words.push("elsewhere".to_owned());
+                }
+                let session = plan(integration, Vec::new(), Vec::new(), &words);
+                let mut launch = contribution();
+
+                let note = session.compose(&mut launch, None, integration.flag_catalog());
+
+                assert_eq!(
+                    launch.extra_args,
+                    os(&[CONTRIBUTION]),
+                    "{} {spelling}",
+                    integration.id()
+                );
+                let note = note.unwrap_or_default();
+                assert!(
+                    note.starts_with(&format!("{spelling} left out (")),
+                    "{} {spelling}: {note}",
+                    integration.id()
+                );
+            }
+        }
+    }
+}

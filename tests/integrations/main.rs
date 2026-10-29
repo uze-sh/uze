@@ -10,6 +10,7 @@ mod facts;
 mod fixtures;
 mod hooks;
 mod identity;
+mod launch_overrides;
 mod lifecycle_conformance;
 mod policy;
 mod provisioning;

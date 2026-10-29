@@ -164,7 +164,7 @@
 
 - status:   pending
 - task:     4.4
-- commit:
+- commit:   2ffb34d0
 - trigger:  The terminal runtime caps a launch environment at 16 entries and 4096 bytes, and the identity takes two; a bare launch adds the overrides' variables.
 - decided:  `uze_terminal::launch::admits` (the check `validate` already ran, made public) is asked by `open_agent_tab` before `CreateTab`; a refused environment opens no tab and raises a failed toast naming the limit. The agent's record stays, as for any launch whose tab did not open, so it can be resumed with fewer.
 - rejected: Truncating to fit: a launch carrying some of the operator's overrides is one they did not ask for. Refusing in the application before placement: it would need the terminal's limits in `uze-application`, which does not depend on `uze-terminal`, and a bare launch is already the rare case (the workspace offers only harnesses whose launcher is in place).

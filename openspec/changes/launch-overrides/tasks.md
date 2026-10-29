@@ -41,7 +41,7 @@
 - [x] 4.2 Under `UZE_BYPASS`, or for a claim `owner_of` refuses, launch without overrides and say so once
 - [x] 4.3 Application: catalog and recent-sets read models, a check service, launches and resumes that take overrides; `Continue in` launches with the target harness's recorded set (none on first switch) and says the earlier ones were left behind
 - [x] 4.4 Bare-binary launch (no shim): the client appends flags to argv and variables to the launch environment
-- [ ] 4.5 Integration tests per harness: final argv order with resume, with first turn, with `memory_off`; continuity still resumes with overrides present
+- [x] 4.5 Integration tests per harness: final argv order with resume, with first turn, with `memory_off`; continuity still resumes with overrides present
 
 ## 5. Popup (src/ui)
 

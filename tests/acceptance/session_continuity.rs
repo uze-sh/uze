@@ -373,3 +373,122 @@ fn an_agent_placed_before_launch_keys_still_comes_back_to_its_conversation() {
         "the relaunch continues the conversation: {launches:?}"
     );
 }
+
+/// Records `line` as the managed agent's overrides on the harness, as the
+/// workspace does before the agent's tab opens.
+fn with_overrides(env: &TestEnvironment, primary: &Path, id: &str, line: &str) {
+    uze_workspace::overrides::record::record_launch(
+        &UzeHome::at(&env.uze_home),
+        primary,
+        &uze_workspace::task::AgentId::adopted(id),
+        INTEGRATION,
+        &uze_workspace::overrides::split(line).unwrap(),
+    )
+    .unwrap();
+}
+
+/// Overrides never turn continuity off: the relaunch resumes, with the
+/// resume first and the overrides after what UZE composes.
+#[test]
+fn a_relaunched_agent_with_overrides_still_resumes_its_conversation() {
+    let env = TestEnvironment::isolated();
+    let harness = harness_recording_its_conversations(&env);
+    let shim = shim(&env);
+    let (primary, slot, id) = managed_slot(&env);
+    with_overrides(&env, &primary, &id, "--model opus --resume elsewhere");
+
+    launch(&env, &shim, &slot, &[], Launch::Composed { identity: &id });
+    launch(&env, &shim, &slot, &[], Launch::Composed { identity: &id });
+
+    let launches = launches(&harness);
+    let started = launches[0][1].clone();
+    assert_eq!(launches[0][0], "--session-id", "{launches:?}");
+    assert_eq!(
+        launches[1][..2],
+        ["--resume".to_owned(), started],
+        "the second launch continues the first: {launches:?}"
+    );
+    for launched in &launches {
+        assert_eq!(
+            launched[launched.len() - 2..],
+            ["--model".to_owned(), "opus".to_owned()],
+            "the override follows what UZE composed: {launches:?}"
+        );
+        assert!(
+            !launched.contains(&"elsewhere".to_owned()),
+            "an override of the resume never reaches it: {launches:?}"
+        );
+    }
+}
+
+/// The stderr a launch through the shim leaves in its pane.
+fn said_by(command: &mut std::process::Command) -> String {
+    let output = command.output().expect("the shim runs");
+    assert!(output.status.success(), "the agent must start");
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+#[test]
+fn a_bypassed_launch_leaves_the_agents_overrides_out_and_says_so() {
+    let env = TestEnvironment::isolated();
+    let harness = harness_recording_its_conversations(&env);
+    let shim = shim(&env);
+    let (primary, slot, id) = managed_slot(&env);
+    with_overrides(&env, &primary, &id, "--model opus DEBUG=1");
+    let shims = UzeHome::at(&env.uze_home).shims_dir();
+
+    let said = said_by(
+        std::process::Command::new(&shim)
+            .current_dir(&slot)
+            .isolated_home(&env.home)
+            .not_launched_by_uze()
+            .env("UZE_HOME", &env.uze_home)
+            .env(uze_terminal::launch::AGENT_IDENTITY_VARIABLE, &id)
+            .env(uze_terminal::launch::AGENT_KEY_VARIABLE, LAUNCH_KEY)
+            .env("UZE_BYPASS", "1")
+            .env(
+                "PATH",
+                uze_testkit::process::path_with(&[&shims, &env.fake_bin]),
+            ),
+    );
+
+    assert_eq!(launches(&harness), vec![Vec::<String>::new()]);
+    assert!(
+        said.contains("the agent's 2 overrides were left out (uze is bypassed)"),
+        "{said}"
+    );
+    assert!(!said.contains("opus"), "{said}");
+}
+
+#[test]
+fn a_claim_no_record_backs_leaves_the_agents_overrides_out_and_says_so() {
+    let env = TestEnvironment::isolated();
+    let harness = harness_recording_its_conversations(&env);
+    let shim = shim(&env);
+    let (primary, slot, id) = managed_slot(&env);
+    with_overrides(&env, &primary, &id, "--model opus");
+    let shims = UzeHome::at(&env.uze_home).shims_dir();
+
+    let said = said_by(
+        std::process::Command::new(&shim)
+            .current_dir(&slot)
+            .isolated_home(&env.home)
+            .not_launched_by_uze()
+            .env("UZE_HOME", &env.uze_home)
+            .env(uze_terminal::launch::AGENT_IDENTITY_VARIABLE, &id)
+            .env(
+                uze_terminal::launch::AGENT_KEY_VARIABLE,
+                "not-the-launch-key",
+            )
+            .env(
+                "PATH",
+                uze_testkit::process::path_with(&[&shims, &env.fake_bin]),
+            ),
+    );
+
+    assert_eq!(launches(&harness), vec![Vec::<String>::new()]);
+    assert!(
+        said.contains("the agent's override was left out (no record backs this launch)"),
+        "{said}"
+    );
+}
