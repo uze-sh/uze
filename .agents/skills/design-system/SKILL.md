@@ -170,7 +170,10 @@ on "cancel" must not save first.
   time: it opens empty, and the last values head a history under it, to
   be taken back on purpose.
 - A popover's foot names its keys and nothing else (`enter new · ←→
-  harness`), with `esc close` alone against its end.
+  harness`), with `esc close` alone against its end. A key whose job
+  changes with the state is named by what it does now, from the same
+  answer the key acts on (the overrides step's Enter: `new` on an empty
+  line, `take` with a row marked, `add` otherwise).
 - `Tab` in a line typed into completes, as it does in a shell; it never
   takes another job there. What Enter acts on is already on screen, in the
   field and the row marked; a sentence repeating it crowds the keys out.

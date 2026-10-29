@@ -300,7 +300,9 @@ Against the operator's mockup and the design-system rules:
 - **Words in English**, lowercase: the mockup's Portuguese (`adicionar`,
   `escolher`, `voltar`, the flag descriptions) becomes English.
 - **Foot:** first step `enter new · ←→ harness · <key> overrides`, `esc
-  close`; overrides step `enter add · tab complete · esc back`. Every hint
+  close`; overrides step `enter add · tab complete · esc back`, Enter named
+  by what it does there: `new` on an empty line with nothing marked,
+  `take` with a row marked, `add` otherwise. Every hint
   a click target with a click == key test.
 - **After launch:** the agent's overview names its overrides under its
   harness. A launch carrying a `Weakens` flag, a respawn included, says so

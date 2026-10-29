@@ -103,6 +103,28 @@ pub(super) enum OverrideRow {
     Value(&'static str),
 }
 
+/// What Enter does in the overrides step as it stands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum EnterDoes {
+    /// Takes the row marked in the list.
+    Take(OverrideRow),
+    /// Starts the agent: the line is empty and nothing is marked.
+    Launch,
+    /// Adds the line typed as entries.
+    Add,
+}
+
+impl EnterDoes {
+    /// The word the foot names Enter by.
+    pub(super) fn word(self) -> &'static str {
+        match self {
+            Self::Take(_) => "take",
+            Self::Launch => "new",
+            Self::Add => "add",
+        }
+    }
+}
+
 /// What the step's key asks of the session, beyond the popup itself.
 #[derive(Debug, Eq, PartialEq)]
 pub(super) enum OverridesOutcome {
@@ -349,8 +371,27 @@ impl DirectoryStep {
         }
     }
 
+    /// What Enter does in the overrides step now; the key and the foot
+    /// both read it, so the foot never names what the key does not do.
+    pub(super) fn enter_does(&self) -> EnterDoes {
+        let Some(step) = self.overrides.as_ref() else {
+            return EnterDoes::Launch;
+        };
+        if let Some(row) = step
+            .marked
+            .and_then(|marked| self.override_rows().get(marked).copied())
+        {
+            EnterDoes::Take(row)
+        } else if step.line.text().trim().is_empty() {
+            EnterDoes::Launch
+        } else {
+            EnterDoes::Add
+        }
+    }
+
     /// Performs `action` in the overrides step.
     pub(super) fn overrides_action(&mut self, action: Action) -> OverridesOutcome {
+        let enter = self.enter_does();
         let rows = self.override_rows();
         let Some(step) = self.overrides.as_mut() else {
             return OverridesOutcome::Kept;
@@ -376,15 +417,11 @@ impl DirectoryStep {
                     self.take_row(row);
                 }
             }
-            Action::Activate => {
-                if let Some(row) = step.marked.and_then(|marked| rows.get(marked)).copied() {
-                    self.take_row(row);
-                } else if step.line.text().trim().is_empty() {
-                    return OverridesOutcome::Launch;
-                } else {
-                    self.add_line();
-                }
-            }
+            Action::Activate => match enter {
+                EnterDoes::Take(row) => self.take_row(row),
+                EnterDoes::Launch => return OverridesOutcome::Launch,
+                EnterDoes::Add => self.add_line(),
+            },
             Action::EraseBack => {
                 step.refusal = None;
                 step.marked = None;

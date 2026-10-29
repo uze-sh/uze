@@ -188,7 +188,7 @@ fn render_harness_field(
 
 /// The popup's keys, Enter's first and the way out against the end: what
 /// Enter does is the field and the row marked above, so the foot only
-/// names the keys.
+/// names the keys, Enter by the word for what it does in that state.
 fn render_new_agent_foot(
     frame: &mut ratatui::Frame<'_>,
     rect: Rect,
@@ -203,7 +203,7 @@ fn render_new_agent_foot(
     let (keys, close) = if step.overrides.is_some() {
         (
             crate::ui::widget::hint::Hints::new(&OVERRIDES_SCOPES)
-                .named(Action::Activate, "add")
+                .named(Action::Activate, step.enter_does().word())
                 .named(Action::Expand, "complete"),
             crate::ui::widget::hint::Hints::new(&OVERRIDES_SCOPES).named(Action::Dismiss, "back"),
         )

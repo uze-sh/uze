@@ -511,6 +511,7 @@ fn clicking_an_overrides_hint_is_pressing_its_key() {
     for (action, ready) in [
         (Action::Dismiss, ""),
         (Action::Activate, "DEBUG=1"),
+        (Action::Activate, ""),
         (Action::Expand, "--"),
     ] {
         let (by_click, by_key) = (popup("overrides-hint-click"), popup("overrides-hint-key"));
@@ -534,16 +535,51 @@ fn clicking_an_overrides_hint_is_pressing_its_key() {
             } else {
                 driven.press_key(chord(action, Scope::LaunchOverrides));
             }
-            let step = step_of(&driven);
+            let step = driven.attach.model.directory_step.as_ref();
             (
-                step.overrides
-                    .as_ref()
+                step.and_then(|step| step.overrides.as_ref())
                     .map(|over| over.line.text().to_owned()),
-                step.entries().to_vec(),
+                step.map(|step| step.entries().to_vec()),
+                driven.attach.model.placement_pending,
             )
         };
         assert_eq!(state(by_click, true), state(by_key, false), "{action}");
     }
+}
+
+/// The foot names Enter by what it does there and then: start the agent
+/// on an empty line with nothing marked, take the row marked, or add the
+/// line typed.
+#[test]
+fn the_foot_names_enter_by_what_it_does() {
+    let mut popup = popup("overrides-enter-word");
+    let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
+    driven.frame();
+    open_by_key(&mut driven);
+    let foot = |driven: &mut Driven<'_>| {
+        screen(driven)
+            .into_iter()
+            .find(|row| row.contains("esc back"))
+            .expect("the step's foot is drawn")
+    };
+
+    assert!(
+        foot(&mut driven).contains("enter new"),
+        "{}",
+        foot(&mut driven)
+    );
+    type_text(&mut driven, "--");
+    assert!(
+        foot(&mut driven).contains("enter add"),
+        "{}",
+        foot(&mut driven)
+    );
+    driven.press_key(chord(Action::SelectNext, Scope::LaunchOverrides));
+    assert!(
+        foot(&mut driven).contains("enter take"),
+        "{}",
+        foot(&mut driven)
+    );
 }
 
 /// Nothing used before and nothing typed: the list says so in one line.
