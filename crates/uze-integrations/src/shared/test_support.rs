@@ -58,3 +58,35 @@ pub(crate) fn walk(root: &Path) -> BTreeSet<PathBuf> {
     }
     out
 }
+
+/// Every flag a `--help` text names, in each spelling it shows: a word that
+/// starts with `-` or `--` and a letter, up to its value (`--debug=hooks`
+/// names `--debug`).
+pub(crate) fn flags_in_help(help: &str) -> BTreeSet<&str> {
+    help.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+        .filter(|word| {
+            let name = word.trim_start_matches('-');
+            let dashes = word.len() - name.len();
+            (dashes == 1 || dashes == 2) && name.starts_with(|c: char| c.is_ascii_alphabetic())
+        })
+        .collect()
+}
+
+/// Fails naming every spelling `catalog` lists that `help` does not, and
+/// every spelling listed twice: a catalog describes the release its
+/// snapshot was taken from, and one spelling means one flag.
+pub(crate) fn assert_catalog_in_help(catalog: &[uze_core::flag_catalog::FlagSpec], help: &str) {
+    let offered = flags_in_help(help);
+    let spellings: Vec<&str> = catalog
+        .iter()
+        .flat_map(|flag| flag.spellings.iter().copied())
+        .collect();
+    let missing: Vec<&str> = spellings
+        .iter()
+        .copied()
+        .filter(|spelling| !offered.contains(spelling))
+        .collect();
+    assert!(missing.is_empty(), "not in the snapshot: {missing:?}");
+    let unique: BTreeSet<&str> = spellings.iter().copied().collect();
+    assert_eq!(unique.len(), spellings.len(), "a spelling is listed twice");
+}
