@@ -71,6 +71,14 @@ on "cancel" must not save first.
   extension's Enable with no project in front says "Needs a project" and
   never quietly flips a switch that is already on.
 
+**Moving between agents:**
+- A surface belongs to the tab it was opened on. Going to another agent,
+  however it got there (a click, a key, another space's header), puts it
+  away for that tab, and the tab coming back has it standing again where
+  it was left. Only choosing the tab or space already in front takes the
+  pane back from it. `clicking_away_and_back_keeps_the_surface_of_the_agent_left`
+  holds it.
+
 **Hover:**
 - Everything clickable has a hover, and nothing that isn't clickable does.
 - Hover is a change of colour only (a "realce"): never underline, an arrow
