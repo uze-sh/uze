@@ -17,18 +17,24 @@ const LINE_PLACEHOLDER: &str = "a flag, or NAME=value";
 /// The list says this while there is nothing to offer and nothing added.
 const NOTHING_USED_YET: &str = "no overrides used before";
 
-/// The `overrides` field at the popup's foot, under a rule and above the
-/// keys: its label in the row's own ink, what the agent's launch is given
-/// muted against its end, cut at its end, and the arrow saying the row
-/// opens a step. The whole row is the key's target, and lights under the
-/// pointer.
+/// The `overrides` field at the popup's foot, above the keys, in
+/// `container`, its own area on the raised ground with a row of air over
+/// and under it: its label in the row's own ink, what the agent's launch
+/// is given muted against its end, cut at its end, and the arrow saying
+/// it opens a step. The whole container is the key's target, and its
+/// words light under the pointer.
 pub(super) fn render_overrides_field(
     frame: &mut ratatui::Frame<'_>,
-    rect: Rect,
+    container: Rect,
     model: &WorkspaceModel,
     step: &DirectoryStep,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
+    let rect = Rect {
+        y: container.y + container.height / 2,
+        height: 1,
+        ..container
+    };
     let opens = step.chosen_harness().is_some();
     let hovered = opens && model.hovered == Some(WorkspaceHit::HintAction(Action::OpenOverrides));
     let entries = step.entries();
@@ -84,9 +90,9 @@ pub(super) fn render_overrides_field(
         }),
     ));
     if opens {
-        hits.push((rect, WorkspaceHit::HintAction(Action::OpenOverrides)));
+        hits.push((container, WorkspaceHit::HintAction(Action::OpenOverrides)));
     }
-    fill(frame, rect, CONTAINER_GROUND);
+    fill(frame, container, CONTAINER_GROUND);
     frame.render_widget(Paragraph::new(spread(rect, label, right)), rect);
 }
 

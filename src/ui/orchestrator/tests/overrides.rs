@@ -132,7 +132,7 @@ fn the_overrides_row_and_its_key_open_the_same_step() {
     assert!(field.contains(&theme::glyph(Symbol::Submenu)), "{field}");
     let foot = rows
         .iter()
-        .find(|row| row.contains("harness") && row.contains("close"))
+        .find(|row| row.contains("harness") && row.contains("enter"))
         .expect("the foot");
     assert!(foot.contains("overrides"), "the foot names the key: {foot}");
     open_by_key(&mut by_key);
@@ -206,40 +206,36 @@ fn end_of(row: &str) -> usize {
 }
 
 /// The harness heads the popup alone, under the title; the `overrides`
-/// row is the last before the foot, in a container of its own straight
-/// under the listing with no rule over it, its value against the same end
-/// as the harness's and its label in the harness's column.
+/// field is the last thing before the foot, in an area of its own: a row
+/// of air parts it from the listing, and it stands inset a column from
+/// the popup's sides with a row of its ground over and under it, so it
+/// never reads as one more directory. Its value ends a column in from the
+/// harness's, on its container's own inset.
 #[test]
 fn the_overrides_row_sits_at_the_foot_in_its_own_container() {
     let mut popup = popup("overrides-at-foot");
     let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
     let (_, rows) = popup_rows(&mut driven);
     let last = rows.len() - 1;
-    assert!(rows[1].contains(" harness "), "{}", rows.join("\n"));
-    assert!(
-        is_rule(&rows[2]),
-        "a rule under the harness:\n{}",
-        rows.join("\n")
-    );
-    let field = &rows[last - 3];
-    assert!(field.contains(" overrides "), "{}", rows.join("\n"));
+    let all = rows.join("\n");
+    assert!(rows[1].contains(" harness "), "{all}");
+    assert!(is_rule(&rows[2]), "a rule under the harness:\n{all}");
+    let field = &rows[last - 4];
+    assert!(field.contains(" overrides "), "{all}");
     assert!(
         field
             .trim_end_matches('│')
             .trim_end()
             .ends_with(&theme::glyph(Symbol::Submenu))
     );
-    assert!(
-        !is_rule(&rows[last - 4]),
-        "no rule over the field, its ground parts it:\n{}",
-        rows.join("\n")
-    );
-    assert!(
-        is_rule(&rows[last - 2]),
-        "the foot's rule:\n{}",
-        rows.join("\n")
-    );
-    assert!(rows[last - 1].contains("esc close"), "{}", rows.join("\n"));
+    for air in [last - 6, last - 5, last - 3] {
+        assert!(
+            rows[air].trim_matches('│').trim().is_empty(),
+            "air around the field, no rule of its own:\n{all}"
+        );
+    }
+    assert!(is_rule(&rows[last - 2]), "the foot's rule:\n{all}");
+    assert!(rows[last - 1].contains("ctrl+f overrides"), "{all}");
     assert_eq!(
         rows.iter()
             .filter(|row| row
@@ -248,11 +244,17 @@ fn the_overrides_row_sits_at_the_foot_in_its_own_container() {
                 .starts_with("overrides"))
             .count(),
         1,
-        "the field is drawn once:\n{}",
-        rows.join("\n")
+        "the field is drawn once:\n{all}"
     );
-    assert_eq!(end_of(field), end_of(&rows[1]), "the values end together");
-    assert_eq!(field.find("overrides"), rows[1].find("harness"));
+    assert_eq!(
+        end_of(field) + 1,
+        end_of(&rows[1]),
+        "inset a column:\n{all}"
+    );
+    assert_eq!(
+        field.find("overrides"),
+        rows[1].find("harness").map(|at| at + 1)
+    );
 
     // The step takes the field's rows with the listing's: its heading
     // stands where the harness did, and the field is not drawn under it.
@@ -265,7 +267,7 @@ fn the_overrides_row_sits_at_the_foot_in_its_own_container() {
     let heading = format!("{} overrides", theme::glyph(Symbol::StepPrevious));
     assert!(step[1].contains(&heading), "{}", step.join("\n"));
     assert!(
-        !step[last - 3].contains(" overrides "),
+        !step[last - 4].contains(" overrides "),
         "{}",
         step.join("\n")
     );
@@ -273,13 +275,13 @@ fn the_overrides_row_sits_at_the_foot_in_its_own_container() {
 
     driven.press_key(chord(Action::Dismiss, Scope::LaunchOverrides));
     let (_, rows) = popup_rows(&mut driven);
-    let field = &rows[last - 3];
+    let field = &rows[last - 4];
     assert!(
         field.contains("--model opus") && field.contains("DEBUG=1"),
         "{}",
         rows.join("\n")
     );
-    assert_eq!(end_of(field), end_of(&rows[1]), "{}", rows.join("\n"));
+    assert_eq!(end_of(field) + 1, end_of(&rows[1]), "{}", rows.join("\n"));
 }
 
 /// The field's label is in the row's own ink and its value muted at its
@@ -304,10 +306,11 @@ fn the_overrides_row_rests_quiet_and_lights_under_the_pointer() {
                 .expect("the row is a target");
             let inks = |driven: &mut Driven<'_>| {
                 let buffer = frame_buffer_at(&mut driven.attach.model, driven.area);
-                let line = &buffer_rows(&buffer)[usize::from(row.y)];
+                let y = row.y + row.height / 2;
+                let line = &buffer_rows(&buffer)[usize::from(y)];
                 let at = |word: &str| {
                     let column = line[..line.find(word).unwrap()].chars().count() as u16;
-                    buffer[(column, row.y)].clone()
+                    buffer[(column, y)].clone()
                 };
                 (at("overrides"), at("none"))
             };
@@ -838,14 +841,13 @@ fn long_values_are_cut_at_their_end_and_narrow_widths_hold() {
     driven.press_key(chord(Action::Dismiss, Scope::LaunchOverrides));
     let (popup, rows) = popup_rows(&mut driven);
     assert_eq!(popup.width, 46, "the popup gives way to the terminal");
-    let field = &rows[rows.len() - 4];
-    assert!(!is_rule(&rows[rows.len() - 5]), "{}", rows.join("\n"));
+    let field = &rows[rows.len() - 5];
     assert!(
         field.contains(" overrides "),
         "still at the foot:\n{}",
         rows.join("\n")
     );
-    assert_eq!(end_of(field), end_of(&rows[1]), "{}", rows.join("\n"));
+    assert_eq!(end_of(field) + 1, end_of(&rows[1]), "{}", rows.join("\n"));
     assert!(field.contains("LONG=x"), "{field}");
     assert!(field.contains('…'), "cut at its end: {field}");
     assert!(field.contains(&theme::glyph(Symbol::Submenu)), "{field}");

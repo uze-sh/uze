@@ -302,9 +302,13 @@ Against the operator's mockup and the design-system rules:
   resizes it.
 - **The first step gains one field row, at its foot:** `harness` stays
   alone at the head; the `overrides` row is the last before the foot's
-  keys, in a container of its own on the raised ground with no rule of
-  its own (the operator found the rules around it too many lines; the
-  step stands in the same container, grown over the listing), its label in the row's own ink and its value muted
+  keys, in an area of its own on the raised ground: a row of air under
+  the listing, inset a column from the sides, a row of its ground over
+  and under its words, no rule of its own (the operator found the rules
+  around it too many lines, and a bare row read as one more directory;
+  the step stands in the same container, grown over the listing). The
+  popup is 52 columns and taller (8 to 12 listing rows); `esc close`
+  gives way to `ctrl+f overrides` in the foot. Its label in the row's own ink and its value muted
   against its end: `none` at rest, `--model opus · DEBUG=1` (cut at its
   end) once set, ending in `›` (`Symbol::Submenu`), since it opens a step.
   Its value ends on the harness value's column. The mockup's `›`/`v`

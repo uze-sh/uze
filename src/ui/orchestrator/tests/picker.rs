@@ -680,7 +680,7 @@ fn the_foot_names_the_keys_and_its_new_starts_the_agent() {
     let (rows, _) = drawn(&mut model);
     let foot = rows
         .iter()
-        .find(|row| row.contains("harness") && row.contains("close"))
+        .find(|row| row.contains("harness") && row.contains("enter"))
         .expect("the foot is drawn");
     assert!(foot.contains("new"), "{foot}");
     assert!(!foot.contains("engine"), "no sentence about where: {foot}");

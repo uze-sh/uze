@@ -151,15 +151,21 @@ on "cancel" must not save first.
 - A popover's fields are placed by how they are used. A choice that rarely
   changes (`harness ‹ Claude Code ›`) sits alone at its head, under the
   title, a rule under it. A field that opens a step of its own
-  (`overrides`) sits at its foot, above the keys, in a container of its
-  own on the raised ground (`SurfaceRaised`), never boxed in by rules of
-  its own: the ground is what parts it from the list. Its label is in the
-  row's own ink and its value muted against its end, ending in `›`,
-  `none` at rest. Never stack the two at the head in one dim ink. The
-  step stands in that same container, grown over the rows of both fields
-  and of the list between them, so the popover's height never moves; the
-  field is not drawn under its own step. Every field's value ends on one
-  column, the one the head's ends on.
+  (`overrides`) sits at its foot, above the keys, in an area of its own:
+  a row of air parts it from the list, and it stands on the raised ground
+  (`SurfaceRaised`), inset a column from the popover's sides, with a row
+  of that ground over and under its words, never boxed in by rules. It
+  must never read as one more row of the list. Its label is in the row's
+  own ink and its value muted against its end, ending in `›`, `none` at
+  rest; the whole area is the target. Never stack the two at the head in
+  one dim ink. The step stands in that same inset container, grown over
+  the rows of both fields and of the list between them, so the popover's
+  height never moves; the field is not drawn under its own step. A field
+  in the open ends its value on the head's column; one in its own
+  container ends on that container's inset.
+- A popover is narrow and tall rather than wide: as wide as a
+  directory's name and what is known about it need (52 columns for the
+  new agent), with the room for its list given in height.
 - Dropdowns float over content and never push it down.
 - A breadcrumb names levels, short and generic (`Context › Containers ›
   Components ▾`), the step on show included. An item's own long name goes
@@ -184,7 +190,9 @@ on "cancel" must not save first.
   time: it opens empty, and the last values head a history under it, to
   be taken back on purpose.
 - A popover's foot names its keys and nothing else (`enter new · ←→
-  harness`), with `esc close` alone against its end. A key whose job
+  harness`), with `esc close` alone against its end. Where the keys that
+  act there need its room, `esc close` is the one left unsaid: Esc closes
+  everything anyway. A key whose job
   changes with the state is named by what it does now, from the same
   answer the key acts on (the overrides step's Enter: `new` on an empty
   line, `take` with a row marked, `add` otherwise).

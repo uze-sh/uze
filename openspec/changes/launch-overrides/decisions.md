@@ -328,3 +328,9 @@
 > only problem is fitting overrides"). The 60-column popup with its rules
 > is back, and the `overrides` field and its step stand in a container of
 > their own on `SurfaceRaised` instead of between two rules.
+> D22 note (popup-overlay, second pass): at the operator's word ("narrower
+> and taller; the overrides row looks like a directory row; give it an
+> area of its own; a visual gap from the picker") the popup is 52 columns
+> with 8 to 12 listing rows, the overrides field stands in an inset
+> container with air around it, and the first step's foot drops `esc
+> close` when `ctrl+f overrides` needs the room.

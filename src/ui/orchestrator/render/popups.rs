@@ -16,22 +16,24 @@ pub(in crate::ui::orchestrator) fn new_agent_popup_rows(directories: usize) -> u
 /// As few as the overrides step needs: it takes the listing's rows and the
 /// `overrides` row's, which is one more, for its entries and the list
 /// under them.
-const NEW_AGENT_POPUP_MIN_ROWS: u16 = 4;
-const NEW_AGENT_POPUP_MAX_ROWS: u16 = 9;
+const NEW_AGENT_POPUP_MIN_ROWS: u16 = 8;
+const NEW_AGENT_POPUP_MAX_ROWS: u16 = 12;
 /// Wide enough for a directory's name beside what is known about it, and
 /// for the foot's keys.
-const NEW_AGENT_POPUP_WIDTH: u16 = 60;
+const NEW_AGENT_POPUP_WIDTH: u16 = 52;
 /// The rows around the listing: the harness at the head, the line typed
-/// into, the `overrides` container and the foot. A rule closes off the
-/// harness, the line and the listing; the container needs none, its ground
-/// is what parts it.
-const NEW_AGENT_POPUP_CHROME: u16 = 7;
+/// into, the `overrides` container with the air over it, and the foot. A
+/// rule closes off the harness, the line and the listing; the container
+/// needs none, its ground is what parts it.
+const NEW_AGENT_POPUP_CHROME: u16 = 7 + OVERRIDES_FIELD - 1;
 /// The rows at the foot, under the part that changes with the step: the
 /// rule and the keys.
 const NEW_AGENT_POPUP_FOOT: u16 = 2;
 /// The rows the `overrides` container takes above the foot on the first
-/// step. The overrides step takes them back.
-const OVERRIDES_FIELD: u16 = 1;
+/// step: a row of air parting it from the listing, then the container,
+/// its row with air above and below. The overrides step takes them back.
+const OVERRIDES_FIELD: u16 = 1 + OVERRIDES_CONTAINER;
+const OVERRIDES_CONTAINER: u16 = 3;
 
 /// Where a popup of `width` by `height` floats beside `anchor`: under it,
 /// pushed back inside `area` at its edges.
@@ -113,7 +115,8 @@ pub(in crate::ui::orchestrator) fn render_directory_step(
     let inner = new_agent_card(frame, popup, hits);
     let (body, mut foot) = split_bottom(inner, NEW_AGENT_POPUP_FOOT);
     if step.overrides.is_some() {
-        render_overrides_step(frame, model, step, popup, &mut Rows::over(body), hits);
+        let container = overrides_container(body);
+        render_overrides_step(frame, model, step, popup, &mut Rows::over(container), hits);
     } else {
         let (listing, mut field) = split_bottom(body, OVERRIDES_FIELD);
         let mut rows = Rows::over(listing);
@@ -122,13 +125,25 @@ pub(in crate::ui::orchestrator) fn render_directory_step(
         }
         popup_rule(frame, &mut rows);
         render_root_picker(frame, model, step, &mut rows, hits);
-        if let Some(rect) = field.next(1) {
-            render_overrides_field(frame, rect, model, step, hits);
+        field.gap();
+        if let Some(rect) = field.next(OVERRIDES_CONTAINER) {
+            render_overrides_field(frame, overrides_container(rect), model, step, hits);
         }
     }
     popup_rule(frame, &mut foot);
     if let Some(rect) = foot.next(1) {
         render_new_agent_foot(frame, rect, model, step, hits);
+    }
+}
+
+/// The overrides' own area inside `area`: inset a column on each side, so
+/// it reads as a container standing in the popup rather than as one more
+/// row of the listing.
+fn overrides_container(area: Rect) -> Rect {
+    Rect {
+        x: area.x + 1,
+        width: area.width.saturating_sub(2),
+        ..area
     }
 }
 
@@ -249,9 +264,12 @@ fn render_new_agent_foot(
     };
     let keys = keys.hovered(hovered);
     let close = close.hovered(hovered);
-    let close_width = close.width();
     let end = rect.right().saturating_sub(TRAILING_PAD);
     let start = rect.x + PICKER_LEAD as u16;
+    // Esc closes the popup as it closes everything, so where the keys
+    // that act here need the room, it is the one left unsaid.
+    let close_fits = keys.width() + 1 + close.width() <= end.saturating_sub(start);
+    let close_width = if close_fits { close.width() } else { 0 };
     let at = Rect {
         x: start,
         width: end.saturating_sub(start + close_width + 1),
@@ -262,11 +280,12 @@ fn render_new_agent_foot(
         width: close_width,
         ..rect
     };
-    for (rect, action) in keys
-        .render(frame, at)
-        .into_iter()
-        .chain(close.render(frame, away))
-    {
+    let said_close = if close_fits {
+        close.render(frame, away)
+    } else {
+        Vec::new()
+    };
+    for (rect, action) in keys.render(frame, at).into_iter().chain(said_close) {
         hits.push((rect, WorkspaceHit::HintAction(action)));
     }
 }
