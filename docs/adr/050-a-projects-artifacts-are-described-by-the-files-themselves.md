@@ -30,11 +30,18 @@ Everything else is read from the files. Every `.mmd` / `.mermaid` under
 the directory is an artifact. Its area is the diagram's first word. Its
 name is the front-matter `title`, then the `title` statement, then the
 file name. C4 artifacts are ordered by level — context, container,
-component, dynamic — and joined into levels by what C4 authors already
-write: a box whose alias another C4 artifact draws as a boundary leads
-inside it. The one explicit join is the last, to the code, because no
-alias can name a path: `$link` on a C4 element, `click … href` on a
-flowchart node.
+component — with the dynamic and deployment views after them as
+supplementary views, not levels. They are joined into levels by what C4
+authors already write, an alias naming one element in every view: a
+`C4Context`'s scope is its one internal `System`; a `C4Container`'s is its
+outermost `System_Boundary`, the inside of the `System` with that alias;
+a `C4Component`'s is its outermost `Container_Boundary`, the inside of the
+`Container` (`ContainerDb`, `ContainerQueue`) with that alias, and views
+sharing one parent are siblings. A nested `Boundary` joins nothing. Where
+the alias cannot say it, an element's `$link` to another catalogued
+artifact declares its inside. The last join, to the code, is always
+explicit, because no alias can name a path: `$link` to a file on a C4
+element, `click … href` on a flowchart node.
 
 There is no manifest, and nothing uze-specific is required in a diagram.
 
@@ -53,6 +60,10 @@ that projects have written is not.
 Joining by alias is implicit, so it can be wrong silently: two boundaries
 with one alias resolve to the first, and the join is restricted to C4
 artifacts because an unrestricted one made a flowchart's subgraph the
-inside of a container by accident of naming.
+inside of a container by accident of naming. Joining any boundary to any
+box of its alias, as the first version did, also let one alias be a system
+in the context and a boundary in a component view, skipping the container
+level; tying each scope to the macro one level up is what keeps a walk
+inside going through every level C4 has.
 
 Source change: openspec/changes/archive/2026-09-19-add-the-architect-surface/

@@ -299,15 +299,21 @@ C4Context
 
 C4 is a model of levels (a system, the containers inside it, the components
 inside one of those), and the files are joined into levels the same way they are
-sorted into areas: by what they already say. A box has a level below it when
-another C4 file draws its **inside**, which is a boundary carrying the box's
+sorted into areas: by what they already say. An alias names one element in every
+view, and a view's outermost boundary says which box it is the inside of: a
+container view's `System_Boundary` is the inside of the `System` with its alias,
+a component view's `Container_Boundary` the inside of the `Container` with its
 alias:
 
 ```text
 system-context.mmd    System(uze, "uze", …)
-containers.mmd        System_Boundary(uze, "uze") { … Container(core, "Core", …) … }
-core-components.mmd   Container_Boundary(core, "Core") { … }
+containers.mmd        System_Boundary(uze, "uze") { … Container(cli, "uze CLI", …) … }
+core-components.mmd   Container_Boundary(cli, "uze CLI") { … }
 ```
+
+Several component views of one container sit side by side, each one level below
+it. Where an alias cannot say it, an element's `$link` to another of the files
+names its inside instead.
 
 A box like that is marked, and entering it opens the file that draws its inside;
 the way in is kept as a trail, every step of which goes back. The last level is
