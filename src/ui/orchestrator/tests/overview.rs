@@ -3318,7 +3318,7 @@ fn a_section_not_read_yet_says_it_is_reading() {
 }
 
 /// An agent whose directory is gone still has an overview: it says the
-/// directory no longer exists, offers a refresh, and lists no section.
+/// directory no longer exists, and keeps every section to go to.
 #[test]
 fn an_agent_whose_directory_is_gone_is_said_so() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-gone"));
@@ -3328,15 +3328,30 @@ fn an_agent_whose_directory_is_gone_is_said_so() {
     let mut driven = overview_answered(&home, Some(Ok(gone)));
     let screen = frame_rows(&mut driven.attach.model).join("\n");
     assert!(screen.contains("no longer exists"), "{screen}");
-    assert!(
-        !driven
-            .attach
-            .model
-            .hits
-            .iter()
-            .any(|(_, hit)| matches!(hit, WorkspaceHit::OverviewSection(_))),
-        "no section is offered over a directory that is gone"
-    );
+    let sections = driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .filter(|(_, hit)| matches!(hit, WorkspaceHit::OverviewSection(_)))
+        .count();
+    assert_eq!(sections, Section::COUNT, "every section is offered");
+}
+
+/// A project that could not be read keeps the bar: each section other
+/// than the agent's says why it has nothing to list.
+#[test]
+fn a_project_that_could_not_be_read_keeps_every_section() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-unread"));
+    let mut driven = overview_answered(&home, Some(Err("agents.yaml is malformed".to_owned())));
+    let worktrees =
+        driven.hit(|hit| *hit == WorkspaceHit::OverviewSection(Section::Worktrees.index()));
+    driven.press(worktrees.x + 1, worktrees.y);
+    driven.frame();
+    let screen = frame_rows(&mut driven.attach.model).join("\n");
+    assert!(screen.contains("PROJECT NOT READ"), "{screen}");
+    assert!(screen.contains("agents.yaml is malformed"), "{screen}");
+    assert_eq!(overview_of(&driven).section, Section::Worktrees);
 }
 
 /// The server confirming the selection the overview was opened over —

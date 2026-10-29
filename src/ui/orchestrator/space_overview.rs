@@ -998,10 +998,12 @@ impl SpaceOverviewView {
     /// The health of each section, from the answer as it stands.
     pub(super) fn health(&self, section: Section) -> Health {
         let Some(project) = self.project() else {
-            return if self.answer.is_none() {
-                Health::Loading
-            } else {
-                Health::Fine
+            return match &self.answer {
+                None => Health::Loading,
+                // The prompts are read without the project.
+                Some(_) if section == Section::Agent => Health::Fine,
+                Some(Err(_)) => Health::Failing,
+                Some(Ok(_)) => Health::Warning,
             };
         };
         match section {

@@ -153,38 +153,22 @@ fn render_overview_frame(
         &name,
         overview,
     );
+    // What stands in for the project, as a title and what it is about.
     let message = match &overview.answer {
-        Some(Ok(SpaceOverview::DirectoryGone { directory })) => {
-            Some(format!("{} no longer exists", display_path(directory)))
-        }
-        Some(Ok(SpaceOverview::NotAProject { directory })) => Some(format!(
-            "{} is not inside a project",
-            display_path(directory)
+        Some(Ok(SpaceOverview::DirectoryGone { directory })) => Some((
+            "Directory gone",
+            format!("{} no longer exists", display_path(directory)),
         )),
-        Some(Err(reason)) => Some(reason.clone()),
+        Some(Ok(SpaceOverview::NotAProject { directory })) => Some((
+            "Not a project",
+            format!("{} is not inside a project", display_path(directory)),
+        )),
+        Some(Err(reason)) => Some(("Project not read", reason.clone())),
         _ => None,
     };
-    if let Some(message) = message {
-        let line = Line::from(Span::styled(message, theme::fg(Token::TextPrimary)));
-        frame.render_widget(
-            Paragraph::new(line),
-            Rect::new(inner.x, inner.y + BAR_ROW, inner.width, 1),
-        );
-        // The agent is still the agent, wherever it stands: its prompts
-        // are listed even with no project to describe around them.
-        let top = inner.y + CAUSE_ROW;
-        let body = Rect::new(inner.x, top, inner.width, foot.y.saturating_sub(top + 1));
-        render_agent(frame, body, model, overview, hits, Track::default());
-        render_foot(
-            frame,
-            foot,
-            model,
-            overview,
-            &[(Action::Refresh, "refresh")],
-            hits,
-        );
-        return;
-    }
+    // The bar stands whatever the read said: a project that could not be
+    // read is still the one each section is about, and every section says
+    // why it is empty rather than the overview losing all but one.
     let bar = Rect::new(inner.x, inner.y + BAR_ROW, inner.width, 1);
     let open = Some(overview.section.index());
     for (rect, index) in tabs::tab_bar(frame, bar, &section_tabs(model, overview), open, false) {
@@ -192,17 +176,30 @@ fn render_overview_frame(
     }
     Rule::new(Edge::Top).render(frame, Rect::new(area.x, inner.y + RULE_ROW, area.width, 1));
     let Some(project) = project else {
-        let loading = Line::from(vec![
-            Span::styled(
-                theme::frame(Symbol::StatusWorking, model.tick),
-                theme::fg(Token::StateInFlight),
-            ),
-            Span::styled("  reading the project", theme::fg(Token::TextMuted)),
-        ]);
-        frame.render_widget(
-            Paragraph::new(loading),
-            Rect::new(inner.x, inner.y + CAUSE_ROW, inner.width, 1),
-        );
+        let cause = Rect::new(inner.x, inner.y + CAUSE_ROW, inner.width, 1);
+        match (&message, overview.section) {
+            // The agent is still the agent, wherever it stands: its
+            // prompts are listed with no project to describe around them.
+            (_, Section::Agent) => {
+                let said = match &message {
+                    Some((_, message)) => Line::from(Span::styled(
+                        text::elide(message, usize::from(cause.width)),
+                        theme::fg(Token::TextPrimary),
+                    )),
+                    None => reading_the_project(model),
+                };
+                frame.render_widget(Paragraph::new(said), cause);
+                let top = inner.y + BODY_ROW;
+                let body = Rect::new(inner.x, top, inner.width, foot.y.saturating_sub(top + 1));
+                render_agent(frame, body, model, overview, hits, Track::default());
+            }
+            (Some((title, message)), _) => {
+                let top = cause.y;
+                let body = Rect::new(inner.x, top, inner.width, foot.y.saturating_sub(top + 1));
+                empty(frame, body, title, Some(message));
+            }
+            (None, _) => frame.render_widget(Paragraph::new(reading_the_project(model)), cause),
+        }
         render_foot(
             frame,
             foot,
@@ -366,6 +363,17 @@ fn render_header(
         Span::styled(format!("  {path}"), theme::fg(Token::TextMuted)),
     ]);
     frame.render_widget(Paragraph::new(line), rect);
+}
+
+/// The cause line while the project is being read.
+fn reading_the_project(model: &WorkspaceModel) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(
+            theme::frame(Symbol::StatusWorking, model.tick),
+            theme::fg(Token::StateInFlight),
+        ),
+        Span::styled("  reading the project", theme::fg(Token::TextMuted)),
+    ])
 }
 
 /// The first line of the section: what its state comes from.
