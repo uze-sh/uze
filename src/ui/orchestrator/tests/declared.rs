@@ -2252,16 +2252,27 @@ fn a_linked_extensions_inspector_lists_its_runs_and_reruns_with_edited_input() {
     );
     driven.press(rerun_hint.x, rerun_hint.y);
     assert!(driven.attach.model.inspector.edit.is_none(), "asked");
+    // The runner counts a run as it starts and lists it once it answered,
+    // so what is waited for is the listing the assertions read.
+    let refreshed = |runs: &[String]| runs.iter().any(|run| run.starts_with("refresh state"));
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
-    while driven.attach.model.remembered.declared.runner.runs() < 2
+    while !refreshed(&driven.attach.model.inspection().unwrap().runs)
         && std::time::Instant::now() < deadline
     {
         let _ = driven.pump();
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     let runs = driven.attach.model.inspection().unwrap().runs;
-    assert!(runs[0].starts_with("refresh state"), "{runs:?}");
-    assert!(runs[1].contains(r#"input {"phase":"7"}"#), "{runs:?}");
+    let refresh = runs.iter().position(|run| run.starts_with("refresh state"));
+    let rerun = runs
+        .iter()
+        .position(|run| run.contains(r#"input {"phase":"7"}"#));
+    assert!(
+        refresh
+            .zip(rerun)
+            .is_some_and(|(refresh, rerun)| refresh < rerun),
+        "the rerun with its input, then the refresh it caused: {runs:?}"
+    );
     let rows = frame_rows_at(&mut driven.attach.model, driven.area);
     assert!(shown(&rows, "put state's input back"), "{rows:#?}");
     assert_eq!(driven.attach.model.remembered.declared.runner.runs(), 2);
