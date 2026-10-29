@@ -27,6 +27,12 @@ pub(super) fn forward_mouse<W: io::Write>(
     let Some(snapshot) = model.panes.get(&model.focused_pane()) else {
         return;
     };
+    // A floating drawer covers these cells: what the pointer does there is
+    // the drawer's, and a release or a drag under it would reach the agent
+    // as a gesture at a cell nobody pressed.
+    if model.under_floating_drawer(mouse.column, mouse.row) {
+        return;
+    }
     if !snapshot.mouse.reports_clicks {
         return;
     }

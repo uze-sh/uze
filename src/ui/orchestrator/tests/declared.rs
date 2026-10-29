@@ -2456,3 +2456,55 @@ fn a_drawers_waiting_notice_goes_once_its_extension_answers() {
     }));
     assert_eq!(model.dock_notice, None, "the answer ends the waiting");
 }
+
+/// A floating drawer stands over the pane: what is under its card is the
+/// drawer's to answer, ahead of whatever the pane drew there, and nothing
+/// the pointer does on it reaches the agent behind.
+#[test]
+fn a_floating_drawer_answers_the_pointer_over_the_pane_it_covers() {
+    let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("drawer-float-pointer"));
+    let mut model = hosting_a_drawer(Some(uze_contract::DrawerDecl {
+        side: uze_contract::DrawerSide::Right,
+        float: true,
+        fit: false,
+    }));
+    let slot = drawer_slot(&model);
+    // A view in the pane, whose targets lie under the card.
+    let view = view_slot(&model);
+    super::open_surface(&mut model, view);
+    model.toggle_drawer(slot, ratatui::layout::Rect::new(0, 0, 200, 60));
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    driven.frame();
+    let pane = layout_of(&driven).pane;
+    let card = driven
+        .attach
+        .model
+        .dock_drawn
+        .get()
+        .expect("the card is drawn");
+    assert!(
+        pane.contains(ratatui::layout::Position::new(card.x + 2, card.y + 2)),
+        "floating, the card stands over the pane"
+    );
+    assert!(
+        driven
+            .attach
+            .model
+            .on_drawer_hit(card.x + 2, card.bottom() - 2),
+        "the card answers before the pane under it"
+    );
+    let _ = driven.sent();
+
+    driven.press(card.x + 2, card.bottom() - 2);
+    assert!(
+        driven.attach.model.drawer_focused(),
+        "a click lends it the keys"
+    );
+    assert!(
+        !driven.sent().iter().any(|request| matches!(
+            request,
+            crate::ui::orchestrator::ClientRequest::Input { .. }
+        )),
+        "and the agent behind never sees the click"
+    );
+}

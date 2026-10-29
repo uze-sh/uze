@@ -171,6 +171,7 @@ impl Attach<'_> {
             )
         );
         let on_surface = !on_host
+            && !self.model.under_floating_drawer(mouse.column, mouse.row)
             && (layout
                 .pane
                 .contains(ratatui::layout::Position::new(mouse.column, mouse.row))

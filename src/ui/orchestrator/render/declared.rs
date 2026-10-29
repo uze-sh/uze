@@ -125,15 +125,23 @@ pub(super) fn render_declared_drawer(
         widget::banner::render(frame, content, &error_title(errors.len()), errors);
     }
     // The edge first, so it answers before the rows beside it; the card
-    // last, behind everything it holds.
-    hits.push((handle, WorkspaceHit::ResizeDock));
-    hits.extend(view_hits.into_iter().map(|(rect, hit)| {
+    // last, behind everything it holds. Floating, the drawer stands over
+    // the pane and its bands, whose targets were registered first: its own
+    // go ahead of them, as an overlay's do.
+    let mut drawn = vec![(handle, WorkspaceHit::ResizeDock)];
+    drawn.extend(view_hits.into_iter().map(|(rect, hit)| {
         (
             rect,
             WorkspaceHit::Extension(ExtensionHit { slot: slot.id, hit }),
         )
     }));
-    hits.push((area, WorkspaceHit::DockBody));
+    drawn.push((area, WorkspaceHit::DockBody));
+    match place.float {
+        true => {
+            hits.splice(0..0, drawn);
+        }
+        false => hits.extend(drawn),
+    }
     animates
 }
 

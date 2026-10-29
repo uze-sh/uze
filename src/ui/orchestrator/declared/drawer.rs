@@ -180,6 +180,28 @@ impl WorkspaceModel {
         self.dock_focused = false;
     }
 
+    /// Whether the cell at `column`, `row` is a floating drawer's, drawn
+    /// over the pane: the drawer's, never the pane's nor the agent's.
+    pub(in crate::ui::orchestrator) fn under_floating_drawer(&self, column: u16, row: u16) -> bool {
+        self.drawer_floats()
+            && self
+                .dock_drawn
+                .get()
+                .is_some_and(|card| card.contains(ratatui::layout::Position::new(column, row)))
+    }
+
+    /// Whether the target under `column`, `row` is the open drawer's.
+    #[cfg(test)]
+    pub(in crate::ui::orchestrator) fn on_drawer_hit(&self, column: u16, row: u16) -> bool {
+        match self.hit_at(column, row) {
+            Some(WorkspaceHit::DockBody | WorkspaceHit::ResizeDock) => true,
+            Some(WorkspaceHit::Extension(ExtensionHit { slot, .. })) => {
+                self.open_drawer() == Some(slot)
+            }
+            _ => false,
+        }
+    }
+
     /// Whether the open drawer floats over the pane: then it is put away
     /// as an overlay is, and Esc closes it wherever the keys are.
     pub(in crate::ui::orchestrator) fn drawer_floats(&self) -> bool {
