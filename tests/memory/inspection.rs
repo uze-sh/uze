@@ -142,6 +142,17 @@ fn a_space_outside_every_project_keeps_its_settings_and_memory() {
     let application = app(&root, true);
     let bare = root.join("bare");
     fs::create_dir_all(&bare).unwrap();
+    application
+        .memory()
+        .remember(
+            uze_application::application::memory::MemoryCaller::Operator { cwd: &bare },
+            uze_application::application::memory::MemoryScope::Machine,
+            "everywhere",
+            uze_application::application::memory::Kind::User,
+            "a fact for every project",
+            "body",
+        )
+        .unwrap();
 
     let SpaceOverview::Project(space) = application.workspace().space_overview(&bare).unwrap()
     else {
@@ -150,6 +161,15 @@ fn a_space_outside_every_project_keeps_its_settings_and_memory() {
     assert!(space.status.is_none(), "no project has no status");
     assert!(space.plugins.plugins.is_empty());
     assert!(space.workspace.is_ok(), "{:?}", space.workspace);
+    assert!(
+        space
+            .memory
+            .machine
+            .iter()
+            .any(|fact| fact.name == "everywhere"),
+        "the machine's facts reach it: {:?}",
+        space.memory.machine
+    );
 
     let applied = application
         .workspace()
