@@ -121,29 +121,65 @@ fn a_resumed_launch_takes_its_overrides_after_the_resume_on_every_harness() {
     }
 }
 
+/// Where a harness reads its first turn decides where overrides go: before
+/// a turn its own flag carries (`-- <turn>` ends option parsing), after a
+/// bare positional one, which a variadic flag before it would swallow.
 #[test]
-fn a_first_turn_stays_after_the_overrides_on_every_harness() {
+fn a_first_turn_keeps_its_place_beside_the_overrides_on_every_harness() {
     let mut asked = 0;
     for integration in registry("overrides-first-turn").iter() {
         let flag = an_operator_flag(integration);
         let turn = integration.first_turn_args("read your briefing");
-        if turn.is_empty() {
+        let Some(first) = turn.first() else {
             continue;
-        }
+        };
         let session = plan(integration, Vec::new(), turn.clone(), &flag);
         let mut launch = contribution();
 
         session.compose(&mut launch, None, integration.flag_catalog());
 
-        let expected: Vec<OsString> = os(&[CONTRIBUTION])
-            .into_iter()
-            .chain(flag.iter().map(OsString::from))
-            .chain(turn)
-            .collect();
+        let flag: Vec<OsString> = flag.iter().map(OsString::from).collect();
+        let expected: Vec<OsString> = if first.to_string_lossy().starts_with('-') {
+            os(&[CONTRIBUTION])
+                .into_iter()
+                .chain(flag)
+                .chain(turn)
+                .collect()
+        } else {
+            os(&[CONTRIBUTION])
+                .into_iter()
+                .chain(turn)
+                .chain(flag)
+                .collect()
+        };
         assert_eq!(launch.extra_args, expected, "{}", integration.id());
         asked += 1;
     }
     assert!(asked > 0, "some harness takes its first turn as arguments");
+}
+
+#[test]
+fn a_bare_first_turn_is_never_taken_as_a_variadic_flags_value() {
+    let registry = registry("overrides-variadic");
+    let codex = registry
+        .iter()
+        .find(|integration| integration.id() == "codex")
+        .expect("Codex is registered");
+    let turn = codex.first_turn_args("read your briefing");
+    let words: Vec<String> = ["-i", "shot.png"].map(str::to_owned).to_vec();
+    let session = plan(codex, Vec::new(), turn.clone(), &words);
+    let mut launch = contribution();
+    let off = codex.memory_off().expect("Codex turns its memory off");
+
+    session.compose(&mut launch, Some(off.clone()), codex.flag_catalog());
+
+    let expected: Vec<OsString> = os(&[CONTRIBUTION])
+        .into_iter()
+        .chain(turn)
+        .chain(os(&["-i", "shot.png"]))
+        .chain(off.args)
+        .collect();
+    assert_eq!(launch.extra_args, expected);
 }
 
 #[test]

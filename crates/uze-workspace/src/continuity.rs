@@ -90,10 +90,12 @@ impl LaunchPlan {
     /// once.
     ///
     /// The argv is the resume, the contribution's own arguments, the
-    /// operator's overrides, the first turn, then memory-off: a resume
-    /// spelled as a subcommand needs the front of the line, a first turn
-    /// may end the harness's options so overrides precede it, and nothing
-    /// an override says reaches past what UZE composes. Variables go the
+    /// operator's overrides and the first turn, then memory-off: a resume
+    /// spelled as a subcommand needs the front of the line, and nothing an
+    /// override says reaches past what UZE composes. Overrides precede a
+    /// first turn its own flag carries, which may end the harness's options
+    /// (`-- <turn>`), and follow a bare positional one, which a variadic
+    /// flag before it would take as one of its values. Variables go the
     /// same way round: the overrides' first, so any later setting of the
     /// same name is UZE's.
     pub fn compose(
@@ -113,12 +115,18 @@ impl LaunchPlan {
             notes.extend(overrides.left_out.drain(said..));
         }
         notes.extend(overrides.weakens);
+        let (before_turn, after_turn) = if starts_bare(&self.trailing) {
+            (Vec::new(), overrides.args)
+        } else {
+            (overrides.args, Vec::new())
+        };
         contribution.extra_args = self
             .args
             .into_iter()
             .chain(std::mem::take(&mut contribution.extra_args))
-            .chain(overrides.args)
+            .chain(before_turn)
             .chain(self.trailing)
+            .chain(after_turn)
             .collect();
         contribution.extra_env = overrides
             .env
@@ -139,6 +147,13 @@ impl LaunchPlan {
             ..Self::default()
         }
     }
+}
+
+/// Whether a first turn begins with a bare positional word rather than a
+/// flag carrying it.
+fn starts_bare(turn: &[OsString]) -> bool {
+    turn.first()
+        .is_some_and(|first| !first.to_string_lossy().starts_with('-'))
 }
 
 /// Resume this agent's conversation, or start one and record it.

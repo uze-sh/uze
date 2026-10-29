@@ -116,13 +116,17 @@ harness's set again. An agent's entry goes when the agent's record does.
 ### 3. Final argv and environment
 
 ```
-<session args> <contribution args> <override flags> <trailing turn> <memory_off args> <caller argv (empty)>
+<session args> <contribution args> <override flags> <trailing turn> <memory_off args> <caller argv (empty)>   turn behind a flag or `--`
+<session args> <contribution args> <trailing turn> <override flags> <memory_off args> <caller argv (empty)>   bare positional turn
 ```
 
 The session args lead (Codex's `resume <id>` must come first, so every
 Codex catalog flag must also be accepted by `codex resume`); the trailing
-turn stays where its harness reads it (Claude's `-- <turn>` ends option
-parsing, so overrides must precede it). Variables are set before
+turn stays where its harness reads it. A turn carried by a flag or after
+`--` (Claude's `-- <turn>` ends option parsing, OpenCode's `--prompt`,
+Antigravity's `-i`) has overrides precede it; a bare positional turn
+(Codex) has them follow it, since a variadic flag before it
+(`-i, --image <FILE>...`) would take the turn as one of its values. Variables are set before
 `UZE_SHIM_*` and `extra_env`. That ordering protects only what UZE
 *sets*; variables UZE only *reads* are protected by refusal alone.
 

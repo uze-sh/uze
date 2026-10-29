@@ -26,7 +26,8 @@ and choosing none SHALL take no step beyond the directory and Enter.
 
 ### Requirement: Overrides are composed after what UZE adds
 The system SHALL place an override's flags after the arguments UZE
-prepends and before the first turn UZE appends last, and SHALL set an
+prepends, before a first turn a flag or `--` carries and after a first
+turn the harness reads as a bare positional word, and SHALL set an
 override's variables on top of the inherited environment and under
 nothing UZE sets, so an override changes the harness and never the launch
 UZE composed.
@@ -34,6 +35,10 @@ UZE composed.
 #### Scenario: A resumed agent with an override
 - **WHEN** an agent launched with `--model opus` is relaunched and its conversation is resumed
 - **THEN** the harness receives the resume arguments first and `--model opus` after them
+
+#### Scenario: A first turn read as a bare positional word
+- **WHEN** an agent of a harness that reads its first turn as a bare positional word is launched with an override flag that takes several values
+- **THEN** the harness receives the first turn before the override, so the flag never takes the turn as a value
 
 #### Scenario: A variable the operator's shell already sets
 - **WHEN** the operator's environment has `DEBUG=0` and the override says `DEBUG=1`

@@ -2393,9 +2393,10 @@ starts the agent anyway.
 
 ### An override never displaces what UZE composes for a launch (`launch-overrides`)
 
-An agent's launch overrides are spliced between what UZE prepends and the
-first turn, and what turns memory off comes after them, so a resume, a
-briefing channel or a first turn is never pushed aside. A flag, a
+An agent's launch overrides are spliced after what UZE prepends, before a
+first turn a flag or `--` carries and after a bare positional one, and
+what turns memory off comes after them, so a resume, a briefing channel or
+a first turn is never pushed aside or taken as an override's value. A flag, a
 configuration key or a variable that collides with what UZE composes on
 that launch — a resume or session flag, a variable UZE or the integration
 manages, a key memory-off sets — is left out before the harness starts, on
@@ -2404,7 +2405,8 @@ says the flag's spelling or the variable's name, never its value.
 
 > `tests/integrations/launch_overrides.rs::an_override_of_what_uze_composes_never_reaches_any_harness`
 > `tests/integrations/launch_overrides.rs::a_resumed_launch_takes_its_overrides_after_the_resume_on_every_harness`
-> `tests/integrations/launch_overrides.rs::a_first_turn_stays_after_the_overrides_on_every_harness`
+> `tests/integrations/launch_overrides.rs::a_first_turn_keeps_its_place_beside_the_overrides_on_every_harness`
+> `tests/integrations/launch_overrides.rs::a_bare_first_turn_is_never_taken_as_a_variadic_flags_value`
 > `tests/integrations/launch_overrides.rs::memory_off_comes_last_and_leaves_out_the_override_it_collides_with`
 > `crates/uze-workspace/src/overrides.rs::what_uze_owns_is_left_out_naming_it_and_never_its_value`
 > `crates/uze-workspace/src/overrides.rs::a_key_composed_after_the_plan_is_left_out_then`
