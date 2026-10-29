@@ -2545,3 +2545,40 @@ fn an_answer_to_the_drawer_is_said_in_the_drawer_beside_its_view() {
     assert_eq!(model.dock_notice, Some(said), "said where it was asked");
     assert_eq!(model.open_notice, None, "not along the view's foot");
 }
+
+/// A width dragged on a docked drawer is that placement's own: a floating
+/// card does not take it, and one that fits what it holds keeps the width
+/// its views are written for.
+#[test]
+fn a_docked_drawers_dragged_width_is_not_a_floating_ones() {
+    use super::render::place_drawer;
+    let area = ratatui::layout::Rect::new(0, 0, 200, 60);
+    for (fit, expected) in [
+        (true, Some(crate::ui::widget::drawer::FIT_WIDTH)),
+        (false, None),
+    ] {
+        let mut model = hosting_a_drawer(Some(uze_contract::DrawerDecl {
+            side: uze_contract::DrawerSide::Right,
+            float: true,
+            fit,
+        }));
+        let slot = drawer_slot(&model);
+        model.toggle_drawer(slot, area);
+        let before = place_drawer(area, model.dock().expect("open"))
+            .1
+            .unwrap()
+            .width;
+        model.dock_width = Some(150);
+        let after = place_drawer(area, model.dock().expect("open"))
+            .1
+            .unwrap()
+            .width;
+        assert_eq!(
+            after, before,
+            "fit {fit}: the docked width is not the card's"
+        );
+        if let Some(expected) = expected {
+            assert_eq!(after, expected);
+        }
+    }
+}

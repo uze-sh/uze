@@ -69,11 +69,11 @@ impl WorkspaceModel {
     }
 
     fn dock_for(&self, place: uze_contract::DrawerDecl) -> crate::ui::orchestrator::render::Dock {
-        crate::ui::orchestrator::render::Dock {
-            place,
-            width: self.dock_width,
-            rows: self.dock_rows,
-        }
+        let (width, rows) = match place.float {
+            true => (self.float_width, self.float_rows),
+            false => (self.dock_width, self.dock_rows),
+        };
+        crate::ui::orchestrator::render::Dock { place, width, rows }
     }
 
     /// Whether the open drawer has the navigation keys now. Anything
@@ -136,6 +136,10 @@ impl WorkspaceModel {
         let Some(place) = self.open_drawer_slot().and_then(HostedSlot::drawer_place) else {
             return;
         };
+        // A card that fits what it holds is sized by it, not by a hand.
+        if place.fit {
+            return;
+        }
         let gap = match place.float {
             true => 0,
             false => crate::ui::widget::drawer::DOCKED_GAP,
@@ -154,13 +158,16 @@ impl WorkspaceModel {
         let Some(drawn) = crate::ui::orchestrator::render::place_drawer(room, dock).1 else {
             return;
         };
-        let (width, rows) = match place.side.across() {
-            true => (self.dock_width, Some(drawn.height - gap)),
-            false => (Some(drawn.width - gap), self.dock_rows),
+        let kept = match place.float {
+            true => (&mut self.float_width, &mut self.float_rows),
+            false => (&mut self.dock_width, &mut self.dock_rows),
         };
-        if (width, rows) != (self.dock_width, self.dock_rows) {
-            self.dock_width = width;
-            self.dock_rows = rows;
+        let wanted = match place.side.across() {
+            true => (*kept.0, Some(drawn.height - gap)),
+            false => (Some(drawn.width - gap), *kept.1),
+        };
+        if wanted != (*kept.0, *kept.1) {
+            (*kept.0, *kept.1) = wanted;
             self.dirty = true;
         }
     }

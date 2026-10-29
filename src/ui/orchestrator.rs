@@ -1984,6 +1984,11 @@ struct WorkspaceModel {
     /// same way: apart from its width, so a drawer on another side keeps
     /// its own.
     dock_rows: Option<u16>,
+    /// The same two for a drawer floating over the pane, apart from a
+    /// docked one's: a card dragged wide over the agent must not open the
+    /// next docked drawer squeezing the agent to its narrowest.
+    float_width: Option<u16>,
+    float_rows: Option<u16>,
     /// The card the drawer stood in on the last frame: a floating drawer
     /// that fits what it holds is only sized while it is drawn, and the
     /// wheel and a drag of its edge are measured against what was seen.

@@ -128,7 +128,12 @@ pub(super) fn render_declared_drawer(
     // last, behind everything it holds. Floating, the drawer stands over
     // the pane and its bands, whose targets were registered first: its own
     // go ahead of them, as an overlay's do.
-    let mut drawn = vec![(handle, WorkspaceHit::ResizeDock)];
+    // A card that fits what it holds has no edge to drag: it is sized by
+    // what it holds.
+    let mut drawn = Vec::new();
+    if !place.fit {
+        drawn.push((handle, WorkspaceHit::ResizeDock));
+    }
     drawn.extend(view_hits.into_iter().map(|(rect, hit)| {
         (
             rect,

@@ -105,7 +105,7 @@ pub(super) fn place_drawer(area: Rect, dock: Dock) -> (Rect, Option<Rect>) {
     let side = dock.place.side;
     if dock.place.float {
         let extent = match (side.across(), dock.place.fit) {
-            (false, true) => Some(dock.width.unwrap_or(FIT_WIDTH).min(area.width)),
+            (false, true) => Some(FIT_WIDTH.min(area.width)),
             (false, false) => {
                 widget::drawer::floating_extent(dock.width, area.width, DOCKED_MIN_WIDTH)
             }
