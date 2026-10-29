@@ -12,8 +12,8 @@
 
 ## 1. Catalog contract (uze-core)
 
-- [ ] 1.1 Add `FlagSpec`, `FlagValue` (`None`/`Free`/`OneOf`) and `FlagOwner` (`Operator`/`Weakens`/`Degrades`/`Uze`/`Keyed`) as plain data, naming no harness
-- [ ] 1.2 Add `IntegrationPort::flag_catalog()` and `managed_environment()` with empty defaults; unit-test the defaults
+- [x] 1.1 Add `FlagSpec`, `FlagValue` (`None`/`Free`/`OneOf`) and `FlagOwner` (`Operator`/`Weakens`/`Degrades`/`Uze`/`Keyed`) as plain data, naming no harness
+- [x] 1.2 Add `IntegrationPort::flag_catalog()` and `managed_environment()` with empty defaults; unit-test the defaults
 
 ## 2. Catalogs (uze-integrations)
 

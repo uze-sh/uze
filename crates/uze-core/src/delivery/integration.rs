@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     error::Result,
     exposure::{ExposureMechanism, ExposurePlan, PackageExposurePlan},
+    flag_catalog::FlagSpec,
     harness_runtime::{HarnessRuntimeContribution, RuntimeContext},
     home::UzeHome,
     project_context::AgentsDirectoryResource,
@@ -531,6 +532,23 @@ pub trait IntegrationPort: Send + Sync {
         _since_unix: Option<u64>,
     ) -> Option<ConversationDigest> {
         None
+    }
+
+    /// The flags this harness's launch takes that are worth offering an
+    /// operator, and which of them UZE composes itself. Kept to the
+    /// harness's latest release and proven against its `--help`. The
+    /// default is none: a harness nobody has catalogued is completed with
+    /// nothing, and every flag typed for it passes as unknown.
+    fn flag_catalog(&self) -> &'static [FlagSpec] {
+        &[]
+    }
+
+    /// The environment variables this integration sets or reads to deliver
+    /// and resume, which an override may not set. Only this harness's own:
+    /// what every harness shares (`UZE_*`, `PATH`, `HOME`) is the
+    /// workspace's rule. The default is none.
+    fn managed_environment(&self) -> &'static [&'static str] {
+        &[]
     }
 
     // ── Back to delivery ───────────────────────────────────────────────
@@ -1414,6 +1432,14 @@ mod tests {
             }),
             None
         );
+    }
+
+    /// An override for a harness nobody has catalogued is the operator's
+    /// as typed: nothing completes it, and nothing claims it is UZE's.
+    #[test]
+    fn an_integration_that_declares_nothing_catalogues_no_flag_and_manages_no_variable() {
+        assert!(UndeclaredIntegration.flag_catalog().is_empty());
+        assert!(UndeclaredIntegration.managed_environment().is_empty());
     }
 
     /// `exec` cannot retry, so "I cannot tell you cheaply" must not read as

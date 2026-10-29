@@ -59,8 +59,8 @@ pub mod appearance;
 // reader looks first.
 pub use capability::{extension, hook, skill};
 pub use delivery::{
-    delivered_root, engine, exposure, integration, leftovers, persistence, reconciliation, router,
-    session, state,
+    delivered_root, engine, exposure, flag_catalog, integration, leftovers, persistence,
+    reconciliation, router, session, state,
 };
 pub use machine::{
     detection_cache, features, harness_runtime, home, launcher, path, portable_shell, process_cwd,
