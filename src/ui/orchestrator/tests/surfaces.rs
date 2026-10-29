@@ -654,6 +654,38 @@ fn a_tab_coming_back_to_the_front_shows_the_surface_it_was_left_with() {
     );
 }
 
+/// A tab coming back while the space's overview stands keeps the overview
+/// in front, and its surface is not lost for that: it stands again the next
+/// time the tab comes back.
+#[test]
+fn a_surface_kept_back_by_the_overview_is_not_forgotten() {
+    let (mut model, first, second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    open_architect(&mut model);
+    let bring_to_front = |model: &mut WorkspaceModel, tab| {
+        let mut session = model.session.clone().expect("session");
+        session.select_tab(tab);
+        model.apply(
+            ClientEvent::SessionUpdated { session },
+            &identities_fixture(),
+        );
+    };
+
+    bring_to_front(&mut model, second);
+    let space = model.session.as_ref().expect("session").selected_space().id;
+    model.open_space_overview(space, second, PathBuf::from("/repo"), true);
+    bring_to_front(&mut model, first);
+    assert!(!model.showing(uze_extensions::architect::CATALOG.id));
+
+    model.put_away_space_overview();
+    bring_to_front(&mut model, second);
+    bring_to_front(&mut model, first);
+    assert!(
+        model.showing(uze_extensions::architect::CATALOG.id),
+        "the first agent's surface stands again"
+    );
+}
+
 /// The same, the way it is done: a click on another agent leaves the
 /// surface to the agent it was opened on, rather than closing it before
 /// the move is even confirmed.

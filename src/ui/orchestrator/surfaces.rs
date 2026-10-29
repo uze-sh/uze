@@ -76,10 +76,12 @@ impl WorkspaceModel {
         self.close_extension();
         self.extension_tab = in_front;
         self.forget_surfaces_of_closed_tabs();
-        let returning = in_front.and_then(|tab| self.left_open.remove(&tab));
-        if let Some((slot, root)) = returning
-            && self.space_overview.is_none()
-        {
+        // An overview standing keeps the pane; the surface waits for the
+        // tab's next return rather than being forgotten.
+        if self.space_overview.is_some() {
+            return;
+        }
+        if let Some((slot, root)) = in_front.and_then(|tab| self.left_open.remove(&tab)) {
             open_surface_on(self, slot, root);
         }
     }
