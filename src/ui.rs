@@ -559,12 +559,6 @@ impl Rows {
     pub(crate) fn remaining(&self) -> u16 {
         self.bottom.saturating_sub(self.y)
     }
-
-    /// The next `height` rows, without taking them: the ground a group of
-    /// rows stands on, painted before the rows themselves are laid out.
-    pub(crate) fn peek(&self, height: u16) -> Option<Rect> {
-        (self.y + height <= self.bottom).then(|| Rect::new(self.x, self.y, self.width, height))
-    }
 }
 
 /// The list of things worth trying once, at the foot of a sidebar.

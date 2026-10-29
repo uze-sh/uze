@@ -334,3 +334,8 @@
 > with 8 to 12 listing rows, the overrides field stands in an inset
 > container with air around it, and the first step's foot drops `esc
 > close` when `ctrl+f overrides` needs the room.
+> D22 note (popup-overlay, third pass): at the operator's word the head is
+> a segmented control `path · overrides` with the harness at its end and
+> no label; the body is the view in front; the bottom border counts the
+> overrides (`none`, `3 flags · 2 vars`). The container and the field row
+> are gone. New widget `widget::segmented`.

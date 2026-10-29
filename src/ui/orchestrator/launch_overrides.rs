@@ -146,17 +146,6 @@ pub(super) enum OverridesOutcome {
     Forget(Vec<String>),
 }
 
-/// What the first step's field says of `entries`: each entry's words, the
-/// entries apart.
-pub(super) fn summary(entries: &[OverrideEntry]) -> String {
-    let separator = theme::glyph(Symbol::HintSeparator);
-    entries
-        .iter()
-        .map(|entry| entry.join(" "))
-        .collect::<Vec<_>>()
-        .join(&separator)
-}
-
 /// What a flag gives up, in words, with the hue that says so: `None` for
 /// one that gives up nothing.
 pub(super) fn cost(mark: OverrideMark) -> Option<String> {

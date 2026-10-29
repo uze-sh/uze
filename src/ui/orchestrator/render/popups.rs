@@ -1,6 +1,8 @@
 //! What floats over the workspace: the agent picker, the context menu, a commit's account, the status catalog, the new agent's popup, the delivery notification and the action index.
 
+use super::overrides::{entry_cost, overrides_count};
 use super::*;
+use crate::ui::widget::segmented::{self, Segment};
 
 /// The directories the new agent's popup lists at once: as many as match,
 /// between [`NEW_AGENT_POPUP_MIN_ROWS`] and [`NEW_AGENT_POPUP_MAX_ROWS`].
@@ -21,19 +23,13 @@ const NEW_AGENT_POPUP_MAX_ROWS: u16 = 12;
 /// Wide enough for a directory's name beside what is known about it, and
 /// for the foot's keys.
 const NEW_AGENT_POPUP_WIDTH: u16 = 52;
-/// The rows around the listing: the harness at the head, the line typed
-/// into, the `overrides` container with the air over it, and the foot. A
-/// rule closes off the harness, the line and the listing; the container
-/// needs none, its ground is what parts it.
-const NEW_AGENT_POPUP_CHROME: u16 = 7 + OVERRIDES_FIELD - 1;
+/// The rows around the listing: the head, the line typed into and the
+/// foot, each closed off by a rule. The overrides view takes the line's
+/// rows and the listing's.
+const NEW_AGENT_POPUP_CHROME: u16 = 6;
 /// The rows at the foot, under the part that changes with the step: the
 /// rule and the keys.
 const NEW_AGENT_POPUP_FOOT: u16 = 2;
-/// The rows the `overrides` container takes above the foot on the first
-/// step: a row of air parting it from the listing, then the container,
-/// its row with air above and below. The overrides step takes them back.
-const OVERRIDES_FIELD: u16 = 1 + OVERRIDES_CONTAINER;
-const OVERRIDES_CONTAINER: u16 = 3;
 
 /// Where a popup of `width` by `height` floats beside `anchor`: under it,
 /// pushed back inside `area` at its edges.
@@ -59,11 +55,17 @@ fn popup_beside(area: Rect, anchor: Rect, width: u16, height: u16) -> Rect {
 fn new_agent_card(
     frame: &mut ratatui::Frame<'_>,
     popup: Rect,
+    note: Option<Line<'static>>,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) -> Rect {
     frame.render_widget(Clear, popup);
     hits.push((popup, WorkspaceHit::NewAgentBody));
-    Surface::card().title(" new agent ").render(frame, popup)
+    let card = Surface::card().title(" new agent ");
+    match note {
+        Some(note) => card.hint(note),
+        None => card,
+    }
+    .render(frame, popup)
 }
 
 /// A line with `left` at its start and `right` against its end, `right`
@@ -112,38 +114,21 @@ pub(in crate::ui::orchestrator) fn render_directory_step(
 ) {
     let height = step.rows + NEW_AGENT_POPUP_CHROME + 2;
     let popup = popup_beside(area, step.anchor, NEW_AGENT_POPUP_WIDTH, height);
-    let inner = new_agent_card(frame, popup, hits);
+    let inner = new_agent_card(frame, popup, Some(overrides_note(step)), hits);
     let (body, mut foot) = split_bottom(inner, NEW_AGENT_POPUP_FOOT);
+    let mut rows = Rows::over(body);
+    if let Some(rect) = rows.next(1) {
+        render_head(frame, rect, model, step, hits);
+    }
+    popup_rule(frame, &mut rows);
     if step.overrides.is_some() {
-        let container = overrides_container(body);
-        render_overrides_step(frame, model, step, popup, &mut Rows::over(container), hits);
+        render_overrides_step(frame, model, step, popup, &mut rows, hits);
     } else {
-        let (listing, mut field) = split_bottom(body, OVERRIDES_FIELD);
-        let mut rows = Rows::over(listing);
-        if let Some(rect) = rows.next(1) {
-            render_harness_field(frame, rect, model, step, hits);
-        }
-        popup_rule(frame, &mut rows);
         render_root_picker(frame, model, step, &mut rows, hits);
-        field.gap();
-        if let Some(rect) = field.next(OVERRIDES_CONTAINER) {
-            render_overrides_field(frame, overrides_container(rect), model, step, hits);
-        }
     }
     popup_rule(frame, &mut foot);
     if let Some(rect) = foot.next(1) {
         render_new_agent_foot(frame, rect, model, step, hits);
-    }
-}
-
-/// The overrides' own area inside `area`: inset a column on each side, so
-/// it reads as a container standing in the popup rather than as one more
-/// row of the listing.
-fn overrides_container(area: Rect) -> Rect {
-    Rect {
-        x: area.x + 1,
-        width: area.width.saturating_sub(2),
-        ..area
     }
 }
 
@@ -169,47 +154,61 @@ const NEW_AGENT_SCOPES: [uze_keys::Scope; 2] =
 const OVERRIDES_SCOPES: [uze_keys::Scope; 2] =
     [uze_keys::Scope::Global, uze_keys::Scope::LaunchOverrides];
 
-/// The harness the agent will run, between the arrows that change it. A
-/// click on either arrow is its key.
-fn render_harness_field(
+/// The popup's head: which of its views stands below, `path` or
+/// `overrides`, and against the end the harness the agent will run. On
+/// `path` the harness sits between the arrows that change it, a click on
+/// either being its key; on `overrides` the arrows move the caret, so the
+/// harness is only named, the one the flags are for.
+fn render_head(
     frame: &mut ratatui::Frame<'_>,
     rect: Rect,
     model: &WorkspaceModel,
     step: &DirectoryStep,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
+    let on_overrides = step.overrides.is_some();
+    let hovered = |action: Action| model.hovered == Some(WorkspaceHit::HintAction(action));
+    let segments = [
+        Segment {
+            label: "path",
+            target: on_overrides.then_some(Action::Dismiss),
+            hovered: on_overrides && hovered(Action::Dismiss),
+        },
+        Segment {
+            label: "overrides",
+            target: (!on_overrides && step.chosen_harness().is_some())
+                .then_some(Action::OpenOverrides),
+            hovered: !on_overrides && hovered(Action::OpenOverrides),
+        },
+    ];
     let arrow_hue = |action: Action| {
-        if model.hovered == Some(WorkspaceHit::HintAction(action)) {
+        if hovered(action) {
             Token::Accent
         } else {
             Token::TextFaint
         }
     };
-    let left = vec![
-        picker_lead(),
-        Span::styled("harness", theme::fg(Token::TextDim)),
-    ];
     let right = match step.chosen_harness() {
-        Some(option) => {
-            let mut right = vec![Span::styled(
+        Some(option) if on_overrides => vec![Span::styled(
+            option.display_name.clone(),
+            theme::fg(Token::TextMuted),
+        )],
+        Some(option) => vec![
+            Span::styled(
                 format!("{} ", theme::glyph(Symbol::StepPrevious)),
                 theme::fg(arrow_hue(Action::FocusPrevious)),
-            )];
-            right.push(Span::styled(
-                option.display_name.clone(),
-                theme::fg_bold(Token::Accent),
-            ));
-            right.push(Span::styled(
+            ),
+            Span::styled(option.display_name.clone(), theme::fg_bold(Token::Accent)),
+            Span::styled(
                 format!(" {}", theme::glyph(Symbol::StepNext)),
                 theme::fg(arrow_hue(Action::FocusNext)),
-            ));
-            right
-        }
+            ),
+        ],
         None => vec![Span::styled(NO_AGENT_SET_UP, theme::fg(Token::TextMuted))],
     };
     let right_width: u16 = right.iter().map(|span| span.width() as u16).sum();
     let end = rect.right().saturating_sub(TRAILING_PAD);
-    if step.harnesses.len() > 1 {
+    if !on_overrides && step.harnesses.len() > 1 {
         hits.push((
             Rect::new(end.saturating_sub(right_width), rect.y, 2, 1),
             WorkspaceHit::HintAction(Action::FocusPrevious),
@@ -219,7 +218,38 @@ fn render_harness_field(
             WorkspaceHit::HintAction(Action::FocusNext),
         ));
     }
-    frame.render_widget(Paragraph::new(spread(rect, left, right)), rect);
+    let room = " ".repeat(usize::from(segmented::width(&segments)) + 1);
+    frame.render_widget(
+        Paragraph::new(spread(rect, vec![Span::raw(room)], right)),
+        rect,
+    );
+    let control = Rect {
+        x: rect.x + PICKER_LEAD as u16 - 1,
+        ..rect
+    };
+    let open = usize::from(on_overrides);
+    for (at, action) in segmented::segmented(frame, control, &segments, open) {
+        hits.push((at, WorkspaceHit::HintAction(action)));
+    }
+}
+
+/// What the popup's bottom border says of the overrides the agent will
+/// be launched with: `none`, or how many flags and variables, in the
+/// warning hue when one of them gives something up.
+fn overrides_note(step: &DirectoryStep) -> Line<'static> {
+    let entries = step.entries();
+    let costly = entries
+        .iter()
+        .any(|entry| entry_cost(step, entry).is_some());
+    let tone = if costly {
+        Token::StateWarning
+    } else {
+        Token::TextMuted
+    };
+    Line::from(Span::styled(
+        format!(" {} ", overrides_count(entries)),
+        theme::fg(tone),
+    ))
 }
 
 /// The popup's keys, Enter's first and the way out against the end: what
@@ -312,7 +342,7 @@ pub(in crate::ui::orchestrator) fn render_agent_picker(
     // Empty, it says so and offers the way out on a row of its own.
     let height = picker.options.len().max(2) as u16 + 2;
     let popup = popup_beside(area, anchor, content_width + 6, height);
-    let inner = new_agent_card(frame, popup, hits);
+    let inner = new_agent_card(frame, popup, None, hits);
 
     if picker.options.is_empty() {
         frame.render_widget(

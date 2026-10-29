@@ -3,103 +3,18 @@
 
 use uze_application::{CheckedOverride, OverrideFlag, OverrideValue, OverrideVerdict};
 
-use super::popups::{PICKER_LEAD, picker_lead, popup_rule, render_agent_picker_row, spread};
+use super::popups::{PICKER_LEAD, picker_lead, render_agent_picker_row, spread};
 use super::*;
-use crate::ui::widget::{Scrollbar, fill};
-
-/// The ground the overrides stand on in the popup, the field and the step
-/// alike: a container of their own, lifted off the card, so no rule has to
-/// part them from the listing.
-const CONTAINER_GROUND: Token = Token::SurfaceRaised;
+use crate::ui::widget::Scrollbar;
 
 /// What the line says while nothing is typed into it.
 const LINE_PLACEHOLDER: &str = "a flag, or NAME=value";
 /// The list says this while there is nothing to offer and nothing added.
 const NOTHING_USED_YET: &str = "no overrides used before";
 
-/// The `overrides` field at the popup's foot, above the keys, in
-/// `container`, its own area on the raised ground with a row of air over
-/// and under it: its label in the row's own ink, what the agent's launch
-/// is given muted against its end, cut at its end, and the arrow saying
-/// it opens a step. The whole container is the key's target, and its
-/// words light under the pointer.
-pub(super) fn render_overrides_field(
-    frame: &mut ratatui::Frame<'_>,
-    container: Rect,
-    model: &WorkspaceModel,
-    step: &DirectoryStep,
-    hits: &mut Vec<(Rect, WorkspaceHit)>,
-) {
-    let rect = Rect {
-        y: container.y + container.height / 2,
-        height: 1,
-        ..container
-    };
-    let opens = step.chosen_harness().is_some();
-    let hovered = opens && model.hovered == Some(WorkspaceHit::HintAction(Action::OpenOverrides));
-    let entries = step.entries();
-    let costly = entries
-        .iter()
-        .any(|entry| entry_cost(step, entry).is_some());
-    let label = vec![
-        picker_lead(),
-        Span::styled(
-            "overrides",
-            theme::fg(if hovered {
-                Token::TextBright
-            } else {
-                Token::TextPrimary
-            }),
-        ),
-    ];
-    let value_tone = match () {
-        _ if hovered => Token::TextBright,
-        _ if costly => Token::StateWarning,
-        _ => Token::TextMuted,
-    };
-    let arrow = if opens {
-        format!(" {}", theme::glyph(Symbol::Submenu))
-    } else {
-        String::new()
-    };
-    let mark = if costly {
-        format!("{} ", theme::glyph(Symbol::MarkAttention))
-    } else {
-        String::new()
-    };
-    let taken = PICKER_LEAD + text::columns("overrides") + 2;
-    let room = usize::from(rect.width).saturating_sub(
-        taken + text::columns(&arrow) + text::columns(&mark) + usize::from(TRAILING_PAD),
-    );
-    let value = if entries.is_empty() {
-        "none".to_owned()
-    } else {
-        text::elide(&summary(entries), room)
-    };
-    let mut right = Vec::new();
-    if costly {
-        right.push(Span::styled(mark, theme::fg(value_tone)));
-    }
-    right.push(Span::styled(value, theme::fg(value_tone)));
-    right.push(Span::styled(
-        arrow,
-        theme::fg(if hovered {
-            Token::TextBright
-        } else {
-            Token::TextFaint
-        }),
-    ));
-    if opens {
-        hits.push((container, WorkspaceHit::HintAction(Action::OpenOverrides)));
-    }
-    fill(frame, container, CONTAINER_GROUND);
-    frame.render_widget(Paragraph::new(spread(rect, label, right)), rect);
-}
-
-/// The overrides step, in the rows the harness, the listing and the
-/// `overrides` field take on the first step: its heading, the line typed
-/// into, the entries added and the list under them, and the marked row's
-/// detail.
+/// The `overrides` view, in the rows the `path` view gives its line and
+/// listing: the line typed into, the entries added and the list under
+/// them, and the marked row's detail.
 pub(super) fn render_overrides_step(
     frame: &mut ratatui::Frame<'_>,
     model: &WorkspaceModel,
@@ -109,12 +24,6 @@ pub(super) fn render_overrides_step(
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
     let Some(over) = &step.overrides else { return };
-    if let Some(container) = rows.peek(rows.remaining()) {
-        fill(frame, container, CONTAINER_GROUND);
-    }
-    if let Some(rect) = rows.next(1) {
-        render_heading(frame, rect, model, step, hits);
-    }
     if let Some(rect) = rows.next(1) {
         render_line(frame, rect, over);
     }
@@ -122,12 +31,11 @@ pub(super) fn render_overrides_step(
     if let Some(rect) = rows.next(1) {
         let _ = Rule::new(Edge::Top).tone(Token::Accent).render(frame, rect);
     }
-    // The rule and the detail under the body keep their rows.
-    if let Some(body) = rows.next(rows.remaining().saturating_sub(2)) {
+    // The detail under the body keeps its row, over the foot's rule.
+    if let Some(body) = rows.next(rows.remaining().saturating_sub(1)) {
         let list = render_entries(frame, model, step, body, hits);
         render_list(frame, model, step, list, popup, hits);
     }
-    popup_rule(frame, rows);
     if let Some(rect) = rows.next(1) {
         let (said, tone) = detail(step).unwrap_or((String::new(), Token::TextSecondary));
         let room = usize::from(rect.width).saturating_sub(PICKER_LEAD + usize::from(TRAILING_PAD));
@@ -137,41 +45,6 @@ pub(super) fn render_overrides_step(
         ]);
         frame.render_widget(Paragraph::new(line), rect);
     }
-}
-
-/// `‹ overrides`, the way back, with the harness they are for against the
-/// end.
-fn render_heading(
-    frame: &mut ratatui::Frame<'_>,
-    rect: Rect,
-    model: &WorkspaceModel,
-    step: &DirectoryStep,
-    hits: &mut Vec<(Rect, WorkspaceHit)>,
-) {
-    let back = model.hovered == Some(WorkspaceHit::HintAction(Action::Dismiss));
-    let heading = format!("{} overrides", theme::glyph(Symbol::StepPrevious));
-    let width = text::columns(&heading) as u16;
-    let left = vec![
-        picker_lead(),
-        Span::styled(
-            heading,
-            theme::fg(if back {
-                Token::TextBright
-            } else {
-                Token::TextSecondary
-            }),
-        ),
-    ];
-    let harness = step
-        .chosen_harness()
-        .map(|option| option.display_name.clone())
-        .unwrap_or_default();
-    let right = vec![Span::styled(harness, theme::fg(Token::TextMuted))];
-    hits.push((
-        Rect::new(rect.x + PICKER_LEAD as u16, rect.y, width, 1),
-        WorkspaceHit::HintAction(Action::Dismiss),
-    ));
-    frame.render_widget(Paragraph::new(spread(rect, left, right)), rect);
 }
 
 /// The line typed into, its caret where typing lands. What the last Enter
@@ -573,5 +446,32 @@ fn row_detail(step: &DirectoryStep, row: OverrideRow) -> (String, Token) {
             .map_or((String::new(), Token::TextSecondary), |flag| {
                 (flag_detail(&flag), Token::TextSecondary)
             }),
+    }
+}
+
+/// How many overrides `entries` hold, as the popup's border says it:
+/// `none`, or the flags and the variables counted apart.
+pub(super) fn overrides_count(entries: &[OverrideEntry]) -> String {
+    let variables = entries
+        .iter()
+        .filter(|entry| entry.first().is_some_and(|word| !word.starts_with('-')))
+        .count();
+    let flags = entries.len() - variables;
+    let counted = |count: usize, one: &str, many: &str| match count {
+        0 => None,
+        1 => Some(format!("1 {one}")),
+        _ => Some(format!("{count} {many}")),
+    };
+    let said: Vec<String> = [
+        counted(flags, "flag", "flags"),
+        counted(variables, "var", "vars"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    if said.is_empty() {
+        "none".to_owned()
+    } else {
+        said.join(&theme::glyph(Symbol::HintSeparator))
     }
 }

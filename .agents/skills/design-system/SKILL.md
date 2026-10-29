@@ -144,25 +144,16 @@ on "cancel" must not save first.
   carries no ellipsis: `Rename ›`, `Continue in ›`. An ellipsis marks only
   an entry that asks before acting (`Discard…`). Two entries for one verb
   side by side (`Rename`, `Rename project`) become one that opens both.
-- A dialog's field row that opens a step ends in the same `›`
-  (`Symbol::Submenu`) against its right edge (`overrides --model opus ›`),
-  never a disclosure arrow: `▸`/`▾` say a group unfolds in place, and a
-  step takes the list's place instead.
-- A popover's fields are placed by how they are used. A choice that rarely
-  changes (`harness ‹ Claude Code ›`) sits alone at its head, under the
-  title, a rule under it. A field that opens a step of its own
-  (`overrides`) sits at its foot, above the keys, in an area of its own:
-  a row of air parts it from the list, and it stands on the raised ground
-  (`SurfaceRaised`), inset a column from the popover's sides, with a row
-  of that ground over and under its words, never boxed in by rules. It
-  must never read as one more row of the list. Its label is in the row's
-  own ink and its value muted against its end, ending in `›`, `none` at
-  rest; the whole area is the target. Never stack the two at the head in
-  one dim ink. The step stands in that same inset container, grown over
-  the rows of both fields and of the list between them, so the popover's
-  height never moves; the field is not drawn under its own step. A field
-  in the open ends its value on the head's column; one in its own
-  container ends on that container's inset.
+- A popover that holds more than one view of what it asks (the new
+  agent's `path` and `overrides`) names them in a segmented control on its
+  head row (`widget::segmented`), the one in front on the raised ground in
+  the brightest ink, the rest held back and lit under the pointer; a click
+  on one is the key that reaches it. No label row heads it: a choice that
+  rarely changes (`‹ Claude Code ›`) stands against the head row's end.
+  The body under the head is the view in front, every view in the same
+  rows, so switching never resizes it. What a view holds that the other
+  should know is said on the bottom border, briefly (`none`, `3 flags · 2
+  vars`), never as a row of its own.
 - A popover is narrow and tall rather than wide: as wide as a
   directory's name and what is known about it need (52 columns for the
   new agent), with the room for its list given in height.
@@ -175,9 +166,7 @@ on "cancel" must not save first.
 - A popover with steps fixes its height when it opens, as the largest any
   of its steps needs: going into a step and back never resizes it.
 - A popover's rows stand on its own ground: no raised band under the line
-  typed into or under its list. A container of its own (the field that
-  opens a step, and that step) is the one region on another ground, and
-  everything inside it stands on that ground alike. The row Enter takes is the one marked.
+  typed into or under its list. The row Enter takes is the one marked.
 - A list under a line typed into opens with nothing marked, so Enter acts
   on the line; `↓` marks the first row, and `↑` on it unmarks again.
   Hovering a row only lights it: the pointer resting there never changes
