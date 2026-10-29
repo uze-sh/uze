@@ -1622,8 +1622,11 @@ pub(super) fn open_surface_with(
                 Resumed::Place => declared.places.remove(&key),
                 Resumed::Held(held) => held,
             };
-            if let Some(kept) = kept {
-                engine.resume(&key.1, kept);
+            // Nothing kept is a checkout it never stood on, which starts
+            // over rather than wearing what the last one was left at.
+            match kept {
+                Some(kept) => engine.resume(&key.1, kept),
+                None => engine.forget(&key.1),
             }
         }
     }

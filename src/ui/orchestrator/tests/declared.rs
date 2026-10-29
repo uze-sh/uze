@@ -866,6 +866,26 @@ fn a_discovery_is_due_when_the_plugins_move_or_the_clock_says_so() {
     assert!(!declared.discovery_due(1, now), "one at a time");
 }
 
+/// What a view kept is per checkout: one opened on a checkout it never
+/// stood on starts over, rather than wearing what the last one was left
+/// at.
+#[test]
+fn a_declared_view_on_a_checkout_with_nothing_kept_starts_over() {
+    let space = Size {
+        width: 80,
+        height: 20,
+    };
+    let mut model = hosting_the_board();
+    let slot = view_slot(&model);
+    super::open_surface_on(&mut model, slot, PathBuf::from("/a"));
+    model.tell_surface(Command::NextView, space);
+    model.close_surface();
+
+    super::open_surface_on(&mut model, slot, PathBuf::from("/b"));
+    model.tell_surface(Command::Activate, space);
+    assert_eq!(model.clipboard.take().as_deref(), Some("tab 0"));
+}
+
 #[test]
 fn a_rediscovery_brings_in_a_new_extension_and_takes_a_removed_one_away() {
     let mut model = hosting_the_board();
