@@ -7,7 +7,9 @@
 //! too. Codex has no session flag to own: resuming is a subcommand, and the
 //! check refuses a positional. What UZE composes travels as `-c` keys,
 //! which `--help` does not list and the Codex conformance proves instead.
-//! `--worktree` and `--remote` are left out: they pass as unknown.
+//! Every flag the snapshot defines is catalogued or left out for a reason
+//! the tests name; `--worktree` and `--remote`, which take the session out
+//! of the agent's checkout or off this machine, are UZE's and refused.
 
 use uze_core::flag_catalog::{
     FlagOwner::{Degrades, Keyed, Operator, Uze, Weakens},
@@ -17,6 +19,10 @@ use uze_core::flag_catalog::{
 /// `--enable <feature>` and `--disable <feature>` are, as `--help` says,
 /// `-c features.<feature>=true|false`.
 const FEATURES: &str = "features";
+
+const IN_ITS_CHECKOUT: &str =
+    "uze starts the agent in its own checkout, where its conversation is found again";
+const ON_THIS_MACHINE: &str = "uze finds the agent's conversation among this machine's sessions";
 
 pub(super) const CATALOG: &[FlagSpec] = &[
     FlagSpec::new(
@@ -138,7 +144,25 @@ pub(super) const CATALOG: &[FlagSpec] = &[
         &["--cd", "-C"],
         FlagValue::Free("dir"),
         "another working root",
-        Uze("uze starts the agent in its own checkout, where its conversation is found again"),
+        Uze(IN_ITS_CHECKOUT),
+    ),
+    FlagSpec::new(
+        &["--worktree"],
+        FlagValue::None,
+        "the session in a new managed git worktree",
+        Uze(IN_ITS_CHECKOUT),
+    ),
+    FlagSpec::new(
+        &["--remote"],
+        FlagValue::Free("addr"),
+        "the TUI on a remote app server",
+        Uze(ON_THIS_MACHINE),
+    ),
+    FlagSpec::new(
+        &["--remote-auth-token-env"],
+        FlagValue::Free("env_var"),
+        "variable holding the remote app server's token",
+        Uze("it takes --remote, and uze finds the agent's conversation on this machine"),
     ),
 ];
 
@@ -148,11 +172,20 @@ pub(super) const MANAGED_ENVIRONMENT: &[&str] = &["CODEX_HOME"];
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shared::test_support::assert_catalog_in_help;
+    use crate::shared::test_support::{
+        LeftOut::{self, EndsTheLaunch},
+        assert_catalog_covers_help, assert_catalog_in_help,
+    };
+
+    /// Every flag `help.txt` defines that the catalog does not list.
+    const LEFT_OUT: &[LeftOut] = &[
+        EndsTheLaunch(&["--help", "-h"]),
+        EndsTheLaunch(&["--version", "-V"]),
+    ];
 
     #[test]
-    fn every_catalogued_spelling_is_in_the_snapshot() {
-        assert_catalog_in_help(CATALOG, include_str!("help.txt"));
+    fn every_flag_in_the_snapshot_is_catalogued_or_left_out() {
+        assert_catalog_covers_help(CATALOG, LEFT_OUT, include_str!("help.txt"));
     }
 
     /// A resumed launch is `codex resume <id> <overrides>`, so a flag only
