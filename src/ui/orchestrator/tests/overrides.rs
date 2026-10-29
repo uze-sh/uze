@@ -582,6 +582,40 @@ fn the_foot_names_enter_by_what_it_does() {
     );
 }
 
+/// Completion reads the word at the caret, wherever the caret is in the
+/// line, and Tab completes that word in place, leaving the caret after it.
+#[test]
+fn completion_follows_the_caret_not_the_end_of_the_line() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let mut popup = popup("overrides-caret-completion");
+    let effort = {
+        let step = popup.model.directory_step.as_mut().unwrap();
+        step.harness = step
+            .harnesses
+            .iter()
+            .position(|option| option.overrides.flag("--effort").is_some())
+            .expect("a harness offering --effort");
+        step.catalog().flag("--effort").unwrap()
+    };
+    let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
+    driven.frame();
+    open_by_key(&mut driven);
+    type_text(&mut driven, "--debug --mod");
+    driven.press_key(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE));
+    type_text(&mut driven, "--eff");
+
+    assert_eq!(
+        step_of(&driven).override_rows(),
+        [super::OverrideRow::Flag(effort)],
+        "the list completes the word at the caret"
+    );
+    driven.press_key(chord(Action::Expand, Scope::LaunchOverrides));
+
+    let line = &step_of(&driven).overrides.as_ref().unwrap().line;
+    assert_eq!(line.text(), "--effort --debug --mod");
+    assert_eq!(line.caret, "--effort ".len());
+}
+
 /// Nothing used before and nothing typed: the list says so in one line.
 /// A harness with no catalog completes nothing.
 #[test]

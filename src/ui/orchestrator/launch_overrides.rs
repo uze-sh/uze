@@ -65,22 +65,32 @@ impl OverridesStep {
         top
     }
 
-    /// The word being typed, and the one before it: what the list
-    /// completes, and the flag a value is being typed for.
+    /// The word being typed, up to the caret, and the one before it: what
+    /// the list completes, and the flag a value is being typed for. Read at
+    /// the caret, so a word typed into the middle of the line is the one
+    /// completed.
     pub(super) fn typing(&self) -> (Option<&str>, &str) {
-        let text = self.line.text();
-        let cut = text.rfind(char::is_whitespace).map_or(0, |index| index + 1);
-        let current = &text[cut..];
-        let previous = text[..cut].split_whitespace().next_back();
-        (previous, current)
+        let (before, _) = self.line.split();
+        let cut = Self::word_start(before);
+        let previous = before[..cut].split_whitespace().next_back();
+        (previous, &before[cut..])
     }
 
+    /// Where the word ending at the end of `before` starts.
+    fn word_start(before: &str) -> usize {
+        before.rfind(char::is_whitespace).map_or(0, |index| {
+            index + before[index..].chars().next().map_or(1, char::len_utf8)
+        })
+    }
+
+    /// Puts `with` in place of the word typed up to the caret, leaving the
+    /// caret after it and the rest of the line as it was.
     fn replace_current_word(&mut self, with: &str) {
-        let (_, current) = self.typing();
-        let keep = self.line.text().len() - current.len();
-        let mut text = self.line.text()[..keep].to_owned();
-        text.push_str(with);
+        let (before, after) = self.line.split();
+        let start = Self::word_start(before);
+        let text = format!("{}{with}{after}", &before[..start]);
         self.line = RenameBuffer::new(text);
+        self.line.caret = start + with.len();
     }
 }
 
