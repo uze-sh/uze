@@ -497,9 +497,13 @@ fn a_weakening_flag_is_marked() {
     let (y, row) = rows
         .iter()
         .enumerate()
-        .find(|(_, row)| row.contains(weakening) && row.contains(&attention))
-        .unwrap_or_else(|| panic!("the entry is marked:\n{}", rows.join("\n")));
-    let x = row[..row.find(&attention).unwrap()].chars().count() as u16;
+        .find(|(_, row)| row.contains(weakening))
+        .unwrap_or_else(|| panic!("the entry is listed:\n{}", rows.join("\n")));
+    assert!(
+        !row.contains(&attention),
+        "its hue says it, no glyph: {row}"
+    );
+    let x = row[..row.find(weakening).unwrap()].chars().count() as u16;
     assert_eq!(buffer[(x, y as u16)].fg, theme::color(Token::StateWarning));
     assert!(
         rows.iter().any(|row| row.contains("gives up")),

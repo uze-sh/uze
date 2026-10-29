@@ -354,8 +354,8 @@ Against the operator's mockup and the design-system rules:
   marked choice and is typed when none is; Delete on a marked choice is
   its `✕`, which leaves it out and forgets one used before. A click on a
   choice's row marks it, on its mark switches it, on its `✕` closes it.
-- **States by token:** `Weakens` and `Degrades` carry the warning hue and
-  `Symbol::Warning` on the choice's row, and the detail
+- **States by token:** `Weakens` and `Degrades` carry the warning hue,
+  alone and with no glyph (the operator's call), on the choice's row, and the detail
   line names what is lost; a refused token the danger hue, the detail line
   says why (`managed by uze · conversations continue on their own`).
 - **Words in English**, lowercase: the mockup's Portuguese (`adicionar`,

@@ -409,13 +409,13 @@ Toasts:
   Markdown is "clean, not a rainbow".
 - Ground overlays are neutral grey, **never green-tinted**.
 - What weakens safety or switches something off (a flag that skips
-  permissions, one that turns delivery off) is marked
-  `Symbol::MarkAttention` in `Token::StateWarning` on every row that
-  carries it, and its detail says what it gives up in the catalog's own
-  words. Those words are what is lost, a noun phrase the detail's verb
-  completes (`-c turns off uze's own value for this key`), never a
-  sentence of their own. Never a warning glyph of its own: `MarkAttention` is the one
-  "needs attention" mark, `IconWarning` an icon for running text.
+  permissions, one that turns delivery off) is drawn in
+  `Token::StateWarning` on every row that carries it, its words in that
+  hue and no glyph beside them: where a row has only two states, the
+  default and the warning, the hue says it alone. Its detail says what it
+  gives up in the catalog's own words. Those words are what is lost, a
+  noun phrase the detail's verb completes (`-c turns off uze's own value
+  for this key`), never a sentence of their own.
 - A focused or selected container gets a subtle, slightly darker overlay.
 - The sidebar is transparent: only the space in front is lifted onto the
   panel, every other space stands on the column itself, and the row in

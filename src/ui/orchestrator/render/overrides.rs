@@ -205,12 +205,6 @@ fn render_choice_row(
         ),
         Span::styled(" ", ink(words_tone, false)),
     ];
-    if costly {
-        left.push(Span::styled(
-            format!("{} ", theme::glyph(Symbol::MarkAttention)),
-            ink(Token::StateWarning, row_lit),
-        ));
-    }
     let mut words = ink(words_tone, row_lit);
     if row.marked {
         words = words.add_modifier(Modifier::BOLD);
@@ -321,11 +315,6 @@ fn render_list_row(
         .as_ref()
         .is_some_and(|over| over.marked == Some(offset));
     let hovered = model.hovered == Some(WorkspaceHit::OverrideRow(offset));
-    let mark = if words.costly {
-        format!("{} ", theme::glyph(Symbol::MarkAttention))
-    } else {
-        String::new()
-    };
     if marked {
         let width = text::columns(&words.trailing) as u16;
         let gap = if width > 0 { width + 1 } else { 0 };
@@ -333,8 +322,7 @@ fn render_list_row(
             rect.width
                 .saturating_sub(PICKER_LEAD as u16 + gap + TRAILING_PAD),
         );
-        let label = format!("{mark}{}", words.text);
-        render_agent_picker_row(frame, rect, &text::elide(&label, room), true);
+        render_agent_picker_row(frame, rect, &text::elide(&words.text, room), true);
         let at = Rect {
             x: rect.right().saturating_sub(width + TRAILING_PAD),
             width,
@@ -351,6 +339,8 @@ fn render_list_row(
         );
         return;
     }
+    // A row that gives something up says so in its hue alone: warning is
+    // the one state a row has beside the default, so it needs no glyph.
     let tone = if words.costly {
         Token::StateWarning
     } else {
@@ -361,11 +351,7 @@ fn render_list_row(
     } else {
         theme::fg(tone)
     };
-    let mut left = vec![picker_lead()];
-    if words.costly {
-        left.push(Span::styled(mark, ink));
-    }
-    left.push(Span::styled(words.text, ink));
+    let left = vec![picker_lead(), Span::styled(words.text, ink)];
     let right = vec![Span::styled(words.trailing, theme::fg(Token::TextFaint))];
     frame.render_widget(Paragraph::new(spread(rect, left, right)), rect);
 }
