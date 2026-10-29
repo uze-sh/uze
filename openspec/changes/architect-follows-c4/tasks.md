@@ -1,9 +1,9 @@
 ## 1. Reading C4 as Mermaid writes it
 
-- [ ] 1.1 Macro arguments matched to each signature, positional then `$name=`; relation description kept; typed boundaries read tags, not a type
-- [ ] 1.2 Element and boundary kinds kept on the graph (abstraction, external, boundary kind) for the zoom tree and the check
-- [ ] 1.3 Dynamic relations numbered by statement order; `BiRel` with two heads; `Rel_Back` reversed
-- [ ] 1.4 Types as C4 names them, external included; a queue drawn apart from a person
+- [x] 1.1 Macro arguments matched to each signature, positional then `$name=`; relation description kept; typed boundaries read tags, not a type
+- [x] 1.2 Element and boundary kinds kept on the graph (abstraction, external, boundary kind) for the zoom tree and the check
+- [x] 1.3 Dynamic relations numbered by statement order; `BiRel` with two heads; `Rel_Back` reversed
+- [x] 1.4 Types as C4 names them, external included; a queue drawn apart from a person
 
 ## 2. The zoom tree
 

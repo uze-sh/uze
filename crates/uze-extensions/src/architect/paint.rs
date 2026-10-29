@@ -119,6 +119,9 @@ pub fn paint(scene: &Scene, glyphs: Glyphs, selected: Option<usize>, leads: &[Le
         for (position, &(x, y, heading)) in route.cells.iter().enumerate() {
             let index = lines.index(x, y);
             let back = 1 << ((heading + 2) % 4);
+            if position == 0 && edge.arrow_back {
+                arrows.push((x, y, back, lit));
+            }
             let onward = match route.cells.get(position + 1) {
                 Some(&(_, _, next)) => 1 << next,
                 None if edge.arrow => {
@@ -195,7 +198,7 @@ fn paint_node(canvas: &mut Canvas, node: &Node, frame: Frame, selected: bool) {
     let corners = match node.shape {
         Shape::Box => Corners::Square,
         Shape::Decision => Corners::Marked,
-        Shape::Round | Shape::Database | Shape::Person => Corners::Rounded,
+        Shape::Round | Shape::Database | Shape::Person | Shape::Queue => Corners::Rounded,
     };
     let border = match (selected, node.external) {
         (true, _) => Role::Accent,
@@ -218,6 +221,13 @@ fn paint_node(canvas: &mut Canvas, node: &Node, frame: Frame, selected: bool) {
         }
         row += 1;
     }
+    let wall = layout::queue_wall(node);
+    if wall > 0 {
+        let x = frame.x + frame.w - 2;
+        for y in frame.y + 1..frame.y + frame.h - 1 {
+            canvas.line(x, y, NORTH | SOUTH, Stroke::Solid, border);
+        }
+    }
     for (kind, text) in layout::node_text(node) {
         let (role, bold) = match (kind, selected, node.external) {
             (TextKind::Title, true, _) => (Role::Accent, true),
@@ -226,7 +236,7 @@ fn paint_node(canvas: &mut Canvas, node: &Node, frame: Frame, selected: bool) {
             (TextKind::Kind, ..) => (Role::Dim, false),
             _ => (Role::Muted, false),
         };
-        let x = frame.x + 1 + (frame.w - 2 - text_width(&text)) / 2;
+        let x = frame.x + 1 + (frame.w - 2 - wall - text_width(&text)) / 2;
         canvas.text(x, row, &text, role, bold);
         row += 1;
     }
