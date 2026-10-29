@@ -12,8 +12,8 @@ use crate::ui::widget::alerts::{Alert, Severity};
 use uze_application::application::{StatusHarness, memory::Entry as MemoryEntry};
 use uze_application::{
     ActionEntry, ActionState, CheckoutOwner, CheckoutView, CheckoutsView, DeclarationApplied,
-    DeclarationEntry, DeclarationKey, DeclarationProblem, DeclarationView, DeclaredValue, Edit,
-    ProjectSpace, ShellCommand, SpaceOverview,
+    DeclarationEntry, DeclarationKey, DeclarationProblem, DeclarationView, DeclaredValue,
+    DirectorySpace, Edit, ProjectSpace, ShellCommand, SpaceOverview,
 };
 
 /// The overview's sections, in the order the bar shows them.
@@ -44,6 +44,10 @@ impl Section {
 
     pub(super) const COUNT: usize = Self::ALL.len();
 
+    /// What a directory outside every Git repository has: nothing is
+    /// declared, locked or checked out there for its agents.
+    pub(super) const OUTSIDE_A_REPOSITORY: [Self; 2] = [Self::Agent, Self::Memory];
+
     pub(super) fn label(self) -> &'static str {
         match self {
             Self::Agent => "Agent",
@@ -61,17 +65,22 @@ impl Section {
             .unwrap_or(0)
     }
 
-    /// The section `step` places after this one along the bar, wrapping.
-    fn after(self, step: usize) -> Self {
-        Self::ALL[(self.index() + step) % Self::ALL.len()]
+    /// The section `step` places after this one along a bar of `shown`,
+    /// wrapping.
+    fn after(self, shown: &[Self], step: usize) -> Self {
+        let at = shown
+            .iter()
+            .position(|section| *section == self)
+            .unwrap_or(0);
+        shown[(at + step) % shown.len()]
     }
 
-    fn next(self) -> Self {
-        self.after(1)
+    fn next(self, shown: &[Self]) -> Self {
+        self.after(shown, 1)
     }
 
-    fn previous(self) -> Self {
-        self.after(Self::ALL.len() - 1)
+    fn previous(self, shown: &[Self]) -> Self {
+        self.after(shown, shown.len() - 1)
     }
 }
 
@@ -687,10 +696,28 @@ impl SpaceOverviewView {
         self.space == space && self.root == root
     }
 
-    pub(super) fn project(&self) -> Option<&ProjectSpace> {
+    pub(super) fn directory(&self) -> Option<&DirectorySpace> {
         match self.answer.as_ref()? {
-            Ok(SpaceOverview::Project(project)) => Some(project),
+            Ok(SpaceOverview::Directory(directory)) => Some(directory),
             _ => None,
+        }
+    }
+
+    pub(super) fn project(&self) -> Option<&ProjectSpace> {
+        self.directory()?.project.as_ref()?.as_ref().ok()
+    }
+
+    /// The sections the bar shows, in its order: the agent and its memory
+    /// where the directory is known to be outside every Git repository, or
+    /// to be gone; every one otherwise, a read still awaited or failed
+    /// included, since most agents work in one.
+    pub(super) fn sections(&self) -> &'static [Section] {
+        match self.answer.as_ref() {
+            Some(Ok(SpaceOverview::Directory(directory))) if directory.project.is_none() => {
+                &Section::OUTSIDE_A_REPOSITORY
+            }
+            Some(Ok(SpaceOverview::DirectoryGone { .. })) => &Section::OUTSIDE_A_REPOSITORY,
+            _ => &Section::ALL,
         }
     }
 
@@ -735,15 +762,15 @@ impl SpaceOverviewView {
     /// updated first. One with no date goes last, and a tie keeps the
     /// order they are kept in: the project's, then the machine's.
     pub(super) fn memory_facts(&self) -> Vec<&MemoryEntry> {
-        let Some(project) = self.project() else {
+        let Some(directory) = self.directory() else {
             return Vec::new();
         };
         let needle = self.memory_filter.trim().to_lowercase();
-        let mut facts: Vec<&MemoryEntry> = project
+        let mut facts: Vec<&MemoryEntry> = directory
             .memory
             .project
             .iter()
-            .chain(&project.memory.machine)
+            .chain(&directory.memory.machine)
             .filter(|entry| needle.is_empty() || fact_matches(entry, &needle))
             .collect();
         // `updated` is `YYYY-MM-DD`, so its text sorts as its date does.
@@ -997,12 +1024,29 @@ impl SpaceOverviewView {
 
     /// The health of each section, from the answer as it stands.
     pub(super) fn health(&self, section: Section) -> Health {
-        let Some(project) = self.project() else {
-            return if self.answer.is_none() {
-                Health::Loading
-            } else {
-                Health::Fine
+        // The prompts are read without the directory.
+        if section == Section::Agent {
+            return Health::Fine;
+        }
+        let Some(directory) = self.directory() else {
+            return match &self.answer {
+                None => Health::Loading,
+                Some(Err(_)) => Health::Failing,
+                Some(Ok(_)) => Health::Warning,
             };
+        };
+        if section == Section::Memory {
+            return if directory.memory.unreadable.is_empty() {
+                Health::Fine
+            } else {
+                Health::Warning
+            };
+        }
+        let project = match &directory.project {
+            Some(Ok(project)) => project,
+            Some(Err(_)) => return Health::Failing,
+            // Not on the bar: a directory outside every repository.
+            None => return Health::Fine,
         };
         match section {
             Section::Plugins => {
@@ -1027,13 +1071,12 @@ impl SpaceOverviewView {
                         .map_or(true, |declaration| !declaration.problems.is_empty());
                 if failing {
                     Health::Failing
-                } else if project.status.commands_awaiting_approval.is_some() {
+                } else if project.status.commands_awaiting_approval.as_ref().is_some() {
                     Health::Warning
                 } else {
                     Health::Fine
                 }
             }
-            Section::Agent => Health::Fine,
             Section::Worktrees => {
                 let worktrees = self.worktrees();
                 if self.worktrees.answer.is_none() && self.worktrees.pending {
@@ -1046,13 +1089,7 @@ impl SpaceOverviewView {
                     Health::Fine
                 }
             }
-            Section::Memory => {
-                if project.memory.unreadable.is_empty() {
-                    Health::Fine
-                } else {
-                    Health::Warning
-                }
-            }
+            Section::Agent | Section::Memory => Health::Fine,
         }
     }
 
@@ -1061,7 +1098,7 @@ impl SpaceOverviewView {
     /// reaches the harnesses, which has no section of its own since the
     /// Agent's drawer says it for the agent in front.
     pub(super) fn issues(&self) -> Vec<Alert> {
-        let Some(project) = self.project() else {
+        let Some(directory) = self.directory() else {
             return Vec::new();
         };
         let alert = |severity, label: String, detail: String| Alert {
@@ -1070,106 +1107,110 @@ impl SpaceOverviewView {
             detail,
         };
         let mut issues = Vec::new();
-        let report = &project.status.report;
-        if !report.instructions.exists {
-            issues.push(alert(
-                Severity::Low,
-                "No AGENTS.md".to_owned(),
-                "Harnesses get no project context here.".to_owned(),
-            ));
-        }
-        for harness in &report.harnesses {
-            for issue in harness_issues(harness) {
+        // Outside a repository nothing is declared or delivered, so
+        // nothing about either is an issue.
+        if let Some(project) = self.project() {
+            let report = &project.status.report;
+            if !report.instructions.exists {
                 issues.push(alert(
-                    Severity::Medium,
-                    harness.display_name.clone(),
-                    issue.to_owned(),
+                    Severity::Low,
+                    "No AGENTS.md".to_owned(),
+                    "Harnesses get no project context here.".to_owned(),
                 ));
             }
-        }
-        for issue in &report.issues {
-            issues.push(alert(Severity::Medium, "Context".to_owned(), issue.clone()));
-        }
-        let plugins = &project.plugins;
-        if let Some(problem) = &plugins.lock_problem {
-            issues.push(alert(
-                Severity::High,
-                "agents.lock is malformed".to_owned(),
-                problem.clone(),
-            ));
-        }
-        for plugin in plugins.plugins.iter().filter(|plugin| !plugin.installed) {
-            issues.push(alert(
-                Severity::Medium,
-                format!("{} is not installed", plugin.plugin),
-                "`uze install` installs what agents.lock records.".to_owned(),
-            ));
-        }
-        let drift = &plugins.drift;
-        for (label, names) in [
-            ("Declared, not locked yet", &drift.unresolved),
-            ("Locked, no longer declared", &drift.surplus),
-            ("Locked, not in the store", &drift.missing),
-        ] {
-            if !names.is_empty() {
-                issues.push(alert(
-                    Severity::Medium,
-                    label.to_owned(),
-                    format!("{}. `uze install` puts it right.", names.join(", ")),
-                ));
-            }
-        }
-        if drift.stale_projection {
-            issues.push(alert(
-                Severity::Medium,
-                "AGENTS.md is stale".to_owned(),
-                "A plugin's region says other than it should. `uze install` puts it right."
-                    .to_owned(),
-            ));
-        }
-        for step in &project.status.steps_not_spelled_here {
-            issues.push(alert(
-                Severity::High,
-                format!("`{}` never runs here", step.command),
-                match &step.not_portable {
-                    None => format!("It has no {} spelling in agents.yaml.", step.platform),
-                    Some(why) => format!(
-                        "It is not portable ({why}). Spell it under posix and {} in agents.yaml.",
-                        step.platform
-                    ),
-                },
-            ));
-        }
-        match &project.workspace {
-            Err(reason) => issues.push(alert(
-                Severity::High,
-                "agents.yaml could not be read".to_owned(),
-                reason.clone(),
-            )),
-            Ok(declaration) => {
-                for problem in &declaration.problems {
+            for harness in &report.harnesses {
+                for issue in harness_issues(harness) {
                     issues.push(alert(
-                        Severity::High,
-                        problem.key.as_deref().map_or_else(
-                            || "agents.yaml".to_owned(),
-                            |key| format!("workspace.{key}"),
-                        ),
-                        problem.reason.clone(),
+                        Severity::Medium,
+                        harness.display_name.clone(),
+                        issue.to_owned(),
                     ));
                 }
             }
+            for issue in &report.issues {
+                issues.push(alert(Severity::Medium, "Context".to_owned(), issue.clone()));
+            }
+            let plugins = &project.plugins;
+            if let Some(problem) = &plugins.lock_problem {
+                issues.push(alert(
+                    Severity::High,
+                    "agents.lock is malformed".to_owned(),
+                    problem.clone(),
+                ));
+            }
+            for plugin in plugins.plugins.iter().filter(|plugin| !plugin.installed) {
+                issues.push(alert(
+                    Severity::Medium,
+                    format!("{} is not installed", plugin.plugin),
+                    "`uze install` installs what agents.lock records.".to_owned(),
+                ));
+            }
+            let drift = &plugins.drift;
+            for (label, names) in [
+                ("Declared, not locked yet", &drift.unresolved),
+                ("Locked, no longer declared", &drift.surplus),
+                ("Locked, not in the store", &drift.missing),
+            ] {
+                if !names.is_empty() {
+                    issues.push(alert(
+                        Severity::Medium,
+                        label.to_owned(),
+                        format!("{}. `uze install` puts it right.", names.join(", ")),
+                    ));
+                }
+            }
+            if drift.stale_projection {
+                issues.push(alert(
+                    Severity::Medium,
+                    "AGENTS.md is stale".to_owned(),
+                    "A plugin's region says other than it should. `uze install` puts it right."
+                        .to_owned(),
+                ));
+            }
+            for step in &project.status.steps_not_spelled_here {
+                issues.push(alert(
+                    Severity::High,
+                    format!("`{}` never runs here", step.command),
+                    match &step.not_portable {
+                        None => format!("It has no {} spelling in agents.yaml.", step.platform),
+                        Some(why) => format!(
+                            "It is not portable ({why}). Spell it under posix and {} in agents.yaml.",
+                            step.platform
+                        ),
+                    },
+                ));
+            }
+            match &project.workspace {
+                Err(reason) => issues.push(alert(
+                    Severity::High,
+                    "agents.yaml could not be read".to_owned(),
+                    reason.clone(),
+                )),
+                Ok(declaration) => {
+                    for problem in &declaration.problems {
+                        issues.push(alert(
+                            Severity::High,
+                            problem.key.as_deref().map_or_else(
+                                || "agents.yaml".to_owned(),
+                                |key| format!("workspace.{key}"),
+                            ),
+                            problem.reason.clone(),
+                        ));
+                    }
+                }
+            }
+            if let Some(awaiting) = project.status.commands_awaiting_approval.as_ref() {
+                issues.push(alert(
+                    Severity::Medium,
+                    match awaiting.commands.len() {
+                        1 => "1 command waiting for approval".to_owned(),
+                        count => format!("{count} commands waiting for approval"),
+                    },
+                    "Settings shows them; approving lets agents run them here.".to_owned(),
+                ));
+            }
         }
-        if let Some(awaiting) = &project.status.commands_awaiting_approval {
-            issues.push(alert(
-                Severity::Medium,
-                match awaiting.commands.len() {
-                    1 => "1 command waiting for approval".to_owned(),
-                    count => format!("{count} commands waiting for approval"),
-                },
-                "Settings shows them; approving lets agents run them here.".to_owned(),
-            ));
-        }
-        for unreadable in &project.memory.unreadable {
+        for unreadable in &directory.memory.unreadable {
             issues.push(alert(
                 Severity::Medium,
                 "A memory file cannot be read".to_owned(),
@@ -1468,6 +1509,11 @@ impl WorkspaceModel {
         }
         overview.pending = false;
         overview.answer = Some(resolution.answer);
+        // A directory found to be outside every repository has no section
+        // for what was in front while it was read.
+        if !overview.sections().contains(&overview.section) {
+            overview.switch(Section::Agent);
+        }
         if overview
             .edit
             .landed
@@ -1922,12 +1968,15 @@ impl Attach<'_> {
                 overview.filtering = true;
             }
             Action::SelectSection(position) => {
-                if let Some(section) = Section::ALL.get(usize::from(position).saturating_sub(1)) {
+                let shown = overview.sections();
+                if let Some(section) = shown.get(usize::from(position).saturating_sub(1)) {
                     overview.switch(*section);
                 }
             }
-            Action::FocusNext => overview.switch(overview.section.next()),
-            Action::FocusPrevious => overview.switch(overview.section.previous()),
+            Action::FocusNext => overview.switch(overview.section.next(overview.sections())),
+            Action::FocusPrevious => {
+                overview.switch(overview.section.previous(overview.sections()))
+            }
             Action::SelectNext => overview.select(1),
             Action::SelectPrevious => overview.select(-1),
             Action::Refresh => self.refresh_space_overview(),
@@ -2427,12 +2476,18 @@ mod tests {
     }
 
     /// Back from any section is the one before it on the bar, wrapping
-    /// from the first to the last, and forward undoes it.
+    /// from the first to the last, and forward undoes it, on either bar.
     #[test]
     fn stepping_back_lands_on_the_section_before() {
-        assert_eq!(Section::Agent.previous(), Section::Worktrees);
-        for section in Section::ALL {
-            assert_eq!(section.next().previous(), section);
+        assert_eq!(Section::Agent.previous(&Section::ALL), Section::Worktrees);
+        assert_eq!(
+            Section::Agent.previous(&Section::OUTSIDE_A_REPOSITORY),
+            Section::Memory
+        );
+        for shown in [&Section::ALL[..], &Section::OUTSIDE_A_REPOSITORY[..]] {
+            for section in shown {
+                assert_eq!(section.next(shown).previous(shown), *section);
+            }
         }
     }
 }

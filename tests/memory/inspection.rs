@@ -78,9 +78,16 @@ fn the_space_overview_agrees_with_status() {
     .unwrap();
 
     let status = application.health().project_status(&project).unwrap();
-    let SpaceOverview::Project(space) = application.workspace().space_overview(&project).unwrap()
+    let SpaceOverview::Directory(directory) =
+        application.workspace().space_overview(&project).unwrap()
     else {
         panic!("a project answers with its overview");
+    };
+    let Some(Ok(space)) = directory.project else {
+        panic!(
+            "a repository is read as its project: {:?}",
+            directory.project
+        );
     };
 
     let context_of = |status: &uze_application::application::ProjectStatus| {
@@ -129,17 +136,106 @@ fn the_space_overview_agrees_with_status() {
     );
 }
 
+/// A directory outside every Git repository is overviewed for what reaches
+/// its agents anyway, the machine's memory, and has no project: nothing to
+/// read for it, and no settings to write there.
 #[test]
-fn a_space_with_no_project_or_no_root_is_answered_as_such() {
-    let root = temp("space-overview-absent");
+fn a_space_outside_every_repository_has_its_memory_and_no_project() {
+    use uze_application::application::memory::{Kind, MemoryCaller, MemoryScope};
+    use uze_application::{DeclarationKey, DeclaredValue, Edit};
+    let root = temp("space-overview-loose");
     let application = app(&root, true);
     let bare = root.join("bare");
     fs::create_dir_all(&bare).unwrap();
+    application
+        .memory()
+        .remember(
+            MemoryCaller::Operator { cwd: &bare },
+            MemoryScope::Machine,
+            "everywhere",
+            Kind::User,
+            "a fact for every project",
+            "body",
+        )
+        .unwrap();
 
-    assert!(matches!(
-        application.workspace().space_overview(&bare).unwrap(),
-        SpaceOverview::NotAProject { .. }
-    ));
+    let SpaceOverview::Directory(space) = application.workspace().space_overview(&bare).unwrap()
+    else {
+        panic!("a directory that exists is overviewed");
+    };
+    assert!(space.project.is_none(), "{:?}", space.project);
+    assert!(
+        space
+            .memory
+            .machine
+            .iter()
+            .any(|fact| fact.name == "everywhere"),
+        "the machine's facts reach it: {:?}",
+        space.memory.machine
+    );
+
+    let applied = application.workspace().apply_declaration(
+        &bare,
+        &[Edit::Set {
+            key: DeclarationKey::Slots,
+            value: DeclaredValue::Number(2),
+        }],
+    );
+    assert!(applied.is_err(), "{applied:?}");
+    assert!(!bare.join("agents.yaml").exists());
+}
+
+/// A repository whose project cannot be read is still a repository: the
+/// overview says why its project is missing, and the memory that reaches
+/// its agents anyway is still listed.
+#[test]
+fn a_repository_whose_project_cannot_be_read_keeps_its_memory() {
+    use uze_application::application::memory::{Kind, MemoryCaller, MemoryScope};
+    let root = temp("space-overview-unreadable");
+    let application = app(&root, true);
+    let project = root.join("project");
+    uze_testkit::git::mark_repository(&project);
+    // A Store index nobody can read: the project's plugins cannot be
+    // listed, which is the project's part of the overview alone.
+    let registry = UzeHome::at(root.join("uze-home")).registry_path();
+    fs::create_dir_all(registry.parent().unwrap()).unwrap();
+    fs::write(registry, "{ not json").unwrap();
+    application
+        .memory()
+        .remember(
+            MemoryCaller::Operator { cwd: &root },
+            MemoryScope::Machine,
+            "everywhere",
+            Kind::User,
+            "a fact for every project",
+            "body",
+        )
+        .unwrap();
+
+    let SpaceOverview::Directory(space) = application.workspace().space_overview(&project).unwrap()
+    else {
+        panic!("a directory that exists is overviewed");
+    };
+    assert!(
+        matches!(&space.project, Some(Err(_))),
+        "{:?}",
+        space.project
+    );
+    assert!(
+        space
+            .memory
+            .machine
+            .iter()
+            .any(|fact| fact.name == "everywhere"),
+        "the machine's facts reach it: {:?}",
+        space.memory.machine
+    );
+}
+
+#[test]
+fn a_space_whose_directory_is_gone_is_answered_as_such() {
+    let root = temp("space-overview-gone");
+    let application = app(&root, true);
     assert!(matches!(
         application
             .workspace()

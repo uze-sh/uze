@@ -13,6 +13,7 @@ use uze_core::{
     Result, UzeError,
     manifest::{self, edit::ManifestDocument},
     persistence::MutationLock,
+    project_root::repository_root_of,
 };
 use uze_workspace::{
     approval::{self, ProjectCommands},
@@ -159,8 +160,15 @@ impl Workspace<'_> {
     /// the workspace would refuse the result. An edit names a key, so it
     /// applies to whatever the file holds when it lands. Never approves a
     /// command: a changed setup or gate is reported as waiting again.
+    /// Refused outside every Git repository: an `agents.yaml` written in a
+    /// plain directory would make it the project of every directory below.
     #[tracing::instrument(name = "workspace.apply_declaration", skip_all, fields(root = %root.display()), err)]
     pub fn apply_declaration(&self, root: &Path, edits: &[Edit]) -> Result<DeclarationApplied> {
+        if repository_root_of(root).is_none() {
+            return Err(UzeError::NoProject {
+                hint: "settings are written inside a Git repository".to_owned(),
+            });
+        }
         let _mutation = MutationLock::acquire(&self.0.home)?;
         let primary = primary_of(root);
         let checkout = checkout_of(root);

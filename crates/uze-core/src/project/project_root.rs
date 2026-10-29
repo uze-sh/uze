@@ -90,6 +90,18 @@ pub(crate) fn find_upward<T>(
     Ok((start, answer))
 }
 
+/// The top of the Git repository `directory` stands in, or `None` outside
+/// every one: read from the markers alone, as [`resolve_project_root`]
+/// reads them, with no Git run, and from where the directory really is,
+/// so a link into a repository is in it as `uze status` finds it.
+pub fn repository_root_of(directory: &Path) -> Option<PathBuf> {
+    let directory = directory.canonical().ok()?;
+    directory
+        .ancestors()
+        .find(|ancestor| is_repository_root(ancestor))
+        .map(Path::to_path_buf)
+}
+
 /// Whether `directory` is the top of a Git repository: its `.git` is the
 /// file a linked worktree has, or a directory holding a `HEAD`. A `.git`
 /// directory without one is no repository to Git either — a stray one left
@@ -116,6 +128,65 @@ mod tests {
         // manifest, and the parent is the project root
         let resolved = resolve_project_root(&sub).unwrap();
         assert_eq!(resolved, Some(root.canonical().unwrap()));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A repository is found from any directory in it, a linked worktree's
+    /// `.git` file included, and a manifest outside every one is no
+    /// repository for being a project.
+    #[test]
+    fn the_repository_root_is_found_from_inside_it_alone() {
+        let root = uze_testkit::temp::scratch("repository-root");
+        let repository = root.join("repository");
+        fs::create_dir_all(repository.join(GIT_MARKER)).unwrap();
+        fs::write(
+            repository.join(GIT_MARKER).join("HEAD"),
+            "ref: refs/heads/main\n",
+        )
+        .unwrap();
+        let worktree = repository.join(".worktrees").join("a1b2c3");
+        fs::create_dir_all(worktree.join("src")).unwrap();
+        fs::write(
+            worktree.join(GIT_MARKER),
+            "gitdir: ../../.git/worktrees/a1b2c3\n",
+        )
+        .unwrap();
+        let loose = root.join("loose");
+        fs::create_dir_all(&loose).unwrap();
+        fs::write(loose.join(MANIFEST_FILE_NAME), "workspace: {}\n").unwrap();
+
+        assert_eq!(
+            repository_root_of(&repository.join(".worktrees")),
+            Some(repository.clone())
+        );
+        assert_eq!(
+            repository_root_of(&worktree.join("src")),
+            Some(worktree.clone())
+        );
+        assert_eq!(repository_root_of(&loose), None);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_linked_into_a_repository_is_in_it() {
+        let root = uze_testkit::temp::scratch("repository-root-linked");
+        let repository = root.join("repository");
+        fs::create_dir_all(repository.join(GIT_MARKER)).unwrap();
+        fs::write(
+            repository.join(GIT_MARKER).join("HEAD"),
+            "ref: refs/heads/main\n",
+        )
+        .unwrap();
+        fs::create_dir_all(repository.join("sub")).unwrap();
+        let link = root.join("work");
+        std::os::unix::fs::symlink(repository.join("sub"), &link).unwrap();
+
+        assert_eq!(
+            repository_root_of(&link),
+            Some(repository.canonical().unwrap())
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

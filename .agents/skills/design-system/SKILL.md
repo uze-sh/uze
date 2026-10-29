@@ -421,6 +421,11 @@ operator rather than assume.
 - No hint bar, no stray esc, no empty sidebar slot.
 - The drawer goes away.
 - The same shape in every extension and section.
+- A part that cannot be read empties its own section, never the screen:
+  the section bar stays, and each section is gated on what it needs alone.
+- A section that cannot apply where the agent stands is not on the bar,
+  rather than on it and marked: outside a Git repository the overview is
+  the agent's prompts and memory alone.
 
 **Narrow widths:**
 - Nothing clips the header, the footer or the first line.

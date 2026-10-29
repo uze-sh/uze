@@ -5,31 +5,40 @@
 
 use std::path::{Path, PathBuf};
 
-use uze_core::{Result, UzeError};
+use uze_core::{Result, project_root::repository_root_of};
 use uze_workspace::worktree::isolated_checkout;
 
 use super::{DeclarationView, PreservedWork, Workspace};
 use crate::application::{
     EnvironmentDrift, Freshness, PluginSummary, ProjectLockStatus, ProjectStatus,
-    memory::{Entry, MemoryScope, UnreadableFact},
+    memory::{Entry, MemoryReport, MemoryScope, UnreadableFact},
 };
 
-/// The overview of the project an agent works in. A directory that is gone
-/// and one that is no project are answers the screen shows, never failures.
+/// The overview of the directory an agent works in. A directory that is
+/// gone is an answer the screen shows, never a failure.
 #[derive(Clone, Debug)]
 pub enum SpaceOverview {
     DirectoryGone { directory: PathBuf },
-    NotAProject { directory: PathBuf },
-    Project(Box<ProjectSpace>),
+    Directory(Box<DirectorySpace>),
 }
 
-/// A project's overview.
+/// What reaches an agent wherever it works: its memory, and the project
+/// around it when it works inside a Git repository.
+#[derive(Clone, Debug)]
+pub struct DirectorySpace {
+    pub memory: SpaceMemory,
+    /// `None` outside every Git repository, where nothing is declared,
+    /// locked or checked out for the agent; why the project could not be
+    /// read, when it could not.
+    pub project: Option<std::result::Result<ProjectSpace, String>>,
+}
+
+/// The project a Git repository is, as `uze status` and the workspace see it.
 #[derive(Clone, Debug)]
 pub struct ProjectSpace {
     /// Exactly what `uze status` answers here.
     pub status: ProjectStatus,
     pub plugins: SpacePlugins,
-    pub memory: SpaceMemory,
     /// The `workspace:` declaration key by key, or why `agents.yaml` could
     /// not be read for it.
     pub workspace: std::result::Result<DeclarationView, String>,
@@ -106,10 +115,11 @@ impl Workspace<'_> {
         hasher.finish()
     }
 
-    /// The overview of the project at `root`. Reads only what
+    /// The overview of the directory at `root`. Reads only what
     /// `uze status` reads, plus the installed plugins' index and UZE's
     /// own agent records, and asks Git only whether each declared link is
-    /// ignored: no network.
+    /// ignored: no network. Outside a Git repository it reads the memory
+    /// alone.
     #[tracing::instrument(name = "workspace.space_overview", skip_all, fields(root = %root.display()), err)]
     pub fn space_overview(&self, root: &Path) -> Result<SpaceOverview> {
         if !root.is_dir() {
@@ -117,34 +127,45 @@ impl Workspace<'_> {
                 directory: root.to_path_buf(),
             });
         }
-        let status = match self.0.health().project_status(root) {
-            Ok(status) => status,
-            Err(UzeError::NoProject { .. }) => {
-                return Ok(SpaceOverview::NotAProject {
-                    directory: root.to_path_buf(),
-                });
-            }
-            Err(error) => return Err(error),
+        if repository_root_of(root).is_none() {
+            return Ok(SpaceOverview::Directory(Box::new(DirectorySpace {
+                memory: space_memory(&self.0.memory().report_at(root)),
+                project: None,
+            })));
+        }
+        let space = match self.project_space(root) {
+            Ok(project) => DirectorySpace {
+                memory: space_memory(&project.status.report.memory),
+                project: Some(Ok(project)),
+            },
+            Err(error) => DirectorySpace {
+                memory: space_memory(&self.0.memory().report_at(root)),
+                project: Some(Err(error.to_string())),
+            },
         };
-        let installed = self.0.plugins().list()?;
-        let primary = isolated_checkout(&status.report.root).map_or_else(
-            || status.report.root.clone(),
+        Ok(SpaceOverview::Directory(Box::new(space)))
+    }
+
+    /// The project the repository at `root` is.
+    fn project_space(&self, root: &Path) -> Result<ProjectSpace> {
+        let status = self.0.health().project_status(root)?;
+        let project_root = status.report.root.clone();
+        let primary = isolated_checkout(&project_root).map_or_else(
+            || project_root.clone(),
             |checkout| checkout.primary.to_path_buf(),
         );
-        let preserved = self
-            .preserved_work()
-            .into_iter()
-            .filter(|work| work.project == primary)
-            .collect();
-        Ok(SpaceOverview::Project(Box::new(ProjectSpace {
-            plugins: space_plugins(&status, &installed),
-            memory: space_memory(&status),
+        Ok(ProjectSpace {
+            plugins: space_plugins(&status, &self.0.plugins().list()?),
             workspace: self
-                .declaration_view(&status.report.root)
+                .declaration_view(&project_root)
                 .map_err(|error| error.to_string()),
-            preserved,
+            preserved: self
+                .preserved_work()
+                .into_iter()
+                .filter(|work| work.project == primary)
+                .collect(),
             status,
-        })))
+        })
     }
 }
 
@@ -178,8 +199,7 @@ fn space_plugins(status: &ProjectStatus, installed: &[PluginSummary]) -> SpacePl
     }
 }
 
-fn space_memory(status: &ProjectStatus) -> SpaceMemory {
-    let memory = &status.report.memory;
+fn space_memory(memory: &MemoryReport) -> SpaceMemory {
     SpaceMemory {
         project: memory
             .entries

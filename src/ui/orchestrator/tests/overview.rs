@@ -874,8 +874,8 @@ fn a_drawer_opened_reads_from_its_top_after_page_keys_while_closed() {
 fn a_fact_citing_what_the_checkout_lacks_is_marked_in_the_tab_and_the_drawer() {
     let mut model = memory_overview(&["moved-file", "still-there"]);
     let overview = model.space_overview.as_mut().expect("open");
-    if let Some(Ok(uze_application::SpaceOverview::Project(project))) = overview.answer.as_mut() {
-        project.memory.project[0].missing = vec!["crates/a/gone.rs".to_owned()];
+    if let Some(Ok(uze_application::SpaceOverview::Directory(space))) = overview.answer.as_mut() {
+        space.memory.project[0].missing = vec!["crates/a/gone.rs".to_owned()];
     }
     overview.drawer = false;
     let mark = theme::glyph(crate::ui::theme::Symbol::MarkAttention);
@@ -929,19 +929,31 @@ fn project_space(
         rules: None,
         plugin_rules: Default::default(),
     };
-    uze_application::SpaceOverview::Project(Box::new(uze_application::ProjectSpace {
-        status: uze_application::application::ProjectStatus {
-            report,
-            steps_not_spelled_here: Vec::new(),
-            steps_only_in_sh: Vec::new(),
-            commands_awaiting_approval: None,
-            extensions: Vec::new(),
-        },
-        plugins: Default::default(),
+    uze_application::SpaceOverview::Directory(Box::new(uze_application::DirectorySpace {
         memory,
-        workspace,
-        preserved: Vec::new(),
+        project: Some(Ok(uze_application::ProjectSpace {
+            status: uze_application::application::ProjectStatus {
+                report,
+                steps_not_spelled_here: Vec::new(),
+                steps_only_in_sh: Vec::new(),
+                commands_awaiting_approval: None,
+                extensions: Vec::new(),
+            },
+            plugins: Default::default(),
+            workspace,
+            preserved: Vec::new(),
+        })),
     }))
+}
+
+/// The project an answer [`project_space`] built holds, to change in place.
+fn repository_of(
+    answer: &mut uze_application::SpaceOverview,
+) -> Option<&mut uze_application::ProjectSpace> {
+    match answer {
+        uze_application::SpaceOverview::Directory(space) => space.project.as_mut()?.as_mut().ok(),
+        uze_application::SpaceOverview::DirectoryGone { .. } => None,
+    }
 }
 
 /// The Workspace section is a form: a label per key and the control
@@ -2858,7 +2870,7 @@ fn the_plugins_are_a_compact_table_and_the_drawer_folds_as_it_narrows() {
     let overview = model.space_overview.as_mut().expect("open");
     overview.section = Section::Plugins;
     let mut answer = project_space(Default::default(), Err("not read".to_owned()));
-    if let uze_application::SpaceOverview::Project(project) = &mut answer {
+    if let Some(project) = repository_of(&mut answer) {
         let plugin = |name: &str, state: FreshnessState| uze_application::SpacePlugin {
             plugin: name.to_owned(),
             package: format!("{name}@ai"),
@@ -2916,7 +2928,7 @@ fn the_count_in_the_foot_lists_the_space_s_issues() {
     let mut model = model_of(session);
     model.open_space_overview(space, behind, PathBuf::from("/repo"), true);
     let mut answer = project_space(Default::default(), Err("not read".to_owned()));
-    if let uze_application::SpaceOverview::Project(project) = &mut answer {
+    if let Some(project) = repository_of(&mut answer) {
         project
             .status
             .report
@@ -3318,7 +3330,7 @@ fn a_section_not_read_yet_says_it_is_reading() {
 }
 
 /// An agent whose directory is gone still has an overview: it says the
-/// directory no longer exists, offers a refresh, and lists no section.
+/// directory no longer exists, and keeps every section to go to.
 #[test]
 fn an_agent_whose_directory_is_gone_is_said_so() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-gone"));
@@ -3328,14 +3340,58 @@ fn an_agent_whose_directory_is_gone_is_said_so() {
     let mut driven = overview_answered(&home, Some(Ok(gone)));
     let screen = frame_rows(&mut driven.attach.model).join("\n");
     assert!(screen.contains("no longer exists"), "{screen}");
-    assert!(
-        !driven
-            .attach
-            .model
-            .hits
-            .iter()
-            .any(|(_, hit)| matches!(hit, WorkspaceHit::OverviewSection(_))),
-        "no section is offered over a directory that is gone"
+    let sections = driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .filter(|(_, hit)| matches!(hit, WorkspaceHit::OverviewSection(_)))
+        .count();
+    assert_eq!(
+        sections,
+        Section::OUTSIDE_A_REPOSITORY.len(),
+        "what needs no repository is offered"
+    );
+}
+
+/// A read that failed says nothing about where the agent stands, so the
+/// bar keeps the five sections it shows while reading, each saying why.
+#[test]
+fn a_read_that_failed_keeps_every_section() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-failed"));
+    let mut driven = overview_answered(&home, Some(Err("reading the overview failed".to_owned())));
+    assert_eq!(overview_of(&driven).sections(), &Section::ALL);
+    let settings =
+        driven.hit(|hit| *hit == WorkspaceHit::OverviewSection(Section::Settings.index()));
+    driven.press(settings.x + 1, settings.y);
+    driven.frame();
+    let screen = frame_rows(&mut driven.attach.model).join("\n");
+    assert!(screen.contains("NOT READ"), "{screen}");
+    assert!(screen.contains("reading the overview failed"), "{screen}");
+}
+
+/// A repository whose project could not be read keeps its five sections:
+/// each of the repository's own says why it has nothing to list, and the
+/// memory, read without it, is still listed.
+#[test]
+fn a_project_that_could_not_be_read_keeps_every_section() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-unread"));
+    let mut answer = project_space(Default::default(), Ok(undeclared(true)));
+    if let uze_application::SpaceOverview::Directory(space) = &mut answer {
+        space.project = Some(Err("agents.yaml is malformed".to_owned()));
+    }
+    let mut driven = overview_answered(&home, Some(Ok(answer)));
+    let worktrees =
+        driven.hit(|hit| *hit == WorkspaceHit::OverviewSection(Section::Worktrees.index()));
+    driven.press(worktrees.x + 1, worktrees.y);
+    driven.frame();
+    let screen = frame_rows(&mut driven.attach.model).join("\n");
+    assert!(screen.contains("PROJECT NOT READ"), "{screen}");
+    assert!(screen.contains("agents.yaml is malformed"), "{screen}");
+    assert_eq!(overview_of(&driven).section, Section::Worktrees);
+    assert_eq!(
+        overview_of(&driven).health(Section::Memory),
+        crate::ui::orchestrator::space_overview::Health::Fine
     );
 }
 
@@ -3385,7 +3441,7 @@ fn commands_waiting_are_reviewed_from_the_keyboard() {
         .commands_awaiting_approval(&project)
         .expect("an unapproved project waits");
     let mut answer = project_space(Default::default(), Err("not read".to_owned()));
-    if let uze_application::SpaceOverview::Project(space) = &mut answer {
+    if let Some(space) = repository_of(&mut answer) {
         space.status.commands_awaiting_approval = Some(awaiting.clone());
     }
     let mut driven = overview_answered(&home, Some(Ok(answer)));
@@ -3496,4 +3552,82 @@ fn a_worktrees_settings_say_they_apply_once_delivered() {
         screen.contains("worktree copy · applies once delivered"),
         "the file is said to be the worktree's: {screen}"
     );
+}
+
+/// An agent outside every Git repository has its prompts and its memory,
+/// and nothing else: no settings to write a stray `agents.yaml` from, no
+/// lock, no worktrees, and nothing marked for lacking them.
+#[test]
+fn an_agent_outside_every_repository_has_its_prompts_and_memory_alone() {
+    use crate::ui::orchestrator::space_overview::Health;
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-loose"));
+    let mut answer = project_space(Default::default(), Ok(undeclared(false)));
+    if let uze_application::SpaceOverview::Directory(space) = &mut answer {
+        space.project = None;
+    }
+    let mut driven = overview_answered(&home, Some(Ok(answer)));
+    assert_eq!(
+        overview_of(&driven).sections(),
+        &Section::OUTSIDE_A_REPOSITORY
+    );
+    for section in Section::OUTSIDE_A_REPOSITORY {
+        assert_eq!(
+            overview_of(&driven).health(section),
+            Health::Fine,
+            "{section:?}"
+        );
+    }
+    assert!(overview_of(&driven).issues().is_empty());
+    let offered = driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .filter(|(_, hit)| matches!(hit, WorkspaceHit::OverviewSection(_)))
+        .count();
+    assert_eq!(offered, 2);
+    let screen = frame_rows(&mut driven.attach.model).join("\n");
+    assert!(!screen.contains("Settings"), "{screen}");
+
+    driven.press_key(key_event(
+        uze_keys::active()
+            .chord_for(
+                uze_keys::Action::SelectSection(2),
+                &[uze_keys::Scope::SpaceOverview],
+            )
+            .expect("the second section has a key"),
+    ));
+    assert_eq!(overview_of(&driven).section, Section::Memory);
+}
+
+/// An answer that finds no repository puts away the section that was in
+/// front while it was read, when that section is the repository's.
+#[test]
+fn a_repository_section_left_by_the_answer_goes_back_to_the_agent() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-overview-left"));
+    let mut driven = overview_answered(&home, None);
+    driven
+        .attach
+        .model
+        .space_overview
+        .as_mut()
+        .expect("the overview is open")
+        .section = Section::Settings;
+    let mut answer = project_space(Default::default(), Ok(undeclared(false)));
+    if let uze_application::SpaceOverview::Directory(space) = &mut answer {
+        space.project = None;
+    }
+    let (space, root, asked) = {
+        let overview = overview_of(&driven);
+        (overview.space, overview.root.clone(), overview.asked)
+    };
+    driven.attach.model.absorb_space_overview(
+        crate::ui::orchestrator::space_overview::SpaceOverviewResolution {
+            space,
+            root,
+            asked,
+            answer: Ok(answer),
+        },
+    );
+    assert_eq!(overview_of(&driven).section, Section::Agent);
 }
