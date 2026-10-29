@@ -31,6 +31,7 @@ use uze_core::{
 };
 
 mod digest;
+mod flags;
 mod generate;
 mod hooks;
 mod mcp;
@@ -364,6 +365,14 @@ impl IntegrationPort for CodexIntegration {
         ctx: &uze_core::integration::AgentContext,
     ) -> Result<uze_core::integration::ContextContribution> {
         Ok(context_hook(ctx.file))
+    }
+
+    fn flag_catalog(&self) -> &'static [uze_core::flag_catalog::FlagSpec] {
+        flags::CATALOG
+    }
+
+    fn managed_environment(&self) -> &'static [&'static str] {
+        flags::MANAGED_ENVIRONMENT
     }
 
     fn conversation_digest(
