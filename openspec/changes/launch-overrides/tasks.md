@@ -6,8 +6,8 @@
 - [x] 0.4 Integrations: remove each `preferences.rs`, `shared/preference.rs`, the `PreferencePort` impls, Antigravity's `preferences_config_path`, the registry's preference adapters and `RegistryParts`; drop helpers in `json_config`/`toml_config` left without callers
 - [x] 0.5 Core: remove `preference.rs`, `profile_state.rs`, the profile errors, `UzeHome::profiles_path` and its tier-test entry; `Feature::Profiles` (tests move to `Overview`)
 - [x] 0.6 Remove `state/profiles.json` once where the application retires what earlier releases left; test that a machine with one ends without it and nothing else under `state/` changes
-- [ ] 0.7 Remove `tests/integrations/preferences.rs` and the journey `01-first-run/03-a-profile-each-harness-can-read.yml`; fix `layout.json` fixtures (`.demo/_shared/workspace.yml`) and docs (`README.md`, `invariants.md` unfinished surfaces, doc comments in `client_layout.rs`, `appearance.rs`, `dialog.rs`, `mark.rs`)
-- [ ] 0.8 CHANGELOG: the Profiles screen is gone; keys it applied to harness configuration stay and are the operator's
+- [x] 0.7 Remove `tests/integrations/preferences.rs` and the journey `01-first-run/03-a-profile-each-harness-can-read.yml`; fix `layout.json` fixtures (`.demo/_shared/workspace.yml`) and docs (`README.md`, `invariants.md` unfinished surfaces, doc comments in `client_layout.rs`, `appearance.rs`, `dialog.rs`, `mark.rs`)
+- [x] 0.8 CHANGELOG: the Profiles screen is gone; keys it applied to harness configuration stay and are the operator's
 - [ ] 0.9 `cargo test --workspace`, `cargo clippy --all-targets -- -D warnings`, and `rg -i 'profile' --type rust` reviewed for leftovers (shell, PowerShell, seatbelt, hook and Cargo profiles are unrelated and stay)
 
 ## 1. Catalog contract (uze-core)

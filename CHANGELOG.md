@@ -4,6 +4,12 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [Unreleased]
+
+### Refactor
+
+- **ui:** Remove the Profiles screen, which never left its feature flag. The keys an applied profile wrote into a harness's own configuration (Claude Code's `permissions.defaultMode`, `sandbox.enabled` and `model`, Codex's `approval_policy` and `sandbox_mode`, OpenCode's `permission`, Antigravity CLI's `agentMode` and `toolPermission`) stay where they are: no receipt says UZE wrote them, so they are the operator's settings now. `state/profiles.json` is removed once [**breaking**]
+
 ## [1.0.0-beta.20](https://github.com/uze-sh/uze/compare/v1.0.0-beta.19...v1.0.0-beta.20) - 2026-10-23
 
 ### Features
