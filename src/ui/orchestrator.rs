@@ -1983,7 +1983,7 @@ struct WorkspaceModel {
     open_slot: Option<SlotId>,
     open_root: Option<PathBuf>,
     /// The agent directory in front when it opened, kept with it when it
-    /// is put away for its tab.
+    /// is put away for its agent.
     open_context: Option<PathBuf>,
     /// Whether the inspector stands beside it.
     inspecting: bool,

@@ -422,7 +422,7 @@ pub(super) struct HostedExtension {
     pub(super) observes_agents: bool,
 }
 
-/// A surface put away for its tab: which one, on which checkout, what it
+/// A surface put away for its agent: which one, on which checkout, what it
 /// held, and the host's own frame around it. By owner and surface rather
 /// than by slot, so a recompile in the meantime does not lose it.
 pub(super) struct Standing {
@@ -464,9 +464,11 @@ pub(super) struct HostedExtensions {
     pub(super) polled_at: Option<Instant>,
     /// Where the viewer was on each surface, per checkout.
     pub(super) places: BTreeMap<(Owner, String, PathBuf), Opaque>,
-    /// What stood in each tab's pane when another tab came to the front,
-    /// handed back when it returns. Kept across attaches, never written
-    /// down: what a surface holds is opaque and may be an unsaved thought.
+    /// What stood in each agent's pane when another agent came to the
+    /// front, by the agent's tab id (a shell's is the agent's beside it),
+    /// handed back when any of its tabs returns. Kept across attaches,
+    /// never written down: what a surface holds is opaque and may be an
+    /// unsaved thought.
     pub(super) standing: BTreeMap<TabId, Standing>,
     /// The drawer open in each space: one at most, so the pane gives up
     /// one column of room and never two.
