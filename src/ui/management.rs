@@ -1,5 +1,5 @@
 //! The management surface — Overview, Plugins, Extensions, Harnesses,
-//! Profiles, Keys and Settings — drawn as a modal over the workspace
+//! Keys and Settings — drawn as a modal over the workspace
 //! client (`super::orchestrator`) rather than as a mode beside it. The
 //! workspace owns the frame, the event loop and the terminal session; this
 //! module owns what the modal keeps between openings
@@ -226,11 +226,7 @@ impl ManagementMemory {
         } else {
             model.drawer_inspect_intent()
         };
-        for missing in [
-            drawer,
-            model.profile_preview_intent(),
-            model.settings_intent(),
-        ] {
+        for missing in [drawer, model.settings_intent()] {
             if missing != Intent::None {
                 dispatch(missing, home, &self.sender, model);
                 changed = true;
@@ -371,7 +367,6 @@ pub(crate) fn render(
             view::extensions::render_extensions(frame, layout.content, model, hits)
         }
         Route::Harnesses => view::harnesses::render_harnesses(frame, layout.content, model, hits),
-        Route::Profiles => view::profiles::render_profiles(frame, layout.content, model, hits),
         Route::Keys => view::keys::render_keys(frame, layout.content, model, hits),
         Route::Settings => view::settings::render_settings(frame, layout.content, model, hits),
     }
@@ -416,18 +411,6 @@ pub(crate) fn render(
                        install.",
                 placeholder: "Local path or https://... source",
                 confirm: "Add",
-            },
-            input,
-            hits,
-        ),
-        Overlay::NewProfile(input) => overlay::render_text_prompt(
-            frame,
-            area,
-            &overlay::TextPrompt {
-                title: "New profile",
-                body: "A named set of preferences, applied to the harnesses you choose.",
-                placeholder: "Profile name",
-                confirm: "Create",
             },
             input,
             hits,
@@ -614,7 +597,7 @@ fn hints<'a>(model: &TuiModel, scopes: &'a [uze_keys::Scope]) -> Hints<'a> {
 /// lies. Mirrors the `Activate` arm of `perform` screen by screen; a screen
 /// that changes what Enter does changes this with it.
 fn activate_label(model: &TuiModel) -> Option<String> {
-    use model::{PluginPane, ProfilePanel, SettingsRow};
+    use model::{PluginPane, SettingsRow};
     if model.focus == Focus::Sidebar {
         return Some("open".to_owned());
     }
@@ -634,12 +617,6 @@ fn activate_label(model: &TuiModel) -> Option<String> {
             .selected_marketplace_plugin()
             .and_then(|plugin| view::plugins::primary_offer(&plugin.offers()))
             .map(|action| action.label()),
-        Route::Profiles if model.profile_preview_open => Some("toggle".to_owned()),
-        Route::Profiles => match model.profile_panel {
-            ProfilePanel::List => Some("edit".to_owned()),
-            ProfilePanel::Editor => Some("change".to_owned()),
-            ProfilePanel::Harnesses => None,
-        },
         // What Enter does: Enable when it is offered, else Disable when
         // that is, else nothing to name.
         Route::Extensions => model.selected_extension().and_then(|extension| {

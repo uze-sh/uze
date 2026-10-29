@@ -360,7 +360,7 @@ fn a_question_is_answered_with_the_pointer_too() {
 fn a_confirmation_dialog_reads_as_heading_subject_body_and_answers() {
     let mut model = model_with_data();
     model.overlay = Overlay::Confirm {
-        kind: Confirmation::DeleteProfile("default".to_owned()),
+        kind: Confirmation::RemovePlugin("stray-helper".to_owned()),
         focus: Some(1),
     };
     let (terminal, hits) = drawn_at(&model, 90, 24);
@@ -372,21 +372,21 @@ fn a_confirmation_dialog_reads_as_heading_subject_body_and_answers() {
     };
     assert_eq!(
         rows.iter()
-            .filter(|row| row.contains("Delete profile"))
+            .filter(|row| row.contains("Remove plugin"))
             .count(),
         1,
         "the question is asked once, not in the border and again below it"
     );
-    assert_eq!(position("default"), position("Delete profile") + 1);
+    assert_eq!(position("stray-helper"), position("Remove plugin") + 1);
     assert!(
-        position("configuration is touched.") > position("default"),
+        position("removed.") > position("stray-helper"),
         "the explanation wraps inside the dialog rather than off its edge"
     );
-    let answers = position("  Delete  ");
-    assert!(answers > position("configuration is touched."));
+    let answers = position("  Remove  ");
+    assert!(answers > position("removed."));
     let row = &rows[answers];
     assert!(
-        row.find("Cancel").unwrap() < row.find("Delete").unwrap(),
+        row.find("Cancel").unwrap() < row.find("Remove").unwrap(),
         "the affirmative is last, where reading ends: {row}"
     );
     assert!(

@@ -255,7 +255,7 @@ fn a_list_taller_than_the_screen_says_where_the_window_is() {
     // A list that fits gets none: a scrollbar on a full view says the
     // opposite of what it is for.
     let short = TuiModel {
-        route: Route::Profiles,
+        route: Route::Harnesses,
         focus: Focus::Content,
         ..TuiModel::default()
     };
@@ -313,24 +313,6 @@ fn the_wheel_scrolls_the_keys_page_and_the_keys_bring_it_back() {
     model.apply_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     assert_eq!(model.key_screen.selected, 1);
     assert!(shows(&model, 1), "the key did not bring the page back");
-
-    // Profiles was the other screen the wheel could not move, for the same
-    // reason: its selection is three panels rather than one list, and the
-    // mover the wheel called knew about neither.
-    let mut profiles = TuiModel {
-        route: Route::Profiles,
-        focus: Focus::Content,
-        ..model_with_data()
-    };
-    assert!(
-        profiles.remembered.profiles.len() > 1,
-        "there is somewhere to move to"
-    );
-    wheel(&mut profiles, MouseEventKind::ScrollDown);
-    assert_eq!(
-        profiles.remembered.profiles_selected, 1,
-        "the wheel moved it"
-    );
 }
 
 /// A group opens with a blank line and its keys sit in from its name.

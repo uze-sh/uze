@@ -6,8 +6,7 @@
 //! answered by the client on every launch, so each was a choice the user
 //! kept making — and made in the one place where the answer is obviously
 //! personal rather than per-repository, which is why this is machine-scoped
-//! like [`profile_state`](crate::profile_state) rather than keyed by
-//! workspace.
+//! rather than keyed by workspace.
 //!
 //! One file, one struct, sectioned by who owns each part: the workspace
 //! and the management modal over it are one product to the person moving
@@ -106,7 +105,7 @@ impl Default for WorkspaceLayout {
 }
 
 /// What the management client — plugins, extensions, integrations,
-/// profiles — keeps of its own arrangement.
+/// shortcuts — keeps of its own arrangement.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default)]
 pub struct ManagementLayout {
@@ -120,7 +119,6 @@ pub struct ManagementLayout {
     /// point of the screen, so the drawer is a column of it rather than
     /// something to be opened and closed.
     pub drawer_width: Option<u16>,
-    pub profile_columns_width: Option<u16>,
     /// The marketplace the plugin catalog was narrowed to, by name;
     /// `None` shows every marketplace's plugins.
     pub plugin_market: Option<String>,
@@ -239,13 +237,18 @@ mod tests {
         std::fs::create_dir_all(home.state_dir()).unwrap();
         std::fs::write(
             home.client_layout_path(),
-            br#"{ "sidebar": { "width": 30 }, "management": { "route": "profiles" } }"#,
+            br#"{ "sidebar": { "width": 30 },
+                 "management": { "route": "keys", "profile_columns_width": 28 } }"#,
         )
         .unwrap();
 
         let layout = load(&home);
         assert_eq!(layout.sidebar.width, Some(30));
-        assert_eq!(layout.management.route.as_deref(), Some("profiles"));
+        assert_eq!(
+            layout.management.route.as_deref(),
+            Some("keys"),
+            "a key an earlier build wrote is dropped, not a reason to forget the rest"
+        );
         assert_eq!(layout.workspace, WorkspaceLayout::default());
         assert_eq!(
             layout.management.drawer_width, None,

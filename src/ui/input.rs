@@ -16,8 +16,7 @@ use uze_keys::{Action, Resolution, Scope};
 use super::hit::Hit;
 use super::keys;
 use super::model::{
-    self, Confirmation, Focus, Overlay, PluginPane, PluginTreeRow, ProfilePanel, ResizablePanel,
-    Route, TuiModel,
+    self, Confirmation, Focus, Overlay, PluginPane, PluginTreeRow, Route, TuiModel,
 };
 use super::worker::Intent;
 
@@ -38,9 +37,6 @@ impl TuiModel {
             // elsewhere — that is the point of a capture.
             scopes.push(Scope::KeyCapture);
         }
-        if self.route == Route::Profiles && self.profile_panel == ProfilePanel::Editor {
-            scopes.push(Scope::ProfileEditor);
-        }
         if self.focus == Focus::Sidebar {
             scopes.push(Scope::ManagementSidebar);
         }
@@ -50,7 +46,7 @@ impl TuiModel {
         match self.overlay {
             Overlay::None | Overlay::HarnessHelp | Overlay::Health => {}
             Overlay::ActionIndex { .. } => scopes.push(Scope::ActionIndex),
-            Overlay::AddMarketplace(_) | Overlay::NewProfile(_) => scopes.push(Scope::TextPrompt),
+            Overlay::AddMarketplace(_) => scopes.push(Scope::TextPrompt),
             Overlay::Preferences(ref editor) if editor.typing.is_some() => {
                 scopes.push(Scope::TextPrompt)
             }
@@ -156,8 +152,7 @@ impl TuiModel {
             Action::Refresh => Intent::Refresh,
             Action::SelectNext => self.move_by(1),
             Action::SelectPrevious => self.move_by(-1),
-            Action::FocusNext => self.cycle_focus(true),
-            Action::FocusPrevious => self.cycle_focus(false),
+            Action::FocusNext | Action::FocusPrevious => self.toggle_focus(),
             // Choosing a screen is wanting to be on it, so the focus lands
             // in the screen rather than on its name.
             Action::SelectTab(position) => match model::routes().get(usize::from(position) - 1) {
@@ -224,14 +219,6 @@ impl TuiModel {
                 Intent::None
             }
             Action::EraseBack => self.erase_character(),
-            Action::NextValue => self.cycle_selected_preference(true),
-            Action::PreviousValue => self.cycle_selected_preference(false),
-            Action::ToggleProfileHarness => {
-                if self.profile_panel == ProfilePanel::Harnesses {
-                    self.toggle_profile_harness_at(self.profile_harness_selected);
-                }
-                Intent::None
-            }
             Action::InstallPlugin => {
                 if let Some((name, marketplace)) = self
                     .selected_marketplace_plugin()
@@ -338,32 +325,12 @@ impl TuiModel {
                 }
                 Intent::None
             }
-            Action::NewProfile => {
-                self.overlay = Overlay::NewProfile(String::new());
-                Intent::None
-            }
-            Action::DeleteProfile => {
-                if self.profile_panel == ProfilePanel::List
-                    && let Some(profile) = self.selected_profile()
-                {
-                    self.overlay = Overlay::Confirm {
-                        kind: Confirmation::DeleteProfile(profile.id.clone()),
-                        focus: Some(1),
-                    };
-                }
-                Intent::None
-            }
-            Action::ApplyProfile => self.apply_selected_profile(),
             Action::ScrollPageDown => {
                 self.scroll_resource_preview(PREVIEW_PAGE);
                 Intent::None
             }
             Action::ScrollPageUp => {
                 self.scroll_resource_preview(-PREVIEW_PAGE);
-                Intent::None
-            }
-            Action::PreviewProfile => {
-                self.toggle_profile_preview();
                 Intent::None
             }
             // Answered by the surfaces that own them; anywhere else they
@@ -373,8 +340,8 @@ impl TuiModel {
     }
 
     /// Where the selection goes, which depends on what the screen is a
-    /// list *of* — screens on the tab strip, prompts on the Overview, a
-    /// profile's three panels, or the ordinary content rows.
+    /// list *of* — screens on the tab strip, prompts on the Overview, or
+    /// the ordinary content rows.
     /// Scrolls the screen in front a line, leaving its selection be. A
     /// screen with no page of its own to move walks its selection, as the
     /// keys do.
@@ -400,14 +367,6 @@ impl TuiModel {
             return self.set_route(self.route.neighbour(delta));
         }
         match self.route {
-            Route::Profiles if self.profile_preview_open => {
-                self.move_profile_preview_cursor(delta);
-                Intent::None
-            }
-            Route::Profiles => {
-                self.move_profile_selection(delta);
-                Intent::None
-            }
             Route::Keys => {
                 let last = self.key_rows().len().saturating_sub(1);
                 self.key_screen.selected = self
@@ -439,18 +398,7 @@ impl TuiModel {
         }
     }
 
-    /// Profiles cycles its three sub-panels while the content has focus,
-    /// instead of the generic sidebar/content toggle — scoped to that
-    /// route so every other screen's focus behaviour is unchanged.
-    fn cycle_focus(&mut self, forward: bool) -> Intent {
-        if self.route == Route::Profiles && self.focus == Focus::Content {
-            self.profile_panel = if forward {
-                self.profile_panel.next()
-            } else {
-                self.profile_panel.prev()
-            };
-            return Intent::None;
-        }
+    fn toggle_focus(&mut self) -> Intent {
         self.focus = match self.focus {
             Focus::Sidebar => Focus::Content,
             Focus::Content => Focus::Sidebar,
@@ -555,19 +503,6 @@ impl TuiModel {
             self.clear_filter();
             return Intent::None;
         }
-        if self.route == Route::Profiles {
-            // The preview closes first, then the panel collapses back to
-            // the List: both are layers over the screen, unlike a drawer.
-            if self.profile_preview_open {
-                self.profile_preview_open = false;
-                return Intent::None;
-            }
-            if self.profile_panel != ProfilePanel::List {
-                self.profile_panel = ProfilePanel::List;
-                return Intent::None;
-            }
-            return Intent::CloseModal;
-        }
         Intent::CloseModal
     }
 
@@ -591,10 +526,6 @@ impl TuiModel {
                 Some(action) => self.act(action),
                 None => self.marketplace_inspect_intent(),
             },
-            // List: jump straight into editing, the same way Enter opens a
-            // drawer elsewhere. Editor: change the highlighted value.
-            // Harnesses: no-op — toggling is the toggle action's job,
-            // deliberately not doubled onto Enter.
             // Enter switches an extension whichever way it is not: Enable
             // when it is offered, Disable otherwise — except for one that
             // waits for a project, which Enter must not switch off.
@@ -607,18 +538,6 @@ impl TuiModel {
                     self.switch_selected_extension(enable)
                 }
                 None => Intent::None,
-            },
-            Route::Profiles if self.profile_preview_open => {
-                self.toggle_profile_preview_harness(self.profile_preview_cursor);
-                Intent::None
-            }
-            Route::Profiles => match self.profile_panel {
-                ProfilePanel::List => {
-                    self.profile_panel = ProfilePanel::Editor;
-                    Intent::None
-                }
-                ProfilePanel::Editor => self.cycle_selected_preference(true),
-                ProfilePanel::Harnesses => Intent::None,
             },
             _ => Intent::None,
         }
@@ -645,12 +564,8 @@ impl TuiModel {
             MouseEventKind::Drag(MouseButton::Left) if let Some(panel) = self.dragging_panel => {
                 let min_panel_width = 24;
                 let max_panel_width = total_width.saturating_sub(min_panel_width);
-                // A drawer grows leftwards from the right edge; the profile
-                // columns' divider is measured from the content's left.
-                let width = match panel {
-                    ResizablePanel::ProfileColumns => column,
-                    _ => total_width.saturating_sub(column),
-                };
+                // A drawer grows leftwards from the right edge.
+                let width = total_width.saturating_sub(column);
                 *panel.width_mut(self) = Some(width.min(max_panel_width).max(min_panel_width));
                 Intent::None
             }
@@ -661,8 +576,8 @@ impl TuiModel {
             }
             // The wheel walks whatever the arrow keys walk. It used to
             // call a narrower mover that knew only three of the screens,
-            // so on Keys — by far the longest list uze draws — and on
-            // Profiles the wheel did nothing at all, and the only way down
+            // so on Keys — by far the longest list uze draws — the wheel
+            // did nothing at all, and the only way down
             // the page was the keyboard. Which is the shape of thing this
             // whole mechanism exists to stop shipping.
             // An open list is still a list: the index scrolls under the

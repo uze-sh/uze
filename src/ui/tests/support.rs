@@ -197,28 +197,6 @@ pub(super) fn model_with_data() -> TuiModel {
         ],
     });
     model.remembered.harness_screen.selected = 0;
-    model.remembered.profiles = vec![
-        uze_application::application::ProfileSummary {
-            id: "dev-autonomous".to_owned(),
-            description: Some("My daily autonomous coding setup.".to_owned()),
-            active: true,
-            preferences: uze_core::preference::Preferences {
-                autonomy: uze_core::preference::Autonomy::Auto,
-                sandbox: uze_core::preference::SandboxScope::WorkspaceWrite,
-                model: uze_core::preference::ModelPreference::Default,
-            },
-        },
-        uze_application::application::ProfileSummary {
-            id: "safe-mode".to_owned(),
-            description: None,
-            active: false,
-            preferences: uze_core::preference::Preferences::default(),
-        },
-    ];
-    model.profile_harness_selection = ["claude-code".to_owned(), "codex".to_owned()]
-        .into_iter()
-        .collect();
-    model.profile_harness_defaulted = true;
     model
 }
 

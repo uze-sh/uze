@@ -89,22 +89,20 @@ fn a_first_visit_starts_from_the_default_model() {
 #[test]
 fn the_next_run_opens_on_the_screen_the_last_one_left() {
     let mut model = TuiModel::default();
-    model.set_route(Route::Profiles);
+    model.set_route(Route::Harnesses);
     model.drawer_width = Some(38);
-    model.profile_columns_width = Some(28);
     model.plugin_market = Some("uze-official".to_owned());
 
     let layout = model.management_layout();
-    assert_eq!(layout.route.as_deref(), Some("profiles"));
+    assert_eq!(layout.route.as_deref(), Some("integrations"));
 
     let model = TuiModel::recall(None, &layout);
-    assert_eq!(model.route, Route::Profiles);
+    assert_eq!(model.route, Route::Harnesses);
     assert_eq!(
         model.drawer_width,
         Some(38),
         "a drawer stays the width it was dragged to"
     );
-    assert_eq!(model.profile_columns_width, Some(28));
     assert_eq!(model.plugin_market.as_deref(), Some("uze-official"));
 
     let unknown = uze_application::ManagementLayout {

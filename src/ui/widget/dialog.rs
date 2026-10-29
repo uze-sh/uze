@@ -46,9 +46,9 @@ impl Tone {
 /// has read one knows where to look in the next.
 pub(crate) struct Dialog<'a> {
     pub(crate) tone: Tone,
-    /// What is being asked, as a heading: "Delete profile".
+    /// What is being asked, as a heading: "Remove marketplace".
     pub(crate) title: &'a str,
-    /// The thing it would happen to, when there is one: the profile's id.
+    /// The thing it would happen to, when there is one: the marketplace's name.
     pub(crate) subject: Option<Line<'static>>,
     /// What answering yes does, one paragraph per entry.
     pub(crate) body: Vec<String>,
