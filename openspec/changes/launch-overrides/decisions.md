@@ -94,7 +94,7 @@
 
 - status:   pending
 - task:     3.3
-- commit:
+- commit:   effcd2dc
 - trigger:  `prompt_history`'s rewrite publishes with `write_atomic` and then calls `restrict_to_owner`, so the file is readable with the umask's mode between the rename and the narrowing; this record can hold a token.
 - decided:  `uze_core::persistence::write_atomic_private`, which opens the temporary through `uze_platform::fs::private_file` before anything is written into it; `replace_atomically` takes a `Mode` (`Umask`, `Kept`, `Private`) in place of its `Option<Permissions>`.
 - rejected: Following `prompt_history` as it is: the window is short, but the record is the one place a secret value is kept.
@@ -104,7 +104,7 @@
 
 - status:   pending
 - task:     3.4
-- commit:
+- commit:   effcd2dc
 - trigger:  The design says an agent's entry goes when its record does; there are four places the application drops a task record (`forget_finished`'s sweep, `discard_task`, `forget_in_the_root`, `forget_task`).
 - decided:  `conversation::forget`, which all four already call, also calls `overrides::record::forget_agent`, best-effort like the rest of it; the history keeps the agent's sets.
 - rejected: Pruning entries whose agent no longer exists at each write: it needs every project's agent store loaded on a write, and leaves a dead agent's values on disk until some other launch is recorded.
@@ -114,8 +114,18 @@
 
 - status:   pending
 - task:     3.5
-- commit:
+- commit:   effcd2dc
 - trigger:  The design says sets are identified "by their normalized tokens" without saying what normalizing does.
 - decided:  The split words in the order typed, without the variables withheld as secrets; `--model opus` and `--model=opus` are two sets, and the same flags with a different secret are one. A set left empty by withholding is not remembered. Each set keeps the canonical root of the project it was last used in (to be named in the list); agents are keyed by project id as the design says.
 - rejected: Normalizing through the catalog (`--f=v` as `--f v`, sorting): the record would have to be rewritten whenever a catalog learns a flag, and an operator applying a set gets back something other than what they typed.
 - blast:    `remember` and `without_secrets` in `overrides/record.rs`.
+
+## D13 — Overrides are read once the claim is verified, and said on the plan's note
+
+- status:   pending
+- task:     3.6
+- commit:
+- trigger:  The task says `plan_with` fills `LaunchPlan.overrides` "from the same store load that verifies the claim", but the overrides live in their own record (design decision 2), not in `agents.json`, which `owner_of` loads.
+- decided:  `plan_with` reads the overrides record only after `owner_of` accepted the claim, so a claim it refuses carries none; the plan-aware check runs against the plan's `args` and `trailing`. Each entry left out is also added to `LaunchPlan.note`, which the shim already prints, so a now-owned override is said on the tab before group 4 touches the shim. `LaunchOverrides.weakens` names the passed flags that weaken safety, for the shim's note in 4.1.
+- rejected: Copying the overrides into `agents.json` so one load serves both: the design rejects that file for being world-readable and for the shape bump.
+- blast:    `overrides_for` in `continuity.rs` and the note lines; group 4 must not print `left_out` a second time.
