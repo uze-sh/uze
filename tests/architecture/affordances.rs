@@ -108,6 +108,14 @@ fn affordances() -> BTreeMap<Action, Affordance> {
         Control("the Preferences button in a declared extension's drawer, and a click on a row"),
     );
     put(
+        Action::ShowExtension,
+        Control("the open link in the Marketplace panel of an extension a plugin declares"),
+    );
+    put(
+        Action::ShowPlugin,
+        Control("the plugin line in a declared extension's drawer"),
+    );
+    put(
         Action::ResolvePrograms,
         Control("the Resolve again button in a declared extension's drawer"),
     );

@@ -1171,6 +1171,10 @@ pub(crate) fn drain_worker_results(
                     inspection.plugin.id.clone(),
                     inspection.capabilities.clone(),
                 );
+                model.plugin_extensions.insert(
+                    inspection.plugin.id.clone(),
+                    inspection.declared_extensions.clone(),
+                );
                 model.plugin_detail = Some(inspection);
                 model.inspection_in_flight = None;
             }
@@ -1178,6 +1182,10 @@ pub(crate) fn drain_worker_results(
                 model.plugin_resources.insert(
                     model.marketplace_plugin_id(&detail.summary),
                     detail.capabilities.clone(),
+                );
+                model.plugin_extensions.insert(
+                    model.marketplace_plugin_id(&detail.summary),
+                    detail.declared_extensions.clone(),
                 );
                 model.marketplace_detail = Some(detail);
                 model.inspection_in_flight = None;

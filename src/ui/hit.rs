@@ -27,6 +27,9 @@ pub(crate) enum Hit {
     /// A resource row under an unfolded plugin, by the plugin's position
     /// and the resource's identity.
     PluginResource(usize, String),
+    /// An extension row under an unfolded plugin, by the plugin's position
+    /// and the extension's identity.
+    PluginExtension(usize, uze_application::ExtensionIdentity),
     /// The drawer's preview of the selected resource: the wheel scrolls it
     /// rather than the list, and a click on it does nothing.
     ResourcePreview,
@@ -208,7 +211,8 @@ impl TuiModel {
             Hit::MarketplaceRow(index) => {
                 let again = self.plugin_pane == PluginPane::Plugins
                     && self.remembered.plugin_screen.selected == index
-                    && self.selected_resource.is_none();
+                    && self.selected_resource.is_none()
+                    && self.selected_package_extension.is_none();
                 self.select_plugin_row(index, None);
                 self.plugin_pane = PluginPane::Plugins;
                 self.focus = Focus::Content;
@@ -231,6 +235,11 @@ impl TuiModel {
             Hit::PluginResource(position, identity) => {
                 self.select_plugin_row(position, Some(identity));
                 self.plugin_pane = PluginPane::Plugins;
+                self.focus = Focus::Content;
+                Intent::None
+            }
+            Hit::PluginExtension(position, identity) => {
+                self.select_package_extension(position, identity);
                 self.focus = Focus::Content;
                 Intent::None
             }

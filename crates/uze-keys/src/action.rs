@@ -207,6 +207,14 @@ actions! {
     EditPreferences => "edit-preferences", false,
         "Preferences", "Set the selected extension's preferences";
 
+    // --- Management, from one screen to its sibling ---------------------
+    ShowExtension => "show-extension", false,
+        "Show extension",
+        "Show the extension the selected plugin declares on the Extensions screen, where \
+         whether it runs is decided";
+    ShowPlugin => "show-plugin", false,
+        "Show plugin", "Show the plugin the selected extension comes with on the Marketplace";
+
     // --- Management, things done to a project ---------------------------
     InstallProjectEnvironment => "install-project-environment", false,
         "Install the project's environment", "Install what this project declares but the machine lacks";

@@ -255,6 +255,9 @@ pub(crate) enum PluginTreeRow {
     Market(String),
     Plugin(usize),
     Resource(usize, String),
+    /// An extension the plugin declares: what it brings to the workspace,
+    /// whose standing the Extensions screen holds.
+    Extension(usize, uze_application::ExtensionIdentity),
 }
 
 /// Which of the Profiles screen's three panels currently has the arrow keys,
@@ -780,6 +783,12 @@ pub(crate) struct TuiModel {
     /// plugin is unfolded and still offers it — see
     /// [`TuiModel::selected_resource`].
     pub(crate) selected_resource: Option<String>,
+    /// Every plugin's declared extensions the drawer has been told this
+    /// session, by qualified id, beside [`Self::plugin_resources`].
+    pub(crate) plugin_extensions: BTreeMap<String, Vec<uze_application::ExtensionIdentity>>,
+    /// The declared extension under the selected plugin the keyboard is
+    /// on; never set together with `selected_resource`.
+    pub(crate) selected_package_extension: Option<uze_application::ExtensionIdentity>,
     /// How far the drawer's preview of that resource is scrolled, in rows.
     pub(crate) resource_scroll: u16,
 
@@ -1054,6 +1063,8 @@ impl TuiModel {
             expanded_plugins: BTreeSet::new(),
             plugin_resources: BTreeMap::new(),
             selected_resource: None,
+            plugin_extensions: BTreeMap::new(),
+            selected_package_extension: None,
             resource_scroll: 0,
             extensions: uze_extensions::registry::ExtensionRegistry::builtin()
                 .all()
@@ -1700,6 +1711,7 @@ impl TuiModel {
         self.plugin_market = market;
         self.plugin_pane = PluginPane::Markets;
         self.selected_resource = None;
+        self.selected_package_extension = None;
     }
 
     /// Puts the keyboard on a plugin, or on one of its resources, and
@@ -1712,6 +1724,7 @@ impl TuiModel {
         }
         self.remembered.plugin_screen.selected = position;
         self.selected_resource = resource;
+        self.selected_package_extension = None;
         self.plugin_pane = PluginPane::Plugins;
         if let Some(plugin) = self.selected_marketplace_plugin() {
             self.plugin_market = Some(plugin.marketplace);
@@ -1754,6 +1767,12 @@ impl TuiModel {
                         PluginTreeRow::Resource(position, resource.identity.clone())
                     }));
                 }
+                tree.extend(
+                    self.plugin_extensions_of(&id)
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|extension| PluginTreeRow::Extension(position, extension.clone())),
+                );
             }
         }
         tree
@@ -1761,6 +1780,11 @@ impl TuiModel {
 
     /// The tree row the keyboard is on.
     pub(crate) fn plugin_tree_cursor(&self) -> PluginTreeRow {
+        if self.plugin_pane == PluginPane::Plugins
+            && let Some(extension) = self.selected_package_extension()
+        {
+            return PluginTreeRow::Extension(self.remembered.plugin_screen.selected, extension);
+        }
         match (self.plugin_pane, self.selected_resource()) {
             (PluginPane::Markets, _) => {
                 PluginTreeRow::Market(self.cursor_market().unwrap_or_default())
@@ -1782,6 +1806,9 @@ impl TuiModel {
             PluginTreeRow::Resource(position, identity) => {
                 self.select_plugin_row(position, Some(identity))
             }
+            PluginTreeRow::Extension(position, identity) => {
+                self.select_package_extension(position, identity)
+            }
         }
     }
 
@@ -1797,9 +1824,10 @@ impl TuiModel {
             .iter()
             .position(|row| *row == here)
             .or_else(|| match &here {
-                PluginTreeRow::Resource(position, _) => tree
-                    .iter()
-                    .position(|row| *row == PluginTreeRow::Plugin(*position)),
+                PluginTreeRow::Resource(position, _) | PluginTreeRow::Extension(position, _) => {
+                    tree.iter()
+                        .position(|row| *row == PluginTreeRow::Plugin(*position))
+                }
                 _ => None,
             })
             .unwrap_or(0);
@@ -1863,7 +1891,86 @@ impl TuiModel {
             self.expanded_plugins.insert(plugin.to_owned());
         } else {
             self.selected_resource = None;
+            self.selected_package_extension = None;
         }
+    }
+
+    /// Puts the keyboard on an extension `position`'s plugin declares.
+    pub(crate) fn select_package_extension(
+        &mut self,
+        position: usize,
+        identity: uze_application::ExtensionIdentity,
+    ) {
+        self.select_plugin_row(position, None);
+        self.selected_package_extension = Some(identity);
+    }
+
+    /// The declared extension the keyboard is on, while its plugin is
+    /// selected, unfolded and still declares it.
+    pub(crate) fn selected_package_extension(&self) -> Option<uze_application::ExtensionIdentity> {
+        let identity = self.selected_package_extension.as_ref()?;
+        let plugin = self.selected_marketplace_plugin()?;
+        let id = self.marketplace_plugin_id(&plugin);
+        if !self.expanded_plugins.contains(&id) {
+            return None;
+        }
+        self.plugin_extensions_of(&id)?
+            .iter()
+            .find(|extension| *extension == identity)
+            .cloned()
+    }
+
+    /// The selected declared extension the Extensions screen lists: one
+    /// whose plugin is installed. One on offer has nowhere to be shown yet.
+    pub(crate) fn shown_package_extension(&self) -> Option<uze_application::ExtensionIdentity> {
+        self.selected_marketplace_plugin()
+            .filter(|plugin| plugin.installed)
+            .and(self.selected_package_extension())
+    }
+
+    /// The extensions this plugin is known to declare, if it has been
+    /// asked.
+    pub(crate) fn plugin_extensions_of(
+        &self,
+        plugin: &str,
+    ) -> Option<&[uze_application::ExtensionIdentity]> {
+        self.plugin_extensions.get(plugin).map(Vec::as_slice)
+    }
+
+    /// Opens the Extensions screen on `identity`: what runs in the
+    /// workspace is said there, and a filter that would hide it is let go.
+    pub(crate) fn show_extension(
+        &mut self,
+        identity: uze_application::ExtensionIdentity,
+    ) -> crate::ui::worker::Intent {
+        self.remembered.extension_screen.filter.clear();
+        let intent = self.set_route(Route::Extensions);
+        self.focus = Focus::Content;
+        self.reveal_extension(identity);
+        intent
+    }
+
+    /// Opens the Marketplace on the plugin that declares `identity`,
+    /// unfolded on that extension, so what it brings stands under it.
+    pub(crate) fn show_plugin_of(
+        &mut self,
+        identity: uze_application::ExtensionIdentity,
+    ) -> crate::ui::worker::Intent {
+        self.remembered.plugin_screen.filter.clear();
+        let _ = self.set_route(Route::Plugins);
+        self.focus = Focus::Content;
+        let qualified = format!("{}@{}", identity.plugin, identity.marketplace);
+        let rows = self.marketplace_rows();
+        let Some(position) = self
+            .visible_indices_in(&rows)
+            .iter()
+            .position(|&raw| self.marketplace_plugin_id(&rows[raw]) == qualified)
+        else {
+            return crate::ui::worker::Intent::None;
+        };
+        self.expanded_plugins.insert(qualified);
+        self.select_package_extension(position, identity);
+        self.marketplace_inspect_intent()
     }
 
     /// What this plugin is known to offer, if it has been asked.
@@ -2213,6 +2320,7 @@ impl TuiModel {
             .into_iter()
             .filter(ActionOffer::is_available)
             .map(|offer| offer.action)
+            .chain(self.selected_link())
             .chain(self.screen_actions());
         for offered in offered {
             if !rows.iter().any(|(action, _)| *action == offered) {
@@ -2220,6 +2328,31 @@ impl TuiModel {
             }
         }
         crate::ui::widget::action_index::narrowed(rows, filter)
+    }
+
+    /// Where the selected row leads on the sibling screen: an extension a
+    /// plugin declares to the Extensions screen, a declared extension to
+    /// the plugin it comes with. Navigation rather than an offer, so no
+    /// drawer draws it as a button; its link and the index carry it.
+    pub(crate) fn selected_link(&self) -> Option<uze_keys::Action> {
+        match self.route {
+            Route::Plugins => self
+                .shown_package_extension()
+                .map(|_| uze_keys::Action::ShowExtension),
+            Route::Extensions => self
+                .selected_declared_identity()
+                .map(|_| uze_keys::Action::ShowPlugin),
+            _ => None,
+        }
+    }
+
+    /// The identity of the declared extension selected on the Extensions
+    /// screen; `None` on a built-in, which comes with no plugin.
+    pub(crate) fn selected_declared_identity(&self) -> Option<uze_application::ExtensionIdentity> {
+        match self.selected_extension()? {
+            ExtensionEntry::Declared(summary) => Some(summary.identity.clone()),
+            ExtensionEntry::Builtin(_) => None,
+        }
     }
 
     /// What this screen can do that is about no row of it, and holds no

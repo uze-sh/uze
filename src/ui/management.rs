@@ -629,6 +629,7 @@ fn activate_label(model: &TuiModel) -> Option<String> {
             _ => None,
         },
         Route::Plugins if model.plugin_pane == PluginPane::Markets => Some("open".to_owned()),
+        Route::Plugins if model.shown_package_extension().is_some() => Some("open".to_owned()),
         Route::Plugins => model
             .selected_marketplace_plugin()
             .and_then(|plugin| view::plugins::primary_offer(&plugin.offers()))

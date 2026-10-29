@@ -295,6 +295,12 @@ impl TuiModel {
             Action::DisableExtension => self.switch_selected_extension(false),
             Action::ResolvePrograms => self.resolve_selected_programs(),
             Action::EditPreferences => self.edit_selected_preferences(),
+            Action::ShowExtension => self
+                .shown_package_extension()
+                .map_or(Intent::None, |identity| self.show_extension(identity)),
+            Action::ShowPlugin => self
+                .selected_declared_identity()
+                .map_or(Intent::None, |identity| self.show_plugin_of(identity)),
             Action::MoveItemUp if self.route == Route::Extensions => {
                 self.move_selected_status(true)
             }
@@ -462,7 +468,9 @@ impl TuiModel {
     /// the screen tabs.
     fn step_plugins_back(&mut self) {
         match self.plugin_tree_cursor() {
-            PluginTreeRow::Resource(position, _) => self.select_plugin_row(position, None),
+            PluginTreeRow::Resource(position, _) | PluginTreeRow::Extension(position, _) => {
+                self.select_plugin_row(position, None)
+            }
             PluginTreeRow::Plugin(_) => match self
                 .selected_marketplace_plugin()
                 .map(|plugin| (self.marketplace_plugin_id(&plugin), plugin.marketplace))
@@ -496,7 +504,7 @@ impl TuiModel {
                 self.expanded_plugins.insert(id);
                 self.marketplace_inspect_intent()
             }
-            PluginTreeRow::Resource(..) => Intent::None,
+            PluginTreeRow::Resource(..) | PluginTreeRow::Extension(..) => Intent::None,
         }
     }
 
@@ -571,6 +579,11 @@ impl TuiModel {
         match self.route {
             // The panel's first action: installing what is not there,
             // removing what is — each asked about before it happens.
+            // An extension a plugin declares is decided about on the
+            // Extensions screen; Enter goes there.
+            Route::Plugins if self.shown_package_extension().is_some() => {
+                self.act(Action::ShowExtension)
+            }
             Route::Plugins => match self
                 .selected_marketplace_plugin()
                 .and_then(|plugin| super::view::plugins::primary_offer(&plugin.offers()))

@@ -270,9 +270,28 @@ fn render_extension_drawer(
     if let ExtensionEntry::Declared(summary) = extension {
         lines.push(Line::from(""));
         lines.push(super::section_label("from"));
+        // The plugin it comes with, a click away on the Marketplace: what
+        // the package brings is said there, what runs is said here.
+        let above: usize = lines
+            .iter()
+            .map(|line| text::fold(&line.to_string(), usize::from(body.width)).len())
+            .sum();
+        if let Ok(above) = u16::try_from(above)
+            && above < body.height
+        {
+            hits.push((
+                Rect::new(body.x, body.y + above, body.width, 1),
+                Hit::OfferedAction(uze_keys::Action::ShowPlugin),
+            ));
+        }
+        let link = if model.hovered_offer == Some(uze_keys::Action::ShowPlugin) {
+            Token::TextBright
+        } else {
+            Token::TextMuted
+        };
         lines.push(Line::from(Span::styled(
             summary.identity.to_string(),
-            theme::fg(Token::TextPrimary),
+            theme::fg(link),
         )));
         if summary.linked {
             lines.push(Line::from(Span::styled(

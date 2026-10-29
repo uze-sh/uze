@@ -724,6 +724,10 @@ mod tests {
                 "resolve-programs",
                 // On the extension's own drawer, beside its other offers.
                 "edit-preferences",
+                // Enter on an extension's row in a plugin's tree, and a
+                // link in each drawer: a way across, never a reflex.
+                "show-extension",
+                "show-plugin",
                 "install-project-environment",
                 // Rare, and project-wide rather than about the harness the
                 // keyboard is on: the index lists both on that screen.
