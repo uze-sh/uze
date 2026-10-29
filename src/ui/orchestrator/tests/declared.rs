@@ -32,6 +32,14 @@ impl Extension for Board {
         "board".to_owned()
     }
 
+    /// An answer that is a span is said, as an action's notice is.
+    fn absorb(&mut self, answer: uze_extensions::contract::Opaque) -> Outcome {
+        match answer.downcast::<uze_extensions::view::Span>() {
+            Some(span) => Outcome::Notice(span),
+            None => Outcome::Stay,
+        }
+    }
+
     fn surfaces(&self) -> Vec<SurfaceInfo> {
         Vec::new()
     }
@@ -2507,4 +2515,33 @@ fn a_floating_drawer_answers_the_pointer_over_the_pane_it_covers() {
         )),
         "and the agent behind never sees the click"
     );
+}
+
+/// An extension with a view in the pane and a drawer open beside it: what
+/// it answers to a gesture made in the drawer is said in the drawer, where
+/// the gesture said it was waiting, not along the view's foot.
+#[test]
+fn an_answer_to_the_drawer_is_said_in_the_drawer_beside_its_view() {
+    let mut model = hosting_the_drawer();
+    let view = view_slot(&model);
+    super::open_surface(&mut model, view);
+    let slot = drawer_slot(&model);
+    model.toggle_drawer(slot, ratatui::layout::Rect::new(0, 0, 200, 60));
+    model.dock_notice = Some(uze_extensions::view::Span::new(
+        "Start a session…",
+        uze_extensions::view::Role::Muted,
+    ));
+    let owner = model
+        .open_drawer_slot()
+        .expect("the drawer is open")
+        .owner
+        .clone();
+    let said =
+        uze_extensions::view::Span::new("session started", uze_extensions::view::Role::Muted);
+    assert!(model.absorb_engine_answer(super::reads::EngineAnswer {
+        extension: owner,
+        answer: uze_extensions::contract::Opaque::new(said.clone()),
+    }));
+    assert_eq!(model.dock_notice, Some(said), "said where it was asked");
+    assert_eq!(model.open_notice, None, "not along the view's foot");
 }

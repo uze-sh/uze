@@ -258,6 +258,13 @@ impl WorkspaceModel {
         use uze_extensions::contract::Outcome;
         // What the gesture said while it waited ("Say done…") is over once
         // its extension answers: the answer says what there is to say.
+        // The drawer is where the gesture was made when it is the one
+        // saying it waits: an extension with a view open as well answers
+        // there, not along the view's foot.
+        let asked_in_drawer = self.dock_notice.is_some()
+            && self
+                .open_drawer_slot()
+                .is_some_and(|slot| slot.owner == answer.extension);
         // So for the view in front, the drawer open beside it and the
         // overlay over it, each of which says it along its own foot.
         if !matches!(outcome, Outcome::Notice(_)) {
@@ -289,6 +296,7 @@ impl WorkspaceModel {
             Outcome::Agent(request) if !request.unattended => {
                 self.ask_of_agent(answer.extension.clone(), *request);
             }
+            Outcome::Notice(span) if asked_in_drawer => self.dock_notice = Some(span),
             Outcome::Notice(span)
                 if self
                     .slot_in_pane()
