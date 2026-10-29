@@ -76,6 +76,34 @@ impl Extensions<'_> {
         found.sort_by(|a, b| a.identity.cmp(&b.identity));
         found
     }
+
+    /// The extensions the installed package `marketplace`/`plugin`
+    /// declares, read where [`Self::installed`] reads them, so each is
+    /// the identity the Extensions screen lists it under.
+    pub(crate) fn declared_by(&self, marketplace: &str, plugin: &str) -> Vec<Identity> {
+        self.installed()
+            .into_iter()
+            .map(|installed| installed.identity)
+            .filter(|identity| identity.marketplace == marketplace && identity.plugin == plugin)
+            .collect()
+    }
+}
+
+/// The extensions the package at `plugin_dir` declares, under the identity
+/// it would carry once installed from `marketplace` as `plugin`.
+pub(crate) fn declared_in(
+    plugin_dir: &std::path::Path,
+    marketplace: &str,
+    plugin: &str,
+) -> Vec<Identity> {
+    extension::discover(plugin_dir)
+        .into_iter()
+        .map(|entry| Identity {
+            marketplace: marketplace.to_owned(),
+            plugin: plugin.to_owned(),
+            id: entry.id,
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -174,6 +202,53 @@ mod tests {
             canonical(&installed[0].dir),
             canonical(&plugin.join("extensions/board")),
             "the author's own files, not the Store's copy"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// What a package provides is read from its contents: the extension it
+    /// declares stands beside its skills, on offer and once installed, under
+    /// the identity the Extensions screen lists it by.
+    #[test]
+    fn a_package_says_which_extensions_it_declares_on_offer_and_installed() {
+        let root = uze_testkit::temp::scratch("declared-extensions");
+        let market = root.join("market");
+        let plugin = stage_market(&market);
+        let home = UzeHome::at(root.join("home"));
+        uze_core::state::marketplace_add(
+            &home,
+            "market",
+            uze_core::PackageSource::Local {
+                path: market.clone(),
+            },
+        )
+        .unwrap();
+        let app = UzeApplication::new(home, Vec::new());
+        let board = format!("board · {PLUGIN}@market");
+
+        let offered = app.marketplace().inspect_plugin("market", PLUGIN).unwrap();
+        let said: Vec<String> = offered
+            .declared_extensions
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(said, vec![board.clone()], "on offer, before any install");
+        assert!(
+            !offered.capabilities.is_empty(),
+            "its skills stand beside it"
+        );
+
+        install(&app, &plugin);
+        let installed = app.plugins().inspect(PLUGIN).unwrap();
+        let said: Vec<String> = installed
+            .declared_extensions
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(
+            said,
+            vec![board],
+            "installed, as the Extensions screen lists it"
         );
         fs::remove_dir_all(root).unwrap();
     }

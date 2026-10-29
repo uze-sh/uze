@@ -37,6 +37,7 @@ pub use consent::{
 };
 pub use costs::{MeasuredCost, MeasuredCosts, bytes_text};
 pub use installed::InstalledExtension;
+pub(crate) use installed::declared_in;
 use reach::CheckoutReach;
 pub use report::{
     ExtensionCondition, ExtensionReport, PreferenceRow, grant_meaning, secrets_kept_in,

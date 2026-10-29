@@ -111,6 +111,10 @@ impl Plugins<'_> {
                 .iter()
                 .map(|resource| plugin_capability(resource))
                 .collect(),
+            declared_extensions: self
+                .0
+                .extensions()
+                .declared_by(package.id.marketplace(), package.id.plugin_name()),
             deliveries,
             managed_state: managed_state(&reconciliation),
             reconciliation,
@@ -360,6 +364,9 @@ pub struct MarketplacePluginSummary {
 pub struct MarketplacePluginDetail {
     pub summary: MarketplacePluginSummary,
     pub capabilities: Vec<PluginCapability>,
+    /// See [`PluginInspection::declared_extensions`].
+    #[serde(skip)]
+    pub declared_extensions: Vec<crate::ExtensionIdentity>,
     /// When this plugin was last written in the marketplace that offers
     /// it — what you would be installing, and how old it is.
     pub revision: Option<Revision>,
@@ -451,6 +458,12 @@ pub struct PluginInspection {
     pub revision: Option<Revision>,
     pub plugin: PluginSummary,
     pub capabilities: Vec<PluginCapability>,
+    /// The extensions the package declares under `extensions/`: what it
+    /// brings to the workspace, as `capabilities` is what it brings to the
+    /// harnesses. Read from its contents, whatever their standing; where
+    /// each stands is [`Self::extensions`]'s to say.
+    #[serde(skip)]
+    pub declared_extensions: Vec<crate::ExtensionIdentity>,
     pub deliveries: Vec<HarnessDelivery>,
     pub managed_state: ManagedStateSummary,
     pub reconciliation: ReconciliationReport,

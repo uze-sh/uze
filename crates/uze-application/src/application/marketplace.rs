@@ -813,6 +813,11 @@ impl Marketplace<'_> {
                 self.0.offered_revision(marketplace, name)
             },
             capabilities: inspected.resources.iter().map(plugin_capability).collect(),
+            declared_extensions: super::extensions::declared_in(
+                materialized.root(),
+                marketplace,
+                name,
+            ),
             summary,
         })
     }
