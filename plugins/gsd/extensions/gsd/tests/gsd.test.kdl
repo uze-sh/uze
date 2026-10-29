@@ -1,0 +1,87 @@
+// Four moments of a milestone: phase 3 to plan, phase 3 executing its
+// waves, a plan of phase 3 waiting at its checkpoint, and every phase done.
+
+test "the bar says the milestone, the phase in front and its step" {
+    surface "step"
+    given "planning" fixture="fixtures/planning.json"
+    expect-text "v1.4 · 3 plan"
+    snapshot "bar"
+}
+
+test "the drawer offers the next step of the phase in front, and asks the agent for it" {
+    surface "phases"
+    given "planning" fixture="fixtures/planning.json"
+    expect-text "2 of 5 phases · phase 3 next"
+    expect-text "after 3"
+    expect-no-text "needs you"
+    press-button "plan phase 3"
+    expect-action "next" number="3" step="plan" command="gsd-plan-phase"
+    snapshot "planning"
+}
+
+test "nothing waits, so the band draws nothing" {
+    surface "checkpoint"
+    given "planning" fixture="fixtures/planning.json"
+    expect-no-text "Checkpoint"
+    expect-no-text "approved"
+}
+
+test "executing, the drawer counts the plans run, wave by wave" {
+    surface "phases"
+    given "planning" fixture="fixtures/executing.json"
+    expect-text "2/5"
+    expect-text "wave 1"
+    expect-text "wave 3"
+    press-button "execute phase 3"
+    expect-action "next" number="3" step="execute" command="gsd-execute-phase"
+    snapshot "executing"
+}
+
+test "a checkpoint waiting takes the bar" {
+    surface "step"
+    given "planning" fixture="fixtures/checkpoint.json"
+    expect-text "3-04 waits for you"
+    expect-no-text "v1.4"
+    snapshot "bar-checkpoint"
+}
+
+test "a checkpoint waiting is answered from the band over the agent" {
+    surface "checkpoint"
+    given "planning" fixture="fixtures/checkpoint.json"
+    expect-text "Checkpoint 3-04"
+    expect-text "Check the payment form in the browser"
+    press-button "approved"
+    expect-action "approve" plan="3-04"
+    snapshot "band"
+}
+
+test "a problem at the checkpoint is reported to the agent" {
+    surface "checkpoint"
+    given "planning" fixture="fixtures/checkpoint.json"
+    press-button "report a problem"
+    expect-action "report" plan="3-04"
+}
+
+test "a checkpoint waiting holds the drawer's button back" {
+    surface "phases"
+    given "planning" fixture="fixtures/checkpoint.json"
+    expect-text "needs you"
+    expect-text "waits for you above"
+    expect-no-text "execute phase 3"
+    snapshot "checkpoint"
+}
+
+test "every phase done, the milestone is complete" {
+    surface "phases"
+    given "planning" fixture="fixtures/complete.json"
+    expect-text "100%"
+    expect-text "5 of 5 phases · complete"
+    expect-no-text "after"
+    snapshot "complete"
+}
+
+test "every phase done, the bar says so" {
+    surface "step"
+    given "planning" fixture="fixtures/complete.json"
+    expect-text "v1.4 complete"
+}

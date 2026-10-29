@@ -7,7 +7,7 @@
   "plugins": [
     { "name": "uze", "source": "./plugins/uze", "category": "development" },
     { "name": "pingpong", "source": "./plugins/pingpong", "category": "example" },
-    { "name": "milestone", "source": "./plugins/milestone", "category": "example" },
+    { "name": "gsd", "source": "./plugins/gsd", "category": "example" },
     { "name": "focus", "source": "./plugins/focus", "category": "example" },
     { "name": "contributions", "source": "./plugins/contributions", "category": "example" }
   ]

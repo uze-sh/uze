@@ -1,0 +1,24 @@
+<view>
+// In the bar: the milestone, the phase in front and its step; while a plan
+// waits at a checkpoint, that instead, in the danger hue, since the agent
+// does nothing until the person answers. A click opens the drawer.
+Row gap=1 {
+    Row gap=1 when="checkpoint" {
+        Icon "checkpoint" role="danger"
+        Text "{checkpoint.plan} waits for you" role="danger"
+    }
+    Row gap=1 unless="checkpoint" {
+        Row gap=1 when="current" {
+            Text "◆" role="warning"
+            Text "{version}" role="secondary"
+            Text "·" role="faint"
+            Text "{current.number}" role="default"
+            Text "{current.step}" role="bright"
+        }
+        Row gap=1 unless="current" {
+            Icon "check" role="success"
+            Text "{version} complete" role="secondary"
+        }
+    }
+}
+</view>

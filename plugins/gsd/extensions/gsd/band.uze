@@ -1,0 +1,14 @@
+<view>
+// Over the agent's pane, only while a plan waits at a checkpoint: what to
+// check, and the two answers GSD waits for. Nothing is drawn otherwise.
+Row gap=2 when="checkpoint" {
+    Row gap=1 grow=#true {
+        Icon "checkpoint" role="danger"
+        Text "Checkpoint {checkpoint.plan}" strong=#true
+        Text "·" role="faint"
+        Text "{checkpoint.title}" role="secondary" truncate=#true grow=#true
+    }
+    Button "approved" action="approve" item="{checkpoint}"
+    Button "report a problem" action="report" item="{checkpoint}"
+}
+</view>

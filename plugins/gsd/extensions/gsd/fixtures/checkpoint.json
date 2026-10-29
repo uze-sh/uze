@@ -1,0 +1,244 @@
+{
+  "checkpoint": {
+    "plan": "3-04",
+    "title": "Check the payment form in the browser"
+  },
+  "current": {
+    "command": "gsd-execute-phase",
+    "label": "execute phase 3",
+    "name": "Payment form",
+    "number": "3",
+    "plans": 5,
+    "ran": 3,
+    "step": "execute",
+    "steps": [
+      {
+        "done": true,
+        "mark": "○",
+        "name": "discuss",
+        "state": "done"
+      },
+      {
+        "done": true,
+        "mark": "○",
+        "name": "plan",
+        "state": "done"
+      },
+      {
+        "done": false,
+        "mark": "◆",
+        "name": "execute",
+        "state": "current"
+      },
+      {
+        "done": false,
+        "mark": "○",
+        "name": "verify",
+        "state": "pending"
+      }
+    ],
+    "waiting": {
+      "plan": "3-04",
+      "title": "Check the payment form in the browser"
+    },
+    "waves": [
+      {
+        "kind": "label",
+        "text": "wave 1 "
+      },
+      {
+        "kind": "done",
+        "text": "■"
+      },
+      {
+        "kind": "done",
+        "text": "■"
+      },
+      {
+        "kind": "label",
+        "text": "  "
+      },
+      {
+        "kind": "label",
+        "text": "wave 2 "
+      },
+      {
+        "kind": "done",
+        "text": "■"
+      },
+      {
+        "kind": "waiting",
+        "text": "",
+        "waiting": true
+      },
+      {
+        "kind": "label",
+        "text": "  "
+      },
+      {
+        "kind": "label",
+        "text": "wave 3 "
+      },
+      {
+        "kind": "pending",
+        "text": "□"
+      }
+    ]
+  },
+  "done": 2,
+  "name": "Store checkout",
+  "next": "phase 3 next",
+  "percent": 51,
+  "phases": [
+    {
+      "after": "after ",
+      "finished": true,
+      "name": "Cart service",
+      "number": "1",
+      "plans": "3/3",
+      "state": "done"
+    },
+    {
+      "after": "after 1",
+      "finished": true,
+      "name": "Checkout API",
+      "number": "2",
+      "plans": "4/4",
+      "state": "done"
+    },
+    {
+      "after": "after 2",
+      "front": {
+        "command": "gsd-execute-phase",
+        "label": "execute phase 3",
+        "name": "Payment form",
+        "number": "3",
+        "plans": 5,
+        "ran": 3,
+        "step": "execute",
+        "steps": [
+          {
+            "done": true,
+            "mark": "○",
+            "name": "discuss",
+            "state": "done"
+          },
+          {
+            "done": true,
+            "mark": "○",
+            "name": "plan",
+            "state": "done"
+          },
+          {
+            "done": false,
+            "mark": "◆",
+            "name": "execute",
+            "state": "current"
+          },
+          {
+            "done": false,
+            "mark": "○",
+            "name": "verify",
+            "state": "pending"
+          }
+        ],
+        "waiting": {
+          "plan": "3-04",
+          "title": "Check the payment form in the browser"
+        },
+        "waves": [
+          {
+            "kind": "label",
+            "text": "wave 1 "
+          },
+          {
+            "kind": "done",
+            "text": "■"
+          },
+          {
+            "kind": "done",
+            "text": "■"
+          },
+          {
+            "kind": "label",
+            "text": "  "
+          },
+          {
+            "kind": "label",
+            "text": "wave 2 "
+          },
+          {
+            "kind": "done",
+            "text": "■"
+          },
+          {
+            "kind": "waiting",
+            "text": "",
+            "waiting": true
+          },
+          {
+            "kind": "label",
+            "text": "  "
+          },
+          {
+            "kind": "label",
+            "text": "wave 3 "
+          },
+          {
+            "kind": "pending",
+            "text": "□"
+          }
+        ]
+      },
+      "name": "Payment form",
+      "number": "3",
+      "plans": "3/5",
+      "state": "current"
+    },
+    {
+      "after": "after 3",
+      "ahead": true,
+      "name": "Order emails",
+      "number": "4",
+      "plans": "",
+      "state": "later"
+    },
+    {
+      "after": "after 4",
+      "ahead": true,
+      "name": "Rollout",
+      "number": "5",
+      "plans": "",
+      "state": "later"
+    }
+  ],
+  "segments": [
+    {
+      "ratio": 1.0,
+      "state": "done",
+      "weight": 3
+    },
+    {
+      "ratio": 1.0,
+      "state": "done",
+      "weight": 4
+    },
+    {
+      "ratio": 0.6,
+      "state": "current",
+      "weight": 5
+    },
+    {
+      "ratio": 0.0,
+      "state": "later",
+      "weight": 3
+    },
+    {
+      "ratio": 0.0,
+      "state": "later",
+      "weight": 3
+    }
+  ],
+  "total": 5,
+  "version": "v1.4"
+}

@@ -1,0 +1,71 @@
+# uze snapshot · protocol 1 · drawer 46x30 · dark
+ ┌───────────────────────────────────────────┐
+ │ gsd · gsd@local                           │
+ │                                           │
+ │  v1.4 Store checkout                 51%  │
+ │  ██████ ████████ █████▍─── ────── ──────  │
+ │  2 of 5 phases · phase 3 next             │
+ │                                           │
+ │  needs you                                │
+ │    ▲  3-04  Check the payment form in t…  │
+ │                                           │
+ │  ✓  1   Cart service                 3/3  │
+ │  ✓  2   Checkout API                 4/4  │
+ │                                           │
+ │  ▶  3   Payment form                      │
+ │   ✓ discuss  ✓ plan  ◆ execute  ○ verify  │
+ │   wave 1 ■■  wave 2 ■▲  wave 3 □     3/5  │
+ │                                           │
+ │                      waits for you above  │
+ │                                           │
+ │  ·  4   Order emails             after 3  │
+ │  ·  5   Rollout                  after 4  │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ │                                           │
+ └───────────────────────────────────────────┘
+---
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ a bbb b bbbbbbbbb                           a
+ a                                           a
+ a  cccc ddddd dddddddd                 ddd  a
+ a  eeeeee eeeeeeee ffffffggg gggggg gggggg  a
+ a  b bb b bbbbbb b bbbbb b bbbb             a
+ a                                           a
+ a  hhhhh hhh                                a
+ a    h  cccc  ddddd ddd ddddddd dddd dd dd  a
+ a                                           a
+ a  e  b   bbbb bbbbbbb                 bbb  a
+ a  e  b   bbbbbbbb bbb                 bbb  a
+ a                                           a
+ a  f  c   ccccccc cccc                      a
+ a   e eeeeeee  e eeee  f fffffff  g gggggg  a
+ a   bbbb b ee  bbbb b eh  bbbb b g     bbb  a
+ a                                           a
+ a                      hhhhh hhh hhh hhhhh  a
+ a                                           a
+ a  g  g   ggggg gggggg             ggggg g  a
+ a  g  g   ggggggg                  ggggg g  a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ a                                           a
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+---
+a border.default
+b text.muted
+c text.bright
+d text.secondary
+e state.success
+f state.warning
+g text.faint
+h state.danger

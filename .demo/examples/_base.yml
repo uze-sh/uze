@@ -31,7 +31,7 @@ sandbox:
     - mkdir -p {root}/tmp
     # The project `uze:try` makes, by the same script, so the demos show
     # what a person trying uze sees: twelve weeks of commits for contributions and a
-    # milestone in .planning/ for milestone. Made again on every seed, so its
+    # GSD milestone in .planning/ for gsd. Made again on every seed, so its
     # dates stay relative to the day the demos are recorded; the base's reset
     # rewinds it between takes like the other fixtures.
     - rm -rf {fixtures}/demo-tasks && python3 -I {project}/plugins/uze/skills/try/demo.py {fixtures}/demo-tasks
@@ -51,7 +51,7 @@ sandbox:
     # untracked file before a take.
     - |
       cd {fixtures}/demo-tasks
-      for plugin in milestone focus contributions; do
+      for plugin in gsd focus contributions; do
         {project}/target/release/uze install "$plugin@uze" >/dev/null
       done
       git add -A
@@ -60,7 +60,7 @@ sandbox:
       git rev-parse HEAD > {root}/base-demo-tasks.sha
   reset:
     # An agent works in the project itself, not in a checkout of its own,
-    # and milestone's take has it execute a phase: the project goes back to
+    # and gsd's take has it execute a phase: the project goes back to
     # what the seed left before every take. Not a fixture the recorder
     # knows, so the rewind is this one.
     - git -C {fixtures}/demo-tasks reset -q --hard "$(cat {root}/base-demo-tasks.sha)"

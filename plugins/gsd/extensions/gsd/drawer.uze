@@ -1,0 +1,97 @@
+<view>
+// The drawer, read while the agent works: the milestone and how far it
+// is, what waits for the person, and the phases, the one in front opened
+// to its steps and waves, with the one button that asks for its next step.
+lookup "fill" default="faint" {
+    done "success"
+    current "warning"
+}
+
+lookup "step" default="faint" {
+    done "success"
+    current "warning"
+}
+
+lookup "wave" default="faint" {
+    label "muted"
+    done "success"
+}
+
+Stack gap=1 {
+    Stack {
+        Row gap=1 {
+            Text "{version}" strong=#true
+            Text "{name}" role="secondary" truncate=#true grow=#true
+            Text "{percent}%" role="secondary"
+        }
+        Progress {
+            Segment each="segments" weight="{weight}" ratio="{ratio}" role="{fill:state}"
+        }
+        Text "{done} of {total} phases · {next}" role="muted"
+    }
+
+    // A plan stopped for the person: answered over the agent's pane.
+    Stack when="checkpoint" {
+        Text "needs you" role="danger"
+        Box direction="row" gap=2 padding-x=2 {
+            Icon "checkpoint" role="danger"
+            Text "{checkpoint.plan}" role="bright"
+            Text "{checkpoint.title}" role="secondary" truncate=#true grow=#true
+        }
+    }
+
+    Stack {
+        Stack each="phases" {
+            Row gap=2 when="finished" {
+                Icon "check" role="success"
+                Text "{number}" role="muted" min-width=2
+                Text "{name}" role="muted" truncate=#true grow=#true
+                Text "{plans}" role="muted"
+            }
+
+            // The phase in front: its steps, its plans wave by wave, and what
+            // comes next, the button or the checkpoint it waits at.
+            Box gap=1 padding-y=1 when="front" {
+                Stack {
+                    Row gap=2 {
+                        Text "▶" role="warning"
+                        Text "{number}" role="bright" strong=#true min-width=2
+                        Text "{name}" role="bright" strong=#true truncate=#true grow=#true
+                    }
+                    Row {
+                        Text "" min-width=1
+                        Row gap=2 {
+                            Row gap=1 each="front.steps" {
+                                Icon "check" role="success" when="done"
+                                Text "{mark}" role="{step:state}" unless="done"
+                                Text "{name}" role="{step:state}"
+                            }
+                        }
+                    }
+                    Row when="front.waves" {
+                        Text "" min-width=1
+                        Row grow=#true {
+                            Row each="front.waves" {
+                                Icon "checkpoint" role="danger" when="waiting"
+                                Text "{text}" role="{wave:kind}" unless="waiting"
+                            }
+                        }
+                        Text "{front.ran}/{front.plans}" role="muted"
+                    }
+                }
+                Row align="end" {
+                    Text "waits for you above" role="danger" when="front.waiting"
+                    Button "{front.label}" action="next" item="{front}" unless="front.waiting"
+                }
+            }
+
+            Row gap=2 when="ahead" {
+                Text "·" role="faint"
+                Text "{number}" role="faint" min-width=2
+                Text "{name}" role="faint" truncate=#true grow=#true
+                Text "{after}" role="faint"
+            }
+        }
+    }
+}
+</view>

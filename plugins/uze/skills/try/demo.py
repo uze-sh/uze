@@ -6,8 +6,9 @@ The directory must not exist yet, or be empty. It becomes a small Git
 repository, a tasks CLI, holding what each example reads:
 
 - twelve weeks of commits by three authors, for `contributions`' graph;
-- a milestone in `.planning/`, one phase done and the next one planned, for
-  `milestone`, whose drawer then offers to execute it;
+- a GSD milestone in `.planning/`, written the way GSD writes it, one phase
+  done and the next one planned, for `gsd`, whose drawer then offers to
+  execute it (the second plan stops at a checkpoint);
 - an `AGENTS.md`, so any harness opened there has something to read;
 - an empty `agents.yaml`, so the plugins installed there are declared by
   the project, and the workspace offers their extensions where it opens.
@@ -44,9 +45,8 @@ FILES = {
 A small command-line task list, kept to try uze's example plugins.
 
 - `tasks.py` is the CLI: `python3 tasks.py add <text>`, `python3 tasks.py list`.
-- `.planning/` holds the milestone the `milestone` plugin shows: plan and
-  execute its phases with `/milestone:plan-phase N` and
-  `/milestone:execute-phase N`.
+- `.planning/` holds a GSD (Get Shit Done) milestone, which the `gsd`
+  plugin shows. Its steps are GSD's: install GSD to run them.
 """,
     "tasks.py": '''"""A small task list: add a task, list them."""
 
@@ -65,36 +65,90 @@ def main(argv):
 if __name__ == "__main__":
     main(sys.argv[1:])
 ''',
-    ".planning/STATE.md": """# State
+    ".planning/STATE.md": """---
+milestone: v1.0
+milestone_name: a tasks CLI
+status: ready_to_execute
+stopped_at: Phase 2 planned
+---
 
-Milestone: v1 · a tasks CLI
-Phase: 2
-Step: planned
+# Project State
+
+Phase 2 of 4 is planned: its two plans are ready to execute.
 """,
-    ".planning/ROADMAP.md": """# Roadmap
+    ".planning/ROADMAP.md": """# Roadmap: a tasks CLI
 
-- [x] **Phase 1: CLI skeleton**
-- [ ] **Phase 2: Keep tasks in a file**
-- [ ] **Phase 3: Mark a task done**
-- [ ] **Phase 4: List only the pending ones**
+## Phases
+
+- [x] **Phase 1: CLI skeleton** - add and list tasks in memory
+- [ ] **Phase 2: Keep tasks in a file** - tasks survive between runs
+- [ ] **Phase 3: Mark a task done** - `done <n>`
+- [ ] **Phase 4: List only the pending ones** - `list --pending`
 """,
-    ".planning/phases/01-cli-skeleton/01-PLAN.md": """# Phase 1 · CLI skeleton
+    ".planning/phases/01-cli-skeleton/01-CONTEXT.md": """# Phase 1: CLI skeleton - Context
 
-1. Create `tasks.py` with a `main(argv)` entry.
-2. `add <text>` appends a task.
-3. `list` prints the tasks, numbered.
+One file, `tasks.py`, with `add` and `list`; nothing kept between runs yet.
 """,
-    ".planning/phases/01-cli-skeleton/01-SUMMARY.md": """# Phase 1 · done
+    ".planning/phases/01-cli-skeleton/01-01-PLAN.md": """---
+phase: 01-cli-skeleton
+plan: 01
+wave: 1
+autonomous: true
+---
 
-1. `tasks.py` has `main(argv)`.
-2. `add` appends to an in-memory list.
-3. `list` prints them numbered.
+<tasks>
+<task type="auto">
+  <name>Create tasks.py with add and list</name>
+</task>
+</tasks>
 """,
-    ".planning/phases/02-keep-tasks-in-a-file/02-PLAN.md": """# Phase 2 · Keep tasks in a file
+    ".planning/phases/01-cli-skeleton/01-01-SUMMARY.md": """# Phase 1 Plan 01: Summary
 
-1. Create `store.py` with `load()` and `save(tasks)` over `tasks.json`.
-2. `add` appends and saves.
-3. `list` reads from `tasks.json`.
+`tasks.py` has `main(argv)`; `add` appends to a list in memory and `list`
+prints it numbered.
+""",
+    ".planning/phases/01-cli-skeleton/01-VERIFICATION.md": """# Phase 1: Verification
+
+status: passed
+""",
+    ".planning/phases/02-keep-tasks-in-a-file/02-CONTEXT.md": """# Phase 2: Keep tasks in a file - Context
+
+Tasks are kept in `tasks.json` beside the CLI, read once per command.
+""",
+    ".planning/phases/02-keep-tasks-in-a-file/02-01-PLAN.md": """---
+phase: 02-keep-tasks-in-a-file
+plan: 01
+wave: 1
+autonomous: true
+---
+
+<tasks>
+<task type="auto">
+  <name>Create store.py with load() and save(tasks) over tasks.json</name>
+</task>
+<task type="auto">
+  <name>Make add save and list load</name>
+</task>
+</tasks>
+""",
+    ".planning/phases/02-keep-tasks-in-a-file/02-02-PLAN.md": """---
+phase: 02-keep-tasks-in-a-file
+plan: 02
+wave: 2
+autonomous: false
+---
+
+<tasks>
+<task type="checkpoint:human-verify" gate="blocking">
+  <name>Add a task, run list again: it is still there</name>
+  <what-built>Tasks kept in tasks.json</what-built>
+  <how-to-verify>
+    1. python3 tasks.py add "buy milk"
+    2. python3 tasks.py list
+  </how-to-verify>
+  <resume-signal>Type "approved" or describe issues</resume-signal>
+</task>
+</tasks>
 """,
 }
 

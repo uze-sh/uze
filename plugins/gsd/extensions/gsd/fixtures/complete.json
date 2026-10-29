@@ -1,0 +1,79 @@
+{
+  "checkpoint": null,
+  "current": null,
+  "done": 5,
+  "name": "Store checkout",
+  "next": "complete",
+  "percent": 100,
+  "phases": [
+    {
+      "after": "after ",
+      "finished": true,
+      "name": "Cart service",
+      "number": "1",
+      "plans": "3/3",
+      "state": "done"
+    },
+    {
+      "after": "after 1",
+      "finished": true,
+      "name": "Checkout API",
+      "number": "2",
+      "plans": "4/4",
+      "state": "done"
+    },
+    {
+      "after": "after 2",
+      "finished": true,
+      "name": "Payment form",
+      "number": "3",
+      "plans": "5/5",
+      "state": "done"
+    },
+    {
+      "after": "after 3",
+      "finished": true,
+      "name": "Order emails",
+      "number": "4",
+      "plans": "",
+      "state": "done"
+    },
+    {
+      "after": "after 4",
+      "finished": true,
+      "name": "Rollout",
+      "number": "5",
+      "plans": "",
+      "state": "done"
+    }
+  ],
+  "segments": [
+    {
+      "ratio": 1.0,
+      "state": "done",
+      "weight": 3
+    },
+    {
+      "ratio": 1.0,
+      "state": "done",
+      "weight": 4
+    },
+    {
+      "ratio": 1.0,
+      "state": "done",
+      "weight": 5
+    },
+    {
+      "ratio": 1.0,
+      "state": "done",
+      "weight": 3
+    },
+    {
+      "ratio": 1.0,
+      "state": "done",
+      "weight": 3
+    }
+  ],
+  "total": 5,
+  "version": "v1.4"
+}
