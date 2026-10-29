@@ -381,14 +381,6 @@ pub enum UzeError {
         .pid.map(|pid| format!(" (process {pid})")).unwrap_or_default()
     )]
     MutationInProgress { path: PathBuf, pid: Option<u32> },
-    #[error("unknown profile `{0}`")]
-    UnknownProfile(String),
-    #[error("profile `{0}` already exists")]
-    ProfileAlreadyExists(String),
-    #[error("cannot remove the only profile")]
-    CannotDeleteOnlyProfile,
-    #[error("invalid profile id `{0}`: use lowercase letters, digits, `-`, or `_`")]
-    InvalidProfileId(String),
     #[error("failed to run `{program}`: {source}")]
     Process {
         program: String,
