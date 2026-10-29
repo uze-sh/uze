@@ -19,6 +19,7 @@
 
 mod check;
 mod line;
+pub mod record;
 
 use std::ffi::OsString;
 

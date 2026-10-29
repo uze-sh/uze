@@ -68,7 +68,14 @@ pub fn create_symlink(target: &Path, link: &Path) -> Result<()> {
 }
 
 pub fn write_atomic(path: &Path, payload: &[u8]) -> Result<()> {
-    replace_atomically(path, payload, None, Durability::Synced)
+    replace_atomically(path, payload, Mode::Umask, Durability::Synced)
+}
+
+/// [`write_atomic`] for a record only its owner may read: the file is
+/// created owner-only, so no reader ever finds it published with the
+/// umask's mode in between.
+pub fn write_atomic_private(path: &Path, payload: &[u8]) -> Result<()> {
+    replace_atomically(path, payload, Mode::Private, Durability::Synced)
 }
 
 /// [`write_atomic`] for what UZE generates or remembers (`runtime/`,
@@ -77,7 +84,17 @@ pub fn write_atomic(path: &Path, payload: &[u8]) -> Result<()> {
 /// crash costs nothing — it is produced or observed again — while the two
 /// syncs are most of what the write costs on a slow filesystem.
 pub fn write_atomic_unsynced(path: &Path, payload: &[u8]) -> Result<()> {
-    replace_atomically(path, payload, None, Durability::Unsynced)
+    replace_atomically(path, payload, Mode::Umask, Durability::Unsynced)
+}
+
+/// What mode a replacement is published with.
+enum Mode {
+    /// Whatever the umask gives a new file.
+    Umask,
+    /// The mode of the file it replaces.
+    Kept(fs::Permissions),
+    /// This user's alone.
+    Private,
 }
 
 /// Whether a replacement waits for the disk before and after it is
@@ -101,7 +118,12 @@ pub fn write_atomic_preserving(path: &Path, payload: &[u8]) -> Result<()> {
     let permissions = fs::metadata(&destination)
         .ok()
         .map(|metadata| metadata.permissions());
-    replace_atomically(&destination, payload, permissions, Durability::Synced)
+    replace_atomically(
+        &destination,
+        payload,
+        permissions.map_or(Mode::Umask, Mode::Kept),
+        Durability::Synced,
+    )
 }
 
 /// [`write_atomic_preserving`] for a file a project keeps, which may be a
@@ -119,7 +141,12 @@ pub fn write_atomic_within(root: &Path, path: &Path, payload: &[u8]) -> Result<(
     let permissions = fs::metadata(&destination)
         .ok()
         .map(|metadata| metadata.permissions());
-    replace_atomically(&destination, payload, permissions, Durability::Synced)
+    replace_atomically(
+        &destination,
+        payload,
+        permissions.map_or(Mode::Umask, Mode::Kept),
+        Durability::Synced,
+    )
 }
 
 /// Where a write to the project file `path` lands, refused when that is
@@ -266,7 +293,7 @@ fn resolve_symlinks(path: &Path) -> Result<PathBuf> {
 fn replace_atomically(
     path: &Path,
     payload: &[u8],
-    permissions: Option<fs::Permissions>,
+    mode: Mode,
     durability: Durability,
 ) -> Result<()> {
     let _span =
@@ -278,13 +305,16 @@ fn replace_atomically(
     // Opened outside the fallible block on purpose: the cleanup below
     // removes `temporary`, and this call may only remove a file it created
     // itself.
-    let mut file = OpenOptions::new()
-        .create_new(true)
-        .write(true)
+    let mut options = OpenOptions::new();
+    options.create_new(true).write(true);
+    if matches!(mode, Mode::Private) {
+        uze_platform::fs::private_file(&mut options);
+    }
+    let mut file = options
         .open(&temporary)
         .map_err(UzeError::write(&temporary))?;
     let result = (|| {
-        if let Some(permissions) = permissions {
+        if let Mode::Kept(permissions) = mode {
             file.set_permissions(permissions)
                 .map_err(UzeError::write(&temporary))?;
         }

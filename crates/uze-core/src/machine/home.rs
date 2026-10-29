@@ -193,6 +193,20 @@ impl UzeHome {
         self.state_dir().join("hosts.json")
     }
 
+    /// The overrides each agent was launched with, per harness, and the
+    /// sets of them the operator used lately. A record: only what the
+    /// operator typed says it. Owner-only, since a value may be a secret.
+    pub fn launch_overrides_path(&self) -> PathBuf {
+        self.state_dir().join("launch-overrides.json")
+    }
+
+    /// The guard every read-modify-write of the launch overrides takes: the
+    /// workspace records them and a relaunching shim may be reading. A
+    /// lock, not a record.
+    pub fn launch_overrides_lock_path(&self) -> PathBuf {
+        self.state_dir().join("launch-overrides.lock")
+    }
+
     /// Where the removed Profiles screen kept its record. Nothing reads it:
     /// it is named only so the application can remove what earlier
     /// releases left there.
@@ -941,6 +955,7 @@ mod tests {
             home.conversation_path("abc", "def"),
             home.prompt_history_path("abc"),
             home.extensions_record_path(),
+            home.launch_overrides_path(),
             home.extension_stores_dir(),
             home.extension_store_path("gsd@market", "gsd-band", Some("abc")),
             home.extension_preferences_path("gsd@market", "gsd-band"),

@@ -74,7 +74,7 @@
 
 - status:   pending
 - task:     3.2, 3.6
-- commit:
+- commit:   d6370b54
 - trigger:  The design gives `check` an `Option<&LaunchPlan>`, but `features.memories=false` is composed by the shim from `memory_off` after `plan_with` returns, so the plan alone cannot say whether that conditional key is set on this launch.
 - decided:  `check(entries, catalog, managed, composed: Option<&[OsString]>)`, where `composed` is every argument UZE adds; `plan_with` passes the plan's `args` and `trailing`, and `LaunchOverrides::leave_out_composed(catalog, composed)` lets the shim drop, with a note, a flag that collides with what it adds afterwards (group 4 calls it with `memory_off`'s args).
 - rejected: Moving the `memory_off` decision into `plan_with`: it is the shim's today and group 3 does not change the shim. Treating conditional keys as always owned at launch: it would refuse `-c notify=…` on every launch where the operator's own config already sets `notify`, which is exactly the case UZE leaves alone.
@@ -84,8 +84,38 @@
 
 - status:   pending
 - task:     3.1, 3.2
-- commit:
+- commit:   d6370b54
 - trigger:  The design names the splitter's quoting and the verdicts, not the edge cases each meets.
 - decided:  Double quotes take POSIX's escapes only (`\"`, `\\`, `` \` ``, `\$`), so a quoted `C:\dir` keeps its backslash; a backslash ending the line is itself. A catalogued flag that takes a value and has none, a `OneOf` value outside its set, and a keyed value with no `key=` are `Refused` with the reason (`takes a value: model`, `takes one of …`, `takes key=value`). Variable names are compared to the managed ones without case (`Path` is `PATH` on Windows). Keyed keys drop quotes and blanks around dots (`"hooks" . state` is `hooks.state`), and a key collides with an owned one when equal, its parent table, or inside it (`agents.max` under `agents`). A refusal note names a flag's spelling or a variable's name, never a value.
 - rejected: Passing a value-less `--model` through for the harness to reject: the agent would start and die in its pane, where the popup could have said why.
 - blast:    `overrides/line.rs` and `overrides/check.rs`, with their tests.
+
+## D10 — Create the record owner-only rather than narrow it after
+
+- status:   pending
+- task:     3.3
+- commit:
+- trigger:  `prompt_history`'s rewrite publishes with `write_atomic` and then calls `restrict_to_owner`, so the file is readable with the umask's mode between the rename and the narrowing; this record can hold a token.
+- decided:  `uze_core::persistence::write_atomic_private`, which opens the temporary through `uze_platform::fs::private_file` before anything is written into it; `replace_atomically` takes a `Mode` (`Umask`, `Kept`, `Private`) in place of its `Option<Permissions>`.
+- rejected: Following `prompt_history` as it is: the window is short, but the record is the one place a secret value is kept.
+- blast:    One function and the `Mode` enum in `persistence.rs`; `prompt_history` can move to it later.
+
+## D11 — An agent's overrides go where its conversations go
+
+- status:   pending
+- task:     3.4
+- commit:
+- trigger:  The design says an agent's entry goes when its record does; there are four places the application drops a task record (`forget_finished`'s sweep, `discard_task`, `forget_in_the_root`, `forget_task`).
+- decided:  `conversation::forget`, which all four already call, also calls `overrides::record::forget_agent`, best-effort like the rest of it; the history keeps the agent's sets.
+- rejected: Pruning entries whose agent no longer exists at each write: it needs every project's agent store loaded on a write, and leaves a dead agent's values on disk until some other launch is recorded.
+- blast:    One line and its test in `conversation.rs`.
+
+## D12 — A remembered set is its words, minus the secrets
+
+- status:   pending
+- task:     3.5
+- commit:
+- trigger:  The design says sets are identified "by their normalized tokens" without saying what normalizing does.
+- decided:  The split words in the order typed, without the variables withheld as secrets; `--model opus` and `--model=opus` are two sets, and the same flags with a different secret are one. A set left empty by withholding is not remembered. Each set keeps the canonical root of the project it was last used in (to be named in the list); agents are keyed by project id as the design says.
+- rejected: Normalizing through the catalog (`--f=v` as `--f v`, sorting): the record would have to be rewritten whenever a catalog learns a flag, and an operator applying a set gets back something other than what they typed.
+- blast:    `remember` and `without_secrets` in `overrides/record.rs`.
