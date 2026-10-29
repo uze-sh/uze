@@ -3,7 +3,7 @@
 
 use uze_application::{CheckedOverride, OverrideFlag, OverrideValue, OverrideVerdict};
 
-use super::popups::{PICKER_LEAD, picker_lead, render_agent_picker_row, spread};
+use super::popups::{PICKER_LEAD, picker_lead, popup_rule, render_agent_picker_row, spread};
 use super::*;
 use crate::ui::widget::Scrollbar;
 
@@ -12,8 +12,8 @@ const LINE_PLACEHOLDER: &str = "a flag, or NAME=value";
 /// The list says this while there is nothing to offer and nothing added.
 const NOTHING_USED_YET: &str = "no overrides used before";
 
-/// The `overrides` field at the popup's foot, a row of air above it and
-/// the keys on the border under it: its label in the row's own ink, what the agent's launch is given
+/// The `overrides` field at the popup's foot, under a rule and above the
+/// keys: its label in the row's own ink, what the agent's launch is given
 /// muted against its end, cut at its end, and the arrow saying the row
 /// opens a step. The whole row is the key's target, and lights under the
 /// pointer.
@@ -85,9 +85,9 @@ pub(super) fn render_overrides_field(
 }
 
 /// The overrides step, in the rows the harness, the listing and the
-/// `overrides` field take on the first step, parted as they are: its
-/// heading, air, the line typed into with the entries added and the list
-/// under them, air, and the marked row's detail.
+/// `overrides` field take on the first step: its heading, the line typed
+/// into, the entries added and the list under them, and the marked row's
+/// detail.
 pub(super) fn render_overrides_step(
     frame: &mut ratatui::Frame<'_>,
     model: &WorkspaceModel,
@@ -100,16 +100,19 @@ pub(super) fn render_overrides_step(
     if let Some(rect) = rows.next(1) {
         render_heading(frame, rect, model, step, hits);
     }
-    rows.gap();
     if let Some(rect) = rows.next(1) {
         render_line(frame, rect, over);
     }
-    // The air and the detail under the body keep their rows.
+    // The line's own underline, lit: it is the field the keys land in.
+    if let Some(rect) = rows.next(1) {
+        let _ = Rule::new(Edge::Top).tone(Token::Accent).render(frame, rect);
+    }
+    // The rule and the detail under the body keep their rows.
     if let Some(body) = rows.next(rows.remaining().saturating_sub(2)) {
         let list = render_entries(frame, model, step, body, hits);
         render_list(frame, model, step, list, popup, hits);
     }
-    rows.gap();
+    popup_rule(frame, rows);
     if let Some(rect) = rows.next(1) {
         let (said, tone) = detail(step).unwrap_or((String::new(), Token::TextSecondary));
         let room = usize::from(rect.width).saturating_sub(PICKER_LEAD + usize::from(TRAILING_PAD));

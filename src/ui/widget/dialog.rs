@@ -388,25 +388,6 @@ impl BorderHint {
         }
     }
 
-    /// As [`new`](Self::new), holding only the keys that fit a border
-    /// `room` columns long: the last that does not fit is left out whole,
-    /// never cut mid-word, so the keys first in `keys` are the ones kept.
-    pub(crate) fn fitting(
-        scopes: &[uze_keys::Scope],
-        keys: &[BorderKey<'_>],
-        hovered: Option<uze_keys::Action>,
-        room: u16,
-    ) -> Self {
-        let mut kept = keys.len();
-        loop {
-            let hint = Self::new(scopes, &keys[..kept], hovered);
-            if kept == 0 || hint.line.width() <= usize::from(room) {
-                return hint;
-            }
-            kept -= 1;
-        }
-    }
-
     pub(crate) fn line(&self) -> Line<'static> {
         self.line.clone()
     }

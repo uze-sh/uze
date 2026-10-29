@@ -148,22 +148,16 @@ on "cancel" must not save first.
   (`Symbol::Submenu`) against its right edge (`overrides --model opus ›`),
   never a disclosure arrow: `▸`/`▾` say a group unfolds in place, and a
   step takes the list's place instead.
-- A popover is flat: its groups are parted by one row of air, never a
-  rule, and its keys ride its bottom border (`dialog::BorderHint`), not a
-  row of their own. The line typed into is told by its caret, with no
-  underline; its list follows it with no air between. Four rules inside
-  one small card is the clutter this replaces.
 - A popover's fields are placed by how they are used. A choice that rarely
   changes (`harness ‹ Claude Code ›`) sits alone at its head, under the
-  title, a row of air under it. A field that opens a step of its own
-  (`overrides`) is its last row, a row of air above it and the keys'
-  border under it, its label in the row's own ink and its value muted
-  against its end, ending in `›`, `none` at rest. Never stack the two at
-  the head in one dim ink. The step takes the rows of both and of the list
-  between them, parted the same way (heading, air, line and list, air,
-  detail), so the popover's height never moves; the field is not drawn
-  under its own step. Every field's value ends on one column, the one the
-  head's ends on.
+  title, a rule under it. A field that opens a step of its own
+  (`overrides`) sits at its foot, under a rule and above the keys, its
+  label in the row's own ink and its value muted against its end, ending
+  in `›`, `none` at rest. Never stack the two at the head in one dim ink.
+  The step takes the rows of both and of the list between them, so the
+  popover's height never moves; the field is not drawn under its own
+  step. Every field's value ends on one column, the one the head's ends
+  on.
 - Dropdowns float over content and never push it down.
 - A breadcrumb names levels, short and generic (`Context › Containers ›
   Components ▾`), the step on show included. An item's own long name goes
@@ -185,18 +179,15 @@ on "cancel" must not save first.
   started (a new agent's launch overrides), is never prefilled from last
   time: it opens empty, and the last values head a history under it, to
   be taken back on purpose.
-- A popover's bottom border names its keys and nothing else (`enter new ·
-  ←→ harness · ctrl+f overrides`). Esc closes it and says so nowhere, as
-  everywhere; a step's border names it `back`. A key that does not fit is
-  left out whole, from the end. A key whose job changes with the state is
-  named by what it does now, from the same answer the key acts on (the
-  overrides step's Enter: `new` on an empty line, `take` with a row
-  marked, `add` otherwise).
+- A popover's foot names its keys and nothing else (`enter new · ←→
+  harness`), with `esc close` alone against its end. A key whose job
+  changes with the state is named by what it does now, from the same
+  answer the key acts on (the overrides step's Enter: `new` on an empty
+  line, `take` with a row marked, `add` otherwise).
 - `Tab` in a line typed into completes, as it does in a shell; it never
   takes another job there. What Enter acts on is already on screen, in the
   field and the row marked; a sentence repeating it crowds the keys out.
-- A popover is as wide as its rows need and no wider, and taller rather
-  than wider: the new agent's is 52 columns, its listing 10 to 14 rows.
+- A popover is as wide as its rows need and no wider.
 - A listing row says what is known about its entry against its end
   (`space · main`, `git`), never in a column of its own.
 - An agent's caption row leads with its project, by the operator's label
@@ -319,8 +310,7 @@ on "cancel" must not save first.
 
 **Forms:**
 - Inputs share one look: an underline that lights on focus, and a visible
-  caret so the field reads as an input before anyone types. Inside a
-  popover the caret alone says it (see Popovers: a popover is flat).
+  caret so the field reads as an input before anyone types.
 - Numbers use `- value +` steppers sized for two digits.
 - A fixed set of choices uses a combobox or radio buttons.
 - Files and branches come from a picker of real options.

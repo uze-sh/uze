@@ -1,7 +1,6 @@
 //! What floats over the workspace: the agent picker, the context menu, a commit's account, the status catalog, the new agent's popup, the delivery notification and the action index.
 
 use super::*;
-use crate::ui::widget::dialog::{BorderHint, BorderKey};
 
 /// The directories the new agent's popup lists at once: as many as match,
 /// between [`NEW_AGENT_POPUP_MIN_ROWS`] and [`NEW_AGENT_POPUP_MAX_ROWS`].
@@ -14,19 +13,22 @@ pub(in crate::ui::orchestrator) fn new_agent_popup_rows(directories: usize) -> u
     rows.clamp(NEW_AGENT_POPUP_MIN_ROWS, NEW_AGENT_POPUP_MAX_ROWS)
 }
 
-/// Tall enough that the overrides step, which takes the listing's rows
-/// for its entries and the list under them, has room for both.
-const NEW_AGENT_POPUP_MIN_ROWS: u16 = 10;
-const NEW_AGENT_POPUP_MAX_ROWS: u16 = 14;
+/// As few as the overrides step needs: it takes the listing's rows and the
+/// `overrides` row's, which is one more, for its entries and the list
+/// under them.
+const NEW_AGENT_POPUP_MIN_ROWS: u16 = 4;
+const NEW_AGENT_POPUP_MAX_ROWS: u16 = 9;
 /// Wide enough for a directory's name beside what is known about it, and
-/// for the keys along the bottom border.
-const NEW_AGENT_POPUP_WIDTH: u16 = 52;
-/// The rows around the listing: the harness at the head and a row of air,
-/// the line typed into, then air and the `overrides` row at the foot. The
-/// keys are on the bottom border, and no rule parts the groups.
-const NEW_AGENT_POPUP_CHROME: u16 = 5;
-/// The rows the `overrides` field takes at the foot on the first step:
-/// the air above it and itself. The overrides step takes them back.
+/// for the foot's keys.
+const NEW_AGENT_POPUP_WIDTH: u16 = 60;
+/// The rows around the listing: the harness at the head, the line typed
+/// into, the `overrides` row and the foot, each part closed off by a rule.
+const NEW_AGENT_POPUP_CHROME: u16 = 8;
+/// The rows at the foot, under the part that changes with the step: the
+/// rule and the keys.
+const NEW_AGENT_POPUP_FOOT: u16 = 2;
+/// The rows the `overrides` field takes above the foot on the first step:
+/// its rule and itself. The overrides step takes them back.
 const OVERRIDES_FIELD: u16 = 2;
 
 /// Where a popup of `width` by `height` floats beside `anchor`: under it,
@@ -45,8 +47,7 @@ fn popup_beside(area: Rect, anchor: Rect, width: u16, height: u16) -> Rect {
 /// The card a new agent is chosen in, cleared over whatever is beneath. A
 /// card, not a floating surface: the popup is anchored to the control that
 /// opened it and measures itself — its height budgets its two border rows
-/// and nothing else, and each row leads with its own inset. `keys`, when
-/// given, ride its bottom border.
+/// and nothing else, and each row leads with its own inset.
 ///
 /// The whole card answers a click, ahead of its rows: one on the line
 /// being typed into, the title or the border is inside the popup, and must
@@ -54,17 +55,11 @@ fn popup_beside(area: Rect, anchor: Rect, width: u16, height: u16) -> Rect {
 fn new_agent_card(
     frame: &mut ratatui::Frame<'_>,
     popup: Rect,
-    keys: Option<Line<'static>>,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) -> Rect {
     frame.render_widget(Clear, popup);
     hits.push((popup, WorkspaceHit::NewAgentBody));
-    let card = Surface::card().title(" new agent ");
-    match keys {
-        Some(keys) => card.hint(keys),
-        None => card,
-    }
-    .render(frame, popup)
+    Surface::card().title(" new agent ").render(frame, popup)
 }
 
 /// A line with `left` at its start and `right` against its end, `right`
@@ -94,13 +89,16 @@ pub(super) fn spread(
     Line::from(spans)
 }
 
+/// A hairline across the popup, between two of its parts.
+pub(super) fn popup_rule(frame: &mut ratatui::Frame<'_>, rows: &mut Rows) {
+    if let Some(rect) = rows.next(1) {
+        let _ = Rule::new(Edge::Top).render(frame, rect);
+    }
+}
+
 /// The new agent's popup, floating beside the `new` it was asked from,
 /// over the pane, so nothing in the sidebar moves while it is open: the
 /// harness it runs, the directory it runs in, and what Enter does.
-///
-/// Flat: its groups (the harness, the line typed into with its listing,
-/// the `overrides` row) are parted by a row of air, never a rule, and its
-/// keys ride the bottom border.
 pub(in crate::ui::orchestrator) fn render_directory_step(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
@@ -110,8 +108,8 @@ pub(in crate::ui::orchestrator) fn render_directory_step(
 ) {
     let height = step.rows + NEW_AGENT_POPUP_CHROME + 2;
     let popup = popup_beside(area, step.anchor, NEW_AGENT_POPUP_WIDTH, height);
-    let keys = new_agent_keys(model, step, popup.width.saturating_sub(2));
-    let body = new_agent_card(frame, popup, Some(keys.line()), hits);
+    let inner = new_agent_card(frame, popup, hits);
+    let (body, mut foot) = split_bottom(inner, NEW_AGENT_POPUP_FOOT);
     if step.overrides.is_some() {
         render_overrides_step(frame, model, step, popup, &mut Rows::over(body), hits);
     } else {
@@ -120,15 +118,16 @@ pub(in crate::ui::orchestrator) fn render_directory_step(
         if let Some(rect) = rows.next(1) {
             render_harness_field(frame, rect, model, step, hits);
         }
-        rows.gap();
+        popup_rule(frame, &mut rows);
         render_root_picker(frame, model, step, &mut rows, hits);
-        field.gap();
+        popup_rule(frame, &mut field);
         if let Some(rect) = field.next(1) {
             render_overrides_field(frame, rect, model, step, hits);
         }
     }
-    for (rect, action) in keys.targets(popup) {
-        hits.push((rect, WorkspaceHit::HintAction(action)));
+    popup_rule(frame, &mut foot);
+    if let Some(rect) = foot.next(1) {
+        render_new_agent_foot(frame, rect, model, step, hits);
     }
 }
 
@@ -207,35 +206,68 @@ fn render_harness_field(
     frame.render_widget(Paragraph::new(spread(rect, left, right)), rect);
 }
 
-/// The popup's keys, along its bottom border `room` columns long, Enter's
-/// first: what Enter does is the field and the row marked above, so the
-/// keys only name themselves, Enter by the word for what it does in that
-/// state. Esc closes the popup as it closes everything, and says so only
-/// on the overrides step, where it goes back.
-fn new_agent_keys(model: &WorkspaceModel, step: &DirectoryStep, room: u16) -> BorderHint {
+/// The popup's keys, Enter's first and the way out against the end: what
+/// Enter does is the field and the row marked above, so the foot only
+/// names the keys, Enter by the word for what it does in that state.
+fn render_new_agent_foot(
+    frame: &mut ratatui::Frame<'_>,
+    rect: Rect,
+    model: &WorkspaceModel,
+    step: &DirectoryStep,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) {
     let hovered = match model.hovered {
         Some(WorkspaceHit::HintAction(action)) => Some(action),
         _ => None,
     };
-    if step.overrides.is_some() {
-        let keys = [
-            BorderKey::Key(Action::Activate, step.enter_does().word()),
-            BorderKey::Key(Action::Expand, "complete"),
-            BorderKey::Key(Action::Dismiss, "back"),
-        ];
-        return BorderHint::fitting(&OVERRIDES_SCOPES, &keys, hovered, room);
-    }
-    let harness = BorderKey::Run(Action::FocusPrevious, Action::FocusNext, "harness");
-    let keys = if step.chosen_harness().is_some() {
-        vec![
-            BorderKey::Key(Action::Activate, "new"),
-            harness,
-            BorderKey::Key(Action::OpenOverrides, "overrides"),
-        ]
+    let (keys, close) = if step.overrides.is_some() {
+        (
+            crate::ui::widget::hint::Hints::new(&OVERRIDES_SCOPES)
+                .named(Action::Activate, step.enter_does().word())
+                .named(Action::Expand, "complete"),
+            crate::ui::widget::hint::Hints::new(&OVERRIDES_SCOPES).named(Action::Dismiss, "back"),
+        )
     } else {
-        vec![BorderKey::Key(Action::Activate, SET_ONE_UP), harness]
+        let mut keys = crate::ui::widget::hint::Hints::new(&NEW_AGENT_SCOPES);
+        if step.chosen_harness().is_some() {
+            keys = keys
+                .named(Action::Activate, "new")
+                .run(Action::FocusPrevious, Action::FocusNext, "harness")
+                .named(Action::OpenOverrides, "overrides");
+        } else {
+            keys = keys.named(Action::Activate, SET_ONE_UP).run(
+                Action::FocusPrevious,
+                Action::FocusNext,
+                "harness",
+            );
+        }
+        (
+            keys,
+            crate::ui::widget::hint::Hints::new(&NEW_AGENT_SCOPES).named(Action::Dismiss, "close"),
+        )
     };
-    BorderHint::fitting(&NEW_AGENT_SCOPES, &keys, hovered, room)
+    let keys = keys.hovered(hovered);
+    let close = close.hovered(hovered);
+    let close_width = close.width();
+    let end = rect.right().saturating_sub(TRAILING_PAD);
+    let start = rect.x + PICKER_LEAD as u16;
+    let at = Rect {
+        x: start,
+        width: end.saturating_sub(start + close_width + 1),
+        ..rect
+    };
+    let away = Rect {
+        x: end.saturating_sub(close_width),
+        width: close_width,
+        ..rect
+    };
+    for (rect, action) in keys
+        .render(frame, at)
+        .into_iter()
+        .chain(close.render(frame, away))
+    {
+        hits.push((rect, WorkspaceHit::HintAction(action)));
+    }
 }
 
 /// The harness a resumed agent runs, listing `agent_options`, when the one
@@ -260,7 +292,7 @@ pub(in crate::ui::orchestrator) fn render_agent_picker(
     // Empty, it says so and offers the way out on a row of its own.
     let height = picker.options.len().max(2) as u16 + 2;
     let popup = popup_beside(area, anchor, content_width + 6, height);
-    let inner = new_agent_card(frame, popup, None, hits);
+    let inner = new_agent_card(frame, popup, hits);
 
     if picker.options.is_empty() {
         frame.render_widget(
@@ -767,6 +799,7 @@ fn render_root_picker(
 ) {
     let picker = &step.picker;
     render_query_row(frame, picker, rows);
+    popup_rule(frame, rows);
     if picker.match_count() == 0 {
         if let Some(rect) = rows.next(1) {
             let spans = vec![
