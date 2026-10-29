@@ -1,14 +1,15 @@
 // Focus: a pomodoro beside the agent. In the bar, what is left of the
 // session, or the day's sessions; a click opens the drawer, where a session
 // starts and stops. When one ends, a sound and a notification. Everything it
-// remembers is in its store, per project: when the session started and how
-// many sessions each day closed.
+// remembers is in one store for the machine, not per project: a session is
+// the person's, and goes on whichever space or project is in front. It keeps
+// when the session started and how many sessions each day closed.
 protocol 1
 id "focus"
 name "Focus"
 description "A pomodoro: the time in the bar and the sessions of the last days"
 
-wants "store" "notify"
+wants "store:global" "notify"
 
 preferences {
     number "minutes" label="Minutes in a session" default=25 min=1 max=90
