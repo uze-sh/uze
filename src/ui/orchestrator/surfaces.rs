@@ -65,17 +65,19 @@ impl WorkspaceModel {
             .session
             .as_ref()
             .map(|session| session.selected_tab().id);
-        if in_front == self.extension_tab {
-            return;
-        }
-        if let (Some(tab), Some(slot), Some(root)) =
-            (self.extension_tab, self.open_slot, self.open_root.clone())
+        let moved = in_front != self.extension_tab;
+        if moved
+            && let (Some(tab), Some(slot), Some(root)) =
+                (self.extension_tab, self.open_slot, self.open_root.clone())
         {
             self.left_open.insert(tab, (slot, root));
         }
+        self.forget_surfaces_of_closed_tabs();
+        if !moved {
+            return;
+        }
         self.close_extension();
         self.extension_tab = in_front;
-        self.forget_surfaces_of_closed_tabs();
         // An overview standing keeps the pane; the surface waits for the
         // tab's next return rather than being forgotten.
         if self.space_overview.is_some() {

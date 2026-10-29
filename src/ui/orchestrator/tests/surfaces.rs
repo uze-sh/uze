@@ -976,3 +976,25 @@ fn clicking_a_surface_footer_hint_is_pressing_its_key() {
         "as the key does"
     );
 }
+
+/// What a closed tab was showing goes with it.
+#[test]
+fn a_closed_tab_leaves_no_surface_behind() {
+    let (mut model, first, second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    open_architect(&mut model);
+
+    let mut session = model.session.clone().expect("session");
+    session.select_tab(second);
+    model.apply(
+        ClientEvent::SessionUpdated { session },
+        &identities_fixture(),
+    );
+    let mut session = model.session.clone().expect("session");
+    session.remove_tab(first);
+    model.apply(
+        ClientEvent::SessionUpdated { session },
+        &identities_fixture(),
+    );
+    assert!(model.left_open.is_empty());
+}
