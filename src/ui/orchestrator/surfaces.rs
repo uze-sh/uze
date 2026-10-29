@@ -82,9 +82,9 @@ impl WorkspaceModel {
             if !same_agent {
                 self.suspend_surface();
             } else if self.space_overview.is_none() {
-                // Under the overview the pane reaches no terminal: the
-                // overview follows the agent, and what it put away waits
-                // for it to go.
+                // A tab chosen puts the overview away first; one that
+                // arrives under it (a shell its "+" opened) is followed by
+                // the overview, and what it put away waits for it to go.
                 self.close_surface();
                 if let Some(front) = in_front {
                     self.remembered.declared.standing.remove(&front.agent);

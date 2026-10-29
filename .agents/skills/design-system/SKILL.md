@@ -86,10 +86,12 @@ on "cancel" must not save first.
   the agent in front (its tab from its shell, a shell from its tab), takes
   the pane back from it, and forgets it: an agent never keeps a surface
   waiting on one of its tabs while showing another. A shell is a terminal
-  wherever it is chosen. Under the overview the pane reaches no terminal:
-  the overview follows the agent to the tab chosen, and putting it away
-  gives back what it put away. `each_agent_keeps_its_own_surface`,
+  wherever it is chosen, the overview put away first. A shell the
+  overview's own "+" opens is not chosen: the overview follows the agent
+  to it, and putting it away gives back what it put away.
+  `each_agent_keeps_its_own_surface`,
   `an_agent_and_its_shell_never_keep_two_surfaces`,
+  `clicking_the_agents_shell_under_the_overview_shows_the_shell`,
   `moving_to_the_agents_shell_under_the_overview_keeps_the_surface` and
   `returning_to_an_agent_shows_code_on_the_half_it_was_left_on` hold it.
 
