@@ -1,48 +1,52 @@
 <view>
-// A strip along the bottom of the agent area: the totals over the map,
-// and beside it the chosen day's commits and who wrote them. A click on a
-// day chooses it.
+// A strip along the bottom of the agent area: the totals and streaks over
+// the map, and beside it the chosen day's commits and who wrote them. A
+// click on a day chooses it.
 Stack gap=1 {
-    Row gap=4 {
-        Stat "{total}" "commits in 12 weeks" role="success"
-        Stat "{active}" "days with a commit" role="info"
-        Stat "{best}" "on the busiest day" role="warning"
+    Row gap=6 {
+        Stat "{total}" "commits"
+        Stat "{active}" "active days"
+        Stat "{streak}" "current streak"
+        Stat "{longest}" "longest streak"
     }
 
     Row gap=4 {
         Stack gap=1 {
             Cells rows="{grid}" regions="{regions}"
             Row gap=1 {
-                Text "less" role="faint"
+                Text "click a day" role="faint" truncate=#true grow=#true
+                Text "less" role="muted"
                 Marks {
-                    Mark role="faint"
-                    Mark role="info"
-                    Mark role="success"
-                    Mark role="warning"
+                    Mark role="heat-0"
+                    Mark role="heat-1"
+                    Mark role="heat-2"
+                    Mark role="heat-3"
+                    Mark role="heat-4"
                 }
-                Text "more" role="faint"
+                Text "more" role="muted"
             }
         }
 
-        Stack gap=1 grow=#true {
-            Rule "{chosen.date}" when="chosen"
-            Rule "click a day to see its commits" unless="chosen"
-            List each="chosen.commits" empty="no commit that day" when="chosen" {
-                Row gap=2 {
-                    Text "{hash}" role="info" min-width=7
-                    Text "{subject}" truncate=#true grow=#true
-                    Text "{author}" role="muted"
-                }
+        Stack grow=#true min-width=30 {
+            Row gap=1 {
+                Text "{chosen.title}" role="bright"
+                Text "· {chosen.said}" role="muted" truncate=#true
             }
+            Row gap=1 each="chosen.commits" {
+                Text "{hash}" role="info" min-width=7
+                Text "{subject}" truncate=#true grow=#true
+                Text "{author}" role="muted" truncate=#true min-width=5
+            }
+            Text "no commit that day" role="faint" unless="chosen.commits"
+            Text "{chosen.more}" role="faint" when="chosen.more"
         }
 
-        Stack gap=1 min-width=22 {
-            Rule "who"
-            Table "author" "commits" {
-                Row each="authors" {
-                    Text "{name}"
-                    Text "{count}" role="muted"
-                }
+        Stack min-width=22 {
+            Text "who" role="muted"
+            Row gap=1 each="authors" {
+                Text "{name}" role="secondary" truncate=#true min-width=6
+                Progress ratio="{ratio}" role="heat-3" grow=#true
+                Text "{count}" role="muted" min-width=3
             }
         }
     }
@@ -50,8 +54,15 @@ Stack gap=1 {
 </view>
 
 <script>
-// The last 12 weeks of git log as a heatmap, from one `git log`. The
-// chosen day is kept in the store, and its commits come from the same log.
+// The last 20 weeks of git log as a contribution map, from one `git log`.
+// The chosen day is kept in the store, and its commits come from the same
+// log.
+
+fn weeks() { 20 }
+
+fn month_name(index) {
+    ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][index]
+}
 
 // Days since 1970 of "YYYY-MM-DD" (Howard Hinnant).
 fn days_of(iso) {
@@ -81,91 +92,198 @@ fn iso_of(days) {
     `${y}-${two.call(m)}-${two.call(d)}`
 }
 
-// A day's tone, by where it stands among the days that had a commit: up
-// to the median, up to the 85th percentile, above. One exceptional day
-// does not wash out the others, and the map reads the same for a
-// repository of a commit a week and one of a hundred a day.
-fn tone_of(count, cuts) {
-    if count == 0 { "faint" } else if count <= cuts[0] { "info" } else if count <= cuts[1] { "success" } else { "warning" }
+// "Tue, Oct 27" of days since 1970.
+fn title_of(days) {
+    let iso = iso_of(days);
+    let weekday = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][(days + 3) % 7];
+    `${weekday}, ${month_name(iso.sub_string(5, 2).parse_int() - 1)} ${iso.sub_string(8, 2).parse_int()}`
+}
+
+fn counted(n, one, many) {
+    if n == 1 { `1 ${one}` } else { `${n} ${many}` }
+}
+
+// A day's step of the heat ramp, by where it stands among the days that
+// had a commit: up to the first quartile, the median, the third, above.
+// One exceptional day does not wash out the others, and the map reads the
+// same for a repository of a commit a week and one of a hundred a day.
+fn heat_of(count, cuts) {
+    if count == 0 {
+        "heat-0"
+    } else if count <= cuts[0] {
+        "heat-1"
+    } else if count <= cuts[1] {
+        "heat-2"
+    } else if count <= cuts[2] {
+        "heat-3"
+    } else {
+        "heat-4"
+    }
+}
+
+// Text as cells of one role.
+fn cells_of(text, role) {
+    let cells = [];
+    for ch in text.chars() {
+        cells.push(#{ ch: `${ch}`, role: role });
+    }
+    cells
+}
+
+// The map: a row of month names over the weeks, then a row per weekday
+// with its name on Monday, Wednesday and Friday and a square per week.
+// A month is named over the first week it starts, unless the name before
+// it would run into it; the first week is always named.
+fn map_of(first, today, per_day, cuts, chosen) {
+    let width = 4 + weeks() * 2 - 1;
+    let blank = #{ ch: " ", role: "muted" };
+    let months = [];
+    for x in 0..width {
+        months.push(blank);
+    }
+    let last = -1;
+    let named_at = -9;
+    for week in 0..weeks() {
+        let month = iso_of(first + week * 7).sub_string(5, 2).parse_int() - 1;
+        if month != last && week - named_at >= 3 {
+            let x = 4 + week * 2;
+            for cell in cells_of(month_name(month), "muted") {
+                if x < width {
+                    months[x] = cell;
+                }
+                x += 1;
+            }
+            last = month;
+            named_at = week;
+        }
+    }
+    let grid = [months];
+    let regions = [];
+    let labels = ["Mon", "", "Wed", "", "Fri", "", ""];
+    for row in 0..7 {
+        let cells = cells_of(labels[row], "muted");
+        while cells.len() < 4 {
+            cells.push(blank);
+        }
+        for week in 0..weeks() {
+            if week > 0 {
+                cells.push(blank);
+            }
+            let day = first + week * 7 + row;
+            if day > today {
+                cells.push(blank);
+            } else {
+                let iso = iso_of(day);
+                let ch = if iso == chosen { "▣" } else { "■" };
+                cells.push(#{ ch: ch, role: heat_of(per_day[iso] ?? 0, cuts) });
+                regions.push(#{ x: 4 + week * 2, y: row + 1, w: 1, h: 1, action: "day", item: #{ date: iso } });
+            }
+        }
+        grid.push(cells);
+    }
+    #{ grid: grid, regions: regions }
 }
 
 fn answer(input, context) {
     let today = clock() / 86400000;
     // The week starts on Monday: today is row `(today + 3) % 7`.
-    let weekday = (today + 3) % 7;
-    let weeks = 12;
-    let first = today - weekday - (weeks - 1) * 7;
+    let first = today - (today + 3) % 7 - (weeks() - 1) * 7;
 
     let log = run_program("git", ["log", `--since=${iso_of(first)}`, "--format=%ad%x09%an%x09%h%x09%s", "--date=short"]);
     if log.code != 0 {
         return #{ data: #{ error: `git log failed: ${log.stderr}` } };
     }
-    // A commit per line; the chosen day's are kept as they come, by the
-    // same date the map counts.
-    let picked = store().day ?? ();
+    // A commit per line, newest first.
     let per_day = #{};
     let per_author = #{};
     let commits = [];
     for line in lines(log.stdout) {
         let parts = line.split("\t");
-        if parts.len() < 4 { continue; }
+        if parts.len() < 4 {
+            continue;
+        }
         per_day[parts[0]] = (per_day[parts[0]] ?? 0) + 1;
         per_author[parts[1]] = (per_author[parts[1]] ?? 0) + 1;
-        if parts[0] == picked {
-            commits.push(#{ hash: parts[2], subject: parts[3], author: parts[1] });
-        }
+        commits.push(#{ date: parts[0], hash: parts[2], subject: parts[3], author: parts[1] });
     }
     let counts = per_day.values();
     counts.sort();
-    let best = if counts.len() > 0 { counts[counts.len() - 1] } else { 0 };
-    let cuts = if counts.len() > 0 { [counts[counts.len() / 2], counts[counts.len() * 85 / 100]] } else { [0, 0] };
+    let n = counts.len();
+    let cuts = if n > 0 { [counts[n / 4], counts[n / 2], counts[n * 3 / 4]] } else { [0, 0, 0] };
 
-    // The map's rows: the weekday's letter and a square per week.
-    let letters = ["M", "T", "W", "T", "F", "S", "S"];
-    let grid = [];
-    let regions = [];
-    for row in 0..7 {
-        let cells = [#{ ch: letters[row], role: "faint" }, #{ ch: " ", role: "faint" }];
-        for week in 0..weeks {
-            let day = first + week * 7 + row;
-            if day > today {
-                cells.push(#{ ch: " ", role: "faint" });
-            } else {
-                let iso = iso_of(day);
-                let count = per_day[iso] ?? 0;
-                cells.push(#{ ch: "■", role: tone_of(count, cuts) });
-                regions.push(#{ x: 2 + week * 2, y: row, w: 1, h: 1, action: "day", item: #{ date: iso } });
-            }
-            cells.push(#{ ch: " ", role: "faint" });
+    // The chosen day: the one clicked, or the last that had a commit, or
+    // today when none had.
+    let chosen = store().day ?? ();
+    if chosen == () {
+        let day = today;
+        while day >= first && (per_day[iso_of(day)] ?? 0) == 0 {
+            day -= 1;
         }
-        grid.push(cells);
+        chosen = iso_of(if day < first { today } else { day });
+    }
+    let shown = [];
+    let of_chosen = 0;
+    for commit in commits {
+        if commit.date == chosen {
+            of_chosen += 1;
+            if shown.len() < 7 {
+                shown.push(#{ hash: commit.hash, subject: commit.subject, author: commit.author });
+            }
+        }
+    }
+    let more = of_chosen - shown.len();
+
+    // A streak is broken only once a day ends without a commit, so the
+    // current one still counts while today has none yet.
+    let streak = 0;
+    let day = if (per_day[iso_of(today)] ?? 0) > 0 { today } else { today - 1 };
+    while day >= first && (per_day[iso_of(day)] ?? 0) > 0 {
+        streak += 1;
+        day -= 1;
+    }
+    let longest = 0;
+    let run = 0;
+    for day in first..=today {
+        run = if (per_day[iso_of(day)] ?? 0) > 0 { run + 1 } else { 0 };
+        if run > longest {
+            longest = run;
+        }
     }
 
+    // The bar's two weeks, in the map's tones.
     let recent = [];
     for back in range(13, -1, -1) {
-        recent.push(per_day[iso_of(today - back)] ?? 0);
+        recent.push(#{ ch: "■", role: heat_of(per_day[iso_of(today - back)] ?? 0, cuts) });
     }
-    let authors = [];
+    let ranked = [];
     for name in per_author.keys() {
-        authors.push(#{ name: name, count: per_author[name] });
+        ranked.push(#{ name: name, count: per_author[name] });
     }
-    authors.sort(|a, b| b.count - a.count);
-    let total = 0;
-    for n in per_day.values() { total += n; }
+    ranked.sort(|a, b| b.count - a.count);
+    let top = if ranked.len() > 0 { ranked[0].count.to_float() } else { 1.0 };
+    let authors = [];
+    for author in ranked {
+        authors.push(#{ name: author.name, count: author.count, ratio: author.count.to_float() / top });
+    }
 
-    let chosen = if picked != () { #{ date: picked, commits: commits } } else { () };
-
+    let map = map_of(first, today, per_day, cuts, chosen);
     #{
         data: #{
             today: per_day[iso_of(today)] ?? 0,
-            recent: recent,
-            total: total,
-            active: per_day.len(),
-            best: best,
-            grid: grid,
-            regions: regions,
+            recent: [recent],
+            total: commits.len(),
+            active: n,
+            streak: counted(streak, "day", "days"),
+            longest: counted(longest, "day", "days"),
+            grid: map.grid,
+            regions: map.regions,
             authors: authors,
-            chosen: chosen,
+            chosen: #{
+                title: title_of(days_of(chosen)),
+                said: counted(of_chosen, "commit", "commits"),
+                commits: shown,
+                more: if more > 0 { `and ${more} more` } else { () },
+            },
         }
     }
 }

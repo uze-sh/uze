@@ -1,8 +1,8 @@
 <view>
-// In the bar: today's commits, and the last two weeks.
+// In the bar: today's commits, and the last two weeks in the map's tones.
 Row gap=1 {
     Icon "commit" role="success"
     Text "{today} today"
-    Chart series="{recent}" kind="sparkline" role="success"
+    Cells rows="{recent}"
 }
 </view>

@@ -1,0 +1,54 @@
+# uze snapshot · protocol 1 · drawer 160x20 · dark
+ ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ │ contributions · contributions@local                                                                                                                         │
+ │                                                                                                                                                             │
+ │  404          92               10 days             10 days                                                                                                  │
+ │  commits      active days      current streak      longest streak                                                                                           │
+ │                                                                                                                                                             │
+ │      Jun   Jul     Aug       Sep     Oct        Tue, Oct 27 · 12 commits                                                           who                      │
+ │  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■    758e3a6 chore: bump the toml parser                                       ana      ana    ████████████ 193  │
+ │      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ▣    fbc1065 refactor(cli): parse arguments in one place                       ana      bruno  ██████▋───── 106  │
+ │  Wed ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■    4c2d9e3 fix(store): keep the file when a write fails                      carla    carla  ██████▌───── 105  │
+ │      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■      bb3da50 perf(store): read the file once per command                       bruno                             │
+ │  Fri ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■      dd21816 feat(cli): sort tasks by due date                                 ana                               │
+ │      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■      60eccee test(store): cover an empty tasks file                            ana                               │
+ │      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■      47e9833 feat(store): keep a backup of the last write                      bruno                             │
+ │                                                 and 5 more                                                                                                  │
+ │  click a day                 less ■■■■■ more                                                                                                                │
+ │                                                                                                                                                             │
+ │                                                                                                                                                             │
+ │                                                                                                                                                             │
+ └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+---
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ a bbbbbbbbbbbbb b bbbbbbbbbbbbbbbbbbb                                                                                                                         a
+ a                                                                                                                                                             a
+ a  ccc          cc               cc cccc             cc cccc                                                                                                  a
+ a  bbbbbbb      bbbbbb bbbb      bbbbbbb bbbbbb      bbbbbbb bbbbbb                                                                                           a
+ a                                                                                                                                                             a
+ a      bbb   bbb     bbb       bbb     bbb        cccc ccc cc b bb bbbbbbb                                                           bbb                      a
+ a  bbb d e f d g g d g f g d g d f f h h d f f    iiiiiii cccccc cccc ccc cccc cccccc                                       bbb      jjj    gggggggggggg bbb  a
+ a      h g f g g f g d e f e e e e f g d g h h    iiiiiii cccccccccccccc ccccc ccccccccc cc ccc ccccc                       bbb      jjjjj  gggggggkkkkk bbb  a
+ a  bbb d e e h f g e d e h e d d e g h d d g h    iiiiiii ccccccccccc cccc ccc cccc cccc c ccccc ccccc                      bbbbb    jjjjj  gggggggkkkkk bbb  a
+ a      d h d f g f f e f f d d f h h d g d d      iiiiiii cccccccccccc cccc ccc cccc cccc ccc ccccccc                       bbbbb                             a
+ a  bbb g d d f g f f d d g f g g f g d e e d      iiiiiii cccccccccc cccc ccccc cc ccc cccc                                 bbb                               a
+ a      e e e e e e e e e e f e f e f e e e d      iiiiiii cccccccccccc ccccc cc ccccc ccccc cccc                            bbb                               a
+ a      e e e e e f d e f d e e e e e e e e f      iiiiiii cccccccccccc cccc c cccccc cc ccc cccc ccccc                      bbbbb                             a
+ a                                                 kkk k kkkk                                                                                                  a
+ a  kkkkk k kkk                 bbbb efdgh bbbb                                                                                                                a
+ a                                                                                                                                                             a
+ a                                                                                                                                                             a
+ a                                                                                                                                                             a
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+---
+a border.default
+b text.muted
+c text.bright
+d heat.2
+e heat.0
+f heat.1
+g heat.3
+h state.success
+i state.info
+j text.secondary
+k text.faint

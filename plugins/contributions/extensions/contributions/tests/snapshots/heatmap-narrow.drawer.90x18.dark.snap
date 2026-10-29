@@ -1,0 +1,49 @@
+# uze snapshot · protocol 1 · drawer 90x18 · dark
+ ┌───────────────────────────────────────────────────────────────────────────────────────┐
+ │ contributions · contributions@local                                                   │
+ │                                                                                       │
+ │  404          92               10 days             10 days                            │
+ │  commits      active days      current streak      longest streak                     │
+ │                                                                                       │
+ │      Jun   Jul     Aug       Sep     Oct        Tue, Oct 27 · 12 commits          wh  │
+ │  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■    758e3a6 chore: bump the… ana      o   │
+ │      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ▣    fbc1065 refactor(cli): … ana          │
+ │  Wed ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■    4c2d9e3 fix(store): kee… carla        │
+ │      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■      bb3da50 perf(store): re… bruno        │
+ │  Fri ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■      dd21816 feat(cli): sort… ana          │
+ │      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■      60eccee test(store): co… ana          │
+ │      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■      47e9833 feat(store): ke… bruno        │
+ │                                                 and 5 more                            │
+ │  click a day                 less ■■■■■ more                                          │
+ │                                                                                       │
+ └───────────────────────────────────────────────────────────────────────────────────────┘
+---
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ a bbbbbbbbbbbbb b bbbbbbbbbbbbbbbbbbb                                                   a
+ a                                                                                       a
+ a  ccc          cc               cc cccc             cc cccc                            a
+ a  bbbbbbb      bbbbbb bbbb      bbbbbbb bbbbbb      bbbbbbb bbbbbb                     a
+ a                                                                                       a
+ a      bbb   bbb     bbb       bbb     bbb        cccc ccc cc b bb bbbbbbb          bb  a
+ a  bbb d e f d g g d g f g d g d f f h h d f f    iiiiiii cccccc cccc cccc bbb      b   a
+ a      h g f g g f g d e f e e e e f g d g h h    iiiiiii cccccccccccccc c bbb          a
+ a  bbb d e e h f g e d e h e d d e g h d d g h    iiiiiii ccccccccccc cccc bbbbb        a
+ a      d h d f g f f e f f d d f h h d g d d      iiiiiii cccccccccccc ccc bbbbb        a
+ a  bbb g d d f g f f d d g f g g f g d e e d      iiiiiii cccccccccc ccccc bbb          a
+ a      e e e e e e e e e e f e f e f e e e d      iiiiiii cccccccccccc ccc bbb          a
+ a      e e e e e f d e f d e e e e e e e e f      iiiiiii cccccccccccc ccc bbbbb        a
+ a                                                 jjj j jjjj                            a
+ a  jjjjj j jjj                 bbbb efdgh bbbb                                          a
+ a                                                                                       a
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+---
+a border.default
+b text.muted
+c text.bright
+d heat.2
+e heat.0
+f heat.1
+g heat.3
+h state.success
+i state.info
+j text.faint
