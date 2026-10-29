@@ -613,6 +613,27 @@ conflict, and an unreadable ledger all block a destructive operation rather
 than authorizing one. Every M2 addition preserved this: a failed acquisition,
 a rejected package and a refused consent all mutate nothing.
 
+### A plugin switched off in its harness is the person's choice, not drift
+
+Switching UZE's plugin off inside the harness changes nothing UZE wrote,
+so its receipt inspects as matched: an update goes ahead and switches it
+off again after delivering it anew, and a removal takes it away. A
+marketplace pointing elsewhere is still drift.
+
+> `crates/uze-integrations/src/claude/plugin.rs::recorded_state_tests::a_plugin_switched_off_in_claude_is_matched_and_a_moved_marketplace_is_drift`
+> `crates/uze-application/src/application/tests.rs::an_update_keeps_a_plugin_the_person_switched_off_switched_off`
+
+### A package of extensions only never touches a harness
+
+A package that carries nothing a harness reads is stored, locked and found
+by the workspace, and delivered to no harness on install, update, setup or
+removal. What an earlier build delivered of one is taken back off through
+its receipts, and an artifact someone changed since stays with its receipt.
+
+> `tests/lifecycle/extension_only.rs::a_plugin_of_extensions_only_is_stored_and_found_but_reaches_no_harness`
+> `tests/lifecycle/extension_only.rs::an_update_takes_off_what_an_earlier_build_delivered`
+> `tests/lifecycle/extension_only.rs::delivering_again_takes_off_only_what_still_matches_its_receipt`
+
 ### A file the operator owns keeps its link and its mode
 
 Shell rc files, `AGENTS.md`, `agents.yaml` (to a file inside their project,
