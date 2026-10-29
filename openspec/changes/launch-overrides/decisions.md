@@ -308,7 +308,7 @@
 
 - status:   pending
 - task:     2.8
-- commit:
+- commit:   26f8c771
 - trigger:  The check read every single-dash word one way, falling back to a long flag written with one dash; clap and commander read `-model` as `-m odel`, Go's `flag` reads it as `--model`, and Effect's CLI only reads `-name=value` so.
 - decided:  `flag_catalog()` returns a `FlagCatalog { grammar, flags }`, dereferencing to the specs, with `FlagGrammar::{Posix, GoFlag, EffectCli}` named after the parser family; Claude Code and Codex are `Posix`, agy `GoFlag`, OpenCode `EffectCli` (probed on 2.1.3: `-sabc` is a missing `--session` value and unknown `-a`, `-log-level=x` is `--log-level`). The check reads a flag word once per use, from its first word, so entries and verdicts agree.
 - rejected: A separate `IntegrationPort::flag_grammar()`: every function taking the catalog would take the grammar beside it, and nothing keeps the two from coming from different harnesses. Reading OpenCode as `Posix`: `-prompt=hi` would pass as an unknown cluster while OpenCode reads it as `--prompt`.
