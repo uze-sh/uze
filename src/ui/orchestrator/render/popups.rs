@@ -1,6 +1,6 @@
 //! What floats over the workspace: the agent picker, the context menu, a commit's account, the status catalog, the new agent's popup, the delivery notification and the action index.
 
-use super::overrides::{entry_cost, overrides_count};
+use super::overrides::{detail_line, entry_cost, overrides_count};
 use super::*;
 use crate::ui::widget::segmented::{Segment, segmented};
 
@@ -29,7 +29,9 @@ const NEW_AGENT_POPUP_WIDTH: u16 = 52;
 /// overrides view takes the line's rows and the listing's.
 const NEW_AGENT_POPUP_CHROME: u16 = 6 + OVERRIDES_NOTE;
 /// The rows the overrides' note takes over the foot: air, the note, air,
-/// so it rests against neither the list nor the keys.
+/// so it rests against neither the list nor the keys. The note is what
+/// the row marked or the word typed is, while there is one, and the count
+/// of the overrides otherwise.
 const OVERRIDES_NOTE: u16 = 3;
 /// The rows at the foot, under the part that changes with the step: the
 /// rule and the keys.
@@ -136,10 +138,11 @@ pub(in crate::ui::orchestrator) fn render_directory_step(
         render_root_picker(frame, model, step, &mut rows, hits);
     }
     note.gap();
-    if let Some(rect) = note.next(1)
-        && let Some(said) = overrides_note(step)
-    {
-        frame.render_widget(Paragraph::new(said), rect);
+    if let Some(rect) = note.next(1) {
+        let said = detail_line(step, rect.width).or_else(|| overrides_note(step));
+        if let Some(said) = said {
+            frame.render_widget(Paragraph::new(said), rect);
+        }
     }
     popup_rule(frame, &mut foot);
     if let Some(rect) = foot.next(1) {

@@ -703,12 +703,30 @@ fn recent_entries_are_choices_space_switches_the_marked_one() {
         "{}",
         rows.join("\n")
     );
+    // With a row marked, the note says what that row is; with none, it
+    // counts what is checked.
+    let over = |driven: &mut Driven<'_>| {
+        driven
+            .attach
+            .model
+            .directory_step
+            .as_mut()
+            .and_then(|step| step.overrides.as_mut())
+            .unwrap()
+            .marked
+            .take()
+    };
+    let marked = over(&mut driven);
+    let rows = screen(&mut driven);
     assert!(
         rows.iter()
-            .any(|row| row.contains("2 flags") || row.contains("1 flag")),
+            .any(|row| row.contains("1 flag") && row.contains("1 var")),
         "the note counts what is checked:\n{}",
         rows.join("\n")
     );
+    if let Some(step) = driven.attach.model.directory_step.as_mut() {
+        step.overrides.as_mut().unwrap().marked = marked;
+    }
 
     // Space again leaves it out; it stays offered, as one used before.
     driven.press_key(chord(Action::ToggleChoice, Scope::LaunchOverrides));
@@ -1064,6 +1082,31 @@ fn a_click_on_the_line_leaves_nothing_marked() {
     driven.press(line.x + 3, line.y);
     assert_eq!(marked(&driven), None, "the overrides'");
     assert!(in_step(&driven));
+}
+
+/// What the flag typed or marked is, is said at the body's foot, on the
+/// note's row by the keys, with air over and under it, never in the
+/// middle of the list's room.
+#[test]
+fn a_flags_detail_is_said_by_the_keys() {
+    let mut popup = popup("overrides-detail-foot");
+    let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
+    driven.frame();
+    open_by_key(&mut driven);
+    type_text(&mut driven, "--permission-mode");
+    let (_, rows) = popup_rows(&mut driven);
+    let last = rows.len() - 1;
+    let all = rows.join("\n");
+    assert!(
+        !rows[last - 4].trim_matches('│').trim().is_empty(),
+        "the detail on the note's row:\n{all}"
+    );
+    for air in [last - 5, last - 3] {
+        assert!(
+            rows[air].trim_matches('│').trim().is_empty(),
+            "air over and under it:\n{all}"
+        );
+    }
 }
 
 /// Enter on an empty line with nothing marked starts the agent, with the

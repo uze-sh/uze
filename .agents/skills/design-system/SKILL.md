@@ -162,7 +162,10 @@ on "cancel" must not save first.
   know is one muted line at the body's foot, with a row of air over and
   under it so it rests against neither the list nor the keys (`3 flags ·
   2 vars`), said only once there is something to say: with none, the
-  rows stay air.
+  rows stay air. What the row marked or the word typed is (its summary,
+  what it gives up, why it was refused) takes that same line while there
+  is one, by the keys, never a row of its own in the middle of the list's
+  room.
 - A click on a popover's line typed into puts the keys back on it:
   nothing stays marked in the list under it.
 - Every line typed into in one popover looks the same: the typed text

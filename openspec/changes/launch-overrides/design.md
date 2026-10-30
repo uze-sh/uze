@@ -320,7 +320,8 @@ Against the operator's mockup and the design-system rules:
   same look; a click on a line leaves nothing marked under it. At the
   body's foot, with air over and under it, one muted line counts the
   overrides once there are any (`3 flags · 2 vars`, in the warning hue
-  when one gives something up). A click on `overrides`, or `ctrl+f`,
+  when one gives something up); what the row marked or the word typed
+  is takes that line while there is one. A click on `overrides`, or `ctrl+f`,
   opens that view; a click on `new agent`, or Esc, goes back. The popup
   is 52 columns with 8 to 12 listing rows; `esc close` gives way to
   `ctrl+f overrides` in the foot.

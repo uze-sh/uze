@@ -32,19 +32,26 @@ pub(super) fn render_overrides_step(
     if let Some(rect) = rows.next(1) {
         let _ = Rule::new(Edge::Top).render(frame, rect);
     }
-    // The detail under the body keeps its row, over the foot's rule.
-    if let Some(body) = rows.next(rows.remaining().saturating_sub(1)) {
+    // What the marked row or the word typed is, is said at the body's
+    // foot, by the keys, not under the list.
+    if let Some(body) = rows.next(rows.remaining()) {
         render_list(frame, model, step, body, popup, hits);
     }
-    if let Some(rect) = rows.next(1) {
-        let (said, tone) = detail(step).unwrap_or((String::new(), Token::TextSecondary));
-        let room = usize::from(rect.width).saturating_sub(PICKER_LEAD + usize::from(TRAILING_PAD));
-        let line = Line::from(vec![
-            picker_lead(),
-            Span::styled(text::elide(&said, room), theme::fg(tone)),
-        ]);
-        frame.render_widget(Paragraph::new(line), rect);
+}
+
+/// What the overrides view says at the body's foot while there is
+/// something to say of the row marked or the word typed (what it is,
+/// what it gives up, why it was refused), cut at its end to `width`.
+pub(super) fn detail_line(step: &DirectoryStep, width: u16) -> Option<Line<'static>> {
+    let (said, tone) = detail(step)?;
+    if said.is_empty() {
+        return None;
     }
+    let room = usize::from(width).saturating_sub(PICKER_LEAD + usize::from(TRAILING_PAD));
+    Some(Line::from(vec![
+        picker_lead(),
+        Span::styled(text::elide(&said, room), theme::fg(tone)),
+    ]))
 }
 
 /// The line typed into, its caret where typing lands. What the last Enter
