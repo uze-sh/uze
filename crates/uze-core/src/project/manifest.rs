@@ -36,12 +36,15 @@ use crate::{Result, UzeError};
 
 pub const MANIFEST_FILE_NAME: &str = "agents.yaml";
 
-/// The marketplace UZE carries inside its own binary. A project never
-/// declares it: it is part of how UZE works rather than something the
-/// project chose, so a plugin may name it with no `marketplaces:` entry
-/// behind it — and an entry claiming the name is refused, since the only
-/// thing it could express is shadowing the built-in one.
+/// The marketplace built into the binary. A project declares its plugins
+/// under this name with no source — the binary is the source — and an
+/// entry giving it one is refused, since the only thing that could express
+/// is shadowing the built-in one.
 pub const BUILT_IN_MARKETPLACE: &str = "uze";
+
+/// The built-in plugins the machine's bootstrap installs everywhere. A
+/// project never declares one: every project has it already.
+pub const BUNDLED_PLUGINS: &[&str] = &["uze"];
 
 /// The manifest as declared. Every field is optional: a project that
 /// declares only a workspace policy is as valid as one that declares only
@@ -184,9 +187,9 @@ pub const SCAFFOLD: &str = r"# This project's agent environment. UZE reads this 
 # be narrowed by `ref:` and `subdirectory:`. The `ref:` is also the pin: it
 # is what moves the plugins listed under it.
 #
-# UZE's own marketplace is not here. It is built into the binary, its
-# plugins are installed for every project, and neither is yours to declare
-# — `uze market` shows both, this file carries only what the project chose.
+# UZE's own marketplace, `uze`, is built into the binary: list what the
+# project takes from it under `uze:` with no source. Its `uze` plugin is
+# every project's already and is never listed.
 #
 # `uze <plugin>@<market>` writes these entries and records what they
 # resolved to in agents.lock; `uze install` reproduces that lock on
@@ -439,10 +442,27 @@ fn validate(manifest: &ProjectManifest, path: &Path) -> Result<()> {
             }
         }
         if name == BUILT_IN_MARKETPLACE {
-            return Err(malformed(format!(
-                "`{name}` is the marketplace built into UZE; it is always available and cannot \
-                 be declared. Remove the entry — the plugins that come from it stay."
-            )));
+            let sourced = marketplace.git.is_some()
+                || marketplace.path.is_some()
+                || marketplace.r#ref.is_some()
+                || marketplace.subdirectory.is_some();
+            if sourced {
+                return Err(malformed(format!(
+                    "`{name}` is the marketplace built into UZE; it has no source. List its \
+                     plugins under it with no `git:`, `path:`, `ref:` or `subdirectory:`."
+                )));
+            }
+            if let Some(bundled) = marketplace
+                .plugins
+                .iter()
+                .find(|plugin| BUNDLED_PLUGINS.contains(&plugin.as_str()))
+            {
+                return Err(malformed(format!(
+                    "`{bundled}` is bundled with UZE and every project has it; remove it from \
+                     `{name}`."
+                )));
+            }
+            continue;
         }
         let sources =
             usize::from(marketplace.git.is_some()) + usize::from(marketplace.path.is_some());
@@ -537,14 +557,44 @@ mod tests {
     }
 
     #[test]
-    fn declaring_the_built_in_marketplace_is_refused() {
+    fn a_source_on_the_built_in_marketplace_is_refused() {
+        for source in [
+            "git: https://example.invalid/fake",
+            "path: ./market",
+            "ref: main",
+        ] {
+            let error = parsed(&format!(
+                "marketplaces:\n  {BUILT_IN_MARKETPLACE}:\n    {source}\n    plugins: [workspace]\n"
+            ))
+            .unwrap_err();
+            let message = error.to_string();
+            assert!(
+                message.contains(BUILT_IN_MARKETPLACE),
+                "{source}: {message}"
+            );
+            assert!(message.contains("built into UZE"), "{source}: {message}");
+        }
+    }
+
+    #[test]
+    fn the_built_in_marketplace_s_plugins_are_declared_without_a_source() {
+        let manifest = parsed(&format!(
+            "marketplaces:\n  {BUILT_IN_MARKETPLACE}:\n    plugins: [workspace]\n"
+        ))
+        .unwrap();
+        assert_eq!(
+            manifest.marketplace_of("workspace"),
+            Some(BUILT_IN_MARKETPLACE)
+        );
+    }
+
+    #[test]
+    fn a_bundled_plugin_is_never_declared() {
         let error = parsed(&format!(
-            "marketplaces:\n  {BUILT_IN_MARKETPLACE}:\n    git: https://example.invalid/fake\n"
+            "marketplaces:\n  {BUILT_IN_MARKETPLACE}:\n    plugins: [uze]\n"
         ))
         .unwrap_err();
-        let message = error.to_string();
-        assert!(message.contains(BUILT_IN_MARKETPLACE), "{message}");
-        assert!(message.contains("built into UZE"), "{message}");
+        assert!(error.to_string().contains("bundled"), "{error}");
     }
 
     #[test]

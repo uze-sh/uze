@@ -30,6 +30,42 @@ declaring it says nothing.
 - **THEN** nothing is written to `agents.yaml`, and a project that had no
   manifest still has none
 
+#### Scenario: A manifest declaring the bundled plugin is refused
+- **WHEN** a manifest lists `uze` under the built-in marketplace
+- **THEN** the manifest is reported as malformed, saying it is bundled
+  with uze and every project has it
+
+## MODIFIED Requirements
+
+### Requirement: A marketplace declares its source and what the project takes from it
+A marketplace entry SHALL carry the name the project refers to it by,
+exactly one source — a Git remote with an optional reference and
+subdirectory, or a local path — and the plugins the project installs from
+it, as bare names; the built-in marketplace alone carries no source. A
+plugin's identity is `plugin@marketplace` (ADR-036), and a plugin entry
+SHALL carry no fields of its own. There SHALL be no top-level `plugins:`.
+
+#### Scenario: Each source form parses to its own variant
+- **WHEN** a manifest declares a marketplace as a Git remote or as a local
+  path
+- **THEN** it parses into the corresponding source variant carrying that
+  variant's own fields, and the plugins under it are attributed to it
+
+#### Scenario: A marketplace with no source, or with two, is rejected
+- **WHEN** a marketplace entry other than the built-in one declares
+  neither `git:` nor `path:`, or any entry declares both
+- **THEN** the manifest is reported as malformed, naming the marketplace
+
+#### Scenario: A source may be declared with nothing taken from it
+- **WHEN** a marketplace is declared with no plugins under it
+- **THEN** the manifest loads, declaring that source and no plugin
+
+#### Scenario: The same plugin under two marketplaces is refused
+- **WHEN** two marketplaces each list a plugin of the same name
+- **THEN** the manifest is reported as malformed naming both marketplaces,
+  because the file cannot say which of the two identities answers to that
+  name locally
+
 ## REMOVED Requirements
 
 ### Requirement: The built-in marketplace is never declared

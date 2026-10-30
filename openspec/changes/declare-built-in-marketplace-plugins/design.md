@@ -15,13 +15,14 @@ when it archives; this change archives after it.
 **Goals:**
 - One official marketplace, `uze`, for the machine and for projects alike.
 - A project declares a built-in plugin the way it declares any other, and
-  reproduces it the way it can: on the same uze version, byte for byte.
+  every machine installs it from the binary it runs, the lock saying which
+  bytes and which version that was.
 
 **Non-Goals:**
 - Linking the built-in marketplace to a checkout for live edits. `make
   try` installs this checkout's uze instead, which carries its `plugins/`.
-- Pinning a built-in plugin across uze versions: the binary is the
-  marketplace, and another version is another marketplace revision.
+- Pinning a built-in plugin across uze builds: the binary is the
+  marketplace, and another build is another marketplace revision.
 
 ## Decisions
 
@@ -37,23 +38,29 @@ bundled.** The early return for the built-in marketplace narrows to
 `bootstrap::DEFAULT_PLUGIN_IDS`; any other built-in plugin goes the
 declared road, its request resolved from the embedded snapshot.
 
-**The lock's marketplace becomes two shapes.** `LockedMarketplace` turns
-into an enum, untagged in YAML so each reads as the manifest does: `Git {
-git, ref, subdirectory, revision }`, unchanged, and `BuiltIn { uze:
-<version> }`, whose one field is the version that resolved it. Every
-caller that read `locked.git` matches on the shape; only `Git` reaches the
-Git transport. Alternative: optional `git`/`revision` plus an optional
-`version` on one struct. Refused: it lets a lock say "a Git marketplace
-with no commit", which the module's first rule forbids.
+**The lock pins the built-in marketplace by a top-level `uze:` version,
+not by a marketplace entry.** `agents.lock` gains `uze: <version>`, written
+only while a built-in plugin is locked, and each built-in plugin is an
+ordinary `plugins:` entry (`marketplace: uze`, `integrity:`). No entry
+goes under `marketplaces:`, so every reader of a locked marketplace (Git
+mirrors, `answers`, lineage, rules, the workspace's facts) never meets one
+that is not Git. Alternative, first drafted: `LockedMarketplace` as an enum
+of a Git and a built-in shape. Refused after review: every caller of
+`locked.git` would branch, and an untagged YAML enum loses the precise
+"missing field" messages the malformed-lock requirement wants.
 
-**Another version re-resolves; the same version verifies.** Installing a
-locked built-in plugin compares the entry's version with the running one.
-Equal: the bytes are checked against `integrity` as any pin is. Different:
-the plugin is installed from this binary, the lock rewritten with this
-version and the new integrity, and the report lists it as updated.
-Alternative: fail, asking for `uze update`. Refused: a teammate on another
-uze version could never install the project, and nothing they could
-fetch would satisfy the pin.
+**Built-in plugins have an install phase of their own, and follow the
+binary.** `stale_against` and the Git phases (`resolve_declared`,
+`reproduce_locked`, `rise_to_lock`, `update`, rules) skip `uze` entries. A
+dedicated phase compares, per declared built-in plugin, the binary's bytes
+(`bootstrap::materialize`, digest) with the Store's: missing is installed,
+different is replaced through `replace_with` (the Store keys embedded
+provenance by id alone, so installing again would keep the old bytes),
+equal is left; then the lock records the integrity and the running
+version. A difference is never refused: the binary is the only source,
+and `make install` rebuilds without a version bump, so "same version,
+other bytes" is a developer's rebuild, not tampering. `add` shares the
+phase's helper for one plugin.
 
 **The retired name is moved at seeding.** Already built (`setup.rs`): a
 package under `uze-official` is taken off with its receipts and installed
@@ -73,6 +80,8 @@ again under `uze`, once, before the defaults are seeded.
 - [A project declared `workspace@uze` and a newer uze drops or renames the
   plugin] → resolution fails naming the plugin, as a Git marketplace that
   dropped one does.
-- [The `LockedMarketplace` enum touches every lock reader] → the compiler
-  finds each one; the YAML of an existing Git entry is unchanged, so no
-  lock on disk needs rewriting.
+- [A built-in plugin's integrity cannot catch tampering with the binary]
+  → the binary is trusted as the tool itself is; the integrity records
+  which bytes a project ran, and a difference is reported as an update.
+- [Specs this change modifies live in the open project-agent-environment
+  change] → this change archives after it.

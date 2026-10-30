@@ -896,3 +896,155 @@ fn update_reports_every_plugin_of_one_marketplace_that_moved() {
     );
     assert_eq!(report.outcomes.len(), 2, "{report:?}");
 }
+
+/// The lock as `uze install` left it, parsed.
+fn lock_of(root: &std::path::Path) -> uze_core::project_lock::ProjectLock {
+    uze_core::project_lock::load_lock(root)
+        .unwrap()
+        .expect("a lock was written")
+}
+
+/// [`project`], keeping the machine's home to read its Store from.
+fn built_in_project(label: &str) -> (UzeApplication, uze_testkit::git::Repository, UzeHome) {
+    let repository = uze_testkit::git::Repository::new(label);
+    repository.commit_file("README.md", "# p\n");
+    let home = UzeHome::at(uze_testkit::temp::scratch(&format!("{label}-home")));
+    (
+        UzeApplication::new(home.clone(), Vec::new()),
+        repository,
+        home,
+    )
+}
+
+/// The Store's copy of `name@uze`, if it holds one.
+fn stored_built_in(home: &UzeHome, name: &str) -> Option<uze_core::store::StoredPackage> {
+    uze_core::UzeStore::new(home.clone())
+        .packages()
+        .unwrap()
+        .into_iter()
+        .find(|package| package.id.as_str() == format!("{name}@uze"))
+}
+
+fn plugins_installed(report: &uze_application::application::InstallReport) -> Vec<String> {
+    match report {
+        uze_application::application::InstallReport::Installed { plugins, .. } => plugins.clone(),
+        _ => Vec::new(),
+    }
+}
+
+#[test]
+fn adding_a_built_in_plugin_declares_it_with_no_source() {
+    let (application, repository) = project("built-in-add");
+    let root = repository.root().to_path_buf();
+
+    let report = application
+        .project()
+        .add(
+            "workspace",
+            manifest::BUILT_IN_MARKETPLACE,
+            &root,
+            &AlwaysTrust,
+            &uze_core::naming::NoNameCollisionAuthority,
+        )
+        .unwrap();
+
+    assert!(report.declared);
+    let declared = manifest::load(&root).unwrap().unwrap();
+    let uze = &declared.marketplaces[manifest::BUILT_IN_MARKETPLACE];
+    assert_eq!(uze.plugins, ["workspace"]);
+    assert!(uze.git.is_none() && uze.path.is_none(), "{uze:?}");
+    let lock = lock_of(&root);
+    assert_eq!(lock.uze.as_deref(), Some(env!("CARGO_PKG_VERSION")));
+    assert!(lock.marketplaces.is_empty(), "the binary has no repository");
+    let locked = &lock.plugins["workspace"];
+    assert_eq!(locked.marketplace, manifest::BUILT_IN_MARKETPLACE);
+    assert!(locked.integrity.is_some());
+}
+
+#[test]
+fn adding_the_bundled_plugin_declares_nothing() {
+    let (application, repository) = project("built-in-bundled");
+    let root = repository.root().to_path_buf();
+
+    application
+        .project()
+        .add(
+            "uze",
+            manifest::BUILT_IN_MARKETPLACE,
+            &root,
+            &AlwaysTrust,
+            &uze_core::naming::NoNameCollisionAuthority,
+        )
+        .unwrap();
+
+    assert!(!manifest::manifest_path_for(&root).exists());
+    assert!(!root.join("agents.lock").exists());
+}
+
+/// A clone carrying only the manifest installs the built-in plugin from
+/// the binary, writes the lock, and a second install moves nothing.
+#[test]
+fn a_built_in_plugin_installs_from_the_manifest_alone() {
+    let (application, repository, home) = built_in_project("built-in-clone");
+    let root = repository.root().to_path_buf();
+    fs::write(
+        manifest::manifest_path_for(&root),
+        "marketplaces:\n  uze:\n    plugins: [workspace]\n",
+    )
+    .unwrap();
+
+    let first = application.project().install(&root, &AlwaysTrust).unwrap();
+    assert_eq!(plugins_installed(&first), ["workspace"]);
+    assert!(stored_built_in(&home, "workspace").is_some());
+    let lock = lock_of(&root);
+    assert_eq!(lock.uze.as_deref(), Some(env!("CARGO_PKG_VERSION")));
+    assert!(lock.plugins["workspace"].integrity.is_some());
+
+    let again = application.project().install(&root, &AlwaysTrust).unwrap();
+    assert!(plugins_installed(&again).is_empty(), "{again:?}");
+    assert_eq!(lock_of(&root), lock, "an agreeing binary rewrites nothing");
+}
+
+/// Bytes another uze build left, on the machine and in the lock, are
+/// brought to this binary's: replaced, recorded, and reported.
+#[test]
+fn a_built_in_plugin_follows_the_binary_it_runs() {
+    let (application, repository, home) = built_in_project("built-in-follows");
+    let root = repository.root().to_path_buf();
+    fs::write(
+        manifest::manifest_path_for(&root),
+        "marketplaces:\n  uze:\n    plugins: [workspace]\n",
+    )
+    .unwrap();
+    application.project().install(&root, &AlwaysTrust).unwrap();
+    let current = lock_of(&root);
+
+    // What an earlier build shipped: other bytes in the Store, and a lock
+    // that names them and the version that wrote it.
+    let stored = stored_built_in(&home, "workspace").unwrap();
+    fs::write(stored.root.join("README.md"), "an earlier build's readme\n").unwrap();
+    let mut earlier = current.clone();
+    earlier.uze = Some("0.0.1".to_owned());
+    earlier.plugins.get_mut("workspace").unwrap().integrity = Some("sha256:earlier".to_owned());
+    uze_core::project_lock::save_lock(&root, &earlier).unwrap();
+    assert!(
+        application.project().plan(&root).unwrap().has_changes,
+        "a lock another version wrote is behind"
+    );
+
+    let report = application.project().install(&root, &AlwaysTrust).unwrap();
+
+    assert_eq!(
+        plugins_installed(&report),
+        ["workspace"],
+        "reported as moved"
+    );
+    assert_eq!(lock_of(&root), current, "the lock is this binary's again");
+    let replaced = stored_built_in(&home, "workspace").unwrap();
+    assert!(
+        !fs::read_to_string(replaced.root.join("README.md"))
+            .unwrap()
+            .contains("earlier build"),
+        "the machine holds this binary's bytes"
+    );
+}

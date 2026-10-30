@@ -1,29 +1,63 @@
 ## ADDED Requirements
 
-### Requirement: The built-in marketplace is pinned by the uze version
-A locked built-in marketplace SHALL record the uze version that resolved
-it, its only revision, and each of its plugins SHALL carry the integrity
-of the bytes that version ingested.
+### Requirement: The built-in marketplace's plugins are pinned by the binary
+A locked plugin of the built-in marketplace SHALL carry the integrity of
+the bytes the running binary holds for it, and the lock SHALL record the
+uze version that resolved them. The built-in marketplace SHALL have no
+marketplace entry: it has no repository and no commit.
 
-#### Scenario: Resolving a built-in plugin records the version
-- **WHEN** a built-in plugin is resolved in a project
-- **THEN** the lock lists `uze` with the running uze version, and the
-  plugin with the integrity of what was ingested
+#### Scenario: Resolving a built-in plugin records the version and bytes
+- **WHEN** a project's `uze` plugins are resolved
+- **THEN** the lock records the running uze version, and each plugin
+  under `marketplace: uze` with the integrity of the binary's bytes
 
-### Requirement: A lock another uze version wrote is resolved again
-A built-in entry recorded by another uze version SHALL be resolved again
-from the running binary and the lock rewritten, reported as updated,
-never refused: the binary is the marketplace, and it moved. Bytes that
-differ under the same version SHALL still fail as any pin does.
+#### Scenario: A lock with no built-in plugin records no version
+- **WHEN** a project declares no plugin of the built-in marketplace
+- **THEN** its lock carries no uze version
 
-#### Scenario: Another version's lock is brought up to this binary
-- **WHEN** a project's lock pins `uze` at a version other than the
-  running one
-- **THEN** its built-in plugins are installed from this binary, the lock
-  records this version and the new integrity, and the install reports
-  them as updated
+### Requirement: Built-in plugins follow the binary, never fail on it
+A built-in plugin whose bytes on the machine differ from the running
+binary's SHALL be replaced by the binary's on install and the lock
+rewritten, reported as updated: the binary is the only source, so a
+difference is another uze build, never a reason to refuse.
 
-#### Scenario: Same version, other bytes, fails
-- **WHEN** the lock pins `uze` at the running version and a built-in
-  plugin's bytes hash to another integrity
-- **THEN** the install fails naming both hashes, and nothing is delivered
+#### Scenario: A lock another uze build wrote is brought to this binary
+- **WHEN** a project's lock pins a built-in plugin to bytes other than
+  the running binary's
+- **THEN** install delivers the binary's bytes, the lock records them and
+  the running version, and the plugin is reported as updated
+
+#### Scenario: Nothing moves when the binary agrees
+- **WHEN** the machine, the lock and the binary hold the same bytes
+- **THEN** install reports no change for that plugin
+
+## MODIFIED Requirements
+
+### Requirement: Marketplace source types
+A locked marketplace's source SHALL be `git` or `path`, mirroring the
+acquisition mechanisms a project declares. The marketplace built into uze
+SHALL have no marketplace entry; its plugins are pinned as the built-in
+requirements say.
+
+#### Scenario: Each source type parses to its own variant
+- **WHEN** a lock declares a marketplace with `git:` or `path:`
+- **THEN** it parses into the corresponding source, carrying that
+  source's own fields
+
+### Requirement: Resolved revision reflects what was actually acquired
+A locked marketplace's or plugin's `resolved.revision` SHALL be derived
+from what acquisition actually observed, not fabricated — present for a
+Git commit, absent for a local path (which has no stable revision to
+pin). The built-in marketplace records the uze version instead.
+
+#### Scenario: Git source records a commit
+- **WHEN** a marketplace or plugin is acquired from a Git source
+- **THEN** `resolved.revision` holds that acquisition's resolved commit
+
+#### Scenario: Built-in source records the uze version
+- **WHEN** a plugin is acquired from the marketplace built into uze
+- **THEN** the lock records the running uze version, not a revision
+
+#### Scenario: Local source records no revision
+- **WHEN** a marketplace or plugin is acquired from a local path
+- **THEN** `resolved.revision` is absent, not a fabricated value

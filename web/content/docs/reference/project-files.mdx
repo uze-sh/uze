@@ -90,9 +90,18 @@ says how to authenticate, and a collaborator with no key installs a public
 marketplace as easily as you do. A marketplace you develop is read from your
 checkout with `uze market link`, which touches neither file.
 
-The official marketplace is not declared here. `uze` is built into the
-binary, its plugins are installed for every project, and an entry claiming that
-name is refused: the only thing it could express is shadowing the built-in one.
+The official marketplace, `uze`, is built into the binary, so a project lists
+what it takes from it with no source:
+
+```yaml
+marketplaces:
+  uze:
+    plugins:
+      - workspace
+```
+
+A `git:` or `path:` on that name is refused: the binary is its only source. The
+`uze` plugin itself is never listed, since every project has it already.
 
 ### `workspace`
 
@@ -368,6 +377,14 @@ Resolution adds exactly two things to a declaration:
   names both digests and installs nothing. A `path:` marketplace records none:
   a digest of a directory somebody is editing would be wrong by the next
   command, and a pin that is routinely wrong teaches people to ignore pins.
+
+The official marketplace has no repository and no commit, so it has no entry
+under `marketplaces:`. The lock records the uze version that resolved its
+plugins instead, at the top (`uze: 1.0.0`), and each of them with its
+`integrity` as above. Those plugins follow the binary that runs: when the
+machine's bytes or the lock's are another uze build's, `uze install` replaces
+them with this one's, rewrites the lock and reports them as updated, never as a
+mismatch.
 
 Everything else in the file was already in the manifest, and is repeated only
 so the lock stands alone on a machine that has never read one. `version` stays

@@ -223,6 +223,17 @@ impl Project<'_> {
         name: &str,
         locked: &LockedPlugin,
     ) -> Expected {
+        // The built-in marketplace's bytes are the binary's: read from it.
+        if locked.marketplace == uze_core::manifest::BUILT_IN_MARKETPLACE {
+            return match crate::bootstrap::materialize(name)
+                .and_then(|materialized| plugin_rules::shipped_rules(materialized.root()))
+            {
+                Ok(shipped) => Expected::Known(shipped),
+                Err(error) => Expected::Unverified(format!(
+                    "the plugin built into this uze could not be read ({error})"
+                )),
+            };
+        }
         let Some(recorded) = lock.marketplaces.get(&locked.marketplace) else {
             return Expected::Unverified(format!(
                 "agents.lock records no revision for marketplace `{}`",
