@@ -1991,6 +1991,41 @@ fn an_official_plugin_uze_does_not_bundle_is_removed_and_stays_removed() {
     fs::remove_dir_all(root).unwrap();
 }
 
+/// A machine an earlier release seeded keeps the official plugins under
+/// the marketplace's old name, `uze-official`. Seeding takes each off as a
+/// removal would and installs it again under `uze`: nothing is left under
+/// the old name, and the bundled one is not installed twice.
+#[test]
+fn seeding_moves_plugins_off_the_official_marketplaces_old_name() {
+    let root = uze_testkit::temp::scratch("retired-official-name");
+    let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
+    for name in ["uze", "focus"] {
+        app.plugins()
+            .install_materialized(
+                bootstrap::materialize(name).unwrap(),
+                "uze-official",
+                None,
+                &uze_core::trust::AlwaysTrust,
+                &uze_core::naming::NoNameCollisionAuthority,
+                uze_core::trust::SourceOrigin::Operator,
+            )
+            .unwrap();
+    }
+
+    app.ensure_default_plugins().unwrap();
+
+    let mut ids: Vec<String> = app
+        .store
+        .package_ids()
+        .unwrap()
+        .iter()
+        .map(|id| id.as_str().to_owned())
+        .collect();
+    ids.sort();
+    assert_eq!(ids, ["focus@uze", "uze@uze"]);
+    fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn local_spoof_named_uze_is_not_protected() {
     let root = uze_testkit::temp::scratch("spoof-not-protected");
