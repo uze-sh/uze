@@ -618,14 +618,17 @@ fn standing_lines(
             if row.is_secret() {
                 said.push_str(" · empty forgets it");
             }
-            let mut folded = text::fold(&said, grid.width);
+            // Under the labels, in their column.
+            let indent = form::LABEL_INDENT;
+            let mut folded = text::fold(&said, grid.width.saturating_sub(indent));
             folded.resize(PREFERENCE_DETAIL, String::new());
             folded.truncate(PREFERENCE_DETAIL);
-            grid.lines.extend(
-                folded
-                    .into_iter()
-                    .map(|row| Line::from(Span::styled(row, theme::fg(Token::TextMuted)))),
-            );
+            grid.lines.extend(folded.into_iter().map(|row| {
+                Line::from(Span::styled(
+                    format!("{:indent$}{row}", ""),
+                    theme::fg(Token::TextMuted),
+                ))
+            }));
         }
     }
 

@@ -268,15 +268,15 @@ scenes:
       # outside the modal.
       - click: "deck · deck@studio"
         say: choose the extension, which its drawer then describes
-        expect: 'Show each phase''s name {2,}\S+ on'
+        expect: 'Show each phase''s name {2,}off {2,}on'
         expect_timeout: 10
       - click: "Preferences"
         say: put the keys on its preferences from the drawer's button
-        expect: 'Show each phase''s name {2,}\S+ on'
+        expect: 'Show each phase''s name {2,}off {2,}on'
         expect_timeout: 10
       - key: "Enter"
-        say: turn the toggle off
-        expect: 'Show each phase''s name {2,}\S+ off'
+        say: turn the toggle off, which the recorded answer below proves
+        expect: 'Show each phase''s name {2,}off {2,}on'
         expect_timeout: 10
       - wait: file
         until: "{uze_home}/state/extensions/preferences/deck@studio/deck.json"

@@ -366,18 +366,20 @@ on "cancel" must not save first.
 - A fixed set of choices uses a combobox or radio buttons.
 - Files and branches come from a picker of real options.
 - Settings autosave, and the save shows no toast.
-- An extension's preferences are set in its drawer, never in a dialog of
-  their own: under `preferences`, one row per preference, its label on
-  the left and its value as the control that changes it in one column
-  against the right edge (`widget::control`: `− 25 +`, `‹ dark ›`,
-  `◉ on`, a field), each part a click target from the start. The
-  drawer's Preferences button (or a click on a row) puts the keys on
-  them: the row they are on takes the selected ground, a detail of fixed
-  height under the rows says its kind, range and default (`A number from
-  1 to 90 · default 25`), or where a secret is kept, and the footer names
-  their keys. ←→ step and save at once; Enter types (in the row's own
-  field) or flips; Esc, or a click anywhere else, gives the keys back to
-  the cards.
+- Every form looks like the workspace's settings form (`widget::form`),
+  whatever screen it stands on: the label in a column with the keys'
+  `❯` ahead of it, then the control from that column, never right-aligned
+  against the edge: a number between raised `−` `+`, a toggle or a few
+  choices side by side with the chosen one in the accent, a typed value
+  in a recessed box. Never a control of a screen's own.
+- An extension's preferences are that form in its drawer, never a dialog
+  of their own: every part a click target from the start (a click on an
+  option chooses it). The drawer's Preferences button, or a click on a
+  row, puts the keys on them; a detail of fixed height under the rows
+  says the row's kind, range and default (`A number from 1 to 90 ·
+  default 25`), or where a secret is kept, and the footer names their
+  keys. ←→ step and save at once; Enter types in the row's own box or
+  flips; Esc, or a click anywhere else, gives the keys back to the cards.
 
 ## Feedback, state and timing
 

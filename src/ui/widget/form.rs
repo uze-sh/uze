@@ -18,7 +18,7 @@ use crate::ui::theme::{self, Symbol};
 
 /// How far a label sits in under its group's heading, and the column the
 /// keyboard's mark stands in.
-const LABEL_INDENT: usize = 2;
+pub(crate) const LABEL_INDENT: usize = 2;
 
 /// A key's label, `width` columns with the keyboard's mark ahead of it
 /// when the keys are on its row; bright on that row, lit under the
