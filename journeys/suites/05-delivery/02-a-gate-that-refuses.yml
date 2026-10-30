@@ -35,7 +35,7 @@ scenes:
         pause: 1.0
       - click: "new"
         in: sidebar
-        expect: 'harness .*Claude Code'
+        expect: 'overrides .*Claude Code'
       - type: "{project}"
         say: place an agent
         expect: Claude Code v

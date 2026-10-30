@@ -192,7 +192,7 @@ scenes:
       - click: "new"
         say: open the new-agent popup from the space's row
         in: sidebar
-        expect: 'harness .*Claude Code'
+        expect: 'overrides .*Claude Code'
       - type: "{project}"
         say: place an agent on the project
         expect: "2 extensions run nothing there"

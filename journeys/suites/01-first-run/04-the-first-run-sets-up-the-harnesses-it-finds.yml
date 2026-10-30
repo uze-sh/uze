@@ -47,7 +47,7 @@ scenes:
         say: open the new-agent picker from the space's row
         in: sidebar
         # Whichever harness the first run set up first is the one offered.
-        expect: 'harness '
+        expect: 'new agent .*overrides'
       - type: "{project}"
         say: start it with the first harness it offers
         # The tab, not the header's `agent 1: preparing`: the tab opens

@@ -34,7 +34,7 @@ scenes:
       - click: "new"
         say: open the new-agent popup
         in: sidebar
-        expect: 'harness .*Claude Code'
+        expect: 'overrides .*Claude Code'
       - type: "{project}"
         say: start an agent in the project, with Claude Code
         # The tab, not the header's `agent 1: preparing`: the tab opens

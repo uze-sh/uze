@@ -53,7 +53,7 @@ scenes:
       - click: "new"
         say: open the new-agent popup
         in: sidebar
-        expect: 'harness .*Claude Code'
+        expect: 'overrides .*Claude Code'
       - type: "{world}/projects/group"
         say: name the folder on the way, which used to be drawn nowhere
         submit: false

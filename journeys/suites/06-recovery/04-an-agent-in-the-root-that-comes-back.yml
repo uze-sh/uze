@@ -34,7 +34,7 @@ scenes:
       - click: "new"
         say: open the new-agent picker
         in: sidebar
-        expect: 'harness .*Claude Code'
+        expect: 'overrides .*Claude Code'
       - type: "{project}"
         say: place a Claude agent, which starts where the project says
         expect: Claude Code v

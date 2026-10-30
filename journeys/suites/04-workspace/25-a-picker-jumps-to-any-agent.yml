@@ -96,7 +96,7 @@ scenes:
       - click: "new"
         say: open the new-agent popup from the space's row
         in: sidebar
-        expect: 'harness .*Claude Code'
+        expect: 'overrides .*Claude Code'
       - type: "{project}"
         say: place the first agent on the project
         expect: "Jump runs nothing there yet"
@@ -116,7 +116,7 @@ scenes:
       - click: "new"
         say: open the new-agent popup again
         in: sidebar
-        expect: 'harness .*Claude Code'
+        expect: 'overrides .*Claude Code'
       - type: "{project}"
         say: place the second agent, which comes to the front
         expect: 'agent 2(?!: preparing)'

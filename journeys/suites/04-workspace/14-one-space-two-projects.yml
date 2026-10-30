@@ -47,7 +47,7 @@ scenes:
       - click: "new"
         say: open the new-agent popup
         in: sidebar
-        expect: 'harness .*Claude Code'
+        expect: 'overrides .*Claude Code'
       - type: "{project}"
         say: an agent in the project uze opened on
         expect: 'agent 1(?!: preparing)'
@@ -56,7 +56,7 @@ scenes:
       - click: "new"
         say: open the popup again, in the same space
         in: sidebar
-        expect: 'harness .*Claude Code'
+        expect: 'overrides .*Claude Code'
       - type: "{world}/projects/back"
         say: an agent in the other repository
         expect: 'agent 2(?!: preparing)'
