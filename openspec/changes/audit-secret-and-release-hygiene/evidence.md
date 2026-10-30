@@ -14,6 +14,10 @@
     (`cargo test -p uze-git a_git_span_never`)
   - `src/telemetry.rs::tests::the_journal_never_keeps_the_credentials_of_a_url`
     (`cargo test -p uze --lib the_journal_never_keeps`), the net alone
+  - `crates/uze-platform/src/redact.rs::tests::every_url_of_a_word_is_redacted`
+    and `::a_password_carrying_a_slash_is_redacted` (`cargo test -p
+    uze-platform redact`): a second URL in one word and an unescaped `/` in a
+    password (found by the branch's review; the first version kept both).
   - `crates/uze-platform/src/redact.rs::tests` (`cargo test -p uze-platform redact`)
 
   The first two were run before the fix and failed, recording

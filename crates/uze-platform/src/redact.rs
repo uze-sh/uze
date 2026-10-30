@@ -19,7 +19,7 @@ pub const REDACTED: &str = "<redacted>";
 /// by word, keeping everything else — whitespace included — as it was.
 ///
 /// Two shapes are credentials:
-/// - the userinfo of a `scheme://` authority. Only the authority holds it,
+/// - the userinfo of every `scheme://` authority. Only the authority holds it,
 ///   and the host follows its *last* `@`: a password may itself carry one,
 ///   and a path or reference after the host (`repo@v1`) is not userinfo.
 /// - a word that is a token a provider mints, standing on its own. Only
@@ -40,22 +40,35 @@ pub fn redact(text: &str) -> String {
 }
 
 fn redact_userinfo(word: &str, into: &mut String) {
-    let Some(scheme) = word.find("://") else {
-        into.push_str(word);
-        return;
-    };
-    let start = scheme + 3;
-    let rest = &word[start..];
-    let authority = &rest[..rest.find(['/', '?', '#']).unwrap_or(rest.len())];
-    match authority.rfind('@') {
-        Some(at) => {
-            into.push_str(&word[..start]);
+    let mut rest = word;
+    while let Some(scheme) = rest.find("://") {
+        let start = scheme + 3;
+        into.push_str(&rest[..start]);
+        rest = &rest[start..];
+        let url = &rest[..rest.find("://").unwrap_or(rest.len())];
+        if let Some(host) = host_start(url) {
             into.push_str(REDACTED);
             into.push('@');
-            into.push_str(&word[start + at + 1..]);
+            rest = &rest[host..];
         }
-        None => into.push_str(word),
     }
+    into.push_str(rest);
+}
+
+/// Where the host begins in `url` (what follows `scheme://`), when a
+/// userinfo stands before it. The host follows the authority's *last*
+/// `@`. An authority with no `@` whose port is not a number is a password
+/// that carries a `/` unescaped, so the host follows the first `@` past it.
+fn host_start(url: &str) -> Option<usize> {
+    let authority = &url[..url.find(['/', '?', '#']).unwrap_or(url.len())];
+    if let Some(at) = authority.rfind('@') {
+        return Some(at + 1);
+    }
+    let port = &authority[authority.rfind(':')? + 1..];
+    if port.chars().all(|digit| digit.is_ascii_digit()) {
+        return None;
+    }
+    url.find('@').map(|at| at + 1)
 }
 
 /// Whether `word` is a credential standing on its own.
@@ -100,6 +113,27 @@ mod tests {
         );
         assert_eq!(redact("plugin@market"), "plugin@market");
         assert_eq!(redact("https://h/x?u=a@b"), "https://h/x?u=a@b");
+    }
+
+    #[test]
+    fn every_url_of_a_word_is_redacted() {
+        assert_eq!(
+            redact("a=https://u:p@h/x,b=https://u2:tok@h2/y"),
+            "a=https://<redacted>@h/x,b=https://<redacted>@h2/y"
+        );
+    }
+
+    #[test]
+    fn a_password_carrying_a_slash_is_redacted() {
+        assert_eq!(
+            redact("https://user:pa/ss@host/r"),
+            "https://<redacted>@host/r"
+        );
+        assert_eq!(
+            redact("https://host:8443/org/a@b"),
+            "https://host:8443/org/a@b",
+            "a numeric port is a port"
+        );
     }
 
     #[test]
