@@ -471,14 +471,14 @@ pub(in crate::ui::orchestrator) fn render_agent_write(
         )
     };
     let question = Dialog {
-        table: Vec::new(),
         tone: Tone::Caution,
-        title: &title,
+        title: title.as_str().into(),
         subject: Some(Line::from(attribution(&open.write.owner))),
         body,
         confirm: Some(confirm),
         focus: Some(if open.on_allow { 1 } else { CANCEL }),
         field: None,
+        ..Default::default()
     };
     let shown_whole = dialog::fits(area, &question);
     open.shown_whole.set(shown_whole);
@@ -489,9 +489,8 @@ pub(in crate::ui::orchestrator) fn render_agent_write(
         &question
     } else {
         too_tall = Dialog {
-            table: Vec::new(),
             tone: Tone::Caution,
-            title: "Too long to read here",
+            title: "Too long to read here".into(),
             subject: question.subject.clone(),
             body: vec![
                 format!(
@@ -505,6 +504,7 @@ pub(in crate::ui::orchestrator) fn render_agent_write(
             confirm: None,
             focus: Some(CANCEL),
             field: None,
+            ..Default::default()
         };
         &too_tall
     };

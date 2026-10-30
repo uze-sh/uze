@@ -498,7 +498,6 @@ fn render_programs(
         frame,
         area,
         &Dialog {
-            table: Vec::new(),
             tone: if confined {
                 Tone::Caution
             } else {
@@ -508,12 +507,14 @@ fn render_programs(
                 "Allow these programs to run, confined?"
             } else {
                 "Allow these programs to run as you?"
-            },
+            }
+            .into(),
             subject: Some(Line::from(subject)),
             body,
             confirm: Some("Allow and enable"),
             focus: Some(if open.on_allow { 1 } else { CANCEL }),
             field: None,
+            ..Default::default()
         },
         &[uze_keys::Scope::Global, uze_keys::Scope::Confirm],
         WorkspaceHit::ExtensionOfferAnswer(false),

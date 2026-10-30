@@ -475,14 +475,14 @@ pub(crate) fn render_text_prompt(
         frame,
         area,
         &Dialog {
-            table: Vec::new(),
             tone: Tone::Neutral,
-            title: prompt.title,
+            title: prompt.title.into(),
             subject: None,
             body: vec![prompt.body.to_owned()],
             confirm: Some(prompt.confirm),
             focus: None,
             field: Some(Field::new(input, prompt.placeholder)),
+            ..Default::default()
         },
         &[uze_keys::Scope::Global, uze_keys::Scope::TextPrompt],
         Hit::OfferedAction(Action::Dismiss),
@@ -613,21 +613,6 @@ fn plugin_of(attribution: &str) -> &str {
 }
 
 impl Confirmation {
-    /// A title that names what it asks about, for the questions whose
-    /// subject is in their heading rather than under it.
-    fn titled(&self) -> Option<String> {
-        match self {
-            Self::EnableExtension {
-                here, new_grants, ..
-            } => Some(if new_grants.is_empty() {
-                format!("Allow {} to run?", here.name)
-            } else {
-                format!("Allow what {}'s update wants?", here.name)
-            }),
-            _ => None,
-        }
-    }
-
     /// Whether this only explains, with one way out and nothing to agree to.
     fn is_notice(&self) -> bool {
         matches!(self, Self::ProtectedPlugin(_))
@@ -681,16 +666,19 @@ impl Confirmation {
 
     /// The question as it is drawn.
     fn dialog(&self, focus: Option<usize>) -> Dialog<'_> {
-        let dialog = |tone, title, subject: Option<Line<'static>>, body: &str, confirm| Dialog {
-            table: Vec::new(),
-            tone,
-            title,
-            subject,
-            body: vec![body.to_owned()],
-            confirm,
-            focus,
-            field: None,
-        };
+        let dialog =
+            |tone, title: &'static str, subject: Option<Line<'static>>, body: &str, confirm| {
+                Dialog {
+                    tone,
+                    title: title.into(),
+                    subject,
+                    body: vec![body.to_owned()],
+                    confirm,
+                    focus,
+                    field: None,
+                    ..Default::default()
+                }
+            };
         let named = |id: &str| Some(Line::from(id.to_owned()));
         match self {
             Self::AllowPrograms {
@@ -723,11 +711,16 @@ impl Confirmation {
             } => {
                 let (body, table) = extension_grants_body(here, grants, new_grants, *band_rows);
                 Dialog {
+                    title: if new_grants.is_empty() {
+                        format!("Allow {} to run?", here.name)
+                    } else {
+                        format!("Allow what {}'s update wants?", here.name)
+                    }
+                    .into(),
                     body,
                     table,
                     ..dialog(
                         Tone::Caution,
-                        // Named in full by `titled`, which owns the words.
                         "",
                         Some(Line::from(Span::styled(
                             plugin_of(attribution).to_owned(),
@@ -811,15 +804,10 @@ pub(crate) fn render_confirmation(
     focus: Option<usize>,
     hits: &mut Vec<(Rect, Hit)>,
 ) {
-    let title = kind.titled();
-    let mut asked = kind.dialog(focus);
-    if let Some(title) = &title {
-        asked.title = title;
-    }
     let targets = dialog::render(
         frame,
         area,
-        &asked,
+        &kind.dialog(focus),
         &[uze_keys::Scope::Global, uze_keys::Scope::Confirm],
         Hit::Answer(false),
         Hit::Answer(true),

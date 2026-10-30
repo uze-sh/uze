@@ -99,14 +99,14 @@ pub(super) fn render_interrupt(
         frame,
         area,
         &Dialog {
-            table: Vec::new(),
             tone: Tone::Caution,
-            title: &title,
+            title: title.as_str().into(),
             subject: None,
             body: vec![body],
             confirm: Some(&confirm),
             focus: Some(if open.on_confirm { 1 } else { CANCEL }),
             field: None,
+            ..Default::default()
         },
         &[uze_keys::Scope::Global, uze_keys::Scope::Confirm],
         WorkspaceHit::InterruptAnswer(false),

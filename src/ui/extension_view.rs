@@ -438,12 +438,11 @@ pub(crate) fn render_confirm(
     let dialog = widget::dialog::Dialog {
         // A yes-or-no is asked only before what cannot be undone; a
         // question that takes text is asking for a name.
-        table: Vec::new(),
         tone: match confirm.field {
             Some(_) => widget::dialog::Tone::Neutral,
             None => widget::dialog::Tone::Danger,
         },
-        title: &confirm.title,
+        title: confirm.title.as_str().into(),
         subject: Some(subject),
         body: vec![confirm.body.clone()],
         confirm: Some(&confirm.confirm),
@@ -455,6 +454,7 @@ pub(crate) fn render_confirm(
             .field
             .as_deref()
             .map(|text| widget::field::Field::new(text, "")),
+        ..Default::default()
     };
     let answers = widget::dialog::render(
         frame,

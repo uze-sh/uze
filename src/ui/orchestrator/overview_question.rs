@@ -140,14 +140,14 @@ pub(super) fn render_overview_question(
         frame,
         area,
         &Dialog {
-            table: Vec::new(),
             tone: Tone::Danger,
-            title,
+            title: title.into(),
             subject: Some(Line::from(Span::styled(subject, subject_style))),
             body: vec![body.to_owned()],
             confirm: Some(confirm),
             focus: Some(if question.on_confirm { 1 } else { CANCEL }),
             field: None,
+            ..Default::default()
         },
         &[uze_keys::Scope::Global, uze_keys::Scope::Confirm],
         WorkspaceHit::OverviewAnswer(false),

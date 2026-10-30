@@ -220,14 +220,14 @@ pub(super) fn render_approval(
         frame,
         area,
         &Dialog {
-            table: Vec::new(),
             tone: Tone::Caution,
-            title: "Run this project's commands?",
+            title: "Run this project's commands?".into(),
             subject: Some(Line::from(open.project.clone())),
             body,
             confirm: Some("Approve"),
             focus: Some(if open.on_approve { 1 } else { CANCEL }),
             field: None,
+            ..Default::default()
         },
         &[uze_keys::Scope::Global, uze_keys::Scope::Confirm],
         WorkspaceHit::ApprovalAnswer(false),

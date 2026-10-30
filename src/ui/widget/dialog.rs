@@ -22,8 +22,9 @@ pub(crate) const CANCEL: usize = 0;
 /// acted on and the button that acts — the only two places the answer
 /// lands — and nothing else, so the dialog reads calm until the eye
 /// reaches what it would do.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub(crate) enum Tone {
+    #[default]
     Neutral,
     Caution,
     Danger,
@@ -44,10 +45,11 @@ impl Tone {
 /// Every dialog is the same four things in the same order — what is being
 /// asked, of what, what it means, and the answers — so that someone who
 /// has read one knows where to look in the next.
+#[derive(Default)]
 pub(crate) struct Dialog<'a> {
     pub(crate) tone: Tone,
     /// What is being asked, as a heading: "Remove marketplace".
-    pub(crate) title: &'a str,
+    pub(crate) title: std::borrow::Cow<'a, str>,
     /// The thing it would happen to, when there is one: the marketplace's name.
     pub(crate) subject: Option<Line<'static>>,
     /// What answering yes does, one paragraph per entry.
@@ -201,7 +203,7 @@ fn content(dialog: &Dialog<'_>, measure: usize) -> Content {
     let mut lines = vec![
         Line::default(),
         Line::from(Span::styled(
-            dialog.title.to_owned(),
+            dialog.title.to_string(),
             theme::fg_bold(Token::TextBright),
         )),
     ];
