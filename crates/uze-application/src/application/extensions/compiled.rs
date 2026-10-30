@@ -11,7 +11,7 @@
 //! stamp of the files, so a linked extension is recompiled only when one of
 //! them changed.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::io::Read as _;
 use std::path::{Component, Path, PathBuf};
 
@@ -110,6 +110,7 @@ fn compile_cached(
         && let Ok(compiled) = serde_json::from_slice::<CompiledExtension>(&bytes)
         && compiled.identity == *identity
     {
+        prune_revisions(home, identity, &cached_at);
         return Ok(compiled);
     }
     let compiled = compile(identity.clone(), loaded)?;
@@ -120,6 +121,7 @@ fn compile_cached(
         }
         let _ = uze_core::persistence::write_atomic(&cached_at, &bytes);
     }
+    prune_revisions(home, identity, &cached_at);
     Ok(compiled)
 }
 
@@ -140,21 +142,10 @@ fn cache_key(identity: &Identity, loaded: &Loaded) -> String {
     format!("{:016x}", fnv1a64(&stream))
 }
 
-/// Removes compiled views whose source bytes no installed extension still
-/// names. The cache shares its directory with generated extension costs, so
-/// only a filename in the digest form this module writes is eligible.
-pub(crate) fn prune_stale_cache(
-    home: &uze_core::UzeHome,
-    installed: &[InstalledExtension],
-) -> usize {
-    let current: BTreeSet<_> = installed
-        .iter()
-        .filter_map(|extension| {
-            Loaded::read(&extension.dir)
-                .ok()
-                .map(|loaded| cache_key(&extension.identity, &loaded))
-        })
-        .collect();
+/// Keeps one compiled view for an extension identity. This runs on the
+/// extension-load path, which has already read and hashed its files; health
+/// checks do not need to re-read every extension merely to collect a cache.
+fn prune_revisions(home: &uze_core::UzeHome, identity: &Identity, current: &Path) -> usize {
     let Ok(entries) = std::fs::read_dir(home.compiled_extensions_dir()) else {
         return 0;
     };
@@ -162,8 +153,14 @@ pub(crate) fn prune_stale_cache(
         .flatten()
         .filter_map(|entry| {
             let path = entry.path();
-            let key = compiled_cache_key(&path)?;
-            (!current.contains(key) && entry.file_type().ok()?.is_file()).then_some(path)
+            compiled_cache_key(&path)?;
+            (path != current && entry.file_type().ok()?.is_file()).then_some(path)
+        })
+        .filter(|path| {
+            std::fs::read(path)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<CompiledExtension>(&bytes).ok())
+                .is_some_and(|compiled| compiled.identity == *identity)
         })
         .filter(|path| std::fs::remove_file(path).is_ok())
         .count()
@@ -392,24 +389,33 @@ mod tests {
     }
 
     #[test]
-    fn stale_compiles_are_collected_without_touching_other_runtime_files() {
+    fn an_extension_keeps_one_compiled_revision_without_touching_other_runtime_files() {
         let root = uze_testkit::temp::scratch("extension-compile-prune");
         let home = uze_core::UzeHome::at(root.join("home"));
         let installed = extension_in(&root);
-        let current = cache_key(&installed.identity, &loaded(&installed));
+        let compile = |_: Identity, _: &Loaded| Ok(compiled());
+
+        compile_cached(&home, &installed.identity, &loaded(&installed), compile).unwrap();
+        fs::write(
+            installed.dir.join("extension.kdl"),
+            "protocol 1\n// saved\n",
+        )
+        .unwrap();
+        compile_cached(&home, &installed.identity, &loaded(&installed), compile).unwrap();
+
         let cache = home.compiled_extensions_dir();
-        fs::create_dir_all(&cache).unwrap();
-        fs::write(cache.join(format!("{current}.json")), "current").unwrap();
-        fs::write(cache.join("0123456789abcdef.json"), "stale").unwrap();
         fs::write(cache.join("costs.json"), "generated costs").unwrap();
 
-        assert_eq!(
-            prune_stale_cache(&home, std::slice::from_ref(&installed)),
-            1
-        );
-        assert!(cache.join(format!("{current}.json")).is_file());
         assert!(cache.join("costs.json").is_file());
-        assert!(!cache.join("0123456789abcdef.json").exists());
+        assert_eq!(
+            fs::read_dir(&cache)
+                .unwrap()
+                .flatten()
+                .filter(|entry| compiled_cache_key(&entry.path()).is_some())
+                .count(),
+            1,
+            "the previous compiled revision is collected"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
