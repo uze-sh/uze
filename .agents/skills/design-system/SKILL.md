@@ -251,7 +251,9 @@ on "cancel" must not save first.
 **Closing:**
 - Esc closes everything, and a modal or a drawer says so nowhere: its
   closing is a bare `x` at the top right, with no label, no footer "close"
-  button and no "esc" hint.
+  button and no "esc" hint. A plugin's drawer and overlay wear it too,
+  drawn by the host on the card's top hairline, whatever the plugin
+  declares: no surface is closed by Esc alone.
 - A step opened inside a dialog (everything a row asks for, in the list's
   place) goes back before it closes: its heading starts with `‹`
   (`Symbol::StepPrevious`) and is a target, and the bottom border names

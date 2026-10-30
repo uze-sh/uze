@@ -1676,6 +1676,7 @@ impl Attach<'_> {
                 self.model.dock_focused = true;
                 self.model.dirty = true;
             }
+            WorkspaceHit::CloseDrawer => self.model.close_drawer(),
             // Only reachable while the overlay is open, which the guarded
             // arm in `press` answers first.
             WorkspaceHit::OverlayBody | WorkspaceHit::CloseOverlay => {}

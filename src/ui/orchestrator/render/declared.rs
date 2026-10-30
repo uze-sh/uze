@@ -56,8 +56,9 @@ pub(super) fn render_declared_overlays(
 /// hairlines and its title.
 const CARD_CHROME_ROWS: u16 = 2 + crate::ui::extension_view::tree::TITLE_ROWS;
 
-/// The open drawer, where `compute_layout` placed it: a raised card, its
-/// title across its top where nothing it draws can cover it, and its view
+/// The open drawer, where `compute_layout` placed it: a raised card with
+/// the mark that closes it, its title across its top where nothing it
+/// draws can cover it, and its view
 /// under that. A floating drawer that fits what it
 /// holds is cut to that, against its own side. Answers whether anything in
 /// it moves with the clock.
@@ -103,6 +104,7 @@ pub(super) fn render_declared_drawer(
         model.dragging_dock,
         note,
     );
+    let close_rect = render_close_mark(frame, inner, model, WorkspaceHit::CloseDrawer);
     let content = match slot.owner.declared() {
         Some(_) => crate::ui::extension_view::tree::render_title(frame, inner, &slot.surface.title),
         None => inner,
@@ -139,7 +141,7 @@ pub(super) fn render_declared_drawer(
     // go ahead of them, as an overlay's do.
     // A card that fits what it holds has no edge to drag: it is sized by
     // what it holds.
-    let mut drawn = Vec::new();
+    let mut drawn = vec![(close_rect, WorkspaceHit::CloseDrawer)];
     if !place.fit {
         drawn.push((handle, WorkspaceHit::ResizeDock));
     }
@@ -277,24 +279,7 @@ pub(super) fn render_overlay(
     let card = overlay_card(area);
     frame.render_widget(ratatui::widgets::Clear, card);
     let inner = Surface::card().render(frame, card);
-    let close = theme::glyph(Symbol::MarkClose);
-    let close_width = theme::width(Symbol::MarkClose);
-    let close_rect = Rect::new(
-        card.right().saturating_sub(1 + TRAILING_PAD + close_width),
-        card.y,
-        close_width,
-        1,
-    );
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            close,
-            theme::fg(widget::mark::close_tone(chip_state(
-                model,
-                WorkspaceHit::CloseOverlay,
-            ))),
-        )),
-        close_rect,
-    );
+    let close_rect = render_close_mark(frame, inner, model, WorkspaceHit::CloseOverlay);
     let content = match slot.owner.declared() {
         Some(_) => crate::ui::extension_view::tree::render_title(frame, inner, &slot.surface.title),
         None => inner,
@@ -333,6 +318,32 @@ pub(super) fn render_overlay(
     targets.push((card, WorkspaceHit::OverlayBody));
     hits.splice(0..0, targets);
     drawn.marquee
+}
+
+/// The mark that closes a card, on its top hairline against its right
+/// edge, over the room `inner` its hairline leaves; answers where it
+/// stands, for `close` to be registered there.
+fn render_close_mark(
+    frame: &mut ratatui::Frame<'_>,
+    inner: Rect,
+    model: &WorkspaceModel,
+    close: WorkspaceHit,
+) -> Rect {
+    let width = theme::width(Symbol::MarkClose);
+    let rect = Rect::new(
+        inner.right().saturating_sub(TRAILING_PAD + width),
+        inner.y.saturating_sub(1),
+        width,
+        1,
+    );
+    frame.render_widget(
+        Paragraph::new(Span::styled(
+            theme::glyph(Symbol::MarkClose),
+            theme::fg(widget::mark::close_tone(chip_state(model, close))),
+        )),
+        rect,
+    );
+    rect
 }
 
 /// What a status row or a band draws in `area`, its hits tagged with its

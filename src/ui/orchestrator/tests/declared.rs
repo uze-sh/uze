@@ -2486,6 +2486,53 @@ fn esc_closes_a_floating_drawer_without_reaching_the_agent() {
     );
 }
 
+/// A drawer's closing is a bare `x` at its top right, as an overlay's is,
+/// docked or floating: a click on it closes the drawer and reaches
+/// nothing under it.
+#[test]
+fn the_drawers_mark_closes_it() {
+    let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("drawer-close-mark"));
+    for float in [false, true] {
+        let mut model = hosting_a_drawer(Some(uze_contract::DrawerDecl {
+            side: uze_contract::DrawerSide::Bottom,
+            float,
+            fit: false,
+        }));
+        let slot = drawer_slot(&model);
+        model.toggle_drawer(slot, ratatui::layout::Rect::new(0, 0, 200, 60));
+        let mut driven = driven(model, &home).on_a_roomy_terminal();
+        driven.frame();
+        let close = drawn(&driven.attach.model, WorkspaceHit::CloseDrawer);
+        let rows = frame_rows_at(&mut driven.attach.model, driven.area);
+        let hairline = &rows[usize::from(close.y)];
+        assert!(
+            hairline.contains('─')
+                && hairline.contains(&crate::ui::theme::glyph(
+                    crate::ui::theme::Symbol::MarkClose
+                )),
+            "float {float}: on its top hairline: {rows:#?}"
+        );
+        assert!(
+            rows[usize::from(close.y) + 1].contains("Side"),
+            "float {float}: over its title: {rows:#?}"
+        );
+        let _ = driven.sent();
+        driven.press(close.x, close.y);
+        assert_eq!(
+            driven.attach.model.open_drawer(),
+            None,
+            "float {float}: closed"
+        );
+        assert!(
+            !driven.sent().iter().any(|request| matches!(
+                request,
+                crate::ui::orchestrator::ClientRequest::Input { .. }
+            )),
+            "float {float}: the agent never saw it"
+        );
+    }
+}
+
 /// What a drawer's action said while it waited ("Start a session…") is
 /// over once its extension answers, as a view's is: it never stays on the
 /// drawer's foot after the action ran.

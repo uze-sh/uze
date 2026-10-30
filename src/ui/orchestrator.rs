@@ -961,6 +961,8 @@ pub(super) enum WorkspaceHit {
     /// The docked drawer itself, behind what it drew: a click there lends
     /// it the navigation keys and does nothing else.
     DockBody,
+    /// The mark that closes a plugin's drawer.
+    CloseDrawer,
     /// A plugin's overlay itself, behind what it drew: a click there keeps
     /// it open and does nothing else.
     OverlayBody,
