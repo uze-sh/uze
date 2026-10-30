@@ -229,8 +229,6 @@ mod official_installer_tests {
 
     #[test]
     fn a_download_that_fails_fails_the_install_and_runs_nothing() {
-        use std::os::unix::fs::PermissionsExt;
-
         let bin = uze_testkit::temp::scratch("installer-curl-fails");
         std::fs::create_dir_all(&bin).unwrap();
         let curl = bin.join("curl");
@@ -246,8 +244,7 @@ mod official_installer_tests {
             .unwrap(),
         );
 
-        std::fs::write(&curl, "#!/bin/sh\necho 'partial'\nexit 22\n").unwrap();
-        std::fs::set_permissions(&curl, std::fs::Permissions::from_mode(0o755)).unwrap();
+        uze_testkit::process::install_executable(&curl, b"#!/bin/sh\necho 'partial'\nexit 22\n");
         assert!(
             !run(&spec, &bin),
             "the pipe's last status would have been success"

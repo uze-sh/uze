@@ -1526,17 +1526,14 @@ mod recorded_state_tests {
     #[cfg(unix)]
     #[test]
     fn a_plugin_claudes_cli_lists_as_disabled_is_matched_and_known_to_be_off() {
-        use std::os::unix::fs::PermissionsExt;
         let mut env = uze_testkit::env::scope();
         env.remove("CLAUDE_CONFIG_DIR");
         let home = home_with("claude-cli-switched-off", &[]);
         let claude = home.join("claude");
-        fs::write(
+        uze_testkit::process::install_executable(
             &claude,
-            "#!/bin/sh\ncase \"$2\" in\n  marketplace) echo '[{\"name\":\"uze-store\",\"path\":\"/uze/generated\"}]' ;;\n  list) echo '[{\"id\":\"git@uze-store\",\"enabled\":false}]' ;;\nesac\n",
-        )
-        .unwrap();
-        fs::set_permissions(&claude, fs::Permissions::from_mode(0o755)).unwrap();
+            b"#!/bin/sh\ncase \"$2\" in\n  marketplace) echo '[{\"name\":\"uze-store\",\"path\":\"/uze/generated\"}]' ;;\n  list) echo '[{\"id\":\"git@uze-store\",\"enabled\":false}]' ;;\nesac\n",
+        );
 
         let inspection = super::inspect_claude_plugin(
             &claude,

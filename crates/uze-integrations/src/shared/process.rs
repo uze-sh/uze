@@ -437,16 +437,13 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn an_inspection_is_answered_once_until_the_program_is_run_otherwise() {
-        use std::os::unix::fs::PermissionsExt as _;
         let scratch = uze_testkit::temp::scratch("vendor-inspection-memo");
         let runs = scratch.join("runs");
         let program = scratch.join("vendor");
-        std::fs::write(
+        uze_testkit::process::install_executable(
             &program,
-            format!("#!/bin/sh\necho x >> '{}'\necho '{{}}'\n", runs.display()),
-        )
-        .unwrap();
-        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+            format!("#!/bin/sh\necho x >> '{}'\necho '{{}}'\n", runs.display()).as_bytes(),
+        );
         let count = || {
             std::fs::read_to_string(&runs)
                 .unwrap_or_default()
