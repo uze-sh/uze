@@ -43,6 +43,56 @@ pub(crate) fn render_message(
     );
 }
 
+/// What a list's room says about what is being typed rather than about
+/// itself being empty: sentences, each in its own tone, folded to the
+/// message's measure and centred as a message is, never a heading. The
+/// measure keeps them off the edges of a room as narrow as a popover's.
+pub(crate) fn render_statement(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    sentences: &[(&str, Color)],
+) {
+    if area.height == 0 {
+        return;
+    }
+    let measure = usize::from(area.width.saturating_sub(4).clamp(1, MESSAGE_MEASURE));
+    let lines: Vec<Line<'static>> = sentences
+        .iter()
+        .flat_map(|(sentence, colour)| {
+            fold_parts(sentence, measure)
+                .into_iter()
+                .map(|row| Line::from(Span::styled(row, Style::default().fg(*colour))))
+        })
+        .collect();
+    let height = u16::try_from(lines.len())
+        .unwrap_or(u16::MAX)
+        .min(area.height);
+    let top = area.y + (area.height - height) / 2;
+    frame.render_widget(
+        Paragraph::new(lines).alignment(ratatui::layout::Alignment::Center),
+        Rect::new(area.x, top, area.width, height),
+    );
+}
+
+/// `sentence` folded to `measure`, a part between ` · ` never broken
+/// across rows while it fits on one: a row ends at a separator before it
+/// ends inside a part, so no word of a part is stranded on a row alone.
+fn fold_parts(sentence: &str, measure: usize) -> Vec<String> {
+    const SEPARATOR: &str = " · ";
+    let mut rows: Vec<String> = Vec::new();
+    for part in sentence.split(SEPARATOR) {
+        let joined = rows
+            .last()
+            .map(|row| format!("{row}{SEPARATOR}{part}"))
+            .filter(|joined| text::columns(joined) <= measure);
+        match joined {
+            Some(joined) => *rows.last_mut().expect("a row to join") = joined,
+            None => rows.extend(text::fold(part, measure)),
+        }
+    }
+    rows
+}
+
 /// The widest a message's lines run: a sentence across a whole wide pane
 /// is read as a strip, not as a sentence.
 pub(crate) const MESSAGE_MEASURE: u16 = 48;

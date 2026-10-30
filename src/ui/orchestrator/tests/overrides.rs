@@ -1625,3 +1625,63 @@ fn only_a_selection_the_operator_saw_is_remembered_at_the_launch() {
         }
     }
 }
+
+/// What a free value's flag is, however long the catalog says it, folds
+/// inside the list's room with air at both edges: never cut, never against
+/// the popup's sides.
+#[test]
+fn a_long_flag_summary_folds_inside_the_popups_margins() {
+    let mut popup = popup("overrides-free-value-long");
+    let flag = popup
+        .model
+        .directory_step
+        .as_ref()
+        .unwrap()
+        .catalog()
+        .flags()
+        .filter(|flag| matches!(flag.value, OverrideValue::Free(_)))
+        .max_by_key(|flag| super::launch_overrides::flag_detail(flag).len())
+        .expect("a flag that takes a free value");
+    let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
+    driven.frame();
+    open_by_key(&mut driven);
+    type_text(&mut driven, &format!("{} ", flag.name));
+    let (_, rows) = popup_rows(&mut driven);
+    let all = rows.join("\n");
+    let inside = |row: &str| -> String {
+        match (row.find('│'), row.rfind('│')) {
+            (Some(start), Some(end)) if start < end => row[start + '│'.len_utf8()..end].to_owned(),
+            _ => String::new(),
+        }
+    };
+    let detail = super::launch_overrides::flag_detail(&flag);
+    let first_word = detail.split_whitespace().next().unwrap();
+    let at = rows
+        .iter()
+        .position(|row| inside(row).trim_start().starts_with(first_word))
+        .unwrap_or_else(|| panic!("the detail is drawn:\n{all}"));
+    let mut said = String::new();
+    for row in rows[at..].iter().map(|row| inside(row)) {
+        if row.trim().is_empty() {
+            break;
+        }
+        let width = row.chars().count();
+        let text = row.trim();
+        let before = row.find(text).map(|at| row[..at].chars().count()).unwrap();
+        let after = width - before - text.chars().count();
+        assert!(
+            before >= 2 && after >= 2,
+            "air at both edges: {row:?}\n{all}"
+        );
+        said.push_str(text);
+        said.push(' ');
+    }
+    let words = |text: &str| -> Vec<String> {
+        text.split_whitespace()
+            .filter(|word| *word != "·")
+            .map(str::to_owned)
+            .collect()
+    };
+    let whole = format!("{detail} {}", super::launch_overrides::FLAG_VALUES_ARE_SEEN);
+    assert_eq!(words(&said), words(&whole), "said whole:\n{all}");
+}

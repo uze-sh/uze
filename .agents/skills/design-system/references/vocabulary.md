@@ -22,6 +22,7 @@ ratatui primitives (`chrome_is_built_from_the_widget_vocabulary`).
 | a text input | `Field::new(text, placeholder).focused()` |
 | an outcome | `Toast::new(kind, title, detail)`, `toast::stack` |
 | what an empty surface says | `message::render_message`, `message_lines` |
+| what a list's room says about what is typed | `message::render_statement` |
 | a grid of cards | `grid::Shape::fitting(...).lay(...)` |
 | tabs | `Tab`, `tab_bar` |
 | segmented | `Segment`, `segmented`: a few views of one place as spans for a row, the one in front in the accent, the rest lit under the pointer |

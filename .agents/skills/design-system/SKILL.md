@@ -581,7 +581,9 @@ operator rather than assume.
   nothing to list: what is said about it (the flag's summary, and under
   it, held back, that other users can read flag values) stands centred in
   the list's room, never floating on a detail row with empty rows around
-  it.
+  it (`message::render_statement`). A description keeps its length and
+  wraps, centred, inside the message's measure with air at both edges,
+  a part between ` · ` never split while it fits; a title stays short.
 - Minimal: one centred short title, with an optional muted line.
 - No hint bar, no stray esc, no empty sidebar slot.
 - The drawer goes away.

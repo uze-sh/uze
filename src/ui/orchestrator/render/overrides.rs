@@ -367,22 +367,24 @@ fn render_list_row(
 /// list, centred as an empty state is: what the flag is, and under it,
 /// held back, that every user on the machine can read a flag's value.
 fn render_value_wanted(frame: &mut ratatui::Frame<'_>, area: Rect, flag: &OverrideFlag) {
-    let lines = vec![
-        Line::from(Span::styled(
-            flag_detail(flag),
-            theme::fg(Token::TextSecondary),
-        )),
-        Line::from(Span::styled(
-            FLAG_VALUES_ARE_SEEN,
-            theme::fg(Token::TextFaint),
-        )),
-    ];
-    let height = (lines.len() as u16).min(area.height);
-    let top = area.y + (area.height - height) / 2;
-    frame.render_widget(
-        Paragraph::new(lines).alignment(ratatui::layout::Alignment::Center),
-        Rect::new(area.x, top, area.width, height),
+    crate::ui::widget::message::render_statement(
+        frame,
+        area,
+        &[
+            (&flag_detail(flag), theme::color(flag_tone(flag))),
+            (FLAG_VALUES_ARE_SEEN, theme::color(Token::TextFaint)),
+        ],
     );
+}
+
+/// The hue a flag's detail is said in: the warning hue for one that gives
+/// something up.
+fn flag_tone(flag: &OverrideFlag) -> Token {
+    if cost(flag.mark).is_some() {
+        Token::StateWarning
+    } else {
+        Token::TextSecondary
+    }
 }
 
 /// The detail line: why the line was refused, the marked row's detail,
@@ -401,12 +403,7 @@ fn detail(step: &DirectoryStep) -> Option<(String, Token)> {
         return None;
     }
     if let Some(flag) = step.flag_typed().or_else(|| step.flag_being_valued()) {
-        let tone = if cost(flag.mark).is_some() {
-            Token::StateWarning
-        } else {
-            Token::TextSecondary
-        };
-        return Some((flag_detail(&flag), tone));
+        return Some((flag_detail(&flag), flag_tone(&flag)));
     }
     step.entries().iter().rev().find_map(|entry| {
         let label = entry.first()?.clone();
