@@ -873,6 +873,9 @@ pub(super) enum WorkspaceHit {
     /// The toast's way to an extension the project offers to enable:
     /// opens the question about it.
     ReviewExtensions,
+    /// The toast's way to plugin updates that wait for the operator:
+    /// opens the plugins screen, where each is updated with its consent.
+    ReviewPluginUpdates,
     /// An answer to that question: allow and enable, or put it away.
     ExtensionOfferAnswer(bool),
     /// A row of its list, by index: marks it.

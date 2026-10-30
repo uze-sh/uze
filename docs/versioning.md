@@ -246,10 +246,19 @@ opens that release's notes in a modal — its own section of the
 is merely available, or that this binary will not install itself, is left
 to `uze upgrade`. The first CLI command after an update mentions it once.
 
-The background check installs a release only once it has been the latest
-for a day (`SETTLE` in `src/self_update.rs`): a release found to be bad and
-pulled within that day never reaches a machine that was only waiting for
-it. `uze upgrade` does not wait.
+The background check installs a release as soon as it finds one. On the
+`stable` channel (`UZE_RELEASE_CHANNEL=stable`) it waits until the release
+has been the latest for a day (`SETTLE` in `src/self_update.rs`): a release
+found to be bad and pulled within that day never reaches a machine that was
+only waiting for it. `uze upgrade` does not wait on either channel.
+
+An open workspace wakes about every 15 minutes and asks for the latest
+release only when the machine's last answer is over an hour old; one
+process asks, under `~/.uze/state/update.lock`, and the others read its
+answer. The same wake fetches the marketplaces whose answer is over an hour
+old, under `~/.uze/state/marketplace-fetch.lock`, and applies the plugin
+updates that need no new consent; an update that asks to run something new
+is only announced, and waits for the operator on the plugins screen.
 
 One consequence is worth knowing before it happens: when a release changes
 the terminal protocol, the first client of the new release replaces the

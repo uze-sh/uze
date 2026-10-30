@@ -721,7 +721,7 @@ pub(crate) fn spawn_startup(home: UzeHome, sender: Sender<WorkerResult>, context
                     return Vec::new();
                 };
                 app.plugins()
-                    .auto_update()
+                    .keep_current()
                     .into_iter()
                     .filter(|outcome| outcome.applied)
                     .map(|outcome| outcome.plugin)

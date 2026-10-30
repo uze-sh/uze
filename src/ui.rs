@@ -64,6 +64,7 @@ mod management;
 mod model;
 mod orchestrator;
 mod overlay;
+mod plugin_updates;
 mod release_notes;
 mod root_picker;
 mod selection;
@@ -112,6 +113,7 @@ pub fn run(home: UzeHome) -> Result<()> {
     // Once per process rather than per attach: attaching again is not a
     // reason to ask GitHub again, and both surfaces read the one answer.
     crate::self_update::watch(home.clone());
+    plugin_updates::watch(home.clone());
     // Before the session starts reading input, which would take the
     // terminal's reply for keystrokes.
     crate::theme::observe_appearance(&home);

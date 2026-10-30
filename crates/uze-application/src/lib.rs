@@ -86,7 +86,7 @@ pub use uze_core::path;
 /// The one writer for anything UZE owns. The binary writes its own update
 /// ledger, and doing that with a second atomic-rename of its own is how
 /// two conventions for one thing start.
-pub use uze_core::persistence::{write_atomic, write_atomic_preserving};
+pub use uze_core::persistence::{FileLock, write_atomic, write_atomic_preserving};
 
 /// What one `setup` did to a harness, as `SetupResult` reports it.
 pub use uze_core::provisioning::{

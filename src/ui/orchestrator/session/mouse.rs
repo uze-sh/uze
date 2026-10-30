@@ -1605,6 +1605,7 @@ impl Attach<'_> {
             WorkspaceHit::ToggleRecent => self.open_recent(),
             WorkspaceHit::ReviewCommands => self.model.review_commands(),
             WorkspaceHit::ReviewExtensions => self.model.review_extensions(),
+            WorkspaceHit::ReviewPluginUpdates => self.open_manage_at(Route::Plugins),
             WorkspaceHit::ReviewProposal => self.model.review_proposal(),
             // Only reachable while the question is open, which the guarded
             // arm in `press` answers first.

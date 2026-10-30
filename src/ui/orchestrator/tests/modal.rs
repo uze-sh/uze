@@ -355,3 +355,29 @@ fn a_toast_over_the_management_modal_is_drawn_and_answers_there() {
     );
     assert!(driven.attach.model.manage.is_some(), "and the modal stayed");
 }
+
+/// The toast about plugin updates that wait for consent offers the way
+/// to them, and a click on its button opens the plugins screen, where
+/// each is updated with its consent.
+#[test]
+fn a_waiting_plugin_updates_review_opens_the_plugins_screen() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-plugin-review"));
+    let mut driven = driven(agent_with_task(WorkStateView::Ready, 1), &home).on_a_roomy_terminal();
+    driven
+        .attach
+        .model
+        .tell_plugin_updates(crate::ui::plugin_updates::Told {
+            updated: Vec::new(),
+            waiting: vec!["flow@mkt".to_owned()],
+        });
+    driven.frame();
+    let review = driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .find_map(|(rect, hit)| (*hit == WorkspaceHit::ToastAction(0)).then_some(*rect))
+        .expect("the toast offers its review");
+    driven.press(review.x, review.y);
+    assert_eq!(manage_route(&driven), crate::ui::model::Route::Plugins);
+}

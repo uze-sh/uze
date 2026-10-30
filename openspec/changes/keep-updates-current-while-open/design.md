@@ -11,8 +11,8 @@ Plugins are kept current by `Plugins::auto_update`, which the workspace
 calls once, when it opens (`spawn_startup`). It decides from the head each
 marketplace mirror last recorded, a JSON read, so it never reaches the
 network. A mirror is fetched only when a catalogue is read and its entry is
-over `MAX_AGE` (1h) old, and the catalogue is then memoized for the life of
-the process. In a client left open, nothing fetches again.
+over `MAX_AGE` (1h) old, and keeping plugins current reads none. In a
+client left open, nothing fetches again.
 
 A second review of the proposed 15-minute interval measured two costs:
 `curl -L` on `releases/latest` downloads the tag page (about 170 KB, about
@@ -67,8 +67,9 @@ pull refs an earlier build fetched stay until the mirror is made again,
 which is harmless.
 
 **The plugin pass is the startup pass, repeated.** `Plugins::keep_current`
-fetches the stale marketplaces (forgetting their memoized catalogue) and
-then runs `auto_update` unchanged. The workspace runs it on its own tick
+fetches the stale marketplaces and then runs `auto_update` unchanged;
+opening the workspace runs it too, so a stale marketplace is fetched there
+as well. The workspace runs it on its own tick
 thread and raises one toast for what was applied and one, staying, for
 what waits for confirmation, each naming the plugins. The management modal
 reads the change on its next opening through the plugins' revision.

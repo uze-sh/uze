@@ -282,7 +282,7 @@ impl MarketplaceCatalogues {
     /// asked again every tick. A marketplace with no entry yet is left to
     /// the first read, and a linked one is read in place.
     pub fn refresh_stale(&self, home: &UzeHome) -> Vec<String> {
-        let Some(_claim) = FetchClaim::take(home) else {
+        let Some(_claim) = claim_fetch(home) else {
             return Vec::new();
         };
         let Ok(marketplaces) = uze_core::state::marketplace_list(home) else {
@@ -666,36 +666,16 @@ fn directory_name(name: &str) -> String {
 }
 
 /// The right to fetch marketplaces in the background, held by one process
-/// at a time. Released when dropped.
-struct FetchClaim(#[allow(dead_code)] Option<fs::File>);
-
-impl FetchClaim {
-    /// `None` while another process holds it. A lock the platform cannot
-    /// take at all is no reason to stop fetching, so that one is a claim
-    /// without a file.
-    fn take(home: &UzeHome) -> Option<Self> {
-        let path = home.marketplace_fetch_lock_path();
-        let file = path
-            .parent()
-            .map(fs::create_dir_all)
-            .and_then(std::result::Result::ok)
-            .and_then(|()| {
-                fs::OpenOptions::new()
-                    .create(true)
-                    .truncate(false)
-                    .write(true)
-                    .open(&path)
-                    .ok()
-            });
-        let Some(file) = file else {
-            return Some(Self(None));
-        };
-        match uze_platform::lock::try_lock(&file, uze_platform::lock::Mode::Exclusive) {
-            Ok(()) => Some(Self(Some(file))),
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => None,
-            Err(_) => Some(Self(None)),
-        }
-    }
+/// at a time; `None` while another holds it. The wait only outlasts a
+/// descriptor a `fork` on another thread still holds (see
+/// `MutationLock`), never another process.
+fn claim_fetch(home: &UzeHome) -> Option<uze_core::persistence::FileLock> {
+    uze_core::persistence::FileLock::acquire(
+        &home.marketplace_fetch_lock_path(),
+        Duration::from_millis(25),
+        Duration::from_millis(1),
+    )
+    .ok()
 }
 
 /// What `name`'s mirror last resolved its declared ref to, and when.

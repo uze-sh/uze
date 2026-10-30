@@ -4,9 +4,10 @@ The workspace client is the surface people leave open for days, and it is
 the one that learns about updates least. A release reaches a machine a day
 or more after it is published: the background pass installs one only once
 it has been the latest for 24 hours, and an open client asks about it once
-an hour from the moment it started. Plugins are worse: their marketplaces
-are fetched once per process and never again, because the catalogue memo
-never expires, and pending updates are applied only when the client opens.
+an hour from the moment it started. Plugins are worse: pending updates are
+applied only when the client opens, and decided from the head each
+marketplace mirror last recorded, which nothing in an open client fetches
+again.
 A workspace open since Monday never hears of Tuesday's plugin release.
 
 Two of the costs per check are also larger than they look. The release
@@ -52,7 +53,7 @@ None.
 - `src/self_update.rs`: channel, locked and stamped checks, the tick,
   redirect-only check.
 - `crates/uze-application`: a background pass over marketplaces and
-  plugins (`Plugins::keep_current`), the catalogue memo expiring, a lock.
+  plugins (`Plugins::keep_current`) under a lock.
 - `crates/uze-core`: the mirror's refspec; two lock paths in `UzeHome`.
 - `src/ui/`: the workspace runs the plugin pass on the tick and raises its
   toasts.

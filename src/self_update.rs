@@ -92,7 +92,7 @@ const CHECK_EVERY: Duration = Duration::from_secs(60 * 60);
 /// from whenever it started left an hour-old answer standing for up to
 /// another hour. Looking costs a file read; only an answer past
 /// [`CHECK_EVERY`] reaches the network.
-const WAKE_EVERY: Duration = Duration::from_secs(15 * 60);
+pub(crate) const WAKE_EVERY: Duration = Duration::from_secs(15 * 60);
 
 const RUNNING: &str = env!("CARGO_PKG_VERSION");
 
@@ -426,7 +426,7 @@ fn pass(
     let stale = |ledger: &Ledger| now.saturating_sub(ledger.checked_at) >= CHECK_EVERY.as_secs();
     let mut ledger = read_json::<Ledger>(&ledger_path(home)).unwrap_or_default();
     if (ask || stale(&ledger))
-        && let Some(_claim) = CheckClaim::take(home)
+        && let Some(_claim) = claim_check(home)
     {
         // Read again under the claim: whoever held it last may have just
         // answered, and asking again would be the duplicate it prevents.
@@ -1193,36 +1193,20 @@ fn ledger_path(home: &UzeHome) -> PathBuf {
 }
 
 /// The right to ask for the latest release, held by one process at a
-/// time so clients that wake together ask once. Released when dropped.
-struct CheckClaim(#[allow(dead_code)] Option<fs::File>);
-
-impl CheckClaim {
-    /// `None` while another process holds it. A lock the platform cannot
-    /// take at all is no reason to stop asking, so that one is a claim
-    /// without a file.
-    fn take(home: &UzeHome) -> Option<Self> {
-        let path = home.binary_check_lock_path();
-        let file = path
-            .parent()
-            .map(fs::create_dir_all)
-            .and_then(Result::ok)
-            .and_then(|()| {
-                fs::OpenOptions::new()
-                    .create(true)
-                    .truncate(false)
-                    .write(true)
-                    .open(&path)
-                    .ok()
-            });
-        let Some(file) = file else {
-            return Some(Self(None));
-        };
-        match uze_platform::lock::try_lock(&file, uze_platform::lock::Mode::Exclusive) {
-            Ok(()) => Some(Self(Some(file))),
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => None,
-            Err(_) => Some(Self(None)),
-        }
-    }
+/// time so clients that wake together ask once; `None` while another
+/// process holds it. Released when dropped.
+///
+/// The wait is only long enough to outlast a descriptor a `fork` on
+/// another thread still holds for a lock this process just let go of
+/// (`MutationLock` explains it): a holder that is another process is not
+/// waited for, and its answer is read instead.
+fn claim_check(home: &UzeHome) -> Option<uze_application::FileLock> {
+    uze_application::FileLock::acquire(
+        &home.binary_check_lock_path(),
+        Duration::from_millis(25),
+        Duration::from_millis(1),
+    )
+    .ok()
 }
 
 /// Read, changed and written back in one step rather than from a copy held
@@ -1631,7 +1615,7 @@ mod tests {
         receipt(&home, &binary, RUNNING);
         let releases = fake(Some("999.0.0"));
 
-        let other = CheckClaim::take(&home).expect("nobody holds it yet");
+        let other = claim_check(&home).expect("nobody holds it yet");
         pass(
             &home,
             Policy::Install,

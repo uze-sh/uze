@@ -14,9 +14,9 @@
 
 - [x] 3.1 `MarketplaceCatalogues` refreshes a stale Git marketplace under the fetch lock, stamping the attempt first, and forgets its memo
 - [x] 3.2 `Plugins::keep_current` fetches the stale marketplaces, then runs `auto_update`; test that a pushed revision is applied without reopening
-- [ ] 3.3 The workspace runs `keep_current` on its tick thread and raises a toast for what was applied and a staying one for what waits for consent
+- [x] 3.3 The workspace runs `keep_current` on its tick thread and raises a toast for what was applied and a staying one for what waits for consent
 
 ## 4. Documentation and checks
 
-- [ ] 4.1 `docs/versioning.md`: the channel and the cadence
-- [ ] 4.2 `openspec validate keep-updates-current-while-open --strict`, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, targeted tests
+- [x] 4.1 `docs/versioning.md`: the channel and the cadence
+- [x] 4.2 `openspec validate keep-updates-current-while-open --strict`, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, targeted tests
