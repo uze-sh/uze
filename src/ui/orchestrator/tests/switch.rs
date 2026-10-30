@@ -629,7 +629,10 @@ fn a_restart_on_a_harness_without_continuity_says_so() {
         if busy {
             let rows = frame_rows(&mut driven.attach.model).join("\n");
             assert!(!rows.contains("is resumed"), "{rows}");
-            assert!(rows.contains("conversation with the new overrides"), "{rows}");
+            assert!(
+                rows.contains("conversation with the new overrides"),
+                "{rows}"
+            );
             driven.attach.interrupt_action(uze_keys::Action::FocusNext);
             driven.attach.interrupt_action(uze_keys::Action::Activate);
         }

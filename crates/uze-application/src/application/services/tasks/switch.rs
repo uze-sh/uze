@@ -580,6 +580,64 @@ mod tests {
         let _ = std::fs::remove_dir_all(project);
     }
 
+    /// The restart panel asks from the agent's own checkout: the set it
+    /// carries and the entries used lately are read for the project that
+    /// checkout belongs to.
+    #[test]
+    fn standing_overrides_are_read_for_the_project_of_the_agents_checkout() {
+        let repository = uze_testkit::git::Repository::new("standing-isolated");
+        let root = repository.root().to_path_buf();
+        let app = application("standing-isolated-home");
+        let placed = app
+            .workspace()
+            .place_new_agent(&root, Some(PlacementKind::Isolated), "left", &[])
+            .unwrap();
+        let id = placed.placement.agent().clone();
+        let words = vec!["--model=opus".to_owned()];
+        app.workspace()
+            .relaunch(&placed.cwd, id.as_str(), "left", "left", Some(&words))
+            .unwrap();
+
+        let standing = app
+            .workspace()
+            .standing_overrides(&placed.cwd, id.as_str(), "left")
+            .unwrap();
+
+        assert_ne!(placed.cwd, canonical(&root), "asked from the slot");
+        assert_eq!(standing.recorded, words);
+        let recent: Vec<&[String]> = standing
+            .recent
+            .iter()
+            .map(|entry| entry.words.as_slice())
+            .collect();
+        assert_eq!(recent, [words.as_slice()]);
+        assert!(
+            standing.recent[0].used_in(&canonical(&root)),
+            "ranked for the project, not the slot"
+        );
+        assert!(
+            app.workspace()
+                .standing_overrides(&placed.cwd, id.as_str(), "right")
+                .unwrap()
+                .recorded
+                .is_empty(),
+            "a harness it never ran with carries none"
+        );
+    }
+
+    #[test]
+    fn standing_overrides_outside_a_project_are_refused() {
+        let app = application("standing-nowhere-home");
+        let nowhere = project("standing-nowhere");
+
+        assert!(
+            app.workspace()
+                .standing_overrides(&nowhere, "agent", "left")
+                .is_err()
+        );
+        let _ = std::fs::remove_dir_all(nowhere);
+    }
+
     #[test]
     fn a_harness_nobody_registered_is_refused() {
         let app = application("switch-unknown-home");
