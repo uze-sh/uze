@@ -75,6 +75,47 @@ fn a_resident_nesting_this_across_calls_is_stopped_at_the_crossing_depth() {
     );
 }
 
+/// The same nesting through closures: each one captures the last, so a
+/// function pointer holds what an array or a map would.
+const CLOSURES: &str = r#"
+    fn start(context) { this.k = 0; this.d = 0; true }
+    fn event(event) {
+        let x = this.k;
+        let k = 0;
+        while k < 8 {
+            let y = x;
+            x = || y;
+            k += 1;
+        }
+        this.k = x;
+        this.d += 8;
+        true
+    }
+    fn render(size) { #{ type: "text", args: [`${this.d}`] } }
+"#;
+
+#[test]
+fn a_resident_nesting_closures_in_this_is_stopped_at_the_crossing_depth() {
+    let resident = resident(CLOSURES);
+    let (call, error) = (0..4_000)
+        .find_map(|call| {
+            resident
+                .event(&json!({"name": "timer"}))
+                .outcome
+                .err()
+                .map(|error| (call, error))
+        })
+        .expect("the session stops");
+    assert_eq!(
+        error,
+        ScriptError::Limit {
+            limit: Limit::Nesting,
+            at: None
+        }
+    );
+    assert!(call <= 17, "stopped once past 128 levels, at call {call}");
+}
+
 /// Nests `a` 400 levels within one call, then compares and prints it: each
 /// recursion Rhai makes, some 12 KiB a level in a debug build, past a
 /// default 2 MiB thread stack.

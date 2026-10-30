@@ -6,7 +6,7 @@
 //! conversion without a floor would turn that into a stack overflow on the
 //! pool thread.
 
-use rhai::{Array, Dynamic, Map};
+use rhai::{Array, Dynamic, FnPtr, Map};
 use serde_json::{Map as JsonMap, Number, Value};
 
 /// How deep a value may nest on its way in or out; `serde_json`'s own
@@ -113,15 +113,24 @@ fn to_json_at(value: &Dynamic, depth: usize) -> Result<Value, Crossing> {
     Err(Crossing::NotJson(value.type_name().to_owned()))
 }
 
-/// Whether `value` nests arrays and maps more than `levels` deep: walked
-/// no further than `levels + 1`, so a value nested thousands of levels is
-/// judged in as many frames as the bound, not as the value.
+/// Whether `value` nests arrays, maps and closures more than `levels`
+/// deep: walked no further than `levels + 1`, so a value nested thousands
+/// of levels is judged in as many frames as the bound, not as the value. A
+/// closure holds what it captured as a container holds its items, and
+/// Rhai's size limits do not look inside it.
 pub(crate) fn deeper_than(value: &Dynamic, levels: usize) -> bool {
     if let Some(array) = value.read_lock::<Array>() {
         return levels == 0 || array.iter().any(|item| deeper_than(item, levels - 1));
     }
     if let Some(map) = value.read_lock::<Map>() {
         return levels == 0 || map.values().any(|item| deeper_than(item, levels - 1));
+    }
+    if let Some(function) = value.read_lock::<FnPtr>() {
+        return function.is_curried()
+            && (levels == 0
+                || function
+                    .iter_curry()
+                    .any(|item| deeper_than(item, levels - 1)));
     }
     false
 }

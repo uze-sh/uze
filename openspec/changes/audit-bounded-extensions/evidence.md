@@ -70,6 +70,10 @@ checked out from `e295bfe3`, the new tests kept) and failed as noted.
   `a_deep_value_built_in_one_resident_call_is_compared_on_the_session_stack`.
   On the audited sources all three abort: `thread 'uze-resident' has
   overflowed its stack` / `fatal runtime error: stack overflow, aborting`.
+  `a_resident_nesting_closures_in_this_is_stopped_at_the_crossing_depth`
+  pins the same bound for nesting through closures, whose captures the
+  first version of the bound did not walk (found by the branch's review;
+  red before the depth walk entered a closure's captures).
 - **Exploit re-run**: the audit's `deep_nesting_across_resident_calls`
   (`ws/crates/uze-script/tests/audit.rs`), built from this branch inside the
   sandbox:
