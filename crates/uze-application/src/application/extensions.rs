@@ -30,6 +30,7 @@ mod watch;
 
 pub use checked::{CheckedExtension, Overlay};
 pub use checkout::{ExtensionCheckout, NotACheckout};
+pub(crate) use compiled::prune_stale_cache;
 pub use compiled::{ExtensionLoad, FIXTURE_LIMIT, SourceData, extension_stamp};
 pub use consent::{
     Asker, Consented, ExtensionConsent, ExtensionStanding, ExtensionState, ProgramPin, Switched,

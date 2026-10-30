@@ -11,7 +11,7 @@
 //! stamp of the files, so a linked extension is recompiled only when one of
 //! them changed.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read as _;
 use std::path::{Component, Path, PathBuf};
 
@@ -138,6 +138,41 @@ fn cache_key(identity: &Identity, loaded: &Loaded) -> String {
         push_field(&mut stream, part.as_bytes());
     }
     format!("{:016x}", fnv1a64(&stream))
+}
+
+/// Removes compiled views whose source bytes no installed extension still
+/// names. The cache shares its directory with generated extension costs, so
+/// only a filename in the digest form this module writes is eligible.
+pub(crate) fn prune_stale_cache(
+    home: &uze_core::UzeHome,
+    installed: &[InstalledExtension],
+) -> usize {
+    let current: BTreeSet<_> = installed
+        .iter()
+        .filter_map(|extension| {
+            Loaded::read(&extension.dir)
+                .ok()
+                .map(|loaded| cache_key(&extension.identity, &loaded))
+        })
+        .collect();
+    let Ok(entries) = std::fs::read_dir(home.compiled_extensions_dir()) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let key = compiled_cache_key(&path)?;
+            (!current.contains(key) && entry.file_type().ok()?.is_file()).then_some(path)
+        })
+        .filter(|path| std::fs::remove_file(path).is_ok())
+        .count()
+}
+
+fn compiled_cache_key(path: &Path) -> Option<&str> {
+    let name = path.file_name()?.to_str()?;
+    let key = name.strip_suffix(".json")?;
+    (key.len() == 16 && key.bytes().all(|byte| byte.is_ascii_hexdigit())).then_some(key)
 }
 
 /// A stamp of when each of an extension's files last changed: equal stamps
@@ -353,6 +388,28 @@ mod tests {
         .unwrap();
         compile_cached(&home, &identity(), &loaded(&installed), compile).unwrap();
         assert_eq!(compiles.get(), 2, "a saved file compiles again");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn stale_compiles_are_collected_without_touching_other_runtime_files() {
+        let root = uze_testkit::temp::scratch("extension-compile-prune");
+        let home = uze_core::UzeHome::at(root.join("home"));
+        let installed = extension_in(&root);
+        let current = cache_key(&installed.identity, &loaded(&installed));
+        let cache = home.compiled_extensions_dir();
+        fs::create_dir_all(&cache).unwrap();
+        fs::write(cache.join(format!("{current}.json")), "current").unwrap();
+        fs::write(cache.join("0123456789abcdef.json"), "stale").unwrap();
+        fs::write(cache.join("costs.json"), "generated costs").unwrap();
+
+        assert_eq!(
+            prune_stale_cache(&home, std::slice::from_ref(&installed)),
+            1
+        );
+        assert!(cache.join(format!("{current}.json")).is_file());
+        assert!(cache.join("costs.json").is_file());
+        assert!(!cache.join("0123456789abcdef.json").exists());
         fs::remove_dir_all(root).unwrap();
     }
 
