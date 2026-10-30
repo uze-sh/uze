@@ -255,6 +255,16 @@ pub fn commit_everything_in(root: &Path) -> String {
     isolated(&["rev-parse", "HEAD"])
 }
 
+/// Marks `root` as the top of a Git repository the cheapest way Git itself
+/// accepts: a `.git` directory holding a `HEAD`. For a test about where a
+/// project's root is, which runs no Git; a test that does uses
+/// [`Repository`].
+pub fn mark_repository(root: &Path) {
+    let git = root.join(".git");
+    std::fs::create_dir_all(&git).expect("create .git");
+    std::fs::write(git.join("HEAD"), "ref: refs/heads/main\n").expect("write HEAD");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -327,14 +337,4 @@ mod tests {
             "contents\n"
         );
     }
-}
-
-/// Marks `root` as the top of a Git repository the cheapest way Git itself
-/// accepts: a `.git` directory holding a `HEAD`. For a test about where a
-/// project's root is, which runs no Git; a test that does uses
-/// [`Repository`].
-pub fn mark_repository(root: &Path) {
-    let git = root.join(".git");
-    std::fs::create_dir_all(&git).expect("create .git");
-    std::fs::write(git.join("HEAD"), "ref: refs/heads/main\n").expect("write HEAD");
 }

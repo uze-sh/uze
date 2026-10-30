@@ -85,28 +85,6 @@ pub fn official_plugin() -> PathBuf {
     workspace_root().join("plugins/uze")
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fixtures_root_honors_the_runtime_override() {
-        let override_dir = std::env::temp_dir().join(format!(
-            "uze-testkit-fixtures-override-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&override_dir).unwrap();
-        let mut scope = crate::env::scope();
-        scope.set("UZE_TESTKIT_FIXTURES_ROOT", &override_dir);
-        assert_eq!(root(), override_dir);
-        assert_eq!(canonical("x"), override_dir.join("canonical/x"));
-        drop(scope);
-        // Without the override the workspace walk is authoritative again.
-        assert!(root().ends_with("tests/_fixtures"));
-        let _ = std::fs::remove_dir_all(&override_dir);
-    }
-}
-
 /// One case of the shared `.agents/rules.json` table
 /// (`tests/_fixtures/rules/manifest/<name>/`): a checkout's rule files and
 /// manifest, and the rule identities every reader of the manifest must
@@ -162,4 +140,26 @@ pub fn rules_manifest_cases() -> Vec<RulesManifestCase> {
         .collect();
     cases.sort_by(|a, b| a.name.cmp(&b.name));
     cases
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fixtures_root_honors_the_runtime_override() {
+        let override_dir = std::env::temp_dir().join(format!(
+            "uze-testkit-fixtures-override-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&override_dir).unwrap();
+        let mut scope = crate::env::scope();
+        scope.set("UZE_TESTKIT_FIXTURES_ROOT", &override_dir);
+        assert_eq!(root(), override_dir);
+        assert_eq!(canonical("x"), override_dir.join("canonical/x"));
+        drop(scope);
+        // Without the override the workspace walk is authoritative again.
+        assert!(root().ends_with("tests/_fixtures"));
+        let _ = std::fs::remove_dir_all(&override_dir);
+    }
 }
