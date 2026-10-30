@@ -200,16 +200,26 @@ impl<'a> Hints<'a> {
 }
 
 /// A key as a hint spells it: an arrow key as the arrow the theme draws,
-/// which is what a run of them reads as; anything else as its chord.
+/// which is what a run of them reads as, its modifiers kept (`alt+→`);
+/// anything else as its chord.
 pub(crate) fn key_text(chord: Chord) -> String {
-    let arrow = match chord.to_string().as_str() {
+    let text = chord.to_string();
+    let (modifiers, key) = match text.rsplit_once('+') {
+        Some((modifiers, key)) if !key.is_empty() => (Some(modifiers), key),
+        _ => (None, text.as_str()),
+    };
+    let arrow = match key {
         "up" => Some(Symbol::ArrowUp),
         "down" => Some(Symbol::ArrowDown),
         "left" => Some(Symbol::ArrowLeft),
         "right" => Some(Symbol::ArrowRight),
         _ => None,
     };
-    arrow.map_or_else(|| chord.to_string(), theme::glyph)
+    match (arrow, modifiers) {
+        (Some(arrow), Some(modifiers)) => format!("{modifiers}+{}", theme::glyph(arrow)),
+        (Some(arrow), None) => theme::glyph(arrow),
+        (None, _) => text,
+    }
 }
 
 /// A run's two ends: arrows side by side, which is how a pair of them is
@@ -232,6 +242,18 @@ pub(crate) fn key_style() -> Style {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An arrow keeps its modifiers and is drawn as the arrow.
+    #[test]
+    fn a_modified_arrow_is_spelled_with_its_glyph() {
+        let chord = Chord::parse("alt+right").unwrap();
+        assert_eq!(
+            key_text(chord),
+            format!("alt+{}", theme::glyph(Symbol::ArrowRight))
+        );
+        let chord = Chord::parse("ctrl+f").unwrap();
+        assert_eq!(key_text(chord), "ctrl+f");
+    }
 
     /// A hint names a key and what it does, and it asks the keymap for both.
     /// The strings this replaced were typed by hand — which is how the help

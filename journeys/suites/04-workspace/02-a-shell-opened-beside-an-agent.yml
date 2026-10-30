@@ -38,7 +38,7 @@ scenes:
       - click: "new"
         say: open the new-agent picker
         in: sidebar
-        expect: 'harness .*Claude Code'
+        expect: 'overrides .*Claude Code'
       - type: "{project}"
         say: pick Claude Code
         # UZE's own drawing, not the stand-in's banner: a gate on a
@@ -107,10 +107,10 @@ scenes:
       - click: "new"
         say: open the picker again
         in: sidebar
-        expect: 'harness .*Claude Code'
+        expect: 'overrides .*Claude Code'
       - key: "Right"
         say: move the harness to Codex
-        expect: 'harness .*Codex'
+        expect: 'overrides .*Codex'
       - type: "{project}"
         say: pick Codex
         # An item on the tree, not the label: the closed agent freed its

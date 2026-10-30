@@ -205,6 +205,7 @@ the real binaries) — the honest place for vendor-semantics verdicts.
 | A18 | an agent cannot approve its project's commands | `command_approval::an_agent_cannot_approve_its_projects_commands` |
 | A19 | a relaunched agent resumes its conversation | `session_continuity::a_relaunched_agent_resumes_the_conversation_its_task_was_left_in` |
 | A20 | one canonical package reaches every harness | `canonical_package::one_canonical_package_reaches_every_harness_through_its_most_native_safe_representation` |
+| A21 | an agent launched with overrides still resumes, with them after the resume | `session_continuity::a_relaunched_agent_with_overrides_still_resumes_its_conversation` |
 
 ### Usage profiles
 

@@ -46,19 +46,6 @@ pub(crate) enum Hit {
     TypeInShell(String),
     ExtensionRow(usize),
     HarnessRow(usize),
-    /// A harness's row in the profile preview: opens or closes it.
-    PreviewHarness(usize),
-    ProfileRow(usize),
-    PreferenceRow(usize),
-    /// A preference row's `‹`/`›`: select that preference and step its value.
-    StepPreference {
-        index: usize,
-        forward: bool,
-    },
-    /// Clicking a harness checkbox toggles it immediately — the click's
-    /// obvious intent — rather than only selecting it the way `HarnessRow`
-    /// does.
-    ProfileHarnessRow(usize),
     /// A route-local divider between two content panels.
     ResizePanel(ResizablePanel),
     /// One row of the open index of everything, by position in it.
@@ -268,36 +255,6 @@ impl TuiModel {
             Hit::HarnessRow(index) => {
                 self.remembered.harness_screen.selected = index;
                 self.focus = Focus::Content;
-                Intent::None
-            }
-            Hit::PreviewHarness(index) => {
-                self.focus = Focus::Content;
-                self.toggle_profile_preview_harness(index);
-                Intent::None
-            }
-            Hit::ProfileRow(index) => {
-                self.remembered.profiles_selected = index;
-                self.profile_panel = super::model::ProfilePanel::List;
-                self.focus = Focus::Content;
-                Intent::None
-            }
-            Hit::PreferenceRow(index) => {
-                self.profile_editor_selected = index;
-                self.profile_panel = super::model::ProfilePanel::Editor;
-                self.focus = Focus::Content;
-                Intent::None
-            }
-            Hit::StepPreference { index, forward } => {
-                self.profile_editor_selected = index;
-                self.profile_panel = super::model::ProfilePanel::Editor;
-                self.focus = Focus::Content;
-                self.cycle_selected_preference(forward)
-            }
-            Hit::ProfileHarnessRow(index) => {
-                self.profile_harness_selected = index;
-                self.profile_panel = super::model::ProfilePanel::Harnesses;
-                self.focus = Focus::Content;
-                self.toggle_profile_harness_at(index);
                 Intent::None
             }
             Hit::HealthStatus => {

@@ -10,14 +10,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use uze_application::Preferences;
-
 use uze_application::{
     Result, UzeApplication, UzeError, UzeHome,
     application::{
         ContextPlan, ContextReconciliationReport, InstallReport, MarketplaceRemovalReport,
-        ProfileApplyResult, ProfilePreview, ProjectContextStatus, RemovePluginReport,
-        UpdatePluginReport,
+        ProjectContextStatus, RemovePluginReport, UpdatePluginReport,
     },
 };
 
@@ -113,26 +110,6 @@ pub(crate) enum Intent {
     /// Reproduce the detected consumer workspace's `agents.lock` through
     /// the exact same Application use case `uze install` invokes.
     InstallProjectEnvironment(PathBuf),
-    CreateProfile(String),
-    DeleteProfile(String),
-    /// Read what applying these preferences would write into each harness.
-    PreviewProfile(super::model::PreviewQuestion),
-    /// Fired on every Editor-panel value cycle — deliberately silent/no
-    /// refresh (see `dispatch`'s arm), since the model already applied the
-    /// new value optimistically and a status toast per keystroke would be
-    /// noisy.
-    UpdatePreferences {
-        id: String,
-        preferences: Preferences,
-    },
-    /// Carries the preferences on screen, written before applying: the
-    /// editor persists each change on a thread of its own, and an apply
-    /// that read the profile back from disk could overtake that write.
-    ApplyProfile {
-        id: String,
-        preferences: Preferences,
-        harness_ids: Vec<String>,
-    },
 }
 
 impl Intent {
@@ -166,11 +143,6 @@ impl Intent {
             Self::ContextAnalyze(_) => "context_analyze",
             Self::ContextApply(_) => "context_apply",
             Self::InstallProjectEnvironment(_) => "install_project_environment",
-            Self::CreateProfile(_) => "create_profile",
-            Self::DeleteProfile(_) => "delete_profile",
-            Self::PreviewProfile(_) => "preview_profile",
-            Self::UpdatePreferences { .. } => "update_preferences",
-            Self::ApplyProfile { .. } => "apply_profile",
         }
     }
 }
@@ -210,14 +182,6 @@ pub(crate) enum WorkerResult {
     ContextApplied(
         MutationTicket,
         std::result::Result<(String, ContextReconciliationReport), String>,
-    ),
-    ProfileApplied(
-        MutationTicket,
-        std::result::Result<(String, Vec<ProfileApplyResult>, RefreshData), String>,
-    ),
-    ProfilePreviewed(
-        super::model::PreviewQuestion,
-        std::result::Result<ProfilePreview, String>,
     ),
     ReleaseNotesRead(String, Option<crate::self_update::ReleaseNotes>),
     /// A link handed to a browser, and the opener that took it.
@@ -377,33 +341,6 @@ pub(crate) fn dispatch(
             install_project_environment(root, home, sender, model)
         }
         Intent::ContextApply(root) => apply_context(root, home, sender, model),
-        Intent::CreateProfile(id) => {
-            spawn_mutation(
-                Mutation::asked(model, format!("Creating profile \"{id}\"…"), home, sender),
-                move |app| {
-                    app.profiles()
-                        .create(&id, None, Preferences::default())
-                        .map(|()| format!("Created profile \"{id}\""))
-                },
-            );
-        }
-        Intent::DeleteProfile(id) => {
-            spawn_mutation(
-                Mutation::asked(model, format!("Deleting profile \"{id}\"…"), home, sender),
-                move |app| {
-                    app.profiles()
-                        .delete(&id)
-                        .map(|()| format!("Deleted profile \"{id}\""))
-                },
-            );
-        }
-        Intent::PreviewProfile(question) => preview_profile(question, home, sender, model),
-        Intent::UpdatePreferences { id, preferences } => update_preferences(id, preferences, home),
-        Intent::ApplyProfile {
-            id,
-            preferences,
-            harness_ids,
-        } => apply_profile(id, preferences, harness_ids, home, sender, model),
     }
 }
 
@@ -691,55 +628,6 @@ fn apply_context(
     });
 }
 
-fn preview_profile(
-    question: super::model::PreviewQuestion,
-    home: &UzeHome,
-    sender: &Sender<WorkerResult>,
-    model: &mut TuiModel,
-) {
-    model.profile_preview_asked = Some(question.clone());
-    let (home, sender) = (home.clone(), sender.clone());
-    let parent = tracing::Span::current();
-    thread::spawn(move || {
-        let _span = tracing::info_span!(parent: &parent, "tui.worker").entered();
-        let result = answered_or(
-            || {
-                tui_application(home)
-                    .map(|app| {
-                        app.profiles()
-                            .preview(&question.preferences, &question.harness_ids)
-                    })
-                    .map_err(|error| error.to_string())
-            },
-            Err("Previewing the profile failed".to_owned()),
-        );
-        let _ = sender.send(WorkerResult::ProfilePreviewed(question, result));
-    });
-}
-
-fn update_preferences(id: String, preferences: Preferences, home: &UzeHome) {
-    let home = home.clone();
-    let parent = tracing::Span::current();
-    // In the lane, not on a thread of its own: the write takes the mutation
-    // lock, which refuses rather than waits, so a toggle made during an
-    // install would otherwise be dropped, and two quick toggles could land
-    // out of order.
-    in_mutation_lane(move || {
-        let _span = tracing::info_span!(parent: &parent, "tui.worker").entered();
-        let written = answered_or(
-            || {
-                tui_application(home)
-                    .and_then(|app| app.profiles().update_preferences(&id, preferences))
-                    .map_err(|error| error.to_string())
-            },
-            Err("the write panicked".to_owned()),
-        );
-        if let Err(error) = written {
-            tracing::warn!(profile = %id, %error, "could not save the profile's preferences");
-        }
-    });
-}
-
 fn install(
     name: String,
     marketplace: String,
@@ -778,41 +666,6 @@ fn install(
             marketplace: retry_marketplace,
         },
     );
-}
-
-fn apply_profile(
-    id: String,
-    preferences: Preferences,
-    harness_ids: Vec<String>,
-    home: &UzeHome,
-    sender: &Sender<WorkerResult>,
-    model: &mut TuiModel,
-) {
-    let ticket = model.mutation_asked(format!("Applying \"{id}\"…"));
-    let (home, sender, context_root) = (home.clone(), sender.clone(), model.context_root.clone());
-    let parent = tracing::Span::current();
-    in_mutation_lane(move || {
-        let _span = tracing::info_span!(parent: &parent, "tui.worker").entered();
-        let failed = format!("Applying \"{id}\" failed");
-        let result = answered_or(
-            || {
-                tui_application(home.clone())
-                    .and_then(|app| {
-                        app.profiles().update_preferences(&id, preferences)?;
-                        app.profiles().set_active(&id)?;
-                        let results = app.profiles().apply(&id, &harness_ids)?;
-                        let data = load_refresh_data(home, &context_root)?;
-                        Ok({
-                            let message = apply_message(&id, &results);
-                            (message, results, data)
-                        })
-                    })
-                    .map_err(|error| error.to_string())
-            },
-            Err(failed),
-        );
-        let _ = sender.send(WorkerResult::ProfileApplied(ticket, result));
-    });
 }
 
 pub(crate) fn spawn_refresh(home: UzeHome, sender: Sender<WorkerResult>, context_root: PathBuf) {
@@ -922,7 +775,6 @@ fn load_refresh_data(home: UzeHome, context_root: &std::path::Path) -> Result<Re
         doctor: Some(snapshot.doctor),
         marketplace_plugins: snapshot.marketplace_plugins,
         marketplaces: snapshot.marketplaces,
-        profiles: snapshot.profiles,
         declared_extensions: app.extensions().summaries(),
         extension_standings: app.extensions().reports(extension_project.as_deref()),
         extension_project,
@@ -1224,16 +1076,6 @@ pub(crate) fn drain_worker_results(
             WorkerResult::ContextApplied(ticket, Ok((message, report))) => {
                 model.mutation_answered(ticket, context_applied(message, &report));
             }
-            WorkerResult::ProfileApplied(ticket, Ok((message, results, data))) => {
-                crate::ui::extension_switch::plugins_changed();
-                model.refreshed(data);
-                model.profile_apply_results = results;
-                model.mutation_answered(ticket, Status::Success(message));
-                model.status_expires_at = Some(Instant::now() + Duration::from_secs(5));
-            }
-            WorkerResult::ProfilePreviewed(question, result) => {
-                model.profile_previewed(question, result);
-            }
             WorkerResult::Refreshed(Err(error)) => {
                 model.maintenance_in_flight = false;
                 model.status = Status::Error(error);
@@ -1253,8 +1095,7 @@ pub(crate) fn drain_worker_results(
                 }
             }
             WorkerResult::Mutated(ticket, Err(error))
-            | WorkerResult::ContextApplied(ticket, Err(error))
-            | WorkerResult::ProfileApplied(ticket, Err(error)) => {
+            | WorkerResult::ContextApplied(ticket, Err(error)) => {
                 model.mutation_answered(ticket, Status::Error(error));
             }
             WorkerResult::ContextAnalyzed(Err(error)) => model.status = Status::Error(error),
@@ -1263,9 +1104,6 @@ pub(crate) fn drain_worker_results(
     arrived
 }
 
-/// `Applied profile "default" to 3 harnesses · 1 approximation` — the one
-/// concise status line the spec asks for; per-harness detail lives in the
-/// Harnesses panel's badges (`model.profile_apply_results`), not here.
 /// How a reconciliation went: a region an earlier release wrote that it
 /// left in place is named, since the pass still finishing would otherwise
 /// read as everything having been taken out.
@@ -1296,38 +1134,6 @@ fn context_applied(message: String, report: &ContextReconciliationReport) -> Sta
     } else {
         Status::Error(format!("{message} except {}", problems.join(" · ")))
     }
-}
-
-fn apply_message(id: &str, results: &[ProfileApplyResult]) -> String {
-    use uze_application::PreferenceApplyOutcome;
-    let approximated = results
-        .iter()
-        .filter(|result| {
-            matches!(
-                result.outcome,
-                PreferenceApplyOutcome::AppliedWithApproximation { .. }
-            )
-        })
-        .count();
-    let failed = results
-        .iter()
-        .filter(|result| matches!(result.outcome, PreferenceApplyOutcome::Failed { .. }))
-        .count();
-    let mut message = format!(
-        "Applied profile \"{id}\" to {} harness{}",
-        results.len(),
-        if results.len() == 1 { "" } else { "es" }
-    );
-    if approximated > 0 {
-        message.push_str(&format!(
-            " · {approximated} approximation{}",
-            if approximated == 1 { "" } else { "s" }
-        ));
-    }
-    if failed > 0 {
-        message.push_str(&format!(" · {failed} failed",));
-    }
-    message
 }
 
 fn remove_message(report: RemovePluginReport) -> String {
@@ -1820,15 +1626,12 @@ mod tests {
     fn an_answer_is_paired_with_its_own_question() {
         let mut model = TuiModel::default();
         let _unanswered = model.mutation_asked("Removing flow…".to_owned());
-        let profile = model.mutation_asked("Creating profile \"work\"…".to_owned());
+        let install = model.mutation_asked("Installing gsd…".to_owned());
 
-        model.mutation_answered(
-            profile,
-            Status::Success("Created profile \"work\"".to_owned()),
-        );
+        model.mutation_answered(install, Status::Success("Installed gsd".to_owned()));
         assert_eq!(
             model.status,
-            Status::Working("Created profile \"work\" · Removing flow…".to_owned()),
+            Status::Working("Installed gsd · Removing flow…".to_owned()),
             "the line still names the mutation that has not answered"
         );
     }
@@ -2096,36 +1899,6 @@ mod tests {
             } if plugin == "flow@market"
         ));
         assert_eq!(model.status, Status::Idle);
-    }
-
-    #[test]
-    fn the_apply_message_counts_harnesses_approximations_and_failures() {
-        use uze_application::PreferenceApplyOutcome;
-        let result = |outcome| ProfileApplyResult {
-            integration: "fixture".to_owned(),
-            outcome,
-        };
-        let results = vec![
-            result(PreferenceApplyOutcome::Applied {
-                changed_keys: Vec::new(),
-            }),
-            result(PreferenceApplyOutcome::AppliedWithApproximation {
-                changed_keys: Vec::new(),
-                notes: Vec::new(),
-            }),
-            result(PreferenceApplyOutcome::Failed {
-                reason: "read-only".to_owned(),
-            }),
-        ];
-
-        assert_eq!(
-            apply_message("default", &results),
-            "Applied profile \"default\" to 3 harnesses · 1 approximation · 1 failed"
-        );
-        assert_eq!(
-            apply_message("default", &results[..1]),
-            "Applied profile \"default\" to 1 harness"
-        );
     }
 
     #[test]

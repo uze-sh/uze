@@ -21,7 +21,6 @@ mod overview;
 #[cfg(test)]
 mod plugins;
 #[cfg(test)]
-mod profiles;
 #[cfg(test)]
 mod search;
 #[cfg(test)]

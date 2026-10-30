@@ -231,17 +231,7 @@ actions! {
     OpenGlossary => "open-glossary", false,
         "What these words mean", "Explain the labels this screen uses";
 
-    // --- Management, things done to a profile ---------------------------
-    NewProfile => "new-profile", false,
-        "New profile", "Create a profile of preferences";
-    DeleteProfile => "delete-profile", true,
-        "Delete", "Delete the selected profile";
-    ApplyProfile => "apply-profile", false,
-        "Apply", "Make the selected profile active and write it into the checked harnesses";
-    PreviewProfile => "preview-profile", false,
-        "Preview", "Show what the selected profile writes into each harness";
-    ToggleProfileHarness => "toggle-profile-harness", false,
-        "Toggle harness", "Include or exclude the highlighted harness";
+    // --- Management, choosing values -------------------------------------
     ToggleChoice => "toggle-choice", false,
         "Switch", "Include or leave out the marked row";
     ToggleAllChoices => "toggle-all-choices", false,
@@ -258,6 +248,8 @@ actions! {
         "Close tab", "Close the selected tab";
     NewAgent => "new-agent", false,
         "New agent", "Start an agent in this space";
+    OpenOverrides => "open-overrides", false,
+        "Overrides", "Add flags and variables to the new agent's launch";
     IsolateAgent => "isolate-agent", false,
         "To worktree",
         "Move this agent into a worktree of its own, taking the uncommitted \
@@ -474,7 +466,6 @@ mod tests {
                     "clear-prompt-history",
                     "close-tab",
                     "delete-file",
-                    "delete-profile",
                     "discard-task",
                     "remove-marketplace",
                     "remove-plugin",

@@ -20,7 +20,6 @@ fn every_route_renders_without_panicking() {
     for route in ROUTES {
         let model = TuiModel {
             route,
-            profile_harness_selection: base.profile_harness_selection.clone(),
             focus: Focus::Content,
             remembered: Remembered {
                 plugins: base.remembered.plugins.clone(),
@@ -28,7 +27,6 @@ fn every_route_renders_without_panicking() {
                 marketplace_plugins: base.remembered.marketplace_plugins.clone(),
                 doctor: base.remembered.doctor.clone(),
                 harness_screen: base.remembered.harness_screen.clone(),
-                profiles: base.remembered.profiles.clone(),
                 ..TuiModel::default().remembered
             },
             ..TuiModel::default()
@@ -77,11 +75,6 @@ fn every_overlay_renders_without_panicking() {
             focus: None,
         },
         Overlay::AddMarketplace("/home/user/marketplace".to_owned()),
-        Overlay::NewProfile("dev-autonomous".to_owned()),
-        Overlay::Confirm {
-            kind: Confirmation::DeleteProfile("default".to_owned()),
-            focus: Some(1),
-        },
         Overlay::Confirm {
             kind: Confirmation::Trust {
                 plugin: "one".to_owned(),
@@ -134,12 +127,7 @@ fn empty_marketplace_and_no_harness_states_do_not_panic_rendering() {
 /// what can be done now.
 #[test]
 fn every_drawer_draws_what_its_row_can_do_as_buttons() {
-    for route in [
-        Route::Plugins,
-        Route::Harnesses,
-        Route::Profiles,
-        Route::Keys,
-    ] {
+    for route in [Route::Plugins, Route::Harnesses, Route::Keys] {
         let mut model = model_with_data();
         model.set_route(route);
         model.focus = Focus::Content;

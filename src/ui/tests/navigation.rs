@@ -240,7 +240,7 @@ fn a_screen_behind_a_feature_is_absent_or_whole() {
 #[test]
 fn the_unsettled_routes_are_the_only_badged_ones_in_either_layout() {
     let badge = crate::ui::widget::text::small_caps(
-        Route::Profiles
+        Route::Overview
             .badge()
             .expect("a screen behind a feature says so"),
     );
@@ -249,7 +249,7 @@ fn the_unsettled_routes_are_the_only_badged_ones_in_either_layout() {
         .filter(|route| route.feature().is_some())
         .collect();
     for width in [190u16, 150] {
-        for route in [Route::Profiles, Route::Plugins] {
+        for route in [Route::Overview, Route::Plugins] {
             let model = TuiModel {
                 route,
                 focus: Focus::Content,

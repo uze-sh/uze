@@ -28,7 +28,8 @@ use uze_core::{integration::ObservationContext, session::SessionId};
 
 use crate::shared::process;
 
-const RESUME_FLAG: &str = "--session";
+pub(super) const RESUME_FLAG: &str = "--session";
+pub(super) const FIRST_TURN_FLAG: &str = "--prompt";
 const LISTING_ARGS: [&str; 3] = ["api", "GET", "/api/session"];
 /// What the API answers, with exit 1, for an id it holds no session under
 /// (2.0.29).
@@ -47,7 +48,7 @@ pub(super) fn new_id() -> SessionId {
 /// The operator's first turn. Behind `--prompt`, which the TUI takes beside
 /// `--session <id>`.
 pub(super) fn first_turn_args(turn: &str) -> Vec<OsString> {
-    vec![OsString::from("--prompt"), OsString::from(turn)]
+    vec![OsString::from(FIRST_TURN_FLAG), OsString::from(turn)]
 }
 
 pub(super) fn resume_args(session: &SessionId) -> Vec<OsString> {

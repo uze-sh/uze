@@ -24,7 +24,7 @@ use std::{collections::BTreeSet, env, sync::OnceLock};
 
 /// The environment variable that overrides this build's defaults: a
 /// comma-separated list of ids, each optionally prefixed with `-` to turn
-/// one off. `UZE_FEATURES=profiles` in a downloaded build, `-profiles` in
+/// one off. `UZE_FEATURES=overview` in a downloaded build, `-overview` in
 /// a development one. An id this build does not know is ignored, so a
 /// shell profile written for a newer uze is not an error.
 pub const FEATURES_ENV: &str = "UZE_FEATURES";
@@ -78,10 +78,6 @@ macro_rules! features {
 }
 
 features! {
-    /// The management modal's Profiles screen: the preference axes
-    /// (autonomy, sandbox, model) UZE applies to a harness. The domain
-    /// behind it is real; what is undecided is the surface.
-    Profiles => "profiles", "The Profiles screen: preference axes applied to a harness";
     /// The management modal's Overview screen. With the prompt history
     /// moved to the agent context drawer it held two counts and the
     /// health line, which the modal's footer now carries; what it should
@@ -148,19 +144,19 @@ mod tests {
 
     #[test]
     fn the_environment_answers_either_way() {
-        assert!(resolve(Feature::Profiles, Some("profiles")));
-        assert!(!resolve(Feature::Profiles, Some("-profiles")));
+        assert!(resolve(Feature::Overview, Some("overview")));
+        assert!(!resolve(Feature::Overview, Some("-overview")));
         assert!(
-            resolve(Feature::Profiles, Some("worktrees, profiles")),
+            resolve(Feature::Overview, Some("worktrees, overview")),
             "one entry among several, spaced the way a person writes it"
         );
         assert_eq!(
-            resolve(Feature::Profiles, Some("holodeck")),
+            resolve(Feature::Overview, Some("holodeck")),
             cfg!(debug_assertions),
             "an id this build does not know leaves the default alone"
         );
         assert!(
-            !resolve(Feature::Profiles, Some("profiles,-profiles")),
+            !resolve(Feature::Overview, Some("overview,-overview")),
             "the last word on a feature is the one that counts"
         );
     }

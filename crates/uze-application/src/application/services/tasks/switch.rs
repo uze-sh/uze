@@ -114,16 +114,27 @@ impl Workspace<'_> {
             .and_then(|(primary, policy)| {
                 self.placed_view(&primary, switched.id.as_str(), &policy)
             });
-        Ok(AgentPlacement {
+        let mut told = switched_notice(incoming);
+        if let Some(behind) = self
+            .integration(from)
+            .and_then(|outgoing| self.overrides_left_behind(&root, &switched.id, outgoing))
+        {
+            told = format!("{told} {behind}");
+        }
+        let placed = AgentPlacement {
             project: root,
             cwd: switched.directory,
             placement: switched.placement,
             warnings: Vec::new(),
-            told: Some(switched_notice(incoming)),
+            told: Some(told),
             awaiting_approval: None,
             view,
             launch_key: switched.launch_key,
-        })
+            bare_launch: BareLaunch::default(),
+        };
+        // The incoming harness's own overrides, the ones the agent last had
+        // there: none the first time it runs one.
+        Ok(self.launching_with(placed, None))
     }
 
     /// Records the agent's briefing for `incoming`, which every launch on

@@ -193,11 +193,24 @@ impl UzeHome {
         self.state_dir().join("hosts.json")
     }
 
-    /// UZE-owned Profiles/Preferences (durable user intent, never
-    /// reconstructable from a harness's own config — hence `state_dir()`,
-    /// not `cache_dir()`). Harness-specific files are projections of this,
-    /// not the source of truth.
-    pub fn profiles_path(&self) -> PathBuf {
+    /// The overrides each agent was launched with, per harness, and the
+    /// sets of them the operator used lately. A record: only what the
+    /// operator typed says it. Owner-only, since a value may be a secret.
+    pub fn launch_overrides_path(&self) -> PathBuf {
+        self.state_dir().join("launch-overrides.json")
+    }
+
+    /// The guard every read-modify-write of the launch overrides takes: the
+    /// workspace records them and a relaunching shim may be reading. A
+    /// lock, not a record.
+    pub fn launch_overrides_lock_path(&self) -> PathBuf {
+        self.state_dir().join("launch-overrides.lock")
+    }
+
+    /// Where the removed Profiles screen kept its record. Nothing reads it:
+    /// it is named only so the application can remove what earlier
+    /// releases left there.
+    pub fn retired_profiles_path(&self) -> PathBuf {
         self.state_dir().join("profiles.json")
     }
 
@@ -357,7 +370,7 @@ impl UzeHome {
     }
 
     /// Where a user's own themes live, one file per theme, named by the
-    /// theme's own id. Durable user intent like Profiles are — a theme is
+    /// theme's own id. Durable user intent like the layout is — a theme is
     /// something someone wrote, never something UZE can rebuild — so
     /// `state_dir()`'s sibling under the root rather than a cache.
     pub fn themes_dir(&self) -> PathBuf {
@@ -935,7 +948,6 @@ mod tests {
             home.marketplaces_path(),
             home.attachments_path(),
             home.undelivered_path(),
-            home.profiles_path(),
             home.client_layout_path(),
             home.provisioning_state_path(),
             home.binary_path(),
@@ -943,6 +955,7 @@ mod tests {
             home.conversation_path("abc", "def"),
             home.prompt_history_path("abc"),
             home.extensions_record_path(),
+            home.launch_overrides_path(),
             home.extension_stores_dir(),
             home.extension_store_path("gsd@market", "gsd-band", Some("abc")),
             home.extension_preferences_path("gsd@market", "gsd-band"),

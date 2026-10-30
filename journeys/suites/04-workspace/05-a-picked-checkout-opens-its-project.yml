@@ -44,7 +44,7 @@ scenes:
       - click: "new"
         say: open the new-agent popup
         in: sidebar
-        expect: 'harness .*Claude Code'
+        expect: 'overrides .*Claude Code'
       - type: "{project}/.worktrees/t0pick"
         say: name the agent's checkout itself
         submit: false

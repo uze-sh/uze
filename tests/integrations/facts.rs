@@ -15,7 +15,7 @@ use uze_integrations::registry::IntegrationRegistry;
 fn every_harness_states_its_facts_and_each_names_a_lab_check_that_exists() {
     let root = uze_testkit::temp::scratch("harness-facts");
     let home = UzeHome::at(root.join("uze"));
-    let (integrations, _) = IntegrationRegistry::isolated(&root, &home).into_parts();
+    let integrations = IntegrationRegistry::isolated(&root, &home).into_inner();
     let conformance = Path::new(env!("CARGO_MANIFEST_DIR")).join("conformance");
     let mut unproven = Vec::new();
     for integration in &integrations {

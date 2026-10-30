@@ -8,7 +8,7 @@
 //! the whole of the domain's interest in appearance. That split is what
 //! lets the vocabulary grow without the domain hearing about it.
 //!
-//! Machine-scoped, like Profiles: a project does not get to decide what the
+//! Machine-scoped: a project does not get to decide what the
 //! operator's terminal looks like.
 
 use std::{fs, path::PathBuf};

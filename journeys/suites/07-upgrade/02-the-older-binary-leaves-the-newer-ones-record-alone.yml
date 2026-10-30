@@ -40,7 +40,7 @@ scenes:
       - click: "new"
         say: open the new-agent picker
         in: sidebar
-        expect: 'harness .*Claude Code'
+        expect: 'overrides .*Claude Code'
       - type: "{project}"
         say: pick Claude Code
         # The tab, not the header's `agent 1: preparing`: the tab opens

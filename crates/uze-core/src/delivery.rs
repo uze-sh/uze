@@ -8,7 +8,8 @@
 //! receipts; [`reconciliation`] compares that record against what is
 //! actually on disk, which is what makes removal safe. [`session`] names a
 //! harness's conversation, which the contract speaks; carrying one across a
-//! launch is the workspace's, in `uze-workspace`.
+//! launch is the workspace's, in `uze-workspace`. [`flag_catalog`] names the
+//! flags a harness's launch takes, and which of them UZE composes.
 //!
 //! Vendor-neutral throughout — no module here names a harness. The concrete
 //! verticals live in `uze-integrations`, behind
@@ -17,6 +18,7 @@
 pub mod delivered_root;
 pub mod engine;
 pub mod exposure;
+pub mod flag_catalog;
 pub mod integration;
 pub mod leftovers;
 pub mod persistence;

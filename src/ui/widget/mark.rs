@@ -14,7 +14,7 @@ use crate::ui::theme::{self, Symbol};
 /// The chevron that says whether a group is open.
 ///
 /// It takes `expanded` rather than `collapsed` because half its callers
-/// already hold the positive question — a profile is *selected*, a drawer
+/// already hold the positive question — a group is *unfolded*, a drawer
 /// is *open* — and a marker that had to be asked the negative one is how
 /// two of them ended up writing the branches in the opposite order.
 pub(crate) fn disclosure(expanded: bool) -> String {

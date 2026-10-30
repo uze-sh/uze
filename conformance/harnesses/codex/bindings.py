@@ -19,6 +19,10 @@ class CodexBindings(Bindings):
     display_name = "Codex"
     compact_command = "/compact"
     launch = "exec codex"
+    help_snapshots = (
+        (("--help",), "crates/uze-integrations/src/codex/help.txt"),
+        (("resume", "--help"), "crates/uze-integrations/src/codex/resume-help.txt"),
+    )
     #: The real prompt, not the splash. A marker loose enough to match
     #: onboarding passes every check against a screen that accepts no
     #: input — which it did, once, here.

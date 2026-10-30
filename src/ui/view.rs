@@ -2,7 +2,6 @@
 
 use ratatui::{
     layout::Rect,
-    style::{Modifier, Style},
     text::{Line, Span},
 };
 
@@ -20,12 +19,7 @@ pub mod health;
 pub mod keys;
 pub mod overview;
 pub mod plugins;
-pub mod profiles;
 pub mod settings;
-
-/// A drawer's width at rest, which a screen sizing a column of its own
-/// beside one starts from.
-pub(crate) const DRAWER_DEFAULT_WIDTH: u16 = drawer::DEFAULT_WIDTH;
 
 /// How wide `panel`'s drawer is drawn over `content`: where it was dragged
 /// to, or its width at rest, within what [`drawer::width`] allows.
@@ -138,11 +132,6 @@ pub(crate) const FILTER_ROWS: u16 = 2;
 
 pub(crate) use drawer::Status as DrawerStatus;
 
-/// Rows [`render_drawer_footer`] needs for `offers`.
-pub(crate) fn drawer_footer_height(offers: &[ActionOffer]) -> u16 {
-    drawer::foot_height(!drawer_buttons(offers).is_empty())
-}
-
 /// The offers a drawer draws as buttons: the available ones, what builds
 /// before what destroys. `Activate` is left out — it is what opened the
 /// drawer, and a button that opens what is already open does nothing.
@@ -154,22 +143,6 @@ fn drawer_buttons(offers: &[ActionOffer]) -> Vec<uze_keys::Action> {
         .collect();
     buttons.sort_by_key(|action| action.destructive());
     buttons
-}
-
-/// A button's look: soft at rest, the full hue under the pointer — the
-/// step between the two is what says it can be clicked. One under way
-/// stays `strong`, so the button that started it reads as the one that
-/// stops it. `ground` is the surface it sits on, which the soft tint is
-/// mixed against.
-pub(crate) fn button_style(hue: Token, strong: bool, ground: Token) -> Style {
-    let style = if strong {
-        theme::on(Token::SurfaceBackground, hue)
-    } else {
-        Style::default()
-            .fg(theme::color(hue))
-            .bg(theme::softened(hue, ground))
-    };
-    style.add_modifier(Modifier::BOLD)
 }
 
 /// Every detail drawer ends the same way: where the thing stands, then
@@ -251,7 +224,7 @@ mod drawer_tests {
         // the screen: a detail panel does not get better by getting wider.
         assert_eq!(
             drawer_width(panel, &model, Rect::new(0, 0, 120, 40)),
-            DRAWER_DEFAULT_WIDTH
+            drawer::DEFAULT_WIDTH
         );
         assert_eq!(
             drawer_width(panel, &model, Rect::new(0, 0, 200, 40)),

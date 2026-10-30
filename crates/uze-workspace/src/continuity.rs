@@ -27,13 +27,19 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use uze_core::flag_catalog::FlagCatalog;
+
 use crate::{
     agent_context::{self, Section, SectionAsk},
     briefing, checkout,
     conversation::{self, Claim, ConversationOrigin, ConversationRecord, SessionId},
     declaration,
+    harness_runtime::HarnessRuntimeContribution,
     home::UzeHome,
-    integration::{AgentContext, IntegrationPort, ObservationContext, SessionContinuity},
+    integration::{
+        AgentContext, ContextContribution, IntegrationPort, ObservationContext, SessionContinuity,
+    },
+    overrides::{self, LaunchOverrides},
     worktree::{self, Placement},
 };
 
@@ -58,6 +64,10 @@ pub struct LaunchPlan {
     /// Whether this launch is one UZE owns: an agent its record backs, in
     /// the directory the record puts it. Only such a launch is changed.
     pub owned: bool,
+    /// What the operator recorded for this agent on this harness, checked
+    /// against what this plan composes. Only an owned launch has any; what
+    /// was left out is already said in [`Self::note`].
+    pub overrides: LaunchOverrides,
 }
 
 impl LaunchPlan {
@@ -74,12 +84,76 @@ impl LaunchPlan {
         });
     }
 
+    /// Folds this plan into what the harness's runtime `contribution`
+    /// already carries, and, when the operator turned the harness's memory
+    /// off, what turning it off adds; answers what the launch should say,
+    /// once.
+    ///
+    /// The argv is the resume, the contribution's own arguments, the
+    /// operator's overrides and the first turn, then memory-off: a resume
+    /// spelled as a subcommand needs the front of the line, and nothing an
+    /// override says reaches past what UZE composes. Overrides precede a
+    /// first turn its own flag carries, which may end the harness's options
+    /// (`-- <turn>`), and follow a bare positional one, which a variadic
+    /// flag before it would take as one of its values. Variables go the
+    /// same way round: the overrides' first, so any later setting of the
+    /// same name is UZE's.
+    pub fn compose(
+        self,
+        contribution: &mut HarnessRuntimeContribution,
+        memory_off: Option<ContextContribution>,
+        catalog: FlagCatalog,
+    ) -> Option<String> {
+        let mut notes: Vec<String> = self.note.into_iter().collect();
+        let mut overrides = self.overrides;
+        if let Some(off) = &memory_off {
+            // Composed after the plan was made, so the plan's own check
+            // could not see it: what this leaves out is new, while what the
+            // plan left out is already in its note.
+            let said = overrides.left_out.len();
+            overrides.leave_out_composed(catalog, &off.args);
+            notes.extend(overrides.left_out.drain(said..));
+        }
+        notes.extend(overrides.weakens);
+        let (before_turn, after_turn) = if starts_bare(&self.trailing) {
+            (Vec::new(), overrides.args)
+        } else {
+            (overrides.args, Vec::new())
+        };
+        contribution.extra_args = self
+            .args
+            .into_iter()
+            .chain(std::mem::take(&mut contribution.extra_args))
+            .chain(before_turn)
+            .chain(self.trailing)
+            .chain(after_turn)
+            .collect();
+        contribution.extra_env = overrides
+            .env
+            .into_iter()
+            .chain(std::mem::take(&mut contribution.extra_env))
+            .chain(self.env)
+            .collect();
+        if let Some(off) = memory_off {
+            contribution.extra_args.extend(off.args);
+            contribution.extra_env.extend(off.env);
+        }
+        (!notes.is_empty()).then(|| notes.join("; "))
+    }
+
     fn args(args: Vec<OsString>) -> Self {
         Self {
             args,
             ..Self::default()
         }
     }
+}
+
+/// Whether a first turn begins with a bare positional word rather than a
+/// flag carrying it.
+fn starts_bare(turn: &[OsString]) -> bool {
+    turn.first()
+        .is_some_and(|first| !first.to_string_lossy().starts_with('-'))
 }
 
 /// Resume this agent's conversation, or start one and record it.
@@ -110,11 +184,86 @@ pub fn plan_with(
             cwd = %claim.cwd.display(),
             "no record backs this launch's claim; launched as an ordinary invocation"
         );
-        return LaunchPlan::nothing();
+        let mut plan = LaunchPlan::nothing();
+        if let Some(note) =
+            overrides_left_behind(home, claim, integration, "no record backs this launch")
+        {
+            plan.add_note(note);
+        }
+        return plan;
     };
     let mut plan = plan_for(home, claim, integration, &owner, sections);
     plan.owned = true;
+    plan.overrides = overrides_for(home, &owner, integration, &plan);
+    for left_out in plan.overrides.left_out.clone() {
+        plan.add_note(left_out);
+    }
     plan
+}
+
+/// The agent's recorded overrides on this harness, checked against what
+/// `plan` composes: one UZE now composes is left out and said, never
+/// obeyed. Read only once the claim is verified, so a launch no record
+/// backs carries none.
+fn overrides_for(
+    home: &UzeHome,
+    owner: &conversation::Owner,
+    integration: &dyn IntegrationPort,
+    plan: &LaunchPlan,
+) -> LaunchOverrides {
+    let words =
+        overrides::record::recorded(home, &owner.project_root, &owner.agent, integration.id());
+    if words.is_empty() {
+        return LaunchOverrides::default();
+    }
+    let composed: Vec<OsString> = plan.args.iter().chain(&plan.trailing).cloned().collect();
+    let overrides = overrides::compose(
+        &words,
+        integration.flag_catalog(),
+        integration.managed_environment(),
+        &composed,
+    );
+    tracing::info!(
+        agent = %owner.agent.as_str(),
+        harness = integration.id(),
+        overrides = overrides.len(),
+        left_out = overrides.left_out.len(),
+        "launching with the agent's overrides"
+    );
+    overrides
+}
+
+/// What a launch that carries none of the overrides recorded for the agent
+/// `claim` names on `integration` says about them and `why`; `None` when
+/// it has none. For a launch UZE does not compose — bypassed, or a claim
+/// no record backs — so it never fails one and stays cheap: a missing
+/// record is one `stat`, and otherwise a few more and one small read.
+/// Counts them and never names one: whoever makes the claim need not be
+/// the operator who typed them.
+pub fn overrides_left_behind(
+    home: &UzeHome,
+    claim: Claim<'_>,
+    integration: &dyn IntegrationPort,
+    why: &str,
+) -> Option<String> {
+    if claim.id.is_empty() || !home.launch_overrides_path().exists() {
+        return None;
+    }
+    let root = conversation::project_of(home, claim.cwd)?;
+    let words = overrides::record::recorded(
+        home,
+        &root,
+        &crate::task::AgentId::adopted(claim.id),
+        integration.id(),
+    );
+    let count = overrides::entries(&words, integration.flag_catalog()).len();
+    match count {
+        0 => None,
+        1 => Some(format!("the agent's override was left out ({why})")),
+        count => Some(format!(
+            "the agent's {count} overrides were left out ({why})"
+        )),
+    }
 }
 
 fn plan_for(
@@ -713,6 +862,12 @@ mod tests {
         fn context_channel_unavailable(&self) -> Option<String> {
             self.unavailable.clone()
         }
+        fn flag_catalog(&self) -> FlagCatalog {
+            HARNESS_FLAGS
+        }
+        fn managed_environment(&self) -> &'static [&'static str] {
+            &["HARNESS_HOME"]
+        }
         fn deliver_context(
             &self,
             _home: &UzeHome,
@@ -724,6 +879,28 @@ mod tests {
             })
         }
     }
+
+    /// What the test harness's launch takes: its resume flag is UZE's.
+    const HARNESS_FLAGS: FlagCatalog = {
+        use uze_core::flag_catalog::{FlagGrammar, FlagOwner, FlagSpec, FlagValue};
+        FlagCatalog::new(
+            FlagGrammar::Posix,
+            &[
+                FlagSpec::new(
+                    &["--resume"],
+                    FlagValue::Free("id"),
+                    "resume",
+                    FlagOwner::Uze("uze continues this agent's conversation itself"),
+                ),
+                FlagSpec::new(
+                    &["--model"],
+                    FlagValue::Free("model"),
+                    "model",
+                    FlagOwner::Operator,
+                ),
+            ],
+        )
+    };
 
     /// A repository with one task in one slot: the home, the primary, the
     /// slot's path and the task's identifier — what a launch there claims.
@@ -1513,5 +1690,287 @@ mod tests {
         *harness.observed.lock().unwrap() = Some(SessionId::new("neighbour"));
         assert!(!refresh(&home, claim(&id, &slot), &harness));
         assert_eq!(recorded(&home, &primary), Some(own));
+    }
+
+    /// Records `line` as the managed agent's overrides on the test harness.
+    fn with_overrides(home: &UzeHome, primary: &Path, line: &str) {
+        let store = task::load(home, primary).unwrap();
+        overrides::record::record_launch(
+            home,
+            primary,
+            &store.agents[0].id,
+            "harness",
+            uze_core::flag_catalog::FlagCatalog::default(),
+            &overrides::split(line).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn an_owned_launch_carries_the_agents_overrides_after_its_resume() {
+        let (home, primary, slot, id) = managed("continuity-overrides");
+        let harness = Harness::new(SessionContinuity::Assigned);
+        with_overrides(&home, &primary, "--model opus DEBUG=1");
+        let first = plan(&home, claim(&id, &slot), &harness);
+
+        let resumed = plan(&home, claim(&id, &slot), &harness);
+
+        assert_eq!(resumed.args[0], "--resume");
+        assert_eq!(resumed.overrides.args, ["--model", "opus"]);
+        assert_eq!(
+            resumed.overrides.env,
+            [(OsString::from("DEBUG"), OsString::from("1"))]
+        );
+        assert_eq!(first.overrides, resumed.overrides);
+        assert_eq!(resumed.note, None);
+    }
+
+    #[test]
+    fn a_recorded_override_uze_now_owns_is_left_out_and_said() {
+        let (home, primary, slot, id) = managed("continuity-overrides-owned");
+        let harness = Harness::new(SessionContinuity::Assigned);
+        with_overrides(
+            &home,
+            &primary,
+            "--resume elsewhere HARNESS_HOME=/x --model opus",
+        );
+
+        let launched = plan(&home, claim(&id, &slot), &harness);
+
+        assert_eq!(launched.args[0], "--start");
+        assert_eq!(launched.overrides.args, ["--model", "opus"]);
+        assert!(launched.overrides.env.is_empty());
+        let note = launched.note.unwrap();
+        assert!(
+            note.contains("--resume left out (uze continues this agent's conversation itself)")
+        );
+        assert!(note.contains("HARNESS_HOME left out (HARNESS_HOME is managed by uze)"));
+        assert!(!note.contains("elsewhere") && !note.contains("/x"));
+    }
+
+    #[test]
+    fn a_claim_no_record_backs_launches_without_overrides() {
+        let (home, primary, slot, id) = managed("continuity-overrides-unowned");
+        let harness = Harness::new(SessionContinuity::Assigned);
+        with_overrides(&home, &primary, "--model opus");
+
+        let stranger = plan(
+            &home,
+            Claim {
+                id: &id,
+                key: "not-the-launch-key",
+                cwd: &slot,
+            },
+            &harness,
+        );
+
+        assert!(!stranger.owned);
+        assert!(stranger.overrides.is_empty());
+        assert_eq!(
+            stranger.note.as_deref(),
+            Some("the agent's override was left out (no record backs this launch)")
+        );
+    }
+
+    #[test]
+    fn a_launch_composed_of_nothing_counts_the_overrides_it_left_behind() {
+        let (home, primary, slot, id) = managed("continuity-overrides-behind");
+        let harness = Harness::new(SessionContinuity::Assigned);
+        let bypassed = |home: &UzeHome| {
+            overrides_left_behind(home, claim(&id, &slot), &harness, "uze is bypassed")
+        };
+        assert_eq!(bypassed(&home), None);
+
+        with_overrides(&home, &primary, "--model opus API_TOKEN=hunter2");
+
+        assert_eq!(
+            bypassed(&home).as_deref(),
+            Some("the agent's 2 overrides were left out (uze is bypassed)")
+        );
+    }
+
+    fn words(line: &str) -> Vec<OsString> {
+        line.split_whitespace().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn a_composed_launch_puts_overrides_between_what_uze_prepends_and_the_first_turn() {
+        let plan = LaunchPlan {
+            args: words("--resume abc"),
+            env: vec![("CONTEXT_FLAG".into(), "plan".into())],
+            trailing: words("-- turn"),
+            overrides: overrides::compose(
+                &overrides::split("--model opus CONTEXT_FLAG=operator DEBUG=1").unwrap(),
+                HARNESS_FLAGS,
+                &[],
+                &words("--resume abc -- turn"),
+            ),
+            owned: true,
+            ..LaunchPlan::default()
+        };
+        let mut contribution = HarnessRuntimeContribution {
+            extra_args: words("--add-dir runtime"),
+            extra_env: vec![("RUNTIME".into(), "1".into())],
+            note: None,
+        };
+        let off = ContextContribution {
+            args: words("--memory off"),
+            env: vec![("MEMORY".into(), "0".into())],
+        };
+
+        let note = plan.compose(&mut contribution, Some(off), HARNESS_FLAGS);
+
+        assert_eq!(
+            contribution.extra_args,
+            words("--resume abc --add-dir runtime --model opus -- turn --memory off")
+        );
+        let env: Vec<(OsString, OsString)> = [
+            ("CONTEXT_FLAG", "operator"),
+            ("DEBUG", "1"),
+            ("RUNTIME", "1"),
+            ("CONTEXT_FLAG", "plan"),
+            ("MEMORY", "0"),
+        ]
+        .into_iter()
+        .map(|(name, value)| (name.into(), value.into()))
+        .collect();
+        assert_eq!(contribution.extra_env, env, "a later setting is UZE's");
+        assert_eq!(note, None);
+    }
+
+    #[test]
+    fn a_composed_launch_says_what_memory_off_left_out_and_what_weakens_once() {
+        const CATALOG: FlagCatalog = {
+            use uze_core::flag_catalog::{FlagGrammar, FlagOwner, FlagSpec, FlagValue};
+            FlagCatalog::new(
+                FlagGrammar::Posix,
+                &[
+                    FlagSpec::new(
+                        &["--config", "-c"],
+                        FlagValue::Free("key=value"),
+                        "config",
+                        FlagOwner::Keyed {
+                            owned: &[],
+                            conditional: &["features.memories"],
+                        },
+                    ),
+                    FlagSpec::new(
+                        &["--yolo"],
+                        FlagValue::None,
+                        "yolo",
+                        FlagOwner::Weakens("permission prompts"),
+                    ),
+                ],
+            )
+        };
+        let mut plan = LaunchPlan {
+            overrides: overrides::compose(
+                &overrides::split("-c features.memories=true --yolo").unwrap(),
+                CATALOG,
+                &[],
+                &[],
+            ),
+            owned: true,
+            ..LaunchPlan::default()
+        };
+        plan.add_note("the recorded conversation is no longer there".to_owned());
+        let mut contribution = HarnessRuntimeContribution::passthrough();
+        let off = ContextContribution {
+            args: words("-c features.memories=false"),
+            env: Vec::new(),
+        };
+
+        let note = plan.compose(&mut contribution, Some(off), CATALOG).unwrap();
+
+        assert_eq!(
+            contribution.extra_args,
+            words("--yolo -c features.memories=false")
+        );
+        assert!(
+            note.starts_with("the recorded conversation is no longer there; -c left out ("),
+            "{note}"
+        );
+        assert!(
+            note.ends_with("; --yolo gives up permission prompts"),
+            "{note}"
+        );
+    }
+
+    /// Every value a span or an event recorded, by field.
+    #[derive(Clone, Default)]
+    struct Fields(std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>);
+
+    impl tracing::field::Visit for Fields {
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            self.0
+                .lock()
+                .unwrap()
+                .push((field.name().to_owned(), format!("{value:?}")));
+        }
+    }
+
+    impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Fields {
+        fn on_new_span(
+            &self,
+            attrs: &tracing::span::Attributes<'_>,
+            _id: &tracing::span::Id,
+            _context: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            attrs.record(&mut self.clone());
+        }
+
+        fn on_record(
+            &self,
+            _id: &tracing::span::Id,
+            values: &tracing::span::Record<'_>,
+            _context: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            values.record(&mut self.clone());
+        }
+
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _context: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            event.record(&mut self.clone());
+        }
+    }
+
+    #[test]
+    fn a_trace_says_how_many_overrides_a_launch_carried_and_never_which() {
+        use tracing_subscriber::layer::SubscriberExt;
+        let (home, primary, slot, id) = managed("continuity-overrides-traced");
+        let harness = Harness::new(SessionContinuity::Assigned);
+        with_overrides(
+            &home,
+            &primary,
+            "API_TOKEN=hunter2 --model secret-model --resume secret-session",
+        );
+        let fields = Fields::default();
+        let subscriber = tracing_subscriber::registry().with(fields.clone());
+        // With one subscriber registered, tracing asks only the registering
+        // thread's, so another test's thread, which has none, would mark
+        // these callsites uninteresting for every thread. A second one
+        // makes it ask them all.
+        let _bystander = tracing::Dispatch::new(tracing_subscriber::registry());
+
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::callsite::rebuild_interest_cache();
+            plan(&home, claim(&id, &slot), &harness);
+        });
+
+        let fields = fields.0.lock().unwrap().clone();
+        // Three entries read; two passed, `--resume` left out.
+        assert!(fields.contains(&("overrides".to_owned(), "3".to_owned())));
+        assert!(fields.contains(&("overrides".to_owned(), "2".to_owned())));
+        for (name, value) in &fields {
+            for secret in ["hunter2", "API_TOKEN", "secret-model", "secret-session"] {
+                assert!(
+                    !value.contains(secret),
+                    "{name} = {value} carries an override"
+                );
+            }
+        }
     }
 }

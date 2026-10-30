@@ -16,7 +16,7 @@ use uze_testkit::git::Repository;
 fn app(root: &Path) -> UzeApplication {
     let home = UzeHome::at(root.join("uze-home"));
     let registry = IntegrationRegistry::isolated(&root.join("harnesses"), &home);
-    UzeApplication::new(home, registry.into_parts().0)
+    UzeApplication::new(home, registry.into_inner())
 }
 
 const OPERATOR_TEXT: &str = "# Project\n\nWhat the operator wrote.\n";

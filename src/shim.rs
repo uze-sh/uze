@@ -119,7 +119,27 @@ pub fn run(shim_name: &str) -> ! {
         )),
     };
 
+    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     if bypass {
+        // Bypassed means composed of nothing, the agent's overrides
+        // included; an agent that has some hears they were left out, since
+        // its operator chose them and would otherwise look for them.
+        if original_args.is_empty()
+            && let Some(integration) = &integration
+            && let Some((id, key)) = owned_identity()
+            && let Some(note) = continuity::overrides_left_behind(
+                &home,
+                Claim {
+                    id: &id,
+                    key: &key,
+                    cwd: &cwd,
+                },
+                *integration,
+                "uze is bypassed",
+            )
+        {
+            eprintln!("uze: {}.", uze_core::authored::inert(&note));
+        }
         exec_or_die(
             &executable,
             &original_args,
@@ -129,7 +149,6 @@ pub fn run(shim_name: &str) -> ! {
         );
     }
 
-    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let mut contribution = match &integration {
         Some(integration) => integration.runtime_contribution(&RuntimeContext {
             cwd: &cwd,
@@ -168,26 +187,14 @@ pub fn run(shim_name: &str) -> ! {
             *integration,
             &|ask| memory::context_sections(&home, ask, *integration, &integrations),
         );
-        if let Some(note) = &session.note {
-            eprintln!("uze: {}.", uze_core::authored::inert(note));
-        }
-        // Ahead of the contribution's own arguments: a harness whose resume
-        // is a subcommand needs it at the front of the line. A briefing's
-        // first turn goes last, where a positional prompt is read.
-        contribution.extra_args = session
-            .args
-            .into_iter()
-            .chain(contribution.extra_args)
-            .chain(session.trailing)
-            .collect();
-        contribution.extra_env.extend(session.env);
-        if session.owned
-            && harness_memory_off(&home)
-            && !integration.writes_own_memory()
-            && let Some(off) = integration.memory_off()
+        let memory_off =
+            (session.owned && harness_memory_off(&home) && !integration.writes_own_memory())
+                .then(|| integration.memory_off())
+                .flatten();
+        if let Some(note) =
+            session.compose(&mut contribution, memory_off, integration.flag_catalog())
         {
-            contribution.extra_args.extend(off.args);
-            contribution.extra_env.extend(off.env);
+            eprintln!("uze: {}.", uze_core::authored::inert(&note));
         }
     }
 

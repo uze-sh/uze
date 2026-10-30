@@ -1332,7 +1332,7 @@ intact, so one attached hook does not reshuffle a hand-organised file.
 > `tests/integrations/hooks.rs::foreign_codex_hooks_survive_attach_and_detach`
 > `crates/uze-integrations/src/hooks/tests.rs::drift_blocks_removal_and_an_empty_file_is_removed`
 > `crates/uze-integrations/src/hooks/tests.rs::a_merge_keeps_the_users_own_key_order`
-> `crates/uze-integrations/src/shared/json_config.rs::a_merge_keeps_the_users_own_key_order`
+> `crates/uze-integrations/src/shared/json_config.rs::a_write_keeps_the_users_own_key_order`
 
 ### A package's hooks attach once per harness, idempotently
 
@@ -2390,6 +2390,29 @@ starts the agent anyway.
 > `tests/acceptance/session_continuity.rs::a_launch_carrying_no_identity_is_launched_untouched_even_inside_a_slot`
 > `crates/uze-workspace/src/continuity.rs::a_conversation_the_harness_no_longer_holds_starts_a_new_one_and_says_so`
 > `crates/uze-workspace/src/continuity.rs::unreadable_state_still_launches_the_agent`
+
+### An override never displaces what UZE composes for a launch (`launch-overrides`)
+
+An agent's launch overrides are spliced after what UZE prepends, before a
+first turn a flag or `--` carries and after a bare positional one, and
+what turns memory off comes after them, so a resume, a briefing channel or
+a first turn is never pushed aside or taken as an override's value. A flag, a
+configuration key or a variable that collides with what UZE composes on
+that launch — a resume or session flag, a variable UZE or the integration
+manages, a key memory-off sets — is left out before the harness starts, on
+a launch the shim composes and on a bare one alike, and the note naming it
+says the flag's spelling or the variable's name, never its value.
+
+> `tests/integrations/launch_overrides.rs::an_override_of_what_uze_composes_never_reaches_any_harness`
+> `tests/integrations/launch_overrides.rs::a_resumed_launch_takes_its_overrides_after_the_resume_on_every_harness`
+> `tests/integrations/launch_overrides.rs::a_first_turn_keeps_its_place_beside_the_overrides_on_every_harness`
+> `tests/integrations/launch_overrides.rs::a_bare_first_turn_is_never_taken_as_a_variadic_flags_value`
+> `tests/integrations/launch_overrides.rs::memory_off_comes_last_and_leaves_out_the_override_it_collides_with`
+> `crates/uze-workspace/src/overrides.rs::what_uze_owns_is_left_out_naming_it_and_never_its_value`
+> `crates/uze-workspace/src/overrides.rs::a_key_composed_after_the_plan_is_left_out_then`
+> `crates/uze-workspace/src/continuity.rs::a_recorded_override_uze_now_owns_is_left_out_and_said`
+> `crates/uze-application/src/application/services/tasks/tests.rs::a_harness_without_its_launcher_is_handed_its_overrides_by_the_client`
+> `tests/acceptance/session_continuity.rs::a_relaunched_agent_with_overrides_still_resumes_its_conversation`
 
 ### An agent placed before launch keys still comes back
 

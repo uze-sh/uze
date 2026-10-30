@@ -23,8 +23,8 @@ use std::{
 
 use uze_core::{integration::ObservationContext, session::SessionId};
 
-const START_FLAG: &str = "--session-id";
-const RESUME_FLAG: &str = "--resume";
+pub(super) const START_FLAG: &str = "--session-id";
+pub(super) const RESUME_FLAG: &str = "--resume";
 const TRANSCRIPT_EXTENSION: &str = "jsonl";
 
 pub(super) fn start_args(session: &SessionId) -> Vec<OsString> {

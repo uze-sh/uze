@@ -54,9 +54,11 @@ pub(super) fn identities_fixture() -> Vec<AgentIdentity> {
         integration: "agent",
         display_name: "Agent",
         launch: std::path::PathBuf::from("agent"),
+        through_launcher: false,
         continuity_gap: None,
         configured: true,
         skill_prefix: Some("/"),
+        overrides: Default::default(),
     }]
 }
 
@@ -326,18 +328,22 @@ pub(super) fn identities_in_the_root() -> Vec<AgentIdentity> {
             integration: "claude-code",
             display_name: "Claude Code",
             launch: std::path::PathBuf::from("/uze/shims/claude"),
+            through_launcher: true,
             continuity_gap: None,
             configured: true,
             skill_prefix: Some("/"),
+            overrides: Default::default(),
         },
         AgentIdentity {
             binary: "codex",
             integration: "codex",
             display_name: "Codex",
             launch: std::path::PathBuf::from("codex"),
+            through_launcher: false,
             continuity_gap: None,
             configured: true,
             skill_prefix: Some("/"),
+            overrides: Default::default(),
         },
     ]
 }
@@ -694,18 +700,22 @@ pub(super) fn identities() -> Vec<AgentIdentity> {
             integration: "claude-code",
             display_name: "Claude Code",
             launch: std::path::PathBuf::from("/uze/shims/claude"),
+            through_launcher: true,
             continuity_gap: None,
             configured: true,
             skill_prefix: Some("/"),
+            overrides: Default::default(),
         },
         AgentIdentity {
             binary: "codex",
             integration: "codex",
             display_name: "Codex",
             launch: std::path::PathBuf::from("codex"),
+            through_launcher: false,
             continuity_gap: Some("no launcher".to_owned()),
             configured: true,
             skill_prefix: Some("/"),
+            overrides: Default::default(),
         },
     ]
 }

@@ -23,14 +23,14 @@ fn directory_step_over(model: &mut WorkspaceModel, directory: &Path, home: &UzeH
     let picker = RootPicker::opened_in(&directory.display().to_string(), None);
     let rows = render::new_agent_popup_rows(picker.match_count());
     let space = model.session.as_ref().unwrap().selected_space().id;
-    model.directory_step = Some(DirectoryStep {
+    model.directory_step = Some(DirectoryStep::new(
         picker,
         space,
-        anchor: Rect::new(20, 1, 3, 1),
+        Rect::new(20, 1, 3, 1),
         rows,
-        harnesses: super::agent_options(home),
-        harness: 0,
-    });
+        super::agent_options(home),
+        0,
+    ));
 }
 
 /// A home with nothing set up, for a popup whose harnesses do not matter.
@@ -58,13 +58,14 @@ fn drawn(model: &mut WorkspaceModel) -> (Vec<String>, Buffer) {
     (buffer_rows(&buffer), buffer)
 }
 
-/// The line typed into: under the harness field, past the rule closing it.
+/// The line typed into: under the harness field, past the rule closing
+/// it.
 fn prompt_row_of(rows: &[String]) -> String {
-    let harness = rows
+    let head = rows
         .iter()
-        .position(|row| row.contains(" harness "))
+        .position(|row| row.contains("new agent") && row.contains("overrides"))
         .expect("the popup is drawn");
-    rows[harness + 2].clone()
+    rows[head + 2].clone()
 }
 
 /// Enter on the directory step, as the keyboard sends it.
@@ -679,7 +680,7 @@ fn the_foot_names_the_keys_and_its_new_starts_the_agent() {
     let (rows, _) = drawn(&mut model);
     let foot = rows
         .iter()
-        .find(|row| row.contains("harness") && row.contains("close"))
+        .find(|row| row.contains("harness") && row.contains("enter"))
         .expect("the foot is drawn");
     assert!(foot.contains("new"), "{foot}");
     assert!(!foot.contains("engine"), "no sentence about where: {foot}");
@@ -984,7 +985,10 @@ fn a_new_agent_opens_in_the_space_it_was_asked_from() {
 
     driven.placements_answered(PlacementResolution {
         label: "agent 2".to_owned(),
-        command: vec!["claude".to_owned()],
+        command: super::TabCommand {
+            argv: vec!["claude".to_owned()],
+            through_launcher: false,
+        },
         placement: Ok(placement),
         replacing: None,
         space: Some(origin),
@@ -1003,5 +1007,38 @@ fn a_new_agent_opens_in_the_space_it_was_asked_from() {
             .iter()
             .any(|request| matches!(request, ClientRequest::CreateSpace { .. })),
         "and no space is opened for its project: {sent:?}"
+    );
+}
+
+/// A filter nothing matches says so once, centred in the listing's room,
+/// as an empty state does, never against its first row.
+#[test]
+fn a_filter_nothing_matches_says_so_centred() {
+    let root = uze_testkit::temp::TempDir::new("popup-empty-root");
+    std::fs::create_dir_all(root.join("engine")).unwrap();
+    let mut model = agent_session_in("/repo");
+    directory_step_over(&mut model, root.path(), &bare_home("popup-empty"));
+    if let Some(step) = model.directory_step.as_mut() {
+        for character in "zzz".chars() {
+            step.picker.typed(character);
+        }
+    }
+
+    let (rows, _) = drawn(&mut model);
+    let prompt = rows
+        .iter()
+        .position(|row| row.contains("zzz"))
+        .expect("the line is drawn");
+    let at = rows
+        .iter()
+        .position(|row| row.contains("no directory matches"))
+        .unwrap_or_else(|| panic!("{rows:#?}"));
+    assert!(at > prompt + 3, "centred down the listing: {rows:#?}");
+    let row = &rows[at];
+    let inside = &row[row.find('│').unwrap() + '│'.len_utf8()..row.rfind('│').unwrap()];
+    let (before, after) = inside.split_once("no directory matches").unwrap();
+    assert!(
+        before.chars().count().abs_diff(after.chars().count()) <= 1,
+        "centred across: {row}"
     );
 }

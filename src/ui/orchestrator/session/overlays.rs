@@ -57,6 +57,23 @@ impl Attach<'_> {
     /// The new agent's directory step: type to narrow, walk into the
     /// highlighted directory, take it to the harness step.
     pub(super) fn directory_step_action(&mut self, action: Action) {
+        if self
+            .model
+            .directory_step
+            .as_ref()
+            .is_some_and(|step| step.overrides.is_some())
+        {
+            self.overrides_action(action);
+            return;
+        }
+        if action == Action::OpenOverrides {
+            if let Some(step) = self.model.directory_step.as_mut() {
+                step.open_overrides();
+            }
+            self.ask_recent_overrides();
+            self.model.dirty = true;
+            return;
+        }
         // The harness field: on to the next one set up, or back.
         if let (Action::FocusNext | Action::FocusPrevious, Some(step)) =
             (action, self.model.directory_step.as_mut())
@@ -103,6 +120,108 @@ impl Attach<'_> {
             _ => {}
         }
         self.model.dirty = true;
+    }
+
+    /// A click on an arrow of the harness field, on either view. On the
+    /// overrides view the entries used lately are the new harness's, so
+    /// they are asked for.
+    pub(super) fn cycle_popup_harness(&mut self, step: isize) {
+        let Some(popup) = self.model.directory_step.as_mut() else {
+            return;
+        };
+        popup.cycle_harness(step);
+        if popup.overrides.is_some() {
+            self.ask_recent_overrides();
+        }
+        self.model.dirty = true;
+    }
+
+    /// The overrides step: its line, its list and Enter, which launches
+    /// from an empty line with nothing marked.
+    fn overrides_action(&mut self, action: Action) {
+        let Some(step) = self.model.directory_step.as_mut() else {
+            return;
+        };
+        match step.overrides_action(action) {
+            OverridesOutcome::Kept => {}
+            OverridesOutcome::Launch => {
+                if step.picker.chosen().is_some() {
+                    self.confirm_directory();
+                } else {
+                    // No directory chosen yet: the first step is where one
+                    // is, and Enter there walks into the row.
+                    step.overrides = None;
+                }
+            }
+            OverridesOutcome::Forget(words) => self.forget_recent_override(words),
+        }
+        self.model.dirty = true;
+    }
+
+    /// Asks for the entries used lately on the harness in the popup's field,
+    /// from where it is, unless that is already asked or answered.
+    pub(super) fn ask_recent_overrides(&mut self) {
+        let Some(step) = self.model.directory_step.as_mut() else {
+            return;
+        };
+        let Some(question) = step.recent_question() else {
+            return;
+        };
+        if step.recent_entries().is_some() || step.recent_asked.as_ref() == Some(&question) {
+            return;
+        }
+        step.recent_asked = Some(question.clone());
+        let (harness, root) = question;
+        spawn_recent_overrides(
+            self.home,
+            harness,
+            root,
+            None,
+            self.channels.recent_overrides.sender.clone(),
+        );
+    }
+
+    /// Forgets an entry used before on the harness in front, then reads
+    /// the entries again, so the list is what is on disk.
+    pub(super) fn forget_recent_override(&mut self, words: Vec<String>) {
+        let Some(step) = self.model.directory_step.as_mut() else {
+            return;
+        };
+        let Some(question) = step.recent_question() else {
+            return;
+        };
+        step.recent_asked = Some(question.clone());
+        let (harness, root) = question;
+        spawn_recent_overrides(
+            self.home,
+            harness,
+            root,
+            Some(words),
+            self.channels.recent_overrides.sender.clone(),
+        );
+    }
+
+    /// Takes the entries used lately into the popup when they answer what it
+    /// asked last; an answer to an earlier question is dropped.
+    pub(super) fn absorb_recent_overrides(&mut self) {
+        while let Ok(answer) = self.channels.recent_overrides.receiver.try_recv() {
+            let Some(step) = self.model.directory_step.as_mut() else {
+                continue;
+            };
+            let question = (answer.harness.clone(), answer.root.clone());
+            if step.recent_asked.as_ref() != Some(&question) {
+                continue;
+            }
+            step.recent_asked = None;
+            if let Some(overrides) = step.overrides.as_ref() {
+                overrides.top.set(0);
+            }
+            if let Some(overrides) = step.overrides.as_mut() {
+                overrides.marked = None;
+            }
+            step.recent = Some(answer);
+            self.model.dirty = true;
+        }
     }
 
     /// Records a name typed over an agent's tab as that agent's own, off

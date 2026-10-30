@@ -29,6 +29,7 @@ mod delivery;
 mod evaluation;
 mod naming;
 mod occupancy;
+mod overrides;
 mod placement;
 mod reporting;
 mod repository;
@@ -63,6 +64,7 @@ impl Workspace<'_> {
                     .unwrap_or(integration.id());
                 let (launch, continuity_gap) = self.launcher(integration.as_ref(), binary);
                 AgentIdentity {
+                    through_launcher: launch != std::path::Path::new(binary),
                     binary,
                     integration: integration.id(),
                     display_name: integration.display_name(),
@@ -71,6 +73,7 @@ impl Workspace<'_> {
                     configured: self.is_set_up(integration.as_ref()),
                     skill_prefix: Some(integration.invocation_prefix())
                         .filter(|prefix| !prefix.is_empty()),
+                    overrides: super::OverrideCatalog::of(integration.as_ref()),
                 }
             })
             .collect()

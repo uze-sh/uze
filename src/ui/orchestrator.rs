@@ -49,11 +49,13 @@ use uze_terminal::{
 };
 
 mod gestures;
+mod launch_overrides;
 mod pickers;
 mod surfaces;
 mod tabs;
 
 use gestures::*;
+use launch_overrides::*;
 use pickers::*;
 use surfaces::*;
 pub(super) use tabs::*;
@@ -272,6 +274,9 @@ struct AgentTab {
     agent: String,
     /// The secret the placement issued this launch (`UZE_AGENT_KEY`).
     launch_key: String,
+    /// Variables the launch carries beside its identity: the agent's
+    /// overrides, when no UZE launcher carries them.
+    env: Vec<(String, String)>,
     size: (u16, u16),
 }
 
@@ -913,6 +918,19 @@ pub(super) enum WorkspaceHit {
     /// current matches — same pattern [`WorkspaceHit::PickAgent`] uses for
     /// the harness step.
     PickDirectory(usize),
+    /// One row of the overrides step's list, by its place in the list:
+    /// a click takes a completion, as Enter on it marked does, and marks a
+    /// choice, as the arrows do.
+    OverrideRow(usize),
+    /// The `◉`/`○` mark of a choice, by its place among the choices:
+    /// switches it, as space on it marked does.
+    OverrideToggle(usize),
+    /// The close mark of a choice, by its place among the choices: leaves
+    /// it out of the launch and forgets one used before, as Delete on it
+    /// marked does.
+    OverrideClose(usize),
+    /// The overrides list's scrollbar, on the popup's edge.
+    OverridesScroll,
     /// The tab strip's count of what the focused checkout's upstream has
     /// that it lacks: pulls the target, by fast-forward only. Drawn only
     /// on the target, where the count is.
@@ -1045,6 +1063,18 @@ pub(super) enum WorkspaceHit {
     /// [`WorkspaceHit::QuickAction`] only so pointing at one does not
     /// light the other where both offer the same action.
     HintAction(Action),
+    /// A view a popup's top border names, reached by the key that opens
+    /// it. Apart from [`WorkspaceHit::HintAction`] so pointing at the view
+    /// does not light the foot's hint for the same key.
+    ViewAction(Action),
+    /// An arrow of the new agent's harness field, by the way it moves the
+    /// harness (`-1` back, `1` on). Its own target rather than the arrow
+    /// keys' hint: on the overrides view those keys move the caret, and
+    /// the arrows still change the harness there.
+    HarnessArrow(isize),
+    /// The new agent popup's line typed into, on either view: a click on
+    /// it puts the keys back on the line, leaving nothing marked below.
+    PopupLine,
     /// One row of the open index, by position in it.
     ActionIndexEntry(usize),
     /// The release notes modal's own area: a click on it is reading, and
@@ -1102,8 +1132,9 @@ fn agent_options(home: &UzeHome) -> Vec<AgentOption> {
         .map(|identity| AgentOption {
             display_name: identity.display_name.to_owned(),
             integration: identity.integration.to_owned(),
-            command: vec![identity.launch.to_string_lossy().into_owned()],
+            command: TabCommand::of(&identity),
             continuity_gap: identity.continuity_gap,
+            overrides: identity.overrides,
         })
         .collect()
 }
@@ -1339,6 +1370,7 @@ fn agent_panel_in_front(
         tab: tab.id,
         prompts,
         path: crate::ui::display_project_path(&directory),
+        overrides: None,
         key,
         selected: 0,
     })
@@ -1501,6 +1533,10 @@ struct Channels {
     support: Answers<SupportResolution>,
     /// The agent drawer's prompt history, read and cleared.
     prompts: Answers<PromptHistoryResolution>,
+    /// The overrides the agent in the overview was launched with.
+    agent_overrides: Answers<AgentOverridesResolution>,
+    /// The sets of overrides used lately, for the new agent's popup.
+    recent_overrides: Answers<RecentOverridesRead>,
     tasks: Answers<WorkResolution>,
     deliveries: Answers<DeliveryResolution>,
     /// Finishing and discarding a preserved task. Off-thread for the same
@@ -1614,6 +1650,8 @@ struct Remembered {
     /// Whose prompt history a read is out for, so opening the overview
     /// again before it answers does not queue another.
     prompt_history_pending: Option<PromptsOf>,
+    /// Whose recorded overrides a read is out for.
+    agent_overrides_pending: Option<OverridesOf>,
     /// Cached Git summary for the selected agent/shell tab's live cwd.
     /// Stored client-side because it is display chrome, not terminal session
     /// state that belongs in `uze-terminal`.

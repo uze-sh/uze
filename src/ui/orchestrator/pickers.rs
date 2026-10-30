@@ -15,10 +15,12 @@ pub(super) struct AgentOption {
     /// The integration the harness belongs to — what an agent is recorded
     /// as running.
     pub(super) integration: String,
-    pub(super) command: Vec<String>,
+    pub(super) command: TabCommand,
     /// Said on the tab when the agent starts a conversation it will not be
     /// able to continue.
     pub(super) continuity_gap: Option<String>,
+    /// What its launch takes beyond what UZE composes.
+    pub(super) overrides: uze_application::OverrideCatalog,
 }
 
 /// Open state of the harness picker a resume asks with when the harness its
@@ -49,6 +51,9 @@ pub(super) enum AgentLaunch {
 pub(super) struct NewPlace {
     pub(super) space: SpaceId,
     pub(super) directory: PathBuf,
+    /// The words the operator added to this agent's launch for its harness;
+    /// none is the launch the workspace makes by default.
+    pub(super) overrides: Vec<String>,
 }
 
 /// Open state of the "+ new agent" popup (`WorkspaceHit::NewAgentMenu`):
@@ -67,6 +72,31 @@ pub(super) struct DirectoryStep {
     pub(super) harnesses: Vec<AgentOption>,
     /// Index into `harnesses` of the one the agent will run.
     pub(super) harness: usize,
+    /// The overrides step, while it stands in the listing's place.
+    pub(super) overrides: Option<OverridesStep>,
+    /// The overrides added in this popup, by harness: moving the harness
+    /// shows that harness's, never another's flags.
+    pub(super) drafts: BTreeMap<String, Vec<OverrideEntry>>,
+    /// Every entry added in this popup, by harness, checked or not: a
+    /// choice stays in the list when it is unchecked, and leaves only by
+    /// its close mark.
+    pub(super) listed: BTreeMap<String, Vec<OverrideEntry>>,
+    /// The entries used lately, as last read.
+    pub(super) recent: Option<RecentOverridesRead>,
+    /// The read of them that is out, so a step opened again before it
+    /// answers asks nothing more.
+    pub(super) recent_asked: Option<(String, PathBuf)>,
+}
+
+impl AgentSupportDropdown {
+    /// Whose recorded overrides the section names: an agent UZE launched,
+    /// on the harness it runs.
+    pub(super) fn overrides_of(&self) -> Option<OverridesOf> {
+        Some(OverridesOf {
+            prompts: self.prompts.clone()?,
+            harness: self.key.as_ref()?.0.clone(),
+        })
+    }
 }
 
 impl DirectoryStep {
@@ -75,11 +105,19 @@ impl DirectoryStep {
         self.harnesses.get(self.harness)
     }
 
-    /// Moves the harness on by `step`, round the ones set up.
+    /// Moves the harness on by `step`, round the ones set up. On the
+    /// overrides view the entries, the catalog and the sets used lately
+    /// follow it, each kept per harness; what was marked in the list, and
+    /// why a token was refused, were the other harness's and go.
     pub(super) fn cycle_harness(&mut self, step: isize) {
         let count = self.harnesses.len();
         if count > 0 {
             self.harness = (self.harness as isize + step).rem_euclid(count as isize) as usize;
+        }
+        if let Some(over) = self.overrides.as_mut() {
+            over.marked = None;
+            over.top.set(0);
+            over.refusal = None;
         }
     }
 }
@@ -122,6 +160,9 @@ pub(super) struct AgentSupportDropdown {
     pub(super) prompts: Option<PromptsOf>,
     /// The agent's directory as the operator reads it.
     pub(super) path: String,
+    /// What the agent was launched with on its harness beyond what UZE
+    /// composes, once read.
+    pub(super) overrides: Option<Vec<String>>,
     /// Index into the agent's prompts, newest first.
     pub(super) selected: usize,
 }

@@ -1143,11 +1143,30 @@ pub(super) fn spawn_commit_detail(
     });
 }
 
+/// What an agent's tab runs, as the client read it when it attached.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct TabCommand {
+    pub(super) argv: Vec<String>,
+    /// Whether `argv` starts UZE's launcher, which carries the agent's
+    /// overrides itself; a plain binary is handed them with its tab.
+    pub(super) through_launcher: bool,
+}
+
+impl TabCommand {
+    /// The command an agent of `identity` is launched by.
+    pub(super) fn of(identity: &uze_application::AgentIdentity) -> Self {
+        Self {
+            argv: vec![identity.launch.to_string_lossy().into_owned()],
+            through_launcher: identity.through_launcher,
+        }
+    }
+}
+
 /// The answer to a placement request: where the agent goes, or why it
 /// cannot — in which case no tab opens.
 pub(super) struct PlacementResolution {
     pub(super) label: String,
-    pub(super) command: Vec<String>,
+    pub(super) command: TabCommand,
     pub(super) placement: std::result::Result<uze_application::AgentPlacement, String>,
     /// The tab this placement takes over from: the agent standing in a
     /// checkout that is gone, whose row the resume was clicked on. Closed
@@ -1172,6 +1191,7 @@ pub(super) enum PlacementRequest {
         from: PathBuf,
         harness: String,
         space: SpaceId,
+        overrides: Vec<String>,
     },
     /// The agent this checkout is being cut for, and what the operator
     /// answered about the changes their own tree holds.
@@ -1227,7 +1247,7 @@ pub(super) fn spawn_agent_placement(
     request: PlacementRequest,
     occupied: Vec<PathBuf>,
     label: String,
-    command: Vec<String>,
+    command: TabCommand,
     replacing: Option<TabId>,
     sender: mpsc::Sender<PlacementResolution>,
 ) {
@@ -1260,13 +1280,18 @@ pub(super) fn spawn_agent_placement(
                 // answers with the reason and opens nothing: the operator
                 // chose the kind, and an agent landing anywhere else is
                 // the one outcome a notice could not undo.
-                PlacementRequest::New { from, harness, .. } => tui_application(home)
+                PlacementRequest::New {
+                    from,
+                    harness,
+                    overrides,
+                    ..
+                } => tui_application(home)
                     .and_then(|app| {
                         // No kind travels: where an agent starts is the
                         // project's to declare, and isolating one is an
                         // action on it afterwards.
                         app.workspace()
-                            .place_new_agent(&from, None, &harness, &occupied)
+                            .place_new_agent_with(&from, None, &harness, &occupied, &overrides)
                     })
                     .map_err(|error| error.to_string()),
                 PlacementRequest::Isolate { from, agent, carry } => tui_application(home)
@@ -1399,6 +1424,87 @@ pub(super) fn spawn_prompt_history(
             Vec::new(),
         );
         let _ = sender.send(PromptHistoryResolution { of, entries });
+    });
+}
+
+/// Reads the overrides used lately on `harness`, one entry each, as seen from
+/// `root`, having first forgotten `forget` when one is given: a file, and
+/// nothing the popup draws waits on one. The answer names its question.
+pub(super) fn spawn_recent_overrides(
+    home: &UzeHome,
+    harness: String,
+    root: PathBuf,
+    forget: Option<Vec<String>>,
+    sender: mpsc::Sender<RecentOverridesRead>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _pass = crate::telemetry::background_pass!("tui.recent_overrides", parent: &parent);
+        let entries = answered_or(
+            || {
+                tui_application(home)
+                    .map(|app| {
+                        if let Some(words) = &forget
+                            && let Err(error) =
+                                app.workspace().forget_recent_override(&harness, words)
+                        {
+                            tracing::warn!(%error, "an override used before could not be forgotten");
+                        }
+                        app.workspace().recent_overrides(&harness, &root)
+                    })
+                    .unwrap_or_default()
+            },
+            Vec::new(),
+        );
+        let _ = sender.send(RecentOverridesRead {
+            harness,
+            root,
+            entries,
+        });
+    });
+}
+
+/// Whose recorded overrides are asked for: an agent of a project, on one
+/// harness.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct OverridesOf {
+    pub(super) prompts: PromptsOf,
+    pub(super) harness: String,
+}
+
+/// An agent's recorded overrides, tagged with whose they are.
+pub(super) struct AgentOverridesResolution {
+    pub(super) of: OverridesOf,
+    pub(super) words: Vec<String>,
+}
+
+/// Reads the overrides an agent was launched with on its harness, for the
+/// overview to name under it.
+pub(super) fn spawn_agent_overrides(
+    home: &UzeHome,
+    of: OverridesOf,
+    sender: mpsc::Sender<AgentOverridesResolution>,
+) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _pass = crate::telemetry::background_pass!("tui.agent_overrides", parent: &parent);
+        let words = answered_or(
+            || {
+                tui_application(home)
+                    .map(|app| {
+                        app.workspace().agent_overrides(
+                            &of.prompts.project,
+                            &of.prompts.agent,
+                            &of.harness,
+                        )
+                    })
+                    .unwrap_or_default()
+            },
+            Vec::new(),
+        );
+        let _ = sender.send(AgentOverridesResolution { of, words });
     });
 }
 

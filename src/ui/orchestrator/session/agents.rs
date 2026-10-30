@@ -45,14 +45,9 @@ impl Attach<'_> {
                     .position(|option| option.integration == last)
             })
             .unwrap_or(0);
-        self.model.directory_step = Some(DirectoryStep {
-            picker,
-            space,
-            anchor,
-            rows,
-            harnesses,
-            harness,
-        });
+        self.model.directory_step = Some(DirectoryStep::new(
+            picker, space, anchor, rows, harnesses, harness,
+        ));
         self.model.dirty = true;
     }
 
@@ -69,22 +64,30 @@ impl Attach<'_> {
             self.model.dirty = true;
             return;
         };
-        let Some(DirectoryStep {
+        let Some(step) = self.model.directory_step.take() else {
+            return;
+        };
+        let overrides = step.launch_words();
+        let DirectoryStep {
             space,
             mut harnesses,
             harness,
             ..
-        }) = self.model.directory_step.take()
-        else {
-            return;
-        };
+        } = step;
         self.model.dirty = true;
         if harness >= harnesses.len() {
             self.open_manage_at(Route::Harnesses);
             return;
         }
         let option = harnesses.swap_remove(harness);
-        self.start_agent(option, AgentLaunch::New(NewPlace { space, directory }));
+        self.start_agent(
+            option,
+            AgentLaunch::New(NewPlace {
+                space,
+                directory,
+                overrides,
+            }),
+        );
     }
 
     /// Asks which harness a resumed agent runs — unless exactly one is set
@@ -148,7 +151,7 @@ impl Attach<'_> {
     pub(super) fn launch_agent(
         &mut self,
         label: String,
-        command: Vec<String>,
+        command: TabCommand,
         harness: String,
         launch: AgentLaunch,
     ) {
@@ -161,11 +164,16 @@ impl Attach<'_> {
                 },
                 target.replacing,
             ),
-            AgentLaunch::New(NewPlace { space, directory }) => (
+            AgentLaunch::New(NewPlace {
+                space,
+                directory,
+                overrides,
+            }) => (
                 PlacementRequest::New {
                     from: directory,
                     harness,
                     space,
+                    overrides,
                 },
                 None,
             ),
@@ -410,7 +418,7 @@ impl Attach<'_> {
             .identities
             .iter()
             .find(|identity| identity.integration == choice.integration)
-            .map(|identity| identity.launch.to_string_lossy().into_owned())
+            .map(TabCommand::of)
         else {
             return;
         };
@@ -434,7 +442,7 @@ impl Attach<'_> {
             },
             Vec::new(),
             label,
-            vec![launch],
+            launch,
             Some(tab),
             self.channels.placements.sender.clone(),
         );
@@ -458,13 +466,13 @@ impl Attach<'_> {
                 // recorded against.
                 launched_agent_id(found)?.to_owned(),
                 found.label.clone(),
-                agent_for_tab(&self.identities, found)?.launch.clone(),
+                TabCommand::of(agent_for_tab(&self.identities, found)?),
                 named_checkout(&found.pane.cwd),
             ))
         }) else {
             return;
         };
-        let command = vec![harness.to_string_lossy().into_owned()];
+        let command = harness;
         if self.model.placement_pending {
             return;
         }
@@ -491,17 +499,29 @@ impl Attach<'_> {
     /// The one place a `CreateTab` for an agent is sent: an agent tab
     /// always carries the identity its placement recorded, and the key its
     /// placement issued.
+    ///
+    /// An environment the terminal runtime would refuse opens no tab and
+    /// says why: the overrides were the operator's, and a launch that
+    /// dropped some of them would be one they did not ask for.
     pub(super) fn open_agent_tab(&mut self, pending: AgentTab) {
-        let env = vec![
-            (
-                uze_terminal::launch::AGENT_IDENTITY_VARIABLE.to_owned(),
-                pending.agent,
-            ),
-            (
-                uze_terminal::launch::AGENT_KEY_VARIABLE.to_owned(),
-                pending.launch_key,
-            ),
-        ];
+        let mut env = pending.env;
+        env.push((
+            uze_terminal::launch::AGENT_IDENTITY_VARIABLE.to_owned(),
+            pending.agent,
+        ));
+        env.push((
+            uze_terminal::launch::AGENT_KEY_VARIABLE.to_owned(),
+            pending.launch_key,
+        ));
+        if let Err(refusal) = uze_terminal::launch::admits(&env) {
+            self.model.raise_toast(
+                ToastKind::Failed,
+                format!("not launched: {refusal}"),
+                pending.label,
+                None,
+            );
+            return;
+        }
         let _ = send_request(
             &mut self.stream,
             &ClientRequest::CreateTab {
@@ -531,7 +551,7 @@ impl Attach<'_> {
         } = resolution;
         // A resume with nowhere to go opens nothing: the task keeps its
         // branch and stays in the preserved list, and the reason is said.
-        let placement = match placement {
+        let mut placement = match placement {
             Ok(placement) => placement,
             Err(reason) => {
                 self.model
@@ -539,6 +559,21 @@ impl Attach<'_> {
                 return;
             }
         };
+        // A plain binary is handed the agent's overrides here, since nothing
+        // between the tab and the binary would add them; UZE's launcher adds
+        // them itself. Decided by the command this tab runs, never by
+        // whether a launcher exists now.
+        let TabCommand {
+            argv: mut command,
+            through_launcher,
+        } = command;
+        let bare_launch = std::mem::take(&mut placement.bare_launch);
+        let mut launch_env = Vec::new();
+        if !through_launcher {
+            command.extend(bare_launch.args);
+            launch_env = bare_launch.env;
+            placement.warnings.extend(bare_launch.said);
+        }
         // What preparing the checkout could not do, said once — the tab
         // opens either way. A placement that could not do what was asked
         // never reaches here: it answered `Err` above and opened nothing.
@@ -609,6 +644,7 @@ impl Attach<'_> {
             cwd: placement.cwd,
             agent,
             launch_key: placement.launch_key,
+            env: launch_env,
             size,
         });
         if follow {

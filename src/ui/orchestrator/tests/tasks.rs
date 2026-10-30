@@ -516,7 +516,10 @@ fn a_placed_agent_is_drawn_isolated_before_any_evaluation_answers() {
 
     driven.placements_answered(PlacementResolution {
         label: "agent 2".to_owned(),
-        command: vec!["claude".to_owned()],
+        command: super::TabCommand {
+            argv: vec!["claude".to_owned()],
+            through_launcher: false,
+        },
         placement: Ok(placement),
         replacing: None,
         space: None,
@@ -541,7 +544,10 @@ fn an_agent_that_could_not_be_placed_says_why_and_opens_nothing() {
     let mut driven = driven(agent_session_in("/repo"), &home);
     driven.placements_answered(PlacementResolution {
         label: "agent 2".to_owned(),
-        command: vec!["claude".to_owned()],
+        command: super::TabCommand {
+            argv: vec!["claude".to_owned()],
+            through_launcher: false,
+        },
         placement: Err("could not place the agent: no commit to branch from".to_owned()),
         replacing: None,
         space: None,
@@ -558,6 +564,145 @@ fn an_agent_that_could_not_be_placed_says_why_and_opens_nothing() {
             .any(|request| matches!(request, ClientRequest::CreateTab { .. })),
         "nothing was opened in the operator's tree"
     );
+}
+
+/// A placement on a harness that starts by its plain binary hands the
+/// client the agent's overrides: the flags follow the binary, the
+/// variables join the tab's launch environment beside its identity.
+#[test]
+fn a_bare_launch_carries_the_agents_overrides_in_its_tab() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-bare-overrides"));
+    let mut driven = driven(agent_session_in("/repo"), &home);
+    let mut placement = in_place_placement(&home, "orchestrator-bare-overrides-repo");
+    placement.bare_launch = uze_application::BareLaunch {
+        args: vec!["--model".to_owned(), "opus".to_owned()],
+        env: vec![("DEBUG".to_owned(), "1".to_owned())],
+        said: None,
+    };
+
+    driven.placements_answered(PlacementResolution {
+        label: "agent 2".to_owned(),
+        command: super::TabCommand {
+            argv: vec!["harness".to_owned()],
+            through_launcher: false,
+        },
+        placement: Ok(placement),
+        replacing: None,
+        space: None,
+    });
+
+    let sent = driven.sent();
+    assert!(
+        sent.iter().any(|request| matches!(
+            request,
+            ClientRequest::CreateTab { command: Some(command), env, .. }
+                if command == &["harness", "--model", "opus"]
+                    && env.contains(&("DEBUG".to_owned(), "1".to_owned()))
+                    && env.iter().any(|(name, _)| {
+                        name == uze_terminal::launch::AGENT_IDENTITY_VARIABLE
+                    })
+        )),
+        "{sent:?}"
+    );
+}
+
+/// Which of the two a tab gets follows the command it runs, read when the
+/// client attached: UZE's launcher carries the overrides itself, so a tab
+/// running it is handed none, while a plain binary is handed them even when
+/// a launcher was set up since.
+#[test]
+fn whether_a_tab_is_handed_the_overrides_follows_the_command_it_runs() {
+    for through_launcher in [true, false] {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-tab-command"));
+        let mut driven = driven(agent_session_in("/repo"), &home);
+        let mut placement = in_place_placement(&home, "orchestrator-tab-command-repo");
+        placement.bare_launch = uze_application::BareLaunch {
+            args: vec!["--yolo".to_owned()],
+            env: vec![("DEBUG".to_owned(), "1".to_owned())],
+            said: Some("--yolo gives up permission prompts".to_owned()),
+        };
+
+        driven.placements_answered(PlacementResolution {
+            label: "agent 2".to_owned(),
+            command: super::TabCommand {
+                argv: vec!["harness".to_owned()],
+                through_launcher,
+            },
+            placement: Ok(placement),
+            replacing: None,
+            space: None,
+        });
+
+        let handed = driven.sent().iter().any(|request| {
+            matches!(
+                request,
+                ClientRequest::CreateTab { command: Some(command), env, .. }
+                    if command == &["harness", "--yolo"]
+                        && env.contains(&("DEBUG".to_owned(), "1".to_owned()))
+            )
+        });
+        let said = format!("{:?}", driven.attach.model.toast_stack());
+        assert_eq!(
+            handed, !through_launcher,
+            "through launcher: {through_launcher}"
+        );
+        assert_eq!(
+            said.contains("gives up permission prompts"),
+            !through_launcher,
+            "{said}"
+        );
+    }
+}
+
+/// More variables than a launch environment holds opens no tab: a launch
+/// carrying only some of the operator's overrides is one they did not ask
+/// for.
+#[test]
+fn a_bare_launch_with_more_variables_than_a_tab_holds_opens_nothing_and_says_why() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-bare-overflow"));
+    let mut driven = driven(agent_session_in("/repo"), &home);
+    let mut placement = in_place_placement(&home, "orchestrator-bare-overflow-repo");
+    placement.bare_launch.env = (0..uze_terminal::launch::MAX_ENVIRONMENT_ENTRIES)
+        .map(|index| (format!("VARIABLE_{index}"), "1".to_owned()))
+        .collect();
+
+    driven.placements_answered(PlacementResolution {
+        label: "agent 2".to_owned(),
+        command: super::TabCommand {
+            argv: vec!["harness".to_owned()],
+            through_launcher: false,
+        },
+        placement: Ok(placement),
+        replacing: None,
+        space: None,
+    });
+
+    assert!(
+        !driven
+            .sent()
+            .iter()
+            .any(|request| matches!(request, ClientRequest::CreateTab { .. })),
+        "no tab opens"
+    );
+    let said = format!("{:?}", driven.attach.model.toast_stack());
+    assert!(
+        said.contains("agent 2") && said.contains("not launched"),
+        "{said}"
+    );
+}
+
+/// An agent placed in a repository of its own, as a placement answers it.
+fn in_place_placement(home: &UzeHome, label: &str) -> uze_application::AgentPlacement {
+    let repository = uze_testkit::git::Repository::new(label);
+    uze_application::UzeApplication::new(home.clone(), Vec::new())
+        .workspace()
+        .place_new_agent(
+            repository.root(),
+            Some(uze_application::PlacementKind::InPlace),
+            "harness",
+            &[],
+        )
+        .expect("the agent is placed")
 }
 
 /// The operator's own sequence, end to end: an agent commits in its

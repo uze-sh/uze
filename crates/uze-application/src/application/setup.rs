@@ -45,6 +45,7 @@ impl UzeApplication {
     /// Nothing to seed or republish takes no lock at all, because taking one
     /// writes its holder's pid and a warm bootstrap writes nothing.
     pub fn ensure_default_plugins(&self) -> Result<bool> {
+        self.retire_records_of_earlier_releases();
         if self.bootstrap_is_settled() {
             let _span = tracing::info_span!("bootstrap.ensure_default_plugins").entered();
             self.prepare_detected_integrations_reporting();
@@ -56,6 +57,26 @@ impl UzeApplication {
             Err(error) => return Err(error),
         };
         self.ensure_default_plugins_locked()
+    }
+
+    /// Removes the records an earlier release kept that nothing reads any
+    /// more. Runs ahead of every command with the seeding, so a machine
+    /// sheds one the first time a build without its reader runs; costs one
+    /// look at the disk once it is gone.
+    ///
+    /// `state/profiles.json` is the Profiles screen's record, which listing
+    /// the management overview wrote on every machine. The keys an applied
+    /// profile wrote into a harness's own configuration stay: no receipt
+    /// says UZE wrote them, so they are the operator's settings now.
+    pub(crate) fn retire_records_of_earlier_releases(&self) {
+        let retired = self.home.retired_profiles_path();
+        match std::fs::remove_file(&retired) {
+            Ok(()) => tracing::info!(path = %retired.display(), "retired a record nothing reads"),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                tracing::warn!(path = %retired.display(), %error, "a retired record could not be removed")
+            }
+        }
     }
 
     /// Every default plugin is in the Store and every derived view matches
@@ -172,6 +193,7 @@ impl UzeApplication {
         route: ProvisionRoute,
     ) -> Result<Vec<SetupResult>> {
         let _mutation = uze_core::persistence::MutationLock::acquire(&self.home)?;
+        self.retire_records_of_earlier_releases();
         // Seed the default marketplace plugins before any provisioning, so a
         // fresh `UZE_HOME` gets the Skill without a manual `uze add` and so
         // an updated binary heals its attachment on next `setup`.

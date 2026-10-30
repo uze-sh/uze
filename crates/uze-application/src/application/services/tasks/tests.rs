@@ -3618,3 +3618,315 @@ fn a_refused_pull_names_the_files_in_the_way() {
     );
     assert_eq!(super::placement::in_the_way("no remote"), "no remote");
 }
+
+mod overrides_tests {
+    use super::*;
+    use uze_core::{
+        UzeHome,
+        capability::Resource,
+        exposure::{ExposureMechanism, ExposurePlan},
+        flag_catalog::{FlagCatalog, FlagGrammar, FlagOwner, FlagSpec, FlagValue},
+        integration::SessionContinuity,
+        router::{CompatibilityRoute, HarnessCapabilities},
+    };
+
+    use crate::{OverrideKind, OverrideMark, OverrideVerdict};
+
+    const FLAGS: &[FlagSpec] = &[
+        FlagSpec::new(
+            &["--model", "-m"],
+            FlagValue::Free("model"),
+            "model",
+            FlagOwner::Operator,
+        ),
+        FlagSpec::new(
+            &["--resume"],
+            FlagValue::Free("id"),
+            "resume",
+            FlagOwner::Uze("uze continues this agent's conversation itself"),
+        ),
+        FlagSpec::new(
+            &["--yolo"],
+            FlagValue::None,
+            "skip prompts",
+            FlagOwner::Weakens("permission prompts"),
+        ),
+    ];
+
+    /// A harness whose launch takes [`FLAGS`], started through UZE's
+    /// launcher or by its plain binary as the test says.
+    struct Harness {
+        id: &'static str,
+        name: &'static str,
+        resumes: bool,
+    }
+
+    impl uze_core::integration::IntegrationPort for Harness {
+        fn id(&self) -> &'static str {
+            self.id
+        }
+        fn display_name(&self) -> &'static str {
+            self.name
+        }
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+        fn exposure_plan(&self, _resource: &Resource) -> ExposurePlan {
+            ExposurePlan {
+                route: CompatibilityRoute::Adaptable,
+                mechanism: ExposureMechanism::Unsupported {
+                    rationale: "test does not attach".to_owned(),
+                },
+                evidence: "test".to_owned(),
+            }
+        }
+        fn session_continuity(&self) -> SessionContinuity {
+            if self.resumes {
+                SessionContinuity::Assigned
+            } else {
+                SessionContinuity::Unsupported
+            }
+        }
+        fn flag_catalog(&self) -> FlagCatalog {
+            FlagCatalog::new(FlagGrammar::Posix, FLAGS)
+        }
+        fn managed_environment(&self) -> &'static [&'static str] {
+            &["HARNESS_HOME"]
+        }
+    }
+
+    /// `one` starts through its launcher, which this places; `two` starts
+    /// by its plain binary.
+    fn application(label: &str) -> UzeApplication {
+        let home = UzeHome::at(uze_testkit::temp::scratch(label));
+        std::fs::create_dir_all(home.shims_dir()).unwrap();
+        std::fs::write(home.shim_path("one"), "").unwrap();
+        UzeApplication::new(
+            home,
+            vec![
+                Box::new(Harness {
+                    id: "one",
+                    name: "One",
+                    resumes: true,
+                }),
+                Box::new(Harness {
+                    id: "two",
+                    name: "Two",
+                    resumes: false,
+                }),
+            ],
+        )
+    }
+
+    fn words(line: &str) -> Vec<String> {
+        line.split_whitespace().map(str::to_owned).collect()
+    }
+
+    fn placed(app: &UzeApplication, root: &Path, harness: &str, line: &str) -> AgentPlacement {
+        app.workspace()
+            .place_new_agent_with(
+                root,
+                Some(PlacementKind::InPlace),
+                harness,
+                &[],
+                &words(line),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn a_new_agents_overrides_are_recorded_for_its_launcher_and_remembered() {
+        let repository = uze_testkit::git::Repository::new("overrides-launcher");
+        let root = repository.root().canonical().unwrap();
+        let app = application("overrides-launcher-home");
+
+        let placement = placed(&app, &root, "one", "--model opus DEBUG=1");
+
+        let agent = placement.placement.agent().as_str();
+        assert_eq!(
+            app.workspace().agent_overrides(&root, agent, "one"),
+            words("--model opus DEBUG=1")
+        );
+        assert!(
+            placement.warnings.is_empty(),
+            "the launcher says what it leaves out: {:?}",
+            placement.warnings
+        );
+        let recent: Vec<Vec<String>> = app
+            .workspace()
+            .recent_overrides("one", &root)
+            .into_iter()
+            .map(|entry| entry.words)
+            .collect();
+        assert_eq!(recent, [words("--model opus"), words("DEBUG=1")]);
+    }
+
+    /// The client's harness list is read when it attaches, and its tab runs
+    /// the command read then: a launcher set up in between must not leave
+    /// the overrides recorded for a launcher the tab never runs.
+    #[test]
+    fn a_launcher_set_up_after_the_client_attached_never_strands_the_overrides() {
+        let repository = uze_testkit::git::Repository::new("overrides-late-launcher");
+        let root = repository.root().canonical().unwrap();
+        let app = application("overrides-late-launcher-home");
+        let launcher = app.home.shim_path("one");
+        std::fs::remove_file(&launcher).unwrap();
+        let attached = app
+            .workspace()
+            .agent_identities()
+            .into_iter()
+            .find(|identity| identity.integration == "one")
+            .unwrap();
+        assert_ne!(attached.launch, launcher);
+        assert!(
+            !attached.through_launcher,
+            "the client attached to the bare binary"
+        );
+        std::fs::write(&launcher, "").unwrap();
+
+        let placement = placed(&app, &root, "one", "--model opus DEBUG=1");
+
+        assert_eq!(placement.bare_launch.args, ["--model", "opus"]);
+        assert_eq!(
+            placement.bare_launch.env,
+            [("DEBUG".to_owned(), "1".to_owned())]
+        );
+    }
+
+    #[test]
+    fn a_new_agent_with_none_records_nothing() {
+        let repository = uze_testkit::git::Repository::new("overrides-none");
+        let root = repository.root().canonical().unwrap();
+        let app = application("overrides-none-home");
+
+        placed(&app, &root, "one", "");
+
+        assert!(!app.home.launch_overrides_path().exists());
+    }
+
+    #[test]
+    fn a_harness_without_its_launcher_is_handed_its_overrides_by_the_client() {
+        let repository = uze_testkit::git::Repository::new("overrides-bare");
+        let root = repository.root().canonical().unwrap();
+        let app = application("overrides-bare-home");
+
+        let placement = placed(
+            &app,
+            &root,
+            "two",
+            "--resume elsewhere --yolo HARNESS_HOME=/x DEBUG=1",
+        );
+
+        assert_eq!(placement.bare_launch.args, ["--yolo"]);
+        assert_eq!(
+            placement.bare_launch.env,
+            [("DEBUG".to_owned(), "1".to_owned())]
+        );
+        let said = placement.bare_launch.said.unwrap_or_default();
+        assert!(said.contains("--resume left out"), "{said}");
+        assert!(said.contains("HARNESS_HOME left out"), "{said}");
+        assert!(
+            said.contains("--yolo gives up permission prompts"),
+            "{said}"
+        );
+        assert!(
+            !said.contains("elsewhere") && !said.contains("/x"),
+            "{said}"
+        );
+    }
+
+    #[test]
+    fn overrides_stay_with_the_harness_an_agent_continued_away_from() {
+        let repository = uze_testkit::git::Repository::new("overrides-switch");
+        let root = repository.root().canonical().unwrap();
+        let app = application("overrides-switch-home");
+        let placement = placed(&app, &root, "two", "--model opus");
+        let agent = placement.placement.agent().as_str().to_owned();
+
+        let away = app
+            .workspace()
+            .switch_harness(&root, &agent, "two", "one")
+            .unwrap();
+        let back = app
+            .workspace()
+            .switch_harness(&root, &agent, "one", "two")
+            .unwrap();
+
+        assert!(
+            away.told
+                .as_deref()
+                .is_some_and(|told| told.contains("Its overrides on Two were left behind")),
+            "{:?}",
+            away.told
+        );
+        assert_eq!(away.bare_launch, BareLaunch::default());
+        assert!(
+            back.told
+                .as_deref()
+                .is_some_and(|told| !told.contains("left behind")),
+            "{:?}",
+            back.told
+        );
+        assert_eq!(back.bare_launch.args, ["--model", "opus"]);
+    }
+
+    /// A resume is never asked about overrides: the agent starts again
+    /// with the ones it last had on that harness, recorded where its
+    /// launcher reads them and handed to a bare launch alike.
+    #[test]
+    fn a_resumed_agent_keeps_its_recorded_overrides() {
+        let repository = uze_testkit::git::Repository::new("overrides-resume");
+        let root = repository.root().canonical().unwrap();
+        let app = application("overrides-resume-home");
+        for (harness, line) in [("one", "--model opus DEBUG=1"), ("two", "--yolo")] {
+            let placement = placed(&app, &root, harness, line);
+            let agent = placement.placement.agent().as_str().to_owned();
+
+            let resumed = app
+                .workspace()
+                .resume_task(&root, &agent, harness, &[])
+                .unwrap();
+
+            assert_eq!(
+                app.workspace().agent_overrides(&root, &agent, harness),
+                words(line),
+                "{harness}"
+            );
+            assert_eq!(resumed.bare_launch, placement.bare_launch, "{harness}");
+            assert!(!resumed.bare_launch.args.is_empty(), "{harness}");
+        }
+    }
+
+    #[test]
+    fn a_catalog_offers_the_operators_flags_and_checks_a_line_as_typed() {
+        let app = application("overrides-catalog-home");
+        let catalog = app.workspace().override_catalog("one").unwrap();
+
+        let offered: Vec<&str> = catalog.flags().map(|flag| flag.name).collect();
+        assert_eq!(offered, ["--model", "--yolo"]);
+        assert_eq!(catalog.flag("-m").map(|flag| flag.name), Some("--model"));
+        assert_eq!(
+            catalog.flag("--yolo").map(|flag| flag.mark),
+            Some(OverrideMark::Weakens("permission prompts"))
+        );
+
+        let checked = catalog
+            .check("--model 'big one' stray UZE_HOME=/x")
+            .unwrap();
+        let verdicts: Vec<(OverrideKind, &str, bool)> = checked
+            .iter()
+            .map(|entry| (entry.kind, entry.label.as_str(), entry.verdict.is_refused()))
+            .collect();
+        assert_eq!(
+            verdicts,
+            [
+                (OverrideKind::Flag, "--model", false),
+                (OverrideKind::Positional, "a positional argument", true),
+                (OverrideKind::Variable, "UZE_HOME", true),
+            ]
+        );
+        assert_eq!(checked[0].words, ["--model", "big one"]);
+        assert_eq!(checked[0].verdict, OverrideVerdict::Accepted);
+        assert!(catalog.check("--model \"open").is_err());
+    }
+}

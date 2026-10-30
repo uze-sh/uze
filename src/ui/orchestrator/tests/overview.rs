@@ -3631,3 +3631,33 @@ fn a_repository_section_left_by_the_answer_goes_back_to_the_agent() {
     );
     assert_eq!(overview_of(&driven).section, Section::Agent);
 }
+
+/// The agent's overview names what it was launched with under its
+/// harness.
+#[test]
+fn the_overview_names_the_agents_overrides() {
+    let mut model = agent_session_in("/repo/.worktrees/a");
+    stamp_first_tab(&mut model, "a1");
+    let mut agent = drawer_over(&model);
+    agent.support = Some(support_fixture());
+    agent.overrides = Some(vec!["--model".to_owned(), "opus".to_owned()]);
+    let (space, behind) = {
+        let space = model.session.as_ref().expect("session").selected_space();
+        (space.id, space.selected_tab)
+    };
+    model.open_space_overview(space, behind, PathBuf::from("/repo"), true);
+    let overview = model.space_overview.as_mut().expect("the overview is open");
+    overview.agent = Some(agent);
+    overview.answer = Some(Ok(project_space(
+        Default::default(),
+        Err("not read".to_owned()),
+    )));
+    let rows = frame_rows_at(&mut model, Rect::new(0, 0, 160, 45));
+    let row_of = |text: &str| {
+        rows.iter()
+            .position(|row| row.contains(text))
+            .unwrap_or_else(|| panic!("no {text}:\n{}", rows.join("\n")))
+    };
+    assert!(row_of("--model opus") > row_of("harness"));
+    assert!(row_of("--model opus") < row_of("path"));
+}

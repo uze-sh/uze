@@ -24,9 +24,6 @@ use uze_core::{
         HarnessDetection, IntegrationPort, ManagedArtifact, PublicationStatus, active_plugin_name,
         default_exposure_name_candidates, qualified_exposure_name_candidates,
     },
-    preference::{
-        PreferenceApplyOutcome, PreferencePlan, PreferencePort, PreferenceTranslation, Preferences,
-    },
     provisioning::{ProcessRunner, ProcessSpec, ProvisioningResult},
     router::HarnessCapabilities,
     state,
@@ -34,11 +31,11 @@ use uze_core::{
 };
 
 mod digest;
+mod flags;
 mod generate;
 mod hooks;
 mod mcp;
 mod plugin;
-mod preferences;
 mod runtime;
 mod session;
 mod skills;
@@ -368,6 +365,14 @@ impl IntegrationPort for CodexIntegration {
         ctx: &uze_core::integration::AgentContext,
     ) -> Result<uze_core::integration::ContextContribution> {
         Ok(context_hook(ctx.file))
+    }
+
+    fn flag_catalog(&self) -> uze_core::flag_catalog::FlagCatalog {
+        flags::CATALOG
+    }
+
+    fn managed_environment(&self) -> &'static [&'static str] {
+        flags::MANAGED_ENVIRONMENT
     }
 
     fn conversation_digest(
@@ -731,24 +736,6 @@ impl CodexIntegration {
 /// `codex --version` prints "codex-cli 0.148.0" — the version trails.
 fn codex_version(program: &str) -> HarnessDetection {
     detect_version(program, VersionToken::Last)
-}
-
-impl PreferencePort for CodexIntegration {
-    fn preference_id(&self) -> &'static str {
-        IntegrationPort::id(self)
-    }
-
-    fn translate(&self, preferences: &Preferences) -> PreferenceTranslation {
-        preferences::translate(preferences)
-    }
-
-    fn apply(&self, preferences: &Preferences) -> Result<PreferenceApplyOutcome> {
-        preferences::apply(&self.config_toml_path(), preferences)
-    }
-
-    fn plan(&self, preferences: &Preferences) -> Result<PreferencePlan> {
-        preferences::plan(&self.config_toml_path(), preferences)
-    }
 }
 
 /// The agent's Codex role file: its label as `name`, the portable

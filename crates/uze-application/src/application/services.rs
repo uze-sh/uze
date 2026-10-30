@@ -31,16 +31,6 @@ impl UzeApplication {
     }
 }
 
-/// Universal user preferences and the profiles that carry them.
-pub struct Profiles<'a>(pub(super) &'a UzeApplication);
-
-impl UzeApplication {
-    /// Reading and applying user preference profiles.
-    pub fn profiles(&self) -> Profiles<'_> {
-        Profiles(self)
-    }
-}
-
 /// Which theme is active, and which themes this machine has.
 pub struct Themes<'a>(pub(super) &'a UzeApplication);
 
@@ -164,6 +154,9 @@ pub struct AgentIdentity {
     /// is what keeps a conversation carrying over without asking the
     /// operator to reorder their own environment.
     pub launch: std::path::PathBuf,
+    /// Whether `launch` is UZE's launcher, which carries an agent's
+    /// overrides itself; a plain binary is handed them by the client.
+    pub through_launcher: bool,
     /// Why an agent of this harness starts a conversation it will not be
     /// able to continue, when that is the case. `None` is the ordinary
     /// answer; a value is meant to be said once, on the tab.
@@ -177,6 +170,9 @@ pub struct AgentIdentity {
     /// How this harness's prompt invokes a skill by name (`/`, `$`, `@`),
     /// or `None` for one that has no way to.
     pub skill_prefix: Option<&'static str>,
+    /// What an agent of this harness may be launched with beyond what UZE
+    /// composes, for an overrides step to offer and check.
+    pub overrides: OverrideCatalog,
 }
 
 impl AgentIdentity {
@@ -222,6 +218,7 @@ mod checkouts;
 mod declaration;
 mod disk;
 mod launchers;
+mod overrides;
 mod policy_commands;
 mod retired_regions;
 mod space_overview;
@@ -232,6 +229,7 @@ pub use artifacts::*;
 pub use checkouts::*;
 pub use declaration::*;
 pub use disk::*;
+pub use overrides::*;
 pub use policy_commands::*;
 pub use space_overview::*;
 pub use tasks::*;

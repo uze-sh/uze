@@ -304,12 +304,6 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Plugins, "pagedown", Action::ScrollPageDown),
         bind(Scope::Plugins, "pageup", Action::ScrollPageUp),
         bind(Scope::Harnesses, "s", Action::SetupHarness),
-        bind(Scope::Profiles, "n", Action::NewProfile),
-        bind(Scope::Profiles, "d", Action::DeleteProfile),
-        bind(Scope::Profiles, "space", Action::ToggleProfileHarness),
-        bind(Scope::Profiles, "v", Action::PreviewProfile),
-        bind(Scope::ProfileEditor, "left", Action::PreviousValue),
-        bind(Scope::ProfileEditor, "right", Action::NextValue),
         // --- Management, the surfaces that seal -------------------------
         bind(Scope::Filter, "enter", Action::Activate),
         bind(Scope::Filter, "esc", Action::Dismiss),
@@ -425,8 +419,8 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Architect, "down", Action::PanDown),
         bind(Scope::Architect, "tab", Action::NextDiagram),
         bind(Scope::Architect, "shift+tab", Action::PreviousDiagram),
-        // Free letters, both: `v` previews a profile and `a` analyses a
-        // context elsewhere, and a letter names one action everywhere.
+        // A free letter: `a` analyses a context elsewhere, and a letter
+        // names one action everywhere.
         bind(Scope::Architect, "g", Action::NextRendering),
         // One key for the two lists: `o` opens the artifacts, which is the
         // list reached for most, and left and right step between it and
@@ -588,6 +582,26 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::RootPicker, "enter", Action::Activate),
         bind(Scope::RootPicker, "esc", Action::Dismiss),
         bind(Scope::RootPicker, "backspace", Action::EraseBack),
+        // The popup's views sit side by side, so `alt` and the sideways
+        // arrows walk them, as `alt+up`/`alt+down` walk the agents: the
+        // bare arrows already move the harness here and the caret there.
+        bind(Scope::RootPicker, "alt+right", Action::OpenOverrides),
+        // The overrides step is a line typed into: the sideways keys move
+        // its caret, the vertical ones mark in the list under it, and space
+        // switches the choice marked there (with none marked, it is typed).
+        bind(Scope::LaunchOverrides, "down", Action::SelectNext),
+        bind(Scope::LaunchOverrides, "up", Action::SelectPrevious),
+        bind(Scope::LaunchOverrides, "tab", Action::Expand),
+        bind(Scope::LaunchOverrides, "enter", Action::Activate),
+        bind(Scope::LaunchOverrides, "esc", Action::Dismiss),
+        bind(Scope::LaunchOverrides, "alt+left", Action::Dismiss),
+        bind(Scope::LaunchOverrides, "backspace", Action::EraseBack),
+        bind(Scope::LaunchOverrides, "delete", Action::EraseForward),
+        bind(Scope::LaunchOverrides, "left", Action::CaretLeft),
+        bind(Scope::LaunchOverrides, "right", Action::CaretRight),
+        bind(Scope::LaunchOverrides, "home", Action::CaretLineStart),
+        bind(Scope::LaunchOverrides, "end", Action::CaretLineEnd),
+        bind(Scope::LaunchOverrides, "space", Action::ToggleChoice),
         bind(Scope::Rename, "enter", Action::Activate),
         bind(Scope::Rename, "esc", Action::Dismiss),
         bind(Scope::Rename, "backspace", Action::EraseBack),
@@ -734,7 +748,6 @@ mod tests {
                 "analyze-context",
                 "apply-context-plan",
                 "open-glossary",
-                "apply-profile",
                 // Isolating an agent is a decision taken once, on one
                 // agent, from the menu that already names that agent — a
                 // chord would fire on whichever row happened to be under
@@ -794,7 +807,6 @@ mod tests {
         assert_eq!(
             bare,
             vec![
-                "profiles.delete-profile=d",
                 "code.delete-file=d",
                 "space-overview.clear-prompt-history=shift+x",
                 "preserved-work.discard-task=d",

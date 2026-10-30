@@ -24,6 +24,35 @@ impl Workspace<'_> {
         harness: &str,
         occupied: &[PathBuf],
     ) -> Result<AgentPlacement> {
+        let placed = self.place(pane_cwd, kind, harness, occupied)?;
+        Ok(self.launching_with(placed, None))
+    }
+
+    /// [`Self::place_new_agent`], launched with `overrides`: the words the
+    /// operator typed for this agent's harness, recorded as the agent's
+    /// before its tab exists, so the launch that tab makes carries them,
+    /// and remembered among the sets used lately. None is the launch the
+    /// workspace made before overrides existed.
+    #[tracing::instrument(name = "workspace.place_new_agent_with", skip_all, fields(pane_cwd = %pane_cwd.display(), ?kind, harness, overrides = overrides.len()))]
+    pub fn place_new_agent_with(
+        &self,
+        pane_cwd: &Path,
+        kind: Option<PlacementKind>,
+        harness: &str,
+        occupied: &[PathBuf],
+        overrides: &[String],
+    ) -> Result<AgentPlacement> {
+        let placed = self.place(pane_cwd, kind, harness, occupied)?;
+        Ok(self.launching_with(placed, Some(overrides).filter(|words| !words.is_empty())))
+    }
+
+    fn place(
+        &self,
+        pane_cwd: &Path,
+        kind: Option<PlacementKind>,
+        harness: &str,
+        occupied: &[PathBuf],
+    ) -> Result<AgentPlacement> {
         // The project decides, unless the caller asked for one kind by
         // name: `Isolate` is an action on an agent, and a launch is not
         // where that question is asked any more.
@@ -63,6 +92,7 @@ impl Workspace<'_> {
                     awaiting_approval: None,
                     view,
                     launch_key: String::new(),
+                    bare_launch: BareLaunch::default(),
                 })
             }
         };
@@ -247,6 +277,7 @@ impl Workspace<'_> {
             awaiting_approval,
             view,
             launch_key: String::new(),
+            bare_launch: BareLaunch::default(),
         })
     }
 
@@ -267,6 +298,17 @@ impl Workspace<'_> {
     /// `carry` says.
     #[tracing::instrument(name = "workspace.isolate", skip_all, fields(cwd = %cwd.display(), agent = %agent_id, ?carry), err)]
     pub fn isolate(
+        &self,
+        cwd: &Path,
+        agent_id: &str,
+        carry: Carry,
+        occupied: &[PathBuf],
+    ) -> Result<AgentPlacement> {
+        let placed = self.isolated(cwd, agent_id, carry, occupied)?;
+        Ok(self.launching_with(placed, None))
+    }
+
+    fn isolated(
         &self,
         cwd: &Path,
         agent_id: &str,
@@ -367,6 +409,7 @@ impl Workspace<'_> {
                 awaiting_approval,
                 view,
                 launch_key: String::new(),
+                bare_launch: BareLaunch::default(),
             },
             None,
         )
@@ -382,6 +425,17 @@ impl Workspace<'_> {
     /// the record takes as the agent's from here on.
     #[tracing::instrument(name = "workspace.resume_task", skip_all, fields(cwd = %cwd.display(), task_id = %task_id, harness = %harness), err)]
     pub fn resume_task(
+        &self,
+        cwd: &Path,
+        task_id: &str,
+        harness: &str,
+        occupied: &[PathBuf],
+    ) -> Result<AgentPlacement> {
+        let placed = self.resume(cwd, task_id, harness, occupied)?;
+        Ok(self.launching_with(placed, None))
+    }
+
+    fn resume(
         &self,
         cwd: &Path,
         task_id: &str,
@@ -438,6 +492,7 @@ impl Workspace<'_> {
                     awaiting_approval: None,
                     view: None,
                     launch_key: String::new(),
+                    bare_launch: BareLaunch::default(),
                 });
             }
             // An agent that ended with nothing to deliver, or whose work
@@ -498,6 +553,7 @@ impl Workspace<'_> {
                 awaiting_approval: None,
                 view: None,
                 launch_key: String::new(),
+                bare_launch: BareLaunch::default(),
             })
         })?;
         // Only once the record says the work is back: a shelf removed before
@@ -557,6 +613,7 @@ impl Workspace<'_> {
             awaiting_approval: None,
             view,
             launch_key: String::new(),
+            bare_launch: BareLaunch::default(),
         }))
     }
 

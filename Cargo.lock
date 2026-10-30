@@ -3746,6 +3746,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tracing",
+ "tracing-subscriber",
  "uze-core",
  "uze-document",
  "uze-git",

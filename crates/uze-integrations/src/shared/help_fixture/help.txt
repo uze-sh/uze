@@ -1,0 +1,39 @@
+Usage: harness [options] [command] [prompt]
+       harness resume [--last] <id>
+
+A help text in every style a harness prints one: commander, clap, cobra
+and a bare list. Read by the Rust suite's `flags_in_help` and by the Lab's
+`defined_flags`, which must find exactly the flags in `flags.txt`.
+
+Arguments:
+  prompt                                Your prompt; see --print
+
+Options:
+  -d, --debug [filter]                  Enable debug mode with optional category
+                                        filtering (e.g., --debug=hooks,mcp)
+  -c, --continue                        Continue the most recent conversation
+  --permission-mode <mode>              Permission mode (choices: "plan",
+                                        "auto"); --dangerously-skip it
+  -h, --help                            Display help for command
+
+  -c, --config <key=value>
+          Override a configuration value. Examples: `-c model="o3"`, --profile
+
+      --enable <FEATURE>
+          Enable a feature (repeatable). Equivalent to `-c features.<name>=true`
+
+  -s, --sandbox <SANDBOX_MODE>
+          [possible values: read-only, workspace-write, danger-full-access]
+
+      --no-alt-screen
+          Disable alternate screen mode
+
+Flags:
+  --session, -s string   continue the session with this id
+  --log_level string     how much to log
+  -i                     Short alias for --prompt-interactive
+  --effort               Reasoning effort (low|medium|high)
+  --naïve                not a flag: not ASCII
+  -1                     not a flag: starts with a digit
+  ---triple              not a flag: three dashes
+  -                      not a flag: a dash alone

@@ -2,7 +2,7 @@
 //!
 //! Read whole as a generic `Value`; a missing file is an empty object; a
 //! non-object shape is refused rather than overwritten. Every JSON vendor
-//! config UZE reads or writes — preferences, merged hooks, MCP entries —
+//! config UZE reads or writes — merged hooks, MCP entries, rules —
 //! goes through here, and every write through
 //! `persistence::write_atomic_preserving`, so a crash mid-merge can never
 //! corrupt a user config file nor replace the link a dotfile manager keeps.
@@ -64,30 +64,6 @@ pub(crate) fn get_path<'a>(
     path.iter().try_fold(config, |cursor, key| cursor.get(*key))
 }
 
-/// Whether `set_path` could write `path`: no ancestor holds a value that is
-/// not an object. Absent ancestors are fine — `set_path` creates them.
-pub(crate) fn writable(
-    config: &serde_json::Value,
-    path: &[&str],
-) -> std::result::Result<(), String> {
-    let Some((_, ancestors)) = path.split_last() else {
-        return Err("empty config key path".to_owned());
-    };
-    let mut cursor = config;
-    for key in ancestors {
-        match cursor.get(*key) {
-            None => return Ok(()),
-            Some(next) if next.is_object() => cursor = next,
-            Some(_) => {
-                return Err(format!(
-                    "`{key}` already holds a non-object value; preserved"
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
 /// Removes `path` if it exists, leaving every other key untouched. An
 /// absent key is a successful no-op: the caller asked for it to be gone.
 pub(crate) fn remove_path(config: &mut serde_json::Value, path: &[&str]) {
@@ -139,22 +115,6 @@ pub(crate) fn write_object_or_remove_emptied(
             source,
         }),
     }
-}
-
-/// Convenience for a `PreferencePort::apply` implementation: read, apply one
-/// mutation, write — surfacing a merge failure as `UzeError::HarnessConfig`
-/// the same way `hooks.rs` does for its own merge failures.
-pub(crate) fn merge(
-    path: &Path,
-    mutate: impl FnOnce(&mut serde_json::Value) -> std::result::Result<(), String>,
-) -> Result<()> {
-    let mut config = read_object(path).map_err(|reason| {
-        UzeError::HarnessConfig(format!("cannot update preferences: {reason}"))
-    })?;
-    mutate(&mut config).map_err(|reason| {
-        UzeError::HarnessConfig(format!("cannot update preferences: {reason}"))
-    })?;
-    write_object(path, &config)
 }
 
 #[cfg(test)]
@@ -210,11 +170,11 @@ mod tests {
         );
     }
 
-    /// A preference merge re-emits the whole document, so the order of the
-    /// user's own keys is UZE's to lose. One setting must not reshuffle a
+    /// A write re-emits the whole document, so the order of the user's own
+    /// keys is UZE's to lose. One setting must not reshuffle a
     /// hand-organised config.
     #[test]
-    fn a_merge_keeps_the_users_own_key_order() {
+    fn a_write_keeps_the_users_own_key_order() {
         let path = temp_path("key-order");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(
@@ -222,14 +182,14 @@ mod tests {
             r#"{"zed":"last alphabetically","apiKeyHelper":"~/bin/key","permissions":{"allow":[]}}"#,
         )
         .unwrap();
-        merge(&path, |config| {
-            set_path(
-                config,
-                &["permissions", "defaultMode"],
-                serde_json::json!("acceptEdits"),
-            )
-        })
+        let mut config = read_object(&path).unwrap();
+        set_path(
+            &mut config,
+            &["permissions", "defaultMode"],
+            serde_json::json!("acceptEdits"),
+        )
         .unwrap();
+        write_object(&path, &config).unwrap();
 
         let after = fs::read_to_string(&path).unwrap();
         let keys: Vec<&str> = after
@@ -246,12 +206,11 @@ mod tests {
     }
 
     #[test]
-    fn merge_round_trips_through_disk_atomically() {
-        let path = temp_path("merge");
-        merge(&path, |config| {
-            set_path(config, &["model"], serde_json::json!("opus"))
-        })
-        .unwrap();
+    fn a_write_round_trips_through_disk_atomically() {
+        let path = temp_path("write");
+        let mut config = read_object(&path).unwrap();
+        set_path(&mut config, &["model"], serde_json::json!("opus")).unwrap();
+        write_object(&path, &config).unwrap();
         let written = read_object(&path).unwrap();
         assert_eq!(written["model"], "opus");
         // Scoped to this test's own file name: `path.parent()` is the shared

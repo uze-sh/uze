@@ -123,12 +123,6 @@ scopes! {
     Plugins => "plugins", "Marketplace", Management, seals: false, text: false;
     Extensions => "extensions", "Extensions", Management, seals: false, text: false;
     Harnesses => "harnesses", "Integrations", Management, seals: false, text: false;
-    Profiles => "profiles", "Profiles", Management, seals: false, text: false;
-    /// The preference editor inside Profiles. Its own surface because
-    /// left/right change a value there and move focus everywhere else —
-    /// which is a different surface, not a guard on a binding.
-    ProfileEditor => "profile-editor", "Editing a preference", Management,
-        seals: false, text: false;
     /// The Keys screen itself.
     Keys => "keys", "Shortcuts", Management, seals: false, text: false;
     /// The Settings screen: the choices `config.toml` holds — palette,
@@ -187,6 +181,10 @@ scopes! {
         seals: true, text: true;
     /// The directory picker a new space is born from.
     RootPicker => "root-picker", "Choosing a directory", Workspace, seals: true, text: true;
+    /// The new agent's overrides step: a line typed into, whose caret the
+    /// sideways keys move, over the list of entries to include.
+    LaunchOverrides => "launch-overrides", "Adding launch overrides", Workspace,
+        seals: true, text: true;
     /// The inline rename buffer over a tab or space label.
     Rename => "rename", "While renaming", Workspace, seals: true, text: true;
     /// The harness picker a new agent is born from.

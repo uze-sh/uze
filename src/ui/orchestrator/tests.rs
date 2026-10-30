@@ -52,6 +52,8 @@ mod header;
 #[cfg(test)]
 mod modal;
 #[cfg(test)]
+mod overrides;
+#[cfg(test)]
 mod overview;
 #[cfg(test)]
 mod panes;

@@ -27,6 +27,8 @@ use uze_core::{
 /// Claude Code treat a `--add-dir` directory's `CLAUDE.md` as loaded
 /// instructions rather than only granting tool/file access to it.
 pub(super) const RUNTIME_PROJECTION_ENV_VAR: &str = "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD";
+pub(super) const ADD_DIR_FLAG: &str = "--add-dir";
+pub(super) const SETTINGS_FLAG: &str = "--settings";
 
 /// Builds (or refreshes) `$UZE_HOME/runtime/projects/<id>/claude-code/`
 /// with the project's `.agents/` resources linked in, entirely outside the
@@ -151,7 +153,7 @@ pub(super) fn projection_would_activate(ctx: &RuntimeContext) -> bool {
 pub(super) fn runtime_contribution(ctx: &RuntimeContext) -> HarnessRuntimeContribution {
     match claude_runtime_projection(ctx) {
         Ok(Some(runtime_dir)) => HarnessRuntimeContribution {
-            extra_args: vec![OsString::from("--add-dir"), runtime_dir.into_os_string()],
+            extra_args: vec![OsString::from(ADD_DIR_FLAG), runtime_dir.into_os_string()],
             extra_env: Vec::new(),
             note: None,
         },
@@ -221,7 +223,7 @@ pub(super) fn reporter(
     )
     .ok()?;
     Some(uze_core::integration::ContextContribution {
-        args: vec![OsString::from("--settings"), file.into_os_string()],
+        args: vec![OsString::from(SETTINGS_FLAG), file.into_os_string()],
         env: Vec::new(),
     })
 }
@@ -241,7 +243,7 @@ pub(super) fn agent_context(
 ) -> uze_core::Result<uze_core::integration::ContextContribution> {
     crate::shared::agent_context::write_private(&ctx.dir.join("CLAUDE.md"), ctx.text)?;
     Ok(uze_core::integration::ContextContribution {
-        args: vec![OsString::from("--add-dir"), ctx.dir.as_os_str().to_owned()],
+        args: vec![OsString::from(ADD_DIR_FLAG), ctx.dir.as_os_str().to_owned()],
         env: vec![(
             OsString::from(RUNTIME_PROJECTION_ENV_VAR),
             OsString::from("1"),

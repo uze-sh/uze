@@ -7,14 +7,15 @@ pub mod bootstrap;
 
 pub use application::UzeApplication;
 pub use application::services::{
-    ActionEntry, AgentIdentity, AgentPlacement, AgentView, Carry, CheckoutOwner, CheckoutView,
-    CheckoutsView, CommandsAwaitingApproval, DeclarationApplied, DeclarationChoices,
-    DeclarationEntry, DeclarationView, DeclaredDirectory, DeliveryOutcome, DeliveryPolicyView,
-    DeliveryReport, DirectorySpace, DiskView, Evaluation, HomeTier, JoinedWork, NamedTask,
-    Placement, PlacementKind, PreservedWork, ProjectArtifacts, ProjectSpace, PullReport,
-    Reconciliation, ReleasedTask, RequestQuestion, ShownCommand, SpaceMemory, SpaceOverview,
-    SpacePlugin, SpacePlugins, SplitWork, SubagentCheckout, TargetSyncReport, UpstreamSync,
-    WorkStateView, WorkspaceEntry, project_artifacts, skill_invocation,
+    ActionEntry, AgentIdentity, AgentPlacement, AgentView, BareLaunch, Carry, CheckedOverride,
+    CheckoutOwner, CheckoutView, CheckoutsView, CommandsAwaitingApproval, DeclarationApplied,
+    DeclarationChoices, DeclarationEntry, DeclarationView, DeclaredDirectory, DeliveryOutcome,
+    DeliveryPolicyView, DeliveryReport, DirectorySpace, DiskView, Evaluation, HomeTier, JoinedWork,
+    NamedTask, OverrideCatalog, OverrideFlag, OverrideKind, OverrideMark, OverrideValue, Placement,
+    PlacementKind, PreservedWork, ProjectArtifacts, ProjectSpace, PullReport, Reconciliation,
+    ReleasedTask, RequestQuestion, ShownCommand, SpaceMemory, SpaceOverview, SpacePlugin,
+    SpacePlugins, SplitWork, SubagentCheckout, TargetSyncReport, UpstreamSync, WorkStateView,
+    WorkspaceEntry, project_artifacts, skill_invocation,
 };
 
 /// Types the read models above are made of. Presentation consumes these
@@ -32,10 +33,6 @@ pub use uze_core::{
     naming::{
         FixedResolution, NameCollisionAuthority, NameCollisionRequest, NameCollisionResolution,
         NoNameCollisionAuthority,
-    },
-    preference::{
-        Autonomy, AxisPlan, KeyPlan, ModelPreference, PlannedValue, PreferenceApplyOutcome,
-        PreferenceAxis, PreferencePlan, Preferences, SandboxScope,
     },
     router::{CompatibilityRoute, HarnessCapabilities},
     store::{parse_plugin_marketplace_spec, typed_name},
@@ -109,6 +106,8 @@ pub use uze_workspace::{
     conversation::Claim,
     declaration::{ActionState, DeclarationKey, DeclarationProblem, DeclaredValue, Edit},
     notifications::{Chime, WrittenChime},
+    overrides::record::RecentEntry as RecentOverride,
+    overrides::{Unterminated as OverrideLineOpen, Verdict as OverrideVerdict},
     project_labels::{ProjectLabels, directory_name},
     prompt_history::{PromptAge, PromptClock, PromptEntry, PromptOrigin},
     reports::Cursor as AgentReportCursor,

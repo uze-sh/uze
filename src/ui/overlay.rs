@@ -124,28 +124,6 @@ impl TuiModel {
                 _ => Intent::None,
             },
             Overlay::Preferences(editor) => self.preferences_action(editor, action),
-            Overlay::NewProfile(input) => match action {
-                Action::Activate => {
-                    let id = slugify(&input);
-                    self.close_overlay();
-                    if id.is_empty() {
-                        Intent::None
-                    } else {
-                        Intent::CreateProfile(id)
-                    }
-                }
-                Action::Dismiss => {
-                    self.close_overlay();
-                    Intent::None
-                }
-                Action::EraseBack => {
-                    let mut input = input;
-                    input.pop();
-                    self.overlay = Overlay::NewProfile(input);
-                    Intent::None
-                }
-                _ => Intent::None,
-            },
         }
     }
 
@@ -835,29 +813,6 @@ pub(crate) fn render_text_prompt(
     );
 }
 
-/// Normalizes free-text input into a profile-id slug: lowercase, runs of
-/// whitespace/underscores collapsed to one `-`, everything else outside
-/// `[a-z0-9-]` dropped. Trims leading/trailing `-`. Mirrors
-/// `profile_state::validate_id`'s accepted charset (plus `_`, folded into
-/// `-` here rather than rejected, since typing a space is the most likely
-/// way a user would separate words).
-fn slugify(input: &str) -> String {
-    let mut slug = String::new();
-    let mut pending_dash = false;
-    for ch in input.trim().chars() {
-        if ch.is_ascii_alphanumeric() {
-            if pending_dash && !slug.is_empty() {
-                slug.push('-');
-            }
-            pending_dash = false;
-            slug.push(ch.to_ascii_lowercase());
-        } else if ch == '-' || ch.is_whitespace() || ch == '_' {
-            pending_dash = true;
-        }
-    }
-    slug
-}
-
 /// What allowing an extension means, then each grant it wants with what
 /// it lets it do: what the operator reads before anything of it runs.
 fn extension_grants_body(
@@ -1001,7 +956,6 @@ impl Confirmation {
             },
             Self::ApplyContext => Intent::ContextApply(model.workspace_root()),
             Self::ProtectedPlugin(_) => Intent::None,
-            Self::DeleteProfile(id) => Intent::DeleteProfile(id),
             Self::Trust { retry, .. } => match retry {
                 TrustedRetry::Install { name, marketplace } => Intent::Install {
                     name,
@@ -1114,13 +1068,6 @@ impl Confirmation {
                 "An official marketplace plugin can't be removed from here. Install it from a \
                  custom source to make it removable.",
                 None,
-            ),
-            Self::DeleteProfile(id) => dialog(
-                Tone::Danger,
-                "Delete profile",
-                named(id),
-                "Removes UZE's own record of this profile. No harness configuration is touched.",
-                Some("Delete"),
             ),
             Self::Trust { plugin, detail, .. } => Dialog {
                 body: vec![

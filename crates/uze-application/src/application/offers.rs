@@ -17,7 +17,6 @@ use serde::Serialize;
 use uze_keys::Action;
 
 use super::lifecycle::remove::is_protected_plugin;
-use super::profile::ProfileSummary;
 use super::read_models::{
     FreshnessState, HarnessHealth, MarketplacePluginSummary, MarketplaceSummary,
 };
@@ -139,18 +138,6 @@ impl HarnessHealth {
     /// question answered two ways.
     pub fn offers(&self) -> Vec<ActionOffer> {
         vec![ActionOffer::available(Action::SetupHarness)]
-    }
-}
-
-impl ProfileSummary {
-    pub fn offers(&self) -> Vec<ActionOffer> {
-        // Applying stays available on the active profile: its preferences
-        // may have been edited since, or a harness's configuration changed
-        // by hand — being active is not the same as being in effect.
-        vec![
-            ActionOffer::available(Action::ApplyProfile),
-            ActionOffer::available(Action::DeleteProfile),
-        ]
     }
 }
 

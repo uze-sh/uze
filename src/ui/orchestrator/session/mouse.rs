@@ -272,9 +272,27 @@ impl Attach<'_> {
                         }
                         self.confirm_directory();
                     }
-                    // The harness field's arrows and the foot's hints are
-                    // their keys, in the popup's own scope.
-                    Some(WorkspaceHit::HintAction(action)) => self.directory_step_action(action),
+                    // The harness field's arrows, the foot's hints and the
+                    // views on the border are their keys, in the popup's
+                    // own scope.
+                    Some(WorkspaceHit::HintAction(action) | WorkspaceHit::ViewAction(action)) => {
+                        self.directory_step_action(action)
+                    }
+                    Some(WorkspaceHit::HarnessArrow(step)) => self.cycle_popup_harness(step),
+                    Some(WorkspaceHit::PopupLine) => {
+                        if let Some(step) = self.model.directory_step.as_mut() {
+                            match step.overrides.as_mut() {
+                                Some(over) => over.marked = None,
+                                None => step.picker.unselect(),
+                            }
+                        }
+                    }
+                    Some(
+                        hit @ (WorkspaceHit::OverrideRow(_)
+                        | WorkspaceHit::OverrideToggle(_)
+                        | WorkspaceHit::OverrideClose(_)
+                        | WorkspaceHit::OverridesScroll),
+                    ) => self.press_overrides(hit, mouse.row),
                     Some(WorkspaceHit::NewAgentBody) => {}
                     // Click outside the popup discards it — same rule
                     // `renaming` uses.
@@ -461,6 +479,15 @@ impl Attach<'_> {
             _ if self.model.board_grab.is_some() => {
                 self.drag_board(mouse.column, mouse.row);
             }
+            _ if self
+                .model
+                .directory_step
+                .as_ref()
+                .and_then(|step| step.overrides.as_ref())
+                .is_some_and(|over| over.grabbed) =>
+            {
+                self.scroll_overrides_to(mouse.row);
+            }
             _ if self.model.dragging_content => {
                 self.scroll_content_to(mouse.row);
             }
@@ -583,6 +610,17 @@ impl Attach<'_> {
     /// it would.
     pub(super) fn release(&mut self, mouse: MouseEvent, viewport: &Viewport) -> Flow {
         let Viewport { ref layout, .. } = *viewport;
+        if let Some(over) = self
+            .model
+            .directory_step
+            .as_mut()
+            .and_then(|step| step.overrides.as_mut())
+            .filter(|over| over.grabbed)
+        {
+            over.grabbed = false;
+            self.model.dirty = true;
+            return Flow::Continue;
+        }
         match &self.model.selection {
             Some(Selection::Pane(_)) => {
                 self.release_selection(mouse, layout.pane);
@@ -869,6 +907,56 @@ impl Attach<'_> {
         Flow::Continue
     }
 
+    /// A press on one of the overrides step's own targets: a completion is
+    /// taken as Enter takes it marked, a choice's row is marked and its
+    /// mark switches it, as space does, a close mark leaves its entry out
+    /// and forgets one used before, and the scrollbar is held.
+    fn press_overrides(&mut self, hit: WorkspaceHit, row: u16) {
+        let Some(step) = self.model.directory_step.as_mut() else {
+            return;
+        };
+        match hit {
+            WorkspaceHit::OverrideRow(index) => match step.override_rows().get(index).copied() {
+                Some(OverrideRow::Choice(_)) => {
+                    if let Some(over) = step.overrides.as_mut() {
+                        over.marked = Some(index);
+                    }
+                }
+                Some(taken) => step.take_row(taken),
+                None => {}
+            },
+            WorkspaceHit::OverrideToggle(index) => step.toggle_choice(index),
+            WorkspaceHit::OverrideClose(index) => {
+                if let OverridesOutcome::Forget(words) = step.close_choice(index) {
+                    self.forget_recent_override(words);
+                }
+            }
+            WorkspaceHit::OverridesScroll => {
+                if let Some(over) = step.overrides.as_mut() {
+                    over.grabbed = true;
+                }
+                self.scroll_overrides_to(row);
+            }
+            _ => {}
+        }
+        self.model.dirty = true;
+    }
+
+    /// Moves the overrides list to where the pointer holds its scrollbar.
+    fn scroll_overrides_to(&mut self, row: u16) {
+        if let Some(over) = self
+            .model
+            .directory_step
+            .as_mut()
+            .and_then(|step| step.overrides.as_mut())
+            && let Some(bar) = over.bar.get()
+        {
+            over.marked = None;
+            over.top.set(bar.first_at(row));
+            self.model.dirty = true;
+        }
+    }
+
     /// Pointer motion. Only the three list-shaped overlays follow it —
     /// moving the highlight under the pointer is what makes them read as
     /// menus rather than as keyboard-only lists.
@@ -879,7 +967,17 @@ impl Attach<'_> {
                 // agent picker and the sidebar context menu already do, and
                 // the popup's controls light under it.
                 let hit = hit_at(&self.model, mouse.column, mouse.row);
-                let control = hit.filter(|hit| matches!(hit, WorkspaceHit::HintAction(_)));
+                let control = hit.filter(|hit| {
+                    matches!(
+                        hit,
+                        WorkspaceHit::HintAction(_)
+                            | WorkspaceHit::ViewAction(_)
+                            | WorkspaceHit::HarnessArrow(_)
+                            | WorkspaceHit::OverrideRow(_)
+                            | WorkspaceHit::OverrideToggle(_)
+                            | WorkspaceHit::OverrideClose(_)
+                    )
+                });
                 if self.model.hovered != control {
                     self.model.hovered = control;
                     self.model.dirty = true;
@@ -1138,6 +1236,30 @@ impl Attach<'_> {
                     self.model.dirty = true;
                 }
             }
+            // The wheel over the overrides list scrolls it, and leaves
+            // what is marked alone.
+            _ if self.model.directory_step.is_some()
+                && matches!(
+                    hit_at(&self.model, mouse.column, mouse.row),
+                    Some(WorkspaceHit::OverrideRow(_) | WorkspaceHit::OverridesScroll)
+                ) =>
+            {
+                if let Some(over) = self
+                    .model
+                    .directory_step
+                    .as_mut()
+                    .and_then(|step| step.overrides.as_mut())
+                {
+                    let top = over.top.get();
+                    over.marked = None;
+                    over.top.set(if mouse.kind == MouseEventKind::ScrollUp {
+                        top.saturating_sub(1)
+                    } else {
+                        top + 1
+                    });
+                    self.model.dirty = true;
+                }
+            }
             // The wheel over the directory step walks the directories it
             // offers — the same move the arrow keys make, and what keeps a
             // listing taller than the popup reachable by pointer.
@@ -1259,9 +1381,13 @@ impl Attach<'_> {
             ..
         } = *viewport;
         match hit {
-            WorkspaceHit::QuickAction(action) | WorkspaceHit::HintAction(action) => {
+            WorkspaceHit::QuickAction(action)
+            | WorkspaceHit::HintAction(action)
+            | WorkspaceHit::ViewAction(action) => {
                 return self.act(action, viewport);
             }
+            WorkspaceHit::HarnessArrow(step) => self.cycle_popup_harness(step),
+            WorkspaceHit::PopupLine => {}
             WorkspaceHit::DismissToast(index) => self.model.dismiss_toast(index),
             // The offer is answered and the message goes: leaving it up
             // would say the thing is still waiting on the reader.
@@ -1482,7 +1608,11 @@ impl Attach<'_> {
                 // agent picker.
             }
             WorkspaceHit::NewSpace => self.open_new_space(columns, rows),
-            WorkspaceHit::PickDirectory(_) => {
+            WorkspaceHit::PickDirectory(_)
+            | WorkspaceHit::OverrideRow(_)
+            | WorkspaceHit::OverrideToggle(_)
+            | WorkspaceHit::OverrideClose(_)
+            | WorkspaceHit::OverridesScroll => {
                 // Only reachable while the directory step is open,
                 // which the guarded arm above already handles —
                 // same as `PickAgent` for the agent picker.

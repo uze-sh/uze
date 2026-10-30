@@ -19,7 +19,6 @@ const SERVICES: &[&str] = &[
     "Health",
     "Context",
     "Project",
-    "Profiles",
     "Themes",
     "Workspace",
     "Hooks",

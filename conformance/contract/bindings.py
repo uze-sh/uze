@@ -68,6 +68,12 @@ class Bindings:
     #: The command run inside the container to start the TUI.
     launch = ""
 
+    #: The committed `--help` snapshots this harness's flag catalog is
+    #: proven by, as `(arguments after the binary, path from the
+    #: repository root)`: the release must still define exactly the flags
+    #: each one holds (`contract/flags.py`).
+    help_snapshots = ()
+
     #: Text that proves the TUI is ready for input. Any one is enough.
     ready_markers = ()
 

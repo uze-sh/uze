@@ -23,12 +23,13 @@ use std::{
 
 use uze_core::{integration::ObservationContext, session::SessionId};
 
-const RESUME_FLAG: &str = "--conversation";
+pub(super) const RESUME_FLAG: &str = "--conversation";
+pub(super) const FIRST_TURN_FLAG: &str = "-i";
 
 /// The operator's first turn. Behind `-i` (`--prompt-interactive`): the
 /// plain prompt flag runs once and exits, and an agent is a session.
 pub(super) fn first_turn_args(turn: &str) -> Vec<OsString> {
-    vec![OsString::from("-i"), OsString::from(turn)]
+    vec![OsString::from(FIRST_TURN_FLAG), OsString::from(turn)]
 }
 
 pub(super) fn resume_args(session: &SessionId) -> Vec<OsString> {

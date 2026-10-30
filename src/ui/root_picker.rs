@@ -227,6 +227,13 @@ impl RootPicker {
         }
     }
 
+    /// Leaves no row marked, as before the arrows or the pointer chose
+    /// one: the keys are back on the line typed into.
+    pub(super) fn unselect(&mut self) {
+        self.touched = false;
+        self.reland();
+    }
+
     pub(super) fn move_selection(&mut self, delta: isize) {
         let last = self.matched.len().saturating_sub(1);
         // The first move chooses the row already in front, rather than

@@ -2652,6 +2652,9 @@ impl DrawerLines {
                     .as_ref()
                     .map_or("the agent in front", |support| support.display_name());
                 self.head("harness", name);
+                if let Some(words) = agent.overrides.as_ref().filter(|words| !words.is_empty()) {
+                    self.pair("overrides", words.join(" "), Token::TextPrimary);
+                }
                 self.pair("path", agent.path.clone(), Token::TextSecondary);
             }
         }

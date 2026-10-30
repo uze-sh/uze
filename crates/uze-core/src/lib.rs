@@ -43,16 +43,10 @@ pub mod error;
 /// reading rule, used wherever a manifest or declaration is parsed.
 pub mod authored;
 
-/// Universal user preferences and their per-harness translation. A product
-/// feature (Profiles) rather than part of the portable model — kept at the
-/// root, visibly, rather than filed under a concern it does not belong to.
-pub mod preference;
-pub mod profile_state;
-
 /// The operator's `config.toml`. Knows files and sections, never what a
 /// setting means: each section is owned by the module named after it.
-/// Root-level for the same reason [`profile_state`] is: UZE-owned state
-/// under `UzeHome` that belongs to no portable concern.
+/// Root-level because it is UZE-owned state under `UzeHome` that belongs
+/// to no portable concern.
 pub mod config;
 
 /// `[appearance]`: which theme and glyph set are chosen, and which theme
@@ -65,8 +59,8 @@ pub mod appearance;
 // reader looks first.
 pub use capability::{extension, hook, skill};
 pub use delivery::{
-    delivered_root, engine, exposure, integration, leftovers, persistence, reconciliation, router,
-    session, state,
+    delivered_root, engine, exposure, flag_catalog, integration, leftovers, persistence,
+    reconciliation, router, session, state,
 };
 pub use machine::{
     detection_cache, features, harness_runtime, home, launcher, path, portable_shell, process_cwd,

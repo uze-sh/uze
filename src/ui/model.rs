@@ -8,28 +8,18 @@ use std::{
 
 use ratatui::layout::Rect;
 use uze_application::DeclaredExtensionSummary;
-use uze_application::{Autonomy, ManagementLayout, ModelPreference, Preferences, SandboxScope};
+use uze_application::ManagementLayout;
 use uze_extensions::registry::BuiltinExtension;
 
 use uze_application::application::offers::ActionOffer;
 use uze_application::application::{
-    ContextPlan, DoctorReport, HarnessHealth, HarnessPreview, MarketplacePluginDetail,
-    MarketplacePluginSummary, MarketplaceSummary, OverviewWorkspaceSummary, PluginCapability,
-    PluginInspection, PluginSummary, ProfileApplyResult, ProfilePreview, ProfileSummary,
-    ProjectContextStatus, ProjectEnvironmentState,
+    ContextPlan, DoctorReport, HarnessHealth, MarketplacePluginDetail, MarketplacePluginSummary,
+    MarketplaceSummary, OverviewWorkspaceSummary, PluginCapability, PluginInspection,
+    PluginSummary, ProjectContextStatus, ProjectEnvironmentState,
 };
 
 use super::hit::Hit;
 use super::view::health::{Alert, actionable_alerts};
-
-/// What a profile preview answers: these preferences, against these
-/// harnesses. An answer that does not match the current question is stale.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PreviewQuestion {
-    pub(crate) preferences: Preferences,
-    pub(crate) harness_ids: Vec<String>,
-    pub(crate) epoch: u64,
-}
 
 // --- Routes -----------------------------------------------------------------
 
@@ -45,7 +35,6 @@ pub(crate) enum Route {
     /// opposed to plugins, which are packages delivered *to* harnesses.
     Extensions,
     Harnesses,
-    Profiles,
     /// The keyboard itself: every action, the key that reaches it, and
     /// whether this terminal can deliver that key at all. Called
     /// *Shortcuts* on screen — "keys" is what a harness authenticates with,
@@ -59,15 +48,10 @@ pub(crate) enum Route {
 }
 
 /// Sidebar order, and it is an argument rather than a list: what UZE
-/// delivers (plugins, then the preferences that travel with them), then who
-/// receives it, then UZE's own surface. Profiles used to sit after
-/// Integrations, among the screens about the app, where "preferences" read
-/// as *uze's* preferences — they are an agent's, applied to harnesses, and
-/// they belong beside the other thing UZE hands a harness.
-pub(crate) const ROUTES: [Route; 7] = [
+/// delivers (plugins), then who receives it, then UZE's own surface.
+pub(crate) const ROUTES: [Route; 6] = [
     Route::Overview,
     Route::Plugins,
-    Route::Profiles,
     Route::Harnesses,
     Route::Extensions,
     Route::Keys,
@@ -113,7 +97,6 @@ impl Route {
             Route::Plugins => "Marketplace",
             Route::Extensions => "Extensions",
             Route::Harnesses => "Integrations",
-            Route::Profiles => "Profiles",
             Route::Keys => "Shortcuts",
             Route::Settings => "Settings",
         }
@@ -127,7 +110,6 @@ impl Route {
             Route::Plugins => "plugins & skills",
             Route::Extensions => "workspace tools",
             Route::Harnesses => "detected agents",
-            Route::Profiles => "agent preferences",
             Route::Keys => "key bindings",
             Route::Settings => "theme & notifications",
         }
@@ -159,9 +141,6 @@ impl Route {
             Route::Plugins => &[Scope::Plugins],
             Route::Extensions => &[Scope::Extensions],
             Route::Harnesses => &[Scope::Harnesses],
-            // The preference editor is a surface of this screen and of
-            // nowhere else, which is why hiding the screen hides it too.
-            Route::Profiles => &[Scope::Profiles, Scope::ProfileEditor],
             Route::Keys => &[Scope::Keys],
             Route::Settings => &[Scope::Settings],
         }
@@ -179,7 +158,6 @@ impl Route {
     /// offers unconditionally.
     pub(crate) fn feature(self) -> Option<uze_application::Feature> {
         match self {
-            Route::Profiles => Some(uze_application::Feature::Profiles),
             Route::Overview => Some(uze_application::Feature::Overview),
             _ => None,
         }
@@ -221,7 +199,6 @@ impl Route {
             Route::Plugins => "plugins",
             Route::Extensions => "extensions",
             Route::Harnesses => "integrations",
-            Route::Profiles => "profiles",
             Route::Keys => "keys",
             Route::Settings => "settings",
         }
@@ -260,18 +237,6 @@ pub(crate) enum PluginTreeRow {
     Extension(usize, uze_application::ExtensionIdentity),
 }
 
-/// Which of the Profiles screen's three panels currently has the arrow keys,
-/// cycled by Tab/Shift+Tab while that route is focused — there is no
-/// existing intra-content multi-panel focus mechanism elsewhere in the TUI
-/// to reuse, since every other route is a single list (plus an optional
-/// slide-in drawer).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ProfilePanel {
-    List,
-    Editor,
-    Harnesses,
-}
-
 /// A content-level divider in the Manage UI, kept separate from the
 /// sidebar width.
 ///
@@ -281,7 +246,6 @@ pub(crate) enum ProfilePanel {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ResizablePanel {
     Drawer,
-    ProfileColumns,
 }
 
 impl ResizablePanel {
@@ -289,14 +253,12 @@ impl ResizablePanel {
     pub(crate) fn width(self, model: &TuiModel) -> Option<u16> {
         match self {
             Self::Drawer => model.drawer_width,
-            Self::ProfileColumns => model.profile_columns_width,
         }
     }
 
     pub(crate) fn width_mut(self, model: &mut TuiModel) -> &mut Option<u16> {
         match self {
             Self::Drawer => &mut model.drawer_width,
-            Self::ProfileColumns => &mut model.profile_columns_width,
         }
     }
 }
@@ -320,71 +282,6 @@ impl ListScreen {
     fn reopen(&mut self) {
         self.filter.clear();
     }
-}
-
-impl ProfilePanel {
-    pub(crate) fn next(self) -> Self {
-        match self {
-            Self::List => Self::Editor,
-            Self::Editor => Self::Harnesses,
-            Self::Harnesses => Self::List,
-        }
-    }
-
-    pub(crate) fn prev(self) -> Self {
-        match self {
-            Self::List => Self::Harnesses,
-            Self::Editor => Self::List,
-            Self::Harnesses => Self::Editor,
-        }
-    }
-}
-
-/// Number of rows in the Preferences editor panel (autonomy/sandbox/model) —
-/// the v1 preference set is deliberately this small; see the domain model's
-/// own doc comment for why `network`/`confirmations` aren't separate rows.
-pub(crate) const PREFERENCE_ROW_COUNT: usize = 3;
-
-fn cycle<T: Copy + PartialEq>(order: &[T], current: T, forward: bool) -> T {
-    let index = order
-        .iter()
-        .position(|value| *value == current)
-        .unwrap_or(0);
-    let len = order.len();
-    let next = if forward {
-        (index + 1) % len
-    } else {
-        (index + len - 1) % len
-    };
-    order[next]
-}
-
-fn cycle_autonomy(current: Autonomy, forward: bool) -> Autonomy {
-    const ORDER: [Autonomy; 4] = [
-        Autonomy::Manual,
-        Autonomy::Balanced,
-        Autonomy::Auto,
-        Autonomy::Unattended,
-    ];
-    cycle(&ORDER, current, forward)
-}
-
-fn cycle_sandbox(current: SandboxScope, forward: bool) -> SandboxScope {
-    const ORDER: [SandboxScope; 3] = [
-        SandboxScope::ReadOnly,
-        SandboxScope::WorkspaceWrite,
-        SandboxScope::FullAccess,
-    ];
-    cycle(&ORDER, current, forward)
-}
-
-fn cycle_model(current: ModelPreference, forward: bool) -> ModelPreference {
-    const ORDER: [ModelPreference; 3] = [
-        ModelPreference::Default,
-        ModelPreference::Fast,
-        ModelPreference::Capable,
-    ];
-    cycle(&ORDER, current, forward)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -479,8 +376,6 @@ pub(crate) enum Overlay {
     /// Free-text input, appended to on every character key and popped on
     /// backspace — see `TuiModel::overlay_key`'s `AddMarketplace` arms.
     AddMarketplace(String),
-    /// A new profile's id, typed the same way as `AddMarketplace`.
-    NewProfile(String),
     /// A declared extension's preferences, one row each: Enter flips a
     /// toggle, moves a choice on, or types a text or a number.
     Preferences(PreferencesEditor),
@@ -532,7 +427,6 @@ pub(crate) enum Confirmation {
     /// Why a plugin from the embedded official snapshot cannot be removed.
     /// Nothing to agree to: it explains a refusal.
     ProtectedPlugin(String),
-    DeleteProfile(String),
     /// A mutation needs consent it wasn't given non-interactively. Confirming
     /// re-runs the *same* action with explicit trust — never a silent
     /// bypass; the operator sees exactly what would newly execute.
@@ -660,7 +554,6 @@ pub(crate) struct RefreshData {
     pub(crate) doctor: Option<DoctorReport>,
     pub(crate) marketplace_plugins: Vec<MarketplacePluginSummary>,
     pub(crate) marketplaces: Vec<MarketplaceSummary>,
-    pub(crate) profiles: Vec<ProfileSummary>,
     pub(crate) declared_extensions: Vec<DeclaredExtensionSummary>,
     /// Where each declared extension stands, and the project it was judged
     /// for (`None` outside every project).
@@ -811,43 +704,6 @@ pub(crate) struct TuiModel {
     /// [`extension_switch::declared_id`](super::extension_switch::declared_id).
     pub(crate) disabled_extensions: BTreeSet<String>,
 
-    pub(crate) profile_panel: ProfilePanel,
-    pub(crate) profile_editor_selected: usize,
-    pub(crate) profile_harness_selected: usize,
-    /// Harness ids to apply the selected profile to. Session-only — never
-    /// persisted as part of the `Profile` domain object (v1 scope: profiles
-    /// hold only preferences).
-    pub(crate) profile_harness_selection: BTreeSet<String>,
-    /// Whether `profile_harness_selection` has received its one-time default
-    /// (every currently detected harness) — set once real `doctor` data is
-    /// available, so entering the route before the first refresh completes
-    /// doesn't lock in an empty selection.
-    pub(crate) profile_harness_defaulted: bool,
-    /// The last `apply` action's per-harness outcomes, shown as a one-word
-    /// badge next to each harness row. Empty (no badges) until an apply has
-    /// actually run this session.
-    pub(crate) profile_apply_results: Vec<ProfileApplyResult>,
-    /// Whether the Profiles screen shows the selected profile's preview —
-    /// what applying it writes into each harness — instead of the list.
-    pub(crate) profile_preview_open: bool,
-    /// The harness the preview's cursor is on, by its position in the
-    /// preview.
-    pub(crate) profile_preview_cursor: usize,
-    /// Harnesses opened or closed by hand, against their default: open
-    /// when applying would write something there, closed when not.
-    pub(crate) profile_preview_toggled: BTreeSet<String>,
-    /// The last preview answer, kept with the question it answered. Read
-    /// through [`TuiModel::profile_preview_answer`], which refuses one that
-    /// answers a question nobody is asking any more.
-    pub(crate) profile_preview: Option<(PreviewQuestion, Result<ProfilePreview, String>)>,
-    /// Bumped whenever a harness's configuration may have changed, so a
-    /// read that started before the change can never pass for one after.
-    pub(crate) profile_preview_epoch: u64,
-    /// The question last sent to the worker, so a frame does not ask it
-    /// again while the answer is on its way. Cleared whenever a harness's
-    /// configuration may have changed underneath it.
-    pub(crate) profile_preview_asked: Option<PreviewQuestion>,
-
     pub(crate) context_root: PathBuf,
 
     /// Whether the pointer is on the plugin drawer's source address.
@@ -882,7 +738,6 @@ pub(crate) struct TuiModel {
     /// scattered through render functions.
     pub(crate) hits: Vec<(Rect, Hit)>,
 
-    pub(crate) profile_columns_width: Option<u16>,
     pub(crate) dragging_panel: Option<ResizablePanel>,
     /// The Keys list's scroll track while it is being dragged, kept from
     /// the mousedown that armed it so every following drag maps against
@@ -937,7 +792,6 @@ pub(crate) struct Remembered {
     /// what the plugin drawer resolves a source link through.
     pub(crate) marketplaces: Vec<MarketplaceSummary>,
     pub(crate) marketplace_plugins: Vec<MarketplacePluginSummary>,
-    pub(crate) profiles: Vec<ProfileSummary>,
     pub(crate) context_status: Option<ProjectContextStatus>,
     pub(crate) context_plan: Option<ContextPlan>,
     /// The detected UZE workspace (`agents.lock`/`marketplace.json`), loaded on
@@ -959,7 +813,6 @@ pub(crate) struct Remembered {
     /// filtered cards and keyboard navigation always agree.
     pub(crate) extension_screen: ListScreen,
     pub(crate) harness_screen: ListScreen,
-    pub(crate) profiles_selected: usize,
     /// The plugins' revision the reading on screen began at.
     pub(crate) plugins_revision: u64,
     /// The plugins' extensions and where they stand, as the last refresh
@@ -1074,18 +927,6 @@ impl TuiModel {
             extension_standings,
             extension_project,
             disabled_extensions: super::extension_switch::disabled(),
-            profile_panel: ProfilePanel::List,
-            profile_editor_selected: 0,
-            profile_harness_selected: 0,
-            profile_harness_selection: BTreeSet::new(),
-            profile_harness_defaulted: false,
-            profile_apply_results: Vec::new(),
-            profile_preview_open: false,
-            profile_preview_cursor: 0,
-            profile_preview_toggled: BTreeSet::new(),
-            profile_preview: None,
-            profile_preview_epoch: 0,
-            profile_preview_asked: None,
             context_root: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
             source_link_hovered: false,
             version_hovered: false,
@@ -1096,7 +937,6 @@ impl TuiModel {
             settings_scroll: Default::default(),
             tick: 0,
             hits: Vec::new(),
-            profile_columns_width: layout.profile_columns_width,
             dragging_panel: None,
             dragging_keys_track: None,
             first_steps_collapsed: false,
@@ -1119,7 +959,6 @@ impl TuiModel {
         ManagementLayout {
             route: Some(self.route.id().to_owned()),
             drawer_width: self.drawer_width,
-            profile_columns_width: self.profile_columns_width,
             plugin_market: self.plugin_market.clone(),
             status_order: self.status_order.clone(),
         }
@@ -2009,7 +1848,7 @@ impl TuiModel {
                 filter.push(character);
                 *selected = 0;
             }
-            Overlay::AddMarketplace(input) | Overlay::NewProfile(input) => input.push(character),
+            Overlay::AddMarketplace(input) => input.push(character),
             Overlay::Preferences(PreferencesEditor {
                 typing: Some(input),
                 ..
@@ -2028,7 +1867,7 @@ impl TuiModel {
                 filter.pop();
                 *selected = 0;
             }
-            Overlay::AddMarketplace(input) | Overlay::NewProfile(input) => {
+            Overlay::AddMarketplace(input) => {
                 input.pop();
             }
             _ => self.edit_filter(|filter| {
@@ -2064,15 +1903,15 @@ impl TuiModel {
     }
 
     /// The list screen `route` is, if it is one: Plugins, Extensions,
-    /// Integrations and Keys. The Overview is a report, Profiles is three
-    /// panels and Settings a catalogue with headings.
+    /// Integrations and Keys. The Overview is a report and Settings a
+    /// catalogue with headings.
     pub(crate) fn list(&self, route: Route) -> Option<&ListScreen> {
         match route {
             Route::Plugins => Some(&self.remembered.plugin_screen),
             Route::Extensions => Some(&self.remembered.extension_screen),
             Route::Harnesses => Some(&self.remembered.harness_screen),
             Route::Keys => Some(&self.key_screen),
-            Route::Overview | Route::Profiles | Route::Settings => None,
+            Route::Overview | Route::Settings => None,
         }
     }
 
@@ -2082,7 +1921,7 @@ impl TuiModel {
             Route::Extensions => Some(&mut self.remembered.extension_screen),
             Route::Harnesses => Some(&mut self.remembered.harness_screen),
             Route::Keys => Some(&mut self.key_screen),
-            Route::Overview | Route::Profiles | Route::Settings => None,
+            Route::Overview | Route::Settings => None,
         }
     }
 
@@ -2093,7 +1932,7 @@ impl TuiModel {
             Route::Extensions => self.extension_visible_indices().len(),
             Route::Harnesses => self.harness_visible_indices().len(),
             Route::Keys => self.key_rows().len(),
-            Route::Overview | Route::Profiles | Route::Settings => 0,
+            Route::Overview | Route::Settings => 0,
         }
     }
 
@@ -2398,10 +2237,6 @@ impl TuiModel {
                 .selected_harness()
                 .map(HarnessHealth::offers)
                 .unwrap_or_default(),
-            Route::Profiles => self
-                .selected_profile()
-                .map(ProfileSummary::offers)
-                .unwrap_or_default(),
             Route::Keys => self
                 .selected_key_row()
                 .map(|row| uze_application::application::offers::key_offers(row.custom()))
@@ -2417,40 +2252,6 @@ impl TuiModel {
         self.remembered.doctor.as_ref()?.harnesses.get(index)
     }
 
-    pub(crate) fn selected_profile(&self) -> Option<&ProfileSummary> {
-        self.remembered
-            .profiles
-            .get(self.remembered.profiles_selected)
-    }
-
-    /// Every harness on this machine, in the order the screen lists them.
-    /// The preview covers the unchecked ones too, so checking a box never
-    /// has to wait on a read.
-    pub(crate) fn detected_harness_ids(&self) -> Vec<String> {
-        self.remembered
-            .doctor
-            .as_ref()
-            .map(|doctor| {
-                doctor
-                    .harnesses
-                    .iter()
-                    .filter(|harness| harness.detection.present)
-                    .map(|harness| harness.integration.clone())
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
-    pub(crate) fn profile_preview_question(&self) -> Option<PreviewQuestion> {
-        let profile = self.selected_profile()?;
-        let harness_ids = self.detected_harness_ids();
-        (!harness_ids.is_empty()).then_some(PreviewQuestion {
-            preferences: profile.preferences,
-            harness_ids,
-            epoch: self.profile_preview_epoch,
-        })
-    }
-
     /// The read the Settings screen is missing, or `Intent::None`.
     ///
     /// Arriving asks for it (see [`Self::set_route`]), but arriving is not
@@ -2463,118 +2264,6 @@ impl TuiModel {
         } else {
             super::worker::Intent::None
         }
-    }
-
-    /// The preview read the Profiles screen is missing right now, or
-    /// `Intent::None`. Asked every frame, like the plugin drawer's detail:
-    /// the selection, an edited preference and a finished apply all change
-    /// the answer, and none of them should have to remember to ask.
-    pub(crate) fn profile_preview_intent(&self) -> super::worker::Intent {
-        if self.route != Route::Profiles {
-            return super::worker::Intent::None;
-        }
-        match self.profile_preview_question() {
-            Some(question) if self.profile_preview_asked.as_ref() != Some(&question) => {
-                super::worker::Intent::PreviewProfile(question)
-            }
-            _ => super::worker::Intent::None,
-        }
-    }
-
-    /// The answer to the question the screen is asking now — `None` while it
-    /// has not arrived. An `Err` stays until something changes the question:
-    /// asking again unchanged would repeat the failure forever.
-    pub(crate) fn profile_preview_answer(&self) -> Option<Result<&ProfilePreview, &str>> {
-        let question = self.profile_preview_question()?;
-        let (answered, result) = self.profile_preview.as_ref()?;
-        (*answered == question).then(|| result.as_ref().map_err(String::as_str))
-    }
-
-    /// The preview of the selected profile as it is now, when it was read.
-    pub(crate) fn current_profile_preview(&self) -> Option<&ProfilePreview> {
-        self.profile_preview_answer()?.ok()
-    }
-
-    pub(crate) fn profile_previewed(
-        &mut self,
-        question: PreviewQuestion,
-        result: Result<ProfilePreview, String>,
-    ) {
-        self.profile_preview = Some((question, result));
-    }
-
-    /// Writes the selected profile into the checked harnesses and makes it
-    /// the active one. Refuses, saying why, with nothing checked: marking a
-    /// profile active while writing it nowhere is how "active" stopped
-    /// meaning "in effect".
-    pub(crate) fn apply_selected_profile(&mut self) -> super::worker::Intent {
-        let Some((id, preferences)) = self
-            .selected_profile()
-            .map(|profile| (profile.id.clone(), profile.preferences))
-        else {
-            return super::worker::Intent::None;
-        };
-        let harness_ids: Vec<String> = self
-            .detected_harness_ids()
-            .into_iter()
-            .filter(|harness| self.profile_harness_selection.contains(harness))
-            .collect();
-        if harness_ids.is_empty() {
-            self.say("Check at least one harness to apply the profile to");
-            return super::worker::Intent::None;
-        }
-        super::worker::Intent::ApplyProfile {
-            id,
-            preferences,
-            harness_ids,
-        }
-    }
-
-    pub(crate) fn toggle_profile_preview(&mut self) {
-        self.profile_preview_open = !self.profile_preview_open;
-        self.profile_preview_cursor = 0;
-        self.profile_preview_toggled.clear();
-    }
-
-    /// Whether the preview shows a harness's settings, not just its row.
-    pub(crate) fn profile_preview_expanded(&self, harness: &HarnessPreview) -> bool {
-        let pending = harness
-            .plan
-            .as_ref()
-            .map_or(true, |plan| plan.pending() > 0);
-        pending != self.profile_preview_toggled.contains(&harness.integration)
-    }
-
-    pub(crate) fn move_profile_preview_cursor(&mut self, delta: isize) {
-        let count = self
-            .current_profile_preview()
-            .map_or(0, |preview| preview.harnesses.len());
-        self.profile_preview_cursor = self
-            .profile_preview_cursor
-            .saturating_add_signed(delta)
-            .min(count.saturating_sub(1));
-    }
-
-    /// Opens or closes the harness at `index` in the preview.
-    pub(crate) fn toggle_profile_preview_harness(&mut self, index: usize) {
-        let Some(id) = self
-            .current_profile_preview()
-            .and_then(|preview| preview.harnesses.get(index))
-            .map(|harness| harness.integration.clone())
-        else {
-            return;
-        };
-        self.profile_preview_cursor = index;
-        if !self.profile_preview_toggled.remove(&id) {
-            self.profile_preview_toggled.insert(id);
-        }
-    }
-
-    /// Starts a new epoch, so the next frame asks again and anything read
-    /// before now is refused — for when a harness's configuration may have
-    /// changed.
-    pub(crate) fn invalidate_profile_preview(&mut self) {
-        self.profile_preview_epoch = self.profile_preview_epoch.wrapping_add(1);
     }
 
     /// Walks the Settings list, stepping over headings rather than
@@ -2636,76 +2325,6 @@ impl TuiModel {
         }
     }
 
-    /// Profiles has three independently-scrolled sub-panels rather than one
-    /// list, so it is no [`ListScreen`] and clamps whichever panel is
-    /// currently focused.
-    pub(crate) fn move_profile_selection(&mut self, delta: isize) {
-        let clamp = |current: usize, len: usize| step_within(current, delta, len);
-        match self.profile_panel {
-            ProfilePanel::List => {
-                self.remembered.profiles_selected = clamp(
-                    self.remembered.profiles_selected,
-                    self.remembered.profiles.len(),
-                );
-            }
-            ProfilePanel::Editor => {
-                self.profile_editor_selected =
-                    clamp(self.profile_editor_selected, PREFERENCE_ROW_COUNT);
-            }
-            ProfilePanel::Harnesses => {
-                let len = self
-                    .remembered
-                    .doctor
-                    .as_ref()
-                    .map_or(0, |d| d.harnesses.len());
-                self.profile_harness_selected = clamp(self.profile_harness_selected, len);
-            }
-        }
-    }
-
-    /// Cycles the Editor panel's currently-highlighted preference value and
-    /// returns the `Intent` that persists it. Mutates `self.remembered.profiles`
-    /// optimistically so the row reflects the new value immediately, without
-    /// waiting on the (silent, fire-and-forget) background write.
-    pub(crate) fn cycle_selected_preference(&mut self, forward: bool) -> super::worker::Intent {
-        let Some(profile) = self
-            .remembered
-            .profiles
-            .get_mut(self.remembered.profiles_selected)
-        else {
-            return super::worker::Intent::None;
-        };
-        match self.profile_editor_selected {
-            0 => {
-                profile.preferences.autonomy = cycle_autonomy(profile.preferences.autonomy, forward)
-            }
-            1 => profile.preferences.sandbox = cycle_sandbox(profile.preferences.sandbox, forward),
-            2 => profile.preferences.model = cycle_model(profile.preferences.model, forward),
-            _ => return super::worker::Intent::None,
-        }
-        super::worker::Intent::UpdatePreferences {
-            id: profile.id.clone(),
-            preferences: profile.preferences,
-        }
-    }
-
-    /// Toggles one harness's inclusion in the apply target set, by its
-    /// position in `doctor.harnesses` (the Harnesses panel's row index).
-    pub(crate) fn toggle_profile_harness_at(&mut self, index: usize) {
-        let Some(id) = self
-            .remembered
-            .doctor
-            .as_ref()
-            .and_then(|doctor| doctor.harnesses.get(index))
-            .map(|harness| harness.integration.clone())
-        else {
-            return;
-        };
-        if !self.profile_harness_selection.remove(&id) {
-            self.profile_harness_selection.insert(id);
-        }
-    }
-
     pub(crate) fn move_selection(&mut self, delta: isize) {
         let route = self.route;
         let len = self.list_len(route);
@@ -2732,32 +2351,6 @@ impl TuiModel {
         self.extension_project = data.extension_project;
         self.clamp_list_selection(Route::Extensions);
         self.reveal_pending();
-        self.remembered.profiles = data.profiles;
-        // A refresh is the operator asking to see the machine as it is;
-        // a harness configuration edited by hand is part of that.
-        self.invalidate_profile_preview();
-        self.remembered.profiles_selected = self
-            .remembered
-            .profiles_selected
-            .min(self.remembered.profiles.len().saturating_sub(1));
-        self.profile_harness_selected = self.profile_harness_selected.min(
-            self.remembered
-                .doctor
-                .as_ref()
-                .map_or(0, |d| d.harnesses.len())
-                .saturating_sub(1),
-        );
-        if !self.profile_harness_defaulted
-            && let Some(doctor) = &self.remembered.doctor
-        {
-            self.profile_harness_selection = doctor
-                .harnesses
-                .iter()
-                .filter(|harness| harness.detection.present)
-                .map(|harness| harness.integration.clone())
-                .collect();
-            self.profile_harness_defaulted = true;
-        }
         if data.context_status.is_some() {
             self.remembered.context_status = data.context_status;
         }
@@ -2820,9 +2413,6 @@ impl TuiModel {
         // selection means anything.
         if route == Route::Harnesses {
             self.remembered.harness_screen.selected = 0;
-        }
-        if route == Route::Profiles {
-            self.profile_panel = ProfilePanel::List;
         }
         self.route = route;
         // Settings reads its two lists on arrival rather than per frame:

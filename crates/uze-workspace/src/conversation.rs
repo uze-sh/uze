@@ -343,7 +343,8 @@ pub(crate) fn claimed_by_others(
         .collect()
 }
 
-/// Forgets an agent's conversations. Best-effort by construction: a record
+/// Forgets an agent's conversations and the overrides it was launched
+/// with. Best-effort by construction: a record
 /// that is already gone is the outcome asked for.
 pub fn forget(home: &UzeHome, project_root: &Path, agent: &AgentId) {
     // A channel that finds the context by conversation keeps one document
@@ -357,6 +358,8 @@ pub fn forget(home: &UzeHome, project_root: &Path, agent: &AgentId) {
         }
     }
     let _ = fs::remove_file(store_path(home, project_root, agent));
+    // Its overrides were typed for it alone; the history keeps the sets.
+    let _ = crate::overrides::record::forget_agent(home, project_root, agent);
     let context = home.agent_context_dir(&project_id(project_root), agent.as_str());
     forget_context_links(project_root, &context);
     let _ = fs::remove_dir_all(context);
@@ -940,5 +943,32 @@ mod tests {
 
         assert!(!store_path(&home, &root, &task).exists());
         assert!(load(&home, &root, &task).harnesses.is_empty());
+    }
+
+    #[test]
+    fn forgetting_a_task_takes_its_overrides_with_it() {
+        let home = home("conversation-forget-overrides");
+        let root = project("conversation-forget-overrides-project");
+        let (task, other) = (AgentId::generate(), AgentId::generate());
+        let opus = ["--model".to_owned(), "opus".to_owned()];
+        for agent in [&task, &other] {
+            crate::overrides::record::record_launch(
+                &home,
+                &root,
+                agent,
+                "codex",
+                uze_core::flag_catalog::FlagCatalog::default(),
+                &opus,
+            )
+            .unwrap();
+        }
+
+        forget(&home, &root, &task);
+
+        assert!(crate::overrides::record::recorded(&home, &root, &task, "codex").is_empty());
+        assert_eq!(
+            crate::overrides::record::recorded(&home, &root, &other, "codex"),
+            opus
+        );
     }
 }

@@ -144,19 +144,80 @@ on "cancel" must not save first.
   carries no ellipsis: `Rename ›`, `Continue in ›`. An ellipsis marks only
   an entry that asks before acting (`Discard…`). Two entries for one verb
   side by side (`Rename`, `Rename project`) become one that opens both.
+- A popover that holds more than one view of what it asks (the new
+  agent's `new agent · overrides`) names them at the start of its first
+  row (`widget::segmented`), standing for a title the popover then does
+  not carry, with the row's field (`‹ Claude Code ›`, unlabelled) against
+  its end; never on the border, where they read as part of what is
+  behind. The views are parted by the separator glyph alone, the one in
+  front in the accent and the rest held back and lit under the pointer:
+  colour alone tells them apart, never a ground, a weight or a button's
+  look. A click on one is the key that reaches it, through a target of
+  its own (`WorkspaceHit::ViewAction`), so pointing at a view lights that
+  view and never the foot's hint for the same key. The row is drawn
+  alike on every view so nothing shifts when they switch, and its field
+  is changeable on every view (what a view holds follows it); a rule
+  closes it, then the view in front, every view in the same rows, so
+  switching never resizes it. What a view holds that the other should
+  know is one muted line at the body's foot, with a row of air over and
+  under it so it rests against neither the list nor the keys (`3 flags ·
+  2 vars`), said only once there is something to say: with none, the
+  rows stay air. What the row marked or the word typed is (its summary,
+  what it gives up, why it was refused) takes that same line while there
+  is one, by the keys, never a row of its own in the middle of the list's
+  room.
+- A click on a popover's line typed into puts the keys back on it:
+  nothing stays marked in the list under it.
+- Every line typed into in one popover looks the same: the typed text
+  bright, the accent caret, a faint placeholder and a plain rule under
+  it. A view's line never wears a lit underline the other's does not.
+- A popover is narrow and tall rather than wide: as wide as a
+  directory's name and what is known about it need (52 columns for the
+  new agent), with the room for its list given in height.
 - Dropdowns float over content and never push it down.
 - A breadcrumb names levels, short and generic (`Context › Containers ›
   Components ▾`), the step on show included. An item's own long name goes
   in the list that step opens and, muted and in its own case, on the row
   of the content's modes (`View::label`), never in the step itself.
 - A modal keeps its height while you filter inside it.
+- A popover with steps fixes its height when it opens, as the largest any
+  of its steps needs: going into a step and back never resizes it.
 - A popover's rows stand on its own ground: no raised band under the line
   typed into or under its list. The row Enter takes is the one marked.
+- A list under a line typed into opens with nothing marked, so Enter acts
+  on the line; `↓` marks the first row, and `↑` on it unmarks again.
+  Hovering a row only lights it: the pointer resting there never changes
+  what Enter does.
 - A choice that rarely changes is a field prefilled with the last answer
-  (`harness ‹ Claude Code ›`, moved with `←` `→`), never a step of its own:
+  (`‹ Claude Code ›`, moved with `←` `→`), never a step of its own:
   the common case is the one question and Enter. Its arrows are its keys.
-- A popover's foot names its keys and nothing else (`enter new · ←→
-  harness`), with `esc close` alone against its end.
+- A field whose wrong value is unsafe, or invisible once the thing has
+  started (a new agent's launch overrides), is never prefilled from last
+  time: it opens empty, and the last values head a history under it, to
+  be taken back on purpose.
+- That history is a list of choices, one row per value, never per
+  bundle of them: the overrides list holds each flag or variable once
+  (`◉ --model opus ✕`), the ones added first, then the ones used lately,
+  `◉` when this launch carries it and `○` when not. Unchecking never
+  takes a row off the list; only its close mark against the end does,
+  leaving it out and forgetting one used before. Space
+  switches the row marked (and is typed when none is), Delete is the
+  close mark, Enter still answers the whole question (`new`), and the
+  foot names space and Delete only while a row is marked (`space toggle
+  · delete forget`, `remove` for one only added).
+- A popover's foot names its keys and nothing else: the keys that act on
+  what is in front at its start, two of them where there are three, and
+  one against its end, the way out of it: `esc close`, or, in a popover
+  with views, the way to the other view (`enter new · ←→ harness` …
+  `alt+→ overrides`). What stands against the end gives way, whole, when
+  the keys at the start need its room.
+- A popover's views are walked with `alt` and the sideways arrows
+  (`alt+→`, `alt+←`), as `alt+↑`/`alt+↓` walk the agents: the bare arrows
+  keep their job in the view, and a key drawn with a modifier spells its
+  arrow as a glyph (`alt+→`). A key whose job
+  changes with the state is named by what it does now, from the same
+  answer the key acts on (the overrides step's Enter: `new` on an empty
+  line, `take` with a completion marked, `add` otherwise).
 - `Tab` in a line typed into completes, as it does in a shell; it never
   takes another job there. What Enter acts on is already on screen, in the
   field and the row marked; a sentence repeating it crowds the keys out.
@@ -357,6 +418,14 @@ Toasts:
   `State*` tokens, of which the warning gold is the workspace's own).
   Markdown is "clean, not a rainbow".
 - Ground overlays are neutral grey, **never green-tinted**.
+- What weakens safety or switches something off (a flag that skips
+  permissions, one that turns delivery off) is drawn in
+  `Token::StateWarning` on every row that carries it, its words in that
+  hue and no glyph beside them: where a row has only two states, the
+  default and the warning, the hue says it alone. Its detail says what it
+  gives up in the catalog's own words. Those words are what is lost, a
+  noun phrase the detail's verb completes (`-c turns off uze's own value
+  for this key`), never a sentence of their own.
 - A focused or selected container gets a subtle, slightly darker overlay.
 - The sidebar is transparent: only the space in front is lifted onto the
   panel, every other space stands on the column itself, and the row in
@@ -432,6 +501,15 @@ operator rather than assume.
 - Counts are minimal (`1/5`). There are no raw logs in the UI.
 
 **Empty states:**
+- A list inside a popover that has nothing to show (no directory
+  matches, no overrides used before) says so centred in the list's own
+  room, across and down (`message::render_message`), never on its first
+  row.
+- The same holds while a line typed into wants a free value and so has
+  nothing to list: what is said about it (the flag's summary, and under
+  it, held back, that other users can read flag values) stands centred in
+  the list's room, never floating on a detail row with empty rows around
+  it.
 - Minimal: one centred short title, with an optional muted line.
 - No hint bar, no stray esc, no empty sidebar slot.
 - The drawer goes away.

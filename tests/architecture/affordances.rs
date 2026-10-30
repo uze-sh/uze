@@ -123,26 +123,22 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     put(Action::AnalyzeContext, Index);
     put(Action::ApplyContextPlan, Index);
     put(
-        Action::NewProfile,
-        Control("the Profiles screen's new button"),
-    );
-    put(Action::DeleteProfile, Control("the drawer's buttons"));
-    put(Action::ApplyProfile, Control("the drawer's buttons"));
-    put(
-        Action::PreviewProfile,
-        Control("the Profiles screen's Preview button"),
+        Action::NextValue,
+        Control("an extension preference row's `›`"),
     );
     put(
-        Action::ToggleProfileHarness,
-        Control("clicking the harness checkbox"),
+        Action::PreviousValue,
+        Control("an extension preference row's `‹`"),
     );
-    put(Action::NextValue, Control("a preference row's `›`"));
-    put(Action::PreviousValue, Control("a preference row's `‹`"));
 
     // --- Workspace ------------------------------------------------------
     put(Action::NewShellTab, Control("the tab strip's `+`"));
     put(Action::CloseTab, Control("a tab's close control"));
     put(Action::NewAgent, Control("the tab strip's `✦`"));
+    put(
+        Action::OpenOverrides,
+        Control("the new agent popup's `overrides` row, and its foot's hint"),
+    );
     put(Action::NewSpace, Control("the sidebar's `+ new` row"));
     put(
         Action::IsolateAgent,

@@ -19,6 +19,9 @@ class AntigravityBindings(Bindings):
     launcher = "agy"
     compact_command = "/compact"
     launch = "exec agy"
+    help_snapshots = (
+        (("--help",), "crates/uze-integrations/src/antigravity/help.txt"),
+    )
     ready_markers = ("Antigravity CLI",)
     warmup = 3.0
     #: The hint under agy's input line; no dialog draws it (1.3.2).

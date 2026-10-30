@@ -33,9 +33,6 @@ use uze_core::{
         HarnessDetection, IntegrationPort, ManagedArtifact, UnreadableDelivery, active_plugin_name,
         default_exposure_name_candidates, qualified_exposure_name_candidates,
     },
-    preference::{
-        PreferenceApplyOutcome, PreferencePlan, PreferencePort, PreferenceTranslation, Preferences,
-    },
     provisioning::{ProcessRunner, ProvisioningResult},
     router::HarnessCapabilities,
     state,
@@ -44,9 +41,9 @@ use uze_core::{
 
 mod agent_context;
 mod distribution;
+mod flags;
 mod hooks;
 mod mcp;
-mod preferences;
 mod project_agents;
 mod provision;
 pub(crate) mod runtime_plugin;
@@ -273,6 +270,14 @@ impl IntegrationPort for OpenCodeIntegration {
     /// (measured on 2.0.29, `experiments/opencode/session-assigned`), so UZE
     /// names it at launch. The read-back stays, for a conversation the
     /// person starts from inside the TUI.
+    fn flag_catalog(&self) -> uze_core::flag_catalog::FlagCatalog {
+        flags::CATALOG
+    }
+
+    fn managed_environment(&self) -> &'static [&'static str] {
+        flags::MANAGED_ENVIRONMENT
+    }
+
     fn session_continuity(&self) -> uze_core::integration::SessionContinuity {
         uze_core::integration::SessionContinuity::Assigned
     }
@@ -535,24 +540,6 @@ impl IntegrationPort for OpenCodeIntegration {
             });
         };
         mcp::detach_mcp_config(&self.config_path, &entry)
-    }
-}
-
-impl PreferencePort for OpenCodeIntegration {
-    fn preference_id(&self) -> &'static str {
-        IntegrationPort::id(self)
-    }
-
-    fn translate(&self, preferences: &Preferences) -> PreferenceTranslation {
-        preferences::translate(preferences)
-    }
-
-    fn apply(&self, preferences: &Preferences) -> Result<PreferenceApplyOutcome> {
-        preferences::apply(&self.config_path, preferences)
-    }
-
-    fn plan(&self, preferences: &Preferences) -> Result<PreferencePlan> {
-        preferences::plan(&self.config_path, preferences)
     }
 }
 

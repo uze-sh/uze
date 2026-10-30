@@ -42,7 +42,7 @@ scenes:
       - click: "new"
         say: open the new-agent popup from the space's row
         in: sidebar
-        expect: 'harness .*Claude Code'
+        expect: 'overrides .*Claude Code'
       # A space with no agent offers no directory in particular: the
       # project is typed, and Enter starts the agent there with the
       # harness in the field, the first one set up on a fresh machine.
@@ -82,10 +82,10 @@ scenes:
       - click: "new"
         say: open the popup again
         in: sidebar
-        expect: 'harness .*Claude Code'
+        expect: 'overrides .*Claude Code'
       - key: "Right"
         say: move the harness on from the one used last
-        expect: 'harness .*Codex'
+        expect: 'overrides .*Codex'
       - type: "{project}"
         say: choose the project, with Codex
         # The tab, not the header's `agent 2: preparing`: the tab opens
@@ -136,10 +136,10 @@ scenes:
     when:
       - click: "new"
         in: sidebar
-        expect: 'harness .*Codex'
+        expect: 'overrides .*Codex'
       - key: "Right"
         say: move the harness on to OpenCode
-        expect: 'harness .*OpenCode'
+        expect: 'overrides .*OpenCode'
       - type: "{project}"
         say: choose the project, with OpenCode
         # The tab, not the header's `agent 3: preparing`: the tab opens
@@ -188,10 +188,10 @@ scenes:
     when:
       - click: "new"
         in: sidebar
-        expect: 'harness .*OpenCode'
+        expect: 'overrides .*OpenCode'
       - key: "Left"
         say: move the harness back to Codex
-        expect: 'harness .*Codex'
+        expect: 'overrides .*Codex'
       - type: "{project}"
         say: choose the project, with Codex again
         # How many agents the tree holds, not the label: closing an agent
