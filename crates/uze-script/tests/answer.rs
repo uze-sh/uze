@@ -403,20 +403,25 @@ fn an_answer_costs_what_d28_measured() {
     let script = Script::compile(source).unwrap();
     let compiled = started.elapsed();
 
-    let mut slowest = Duration::ZERO;
-    for _ in 0..20 {
-        let started = Instant::now();
-        let answered = script.answer(&json!({}), &Value::Null, &Grants::new(), checkout());
-        slowest = slowest.max(started.elapsed());
-        assert!(answered.outcome.is_ok());
-    }
+    // The median, not the slowest: one answer descheduled on a shared
+    // runner says nothing about what an answer costs.
+    let mut costs: Vec<Duration> = (0..21)
+        .map(|_| {
+            let started = Instant::now();
+            let answered = script.answer(&json!({}), &Value::Null, &Grants::new(), checkout());
+            assert!(answered.outcome.is_ok());
+            started.elapsed()
+        })
+        .collect();
+    costs.sort();
+    let median = costs[costs.len() / 2];
     assert!(
         compiled < Duration::from_millis(20),
         "compiled in {compiled:?}"
     );
     assert!(
-        slowest < Duration::from_millis(20),
-        "slowest answer {slowest:?}"
+        median < Duration::from_millis(20),
+        "median answer {median:?}"
     );
 }
 
