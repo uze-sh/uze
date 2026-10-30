@@ -1,5 +1,5 @@
-//! Asking before an agent mid-turn is continued on another harness: the
-//! relaunch ends its process, and with it whatever the turn was doing. A
+//! Asking before an agent mid-turn is restarted or continued on another
+//! harness: the relaunch ends its process, and with it whatever the turn was doing. A
 //! dialog over the whole client rather than a row of the menu, because an
 //! answer here costs work in flight, and is asked the way the client asks
 //! every question of that weight.
@@ -13,19 +13,23 @@ pub(super) struct InterruptDialog {
     pub(super) target: MenuTarget,
     pub(super) label: String,
     pub(super) choice: HarnessChoice,
+    /// The relaunch is on the harness the agent runs: a restart.
+    pub(super) restart: bool,
+    /// The overrides it is relaunched with.
+    pub(super) overrides: Vec<String>,
     pub(super) on_confirm: bool,
 }
 
 impl Attach<'_> {
-    /// The operator's answer, by click or by key: yes continues the agent
-    /// on the harness the menu named; no leaves it running.
+    /// The operator's answer, by click or by key: yes relaunches the agent
+    /// as the restart panel said; no leaves it running.
     pub(super) fn answer_interrupt(&mut self, confirm: bool) {
         let Some(open) = self.model.interrupt.take() else {
             return;
         };
         self.model.dirty = true;
         if confirm {
-            self.continue_in(open.target, open.choice, true);
+            self.continue_in(open.target, open.choice, true, open.overrides);
         }
     }
 
@@ -72,7 +76,22 @@ pub(super) fn render_interrupt(
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
     let title = format!("Interrupt {}?", open.label);
-    let confirm = format!("Continue in {}", open.choice.display_name);
+    let confirm = if open.restart {
+        "Restart".to_owned()
+    } else {
+        format!("Continue in {}", open.choice.display_name)
+    };
+    let body = if open.restart {
+        "It is in the middle of a turn. Restarting it ends what it is doing now; \
+         its conversation is resumed with the new overrides."
+            .to_owned()
+    } else {
+        format!(
+            "It is in the middle of a turn. Continuing it in {} ends what it is doing now; \
+             its conversation is kept, and the new harness is briefed on it.",
+            open.choice.display_name
+        )
+    };
     crate::ui::widget::scrim::render(frame, area);
     let answers = dialog::render(
         frame,
@@ -81,11 +100,7 @@ pub(super) fn render_interrupt(
             tone: Tone::Caution,
             title: &title,
             subject: None,
-            body: vec![format!(
-                "It is in the middle of a turn. Continuing it in {} ends what it is doing now; \
-                 its conversation is kept, and the new harness is briefed on it.",
-                open.choice.display_name
-            )],
+            body: vec![body],
             confirm: Some(&confirm),
             focus: Some(if open.on_confirm { 1 } else { CANCEL }),
             field: None,

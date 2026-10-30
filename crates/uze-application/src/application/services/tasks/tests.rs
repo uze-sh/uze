@@ -3845,11 +3845,11 @@ mod overrides_tests {
 
         let away = app
             .workspace()
-            .switch_harness(&root, &agent, "two", "one")
+            .relaunch(&root, &agent, "two", "one", None)
             .unwrap();
         let back = app
             .workspace()
-            .switch_harness(&root, &agent, "one", "two")
+            .relaunch(&root, &agent, "one", "two", None)
             .unwrap();
 
         assert!(

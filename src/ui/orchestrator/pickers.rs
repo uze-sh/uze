@@ -86,6 +86,24 @@ pub(super) struct DirectoryStep {
     /// The read of them that is out, so a step opened again before it
     /// answers asks nothing more.
     pub(super) recent_asked: Option<(String, PathBuf)>,
+    /// The agent the popup restarts, when it is the agent menu's `Restart
+    /// in` panel: its overrides view alone, on the agent's own checkout,
+    /// whose `picker` then only stands at that checkout.
+    pub(super) restart: Option<RestartOf>,
+}
+
+/// The agent a `Restart in` panel relaunches, and what it carried when the
+/// panel opened.
+pub(super) struct RestartOf {
+    pub(super) target: MenuTarget,
+    pub(super) agent: String,
+    /// The checkout the agent stands in.
+    pub(super) from: PathBuf,
+    /// The harness it runs now.
+    pub(super) current: String,
+    /// The entries recorded for it on each harness, once read: what the
+    /// panel opens on, and what Enter tells a change from.
+    pub(super) recorded: BTreeMap<String, Vec<OverrideEntry>>,
 }
 
 impl AgentSupportDropdown {
@@ -217,11 +235,11 @@ pub(super) struct ContextMenu {
 /// What a menu entry opens instead of acting.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum MenuGroup {
-    /// The harnesses behind [`Action::SwitchHarness`]. One entry opens them
-    /// rather than one entry standing for each: the harnesses a machine has
-    /// are not something a keymap can name, and a group keeps the menu the
-    /// same length however many there are.
-    Harnesses(Vec<HarnessChoice>),
+    /// The restart panel behind [`Action::SwitchHarness`], beside the menu:
+    /// the harness the agent restarts on and the overrides it carries
+    /// there. One entry for both a restart and a switch, which reach the
+    /// same state: the agent relaunched where it stands.
+    Restart,
     /// What [`Action::RenameSelection`] renames on an agent's row: the
     /// agent, or the project it works in. One entry rather than two
     /// renames side by side, which read as the same word twice.
@@ -231,7 +249,6 @@ pub(super) enum MenuGroup {
 /// A choice made in an open submenu.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum SubmenuChoice {
-    Harness(HarnessChoice),
     RenameAgent,
     RenameProject,
 }
@@ -241,24 +258,21 @@ const RENAME_CHOICES: [&str; 2] = ["Agent", "Project"];
 impl MenuGroup {
     fn labels(&self) -> Vec<&str> {
         match self {
-            Self::Harnesses(harnesses) => harnesses
-                .iter()
-                .map(|choice| choice.display_name.as_str())
-                .collect(),
+            Self::Restart => Vec::new(),
             Self::Rename => RENAME_CHOICES.to_vec(),
         }
     }
 
     pub(super) fn len(&self) -> usize {
         match self {
-            Self::Harnesses(harnesses) => harnesses.len(),
+            Self::Restart => 0,
             Self::Rename => RENAME_CHOICES.len(),
         }
     }
 
     fn choice(&self, index: usize) -> Option<SubmenuChoice> {
         match self {
-            Self::Harnesses(harnesses) => harnesses.get(index).cloned().map(SubmenuChoice::Harness),
+            Self::Restart => None,
             Self::Rename => match index {
                 0 => Some(SubmenuChoice::RenameAgent),
                 1 => Some(SubmenuChoice::RenameProject),
@@ -292,16 +306,20 @@ impl ContextMenu {
         }
     }
 
-    /// Inserts the "Continue in" entry at `index`, opening `harnesses`;
-    /// nothing when there are none to continue in.
-    pub(super) fn offering_switches(mut self, index: usize, harnesses: Vec<HarnessChoice>) -> Self {
-        if !harnesses.is_empty() {
+    /// Inserts the "Restart in" entry at `index`, opening the restart
+    /// panel, when `offered`.
+    pub(super) fn offering_restart(mut self, index: usize, offered: bool) -> Self {
+        if offered {
             self.items.insert(index, Action::SwitchHarness);
             self.labels.insert(index, Action::SwitchHarness.label());
-            self.groups
-                .insert(index, Some(MenuGroup::Harnesses(harnesses)));
+            self.groups.insert(index, Some(MenuGroup::Restart));
         }
         self
+    }
+
+    /// Whether entry `index` opens the restart panel rather than a submenu.
+    pub(super) fn opens_panel(&self, index: usize) -> bool {
+        self.group(index) == Some(&MenuGroup::Restart)
     }
 
     /// Makes the menu's rename entry open a choice of the agent or its
@@ -333,10 +351,10 @@ impl ContextMenu {
         self.group(self.selected)?.choice(self.submenu?)
     }
 
-    /// Opens entry `index`'s submenu on its first harness; `false` for an
-    /// entry that opens none.
+    /// Opens entry `index`'s submenu on its first choice; `false` for an
+    /// entry that opens none, or that opens the restart panel instead.
     pub(super) fn open_submenu(&mut self, index: usize) -> bool {
-        if self.group(index).is_none() {
+        if self.group(index).is_none() || self.opens_panel(index) {
             return false;
         }
         self.selected = index;

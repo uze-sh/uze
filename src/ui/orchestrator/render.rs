@@ -471,7 +471,11 @@ pub(super) fn render(
     if let Some(index) = &model.action_index {
         render_action_index(frame, frame.area(), index, &model.disabled_extensions, hits);
     }
-    if let Some(step) = &model.directory_step {
+    if let Some(step) = model
+        .directory_step
+        .as_ref()
+        .filter(|step| step.restart.is_none())
+    {
         render_directory_step(frame, frame.area(), model, step, hits);
     }
     if let Some(picker) = &model.agent_picker {
@@ -483,8 +487,18 @@ pub(super) fn render(
     if let Some(popup) = &model.commit_detail {
         render_commit_detail(frame, frame.area(), popup);
     }
-    if let Some(menu) = &model.context_menu {
-        render_context_menu(frame, frame.area(), menu, hits);
+    let menu_row = model
+        .context_menu
+        .as_ref()
+        .and_then(|menu| render_context_menu(frame, frame.area(), menu, hits));
+    // Over the menu it stands beside, its targets after the menu's, so a
+    // click where they meet is the panel's.
+    if let Some(step) = model
+        .directory_step
+        .as_ref()
+        .filter(|step| step.restart.is_some())
+    {
+        render_restart_panel(frame, frame.area(), model, step, menu_row, hits);
     }
     // Last of all, over everything: the management modal seals the whole
     // client, so the whole frame recedes under it — the popups above

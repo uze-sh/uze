@@ -1205,12 +1205,14 @@ pub(super) enum PlacementRequest {
         task: String,
         harness: String,
     },
-    /// The agent continuing on another harness, where it already stands.
+    /// The agent relaunched where it already stands, on another harness or
+    /// on the one it runs, with `overrides` as its set there.
     Switch {
         from: PathBuf,
         agent: String,
         was: String,
         to: String,
+        overrides: Vec<String>,
     },
 }
 
@@ -1302,8 +1304,12 @@ pub(super) fn spawn_agent_placement(
                     agent,
                     was,
                     to,
+                    overrides,
                 } => tui_application(home)
-                    .and_then(|app| app.workspace().switch_harness(&from, &agent, &was, &to))
+                    .and_then(|app| {
+                        app.workspace()
+                            .relaunch(&from, &agent, &was, &to, Some(&overrides))
+                    })
                     .map_err(|error| error.to_string()),
                 PlacementRequest::Resume {
                     primary,
@@ -1434,6 +1440,7 @@ pub(super) fn spawn_recent_overrides(
     home: &UzeHome,
     harness: String,
     root: PathBuf,
+    restarting: Option<String>,
     forget: Option<Vec<String>>,
     sender: mpsc::Sender<RecentOverridesRead>,
 ) {
@@ -1441,7 +1448,7 @@ pub(super) fn spawn_recent_overrides(
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _pass = crate::telemetry::background_pass!("tui.recent_overrides", parent: &parent);
-        let entries = answered_or(
+        let (entries, recorded) = answered_or(
             || {
                 tui_application(home)
                     .map(|app| {
@@ -1451,16 +1458,28 @@ pub(super) fn spawn_recent_overrides(
                         {
                             tracing::warn!(%error, "an override used before could not be forgotten");
                         }
-                        app.workspace().recent_overrides(&harness, &root)
+                        // A restarted agent's own set comes with them,
+                        // read for the project its checkout belongs to.
+                        match &restarting {
+                            Some(agent) => match app.workspace().standing_overrides(&root, agent, &harness) {
+                                Ok(standing) => (standing.recent, Some(standing.recorded)),
+                                Err(error) => {
+                                    tracing::warn!(%error, "the agent's overrides could not be read");
+                                    (Vec::new(), Some(Vec::new()))
+                                }
+                            },
+                            None => (app.workspace().recent_overrides(&harness, &root), None),
+                        }
                     })
                     .unwrap_or_default()
             },
-            Vec::new(),
+            (Vec::new(), None),
         );
         let _ = sender.send(RecentOverridesRead {
             harness,
             root,
             entries,
+            recorded,
         });
     });
 }

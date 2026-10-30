@@ -2540,7 +2540,7 @@ asked about before its process is ended.
 > `crates/uze-workspace/src/continuity.rs::tests::a_briefing_for_another_harness_is_neither_given_nor_changed`
 > `crates/uze-workspace/src/conversation.rs::tests::a_briefing_applies_only_to_the_harness_it_was_written_for`
 > `crates/uze-workspace/src/conversation.rs::tests::a_briefing_retires_once_the_checkout_moved_past_its_switch`
-> `src/ui/orchestrator/tests/switch.rs::a_busy_agent_is_asked_before_it_is_interrupted`
+> `src/ui/orchestrator/tests/switch.rs::a_busy_agent_is_asked_before_it_is_restarted`
 > `conformance/contract/briefing.py` (all four harnesses)
 
 ### Continuity is declared per harness, and the matrix is derived from it

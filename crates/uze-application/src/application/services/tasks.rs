@@ -37,6 +37,7 @@ mod switch;
 mod views;
 
 pub use naming::*;
+pub use overrides::StandingOverrides;
 pub use views::*;
 
 impl Workspace<'_> {

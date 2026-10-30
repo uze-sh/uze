@@ -324,7 +324,7 @@ impl Attach<'_> {
         // Right after the name: continuing elsewhere is what a
         // person reaches for when this harness stopped working.
         ContextMenu::new(MenuTarget::Tab(tab), items, anchor)
-            .offering_switches(1, self.switch_choices(tab))
+            .offering_restart(1, self.restarts(tab))
             .offering_project_rename(self.renames_project(tab))
     }
 
@@ -336,29 +336,52 @@ impl Attach<'_> {
             && self.model.project_of_tab(tab).is_some()
     }
 
-    /// The harnesses `tab`'s agent could continue in: every one set up for
-    /// the workspace except the one it runs. Offered only while that
-    /// harness is alive in the pane, since a tab whose agent exited is
-    /// resumed from recent, where a harness is picked anyway.
-    pub(super) fn switch_choices(&self, tab: TabId) -> Vec<HarnessChoice> {
-        let Some((_, found)) = self.space_and_tab(tab) else {
-            return Vec::new();
+    /// Whether `tab`'s agent can be restarted where it stands: an agent UZE
+    /// launched, whose harness, set up here, is alive in the pane. A tab
+    /// whose agent exited is resumed from recent, where a harness is picked
+    /// anyway.
+    pub(super) fn restarts(&self, tab: TabId) -> bool {
+        self.space_and_tab(tab).is_some_and(|(_, found)| {
+            launched_agent_id(found).is_some()
+                && agent_for_tab(&self.identities, found).is_some_and(|current| current.configured)
+        })
+    }
+
+    /// Opens the `Restart in` panel over `target`'s agent, beside the menu
+    /// entry it was asked from, which stays open behind it.
+    pub(in crate::ui::orchestrator) fn open_restart_panel(&mut self, target: MenuTarget) {
+        let MenuTarget::Tab(tab) = target else {
+            return;
         };
-        if launched_agent_id(found).is_none() {
-            return Vec::new();
-        }
-        let Some(current) = agent_for_tab(&self.identities, found) else {
-            return Vec::new();
+        let Some((space, restart)) = self.space_and_tab(tab).and_then(|(space, found)| {
+            Some((
+                space.id,
+                RestartOf {
+                    target,
+                    agent: launched_agent_id(found)?.to_owned(),
+                    from: named_checkout(&found.pane.cwd),
+                    current: agent_for_tab(&self.identities, found)?
+                        .integration
+                        .to_owned(),
+                    recorded: BTreeMap::new(),
+                },
+            ))
+        }) else {
+            return;
         };
-        self.identities
-            .iter()
-            .filter(|identity| identity.configured && identity.integration != current.integration)
-            .map(|identity| HarnessChoice {
-                integration: identity.integration.to_owned(),
-                display_name: identity.display_name.to_owned(),
-                continuity_gap: identity.continuity_gap.clone(),
-            })
-            .collect()
+        let anchor = self
+            .model
+            .context_menu
+            .as_ref()
+            .map_or_else(|| Rect::new(0, 0, 1, 1), |menu| menu.anchor);
+        self.model.directory_step = Some(DirectoryStep::restarting(
+            restart,
+            space,
+            anchor,
+            options_of(&self.identities),
+        ));
+        self.ask_recent_overrides();
+        self.model.dirty = true;
     }
 
     /// What a choice made in an open submenu does.
@@ -368,7 +391,6 @@ impl Attach<'_> {
         choice: SubmenuChoice,
     ) {
         match (choice, target) {
-            (SubmenuChoice::Harness(harness), _) => self.continue_in(target, harness, false),
             (SubmenuChoice::RenameAgent, _) => begin_rename(&mut self.model, target),
             (SubmenuChoice::RenameProject, MenuTarget::Tab(tab)) => {
                 begin_project_rename(&mut self.model, tab);
@@ -378,14 +400,16 @@ impl Attach<'_> {
     }
 
     /// Relaunches `target`'s agent on `choice`'s harness, in the place it
-    /// stands, replacing its tab — or, when it is mid-turn and the operator
-    /// has not `confirmed` it, asks first, since the relaunch ends whatever
-    /// it is doing.
+    /// stands, replacing its tab, with `overrides` as its set there: a
+    /// restart when that is the harness it runs, a switch otherwise — or,
+    /// when it is mid-turn and the operator has not `confirmed` it, asks
+    /// first, since the relaunch ends whatever it is doing.
     pub(in crate::ui::orchestrator) fn continue_in(
         &mut self,
         target: MenuTarget,
         choice: HarnessChoice,
         confirmed: bool,
+        overrides: Vec<String>,
     ) {
         let MenuTarget::Tab(tab) = target else {
             return;
@@ -409,7 +433,9 @@ impl Attach<'_> {
             self.model.interrupt = Some(InterruptDialog {
                 target,
                 label,
+                restart: choice.integration == from_harness,
                 choice,
+                overrides,
                 on_confirm: false,
             });
             return;
@@ -425,13 +451,17 @@ impl Attach<'_> {
         if self.model.placement_pending {
             return;
         }
-        if let Some(gap) = &choice.continuity_gap {
+        let restart = choice.integration == from_harness;
+        if !restart && let Some(gap) = &choice.continuity_gap {
             self.model
                 .raise_toast(ToastKind::Warned, gap, label.clone(), None);
         }
         self.model.placement_pending = true;
-        self.model
-            .set_busy_notice(format!("{label}: continuing in {}", choice.display_name));
+        self.model.set_busy_notice(if restart {
+            format!("{label}: restarting")
+        } else {
+            format!("{label}: continuing in {}", choice.display_name)
+        });
         spawn_agent_placement(
             self.home,
             PlacementRequest::Switch {
@@ -439,6 +469,7 @@ impl Attach<'_> {
                 agent,
                 was: from_harness,
                 to: choice.integration,
+                overrides,
             },
             Vec::new(),
             label,

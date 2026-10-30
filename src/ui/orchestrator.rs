@@ -1126,14 +1126,20 @@ fn writer_application(home: UzeHome) -> Option<uze_application::UzeApplication> 
 /// [`AgentIdentity`], `command` set to the program that identity says an
 /// agent of it is launched by.
 fn agent_options(home: &UzeHome) -> Vec<AgentOption> {
-    agent_identities(home)
-        .into_iter()
+    options_of(&agent_identities(home))
+}
+
+/// The harnesses among `identities` set up for the workspace, as a
+/// harness field offers them.
+fn options_of(identities: &[AgentIdentity]) -> Vec<AgentOption> {
+    identities
+        .iter()
         .filter(|identity| identity.configured)
         .map(|identity| AgentOption {
             display_name: identity.display_name.to_owned(),
             integration: identity.integration.to_owned(),
-            command: TabCommand::of(&identity),
-            continuity_gap: identity.continuity_gap,
+            command: TabCommand::of(identity),
+            continuity_gap: identity.continuity_gap.clone(),
             overrides: identity.overrides,
         })
         .collect()

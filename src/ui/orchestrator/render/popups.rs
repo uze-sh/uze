@@ -119,8 +119,35 @@ pub(in crate::ui::orchestrator) fn render_directory_step(
     step: &DirectoryStep,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
+    render_popup_at(frame, area, model, step, step.anchor, hits);
+}
+
+/// The `Restart in` panel: the same popup, beside the menu row it opened
+/// from, its first row level with that row, the way a submenu stands.
+pub(in crate::ui::orchestrator) fn render_restart_panel(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    model: &WorkspaceModel,
+    step: &DirectoryStep,
+    row: Option<Rect>,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) {
+    let anchor = row.map_or(step.anchor, |row| {
+        Rect::new(row.right() + 1, row.y.saturating_sub(2), 1, 1)
+    });
+    render_popup_at(frame, area, model, step, anchor, hits);
+}
+
+fn render_popup_at(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    model: &WorkspaceModel,
+    step: &DirectoryStep,
+    anchor: Rect,
+    hits: &mut Vec<(Rect, WorkspaceHit)>,
+) {
     let height = step.rows + NEW_AGENT_POPUP_CHROME + 2;
-    let popup = popup_beside(area, step.anchor, NEW_AGENT_POPUP_WIDTH, height);
+    let popup = popup_beside(area, anchor, NEW_AGENT_POPUP_WIDTH, height);
     // The border's targets go in after the card's own, which covers the
     // whole popup and must not answer a click on them.
     // Untitled: the views named on the harness's row say what it is.
@@ -185,6 +212,15 @@ fn views(
     // Lit by pointing at the view itself, never at the foot's hint for
     // the same key: each answers the pointer on its own.
     let hovered = |action: Action| model.hovered == Some(WorkspaceHit::ViewAction(action));
+    // The `Restart in` panel is the overrides view alone.
+    if step.restart.is_some() {
+        let only = [Segment {
+            label: "overrides",
+            target: None::<Action>,
+            hovered: false,
+        }];
+        return segmented(&only, 0).0.spans;
+    }
     let segments = [
         Segment {
             label: "new agent",
@@ -305,7 +341,18 @@ fn render_new_agent_foot(
     };
     let (keys, close) = if step.overrides.is_some() {
         let mut keys = crate::ui::widget::hint::Hints::new(&OVERRIDES_SCOPES)
-            .named(Action::Activate, step.enter_does().word());
+            .named(Action::Activate, step.enter_word());
+        // The panel has no other view to move the harness on: with nothing
+        // typed, the sideways keys do it.
+        if step.restart.is_some()
+            && step.harnesses.len() > 1
+            && step
+                .overrides
+                .as_ref()
+                .is_some_and(|over| over.line.text().is_empty())
+        {
+            keys = keys.run(Action::CaretLeft, Action::CaretRight, "harness");
+        }
         if let Some(choice) = step.marked_choice() {
             let close = match step.choices().get(choice).and_then(|it| it.recent) {
                 Some(_) => "forget",
@@ -458,12 +505,14 @@ pub(super) fn render_agent_picker_row(
 /// the menu reads as one consistent list rather than singling a row out).
 /// See [`ContextMenu`]'s own doc comment for why closing specifically still
 /// requires this menu instead of a direct click.
+/// Draws the menu and answers the row of the entry it is on, which an open
+/// submenu or panel stands beside.
 pub(in crate::ui::orchestrator) fn render_context_menu(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     menu: &ContextMenu,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
-) {
+) -> Option<Rect> {
     let entries: Vec<widget::menu::Entry<'_>> = menu
         .labels
         .iter()
@@ -493,6 +542,7 @@ pub(in crate::ui::orchestrator) fn render_context_menu(
             hits.push((row, WorkspaceHit::ContextSubmenuAction(index)));
         }
     }
+    opened
 }
 
 /// Where the commit popup goes and what it says, resolved once for both
