@@ -746,7 +746,7 @@ fn click(model: &mut TuiModel, target: &Hit) -> Intent {
     model.apply_mouse(
         MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
-            column: rect.x + 1,
+            column: rect.x,
             row: rect.y,
             modifiers: KeyModifiers::NONE,
         },
@@ -1046,7 +1046,7 @@ fn stepping_twice_on_the_same_spot_steps_the_same_preference() {
     let (_, hits) = super::support::drawn_at(&model, 220, 44);
     let under = hits
         .iter()
-        .find(|(at, _)| at.contains(ratatui::layout::Position::new(rect.x + 1, rect.y)))
+        .find(|(at, _)| at.contains(ratatui::layout::Position::new(rect.x, rect.y)))
         .map(|(_, hit)| hit.clone());
     assert_eq!(under, Some(plus), "the same spot is the same step");
 }
