@@ -1048,3 +1048,113 @@ fn a_built_in_plugin_follows_the_binary_it_runs() {
         "the machine holds this binary's bytes"
     );
 }
+
+/// A project declaring `plugins` from the built-in marketplace, installed.
+fn built_in_installed(
+    label: &str,
+    plugins: &str,
+) -> (UzeApplication, uze_testkit::git::Repository, UzeHome) {
+    let (application, repository, home) = built_in_project(label);
+    fs::write(
+        manifest::manifest_path_for(repository.root()),
+        format!("marketplaces:\n  uze:\n    plugins: [{plugins}]\n"),
+    )
+    .unwrap();
+    application
+        .project()
+        .install(repository.root(), &AlwaysTrust)
+        .unwrap();
+    (application, repository, home)
+}
+
+/// A lock another build wrote, on a machine that already holds this
+/// binary's bytes: the lock is rewritten, and the plugin reported.
+#[test]
+fn a_lock_another_build_wrote_is_rewritten_and_reported() {
+    let (application, repository, _home) = built_in_installed("built-in-lock-only", "workspace");
+    let root = repository.root().to_path_buf();
+    let current = lock_of(&root);
+    let mut earlier = current.clone();
+    earlier.uze = Some("0.0.1".to_owned());
+    earlier.plugins.get_mut("workspace").unwrap().integrity = Some("sha256:earlier".to_owned());
+    uze_core::project_lock::save_lock(&root, &earlier).unwrap();
+
+    let report = application.project().install(&root, &AlwaysTrust).unwrap();
+
+    assert_eq!(plugins_installed(&report), ["workspace"], "{report:?}");
+    assert_eq!(lock_of(&root), current);
+}
+
+/// `uze update` on a built-in plugin brings the lock to this binary.
+#[test]
+fn updating_a_built_in_plugin_brings_its_lock_to_this_binary() {
+    let (application, repository, _home) = built_in_installed("built-in-update", "workspace");
+    let root = repository.root().to_path_buf();
+    let current = lock_of(&root);
+    let mut earlier = current.clone();
+    earlier.plugins.get_mut("workspace").unwrap().integrity = Some("sha256:earlier".to_owned());
+    uze_core::project_lock::save_lock(&root, &earlier).unwrap();
+
+    let report = application
+        .project()
+        .update(&root, Some("workspace"), false, &AlwaysTrust)
+        .unwrap();
+
+    assert!(
+        matches!(
+            report.outcomes.as_slice(),
+            [uze_application::application::UpdateOutcome::Moved { .. }]
+        ),
+        "{report:?}"
+    );
+    assert_eq!(lock_of(&root), current);
+}
+
+/// The lock's uze version answers for every built-in plugin it pins, or
+/// stays the version that wrote them: one plugin brought to this binary
+/// does not vouch for another it never touched.
+#[test]
+fn the_lock_names_this_version_only_once_it_answers_for_every_built_in() {
+    let (application, repository, _home) = built_in_installed("built-in-partial", "workspace");
+    let root = repository.root().to_path_buf();
+    // An entry an earlier build left beside it, which nothing resolved here.
+    let mut earlier = lock_of(&root);
+    earlier.uze = Some("0.0.1".to_owned());
+    earlier.plugins.insert(
+        "pingpong".to_owned(),
+        uze_core::project_lock::LockedPlugin::resolved("uze", Some("sha256:earlier".to_owned())),
+    );
+    uze_core::project_lock::save_lock(&root, &earlier).unwrap();
+
+    application
+        .project()
+        .update(&root, Some("workspace"), false, &AlwaysTrust)
+        .unwrap();
+    assert_eq!(lock_of(&root).uze.as_deref(), Some("0.0.1"));
+    assert!(application.project().plan(&root).unwrap().has_changes);
+
+    // Once the only other entry is gone, what is left is this binary's.
+    application.project().remove("pingpong", &root).unwrap();
+    application.project().install(&root, &AlwaysTrust).unwrap();
+    assert_eq!(
+        lock_of(&root).uze.as_deref(),
+        Some(env!("CARGO_PKG_VERSION"))
+    );
+}
+
+/// Removing the last built-in plugin takes the uze version off the lock.
+#[test]
+fn removing_the_last_built_in_plugin_takes_the_version_away() {
+    let (application, repository, _home) = built_in_installed("built-in-remove", "workspace");
+    let root = repository.root().to_path_buf();
+    let mut lock = lock_of(&root);
+    lock.plugins.insert(
+        "other".to_owned(),
+        uze_core::project_lock::LockedPlugin::resolved("market", Some("sha256:other".to_owned())),
+    );
+    uze_core::project_lock::save_lock(&root, &lock).unwrap();
+
+    application.project().remove("workspace", &root).unwrap();
+
+    assert_eq!(lock_of(&root).uze, None, "no built-in plugin is locked");
+}

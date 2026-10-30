@@ -13,10 +13,11 @@
 //!    it makes a reader moving between the two files learn the same thing
 //!    twice.
 //!
-//! What resolution adds to a declaration is exactly two things:
-//! `revision:` — the immutable commit a Git marketplace was read at — and
-//! `integrity:` — a digest of the bytes that landed, recorded only when
-//! those bytes cannot change under it. Everything else in the file was
+//! What resolution adds to a declaration is `revision:` — the immutable
+//! commit a Git marketplace was read at — and `integrity:` — a digest of the
+//! bytes that landed, recorded only when those bytes cannot change under
+//! it. The marketplace built into uze has no commit: the top-level `uze:`
+//! is the version whose binary its plugins came from. Everything else in the file was
 //! already in the manifest, and is repeated here only so the lock stands
 //! alone on a machine that has not read one.
 //!

@@ -18,13 +18,12 @@ which the marketplace's rename to `uze` now refuses.
   marketplace has no source but the binary.
 - A bundled plugin (installed by bootstrap on every machine, today `uze`)
   is still never written into a project: it is every project's already.
-- `agents.lock` pins the built-in marketplace by the uze version that
-  resolved it, and each of its plugins by the digest of its bytes, as any
-  plugin is pinned.
-- A lock written by another uze version is not a failure: the plugins are
-  resolved again from this binary and the lock rewritten, the way a
-  marketplace that moved past its pin is an update. A digest that differs
-  under the same version still fails, as any pin does.
+- `agents.lock` records, at its top, the uze version its built-in plugins
+  were resolved from, and each of them by the digest of its bytes; the
+  built-in marketplace has no entry under `marketplaces:`.
+- Built-in plugins follow the binary that runs: bytes another uze build
+  left, on the machine or in the lock, are replaced by this binary's and
+  reported as updated, never refused, since the binary is the only source.
 - The official marketplace is named `uze` (was `uze-official`); a machine
   an earlier release seeded is moved under the new name once.
 - **BREAKING** (no released users): the `gsd`, `focus` and `contributions`
@@ -41,15 +40,15 @@ which the marketplace's rename to `uze` now refuses.
 ### Modified Capabilities
 - `agents-manifest`: the built-in marketplace's plugins may be declared;
   only a source on its name, and a bundled plugin, are refused.
-- `agents-lock`: a built-in marketplace entry pins the uze version, and an
-  entry another version wrote is resolved again rather than refused.
+- `agents-lock`: built-in plugins are pinned by the uze version and their
+  bytes, follow the binary, and have no marketplace entry.
 - `marketplace`: the embedded official marketplace is registered as `uze`,
   and an earlier release's `uze-official` records are moved under it.
 
 ## Impact
 
-- `uze-core`: `manifest` validation, `project_lock` (`LockedMarketplace`
-  gains the built-in form), `BUILT_IN_MARKETPLACE`.
+- `uze-core`: `manifest` validation and `BUNDLED_PLUGINS`, `project_lock`
+  (a top-level `uze:`), `BUILT_IN_MARKETPLACE`.
 - `uze-application`: `project_environment` (`add`, `plan`, install and the
   lineage check), `setup` (retiring `uze-official`), `bootstrap`.
 - Repository: `marketplace.json`, `plugins/workspace`, `plugins/uze`'s
