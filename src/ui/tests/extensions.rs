@@ -1014,6 +1014,63 @@ fn a_drawer_button_acts_while_a_preference_is_typed() {
     assert_eq!(typing.preferences, None);
 }
 
+fn twenty_preferences() -> TuiModel {
+    let mut model = focus_preferences();
+    let row = model.extension_standings[0].preferences[0].clone();
+    model.extension_standings[0].preferences = (0..20)
+        .map(|at| uze_application::PreferenceRow {
+            name: format!("p{at}"),
+            label: format!("Setting {at:02}"),
+            ..row.clone()
+        })
+        .collect();
+    model.preferences = None;
+    model
+}
+
+/// A click on a stepper the drawer shows does not move the drawer under
+/// the pointer: a second click on the same spot steps the same row again.
+#[test]
+fn stepping_twice_on_the_same_spot_steps_the_same_preference() {
+    let mut model = twenty_preferences();
+    let plus = Hit::ExtensionPreferenceStep {
+        index: 6,
+        forward: true,
+    };
+    let (_, hits) = super::support::drawn_at(&model, 220, 44);
+    let (rect, _) = *hits
+        .iter()
+        .find(|(_, hit)| *hit == plus)
+        .expect("the row is in sight");
+    click(&mut model, &plus);
+    let (_, hits) = super::support::drawn_at(&model, 220, 44);
+    let under = hits
+        .iter()
+        .find(|(at, _)| at.contains(ratatui::layout::Position::new(rect.x + 1, rect.y)))
+        .map(|(_, hit)| hit.clone());
+    assert_eq!(under, Some(plus), "the same spot is the same step");
+}
+
+/// The row the keys are on says what it holds wherever it is in a long
+/// list, the first as much as the last.
+#[test]
+fn the_detail_is_in_sight_for_every_row_of_a_long_list() {
+    let mut model = twenty_preferences();
+    model.edit_selected_preferences();
+    for at in 0..20 {
+        let screen = screen_of(&model);
+        assert!(
+            screen.contains(&format!("Setting {at:02}")),
+            "row {at}: {screen}"
+        );
+        assert!(
+            screen.contains("A number from 1 to 90"),
+            "row {at}: {screen}"
+        );
+        model.apply_key(key(KeyCode::Down));
+    }
+}
+
 /// More preferences than the drawer has rows: the drawer follows the keys,
 /// so the row they are on and what it holds are on screen, and a click on
 /// it lands on it.

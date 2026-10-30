@@ -332,13 +332,22 @@ fn render_extension_drawer(
         let banner = crate::ui::widget::banner::render_folded(frame, room, &title, &summary.errors);
         text_area.height = body.height.saturating_sub(banner.height);
     }
-    let first = editing.map_or(0, |editor| {
-        following(
-            &preference_rows,
-            editor.selected,
-            usize::from(text_area.height),
-        )
-    });
+    // While the keys are on the preferences, what the row they are on
+    // holds stands at the body's foot, out of the scroll, as a dialog's
+    // detail does: in sight whichever row it is.
+    let first = match editing {
+        Some(editor) => {
+            let detail = Rect {
+                y: text_area.bottom().saturating_sub(PREFERENCE_DETAIL_ROWS),
+                height: PREFERENCE_DETAIL_ROWS.min(text_area.height),
+                ..text_area
+            };
+            text_area.height = text_area.height.saturating_sub(detail.height);
+            render_preference_detail(frame, detail, editor);
+            following(&preference_rows, editor, usize::from(text_area.height))
+        }
+        None => 0,
+    };
     // Where line `line` of the body stands on screen, once the body has
     // scrolled to `first`; nothing for a line out of sight.
     let on_screen = |line: usize| {
@@ -587,26 +596,6 @@ fn standing_lines(
             });
             grid.lines.push(key.line);
         }
-        // What the row the keys are on holds, in rows kept whatever it
-        // says, so moving between rows never moves what is under them.
-        if let Some(row) = editing.and_then(|editor| editor.rows.get(editor.selected)) {
-            let mut said = preference_meaning(row);
-            if row.is_secret() {
-                said.push_str(" · empty forgets it");
-            }
-            // Under the labels, in their column, a line of air apart.
-            grid.air(form::KEY_AIR);
-            let indent = form::LABEL_INDENT;
-            let mut folded = text::fold(&said, grid.width.saturating_sub(indent));
-            folded.resize(PREFERENCE_DETAIL, String::new());
-            folded.truncate(PREFERENCE_DETAIL);
-            grid.lines.extend(folded.into_iter().map(|row| {
-                Line::from(Span::styled(
-                    format!("{:indent$}{row}", ""),
-                    theme::fg(Token::TextMuted),
-                ))
-            }));
-        }
     }
 
     let grants: Vec<_> = standing
@@ -752,6 +741,9 @@ fn standing_status(
 /// The rows a preference's detail keeps under the rows while the keys are
 /// on them.
 const PREFERENCE_DETAIL: usize = 2;
+/// The rows the detail takes at the body's foot: its rule, then the
+/// detail.
+const PREFERENCE_DETAIL_ROWS: u16 = 1 + PREFERENCE_DETAIL as u16;
 
 /// A preference's row in the drawer, and where on it each part of its
 /// control answers a click.
@@ -846,17 +838,46 @@ fn preference_hit(index: usize, part: form::Part) -> Hit {
     }
 }
 
-/// The first line of the body to show while the keys are on preference
-/// `selected`, `height` lines being shown: none scrolled while everything
-/// fits, otherwise enough that the detail under the rows is in sight,
-/// never so far that the row the keys are on leaves it.
-fn following(rows: &[PlacedPreference], selected: usize, height: usize) -> usize {
-    let (Some(on), Some(last)) = (rows.iter().find(|row| row.index == selected), rows.last())
-    else {
-        return 0;
+/// The first line of the body to show while the keys are on `editor`'s
+/// row, `height` lines being shown: where it was, moved only as far as
+/// brings the row into sight.
+fn following(rows: &[PlacedPreference], editor: &PreferencesEditor, height: usize) -> usize {
+    let first = editor.scroll.get();
+    let Some(on) = rows.iter().find(|row| row.index == editor.selected) else {
+        return first;
     };
-    let detail_end = last.line + form::KEY_AIR + PREFERENCE_DETAIL;
-    (detail_end + 1).saturating_sub(height).min(on.line)
+    let first = if on.line < first {
+        on.line
+    } else if on.line >= first + height {
+        on.line + 1 - height
+    } else {
+        first
+    };
+    editor.scroll.set(first);
+    first
+}
+
+/// What the row the keys are on holds, under a rule at the foot of the
+/// body: its kind, range and default, in rows kept whatever it says.
+fn render_preference_detail(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    editor: &PreferencesEditor,
+) {
+    let Some(row) = editor.rows.get(editor.selected) else {
+        return;
+    };
+    let content = crate::ui::widget::Rule::new(crate::ui::widget::Edge::Top).render(frame, area);
+    let mut said = preference_meaning(row);
+    if row.is_secret() {
+        said.push_str(" · empty forgets it");
+    }
+    let lines: Vec<Line<'static>> = text::fold(&said, usize::from(content.width).max(1))
+        .into_iter()
+        .take(PREFERENCE_DETAIL)
+        .map(|folded| Line::from(Span::styled(folded, theme::fg(Token::TextSecondary))))
+        .collect();
+    frame.render_widget(Paragraph::new(lines), content);
 }
 
 /// What the keys do on the preference they are on, in the footer: what

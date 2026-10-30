@@ -388,6 +388,10 @@ pub(crate) struct PreferencesEditor {
     pub(crate) selected: usize,
     /// What is typed for the selected row, while one is.
     pub(crate) typing: Option<String>,
+    /// The first line of the drawer's body in sight while the keys are
+    /// here, kept from frame to frame so the drawer moves only as far as
+    /// the row the keys are on needs, never under a pointer at rest.
+    pub(crate) scroll: std::cell::Cell<usize>,
 }
 
 /// What a confirmation is about, and so what agreeing to it does.
@@ -1439,6 +1443,7 @@ impl TuiModel {
             rows: standing.preferences,
             selected: 0,
             typing: None,
+            scroll: std::cell::Cell::new(0),
         });
         Intent::None
     }
