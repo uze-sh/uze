@@ -74,6 +74,8 @@ checked out from the audited commit `98d1210f`, the new tests kept) and failed a
   pins the same bound for nesting through closures, whose captures the
   first version of the bound did not walk (found by the branch's review;
   red before the depth walk entered a closure's captures).
+  `a_recursive_closure_kept_on_this_is_not_judged_deep` pins that a shared
+  cell met again is a cycle, not depth (Rhai's recursive-closure idiom).
 - **Exploit re-run**: the audit's `deep_nesting_across_resident_calls`
   (`ws/crates/uze-script/tests/audit.rs`), built from this branch inside the
   sandbox:

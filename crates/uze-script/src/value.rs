@@ -6,6 +6,8 @@
 //! conversion without a floor would turn that into a stack overflow on the
 //! pool thread.
 
+use std::collections::HashSet;
+
 use rhai::{Array, Dynamic, FnPtr, Map};
 use serde_json::{Map as JsonMap, Number, Value};
 
@@ -117,22 +119,43 @@ fn to_json_at(value: &Dynamic, depth: usize) -> Result<Value, Crossing> {
 /// deep: walked no further than `levels + 1`, so a value nested thousands
 /// of levels is judged in as many frames as the bound, not as the value. A
 /// closure holds what it captured as a container holds its items, and
-/// Rhai's size limits do not look inside it.
+/// Rhai's size limits do not look inside it. A shared cell met again on the
+/// way down is a cycle (a closure that calls itself captures the variable
+/// holding it), which adds no depth.
 pub(crate) fn deeper_than(value: &Dynamic, levels: usize) -> bool {
+    deeper_than_unseen(value, levels, &mut HashSet::new())
+}
+
+fn deeper_than_unseen(value: &Dynamic, levels: usize, seen: &mut HashSet<usize>) -> bool {
     if let Some(array) = value.read_lock::<Array>() {
-        return levels == 0 || array.iter().any(|item| deeper_than(item, levels - 1));
+        return first_visit(value, &*array, seen) && any_deeper(array.iter(), levels, seen);
     }
     if let Some(map) = value.read_lock::<Map>() {
-        return levels == 0 || map.values().any(|item| deeper_than(item, levels - 1));
+        return first_visit(value, &*map, seen) && any_deeper(map.values(), levels, seen);
     }
     if let Some(function) = value.read_lock::<FnPtr>() {
         return function.is_curried()
-            && (levels == 0
-                || function
-                    .iter_curry()
-                    .any(|item| deeper_than(item, levels - 1)));
+            && first_visit(value, &*function, seen)
+            && any_deeper(function.iter_curry(), levels, seen);
     }
     false
+}
+
+/// Whether a container at `levels` is already too deep, or one of `items`
+/// nests past the levels left beneath it.
+fn any_deeper<'a>(
+    mut items: impl Iterator<Item = &'a Dynamic>,
+    levels: usize,
+    seen: &mut HashSet<usize>,
+) -> bool {
+    levels == 0 || items.any(|item| deeper_than_unseen(item, levels - 1, seen))
+}
+
+/// Whether this is the first time the walk reaches `content`: always for an
+/// owned value, which nothing else can hold; for a shared one, by the
+/// address of the cell it lives in.
+fn first_visit<T>(value: &Dynamic, content: &T, seen: &mut HashSet<usize>) -> bool {
+    !value.is_shared() || seen.insert(std::ptr::from_ref(content) as usize)
 }
 
 #[cfg(test)]

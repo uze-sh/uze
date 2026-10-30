@@ -116,6 +116,29 @@ fn a_resident_nesting_closures_in_this_is_stopped_at_the_crossing_depth() {
     assert!(call <= 17, "stopped once past 128 levels, at call {call}");
 }
 
+/// Rhai's recursive closure captures the variable that holds it: a cycle
+/// two levels deep, which is not depth.
+#[test]
+fn a_recursive_closure_kept_on_this_is_not_judged_deep() {
+    let resident = resident(
+        r#"
+        fn start(context) {
+            let fact = 0;
+            fact = |n| if n <= 1 { 1 } else { n * fact.call(n - 1) };
+            this.f = fact;
+            true
+        }
+        fn event(event) { type_of(this.f) == "Fn" }
+        fn render(size) { #{ type: "text", args: ["x"] } }
+    "#,
+    );
+    let envelope = resident
+        .event(&json!({"name": "timer"}))
+        .outcome
+        .expect("a recursive closure is an ordinary value");
+    assert_eq!(envelope.data, json!(true));
+}
+
 /// Nests `a` 400 levels within one call, then compares and prints it: each
 /// recursion Rhai makes, some 12 KiB a level in a debug build, past a
 /// default 2 MiB thread stack.
