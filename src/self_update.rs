@@ -45,9 +45,10 @@
 //! was built with. No signature, a bad one, or no `ssh-keygen` all end the
 //! same way: nothing is installed.
 //!
-//! A release is installed in the background only once it has been the
-//! latest for [`SETTLE`]: a release found to be bad and pulled within that
-//! window never reaches a machine that was only waiting. The window is
+//! A release is installed in the background as soon as a check finds it,
+//! unless `UZE_RELEASE_CHANNEL` is `stable`: then only once it has been the
+//! latest for [`SETTLE`], so a release found to be bad and pulled within
+//! that window never reaches a machine that was only waiting. The window is
 //! counted from when the release was published, and one that saw it out
 //! before a newer one replaced it is still installed while that one waits:
 //! counting from when a machine first heard, and forgetting the release a
@@ -164,8 +165,10 @@ fn publish(notice: Option<Notice>) {
     REVISION.fetch_add(1, Ordering::AcqRel);
 }
 
-/// Starts the check for this process: now, and once every [`CHECK_EVERY`]
-/// after, on a thread of its own. Nothing a client draws waits on it.
+/// Starts the check for this process: now, and on every wake after, about
+/// every [`WAKE_EVERY`], on a thread of its own. A wake asks the network
+/// only once the answer is [`CHECK_EVERY`] old. Nothing a client draws
+/// waits on it.
 pub(crate) fn watch(home: UzeHome) {
     let policy = Policy::current();
     if policy == Policy::Off {
