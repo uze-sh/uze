@@ -1176,6 +1176,56 @@ mod mirror_tests {
         fs::remove_dir_all(&home_root).unwrap();
     }
 
+    /// A remote that did not answer is not asked again on every wake: the
+    /// attempt waits out the hour like an answer, and leaves the entry it
+    /// could not refresh as it was.
+    #[test]
+    fn an_unanswered_marketplace_fetch_waits_the_hour() {
+        let home_root = uze_testkit::temp::scratch("keep-current-unanswered");
+        let (repository, first) = marketplace("keep-current-unanswered-src");
+        let home = UzeHome::at(home_root.join("uze"));
+        let application = UzeApplication::new(home.clone(), Vec::new());
+        application
+            .marketplace()
+            .add(&format!("file://{}", repository.root().display()))
+            .unwrap();
+        let meta_path = home.marketplace_cache_dir().join("mkt/catalogue.json");
+        let mut meta: serde_json::Value =
+            serde_json::from_slice(&fs::read(&meta_path).unwrap()).unwrap();
+        meta["cached_at_unix_nanos"] = serde_json::json!(0);
+        let aged = serde_json::to_vec_pretty(&meta).unwrap();
+        fs::write(&meta_path, &aged).unwrap();
+
+        let away = repository.root().with_extension("away");
+        fs::rename(repository.root(), &away).unwrap();
+        assert!(
+            application
+                .marketplace_catalogues
+                .refresh_stale(&home)
+                .is_empty()
+        );
+        assert_eq!(
+            fs::read(&meta_path).unwrap(),
+            aged,
+            "the entry is as it was"
+        );
+
+        fs::rename(&away, repository.root()).unwrap();
+        repository.git(&["commit", "--allow-empty", "-m", "second"]);
+        assert!(
+            application
+                .marketplace_catalogues
+                .refresh_stale(&home)
+                .is_empty(),
+            "not asked again within the hour"
+        );
+        assert_eq!(
+            mirrored_head(&home, "mkt").map(|head| head.commit),
+            Some(first)
+        );
+        fs::remove_dir_all(&home_root).unwrap();
+    }
+
     /// A fetch another process is making is not made again: the tick that
     /// finds the claim held fetches nothing.
     #[test]
