@@ -1,12 +1,12 @@
 Lab: `$AUDIT/fix-bounded` (fixed debug binary from this branch) and
 `$AUDIT/fix-bounded-old` (the audit's own `$AUDIT/bin/uze`, the audited
-build), each PoC run through `.agents/skills/security-audit/sandbox`.
+build), each PoC run through `.agents/skills/security-audit/scripts/sandbox`.
 Every regression test was run against the audited sources (the fix's files
-checked out from `e295bfe3`, the new tests kept) and failed as noted.
+checked out from the audited commit `98d1210f`, the new tests kept) and failed as noted.
 
 ## EXT-1
 
-- **Fix**: c0045c88. The binder spends at most `EXPANSION_MAX` (20 000)
+- **Fix**: The binder spends at most `EXPANSION_MAX` (20 000)
   entries per build, drawn or not, then stops walking and folds with
   `Folded: this view expands to more than 20000 nodes`; the check refuses a
   view whose templates alone expand past it.
@@ -34,7 +34,7 @@ checked out from `e295bfe3`, the new tests kept) and failed as noted.
 
 ## SCRIPT-2
 
-- **Fix**: c9486dd6. `replace` (string or character find, string
+- **Fix**: `replace` (string or character find, string
   substitute) counts its result before building it; `map` and `zip` count
   each result as it is collected; all three refuse with Rhai's own size
   error. Every package function was checked (design.md, SCRIPT-2 table).
@@ -58,7 +58,7 @@ checked out from `e295bfe3`, the new tests kept) and failed as noted.
 
 ## SCRIPT-1
 
-- **Fix**: 0dd93458. Every answer runs on a scoped thread with
+- **Fix**: Every answer runs on a scoped thread with
   `engine::STACK` (64 MiB) and the resident thread uses it too; after each
   resident call, `this` nesting deeper than a value may cross stops the
   session with `Limit::Nesting` ("the script crossed its nesting depth
@@ -89,7 +89,7 @@ checked out from `e295bfe3`, the new tests kept) and failed as noted.
 
 ## EXT-2
 
-- **Fix**: 0a480a03. The pre-scan treats `\` outside strings and comments
+- **Fix**: The pre-scan treats `\` outside strings and comments
   as continuing the node over the next line break, so the existing refusal
   of a slashdashed block inside another applies.
 - **Regression test**:

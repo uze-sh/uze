@@ -2,7 +2,7 @@
 
 - status:   pending
 - task:     1.2
-- commit:   c0045c88
+- commit:   squashed on delivery
 - trigger:  the node cap counted only nodes drawn; the brief proposed reusing the trace's `reached` counter.
 - decided:  the binder keeps its own `steps` (per build, not per trace entry), counting every `use`, node instance and filtered list row, capped at `uze_contract::EXPANSION_MAX` = 20 000; once spent every loop breaks, so the build is O(budget). The compiler refuses a view whose template expansion alone passes the same constant.
 - rejected: `reached` as the budget (it is per entry and was `u32`, overflowing at 4e9); counting only `use`s (an `each` over its parent's list is n² with no `use`); moving the bind off the drawing thread (the budget makes the worst build ~1 ms; the memo and hit-testing assume a synchronous build).
@@ -12,7 +12,7 @@
 
 - status:   pending
 - task:     1.3
-- commit:   c0045c88
+- commit:   squashed on delivery
 - trigger:  the brief asked that `uze agent plugin check` reject the bomb before install; `uze install` installs any extension whose view does not compile and reports it so.
 - decided:  kept that behaviour: the bomb installs, `uze status` shows `× does not compile` with the fan-out message, and nothing binds it.
 - rejected: making install refuse a plugin over one extension's compile error (a behaviour change to install beyond this audit, and other compile errors would need the same).
@@ -22,7 +22,7 @@
 
 - status:   pending
 - task:     2.2
-- commit:   c9486dd6
+- commit:   squashed on delivery
 - trigger:  auditing every package function (design.md's table) found `map` and `zip` collect fresh callback results with no check until the end: 10 000 × 512 KiB held 5.2 GB for 7.7 s in the audited binary.
 - decided:  shadowed both with a collector that counts each result as Rhai's check would and refuses at the first bound passed, calling the function pointer with Rhai's own arity fallback (a semantics test covers `this`, one and two arguments).
 - rejected: shadowing the linear-bounded functions (`split`, `to_chars`: ≤ one element per byte, +14 MB measured); patching Rhai.
@@ -32,7 +32,7 @@
 
 - status:   pending
 - task:     3.2
-- commit:   0dd93458
+- commit:   squashed on delivery
 - trigger:  the brief named the resident and pool threads; the pool lives in `src/ui` (which may not name `uze-script`), and the CLI's `check --run` answers on the main thread (1 MiB on Windows). One answer nests ~1 000 levels before its deadline, enough to overflow a 2 MiB debug thread on `==` (measured).
 - decided:  `Script::call` runs the answer on a scoped thread with `engine::STACK` (64 MiB, reserved not committed); the resident thread gets the same. Measured: a release build compares, prints and drops the structural ceiling (~20 000 levels) in 64 MiB; debug ~5 000.
 - rejected: a constant re-exported through `uze-application` into `src/ui/orchestrator/lanes.rs` (covers the pool but not the CLI or tests); bigger stacks for debug (≥200 MiB).
@@ -42,7 +42,7 @@
 
 - status:   pending
 - task:     3.2
-- commit:   0dd93458
+- commit:   squashed on delivery
 - trigger:  the brief asked for a depth/size check on `this` between calls.
 - decided:  after every call, `this` nesting more than `value::MAX_DEPTH + 1` containers (what could still cross as JSON) stops the session with the new `Limit::Nesting`. No size check: Rhai already checks the whole `this` on every property set (growing it 512 KiB a call failed on the second call).
 - rejected: a lower bound (refuses nothing a render could use at 128); a size walk (redundant with Rhai's).
@@ -52,7 +52,7 @@
 
 - status:   pending
 - task:     4.2
-- commit:   0a480a03
+- commit:   squashed on delivery
 - trigger:  KDL's escline allows whitespace, Unicode spaces and comments between `\` and the break.
 - decided:  a `\` outside strings and comments sets `continued`; the next break (`\r\n` as one) clears it without ending the slashdash. What comes between passes through the normal loop.
 - rejected: parsing escline's exact grammar after the `\` (any whitespace form left out would reopen the bypass).

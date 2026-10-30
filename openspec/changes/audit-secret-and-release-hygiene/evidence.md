@@ -1,6 +1,6 @@
 ## ENV-1
 
-- **Fix**: `5823ad7d`. One rule, `uze_platform::redact`, replaces both
+- **Fix**: One rule, `uze_platform::redact`, replaces both
   earlier copies; every span field that echoes a user-supplied source,
   spec or marketplace (`marketplace.add`, `marketplace.register`,
   `marketplace.install_plugin[_resolving]`, `marketplace.inspect_plugin`,
@@ -47,7 +47,7 @@
 
 ## ENV-2
 
-- **Fix**: `6f2652a2`. `install.sh` and `install.ps1` resolve `latest` to
+- **Fix**: `install.sh` and `install.ps1` resolve `latest` to
   `v<version>` before downloading, validate a pinned `UZE_VERSION`,
   download from `download/v<version>`, and run the unpacked binary before
   placing it: unless its `--version` reports that version they refuse,

@@ -252,7 +252,9 @@ artifacts:
     instruction: |
       Written after the tasks are done, before the change is archived. One
       `## <ID>` section per finding in findings.md, each with:
-      - **Fix**: the commit(s) and the one-line change in behavior
+      - **Fix**: the one-line change in behavior and where it lives (no
+        commit hash: a branch is squashed on delivery, so it would point
+        nowhere)
       - **Regression test**: the test that fails on the audited commit and
         passes now (`path::test_name`), and the command that runs it
       - **Exploit re-run**: the original PoC run again against the fixed

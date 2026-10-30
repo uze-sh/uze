@@ -1,6 +1,6 @@
 ## DELIV-1
 
-- **Fix**: 17df6c9c. Claude, Codex and Antigravity answer
+- **Fix**: Claude, Codex and Antigravity answer
   `IntegrationPort::package_executions`; the application joins every
   registered integration's answer to the canonical executions in one
   `TrustRequest`. Unknown envelope keys, unreadable vendor files and
@@ -30,7 +30,7 @@
 
 ## ACQ-1
 
-- **Fix**: 17df6c9c. `CodeIdentity.digest` is the whole package tree
+- **Fix**: `CodeIdentity.digest` is the whole package tree
   digest (the value a lock pins) on every execution except a requirement
   probe; `entries` remains as the named files, for the reader.
 - **Regression test**: `tests/packages/acquisition.rs::an_update_changing_a_file_the_approved_script_sources_asks_again`

@@ -1,7 +1,6 @@
 Re-runs used the audit sandbox (`$AUDIT/fix-containment`, bubblewrap) with
-the binary built from `64c3dda6` (TERM-1 re-run) and `2adab0a9` (the
-others; `64c3dda6` changes only the library's public `connect`, which the
-binary does not call). The kernel is WSL 6.18 (Landlock ABI ≥ 6). Inside
+the binary built from this change's fixes (the TERM-1 re-run was repeated
+against the delivered branch's binary, with the same result). The kernel is WSL 6.18 (Landlock ABI ≥ 6). Inside
 bubblewrap every process runs under `no_new_privs`, so the re-runs launch
 the PoCs the way the workspace launches an agent: as a program pane from a
 persisted `workspace.json`. The attacker client was rebuilt with protocol
@@ -10,7 +9,7 @@ connects to the person's endpoint.
 
 ## TERM-1
 
-- **Fix**: `9f789b2c`, `2adab0a9`, `64c3dda6`. Program panes start in a
+- **Fix**: Program panes start in a
   Landlock domain scoping abstract sockets; attach and stop are served only
   at a random abstract endpoint that domain cannot reach; the shared socket
   refuses them while it stands; an unconfined client refuses a confined
@@ -48,7 +47,7 @@ connects to the person's endpoint.
 
 ## TERM-2
 
-- **Fix**: `2adab0a9`. `OpenSpace`-created spaces are unvisited until a
+- **Fix**: `OpenSpace`-created spaces are unvisited until a
   client selects one: at most 3 per asking pane and 8 in total, the rest
   refused, and none persisted until visited.
 - **Regression test**:
@@ -76,7 +75,7 @@ connects to the person's endpoint.
 
 ## WKS-4
 
-- **Fix**: `9f789b2c`, `2adab0a9`. `asker()` also refuses a process the
+- **Fix**: `asker()` also refuses a process the
   kernel reports under `no_new_privs`; refusal wording says why.
 - **Regression test**:
   `tests/acceptance/command_approval.rs::a_confined_process_cannot_approve_stripped_of_its_stamp_and_given_a_terminal`
@@ -105,7 +104,7 @@ connects to the person's endpoint.
 
 ## WKS-5
 
-- **Fix**: `8696b95d`. A record with no key digest admits no claim; a split
+- **Fix**: A record with no key digest admits no claim; a split
   subagent is issued a key nobody holds.
 - **Regression test**:
   `crates/uze-workspace/src/conversation.rs::a_record_issued_no_key_admits_no_claim`

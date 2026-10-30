@@ -1,6 +1,6 @@
 ## WKS-2
 
-- **Fix**: 1c95c06c, f4d5f503, 7af6fd17. Every Git process `uze-git`
+- **Fix**: Every Git process `uze-git`
   starts runs with `core.hooksPath` at the null device, no fsmonitor,
   `protocol.ext.allow=never` and no submodule recursion. A command that can
   reach a filter, merge driver, signing program or transport first asks Git
@@ -12,7 +12,7 @@
   `::no_filter_or_merge_driver_the_repository_defines_runs`,
   `::a_transport_the_repository_names_never_runs`
   (`cargo test -p uze-git`). Run against the audited `uze-git` (tests
-  grafted onto `e295bfe3`'s `lib.rs`), all three fail:
+  grafted onto the audited commit `98d1210f`'s `lib.rs`), all three fail:
   ```
   `git worktree add -q -b placed …/linked` ran "…/armed.sh reference-transaction … …/armed.sh post-checkout"
   a placement ran "…/armed.sh \n"
@@ -35,7 +35,7 @@
 
 ## WKS-1
 
-- **Fix**: a7bacb2c. `SessionId::new` is replaced by `SessionId::parse`
+- **Fix**: `SessionId::new` is replaced by `SessionId::parse`
   (1-128 ASCII letters, digits, `-`, `_`, first a letter or digit), which
   serde also goes through. Claude Code, Codex and Antigravity read-backs
   require a UUID; OpenCode requires `ses_` and letters and digits.
@@ -66,7 +66,7 @@
 
 ## WKS-3
 
-- **Fix**: 6a514060. `forget_unpublished` runs `ls-remote --heads --
+- **Fix**: `forget_unpublished` runs `ls-remote --heads --
   <push URL> <patterns>`. A sweep of `uze-workspace` and `uze-git` for
   other values read back from Git and re-passed found none without `--`,
   `--end-of-options`, a validated name or a full object id.

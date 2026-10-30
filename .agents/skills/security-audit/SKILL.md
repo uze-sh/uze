@@ -120,7 +120,7 @@ Join each with `uze agent work join <topic>` when it is green.
 
 `evidence.md` closes each finding with four things:
 
-- the fix commit;
+- the behavior change and where it lives;
 - the regression test;
 - the exploit re-run against the fixed binary, with its output;
 - the residual.

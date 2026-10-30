@@ -2,7 +2,7 @@
 
 - status:   pending
 - task:     1.2
-- commit:   1c95c06c
+- commit:   squashed on delivery
 - trigger:  the brief allowed either folding operator-intended hooks
             (`pre-push`, `commit-msg`) into the ADR-055 approval digest, or
             not running them.
@@ -22,7 +22,7 @@
 
 - status:   pending
 - task:     1.2
-- commit:   1c95c06c
+- commit:   squashed on delivery
 - trigger:  filters and merge drivers are named by the repository under
             names it picks, so they cannot be switched off as a class, and
             `core.sshCommand`/credential helpers are legitimately set by
@@ -46,7 +46,7 @@
 
 - status:   pending
 - task:     1.2
-- commit:   1c95c06c
+- commit:   squashed on delivery
 - trigger:  each overridden key needs a value under which Git runs nothing
             of the repository's choosing.
 - decided:  an empty filter with `required=false`; a merge driver of
@@ -67,7 +67,7 @@
 
 - status:   pending
 - task:     1.2
-- commit:   1c95c06c
+- commit:   squashed on delivery
 - trigger:  the probe is one more Git process; the TUI reads constantly and
             the process budgets count every start.
 - decided:  probe every write except the known-inert ones (`update-ref`,
@@ -84,7 +84,7 @@
 
 - status:   pending
 - task:     2.2
-- commit:   a7bacb2c
+- commit:   squashed on delivery
 - trigger:  the brief asked for `--` before positional ids where each
             harness's CLI supports it.
 - decided:  none added. Codex's `resume <id>` is followed by the operator's
@@ -103,7 +103,7 @@
 
 - status:   pending
 - task:     2.2
-- commit:   a7bacb2c
+- commit:   squashed on delivery
 - trigger:  ~50 test sites built ids with `new`.
 - decided:  `new` is gone; tests call `SessionId::parse(..).unwrap()`.
             Serde goes through `parse` too, so a stored record holding an
@@ -116,7 +116,7 @@
 
 - status:   pending
 - task:     1.2
-- commit:   f4d5f503
+- commit:   squashed on delivery
 - trigger:  a fixed-name key needs no probe to be overridden, and the
             slot-close process budget failed (41 > 36).
 - decided:  every key whose name is fixed (`core.sshCommand`,
