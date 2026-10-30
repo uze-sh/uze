@@ -1024,6 +1024,108 @@ mod mirror_tests {
         fs::remove_dir_all(&home_root).unwrap();
     }
 
+    /// An open workspace learns of a plugin's new revision from its own
+    /// tick: nothing reads a catalogue there, so keeping current is what
+    /// fetches the stale marketplace, and only the stale one.
+    #[test]
+    fn keeping_current_fetches_a_stale_marketplace_and_applies_what_it_brought() {
+        let home_root = uze_testkit::temp::scratch("keep-current");
+        let (repository, _first) = marketplace("keep-current-src");
+        let home = UzeHome::at(home_root.join("uze"));
+        let application = UzeApplication::new(home.clone(), Vec::new());
+        application
+            .marketplace()
+            .add(&format!("file://{}", repository.root().display()))
+            .unwrap();
+        application
+            .marketplace()
+            .install_plugin("flow@mkt", &uze_core::trust::AlwaysTrust)
+            .unwrap();
+
+        fs::write(
+            repository.root().join("plugins/flow/skills/one/SKILL.md"),
+            "---\nname: one\ndescription: d\n---\n\nflow second.\n",
+        )
+        .unwrap();
+        repository.git(&["add", "-A"]);
+        repository.git(&["commit", "-m", "second"]);
+        let second = repository.head();
+
+        assert!(
+            application.plugins().keep_current().is_empty(),
+            "an answer inside the hour is not asked again"
+        );
+
+        let meta_path = home.marketplace_cache_dir().join("mkt/catalogue.json");
+        let mut meta: serde_json::Value =
+            serde_json::from_slice(&fs::read(&meta_path).unwrap()).unwrap();
+        meta["cached_at_unix_nanos"] = serde_json::json!(0);
+        fs::write(&meta_path, serde_json::to_vec_pretty(&meta).unwrap()).unwrap();
+
+        let outcomes = application.plugins().keep_current();
+        assert_eq!(outcomes.len(), 1, "{outcomes:?}");
+        assert!(outcomes[0].applied, "{outcomes:?}");
+        assert_eq!(
+            mirrored_head(&home, "mkt").map(|head| head.commit),
+            Some(second)
+        );
+        let flow = application.package_by_name("flow").unwrap();
+        assert!(
+            fs::read_to_string(flow.root.join("skills/one/SKILL.md"))
+                .unwrap()
+                .contains("flow second."),
+            "the new revision is what is installed"
+        );
+
+        fs::remove_dir_all(&home_root).unwrap();
+    }
+
+    /// A fetch another process is making is not made again: the tick that
+    /// finds the claim held fetches nothing.
+    #[test]
+    fn a_marketplace_fetch_another_process_holds_is_skipped() {
+        let home_root = uze_testkit::temp::scratch("keep-current-claimed");
+        let (repository, first) = marketplace("keep-current-claimed-src");
+        let home = UzeHome::at(home_root.join("uze"));
+        let application = UzeApplication::new(home.clone(), Vec::new());
+        application
+            .marketplace()
+            .add(&format!("file://{}", repository.root().display()))
+            .unwrap();
+        repository.git(&["commit", "--allow-empty", "-m", "second"]);
+        let meta_path = home.marketplace_cache_dir().join("mkt/catalogue.json");
+        let mut meta: serde_json::Value =
+            serde_json::from_slice(&fs::read(&meta_path).unwrap()).unwrap();
+        meta["cached_at_unix_nanos"] = serde_json::json!(0);
+        fs::write(&meta_path, serde_json::to_vec_pretty(&meta).unwrap()).unwrap();
+
+        let held = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(home.marketplace_fetch_lock_path())
+            .unwrap();
+        uze_platform::lock::try_lock(&held, uze_platform::lock::Mode::Exclusive).unwrap();
+
+        assert!(
+            application
+                .marketplace_catalogues
+                .refresh_stale(&home)
+                .is_empty()
+        );
+        assert_eq!(
+            mirrored_head(&home, "mkt").map(|head| head.commit),
+            Some(first)
+        );
+
+        drop(held);
+        assert_eq!(
+            application.marketplace_catalogues.refresh_stale(&home),
+            ["mkt".to_owned()]
+        );
+        fs::remove_dir_all(&home_root).unwrap();
+    }
+
     /// Updating fetches the mirror the catalogue is read from, so the head
     /// the catalogue records moves with it: the plugin just updated reads
     /// as up to date at once, not when the catalogue's window runs out.

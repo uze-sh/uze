@@ -346,6 +346,16 @@ impl Plugins<'_> {
 }
 
 impl Plugins<'_> {
+    /// What an open workspace runs on its tick: fetches the marketplaces
+    /// whose answer has gone stale, then applies what [`Self::auto_update`]
+    /// can settle alone. An update that needs consent is reported, never
+    /// applied.
+    #[tracing::instrument(name = "plugins.keep_current", skip_all)]
+    pub fn keep_current(&self) -> Vec<AutoUpdateOutcome> {
+        self.0.marketplace_catalogues.refresh_stale(&self.0.home);
+        self.auto_update()
+    }
+
     /// Applies every pending update this machine can settle on its own,
     /// and reports what it did.
     ///

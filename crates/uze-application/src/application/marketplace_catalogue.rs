@@ -170,6 +170,11 @@ struct Meta {
     /// read and written back on the next read, since this is cache.
     #[serde(default)]
     listings: Option<BTreeMap<String, PluginListing>>,
+    /// When the background pass last tried to fetch, answered or not. An
+    /// unanswered fetch waits out [`MAX_AGE`] like an answered one: a
+    /// remote that is down stays down for longer than one tick.
+    #[serde(default)]
+    attempted_at_unix_nanos: Option<u128>,
 }
 
 pub struct MarketplaceCatalogues {
@@ -265,6 +270,66 @@ impl MarketplaceCatalogues {
         Ok(catalogue)
     }
 
+    /// Fetches each registered Git marketplace whose entry is past
+    /// [`MAX_AGE`], and answers the names that moved.
+    ///
+    /// What an open workspace runs on its tick: nothing else fetches a
+    /// mirror until something reads a catalogue, and keeping plugins
+    /// current reads none. One process at a time, under
+    /// [`UzeHome::marketplace_fetch_lock_path`]; one that finds it held
+    /// fetches nothing and reads what the holder writes. The attempt is
+    /// stamped before the fetch, so a remote that does not answer is not
+    /// asked again every tick. A marketplace with no entry yet is left to
+    /// the first read, and a linked one is read in place.
+    pub fn refresh_stale(&self, home: &UzeHome) -> Vec<String> {
+        let Some(_claim) = FetchClaim::take(home) else {
+            return Vec::new();
+        };
+        let Ok(marketplaces) = uze_core::state::marketplace_list(home) else {
+            return Vec::new();
+        };
+        let now = now_unix_nanos();
+        let mut moved = Vec::new();
+        for (name, record) in marketplaces {
+            if record.link.is_some() || !matches!(record.source, PackageSource::Git { .. }) {
+                continue;
+            }
+            let meta_path = self.entry_dir(&name).join(META_FILE);
+            let Some(mut meta) = fs::read(&meta_path)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<Meta>(&bytes).ok())
+            else {
+                continue;
+            };
+            let last = meta
+                .cached_at_unix_nanos
+                .max(meta.attempted_at_unix_nanos.unwrap_or(0));
+            if now.saturating_sub(last) < MAX_AGE.as_nanos() {
+                continue;
+            }
+            meta.attempted_at_unix_nanos = Some(now);
+            if let Ok(payload) = serde_json::to_vec_pretty(&meta) {
+                let _ = fs::write(&meta_path, payload);
+            }
+            let before = meta.commit;
+            match self.refresh(&name, &record.source) {
+                Ok(_) => {
+                    let after = fs::read(&meta_path)
+                        .ok()
+                        .and_then(|bytes| serde_json::from_slice::<Meta>(&bytes).ok())
+                        .and_then(|meta| meta.commit);
+                    if after != before {
+                        moved.push(name);
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(marketplace = %name, %error, "the marketplace could not be fetched");
+                }
+            }
+        }
+        moved
+    }
+
     /// Forgets `name` in both tiers.
     pub fn invalidate(&self, name: &str) {
         self.memo
@@ -354,6 +419,7 @@ impl MarketplaceCatalogues {
             cached_at_unix_nanos: now_unix_nanos(),
             commit: Some(commit.clone()),
             listings: Some(listings.clone()),
+            attempted_at_unix_nanos: None,
         };
         let payload = serde_json::to_vec_pretty(&meta).expect("catalogue meta is serializable");
         fs::create_dir_all(&entry).map_err(UzeError::write(&entry))?;
@@ -429,6 +495,7 @@ impl MarketplaceCatalogues {
                 cached_at_unix_nanos: now_unix_nanos(),
                 commit: Some(commit.clone()),
                 listings: Some(listings.clone()),
+                attempted_at_unix_nanos: None,
             };
             let payload = serde_json::to_vec_pretty(&meta).expect("catalogue meta is serializable");
             fs::write(entry.join(META_FILE), payload)
@@ -595,6 +662,39 @@ fn directory_name(name: &str) -> String {
         "_".to_owned()
     } else {
         sanitized
+    }
+}
+
+/// The right to fetch marketplaces in the background, held by one process
+/// at a time. Released when dropped.
+struct FetchClaim(#[allow(dead_code)] Option<fs::File>);
+
+impl FetchClaim {
+    /// `None` while another process holds it. A lock the platform cannot
+    /// take at all is no reason to stop fetching, so that one is a claim
+    /// without a file.
+    fn take(home: &UzeHome) -> Option<Self> {
+        let path = home.marketplace_fetch_lock_path();
+        let file = path
+            .parent()
+            .map(fs::create_dir_all)
+            .and_then(std::result::Result::ok)
+            .and_then(|()| {
+                fs::OpenOptions::new()
+                    .create(true)
+                    .truncate(false)
+                    .write(true)
+                    .open(&path)
+                    .ok()
+            });
+        let Some(file) = file else {
+            return Some(Self(None));
+        };
+        match uze_platform::lock::try_lock(&file, uze_platform::lock::Mode::Exclusive) {
+            Ok(()) => Some(Self(Some(file))),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => None,
+            Err(_) => Some(Self(None)),
+        }
     }
 }
 
