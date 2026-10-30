@@ -398,6 +398,10 @@ fails the build on an input's glyph named outside it.
   caret before anything is typed.
 - Controls start from the label column, never right-aligned against the
   edge.
+- What a plugin's view declares to be set is the form too, drawn by the
+  host: a `Select` is a `Choice` (a press on an option chooses it, through
+  `NodeAct::Choose`), a `Field` its box, and the inputs of a `Form` share
+  one label column.
 - Numbers are steppers sized for two digits; a few fixed choices stand
   side by side, more go in a combo with its list; a list where several
   rows can be on is a list of `check`s.
