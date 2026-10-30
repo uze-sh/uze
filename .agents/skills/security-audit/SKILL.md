@@ -138,8 +138,9 @@ Then run the gate:
 - `openspec validate --all --strict`
 
 An `audit-*` change is archived only when evidence closes every finding
-(`openspec/config.yaml`, archive guidance). Publish its advisories after a
-release carries the fix.
+(`openspec/config.yaml`, archive guidance). Every `audit-*` change has a
+draft advisory, opened when the fix is ready (the `security-findings`
+rule). Publish it right after the release that carries the fix.
 
 Finally, update `references/surface.md`. Add the new changes and advisory ids (ids only) to its index and new
 defenses to "held". If an auditor tested a surface that is missing from it,

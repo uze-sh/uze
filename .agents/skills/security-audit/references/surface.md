@@ -137,11 +137,11 @@ audits proved. Update it at the end of every audit (`SKILL.md`, step 7).
 
 | Audit | ID | Change or private advisory (open findings: id only) |
 |---|---|---|
-| 2026-10-30 | DELIV-1, ACQ-1 | `audit-consent-covers-execution` |
-| 2026-10-30 | TERM-1, TERM-2, WKS-4, WKS-5 | `audit-agent-containment` |
-| 2026-10-30 | WKS-1, WKS-2, WKS-3 | `audit-repository-git-execution` |
-| 2026-10-30 | EXT-1, EXT-2, SCRIPT-1, SCRIPT-2 | `audit-bounded-extensions` |
-| 2026-10-30 | ENV-1, ENV-2 | `audit-secret-and-release-hygiene` |
+| 2026-10-30 | DELIV-1, ACQ-1 | `audit-consent-covers-execution` (GHSA-xhrw-x6hc-7cm4, publish after 1.0.0-beta.21) |
+| 2026-10-30 | TERM-1, TERM-2, WKS-4, WKS-5 | `audit-agent-containment` (GHSA-r57m-mxx8-92jf, publish after 1.0.0-beta.21) |
+| 2026-10-30 | WKS-1, WKS-2, WKS-3 | `audit-repository-git-execution` (GHSA-fxgp-rpfc-678m, publish after 1.0.0-beta.21) |
+| 2026-10-30 | EXT-1, EXT-2, SCRIPT-1, SCRIPT-2 | `audit-bounded-extensions` (GHSA-9fj8-rpvj-7wwj, publish after 1.0.0-beta.21) |
+| 2026-10-30 | ENV-1, ENV-2 | `audit-secret-and-release-hygiene` (GHSA-344x-fmg4-gx84, publish after 1.0.0-beta.21) |
 | 2026-10-30 | open | GHSA-97f7-95q3-wcjw |
 | 2026-10-30 | open (TERM-1 partially closed) | GHSA-w6jq-59jg-h4pg |
 | 2026-10-30 | follow-ups, not findings | `security-audit-followups` |

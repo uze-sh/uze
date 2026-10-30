@@ -55,3 +55,13 @@ The lab under the scratchpad is never committed.
 advisory text as `findings.md`. Publish the advisory only after a release
 carries the fix (`SECURITY.md`, Disclosure), then set its
 `patched_versions`.
+
+**A finding fixed in the audit that found it** gets its advisory too: one
+draft per `audit-*` change, opened when the fix is ready. It holds:
+- the change's `findings.md`;
+- the change's highest severity;
+- `vulnerable_version_range` set to the last release;
+- `patched_versions` set to the release that will carry the fix.
+
+Publishing it is part of shipping that release. Afterwards, the change's
+`evidence.md` names the advisory's id.
