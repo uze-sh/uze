@@ -323,30 +323,33 @@ fn render_new_agent_foot(
             crate::ui::widget::hint::Hints::new(&OVERRIDES_SCOPES).named(Action::Dismiss, "back"),
         )
     } else {
-        let mut keys = crate::ui::widget::hint::Hints::new(&NEW_AGENT_SCOPES);
-        if step.chosen_harness().is_some() {
-            keys = keys
-                .named(Action::Activate, "new")
-                .run(Action::FocusPrevious, Action::FocusNext, "harness")
-                .named(Action::OpenOverrides, "overrides");
+        // Two keys that act on this view at the start, and against the
+        // end the way to the other view; with no harness to give overrides
+        // to, the way out stands there instead.
+        let keys = crate::ui::widget::hint::Hints::new(&NEW_AGENT_SCOPES)
+            .named(
+                Action::Activate,
+                if step.chosen_harness().is_some() {
+                    "new"
+                } else {
+                    SET_ONE_UP
+                },
+            )
+            .run(Action::FocusPrevious, Action::FocusNext, "harness");
+        let away = crate::ui::widget::hint::Hints::new(&NEW_AGENT_SCOPES);
+        let away = if step.chosen_harness().is_some() {
+            away.named(Action::OpenOverrides, "overrides")
         } else {
-            keys = keys.named(Action::Activate, SET_ONE_UP).run(
-                Action::FocusPrevious,
-                Action::FocusNext,
-                "harness",
-            );
-        }
-        (
-            keys,
-            crate::ui::widget::hint::Hints::new(&NEW_AGENT_SCOPES).named(Action::Dismiss, "close"),
-        )
+            away.named(Action::Dismiss, "close")
+        };
+        (keys, away)
     };
     let keys = keys.hovered(hovered);
     let close = close.hovered(hovered);
     let end = rect.right().saturating_sub(TRAILING_PAD);
     let start = rect.x + PICKER_LEAD as u16;
-    // Esc closes the popup as it closes everything, so where the keys
-    // that act here need the room, it is the one left unsaid.
+    // What stands against the end gives way, whole, where the keys that
+    // act here need the room.
     let close_fits = keys.width() + 1 + close.width() <= end.saturating_sub(start);
     let close_width = if close_fits { close.width() } else { 0 };
     let at = Rect {

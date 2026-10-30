@@ -205,10 +205,16 @@ on "cancel" must not save first.
   close mark, Enter still answers the whole question (`new`), and the
   foot names space and Delete only while a row is marked (`space toggle
   · delete forget`, `remove` for one only added).
-- A popover's foot names its keys and nothing else (`enter new · ←→
-  harness`), with `esc close` alone against its end. Where the keys that
-  act there need its room, `esc close` is the one left unsaid: Esc closes
-  everything anyway. A key whose job
+- A popover's foot names its keys and nothing else: the keys that act on
+  what is in front at its start, two of them where there are three, and
+  one against its end, the way out of it: `esc close`, or, in a popover
+  with views, the way to the other view (`enter new · ←→ harness` …
+  `alt+→ overrides`). What stands against the end gives way, whole, when
+  the keys at the start need its room.
+- A popover's views are walked with `alt` and the sideways arrows
+  (`alt+→`, `alt+←`), as `alt+↑`/`alt+↓` walk the agents: the bare arrows
+  keep their job in the view, and a key drawn with a modifier spells its
+  arrow as a glyph (`alt+→`). A key whose job
   changes with the state is named by what it does now, from the same
   answer the key acts on (the overrides step's Enter: `new` on an empty
   line, `take` with a completion marked, `add` otherwise).

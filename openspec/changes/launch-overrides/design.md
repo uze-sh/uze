@@ -309,7 +309,7 @@ Against the operator's mockup and the design-system rules:
   stand at the start of the body's first row, in place of a title the
   popup no longer carries, parted by the separator glyph, the one in
   front in the accent and the other held back, lit under the pointer
-  through its own hit target (so the foot's `ctrl+f` hint never lights
+  through its own hit target (so the foot's `alt+→` hint never lights
   with it). The harness `‹ Claude Code ›` stands unlabelled against the
   same row's end, drawn alike on both views and changeable on both: a
   click on an arrow on `overrides`, where the arrow keys move the caret,
@@ -321,10 +321,12 @@ Against the operator's mockup and the design-system rules:
   body's foot, with air over and under it, one muted line counts the
   overrides once there are any (`3 flags · 2 vars`, in the warning hue
   when one gives something up); what the row marked or the word typed
-  is takes that line while there is one. A click on `overrides`, or `ctrl+f`,
-  opens that view; a click on `new agent`, or Esc, goes back. The popup
-  is 52 columns with 8 to 12 listing rows; `esc close` gives way to
-  `ctrl+f overrides` in the foot.
+  is takes that line while there is one. A click on `overrides`, or `alt+→`,
+  opens that view; a click on `new agent`, `alt+←` or Esc, goes back. The popup
+  is 52 columns with 8 to 12 listing rows; the foot holds the two keys that act on
+  the view at its start and the way to the other view against its end
+  (`enter new · ←→ harness` … `alt+→ overrides`; `enter add · tab
+  complete` … `esc back`).
 - **Not `ctrl+o`.** It is the Global `SwitchMode` and reaches Global even
   while a filter is typed into; `tab` is the picker's `Expand`, `←→` the
   harness. The new action's default chord is the operator's call.

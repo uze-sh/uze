@@ -233,7 +233,18 @@ fn the_head_chooses_the_view_and_a_note_counts_the_overrides() {
         "path is in front:\n{all}"
     );
     assert!(is_rule(&rows[last - 2]), "the foot's rule:\n{all}");
-    assert!(rows[last - 1].contains("ctrl+f overrides"), "{all}");
+    let arrow = theme::glyph(Symbol::ArrowRight);
+    let foot = &rows[last - 1];
+    assert!(
+        foot.trim_end_matches('│')
+            .trim_end()
+            .ends_with(&format!("alt+{arrow} overrides")),
+        "the way to the other view against the end:\n{all}"
+    );
+    assert!(
+        foot.contains("enter new") && foot.contains("harness"),
+        "the two keys that act here at the start:\n{all}"
+    );
     for air in [last - 5, last - 4, last - 3] {
         assert!(
             rows[air].trim_matches('│').trim().is_empty(),
@@ -1109,6 +1120,28 @@ fn a_flags_detail_is_said_by_the_keys() {
     }
 }
 
+/// `alt` and the sideways arrows walk the popup's views: right into
+/// `overrides`, left back to `new agent`.
+#[test]
+fn alt_and_the_sideways_arrows_walk_the_views() {
+    let mut popup = popup("overrides-alt-arrows");
+    let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
+    driven.frame();
+    driven.press_key(chord(Action::OpenOverrides, Scope::RootPicker));
+    assert!(in_step(&driven), "alt+right opens overrides");
+    let back = uze_keys::active()
+        .chords_for(Action::Dismiss, &[Scope::LaunchOverrides])
+        .into_iter()
+        .find(|chord| chord.to_string() == "alt+left")
+        .expect("alt+left goes back");
+    driven.press_key(key_event(back));
+    assert!(!in_step(&driven), "alt+left goes back");
+    assert!(
+        driven.attach.model.directory_step.is_some(),
+        "the popup stays"
+    );
+}
+
 /// Enter on an empty line with nothing marked starts the agent, with the
 /// entries the step holds.
 #[test]
@@ -1287,12 +1320,11 @@ fn long_values_are_cut_at_their_end_and_narrow_widths_hold() {
     let mut popup = popup("overrides-narrow");
     let mut driven = driven(popup.model_take(), &popup.home);
     driven.area = Rect::new(0, 0, 46, 30);
-    let rows = screen(&mut driven);
+    let (_, rows) = popup_rows(&mut driven);
     // A hint that does not fit is left out whole, never cut mid-word.
-    for row in &rows {
-        if let Some(at) = row.find("ctrl+f") {
-            assert!(row[at..].starts_with("ctrl+f overrides"), "{row}");
-        }
+    let foot = &rows[rows.len() - 2];
+    if let Some(at) = foot.find("alt+") {
+        assert!(foot[at..].contains("overrides"), "{foot}");
     }
     open_by_key(&mut driven);
     let long = format!("LONG={}", "x".repeat(80));

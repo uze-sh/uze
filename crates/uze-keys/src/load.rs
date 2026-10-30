@@ -582,10 +582,10 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::RootPicker, "enter", Action::Activate),
         bind(Scope::RootPicker, "esc", Action::Dismiss),
         bind(Scope::RootPicker, "backspace", Action::EraseBack),
-        // A control letter, the one register every terminal delivers: the
-        // picker takes typing, `tab` completes and `ctrl+o` is the Global
-        // way to manage. `f` for the flags most overrides are.
-        bind(Scope::RootPicker, "ctrl+f", Action::OpenOverrides),
+        // The popup's views sit side by side, so `alt` and the sideways
+        // arrows walk them, as `alt+up`/`alt+down` walk the agents: the
+        // bare arrows already move the harness here and the caret there.
+        bind(Scope::RootPicker, "alt+right", Action::OpenOverrides),
         // The overrides step is a line typed into: the sideways keys move
         // its caret, the vertical ones mark in the list under it, and space
         // switches the choice marked there (with none marked, it is typed).
@@ -594,6 +594,7 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::LaunchOverrides, "tab", Action::Expand),
         bind(Scope::LaunchOverrides, "enter", Action::Activate),
         bind(Scope::LaunchOverrides, "esc", Action::Dismiss),
+        bind(Scope::LaunchOverrides, "alt+left", Action::Dismiss),
         bind(Scope::LaunchOverrides, "backspace", Action::EraseBack),
         bind(Scope::LaunchOverrides, "delete", Action::EraseForward),
         bind(Scope::LaunchOverrides, "left", Action::CaretLeft),

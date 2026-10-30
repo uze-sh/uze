@@ -381,3 +381,7 @@
 > D22 note (fifth pass): at the operator's word the views leave the top
 > border for the start of the harness's row, and the popup carries no
 > title; a click on a line typed into leaves nothing marked under it.
+> D19 note: at the operator's word `ctrl+f` gives way to `alt+→` (into
+> `overrides`) and `alt+←` (back), the popup's views being side by side and
+> `alt+↑`/`alt+↓` already walking agents; the foot holds two keys at its
+> start and the way to the other view against its end.
