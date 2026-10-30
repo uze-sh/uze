@@ -1,5 +1,7 @@
 //! The record of launch overrides: what each agent was launched with, per
-//! harness, and the entries the operator used lately, per harness.
+//! harness, the entries the operator used lately, per harness, and the
+//! selection the last new agent was launched with, per harness, which the
+//! next one opens on.
 //!
 //! One document for the machine rather than one per project: most
 //! overrides are the operator's habits (`--model`, `--verbose`), and a
@@ -13,6 +15,10 @@
 //! What is typed is kept as the words it split into, and read as entries
 //! again at each launch against the catalog of that day: an override
 //! recorded before UZE came to own its flag is left out then, not obeyed.
+//!
+//! The last selection was added without a new shape: a build from before
+//! it reads the record and, rewriting it, drops the selection, which costs
+//! one popup opening on nothing checked.
 
 use std::{
     collections::BTreeMap,
@@ -73,6 +79,9 @@ struct LaunchOverridesRecord {
     /// By harness, most recent first.
     #[serde(default)]
     recent: BTreeMap<String, Vec<RecentEntry>>,
+    /// By harness, the entries the last new agent was launched with.
+    #[serde(default)]
+    last: BTreeMap<String, Vec<Vec<String>>>,
 }
 
 impl Default for LaunchOverridesRecord {
@@ -81,6 +90,7 @@ impl Default for LaunchOverridesRecord {
             schema_version: <Self as uze_document::Shaped>::SHAPE,
             agents: BTreeMap::new(),
             recent: BTreeMap::new(),
+            last: BTreeMap::new(),
         }
     }
 }
@@ -207,8 +217,8 @@ pub fn recent_entries(home: &UzeHome, integration: &str, project_root: &Path) ->
     here
 }
 
-/// Forgets the entry `words` on `integration`, in every project, and says
-/// whether there was one.
+/// Forgets the entry `words` on `integration`, in every project and in
+/// the last selection, and says whether the history had it.
 pub fn forget_recent_entry(home: &UzeHome, integration: &str, words: &[String]) -> Result<bool> {
     let mut forgotten = false;
     rewrite(home, |record| {
@@ -220,8 +230,41 @@ pub fn forget_recent_entry(home: &UzeHome, integration: &str, words: &[String]) 
                 record.recent.remove(integration);
             }
         }
+        if let Some(selection) = record.last.get_mut(integration) {
+            selection.retain(|entry| entry != words);
+            if selection.is_empty() {
+                record.last.remove(integration);
+            }
+        }
     })?;
     Ok(forgotten)
+}
+
+/// The entries the last new agent on `integration` was launched with, in
+/// its order: what the next one opens on. None when there were none, or
+/// the record does not read.
+pub fn last_selection(home: &UzeHome, integration: &str) -> Vec<Vec<String>> {
+    read(home).last.remove(integration).unwrap_or_default()
+}
+
+/// Remembers `tokens`, read against `catalog`, as the selection the next
+/// new agent on `integration` opens on: a launch with none remembers that
+/// nothing was checked. A variable that reads as a secret is left out, so
+/// one is never carried to an agent it was not typed for.
+pub fn remember_selection(
+    home: &UzeHome,
+    integration: &str,
+    catalog: FlagCatalog,
+    tokens: &[String],
+) -> Result<()> {
+    let selection = rememberable(&super::entries(tokens, catalog));
+    rewrite(home, |record| {
+        if selection.is_empty() {
+            record.last.remove(integration);
+        } else {
+            record.last.insert(integration.to_owned(), selection);
+        }
+    })
 }
 
 fn forget_harness(
@@ -256,20 +299,7 @@ fn remember(
     project: &Path,
     now: u64,
 ) {
-    let kept: Vec<Vec<String>> = entries
-        .iter()
-        .filter(|entry| match entry {
-            super::Entry::Variable { name, value } => !reads_as_secret(name, value),
-            super::Entry::Flag { .. } => true,
-            super::Entry::Positional(_) | super::Entry::EndOfOptions => false,
-        })
-        .map(super::Entry::words)
-        .fold(Vec::new(), |mut kept, words| {
-            if !kept.contains(&words) {
-                kept.push(words);
-            }
-            kept
-        });
+    let kept = rememberable(entries);
     if kept.is_empty() {
         return;
     }
@@ -284,6 +314,25 @@ fn remember(
         }),
     );
     history.truncate(RECENT_PER_HARNESS);
+}
+
+/// The words of each of `entries` worth offering again, once each, in
+/// their order: flags, and variables that do not read as a secret.
+fn rememberable(entries: &[super::Entry]) -> Vec<Vec<String>> {
+    entries
+        .iter()
+        .filter(|entry| match entry {
+            super::Entry::Variable { name, value } => !reads_as_secret(name, value),
+            super::Entry::Flag { .. } => true,
+            super::Entry::Positional(_) | super::Entry::EndOfOptions => false,
+        })
+        .map(super::Entry::words)
+        .fold(Vec::new(), |mut kept, words| {
+            if !kept.contains(&words) {
+                kept.push(words);
+            }
+            kept
+        })
 }
 
 /// Whether the variable `name=value` reads as a secret, by its name or by
@@ -697,5 +746,73 @@ mod tests {
             .permissions()
             .mode();
         assert_eq!(mode & 0o777, 0o600);
+    }
+
+    fn remember(fixture: &Fixture, harness: &str, line: &str) {
+        remember_selection(
+            &fixture.home,
+            harness,
+            CATALOG,
+            &crate::overrides::split(line).unwrap(),
+        )
+        .unwrap();
+    }
+
+    fn selection_lines(fixture: &Fixture, harness: &str) -> Vec<String> {
+        last_selection(&fixture.home, harness)
+            .into_iter()
+            .map(|entry| entry.join(" "))
+            .collect()
+    }
+
+    #[test]
+    fn the_last_selection_is_kept_per_harness_and_replaced_whole() {
+        let fixture = Fixture::new("overrides-last-selection");
+        remember(&fixture, "first", "--model opus --yolo DEBUG=1");
+        remember(&fixture, "second", "--verbose");
+
+        remember(&fixture, "first", "--model opus DEBUG=1");
+
+        assert_eq!(
+            selection_lines(&fixture, "first"),
+            ["--model opus", "DEBUG=1"]
+        );
+        assert_eq!(selection_lines(&fixture, "second"), ["--verbose"]);
+    }
+
+    #[test]
+    fn a_launch_with_nothing_checked_is_remembered_as_nothing() {
+        let fixture = Fixture::new("overrides-last-empty");
+        remember(&fixture, "first", "--model opus");
+
+        remember(&fixture, "first", "");
+
+        assert!(last_selection(&fixture.home, "first").is_empty());
+    }
+
+    #[test]
+    fn a_secret_variable_is_never_in_the_last_selection() {
+        let fixture = Fixture::new("overrides-last-secret");
+        remember(
+            &fixture,
+            "first",
+            "GH_TOKEN=x DB=postgres://u:p@host DEBUG=1 --model opus",
+        );
+
+        assert_eq!(
+            selection_lines(&fixture, "first"),
+            ["DEBUG=1", "--model opus"]
+        );
+    }
+
+    #[test]
+    fn forgetting_an_entry_takes_it_out_of_the_last_selection_too() {
+        let fixture = Fixture::new("overrides-last-forget");
+        fixture.launch(&fixture.here, "a1", "first", "--model opus --verbose", 1);
+        remember(&fixture, "first", "--model opus --verbose");
+
+        forget_recent_entry(&fixture.home, "first", &["--verbose".to_owned()]).unwrap();
+
+        assert_eq!(selection_lines(&fixture, "first"), ["--model opus"]);
     }
 }

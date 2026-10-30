@@ -48,6 +48,9 @@ impl Attach<'_> {
         self.model.directory_step = Some(DirectoryStep::new(
             picker, space, anchor, rows, harnesses, harness,
         ));
+        // Read now, not when the overrides view opens: the agent launches
+        // with the last selection from here too, and the foot says so.
+        self.ask_recent_overrides();
         self.model.dirty = true;
     }
 
@@ -68,6 +71,7 @@ impl Attach<'_> {
             return;
         };
         let overrides = step.launch_words();
+        let remember_selection = step.remembers_selection();
         let DirectoryStep {
             space,
             mut harnesses,
@@ -86,6 +90,7 @@ impl Attach<'_> {
                 space,
                 directory,
                 overrides,
+                remember_selection,
             }),
         );
     }
@@ -168,12 +173,14 @@ impl Attach<'_> {
                 space,
                 directory,
                 overrides,
+                remember_selection,
             }) => (
                 PlacementRequest::New {
                     from: directory,
                     harness,
                     space,
                     overrides,
+                    remember_selection,
                 },
                 None,
             ),
@@ -571,6 +578,7 @@ impl Attach<'_> {
     /// Opens the tab a placement was acquired for.
     pub(super) fn absorb_placement(&mut self, resolution: PlacementResolution) {
         self.model.placement_pending = false;
+        self.ask_last_selection_again();
         self.model.clear_busy_notice();
         self.model.occupancy_stale = true;
         let PlacementResolution {

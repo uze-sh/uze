@@ -200,10 +200,12 @@ on "cancel" must not save first.
 - A choice that rarely changes is a field prefilled with the last answer
   (`‹ Claude Code ›`, moved with `←` `→`), never a step of its own:
   the common case is the one question and Enter. Its arrows are its keys.
-- A field whose wrong value is unsafe, or invisible once the thing has
-  started (a new agent's launch overrides), is never prefilled from last
-  time: it opens empty, and the last values head a history under it, to
-  be taken back on purpose.
+- A new agent's launch overrides open on the selection the last new
+  agent on that harness launched with, checked, safety-weakening flags
+  included: the operator manages what they use, and a flag used on every
+  launch is never checked again by hand. Secret-looking variables stay
+  out, and the foot counts what the launch carries before any view of
+  the list is opened.
 - That history is a list of choices, one row per value, never per
   bundle of them: the overrides list holds each flag or variable once
   (`◉ --model opus ✕`), the ones added first, then the ones used lately,
@@ -581,7 +583,9 @@ operator rather than assume.
   nothing to list: what is said about it (the flag's summary, and under
   it, held back, that other users can read flag values) stands centred in
   the list's room, never floating on a detail row with empty rows around
-  it.
+  it (`message::render_statement`). A description keeps its length and
+  wraps, centred, inside the message's measure with air at both edges,
+  a part between ` · ` never split while it fits; a title stays short.
 - Minimal: one centred short title, with an optional muted line.
 - No hint bar, no stray esc, no empty sidebar slot.
 - The drawer goes away.

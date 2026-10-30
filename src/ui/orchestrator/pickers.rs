@@ -54,6 +54,8 @@ pub(super) struct NewPlace {
     /// The words the operator added to this agent's launch for its harness;
     /// none is the launch the workspace makes by default.
     pub(super) overrides: Vec<String>,
+    /// The operator saw this selection, so the next new agent opens on it.
+    pub(super) remember_selection: bool,
 }
 
 /// Open state of the "+ new agent" popup (`WorkspaceHit::NewAgentMenu`):
@@ -81,6 +83,10 @@ pub(super) struct DirectoryStep {
     /// choice stays in the list when it is unchecked, and leaves only by
     /// its close mark.
     pub(super) listed: BTreeMap<String, Vec<OverrideEntry>>,
+    /// The harnesses whose entries are the operator's: opened on the last
+    /// new agent's selection, or changed before that read answered. Neither
+    /// is opened on it again, and only these are remembered at the launch.
+    pub(super) settled: BTreeSet<String>,
     /// The entries used lately, as last read.
     pub(super) recent: Option<RecentOverridesRead>,
     /// The read of them that is out, so a step opened again before it

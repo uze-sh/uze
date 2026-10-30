@@ -641,6 +641,7 @@ fn with_recent(name: &str, entries: Vec<RecentOverride>) -> (Popup, (String, Pat
             entries,
             restarting: None,
             recorded: None,
+            last: None,
         });
     }
     (popup, question)
@@ -871,6 +872,7 @@ fn the_overrides_view_draws_its_choices() {
             ],
             restarting: None,
             recorded: None,
+            last: None,
         });
     }
     let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
@@ -1299,6 +1301,7 @@ fn an_empty_history_and_an_empty_catalog_say_little() {
             entries: Vec::new(),
             restarting: None,
             recorded: None,
+            last: None,
         });
     }
     let (_, rows) = popup_rows(&mut driven);
@@ -1412,6 +1415,7 @@ fn a_recent_entrys_close_mark_and_delete_both_forget_it() {
                 entries: vec![used(&["GONE=1"], "/elsewhere")],
                 restarting: None,
                 recorded: None,
+                last: None,
             });
         }
         if click {
@@ -1428,4 +1432,256 @@ fn a_recent_entrys_close_mark_and_delete_both_forget_it() {
             "forgetting asked again (click: {click})"
         );
     }
+}
+
+/// The popup's own harness, by its name.
+fn harness_in_front(popup: &Popup) -> String {
+    let step = popup.model.directory_step.as_ref().unwrap();
+    step.recent_question().unwrap().0
+}
+
+/// The last new agent's selection opens checked, entries the catalog of
+/// today refuses left out, and the launch carries it and is remembered.
+#[test]
+fn the_popup_opens_on_the_last_selection_checked() {
+    let mut popup = popup("overrides-last-seeded");
+    let harness = harness_in_front(&popup);
+    let step = popup.model.directory_step.as_mut().unwrap();
+    assert!(!step.remembers_selection(), "unread, nothing to remember");
+
+    step.seed_last(
+        &harness,
+        &[
+            words_of("--verbose"),
+            words_of("UZE_HOME=/x"),
+            words_of("DEBUG=1"),
+        ],
+    );
+
+    assert_eq!(step.launch_words(), ["--verbose", "DEBUG=1"]);
+    assert!(step.remembers_selection());
+    step.open_overrides();
+    let choices: Vec<(Vec<String>, bool)> = step
+        .choices()
+        .iter()
+        .map(|choice| (choice.words.to_vec(), choice.checked))
+        .collect();
+    assert_eq!(
+        choices,
+        [(words_of("--verbose"), true), (words_of("DEBUG=1"), true)]
+    );
+}
+
+/// Unchecking an entry of the last selection keeps it in the list, so it
+/// is a space away, though the history no longer holds it.
+#[test]
+fn an_entry_of_the_last_selection_unchecked_stays_offered() {
+    let mut popup = popup("overrides-last-unchecked");
+    let harness = harness_in_front(&popup);
+    let step = popup.model.directory_step.as_mut().unwrap();
+    step.seed_last(&harness, &[words_of("--verbose"), words_of("DEBUG=1")]);
+    step.open_overrides();
+
+    step.toggle_choice(0);
+
+    assert_eq!(step.launch_words(), ["DEBUG=1"]);
+    assert_eq!(step.choices().len(), 2);
+    assert!(!step.choices()[0].checked);
+}
+
+/// What the operator changed before the read answered is theirs: the
+/// last selection is not laid over it, and the launch is remembered.
+#[test]
+fn entries_changed_before_the_read_are_not_seeded_over() {
+    let mut popup = popup("overrides-last-touched");
+    let harness = harness_in_front(&popup);
+    let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
+    open_by_key(&mut driven);
+    type_text(&mut driven, "KEPT=1");
+    driven.press_key(chord(Action::Activate, Scope::LaunchOverrides));
+
+    let step = driven.attach.model.directory_step.as_mut().unwrap();
+    step.seed_last(&harness, &[words_of("--verbose")]);
+
+    assert_eq!(step.launch_words(), ["KEPT=1"]);
+    assert!(step.remembers_selection());
+}
+
+/// The last selection is the harness's wherever the popup stands: an
+/// answer read for another directory still opens the harness on it, and
+/// one for another harness opens nothing.
+#[test]
+fn the_last_selection_answers_whatever_directory_it_was_read_for() {
+    let mut popup = popup("overrides-last-root");
+    let harness = harness_in_front(&popup);
+    let mut driven = driven(popup.model_take(), &popup.home);
+    let read = |harness: &str| RecentOverridesRead {
+        harness: harness.to_owned(),
+        root: PathBuf::from("/somewhere/else"),
+        restarting: None,
+        entries: Vec::new(),
+        recorded: None,
+        last: Some(vec![words_of("--verbose")]),
+    };
+    let sender = &driven.attach.channels.recent_overrides.sender;
+    sender.send(read("not-this-harness")).unwrap();
+    driven.attach.absorb_recent_overrides();
+    assert!(step_of(&driven).launch_words().is_empty());
+
+    let sender = &driven.attach.channels.recent_overrides.sender;
+    sender.send(read(&harness)).unwrap();
+    driven.attach.absorb_recent_overrides();
+
+    assert_eq!(step_of(&driven).launch_words(), ["--verbose"]);
+    let rows = screen(&mut driven).join("\n");
+    assert!(rows.contains("1 flag"), "the foot counts it:\n{rows}");
+}
+
+/// Each harness opens on its own last selection: one never carries
+/// another's flags.
+#[test]
+fn each_harness_opens_on_its_own_last_selection() {
+    let mut popup = popup("overrides-last-per-harness");
+    let harness = harness_in_front(&popup);
+    let step = popup.model.directory_step.as_mut().unwrap();
+    step.seed_last(&harness, &[words_of("--verbose")]);
+
+    step.cycle_harness(1);
+
+    assert!(step.launch_words().is_empty());
+    assert!(!step.remembers_selection());
+}
+
+/// A read answered while a placement is out is not seeded: the record may
+/// not hold that placement's selection yet, and the popup, whose Enter
+/// waits on the placement anyway, asks again once it answers.
+#[test]
+fn a_selection_read_while_a_placement_is_out_is_asked_again() {
+    let mut popup = popup("overrides-last-pending");
+    let harness = harness_in_front(&popup);
+    let mut driven = driven(popup.model_take(), &popup.home);
+    driven.attach.model.placement_pending = true;
+    let stale = RecentOverridesRead {
+        harness: harness.clone(),
+        root: PathBuf::from("/anywhere"),
+        restarting: None,
+        entries: Vec::new(),
+        recorded: None,
+        last: Some(vec![words_of("--verbose")]),
+    };
+    driven
+        .attach
+        .channels
+        .recent_overrides
+        .sender
+        .send(stale)
+        .unwrap();
+    driven.attach.absorb_recent_overrides();
+    assert!(step_of(&driven).launch_words().is_empty());
+    assert!(!step_of(&driven).remembers_selection());
+
+    driven.attach.model.placement_pending = false;
+    driven.attach.ask_last_selection_again();
+
+    let asked = step_of(&driven).recent_asked.clone();
+    assert_eq!(asked.map(|(asked, _)| asked), Some(harness));
+}
+
+/// What a launch asks its placement to remember, read back from the
+/// record once the placement answered: an Enter before the read answered
+/// leaves the last selection alone, and one after it replaces it.
+#[test]
+fn only_a_selection_the_operator_saw_is_remembered_at_the_launch() {
+    for seen in [false, true] {
+        let mut popup = popup(&format!("overrides-last-seen-{seen}"));
+        let harness = harness_in_front(&popup);
+        let app = crate::ui::tui_application(popup.home.clone()).unwrap();
+        app.workspace()
+            .remember_override_selection(&harness, &words_of("DEBUG=1"))
+            .unwrap();
+        if seen {
+            let step = popup.model.directory_step.as_mut().unwrap();
+            step.seed_last(&harness, &[words_of("DEBUG=1")]);
+            step.open_overrides();
+            step.toggle_choice(0);
+            step.overrides = None;
+        }
+        let mut driven = driven(popup.model_take(), &popup.home);
+
+        driven.press_key(chord(Action::Activate, Scope::RootPicker));
+        driven
+            .attach
+            .channels
+            .placements
+            .receiver
+            .recv_timeout(std::time::Duration::from_secs(60))
+            .expect("the placement answers");
+
+        let last = app.workspace().last_override_selection(&harness);
+        if seen {
+            assert!(last.is_empty(), "nothing checked is remembered");
+        } else {
+            assert_eq!(last, [words_of("DEBUG=1")], "left alone");
+        }
+    }
+}
+
+/// What a free value's flag is, however long the catalog says it, folds
+/// inside the list's room with air at both edges: never cut, never against
+/// the popup's sides.
+#[test]
+fn a_long_flag_summary_folds_inside_the_popups_margins() {
+    let mut popup = popup("overrides-free-value-long");
+    let flag = popup
+        .model
+        .directory_step
+        .as_ref()
+        .unwrap()
+        .catalog()
+        .flags()
+        .filter(|flag| matches!(flag.value, OverrideValue::Free(_)))
+        .max_by_key(|flag| super::launch_overrides::flag_detail(flag).len())
+        .expect("a flag that takes a free value");
+    let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
+    driven.frame();
+    open_by_key(&mut driven);
+    type_text(&mut driven, &format!("{} ", flag.name));
+    let (_, rows) = popup_rows(&mut driven);
+    let all = rows.join("\n");
+    let inside = |row: &str| -> String {
+        match (row.find('│'), row.rfind('│')) {
+            (Some(start), Some(end)) if start < end => row[start + '│'.len_utf8()..end].to_owned(),
+            _ => String::new(),
+        }
+    };
+    let detail = super::launch_overrides::flag_detail(&flag);
+    let first_word = detail.split_whitespace().next().unwrap();
+    let at = rows
+        .iter()
+        .position(|row| inside(row).trim_start().starts_with(first_word))
+        .unwrap_or_else(|| panic!("the detail is drawn:\n{all}"));
+    let mut said = String::new();
+    for row in rows[at..].iter().map(|row| inside(row)) {
+        if row.trim().is_empty() {
+            break;
+        }
+        let width = row.chars().count();
+        let text = row.trim();
+        let before = row.find(text).map(|at| row[..at].chars().count()).unwrap();
+        let after = width - before - text.chars().count();
+        assert!(
+            before >= 2 && after >= 2,
+            "air at both edges: {row:?}\n{all}"
+        );
+        said.push_str(text);
+        said.push(' ');
+    }
+    let words = |text: &str| -> Vec<String> {
+        text.split_whitespace()
+            .filter(|word| *word != "·")
+            .map(str::to_owned)
+            .collect()
+    };
+    let whole = format!("{detail} {}", super::launch_overrides::FLAG_VALUES_ARE_SEEN);
+    assert_eq!(words(&said), words(&whole), "said whole:\n{all}");
 }
