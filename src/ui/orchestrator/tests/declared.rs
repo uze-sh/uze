@@ -2512,6 +2512,11 @@ fn the_drawers_mark_closes_it() {
                 )),
             "float {float}: on its top hairline: {rows:#?}"
         );
+        let mark = crate::ui::theme::glyph(crate::ui::theme::Symbol::MarkClose);
+        assert!(
+            hairline.contains(&format!("{mark}┐")),
+            "float {float}: against its corner: {hairline}"
+        );
         assert!(
             rows[usize::from(close.y) + 1].contains("Side"),
             "float {float}: over its title: {rows:#?}"

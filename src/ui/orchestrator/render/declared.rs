@@ -320,9 +320,9 @@ pub(super) fn render_overlay(
     drawn.marquee
 }
 
-/// The mark that closes a card, on its top hairline against its right
-/// edge, over the room `inner` its hairline leaves; answers where it
-/// stands, for `close` to be registered there.
+/// The mark that closes a card, on its top hairline against its corner,
+/// over the room `inner` its hairline leaves; answers where it stands,
+/// for `close` to be registered there.
 fn render_close_mark(
     frame: &mut ratatui::Frame<'_>,
     inner: Rect,
@@ -331,7 +331,7 @@ fn render_close_mark(
 ) -> Rect {
     let width = theme::width(Symbol::MarkClose);
     let rect = Rect::new(
-        inner.right().saturating_sub(TRAILING_PAD + width),
+        inner.right().saturating_sub(width),
         inner.y.saturating_sub(1),
         width,
         1,
