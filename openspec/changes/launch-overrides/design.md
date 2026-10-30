@@ -54,8 +54,6 @@ the approach:
 - Overrides for a harness started by hand in a shell: that invocation is
   already the operator's, untouched.
 - Discovering flags by parsing `--help` at runtime.
-- Editing the overrides of a running agent. A change takes a relaunch,
-  which the agent's menu can offer later.
 - Masking values on screen.
 
 ## Decisions
@@ -113,8 +111,8 @@ whose shim would then find no owner and drop every agent's continuity in
 the project. Rejected: one file per project
 (`state/projects/<id>/…`), for the reason above.
 
-An agent's overrides are kept per agent *and* harness, so `Continue in`
-launches the other harness with none and switching back finds the first
+An agent's overrides are kept per agent *and* harness, so a switch
+(`Restart in` on another harness) launches the other harness with none and switching back finds the first
 harness's set again. An agent's entry goes when the agent's record does.
 
 ### 3. Final argv and environment
@@ -294,6 +292,43 @@ write path alive for nothing.
 
 `Feature` keeps the mechanism with `Overview` as its one entry; its tests
 move to `Overview`.
+
+### 10. A running agent's overrides change through `Restart in`
+
+No harness rereads its flags while it runs, so changing a running
+agent's overrides is a relaunch: the process ends and the same agent
+starts again in its tab and checkout, resuming its conversation through
+the harness's own resume, with the record's new set read by the shim as
+on any launch. That is what `Continue in` already did across harnesses,
+so one entry does both rather than two entries for one verb: the menu's
+`Continue in ›` becomes `Restart in ›`, and its group of other harnesses
+becomes a panel opening beside the menu, the harness field starting on
+the current harness. "Restart" is the verb the client already shows
+("agents restarted", "restart to use it"); "relaunch" lives only in the
+code. The label reads into the field: `Restart in ‹ Claude Code ›`.
+
+- **Enter follows the state**, named in the foot: `restart` on the same
+  harness with the set changed; `close` when nothing changed, which
+  launches nothing; `continue in <harness>` on another harness, the
+  switch as before, with its briefing.
+- **Same check as a new agent's**: the catalog, completion, refusals,
+  `Weakens`/`Degrades` marks and recent entries are the popup's, in both
+  contexts. A resumed launch already composes overrides with resume
+  (decision 3), and every Codex catalog flag is in the `resume`
+  snapshot, so no second grammar is needed.
+- **Prefilled from the record**: the panel shows the set recorded for the
+  harness its field names, checked; moving the field shows that
+  harness's set (none on a first switch). The recent entries are offered
+  unchecked, as in the popup.
+- **Mid-turn asks first**: the existing interrupt dialog stands before a
+  restart as before a switch; an idle agent restarts without asking.
+- **Applied entries are remembered** as a launch's are.
+- **Out of scope:** an exited agent; its tab offers no `Restart in`, and
+  resuming it from recent picks a harness anyway.
+
+On the application side the same-harness case is a switch whose
+outgoing and incoming harness are one: it records the new set, skips the
+briefing and relaunches with the native resume.
 
 ## UI/UX
 

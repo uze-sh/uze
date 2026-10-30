@@ -231,6 +231,30 @@ value holds a URL with credentials before its host.
 - **WHEN** a launch carrying `DATABASE_URL=postgres://u:pw@h/db` is remembered
 - **THEN** the history does not hold the variable, whatever its name
 
+### Requirement: The restart panel checks overrides as a new agent's popup does
+The agent menu's `Restart in` panel SHALL show, without a directory, the
+overrides recorded for the harness its field names, with the new agent
+popup's catalog, completion, refusals, marks and recent entries.
+
+#### Scenario: A refused flag in a restart
+- **WHEN** the operator types `--resume` in the restart panel
+- **THEN** it is refused as typed, with the same reason the new agent's popup gives
+
+### Requirement: A running agent's overrides are changed by a restart
+Enter in the restart panel SHALL restart the agent on the same harness,
+resuming its conversation, when the overrides changed; close the panel
+and launch nothing when the harness and the overrides are unchanged; and
+continue the agent on the harness named otherwise. A restart SHALL record
+and remember the overrides as a launch does.
+
+#### Scenario: Restarting with another model
+- **WHEN** the operator opens `Restart in` on an idle agent, adds `--model opus` and presses Enter
+- **THEN** the agent restarts on the same harness with `--model opus`, resumes its conversation, and the history remembers the entry
+
+#### Scenario: Nothing changed
+- **WHEN** the operator opens `Restart in` and presses Enter without changing the harness or an override
+- **THEN** the panel closes and the agent keeps running untouched
+
 ### Requirement: An agent keeps the overrides it was launched with
 The system SHALL record an agent's overrides per harness, so a pane
 respawned and a preserved agent resumed on the same harness start with the
