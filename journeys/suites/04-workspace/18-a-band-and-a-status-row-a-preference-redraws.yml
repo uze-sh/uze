@@ -270,7 +270,9 @@ scenes:
         say: choose the extension, which its drawer then describes
         expect: 'Show each phase''s name {2,}off {2,}on'
         expect_timeout: 10
+      # The button, under the group's own `Preferences` heading.
       - click: "Preferences"
+        occurrence: last
         say: put the keys on its preferences from the drawer's button
         expect: 'Show each phase''s name {2,}off {2,}on'
         expect_timeout: 10

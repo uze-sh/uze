@@ -33,7 +33,11 @@ pub(crate) const GROUP_AIR: usize = 2;
 pub(crate) const KEY_AIR: usize = 1;
 
 /// The narrowest and widest a label column fitted to its labels is.
-const LABEL_FIT: (usize, usize) = (12, 24);
+const LABEL_FIT: (usize, usize) = (12, 36);
+
+/// The least a control keeps beside a fitted label column: a stepper of
+/// two digits, two short options side by side.
+const CONTROL_FLOOR: usize = 14;
 
 /// The width a stepper and a segmented choice take, so the two kinds end
 /// in the same column.
@@ -52,9 +56,10 @@ pub(crate) struct Layout {
 }
 
 impl Layout {
-    /// A label column as wide as `labels` need, within bounds and never
-    /// past half of `width`; controls and boxes share what is left, up to
-    /// [`CONTROL`].
+    /// A label column as wide as `labels` need, within bounds, leaving the
+    /// control at least [`CONTROL_FLOOR`] of `width`: a narrow room cuts the
+    /// control's share before a label. Controls and boxes share what is
+    /// left, up to [`CONTROL`].
     pub(crate) fn fit<'a>(labels: impl IntoIterator<Item = &'a str>, width: usize) -> Self {
         let label = labels
             .into_iter()
@@ -62,7 +67,7 @@ impl Layout {
             .max()
             .unwrap_or(0)
             .clamp(LABEL_FIT.0, LABEL_FIT.1)
-            .min(width / 2);
+            .min(width.saturating_sub(CONTROL_FLOOR));
         let room = width.saturating_sub(label);
         let control = CONTROL.min(room);
         Self {

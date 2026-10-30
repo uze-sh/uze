@@ -1551,3 +1551,24 @@ fn a_form_controls_value_lifts_under_the_pointer() {
         );
     }
 }
+
+/// A label column fitted to its labels gives a label all it needs while
+/// the control keeps room to be read: a drawer's narrow width cuts the
+/// control's share, not the label.
+#[test]
+fn a_fitted_layout_keeps_a_long_label_whole_in_a_narrow_room() {
+    let label = "Show each phase's name";
+    let layout = super::form::Layout::fit([label], 42);
+    let key = super::form::key(
+        label,
+        RowState::Resting,
+        super::form::Control::Choice {
+            options: &["off", "on"],
+            chosen: "on",
+        },
+        layout,
+        None,
+    );
+    assert!(key.line.to_string().contains(label), "{}", key.line);
+    assert!(key.line.width() <= 42, "{}", key.line);
+}
