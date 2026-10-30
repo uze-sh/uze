@@ -29,6 +29,7 @@ ratatui primitives (`chrome_is_built_from_the_widget_vocabulary`).
 | a drawer docked beside a live pane | `drawer::render_docked`, `drawer::docked_width` |
 | a question or notice | `dialog::Dialog` (its `table` for what a consent asks for), `render_choice`, `shell` |
 | a form: a key and the control that sets its value, a group's heading and air, a list's check mark | `widget::form`: `Layout`, `key` + `Control` (`Stepper`, `Choice`, `Boxed`, `Combo`, `Typing`, `Add`) answering `Part`s, `label`/`indent` for a key of prose, `check`, `heading`, `GROUP_AIR`/`KEY_AIR` |
+| names with what each says beside them (a panel's fields, a drawer's grants, a consent's grants) | `definitions::lines` with `Column::Fixed(view::FIELD_KEY_WIDTH)` for a panel's keys or `Column::Fit` for a table of names, one list of lines per entry |
 | a list to choose from, answered once | `dialog::shell` with `Scope::Choose` (`orchestrator/extension_offer.rs`) |
 | a titled card over a scrim | `modal`, `footer::render` (returns `Drawn{trailers, hints}`), `scrim` |
 | what to check, worst first | `alerts` |

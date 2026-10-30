@@ -36,7 +36,9 @@ use crate::ui::content_area;
 use crate::ui::hit::Hit;
 use crate::ui::model::{Focus, PluginTreeRow, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::{Align, Button, button_row, hint::Hints, mark, row, screen_header, text};
+use crate::ui::widget::{
+    Align, Button, button_row, definitions, hint::Hints, mark, row, screen_header, text,
+};
 
 /// Below this many columns the panel goes and the tree takes the width.
 /// Low, since the panel is the detail of the row chosen and the tree gives
@@ -1024,26 +1026,26 @@ fn render_panel(
         // Folded rather than cut: an address is read in full before it is
         // trusted, and a list of names cut at the edge hides which ones
         // are missing.
-        let value_room = room.saturating_sub(FIELD_KEY_WIDTH).max(1);
-        for (key, value, style, hit) in &detail.fields {
+        let entries: Vec<_> = detail
+            .fields
+            .iter()
+            .map(|(key, value, style, _)| definitions::Entry {
+                name: key,
+                said: value,
+                name_style: theme::fg(Token::TextDim),
+                said_style: *style,
+            })
+            .collect();
+        let drawn = definitions::lines(&entries, definitions::Column::Fixed(FIELD_KEY_WIDTH), room);
+        for ((_, _, _, hit), rows) in detail.fields.iter().zip(drawn) {
             let y = body.y + lines.len() as u16;
-            let rows = text::fold(value, value_room);
             if let Some(hit) = hit
                 && y < body.bottom()
             {
                 let height = (rows.len() as u16).min(body.bottom() - y);
                 hits.push((Rect::new(body.x, y, body.width, height), hit.clone()));
             }
-            for (index, row) in rows.into_iter().enumerate() {
-                let key = if index == 0 { *key } else { "" };
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        format!("{key:<FIELD_KEY_WIDTH$}"),
-                        theme::fg(Token::TextDim),
-                    ),
-                    Span::styled(row, *style),
-                ]));
-            }
+            lines.extend(rows);
         }
         frame.render_widget(Paragraph::new(lines), body);
     }

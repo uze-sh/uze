@@ -229,27 +229,21 @@ fn content(dialog: &Dialog<'_>, measure: usize) -> Content {
     }
     if !dialog.table.is_empty() {
         lines.push(Line::default());
-        let column = dialog
+        let entries: Vec<_> = dialog
             .table
             .iter()
-            .map(|(name, _)| text::columns(name) + 2)
-            .max()
-            .unwrap_or(0)
-            .min(measure / 2);
-        let room = measure.saturating_sub(column).max(1);
-        for (name, meaning) in &dialog.table {
-            let name = text::elide(name, column.saturating_sub(2));
-            for (index, row) in text::fold(meaning, room).into_iter().enumerate() {
-                let cell = if index == 0 { name.as_str() } else { "" };
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        format!("{cell}{}", " ".repeat(column - text::columns(cell))),
-                        theme::fg(Token::TextCode),
-                    ),
-                    Span::styled(row, theme::fg(Token::TextSecondary)),
-                ]));
-            }
-        }
+            .map(|(name, meaning)| super::definitions::Entry {
+                name,
+                said: meaning,
+                name_style: theme::fg(Token::TextCode),
+                said_style: theme::fg(Token::TextSecondary),
+            })
+            .collect();
+        lines.extend(
+            super::definitions::lines(&entries, super::definitions::Column::Fit, measure)
+                .into_iter()
+                .flatten(),
+        );
     }
     lines.push(Line::default());
     // The field's text row, then the rule under it that makes it a field.

@@ -25,7 +25,7 @@ use super::{DrawerStatus, render_drawer_footer};
 use crate::ui::hit::Hit;
 use crate::ui::model::{ExtensionEntry, PreferencesEditor, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::{RowState, form, text};
+use crate::ui::widget::{RowState, definitions, form, text};
 use crate::ui::{content_area, render_screen_header};
 use uze_application::{ExtensionCondition as Condition, ExtensionReport};
 
@@ -453,7 +453,11 @@ impl Grid {
 
     /// `key` in the shared key column, `value` folded beside it.
     fn field(&mut self, key: &str, value: &str, token: Token) {
-        self.row((key, Token::TextDim), super::FIELD_KEY_WIDTH, value, token);
+        self.define(
+            &[(key.to_owned(), value.to_owned(), token)],
+            Token::TextDim,
+            definitions::Column::Fixed(super::FIELD_KEY_WIDTH),
+        );
     }
 
     /// A section of rows, each a name and what it says, the names in a
@@ -464,34 +468,29 @@ impl Grid {
         }
         self.gap();
         self.lines.push(super::section_label(heading));
-        let column = rows
-            .iter()
-            .map(|(name, _, _)| text::columns(name) + 2)
-            .max()
-            .unwrap_or(0)
-            .min(self.width / 2);
-        for (name, said, token) in rows {
-            self.row((name, Token::TextCode), column, said, *token);
-        }
+        self.define(rows, Token::TextCode, definitions::Column::Fit);
     }
 
-    fn row(&mut self, (key, ink): (&str, Token), column: usize, value: &str, token: Token) {
-        let room = self.width.saturating_sub(column).max(1);
-        let key = text::elide(key, column.saturating_sub(1));
-        let pad = column.saturating_sub(text::columns(&key));
-        for (index, row) in text::fold(value, room).into_iter().enumerate() {
-            let key = if index == 0 {
-                key.clone()
-            } else {
-                String::new()
-            };
-            let pad = if index == 0 { pad } else { column };
-            self.lines.push(Line::from(vec![
-                Span::styled(key, theme::fg(ink)),
-                Span::raw(" ".repeat(pad)),
-                Span::styled(row, theme::fg(token)),
-            ]));
-        }
+    fn define(
+        &mut self,
+        rows: &[(String, String, Token)],
+        ink: Token,
+        column: definitions::Column,
+    ) {
+        let entries: Vec<_> = rows
+            .iter()
+            .map(|(name, said, token)| definitions::Entry {
+                name,
+                said,
+                name_style: theme::fg(ink),
+                said_style: theme::fg(*token),
+            })
+            .collect();
+        self.lines.extend(
+            definitions::lines(&entries, column, self.width)
+                .into_iter()
+                .flatten(),
+        );
     }
 }
 
