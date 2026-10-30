@@ -736,35 +736,9 @@ fn click(model: &mut TuiModel, target: &Hit) -> Intent {
     )
 }
 
-/// The rows of the open preferences dialog, from its title to its bottom
-/// border.
-fn preferences_dialog(model: &TuiModel, width: u16, height: u16) -> Vec<String> {
-    let (terminal, _) = super::support::drawn_at(model, width, height);
-    let rows = super::support::buffer_rows(&terminal);
-    let title = rows
-        .iter()
-        .position(|row| row.contains("Focus preferences"))
-        .expect("the dialog has a title");
-    let top = title - 2;
-    let bottom = (top + 1..rows.len())
-        .find(|at| rows[*at].contains('└'))
-        .expect("the dialog has a bottom border");
-    let left = rows[top]
-        .chars()
-        .position(|ch| ch == '┌')
-        .expect("the dialog has a top-left corner");
-    let right = rows[top]
-        .chars()
-        .position(|ch| ch == '┐')
-        .expect("the dialog has a top-right corner");
-    rows[top..=bottom]
-        .iter()
-        .map(|row| row.chars().skip(left).take(right + 1 - left).collect())
-        .collect()
-}
-
-/// The drawer lists an extension's preferences; its Preferences button
-/// opens them, Enter flips a toggle, and a number is typed and set.
+/// The drawer lists an extension's preferences as their controls; its
+/// Preferences button puts the keys on them, Enter flips a toggle, and a
+/// number is typed and set, all in the drawer.
 #[test]
 fn preferences_are_listed_and_set_from_the_keyboard() {
     let mut model = with_preferences();
@@ -773,22 +747,23 @@ fn preferences_are_listed_and_set_from_the_keyboard() {
     let row_with = |label: &str, value: &str| {
         screen
             .lines()
-            .any(|row| row.contains(label) && row.trim_end().ends_with(value))
+            .any(|row| row.contains(label) && row.contains(value))
     };
     assert!(row_with("Show °F", "off"), "{screen}");
-    assert!(row_with("Warn at", "70"), "{screen}");
+    assert!(row_with("Warn at", " 70 "), "{screen}");
     assert!(screen.contains("Preferences"), "{screen}");
     assert_eq!(model.edit_selected_preferences(), Intent::None);
+    assert!(
+        model.preferences.is_some(),
+        "the keys are on the preferences"
+    );
+    assert_eq!(model.overlay, crate::ui::model::Overlay::None, "no dialog");
     let editor = screen_of(&model);
-    assert!(editor.contains("GSD preferences"), "{editor}");
-    // The toggle's own row in the dialog, up to the dialog's edge: not
-    // the drawer behind it, nor anywhere else on the screen.
     let row_of = |screen: &str| {
         screen
             .lines()
-            .find(|line| line.contains("❯ Show °F"))
+            .find(|line| line.contains("Show °F"))
             .and_then(|line| line.split("Show °F").nth(1))
-            .and_then(|after| after.split('│').next())
             .map(|value| value.trim().to_owned())
             .unwrap_or_default()
     };
@@ -808,8 +783,8 @@ fn preferences_are_listed_and_set_from_the_keyboard() {
     assert_eq!(model.apply_key(enter), Intent::None, "a number is typed");
     let typing = screen_of(&model);
     assert!(
-        typing.contains("A number from 40 to 71 · default 80."),
-        "the typing step says what the value may be: {typing}"
+        typing.contains("A number from 40 to 71 · default 80"),
+        "the drawer says what the value may be: {typing}"
     );
     for _ in 0..2 {
         model.apply_key(key(KeyCode::Backspace));
@@ -822,15 +797,13 @@ fn preferences_are_listed_and_set_from_the_keyboard() {
     );
 }
 
-/// The dialog is titled for the extension, its values stand in one column
-/// against its right edge, and under them the selected row says its range
-/// and its default.
+/// The values stand in one column against the drawer's right edge, and
+/// under them the row the keys are on says its range and its default.
 #[test]
-fn the_preferences_dialog_aligns_its_values_and_says_the_range_and_default() {
+fn the_drawers_preferences_align_their_values_and_say_the_range_and_default() {
     let model = focus_preferences();
-    let dialog = preferences_dialog(&model, 220, 44);
-    let text = dialog.join("\n");
-    assert!(text.contains("Focus preferences"), "{text}");
+    let text = screen_of(&model);
+    let dialog: Vec<&str> = text.lines().collect();
     assert!(
         text.contains("A number from 1 to 90 · default 25"),
         "{text}"
@@ -850,22 +823,30 @@ fn the_preferences_dialog_aligns_its_values_and_says_the_range_and_default() {
         .unwrap();
     assert!(column(minutes, plus).is_some(), "{minutes}");
     assert_eq!(column(minutes, plus), column(goal, plus), "{text}");
-    let width = dialog[0].chars().count();
-    assert!(width >= 60, "a list dialog is at least 60 wide: {width}");
 }
 
-/// Moving between rows never resizes the dialog, and the detail follows
-/// the keyboard.
+/// Moving between rows never moves what the drawer says under them, and
+/// the detail follows the keyboard.
 #[test]
-fn moving_between_preferences_keeps_the_dialog_still() {
+fn moving_between_preferences_keeps_the_drawer_still() {
     let mut model = focus_preferences();
-    let before = preferences_dialog(&model, 220, 44);
+    let row_of = |text: &str, said: &str| text.lines().position(|row| row.contains(said));
+    let before = screen_of(&model);
     model.apply_key(key(KeyCode::Down));
-    let after = preferences_dialog(&model, 220, 44);
-    assert_eq!(before.len(), after.len());
-    assert_eq!(before[0], after[0]);
-    let text = after.join("\n");
-    assert!(text.contains("A number from 1 to 12 · default 4"), "{text}");
+    let after = screen_of(&model);
+    assert_eq!(
+        row_of(&before, "Sessions a day"),
+        row_of(&after, "Sessions a day")
+    );
+    assert_eq!(
+        row_of(&before, "A number from 1 to 90"),
+        row_of(&after, "A number from 1 to 12"),
+        "the detail keeps its rows: {after}"
+    );
+    assert!(
+        after.contains("A number from 1 to 12 · default 4"),
+        "{after}"
+    );
 }
 
 /// Right and left step a number by one and save it at once; at its bound
@@ -890,7 +871,7 @@ fn the_arrows_step_a_number_within_its_bounds_and_save_it() {
         Intent::None,
         "twelve is the most"
     );
-    let text = preferences_dialog(&model, 220, 44).join("\n");
+    let text = screen_of(&model);
     assert!(text.contains(" 12 "), "{text}");
 }
 
@@ -906,7 +887,7 @@ fn clicking_a_stepper_is_pressing_its_arrow() {
         "a click on a row chooses it"
     );
     keyed.apply_key(key(KeyCode::Down));
-    assert_eq!(clicked.overlay, keyed.overlay);
+    assert_eq!(clicked.preferences, keyed.preferences);
     assert_eq!(
         click(
             &mut clicked,
@@ -929,13 +910,39 @@ fn clicking_a_stepper_is_pressing_its_arrow() {
     );
     keyed.apply_key(key(KeyCode::Up));
     keyed.apply_key(key(KeyCode::Left));
-    assert_eq!(clicked.overlay, keyed.overlay);
+    assert_eq!(clicked.preferences, keyed.preferences);
 }
 
-/// Every key the bottom border names is a target doing what the key does:
-/// enter types the number, esc closes.
+/// A preference's control answers a click straight from the drawer, the
+/// keys then on its row; a click on a card gives them back to the cards.
 #[test]
-fn clicking_a_preferences_border_hint_is_pressing_its_key() {
+fn a_preference_is_set_from_the_drawer_without_opening_anything() {
+    let mut model = focus_preferences();
+    model.preferences = None;
+    assert_eq!(
+        click(
+            &mut model,
+            &Hit::ExtensionPreferenceStep {
+                index: 1,
+                forward: true
+            }
+        ),
+        set("goal", "Sessions a day", serde_json::json!(5))
+    );
+    assert_eq!(model.overlay, crate::ui::model::Overlay::None);
+    assert_eq!(
+        model.preferences.as_ref().map(|editor| editor.selected),
+        Some(1)
+    );
+    click(&mut model, &Hit::ExtensionRow(0));
+    assert_eq!(model.preferences, None);
+}
+
+/// Every key the footer names while the keys are on the preferences is a
+/// target doing what the key does: enter types the number, esc gives the
+/// keys back to the cards.
+#[test]
+fn clicking_a_preferences_footer_hint_is_pressing_its_key() {
     let mut clicked = focus_preferences();
     let mut keyed = focus_preferences();
     assert_eq!(
@@ -945,23 +952,23 @@ fn clicking_a_preferences_border_hint_is_pressing_its_key() {
         ),
         keyed.apply_key(key(KeyCode::Enter))
     );
-    assert_eq!(clicked.overlay, keyed.overlay);
+    assert_eq!(clicked.preferences, keyed.preferences);
     assert!(
-        matches!(&clicked.overlay, crate::ui::model::Overlay::Preferences(editor) if editor.typing.is_some()),
+        matches!(&clicked.preferences, Some(editor) if editor.typing.is_some()),
         "enter on a number types it"
     );
     let mut clicked = focus_preferences();
     let mut keyed = focus_preferences();
     click(&mut clicked, &Hit::OfferedAction(uze_keys::Action::Dismiss));
     keyed.apply_key(key(KeyCode::Esc));
-    assert_eq!(clicked.overlay, crate::ui::model::Overlay::None);
-    assert_eq!(clicked.overlay, keyed.overlay);
+    assert_eq!(clicked.preferences, None);
+    assert_eq!(clicked.preferences, keyed.preferences);
 }
 
-/// The border's keys stand where they are drawn: each target's rect holds
+/// The footer's keys stand where they are drawn: each target's rect holds
 /// the word the key is named by.
 #[test]
-fn the_preferences_border_hints_are_drawn_where_they_answer() {
+fn the_preferences_footer_hints_are_drawn_where_they_answer() {
     let model = focus_preferences();
     let (terminal, hits) = super::support::drawn_at(&model, 220, 44);
     let buffer = terminal.backend().buffer();
@@ -972,7 +979,7 @@ fn the_preferences_border_hints_are_drawn_where_they_answer() {
     };
     for (action, word) in [
         (uze_keys::Action::Activate, "enter type"),
-        (uze_keys::Action::Dismiss, "esc close"),
+        (uze_keys::Action::Dismiss, "esc back"),
     ] {
         let (rect, _) = hits
             .iter()
@@ -1006,7 +1013,12 @@ fn a_secret_is_typed_masked_and_never_shown_again() {
     model.edit_selected_preferences();
     let editor = screen_of(&model);
     assert!(editor.contains("GitHub token"), "{editor}");
-    assert!(editor.contains(" set "), "{editor}");
+    let said_set = |screen: &str| {
+        screen
+            .lines()
+            .any(|row| row.contains("GitHub token") && row.trim_end().ends_with("set"))
+    };
+    assert!(said_set(&editor), "{editor}");
     assert!(
         editor.contains("A secret, kept in"),
         "the detail says where it is kept: {editor}"
@@ -1025,7 +1037,7 @@ fn a_secret_is_typed_masked_and_never_shown_again() {
         set("token", "GitHub token", serde_json::json!("ghp_abc"))
     );
     let after = screen_of(&model);
-    assert!(after.contains(" set "), "{after}");
+    assert!(said_set(&after), "{after}");
     assert!(!after.contains("ghp_abc"), "{after}");
 }
 

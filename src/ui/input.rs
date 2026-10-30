@@ -44,13 +44,14 @@ impl TuiModel {
             scopes.push(Scope::Filter);
         }
         match self.overlay {
-            Overlay::None | Overlay::HarnessHelp | Overlay::Health => {}
+            Overlay::None => match &self.preferences {
+                Some(editor) if editor.typing.is_some() => scopes.push(Scope::TextPrompt),
+                Some(_) => scopes.push(Scope::ExtensionPreferences),
+                None => {}
+            },
+            Overlay::HarnessHelp | Overlay::Health => {}
             Overlay::ActionIndex { .. } => scopes.push(Scope::ActionIndex),
             Overlay::AddMarketplace(_) => scopes.push(Scope::TextPrompt),
-            Overlay::Preferences(ref editor) if editor.typing.is_some() => {
-                scopes.push(Scope::TextPrompt)
-            }
-            Overlay::Preferences(_) => scopes.push(Scope::ExtensionPreferences),
             Overlay::Confirm { .. } => scopes.push(Scope::Confirm),
             Overlay::ReleaseNotes(_) => scopes.push(Scope::ReleaseNotes),
         }
@@ -133,6 +134,9 @@ impl TuiModel {
     fn perform(&mut self, action: Action) -> Intent {
         if self.overlay != Overlay::None {
             return self.overlay_action(action);
+        }
+        if let Some(editor) = self.preferences.clone() {
+            return self.preferences_action(editor, action);
         }
         match action {
             Action::OpenActionIndex => {
@@ -623,24 +627,6 @@ impl TuiModel {
                     uze_extensions::view::ScrollDirection::Up
                 };
                 self.scroll_page(direction)
-            }
-            // Over an extension's preferences, only what the dialog drew
-            // lights: the screen under its scrim answers nothing.
-            MouseEventKind::Moved if matches!(self.overlay, Overlay::Preferences(_)) => {
-                self.hovered = self
-                    .hit_at(event.column, event.row)
-                    .filter(|hit| {
-                        matches!(
-                            hit,
-                            Hit::ExtensionPreferenceRow(_)
-                                | Hit::ExtensionPreferenceStep { .. }
-                                | Hit::ExtensionPreferenceValue(_)
-                                | Hit::OfferedAction(_)
-                        )
-                    })
-                    .cloned();
-                self.pointer_row = Some(event.row);
-                Intent::None
             }
             MouseEventKind::Moved if self.overlay == Overlay::None => {
                 // One read of the hit list answers every hover the chrome

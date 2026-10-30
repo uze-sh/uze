@@ -376,12 +376,10 @@ pub(crate) enum Overlay {
     /// Free-text input, appended to on every character key and popped on
     /// backspace — see `TuiModel::overlay_key`'s `AddMarketplace` arms.
     AddMarketplace(String),
-    /// A declared extension's preferences, one row each: Enter flips a
-    /// toggle, moves a choice on, or types a text or a number.
-    Preferences(PreferencesEditor),
 }
 
-/// The preferences of one declared extension, being set.
+/// The preferences of one declared extension, being set in its drawer:
+/// while there is one, the keys are on its rows rather than the cards.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PreferencesEditor {
     pub(crate) identity: uze_application::ExtensionIdentity,
@@ -590,6 +588,9 @@ pub(crate) struct TuiModel {
     pub(crate) route: Route,
     pub(crate) focus: Focus,
     pub(crate) overlay: Overlay,
+    /// The selected extension's preferences while the keys are on them in
+    /// its drawer.
+    pub(crate) preferences: Option<PreferencesEditor>,
     pub(crate) status: Status,
     pub(crate) status_expires_at: Option<Instant>,
     /// What each mutation asked for and not yet answered is doing, oldest
@@ -887,6 +888,7 @@ impl TuiModel {
                 .unwrap_or_else(Route::first_offered),
             focus: Focus::Sidebar,
             overlay: Overlay::None,
+            preferences: None,
             key_screen: ListScreen::default(),
             drawer_width: layout.drawer_width,
             settings_selected: 0,
@@ -1422,7 +1424,10 @@ impl TuiModel {
         else {
             return Intent::None;
         };
-        self.overlay = Overlay::Preferences(PreferencesEditor {
+        if self.preferences.is_some() {
+            return Intent::None;
+        }
+        self.preferences = Some(PreferencesEditor {
             identity: standing.identity(),
             name: extension.name().to_owned(),
             rows: standing.preferences,
@@ -1841,6 +1846,15 @@ impl TuiModel {
     /// was already decided by the keymap (`Scope::consumes_text`); this
     /// only says where the character lands.
     pub(crate) fn type_character(&mut self, character: char) -> super::worker::Intent {
+        if self.overlay == Overlay::None
+            && let Some(PreferencesEditor {
+                typing: Some(input),
+                ..
+            }) = &mut self.preferences
+        {
+            input.push(character);
+            return super::worker::Intent::None;
+        }
         match &mut self.overlay {
             Overlay::ActionIndex {
                 filter, selected, ..
@@ -1849,10 +1863,6 @@ impl TuiModel {
                 *selected = 0;
             }
             Overlay::AddMarketplace(input) => input.push(character),
-            Overlay::Preferences(PreferencesEditor {
-                typing: Some(input),
-                ..
-            }) => input.push(character),
             _ => self.edit_filter(|filter| filter.push(character)),
         }
         super::worker::Intent::None

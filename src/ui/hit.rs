@@ -110,11 +110,12 @@ impl TuiModel {
             .map(|(_, hit)| hit)
     }
 
-    /// Puts the keyboard on an extension's preference `index`, leaving any
-    /// typing.
+    /// Puts the keyboard on the selected extension's preference `index`,
+    /// in its drawer, leaving any typing.
     fn choose_preference(&mut self, index: usize) {
-        if let Overlay::Preferences(editor) = &mut self.overlay {
-            editor.selected = index;
+        self.edit_selected_preferences();
+        if let Some(editor) = &mut self.preferences {
+            editor.selected = index.min(editor.rows.len().saturating_sub(1));
             editor.typing = None;
         }
     }
@@ -142,24 +143,6 @@ impl TuiModel {
             // area must never silently confirm.
             let answer = match self.hit_at(column, row).cloned() {
                 Some(Hit::OfferedAction(action)) => Some(action),
-                // A click on a preference's row chooses it; on its value or
-                // its steps, it is also the key that answers them.
-                Some(Hit::ExtensionPreferenceRow(index)) => {
-                    self.choose_preference(index);
-                    return Intent::None;
-                }
-                Some(Hit::ExtensionPreferenceStep { index, forward }) => {
-                    self.choose_preference(index);
-                    Some(if forward {
-                        uze_keys::Action::NextValue
-                    } else {
-                        uze_keys::Action::PreviousValue
-                    })
-                }
-                Some(Hit::ExtensionPreferenceValue(index)) => {
-                    self.choose_preference(index);
-                    Some(uze_keys::Action::Activate)
-                }
                 Some(Hit::Answer(yes)) => {
                     if let Overlay::Confirm { focus, .. } = &mut self.overlay {
                         *focus = Some(if yes {
@@ -184,8 +167,21 @@ impl TuiModel {
             };
         }
         let Some(hit) = self.hit_at(column, row).cloned() else {
+            self.preferences = None;
             return Intent::None;
         };
+        // A click anywhere but on the preferences gives the keys back to
+        // the screen, putting away what was being typed. An offered action
+        // (a footer hint, a drawer button) is a key, and the keys decide.
+        if !matches!(
+            hit,
+            Hit::ExtensionPreferenceRow(_)
+                | Hit::ExtensionPreferenceStep { .. }
+                | Hit::ExtensionPreferenceValue(_)
+                | Hit::OfferedAction(_)
+        ) {
+            self.preferences = None;
+        }
         match hit {
             Hit::Route(route) => {
                 let entering = self.set_route(route);
@@ -284,12 +280,28 @@ impl TuiModel {
             }
             // Only reachable while the index is open, which the guarded
             // arm above already answered.
-            Hit::ActionIndexEntry(_)
-            | Hit::OverlayBody
-            | Hit::Answer(_)
-            | Hit::ExtensionPreferenceRow(_)
-            | Hit::ExtensionPreferenceStep { .. }
-            | Hit::ExtensionPreferenceValue(_) => Intent::None,
+            Hit::ActionIndexEntry(_) | Hit::OverlayBody | Hit::Answer(_) => Intent::None,
+            // A click on a preference's row puts the keys on it; on its
+            // value or its steps, it is also the key that answers them.
+            Hit::ExtensionPreferenceRow(index) => {
+                self.focus = Focus::Content;
+                self.choose_preference(index);
+                Intent::None
+            }
+            Hit::ExtensionPreferenceStep { index, forward } => {
+                self.focus = Focus::Content;
+                self.choose_preference(index);
+                self.act(if forward {
+                    uze_keys::Action::NextValue
+                } else {
+                    uze_keys::Action::PreviousValue
+                })
+            }
+            Hit::ExtensionPreferenceValue(index) => {
+                self.focus = Focus::Content;
+                self.choose_preference(index);
+                self.act(uze_keys::Action::Activate)
+            }
             Hit::OfferedAction(action) => self.act(action),
             Hit::KeysTrack(track) => {
                 self.dragging_keys_track = Some(track);

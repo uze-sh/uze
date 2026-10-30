@@ -399,9 +399,6 @@ pub(crate) fn render(
         Overlay::Confirm { kind, focus } => {
             overlay::render_confirmation(frame, area, kind, *focus, hits)
         }
-        Overlay::Preferences(editor) => {
-            overlay::render_preferences(frame, area, editor, model.hovered.as_ref(), hits)
-        }
         Overlay::AddMarketplace(input) => overlay::render_text_prompt(
             frame,
             area,
@@ -573,6 +570,12 @@ fn health_status(model: &TuiModel) -> Option<Line<'static>> {
 /// remembering to.
 fn hints<'a>(model: &TuiModel, scopes: &'a [uze_keys::Scope]) -> Hints<'a> {
     use uze_keys::Action;
+    if let Some(editor) = &model.preferences {
+        return view::extensions::preference_hints(
+            Hints::new(scopes).hovered(model.hovered_offer),
+            editor,
+        );
+    }
     let mut hints = Hints::new(scopes)
         .run(Action::SelectPrevious, Action::SelectNext, "move")
         .hovered(model.hovered_offer);

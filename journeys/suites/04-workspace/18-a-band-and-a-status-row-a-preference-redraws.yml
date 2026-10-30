@@ -268,10 +268,10 @@ scenes:
       # outside the modal.
       - click: "deck · deck@studio"
         say: choose the extension, which its drawer then describes
-        expect: "Show each phase's name · on"
+        expect: 'Show each phase''s name {2,}\S+ on'
         expect_timeout: 10
       - click: "Preferences"
-        say: open its preferences from the drawer's button
+        say: put the keys on its preferences from the drawer's button
         expect: 'Show each phase''s name {2,}\S+ on'
         expect_timeout: 10
       - key: "Enter"
@@ -283,7 +283,7 @@ scenes:
         timeout: 10
         say: the answer is written before the modal is put away
       - key: ["Escape", "Escape"]
-        say: back to the workspace
+        say: give the keys back to the cards, then back to the workspace
         expect: "first steps"
         expect_timeout: 10
       - wait: screen

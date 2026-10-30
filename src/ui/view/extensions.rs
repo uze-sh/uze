@@ -23,7 +23,7 @@ use ratatui::{
 use super::catalog::{Badge, Card, render_card};
 use super::{DrawerStatus, render_drawer_footer};
 use crate::ui::hit::Hit;
-use crate::ui::model::{ExtensionEntry, ResizablePanel, Route, TuiModel};
+use crate::ui::model::{ExtensionEntry, PreferencesEditor, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::widget::{RowState, text};
 use crate::ui::{content_area, render_screen_header};
@@ -303,9 +303,18 @@ fn render_extension_drawer(
             }
         }
     }
-    if let Some(standing) = standing {
-        standing_lines(&mut grid, standing, model.extension_project.as_deref());
-    }
+    let editing = model
+        .preferences
+        .as_ref()
+        .filter(|editor| matches!(extension, ExtensionEntry::Declared(summary) if summary.identity == editor.identity));
+    let preference_rows = standing.map_or_else(Vec::new, |standing| {
+        standing_lines(
+            &mut grid,
+            standing,
+            model.extension_project.as_deref(),
+            editing,
+        )
+    });
     let lines = grid.lines;
     // What the last compile refused stands at the foot of the body, as it
     // does over a plugin's own surface while its author saves.
@@ -329,7 +338,36 @@ fn render_extension_drawer(
         let banner = crate::ui::widget::banner::render_folded(frame, room, &title, &summary.errors);
         text_area.height = body.height.saturating_sub(banner.height);
     }
+    let preferences = editing.map_or_else(
+        || standing.map_or(&[][..], |standing| standing.preferences.as_slice()),
+        |editor| editor.rows.as_slice(),
+    );
+    let placed: Vec<(usize, Rect)> = preference_rows
+        .iter()
+        .enumerate()
+        .filter_map(|(index, row)| {
+            let row = u16::try_from(*row)
+                .ok()
+                .filter(|row| *row < text_area.height)?;
+            Some((index, Rect::new(body.x, body.y + row, body.width, 1)))
+        })
+        .collect();
+    // The row the keys are on stands on the ground every list's does,
+    // under its label and its control alike.
+    if let Some(editor) = editing
+        && let Some((_, line)) = placed.iter().find(|(index, _)| *index == editor.selected)
+    {
+        crate::ui::widget::fill(frame, *line, Token::SurfaceSelected);
+    }
     frame.render_widget(Paragraph::new(lines), text_area);
+    render_preference_controls(
+        frame,
+        preferences,
+        &placed,
+        editing,
+        model.hovered.as_ref(),
+        hits,
+    );
 
     render_drawer_footer(
         frame,
@@ -434,21 +472,6 @@ impl Grid {
             ]));
         }
     }
-
-    /// A row whose value stands against the right edge, as a setting's
-    /// value does.
-    fn trailing(&mut self, label: &str, value: &str) {
-        let value_width = text::columns(value);
-        let label = text::elide(label, self.width.saturating_sub(value_width + 1));
-        let pad = self
-            .width
-            .saturating_sub(text::columns(&label) + value_width);
-        self.lines.push(Line::from(vec![
-            Span::styled(label, theme::fg(Token::TextPrimary)),
-            Span::raw(" ".repeat(pad)),
-            Span::styled(value.to_owned(), theme::fg(Token::TextSecondary)),
-        ]));
-    }
 }
 
 /// What a declared extension offers, a surface a line, each with where it
@@ -497,7 +520,12 @@ fn declared_surfaces(summary: &uze_application::DeclaredExtensionSummary) -> Vec
 /// The drawer's account of where a declared extension stands: the grants
 /// it wants with what each lets it do, its programs, its preferences and,
 /// when it runs nothing here or runs elsewhere, why and where.
-fn standing_lines(grid: &mut Grid, standing: &ExtensionReport, project: Option<&Path>) {
+fn standing_lines(
+    grid: &mut Grid,
+    standing: &ExtensionReport,
+    project: Option<&Path>,
+    editing: Option<&PreferencesEditor>,
+) -> Vec<usize> {
     let grants: Vec<_> = standing
         .grants
         .iter()
@@ -548,11 +576,35 @@ fn standing_lines(grid: &mut Grid, standing: &ExtensionReport, project: Option<&
         }
     }
 
-    if !standing.preferences.is_empty() {
+    // Each preference's label, its control drawn over the row's end once
+    // the body is: the rows they stand on are what this answers with.
+    let mut preference_rows = Vec::new();
+    let preferences = editing.map_or(standing.preferences.as_slice(), |editor| &editor.rows);
+    if !preferences.is_empty() {
         grid.gap();
         grid.lines.push(super::section_label("preferences"));
-        for preference in &standing.preferences {
-            grid.trailing(&preference.label, &preference.said());
+        for preference in preferences {
+            preference_rows.push(grid.lines.len());
+            grid.lines.push(Line::from(Span::styled(
+                text::elide(&preference.label, grid.width / 2),
+                theme::fg(Token::TextPrimary),
+            )));
+        }
+        // What the row the keys are on holds, in rows kept whatever it
+        // says, so moving between rows never moves what is under them.
+        if let Some(row) = editing.and_then(|editor| editor.rows.get(editor.selected)) {
+            let mut said = preference_meaning(row);
+            if row.is_secret() {
+                said.push_str(" · empty forgets it");
+            }
+            let mut folded = text::fold(&said, grid.width);
+            folded.resize(PREFERENCE_DETAIL, String::new());
+            folded.truncate(PREFERENCE_DETAIL);
+            grid.lines.extend(
+                folded
+                    .into_iter()
+                    .map(|row| Line::from(Span::styled(row, theme::fg(Token::TextMuted)))),
+            );
         }
     }
 
@@ -593,6 +645,7 @@ fn standing_lines(grid: &mut Grid, standing: &ExtensionReport, project: Option<&
             grid.field(key, &said, token);
         }
     }
+    preference_rows
 }
 
 /// The drawer's foot for a declared extension that runs code and waits
@@ -643,4 +696,197 @@ fn standing_status(
         },
         Condition::Consented | Condition::FixturesOnly | Condition::Broken => return None,
     })
+}
+
+/// The rows a preference's detail keeps under the rows while the keys are
+/// on them.
+const PREFERENCE_DETAIL: usize = 2;
+/// The narrowest and widest a value's control is: a number with two
+/// digits between its steps, and a typed value cut short.
+const PREFERENCE_CONTROL: (u16, u16) = (11, 24);
+
+/// Each preference's value as the control that changes it, against the
+/// end of the row its label stands on, one column for all of them; the
+/// row the keys are on is typed into while it is.
+fn render_preference_controls(
+    frame: &mut ratatui::Frame<'_>,
+    preferences: &[uze_application::PreferenceRow],
+    placed: &[(usize, Rect)],
+    editing: Option<&PreferencesEditor>,
+    hovered: Option<&Hit>,
+    hits: &mut Vec<(Rect, Hit)>,
+) {
+    use crate::ui::widget::control::Lit;
+    let controls: Vec<_> = preferences.iter().map(preference_control).collect();
+    let width = controls
+        .iter()
+        .map(|control| control.natural_width())
+        .max()
+        .unwrap_or(0)
+        .clamp(PREFERENCE_CONTROL.0, PREFERENCE_CONTROL.1);
+    let lit = |hit: &Hit| hovered == Some(hit);
+    for &(index, line) in placed {
+        let (Some(row), Some(control)) = (preferences.get(index), controls.get(index)) else {
+            continue;
+        };
+        let marked = editing.is_some_and(|editor| editor.selected == index);
+        let width = width.min(line.width / 2);
+        let at = Rect::new(line.right() - width, line.y, width, 1);
+        if lit(&Hit::ExtensionPreferenceRow(index)) || marked {
+            frame.render_widget(
+                Paragraph::new(Span::styled(
+                    text::elide(&row.label, usize::from(line.width - width)),
+                    theme::fg(Token::TextBright),
+                )),
+                Rect::new(line.x, line.y, line.width - width, 1),
+            );
+        }
+        if let Some(typed) = editing
+            .filter(|_| marked)
+            .and_then(|editor| editor.typing.as_deref())
+        {
+            // A secret is drawn as one dot per character typed.
+            let shown = if row.is_secret() {
+                theme::glyph(Symbol::CursorMasked).repeat(typed.chars().count())
+            } else {
+                text::elide_head(typed, usize::from(width.saturating_sub(1)))
+            };
+            frame.render_widget(
+                Paragraph::new(crate::ui::widget::Field::new(&shown, "").line()),
+                at,
+            );
+        } else {
+            let parts = control.render(
+                frame,
+                at,
+                marked,
+                Lit {
+                    previous: lit(&Hit::ExtensionPreferenceStep {
+                        index,
+                        forward: false,
+                    }),
+                    value: lit(&Hit::ExtensionPreferenceValue(index)),
+                    next: lit(&Hit::ExtensionPreferenceStep {
+                        index,
+                        forward: true,
+                    }),
+                },
+            );
+            // The control's parts before the row, so a click on one is
+            // not taken for choosing the row.
+            if let Some(previous) = parts.previous {
+                hits.push((
+                    previous,
+                    Hit::ExtensionPreferenceStep {
+                        index,
+                        forward: false,
+                    },
+                ));
+            }
+            if let Some(next) = parts.next {
+                hits.push((
+                    next,
+                    Hit::ExtensionPreferenceStep {
+                        index,
+                        forward: true,
+                    },
+                ));
+            }
+            hits.push((parts.value, Hit::ExtensionPreferenceValue(index)));
+        }
+        hits.push((line, Hit::ExtensionPreferenceRow(index)));
+    }
+}
+
+/// What the keys do on the preference they are on, in the footer: what
+/// the arrows and Enter do to a row of its kind, and Esc back to the
+/// cards.
+pub(crate) fn preference_hints<'a>(
+    hints: crate::ui::widget::hint::Hints<'a>,
+    editor: &PreferencesEditor,
+) -> crate::ui::widget::hint::Hints<'a> {
+    use uze_keys::Action;
+    let Some(selected) = editor.rows.get(editor.selected) else {
+        return hints;
+    };
+    if editor.typing.is_some() {
+        return hints
+            .named(Action::Activate, "set")
+            .named(Action::Dismiss, "cancel");
+    }
+    let mut hints = hints;
+    if editor.rows.len() > 1 {
+        hints = hints.run(Action::SelectPrevious, Action::SelectNext, "move");
+    }
+    let (step, enter) = match selected.kind {
+        "number" => (Some("step"), "type"),
+        "choice" => (Some("choose"), "next"),
+        "toggle" => (None, "switch"),
+        _ => (None, "type"),
+    };
+    if let Some(step) = step {
+        hints = hints.run(Action::PreviousValue, Action::NextValue, step);
+    }
+    hints
+        .named(Action::Activate, enter)
+        .named(Action::Dismiss, "back")
+}
+
+/// A preference's value as the control that changes it.
+fn preference_control(row: &uze_application::PreferenceRow) -> crate::ui::widget::control::Control {
+    use crate::ui::widget::control::Control;
+    match row.kind {
+        "number" => Control::Stepper(row.said()),
+        "choice" => Control::Choice(row.said()),
+        "toggle" => Control::Toggle(row.value.as_bool().unwrap_or(false)),
+        _ if row.is_secret() => Control::Field {
+            text: row.said(),
+            quiet: row.value != serde_json::Value::Bool(true),
+        },
+        _ => {
+            let empty = row.value.as_str().is_none_or(str::is_empty);
+            Control::Field {
+                text: if empty {
+                    "empty".to_owned()
+                } else {
+                    row.said()
+                },
+                quiet: empty,
+            }
+        }
+    }
+}
+
+/// What `row` holds, as the detail and the typing step say it: its kind
+/// with its range, then its default (`A number from 1 to 90 · default
+/// 25`), or for a secret where it is kept.
+fn preference_meaning(row: &uze_application::PreferenceRow) -> String {
+    let kind = match row.kind {
+        "number" => match (row.min, row.max) {
+            (Some(min), Some(max)) => format!("A number from {min} to {max}"),
+            (Some(min), None) => format!("A number, {min} or more"),
+            (None, Some(max)) => format!("A number up to {max}"),
+            (None, None) => "A number".to_owned(),
+        },
+        "toggle" => "On or off".to_owned(),
+        "choice" => format!("One of {}", row.values.join(", ")),
+        "secret" => {
+            return format!(
+                "A secret, kept in {} and never shown again",
+                uze_application::secrets_kept_in()
+            );
+        }
+        _ => "Text".to_owned(),
+    };
+    let default = match &row.default {
+        serde_json::Value::Null => None,
+        serde_json::Value::Bool(on) => Some(if *on { "on" } else { "off" }.to_owned()),
+        serde_json::Value::String(text) if text.is_empty() => None,
+        serde_json::Value::String(text) => Some(text.clone()),
+        other => Some(other.to_string()),
+    };
+    match default {
+        Some(default) => format!("{kind} · default {default}"),
+        None => kind,
+    }
 }
