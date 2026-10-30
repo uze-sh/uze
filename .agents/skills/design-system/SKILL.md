@@ -200,10 +200,12 @@ on "cancel" must not save first.
 - A choice that rarely changes is a field prefilled with the last answer
   (`‹ Claude Code ›`, moved with `←` `→`), never a step of its own:
   the common case is the one question and Enter. Its arrows are its keys.
-- A field whose wrong value is unsafe, or invisible once the thing has
-  started (a new agent's launch overrides), is never prefilled from last
-  time: it opens empty, and the last values head a history under it, to
-  be taken back on purpose.
+- A new agent's launch overrides open on the selection the last new
+  agent on that harness launched with, checked, safety-weakening flags
+  included: the operator manages what they use, and a flag used on every
+  launch is never checked again by hand. Secret-looking variables stay
+  out, and the foot counts what the launch carries before any view of
+  the list is opened.
 - That history is a list of choices, one row per value, never per
   bundle of them: the overrides list holds each flag or variable once
   (`◉ --model opus ✕`), the ones added first, then the ones used lately,
