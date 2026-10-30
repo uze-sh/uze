@@ -221,7 +221,7 @@ fn seal(label: &'static str) -> Badge {
     }
 }
 
-/// `gsd-band · gsd@market`, and `· linked` when its author works on it
+/// `gsd@market/gsd-band`, and `· linked` when its author works on it
 /// here.
 fn identity_caption(summary: &uze_application::DeclaredExtensionSummary) -> String {
     if summary.linked {

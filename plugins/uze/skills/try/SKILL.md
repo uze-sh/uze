@@ -28,7 +28,7 @@ it. The person then opens the workspace.
    to <https://uze.sh>: installing uze is theirs to do.
 2. **The marketplace is there.** `uze market list`; with no marketplace
    named `uze`, run `uze market add uze-sh/uze`. Not the built-in
-   `uze-official`, which carries the same examples: a project cannot
+   `uze`, which carries the same examples: a project cannot
    declare a plugin from it, and the workspace offers a project only the
    extensions it declares.
 3. **Where.** The person's directory if they named one, else `~/uze-try`.

@@ -91,7 +91,7 @@ fn the_next_run_opens_on_the_screen_the_last_one_left() {
     let mut model = TuiModel::default();
     model.set_route(Route::Harnesses);
     model.drawer_width = Some(38);
-    model.plugin_market = Some("uze-official".to_owned());
+    model.plugin_market = Some("uze".to_owned());
 
     let layout = model.management_layout();
     assert_eq!(layout.route.as_deref(), Some("integrations"));
@@ -103,7 +103,7 @@ fn the_next_run_opens_on_the_screen_the_last_one_left() {
         Some(38),
         "a drawer stays the width it was dragged to"
     );
-    assert_eq!(model.plugin_market.as_deref(), Some("uze-official"));
+    assert_eq!(model.plugin_market.as_deref(), Some("uze"));
 
     let unknown = uze_application::ManagementLayout {
         route: Some("a screen this build does not have".to_owned()),

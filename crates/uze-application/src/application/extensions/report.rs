@@ -272,7 +272,7 @@ impl ExtensionReport {
         }
     }
 
-    /// `id · plugin@marketplace`, as every surface attributes it.
+    /// `plugin@marketplace/id`, as every surface attributes it.
     pub fn attribution(&self) -> String {
         self.identity().to_string()
     }
@@ -620,7 +620,7 @@ mod tests {
         let here = report_of(&world, Some(&world.checkout));
         assert_eq!(here.condition, ExtensionCondition::NeedsConsent);
         assert_eq!(here.grants, ["read:checkout"]);
-        assert_eq!(here.attribution(), "gsd-band · gsd@studio");
+        assert_eq!(here.attribution(), "gsd@studio/gsd-band");
         assert_eq!(here.name, "GSD");
 
         world
@@ -717,7 +717,7 @@ mod tests {
         assert!(offered(&world).is_empty(), "the project declares nothing");
 
         declare_the_plugin(&world);
-        assert_eq!(offered(&world), ["gsd-band · gsd@studio"]);
+        assert_eq!(offered(&world), ["gsd@studio/gsd-band"]);
 
         assert!(
             world

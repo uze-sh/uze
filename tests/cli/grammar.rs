@@ -629,7 +629,7 @@ fn status_m_inside_a_project_does_not_claim_there_is_none() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
     assert!(
-        stdout.contains("uze@uze-official") && !stdout.contains("no project here"),
+        stdout.contains("uze@uze") && !stdout.contains("no project here"),
         "got: {stdout}"
     );
 

@@ -119,10 +119,7 @@ fn the_gsd_band_is_found_in_the_working_tree_compiled_once_and_drawn_from_its_fi
     let (app, market) = installed_from_a_linked_marketplace(&env);
 
     let band = the_band(&app);
-    assert_eq!(
-        band.identity.to_string(),
-        format!("gsd-band · gsd@{MARKET}")
-    );
+    assert_eq!(band.identity.to_string(), format!("gsd@{MARKET}/gsd-band"));
     assert!(band.linked, "a linked marketplace's extension is watched");
     assert_eq!(
         canonical(&band.dir),

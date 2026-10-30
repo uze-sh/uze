@@ -63,8 +63,9 @@ pub(crate) fn load(home: &UzeHome) {
 /// its consent is filed under in `state/extensions.json` too
 /// (`plugin@marketplace/id`), so one extension has one id wherever the
 /// operator reads it. No built-in's id can collide with it: theirs carry
-/// neither `@` nor `/`. The attribution `id · plugin@marketplace` is what
-/// a surface draws, never a key.
+/// neither `@` nor `/`. The attribution a surface draws reads like it but
+/// drops an id its plugin already names (`focus@uze`), so it is never a
+/// key.
 pub(crate) fn declared_id(identity: &uze_application::ExtensionIdentity) -> String {
     uze_application::consent_key(identity)
 }

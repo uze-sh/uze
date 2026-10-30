@@ -342,7 +342,7 @@ on "cancel" must not save first.
   list to choose from (`Scope::Choose`), never a queue of dialogs; one
   toast says what was done (`3 extensions enabled`), never one each.
 - A consent names what it asks about in its title (`Allow Focus to
-  run?`), whose it is muted under it (`focus@uze-official`), one line of
+  run?`), whose it is muted under it (`focus@uze`), one line of
   where it runs, then what it asks for as the same two-column table
   the workspace's offer draws (`Dialog::table`): never a paragraph per
   grant.

@@ -164,10 +164,7 @@ mod tests {
         let installed = app.extensions().installed();
         assert_eq!(installed.len(), 1, "{installed:?}");
         let board = &installed[0];
-        assert_eq!(
-            board.identity.to_string(),
-            format!("board · {PLUGIN}@market")
-        );
+        assert_eq!(board.identity.to_string(), format!("{PLUGIN}@market/board"));
         assert!(!board.linked);
         let stored = app.package_by_name(PLUGIN).unwrap().root;
         assert_eq!(
@@ -224,7 +221,7 @@ mod tests {
         )
         .unwrap();
         let app = UzeApplication::new(home, Vec::new());
-        let board = format!("board · {PLUGIN}@market");
+        let board = format!("{PLUGIN}@market/board");
 
         let offered = app.marketplace().inspect_plugin("market", PLUGIN).unwrap();
         let said: Vec<String> = offered
@@ -286,10 +283,7 @@ mod tests {
             .iter()
             .map(ToString::to_string)
             .collect();
-        assert_eq!(
-            said,
-            vec!["gsd-band · gsd@market", "gsd-panel · gsd@market"]
-        );
+        assert_eq!(said, vec!["gsd@market/gsd-band", "gsd@market/gsd-panel"]);
         assert!(
             offered.capabilities.is_empty(),
             "{:?}",

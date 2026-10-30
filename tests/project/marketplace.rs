@@ -37,7 +37,7 @@ fn malformed_marketplace_is_reported_not_panicked_on() {
 
     // Registry still functional afterwards.
     let list = env.run_ok(uze_bin(), &["market", "list"]);
-    assert!(String::from_utf8_lossy(&list.stdout).contains("uze-official"));
+    assert!(String::from_utf8_lossy(&list.stdout).contains("uze"));
 }
 
 /// `agents.json` is not a compatibility alias: marketplace discovery has one

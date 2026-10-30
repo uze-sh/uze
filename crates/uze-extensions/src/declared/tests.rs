@@ -156,7 +156,7 @@ pub(super) fn extension(view: CompiledView) -> CompiledExtension {
     };
     CompiledExtension {
         identity: Identity {
-            marketplace: "luizfbalves".to_owned(),
+            marketplace: "market".to_owned(),
             plugin: "gsd".to_owned(),
             id: "gsd-band".to_owned(),
         },

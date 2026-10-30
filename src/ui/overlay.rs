@@ -604,14 +604,6 @@ pub(crate) fn programs_lines(
     body
 }
 
-/// `gsd@market` out of `gsd-band · gsd@market`: the title already names
-/// the extension.
-fn plugin_of(attribution: &str) -> &str {
-    attribution
-        .split_once(" · ")
-        .map_or(attribution, |(_, plugin)| plugin)
-}
-
 impl Confirmation {
     /// Whether this only explains, with one way out and nothing to agree to.
     fn is_notice(&self) -> bool {
@@ -723,7 +715,7 @@ impl Confirmation {
                         Tone::Caution,
                         "",
                         Some(Line::from(Span::styled(
-                            plugin_of(attribution).to_owned(),
+                            attribution.clone(),
                             theme::fg(Token::TextMuted),
                         ))),
                         "",

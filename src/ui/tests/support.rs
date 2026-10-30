@@ -75,14 +75,14 @@ pub(super) fn model_with_data() -> TuiModel {
     let mut model = model_with_plugins(&["one", "two"]);
     model.remembered.plugins[0].freshness = behind();
     model.remembered.marketplaces = vec![MarketplaceSummary {
-        name: "uze-official".to_owned(),
-        source: "embedded:uze-official".to_owned(),
+        name: "uze".to_owned(),
+        source: "embedded:uze".to_owned(),
         homepage: Some("https://github.com/uze-sh/uze".to_owned()),
         plugin_count: 1,
         linked_to: None,
     }];
     model.remembered.marketplace_plugins = vec![MarketplacePluginSummary {
-        marketplace: "uze-official".to_owned(),
+        marketplace: "uze".to_owned(),
         name: "flow".to_owned(),
         description: Some("A flow plugin".to_owned()),
         keywords: vec!["flow".to_owned()],
@@ -95,7 +95,7 @@ pub(super) fn model_with_data() -> TuiModel {
     // Renders the "Updated" badge branch on every route that shows plugin
     // rows, alongside the "Update available" one `plugins[0]` carries.
     model.remembered.update_badges = vec![crate::ui::model::UpdateBadge {
-        plugin: "flow@uze-official".to_owned(),
+        plugin: "flow@uze".to_owned(),
         seen_at: None,
     }];
     model.remembered.doctor = Some(DoctorReport {
@@ -234,9 +234,9 @@ pub(super) fn two_market_model() -> TuiModel {
         plugin_pane: PluginPane::Plugins,
         focus: Focus::Content,
         remembered: Remembered {
-            marketplaces: vec![registered("uze-official"), registered("ai")],
+            marketplaces: vec![registered("uze"), registered("ai")],
             marketplace_plugins: vec![
-                marketplace_plugin("uze-official", "uze", true),
+                marketplace_plugin("uze", "uze", true),
                 marketplace_plugin("ai", "git", true),
                 marketplace_plugin("ai", "env", false),
             ],

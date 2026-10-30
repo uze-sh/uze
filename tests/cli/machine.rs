@@ -983,7 +983,7 @@ fn setup_then_add_attaches_transparently_without_a_separate_sync_step() {
     );
     assert!(
         generated_root
-            .join("uze@uze-official/.claude-plugin/plugin.json")
+            .join("uze@uze/.claude-plugin/plugin.json")
             .is_file(),
         "the default uze package's generated Claude envelope should exist too"
     );
@@ -1238,10 +1238,7 @@ fn plugin_remove_uses_the_package_centric_application_flow() {
         .as_array()
         .unwrap()
         .clone();
-    let non_default: Vec<_> = plugins
-        .iter()
-        .filter(|p| p["id"] != "uze@uze-official")
-        .collect();
+    let non_default: Vec<_> = plugins.iter().filter(|p| p["id"] != "uze@uze").collect();
     assert!(
         non_default.is_empty(),
         "expected no non-default plugins after remove, got {plugins:?}"

@@ -412,7 +412,7 @@ pub(crate) fn render_row_menu(
 /// question in the product is asked in, centred in `area`, with the keys
 /// that answer it where the surface is open: `scope`. The caller puts the
 /// scrim behind it and its answers ahead of everything it covers.
-/// `attribution` names a third party's extension (`id · plugin@marketplace`)
+/// `attribution` names a third party's extension (`plugin@marketplace/id`)
 /// beside what it asks about: a question that may close a pane or delete
 /// a file says whose question it is.
 pub(crate) fn render_confirm(

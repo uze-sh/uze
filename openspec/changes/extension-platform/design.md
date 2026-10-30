@@ -972,7 +972,7 @@ GSD.
 
 | Reference | Recreates | Exercises | Tier |
 |---|---|---|---|
-| `gsd-band` | luizfbalves/claude-gsd-band | `band` (6 rows), composed segmented `progress`, `table` with `marks` and `pips`, `paths.changed`, `every`, `agent.prompt` of a native skill with `target: self` | declared |
+| `gsd-band` | a third-party Claude Code plugin | `band` (6 rows), composed segmented `progress`, `table` with `marks` and `pips`, `paths.changed`, `every`, `agent.prompt` of a native skill with `target: self` | declared |
 | `agents-hud` | claude-hud, ccstatusline | `status`, the `agents` source, `activity`, `elapsed`, `gauge`, `{pref.*}` | declared |
 | `flightdeck` | claude-flightdeck, opencode-agents-monitor | `view` and `section`, agent events with `deliver: each`, the `events` source, `tabs`, `table`, `focus_agent` | declared |
 | `gpu-meter` | opencode gpu-sidebar | `section`, `every`, `chart` sparkline over the store, `exec` | declared |

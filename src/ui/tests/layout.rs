@@ -62,7 +62,7 @@ fn every_overlay_renders_without_panicking() {
         Overlay::Confirm {
             kind: Confirmation::InstallPlugin {
                 name: "flow".to_owned(),
-                marketplace: "uze-official".to_owned(),
+                marketplace: "uze".to_owned(),
             },
             focus: None,
         },
@@ -81,7 +81,7 @@ fn every_overlay_renders_without_panicking() {
                 detail: "one -> mcp-server".to_owned(),
                 retry: TrustedRetry::Install {
                     name: "one".to_owned(),
-                    marketplace: "uze-official".to_owned(),
+                    marketplace: "uze".to_owned(),
                 },
             },
             focus: None,

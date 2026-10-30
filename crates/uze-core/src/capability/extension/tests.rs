@@ -67,7 +67,7 @@ Stack {
 
 fn identity(id: &str) -> Identity {
     Identity {
-        marketplace: "luizfbalves".into(),
+        marketplace: "market".into(),
         plugin: "gsd".into(),
         id: id.into(),
     }

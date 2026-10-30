@@ -266,7 +266,7 @@ scenes:
         pause: 1.0
       # The card's own line: the tab strip's `Deck` chip sits above it,
       # outside the modal.
-      - click: "deck · deck@studio"
+      - click: "deck@studio"
         say: choose the extension, which its drawer then describes
         expect: 'Show each phase''s name {2,}off {2,}on'
         expect_timeout: 10

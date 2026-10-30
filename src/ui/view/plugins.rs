@@ -2,7 +2,7 @@
 //!
 //! The agentic side of the product: skills, agents, MCP — everything
 //! installable from a marketplace. One tree on the left: every
-//! marketplace is a group (the embedded `uze-official` snapshot as `uze`,
+//! marketplace is a group (the embedded `uze` snapshot among them,
 //! and a `local` group for ad-hoc installs no catalogue knows about, so a
 //! direct install never disappears from the TUI), its plugins under it,
 //! and under an unfolded plugin its resources by kind, the extensions it
@@ -150,16 +150,6 @@ impl Screen<'_> {
                 .plugin(*position)
                 .map(|plugin| plugin.marketplace.as_str()),
         }
-    }
-}
-
-/// The group name as rendered: "uze-official" reads oddly right above a
-/// child plugin that's *also* named "uze" — the source beside it already
-/// says what the suffix did.
-fn group_display_name(marketplace: &str) -> &str {
-    match marketplace {
-        "uze-official" => "uze",
-        other => other,
     }
 }
 
@@ -640,7 +630,7 @@ fn market_line(
             MARKET_INDENT,
             vec![
                 Span::styled(
-                    group_display_name(market).to_owned(),
+                    market.to_owned(),
                     name_style(selected, resting).add_modifier(Modifier::BOLD),
                 ),
                 Span::raw("  "),
@@ -1216,7 +1206,7 @@ fn market_detail(screen: &Screen<'_>, market: &str) -> Detail {
     Detail {
         kind: kind.to_owned(),
         status,
-        title: group_display_name(market).to_owned(),
+        title: market.to_owned(),
         subtitle: None,
         description: Some(format!(
             "{} · {installed}/{} installed",
@@ -1301,19 +1291,15 @@ fn plugin_detail(model: &TuiModel, plugin: &MarketplacePluginSummary) -> Detail 
         }
     }
     Detail {
-        kind: format!("plugin · {}", group_display_name(&plugin.marketplace)),
+        kind: format!("plugin · {}", plugin.marketplace),
         status: plugin_status(model, plugin),
         title: plugin.name.clone(),
         subtitle: None,
         description: plugin.description.clone(),
         tags: (!plugin.keywords.is_empty()).then(|| plugin.keywords.join(", ")),
         fields,
-        update: (plugin.installed && plugin.freshness.behind()).then(|| {
-            format!(
-                "new revision from {}",
-                group_display_name(&plugin.marketplace)
-            )
-        }),
+        update: (plugin.installed && plugin.freshness.behind())
+            .then(|| format!("new revision from {}", plugin.marketplace)),
         offers: plugin.offers(),
     }
 }
@@ -1368,12 +1354,8 @@ fn resource_detail(plugin: &MarketplacePluginSummary, resource: &PluginCapabilit
         description: None,
         tags: None,
         fields: Vec::new(),
-        update: (plugin.installed && plugin.freshness.behind()).then(|| {
-            format!(
-                "new revision from {}",
-                group_display_name(&plugin.marketplace)
-            )
-        }),
+        update: (plugin.installed && plugin.freshness.behind())
+            .then(|| format!("new revision from {}", plugin.marketplace)),
         // Its plugin's actions, labelled as the plugin's row labels them:
         // the panel above already names which plugin they are about.
         offers: plugin.offers(),
@@ -1425,12 +1407,8 @@ fn extension_detail(
             })
             .into_iter()
             .collect(),
-        update: (plugin.installed && plugin.freshness.behind()).then(|| {
-            format!(
-                "new revision from {}",
-                group_display_name(&plugin.marketplace)
-            )
-        }),
+        update: (plugin.installed && plugin.freshness.behind())
+            .then(|| format!("new revision from {}", plugin.marketplace)),
         offers: plugin.offers(),
     }
 }

@@ -13,7 +13,7 @@ chord is free.
 - **THEN** the action is offered by pointer and in the action index without that key, and `uze doctor` names the collision
 
 #### Scenario: The operator rebinds an extension action
-- **WHEN** `keys.json` binds `r` to `ext.gsd@luizfbalves/gsd-band.refresh`
+- **WHEN** `keys.json` binds `r` to `ext.gsd@market/gsd-band.refresh`
 - **THEN** `r` runs that action while the `gsd-band` surface is in front, and the footer shows `r`
 
 ### Requirement: A conflict drops one binding, never the keymap

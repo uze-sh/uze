@@ -41,7 +41,7 @@ pub const MANIFEST_FILE_NAME: &str = "agents.yaml";
 /// project chose, so a plugin may name it with no `marketplaces:` entry
 /// behind it — and an entry claiming the name is refused, since the only
 /// thing it could express is shadowing the built-in one.
-pub const BUILT_IN_MARKETPLACE: &str = "uze-official";
+pub const BUILT_IN_MARKETPLACE: &str = "uze";
 
 /// The manifest as declared. Every field is optional: a project that
 /// declares only a workspace policy is as valid as one that declares only

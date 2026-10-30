@@ -109,9 +109,15 @@ pub struct Identity {
 }
 
 impl std::fmt::Display for Identity {
-    /// `id · plugin@marketplace`, the attribution the host draws.
+    /// The attribution the host draws, as short as says whose it is:
+    /// `focus@uze` for an extension named as its plugin, and
+    /// `gsd@market/gsd-band` for one of several a plugin carries.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} · {}@{}", self.id, self.plugin, self.marketplace)
+        write!(f, "{}@{}", self.plugin, self.marketplace)?;
+        if self.id != self.plugin {
+            write!(f, "/{}", self.id)?;
+        }
+        Ok(())
     }
 }
 
@@ -130,6 +136,17 @@ mod tests {
     }
 
     #[test]
+    fn an_identity_reads_as_short_as_says_whose_it_is() {
+        let identity = |plugin: &str, id: &str| Identity {
+            marketplace: "uze".into(),
+            plugin: plugin.into(),
+            id: id.into(),
+        };
+        assert_eq!(identity("focus", "focus").to_string(), "focus@uze");
+        assert_eq!(identity("gsd", "gsd-band").to_string(), "gsd@uze/gsd-band");
+    }
+
+    #[test]
     fn an_id_is_at_most_thirty_two_characters() {
         assert!(is_valid_id(&"a".repeat(ID_MAX)));
         assert!(!is_valid_id(&"a".repeat(ID_MAX + 1)));
@@ -140,15 +157,5 @@ mod tests {
         for id in ["code", "architect", "spec", "timeline", "uze"] {
             assert!(RESERVED_IDS.contains(&id), "{id}");
         }
-    }
-
-    #[test]
-    fn identity_reads_as_the_attribution() {
-        let identity = Identity {
-            marketplace: "luizfbalves".into(),
-            plugin: "gsd".into(),
-            id: "gsd-band".into(),
-        };
-        assert_eq!(identity.to_string(), "gsd-band · gsd@luizfbalves");
     }
 }

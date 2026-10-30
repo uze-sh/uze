@@ -1068,15 +1068,7 @@ mod tests {
 
     #[test]
     fn a_name_is_lowercase_kebab_case_of_at_most_64_characters() {
-        for valid in [
-            "a",
-            "git",
-            "uze-official",
-            "x2",
-            "2x",
-            "a-b-c",
-            &"a".repeat(64),
-        ] {
+        for valid in ["a", "git", "uze", "x2", "2x", "a-b-c", &"a".repeat(64)] {
             assert!(is_valid_package_name(valid), "{valid} should hold");
         }
         for invalid in [

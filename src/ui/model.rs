@@ -27,7 +27,7 @@ use super::view::health::{Alert, actionable_alerts};
 pub(crate) enum Route {
     Overview,
     /// The agentic side of the product: skills, agents, MCP — everything
-    /// installable from a marketplace (the embedded `uze-official` snapshot
+    /// installable from a marketplace (the embedded `uze` snapshot
     /// included). Browse the catalog, install, update, remove.
     Plugins,
     /// The tool side: extensions of the workspace itself, the official

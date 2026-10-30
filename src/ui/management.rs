@@ -709,7 +709,7 @@ mod tests {
         model.route = Route::Keys;
         assert_eq!(activate_label(&model).as_deref(), Some("change key"));
         model.route = Route::Plugins;
-        model.select_plugin_market(Some("uze-official".to_owned()));
+        model.select_plugin_market(Some("uze".to_owned()));
         assert_eq!(
             activate_label(&model).as_deref(),
             Some("open"),

@@ -1284,7 +1284,7 @@ impl WorkspaceModel {
     }
 
     /// Who a third party's surface in `slot` is, as every surface of it
-    /// is attributed (`id · plugin@marketplace`); `None` for a built-in.
+    /// is attributed (`plugin@marketplace/id`); `None` for a built-in.
     pub(super) fn attribution_of(&self, slot: Option<SlotId>) -> Option<String> {
         let identity = self.remembered.declared.slot(slot?)?.owner.declared()?;
         Some(crate::ui::extension_view::tree::attribution(identity))

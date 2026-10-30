@@ -161,10 +161,7 @@ fn a_declared_extension_is_listed_after_the_built_ins_with_whose_it_is() {
     let rows = super::support::buffer_rows(&terminal);
     let screen = rows.join("\n");
     assert!(screen.contains("1 from plugins"), "{screen}");
-    assert!(
-        screen.contains("gsd-band · gsd@market · linked"),
-        "{screen}"
-    );
+    assert!(screen.contains("gsd@market/gsd-band · linked"), "{screen}");
     assert!(screen.contains("Board · view"), "the drawer: {screen}");
     assert!(screen.contains("Band · sidebar section"), "{screen}");
     assert!(!screen.contains("last compile"), "{screen}");
@@ -219,7 +216,7 @@ fn a_declared_extension_that_failed_says_so_on_its_card_and_in_its_drawer() {
     let rows = super::support::buffer_rows(&terminal);
     assert!(
         rows.iter()
-            .any(|row| row.contains("gsd-band · gsd@market") && row.contains("Disabled")),
+            .any(|row| row.contains("gsd@market/gsd-band") && row.contains("Disabled")),
         "{rows:#?}"
     );
 }
@@ -365,7 +362,7 @@ fn an_extension_that_needs_consent_says_so_and_shows_its_grants() {
     assert!(
         screen
             .lines()
-            .any(|row| row.contains("gsd-band · gsd@market") && row.contains("Needs consent")),
+            .any(|row| row.contains("gsd@market/gsd-band") && row.contains("Needs consent")),
         "{screen}"
     );
     assert!(screen.contains("grants"), "{screen}");
@@ -496,7 +493,7 @@ fn a_held_extension_names_what_its_update_wants_and_asks_for_it() {
     assert!(
         screen
             .lines()
-            .any(|row| row.contains("gsd-band · gsd@market") && row.contains("Held")),
+            .any(|row| row.contains("gsd@market/gsd-band") && row.contains("Held")),
         "{screen}"
     );
     assert!(screen.contains("clipboard, not allowed yet"), "{screen}");
@@ -549,7 +546,7 @@ fn a_refused_checkout_is_the_reason_the_extension_runs_nothing() {
     assert!(
         screen
             .lines()
-            .any(|row| row.contains("gsd-band · gsd@market") && row.contains("Runs nothing here")),
+            .any(|row| row.contains("gsd@market/gsd-band") && row.contains("Runs nothing here")),
         "{screen}"
     );
     assert!(

@@ -39,7 +39,7 @@ fn up_and_down_walk_every_group_in_one_tree() {
     assert_eq!(model.plugin_pane, PluginPane::Markets);
     assert_eq!(
         model.plugin_market.as_deref(),
-        Some("uze-official"),
+        Some("uze"),
         "the first heading is as far up as it goes"
     );
 }
@@ -50,12 +50,12 @@ fn up_and_down_walk_every_group_in_one_tree() {
 #[test]
 fn left_and_right_walk_the_tree_and_a_plugins_resources() {
     let mut model = two_market_model();
-    model.select_plugin_market(Some("uze-official".to_owned()));
+    model.select_plugin_market(Some("uze".to_owned()));
 
     model.act(uze_keys::Action::FocusContent);
     assert_eq!(model.plugin_pane, PluginPane::Plugins);
     model.act(uze_keys::Action::FocusContent);
-    assert!(model.expanded_plugins.contains("uze@uze-official"));
+    assert!(model.expanded_plugins.contains("uze@uze"));
 
     model.act(uze_keys::Action::FocusSidebar);
     assert!(
@@ -64,7 +64,7 @@ fn left_and_right_walk_the_tree_and_a_plugins_resources() {
     );
     model.act(uze_keys::Action::FocusSidebar);
     assert_eq!(model.plugin_pane, PluginPane::Markets);
-    assert_eq!(model.plugin_market.as_deref(), Some("uze-official"));
+    assert_eq!(model.plugin_market.as_deref(), Some("uze"));
     model.act(uze_keys::Action::FocusSidebar);
     assert_eq!(model.focus, Focus::Sidebar);
 }
@@ -87,7 +87,7 @@ fn removing_on_the_rail_asks_about_the_marketplace() {
     );
 
     model.close_overlay();
-    model.plugin_market = Some("uze-official".to_owned());
+    model.plugin_market = Some("uze".to_owned());
     model.act(uze_keys::Action::RemovePlugin);
     assert_eq!(model.overlay, Overlay::None);
 }
@@ -160,14 +160,14 @@ fn the_source_card_shows_the_marketplace_link_and_offers_to_open_it() {
     let mut model = model_with_plugins(&["one"]);
     model.route = Route::Plugins;
     model.remembered.marketplaces = vec![MarketplaceSummary {
-        name: "uze-official".to_owned(),
-        source: "embedded:uze-official".to_owned(),
+        name: "uze".to_owned(),
+        source: "embedded:uze".to_owned(),
         homepage: Some("https://github.com/uze-sh/uze".to_owned()),
         plugin_count: 1,
         linked_to: None,
     }];
     model.remembered.marketplace_plugins = vec![MarketplacePluginSummary {
-        marketplace: "uze-official".to_owned(),
+        marketplace: "uze".to_owned(),
         name: "flow".to_owned(),
         description: Some("A flow plugin".to_owned()),
         keywords: Vec::new(),
@@ -178,7 +178,7 @@ fn the_source_card_shows_the_marketplace_link_and_offers_to_open_it() {
         is_default: true,
     }];
 
-    model.select_plugin_market(Some("uze-official".to_owned()));
+    model.select_plugin_market(Some("uze".to_owned()));
     let (terminal, hits) = drawn_at(&model, 160, 40);
     model.hits = hits;
     let rows = buffer_rows(&terminal);
@@ -191,7 +191,7 @@ fn the_source_card_shows_the_marketplace_link_and_offers_to_open_it() {
     let rect = model
         .hits
         .iter()
-        .find(|(_, hit)| matches!(hit, Hit::OpenLink(name) if name == "uze-official"))
+        .find(|(_, hit)| matches!(hit, Hit::OpenLink(name) if name == "uze"))
         .map(|(rect, _)| *rect)
         .expect("the address is a target of its own");
     assert!(
@@ -215,14 +215,14 @@ fn the_source_link_is_clickable_on_the_row_it_is_drawn_on() {
     let mut model = model_with_plugins(&["one"]);
     model.route = Route::Plugins;
     model.remembered.marketplaces = vec![MarketplaceSummary {
-        name: "uze-official".to_owned(),
-        source: "embedded:uze-official".to_owned(),
+        name: "uze".to_owned(),
+        source: "embedded:uze".to_owned(),
         homepage: Some("https://github.com/uze-sh/uze".to_owned()),
         plugin_count: 1,
         linked_to: None,
     }];
     model.remembered.marketplace_plugins = vec![MarketplacePluginSummary {
-        marketplace: "uze-official".to_owned(),
+        marketplace: "uze".to_owned(),
         name: "flow".to_owned(),
         description: Some(
             "Makes this project's instructions portable across every harness \
@@ -238,7 +238,7 @@ fn the_source_link_is_clickable_on_the_row_it_is_drawn_on() {
         is_default: true,
     }];
 
-    model.select_plugin_market(Some("uze-official".to_owned()));
+    model.select_plugin_market(Some("uze".to_owned()));
     let (terminal, hits) = drawn_at(&model, 160, 40);
     model.hits = hits;
 
@@ -250,7 +250,7 @@ fn the_source_link_is_clickable_on_the_row_it_is_drawn_on() {
     let rect = model
         .hits
         .iter()
-        .find(|(_, hit)| matches!(hit, Hit::OpenLink(name) if name == "uze-official"))
+        .find(|(_, hit)| matches!(hit, Hit::OpenLink(name) if name == "uze"))
         .map(|(rect, _)| *rect)
         .expect("the address is a target of its own");
     assert_eq!(
@@ -271,14 +271,14 @@ fn the_source_link_lights_up_only_under_the_pointer() {
     let mut model = model_with_plugins(&["one"]);
     model.route = Route::Plugins;
     model.remembered.marketplaces = vec![MarketplaceSummary {
-        name: "uze-official".to_owned(),
-        source: "embedded:uze-official".to_owned(),
+        name: "uze".to_owned(),
+        source: "embedded:uze".to_owned(),
         homepage: Some("https://github.com/uze-sh/uze".to_owned()),
         plugin_count: 1,
         linked_to: None,
     }];
     model.remembered.marketplace_plugins = vec![MarketplacePluginSummary {
-        marketplace: "uze-official".to_owned(),
+        marketplace: "uze".to_owned(),
         name: "flow".to_owned(),
         description: Some("A flow plugin".to_owned()),
         keywords: Vec::new(),
@@ -289,13 +289,13 @@ fn the_source_link_lights_up_only_under_the_pointer() {
         is_default: true,
     }];
 
-    model.select_plugin_market(Some("uze-official".to_owned()));
+    model.select_plugin_market(Some("uze".to_owned()));
     let (_terminal, hits) = drawn_at(&model, 160, 40);
     model.hits = hits;
     let rect = model
         .hits
         .iter()
-        .find(|(_, hit)| matches!(hit, Hit::OpenLink(name) if name == "uze-official"))
+        .find(|(_, hit)| matches!(hit, Hit::OpenLink(name) if name == "uze"))
         .map(|(rect, _)| *rect)
         .expect("the address is a target of its own");
 
@@ -431,9 +431,9 @@ fn every_row_of_a_marketplace_card_answers_a_click() {
 fn the_marketplace_opens_on_its_first_marketplace_until_something_is_chosen() {
     let mut first = TuiModel::recall(
         Some(Remembered {
-            marketplaces: vec![registered("uze-official"), registered("ai")],
+            marketplaces: vec![registered("uze"), registered("ai")],
             marketplace_plugins: vec![
-                marketplace_plugin("uze-official", "uze", true),
+                marketplace_plugin("uze", "uze", true),
                 marketplace_plugin("ai", "git", true),
             ],
             ..TuiModel::default().remembered
@@ -444,7 +444,7 @@ fn the_marketplace_opens_on_its_first_marketplace_until_something_is_chosen() {
     first.focus = Focus::Content;
     assert_eq!(
         first.plugin_tree_cursor(),
-        crate::ui::model::PluginTreeRow::Market("uze-official".to_owned()),
+        crate::ui::model::PluginTreeRow::Market("uze".to_owned()),
         "nothing chosen yet: the first marketplace"
     );
     assert!(first.selected_market_summary().is_some(), "and its panel");

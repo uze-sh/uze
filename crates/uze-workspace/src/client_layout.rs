@@ -198,7 +198,7 @@ mod tests {
             management: ManagementLayout {
                 route: Some("plugins".to_owned()),
                 drawer_width: Some(52),
-                plugin_market: Some("uze-official".to_owned()),
+                plugin_market: Some("uze".to_owned()),
                 ..ManagementLayout::default()
             },
             first_steps: FirstStepsLayout {

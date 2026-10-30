@@ -684,7 +684,7 @@ impl Marketplace<'_> {
     }
 
     /// Every plugin from every marketplace this Store knows about — the
-    /// embedded `uze-official` snapshot plus every marketplace registered
+    /// embedded `uze` snapshot plus every marketplace registered
     /// via `marketplace add` (`uze_core::state::marketplace_list`). A
     /// marketplace whose manifest can no longer be read (moved/deleted
     /// source) is skipped rather than failing the whole listing, mirroring

@@ -51,7 +51,7 @@ scenes:
       - dir: "{uze_home}/cache"
         exists: true
         about: state, store and cache are created on demand
-      - file: "{uze_home}/store/plugins/uze-official/uze/plugin.json"
+      - file: "{uze_home}/store/plugins/uze/uze/plugin.json"
         exists: true
         about: and the official plugin is seeded, so the machine is never empty of UZE itself
       - file: "{home}/.config/opencode/skills/uze:init/SKILL.md"

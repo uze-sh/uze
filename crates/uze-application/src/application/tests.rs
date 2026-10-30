@@ -1730,7 +1730,7 @@ fn bootstrap_installs_exactly_the_default_policy_and_is_idempotent() {
         .collect();
     let expected: Vec<String> = bootstrap::DEFAULT_PLUGIN_IDS
         .iter()
-        .map(|name| format!("{name}@uze-official"))
+        .map(|name| format!("{name}@uze"))
         .collect();
     assert_eq!(installed, expected);
 
@@ -1801,11 +1801,11 @@ fn existing_receipts_survive_repeated_bootstrap_unchanged() {
         })],
     );
     app.ensure_default_plugins().unwrap();
-    let before = state::receipts(&home, Some("uze@uze-official")).unwrap();
+    let before = state::receipts(&home, Some("uze@uze")).unwrap();
     assert!(!before.is_empty());
 
     app.ensure_default_plugins().unwrap();
-    let after = state::receipts(&home, Some("uze@uze-official")).unwrap();
+    let after = state::receipts(&home, Some("uze@uze")).unwrap();
     assert_eq!(before, after);
     fs::remove_dir_all(root).unwrap();
 }
@@ -1898,7 +1898,7 @@ fn auto_update_applies_a_pending_official_snapshot_update() {
     let outcomes = app.plugins().auto_update();
     assert_eq!(outcomes.len(), 1, "one pending update, got: {outcomes:?}");
     assert!(outcomes[0].applied, "expected applied, got: {outcomes:?}");
-    assert_eq!(outcomes[0].plugin, "uze@uze-official");
+    assert_eq!(outcomes[0].plugin, "uze@uze");
 
     assert_eq!(fs::read_to_string(&manifest).unwrap(), pristine);
     assert_eq!(
@@ -1949,13 +1949,12 @@ fn official_embedded_plugin_is_protected_from_remove_but_allows_update() {
     let home = UzeHome::at(&root);
     let app = UzeApplication::new(home, Vec::new());
     app.marketplace()
-        .install_plugin("uze@uze-official", &uze_core::trust::AlwaysTrust)
+        .install_plugin("uze@uze", &uze_core::trust::AlwaysTrust)
         .unwrap();
 
     let err = app.plugins().remove("uze").unwrap_err();
     assert!(
-        err.to_string()
-            .contains("`uze@uze-official` is bundled with uze"),
+        err.to_string().contains("`uze@uze` is bundled with uze"),
         "expected protected error, got: {err}"
     );
 
@@ -1978,7 +1977,7 @@ fn an_official_plugin_uze_does_not_bundle_is_removed_and_stays_removed() {
     let root = uze_testkit::temp::scratch("official-unbundled-remove");
     let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
     app.marketplace()
-        .install_plugin("focus@uze-official", &uze_core::trust::AlwaysTrust)
+        .install_plugin("focus@uze", &uze_core::trust::AlwaysTrust)
         .unwrap();
 
     app.plugins().remove("focus").unwrap();

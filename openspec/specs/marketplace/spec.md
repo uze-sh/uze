@@ -90,11 +90,11 @@ The system SHALL list registered marketplaces, and `market remove <name>` SHALL 
 - **THEN** registry entry is removed
 
 ### Requirement: Embedded official marketplace is pre-registered
-The system SHALL treat the embedded official marketplace (`plugins/uze`, `marketplace.json` at repo root) as a pre-registered marketplace `uze-official` without requiring `marketplace add`.
+The system SHALL treat the embedded official marketplace (`plugins/uze`, `marketplace.json` at repo root) as a pre-registered marketplace `uze` without requiring `marketplace add`.
 
 #### Scenario: Official marketplace available
 - **WHEN** system starts with no registry
-- **THEN** `uze marketplace list` shows `uze-official` and `uze plugin list` can resolve `uze@uze-official`
+- **THEN** `uze marketplace list` shows `uze` and `uze plugin list` can resolve `uze@uze`
 
 ### Requirement: A marketplace's catalogue is served from a cache
 What a marketplace registered from a Git source offers SHALL be read from

@@ -122,7 +122,7 @@ fn a_project_offers_its_extensions_once_with_their_grants() {
             .iter()
             .map(|offer| offer.attribution())
             .collect::<Vec<_>>(),
-        ["gsd-band · gsd@studio"],
+        ["gsd@studio/gsd-band"],
         "a fixtures-only extension waits for nothing"
     );
     let mut driven = driven(WorkspaceModel::default(), &world.home);
