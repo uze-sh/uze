@@ -761,7 +761,7 @@ fn click(model: &mut TuiModel, target: &Hit) -> Intent {
 fn preferences_are_listed_and_set_from_the_keyboard() {
     let mut model = with_preferences();
     let screen = screen_of(&model);
-    assert!(screen.contains("preferences"), "{screen}");
+    assert!(screen.contains("Preferences ─"), "a ruled group: {screen}");
     let row_with = |label: &str, value: &str| {
         screen
             .lines()

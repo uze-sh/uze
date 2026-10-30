@@ -575,8 +575,12 @@ fn standing_lines(
     let mut preference_rows = Vec::new();
     let preferences = editing.map_or(standing.preferences.as_slice(), |editor| &editor.rows);
     if !preferences.is_empty() {
+        // The settings form's group: twice the air above its heading, a
+        // ruled heading, then a line of air between its keys.
         grid.gap();
-        grid.lines.push(super::section_label("preferences"));
+        grid.gap();
+        grid.lines.push(form::heading("preferences", grid.width));
+        grid.gap();
         let label_width = preferences
             .iter()
             .map(|row| text::columns(&row.label) + 4)
@@ -587,6 +591,9 @@ fn standing_lines(
         let control_width =
             PREFERENCE_CONTROL.min(grid.width.saturating_sub(usize::from(label_width)));
         for (index, row) in preferences.iter().enumerate() {
+            if index > 0 {
+                grid.gap();
+            }
             let marked = editing.filter(|editor| editor.selected == index);
             let state = RowState::of(
                 marked.is_some(),
@@ -618,7 +625,8 @@ fn standing_lines(
             if row.is_secret() {
                 said.push_str(" · empty forgets it");
             }
-            // Under the labels, in their column.
+            // Under the labels, in their column, a line of air apart.
+            grid.gap();
             let indent = form::LABEL_INDENT;
             let mut folded = text::fold(&said, grid.width.saturating_sub(indent));
             folded.resize(PREFERENCE_DETAIL, String::new());

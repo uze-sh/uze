@@ -162,3 +162,27 @@ pub(crate) fn segment_width(options: &[&str], width: usize) -> usize {
         .unwrap_or(0);
     (width / options.len().max(1)).max(widest)
 }
+
+/// A group's heading, `title` with its first letter raised, then a rule
+/// to `width`: what parts one group of a form's keys from the next.
+pub(crate) fn heading(title: &str, width: usize) -> Line<'static> {
+    let mut letters = title.chars();
+    let title: String = letters
+        .next()
+        .map(|first| first.to_uppercase().chain(letters).collect())
+        .unwrap_or_default();
+    ruled(title, width)
+}
+
+/// [`heading`] for a title spelled as it is, such as a file's name.
+pub(crate) fn ruled(title: String, width: usize) -> Line<'static> {
+    let rule = width.saturating_sub(Line::from(title.as_str()).width() + 1);
+    Line::from(vec![
+        Span::styled(title, theme::fg_bold(Token::TextPrimary)),
+        Span::raw(" "),
+        Span::styled(
+            theme::glyph(Symbol::TreeDivider).repeat(rule),
+            theme::fg(Token::BorderFaint),
+        ),
+    ])
+}

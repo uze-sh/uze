@@ -371,7 +371,10 @@ on "cancel" must not save first.
   `❯` ahead of it, then the control from that column, never right-aligned
   against the edge: a number between raised `−` `+`, a toggle or a few
   choices side by side with the chosen one in the accent, a typed value
-  in a recessed box. Never a control of a screen's own.
+  in a recessed box. Never a control of a screen's own. A group stands
+  apart the settings way, never with a bar down its side: two blank
+  lines above it, a ruled heading (`form::heading`: `Preferences ───`),
+  a blank line, then its keys with a line of air between each.
 - An extension's preferences are that form in its drawer, never a dialog
   of their own: every part a click target from the start (a click on an
   option chooses it). The drawer's Preferences button, or a click on a

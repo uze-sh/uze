@@ -1579,26 +1579,16 @@ fn box_line(mut spans: Vec<Span<'static>>, width: usize) -> Vec<Span<'static>> {
 
 /// A group's heading: its name, then a rule to the edge of the form.
 fn group_heading(title: &str, width: usize) -> SectionLine {
-    let mut letters = title.chars();
-    let title: String = letters
-        .next()
-        .map(|first| first.to_uppercase().chain(letters).collect())
-        .unwrap_or_default();
-    ruled_heading(title, width)
+    SectionLine {
+        spans: form::heading(title, width).spans,
+        row: None,
+    }
 }
 
 /// [`group_heading`] for a title spelled as it is, such as a file's name.
 fn ruled_heading(title: String, width: usize) -> SectionLine {
-    let rule = width.saturating_sub(Line::from(title.as_str()).width() + 1);
     SectionLine {
-        spans: vec![
-            Span::styled(title, theme::fg_bold(Token::TextPrimary)),
-            Span::raw(" "),
-            Span::styled(
-                theme::glyph(Symbol::TreeDivider).repeat(rule),
-                theme::fg(Token::BorderFaint),
-            ),
-        ],
+        spans: form::ruled(title, width).spans,
         row: None,
     }
 }
