@@ -918,10 +918,8 @@ mod tests {
 
     #[test]
     fn an_undeclared_policy_is_the_built_in_default() {
-        let directory = std::env::temp_dir().join(format!("uze-manifest-{}", std::process::id()));
-        fs::create_dir_all(&directory).unwrap();
-        assert_eq!(policy(&directory).unwrap(), WorktreePolicy::default());
-        fs::remove_dir_all(&directory).ok();
+        let directory = uze_testkit::temp::TempDir::new("manifest");
+        assert_eq!(policy(directory.path()).unwrap(), WorktreePolicy::default());
     }
 
     #[test]
