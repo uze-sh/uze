@@ -125,15 +125,7 @@ fn the_overrides_segment_and_its_key_open_the_same_view() {
     let mut by_key = driven(by_key.model_take(), &by_key.home).on_a_roomy_terminal();
     let (_, rows) = popup_rows(&mut by_key);
     assert!(
-        rows[0].contains("new agent") && rows[0].contains("overrides"),
-        "{}",
-        rows.join("\n")
-    );
-    assert!(
-        !rows
-            .iter()
-            .any(|row| row.contains("overrides") && !row.contains("ctrl+f"))
-            || rows[0].contains("overrides"),
+        rows[1].contains("new agent") && rows[1].contains("overrides"),
         "{}",
         rows.join("\n")
     );
@@ -217,7 +209,7 @@ fn the_head_chooses_the_view_and_a_note_counts_the_overrides() {
     let last = rows.len() - 1;
     let all = rows.join("\n");
     assert!(
-        rows[0].contains("new agent") && rows[0].contains("overrides"),
+        rows[1].contains("new agent") && rows[1].contains("overrides"),
         "{all}"
     );
     assert!(
@@ -258,7 +250,7 @@ fn the_head_chooses_the_view_and_a_note_counts_the_overrides() {
     let all = view.join("\n");
     assert_eq!(view.len(), rows.len(), "the same height:\n{all}");
     assert!(
-        view[0].contains("new agent") && view[0].contains("overrides"),
+        view[1].contains("new agent") && view[1].contains("overrides"),
         "{all}"
     );
     assert!(!all.contains("filter directories"), "{all}");
@@ -1040,6 +1032,40 @@ fn a_flag_is_found_by_a_word_of_its_name() {
     );
 }
 
+/// A click on the line typed into leaves nothing marked in the list
+/// under it, on either view, so the keys are back on the line.
+#[test]
+fn a_click_on_the_line_leaves_nothing_marked() {
+    let mut popup = popup("overrides-line-click");
+    let mut driven = driven(popup.model_take(), &popup.home).on_a_roomy_terminal();
+    driven.frame();
+    driven.press_key(chord(Action::SelectNext, Scope::RootPicker));
+    assert!(step_of(&driven).picker.selection().is_some());
+    driven.frame();
+    let line = driven.hit(|hit| *hit == WorkspaceHit::PopupLine);
+    driven.press(line.x + 3, line.y);
+    assert!(
+        step_of(&driven).picker.selection().is_none(),
+        "the directory's"
+    );
+    assert!(
+        driven.attach.model.directory_step.is_some(),
+        "the popup stays"
+    );
+
+    open_by_key(&mut driven);
+    type_text(&mut driven, "--verbose");
+    driven.press_key(chord(Action::Activate, Scope::LaunchOverrides));
+    driven.press_key(chord(Action::SelectNext, Scope::LaunchOverrides));
+    let marked = |driven: &Driven<'_>| step_of(driven).overrides.as_ref().unwrap().marked;
+    assert!(marked(&driven).is_some());
+    driven.frame();
+    let line = driven.hit(|hit| *hit == WorkspaceHit::PopupLine);
+    driven.press(line.x + 3, line.y);
+    assert_eq!(marked(&driven), None, "the overrides'");
+    assert!(in_step(&driven));
+}
+
 /// Enter on an empty line with nothing marked starts the agent, with the
 /// entries the step holds.
 #[test]
@@ -1231,7 +1257,7 @@ fn long_values_are_cut_at_their_end_and_narrow_widths_hold() {
     driven.press_key(chord(Action::Activate, Scope::LaunchOverrides));
     let (_, rows) = popup_rows(&mut driven);
     assert!(
-        rows[0].contains("new agent") && rows[0].contains("overrides"),
+        rows[1].contains("new agent") && rows[1].contains("overrides"),
         "the segments are whole:\n{}",
         rows.join("\n")
     );

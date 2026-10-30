@@ -378,3 +378,6 @@
 > the list once unchecked, left out of the launch but there to check
 > again; only its `✕` (or Delete, or Backspace on an empty line for the
 > last one) takes it off the list.
+> D22 note (fifth pass): at the operator's word the views leave the top
+> border for the start of the harness's row, and the popup carries no
+> title; a click on a line typed into leaves nothing marked under it.

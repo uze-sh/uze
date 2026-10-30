@@ -1072,6 +1072,9 @@ pub(super) enum WorkspaceHit {
     /// keys' hint: on the overrides view those keys move the caret, and
     /// the arrows still change the harness there.
     HarnessArrow(isize),
+    /// The new agent popup's line typed into, on either view: a click on
+    /// it puts the keys back on the line, leaving nothing marked below.
+    PopupLine,
     /// One row of the open index, by position in it.
     ActionIndexEntry(usize),
     /// The release notes modal's own area: a click on it is reading, and

@@ -279,6 +279,14 @@ impl Attach<'_> {
                         self.directory_step_action(action)
                     }
                     Some(WorkspaceHit::HarnessArrow(step)) => self.cycle_popup_harness(step),
+                    Some(WorkspaceHit::PopupLine) => {
+                        if let Some(step) = self.model.directory_step.as_mut() {
+                            match step.overrides.as_mut() {
+                                Some(over) => over.marked = None,
+                                None => step.picker.unselect(),
+                            }
+                        }
+                    }
                     Some(
                         hit @ (WorkspaceHit::OverrideRow(_)
                         | WorkspaceHit::OverrideToggle(_)
@@ -1379,6 +1387,7 @@ impl Attach<'_> {
                 return self.act(action, viewport);
             }
             WorkspaceHit::HarnessArrow(step) => self.cycle_popup_harness(step),
+            WorkspaceHit::PopupLine => {}
             WorkspaceHit::DismissToast(index) => self.model.dismiss_toast(index),
             // The offer is answered and the message goes: leaving it up
             // would say the thing is still waiting on the reader.

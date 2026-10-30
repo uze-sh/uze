@@ -145,25 +145,26 @@ on "cancel" must not save first.
   an entry that asks before acting (`Discard…`). Two entries for one verb
   side by side (`Rename`, `Rename project`) become one that opens both.
 - A popover that holds more than one view of what it asks (the new
-  agent's `new agent · overrides`) names them on its top border, where its
-  title would be, the first view's name standing for the title
-  (`widget::segmented`, drawn with `Surface::title_line`), parted by the
-  separator glyph alone (`new agent · overrides`), closer than a hint
-  bar's keys. The one in front is in the accent and the rest held
-  back: colour alone tells them apart, never a ground, a weight or a
-  button's look; the held-back ones light under the pointer, in colour
-  alone. A click on one is the key that reaches it, through a target of
+  agent's `new agent · overrides`) names them at the start of its first
+  row (`widget::segmented`), standing for a title the popover then does
+  not carry, with the row's field (`‹ Claude Code ›`, unlabelled) against
+  its end; never on the border, where they read as part of what is
+  behind. The views are parted by the separator glyph alone, the one in
+  front in the accent and the rest held back and lit under the pointer:
+  colour alone tells them apart, never a ground, a weight or a button's
+  look. A click on one is the key that reaches it, through a target of
   its own (`WorkspaceHit::ViewAction`), so pointing at a view lights that
-  view and never the foot's hint for the same key. The
-  body under the border starts with its field, unlabelled against the
-  row's end (`‹ Claude Code ›`), drawn alike on every view so nothing
-  shifts when they switch, and changeable on every view (what a view
-  holds follows it), then a rule, then the view in front, every view in the same rows, so
+  view and never the foot's hint for the same key. The row is drawn
+  alike on every view so nothing shifts when they switch, and its field
+  is changeable on every view (what a view holds follows it); a rule
+  closes it, then the view in front, every view in the same rows, so
   switching never resizes it. What a view holds that the other should
   know is one muted line at the body's foot, with a row of air over and
   under it so it rests against neither the list nor the keys (`3 flags ·
   2 vars`), said only once there is something to say: with none, the
   rows stay air.
+- A click on a popover's line typed into puts the keys back on it:
+  nothing stays marked in the list under it.
 - Every line typed into in one popover looks the same: the typed text
   bright, the accent caret, a faint placeholder and a plain rule under
   it. A view's line never wears a lit underline the other's does not.

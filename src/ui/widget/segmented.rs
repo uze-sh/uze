@@ -4,9 +4,8 @@
 //!
 //! Not a [`tabs`](super::tabs) strip: a tab is a screen reached by its
 //! number, while a segment is a view of the same thing, two or three of
-//! them, named and nothing else. It is drawn as a line rather than into a
-//! rect so it can ride a surface's top border, where a dialog's title
-//! would stand.
+//! them, named and nothing else. It is drawn as spans rather than into a
+//! rect so it can share a row with what stands beside it.
 
 use ratatui::text::{Line, Span};
 use uze_theme::Token;

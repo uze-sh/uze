@@ -26,6 +26,7 @@ pub(super) fn render_overrides_step(
     let Some(over) = &step.overrides else { return };
     if let Some(rect) = rows.next(1) {
         render_line(frame, rect, over);
+        hits.push((rect, WorkspaceHit::PopupLine));
     }
     // The rule under the line, as under the directory's.
     if let Some(rect) = rows.next(1) {

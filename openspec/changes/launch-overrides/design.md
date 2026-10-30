@@ -305,26 +305,25 @@ Against the operator's mockup and the design-system rules:
   target), esc `back`, esc again closes. The popup's height is fixed when
   it opens as the larger of what the two steps need, so switching never
   resizes it.
-- **Two views, named on the top border:** `new agent · overrides` stand
-  where the title would be, the first one standing for it, parted by the
-  hint bar's separator, the one in front in the accent and the other held
-  back (colour only, no ground; the held-back one lit under the pointer,
-  through a hit target of its own, so pointing at it never lights the
-  foot's `ctrl+f` hint). Under the border
-  the harness row, `‹ Claude Code ›` unlabelled against its end, and a
-  rule, then the view in front:
-  `new agent` is the filter and the listing, `overrides` the line and
-  the list of choices, in the same rows, each line typed into in the
-  same look. At the body's foot, with air over and under it, one muted
-  line counts the overrides once there are any (`3 flags · 2 vars`, in
-  the warning hue when one gives something up); with none it says
-  nothing. A click on `overrides`, or `ctrl+f`, opens that view; a click
-  on `new agent`, or Esc, goes back. On `overrides` the arrow keys move the
-  caret, but the harness keeps its arrows, drawn alike, and a click on
-  one changes the harness there: the entries, the catalog and the entries
-  used lately follow it, each kept per harness. The popup is
-  52 columns with 8 to 12 listing rows; `esc close` gives way to `ctrl+f
-  overrides` in the foot.
+- **Two views, named on the harness's row:** `new agent · overrides`
+  stand at the start of the body's first row, in place of a title the
+  popup no longer carries, parted by the separator glyph, the one in
+  front in the accent and the other held back, lit under the pointer
+  through its own hit target (so the foot's `ctrl+f` hint never lights
+  with it). The harness `‹ Claude Code ›` stands unlabelled against the
+  same row's end, drawn alike on both views and changeable on both: a
+  click on an arrow on `overrides`, where the arrow keys move the caret,
+  changes the harness there, and the entries, the catalog and the
+  entries used lately follow it. A rule closes the row, then the view in
+  front: `new agent` is the filter and the listing, `overrides` the line
+  and the list of choices, in the same rows, each line typed into in the
+  same look; a click on a line leaves nothing marked under it. At the
+  body's foot, with air over and under it, one muted line counts the
+  overrides once there are any (`3 flags · 2 vars`, in the warning hue
+  when one gives something up). A click on `overrides`, or `ctrl+f`,
+  opens that view; a click on `new agent`, or Esc, goes back. The popup
+  is 52 columns with 8 to 12 listing rows; `esc close` gives way to
+  `ctrl+f overrides` in the foot.
 - **Not `ctrl+o`.** It is the Global `SwitchMode` and reaches Global even
   while a filter is typed into; `tab` is the picker's `Expand`, `←→` the
   harness. The new action's default chord is the operator's call.

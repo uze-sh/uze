@@ -59,14 +59,16 @@ fn popup_beside(area: Rect, anchor: Rect, width: u16, height: u16) -> Rect {
 fn new_agent_card(
     frame: &mut ratatui::Frame<'_>,
     popup: Rect,
-    views: Option<Line<'static>>,
+    titled: bool,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) -> Rect {
     frame.render_widget(Clear, popup);
     hits.push((popup, WorkspaceHit::NewAgentBody));
-    match views {
-        Some(views) => Surface::card().title_line(views),
-        None => Surface::card().title(" new agent "),
+    let card = Surface::card();
+    if titled {
+        card.title(" new agent ")
+    } else {
+        card
     }
     .render(frame, popup)
 }
@@ -119,10 +121,8 @@ pub(in crate::ui::orchestrator) fn render_directory_step(
     let popup = popup_beside(area, step.anchor, NEW_AGENT_POPUP_WIDTH, height);
     // The border's targets go in after the card's own, which covers the
     // whole popup and must not answer a click on them.
-    let mut on_border = Vec::new();
-    let views = card_views(model, step, popup, &mut on_border);
-    let inner = new_agent_card(frame, popup, Some(views), hits);
-    hits.extend(on_border);
+    // Untitled: the views named on the harness's row say what it is.
+    let inner = new_agent_card(frame, popup, false, hits);
     let (body, mut foot) = split_bottom(inner, NEW_AGENT_POPUP_FOOT);
     let (view, mut note) = split_bottom(body, OVERRIDES_NOTE);
     let mut rows = Rows::over(view);
@@ -169,15 +169,15 @@ const NEW_AGENT_SCOPES: [uze_keys::Scope; 2] =
 const OVERRIDES_SCOPES: [uze_keys::Scope; 2] =
     [uze_keys::Scope::Global, uze_keys::Scope::LaunchOverrides];
 
-/// The popup's top border: which of its views stands below, `new agent`
-/// (the directory) or `overrides`, where its title would be and standing
-/// for it, the one in front in the accent.
-fn card_views(
+/// Which of the popup's views stands below, `new agent` (the directory)
+/// or `overrides`, as spans from `row`'s start, the one in front in the
+/// accent. They stand for the popup's title, which it does not carry.
+fn views(
     model: &WorkspaceModel,
     step: &DirectoryStep,
-    popup: Rect,
+    row: Rect,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
-) -> Line<'static> {
+) -> Vec<Span<'static>> {
     let on_overrides = step.overrides.is_some();
     // Lit by pointing at the view itself, never at the foot's hint for
     // the same key: each answers the pointer on its own.
@@ -196,19 +196,19 @@ fn card_views(
         },
     ];
     let (views, targets) = segmented(&segments, usize::from(on_overrides));
-    // A title starts one column in, past the corner.
     for (at, width, action) in targets {
         hits.push((
-            Rect::new(popup.x + 1 + at, popup.y, width, 1),
+            Rect::new(row.x + at, row.y, width, 1),
             WorkspaceHit::ViewAction(action),
         ));
     }
-    views
+    views.spans
 }
 
-/// The harness the agent will run, on the body's first row against its
-/// end, unlabelled: its name and arrows say what it is. The same on both
-/// views, and changeable on both: the overrides follow the harness.
+/// The body's first row: the popup's views at its start, and against its
+/// end the harness the agent will run, unlabelled: its name and arrows
+/// say what it is. The same on both views, and changeable on both: the
+/// overrides follow the harness.
 fn render_harness_field(
     frame: &mut ratatui::Frame<'_>,
     rect: Rect,
@@ -236,7 +236,7 @@ fn render_harness_field(
     };
     let previous = arrow(Action::FocusPrevious, -1);
     let next = arrow(Action::FocusNext, 1);
-    let left = vec![picker_lead()];
+    let left = views(model, step, rect, hits);
     let right = match step.chosen_harness() {
         Some(option) => vec![
             Span::styled(
@@ -388,7 +388,7 @@ pub(in crate::ui::orchestrator) fn render_agent_picker(
     // Empty, it says so and offers the way out on a row of its own.
     let height = picker.options.len().max(2) as u16 + 2;
     let popup = popup_beside(area, anchor, content_width + 6, height);
-    let inner = new_agent_card(frame, popup, None, hits);
+    let inner = new_agent_card(frame, popup, true, hits);
 
     if picker.options.is_empty() {
         frame.render_widget(
@@ -894,7 +894,9 @@ fn render_root_picker(
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
     let picker = &step.picker;
-    render_query_row(frame, picker, rows);
+    if let Some(rect) = render_query_row(frame, picker, rows) {
+        hits.push((rect, WorkspaceHit::PopupLine));
+    }
     popup_rule(frame, rows);
     if picker.match_count() == 0 {
         if let Some(rect) = rows.next(rows.remaining()) {
@@ -1048,8 +1050,8 @@ pub(super) fn render_query_row(
     frame: &mut ratatui::Frame<'_>,
     picker: &RootPicker,
     rows: &mut Rows,
-) {
-    let Some(rect) = rows.next(1) else { return };
+) -> Option<Rect> {
+    let rect = rows.next(1)?;
     let needle = picker.input();
     // Where the typing starts from, ahead of it: a path typed out from `~`
     // or the root leaves it behind, and says the whole of itself.
@@ -1103,6 +1105,7 @@ pub(super) fn render_query_row(
     }
     let right = vec![Span::styled(count, theme::fg(Token::TextFaint))];
     frame.render_widget(Paragraph::new(spread(rect, left, right)), rect);
+    Some(rect)
 }
 
 pub(super) fn chip_state(model: &WorkspaceModel, hit: WorkspaceHit) -> ChipState {
