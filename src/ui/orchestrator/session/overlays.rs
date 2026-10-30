@@ -249,6 +249,25 @@ impl Attach<'_> {
         );
     }
 
+    /// Asks the new agent's popup for its harness's last selection again,
+    /// unless the operator's entries there are already settled: one read
+    /// while a placement was out was not seeded, since the record may not
+    /// have held that placement's selection yet.
+    pub(in crate::ui::orchestrator) fn ask_last_selection_again(&mut self) {
+        let Some(step) = self.model.directory_step.as_mut() else {
+            return;
+        };
+        let unsettled = step
+            .recent_question()
+            .is_some_and(|(harness, _)| !step.settled.contains(&harness));
+        if step.restart.is_some() || !unsettled {
+            return;
+        }
+        step.recent = None;
+        step.recent_asked = None;
+        self.ask_recent_overrides();
+    }
+
     /// Forgets an entry used before on the harness in front, then reads
     /// the entries again, so the list is what is on disk.
     pub(super) fn forget_recent_override(&mut self, words: Vec<String>) {
@@ -280,14 +299,10 @@ impl Attach<'_> {
             };
             // The last selection is the harness's wherever the popup
             // stands, so a directory moved to before the answer keeps it.
-            // One launched this run is newer than the record can be.
-            let last = answer.last.as_ref().map(|recorded| {
-                self.model
-                    .launched_selections
-                    .get(&answer.harness)
-                    .unwrap_or(recorded)
-            });
-            if let Some(last) = last
+            // While a placement is out, the record may not hold its
+            // selection yet; the read is asked again once it answers.
+            if let Some(last) = &answer.last
+                && !self.model.placement_pending
                 && step.asked_by(&answer)
                 && step
                     .recent_question()

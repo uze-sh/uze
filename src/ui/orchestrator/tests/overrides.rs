@@ -1552,65 +1552,76 @@ fn each_harness_opens_on_its_own_last_selection() {
     assert!(!step.remembers_selection());
 }
 
-/// A popup opened again before the last launch's placement answered reads
-/// the record from before it: the selection launched this run is the one
-/// it opens on, not the stale one the read brings.
+/// A read answered while a placement is out is not seeded: the record may
+/// not hold that placement's selection yet, and the popup, whose Enter
+/// waits on the placement anyway, asks again once it answers.
 #[test]
-fn a_popup_opened_before_the_record_caught_up_opens_on_this_runs_launch() {
-    let mut popup = popup("overrides-last-this-run");
+fn a_selection_read_while_a_placement_is_out_is_asked_again() {
+    let mut popup = popup("overrides-last-pending");
     let harness = harness_in_front(&popup);
-    let stale = vec![words_of("--verbose"), words_of("DEBUG=1")];
-    let step = popup.model.directory_step.as_mut().unwrap();
-    step.seed_last(&harness, &stale);
-    step.open_overrides();
-    step.toggle_choice(0);
-    let fresh = popup.model.directory_step.take();
     let mut driven = driven(popup.model_take(), &popup.home);
-    driven.attach.model.directory_step = fresh;
-    driven.press_key(chord(Action::Dismiss, Scope::LaunchOverrides));
-    driven.press_key(chord(Action::Activate, Scope::RootPicker));
-    assert!(driven.attach.model.directory_step.is_none(), "launched");
-
-    let mut again = self::popup("overrides-last-this-run-again");
-    driven.attach.model.directory_step = again.model.directory_step.take();
-    let sender = &driven.attach.channels.recent_overrides.sender;
-    sender
-        .send(RecentOverridesRead {
-            harness: harness.clone(),
-            root: PathBuf::from("/anywhere"),
-            restarting: None,
-            entries: Vec::new(),
-            recorded: None,
-            last: Some(stale),
-        })
+    driven.attach.model.placement_pending = true;
+    let stale = RecentOverridesRead {
+        harness: harness.clone(),
+        root: PathBuf::from("/anywhere"),
+        restarting: None,
+        entries: Vec::new(),
+        recorded: None,
+        last: Some(vec![words_of("--verbose")]),
+    };
+    driven
+        .attach
+        .channels
+        .recent_overrides
+        .sender
+        .send(stale)
         .unwrap();
     driven.attach.absorb_recent_overrides();
+    assert!(step_of(&driven).launch_words().is_empty());
+    assert!(!step_of(&driven).remembers_selection());
 
-    assert_eq!(step_of(&driven).launch_words(), ["DEBUG=1"]);
+    driven.attach.model.placement_pending = false;
+    driven.attach.ask_last_selection_again();
+
+    let asked = step_of(&driven).recent_asked.clone();
+    assert_eq!(asked.map(|(asked, _)| asked), Some(harness));
 }
 
-/// Enter before the read answered launches without remembering anything,
-/// so the selection the operator never saw stays the last one; once the
-/// read answered, what the launch carries is remembered for its harness.
+/// What a launch asks its placement to remember, read back from the
+/// record once the placement answered: an Enter before the read answered
+/// leaves the last selection alone, and one after it replaces it.
 #[test]
 fn only_a_selection_the_operator_saw_is_remembered_at_the_launch() {
     for seen in [false, true] {
         let mut popup = popup(&format!("overrides-last-seen-{seen}"));
         let harness = harness_in_front(&popup);
+        let app = crate::ui::tui_application(popup.home.clone()).unwrap();
+        app.workspace()
+            .remember_override_selection(&harness, &words_of("DEBUG=1"))
+            .unwrap();
         if seen {
             let step = popup.model.directory_step.as_mut().unwrap();
-            step.seed_last(&harness, &[words_of("--verbose")]);
+            step.seed_last(&harness, &[words_of("DEBUG=1")]);
+            step.open_overrides();
+            step.toggle_choice(0);
+            step.overrides = None;
         }
         let mut driven = driven(popup.model_take(), &popup.home);
 
         driven.press_key(chord(Action::Activate, Scope::RootPicker));
+        driven
+            .attach
+            .channels
+            .placements
+            .receiver
+            .recv_timeout(std::time::Duration::from_secs(60))
+            .expect("the placement answers");
 
-        assert!(driven.attach.model.directory_step.is_none(), "launched");
-        let remembered = driven.attach.model.launched_selections.get(&harness);
+        let last = app.workspace().last_override_selection(&harness);
         if seen {
-            assert_eq!(remembered, Some(&vec![words_of("--verbose")]));
+            assert!(last.is_empty(), "nothing checked is remembered");
         } else {
-            assert_eq!(remembered, None);
+            assert_eq!(last, [words_of("DEBUG=1")], "left alone");
         }
     }
 }

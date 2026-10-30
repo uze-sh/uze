@@ -557,7 +557,6 @@ pub(crate) fn attach_workspace(
         timeline_rows: layout.workspace.timeline_rows,
         collapsed_spaces: layout.workspace.collapsed_spaces.clone(),
         last_harness: layout.workspace.last_harness.clone(),
-        launched_selections: BTreeMap::new(),
         prompt_recorder: Some(prompt_recorder),
         layout_recorder: Some(layout_recorder),
         management_layout: layout.management.clone(),
@@ -1935,11 +1934,6 @@ struct WorkspaceModel {
     /// The harness the last agent was started with: the one the new
     /// agent's popup offers first, kept in the layout for the next run.
     last_harness: Option<String>,
-    /// The override selection each harness's last new agent was launched
-    /// with this run, by harness: the record has it only once that agent's
-    /// placement answers, and a popup opened before then would read the
-    /// one before.
-    launched_selections: BTreeMap<String, Vec<Vec<String>>>,
     /// The project each directory an agent stood in belongs to, resolved
     /// once: what [`WorkspaceModel::space_projects`] is read from.
     projects: BTreeMap<PathBuf, PathBuf>,

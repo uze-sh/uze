@@ -72,7 +72,6 @@ impl Attach<'_> {
         };
         let overrides = step.launch_words();
         let remember_selection = step.remembers_selection();
-        let selection = step.entries().to_vec();
         let DirectoryStep {
             space,
             mut harnesses,
@@ -85,11 +84,6 @@ impl Attach<'_> {
             return;
         }
         let option = harnesses.swap_remove(harness);
-        if remember_selection {
-            self.model
-                .launched_selections
-                .insert(option.integration.clone(), selection);
-        }
         self.start_agent(
             option,
             AgentLaunch::New(NewPlace {
@@ -584,6 +578,7 @@ impl Attach<'_> {
     /// Opens the tab a placement was acquired for.
     pub(super) fn absorb_placement(&mut self, resolution: PlacementResolution) {
         self.model.placement_pending = false;
+        self.ask_last_selection_again();
         self.model.clear_busy_notice();
         self.model.occupancy_stale = true;
         let PlacementResolution {
