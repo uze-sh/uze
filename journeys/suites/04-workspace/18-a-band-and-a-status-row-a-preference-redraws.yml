@@ -268,10 +268,15 @@ scenes:
       # outside the modal.
       - click: "deck@studio"
         say: choose the extension, which its drawer then describes
-        expect: 'Show each phase''s name {2,}off {2,}on'
+        expect: "grants"
         expect_timeout: 10
-      - click: "Show each phase's name"
-        say: put the keys on its preference with a click on its row
+      - key: "F1"
+        say: open the action index
+        expect: "type to narrow"
+        expect_timeout: 10
+      # The drawer follows the keys to the preference, below its grants.
+      - type: "Preferences"
+        say: put the keys on its preferences from the index
         expect: 'Show each phase''s name {2,}off {2,}on'
         expect_timeout: 10
       - key: "Enter"

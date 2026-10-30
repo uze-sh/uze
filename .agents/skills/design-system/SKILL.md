@@ -553,11 +553,12 @@ operator rather than assume.
   beside them hanging under their own first row. A list of named things
   (grants, programs) is a table under a section label, names in
   `TextCode` in a column as wide as the longest, what each means beside
-  it. Under the extension's name and where it comes from, its
-  preferences come before what it is allowed (grants, programs), as the
-  one part that is set rather than read, drawn as the form (**Forms are
-  components**). While the keys are on them the body scrolls only as far
-  as the row they are on needs, never under a pointer at rest. What the foot
+  it. It reads what the extension is, what it may reach (grants,
+  programs), then what is set: its preferences, drawn as the form
+  (**Forms are components**). A body longer than the drawer scrolls under
+  the wheel with the standard scrollbar in the drawer's margin, and while
+  the keys are on the preferences it moves only as far as the row they
+  are on needs, never under a pointer at rest. What the foot
   already says (enabled everywhere) is not said again in the body, and
   the foot's note is left empty when the headline says it all.
 - A path beside a label stays on one line, cut at its head.

@@ -261,24 +261,11 @@ fn render_extension_drawer(
         .preferences
         .as_ref()
         .filter(|editor| matches!(extension, ExtensionEntry::Declared(summary) if summary.identity == editor.identity));
-    // Built at the body's width, and again a scrollbar narrower when it
-    // does not fit, so the bar never stands over what it scrolls.
-    let mut drawn = drawer_body(model, extension, standing, editing, usize::from(body.width));
-    let overflows = drawn.lines.len() > usize::from(body.height);
-    if overflows {
-        drawn = drawer_body(
-            model,
-            extension,
-            standing,
-            editing,
-            usize::from(body.width.saturating_sub(SCROLLBAR_ROOM)),
-        );
-    }
     let DrawerBody {
         lines,
         preference_rows,
         plugin_line,
-    } = drawn;
+    } = drawer_body(model, extension, standing, editing, usize::from(body.width));
     // What the last compile refused stands at the foot of the body, as it
     // does over a plugin's own surface while its author saves.
     let mut text_area = body;
@@ -329,18 +316,13 @@ fn render_extension_drawer(
         first = following(&preference_rows, editor.selected, first, visible);
     }
     model.extension_drawer_scroll.set((selected, first));
-    if overflows
-        && let Some(bar) = crate::ui::widget::Scrollbar::measure(
-            Rect::new(
-                body.right().saturating_sub(1),
-                text_area.y,
-                1,
-                text_area.height,
-            ),
-            visible,
-            lines.len(),
-        )
-    {
+    // In the drawer's own margin beside the body, so it never stands over
+    // what it scrolls.
+    if let Some(bar) = crate::ui::widget::Scrollbar::measure(
+        Rect::new(body.right() + 1, text_area.y, 1, text_area.height),
+        visible,
+        lines.len(),
+    ) {
         bar.render(frame, first);
     }
     // Where line `line` of the body stands on screen, once the body has
@@ -810,10 +792,6 @@ fn standing_status(
         Condition::Consented | Condition::FixturesOnly | Condition::Broken => return None,
     })
 }
-
-/// The columns the body gives up for its scrollbar when it overflows: the
-/// bar and a column of air before it.
-const SCROLLBAR_ROOM: u16 = 2;
 
 /// The rows a preference's detail keeps under the rows while the keys are
 /// on them.
