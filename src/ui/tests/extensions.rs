@@ -998,6 +998,21 @@ fn a_refresh_that_moves_the_selection_puts_the_preferences_away() {
     assert_eq!(model.apply_key(key(KeyCode::Right)), Intent::None);
 }
 
+/// A drawer button answers a click while a value is being typed: the
+/// typing is put away and the button does what it does, as it would with
+/// nothing typed.
+#[test]
+fn a_drawer_button_acts_while_a_preference_is_typed() {
+    let mut typing = focus_preferences();
+    typing.apply_key(key(KeyCode::Enter));
+    assert!(matches!(&typing.preferences, Some(editor) if editor.typing.is_some()));
+    let mut resting = focus_preferences();
+    resting.preferences = None;
+    let disable = Hit::OfferedAction(uze_keys::Action::DisableExtension);
+    assert_eq!(click(&mut typing, &disable), click(&mut resting, &disable));
+    assert_eq!(typing.preferences, None);
+}
+
 /// Every key the footer names while the keys are on the preferences is a
 /// target doing what the key does: enter types the number, esc gives the
 /// keys back to the cards.

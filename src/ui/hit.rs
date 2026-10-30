@@ -189,6 +189,21 @@ impl TuiModel {
         ) {
             self.preferences = None;
         }
+        // While a value is typed, only the typing's own keys (`enter set`,
+        // `esc cancel`) answer it; any other button puts the typing away
+        // and does what it does.
+        if let Hit::OfferedAction(action) = hit
+            && !matches!(
+                action,
+                uze_keys::Action::Activate | uze_keys::Action::Dismiss
+            )
+            && self
+                .preferences
+                .as_ref()
+                .is_some_and(|editor| editor.typing.is_some())
+        {
+            self.preferences = None;
+        }
         match hit {
             Hit::Route(route) => {
                 let entering = self.set_route(route);
