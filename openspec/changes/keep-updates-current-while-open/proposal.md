@@ -34,6 +34,11 @@ page (about 170 KB) to read one version, and a marketplace fetch mirrors
   The consent rules do not change: a revision that asks to execute
   something new is never applied in the background.
 - A marketplace mirror fetches only branches and tags.
+- **Restart into the installed release** from a button at the right end of
+  the bar under the agent area, which shows the bar for it, and from the
+  action index (`restart-uze`). Only the client restarts: the terminal
+  runtime keeps every pane, and retires itself when the new client cannot
+  speak its protocol.
 
 ## Capabilities
 
@@ -56,5 +61,8 @@ None.
   plugins (`Plugins::keep_current`) under a lock.
 - `crates/uze-core`: the mirror's refspec; two lock paths in `UzeHome`.
 - `src/ui/`: the workspace runs the plugin pass on the tick and raises its
-  toasts.
+  toasts; the restart button and action.
+- `src/main.rs`, the CLI grammar: running the restart in this process's
+  place (`uze_platform::process::run_in_place`), and a hidden
+  `workspace --resumed` flag every later release must keep reading.
 - `docs/versioning.md`: the channel and the new cadence.

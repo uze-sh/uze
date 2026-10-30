@@ -52,3 +52,29 @@ without following it.
 - **WHEN** a check asks for the latest release
 - **THEN** the version is read from the redirect's location and no page
   body is downloaded
+
+### Requirement: The workspace restarts into an installed release
+
+While a release is installed and not running, the workspace SHALL offer to
+restart into it, first at the right end of the bar under the agent area,
+showing the bar for it. Restarting SHALL restore the terminal, run the
+installed binary in the client's place on Linux, macOS and Windows, and
+reattach to the running terminal runtime where the operator was. It SHALL
+NOT stop the runtime or any pane.
+
+#### Scenario: Restarting from the notice
+
+- **WHEN** the operator activates the restart button at the right end of
+  the bar under the agent area
+- **THEN** the client is replaced by the installed release, which attaches
+  to the same runtime and shows the space and tab that were in front
+
+#### Scenario: A pane during the restart
+
+- **WHEN** an agent is running in a pane and the operator restarts
+- **THEN** the agent keeps running, and the restarted client shows it
+
+#### Scenario: From the keyboard
+
+- **WHEN** a release is installed and the operator opens the action index
+- **THEN** it offers the restart, and choosing it restarts as the row does

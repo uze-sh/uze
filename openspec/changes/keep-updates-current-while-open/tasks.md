@@ -16,7 +16,14 @@
 - [x] 3.2 `Plugins::keep_current` fetches the stale marketplaces, then runs `auto_update`; test that a pushed revision is applied without reopening
 - [x] 3.3 The workspace runs `keep_current` on its tick thread and raises a toast for what was applied and a staying one for what waits for consent
 
-## 4. Documentation and checks
+## 4. Restart into the installed release
 
-- [x] 4.1 `docs/versioning.md`: the channel and the cadence
-- [x] 4.2 `openspec validate keep-updates-current-while-open --strict`, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, targeted tests
+- [ ] 4.1 `self_update::restart` runs the receipt's binary as `workspace --resumed` through `uze_platform::process::run_in_place`
+- [ ] 4.2 `--resumed` lands the client where it left off; `WorkspaceExit::Restart` and `ui::Ended::Restart`
+- [ ] 4.3 The restart button at the right end of the agent area's bar, ahead of every plugin item, showing the bar; `Action::RestartUze` in the action index; click == key tests
+- [ ] 4.4 Validated on Linux and Windows in the playground
+
+## 5. Documentation and checks
+
+- [x] 5.1 `docs/versioning.md`: the channel and the cadence
+- [x] 5.2 `openspec validate keep-updates-current-while-open --strict`, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, targeted tests
