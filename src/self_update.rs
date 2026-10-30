@@ -24,7 +24,7 @@
 //! one it was handed.
 //!
 //! `UZE_BASE_URL` is `install.sh`'s testing override and stops there. A
-//! shipped `uze` fetches from [`RELEASES`] and nowhere else, because this
+//! shipped `uze` fetches from `RELEASES` and nowhere else, because this
 //! module downloads a binary and renames it over the one in `PATH`: were
 //! the download root an environment variable, anything that can set one —
 //! a cloned repository's `.envrc`, a `Makefile`, a parent process — would
@@ -41,13 +41,13 @@
 //! checksums too. So `SHASUMS256.txt` carries a signature,
 //! `SHASUMS256.txt.sig`, made with a key that never sits in CI unguarded,
 //! and nothing is unpacked until `ssh-keygen -Y verify` (the system's own,
-//! by path) accepts it against [`RELEASE_KEY`], the public key this binary
+//! by path) accepts it against `RELEASE_KEY`, the public key this binary
 //! was built with. No signature, a bad one, or no `ssh-keygen` all end the
 //! same way: nothing is installed.
 //!
 //! A release is installed in the background as soon as a check finds it,
 //! unless `UZE_RELEASE_CHANNEL` is `stable`: then only once it has been the
-//! latest for [`SETTLE`], so a release found to be bad and pulled within
+//! latest for `SETTLE`, so a release found to be bad and pulled within
 //! that window never reaches a machine that was only waiting. The window is
 //! counted from when the release was published, and one that saw it out
 //! before a newer one replaced it is still installed while that one waits:
