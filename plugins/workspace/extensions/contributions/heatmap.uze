@@ -99,6 +99,28 @@ fn title_of(days) {
     `${weekday}, ${month_name(iso.sub_string(5, 2).parse_int() - 1)} ${iso.sub_string(8, 2).parse_int()}`
 }
 
+// Who wrote a commit: its email, in one case, or its name where it has
+// none.
+fn identity_of(name, email) {
+    email.trim();
+    let who = if email == "" { name } else { email };
+    who.trim();
+    who.to_lower()
+}
+
+// The name a person signs with most often, of the times each was used.
+fn commonest(spelled) {
+    let best = "";
+    let most = 0;
+    for name in spelled.keys() {
+        if spelled[name] > most {
+            best = name;
+            most = spelled[name];
+        }
+    }
+    best
+}
+
 fn counted(n, one, many) {
     if n == 1 { `1 ${one}` } else { `${n} ${many}` }
 }
@@ -189,22 +211,33 @@ fn answer(input, context) {
     // The week starts on Monday: today is row `(today + 3) % 7`.
     let first = today - (today + 3) % 7 - (weeks() - 1) * 7;
 
-    let log = run_program("git", ["log", `--since=${iso_of(first)}`, "--format=%ad%x09%an%x09%h%x09%s", "--date=short"]);
+    // `%aN` and `%aE` follow the repository's .mailmap where it has one.
+    let log = run_program("git", ["log", `--since=${iso_of(first)}`, "--format=%ad%x09%aN%x09%aE%x09%h%x09%s", "--date=short"]);
     if log.code != 0 {
         return #{ data: #{ error: `git log failed: ${log.stderr}` } };
     }
-    // A commit per line, newest first.
+    // A commit per line, newest first. A person is their email, whatever
+    // name each machine they committed from gave them.
     let per_day = #{};
     let per_author = #{};
+    let names = #{};
     let commits = [];
     for line in lines(log.stdout) {
         let parts = line.split("\t");
-        if parts.len() < 4 {
+        if parts.len() < 5 {
             continue;
         }
+        let who = identity_of(parts[1], parts[2]);
         per_day[parts[0]] = (per_day[parts[0]] ?? 0) + 1;
-        per_author[parts[1]] = (per_author[parts[1]] ?? 0) + 1;
-        commits.push(#{ date: parts[0], hash: parts[2], subject: parts[3], author: parts[1] });
+        per_author[who] = (per_author[who] ?? 0) + 1;
+        let spelled = names[who] ?? #{};
+        spelled[parts[1]] = (spelled[parts[1]] ?? 0) + 1;
+        names[who] = spelled;
+        commits.push(#{ date: parts[0], hash: parts[3], subject: parts[4], who: who });
+    }
+    let name_of = #{};
+    for who in names.keys() {
+        name_of[who] = commonest(names[who]);
     }
     let counts = per_day.values();
     counts.sort();
@@ -227,7 +260,7 @@ fn answer(input, context) {
         if commit.date == chosen {
             of_chosen += 1;
             if shown.len() < 7 {
-                shown.push(#{ hash: commit.hash, subject: commit.subject, author: commit.author });
+                shown.push(#{ hash: commit.hash, subject: commit.subject, author: name_of[commit.who] });
             }
         }
     }
@@ -256,8 +289,8 @@ fn answer(input, context) {
         recent.push(#{ ch: "■", role: heat_of(per_day[iso_of(today - back)] ?? 0, cuts) });
     }
     let ranked = [];
-    for name in per_author.keys() {
-        ranked.push(#{ name: name, count: per_author[name] });
+    for who in per_author.keys() {
+        ranked.push(#{ name: name_of[who], count: per_author[who] });
     }
     ranked.sort(|a, b| b.count - a.count);
     let top = if ranked.len() > 0 { ranked[0].count.to_float() } else { 1.0 };
