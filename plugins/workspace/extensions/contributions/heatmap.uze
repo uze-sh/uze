@@ -108,17 +108,40 @@ fn identity_of(name, email) {
     who.to_lower()
 }
 
-// The name a person signs with most often, of the times each was used.
-fn commonest(spelled) {
-    let best = "";
-    let most = 0;
-    for name in spelled.keys() {
-        if spelled[name] > most {
-            best = name;
-            most = spelled[name];
+// The people behind the signatures (`name\temail`) counted: a person is
+// their email, whatever name each machine they committed from gave them,
+// and is shown under the name they sign with most. Answers each person's
+// name and count, and the name each signature stands for.
+fn people_of(per_signature) {
+    let who_of = #{};
+    let totals = #{};
+    let per_spelling = #{};
+    for signature in per_signature.keys() {
+        let parts = signature.split("\t");
+        let who = identity_of(parts[0], parts[1]);
+        let count = per_signature[signature];
+        who_of[signature] = who;
+        totals[who] = (totals[who] ?? 0) + count;
+        let spelling = who + "\t" + parts[0];
+        per_spelling[spelling] = (per_spelling[spelling] ?? 0) + count;
+    }
+    let best = #{};
+    for spelling in per_spelling.keys() {
+        let parts = spelling.split("\t");
+        let count = per_spelling[spelling];
+        if count > (best[parts[0]] ?? #{ count: 0 }).count {
+            best[parts[0]] = #{ name: parts[1], count: count };
         }
     }
-    best
+    let counts = #{};
+    for who in totals.keys() {
+        counts[who] = #{ name: best[who].name, count: totals[who] };
+    }
+    let name_of = #{};
+    for signature in who_of.keys() {
+        name_of[signature] = best[who_of[signature]].name;
+    }
+    #{ counts: counts, name_of: name_of }
 }
 
 fn counted(n, one, many) {
@@ -216,29 +239,22 @@ fn answer(input, context) {
     if log.code != 0 {
         return #{ data: #{ error: `git log failed: ${log.stderr}` } };
     }
-    // A commit per line, newest first. A person is their email, whatever
-    // name each machine they committed from gave them.
+    // A commit per line, newest first, counted by how it was signed; a
+    // person is resolved once per signature after, not once per commit.
     let per_day = #{};
-    let per_author = #{};
-    let names = #{};
+    let per_signature = #{};
     let commits = [];
     for line in lines(log.stdout) {
         let parts = line.split("\t");
         if parts.len() < 5 {
             continue;
         }
-        let who = identity_of(parts[1], parts[2]);
+        let signature = parts[1] + "\t" + parts[2];
         per_day[parts[0]] = (per_day[parts[0]] ?? 0) + 1;
-        per_author[who] = (per_author[who] ?? 0) + 1;
-        let spelled = names[who] ?? #{};
-        spelled[parts[1]] = (spelled[parts[1]] ?? 0) + 1;
-        names[who] = spelled;
-        commits.push(#{ date: parts[0], hash: parts[3], subject: parts[4], who: who });
+        per_signature[signature] = (per_signature[signature] ?? 0) + 1;
+        commits.push(#{ date: parts[0], hash: parts[3], subject: parts[4], signature: signature });
     }
-    let name_of = #{};
-    for who in names.keys() {
-        name_of[who] = commonest(names[who]);
-    }
+    let people = people_of(per_signature);
     let counts = per_day.values();
     counts.sort();
     let n = counts.len();
@@ -260,7 +276,7 @@ fn answer(input, context) {
         if commit.date == chosen {
             of_chosen += 1;
             if shown.len() < 7 {
-                shown.push(#{ hash: commit.hash, subject: commit.subject, author: name_of[commit.who] });
+                shown.push(#{ hash: commit.hash, subject: commit.subject, author: people.name_of[commit.signature] });
             }
         }
     }
@@ -289,8 +305,8 @@ fn answer(input, context) {
         recent.push(#{ ch: "■", role: heat_of(per_day[iso_of(today - back)] ?? 0, cuts) });
     }
     let ranked = [];
-    for who in per_author.keys() {
-        ranked.push(#{ name: name_of[who], count: per_author[who] });
+    for person in people.counts.values() {
+        ranked.push(person);
     }
     ranked.sort(|a, b| b.count - a.count);
     let top = if ranked.len() > 0 { ranked[0].count.to_float() } else { 1.0 };
