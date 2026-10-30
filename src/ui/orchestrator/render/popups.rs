@@ -132,10 +132,15 @@ pub(in crate::ui::orchestrator) fn render_restart_panel(
     row: Option<Rect>,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
-    let anchor = row.map_or(step.anchor, |row| {
-        Rect::new(row.right() + 1, row.y.saturating_sub(2), 1, 1)
-    });
+    let anchor = row.map_or(step.anchor, beside_row);
     render_popup_at(frame, area, model, step, anchor, hits);
+}
+
+/// The anchor that stands what opens from a menu row beside it, its first
+/// row level with that one: a popup goes under its anchor, and its border
+/// takes a row of its own, so the anchor is two rows up.
+fn beside_row(row: Rect) -> Rect {
+    Rect::new(row.right() + 1, row.y.saturating_sub(2), 1, 1)
 }
 
 fn render_popup_at(
@@ -523,8 +528,7 @@ pub(in crate::ui::orchestrator) fn render_context_menu(
         })
         .collect();
     let rows = widget::menu::render(frame, area, menu.anchor, &entries, menu.selected);
-    // The open group, beside the row that opened it: anchored one row up
-    // so its first entry sits level with that row.
+    // The open group, beside the row that opened it.
     let opened = rows.get(menu.selected).copied();
     for (index, row) in rows.into_iter().enumerate() {
         hits.push((row, WorkspaceHit::ContextMenuAction(index)));
@@ -532,7 +536,7 @@ pub(in crate::ui::orchestrator) fn render_context_menu(
     if let (Some(row), Some(labels), Some(highlighted)) =
         (opened, menu.submenu_labels(), menu.submenu)
     {
-        let anchor = Rect::new(row.right() + 1, row.y.saturating_sub(2), 1, 1);
+        let anchor = beside_row(row);
         let entries: Vec<widget::menu::Entry<'_>> = labels
             .into_iter()
             .map(widget::menu::Entry::action)
