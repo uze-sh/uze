@@ -32,13 +32,8 @@ impl Workspace<'_> {
                 UzeError::AgentPlacement("this agent is not one UZE launched here".to_owned())
             })?;
         Ok(StandingOverrides {
-            recorded: overrides::record::recorded(
-                &self.0.home,
-                &root,
-                &AgentId::adopted(agent_id),
-                harness,
-            ),
-            recent: overrides::record::recent_entries(&self.0.home, harness, &root),
+            recorded: self.agent_overrides(&root, agent_id, harness),
+            recent: self.recent_overrides(harness, &root),
         })
     }
 
