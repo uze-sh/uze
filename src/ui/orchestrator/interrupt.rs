@@ -81,16 +81,18 @@ pub(super) fn render_interrupt(
     } else {
         format!("Continue in {}", open.choice.display_name)
     };
-    let body = if open.restart {
-        "It is in the middle of a turn. Restarting it ends what it is doing now; \
-         its conversation is resumed with the new overrides."
-            .to_owned()
-    } else {
-        format!(
+    let body = match (open.restart, &open.choice.continuity_gap) {
+        (true, None) => "It is in the middle of a turn. Restarting it ends what it is doing now; \
+             its conversation is resumed with the new overrides."
+            .to_owned(),
+        (true, Some(_)) => "It is in the middle of a turn. Restarting it ends what it is doing \
+             now, and it starts a new conversation with the new overrides."
+            .to_owned(),
+        (false, _) => format!(
             "It is in the middle of a turn. Continuing it in {} ends what it is doing now; \
              its conversation is kept, and the new harness is briefed on it.",
             open.choice.display_name
-        )
+        ),
     };
     crate::ui::widget::scrim::render(frame, area);
     let answers = dialog::render(

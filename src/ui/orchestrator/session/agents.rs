@@ -452,7 +452,7 @@ impl Attach<'_> {
             return;
         }
         let restart = choice.integration == from_harness;
-        if !restart && let Some(gap) = &choice.continuity_gap {
+        if let Some(gap) = &choice.continuity_gap {
             self.model
                 .raise_toast(ToastKind::Warned, gap, label.clone(), None);
         }

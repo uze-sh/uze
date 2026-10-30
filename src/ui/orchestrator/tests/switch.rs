@@ -600,6 +600,48 @@ fn a_declined_interruption_leaves_the_agent_running() {
     assert!(!driven.attach.model.placement_pending);
 }
 
+/// A harness that cannot continue a conversation says so on a restart too,
+/// and the question asked of a busy agent does not promise it.
+#[test]
+fn a_restart_on_a_harness_without_continuity_says_so() {
+    let gap = "Its conversation will not be resumed on a later launch.";
+    let gapped = || {
+        let mut identities = identities();
+        identities[0].continuity_gap = Some(gap.to_owned());
+        identities
+    };
+    for busy in [false, true] {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-restart-gap"));
+        let mut model = agents_in_the_root_session();
+        model.session.as_mut().unwrap().select_tab(TabId(2));
+        if busy {
+            let pane = pane_of(&model, TabId(2));
+            model.note_agent_prompt_submission(pane, &gapped(), Some("keep going"));
+        }
+        let mut driven = driven(model, &home);
+        driven.attach.identities = gapped();
+        open_the_panel_from_the_keyboard(&mut driven, TabId(2));
+        type_text(&mut driven, "DEBUG=1");
+        enter(&mut driven);
+
+        enter(&mut driven);
+
+        if busy {
+            let rows = frame_rows(&mut driven.attach.model).join("\n");
+            assert!(!rows.contains("is resumed"), "{rows}");
+            assert!(rows.contains("conversation with the new overrides"), "{rows}");
+            driven.attach.interrupt_action(uze_keys::Action::FocusNext);
+            driven.attach.interrupt_action(uze_keys::Action::Activate);
+        }
+        let toasts = &driven.attach.model.remembered.toasts;
+        assert!(
+            toasts.iter().any(|toast| toast.text == gap),
+            "busy {busy}: {:?}",
+            toasts.iter().map(|toast| &toast.text).collect::<Vec<_>>()
+        );
+    }
+}
+
 #[test]
 fn the_interruption_is_asked_over_the_whole_client() {
     for (restart, confirm) in [(false, "Continue in Other"), (true, "Restart")] {
