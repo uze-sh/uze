@@ -1080,6 +1080,77 @@ fn a_long_secret_stays_in_its_box() {
     assert!(row.matches(dot.as_str()).count() < 30, "{row}");
 }
 
+fn with_a_choice(values: &[&str]) -> TuiModel {
+    let mut standing = standing(uze_application::ExtensionCondition::Enabled);
+    standing.preferences = vec![uze_application::PreferenceRow {
+        name: "look".to_owned(),
+        label: "Look".to_owned(),
+        kind: "choice",
+        value: serde_json::json!(values[0]),
+        values: values.iter().map(|value| (*value).to_owned()).collect(),
+        default: serde_json::json!(values[0]),
+        min: None,
+        max: None,
+    }];
+    standing_in_a_project(standing)
+}
+
+/// A choice of a few short values stands side by side, and a click on one
+/// sets that one.
+#[test]
+fn clicking_a_choices_option_sets_that_value() {
+    let mut model = with_a_choice(&["dark", "light", "auto"]);
+    assert_eq!(
+        click(
+            &mut model,
+            &Hit::ExtensionPreferenceChoice {
+                index: 0,
+                option: 2
+            }
+        ),
+        set("look", "Look", serde_json::json!("auto"))
+    );
+    assert_eq!(chosen_on(&model, "Look"), "auto");
+}
+
+/// A choice too wide to stand side by side is its value in a box, and a
+/// click on it is Enter on the row: the next value.
+#[test]
+fn a_choice_that_does_not_fit_is_a_box_that_moves_on() {
+    let mut model = with_a_choice(&[
+        "a rather long first value",
+        "a rather long second value",
+        "a third",
+    ]);
+    let (_, hits) = super::support::drawn_at(&model, 220, 44);
+    assert!(
+        !hits
+            .iter()
+            .any(|(_, hit)| matches!(hit, Hit::ExtensionPreferenceChoice { .. })),
+        "no option stands on its own"
+    );
+    assert_eq!(
+        click(&mut model, &Hit::ExtensionPreferenceValue(0)),
+        set(
+            "look",
+            "Look",
+            serde_json::json!("a rather long second value")
+        )
+    );
+}
+
+/// An action the preferences do not answer (a drawer button) gives the
+/// keys back to the cards and is then what it is on the screen.
+#[test]
+fn an_action_the_preferences_do_not_answer_is_the_screens() {
+    let mut editing = focus_preferences();
+    let mut resting = focus_preferences();
+    resting.preferences = None;
+    let disable = Hit::OfferedAction(uze_keys::Action::DisableExtension);
+    assert_eq!(click(&mut editing, &disable), click(&mut resting, &disable));
+    assert_eq!(editing.preferences, None);
+}
+
 /// Every key the footer names while the keys are on the preferences is a
 /// target doing what the key does: enter types the number, esc gives the
 /// keys back to the cards.
