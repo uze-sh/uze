@@ -20,6 +20,12 @@ pub(crate) enum Hit {
     },
     /// A preference's value: selects it and answers it as Enter does.
     ExtensionPreferenceValue(usize),
+    /// One of a preference's options side by side (`off`, `on`, or a
+    /// choice's values): selects the row and chooses that option.
+    ExtensionPreferenceChoice {
+        index: usize,
+        option: usize,
+    },
     MarketplaceRow(usize),
     /// A plugin row's chevron, by position in the visible list: unfolds or
     /// folds its resources without the row's own click behind it.
@@ -178,6 +184,7 @@ impl TuiModel {
             Hit::ExtensionPreferenceRow(_)
                 | Hit::ExtensionPreferenceStep { .. }
                 | Hit::ExtensionPreferenceValue(_)
+                | Hit::ExtensionPreferenceChoice { .. }
                 | Hit::OfferedAction(_)
         ) {
             self.preferences = None;
@@ -301,6 +308,11 @@ impl TuiModel {
                 self.focus = Focus::Content;
                 self.choose_preference(index);
                 self.act(uze_keys::Action::Activate)
+            }
+            Hit::ExtensionPreferenceChoice { index, option } => {
+                self.focus = Focus::Content;
+                self.choose_preference(index);
+                self.pick_preference(option)
             }
             Hit::OfferedAction(action) => self.act(action),
             Hit::KeysTrack(track) => {

@@ -5,7 +5,7 @@
 use super::*;
 use crate::ui::extension_view::NavigatorScroll;
 use crate::ui::widget::{
-    Button, Field, RowState, Scrollbar, Surface, drawer,
+    Button, Field, RowState, Scrollbar, Surface, drawer, form,
     grid::Shape,
     hint::Hints,
     row,
@@ -1151,15 +1151,10 @@ fn render_workspace(
 fn render_field(frame: &mut ratatui::Frame<'_>, field: &EditField, rect: Rect) {
     widget::fill(frame, rect, Token::SurfaceRecessed);
     let (before, after) = field.buffer.split();
-    let mut spans = vec![
-        Span::raw(" "),
-        Span::styled(before.to_owned(), theme::fg(Token::TextBright)),
-        widget::field::caret(),
-        Span::styled(after.to_owned(), theme::fg(Token::TextBright)),
-    ];
-    // Padded to the box, so nothing the row drew beneath shows through.
-    row::pad_to(&mut spans, rect.width, theme::color(Token::SurfaceRecessed));
-    frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+    frame.render_widget(
+        Paragraph::new(Line::from(form::typing(before, after, rect.width))),
+        rect,
+    );
 }
 
 /// The Workspace form as lines, and where on them its controls landed —
@@ -1266,7 +1261,11 @@ impl Form {
             .filter(|field| field.key == key);
         let editable = overview.editable();
         let focused = self.index == overview.row();
-        let mut spans = vec![form_label(key_label(key), self.label_state(focused))];
+        let mut spans = vec![form::label(
+            key_label(key),
+            self.label_state(focused),
+            LABEL,
+        )];
         if field.is_some_and(|field| field.item.is_none()) {
             self.field_at = Some((self.lines.len(), LABEL));
         } else if is_segmented(key) {
@@ -1276,13 +1275,13 @@ impl Form {
             let mut at = LABEL;
             for (option, word) in options.iter().enumerate() {
                 let state = if *word == current {
-                    SegmentState::Chosen
+                    form::SegmentState::Chosen
                 } else if self.hovered == Some(WorkspaceHit::OverviewChoice(self.index, option)) {
-                    SegmentState::Hovered
+                    form::SegmentState::Hovered
                 } else {
-                    SegmentState::Resting
+                    form::SegmentState::Resting
                 };
-                let cell = segment(word, state, self.segment_width(options));
+                let cell = form::segment(word, state, self.segment_width(options));
                 cells.push((at, cell.width() as u16));
                 at += cell.width() as u16;
                 spans.push(cell);
@@ -1296,20 +1295,22 @@ impl Form {
                 (Some(value), _) => (scalar(value), Token::TextPrimary),
                 (None, _) => (key.default_spelled().to_owned(), Token::TextDim),
             };
-            spans.extend(combo(&shown, tone, self.box_width));
+            spans.extend(form::combo(&shown, tone, self.box_width));
         } else if is_number(key) {
             let (shown, tone) = match value {
                 Some(value) => (scalar(value), Token::TextBright),
                 None => (key.default_spelled().to_owned(), Token::TextDim),
             };
             let lit = |adds| self.hovered == Some(WorkspaceHit::OverviewStep(self.index, adds));
-            let (stepper, minus, plus) = stepper(
+            let (stepper, steps) = form::stepper(
                 &shown,
                 tone,
                 editable,
                 [lit(false), lit(true)],
                 self.control(),
             );
+            let minus = (LABEL + steps.minus.0, steps.minus.1);
+            let plus = (LABEL + steps.plus.0, steps.plus.1);
             spans.extend(stepper);
             if editable {
                 self.steps.push((self.lines.len(), self.index, minus, plus));
@@ -1329,10 +1330,16 @@ impl Form {
             ));
         } else {
             match value {
-                Some(value) => {
-                    spans.push(boxed(&scalar(value), Token::TextPrimary, self.box_width))
-                }
-                None => spans.push(boxed(key.default_spelled(), Token::TextDim, self.box_width)),
+                Some(value) => spans.push(form::boxed(
+                    &scalar(value),
+                    Token::TextPrimary,
+                    self.box_width,
+                )),
+                None => spans.push(form::boxed(
+                    key.default_spelled(),
+                    Token::TextDim,
+                    self.box_width,
+                )),
             }
         }
         if edited {
@@ -1351,7 +1358,7 @@ impl Form {
                 }
                 let mut spans = vec![indent()];
                 if matches!(key, DeclarationKey::Setup | DeclarationKey::Gate) {
-                    spans.push(boxed(entry, Token::TextCode, self.entry_width));
+                    spans.push(form::boxed(entry, Token::TextCode, self.entry_width));
                     let command = match value {
                         Some(DeclaredValue::Commands(declared)) => declared.get(item),
                         _ => None,
@@ -1395,7 +1402,7 @@ impl Form {
             .enumerate()
         {
             let mut row_spans = vec![if line == 0 {
-                form_label(action_label(state), self.label_state(focused))
+                form::label(action_label(state), self.label_state(focused), LABEL)
             } else {
                 indent()
             }];
@@ -1422,12 +1429,7 @@ impl Form {
     /// Each option's share of the control, never less than its word with
     /// a column of air either side: options read run together otherwise.
     fn segment_width(&self, options: &[&str]) -> usize {
-        let widest = options
-            .iter()
-            .map(|option| Line::from(*option).width() + 2)
-            .max()
-            .unwrap_or(0);
-        (self.control() / options.len().max(1)).max(widest)
+        form::segment_width(options, self.control())
     }
 
     /// How the next row's label is drawn: the keyboard's, under the
@@ -1547,22 +1549,6 @@ fn action_boxes(
 /// A key's label in the form's first column. The keyboard's row is
 /// pointed at, as the plugin tree points at its own, and stands out bright
 /// against the rest left muted; the pointer brings a label up a step.
-fn form_label(text: &str, state: RowState) -> Span<'static> {
-    let marker = match state {
-        RowState::Selected => format!("{} ", theme::glyph(Symbol::Prompt)),
-        RowState::Hovered | RowState::Resting => String::new(),
-    };
-    let room =
-        usize::from(LABEL).saturating_sub(Line::from(marker.as_str()).width().max(KEY_INDENT));
-    let label = format!("{marker:>KEY_INDENT$}{}", pad(text, room as u16));
-    let style = match state {
-        RowState::Selected => theme::fg_bold(Token::TextBright),
-        RowState::Hovered => theme::fg(Token::TextPrimary),
-        RowState::Resting => theme::fg(Token::TextMuted),
-    };
-    Span::styled(label, style)
-}
-
 /// The label column left blank, under a label.
 fn indent() -> Span<'static> {
     Span::raw(" ".repeat(usize::from(LABEL)))
@@ -1581,31 +1567,6 @@ fn saved_mark() -> Span<'static> {
     Span::styled("  saved", theme::fg(Token::TextMuted))
 }
 
-/// A value in its box, `width` columns wide.
-fn boxed(text: &str, tone: Token, width: usize) -> Span<'static> {
-    Span::styled(
-        format!(" {:<pad$}", text::elide(text, width - 2), pad = width - 1),
-        theme::fg(tone).bg(theme::color(Token::SurfaceRecessed)),
-    )
-}
-
-/// A value chosen from a list: the box a typed value sits in, with the
-/// mark that says it opens.
-fn combo(text: &str, tone: Token, width: usize) -> Vec<Span<'static>> {
-    let mark = theme::glyph(Symbol::Dropdown);
-    let room = width.saturating_sub(2 + Line::from(mark.as_str()).width() + 1);
-    vec![
-        Span::styled(
-            format!(" {:<room$} ", text::elide(text, room)),
-            theme::fg(tone).bg(theme::color(Token::SurfaceRecessed)),
-        ),
-        Span::styled(
-            format!("{mark} "),
-            theme::fg(Token::TextMuted).bg(theme::color(Token::SurfaceRecessed)),
-        ),
-    ]
-}
-
 /// One line of a box `width` columns wide.
 fn box_line(mut spans: Vec<Span<'static>>, width: usize) -> Vec<Span<'static>> {
     row::pad_to(
@@ -1614,68 +1575,6 @@ fn box_line(mut spans: Vec<Span<'static>>, width: usize) -> Vec<Span<'static>> {
         theme::color(Token::SurfaceRecessed),
     );
     spans
-}
-
-/// A number between its − and +, `width` wide with the number in the
-/// middle, and where each of those two stands on the line: its column and
-/// its width. `lit` says which of the two the pointer is over.
-fn stepper(
-    shown: &str,
-    tone: Token,
-    editable: bool,
-    lit: [bool; 2],
-    width: usize,
-) -> (Vec<Span<'static>>, (u16, u16), (u16, u16)) {
-    let step = |symbol: Symbol, lit: bool| {
-        let (fg, ground) = match (editable, lit) {
-            (false, _) => (Token::TextFaint, Token::SurfaceRaised),
-            (true, true) => (Token::TextBright, Token::SurfaceHover),
-            (true, false) => (Token::TextSecondary, Token::SurfaceRaised),
-        };
-        Span::styled(
-            format!(" {} ", theme::glyph(symbol)),
-            theme::fg_bold(fg).bg(theme::color(ground)),
-        )
-    };
-    let minus = step(Symbol::StepDecrease, lit[0]);
-    let plus = step(Symbol::StepIncrease, lit[1]);
-    let minus_width = minus.width() as u16;
-    let plus_width = plus.width() as u16;
-    let room = width.saturating_sub(usize::from(minus_width + plus_width));
-    let middle = Span::styled(
-        format!("{:^room$}", text::elide(shown, room)),
-        theme::fg_bold(tone).bg(theme::color(Token::SurfaceRecessed)),
-    );
-    let middle_width = middle.width() as u16;
-    (
-        vec![minus, middle, plus],
-        (LABEL, minus_width),
-        (LABEL + minus_width + middle_width, plus_width),
-    )
-}
-
-/// How one of a segmented choice's options is drawn.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum SegmentState {
-    Chosen,
-    Hovered,
-    Resting,
-}
-
-/// One option of a segmented choice, `width` columns with its word in the
-/// middle: the chosen one filled with the accent, the others on a raised
-/// ground that lifts under the pointer.
-fn segment(word: &str, state: SegmentState, width: usize) -> Span<'static> {
-    let style = match state {
-        SegmentState::Chosen => {
-            theme::fg_bold(Token::SurfaceBackground).bg(theme::color(Token::Accent))
-        }
-        SegmentState::Hovered => theme::fg(Token::TextBright).bg(theme::color(Token::SurfaceHover)),
-        SegmentState::Resting => {
-            theme::fg(Token::TextSecondary).bg(theme::color(Token::SurfaceRaised))
-        }
-    };
-    Span::styled(format!("{:^width$}", text::elide(word, width)), style)
 }
 
 /// A group's heading: its name, then a rule to the edge of the form.

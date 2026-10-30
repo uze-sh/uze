@@ -25,7 +25,7 @@ use super::{DrawerStatus, render_drawer_footer};
 use crate::ui::hit::Hit;
 use crate::ui::model::{ExtensionEntry, PreferencesEditor, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::{RowState, text};
+use crate::ui::widget::{RowState, form, text};
 use crate::ui::{content_area, render_screen_header};
 use uze_application::{ExtensionCondition as Condition, ExtensionReport};
 
@@ -313,6 +313,7 @@ fn render_extension_drawer(
             standing,
             model.extension_project.as_deref(),
             editing,
+            model.hovered.as_ref(),
         )
     });
     let lines = grid.lines;
@@ -338,36 +339,28 @@ fn render_extension_drawer(
         let banner = crate::ui::widget::banner::render_folded(frame, room, &title, &summary.errors);
         text_area.height = body.height.saturating_sub(banner.height);
     }
-    let preferences = editing.map_or_else(
-        || standing.map_or(&[][..], |standing| standing.preferences.as_slice()),
-        |editor| editor.rows.as_slice(),
-    );
-    let placed: Vec<(usize, Rect)> = preference_rows
-        .iter()
-        .enumerate()
-        .filter_map(|(index, row)| {
-            let row = u16::try_from(*row)
-                .ok()
-                .filter(|row| *row < text_area.height)?;
-            Some((index, Rect::new(body.x, body.y + row, body.width, 1)))
-        })
-        .collect();
-    // The row the keys are on stands on the ground every list's does,
-    // under its label and its control alike.
-    if let Some(editor) = editing
-        && let Some((_, line)) = placed.iter().find(|(index, _)| *index == editor.selected)
-    {
-        crate::ui::widget::fill(frame, *line, Token::SurfaceSelected);
-    }
     frame.render_widget(Paragraph::new(lines), text_area);
-    render_preference_controls(
-        frame,
-        preferences,
-        &placed,
-        editing,
-        model.hovered.as_ref(),
-        hits,
-    );
+    // Each part of a control before its row, so a click on one is not
+    // taken for choosing the row.
+    for placed in preference_rows {
+        let Some(row) = u16::try_from(placed.line)
+            .ok()
+            .filter(|row| *row < text_area.height)
+        else {
+            continue;
+        };
+        let y = body.y + row;
+        for (x, width, hit) in placed.parts {
+            if x < body.width {
+                let width = width.min(body.width - x);
+                hits.push((Rect::new(body.x + x, y, width, 1), hit));
+            }
+        }
+        hits.push((
+            Rect::new(body.x, y, body.width, 1),
+            Hit::ExtensionPreferenceRow(placed.index),
+        ));
+    }
 
     render_drawer_footer(
         frame,
@@ -525,7 +518,8 @@ fn standing_lines(
     standing: &ExtensionReport,
     project: Option<&Path>,
     editing: Option<&PreferencesEditor>,
-) -> Vec<usize> {
+    hovered: Option<&Hit>,
+) -> Vec<PlacedPreference> {
     let grants: Vec<_> = standing
         .grants
         .iter()
@@ -576,19 +570,46 @@ fn standing_lines(
         }
     }
 
-    // Each preference's label, its control drawn over the row's end once
-    // the body is: the rows they stand on are what this answers with.
+    // Each preference as a settings form draws a key: its label in a
+    // column, then the control that changes it.
     let mut preference_rows = Vec::new();
     let preferences = editing.map_or(standing.preferences.as_slice(), |editor| &editor.rows);
     if !preferences.is_empty() {
         grid.gap();
         grid.lines.push(super::section_label("preferences"));
-        for preference in preferences {
-            preference_rows.push(grid.lines.len());
-            grid.lines.push(Line::from(Span::styled(
-                text::elide(&preference.label, grid.width / 2),
-                theme::fg(Token::TextPrimary),
-            )));
+        let label_width = preferences
+            .iter()
+            .map(|row| text::columns(&row.label) + 4)
+            .max()
+            .unwrap_or(0)
+            .clamp(PREFERENCE_LABEL.0, PREFERENCE_LABEL.1)
+            .min(grid.width / 2) as u16;
+        let control_width =
+            PREFERENCE_CONTROL.min(grid.width.saturating_sub(usize::from(label_width)));
+        for (index, row) in preferences.iter().enumerate() {
+            let marked = editing.filter(|editor| editor.selected == index);
+            let state = RowState::of(
+                marked.is_some(),
+                hovered == Some(&Hit::ExtensionPreferenceRow(index)),
+            );
+            let (control, parts) = preference_control(
+                row,
+                index,
+                marked.and_then(|editor| editor.typing.as_deref()),
+                hovered,
+                control_width,
+            );
+            let mut spans = vec![form::label(&row.label, state, label_width)];
+            spans.extend(control);
+            preference_rows.push(PlacedPreference {
+                line: grid.lines.len(),
+                index,
+                parts: parts
+                    .into_iter()
+                    .map(|(x, width, hit)| (label_width + x, width, hit))
+                    .collect(),
+            });
+            grid.lines.push(Line::from(spans));
         }
         // What the row the keys are on holds, in rows kept whatever it
         // says, so moving between rows never moves what is under them.
@@ -701,101 +722,107 @@ fn standing_status(
 /// The rows a preference's detail keeps under the rows while the keys are
 /// on them.
 const PREFERENCE_DETAIL: usize = 2;
-/// The narrowest and widest a value's control is: a number with two
-/// digits between its steps, and a typed value cut short.
-const PREFERENCE_CONTROL: (u16, u16) = (11, 24);
+/// The narrowest and widest a preference's label column is.
+const PREFERENCE_LABEL: (usize, usize) = (12, 24);
+/// The width a preference's control takes, as a settings form's does.
+const PREFERENCE_CONTROL: usize = 24;
 
-/// Each preference's value as the control that changes it, against the
-/// end of the row its label stands on, one column for all of them; the
-/// row the keys are on is typed into while it is.
-fn render_preference_controls(
-    frame: &mut ratatui::Frame<'_>,
-    preferences: &[uze_application::PreferenceRow],
-    placed: &[(usize, Rect)],
-    editing: Option<&PreferencesEditor>,
+/// A preference's row in the drawer, and where on it each part of its
+/// control answers a click.
+struct PlacedPreference {
+    /// The line of the drawer's body it stands on.
+    line: usize,
+    /// Its place among the extension's preferences.
+    index: usize,
+    /// Each part's column from the body's start, its width, and its hit.
+    parts: Vec<(u16, u16, Hit)>,
+}
+
+/// `row`'s value as the settings form's control for its kind, `width`
+/// wide, and where each part of it answers: a number between its steps,
+/// a toggle or a short choice side by side, anything else in its box,
+/// typed into while `typing` holds what is typed.
+fn preference_control(
+    row: &uze_application::PreferenceRow,
+    index: usize,
+    typing: Option<&str>,
     hovered: Option<&Hit>,
-    hits: &mut Vec<(Rect, Hit)>,
-) {
-    use crate::ui::widget::control::Lit;
-    let controls: Vec<_> = preferences.iter().map(preference_control).collect();
-    let width = controls
-        .iter()
-        .map(|control| control.natural_width())
-        .max()
-        .unwrap_or(0)
-        .clamp(PREFERENCE_CONTROL.0, PREFERENCE_CONTROL.1);
+    width: usize,
+) -> (Vec<Span<'static>>, Vec<(u16, u16, Hit)>) {
     let lit = |hit: &Hit| hovered == Some(hit);
-    for &(index, line) in placed {
-        let (Some(row), Some(control)) = (preferences.get(index), controls.get(index)) else {
-            continue;
-        };
-        let marked = editing.is_some_and(|editor| editor.selected == index);
-        let width = width.min(line.width / 2);
-        let at = Rect::new(line.right() - width, line.y, width, 1);
-        if lit(&Hit::ExtensionPreferenceRow(index)) || marked {
-            frame.render_widget(
-                Paragraph::new(Span::styled(
-                    text::elide(&row.label, usize::from(line.width - width)),
-                    theme::fg(Token::TextBright),
-                )),
-                Rect::new(line.x, line.y, line.width - width, 1),
-            );
-        }
-        if let Some(typed) = editing
-            .filter(|_| marked)
-            .and_then(|editor| editor.typing.as_deref())
-        {
-            // A secret is drawn as one dot per character typed.
-            let shown = if row.is_secret() {
-                theme::glyph(Symbol::CursorMasked).repeat(typed.chars().count())
-            } else {
-                text::elide_head(typed, usize::from(width.saturating_sub(1)))
-            };
-            frame.render_widget(
-                Paragraph::new(crate::ui::widget::Field::new(&shown, "").line()),
-                at,
-            );
+    let whole = |spans: Vec<Span<'static>>| {
+        let drawn = spans.iter().map(Span::width).sum::<usize>() as u16;
+        (
+            spans,
+            vec![(0, drawn, Hit::ExtensionPreferenceValue(index))],
+        )
+    };
+    if let Some(typed) = typing {
+        // A secret is drawn as one dot per character typed.
+        let shown = if row.is_secret() {
+            theme::glyph(Symbol::CursorMasked).repeat(typed.chars().count())
         } else {
-            let parts = control.render(
-                frame,
-                at,
-                marked,
-                Lit {
-                    previous: lit(&Hit::ExtensionPreferenceStep {
-                        index,
-                        forward: false,
-                    }),
-                    value: lit(&Hit::ExtensionPreferenceValue(index)),
-                    next: lit(&Hit::ExtensionPreferenceStep {
-                        index,
-                        forward: true,
-                    }),
-                },
-            );
-            // The control's parts before the row, so a click on one is
-            // not taken for choosing the row.
-            if let Some(previous) = parts.previous {
-                hits.push((
-                    previous,
-                    Hit::ExtensionPreferenceStep {
-                        index,
-                        forward: false,
-                    },
-                ));
-            }
-            if let Some(next) = parts.next {
-                hits.push((
-                    next,
-                    Hit::ExtensionPreferenceStep {
-                        index,
-                        forward: true,
-                    },
-                ));
-            }
-            hits.push((parts.value, Hit::ExtensionPreferenceValue(index)));
-        }
-        hits.push((line, Hit::ExtensionPreferenceRow(index)));
+            text::elide_head(typed, width.saturating_sub(3))
+        };
+        return whole(form::typing(&shown, "", width as u16));
     }
+    let options: Vec<String> = match row.kind {
+        "toggle" => vec!["off".to_owned(), "on".to_owned()],
+        "choice" => row.values.clone(),
+        _ => Vec::new(),
+    };
+    let words: Vec<&str> = options.iter().map(String::as_str).collect();
+    let segment = form::segment_width(&words, width);
+    if !options.is_empty() && segment * options.len() <= width {
+        let chosen = row.said();
+        let mut spans = Vec::new();
+        let mut parts = Vec::new();
+        let mut x = 0;
+        for (option, word) in words.iter().enumerate() {
+            let hit = Hit::ExtensionPreferenceChoice { index, option };
+            let state = if *word == chosen {
+                form::SegmentState::Chosen
+            } else if lit(&hit) {
+                form::SegmentState::Hovered
+            } else {
+                form::SegmentState::Resting
+            };
+            let cell = form::segment(word, state, segment);
+            let cell_width = cell.width() as u16;
+            parts.push((x, cell_width, hit));
+            x += cell_width;
+            spans.push(cell);
+        }
+        return (spans, parts);
+    }
+    if row.kind == "number" {
+        let step = |forward| Hit::ExtensionPreferenceStep { index, forward };
+        let (spans, steps) = form::stepper(
+            &row.said(),
+            Token::TextBright,
+            true,
+            [lit(&step(false)), lit(&step(true))],
+            width,
+        );
+        let middle = (steps.minus.1, steps.plus.0 - steps.minus.1);
+        return (
+            spans,
+            vec![
+                (steps.minus.0, steps.minus.1, step(false)),
+                (middle.0, middle.1, Hit::ExtensionPreferenceValue(index)),
+                (steps.plus.0, steps.plus.1, step(true)),
+            ],
+        );
+    }
+    let empty = !row.is_secret() && row.value.as_str().is_none_or(str::is_empty);
+    let (said, tone) = if empty {
+        ("empty".to_owned(), Token::TextDim)
+    } else if row.is_secret() && row.value != serde_json::Value::Bool(true) {
+        (row.said(), Token::TextDim)
+    } else {
+        (row.said(), Token::TextPrimary)
+    };
+    whole(vec![form::boxed(&said, tone, width)])
 }
 
 /// What the keys do on the preference they are on, in the footer: what
@@ -830,31 +857,6 @@ pub(crate) fn preference_hints<'a>(
     hints
         .named(Action::Activate, enter)
         .named(Action::Dismiss, "back")
-}
-
-/// A preference's value as the control that changes it.
-fn preference_control(row: &uze_application::PreferenceRow) -> crate::ui::widget::control::Control {
-    use crate::ui::widget::control::Control;
-    match row.kind {
-        "number" => Control::Stepper(row.said()),
-        "choice" => Control::Choice(row.said()),
-        "toggle" => Control::Toggle(row.value.as_bool().unwrap_or(false)),
-        _ if row.is_secret() => Control::Field {
-            text: row.said(),
-            quiet: row.value != serde_json::Value::Bool(true),
-        },
-        _ => {
-            let empty = row.value.as_str().is_none_or(str::is_empty);
-            Control::Field {
-                text: if empty {
-                    "empty".to_owned()
-                } else {
-                    row.said()
-                },
-                quiet: empty,
-            }
-        }
-    }
 }
 
 /// What `row` holds, as the detail and the typing step say it: its kind

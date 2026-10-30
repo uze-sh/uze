@@ -141,20 +141,8 @@ impl TuiModel {
             self.preferences = None;
             return Intent::None;
         };
-        let set = |editor: &mut crate::ui::model::PreferencesEditor, value: serde_json::Value| {
-            // A secret's row keeps only whether it is set: what was typed
-            // goes to the keychain and is never shown again.
-            editor.rows[editor.selected].value = if row.is_secret() {
-                serde_json::Value::Bool(value.as_str().is_some_and(|typed| !typed.is_empty()))
-            } else {
-                value.clone()
-            };
-            Intent::SetPreference {
-                identity: editor.identity.clone(),
-                name: row.name.clone(),
-                label: row.label.clone(),
-                value,
-            }
+        let set = |editor: &mut crate::ui::model::PreferencesEditor, value| {
+            set_preference(editor, &row, value)
         };
         let intent = match (&mut editor.typing, action) {
             (Some(_), Action::Dismiss) => {
@@ -211,9 +199,57 @@ impl TuiModel {
         intent
     }
 
+    /// Choosing one of the selected preference's options outright, as a
+    /// click on it does: `off` or `on` for a toggle, a choice's value by
+    /// its place. The option already chosen sets nothing.
+    pub(crate) fn pick_preference(&mut self, option: usize) -> Intent {
+        let Some(mut editor) = self.preferences.clone() else {
+            return Intent::None;
+        };
+        let Some(row) = editor.rows.get(editor.selected).cloned() else {
+            return Intent::None;
+        };
+        let value = match row.kind {
+            "toggle" => serde_json::Value::Bool(option == 1),
+            "choice" => match row.values.get(option) {
+                Some(value) => serde_json::Value::String(value.clone()),
+                None => return Intent::None,
+            },
+            _ => return Intent::None,
+        };
+        if value == row.value {
+            return Intent::None;
+        }
+        let intent = set_preference(&mut editor, &row, value);
+        self.preferences = Some(editor);
+        intent
+    }
+
     pub(crate) fn close_overlay(&mut self) {
         self.overlay = Overlay::None;
         self.focus = Focus::Content;
+    }
+}
+
+/// `value` set on `row`, the selected row of `editor`: drawn at once, and
+/// saved by the intent this answers.
+fn set_preference(
+    editor: &mut crate::ui::model::PreferencesEditor,
+    row: &uze_application::PreferenceRow,
+    value: serde_json::Value,
+) -> Intent {
+    // A secret's row keeps only whether it is set: what was typed goes to
+    // the keychain and is never shown again.
+    editor.rows[editor.selected].value = if row.is_secret() {
+        serde_json::Value::Bool(value.as_str().is_some_and(|typed| !typed.is_empty()))
+    } else {
+        value.clone()
+    };
+    Intent::SetPreference {
+        identity: editor.identity.clone(),
+        name: row.name.clone(),
+        label: row.label.clone(),
+        value,
     }
 }
 

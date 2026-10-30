@@ -718,6 +718,24 @@ fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
 
+/// The option drawn chosen, in the accent, on the row labelled `label`.
+fn chosen_on(model: &TuiModel, label: &str) -> String {
+    let (terminal, _) = super::support::drawn_at(model, 220, 44);
+    let buffer = terminal.backend().buffer();
+    let rows = super::support::buffer_rows(&terminal);
+    let y = rows
+        .iter()
+        .position(|row| row.contains(label))
+        .unwrap_or_else(|| panic!("{label} is drawn"));
+    let accent = crate::ui::theme::color(uze_theme::Token::Accent);
+    (0..buffer.area.width)
+        .filter(|x| buffer[(*x, y as u16)].bg == accent)
+        .map(|x| buffer[(x, y as u16)].symbol().to_owned())
+        .collect::<String>()
+        .trim()
+        .to_owned()
+}
+
 fn click(model: &mut TuiModel, target: &Hit) -> Intent {
     let (_, hits) = super::support::drawn_at(model, 220, 44);
     let (rect, _) = *hits
@@ -728,7 +746,7 @@ fn click(model: &mut TuiModel, target: &Hit) -> Intent {
     model.apply_mouse(
         MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
-            column: rect.x + rect.width / 2,
+            column: rect.x + 1,
             row: rect.y,
             modifiers: KeyModifiers::NONE,
         },
@@ -758,26 +776,16 @@ fn preferences_are_listed_and_set_from_the_keyboard() {
         "the keys are on the preferences"
     );
     assert_eq!(model.overlay, crate::ui::model::Overlay::None, "no dialog");
-    let editor = screen_of(&model);
-    let row_of = |screen: &str| {
-        screen
-            .lines()
-            .find(|line| line.contains("Show °F"))
-            .and_then(|line| line.split("Show °F").nth(1))
-            .map(|value| value.trim().to_owned())
-            .unwrap_or_default()
-    };
-    assert!(row_of(&editor).ends_with("off"), "{:?}", row_of(&editor));
+    assert_eq!(chosen_on(&model, "Show °F"), "off");
     let enter = key(KeyCode::Enter);
     assert_eq!(
         model.apply_key(enter),
         set("fahrenheit", "Show °F", serde_json::json!(true))
     );
-    let set_on = screen_of(&model);
-    assert!(
-        row_of(&set_on).ends_with(" on"),
-        "the row says what was set: {:?}",
-        row_of(&set_on)
+    assert_eq!(
+        chosen_on(&model, "Show °F"),
+        "on",
+        "the row says what was set"
     );
     model.apply_key(key(KeyCode::Down));
     assert_eq!(model.apply_key(enter), Intent::None, "a number is typed");
@@ -1041,15 +1049,22 @@ fn a_secret_is_typed_masked_and_never_shown_again() {
     assert!(!after.contains("ghp_abc"), "{after}");
 }
 
-/// A click on a toggle's value is pressing Enter on its row.
+/// A toggle is `off` and `on` side by side, as a settings form draws it:
+/// a click on the one not chosen sets it, on the one chosen sets nothing.
 #[test]
-fn clicking_a_toggle_is_pressing_enter_on_it() {
+fn clicking_a_toggles_option_chooses_it() {
     let mut model = with_preferences();
     model.edit_selected_preferences();
+    let on = Hit::ExtensionPreferenceChoice {
+        index: 0,
+        option: 1,
+    };
     assert_eq!(
-        click(&mut model, &Hit::ExtensionPreferenceValue(0)),
+        click(&mut model, &on),
         set("fahrenheit", "Show °F", serde_json::json!(true))
     );
+    assert_eq!(chosen_on(&model, "Show °F"), "on");
+    assert_eq!(click(&mut model, &on), Intent::None);
 }
 
 /// Two extensions drawing a row in the workspace sidebar's header, the
