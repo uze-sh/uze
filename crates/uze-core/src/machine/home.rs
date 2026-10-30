@@ -492,6 +492,20 @@ impl UzeHome {
         self.state_dir().join("update.json")
     }
 
+    /// Held by the one process asking for the latest release, so clients
+    /// that wake together ask once. A lock, not a record.
+    pub fn binary_check_lock_path(&self) -> PathBuf {
+        self.state_dir().join("update.lock")
+    }
+
+    /// Held by the one process fetching marketplaces in the background,
+    /// so clients that wake together fetch once. In `state/` rather than
+    /// beside the mirrors, because the cache tier may be deleted under its
+    /// holder. A lock, not a record.
+    pub fn marketplace_fetch_lock_path(&self) -> PathBuf {
+        self.state_dir().join("marketplace-fetch.lock")
+    }
+
     /// The receipt `install.sh` leaves: the file it placed and the release
     /// it was. Inbound — UZE reads it and never writes it — which is why it
     /// is a document of its own rather than part of [`Self::binary_path`].

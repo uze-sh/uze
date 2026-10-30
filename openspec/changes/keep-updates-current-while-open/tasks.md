@@ -5,10 +5,10 @@
 
 ## 2. Release check
 
-- [ ] 2.1 Name `state/update.lock` and `state/marketplace-fetch.lock` in `UzeHome`
-- [ ] 2.2 `UZE_RELEASE_CHANNEL` (`latest` default, `stable`): a found release is settled at once on `latest`; test both
-- [ ] 2.3 A due check takes the lock with `try_lock`, stamps `checked_at`, then asks; a held lock skips the network; test both
-- [ ] 2.4 `watch` wakes every 15 minutes ±20% instead of every hour
+- [x] 2.1 Name `state/update.lock` and `state/marketplace-fetch.lock` in `UzeHome`
+- [x] 2.2 `UZE_RELEASE_CHANNEL` (`latest` default, `stable`): a found release is settled at once on `latest`; test both
+- [x] 2.3 A due check takes the lock with `try_lock`, stamps `checked_at`, then asks; a held lock skips the network; test both
+- [x] 2.4 `watch` wakes every 15 minutes ±20% instead of every hour
 
 ## 3. Plugins while the workspace is open
 

@@ -904,7 +904,11 @@ mod tests {
         .unwrap();
 
         // What a forge advertises beside the branches: a pull request's head.
-        run(&["update-ref", "refs/pull/7/head", &first], Some(&origin_dir)).unwrap();
+        run(
+            &["update-ref", "refs/pull/7/head", &first],
+            Some(&origin_dir),
+        )
+        .unwrap();
         run(&["tag", "v1", &second], Some(&origin_dir)).unwrap();
         ensure(
             &origin_dir.to_string_lossy(),
