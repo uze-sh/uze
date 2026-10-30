@@ -28,7 +28,7 @@ ratatui primitives (`chrome_is_built_from_the_widget_vocabulary`).
 | a detail column | `drawer::render`, `drawer::foot` |
 | a drawer docked beside a live pane | `drawer::render_docked`, `drawer::docked_width` |
 | a question or notice | `dialog::Dialog` (its `table` for what a consent asks for), `render_choice`, `shell` |
-| a form's key and its value as the control that changes it | `form::label`, `form::stepper`, `form::segment` (`SegmentState`), `form::boxed`, `form::combo`, `form::typing`: the workspace settings and an extension's preferences alike |
+| a form: a key and the control that sets its value, a group's heading and air, a list's check mark | `widget::form`: `Layout`, `key` + `Control` (`Stepper`, `Choice`, `Boxed`, `Combo`, `Typing`, `Add`) answering `Part`s, `label`/`indent` for a key of prose, `check`, `heading`, `GROUP_AIR`/`KEY_AIR` |
 | a list to choose from, answered once | `dialog::shell` with `Scope::Choose` (`orchestrator/extension_offer.rs`) |
 | a titled card over a scrim | `modal`, `footer::render` (returns `Drawn{trailers, hints}`), `scrim` |
 | what to check, worst first | `alerts` |

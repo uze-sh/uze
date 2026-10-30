@@ -1100,7 +1100,7 @@ fn pip_width() -> u16 {
 }
 
 fn toggle_mark_width() -> u16 {
-    theme::width(Symbol::MarkToggleOn).max(theme::width(Symbol::MarkToggleOff))
+    crate::ui::widget::form::check_width()
 }
 
 /// A row of a `Cells` grid as spans, one for each run of a role.
@@ -1950,17 +1950,14 @@ impl Painter<'_, '_> {
             node: node.id,
             act: NodeAct::Toggle,
         };
-        let (symbol, mark) = match on {
-            true => (Symbol::MarkToggleOn, Token::Accent),
-            false => (Symbol::MarkToggleOff, Token::TextMuted),
-        };
         let ink = match (self.hovered(hit), on) {
             (true, _) => Token::TextBright,
             (false, true) => Token::TextPrimary,
             (false, false) => Token::TextSecondary,
         };
         let line = Line::from(vec![
-            TextSpan::styled(format!("{} ", theme::glyph(symbol)), theme::fg(mark)),
+            crate::ui::widget::form::check(on, false),
+            TextSpan::raw(" "),
             TextSpan::styled(label.to_owned(), theme::fg(ink)),
         ]);
         let taken = natural(node).min(width);

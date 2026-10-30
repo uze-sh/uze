@@ -415,6 +415,12 @@ impl Grid {
         self.lines.push(Line::from(""));
     }
 
+    fn air(&mut self, rows: usize) {
+        for _ in 0..rows {
+            self.gap();
+        }
+    }
+
     fn prose(&mut self, said: &str, token: Token) {
         self.lines.extend(
             text::fold(said, self.width)
@@ -575,48 +581,47 @@ fn standing_lines(
     let mut preference_rows = Vec::new();
     let preferences = editing.map_or(standing.preferences.as_slice(), |editor| &editor.rows);
     if !preferences.is_empty() {
-        // The settings form's group: twice the air above its heading, a
-        // ruled heading, then a line of air between its keys.
-        grid.gap();
-        grid.gap();
+        // A group of the form, as the settings form spaces one.
+        grid.air(form::GROUP_AIR);
         grid.lines.push(form::heading("preferences", grid.width));
-        grid.gap();
-        let label_width = preferences
-            .iter()
-            .map(|row| text::columns(&row.label) + 4)
-            .max()
-            .unwrap_or(0)
-            .clamp(PREFERENCE_LABEL.0, PREFERENCE_LABEL.1)
-            .min(grid.width / 2) as u16;
-        let control_width =
-            PREFERENCE_CONTROL.min(grid.width.saturating_sub(usize::from(label_width)));
+        grid.air(form::KEY_AIR);
+        let layout =
+            form::Layout::fit(preferences.iter().map(|row| row.label.as_str()), grid.width);
         for (index, row) in preferences.iter().enumerate() {
             if index > 0 {
-                grid.gap();
+                grid.air(form::KEY_AIR);
             }
             let marked = editing.filter(|editor| editor.selected == index);
             let state = RowState::of(
                 marked.is_some(),
                 hovered == Some(&Hit::ExtensionPreferenceRow(index)),
             );
-            let (control, parts) = preference_control(
-                row,
-                index,
-                marked.and_then(|editor| editor.typing.as_deref()),
-                hovered,
-                control_width,
-            );
-            let mut spans = vec![form::label(&row.label, state, label_width)];
-            spans.extend(control);
+            let lit = match hovered {
+                Some(Hit::ExtensionPreferenceStep { index: at, forward }) if *at == index => {
+                    Some(if *forward {
+                        form::Part::Increase
+                    } else {
+                        form::Part::Decrease
+                    })
+                }
+                Some(Hit::ExtensionPreferenceChoice { index: at, option }) if *at == index => {
+                    Some(form::Part::Option(*option))
+                }
+                Some(Hit::ExtensionPreferenceValue(at)) if *at == index => Some(form::Part::Value),
+                _ => None,
+            };
+            let typing = marked.and_then(|editor| editor.typing.as_deref());
+            let key = preference_key(row, state, typing, layout, lit);
             preference_rows.push(PlacedPreference {
                 line: grid.lines.len(),
                 index,
-                parts: parts
+                parts: key
+                    .parts
                     .into_iter()
-                    .map(|(x, width, hit)| (label_width + x, width, hit))
+                    .map(|(x, width, part)| (x, width, preference_hit(index, part)))
                     .collect(),
             });
-            grid.lines.push(Line::from(spans));
+            grid.lines.push(key.line);
         }
         // What the row the keys are on holds, in rows kept whatever it
         // says, so moving between rows never moves what is under them.
@@ -626,7 +631,7 @@ fn standing_lines(
                 said.push_str(" · empty forgets it");
             }
             // Under the labels, in their column, a line of air apart.
-            grid.gap();
+            grid.air(form::KEY_AIR);
             let indent = form::LABEL_INDENT;
             let mut folded = text::fold(&said, grid.width.saturating_sub(indent));
             folded.resize(PREFERENCE_DETAIL, String::new());
@@ -733,10 +738,6 @@ fn standing_status(
 /// The rows a preference's detail keeps under the rows while the keys are
 /// on them.
 const PREFERENCE_DETAIL: usize = 2;
-/// The narrowest and widest a preference's label column is.
-const PREFERENCE_LABEL: (usize, usize) = (12, 24);
-/// The width a preference's control takes, as a settings form's does.
-const PREFERENCE_CONTROL: usize = 24;
 
 /// A preference's row in the drawer, and where on it each part of its
 /// control answers a click.
@@ -749,91 +750,83 @@ struct PlacedPreference {
     parts: Vec<(u16, u16, Hit)>,
 }
 
-/// `row`'s value as the settings form's control for its kind, `width`
-/// wide, and where each part of it answers: a number between its steps,
-/// a toggle or a short choice side by side, anything else in its box,
-/// typed into while `typing` holds what is typed.
-fn preference_control(
+/// `row` as a key of the form: a number between its steps, a toggle or a
+/// short choice side by side, anything else in its box, typed into while
+/// `typing` holds what is typed.
+fn preference_key(
     row: &uze_application::PreferenceRow,
-    index: usize,
+    state: RowState,
     typing: Option<&str>,
-    hovered: Option<&Hit>,
-    width: usize,
-) -> (Vec<Span<'static>>, Vec<(u16, u16, Hit)>) {
-    let lit = |hit: &Hit| hovered == Some(hit);
-    let whole = |spans: Vec<Span<'static>>| {
-        let drawn = spans.iter().map(Span::width).sum::<usize>() as u16;
-        (
-            spans,
-            vec![(0, drawn, Hit::ExtensionPreferenceValue(index))],
-        )
-    };
+    layout: form::Layout,
+    lit: Option<form::Part>,
+) -> form::Key {
+    let said = row.said();
+    let control = |control| form::key(&row.label, state, control, layout, lit);
     if let Some(typed) = typing {
         // A secret is drawn as one dot per character typed.
         let shown = if row.is_secret() {
             theme::glyph(Symbol::CursorMasked).repeat(typed.chars().count())
         } else {
-            text::elide_head(typed, width.saturating_sub(3))
+            text::elide_head(typed, layout.field.saturating_sub(3))
         };
-        return whole(form::typing(&shown, "", width as u16));
+        return control(form::Control::Typing {
+            before: &shown,
+            after: "",
+        });
     }
-    let options: Vec<String> = match row.kind {
-        "toggle" => vec!["off".to_owned(), "on".to_owned()],
-        "choice" => row.values.clone(),
-        _ => Vec::new(),
-    };
-    let words: Vec<&str> = options.iter().map(String::as_str).collect();
-    let segment = form::segment_width(&words, width);
-    if !options.is_empty() && segment * options.len() <= width {
-        let chosen = row.said();
-        let mut spans = Vec::new();
-        let mut parts = Vec::new();
-        let mut x = 0;
-        for (option, word) in words.iter().enumerate() {
-            let hit = Hit::ExtensionPreferenceChoice { index, option };
-            let state = if *word == chosen {
-                form::SegmentState::Chosen
-            } else if lit(&hit) {
-                form::SegmentState::Hovered
-            } else {
-                form::SegmentState::Resting
-            };
-            let cell = form::segment(word, state, segment);
-            let cell_width = cell.width() as u16;
-            parts.push((x, cell_width, hit));
-            x += cell_width;
-            spans.push(cell);
+    match row.kind {
+        "number" => control(form::Control::Stepper {
+            value: &said,
+            tone: Token::TextBright,
+            editable: true,
+        }),
+        "toggle" => control(form::Control::Choice {
+            options: &["off", "on"],
+            chosen: &said,
+        }),
+        "choice" => {
+            let options: Vec<&str> = row.values.iter().map(String::as_str).collect();
+            control(form::Control::Choice {
+                options: &options,
+                chosen: &said,
+            })
         }
-        return (spans, parts);
+        _ => {
+            let quiet = if row.is_secret() {
+                row.value != serde_json::Value::Bool(true)
+            } else {
+                row.value.as_str().is_none_or(str::is_empty)
+            };
+            control(form::Control::Boxed {
+                value: if quiet && !row.is_secret() {
+                    "empty"
+                } else {
+                    &said
+                },
+                tone: if quiet {
+                    Token::TextDim
+                } else {
+                    Token::TextPrimary
+                },
+            })
+        }
     }
-    if row.kind == "number" {
-        let step = |forward| Hit::ExtensionPreferenceStep { index, forward };
-        let (spans, steps) = form::stepper(
-            &row.said(),
-            Token::TextBright,
-            true,
-            [lit(&step(false)), lit(&step(true))],
-            width,
-        );
-        let middle = (steps.minus.1, steps.plus.0 - steps.minus.1);
-        return (
-            spans,
-            vec![
-                (steps.minus.0, steps.minus.1, step(false)),
-                (middle.0, middle.1, Hit::ExtensionPreferenceValue(index)),
-                (steps.plus.0, steps.plus.1, step(true)),
-            ],
-        );
+}
+
+/// What a click on `part` of preference `index`'s control is.
+fn preference_hit(index: usize, part: form::Part) -> Hit {
+    match part {
+        form::Part::Decrease => Hit::ExtensionPreferenceStep {
+            index,
+            forward: false,
+        },
+        form::Part::Increase => Hit::ExtensionPreferenceStep {
+            index,
+            forward: true,
+        },
+        form::Part::Value => Hit::ExtensionPreferenceValue(index),
+        form::Part::Option(option) => Hit::ExtensionPreferenceChoice { index, option },
     }
-    let empty = !row.is_secret() && row.value.as_str().is_none_or(str::is_empty);
-    let (said, tone) = if empty {
-        ("empty".to_owned(), Token::TextDim)
-    } else if row.is_secret() && row.value != serde_json::Value::Bool(true) {
-        (row.said(), Token::TextDim)
-    } else {
-        (row.said(), Token::TextPrimary)
-    };
-    whole(vec![form::boxed(&said, tone, width)])
 }
 
 /// What the keys do on the preference they are on, in the footer: what

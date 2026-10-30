@@ -83,10 +83,6 @@ const STATE_ROOM: u16 = 24;
 /// How far a key's label sits in under its group's heading.
 const KEY_INDENT: usize = 2;
 
-/// The width a segmented choice's options and a number's − value + share,
-/// so the two kinds of control end in the same column.
-const CONTROL: usize = 24;
-
 pub(super) fn render_space_overview(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
@@ -1199,29 +1195,26 @@ impl Form {
         };
         let commands = CommandStates::of(project);
         for (group, keys) in GROUPS {
-            // Twice the air between keys, so a group reads apart from the
-            // one above it.
             if !form.lines.is_empty() {
-                form.lines.extend([blank(), blank()]);
+                form.air(form::GROUP_AIR);
             }
             form.lines.push(group_heading(group, form.width));
-            form.lines.push(blank());
+            form.air(form::KEY_AIR);
             for (position, key) in keys.iter().copied().enumerate() {
-                // A line of air between keys, so each reads as its own.
                 if position > 0 {
-                    form.lines.push(blank());
+                    form.air(form::KEY_AIR);
                 }
                 form.push_key(overview, key, &commands);
             }
         }
         // What an agent is asked at each moment: prose, so each is a box of
         // as many lines as the instruction runs to.
-        form.lines.extend([blank(), blank()]);
+        form.air(form::GROUP_AIR);
         form.lines.push(group_heading("agent actions", form.width));
-        form.lines.push(blank());
+        form.air(form::KEY_AIR);
         for (position, state) in ActionState::ALL.into_iter().enumerate() {
             if position > 0 {
-                form.lines.push(blank());
+                form.air(form::KEY_AIR);
             }
             form.push_action(overview, state);
         }
@@ -1261,87 +1254,135 @@ impl Form {
             .filter(|field| field.key == key);
         let editable = overview.editable();
         let focused = self.index == overview.row();
-        let mut spans = vec![form::label(
-            key_label(key),
-            self.label_state(focused),
-            LABEL,
-        )];
-        if field.is_some_and(|field| field.item.is_none()) {
+        let layout = self.layout();
+        let state = self.label_state(focused);
+        let label = key_label(key);
+        let index = self.index;
+        let lit = match self.hovered {
+            Some(WorkspaceHit::OverviewChoice(row, option)) if row == index => {
+                Some(form::Part::Option(option))
+            }
+            Some(WorkspaceHit::OverviewStep(row, adds)) if row == index => Some(if adds {
+                form::Part::Increase
+            } else {
+                form::Part::Decrease
+            }),
+            _ => None,
+        };
+        let drawn = if field.is_some_and(|field| field.item.is_none()) {
+            // The field is drawn over the box once the form is placed.
             self.field_at = Some((self.lines.len(), LABEL));
+            form::key(
+                label,
+                state,
+                form::Control::Boxed {
+                    value: "",
+                    tone: Token::TextPrimary,
+                },
+                layout,
+                lit,
+            )
         } else if is_segmented(key) {
             let current = chosen(key, value);
-            let options = choices(key);
-            let mut cells = Vec::with_capacity(options.len());
-            let mut at = LABEL;
-            for (option, word) in options.iter().enumerate() {
-                let state = if *word == current {
-                    form::SegmentState::Chosen
-                } else if self.hovered == Some(WorkspaceHit::OverviewChoice(self.index, option)) {
-                    form::SegmentState::Hovered
-                } else {
-                    form::SegmentState::Resting
-                };
-                let cell = form::segment(word, state, self.segment_width(options));
-                cells.push((at, cell.width() as u16));
-                at += cell.width() as u16;
-                spans.push(cell);
-            }
+            let drawn = form::key(
+                label,
+                state,
+                form::Control::Choice {
+                    options: choices(key),
+                    chosen: &current,
+                },
+                layout,
+                lit,
+            );
             if editable {
-                self.segments.push((self.lines.len(), self.index, cells));
+                let cells = drawn
+                    .parts
+                    .iter()
+                    .filter(|(_, _, part)| matches!(part, form::Part::Option(_)))
+                    .map(|(x, width, _)| (*x, *width))
+                    .collect();
+                self.segments.push((self.lines.len(), index, cells));
             }
+            drawn
         } else if is_combo(key) {
             let (shown, tone) = match (value, choices(key)) {
                 (_, [_, ..]) => (chosen(key, value), Token::TextPrimary),
                 (Some(value), _) => (scalar(value), Token::TextPrimary),
                 (None, _) => (key.default_spelled().to_owned(), Token::TextDim),
             };
-            spans.extend(form::combo(&shown, tone, self.box_width));
+            form::key(
+                label,
+                state,
+                form::Control::Combo {
+                    value: &shown,
+                    tone,
+                },
+                layout,
+                lit,
+            )
         } else if is_number(key) {
             let (shown, tone) = match value {
                 Some(value) => (scalar(value), Token::TextBright),
                 None => (key.default_spelled().to_owned(), Token::TextDim),
             };
-            let lit = |adds| self.hovered == Some(WorkspaceHit::OverviewStep(self.index, adds));
-            let (stepper, steps) = form::stepper(
-                &shown,
-                tone,
-                editable,
-                [lit(false), lit(true)],
-                self.control(),
+            let drawn = form::key(
+                label,
+                state,
+                form::Control::Stepper {
+                    value: &shown,
+                    tone,
+                    editable,
+                },
+                layout,
+                lit,
             );
-            let minus = (LABEL + steps.minus.0, steps.minus.1);
-            let plus = (LABEL + steps.plus.0, steps.plus.1);
-            spans.extend(stepper);
+            let cell = |wanted| {
+                drawn
+                    .parts
+                    .iter()
+                    .find(|(_, _, part)| *part == wanted)
+                    .map(|(x, width, _)| (*x, *width))
+                    .unwrap_or_default()
+            };
             if editable {
-                self.steps.push((self.lines.len(), self.index, minus, plus));
+                self.steps.push((
+                    self.lines.len(),
+                    index,
+                    cell(form::Part::Decrease),
+                    cell(form::Part::Increase),
+                ));
             }
+            drawn
         } else if is_listed(key, overview) {
             // A new entry is typed where its add stood.
             if field.is_some_and(|field| field.item == Some(value.map_or(0, item_count))) {
                 self.field_at = Some((self.lines.len(), LABEL));
             }
-            spans.push(Span::styled(
-                if editable { "+ add" } else { "" },
-                theme::fg(if focused {
-                    Token::TextSecondary
-                } else {
-                    Token::TextDim
-                }),
-            ));
-        } else {
-            match value {
-                Some(value) => spans.push(form::boxed(
-                    &scalar(value),
-                    Token::TextPrimary,
-                    self.box_width,
-                )),
-                None => spans.push(form::boxed(
-                    key.default_spelled(),
-                    Token::TextDim,
-                    self.box_width,
-                )),
+            if editable {
+                form::key(label, state, form::Control::Add, layout, lit)
+            } else {
+                form::Key {
+                    line: Line::from(form::label(label, state, layout)),
+                    parts: Vec::new(),
+                }
             }
-        }
+        } else {
+            let (shown, tone) = match value {
+                Some(value) => (scalar(value), Token::TextPrimary),
+                None => (key.default_spelled().to_owned(), Token::TextDim),
+            };
+            form::key(
+                label,
+                state,
+                form::Control::Boxed {
+                    value: &shown,
+                    tone,
+                },
+                layout,
+                lit,
+            )
+        };
+        let mut spans = drawn.line.spans;
         if edited {
             spans.push(edited_mark());
         } else if overview.edit.saved.values.contains_key(&key) {
@@ -1353,12 +1394,24 @@ impl Form {
             for (item, entry) in entries.iter().enumerate() {
                 if field.is_some_and(|field| field.item == Some(item)) {
                     self.field_at = Some((self.lines.len(), LABEL));
-                    self.push_row(vec![indent()]);
+                    self.push_row(vec![form::indent(layout)]);
                     continue;
                 }
-                let mut spans = vec![indent()];
+                let mut spans = vec![form::indent(layout)];
                 if matches!(key, DeclarationKey::Setup | DeclarationKey::Gate) {
-                    spans.push(form::boxed(entry, Token::TextCode, self.entry_width));
+                    let entries = form::Layout {
+                        field: self.entry_width,
+                        ..layout
+                    };
+                    let (boxed, _) = form::control(
+                        form::Control::Boxed {
+                            value: entry,
+                            tone: Token::TextCode,
+                        },
+                        entries,
+                        None,
+                    );
+                    spans.extend(boxed);
                     let command = match value {
                         Some(DeclaredValue::Commands(declared)) => declared.get(item),
                         _ => None,
@@ -1385,7 +1438,7 @@ impl Form {
         {
             self.lines.push(SectionLine {
                 spans: vec![
-                    indent(),
+                    form::indent(layout),
                     Span::styled(failed(&problem.reason), theme::fg(Token::StateDanger)),
                 ],
                 row: None,
@@ -1402,9 +1455,13 @@ impl Form {
             .enumerate()
         {
             let mut row_spans = vec![if line == 0 {
-                form::label(action_label(state), self.label_state(focused), LABEL)
+                form::label(
+                    action_label(state),
+                    self.label_state(focused),
+                    self.layout(),
+                )
             } else {
-                indent()
+                form::indent(self.layout())
             }];
             row_spans.append(&mut spans);
             if line == 0 && edited {
@@ -1420,16 +1477,21 @@ impl Form {
         self.index += 1;
     }
 
-    /// The width a segmented choice and a stepper take: [`CONTROL`], or
-    /// what a value's box has on a narrow screen.
-    fn control(&self) -> usize {
-        CONTROL.min(self.box_width)
+    /// `rows` blank lines: the form's air, as [`form`] measures it.
+    fn air(&mut self, rows: usize) {
+        self.lines.extend(std::iter::repeat_with(blank).take(rows));
     }
 
-    /// Each option's share of the control, never less than its word with
-    /// a column of air either side: options read run together otherwise.
-    fn segment_width(&self, options: &[&str]) -> usize {
-        form::segment_width(options, self.control())
+    /// Where the form's keys put their parts: its label column, a stepper
+    /// or a choice as wide as [`form::CONTROL`] or a value's box on a
+    /// narrow screen, and the value's box.
+    fn layout(&self) -> form::Layout {
+        form::Layout {
+            label: LABEL,
+            control: form::CONTROL.min(self.box_width),
+            field: self.box_width,
+            room: self.width.saturating_sub(usize::from(LABEL)),
+        }
     }
 
     /// How the next row's label is drawn: the keyboard's, under the
@@ -1549,11 +1611,6 @@ fn action_boxes(
 /// A key's label in the form's first column. The keyboard's row is
 /// pointed at, as the plugin tree points at its own, and stands out bright
 /// against the rest left muted; the pointer brings a label up a step.
-/// The label column left blank, under a label.
-fn indent() -> Span<'static> {
-    Span::raw(" ".repeat(usize::from(LABEL)))
-}
-
 /// What is refused, behind its mark.
 fn failed(reason: &str) -> String {
     format!("{} {reason}", theme::glyph(Symbol::MarkFailed))

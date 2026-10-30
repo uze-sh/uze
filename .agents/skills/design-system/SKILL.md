@@ -28,7 +28,11 @@ The rules are in two places, and they do not overlap:
 2. If the vocabulary has no widget or constructor for your case, add one to
    `src/ui/widget/` (or a helper to `src/progress.rs`). Never build it at the
    call site.
-3. Read the sections below that apply to your change. When the rule you need
+3. Asking a person for a value (a setting, a preference, an option, a
+   list to tick) is a form: build it from the components of `widget::form`
+   (see **Forms are components**), and grow them there when they lack
+   the input you need.
+4. Read the sections below that apply to your change. When the rule you need
    isn't here, ask the operator once, then write the answer down here.
 
 ## Interaction (TUI)
@@ -359,23 +363,47 @@ on "cancel" must not save first.
 - UI state (collapsed sections, navigation, widths) survives navigation and
   restarts.
 
-**Forms:**
-- Inputs share one look: an underline that lights on focus, and a visible
-  caret so the field reads as an input before anyone types.
-- Numbers use `- value +` steppers sized for two digits.
-- A fixed set of choices uses a combobox or radio buttons.
+**Forms are components.** Every value a person sets, on any screen, is
+drawn from `widget::form`, the way a web app draws its inputs from one
+component library: same anatomy, same states, same spacing everywhere.
+Before drawing an input, find its component; when none fits, add a
+`form::Control` (or a sibling component) there and use it, never a
+control assembled at the call site. `form_inputs_are_drawn_from_the_form_components`
+fails the build on an input's glyph named outside it.
+
+- The components:
+  - `form::Layout`: the label column, a control's width, a box's width
+    and the row's room. `Layout::fit` sizes it to the labels; a screen
+    with a fixed column states its own.
+  - `form::key(label, state, Control, layout, lit)`: one key, its label
+    with the keys' `❯` while they are on it, then its control. It answers
+    with its line and each `form::Part` (`Decrease`, `Value`, `Increase`,
+    `Option(n)`); the caller maps parts to its own hits.
+  - `form::Control`: `Stepper` (a number between raised `−` `+`),
+    `Choice` (a few options side by side, the chosen one in the accent;
+    in a box when they do not fit), `Boxed` (a typed value in a recessed
+    box), `Combo` (a box with the mark that says a list opens: only when
+    one does), `Typing` (the box being typed into, its caret), `Add`
+    (`+ add`, where a list's first entry would stand).
+  - `form::check(on, lit)`: a row's mark in a list of choices, `◉` in the
+    accent or `○` quiet, stronger under the pointer.
+  - `form::heading`, `form::GROUP_AIR`, `form::KEY_AIR`: a group stands
+    apart the settings way, never with a bar down its side: two blank
+    lines above it, a ruled heading (`Preferences ───`), a blank line,
+    then its keys with a line of air between each.
+- Two inputs take text and they are not the same: a key's value is typed
+  in its own recessed box (`Control::Typing`); a line typed into at the
+  head of a list or a popover (a search, a path, a prompt) is
+  `widget::Field`, with its underline that lights on focus. Both show a
+  caret before anything is typed.
+- Controls start from the label column, never right-aligned against the
+  edge.
+- Numbers are steppers sized for two digits; a few fixed choices stand
+  side by side, more go in a combo with its list; a list where several
+  rows can be on is a list of `check`s.
 - Files and branches come from a picker of real options.
 - Settings autosave, and the save shows no toast.
-- Every form looks like the workspace's settings form (`widget::form`),
-  whatever screen it stands on: the label in a column with the keys'
-  `❯` ahead of it, then the control from that column, never right-aligned
-  against the edge: a number between raised `−` `+`, a toggle or a few
-  choices side by side with the chosen one in the accent, a typed value
-  in a recessed box. Never a control of a screen's own. A group stands
-  apart the settings way, never with a bar down its side: two blank
-  lines above it, a ruled heading (`form::heading`: `Preferences ───`),
-  a blank line, then its keys with a line of air between each.
-- An extension's preferences are that form in its drawer, never a dialog
+- An extension's preferences are the form in its drawer, never a dialog
   of their own: every part a click target from the start (a click on an
   option chooses it). The drawer's Preferences button, or a click on a
   row, puts the keys on them; a detail of fixed height under the rows
@@ -658,7 +686,7 @@ Answer each of these. A "no" is a fix, not a note in the report:
 3. Does it match the nearest sibling surface's structure, spacing and
    alignment? Did I check edges against the title?
 4. Is every colour a token, every glyph a `Symbol`, every piece of chrome a
-   widget?
+   widget, every input a `widget::form` component?
 5. Did I check it at a narrow width, in an empty state, in light mode, and
    with long text?
 6. Does each toast have a title and a detail, and is it about something

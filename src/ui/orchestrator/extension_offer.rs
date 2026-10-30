@@ -840,17 +840,7 @@ fn render_rows(
         let attribution_width = usize::from(row.width)
             .saturating_sub(cursor_width + 2 + name_width + 2 + tag_width + 2);
         let mark_hit = WorkspaceHit::ExtensionOfferMark(index);
-        let mark = if open.chosen[index] {
-            Span::styled(
-                theme::glyph(Symbol::MarkToggleOn).to_string(),
-                theme::fg_bold(lit.tone(mark_hit, Token::TextPrimary)),
-            )
-        } else {
-            Span::styled(
-                theme::glyph(Symbol::MarkToggleOff).to_string(),
-                theme::fg(lit.tone(mark_hit, Token::TextFaint)),
-            )
-        };
+        let mark = crate::ui::widget::form::check(open.chosen[index], lit.0 == Some(mark_hit));
         let name = text::elide(&offer.name, name_width);
         let attribution = text::elide(
             &format!("{}@{}", offer.plugin, offer.marketplace),
