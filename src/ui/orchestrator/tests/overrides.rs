@@ -1588,3 +1588,29 @@ fn a_popup_opened_before_the_record_caught_up_opens_on_this_runs_launch() {
 
     assert_eq!(step_of(&driven).launch_words(), ["DEBUG=1"]);
 }
+
+/// Enter before the read answered launches without remembering anything,
+/// so the selection the operator never saw stays the last one; once the
+/// read answered, what the launch carries is remembered for its harness.
+#[test]
+fn only_a_selection_the_operator_saw_is_remembered_at_the_launch() {
+    for seen in [false, true] {
+        let mut popup = popup(&format!("overrides-last-seen-{seen}"));
+        let harness = harness_in_front(&popup);
+        if seen {
+            let step = popup.model.directory_step.as_mut().unwrap();
+            step.seed_last(&harness, &[words_of("--verbose")]);
+        }
+        let mut driven = driven(popup.model_take(), &popup.home);
+
+        driven.press_key(chord(Action::Activate, Scope::RootPicker));
+
+        assert!(driven.attach.model.directory_step.is_none(), "launched");
+        let remembered = driven.attach.model.launched_selections.get(&harness);
+        if seen {
+            assert_eq!(remembered, Some(&vec![words_of("--verbose")]));
+        } else {
+            assert_eq!(remembered, None);
+        }
+    }
+}
