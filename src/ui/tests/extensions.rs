@@ -1289,6 +1289,51 @@ fn the_drawer_offers_no_preferences_button() {
     assert!(offered_button(&model, uze_keys::Action::EditPreferences).is_none());
 }
 
+/// What an extension may reach is read before what is set: its grants
+/// stand above its preferences.
+#[test]
+fn the_drawer_says_the_grants_before_the_preferences() {
+    let screen = screen_of(&focus_preferences());
+    let row_of = |said: &str| screen.lines().position(|row| row.contains(said));
+    assert!(row_of("grants") < row_of("Preferences ─"), "{screen}");
+}
+
+/// A body longer than the drawer scrolls under the wheel, with a
+/// scrollbar beside it, and the wheel never moves the keys.
+#[test]
+fn the_wheel_scrolls_an_overflowing_drawer() {
+    use crossterm::event::{MouseEvent, MouseEventKind};
+    let mut model = twenty_preferences();
+    let (_, hits) = super::support::drawn_at(&model, 220, 44);
+    let (body, _) = *hits
+        .iter()
+        .find(|(_, hit)| *hit == Hit::ExtensionDrawerBody)
+        .expect("the body answers the wheel");
+    model.hits = hits;
+    let before = screen_of(&model);
+    assert!(
+        !before.contains("Setting 19"),
+        "the end is out of sight: {before}"
+    );
+    for _ in 0..20 {
+        model.apply_mouse(
+            MouseEvent {
+                kind: MouseEventKind::ScrollDown,
+                column: body.x + 1,
+                row: body.y + 1,
+                modifiers: KeyModifiers::NONE,
+            },
+            Rect::new(0, 0, 220, 44),
+        );
+    }
+    let after = screen_of(&model);
+    assert!(after.contains("Setting 19"), "{after}");
+    assert_eq!(
+        model.preferences, None,
+        "the wheel leaves the keys where they are"
+    );
+}
+
 /// Every key the footer names while the keys are on the preferences is a
 /// target doing what the key does: enter types the number, esc gives the
 /// keys back to the cards.

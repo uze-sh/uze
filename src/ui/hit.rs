@@ -20,6 +20,9 @@ pub(crate) enum Hit {
     },
     /// A preference's value: selects it and answers it as Enter does.
     ExtensionPreferenceValue(usize),
+    /// The Extensions drawer's body, under every target in it: what the
+    /// wheel scrolls.
+    ExtensionDrawerBody,
     /// One of a preference's options side by side (`off`, `on`, or a
     /// choice's values): selects the row and chooses that option.
     ExtensionPreferenceChoice {
@@ -302,7 +305,10 @@ impl TuiModel {
             }
             // Only reachable while the index is open, which the guarded
             // arm above already answered.
-            Hit::ActionIndexEntry(_) | Hit::OverlayBody | Hit::Answer(_) => Intent::None,
+            Hit::ActionIndexEntry(_)
+            | Hit::OverlayBody
+            | Hit::Answer(_)
+            | Hit::ExtensionDrawerBody => Intent::None,
             // A click on a preference's row puts the keys on it; on its
             // value or its steps, it is also the key that answers them.
             Hit::ExtensionPreferenceRow(index) => {

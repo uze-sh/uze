@@ -605,6 +605,24 @@ impl TuiModel {
                 if self.overlay == Overlay::None
                     && matches!(
                         self.hit_at(event.column, event.row),
+                        Some(Hit::ExtensionDrawerBody)
+                    ) =>
+            {
+                let (scrolled_for, first) = self.extension_drawer_scroll.get();
+                let rows = usize::from(PREVIEW_WHEEL.unsigned_abs());
+                let first = if event.kind == MouseEventKind::ScrollDown {
+                    first + rows
+                } else {
+                    first.saturating_sub(rows)
+                };
+                // The drawer holds it within its end when it next draws.
+                self.extension_drawer_scroll.set((scrolled_for, first));
+                Intent::None
+            }
+            MouseEventKind::ScrollDown | MouseEventKind::ScrollUp
+                if self.overlay == Overlay::None
+                    && matches!(
+                        self.hit_at(event.column, event.row),
                         Some(Hit::ResourcePreview)
                     ) =>
             {

@@ -257,7 +257,179 @@ fn render_extension_drawer(
         .filter(|offer| offer.action != uze_keys::Action::EditPreferences)
         .collect();
     let (body, status) = super::drawer_body_and_footer(inner, &offers);
-    let mut grid = Grid::new(usize::from(body.width));
+    let editing = model
+        .preferences
+        .as_ref()
+        .filter(|editor| matches!(extension, ExtensionEntry::Declared(summary) if summary.identity == editor.identity));
+    // Built at the body's width, and again a scrollbar narrower when it
+    // does not fit, so the bar never stands over what it scrolls.
+    let mut drawn = drawer_body(model, extension, standing, editing, usize::from(body.width));
+    let overflows = drawn.lines.len() > usize::from(body.height);
+    if overflows {
+        drawn = drawer_body(
+            model,
+            extension,
+            standing,
+            editing,
+            usize::from(body.width.saturating_sub(SCROLLBAR_ROOM)),
+        );
+    }
+    let DrawerBody {
+        lines,
+        preference_rows,
+        plugin_line,
+    } = drawn;
+    // What the last compile refused stands at the foot of the body, as it
+    // does over a plugin's own surface while its author saves.
+    let mut text_area = body;
+    if let ExtensionEntry::Declared(summary) = extension
+        && !summary.errors.is_empty()
+    {
+        let title = match summary.errors.len() {
+            1 => "the last compile has an error".to_owned(),
+            count => format!("the last compile has {count} errors"),
+        };
+        // The room under what the drawer says, a blank row apart.
+        let taken = u16::try_from(lines.len() + 1)
+            .unwrap_or(u16::MAX)
+            .min(body.height);
+        let room = Rect {
+            y: body.y + taken,
+            height: body.height - taken,
+            ..body
+        };
+        let banner = crate::ui::widget::banner::render_folded(frame, room, &title, &summary.errors);
+        text_area.height = body.height.saturating_sub(banner.height);
+    }
+    // While the keys are on the preferences, what the row they are on
+    // holds stands at the body's foot, out of the scroll, as a dialog's
+    // detail does: in sight whichever row it is.
+    if let Some(editor) = editing {
+        let detail = Rect {
+            y: text_area.bottom().saturating_sub(PREFERENCE_DETAIL_ROWS),
+            height: PREFERENCE_DETAIL_ROWS.min(text_area.height),
+            ..text_area
+        };
+        text_area.height = text_area.height.saturating_sub(detail.height);
+        render_preference_detail(frame, detail, editor);
+    }
+    let visible = usize::from(text_area.height);
+    // Where the wheel left the body, for the extension it was left on; at
+    // most as far as puts its end at the bottom, and as far again as brings
+    // the row the keys are on into sight.
+    let (scrolled_for, scrolled) = model.extension_drawer_scroll.get();
+    let selected = model.remembered.extension_screen.selected;
+    let mut first = if scrolled_for == selected {
+        scrolled
+    } else {
+        0
+    };
+    first = first.min(lines.len().saturating_sub(visible));
+    if let Some(editor) = editing {
+        first = following(&preference_rows, editor.selected, first, visible);
+    }
+    model.extension_drawer_scroll.set((selected, first));
+    if overflows
+        && let Some(bar) = crate::ui::widget::Scrollbar::measure(
+            Rect::new(
+                body.right().saturating_sub(1),
+                text_area.y,
+                1,
+                text_area.height,
+            ),
+            visible,
+            lines.len(),
+        )
+    {
+        bar.render(frame, first);
+    }
+    // Where line `line` of the body stands on screen, once the body has
+    // scrolled to `first`; nothing for a line out of sight.
+    let on_screen = |line: usize| {
+        line.checked_sub(first)
+            .and_then(|row| u16::try_from(row).ok())
+            .filter(|row| *row < text_area.height)
+            .map(|row| body.y + row)
+    };
+    frame.render_widget(
+        Paragraph::new(lines).scroll((u16::try_from(first).unwrap_or(u16::MAX), 0)),
+        text_area,
+    );
+    if let Some(y) = plugin_line.and_then(on_screen) {
+        hits.push((
+            Rect::new(body.x, y, body.width, 1),
+            Hit::OfferedAction(uze_keys::Action::ShowPlugin),
+        ));
+    }
+    // Each part of a control before its row, so a click on one is not
+    // taken for choosing the row.
+    for placed in preference_rows {
+        let Some(y) = on_screen(placed.line) else {
+            continue;
+        };
+        for (x, width, hit) in placed.parts {
+            if x < body.width {
+                let width = width.min(body.width - x);
+                hits.push((Rect::new(body.x + x, y, width, 1), hit));
+            }
+        }
+        hits.push((
+            Rect::new(body.x, y, body.width, 1),
+            Hit::ExtensionPreferenceRow(placed.index),
+        ));
+    }
+    // Last, so every target in the body answers before it: what the wheel
+    // scrolls.
+    hits.push((text_area, Hit::ExtensionDrawerBody));
+
+    render_drawer_footer(
+        frame,
+        status,
+        if let Some(status) = enabled
+            .then(|| {
+                standing.and_then(|standing| {
+                    standing_status(standing, model.extension_project.is_some())
+                })
+            })
+            .flatten()
+        {
+            status
+        } else if enabled {
+            DrawerStatus {
+                color: theme::color(Token::StateSuccess),
+                headline: "Enabled",
+                subtitle: "",
+            }
+        } else {
+            DrawerStatus {
+                color: theme::color(Token::TextDim),
+                headline: "Disabled",
+                subtitle: "Withdrawn from the workspace",
+            }
+        },
+        &offers,
+        model.hovered_offer,
+        None,
+        hits,
+    );
+}
+
+/// What the drawer's body says, folded to `width`: its lines, where each
+/// preference's row stands among them, and the line naming its plugin.
+struct DrawerBody {
+    lines: Vec<Line<'static>>,
+    preference_rows: Vec<PlacedPreference>,
+    plugin_line: Option<usize>,
+}
+
+fn drawer_body(
+    model: &TuiModel,
+    extension: ExtensionEntry<'_>,
+    standing: Option<&ExtensionReport>,
+    editing: Option<&PreferencesEditor>,
+    width: usize,
+) -> DrawerBody {
+    let mut grid = Grid::new(width);
     let mut plugin_line = None;
 
     grid.lines.push(super::section_label("extension"));
@@ -303,10 +475,6 @@ fn render_extension_drawer(
             }
         }
     }
-    let editing = model
-        .preferences
-        .as_ref()
-        .filter(|editor| matches!(extension, ExtensionEntry::Declared(summary) if summary.identity == editor.identity));
     let preference_rows = standing.map_or_else(Vec::new, |standing| {
         standing_lines(
             &mut grid,
@@ -316,111 +484,11 @@ fn render_extension_drawer(
             model.hovered.as_ref(),
         )
     });
-    let lines = grid.lines;
-    // What the last compile refused stands at the foot of the body, as it
-    // does over a plugin's own surface while its author saves.
-    let mut text_area = body;
-    if let ExtensionEntry::Declared(summary) = extension
-        && !summary.errors.is_empty()
-    {
-        let title = match summary.errors.len() {
-            1 => "the last compile has an error".to_owned(),
-            count => format!("the last compile has {count} errors"),
-        };
-        // The room under what the drawer says, a blank row apart.
-        let taken = u16::try_from(lines.len() + 1)
-            .unwrap_or(u16::MAX)
-            .min(body.height);
-        let room = Rect {
-            y: body.y + taken,
-            height: body.height - taken,
-            ..body
-        };
-        let banner = crate::ui::widget::banner::render_folded(frame, room, &title, &summary.errors);
-        text_area.height = body.height.saturating_sub(banner.height);
+    DrawerBody {
+        lines: grid.lines,
+        preference_rows,
+        plugin_line,
     }
-    // While the keys are on the preferences, what the row they are on
-    // holds stands at the body's foot, out of the scroll, as a dialog's
-    // detail does: in sight whichever row it is.
-    let first = match editing {
-        Some(editor) => {
-            let detail = Rect {
-                y: text_area.bottom().saturating_sub(PREFERENCE_DETAIL_ROWS),
-                height: PREFERENCE_DETAIL_ROWS.min(text_area.height),
-                ..text_area
-            };
-            text_area.height = text_area.height.saturating_sub(detail.height);
-            render_preference_detail(frame, detail, editor);
-            following(&preference_rows, editor, usize::from(text_area.height))
-        }
-        None => 0,
-    };
-    // Where line `line` of the body stands on screen, once the body has
-    // scrolled to `first`; nothing for a line out of sight.
-    let on_screen = |line: usize| {
-        line.checked_sub(first)
-            .and_then(|row| u16::try_from(row).ok())
-            .filter(|row| *row < text_area.height)
-            .map(|row| body.y + row)
-    };
-    frame.render_widget(
-        Paragraph::new(lines).scroll((u16::try_from(first).unwrap_or(u16::MAX), 0)),
-        text_area,
-    );
-    if let Some(y) = plugin_line.and_then(on_screen) {
-        hits.push((
-            Rect::new(body.x, y, body.width, 1),
-            Hit::OfferedAction(uze_keys::Action::ShowPlugin),
-        ));
-    }
-    // Each part of a control before its row, so a click on one is not
-    // taken for choosing the row.
-    for placed in preference_rows {
-        let Some(y) = on_screen(placed.line) else {
-            continue;
-        };
-        for (x, width, hit) in placed.parts {
-            if x < body.width {
-                let width = width.min(body.width - x);
-                hits.push((Rect::new(body.x + x, y, width, 1), hit));
-            }
-        }
-        hits.push((
-            Rect::new(body.x, y, body.width, 1),
-            Hit::ExtensionPreferenceRow(placed.index),
-        ));
-    }
-
-    render_drawer_footer(
-        frame,
-        status,
-        if let Some(status) = enabled
-            .then(|| {
-                standing.and_then(|standing| {
-                    standing_status(standing, model.extension_project.is_some())
-                })
-            })
-            .flatten()
-        {
-            status
-        } else if enabled {
-            DrawerStatus {
-                color: theme::color(Token::StateSuccess),
-                headline: "Enabled",
-                subtitle: "",
-            }
-        } else {
-            DrawerStatus {
-                color: theme::color(Token::TextDim),
-                headline: "Disabled",
-                subtitle: "Withdrawn from the workspace",
-            }
-        },
-        &offers,
-        model.hovered_offer,
-        None,
-        hits,
-    );
 }
 
 /// The drawer's body, folded to its width as it is built, so a row's
@@ -554,56 +622,6 @@ fn standing_lines(
     editing: Option<&PreferencesEditor>,
     hovered: Option<&Hit>,
 ) -> Vec<PlacedPreference> {
-    // Each preference as a settings form draws a key: its label in a
-    // column, then the control that changes it. First, since it is the
-    // one part of the drawer that is set rather than read.
-    let mut preference_rows = Vec::new();
-    let preferences = editing.map_or(standing.preferences.as_slice(), |editor| &editor.rows);
-    if !preferences.is_empty() {
-        // A group of the form, as the settings form spaces one.
-        grid.air(form::GROUP_AIR);
-        grid.lines.push(form::heading("preferences", grid.width));
-        grid.air(form::KEY_AIR);
-        let layout =
-            form::Layout::fit(preferences.iter().map(|row| row.label.as_str()), grid.width);
-        for (index, row) in preferences.iter().enumerate() {
-            if index > 0 {
-                grid.air(form::KEY_AIR);
-            }
-            let marked = editing.filter(|editor| editor.selected == index);
-            let state = RowState::of(
-                marked.is_some(),
-                hovered == Some(&Hit::ExtensionPreferenceRow(index)),
-            );
-            let lit = match hovered {
-                Some(Hit::ExtensionPreferenceStep { index: at, forward }) if *at == index => {
-                    Some(if *forward {
-                        form::Part::Increase
-                    } else {
-                        form::Part::Decrease
-                    })
-                }
-                Some(Hit::ExtensionPreferenceChoice { index: at, option }) if *at == index => {
-                    Some(form::Part::Option(*option))
-                }
-                Some(Hit::ExtensionPreferenceValue(at)) if *at == index => Some(form::Part::Value),
-                _ => None,
-            };
-            let typing = marked.and_then(|editor| editor.typing.as_deref());
-            let key = preference_key(row, state, typing, layout, lit);
-            preference_rows.push(PlacedPreference {
-                line: grid.lines.len(),
-                index,
-                parts: key
-                    .parts
-                    .into_iter()
-                    .map(|(x, width, part)| (x, width, preference_hit(index, part)))
-                    .collect(),
-            });
-            grid.lines.push(key.line);
-        }
-    }
-
     let grants: Vec<_> = standing
         .grants
         .iter()
@@ -651,6 +669,55 @@ fn standing_lines(
                 "runs as you: this machine cannot confine programs",
                 Token::StateWarning,
             );
+        }
+    }
+
+    // Each preference as a settings form draws a key: its label in a
+    // column, then the control that changes it.
+    let mut preference_rows = Vec::new();
+    let preferences = editing.map_or(standing.preferences.as_slice(), |editor| &editor.rows);
+    if !preferences.is_empty() {
+        // A group of the form, as the settings form spaces one.
+        grid.air(form::GROUP_AIR);
+        grid.lines.push(form::heading("preferences", grid.width));
+        grid.air(form::KEY_AIR);
+        let layout =
+            form::Layout::fit(preferences.iter().map(|row| row.label.as_str()), grid.width);
+        for (index, row) in preferences.iter().enumerate() {
+            if index > 0 {
+                grid.air(form::KEY_AIR);
+            }
+            let marked = editing.filter(|editor| editor.selected == index);
+            let state = RowState::of(
+                marked.is_some(),
+                hovered == Some(&Hit::ExtensionPreferenceRow(index)),
+            );
+            let lit = match hovered {
+                Some(Hit::ExtensionPreferenceStep { index: at, forward }) if *at == index => {
+                    Some(if *forward {
+                        form::Part::Increase
+                    } else {
+                        form::Part::Decrease
+                    })
+                }
+                Some(Hit::ExtensionPreferenceChoice { index: at, option }) if *at == index => {
+                    Some(form::Part::Option(*option))
+                }
+                Some(Hit::ExtensionPreferenceValue(at)) if *at == index => Some(form::Part::Value),
+                _ => None,
+            };
+            let typing = marked.and_then(|editor| editor.typing.as_deref());
+            let key = preference_key(row, state, typing, layout, lit);
+            preference_rows.push(PlacedPreference {
+                line: grid.lines.len(),
+                index,
+                parts: key
+                    .parts
+                    .into_iter()
+                    .map(|(x, width, part)| (x, width, preference_hit(index, part)))
+                    .collect(),
+            });
+            grid.lines.push(key.line);
         }
     }
 
@@ -743,6 +810,10 @@ fn standing_status(
         Condition::Consented | Condition::FixturesOnly | Condition::Broken => return None,
     })
 }
+
+/// The columns the body gives up for its scrollbar when it overflows: the
+/// bar and a column of air before it.
+const SCROLLBAR_ROOM: u16 = 2;
 
 /// The rows a preference's detail keeps under the rows while the keys are
 /// on them.
@@ -844,23 +915,20 @@ fn preference_hit(index: usize, part: form::Part) -> Hit {
     }
 }
 
-/// The first line of the body to show while the keys are on `editor`'s
-/// row, `height` lines being shown: where it was, moved only as far as
+/// The first line of the body to show while the keys are on preference
+/// `selected`, `height` lines being shown: `first`, moved only as far as
 /// brings the row into sight.
-fn following(rows: &[PlacedPreference], editor: &PreferencesEditor, height: usize) -> usize {
-    let first = editor.scroll.get();
-    let Some(on) = rows.iter().find(|row| row.index == editor.selected) else {
+fn following(rows: &[PlacedPreference], selected: usize, first: usize, height: usize) -> usize {
+    let Some(on) = rows.iter().find(|row| row.index == selected) else {
         return first;
     };
-    let first = if on.line < first {
+    if on.line < first {
         on.line
     } else if on.line >= first + height {
         on.line + 1 - height
     } else {
         first
-    };
-    editor.scroll.set(first);
-    first
+    }
 }
 
 /// What the row the keys are on holds, under a rule at the foot of the

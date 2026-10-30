@@ -388,10 +388,6 @@ pub(crate) struct PreferencesEditor {
     pub(crate) selected: usize,
     /// What is typed for the selected row, while one is.
     pub(crate) typing: Option<String>,
-    /// The first line of the drawer's body in sight while the keys are
-    /// here, kept from frame to frame so the drawer moves only as far as
-    /// the row the keys are on needs, never under a pointer at rest.
-    pub(crate) scroll: std::cell::Cell<usize>,
 }
 
 /// What a confirmation is about, and so what agreeing to it does.
@@ -595,6 +591,11 @@ pub(crate) struct TuiModel {
     /// The selected extension's preferences while the keys are on them in
     /// its drawer.
     pub(crate) preferences: Option<PreferencesEditor>,
+    /// The Extensions drawer's body scrolled: the selected entry it was
+    /// scrolled for, and its first line in sight. Kept from frame to frame,
+    /// so it moves only as far as the wheel or the keys ask, never under a
+    /// pointer at rest.
+    pub(crate) extension_drawer_scroll: std::cell::Cell<(usize, usize)>,
     pub(crate) status: Status,
     pub(crate) status_expires_at: Option<Instant>,
     /// What each mutation asked for and not yet answered is doing, oldest
@@ -893,6 +894,7 @@ impl TuiModel {
             focus: Focus::Sidebar,
             overlay: Overlay::None,
             preferences: None,
+            extension_drawer_scroll: std::cell::Cell::new((0, 0)),
             key_screen: ListScreen::default(),
             drawer_width: layout.drawer_width,
             settings_selected: 0,
@@ -1452,7 +1454,6 @@ impl TuiModel {
             rows: standing.preferences,
             selected: 0,
             typing: None,
-            scroll: std::cell::Cell::new(0),
         });
         Intent::None
     }
