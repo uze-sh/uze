@@ -418,7 +418,16 @@ fn vendor_marketplace(
         };
         print!("{listed}");
     } else if joined.starts_with("plugin list") {
-        let installed = lines(&state_dir.join("installed"));
+        let only = arguments
+            .iter()
+            .position(|argument| argument == "--marketplace")
+            .and_then(|at| arguments.get(at + 1));
+        let installed: Vec<String> = lines(&state_dir.join("installed"))
+            .into_iter()
+            .filter(|selector| {
+                only.is_none_or(|only| selector.rsplit_once('@').is_some_and(|(_, m)| m == only))
+            })
+            .collect();
         let listed = match vendor {
             MarketplaceVendor::Claude => Value::Array(
                 installed

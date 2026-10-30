@@ -203,10 +203,20 @@ fn inspect_codex_plugin(
             reason: "Codex marketplace root differs from receipt".to_owned(),
         };
     }
+    // Unfiltered, the listing also covers the remote catalogue Codex
+    // fetches when its cache has expired: twenty-five seconds on codex-cli
+    // 0.166, against fifty milliseconds for the one marketplace the receipt
+    // belongs to.
     let plugins = match json(
         executable,
         command_home,
-        &["plugin", "list", "--json"],
+        &[
+            "plugin",
+            "list",
+            "--json",
+            "--marketplace",
+            marketplace_name,
+        ],
         "codex",
     ) {
         Ok(value) => value,
@@ -475,6 +485,57 @@ mod plugin_tests {
         assert_eq!(
             inspect_codex_plugin_value(&absent, "example@uze-local", package).state,
             AttachmentState::Missing
+        );
+    }
+
+    /// The listing without a marketplace is the one that waits on Codex's
+    /// remote catalogue; this fake refuses it, so asking for it is a
+    /// receipt that no longer matches.
+    #[test]
+    fn an_inspection_lists_only_the_marketplace_its_receipt_belongs_to() {
+        use uze_testkit::fake_harness::{Action, FakeHarness};
+
+        // Not under the system temp dir: where that is another filesystem
+        // than the build (a tmpfs `/tmp`), the stand-in is a fresh copy
+        // rather than a link, and a test forking on another thread while
+        // it is written leaves it "Text file busy" to exec.
+        let scratch = uze_testkit::temp::TempDir::outside_the_temporary_directory(
+            "codex-inspect-one-marketplace",
+        );
+        let root = scratch.path().to_path_buf();
+        let marketplace = root.join("generated");
+        let package = marketplace.join("example@local");
+        let codex = FakeHarness::new(&root.join("bin"), "codex")
+            .on_prefix(
+                ["plugin", "marketplace", "list"],
+                Action::stdout(
+                    serde_json::json!({"marketplaces": [{"name": "uze-store", "root": marketplace}]})
+                        .to_string(),
+                ),
+            )
+            .on(
+                ["plugin", "list", "--json", "--marketplace", "uze-store"],
+                Action::stdout(
+                    serde_json::json!({"installed": [{"pluginId": "example@uze-store", "marketplaceName": "uze-store", "enabled": true, "installed": true, "source": {"path": package}}]})
+                        .to_string(),
+                ),
+            )
+            .on_prefix(["plugin", "list"], Action::Exit(1))
+            .build();
+
+        let inspection = super::inspect_codex_plugin(
+            &codex.path(),
+            &root,
+            "example@uze-store",
+            &marketplace,
+            &package,
+        );
+
+        assert_eq!(
+            inspection.state,
+            AttachmentState::Matched,
+            "{}",
+            inspection.reason
         );
     }
 }
