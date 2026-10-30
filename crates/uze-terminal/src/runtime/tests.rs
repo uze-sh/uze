@@ -5327,10 +5327,15 @@ fn a_process_that_escapes_its_pane_cannot_attach_even_with_the_key() {
         .selected_tab()
         .pane
         .id;
+    // The pane's own program outlives the escape: a pane whose program
+    // exits is ended with every process carrying its mark, the escaped
+    // helper among them, before it can report.
     let escape = Launch::Program {
         argv: vec![
-            "setsid".into(),
-            "--fork".into(),
+            "sh".into(),
+            "-c".into(),
+            "setsid --fork \"$@\"; exec sleep 30".into(),
+            "sh".into(),
             std::env::current_exe().unwrap().display().to_string(),
             "--ignored".into(),
             "--exact".into(),
