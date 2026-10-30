@@ -31,7 +31,9 @@ pub(crate) struct Limits {
     /// and stopped before the deadline when the script only computes.
     pub operations: u64,
     /// Five times the p95 target. A lane of the two-thread pool is never
-    /// held longer by one answer, however slow the host's reads.
+    /// held longer by one answer, however slow the host's reads. Measured
+    /// on a release build; a debug build interprets the same work several
+    /// times slower, so it is given proportionally longer (see [`DEADLINE`]).
     pub deadline: Duration,
     /// Recursion uses the pool thread's stack; 32 levels keep well inside
     /// it in a debug build too.
@@ -66,9 +68,21 @@ pub(crate) struct Limits {
 /// stack is reserved, not committed, so the size costs address space only.
 pub(crate) const STACK: usize = 64 << 20;
 
+/// One answer's wall-clock bound: D28's 100 ms for the interpreter a
+/// release ships. An unoptimized build runs the same script several times
+/// slower (the `contributions` heatmap: about 5 ms released, 35 ms in a
+/// debug build here, and past 100 ms on a slower runner), so a bound on
+/// time rather than on work would fail a script for the build it was
+/// tested in. The work itself is bounded alike in both, by `operations`.
+const DEADLINE: Duration = if cfg!(debug_assertions) {
+    Duration::from_millis(1_000)
+} else {
+    Duration::from_millis(100)
+};
+
 pub(crate) const LIMITS: Limits = Limits {
     operations: 1_000_000,
-    deadline: Duration::from_millis(100),
+    deadline: DEADLINE,
     call_levels: 32,
     expression_depth: 64,
     function_expression_depth: 32,
