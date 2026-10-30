@@ -39,6 +39,8 @@ PLATFORM = "windows"
 # the program, because the process that hosts a pane names the shell it
 # starts on its own command line (`uze terminal host-pane … -- powershell.exe`).
 SHELL = r"^(\S*/)?powershell\.exe\b"
+# What that shell shows once it reads input: its own default prompt.
+PROMPT = r"PS [A-Za-z]:\\[^>\n]*>"
 EXECUTABLE_SUFFIX = ".exe"
 REQUIRED_TOOLS = ("git",)
 # At the drive's root, not under %TEMP%: PowerShell's prompt is the whole
