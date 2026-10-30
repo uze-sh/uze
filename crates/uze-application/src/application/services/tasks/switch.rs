@@ -1,4 +1,5 @@
-//! Continuing an agent on another harness.
+//! Relaunching an agent where it stands: on another harness, or restarted on
+//! its own with other overrides.
 
 use uze_core::integration::IntegrationPort;
 use uze_workspace::{
@@ -20,23 +21,29 @@ struct Switched {
 }
 
 impl Workspace<'_> {
-    /// Moves `agent_id` from harness `from` to harness `to`, keeping its
-    /// identity, its checkout, its branch and every harness's conversation,
-    /// and answers the placement the client relaunches it at.
+    /// Relaunches `agent_id`, running `from` now, on `to` where it stands,
+    /// with `overrides` as its set on `to` when given (the one it last had
+    /// there otherwise: none the first time it runs one).
+    ///
+    /// On another harness it is a switch: the agent keeps its identity, its
+    /// checkout, its branch and every harness's conversation, and `to` is
+    /// briefed. On the same one it is a restart: no harness rereads its
+    /// flags while it runs, so a changed set takes a new process, which
+    /// resumes the conversation it was in through the harness's own resume
+    /// and needs no briefing.
     ///
     /// The harness is changed only while it is still `from`, and in the
-    /// same write that issues the launch its key: two clients switching one
-    /// agent at once would otherwise each issue a key, and the process
-    /// launched for the first would start as nobody's. Before
-    /// answering, it writes the agent's briefing and leaves it pending for
-    /// `to`, whose first launch is pointed at it once.
-    #[tracing::instrument(name = "workspace.switch_harness", skip_all, fields(cwd = %cwd.display(), agent = %agent_id, from = %from, to = %to), err)]
-    pub fn switch_harness(
+    /// same write that issues the launch its key: two clients relaunching
+    /// one agent at once would otherwise each issue a key, and the process
+    /// launched for the first would start as nobody's.
+    #[tracing::instrument(name = "workspace.relaunch", skip_all, fields(cwd = %cwd.display(), agent = %agent_id, from = %from, to = %to, overrides = overrides.map_or(0, <[String]>::len)), err)]
+    pub fn relaunch(
         &self,
         cwd: &Path,
         agent_id: &str,
         from: &str,
         to: &str,
+        overrides: Option<&[String]>,
     ) -> Result<AgentPlacement> {
         let refused = |reason: String| UzeError::AgentPlacement(reason);
         let incoming = self
@@ -45,6 +52,7 @@ impl Workspace<'_> {
         let root = conversation::project_of(&self.0.home, cwd)
             .map(|root| canonical(&root))
             .ok_or_else(|| refused("this agent is not one UZE launched here".to_owned()))?;
+        let restart = from == to;
 
         let switched = task::locked(&self.0.home, &root, |store| {
             let Some(agent) = store.agent_mut(agent_id) else {
@@ -105,7 +113,19 @@ impl Workspace<'_> {
         })?
         .map_err(refused)?;
 
-        self.brief(&root, &switched, self.integration(from), incoming);
+        let told = if restart {
+            format!("Restarted in {}.", incoming.display_name())
+        } else {
+            self.brief(&root, &switched, self.integration(from), incoming);
+            let told = switched_notice(incoming);
+            match self
+                .integration(from)
+                .and_then(|outgoing| self.overrides_left_behind(&root, &switched.id, outgoing))
+            {
+                Some(behind) => format!("{told} {behind}"),
+                None => told,
+            }
+        };
 
         let view = self
             .repository_context(&root)
@@ -114,13 +134,6 @@ impl Workspace<'_> {
             .and_then(|(primary, policy)| {
                 self.placed_view(&primary, switched.id.as_str(), &policy)
             });
-        let mut told = switched_notice(incoming);
-        if let Some(behind) = self
-            .integration(from)
-            .and_then(|outgoing| self.overrides_left_behind(&root, &switched.id, outgoing))
-        {
-            told = format!("{told} {behind}");
-        }
         let placed = AgentPlacement {
             project: root,
             cwd: switched.directory,
@@ -132,9 +145,7 @@ impl Workspace<'_> {
             launch_key: switched.launch_key,
             bare_launch: BareLaunch::default(),
         };
-        // The incoming harness's own overrides, the ones the agent last had
-        // there: none the first time it runs one.
-        Ok(self.launching_with(placed, None))
+        Ok(self.launching_with(placed, overrides))
     }
 
     /// Records the agent's briefing for `incoming`, which every launch on
@@ -328,7 +339,7 @@ mod tests {
 
         let placed = app
             .workspace()
-            .switch_harness(&project, id.as_str(), "left", "right")
+            .relaunch(&project, id.as_str(), "left", "right", None)
             .unwrap();
 
         let root = canonical(&project);
@@ -372,7 +383,7 @@ mod tests {
         .unwrap();
 
         app.workspace()
-            .switch_harness(&project, id.as_str(), "left", "right")
+            .relaunch(&project, id.as_str(), "left", "right", None)
             .unwrap();
 
         let record = conversation::load(&app.home, &root, &id);
@@ -392,12 +403,12 @@ mod tests {
         let project = project("switch-twice");
         let id = agent_on_left(&app, &project);
         app.workspace()
-            .switch_harness(&project, id.as_str(), "left", "right")
+            .relaunch(&project, id.as_str(), "left", "right", None)
             .unwrap();
 
         let refusal = app
             .workspace()
-            .switch_harness(&project, id.as_str(), "left", "right")
+            .relaunch(&project, id.as_str(), "left", "right", None)
             .unwrap_err()
             .to_string();
 
@@ -431,12 +442,12 @@ mod tests {
         let root = canonical(&project);
         let id = agent_on_left(&app, &project);
         app.workspace()
-            .switch_harness(&project, id.as_str(), "left", "right")
+            .relaunch(&project, id.as_str(), "left", "right", None)
             .unwrap();
         right_launched(&app, &root, &id);
 
         app.workspace()
-            .switch_harness(&project, id.as_str(), "right", "left")
+            .relaunch(&project, id.as_str(), "right", "left", None)
             .unwrap();
 
         let record = conversation::load(&app.home, &root, &id);
@@ -466,15 +477,15 @@ mod tests {
         let id = agent_on_left(&app, &project);
         let workspace = app.workspace();
         workspace
-            .switch_harness(&project, id.as_str(), "left", "right")
+            .relaunch(&project, id.as_str(), "left", "right", None)
             .unwrap();
         right_launched(&app, &root, &id);
         workspace
-            .switch_harness(&project, id.as_str(), "right", "left")
+            .relaunch(&project, id.as_str(), "right", "left", None)
             .unwrap();
 
         workspace
-            .switch_harness(&project, id.as_str(), "left", "right")
+            .relaunch(&project, id.as_str(), "left", "right", None)
             .unwrap();
 
         let record = conversation::load(&app.home, &root, &id);
@@ -505,7 +516,7 @@ mod tests {
 
         let switched = app
             .workspace()
-            .switch_harness(&root, id.as_str(), "left", "right")
+            .relaunch(&root, id.as_str(), "left", "right", None)
             .unwrap();
 
         assert_eq!(switched.cwd, placed.cwd);
@@ -517,6 +528,117 @@ mod tests {
     }
 
     #[test]
+    fn a_restart_on_the_same_harness_records_the_new_set_and_writes_no_briefing() {
+        let app = application("restart-home");
+        let project = project("restart");
+        let root = canonical(&project);
+        let id = agent_on_left(&app, &project);
+        let words = vec!["--model".to_owned(), "opus".to_owned()];
+
+        let placed = app
+            .workspace()
+            .relaunch(&project, id.as_str(), "left", "left", Some(&words))
+            .unwrap();
+
+        assert_eq!(placed.cwd, root);
+        assert!(!placed.launch_key.is_empty());
+        assert_eq!(placed.told.as_deref(), Some("Restarted in left."));
+        let store = task::load(&app.home, &root).unwrap();
+        assert_eq!(store.agent(id.as_str()).unwrap().harness, "left");
+        let record = conversation::load(&app.home, &root, &id);
+        assert!(record.briefing.is_none(), "a restart briefs no one");
+        assert_eq!(
+            record.get("left").unwrap().conversation,
+            Some(SessionId::new("c1")),
+            "the conversation it resumes is the one it was in"
+        );
+        assert_eq!(
+            uze_workspace::overrides::record::recorded(&app.home, &root, &id, "left"),
+            words
+        );
+        let _ = std::fs::remove_dir_all(project);
+    }
+
+    #[test]
+    fn a_switch_given_a_set_launches_the_incoming_harness_with_it() {
+        let app = application("switch-set-home");
+        let project = project("switch-set");
+        let root = canonical(&project);
+        let id = agent_on_left(&app, &project);
+        let words = vec!["--search".to_owned()];
+
+        app.workspace()
+            .relaunch(&project, id.as_str(), "left", "right", Some(&words))
+            .unwrap();
+
+        assert_eq!(
+            uze_workspace::overrides::record::recorded(&app.home, &root, &id, "right"),
+            words
+        );
+        let record = conversation::load(&app.home, &root, &id);
+        assert!(record.briefing.is_some(), "a switch still briefs");
+        let _ = std::fs::remove_dir_all(project);
+    }
+
+    /// The restart panel asks from the agent's own checkout: the set it
+    /// carries and the entries used lately are read for the project that
+    /// checkout belongs to.
+    #[test]
+    fn standing_overrides_are_read_for_the_project_of_the_agents_checkout() {
+        let repository = uze_testkit::git::Repository::new("standing-isolated");
+        let root = repository.root().to_path_buf();
+        let app = application("standing-isolated-home");
+        let placed = app
+            .workspace()
+            .place_new_agent(&root, Some(PlacementKind::Isolated), "left", &[])
+            .unwrap();
+        let id = placed.placement.agent().clone();
+        let words = vec!["--model=opus".to_owned()];
+        app.workspace()
+            .relaunch(&placed.cwd, id.as_str(), "left", "left", Some(&words))
+            .unwrap();
+
+        let standing = app
+            .workspace()
+            .standing_overrides(&placed.cwd, id.as_str(), "left")
+            .unwrap();
+
+        assert_ne!(placed.cwd, canonical(&root), "asked from the slot");
+        assert_eq!(standing.recorded, words);
+        let recent: Vec<&[String]> = standing
+            .recent
+            .iter()
+            .map(|entry| entry.words.as_slice())
+            .collect();
+        assert_eq!(recent, [words.as_slice()]);
+        assert!(
+            standing.recent[0].used_in(&canonical(&root)),
+            "ranked for the project, not the slot"
+        );
+        assert!(
+            app.workspace()
+                .standing_overrides(&placed.cwd, id.as_str(), "right")
+                .unwrap()
+                .recorded
+                .is_empty(),
+            "a harness it never ran with carries none"
+        );
+    }
+
+    #[test]
+    fn standing_overrides_outside_a_project_are_refused() {
+        let app = application("standing-nowhere-home");
+        let nowhere = project("standing-nowhere");
+
+        assert!(
+            app.workspace()
+                .standing_overrides(&nowhere, "agent", "left")
+                .is_err()
+        );
+        let _ = std::fs::remove_dir_all(nowhere);
+    }
+
+    #[test]
     fn a_harness_nobody_registered_is_refused() {
         let app = application("switch-unknown-home");
         let project = project("switch-unknown");
@@ -524,7 +646,7 @@ mod tests {
 
         let refusal = app
             .workspace()
-            .switch_harness(&project, id.as_str(), "left", "nowhere")
+            .relaunch(&project, id.as_str(), "left", "nowhere", None)
             .unwrap_err()
             .to_string();
 

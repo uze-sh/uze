@@ -36,6 +36,13 @@ repeated, so typing them again on every launch is the cost that matters.
 - **An agent keeps the overrides it was launched with.** A private
   record holds them, so a respawned pane and a resumed task start the same way; an
   agent continued on another harness drops them, and says so.
+- **A running agent's overrides change by a restart.** The agent menu's
+  `Continue in ›` becomes `Restart in ›`, opening beside the menu a lite
+  form of the popup's overrides view: no directory, the harness field on
+  the agent's current harness. Enter restarts it on the same harness,
+  resuming its conversation, with the overrides changed; closes when
+  nothing changed; and continues it on another harness when the field
+  names one. A mid-turn agent is asked first, as a switch is today.
 
 - **BREAKING (unreleased surface): the Profiles module is removed
   whole.** The Profiles screen (preference axes for autonomy, sandbox and
@@ -64,7 +71,12 @@ repeated, so typing them again on every launch is the cost that matters.
   session or resume flag is not one an override can carry, so continuity is
   never turned off by a launch the workspace composed.
 - `agent-harness-switch`: continuing an agent on another harness does not
-  carry its overrides over, since flags belong to one harness.
+  carry its overrides over, since flags belong to one harness; the menu's
+  `Continue in` group becomes the `Restart in` panel, which offers the
+  current harness too and asks first for a mid-turn restart as for a
+  switch.
+- `project-labels`: the arrow marks an entry opening a panel beside the
+  menu as well as a submenu; the menu names `Restart in`.
 - `cli-performance`: the management read model no longer carries
   profiles.
 
@@ -90,7 +102,8 @@ repeated, so typing them again on every launch is the cost that matters.
 - `uze-application`: read models for the catalog and the history, a
   validation service, and launches that take overrides.
 - `src/ui/orchestrator`: the overrides step of the new agent's popup,
-  completion, the history list and the refusal.
+  completion, the history list and the refusal; the `Restart in` panel
+  reusing that view in the agent's menu.
 - `src/shim.rs`: splices the overrides on an owned launch; the client
   passes them itself when a harness has no shim.
 - Conformance: a committed `--help` snapshot per harness backs the

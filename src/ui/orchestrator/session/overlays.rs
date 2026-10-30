@@ -61,6 +61,15 @@ impl Attach<'_> {
             .model
             .directory_step
             .as_ref()
+            .is_some_and(|step| step.restart.is_some())
+        {
+            self.restart_panel_action(action);
+            return;
+        }
+        if self
+            .model
+            .directory_step
+            .as_ref()
             .is_some_and(|step| step.overrides.is_some())
         {
             self.overrides_action(action);
@@ -136,6 +145,63 @@ impl Attach<'_> {
         self.model.dirty = true;
     }
 
+    /// The `Restart in` panel: the overrides step alone. Going back closes
+    /// it onto the menu it opened from; with nothing typed, the sideways
+    /// keys move the harness, since there is no caret to move; Enter on an
+    /// empty line relaunches the agent.
+    fn restart_panel_action(&mut self, action: Action) {
+        let Some(step) = self.model.directory_step.as_mut() else {
+            return;
+        };
+        let empty = step
+            .overrides
+            .as_ref()
+            .is_none_or(|over| over.line.text().is_empty());
+        match action {
+            Action::Dismiss => {
+                self.model.directory_step = None;
+                self.model.dirty = true;
+            }
+            Action::CaretLeft | Action::CaretRight if empty => {
+                self.cycle_popup_harness(if action == Action::CaretRight { 1 } else { -1 });
+            }
+            _ => self.overrides_action(action),
+        }
+    }
+
+    /// Relaunches the agent the `Restart in` panel is over, as its Enter
+    /// says: on the same harness when its overrides changed, on another
+    /// when the field names one, and nowhere when nothing changed or the
+    /// agent's set is not read, which leaves nothing to relaunch with.
+    fn apply_restart(&mut self) {
+        let Some(does) = self
+            .model
+            .directory_step
+            .as_ref()
+            .and_then(DirectoryStep::restart_does)
+        else {
+            return;
+        };
+        let Some(step) = self.model.directory_step.take() else {
+            return;
+        };
+        self.model.context_menu = None;
+        self.model.dirty = true;
+        if matches!(does, RestartDoes::Close | RestartDoes::Pending) {
+            return;
+        }
+        let overrides = step.launch_words();
+        let (Some(restart), Some(option)) = (step.restart.as_ref(), step.chosen_harness()) else {
+            return;
+        };
+        let choice = HarnessChoice {
+            integration: option.integration.clone(),
+            display_name: option.display_name.clone(),
+            continuity_gap: option.continuity_gap.clone(),
+        };
+        self.continue_in(restart.target, choice, false, overrides);
+    }
+
     /// The overrides step: its line, its list and Enter, which launches
     /// from an empty line with nothing marked.
     fn overrides_action(&mut self, action: Action) {
@@ -144,6 +210,7 @@ impl Attach<'_> {
         };
         match step.overrides_action(action) {
             OverridesOutcome::Kept => {}
+            OverridesOutcome::Launch if step.restart.is_some() => self.apply_restart(),
             OverridesOutcome::Launch => {
                 if step.picker.chosen().is_some() {
                     self.confirm_directory();
@@ -171,11 +238,13 @@ impl Attach<'_> {
             return;
         }
         step.recent_asked = Some(question.clone());
+        let restarting = step.restart.as_ref().map(|restart| restart.agent.clone());
         let (harness, root) = question;
         spawn_recent_overrides(
             self.home,
             harness,
             root,
+            restarting,
             None,
             self.channels.recent_overrides.sender.clone(),
         );
@@ -191,11 +260,13 @@ impl Attach<'_> {
             return;
         };
         step.recent_asked = Some(question.clone());
+        let restarting = step.restart.as_ref().map(|restart| restart.agent.clone());
         let (harness, root) = question;
         spawn_recent_overrides(
             self.home,
             harness,
             root,
+            restarting,
             Some(words),
             self.channels.recent_overrides.sender.clone(),
         );
@@ -203,13 +274,13 @@ impl Attach<'_> {
 
     /// Takes the entries used lately into the popup when they answer what it
     /// asked last; an answer to an earlier question is dropped.
-    pub(super) fn absorb_recent_overrides(&mut self) {
+    pub(in crate::ui::orchestrator) fn absorb_recent_overrides(&mut self) {
         while let Ok(answer) = self.channels.recent_overrides.receiver.try_recv() {
             let Some(step) = self.model.directory_step.as_mut() else {
                 continue;
             };
             let question = (answer.harness.clone(), answer.root.clone());
-            if step.recent_asked.as_ref() != Some(&question) {
+            if step.recent_asked.as_ref() != Some(&question) || !step.asked_by(&answer) {
                 continue;
             }
             step.recent_asked = None;
@@ -219,8 +290,26 @@ impl Attach<'_> {
             if let Some(overrides) = step.overrides.as_mut() {
                 overrides.marked = None;
             }
+            let unread = match &answer.recorded {
+                Some(recorded) => {
+                    step.seed_recorded(&answer.harness, recorded);
+                    false
+                }
+                None => step.restart.is_some(),
+            };
             step.recent = Some(answer);
             self.model.dirty = true;
+            // Without the set it carries there is nothing to relaunch the
+            // agent with, and the panel's Enter only closes: said, so a
+            // closed panel is not mistaken for a restart.
+            if unread {
+                self.model.raise_toast(
+                    ToastKind::Warned,
+                    "overrides not read",
+                    "it cannot be restarted from here",
+                    None,
+                );
+            }
         }
     }
 
@@ -436,7 +525,12 @@ impl Attach<'_> {
             // before it closes anything.
             (Action::FocusNext, None) => {
                 let selected = menu.selected;
-                menu.open_submenu(selected);
+                if menu.opens_panel(selected) {
+                    let target = menu.target;
+                    self.open_restart_panel(target);
+                } else {
+                    menu.open_submenu(selected);
+                }
             }
             (Action::FocusPrevious | Action::Dismiss, Some(_)) => menu.submenu = None,
             (Action::Activate, Some(_)) => {
@@ -445,6 +539,10 @@ impl Attach<'_> {
                 {
                     self.choose(menu.target, choice);
                 }
+            }
+            (Action::Activate, None) if menu.opens_panel(menu.selected) => {
+                let target = menu.target;
+                self.open_restart_panel(target);
             }
             (Action::Activate, None) => {
                 let selected = menu.selected;

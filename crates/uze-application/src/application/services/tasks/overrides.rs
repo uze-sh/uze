@@ -6,7 +6,37 @@ use uze_workspace::overrides;
 
 use super::*;
 
+/// What the `Restart in` panel opens on for one agent and harness: the
+/// overrides the agent carries there, and the entries used lately, its
+/// project's first.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct StandingOverrides {
+    pub recorded: Vec<String>,
+    pub recent: Vec<overrides::record::RecentEntry>,
+}
+
 impl Workspace<'_> {
+    /// [`StandingOverrides`] for `agent_id`, standing in `cwd` (its
+    /// checkout or its project), on `harness`. A read of a record: off the
+    /// thread that draws.
+    #[tracing::instrument(name = "workspace.standing_overrides", skip_all, fields(agent = %agent_id, harness), err)]
+    pub fn standing_overrides(
+        &self,
+        cwd: &Path,
+        agent_id: &str,
+        harness: &str,
+    ) -> Result<StandingOverrides> {
+        let root = conversation::project_of(&self.0.home, cwd)
+            .map(|root| canonical(&root))
+            .ok_or_else(|| {
+                UzeError::AgentPlacement("this agent is not one UZE launched here".to_owned())
+            })?;
+        Ok(StandingOverrides {
+            recorded: self.agent_overrides(&root, agent_id, harness),
+            recent: self.recent_overrides(harness, &root),
+        })
+    }
+
     /// `placed`, with `overrides` recorded as its agent's on the harness its
     /// record now names, when the launch was given any, and with what the
     /// client adds itself if its tab runs that harness without UZE's

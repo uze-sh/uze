@@ -265,9 +265,9 @@ actions! {
         "Pause extensions",
         "Hold every prompt an extension would type into an agent, until pressed again";
     SwitchHarness => "switch-harness", false,
-        "Continue in",
-        "Relaunch this agent on another harness in the same checkout, \
-         briefed on what it was doing";
+        "Restart in",
+        "Restart this agent with other launch overrides, or on another \
+         harness, in the same checkout and conversation";
     NewSpace => "new-space", false,
         "New space", "Open a space at a directory";
     RenameSelection => "rename-selection", false,

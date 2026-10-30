@@ -101,7 +101,14 @@ impl OverridesStep {
 pub(super) struct RecentOverridesRead {
     pub(super) harness: String,
     pub(super) root: PathBuf,
+    /// The agent a `Restart in` panel asked for; none for the new agent's
+    /// popup. Two agents of one project ask the same harness from the same
+    /// directory, so this is part of the question.
+    pub(super) restarting: Option<String>,
     pub(super) entries: Vec<RecentOverride>,
+    /// What the restarted agent carries on `harness`, when the read was for
+    /// a `Restart in` panel.
+    pub(super) recorded: Option<Vec<String>>,
 }
 
 /// One row of the list of choices: an entry this launch may carry.
@@ -138,6 +145,33 @@ pub(super) enum EnterDoes {
     Launch,
     /// Adds the line typed as entries.
     Add,
+}
+
+/// What Enter does in the `Restart in` panel with an empty line.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) enum RestartDoes {
+    /// The agent's recorded overrides on the harness in front are not read
+    /// yet, or could not be: nothing to tell a change from, nor to
+    /// relaunch with, so Enter closes.
+    Pending,
+    /// The same harness and the same overrides: nothing to relaunch.
+    Close,
+    /// The same harness with other overrides: a new process, resuming the
+    /// conversation.
+    Restart,
+    /// Another harness, by its name.
+    ContinueIn(String),
+}
+
+impl RestartDoes {
+    /// The word the foot names Enter by.
+    pub(super) fn word(&self) -> String {
+        match self {
+            Self::Pending | Self::Close => "close".to_owned(),
+            Self::Restart => "restart".to_owned(),
+            Self::ContinueIn(harness) => format!("continue in {harness}"),
+        }
+    }
 }
 
 impl EnterDoes {
@@ -237,6 +271,97 @@ impl DirectoryStep {
             listed: BTreeMap::new(),
             recent: None,
             recent_asked: None,
+            restart: None,
+        }
+    }
+
+    /// The `Restart in` panel over `restart`'s agent: its overrides view
+    /// alone, the harness field on the one it runs, first of `harnesses`.
+    pub(super) fn restarting(
+        restart: RestartOf,
+        space: SpaceId,
+        anchor: Rect,
+        mut harnesses: Vec<AgentOption>,
+    ) -> Self {
+        if let Some(current) = harnesses
+            .iter()
+            .position(|option| option.integration == restart.current)
+        {
+            let option = harnesses.remove(current);
+            harnesses.insert(0, option);
+        }
+        let picker =
+            RootPicker::opened_in(&restart.from.display().to_string(), Some(&restart.from));
+        let rows = new_agent_popup_rows(0);
+        let mut step = Self::new(picker, space, anchor, rows, harnesses, 0);
+        step.overrides = Some(OverridesStep::new());
+        step.restart = Some(restart);
+        step
+    }
+
+    /// The word the foot names Enter by: on an empty line in the `Restart
+    /// in` panel, what the restart would do.
+    pub(super) fn enter_word(&self) -> String {
+        match (self.enter_does(), self.restart_does()) {
+            (EnterDoes::Launch, Some(does)) => does.word(),
+            (enter, _) => enter.word().to_owned(),
+        }
+    }
+
+    /// What Enter does in the `Restart in` panel with an empty line;
+    /// `None` for the new agent's popup.
+    pub(super) fn restart_does(&self) -> Option<RestartDoes> {
+        let restart = self.restart.as_ref()?;
+        let option = self.chosen_harness()?;
+        // Unread, the entries in front are not the agent's yet, and a
+        // relaunch with them would record nothing over what it carries.
+        let Some(recorded) = restart.recorded.get(&option.integration) else {
+            return Some(RestartDoes::Pending);
+        };
+        if option.integration != restart.current {
+            return Some(RestartDoes::ContinueIn(option.display_name.clone()));
+        }
+        let sorted = |entries: &[OverrideEntry]| {
+            let mut entries = entries.to_vec();
+            entries.sort();
+            entries
+        };
+        Some(if sorted(recorded) == sorted(self.entries()) {
+            RestartDoes::Close
+        } else {
+            RestartDoes::Restart
+        })
+    }
+
+    /// Takes the overrides `words` recorded for the restarted agent on
+    /// `harness` as that harness's entries, checked and listed, the first
+    /// time they are read: the panel opens on what the agent carries there,
+    /// ahead of whatever was added before the read answered, and an entry
+    /// unchecked stays in the list to check again.
+    pub(super) fn seed_recorded(&mut self, harness: &str, words: &[String]) {
+        let catalog = self
+            .harnesses
+            .iter()
+            .find(|option| option.integration == harness)
+            .map(|option| option.overrides)
+            .unwrap_or_default();
+        let Some(restart) = self.restart.as_mut() else {
+            return;
+        };
+        if restart.recorded.contains_key(harness) {
+            return;
+        }
+        let entries: Vec<OverrideEntry> = catalog
+            .check_words(words)
+            .into_iter()
+            .map(|checked| checked.words)
+            .collect();
+        restart.recorded.insert(harness.to_owned(), entries.clone());
+        for map in [&mut self.drafts, &mut self.listed] {
+            let added = map.remove(harness).unwrap_or_default();
+            let mut merged = entries.clone();
+            merged.extend(added.into_iter().filter(|entry| !entries.contains(entry)));
+            map.insert(harness.to_owned(), merged);
         }
     }
 
@@ -284,9 +409,12 @@ impl DirectoryStep {
         self.entries().iter().flatten().cloned().collect()
     }
 
-    /// Where the entries used lately are read from: the directory chosen,
-    /// or the one being listed.
+    /// Where the entries used lately are read from: the restarted agent's
+    /// checkout, the directory chosen, or the one being listed.
     pub(super) fn overrides_root(&self) -> PathBuf {
+        if let Some(restart) = &self.restart {
+            return restart.from.clone();
+        }
         self.picker
             .chosen()
             .unwrap_or_else(|| self.picker.origin().to_path_buf())
@@ -303,8 +431,14 @@ impl DirectoryStep {
         let (harness, root) = self.recent_question()?;
         self.recent
             .as_ref()
-            .filter(|read| read.harness == harness && read.root == root)
+            .filter(|read| read.harness == harness && read.root == root && self.asked_by(read))
             .map(|read| read.entries.as_slice())
+    }
+
+    /// Whether `read` was asked by this popup: for the agent it restarts,
+    /// or, for the new agent's popup, for no agent.
+    pub(super) fn asked_by(&self, read: &RecentOverridesRead) -> bool {
+        read.restarting.as_deref() == self.restart.as_ref().map(|restart| restart.agent.as_str())
     }
 
     /// The list of choices: the entries added in this popup that the

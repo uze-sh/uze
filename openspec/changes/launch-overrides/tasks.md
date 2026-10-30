@@ -56,6 +56,16 @@
 - [x] 5.8 The agent's overview names its overrides under its harness
 - [x] 5.9 Recent overrides one entry at a time: the history keeps each flag (with its value) and variable, split against the catalog; the list under the line is a list of choices (`◉`/`○`, `✕` forgets), the entries added first, space switching the marked row and Delete its `✕`; click == key tests
 
+## 7. Restart in
+
+- [x] 7.1 Read `design-system` first; widen its arrow rule to an entry opening a panel beside the menu, and its `Continue in ›` example to `Restart in ›`
+- [x] 7.2 Application: a switch whose outgoing and incoming harness are one records the new set, writes no briefing and relaunches with the native resume; a test per harness that the conversation resumes with the new overrides
+- [x] 7.3 Menu: `Continue in ›` becomes `Restart in ›`, offered while the agent runs; it opens the panel beside the menu, not a group; exited agents offer none
+- [x] 7.4 Panel: the popup's overrides view without the directory, the harness field on the current harness first, prefilled with the set recorded for the harness it names; same check, completion, marks, recent entries and keys as the popup
+- [x] 7.5 Enter by state: `restart` (same harness, set changed), `close` (nothing changed, launches nothing), `continue in <harness>` (another harness); applied entries remembered as a launch's
+- [x] 7.6 Mid-turn: the interrupt dialog before a restart as before a switch, its confirm naming `Restart` or `Continue in <harness>`
+- [x] 7.7 Tests: `CONTINUE_IN` and the menu assertions in `tests/switch.rs`, keyboard path into and out of the panel, click == key for the panel's foot, narrow width; `pickers.rs` doc comments
+
 ## 6. Close
 
 - [x] 6.1 `design-system` skill: write the rules this settled (field row opening a step ends in `›`, popup height fixed across steps, history not prefilled)

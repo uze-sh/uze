@@ -294,9 +294,31 @@ impl Attach<'_> {
                         | WorkspaceHit::OverridesScroll),
                     ) => self.press_overrides(hit, mouse.row),
                     Some(WorkspaceHit::NewAgentBody) => {}
+                    // The `Restart in` panel stands beside the menu it
+                    // opened from: a click on that menu puts the panel
+                    // away and leaves the menu, and one anywhere else puts
+                    // both away.
+                    Some(WorkspaceHit::ContextMenuAction(_))
+                        if self
+                            .model
+                            .directory_step
+                            .as_ref()
+                            .is_some_and(|step| step.restart.is_some()) =>
+                    {
+                        self.model.directory_step = None;
+                    }
                     // Click outside the popup discards it — same rule
                     // `renaming` uses.
-                    _ => self.model.directory_step = None,
+                    _ => {
+                        if self
+                            .model
+                            .directory_step
+                            .take()
+                            .is_some_and(|step| step.restart.is_some())
+                        {
+                            self.model.context_menu = None;
+                        }
+                    }
                 }
                 self.model.dirty = true;
             }
@@ -378,9 +400,17 @@ impl Attach<'_> {
                 // way into choices, not a choice.
                 if let Some(WorkspaceHit::ContextMenuAction(index)) = hit
                     && let Some(menu) = self.model.context_menu.as_mut()
-                    && menu.open_submenu(index)
                 {
-                    return Flow::Continue;
+                    if menu.opens_panel(index) {
+                        menu.selected = index;
+                        menu.submenu = None;
+                        let target = menu.target;
+                        self.open_restart_panel(target);
+                        return Flow::Continue;
+                    }
+                    if menu.open_submenu(index) {
+                        return Flow::Continue;
+                    }
                 }
                 // Dismiss unconditionally (any click, on the popup or
                 // outside it, closes the menu) but only dispatch when

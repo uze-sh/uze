@@ -385,3 +385,43 @@
 > `overrides`) and `alt+←` (back), the popup's views being side by side and
 > `alt+↑`/`alt+↓` already walking agents; the foot holds two keys at its
 > start and the way to the other view against its end.
+
+## D36 — With nothing typed, ←→ move the restart panel's harness
+
+- status:   pending
+- task:     7.4
+- commit:
+- trigger:  The new agent's popup moves the harness with ←→ on its `new agent` view; on `overrides` those keys move the caret and the field answers only the pointer. The panel is the overrides view alone, and the spec asks every field of it be reachable from the keyboard.
+- decided:  In the panel, `CaretLeft`/`CaretRight` on an empty line cycle the harness (asking the new harness's read), since there is no caret to move; with text they move the caret as in the popup. The foot names `←→ harness` only while the line is empty and there is more than one harness.
+- rejected: A chord of its own (every `alt+arrow` is taken in that scope or walks agents); a `new agent`-like second view holding only the harness (a view for one field).
+- blast:    `restart_panel_action` in `session/overlays.rs`; the overrides foot in `render/popups.rs`.
+
+## D37 — The panel is the new agent's popup in a restart mode
+
+- status:   pending
+- task:     7.4
+- commit:
+- trigger:  The panel must check, complete, mark and remember exactly as the popup does; the popup's state (`DirectoryStep`) carries a directory picker the panel has no use for.
+- decided:  `DirectoryStep.restart: Option<RestartOf>` turns the popup into the panel: opened on its overrides step, the agent's checkout as the root its recent entries are read for, a single `overrides` segment on its first row, Esc closing it onto the menu, Enter relaunching. Its `picker` is built standing at that checkout and never drawn. Drawn after the context menu, beside the entry's row, its targets after the menu's.
+- rejected: Extracting the overrides draft into its own type shared by both: the same behaviour, at the cost of rewriting every reader of the popup's 240-odd field accesses in a change about one menu entry.
+- blast:    `pickers.rs` (`RestartOf`), `launch_overrides.rs` (`restarting`, `restart_does`, `seed_recorded`, `enter_word`), `render.rs`, `render/popups.rs` (`render_restart_panel`), `session/mouse.rs`.
+
+## D38 — Enter waits for the agent's set on the harness in front to be read
+
+- status:   pending
+- task:     7.5
+- commit:
+- trigger:  The agent's recorded overrides arrive off the thread that draws; until they do, the entries in front are empty, and a relaunch with them would record "none" over what the agent carries.
+- decided:  The panel's read (`spawn_recent_overrides` with the agent) answers the recent entries and the recorded set together, through `Workspace::standing_overrides`, which resolves the project from the checkout. The set seeds that harness's entries once; until then Enter does nothing and the foot says `close`.
+- rejected: Reading the set synchronously when the panel opens: a record read on the drawing thread, which the client forbids.
+- blast:    `reads.rs`, `RecentOverridesRead.recorded`, `tasks/overrides.rs` (`StandingOverrides`).
+
+## D39 — `switch_harness` becomes `relaunch`, taking the set
+
+- status:   pending
+- task:     7.2
+- commit:
+- trigger:  A restart is a switch whose two harnesses are one, minus the briefing; the panel also gives a switch the incoming harness's set.
+- decided:  `Workspace::relaunch(cwd, agent, from, to, overrides)`: on another harness it briefs as before, on the same it writes no briefing and says `Restarted in <harness>.`; both record `overrides` when given. The wrapper `switch_harness` goes (its only callers were tests), and the span is `workspace.relaunch`. `PlacementRequest::Switch` carries the set.
+- rejected: A separate `restart_agent` duplicating the record lock and placement.
+- blast:    `tasks/switch.rs`, `tasks/tests.rs`, `reads.rs`.

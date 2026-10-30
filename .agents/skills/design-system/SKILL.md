@@ -139,11 +139,16 @@ on "cancel" must not save first.
 - A popover opens anchored to its trigger, whatever opened it (click,
   shortcut, resume).
 - A context menu opens at the cursor.
-- A menu entry that opens a further menu ends in an arrow against the
-  menu's right edge (`Symbol::Submenu`, `menu::Entry { opens: true }`) and
-  carries no ellipsis: `Rename ›`, `Continue in ›`. An ellipsis marks only
-  an entry that asks before acting (`Discard…`). Two entries for one verb
-  side by side (`Rename`, `Rename project`) become one that opens both.
+- A menu entry that opens a further menu, or a panel beside the menu,
+  ends in an arrow against the menu's right edge (`Symbol::Submenu`,
+  `menu::Entry { opens: true }`) and carries no ellipsis: `Rename ›`,
+  `Restart in ›`. An ellipsis marks only an entry that asks before acting
+  (`Discard…`). Two entries for one verb side by side (`Rename`, `Rename
+  project`) become one that opens both; so do two entries reaching one
+  state (`Restart in` is the switch of harness and the restart with new
+  overrides, the panel opening on the current harness).
+- A panel beside a menu is not a modal: it stands where the submenu would,
+  anchored to its entry, and Esc goes back to the menu on that entry.
 - A popover that holds more than one view of what it asks (the new
   agent's `new agent · overrides`) names them at the start of its first
   row (`widget::segmented`), standing for a title the popover then does

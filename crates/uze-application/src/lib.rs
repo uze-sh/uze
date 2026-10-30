@@ -14,8 +14,8 @@ pub use application::services::{
     NamedTask, OverrideCatalog, OverrideFlag, OverrideKind, OverrideMark, OverrideValue, Placement,
     PlacementKind, PreservedWork, ProjectArtifacts, ProjectSpace, PullReport, Reconciliation,
     ReleasedTask, RequestQuestion, ShownCommand, SpaceMemory, SpaceOverview, SpacePlugin,
-    SpacePlugins, SplitWork, SubagentCheckout, TargetSyncReport, UpstreamSync, WorkStateView,
-    WorkspaceEntry, project_artifacts, skill_invocation,
+    SpacePlugins, SplitWork, StandingOverrides, SubagentCheckout, TargetSyncReport, UpstreamSync,
+    WorkStateView, WorkspaceEntry, project_artifacts, skill_invocation,
 };
 
 /// Types the read models above are made of. Presentation consumes these

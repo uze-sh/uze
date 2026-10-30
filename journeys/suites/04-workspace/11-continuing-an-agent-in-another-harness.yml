@@ -54,14 +54,18 @@ scenes:
     when:
       - key: "M-."
         say: open the selected agent's actions
-        expect: "Continue in"
+        expect: "Restart in"
       - key: "Down"
-        say: move onto continuing elsewhere
-        expect: "Continue in"
+        say: move onto restarting it
+        expect: "Restart in"
         pause: 0.3
       - key: "Right"
-        say: open the harnesses it can continue in
-        expect: "Codex"
+        say: open the restart panel, on the harness it runs
+        expect: 'overrides .*Claude Code'
+      - key: "Right"
+        say: move the panel's harness to Codex, once the agent's overrides are read
+        expect: "continue in codex"
+        expect_timeout: 20
       - key: "Enter"
         say: continue it in Codex
         expect: Codex v
@@ -168,14 +172,18 @@ scenes:
     when:
       - key: "M-."
         say: open the agent's actions again
-        expect: "Continue in"
+        expect: "Restart in"
       - key: "Down"
-        say: move onto continuing elsewhere
-        expect: "Continue in"
+        say: move onto restarting it
+        expect: "Restart in"
         pause: 0.3
       - key: "Right"
-        say: open the harnesses it can continue in
-        expect: "Claude Code"
+        say: open the restart panel, on the harness it runs
+        expect: 'overrides .*Codex'
+      - key: "Right"
+        say: move the panel's harness back to Claude, once the agent's overrides are read
+        expect: "continue in claude code"
+        expect_timeout: 20
       - key: "Enter"
         say: continue it back in Claude
         expect: Claude Code v
