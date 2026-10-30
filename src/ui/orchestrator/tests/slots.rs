@@ -748,3 +748,93 @@ fn without_a_plugin_in_it_the_bar_takes_no_row() {
     );
     let _ = frame_rows_at(&mut model, ROOMY);
 }
+
+/// A plugin that puts nothing in the bar.
+fn no_bar() -> WorkspaceModel {
+    hosting(vec![compiled(
+        "notes",
+        vec![surface("meter", uze_contract::Slot::Status)],
+    )])
+}
+
+/// An installed release puts its restart at the bar's right end, ahead of
+/// every plugin's item there, and stands the bar up for it when no plugin
+/// does.
+#[test]
+fn the_restart_takes_the_bars_right_end_and_stands_the_bar_up() {
+    let mut bare = no_bar();
+    assert_eq!(layout(&bare).bar, None, "no release, no plugin, no bar");
+    bare.release = Some(crate::self_update::Notice("9.0.1".to_owned()));
+    let bar = bar_row(&mut bare);
+    assert!(bar.trim_end().ends_with("restart"), "{bar}");
+
+    let mut model = hosting_a_bar(uze_contract::BarAlign::Right);
+    answers(&mut model, "notes", "6h12 today");
+    model.release = Some(crate::self_update::Notice("9.0.1".to_owned()));
+    let bar = bar_row(&mut model);
+    let item = bar.find("6h12 today").expect("the item still stands");
+    let restart = bar.find("restart").expect("the restart stands");
+    assert!(restart > item, "the restart is first from the right: {bar}");
+    assert!(bar.trim_end().ends_with("restart"), "{bar}");
+}
+
+/// The restart answers a click as its action answers the index: both
+/// leave the loop to restart, and the runtime is only detached from.
+#[test]
+fn clicking_the_restart_is_choosing_it_in_the_index() {
+    use crate::ui::orchestrator::{Flow, WorkspaceExit};
+
+    let installed = || {
+        let mut model = no_bar();
+        model.release = Some(crate::self_update::Notice("9.0.1".to_owned()));
+        model
+    };
+    let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("bar-restart"));
+
+    let mut clicked = driven(installed(), &home);
+    clicked.area = ROOMY;
+    clicked.frame();
+    let button = clicked
+        .attach
+        .model
+        .hits
+        .iter()
+        .find_map(|(rect, hit)| (*hit == WorkspaceHit::RestartIntoRelease).then_some(*rect))
+        .expect("the bar offers the restart");
+    assert!(matches!(
+        clicked.press_answering(button.x, button.y),
+        Flow::Exit(WorkspaceExit::Restart)
+    ));
+
+    let mut chosen = driven(installed(), &home);
+    chosen.press_key(key_event(uze_keys::Chord::parse("f1").unwrap()));
+    let index = chosen.attach.model.action_index.as_ref().expect("open");
+    let rows = super::action_index_rows(
+        &index.scopes,
+        &index.offered,
+        "",
+        &chosen.attach.model.disabled_extensions,
+    );
+    let at = rows
+        .iter()
+        .position(|(action, _)| *action == uze_keys::Action::RestartUze)
+        .unwrap_or_else(|| panic!("offered: {:?}", index.offered));
+    chosen.attach.model.action_index.as_mut().unwrap().selected = at;
+    assert!(matches!(
+        chosen.press_key_answering(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Enter,
+            crossterm::event::KeyModifiers::NONE,
+        )),
+        Flow::Exit(WorkspaceExit::Restart)
+    ));
+}
+
+/// With nothing installed to restart into, nothing offers it.
+#[test]
+fn without_an_installed_release_nothing_offers_a_restart() {
+    let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("bar-no-restart"));
+    let mut client = driven(no_bar(), &home);
+    client.press_key(key_event(uze_keys::Chord::parse("f1").unwrap()));
+    let index = client.attach.model.action_index.as_ref().expect("open");
+    assert!(!index.offered.contains(&uze_keys::Action::RestartUze));
+}

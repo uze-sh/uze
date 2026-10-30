@@ -762,6 +762,15 @@ impl Driven<'_> {
     /// Any other mouse event at the same viewport the click helpers
     /// use — the rest of a drag, which `press` alone cannot say.
     pub(super) fn mouse(&mut self, column: u16, row: u16, kind: MouseEventKind) {
+        let _ = self.mouse_answering(column, row, kind);
+    }
+
+    /// A click, and where it leaves the loop: what an exit is proved by.
+    pub(super) fn press_answering(&mut self, column: u16, row: u16) -> Flow {
+        self.mouse_answering(column, row, MouseEventKind::Down(MouseButton::Left))
+    }
+
+    fn mouse_answering(&mut self, column: u16, row: u16, kind: MouseEventKind) -> Flow {
         let area = self.area;
         let layout = compute_layout(
             area,
@@ -775,11 +784,16 @@ impl Driven<'_> {
             layout,
         };
         let event = crossterm::event::Event::Mouse(mouse_at(column, row, kind));
-        let _ = self.attach.handle(event, &viewport);
+        self.attach.handle(event, &viewport)
     }
 
     /// One key, through the same dispatch the attach loop uses.
     pub(super) fn press_key(&mut self, key: crossterm::event::KeyEvent) {
+        let _ = self.press_key_answering(key);
+    }
+
+    /// One key, and where it leaves the loop.
+    pub(super) fn press_key_answering(&mut self, key: crossterm::event::KeyEvent) -> Flow {
         let area = self.area;
         let layout = compute_layout(
             area,
@@ -792,9 +806,8 @@ impl Driven<'_> {
             rows: layout.pane.height,
             layout,
         };
-        let _ = self
-            .attach
-            .handle(crossterm::event::Event::Key(key), &viewport);
+        self.attach
+            .handle(crossterm::event::Event::Key(key), &viewport)
     }
 
     /// One turn of everything that is not an event — what absorbs a

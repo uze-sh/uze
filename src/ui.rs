@@ -105,9 +105,19 @@ fn tui_application(home: UzeHome) -> Result<UzeApplication> {
     UzeApplication::from_env_with_runner(home, Box::new(SilentProcessRunner))
 }
 
+/// How the workspace client ended.
+pub enum Ended {
+    Quit,
+    /// The operator asked to restart into the installed release: the
+    /// caller runs it in this process's place, now that the terminal is
+    /// restored.
+    Restart,
+}
+
 /// Runs the TUI. `home` is passed to workers, which construct the same
-/// production application composition root as the CLI.
-pub fn run(home: UzeHome) -> Result<()> {
+/// production application composition root as the CLI. `resumed` is a
+/// client a release restart started, which lands where the last left off.
+pub fn run(home: UzeHome, resumed: bool) -> Result<Ended> {
     let session = tracing::info_span!("tui.session");
     let _entered = session.enter();
     // Once per process rather than per attach: attaching again is not a
@@ -159,7 +169,11 @@ pub fn run(home: UzeHome) -> Result<()> {
     // Only the first attach lands the client in a space for the directory
     // `uze` was started in; an attach after the runtime went away takes
     // the session as it stands (see `orchestrator::Landing`).
-    let mut landing = orchestrator::Landing::AtLaunchDirectory;
+    let mut landing = if resumed {
+        orchestrator::Landing::WhereItLeftOff
+    } else {
+        orchestrator::Landing::AtLaunchDirectory
+    };
     let outcome = loop {
         match orchestrator::attach_workspace(
             &mut terminal,
@@ -170,7 +184,8 @@ pub fn run(home: UzeHome) -> Result<()> {
             &mut management_memory,
             landing,
         ) {
-            Ok(orchestrator::WorkspaceExit::Quit) => break Ok(()),
+            Ok(orchestrator::WorkspaceExit::Quit) => break Ok(Ended::Quit),
+            Ok(orchestrator::WorkspaceExit::Restart) => break Ok(Ended::Restart),
             Ok(orchestrator::WorkspaceExit::Disconnected) => {
                 landing = orchestrator::Landing::WhereItLeftOff;
             }

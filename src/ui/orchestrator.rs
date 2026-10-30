@@ -233,6 +233,8 @@ pub(crate) enum WorkspaceExit {
     /// again rather than leaving the operator with a frozen session.
     Disconnected,
     Quit,
+    /// The operator asked to restart into the installed release.
+    Restart,
 }
 
 /// How often every visible repository's tasks are re-read even when no
@@ -873,6 +875,9 @@ pub(super) enum WorkspaceHit {
     /// The toast's way to an extension the project offers to enable:
     /// opens the question about it.
     ReviewExtensions,
+    /// The bar's restart into the installed release: what
+    /// [`Action::RestartUze`] does.
+    RestartIntoRelease,
     /// The toast's way to plugin updates that wait for the operator:
     /// opens the plugins screen, where each is updated with its consent.
     ReviewPluginUpdates,

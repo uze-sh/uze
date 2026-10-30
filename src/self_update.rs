@@ -243,6 +243,28 @@ pub fn after_command(home: &UzeHome) -> Option<String> {
     updated_to(home, ledger)
 }
 
+/// Runs the installed release in this process's place, as a workspace
+/// client landing where this one left off. Returns only when it could not
+/// be started, saying why.
+///
+/// The file the installer's receipt names, not this process's own image:
+/// that is the release the notice announced, and on Linux a binary renamed
+/// over no longer has the path it ran from. Through
+/// `uze_platform::process::run_in_place`: `exec` on Unix, and on Windows a
+/// child on this console, waited for, whose exit is this process's.
+pub fn restart(home: &UzeHome) -> String {
+    let binary = read_json::<Receipt>(&receipt_path(home))
+        .map(|receipt| receipt.binary)
+        .or_else(|| env::current_exe().ok());
+    let Some(binary) = binary else {
+        return "the installed release could not be found".to_owned();
+    };
+    let mut command = Command::new(&binary);
+    command.args(["workspace", "--resumed"]);
+    let error = uze_platform::process::run_in_place(&mut command);
+    format!("{} could not be started: {error}", binary.display())
+}
+
 /// The site's changelog, where a command points after an update.
 pub fn changelog() -> &'static str {
     CHANGELOG

@@ -45,7 +45,7 @@ impl WorkspaceModel {
 
     /// Whether a plugin puts anything in the bar: a door or an item.
     pub(in crate::ui::orchestrator) fn has_bar(&self) -> bool {
-        !self.bar_doors().is_empty() || !self.bar_items().is_empty()
+        self.release.is_some() || !self.bar_doors().is_empty() || !self.bar_items().is_empty()
     }
 
     /// The surfaces an item of the bar in front opens: their item is their

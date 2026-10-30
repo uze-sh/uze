@@ -131,6 +131,9 @@ impl Attach<'_> {
         if self.model.offers_waiting() {
             offered.push(Action::ReviewExtensions);
         }
+        if self.model.release.is_some() {
+            offered.push(Action::RestartUze);
+        }
         offered
     }
 
@@ -325,6 +328,12 @@ impl Attach<'_> {
             Action::Quit => {
                 let _ = send_request(&mut self.stream, &ClientRequest::Detach);
                 return Flow::Exit(WorkspaceExit::Quit);
+            }
+            // The client alone: the runtime keeps every pane, and the
+            // release that takes this client's place attaches to it.
+            Action::RestartUze if self.model.release.is_some() => {
+                let _ = send_request(&mut self.stream, &ClientRequest::Detach);
+                return Flow::Exit(WorkspaceExit::Restart);
             }
             // The brake works wherever it is pressed, whatever stands in
             // front: it is an extension's writes it stops, and an

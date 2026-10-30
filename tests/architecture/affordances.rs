@@ -292,6 +292,10 @@ fn affordances() -> BTreeMap<Action, Affordance> {
         Action::ReviewExtensions,
         Control("the Review button of the toast that offers a project's extensions"),
     );
+    put(
+        Action::RestartUze,
+        Control("the restart button at the right end of the bar under the agent area"),
+    );
     // Taking work away is never one misclick from a pointer: the index
     // offers it for recent's selected row, and only where it applies.
     put(Action::DiscardTask, Index);

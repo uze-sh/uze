@@ -286,7 +286,7 @@ fn run(cli: Cli, leaf: &str) -> Result<()> {
     // because they are where a person is working when something goes
     // wrong, and a switch nobody turned on beforehand is a switch that was
     // off when it mattered.
-    let opens_the_tui = matches!(cli.command, Some(Command::Workspace { action: None }))
+    let opens_the_tui = matches!(cli.command, Some(Command::Workspace { action: None, .. }))
         && std::env::var_os("UZE_PANE").is_none()
         && std::io::stdout().is_terminal()
         && std::io::stdin().is_terminal();
@@ -381,9 +381,9 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         print_root_help();
         return Ok(());
     };
-    if let Command::Workspace { action } = command {
+    if let Command::Workspace { action, resumed } = command {
         return match action {
-            None => open_workspace(home, verbose),
+            None => open_workspace(home, verbose, resumed),
             Some(WorkspaceAction::Stop) => {
                 if uze_terminal::stop().map_err(terminal_error)? {
                     progress::success("workspace stopped");
@@ -767,7 +767,7 @@ fn run_upgrade(home: &UzeHome) -> Result<()> {
 /// ([`set_up_before_opening`]) rather than left to a pane that never
 /// starts.
 #[tracing::instrument(name = "tui.open_workspace", skip_all)]
-fn open_workspace(home: UzeHome, verbose: bool) -> Result<()> {
+fn open_workspace(home: UzeHome, verbose: bool, resumed: bool) -> Result<()> {
     // Started inside one of the running client's own panes: a client
     // inside a client is never what that means. Open a space for this
     // directory in the uze already running, and leave.
@@ -797,7 +797,14 @@ fn open_workspace(home: UzeHome, verbose: bool) -> Result<()> {
         // frozen for however long harness detection took.
         set_up_before_opening(&home, verbose)?;
     }
-    uze::ui::run(home)
+    match uze::ui::run(home.clone(), resumed)? {
+        uze::ui::Ended::Quit => Ok(()),
+        // Only once the terminal is the shell's again: the release that
+        // takes this process's place enters it afresh.
+        uze::ui::Ended::Restart => Err(uze_application::UzeError::Upgrade(
+            uze::self_update::restart(&home),
+        )),
+    }
 }
 
 /// The machine-checkable half of ADR-019's soundness argument for

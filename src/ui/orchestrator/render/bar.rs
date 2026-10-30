@@ -35,6 +35,27 @@ pub(super) fn render_bar(
     let mut right_x = row.right();
     let mut animates = false;
 
+    // The restart into an installed release takes the right end before
+    // anything a plugin puts there: it is UZE's, and the one thing in the
+    // bar that is news.
+    if model.release.is_some() {
+        let restart = [GroupButton {
+            hit: WorkspaceHit::RestartIntoRelease,
+            label: format!("{} restart", theme::glyph(Symbol::ArrowUp)),
+            hue: theme::color(Token::Accent),
+            strong: false,
+            lit: false,
+            switch: false,
+        }];
+        let width = group_width(&restart).min(row.width);
+        let rect = Rect::new(right_x.saturating_sub(width), row.y, width, 1);
+        let (spans, group_hits) =
+            button_group(model, &restart, Token::SurfaceRaised, (rect.x, rect.y));
+        hits.extend(group_hits);
+        frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+        right_x = rect.x.saturating_sub(GAP);
+    }
+
     // A plugin's doors, lowercase whatever its manifest titles them: every
     // button UZE draws is, and a plugin's is drawn by UZE. A surface an
     // item opens has that item for its door, so it gets no second one.
