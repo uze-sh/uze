@@ -2404,8 +2404,7 @@ fn runtime_shim_writes_no_shell_file() {
     fs::create_dir_all(&shims_dir).unwrap();
     fs::create_dir_all(&real_bin_dir).unwrap();
     let real_executable = real_bin_dir.join(uze_platform::executable::file_name("shim-test"));
-    fs::write(&real_executable, "#!/bin/sh\nexit 0\n").unwrap();
-    uze_platform::executable::make_runnable(&real_executable).unwrap();
+    uze_testkit::process::install_executable(&real_executable, b"#!/bin/sh\nexit 0\n");
 
     let rc_file = root.join(".zshrc");
     let rc_content = format!("export PATH=\"{}:$PATH\"\n", real_bin_dir.display());

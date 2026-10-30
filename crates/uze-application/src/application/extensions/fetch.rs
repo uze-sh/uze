@@ -282,8 +282,6 @@ impl Fetcher {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt as _;
-
     /// A world whose `curl` is a script that records its arguments and
     /// standard input, and answers a recorded reply that echoes the token.
     struct World {
@@ -296,17 +294,16 @@ mod tests {
             let root = uze_testkit::temp::scratch(label);
             let home = UzeHome::at(root.join("uze"));
             let curl = root.join("curl");
-            std::fs::write(
+            uze_testkit::process::install_executable(
                 &curl,
                 format!(
                     "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{args}'\ncat > '{stdin}'\nenv > '{env}'\nprintf '%s' '{reply}'\n",
                     args = root.join("args").display(),
                     stdin = root.join("stdin").display(),
                     env = root.join("env").display(),
-                ),
-            )
-            .unwrap();
-            std::fs::set_permissions(&curl, std::fs::Permissions::from_mode(0o755)).unwrap();
+                )
+                .as_bytes(),
+            );
             let fetcher = Fetcher {
                 home,
                 plugin: "ci@studio".into(),

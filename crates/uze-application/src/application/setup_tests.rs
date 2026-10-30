@@ -540,8 +540,7 @@ fn with_the_executable_on_path(world: &World) -> uze_testkit::env::ProcessEnvGua
     let bin = world.root.join("bin");
     fs::create_dir_all(&bin).unwrap();
     let executable = bin.join(uze_platform::executable::file_name("routed"));
-    fs::write(&executable, "#!/bin/sh\nexit 0\n").unwrap();
-    uze_platform::executable::make_runnable(&executable).unwrap();
+    uze_testkit::process::install_executable(&executable, b"#!/bin/sh\nexit 0\n");
     let mut environment = uze_testkit::env::scope();
     environment.set("PATH", &bin);
     environment
@@ -688,8 +687,7 @@ fn with_the_engine_dependency_on_path(world: &World) -> uze_testkit::env::Proces
     let dependency = bin.join(uze_platform::executable::file_name(
         uze_core::hook::WRAPPER_DEPENDENCY,
     ));
-    fs::write(&dependency, "#!/bin/sh\nexit 0\n").unwrap();
-    uze_platform::executable::make_runnable(&dependency).unwrap();
+    uze_testkit::process::install_executable(&dependency, b"#!/bin/sh\nexit 0\n");
     let mut environment = uze_testkit::env::scope();
     environment.set("PATH", &bin);
     environment
