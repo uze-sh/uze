@@ -14,7 +14,8 @@ use uze_contract::binding::{Path, Scope, TextPart, binding_of, is_field_name, pa
 use uze_contract::catalog::{CATALOG, COMMON_PROPS, NodeSpec};
 use uze_contract::compiled::Span;
 use uze_contract::{
-    Binding, CompiledView, Condition, Item, Lookup, Node, NodeName, PropKind, RoleName,
+    Binding, CompiledView, Condition, EXPANSION_MAX, Item, Lookup, Node, NodeName, PropKind,
+    RoleName,
 };
 
 use super::document::{
@@ -899,6 +900,9 @@ impl Compiler<'_, '_> {
         let cycles = self.refuse_cycles();
         self.refuse_unknown_templates();
         self.refuse_deep_uses(&cycles);
+        if cycles.is_empty() {
+            self.refuse_fan_out();
+        }
         self.refuse_misplaced_uses();
         self.refuse_unknown_tables();
         self.refuse_unknown_shows();
@@ -1008,6 +1012,21 @@ impl Compiler<'_, '_> {
                     "`each` nests {total} levels deep through the template `{template}`, deeper than the {EACH_MAX} a view may"
                 ),
                 Some("give the data a flatter shape".to_owned()),
+            );
+        }
+    }
+
+    /// A view whose templates expand past what one bind may walk, before
+    /// any `each` repeats them: ten uses of a template of ten uses, a few
+    /// levels down, is a few hundred bytes that would walk for hours.
+    fn refuse_fan_out(&mut self) {
+        let expansion = self.view.expansion();
+        if expansion > EXPANSION_MAX {
+            self.report.whole(
+                format!(
+                    "templates expand this view to more than {EXPANSION_MAX} nodes, before any `each` repeats them"
+                ),
+                Some("use templates fewer times inside one another".to_owned()),
             );
         }
     }

@@ -5,7 +5,7 @@ use super::*;
 /// Where a connection comes from — see [`Server::origin_of`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Origin {
-    Pane,
+    Pane(PaneId),
     Outside,
 }
 
@@ -20,6 +20,13 @@ pub(super) const MAX_UNATTACHED: usize = 32;
 /// How many usage requests may wait on one sample at once: a person asks
 /// one at a time, and a pane asking in a loop is turned away past this.
 pub(super) const MAX_USAGE_ASKING: usize = 4;
+
+/// How many spaces opened through `OpenSpace` that no client has visited
+/// one pane may hold, and the whole workspace. A `uze` typed into a pane
+/// opens one, for the person to look at (ADR-056); a pane asking in a loop
+/// is turned away past these (audit TERM-2).
+pub(super) const MAX_UNVISITED_PER_PANE: usize = 3;
+pub(super) const MAX_UNVISITED_SPACES: usize = 8;
 
 /// How long closing a tab waits for its processes to be reaped before
 /// the session is broadcast without them (see [`Server::stop_runtimes`]).
@@ -101,6 +108,19 @@ pub(super) struct Server {
     pub(super) sampled: Mutex<Option<(Instant, UsageReport)>>,
     /// Usage requests waiting on a sample — see [`MAX_USAGE_ASKING`].
     pub(super) usage_asking: std::sync::atomic::AtomicUsize,
+    /// Whether a pane the runtime launches a program in starts sealed from
+    /// the person's endpoint ([`uze_platform::seal`]): asked of the kernel
+    /// once, when the server starts.
+    pub(super) seals: bool,
+    /// The person's endpoint, once [`serve`] opened one — see
+    /// [`PersonDoor`]. While it stands, attaching and stopping are served
+    /// there alone.
+    pub(super) person: std::sync::OnceLock<PersonDoor>,
+    /// Spaces `OpenSpace` created that no client has visited yet, with the
+    /// pane that asked, when a pane did: bounded (see
+    /// [`MAX_UNVISITED_SPACES`]) and never persisted, so nothing a pane
+    /// opened unseen is relaunched by the next start.
+    pub(super) unvisited: Mutex<BTreeMap<SpaceId, Option<PaneId>>>,
 }
 
 impl Server {
@@ -153,6 +173,9 @@ impl Server {
             started: std::time::SystemTime::now(),
             sampled: Mutex::new(None),
             usage_asking: std::sync::atomic::AtomicUsize::new(0),
+            seals: uze_platform::seal::available(),
+            person: std::sync::OnceLock::new(),
+            unvisited: Mutex::new(BTreeMap::new()),
         };
         for (pane, launch) in launches {
             // A persisted program is a guess (an agent binary that may
@@ -184,6 +207,7 @@ impl Server {
         }
         let mut written = self.persisting.lock().expect("persist state poisoned");
         let path = persisted_state_path();
+        let unvisited = self.unvisited.lock().expect("unvisited poisoned").clone();
         let panes = self.panes.lock().expect("panes poisoned");
         let session = self.session.lock().expect("session poisoned");
         let workspace =
@@ -193,6 +217,7 @@ impl Server {
                     .workspace
                     .spaces
                     .iter()
+                    .filter(|space| !unvisited.contains_key(&space.id))
                     .map(|space| SpaceSeed {
                         id: space.id,
                         label: space.label.clone(),
@@ -250,7 +275,7 @@ impl Server {
         }
     }
 
-    pub(super) fn handle_client(self: Arc<Self>, stream: Stream) {
+    pub(super) fn handle_client(self: Arc<Self>, stream: Stream, door: Door) {
         let _span = tracing::info_span!("terminal.client").entered();
         if transport::peer_is_another_user(&stream) {
             tracing::warn!("refused a terminal connection from another user");
@@ -284,7 +309,7 @@ impl Server {
             }
         };
         if let Ok(Some(request)) = &first
-            && let Some(message) = self.refusal(origin, request)
+            && let Some(message) = self.refusal(origin, door, request)
         {
             tracing::warn!(kind = request.kind(), ?origin, %message, "refused a terminal request");
             answer(&ClientEvent::Refused { message });
@@ -293,7 +318,7 @@ impl Server {
         let attached = match first {
             Ok(Some(ClientRequest::OpenSpace { version, seat })) => {
                 answer(&if version == PROTOCOL_VERSION {
-                    self.open_space_and_say(&seat)
+                    self.open_space_and_say(&seat, origin)
                 } else {
                     ClientEvent::Error {
                         message: "incompatible terminal runtime protocol".into(),
@@ -360,7 +385,10 @@ impl Server {
                     Seating::WhereItLeftOff => {}
                     Seating::Open(seat) => {
                         match self.ensure_space(&seat, drawn.unwrap_or(PLACEHOLDER_PANE_SIZE)) {
-                            Ok(OpenedSpace::Existing(space)) => selection.space = Some(space),
+                            Ok(OpenedSpace::Existing(space)) => {
+                                self.visited(space);
+                                selection.space = Some(space);
+                            }
                             Ok(OpenedSpace::Created(NewSpace { space, .. })) => {
                                 selection.space = Some(space);
                                 sized_at_creation = true;
@@ -543,6 +571,7 @@ impl Server {
                             .map(|space| space.id)
                     };
                     if let Some(space) = located {
+                        self.visited(space);
                         self.update_selection(client, |selection| {
                             selection.space = Some(space);
                             selection.tabs.insert(space, tab);
@@ -640,6 +669,7 @@ impl Server {
                         session.space(space).is_some()
                     };
                     if exists {
+                        self.visited(space);
                         self.update_selection(client, |selection| selection.space = Some(space));
                         self.broadcast_session();
                     }
@@ -710,27 +740,43 @@ impl Server {
         let _settled = self.registering.read().expect("registering poisoned");
         // Asked after the map's lock is released: each answer reads the
         // process table, and the input and damage paths wait on that lock.
-        if self.runtimes().iter().any(|runtime| runtime.holds(peer)) {
-            Origin::Pane
-        } else {
-            Origin::Outside
-        }
+        self.runtimes()
+            .iter()
+            .find(|runtime| runtime.holds(peer))
+            .map_or(Origin::Outside, |runtime| Origin::Pane(runtime.id))
     }
 
     /// Why a first frame is not served, or `None` when it is. A frame from
     /// another build is let through to be told so: the answer to it is
     /// "incompatible", which a client acts on by replacing this server,
     /// and a refusal would hide that.
-    pub(super) fn refusal(&self, origin: Origin, request: &ClientRequest) -> Option<String> {
+    ///
+    /// Attaching and stopping are the person's: refused to a process the
+    /// kernel places in a pane, refused at the shared endpoint while the
+    /// person's endpoint stands (a sealed pane reaches only the shared
+    /// one), and refused without the key.
+    pub(super) fn refusal(
+        &self,
+        origin: Origin,
+        door: Door,
+        request: &ClientRequest,
+    ) -> Option<String> {
         let key = match request {
             ClientRequest::OpenSpace { .. } | ClientRequest::Usage { .. } => return None,
             ClientRequest::Attach { version, .. } if *version != PROTOCOL_VERSION => return None,
             ClientRequest::Attach { key, .. } | ClientRequest::Stop { key } => key,
             _ => return None,
         };
-        if origin == Origin::Pane {
+        if matches!(origin, Origin::Pane(_)) {
             return Some(
                 "a process inside a uze pane may open a space or read usage and nothing else; \
+                 attach from a terminal of your own"
+                    .into(),
+            );
+        }
+        if door == Door::Shared && self.person.get().is_some() {
+            return Some(
+                "this endpoint serves what a pane may ask and nothing else; \
                  attach from a terminal of your own"
                     .into(),
             );
@@ -746,10 +792,38 @@ impl Server {
 
     /// Opens the space at `seat` for a connection that asked for nothing
     /// else, and answers with its label alone.
-    pub(super) fn open_space_and_say(&self, seat: &SpaceSeat) -> ClientEvent {
+    ///
+    /// A space this creates is unvisited until a client selects it: it is
+    /// bounded per asking pane and in total, and left out of the persisted
+    /// workspace until then (audit TERM-2).
+    pub(super) fn open_space_and_say(&self, seat: &SpaceSeat, origin: Origin) -> ClientEvent {
+        let opener = match origin {
+            Origin::Pane(pane) => Some(pane),
+            Origin::Outside => None,
+        };
+        let mut unvisited = self.unvisited.lock().expect("unvisited poisoned");
+        let opened = {
+            let session = self.session.lock().expect("session poisoned");
+            unvisited.retain(|space, _| session.space(*space).is_some());
+            session.space_for(seat)
+        };
+        if opened.is_none() {
+            let by_this_pane = unvisited.values().filter(|asked| **asked == opener).count();
+            if unvisited.len() >= MAX_UNVISITED_SPACES
+                || (opener.is_some() && by_this_pane >= MAX_UNVISITED_PER_PANE)
+            {
+                return ClientEvent::Refused {
+                    message: "spaces opened from panes are waiting to be visited; \
+                              look at them in uze before opening more"
+                        .into(),
+                };
+            }
+        }
         let space = match self.ensure_space(seat, PLACEHOLDER_PANE_SIZE) {
             Ok(OpenedSpace::Existing(space)) => space,
             Ok(OpenedSpace::Created(NewSpace { space, .. })) => {
+                unvisited.insert(space, opener);
+                drop(unvisited);
                 self.broadcast_session();
                 space
             }
@@ -770,6 +844,20 @@ impl Server {
             .map(|space| space.label.clone())
             .unwrap_or_default();
         ClientEvent::SpaceOpened { label }
+    }
+
+    /// A client looked at `space`: if a pane opened it, it is the person's
+    /// now, persisted and restored like any other.
+    pub(super) fn visited(&self, space: SpaceId) {
+        let adopted = self
+            .unvisited
+            .lock()
+            .expect("unvisited poisoned")
+            .remove(&space)
+            .is_some();
+        if adopted {
+            self.persist();
+        }
     }
 
     /// The space at `seat`, created — with its first shell pane, spawned at
@@ -899,6 +987,10 @@ impl Server {
             .cloned()
             .ok_or_else(|| RuntimeError::Protocol("unknown pane".into()))?;
         let registering = self.registering.write().expect("registering poisoned");
+        // A program's pane is sealed from the person's endpoint: it is what
+        // an agent runs in. A shell the person opens is not, so `sudo`
+        // keeps working in it; `no_new_privs` would refuse it.
+        let sealed = self.seals && matches!(launch, Launch::Program { .. });
         let runtime = PaneRuntime::spawn(
             pane_id,
             pane.cwd,
@@ -911,6 +1003,7 @@ impl Server {
             self.damage.clone(),
             launch,
             Arc::clone(&self.palette),
+            sealed,
         )?;
         {
             let mut session = self.session.lock().expect("session poisoned");
@@ -1231,6 +1324,9 @@ impl Server {
         self.stop_requested.notify_all();
         self.stop_panes();
         let _ = transport::connect(&self.socket);
+        if let Some(door) = self.person.get() {
+            let _ = uze_platform::seal::connect(door.name());
+        }
     }
 
     /// Blocks until [`Server::shut_down`] runs, and returns holding the
@@ -1346,6 +1442,9 @@ pub(super) fn spawn_endpoint_watch(server: Arc<Server>) {
                 break;
             }
             server.key.keep();
+            if let Some(door) = server.person.get() {
+                door.keep();
+            }
             if transport::identity(&server.socket) == bound {
                 continue;
             }
@@ -1363,7 +1462,7 @@ pub(super) fn spawn_endpoint_watch(server: Arc<Server>) {
                     // The listener this replaces is left blocked in
                     // `accept` on an inode nothing can reach any more, so it
                     // costs one idle thread and answers nobody.
-                    thread::spawn(move || accept_connections(listener, accepting));
+                    thread::spawn(move || accept_connections(listener, accepting, Door::Shared));
                 }
                 Err(error) => {
                     tracing::warn!(%error, "could not rebind the terminal endpoint")

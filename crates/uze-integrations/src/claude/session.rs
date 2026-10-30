@@ -106,7 +106,9 @@ pub(super) fn observe(projects_root: &Path, ctx: &ObservationContext) -> Option<
             .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
             .map(|elapsed| elapsed.as_secs())
             .unwrap_or_default();
-        let session = SessionId::new(name);
+        let Some(session) = conversation_named(name) else {
+            continue;
+        };
         if modified < ctx.since_unix || !ctx.is_unclaimed(&session) {
             continue;
         }
@@ -115,6 +117,13 @@ pub(super) fn observe(projects_root: &Path, ctx: &ObservationContext) -> Option<
         }
     }
     newest.map(|(_, session)| session)
+}
+
+/// The conversation a transcript's name gives, when it is one: Claude Code
+/// names every conversation with a UUID, so a file of any other name in its
+/// directory is not one, whoever put it there.
+fn conversation_named(name: &str) -> Option<SessionId> {
+    SessionId::parse(name).ok().filter(SessionId::is_uuid)
 }
 
 /// Marks `path` as modified now, so a freshly created transcript is never
@@ -170,7 +179,7 @@ mod tests {
 
     #[test]
     fn starting_and_resuming_are_different_arguments() {
-        let session = SessionId::new("11111111-2222-4333-8444-555555555555");
+        let session = SessionId::parse("11111111-2222-4333-8444-555555555555").unwrap();
         assert_eq!(
             start_args(&session),
             vec![
@@ -193,12 +202,12 @@ mod tests {
         let cwd = Path::new("/work/slot");
         transcript(&root, cwd, "kept", 100);
 
-        assert!(exists(&root, cwd, &SessionId::new("kept")));
-        assert!(!exists(&root, cwd, &SessionId::new("deleted")));
+        assert!(exists(&root, cwd, &SessionId::parse("kept").unwrap()));
+        assert!(!exists(&root, cwd, &SessionId::parse("deleted").unwrap()));
         assert!(!exists(
             &root,
             Path::new("/work/other"),
-            &SessionId::new("kept")
+            &SessionId::parse("kept").unwrap()
         ));
     }
 
@@ -208,8 +217,8 @@ mod tests {
     fn the_newest_conversation_since_the_launch_is_the_one_observed() {
         let root = scratch("claude-session-observe");
         let cwd = Path::new("/work/slot");
-        transcript(&root, cwd, "started-with", 100);
-        transcript(&root, cwd, "moved-to", 200);
+        transcript(&root, cwd, "00000000-0000-4000-8000-000000000001", 100);
+        transcript(&root, cwd, "00000000-0000-4000-8000-000000000002", 200);
 
         let observed = observe(
             &root,
@@ -220,7 +229,35 @@ mod tests {
                 claimed_elsewhere: &[],
             },
         );
-        assert_eq!(observed, Some(SessionId::new("moved-to")));
+        assert_eq!(
+            observed,
+            Some(SessionId::parse("00000000-0000-4000-8000-000000000002").unwrap())
+        );
+    }
+
+    /// The store is the agent's to write: a file named like an option is
+    /// never a conversation, however new, so it never reaches `--resume`.
+    #[test]
+    fn a_transcript_not_named_by_claude_code_is_never_observed() {
+        let root = scratch("claude-session-shape");
+        let cwd = Path::new("/work/slot");
+        transcript(&root, cwd, "00000000-0000-4000-8000-000000000001", 100);
+        transcript(&root, cwd, "--dangerously-skip-permissions", 200);
+        transcript(&root, cwd, "not-a-uuid", 300);
+
+        let observed = observe(
+            &root,
+            &ObservationContext {
+                cwd,
+                since_unix: 50,
+                preceded_by: None,
+                claimed_elsewhere: &[],
+            },
+        );
+        assert_eq!(
+            observed,
+            Some(SessionId::parse("00000000-0000-4000-8000-000000000001").unwrap())
+        );
     }
 
     /// A slot is reused, and the previous task's conversation is still
@@ -252,8 +289,8 @@ mod tests {
     fn a_conversation_another_agent_holds_is_never_adopted() {
         let root = scratch("claude-session-claimed");
         let cwd = Path::new("/work/shared");
-        transcript(&root, cwd, "cleared-to", 200);
-        transcript(&root, cwd, "neighbour", 300);
+        transcript(&root, cwd, "00000000-0000-4000-8000-000000000003", 200);
+        transcript(&root, cwd, "00000000-0000-4000-8000-000000000004", 300);
 
         let observed = observe(
             &root,
@@ -261,15 +298,20 @@ mod tests {
                 cwd,
                 since_unix: 50,
                 preceded_by: None,
-                claimed_elsewhere: &[SessionId::new("neighbour")],
+                claimed_elsewhere: &[
+                    SessionId::parse("00000000-0000-4000-8000-000000000004").unwrap()
+                ],
             },
         );
-        assert_eq!(observed, Some(SessionId::new("cleared-to")));
+        assert_eq!(
+            observed,
+            Some(SessionId::parse("00000000-0000-4000-8000-000000000003").unwrap())
+        );
     }
 
     #[test]
     fn a_first_turn_follows_a_resume_as_its_positional_prompt() {
-        let session = SessionId::new("11111111-2222-4333-8444-555555555555");
+        let session = SessionId::parse("11111111-2222-4333-8444-555555555555").unwrap();
         let line: Vec<OsString> = resume_args(&session)
             .into_iter()
             .chain(first_turn_args("carry on"))

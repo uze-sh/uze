@@ -407,7 +407,7 @@ impl Project<'_> {
     }
 
     /// Adds a plugin to the project lock and ensures it's in the Store.
-    #[tracing::instrument(name = "project.add", skip_all, fields(plugin = %plugin, marketplace = %marketplace, root = %root.display()), err)]
+    #[tracing::instrument(name = "project.add", skip_all, fields(plugin = %plugin, marketplace = %uze_platform::redact::redact(marketplace), root = %root.display()), err)]
     pub fn add(
         &self,
         plugin: &str,

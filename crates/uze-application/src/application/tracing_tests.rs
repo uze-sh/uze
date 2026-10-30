@@ -108,3 +108,74 @@ fn a_failed_service_call_records_its_error_on_the_span() {
     );
     let _ = fs::remove_dir_all(&root);
 }
+
+/// Every value a span or an event carried while the subscriber was
+/// current, as the text a layer would write.
+#[derive(Clone, Default)]
+struct Values(Arc<Mutex<Vec<String>>>);
+
+impl Values {
+    fn keep(&self, record: impl FnOnce(&mut dyn tracing::field::Visit)) {
+        let mut seen = Vec::new();
+        record(
+            &mut |field: &tracing::field::Field, value: &dyn std::fmt::Debug| {
+                seen.push(format!("{}={value:?}", field.name()));
+            },
+        );
+        self.0.lock().unwrap().extend(seen);
+    }
+}
+
+impl<S> Layer<S> for Values
+where
+    S: Subscriber + for<'a> LookupSpan<'a>,
+{
+    fn on_new_span(&self, attrs: &span::Attributes<'_>, _id: &span::Id, _context: Context<'_, S>) {
+        self.keep(|visit| attrs.record(visit));
+    }
+
+    fn on_record(&self, _id: &span::Id, values: &span::Record<'_>, _context: Context<'_, S>) {
+        self.keep(|visit| values.record(visit));
+    }
+
+    fn on_event(&self, event: &tracing::Event<'_>, _context: Context<'_, S>) {
+        self.keep(|visit| event.record(visit));
+    }
+}
+
+/// ENV-1: the token in a marketplace URL a person typed reached every
+/// span that recorded the source, and from there the journal and any
+/// collector.
+#[test]
+fn no_span_or_event_carries_the_credentials_of_a_url_the_operator_typed() {
+    let root = uze_testkit::temp::scratch("tracing-credentials");
+    let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
+    let values = Values::default();
+    let subscriber = tracing_subscriber::registry().with(values.clone());
+    tracing::subscriber::with_default(subscriber, || {
+        let marketplace = app.marketplace();
+        let source = "https://alice:ghp_SECRETTOKEN1234567890@127.0.0.1:9/org/market.git";
+        assert!(marketplace.add(source).is_err());
+        assert!(marketplace.register(source).is_err());
+        let spec = "flow@https://alice:ghp_SECRETTOKEN1234567890@127.0.0.1:9/org/market.git";
+        assert!(
+            marketplace
+                .install_plugin(spec, &uze_core::trust::AlwaysTrust)
+                .is_err()
+        );
+        let _ = marketplace.inspect_plugin(source, "flow");
+    });
+    let values = values.0.lock().unwrap().clone();
+    assert!(
+        values
+            .iter()
+            .any(|value| value.contains("https://<redacted>@127.0.0.1:9/org/market.git")),
+        "the source is still on the span, less its credentials: {values:?}"
+    );
+    let leaked: Vec<_> = values
+        .iter()
+        .filter(|value| value.contains("SECRETTOKEN") || value.contains("alice"))
+        .collect();
+    assert!(leaked.is_empty(), "credentials reached a trace: {leaked:?}");
+    let _ = fs::remove_dir_all(&root);
+}

@@ -2813,6 +2813,7 @@ fn replaced_detail(replaced: Replaced) -> &'static str {
         Replaced::AnotherProtocol => "older release; agents restarted",
         Replaced::Unreachable => "it stopped; agents restarted",
         Replaced::Orphaned => "its workspace was deleted",
+        Replaced::StartedInsidePane => "started from a pane; agents restarted",
     }
 }
 

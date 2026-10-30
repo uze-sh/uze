@@ -70,6 +70,17 @@ operations:
       # contains ": " parses as an implicit key and the whole file is
       # rejected (and silently ignored by `openspec`).
       - >-
+        A change on the `audit` schema (named `audit-<subject>`) is
+        archived only once its evidence.md closes every finding in its
+        findings.md: a regression test and an exploit re-run against the
+        fixed binary for each, or a residual stated and accepted. A finding
+        with neither means the change is not ready - say so and stop.
+      - >-
+        Before archiving an `audit-*` change, check that no file in it
+        describes an unfixed attack: an unfixed residual is named only by
+        its private advisory id. Publish the change's advisories only once
+        a release carries the fix (`SECURITY.md`, Disclosure).
+      - >-
         Before moving the change, read BOTH sources of candidate
         decisions: design.md's `## Candidate ADRs` note (decisions known
         before implementing) and decisions.md (decisions taken during

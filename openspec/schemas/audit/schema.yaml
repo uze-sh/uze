@@ -1,0 +1,306 @@
+name: audit
+version: 1
+description: a security audit's findings carried to proven fixes - findings → proposal → specs → design → tasks → evidence; every change named audit-<subject>, the adr-driven flow with the attacker's view at the front and the proof at the back
+artifacts:
+  - id: findings
+    generates: findings.md
+    description: What an attacker can do today, each finding proven or marked plausible
+    template: findings.md
+    instruction: |
+      Record the audit's findings this change resolves. This file enters the
+      public repository only on the branch that fixes them; until then the
+      findings live in a private draft GitHub Security Advisory (AGENTS.md,
+      Security findings; the `security-findings` rule). The `security-audit` skill (.agents/skills/security-audit/)
+      produced them; this file is their permanent record.
+
+      One `## <ID> - <title>` section per finding (IDs are the audit's own:
+      ACQ-1, WKS-2, ...), most severe first, each with exactly these fields:
+      - **Severity**: Critical / High / Medium / Low, with a one-line reason
+      - **Status**: CONFIRMED (a PoC ran) or PLAUSIBLE (exact code path, no run)
+      - **Threat actor** and **Preconditions**
+      - **Location**: `path:line` of the flaw at the audited commit
+      - **Attack**: the steps an attacker takes
+      - **Evidence**: the observed output that proves it (verbatim, short)
+      - **Root cause**: one or two sentences - the property that does not hold
+
+      Start the file with the audited commit and date, and end it with
+      `## Defenses that held` (one line each) so the next audit does not
+      re-test them blindly. No fix here: the fix is design.md's.
+    requires: []
+
+  - id: proposal
+    generates: proposal.md
+    description: Initial proposal document outlining the change
+    template: proposal.md
+    instruction: |
+      Create the proposal document that establishes WHY this change is needed.
+
+      Sections:
+      - **Why**: 1-2 sentences on the problem or opportunity. What problem does this solve? Why now?
+      - **What Changes**: Bullet list of changes. Be specific about new capabilities, modifications, or removals. Mark breaking changes with **BREAKING**.
+      - **Capabilities**: Identify which specs will be created or modified:
+        - **New Capabilities**: List capabilities being introduced. Each becomes a new `specs/<capability-path>/spec.md`. Use kebab-case for path segments you introduce (e.g., `user-auth` or `identity/user-auth`) and follow the project's existing spec organization.
+        - **Modified Capabilities**: List existing capabilities whose REQUIREMENTS are changing. Only include if spec-level behavior changes (not just implementation details). Each needs a delta spec file. Use the exact existing path under `openspec/specs/`. Leave empty if no requirement changes.
+      - **Impact**: Affected code, APIs, dependencies, or systems.
+
+      IMPORTANT: The Capabilities section is critical. It creates the contract between
+      proposal and specs phases. Research existing specs before filling this in.
+      Each capability listed here will need a corresponding spec file.
+
+      Every change must either declare at least one capability (new or
+      modified) or explicitly opt out of specs: `openspec validate` rejects a
+      change with zero deltas unless the change's `.openspec.yaml` sets
+      `skip_specs: true`. Use `skip_specs: true` only when no spec-level
+      behavior changes (pure refactor, tooling, docs) - specs describe
+      behavior, so if behavior does not change, no spec should change either.
+      Do not invent a requirement just to satisfy validation.
+
+      Keep it concise (1-2 pages). Focus on the "why" not the "how" -
+      implementation details belong in design.md.
+
+      This is the foundation - specs, design, and tasks all build on this.
+
+      For an audit change, `## Why` names the finding IDs from findings.md
+      and the property each breaks; do not restate their evidence.
+    requires:
+      - findings
+
+  - id: specs
+    generates: "specs/**/*.md"
+    description: Detailed specifications for the change
+    template: spec.md
+    instruction: |
+      Create specification files that define WHAT the system should do.
+
+      A spec is a behavior contract, not an implementation plan.
+
+      Good spec content:
+      - Observable behavior users or downstream systems rely on
+      - Inputs, outputs, and error conditions
+      - External constraints (security, privacy, reliability, compatibility)
+      - Scenarios that can be tested or explicitly validated
+
+      Avoid in specs:
+      - Internal class/function names
+      - Library or framework choices
+      - Step-by-step implementation details
+      - Detailed execution plans (those belong in design.md or tasks.md)
+
+      Quick test: if the implementation can change without changing externally
+      visible behavior, it likely does not belong in the spec.
+
+      Create one spec file per capability listed in the proposal's Capabilities section.
+      `<capability-path>` is the spec directory relative to `specs/` (for example,
+      `user-auth` or `identity/user-auth`). Preserve the full path:
+      - New capabilities: use the exact path from the proposal at `specs/<capability-path>/spec.md`. Any path segment newly introduced in the proposal must be kebab-case. Follow the project's existing organization; do not add a new domain level when the project uses a flat layout.
+      - Modified capabilities: use the exact existing path from `openspec/specs/<capability-path>/` when creating the delta at `specs/<capability-path>/spec.md`. Do not move or rename the capability.
+
+      There must be at least one spec file unless the change's `.openspec.yaml`
+      sets `skip_specs: true` (no spec-level behavior change) - `openspec validate`
+      rejects a zero-delta change without that marker. If the proposal lists no
+      capabilities and `skip_specs` is not set, revisit the proposal first.
+
+      Delta operations (use ## headers):
+      - **ADDED Requirements**: New capabilities
+      - **MODIFIED Requirements**: Changed behavior - MUST include full updated content
+      - **REMOVED Requirements**: Deprecated features - MUST include **Reason** and **Migration**
+      - **RENAMED Requirements**: Name changes only - use FROM:/TO: format
+
+      Format requirements:
+      - Each requirement: `### Requirement: <name>` followed by description
+      - Use SHALL/MUST for normative requirements (avoid should/may)
+      - Each scenario: `#### Scenario: <name>` with WHEN/THEN format
+      - **CRITICAL**: Scenarios MUST use exactly 4 hashtags (`####`). Using 3 hashtags or bullets will fail silently.
+      - Every requirement MUST have at least one scenario.
+
+      New capabilities only: start the delta spec with a `## Purpose` section -
+      one or two sentences (50+ characters, or `openspec validate --strict`
+      reports it as too brief) describing what the capability is for. Archive
+      copies it into the main spec it creates; without it the new main spec is
+      left with a `TBD ... Update Purpose after archive` placeholder to fill in
+      by hand. Do NOT add `## Purpose` to a delta for an existing capability -
+      that spec already has one and the delta's is ignored. To change an
+      existing capability's Purpose - including a leftover `TBD` placeholder -
+      edit `openspec/specs/<capability-path>/spec.md` directly.
+
+      MODIFIED requirements workflow:
+      1. Locate the existing requirement in openspec/specs/<capability-path>/spec.md
+      2. Copy the ENTIRE requirement block (from `### Requirement:` through all scenarios)
+      3. Paste under `## MODIFIED Requirements` and edit to reflect new behavior
+      4. Ensure header text matches exactly (whitespace-insensitive)
+
+      Common pitfall: Using MODIFIED with partial content loses detail at archive time.
+      If adding new concerns without changing existing behavior, use ADDED instead.
+
+      Example (a new capability, so it opens with `## Purpose`):
+      ```
+      ## Purpose
+
+      Lets users take their data out of the product in a portable format.
+
+      ## ADDED Requirements
+
+      ### Requirement: User can export data
+      The system SHALL allow users to export their data in CSV format.
+
+      #### Scenario: Successful export
+      - **WHEN** user clicks "Export" button
+      - **THEN** system downloads a CSV file with all user data
+
+      ## REMOVED Requirements
+
+      ### Requirement: Legacy export
+      **Reason**: Replaced by new export system
+      **Migration**: Use new export endpoint at /api/v2/export
+      ```
+
+      Specs should be testable - each scenario is a potential test case.
+    requires:
+      - proposal
+
+  - id: design
+    generates: design.md
+    description: Technical design document with implementation details
+    template: design.md
+    instruction: |
+      Create the design document that explains HOW to implement the change.
+
+      When to include design.md (create only if any apply):
+      - Cross-cutting change (multiple services/modules) or new architectural pattern
+      - New external dependency or significant data model changes
+      - Security, performance, or migration complexity
+      - Ambiguity that benefits from technical decisions before coding
+
+      Sections:
+      - **Context**: Only the current state and constraints needed to explain the approach. Reference the proposal for motivation instead of restating it (e.g., "See proposal.md - Why").
+      - **Goals / Non-Goals**: What this design achieves and explicitly excludes. Don't restate the proposal's scope - add only design-level boundaries.
+      - **Decisions**: Key technical choices with rationale (why X over Y?). Include alternatives considered for each decision.
+      - **Risks / Trade-offs**: Known limitations, things that could go wrong. Format: [Risk] → Mitigation
+      - **Migration Plan**: Steps to deploy, rollback strategy (if applicable)
+      - **Open Questions**: Unknowns that can safely be answered later without
+        changing the specs, the approach, or the task breakdown. Omit if none.
+
+      Open questions are for genuinely deferrable unknowns, not decisions you
+      skipped. If a question would change the specs, the chosen approach, or
+      the task breakdown, resolve it now - ask the user instead of guessing.
+
+      Focus on architecture and approach, not line-by-line implementation.
+      The proposal covers why and what; design covers how. Reference the
+      proposal for motivation and, once written, the specs for requirements -
+      if a section would only restate them, point to them instead.
+
+      Good design docs explain the "why" behind technical decisions. If any
+      decision here is architecturally significant and hard to reverse (a
+      new external dependency, a technology/pattern choice with long-term
+      consequences, a boundary expensive to move later), flag it under a
+      `## Candidate ADRs` note - title and one-line why, nothing more. This
+      is a flag, not a commitment: the design can still change while the
+      change is in flight, and premature ADRs churn (superseded before the
+      approach even stabilizes) are exactly what this note exists to avoid.
+      The ADR itself gets written at archive time (see `operations.archive`
+      in `openspec/config.yaml`), once whatever was actually built - not
+      necessarily what was flagged here - is known to hold.
+    requires:
+      - proposal
+
+  - id: tasks
+    generates: tasks.md
+    description: Implementation checklist with trackable tasks
+    template: tasks.md
+    instruction: |
+      Create the task list that breaks down the implementation work.
+
+      Before writing tasks, check design.md for Open Questions. If any of them
+      would change what gets built, resolve them with the user first - do not
+      bake an unstated assumption into the task list.
+
+      **IMPORTANT: Follow the template below exactly.** The apply phase parses
+      checkbox format to track progress. Tasks not using `- [ ]` won't be tracked.
+
+      Guidelines:
+      - Group related tasks under ## numbered headings
+      - Each task MUST be a checkbox: `- [ ] X.Y Task description`
+      - Tasks should be small enough to complete in one session
+      - Order tasks by dependency (what must be done first?)
+      - Do not add a task for writing ADRs here - that happens at archive
+        time (see `operations.archive` in `openspec/config.yaml`), after
+        the approach in this change has actually held up.
+
+      Example:
+      ```
+      ## 1. Setup
+
+      - [ ] 1.1 Create new module structure
+      - [ ] 1.2 Add dependencies to package.json
+
+      ## 2. Core Implementation
+
+      - [ ] 2.1 Implement data export function
+      - [ ] 2.2 Add CSV formatting utilities
+      ```
+
+      Reference specs for what needs to be built, design for how to build it.
+      Each task should be verifiable - you know when it's done.
+    requires:
+      - specs
+      - design
+
+  - id: evidence
+    generates: evidence.md
+    description: Proof, after the fix, that every finding is closed
+    template: evidence.md
+    instruction: |
+      Written after the tasks are done, before the change is archived. One
+      `## <ID>` section per finding in findings.md, each with:
+      - **Fix**: the commit(s) and the one-line change in behavior
+      - **Regression test**: the test that fails on the audited commit and
+        passes now (`path::test_name`), and the command that runs it
+      - **Exploit re-run**: the original PoC run again against the fixed
+        binary in the audit sandbox, with its observed output (verbatim,
+        short) showing the attack now fails
+      - **Residual**: `none`, an accepted limit the threat model excludes
+        by design (stated without a recipe), or the id of the private
+        advisory that tracks what remains unfixed - never the attack itself
+
+      End with the gate: the commands run (`cargo test --workspace`,
+      `cargo clippy --all-targets -- -D warnings`, `openspec validate
+      --all --strict`) and their result. A finding with no exploit re-run
+      is not closed.
+    requires:
+      - tasks
+
+apply:
+  requires: [tasks]
+  tracks: tasks.md
+  # The closed escalation list below is also stated, at length and with its
+  # reasoning, in the plugin's `auto` skill. They are deliberately in both
+  # places - this one ships into the project and drives apply with no skill
+  # loaded - so an edit to one condition belongs in both files.
+  instruction: |
+    Read context files, work through pending tasks in order, and mark each
+    complete as you go. Before ticking a box, verify with the project's own
+    commands - the gate is an exit code, never a judgement that it looks
+    right. Never weaken or delete a test to make a gate pass.
+
+    Where the task list runs out, decide - do not stop to ask. Record the
+    decision in this change's decisions.md (template: templates/decisions.md)
+    in the same commit as the work it justifies, and continue. A decision
+    earns an entry when you chose between real alternatives and a reviewer
+    could reasonably have chosen the other one; routine implementation
+    belongs in the commit message instead. The agent writes entries and
+    never edits their `status`; the reviewer writes `status` and never
+    rewrites an entry.
+
+    Stop and hand back ONLY for: an irreversible or destructive action
+    outside this change's scope; a step that would violate a REQUIREMENT
+    under specs/; three failed hypotheses on the same task item; a needed
+    credential, or a secret found in the working tree; a discovery that
+    invalidates the proposal's `## Why`. This list is closed. Finishing a
+    task item is not on it - the next unchecked box is already authorized,
+    and asking to continue is the failure mode this wording exists to
+    prevent. Neither is an ambiguity that has a defensible answer: pick the
+    reading most consistent with proposal.md and specs/, record it, carry on.
+
+    For a long or unattended run, the `auto` skill carries the full contract
+    (stall counter, one commit per completed item, resuming from a cold
+    context).

@@ -148,40 +148,6 @@ pub fn files_sha256<'a>(files: impl IntoIterator<Item = (&'a str, &'a [u8])>) ->
     spelled_sha256(hasher)
 }
 
-/// The authenticating digest of some entries of a tree — each a file or a
-/// directory named relative to `root` — as `sha256:<hex>`: the code an
-/// approval to execute something was given over. A directory takes part as
-/// its [`tree_sha256`], a file as its bytes, each beside its name.
-pub fn entries_sha256(
-    root: &std::path::Path,
-    entries: &[std::path::PathBuf],
-) -> std::io::Result<String> {
-    use sha2::{Digest, Sha256};
-
-    let mut sorted = entries.to_vec();
-    sorted.sort();
-    sorted.dedup();
-    let mut hasher = Sha256::new();
-    for entry in &sorted {
-        let spelled = crate::path::portable(entry);
-        hasher.update(
-            u64::try_from(spelled.len())
-                .unwrap_or(u64::MAX)
-                .to_be_bytes(),
-        );
-        hasher.update(spelled.as_bytes());
-        let path = root.join(entry);
-        let body = if std::fs::symlink_metadata(&path)?.is_dir() {
-            tree_sha256(&path)?.into_bytes()
-        } else {
-            std::fs::read(&path)?
-        };
-        hasher.update(u64::try_from(body.len()).unwrap_or(u64::MAX).to_be_bytes());
-        hasher.update(&body);
-    }
-    Ok(spelled_sha256(hasher))
-}
-
 /// One thing in the tree the digest speaks for, named relative to `root`.
 enum Entry {
     File {

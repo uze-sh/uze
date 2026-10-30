@@ -6,7 +6,9 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use rhai::{Array, Dynamic, Engine, EvalAltResult, ImmutableString, Map, Position};
+use rhai::{
+    Array, Dynamic, Engine, EvalAltResult, FnPtr, ImmutableString, Map, NativeCallContext, Position,
+};
 
 use crate::engine::Limits;
 use crate::value;
@@ -38,6 +40,7 @@ pub(crate) fn register(engine: &mut Engine, limits: &Limits) {
             pad(text, len, padding, string_size)
         },
     );
+    register_sized(engine, limits);
     engine.register_fn("lines", |text: &str| -> Array {
         text.lines()
             .map(|line| Dynamic::from(line.to_owned()))
@@ -262,6 +265,208 @@ fn unquote(value: &str) -> ImmutableString {
     } else {
         value.into()
     }
+}
+
+/// Shadows the package functions whose result can be many times the size
+/// of what they were handed, and which Rhai builds whole before its size
+/// check sees it: a 512 KiB string with each `a` replaced by 8 KiB asks for
+/// 4 GiB, and the allocation's failure aborts the process. Each shadow
+/// computes the size first, or counts it as it goes, and refuses past the
+/// bound without allocating (design.md, the SCRIPT-2 table).
+fn register_sized(engine: &mut Engine, limits: &Limits) {
+    let bounds = Bounds::of(limits);
+    engine.register_fn(
+        "replace",
+        move |text: &mut ImmutableString, find: &str, with: &str| -> Answer<()> {
+            replace(text, find, with, bounds.string)
+        },
+    );
+    engine.register_fn(
+        "replace",
+        move |text: &mut ImmutableString, find: char, with: &str| -> Answer<()> {
+            replace(text, find.encode_utf8(&mut [0; 4]), with, bounds.string)
+        },
+    );
+    engine.register_fn(
+        "map",
+        move |context: NativeCallContext, array: &mut Array, mapper: FnPtr| -> Answer<Array> {
+            let mut made = Collected::new(bounds, array.len());
+            for (index, item) in array.iter_mut().enumerate() {
+                let index = Dynamic::from_int(rhai::INT::try_from(index).unwrap_or(rhai::INT::MAX));
+                made.push(call_with_item(&context, &mapper, item, index)?)?;
+            }
+            Ok(made.into_array())
+        },
+    );
+    engine.register_fn(
+        "zip",
+        move |context: NativeCallContext,
+              array: &mut Array,
+              other: Array,
+              mapper: FnPtr|
+              -> Answer<Array> {
+            let mut made = Collected::new(bounds, array.len().min(other.len()));
+            for (index, (item, paired)) in array.iter().zip(other).enumerate() {
+                let index = Dynamic::from_int(rhai::INT::try_from(index).unwrap_or(rhai::INT::MAX));
+                made.push(call_pair(&context, &mapper, item.clone(), paired, index)?)?;
+            }
+            Ok(made.into_array())
+        },
+    );
+}
+
+/// The engine's size bounds, as the shadows check them.
+#[derive(Clone, Copy)]
+struct Bounds {
+    string: usize,
+    array: usize,
+    map: usize,
+}
+
+impl Bounds {
+    fn of(limits: &Limits) -> Self {
+        Self {
+            string: limits.string_size,
+            array: limits.array_size,
+            map: limits.map_size,
+        }
+    }
+}
+
+/// What Rhai's own check says when a value is past a bound, so the error
+/// reads (and is classified) the same as the check's.
+fn too_large(what: &str) -> Box<EvalAltResult> {
+    EvalAltResult::ErrorDataTooLarge(what.to_owned(), Position::NONE).into()
+}
+
+/// `replace`, its result's length counted before it is built.
+fn replace(text: &mut ImmutableString, find: &str, with: &str, string_size: usize) -> Answer<()> {
+    if text.is_empty() {
+        return Ok(());
+    }
+    let found = text.matches(find).count();
+    let length = (text.len() - found * find.len()).saturating_add(found.saturating_mul(with.len()));
+    if length > string_size {
+        return Err(too_large("Length of string"));
+    }
+    *text = text.replace(find, with).into();
+    Ok(())
+}
+
+/// An array being built from a callback's results, counted as Rhai counts
+/// a value (every array and map element, every string's bytes, nested
+/// ones included) and refused the moment it passes a bound.
+struct Collected {
+    bounds: Bounds,
+    array: Array,
+    elements: usize,
+    entries: usize,
+    bytes: usize,
+}
+
+impl Collected {
+    fn new(bounds: Bounds, capacity: usize) -> Self {
+        Self {
+            bounds,
+            array: Array::with_capacity(capacity.min(bounds.array)),
+            elements: 0,
+            entries: 0,
+            bytes: 0,
+        }
+    }
+
+    fn push(&mut self, value: Dynamic) -> Answer<()> {
+        let (elements, entries, bytes) = sizes(&value);
+        self.elements = self.elements.saturating_add(1).saturating_add(elements);
+        self.entries = self.entries.saturating_add(entries);
+        self.bytes = self.bytes.saturating_add(bytes);
+        if self.bytes > self.bounds.string {
+            return Err(too_large("Length of string"));
+        }
+        if self.elements > self.bounds.array {
+            return Err(too_large("Size of array"));
+        }
+        if self.entries > self.bounds.map {
+            return Err(too_large("Size of object map"));
+        }
+        self.array.push(value);
+        Ok(())
+    }
+
+    fn into_array(self) -> Array {
+        self.array
+    }
+}
+
+/// Array elements, map entries and string bytes in `value`, nested ones
+/// included: what Rhai's own size check adds up.
+fn sizes(value: &Dynamic) -> (usize, usize, usize) {
+    if let Some(text) = value.read_lock::<ImmutableString>() {
+        return (0, 0, text.len());
+    }
+    if let Some(array) = value.read_lock::<Array>() {
+        return array.iter().fold((0, 0, 0), |(a, m, s), item| {
+            let (ia, im, is) = sizes(item);
+            (
+                a.saturating_add(1).saturating_add(ia),
+                m.saturating_add(im),
+                s.saturating_add(is),
+            )
+        });
+    }
+    if let Some(map) = value.read_lock::<Map>() {
+        return map.values().fold((0, 0, 0), |(a, m, s), item| {
+            let (ia, im, is) = sizes(item);
+            (
+                a.saturating_add(ia),
+                m.saturating_add(1).saturating_add(im),
+                s.saturating_add(is),
+            )
+        });
+    }
+    (0, 0, 0)
+}
+
+/// Whether `error` says no function matched what `pointer` names, so the
+/// next arity is tried, as Rhai's own `map` does.
+fn unmatched(error: &EvalAltResult, pointer: &FnPtr) -> bool {
+    matches!(error, EvalAltResult::ErrorFunctionNotFound(signature, _)
+        if signature.starts_with(pointer.fn_name()))
+}
+
+/// `pointer` called on one item the ways Rhai's `map` does: with the item
+/// as `this`, then as its one argument, then with its index after it.
+fn call_with_item(
+    context: &NativeCallContext,
+    pointer: &FnPtr,
+    item: &mut Dynamic,
+    index: Dynamic,
+) -> Answer<Dynamic> {
+    match pointer.call_raw(context, Some(item), []) {
+        Err(error) if unmatched(&error, pointer) => {}
+        answer => return answer,
+    }
+    match pointer.call_raw(context, None, [item.clone()]) {
+        Err(error) if unmatched(&error, pointer) => {}
+        answer => return answer,
+    }
+    pointer.call_raw(context, None, [item.clone(), index])
+}
+
+/// `pointer` called on a pair the ways Rhai's `zip` does: with the two
+/// items, then with their index after them.
+fn call_pair(
+    context: &NativeCallContext,
+    pointer: &FnPtr,
+    item: Dynamic,
+    paired: Dynamic,
+    index: Dynamic,
+) -> Answer<Dynamic> {
+    match pointer.call_raw(context, None, [item.clone(), paired.clone()]) {
+        Err(error) if unmatched(&error, pointer) => {}
+        answer => return answer,
+    }
+    pointer.call_raw(context, None, [item, paired, index])
 }
 
 /// Pads `text` to `len` characters with `padding` repeated, as Rhai's own

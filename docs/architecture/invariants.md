@@ -413,19 +413,34 @@ What is asked about is everything installing lets run: MCP servers, hooks, a
 Skill or agent whose frontmatter grants tools or hooks or whose text a
 harness executes on load (`` !`…` ``), and the version probe of every
 executable the package requires, which therefore never starts before
-consent. An approval covers the package's own code a command runs, by
-digest, not only the command line.
+consent. An approval covers the whole package tree by digest, not only the
+command line or the files it names: a script reaches files no word of it
+names, so any change to the bytes of a package that executes anything asks
+again, and a process that cannot ask refuses the update.
 
 > `crates/uze-core/src/package/trust.rs::tests::a_skill_that_runs_or_grants_something_is_an_executable_capability`
 > `crates/uze-core/src/package/trust.rs::tests::a_requirement_s_version_probe_is_asked_about`
-> `crates/uze-core/src/package/trust.rs::tests::rewriting_the_script_a_hook_runs_is_new_execution`
+> `crates/uze-core/src/package/trust.rs::tests::rewriting_any_file_of_the_package_a_hook_runs_from_is_new_execution`
+> `tests/packages/acquisition.rs::an_update_changing_a_file_the_approved_script_sources_asks_again`
+
+What trust shows is a superset of what a harness can execute from the
+package. A package mirrored whole to a harness (its own vendor envelope),
+or one whose vendor file a delivery copies, is asked about for every hook,
+server and component that envelope or file carries, and a key or file UZE
+cannot read is asked about as such. Every integration answers, detected or
+not.
+
+> `tests/packages/acquisition.rs::an_envelope_s_own_commands_cross_the_trust_boundary`
+> `tests/packages/acquisition.rs::an_envelope_key_uze_cannot_read_is_asked_about`
 
 Everything the trust question shows was written by somebody else, so it is
 printed inert: a control sequence in a command is spelled out, never
-performed, and `hooks.json`/`mcp.json` values carrying one are refused.
+performed, and `hooks.json`/`mcp.json` values carrying one are refused, as
+are the MCP documents of a vendor envelope.
 
 > `src/cli/install.rs::tests::the_trust_evidence_never_lets_a_command_act_on_the_terminal`
 > `crates/uze-core/src/delivery/engine.rs::discovery_tests::a_terminal_control_in_a_declared_command_is_refused`
+> `crates/uze-integrations/src/shared/envelope.rs::tests::a_terminal_control_in_an_envelope_mcp_document_is_refused`
 
 The same holds for every report the CLI prints, under one last layer that
 passes only the colour it paints itself; for `--format json`, which writes
@@ -1666,7 +1681,7 @@ finds a slot's administrative directory, and the record in it, from the
 primary repository's registry, and runs Git in a slot (to evaluate, deliver,
 join or show it) only while the slot's `.git` still names that directory:
 every Git call `uze-workspace` makes goes through the one guard that asks,
-and the workspace client's extension host asks it too. Every read additionally runs with no file-system monitor, no hook, no
+and the workspace client's extension host asks it too. Every read additionally runs with no
 external diff or text conversion, no discovered bare repository and no
 descent into a nested repository committed as a gitlink, and a
 split point is a full object id handed to Git after `--end-of-options`.
@@ -1679,6 +1694,27 @@ split point is a full object id handed to Git after `--end-of-options`.
 > `crates/uze-git/src/lib.rs::tests::a_read_never_discovers_a_bare_repository`
 > `crates/uze-git/src/lib.rs::tests::a_read_never_runs_what_a_nested_repository_configures`
 > `crates/uze-application/src/application/services/work/tests.rs::a_split_point_that_is_not_a_commit_id_is_refused_before_git_sees_it`
+
+### A Git process UZE starts runs nothing the repository's configuration names
+
+The repository's configuration and its hooks live in the common Git
+directory, which every agent that can commit can write. So every Git
+process `uze-git` starts, read or write, runs no hook (`pre-push` and
+`post-checkout` included: what runs before a delivery is the approved
+`workspace.gate`), no file-system monitor, no `ext::` transport and no
+submodule recursion. Where a command can reach a program a key names — a
+filter, a merge driver, a credential helper, an SSH, askpass or proxy
+command, an upload or receive pack, a signing program — Git is first asked
+which of those keys the repository itself sets, and each is answered on the
+command line with the operator's own (system, global, environment) value or
+an inert one. A value read back from Git and handed to Git again follows
+`--` or `--end-of-options`.
+
+> `crates/uze-git/src/lib.rs::tests::a_read_runs_nothing_the_repository_s_configuration_names`
+> `crates/uze-git/src/lib.rs::tests::a_write_runs_no_hook_the_repository_names`
+> `crates/uze-git/src/lib.rs::tests::no_filter_or_merge_driver_the_repository_defines_runs`
+> `crates/uze-git/src/lib.rs::tests::a_transport_the_repository_names_never_runs`
+> `crates/uze-workspace/src/landing/tests.rs::a_push_url_shaped_like_an_option_runs_nothing`
 
 ### Every surface reads one state, and a delivery in flight is the client's
 
@@ -2344,6 +2380,22 @@ left.
 > `crates/uze-workspace/src/conversation.rs::a_recycled_slots_new_task_finds_nothing_the_previous_one_left`
 > `crates/uze-workspace/src/conversation.rs::a_verified_claim_resolves_to_its_own_record_wherever_inside_its_directory`
 
+### A conversation id is never read as an option or a path
+
+A conversation id comes back from a store the agent can write — a
+harness's transcripts, rollouts or index — and leaves as a word of the
+harness's command line and a file name. Only `SessionId::parse` makes one,
+stored records included: letters, digits, `-` and `_`, beginning with a
+letter or digit. Each integration also requires its harness's own shape
+(a UUID; `ses_…` for OpenCode) before it observes one.
+
+> `crates/uze-core/src/delivery/session.rs::tests::a_value_shaped_like_an_option_or_a_path_is_not_an_identifier`
+> `crates/uze-core/src/delivery/session.rs::tests::a_stored_identifier_is_read_through_the_same_check`
+> `crates/uze-integrations/src/codex/session.rs::tests::a_rollout_naming_an_option_is_never_observed`
+> `crates/uze-integrations/src/claude/session.rs::tests::a_transcript_not_named_by_claude_code_is_never_observed`
+> `crates/uze-integrations/src/antigravity/session.rs::tests::an_index_entry_not_named_by_the_harness_is_not_a_conversation`
+> `crates/uze-integrations/src/opencode/session.rs::tests::only_an_identifier_of_opencode_s_shape_is_a_conversation`
+
 ### An agent is what its launch carried, verified twice (`identify-agents-at-launch`)
 
 Which agent a process is comes from the identity its launch stamped into
@@ -2432,17 +2484,31 @@ says the flag's spelling or the variable's name, never its value.
 > `crates/uze-application/src/application/services/tasks/tests.rs::a_harness_without_its_launcher_is_handed_its_overrides_by_the_client`
 > `tests/acceptance/session_continuity.rs::a_relaunched_agent_with_overrides_still_resumes_its_conversation`
 
-### An agent placed before launch keys still comes back
+### An agent's claim needs its launch key, and no key is no proof
 
-A launch key proves a process was started by its agent's launch, and a
-record issued none is one a release before keys placed: its tab relaunches
-it with no key for as long as that tab lives. Such a record admits the
-launch that names it, as every record did then; one issued a key admits
-only its secret. Refusing the keyless launch would not have made it safer
-— it made every restart after the upgrade start the agent over, silently.
+A launch key proves a process was started by its agent's launch. A record
+holding no key digest admits no claim, whatever the claim offers: absent
+proof is no proof (audit WKS-5). A subagent is issued a key at split that no
+process holds, so nothing acts as it through the agent verbs. An agent placed
+before keys existed is an ordinary invocation until its next placement.
 
-> `crates/uze-workspace/src/conversation.rs::a_record_issued_no_key_admits_the_launch_that_names_it`
-> `tests/acceptance/session_continuity.rs::an_agent_placed_before_launch_keys_still_comes_back_to_its_conversation`
+> `crates/uze-workspace/src/conversation.rs::a_record_issued_no_key_admits_no_claim`
+> `crates/uze-application/src/application/services/work/tests.rs::a_subagents_record_admits_no_claim_without_its_key`
+> `tests/acceptance/session_continuity.rs::an_agent_placed_before_launch_keys_is_an_ordinary_invocation`
+
+### An agent's pane cannot reach the person's endpoint
+
+Where the kernel scopes abstract sockets (Linux, Landlock ABI 6), a pane
+the runtime launches a program in is sealed, and attaching and stopping are
+served only at an endpoint the seal keeps it from. Leaving the pane's
+session and reading the key gets it nothing (audit TERM-1). A process that
+runs confined is never the person to `uze workspace allow` (audit WKS-4),
+and spaces a pane opens are bounded and unpersisted until visited (TERM-2).
+
+> `crates/uze-platform/src/seal/linux.rs::a_sealed_process_cannot_reach_the_endpoint_however_it_leaves`
+> `crates/uze-terminal/src/runtime/tests.rs::a_process_that_escapes_its_pane_cannot_attach_even_with_the_key`
+> `tests/acceptance/command_approval.rs::a_confined_process_cannot_approve_stripped_of_its_stamp_and_given_a_terminal`
+> `crates/uze-terminal/src/runtime/tests.rs::spaces_opened_unseen_are_bounded_and_never_persisted`
 
 ### An agent's context reaches its harness as a path, never as text, and only for UZE's launches
 

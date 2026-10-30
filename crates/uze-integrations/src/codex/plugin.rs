@@ -386,6 +386,40 @@ pub(super) fn manifest_codex_reads(root: &Path) -> Option<CodexManifest> {
     read(root.join(".codex-plugin/plugin.json")).map(CodexManifest::CodexPlugin)
 }
 
+/// What Codex runs from a package that ships its own envelope, beyond the
+/// canonical sources: the package is mirrored to it whole, so the hooks
+/// and servers the envelope declares, those it may discover beside it, and
+/// any manifest key nobody taught UZE are listed for the trust question.
+pub(super) fn envelope_executions(
+    root: &Path,
+) -> Result<Vec<uze_core::trust::ExecutableCapability>> {
+    use crate::shared::envelope::{Executions, METADATA_KEYS, unknown_keys};
+    const MANIFEST: &str = ".codex-plugin/plugin.json";
+    if !root.join(MANIFEST).is_file() {
+        return Ok(Vec::new());
+    }
+    let mut executions = Executions::new(root);
+    if let Some(manifest) = executions.document(MANIFEST) {
+        unknown_keys(
+            &mut executions,
+            MANIFEST,
+            &manifest,
+            &[METADATA_KEYS, &["interface"]].concat(),
+            &["skills", "hooks", "mcpServers"],
+        );
+        executions.paths_outside(manifest.get("skills"), "skills", "skills UZE does not read");
+        if let Some(hooks) = manifest.get("hooks") {
+            executions.hooks_field(&format!("{MANIFEST} hooks"), hooks);
+        }
+        if let Some(servers) = manifest.get("mcpServers") {
+            executions.mcp_field(&format!("{MANIFEST} mcpServers"), servers)?;
+        }
+    }
+    executions.hooks_file("hooks/hooks.json");
+    executions.mcp_file(".mcp.json")?;
+    Ok(executions.into_inner())
+}
+
 /// Which manifest Codex reads (`manifest_codex_reads`).
 pub(super) enum CodexManifest {
     /// A root `plugin.json` declaring the Agent Plugins schema.

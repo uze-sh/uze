@@ -370,14 +370,17 @@ pub(crate) fn trust_evidence(request: &uze_application::TrustRequest) -> String 
         for (key, value) in &capability.environment {
             detail("env", format!("{}={}", inert(key), inert(value)));
         }
+        // The digest is the whole package's: what the approval covers,
+        // whichever of its files the command names.
         if let Some(code) = &capability.code {
+            let named = if code.entries.is_empty() {
+                "package".to_owned()
+            } else {
+                inert(&code.entries.join(", ")).into_owned()
+            };
             detail(
                 "runs",
-                format!(
-                    "{} {}",
-                    inert(&code.entries.join(", ")),
-                    progress::label(inert(&code.digest))
-                ),
+                format!("{named} {}", progress::label(inert(&code.digest))),
             );
         }
     }

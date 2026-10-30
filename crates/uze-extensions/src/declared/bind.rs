@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::Value;
 use uze_contract::binding::is_present;
 use uze_contract::compiled::Node as Compiled;
-use uze_contract::{Clean, CompiledView, Condition, Item, NodeName};
+use uze_contract::{Clean, CompiledView, Condition, EXPANSION_MAX, Item, NodeName};
 
 use super::media::{Held, Lookup, MediaKey, Playing};
 use super::time::since_ms;
@@ -259,7 +259,9 @@ pub(super) fn build<'a>(
         view,
         next_id: 0,
         count: 0,
+        steps: 0,
         folded: false,
+        spent: false,
         acts: BTreeMap::new(),
         cursor: Vec::new(),
         depth: 0,
@@ -293,7 +295,11 @@ struct Builder<'a> {
     view: &'a CompiledView,
     next_id: usize,
     count: usize,
+    /// Every entry the walk considered, drawn or not: what the build
+    /// spent, held to [`EXPANSION_MAX`] (`spent` once it was).
+    steps: usize,
     folded: bool,
+    spent: bool,
     acts: BTreeMap<usize, Act>,
     /// Where in the compiled view the walk is, as child indexes: the key a
     /// `Tabs`, `Toggle` or `List` without an `id` keeps its state under.
@@ -315,6 +321,9 @@ impl<'a> Builder<'a> {
     ) -> Vec<T> {
         let mut out = Vec::new();
         for (index, (item, trace)) in items.iter().zip(traces.iter_mut()).enumerate() {
+            if self.spent {
+                break;
+            }
             self.cursor.push(index);
             match item {
                 Item::Node(node) => self.instances(node, scopes, trace, make, &mut out),
@@ -338,7 +347,9 @@ impl<'a> Builder<'a> {
         make: Make<'a, T>,
         out: &mut Vec<T>,
     ) {
-        trace.reached += 1;
+        if !self.spend(trace) {
+            return;
+        }
         let Some(items) = self.view.templates.get(template) else {
             trace.absent(Absence::UnknownTemplate);
             return;
@@ -373,6 +384,9 @@ impl<'a> Builder<'a> {
         match self.list(scopes, each) {
             Ok(elements) => {
                 for element in elements {
+                    if self.spent {
+                        break;
+                    }
                     scopes.push(element);
                     self.instance(node, scopes, trace, make, out);
                     scopes.pop();
@@ -393,7 +407,9 @@ impl<'a> Builder<'a> {
         make: Make<'a, T>,
         out: &mut Vec<T>,
     ) {
-        trace.reached += 1;
+        if !self.spend(trace) {
+            return;
+        }
         if let Some(reason) = self.excluded(node, scopes) {
             trace.absent(reason);
             return;
@@ -408,6 +424,29 @@ impl<'a> Builder<'a> {
             trace.drawn += 1;
             out.push(made);
         }
+    }
+
+    /// One step of the build's budget, taken for `trace`'s entry: false
+    /// once the budget is spent, when the build stops walking and folds.
+    fn spend(&mut self, trace: &mut TraceNode) -> bool {
+        trace.reached = trace.reached.saturating_add(1);
+        if self.step() {
+            return true;
+        }
+        trace.absent(Absence::CapReached);
+        false
+    }
+
+    /// One step of the build's budget, for what no trace entry stands
+    /// for (a row a list's filter leaves out).
+    fn step(&mut self) -> bool {
+        if self.steps >= EXPANSION_MAX {
+            self.spent = true;
+            self.folded = true;
+            return false;
+        }
+        self.steps += 1;
+        true
     }
 
     /// The items of the list `each` names, or why there are none.
@@ -604,6 +643,9 @@ impl<'a> Builder<'a> {
         let mut rows = Vec::new();
         let mut items = Vec::new();
         for element in elements {
+            if !self.step() {
+                break;
+            }
             if let Some(typed) = &filter
                 && !holds_text(element, typed, FILTER_DEPTH)
             {
@@ -638,7 +680,11 @@ impl<'a> Builder<'a> {
             }
         };
         if self.folded {
-            let text = format!("Folded: this view has more than {NODE_CAP} nodes");
+            let text = if self.spent {
+                format!("Folded: this view expands to more than {EXPANSION_MAX} nodes")
+            } else {
+                format!("Folded: this view has more than {NODE_CAP} nodes")
+            };
             root.children.push(view::Node::new(
                 self.id(),
                 NodeKind::Notice {

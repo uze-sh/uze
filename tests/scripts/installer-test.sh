@@ -58,15 +58,25 @@ sign() { # $1=dir  $2=key
 }
 
 # --- fixture tree --------------------------------------------------------------
+# Each site is a release host: `<site>/latest` redirects to the release page
+# of the tag in `<site>/latest-tag`, as GitHub's does, and every asset sits
+# under `<site>/download/v<version>/`.
 site="$work/site"
-latest="$site/latest/download"
-pinned="$site/download/v9.9.9"
-bad="$site/bad/latest/download"
-unsigned="$site/unsigned/latest/download"
-forged="$site/forged/latest/download"
-mkdir -p "$latest" "$pinned" "$bad" "$unsigned" "$forged"
 
-make_fake_bin() { # $1=fake dir  $2=version string printed by `uze --version`
+release_dir() { # $1=site prefix ('' for the root)  $2=version
+  dir="$site${1:+/$1}/download/v$2"
+  mkdir -p "$dir"
+  printf '%s\n' "$dir"
+}
+
+latest_is() { # $1=site prefix  $2=version
+  root="$site${1:+/$1}"
+  mkdir -p "$root/tag"
+  printf 'v%s' "$2" >"$root/latest-tag"
+  printf 'release page\n' >"$root/tag/v$2"
+}
+
+make_fake_bin() { # $1=fake dir  $2=what `uze --version` prints after "uze "
   mkdir -p "$1"
   printf '#!/bin/sh\nprintf "%%s\\n" "%s"\n' "uze $2" > "$1/uze"
   chmod +x "$1/uze"
@@ -81,43 +91,94 @@ mk_tarball() { # $1=dest dir  $2=platform  $3=fake bin dir
 # shellcheck disable=SC2035
 mk_sums() { (cd "$1" && sha256sum *.tar.gz > SHASUMS256.txt); }
 
-make_fake_bin "$work/macos-arm/fake-bin" "9.9.9-macos-arm"
-make_fake_bin "$work/macos-intel/fake-bin" "9.9.9-macos-intel"
-make_fake_bin "$work/glibc/fake-bin" "9.9.9-glibc"
-make_fake_bin "$work/musl/fake-bin" "9.9.9-musl"
-make_fake_bin "$work/pinned/fake-bin" "9.9.9-pinned"
-make_fake_bin "$work/corrupt/fake-bin" "9.9.9-corrupt"
+# The binaries say which build they are after the version, so a test can
+# tell which asset was installed: `uze 9.9.9 glibc`.
+make_fake_bin "$work/macos-arm/fake-bin" "9.9.9 macos-arm"
+make_fake_bin "$work/macos-intel/fake-bin" "9.9.9 macos-intel"
+make_fake_bin "$work/glibc/fake-bin" "9.9.9 glibc"
+make_fake_bin "$work/musl/fake-bin" "9.9.9 musl"
+make_fake_bin "$work/pinned/fake-bin" "9.9.8 pinned"
+make_fake_bin "$work/corrupt/fake-bin" "9.9.9 corrupt"
+# A genuinely signed build of an older release.
+make_fake_bin "$work/older/fake-bin" "9.9.7"
 
+latest_is "" 9.9.9
+latest="$(release_dir "" 9.9.9)"
+pinned="$(release_dir "" 9.9.8)"
 mk_tarball "$latest" x86_64-linux-gnu "$work/glibc/fake-bin"
 mk_tarball "$latest" x86_64-linux-musl "$work/musl/fake-bin"
-mk_tarball "$pinned" x86_64-linux-gnu "$work/pinned/fake-bin"
-mk_tarball "$bad" x86_64-linux-gnu "$work/corrupt/fake-bin"
 mk_tarball "$latest" aarch64-macos "$work/macos-arm/fake-bin"
 mk_tarball "$latest" x86_64-macos "$work/macos-intel/fake-bin"
-mk_tarball "$unsigned" x86_64-linux-gnu "$work/corrupt/fake-bin"
-mk_tarball "$forged" x86_64-linux-gnu "$work/corrupt/fake-bin"
-mk_sums "$latest"
-mk_sums "$pinned"
-mk_sums "$bad"
-mk_sums "$unsigned"
-mk_sums "$forged"
+mk_tarball "$pinned" x86_64-linux-gnu "$work/pinned/fake-bin"
+
+for name in bad unsigned forged; do
+  latest_is "$name" 9.9.9
+  mk_tarball "$(release_dir "$name" 9.9.9)" x86_64-linux-gnu "$work/corrupt/fake-bin"
+done
+bad="$(release_dir bad 9.9.9)"
+unsigned="$(release_dir unsigned 9.9.9)"
+forged="$(release_dir forged 9.9.9)"
+
+# ENV-2 of the 2026-10-30 audit: an older, genuinely signed build published
+# under a newer tag (and under a pinned one) verifies against its checksums
+# and its signature, and only its own version tells it apart.
+latest_is rollback 9.9.9
+rollback="$(release_dir rollback 9.9.9)"
+rollback_pinned="$(release_dir rollback 9.9.8)"
+mk_tarball "$rollback" x86_64-linux-gnu "$work/older/fake-bin"
+mk_tarball "$rollback_pinned" x86_64-linux-gnu "$work/older/fake-bin"
+
+# A host that does not say which release is the latest.
+mkdir -p "$site/untagged"
+
+for dir in "$latest" "$pinned" "$bad" "$unsigned" "$forged" "$rollback" "$rollback_pinned"; do
+  mk_sums "$dir"
+done
 
 # Corrupt every checksum of the "bad" site, and sign what is left: the
 # checksum is what must refuse it.
 sed -i 's/^/00/' "$bad/SHASUMS256.txt"
 
-sign "$latest" "$work/release-key"
-sign "$pinned" "$work/release-key"
-sign "$bad" "$work/release-key"
+for dir in "$latest" "$pinned" "$bad" "$rollback" "$rollback_pinned"; do
+  sign "$dir" "$work/release-key"
+done
 # Signed by a key that is not the release's: whoever can publish checksums
 # can publish a signature, and only the key says whose it is.
 sign "$forged" "$work/stranger-key"
 
 # --- local server ---------------------------------------------------------------
+# A static server that answers `<site>/latest` the way the release host
+# does: a redirect to the release page of the latest tag.
+cat >"$work/serve.py" <<'PY'
+import http.server, os, sys
+
+root = sys.argv[1]
+
+class Handler(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=root, **kwargs)
+
+    def do_GET(self):
+        if self.path.endswith("/latest"):
+            prefix = self.path[: -len("/latest")]
+            marker = os.path.join(root, prefix.lstrip("/"), "latest-tag")
+            if os.path.isfile(marker):
+                with open(marker) as tag:
+                    self.send_response(302)
+                    self.send_header("Location", f"{prefix}/tag/{tag.read().strip()}")
+                    self.end_headers()
+                    return
+            self.send_error(404)
+            return
+        super().do_GET()
+
+server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+print(f"serving on port {server.server_address[1]}", file=sys.stderr, flush=True)
+server.serve_forever()
+PY
 # `-u`: the startup line must reach the log file immediately, or the port
 # handshake below would stall on Python's block-buffered redirected stderr.
-python3 -u -m http.server 0 --bind 127.0.0.1 --directory "$site" \
-  >"$work/server.out" 2>&1 &
+python3 -u -I "$work/serve.py" "$site" >"$work/server.out" 2>&1 &
 server_pid=$!
 
 port=""
@@ -183,10 +244,12 @@ fi
 # Default (glibc, latest) happy path.
 run_installer "$work/out1.log" UZE_BASE_URL="$base" UZE_BIN_DIR="$work/bin1" UZE_HOME="$work/home1"
 check "glibc/latest install succeeds" $?
-"$work/bin1/uze" --version | grep -q "9.9.9-glibc"
+"$work/bin1/uze" --version | grep -q "9.9.9 glibc"
 check "installed binary is the glibc artifact" $?
-grep -q "latest/download" "$work/out1.log"
-check "latest release URL shape is used" $?
+grep -q "download/v9.9.9/${archive_glibc}" "$work/out1.log"
+check "latest is resolved to its release, and downloaded from there" $?
+grep -q "Latest release is v9.9.9" "$work/out1.log"
+check "and the resolved release is reported" $?
 grep -q "Downloaded ${archive_glibc}" "$work/out1.log"
 check "each step reports what it settled on" $?
 # The updater replaces the file this names and no other, so it has to name
@@ -194,11 +257,11 @@ check "each step reports what it settled on" $?
 receipt="$work/home1/state/install.json"
 grep -qF "\"binary\": \"$(cd "$work/bin1" && pwd -P)/uze\"" "$receipt"
 check "the install leaves a receipt naming the file it placed" $?
-grep -qF '"version": "9.9.9-glibc"' "$receipt"
+grep -qF '"version": "9.9.9"' "$receipt"
 check "and the release it placed there" $?
-# The install ends on the version the binary itself reports, not on the
-# step's own generic wording — the fixture binary prints "uze 9.9.9-glibc".
-grep -q "9.9.9-glibc" "$work/out1.log"
+# The install reports the version the binary itself reports, not the
+# step's own generic wording — the fixture binary prints "uze 9.9.9 glibc".
+grep -q "uze 9.9.9 glibc" "$work/out1.log"
 check "the last step settles on the version installed" $?
 grep -q "Agents come and go. Your work stays." "$work/out1.log"
 check "the installer opens with the CLI's own header" $?
@@ -220,19 +283,68 @@ chmod +x "$work/musl-bin/ldd"
 run_installer "$work/out2.log" UZE_BASE_URL="$base" UZE_BIN_DIR="$work/bin2" \
   PATH="$work/musl-bin:$PATH"
 check "musl install succeeds" $?
-"$work/bin2/uze" --version | grep -q "9.9.9-musl"
+"$work/bin2/uze" --version | grep -q "9.9.9 musl"
 check "installed binary is the musl artifact" $?
 grep -q "linux-musl" "$work/out2.log"
 check "the musl platform is selected" $?
 
 # Pinned version resolves the /v<version>/ path.
 run_installer "$work/out3.log" UZE_BASE_URL="$base" UZE_BIN_DIR="$work/bin3" \
-  UZE_VERSION="9.9.9"
+  UZE_VERSION="9.9.8"
 check "pinned-version install succeeds" $?
-"$work/bin3/uze" --version | grep -q "9.9.9-pinned"
+"$work/bin3/uze" --version | grep -q "9.9.8 pinned"
 check "installed binary is the pinned artifact" $?
-grep -q "download/v9.9.9/" "$work/out3.log"
+grep -q "download/v9.9.8/" "$work/out3.log"
 check "pinned release URL shape is used" $?
+
+# ENV-2: a genuinely signed older build under the latest tag, or under a
+# pinned one, is refused, and a binary already installed is left alone.
+for case_name in latest pinned; do
+  bin_dir="$work/bin-rollback-${case_name}"
+  mkdir -p "$bin_dir"
+  printf 'previous\n' >"$bin_dir/uze"
+  if [ "$case_name" = pinned ]; then
+    set -- UZE_VERSION=9.9.8
+  else
+    set --
+  fi
+  if run_installer "$work/out-rollback-${case_name}.log" UZE_BASE_URL="$base/rollback" \
+    UZE_BIN_DIR="$bin_dir" UZE_HOME="$work/home-rollback-${case_name}" "$@"; then
+    check "an older build under the ${case_name} release is refused" 1
+  else
+    check "an older build under the ${case_name} release is refused" 0
+  fi
+  grep -q "reports 9.9.7, not 9.9." "$work/out-rollback-${case_name}.log"
+  check "and both versions are named" $?
+  [ "$(cat "$bin_dir/uze")" = previous ] && [ "$(ls -A "$bin_dir")" = uze ]
+  check "and the installed binary is left as it was" $?
+  if [ -e "$work/home-rollback-${case_name}/state/install.json" ]; then
+    check "and no receipt is written" 1
+  else
+    check "and no receipt is written" 0
+  fi
+done
+
+# A host that cannot say which release is the latest installs nothing.
+if run_installer "$work/out-untagged.log" UZE_BASE_URL="$base/untagged" \
+  UZE_BIN_DIR="$work/bin-untagged"; then
+  check "an unresolvable latest release is refused" 1
+else
+  check "an unresolvable latest release is refused" 0
+fi
+if [ -e "$work/bin-untagged/uze" ]; then
+  check "no binary installed when latest is unknown" 1
+else
+  check "no binary installed when latest is unknown" 0
+fi
+
+# A pinned version is a path segment, so it is a release version or nothing.
+if run_installer "$work/out-badpin.log" UZE_BASE_URL="$base" UZE_BIN_DIR="$work/bin-badpin" \
+  UZE_VERSION="../../9.9.9"; then
+  check "a pinned version that is not a release is refused" 1
+else
+  check "a pinned version that is not a release is refused" 0
+fi
 
 # Checksum mismatch must fail closed and leave nothing installed.
 if run_installer "$work/out4.log" UZE_BASE_URL="$base/bad" UZE_BIN_DIR="$work/bin4"; then
@@ -285,14 +397,14 @@ fake_uname "$work/mac-arm-bin" "Darwin" "arm64"
 run_installer "$work/out6.log" UZE_BASE_URL="$base" UZE_BIN_DIR="$work/bin6" \
   PATH="$work/mac-arm-bin:$PATH"
 check "macOS on Apple Silicon installs" $?
-"$work/bin6/uze" --version | grep -q "9.9.9-macos-arm"
+"$work/bin6/uze" --version | grep -q "9.9.9 macos-arm"
 check "macOS on Apple Silicon resolved aarch64-macos" $?
 
 fake_uname "$work/mac-intel-bin" "Darwin" "x86_64"
 run_installer "$work/out7.log" UZE_BASE_URL="$base" UZE_BIN_DIR="$work/bin7" \
   PATH="$work/mac-intel-bin:$PATH"
 check "macOS on Intel installs" $?
-"$work/bin7/uze" --version | grep -q "9.9.9-macos-intel"
+"$work/bin7/uze" --version | grep -q "9.9.9 macos-intel"
 check "macOS on Intel resolved x86_64-macos" $?
 
 # macOS names no libc. A `-linux-` asset reaching a Mac would mean the

@@ -213,6 +213,8 @@ mod unavailable;
 
 #[cfg(target_os = "linux")]
 use linux as imp;
+#[cfg(target_os = "linux")]
+pub(crate) use linux::landlock_abi;
 #[cfg(target_os = "macos")]
 use macos as imp;
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]

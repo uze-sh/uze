@@ -62,6 +62,15 @@ pub(super) fn author_mcp_config_servers(package: &StoredPackage) -> BTreeSet<Str
     declared_servers(&package.root.join("mcp_config.json"))
 }
 
+/// What Antigravity runs from the package beyond the canonical sources:
+/// the author's own `mcp_config.json`, which the generated plugin carries
+/// verbatim in place of the translated canonical servers.
+pub(super) fn vendor_executions(root: &Path) -> Result<Vec<uze_core::trust::ExecutableCapability>> {
+    let mut executions = crate::shared::envelope::Executions::new(root);
+    executions.mcp_file("mcp_config.json")?;
+    Ok(executions.into_inner())
+}
+
 pub(super) fn declared_servers(path: &Path) -> BTreeSet<String> {
     fs::read(path)
         .ok()

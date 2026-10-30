@@ -495,6 +495,13 @@ impl IntegrationPort for ClaudeIntegration {
         generate::withheld_paths(package)
     }
 
+    fn package_executions(
+        &self,
+        package_root: &std::path::Path,
+    ) -> Result<Vec<uze_core::trust::ExecutableCapability>> {
+        plugin::envelope_executions(package_root)
+    }
+
     fn unreadable(
         &self,
         package: &StoredPackage,

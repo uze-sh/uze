@@ -66,6 +66,15 @@ pub(super) fn is_uze_image(file_name: &str) -> bool {
     uze_platform::executable::is_image_of(file_name, "uze")
 }
 
+/// Whether the process `pid` runs confined while this one does not: a
+/// server, or something answering in its place, started from inside a
+/// pane. A client in a sandboxed terminal runs confined too, and is not
+/// kept from a server it started there.
+pub(super) fn runs_more_confined_than_this(pid: u32) -> bool {
+    !uze_platform::seal::this_process_runs_confined()
+        && uze_platform::seal::runs_confined(pid) == Some(true)
+}
+
 /// How a person finds a server this build cannot reach, to end it by hand.
 pub(super) fn find_server() -> String {
     uze_platform::process::finding_command("uze", "terminal serve")

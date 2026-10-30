@@ -133,6 +133,7 @@ impl Resident {
         let why = Arc::clone(&stopped);
         let thread = std::thread::Builder::new()
             .name("uze-resident".to_owned())
+            .stack_size(engine::STACK)
             .spawn(move || Session::new(&grants, reach).serve(&script, &received, &why));
         let resident = Self {
             calls: Mutex::new(Some(calls)),
@@ -252,13 +253,30 @@ impl Session {
     fn answer(&mut self, script: &ResidentScript, call: Call) -> Answered {
         self.clock.restart();
         lock(&self.timer).take();
-        let outcome = self.run(script, call);
+        let outcome = self
+            .run(script, call)
+            .and_then(|envelope| self.kept_within_bounds(envelope));
         let trace = std::mem::take(&mut *lock(&self.trace));
         let timer = lock(&self.timer).take().map(held_to_floor);
         Answered {
             outcome: outcome.map(|envelope| Envelope { timer, ..envelope }),
             trace,
         }
+    }
+
+    /// What the script keeps on `this` must be able to cross as a value
+    /// does: each call is bounded on its own, and what one call nested,
+    /// the next could nest again, until a recursive clone, drop or
+    /// comparison ran off the stack (the audit's SCRIPT-1). The session
+    /// stops at the bound instead, saying so.
+    fn kept_within_bounds(&self, envelope: Envelope) -> Result<Envelope, ScriptError> {
+        if value::deeper_than(&self.this, value::MAX_DEPTH + 1) {
+            return Err(ScriptError::Limit {
+                limit: Limit::Nesting,
+                at: None,
+            });
+        }
+        Ok(envelope)
     }
 
     fn run(&mut self, script: &ResidentScript, call: Call) -> Result<Envelope, ScriptError> {

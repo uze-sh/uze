@@ -113,10 +113,37 @@ fn to_json_at(value: &Dynamic, depth: usize) -> Result<Value, Crossing> {
     Err(Crossing::NotJson(value.type_name().to_owned()))
 }
 
+/// Whether `value` nests arrays and maps more than `levels` deep: walked
+/// no further than `levels + 1`, so a value nested thousands of levels is
+/// judged in as many frames as the bound, not as the value.
+pub(crate) fn deeper_than(value: &Dynamic, levels: usize) -> bool {
+    if let Some(array) = value.read_lock::<Array>() {
+        return levels == 0 || array.iter().any(|item| deeper_than(item, levels - 1));
+    }
+    if let Some(map) = value.read_lock::<Map>() {
+        return levels == 0 || map.values().any(|item| deeper_than(item, levels - 1));
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn depth_counts_the_containers_a_value_nests() {
+        let mut value = Dynamic::from_int(1);
+        assert!(!deeper_than(&value, 0));
+        for _ in 0..3 {
+            value = Dynamic::from_array(vec![value]);
+        }
+        let mut map = Map::new();
+        map.insert("x".into(), value);
+        let value = Dynamic::from_map(map);
+        assert!(deeper_than(&value, 3));
+        assert!(!deeper_than(&value, 4));
+    }
 
     #[test]
     fn a_value_crosses_both_ways_unchanged() {

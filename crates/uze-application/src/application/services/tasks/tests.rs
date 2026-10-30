@@ -1202,7 +1202,7 @@ mod task_service_tests {
         record.launched(
             "claude-code",
             conversation::ConversationOrigin::Assigned,
-            Some(conversation::SessionId::new("6a1f")),
+            Some(conversation::SessionId::parse("6a1f").unwrap()),
             None,
         );
         if let Some(entry) = record.harnesses.get_mut("claude-code") {

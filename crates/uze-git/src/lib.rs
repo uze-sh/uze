@@ -61,8 +61,11 @@ use std::{
     time::Duration,
 };
 
+mod hardening;
 mod lock;
 pub mod repository;
+
+use hardening::{Side, reaches_a_remote};
 
 /// How long a write waits for the lock before giving up. Long enough for a
 /// rebase or a fetch in another process, short enough that a hung holder
@@ -74,19 +77,6 @@ pub const DEFAULT_WRITE_TIMEOUT: Duration = Duration::from_secs(60);
 /// for as long as the network cares to stay silent; this is generous
 /// enough that a large push over a slow link is never the one cut off.
 pub const NETWORK_TIMEOUT: Duration = Duration::from_secs(600);
-
-/// What every invocation, read or write, carries whatever the platform. A
-/// file-system monitor only makes a scan faster, and the program
-/// `core.fsmonitor` names is one the checkout's configuration chose, so it
-/// is never run. Hooks are left to writes: a write is UZE acting on the
-/// operator's behalf in a repository whose configuration is theirs (a
-/// slot's is checked for that before UZE runs Git there), and their
-/// `pre-push` or `post-checkout` is part of what that action means.
-const EVERY_INVOCATION: &[(&str, &str)] = &[("core.fsmonitor", "false")];
-
-/// The subcommands that reach a remote, and with it an SSH that may want a
-/// passphrase or a host-key answer.
-const NETWORK_SUBCOMMANDS: &[&str] = &["fetch", "pull", "push", "clone", "ls-remote"];
 
 /// Git could not be run at all. A Git that ran and disagreed with the
 /// caller is an [`Output`], not this.
@@ -179,7 +169,7 @@ pub fn read_pinned(root: &Path, pinned: Pinned<'_>, args: &[&str]) -> Result<Out
 
 fn read_at(root: &Path, pinned: Option<Pinned<'_>>, args: &[&str]) -> Result<Output, SpawnError> {
     let hardened = hardened_read(args);
-    let mut command = base_command_with(root, pinned, READ_SETTINGS, &hardened);
+    let mut command = prepared(root, pinned, &hardened, Side::Read)?;
     command.env("GIT_OPTIONAL_LOCKS", "0");
     run(command, &hardened)
 }
@@ -227,6 +217,12 @@ fn hardened_read<'a>(args: &[&'a str]) -> Vec<&'a str> {
 
 /// Runs a Git command that changes the repository, under the repository
 /// write lock, waiting up to [`DEFAULT_WRITE_TIMEOUT`] for it.
+///
+/// Like a read, a write runs nothing the repository's configuration names:
+/// no hook, no file-system monitor, and no filter, merge driver, signing
+/// program or transport the repository set rather than the operator (see
+/// the `hardening` module). A hook the operator wants before a delivery is
+/// the project's approved `workspace.gate`.
 pub fn write(root: &Path, args: &[&str]) -> Result<Output, SpawnError> {
     write_within(root, args, DEFAULT_WRITE_TIMEOUT)
 }
@@ -250,7 +246,7 @@ fn write_at(
     timeout: Duration,
 ) -> Result<Output, SpawnError> {
     let _held = lock::acquire(root, timeout)?;
-    run(base_command(root, pinned, args), args)
+    run(prepared(root, pinned, args, Side::Write)?, args)
 }
 
 /// [`write`] for a command that reads its input rather than its
@@ -284,7 +280,7 @@ fn write_with_stdin_at(
     use std::io::Write;
 
     let _held = lock::acquire(root, DEFAULT_WRITE_TIMEOUT)?;
-    let mut command = base_command(root, pinned, args);
+    let mut command = prepared(root, pinned, args, Side::Write)?;
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
@@ -337,7 +333,7 @@ fn write_with_env_at(
     env: &[(&str, &str)],
 ) -> Result<Output, SpawnError> {
     let _held = lock::acquire(root, DEFAULT_WRITE_TIMEOUT)?;
-    let mut command = base_command(root, pinned, args);
+    let mut command = prepared(root, pinned, args, Side::Write)?;
     command.envs(env.iter().copied());
     run(command, args)
 }
@@ -377,7 +373,7 @@ pub fn fetch_private(
         remote,
         &refspec,
     ];
-    run(base_command(root, None, &args), &args)
+    run(prepared(root, None, &args, Side::Write)?, &args)
 }
 
 /// Runs `body` with the repository write lock held throughout, so the
@@ -393,14 +389,74 @@ pub fn locked<R>(
     Ok(body())
 }
 
-fn base_command(root: &Path, pinned: Option<Pinned<'_>>, args: &[&str]) -> Command {
-    base_command_with(root, pinned, &[], args)
+/// The command `args` run as on `side`: carrying what every invocation
+/// does, and, where the command can reach a program the configuration
+/// names, the answer to every such program the repository itself sets.
+fn prepared(
+    root: &Path,
+    pinned: Option<Pinned<'_>>,
+    args: &[&str],
+    side: Side,
+) -> Result<Command, SpawnError> {
+    let side_settings: &[(&str, &str)] = match side {
+        Side::Read => READ_SETTINGS,
+        Side::Write => &[],
+    };
+    let overrides = match hardening::reach_of(args) {
+        hardening::Reach::Nothing => hardening::Overrides::default(),
+        reach => {
+            let listing = program_keys(root, pinned)?;
+            let ssh_program = std::env::var("GIT_SSH").ok();
+            hardening::overrides_for(&listing, args, reach, side, ssh_program.as_deref())
+                .map_err(SpawnError)?
+        }
+    };
+    let settings: Vec<String> = side_settings
+        .iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .chain(overrides.settings.iter().cloned())
+        .collect();
+    Ok(base_command_with(
+        root,
+        pinned,
+        &settings,
+        &overrides.placed(args),
+    ))
+}
+
+/// Which of the keys that name a program are set, with the scope each was
+/// set in. A Git that cannot say refuses the command it was asked for: a
+/// configuration nobody could read is not one known to run nothing.
+fn program_keys(root: &Path, pinned: Option<Pinned<'_>>) -> Result<String, SpawnError> {
+    let args = [
+        "config",
+        "-z",
+        "--show-scope",
+        "--get-regexp",
+        hardening::PROGRAM_KEYS,
+    ];
+    let settings: Vec<String> = READ_SETTINGS
+        .iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect();
+    let mut command = base_command_with(root, pinned, &settings, &args);
+    command.env("GIT_OPTIONAL_LOCKS", "0");
+    let output = run_to_completion(command)?;
+    match output.code {
+        Some(0) => Ok(output.stdout),
+        // No key matched.
+        Some(1) => Ok(String::new()),
+        _ => Err(SpawnError(format!(
+            "could not read the repository's Git configuration: {}",
+            output.stderr.trim()
+        ))),
+    }
 }
 
 fn base_command_with(
     root: &Path,
     pinned: Option<Pinned<'_>>,
-    settings: &[(&str, &str)],
+    settings: &[String],
     args: &[&str],
 ) -> Command {
     let mut command = Command::new("git");
@@ -418,12 +474,14 @@ fn base_command_with(
     // Every invocation, not only the one that made a checkout: a `-c`
     // lasts one command, and a long path read by `status` after `worktree
     // add` wrote it is the same long path.
-    for (key, value) in EVERY_INVOCATION
+    for (key, value) in hardening::EVERY_INVOCATION
         .iter()
         .chain(uze_platform::git::EVERY_INVOCATION)
-        .chain(settings)
     {
         command.arg("-c").arg(format!("{key}={value}"));
+    }
+    for setting in settings {
+        command.arg("-c").arg(setting);
     }
     command.args(args);
     // A subprocess that stops to ask for a credential never gets an
@@ -432,22 +490,6 @@ fn base_command_with(
     command.env("GIT_PAGER", "cat");
     command.stdin(Stdio::null());
     command
-}
-
-/// Whether `args` run one of [`NETWORK_SUBCOMMANDS`], skipping the global
-/// options Git accepts before its subcommand.
-fn reaches_a_remote(args: &[&str]) -> bool {
-    let mut remaining = args.iter();
-    while let Some(argument) = remaining.next() {
-        match *argument {
-            "-c" | "-C" | "--git-dir" | "--work-tree" | "--namespace" => {
-                remaining.next();
-            }
-            option if option.starts_with('-') => {}
-            subcommand => return NETWORK_SUBCOMMANDS.contains(&subcommand),
-        }
-    }
-    false
 }
 
 thread_local! {
@@ -565,12 +607,16 @@ fn drain(pipe: Option<impl io::Read + Send + 'static>) -> std::thread::JoinHandl
     })
 }
 
+/// The argument line a span records, less any credential a URL in it
+/// carries: a remote handed to Git is often one somebody typed.
 fn arguments_of(command: &Command) -> String {
-    command
-        .get_args()
-        .map(|argument| argument.to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join(" ")
+    uze_platform::redact::redact(
+        &command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
 }
 
 fn describe_spawn_failure(error: io::Error) -> SpawnError {
@@ -589,7 +635,7 @@ mod tests {
     /// ahead of the subcommand, where `-c` is read.
     #[test]
     fn every_invocation_carries_the_platform_s_settings() {
-        let command = base_command(Path::new("."), None, &["status"]);
+        let command = base_command_with(Path::new("."), None, &[], &["status"]);
         let arguments: Vec<String> = command
             .get_args()
             .map(|argument| argument.to_string_lossy().into_owned())
@@ -719,6 +765,56 @@ mod tests {
         );
     }
 
+    /// The `args` every Git span recorded.
+    #[derive(Clone, Default)]
+    struct Arguments(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
+
+    impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Arguments {
+        fn on_new_span(
+            &self,
+            attrs: &tracing::span::Attributes<'_>,
+            _id: &tracing::span::Id,
+            _context: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            attrs.record(
+                &mut |field: &tracing::field::Field, value: &dyn std::fmt::Debug| {
+                    if field.name() == "args" {
+                        self.0.lock().unwrap().push(format!("{value:?}"));
+                    }
+                },
+            );
+        }
+    }
+
+    /// ENV-1: a URL handed to Git reached its debug span with the password
+    /// in it.
+    #[test]
+    fn a_git_span_never_records_the_credentials_of_a_url() {
+        use tracing_subscriber::layer::SubscriberExt;
+        let _env = uze_testkit::env::scope();
+        let root = repository("git-span-credentials");
+        let recorded = Arguments::default();
+        let subscriber = tracing_subscriber::registry().with(recorded.clone());
+        tracing::subscriber::with_default(subscriber, || {
+            read(
+                &root,
+                &[
+                    "rev-parse",
+                    "--verify",
+                    "https://alice:s3cretpassw0rd@127.0.0.1:9/m.git",
+                ],
+            )
+            .unwrap();
+        });
+        let arguments = recorded.0.lock().unwrap().clone();
+        assert!(
+            arguments.len() == 1
+                && arguments[0].contains("--verify https://<redacted>@127.0.0.1:9/m.git")
+                && !arguments[0].contains("s3cret"),
+            "the span keeps the arguments, less the credentials: {arguments:?}"
+        );
+    }
+
     /// Every test here spawns Git, which resolves through the process-global
     /// `PATH` — including the one test that empties it. Reading ambient env
     /// is exactly what `env::scope` serializes, so a test that only reads it
@@ -733,7 +829,10 @@ mod tests {
         read(&root, &["rev-parse", "HEAD"]).unwrap();
         write(&root, &["status", "--porcelain"]).unwrap();
         write_with_stdin(&root, &["hash-object", "--stdin"], "x").unwrap();
-        assert_eq!(processes_started_on_this_thread() - before, 3);
+        // `status` can reach a filter the configuration names, so it first
+        // asks which of those are set: one more process. Hashing standard
+        // input reaches none.
+        assert_eq!(processes_started_on_this_thread() - before, 4);
 
         let elsewhere = std::thread::spawn(processes_started_on_this_thread)
             .join()
@@ -760,16 +859,6 @@ mod tests {
             .successful()
             .unwrap();
         root
-    }
-
-    #[test]
-    fn a_subcommand_that_reaches_a_remote_is_found_past_the_global_options() {
-        assert!(reaches_a_remote(&["fetch", "--quiet", "origin"]));
-        assert!(reaches_a_remote(&["-c", "http.proxy=x", "push", "origin"]));
-        assert!(reaches_a_remote(&["--no-pager", "-C", "push", "ls-remote"]));
-        assert!(!reaches_a_remote(&["-c", "fetch.prune=true", "status"]));
-        assert!(!reaches_a_remote(&["log", "push"]));
-        assert!(!reaches_a_remote(&[]));
     }
 
     // Drives POSIX programs (`sh`, `sleep`) as stand-ins.
@@ -1021,6 +1110,250 @@ mod tests {
             ["show", "--no-ext-diff", "--no-textconv", "HEAD:diff"]
         );
         assert_eq!(hardened_read(&["status", "diff"]), ["status", "diff"]);
+    }
+
+    /// A program the fixture can arm Git with: it appends what ran it to
+    /// `marker`, and passes its input through, so a filter armed with it
+    /// still converts.
+    // Serves only the tests that arm Git with POSIX shell scripts.
+    #[cfg(unix)]
+    fn armed_program(root: &Path, marker: &Path) -> String {
+        let program = root.join("armed.sh");
+        uze_testkit::process::install_executable(
+            &program,
+            format!("#!/bin/sh\necho \"$0 $*\" >> '{}'\ncat\n", marker.display()).as_bytes(),
+        );
+        program.to_str().unwrap().to_owned()
+    }
+
+    // Serves only the tests that arm Git with POSIX shell scripts.
+    #[cfg(unix)]
+    fn configure(root: &Path, entries: &[(&str, &str)]) {
+        for (key, value) in entries {
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(root)
+                .args(["config", key, value])
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "git config {key}: {output:?}");
+        }
+    }
+
+    // Serves only the tests that arm Git with POSIX shell scripts.
+    #[cfg(unix)]
+    fn assert_nothing_ran(marker: &Path, what: &str) {
+        assert!(
+            !marker.exists(),
+            "{what} ran {:?}",
+            std::fs::read_to_string(marker).unwrap_or_default()
+        );
+    }
+
+    /// A hook is a file in the common Git directory, which every agent that
+    /// can commit can write: none runs in a write UZE makes, whichever hook
+    /// it is and whether the repository moved its hooks elsewhere.
+    // The hooks the fixture installs are POSIX shell scripts.
+    #[cfg(unix)]
+    #[test]
+    fn a_write_runs_no_hook_the_repository_names() {
+        let _environment = uze_testkit::env::scope();
+        let root = repository("git-write-hooks");
+        let marker = root.join("ran");
+        let program = armed_program(&root, &marker);
+        // Moved out of the common Git directory by the repository's own
+        // configuration, as an agent could: no different from the default.
+        let hooks = root.join("elsewhere");
+        std::fs::create_dir(&hooks).unwrap();
+        for hook in [
+            "post-checkout",
+            "reference-transaction",
+            "pre-commit",
+            "post-commit",
+            "post-rewrite",
+            "pre-rebase",
+        ] {
+            uze_testkit::process::install_executable(
+                &hooks.join(hook),
+                format!("#!/bin/sh\nexec '{program}' {hook}\n").as_bytes(),
+            );
+        }
+        configure(&root, &[("core.hooksPath", hooks.to_str().unwrap())]);
+
+        let armed = Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["checkout", "-q", "-b", "armed"])
+            .output()
+            .unwrap();
+        assert!(armed.status.success());
+        assert!(marker.exists(), "the fixture must install a hook Git runs");
+        std::fs::remove_file(&marker).unwrap();
+
+        let linked = root.join("linked");
+        for args in [
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "placed",
+                linked.to_str().unwrap(),
+            ][..],
+            &["commit", "-q", "--allow-empty", "-m", "more"],
+            &["rebase", "--quiet", "main"],
+            &["checkout", "-q", "main"],
+        ] {
+            write(&root, args).unwrap().successful().unwrap();
+            assert_nothing_ran(&marker, &format!("`git {}`", args.join(" ")));
+        }
+    }
+
+    /// A filter or a merge driver is defined under a name the repository
+    /// picks and selected by an attribute it commits, so neither can be
+    /// switched off as a class: what the repository's own configuration
+    /// defines is answered with nothing, on a placement, a rebase and a
+    /// look at the status alike.
+    // The programs the fixture configures are POSIX shell scripts.
+    #[cfg(unix)]
+    #[test]
+    fn no_filter_or_merge_driver_the_repository_defines_runs() {
+        let _environment = uze_testkit::env::scope();
+        let root = repository("git-write-filters");
+        let marker = root.join("ran");
+        let program = armed_program(&root, &marker);
+        std::fs::write(
+            root.join(".gitattributes"),
+            "*.t filter=Armed\n*.m merge=armed\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("a.t"), "text\n").unwrap();
+        std::fs::write(root.join("b.m"), "base\n").unwrap();
+        write(&root, &["add", "."]).unwrap().successful().unwrap();
+        write(&root, &["commit", "-qm", "attributes"])
+            .unwrap()
+            .successful()
+            .unwrap();
+        let git = |args: &[&str]| {
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(["-c", "core.hooksPath=/dev/null"])
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "git {args:?}: {output:?}");
+        };
+        git(&["checkout", "-q", "-b", "theirs"]);
+        std::fs::write(root.join("b.m"), "theirs\n").unwrap();
+        git(&["commit", "-qam", "theirs"]);
+        git(&["checkout", "-q", "-b", "ours", "main"]);
+        std::fs::write(root.join("b.m"), "ours\n").unwrap();
+        git(&["commit", "-qam", "ours"]);
+        configure(
+            &root,
+            &[
+                ("filter.Armed.clean", &program),
+                ("filter.Armed.smudge", &program),
+                ("filter.Armed.required", "true"),
+                ("merge.armed.driver", &program),
+            ],
+        );
+
+        let linked = root.join("linked");
+        write(
+            &root,
+            &["worktree", "add", "-q", linked.to_str().unwrap(), "main"],
+        )
+        .unwrap()
+        .successful()
+        .unwrap();
+        assert_nothing_ran(&marker, "a placement");
+
+        std::fs::write(root.join("a.t"), "TEXT\n").unwrap();
+        read(&root, &["status", "--porcelain"]).unwrap();
+        assert_nothing_ran(&marker, "a status read");
+        std::fs::write(root.join("a.t"), "text\n").unwrap();
+
+        let rebased = write(&root, &["rebase", "--quiet", "theirs"]).unwrap();
+        assert_nothing_ran(&marker, "a rebase");
+        assert!(
+            !rebased.is_success(),
+            "a merge driver that cannot run leaves a conflict: {rebased:?}"
+        );
+        write(&root, &["rebase", "--abort"]).unwrap();
+    }
+
+    /// Whatever the repository names for a transport — a program behind an
+    /// `ext::` URL, an upload pack, a credential helper or an askpass —
+    /// runs in none of UZE's fetches, while the helper the operator
+    /// configured globally still answers.
+    // The programs the fixture configures are POSIX shell scripts.
+    #[cfg(unix)]
+    #[test]
+    fn a_transport_the_repository_names_never_runs() {
+        let mut environment = uze_testkit::env::scope();
+        let root = repository("git-fetch-transport");
+        let marker = root.join("ran");
+        let program = armed_program(&root, &marker);
+        let global = root.join("operator.gitconfig");
+        std::fs::write(
+            &global,
+            format!(
+                "[credential]\n\thelper = \"!f() {{ echo operator >> '{}'; echo username=u; echo password=x; }}; f\"\n",
+                root.join("operator-helper").display()
+            ),
+        )
+        .unwrap();
+        environment.set("GIT_CONFIG_GLOBAL", &global);
+        let remote = uze_testkit::temp::scratch("git-fetch-transport-remote");
+        write(&remote, &["init", "-q", "--bare", "."])
+            .unwrap()
+            .successful()
+            .unwrap();
+        write(&root, &["push", "-q", remote.to_str().unwrap(), "main"])
+            .unwrap()
+            .successful()
+            .unwrap();
+        configure(
+            &root,
+            &[
+                ("remote.origin.url", remote.to_str().unwrap()),
+                (
+                    "remote.origin.uploadpack",
+                    &format!("{program} upload; false"),
+                ),
+                ("remote.ext.url", &format!("ext::{program} ext")),
+                ("protocol.allow", "always"),
+                ("protocol.ext.allow", "always"),
+                ("credential.helper", &program),
+                ("credential.https://forge.invalid.helper", &program),
+                ("core.askPass", &program),
+                ("core.sshCommand", &program),
+            ],
+        );
+
+        let fetched = write(&root, &["fetch", "--quiet", "origin", "main"]).unwrap();
+        assert!(fetched.is_success(), "{fetched:?}");
+        assert_nothing_ran(&marker, "a fetch from a local remote");
+        read(&root, &["ls-remote", "origin"]).unwrap();
+        assert_nothing_ran(&marker, "an ls-remote");
+        let refused = write(&root, &["fetch", "--quiet", "ext"]).unwrap();
+        assert!(!refused.is_success());
+        assert_nothing_ran(&marker, "a fetch from an ext:: remote");
+        let _ = write(&root, &["fetch", "--quiet", "ssh://forge.invalid/x"]).unwrap();
+        assert_nothing_ran(&marker, "a fetch over SSH");
+        let filled = write_with_stdin(
+            &root,
+            &["credential", "fill"],
+            "protocol=https\nhost=forge.invalid\n\n",
+        )
+        .unwrap();
+        assert_nothing_ran(&marker, "a credential lookup");
+        assert!(
+            filled.stdout.contains("password=x"),
+            "the operator's own helper still answers: {filled:?}"
+        );
     }
 
     /// The fetch a clock runs never queues behind a write, and never

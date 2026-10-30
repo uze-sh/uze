@@ -20,6 +20,9 @@ pub enum Limit {
     ArraySize,
     /// A map with more entries than allowed.
     MapSize,
+    /// What a resident script keeps on `this` nested deeper than a value
+    /// may cross.
+    Nesting,
     /// A script larger than the engine compiles.
     ScriptSize,
 }
@@ -35,6 +38,7 @@ impl Limit {
             Self::StringSize => "string size",
             Self::ArraySize => "array size",
             Self::MapSize => "map size",
+            Self::Nesting => "nesting depth",
             Self::ScriptSize => "script size",
         }
     }

@@ -284,14 +284,19 @@ pub fn is_valid_package_name(value: &str) -> bool {
 /// [`typed_name`] forgives their case.
 pub fn parse_plugin_marketplace_spec(spec: &str) -> Result<(String, String)> {
     let typed = typed_name(spec);
+    // The message echoes what was typed, and a URL typed where a
+    // marketplace name belongs may carry a token.
+    let shown = uze_platform::redact::redact;
     let (plugin, marketplace) = typed.split_once('@').ok_or_else(|| {
-        UzeError::InvalidPluginSpec(format!("`{spec}` must be `name@marketplace`"))
+        UzeError::InvalidPluginSpec(format!("`{}` must be `name@marketplace`", shown(spec)))
     })?;
     for part in [plugin, marketplace] {
         if !is_valid_name_component(part) {
+            let part = shown(part);
             return Err(UzeError::InvalidPluginSpec(format!(
-                "`{spec}` must be `name@marketplace`, and `{part}` is not a valid name: {}",
-                name_rule(part)
+                "`{}` must be `name@marketplace`, and `{part}` is not a valid name: {}",
+                shown(spec),
+                name_rule(&part)
             )));
         }
     }

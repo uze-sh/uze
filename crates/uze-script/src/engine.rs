@@ -56,6 +56,16 @@ pub(crate) struct Limits {
     pub host_waiting: Duration,
 }
 
+/// The stack every script runs on: a pool answer on a thread of its own,
+/// a resident session on its thread. Rhai clones, drops, compares, prints
+/// and size-checks a value by recursing into it, and its own bounds let a
+/// value nest as deep as its array and map bounds together (some 20 000
+/// levels, alternating). Measured on rhai 1.27: a release build compares
+/// and prints a value that deep within 64 MiB; a debug build some 5 000
+/// levels, several times what one answer builds before its deadline. A
+/// stack is reserved, not committed, so the size costs address space only.
+pub(crate) const STACK: usize = 64 << 20;
+
 pub(crate) const LIMITS: Limits = Limits {
     operations: 1_000_000,
     deadline: Duration::from_millis(100),

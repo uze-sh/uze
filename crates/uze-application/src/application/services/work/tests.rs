@@ -484,3 +484,34 @@ fn concurrent_splits_of_one_topic_make_one_subagent() {
         1
     );
 }
+
+/// A subagent's record carries a key no process was given, so naming the
+/// subagent with any key, from inside its checkout, proves nothing (audit
+/// WKS-5): no rename, no split, no join as it.
+#[test]
+fn a_subagents_record_admits_no_claim_without_its_key() {
+    let world = World::new("work-child-impersonated");
+    let agent = world.agent();
+    let split = world.split(&agent, "parser").unwrap();
+    let primary = world.root().canonical().unwrap();
+    let store = task::load(&world.app.home, &primary).unwrap();
+    let child = store
+        .agents
+        .iter()
+        .find(|recorded| recorded.parent.as_ref().map(AgentId::as_str) == Some(agent.0.as_str()))
+        .expect("the split recorded a child");
+    assert!(child.launch_key.is_some(), "a split child is issued a key");
+
+    let impersonator = (
+        child.id.as_str().to_owned(),
+        split.path.clone(),
+        "guessed-anything".to_owned(),
+    );
+    assert!(
+        refusal(world.split(&impersonator, "grandchild")).contains("not an agent UZE launched")
+    );
+    assert!(
+        refusal(world.app.workspace().list_work(claim(&impersonator)))
+            .contains("not an agent UZE launched")
+    );
+}

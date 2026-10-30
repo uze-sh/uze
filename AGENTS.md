@@ -99,6 +99,19 @@ A convention that holds only under one path is a rule in `.agents/rules/`
 (the `uze:rules` Skill says how), never a new section here. A procedure
 with steps is a Skill under `.agents/skills/`.
 
+## Security findings
+
+This repository is public, so whatever is committed here is disclosed,
+and the history keeps it after a deletion. **A security finding enters the
+repository only together with its fix.** Until then it lives in a private
+draft GitHub Security Advisory on `uze-sh/uze`, the channel `SECURITY.md`
+gives reporters. This holds for an audit's findings, for a residual found
+while fixing one, and for a commit message, a test name or a comment that
+explains an attack. Once the fix is in, the finding is recorded as an
+`audit-<subject>` OpenSpec change on the `audit` schema. The
+`security-findings` rule says how, and the `security-audit` skill runs
+audits.
+
 ## Workspace layout
 
 Cargo workspace, edition 2024, MSRV 1.97. Single version source:

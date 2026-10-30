@@ -50,7 +50,14 @@ pub(super) fn observe(sessions_root: &Path, ctx: &ObservationContext) -> Option<
         let Some(meta) = session_meta(&path) else {
             continue;
         };
-        let session = SessionId::new(meta.session_id);
+        // Codex names every conversation with a UUID; a rollout naming
+        // anything else is not one of its own.
+        let Some(session) = SessionId::parse(meta.session_id)
+            .ok()
+            .filter(SessionId::is_uuid)
+        else {
+            continue;
+        };
         if Path::new(&meta.cwd) != ctx.cwd || !ctx.is_unclaimed(&session) {
             continue;
         }
@@ -178,7 +185,7 @@ mod tests {
     #[test]
     fn resuming_is_a_subcommand_and_carries_the_identifier() {
         assert_eq!(
-            resume_args(&SessionId::new("01a05afb")),
+            resume_args(&SessionId::parse("01a05afb").unwrap()),
             vec![OsString::from("resume"), OsString::from("01a05afb")]
         );
     }
@@ -186,9 +193,24 @@ mod tests {
     #[test]
     fn the_newest_conversation_recorded_for_the_checkout_is_the_one_observed() {
         let root = scratch("codex-session-observe");
-        rollout(&root, "older", "/work/slot", 100);
-        rollout(&root, "newer", "/work/slot", 200);
-        rollout(&root, "elsewhere", "/work/other", 300);
+        rollout(
+            &root,
+            "019a0000-0000-7000-8000-000000000001",
+            "/work/slot",
+            100,
+        );
+        rollout(
+            &root,
+            "019a0000-0000-7000-8000-000000000002",
+            "/work/slot",
+            200,
+        );
+        rollout(
+            &root,
+            "019a0000-0000-7000-8000-000000000003",
+            "/work/other",
+            300,
+        );
 
         assert_eq!(
             observe(
@@ -200,7 +222,41 @@ mod tests {
                     claimed_elsewhere: &[],
                 },
             ),
-            Some(SessionId::new("newer"))
+            Some(SessionId::parse("019a0000-0000-7000-8000-000000000002").unwrap())
+        );
+    }
+
+    /// The audit's attack: a rollout planted in the store whose
+    /// `session_id` is a flag. It is not a conversation, so it is never
+    /// recorded, and never follows `resume` on the next launch.
+    #[test]
+    fn a_rollout_naming_an_option_is_never_observed() {
+        let root = scratch("codex-session-shape");
+        rollout(
+            &root,
+            "019a0000-0000-7000-8000-000000000001",
+            "/work/slot",
+            100,
+        );
+        rollout(
+            &root,
+            "--dangerously-bypass-approvals-and-sandbox",
+            "/work/slot",
+            200,
+        );
+        rollout(&root, "a-session-name", "/work/slot", 300);
+
+        assert_eq!(
+            observe(
+                &root,
+                &ObservationContext {
+                    cwd: Path::new("/work/slot"),
+                    since_unix: 50,
+                    preceded_by: None,
+                    claimed_elsewhere: &[],
+                },
+            ),
+            Some(SessionId::parse("019a0000-0000-7000-8000-000000000001").unwrap())
         );
     }
 
@@ -228,13 +284,13 @@ mod tests {
         let root = scratch("codex-session-exists");
         rollout(&root, "kept", "/work/slot", 100);
 
-        assert!(exists(&root, &SessionId::new("kept")));
-        assert!(!exists(&root, &SessionId::new("deleted")));
+        assert!(exists(&root, &SessionId::parse("kept").unwrap()));
+        assert!(!exists(&root, &SessionId::parse("deleted").unwrap()));
     }
 
     #[test]
     fn a_first_turn_is_the_resume_subcommands_prompt() {
-        let session = SessionId::new("019a-thread");
+        let session = SessionId::parse("019a-thread").unwrap();
         let line: Vec<OsString> = resume_args(&session)
             .into_iter()
             .chain(first_turn_args("carry on"))

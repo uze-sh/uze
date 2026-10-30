@@ -275,7 +275,7 @@ mod tests {
             SessionContinuity::Observed
         }
         fn observe_session(&self, _ctx: &ObservationContext) -> Option<SessionId> {
-            Some(SessionId::new("observed"))
+            Some(SessionId::parse("observed").unwrap())
         }
         fn conversation_digest(
             &self,
@@ -317,7 +317,7 @@ mod tests {
             record.launched(
                 "left",
                 ConversationOrigin::Assigned,
-                Some(SessionId::new("c1")),
+                Some(SessionId::parse("c1").unwrap()),
                 None,
             );
         })
@@ -389,7 +389,7 @@ mod tests {
         let record = conversation::load(&app.home, &root, &id);
         assert_eq!(
             record.get("left").unwrap().conversation,
-            Some(SessionId::new("observed")),
+            Some(SessionId::parse("observed").unwrap()),
             "the observation is recorded, not only used"
         );
         let text = record.briefing.unwrap().text;
@@ -423,7 +423,7 @@ mod tests {
             record.launched(
                 "right",
                 ConversationOrigin::Assigned,
-                Some(SessionId::new("c2")),
+                Some(SessionId::parse("c2").unwrap()),
                 None,
             );
         })
@@ -549,7 +549,7 @@ mod tests {
         assert!(record.briefing.is_none(), "a restart briefs no one");
         assert_eq!(
             record.get("left").unwrap().conversation,
-            Some(SessionId::new("c1")),
+            Some(SessionId::parse("c1").unwrap()),
             "the conversation it resumes is the one it was in"
         );
         assert_eq!(

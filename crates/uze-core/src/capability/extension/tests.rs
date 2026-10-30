@@ -972,6 +972,29 @@ Stack { use "a"; }"#,
     );
 }
 
+/// The audit's EXT-1 shape: `t0` holds one `Text`, each `tK` uses the one
+/// below ten times, and the view uses the top one.
+fn fan_out(levels: usize, fan: usize) -> String {
+    let mut source = "template \"t0\" {\n    Text \"{t}\"\n}\n".to_owned();
+    for level in 1..=levels {
+        source.push_str(&format!("template \"t{level}\" {{\n"));
+        for _ in 0..fan {
+            source.push_str(&format!("    use \"t{}\"\n", level - 1));
+        }
+        source.push_str("}\n");
+    }
+    source + &format!("Row {{\n    use \"t{levels}\"\n}}\n")
+}
+
+#[test]
+fn a_template_fan_out_past_the_bind_bound_is_refused_by_the_check() {
+    let bomb = fan_out(12, 10);
+    assert!(bomb.len() < 2048, "{}", bomb.len());
+    let said = the_one(&bomb);
+    assert!(said.message.contains("more than 20000 nodes"), "{said:?}");
+    assert!(view(&fan_out(3, 10)).is_ok());
+}
+
 #[test]
 fn a_block_on_a_leaf_whose_string_is_optional_is_said() {
     let said = the_one("Stack {\n    Rule {\n        Text \"hidden\"\n    }\n}");

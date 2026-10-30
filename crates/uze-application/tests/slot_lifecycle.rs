@@ -2397,8 +2397,12 @@ mod budget {
         let cost = uze_git::processes_started_on_this_thread() - before;
 
         assert!(world.shelf(&agent).is_some(), "the work was shelved");
+        // 36 before every command that can run a filter (the two `status`,
+        // the two `add`, the `switch` and the index refresh here) first
+        // asked Git which filters the repository defines: see
+        // `audit-repository-git-execution`, D7.
         assert!(
-            cost <= 36,
+            cost <= 42,
             "closing an agent with work started {cost} Git processes"
         );
     }

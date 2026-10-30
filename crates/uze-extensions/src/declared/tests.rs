@@ -6,8 +6,8 @@ use serde_json::{Value, json};
 use uze_contract::binding::{binding_of, parse_text};
 use uze_contract::compiled::{Lookup, Node, Span as SourceSpan};
 use uze_contract::{
-    Binding, CompiledExtension, CompiledView, Condition, Identity, Item, Manifest, NodeName, Path,
-    Slot, SourceDecl, SourceKind, SurfaceDecl,
+    Binding, CompiledExtension, CompiledView, Condition, EXPANSION_MAX, Identity, Item, Manifest,
+    NodeName, Path, Slot, SourceDecl, SourceKind, SurfaceDecl,
 };
 
 use super::*;
@@ -509,6 +509,86 @@ fn an_expansion_past_the_cap_is_folded_with_a_notice() {
             .any(|node| node.absent.contains(&Absence::CapReached) || capped(&node.children))
     }
     assert!(capped(&trace.items));
+}
+
+/// The audit's EXT-1 view, compiled by hand as an older build or another
+/// compiler could hand it over: `t0` one `Text`, each `tK` ten uses of
+/// the one below, the view one use of `t12`. Ten to the twelfth uses.
+fn fan_out(levels: usize) -> CompiledView {
+    let mut templates = vec![("t0".to_owned(), vec![n(NodeName::Text).arg("{t}").item()])];
+    for level in 1..=levels {
+        let below = format!("t{}", level - 1);
+        let uses = (0..10)
+            .map(|_| Item::Use {
+                template: below.clone(),
+                span: SourceSpan::default(),
+            })
+            .collect();
+        templates.push((format!("t{level}"), uses));
+    }
+    let mut view = compiled_view(
+        vec![n(NodeName::Row).uses(&format!("t{levels}")).item()],
+        Vec::new(),
+        Vec::new(),
+    );
+    view.templates = templates.into_iter().collect();
+    view
+}
+
+#[test]
+fn a_template_fan_out_is_folded_once_the_build_spent_its_budget() {
+    let started = std::time::Instant::now();
+    let extension = hosted_view(fan_out(12), json!({ "t": "12:00" }), "pt");
+    let root = tree(&extension);
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "bounded by the budget, not the fan-out: {:?}",
+        started.elapsed()
+    );
+    let notice = root.children.last().expect("a notice last");
+    assert!(
+        matches!(&notice.kind, NodeKind::Notice { text, role: Role::Warning }
+            if text.contains(&format!("expands to more than {EXPANSION_MAX} nodes"))),
+        "{notice:?}"
+    );
+    let trace = extension.trace(VIEW).expect("a trace");
+    assert!(trace.folded);
+    let walked: u32 = trace
+        .templates
+        .values()
+        .flatten()
+        .map(|node| node.reached)
+        .sum();
+    assert!(
+        walked as usize <= EXPANSION_MAX + 2 * 12,
+        "the walk stopped at the budget: {walked}"
+    );
+}
+
+#[test]
+fn an_each_over_its_own_parent_list_is_bounded_by_the_budget() {
+    // Each row repeats over the list it is a row of: n² without the data
+    // growing, which the node cap alone only stops drawing, not walking.
+    let items = vec![
+        n(NodeName::Stack)
+            .each("rows")
+            .child(n(NodeName::Text).each("^.rows").arg("{.}").when("missing"))
+            .item(),
+    ];
+    let rows: Vec<Value> = (0..3_000).map(Value::from).collect();
+    let started = std::time::Instant::now();
+    let extension = hosted(items, json!({ "rows": rows }));
+    let root = tree(&extension);
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "{:?}",
+        started.elapsed()
+    );
+    let notice = root.children.last().expect("a notice last");
+    assert!(
+        matches!(&notice.kind, NodeKind::Notice { text, .. } if text.contains("expands")),
+        "{notice:?}"
+    );
 }
 
 #[test]

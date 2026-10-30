@@ -23,6 +23,9 @@ pub enum Replaced {
     Unreachable,
     /// Serving a workspace deleted under it.
     Orphaned,
+    /// Started from inside a pane: it runs confined and this client does
+    /// not, and an agent could reach what it serves.
+    StartedInsidePane,
 }
 
 /// Connects to the user's one server, starting it when none answers —
@@ -98,6 +101,15 @@ pub(super) fn make_way(socket: &Path) -> Result<Way, RuntimeError> {
         // release reads as this very build. A server that answers this
         // build's handshake can serve this build, whatever it was built
         // from, and only one that cannot is retired.
+        Arrival::Ask(pid) if host::runs_more_confined_than_this(pid) => {
+            tracing::warn!(
+                pid,
+                socket = %socket.display(),
+                "the server here runs confined and this client does not; it was started from a pane, retiring it"
+            );
+            let retired = retire(pid, None, socket);
+            Ok(Way::Clear(retired.then_some(Replaced::StartedInsidePane)))
+        }
         Arrival::Ask(pid) => {
             // A server that answered a moment ago and cannot be reached
             // now is one that has just gone: taken as an unanswered
@@ -194,7 +206,7 @@ pub(super) const ANSWERS_WITHIN: Duration = Duration::from_secs(2);
 /// size, so no pane anybody is looking at is resized, and `Detach` before
 /// the caller's own connection is made.
 pub(super) fn serves_this_build(socket: &Path) -> bool {
-    let Ok(mut stream) = transport::connect(socket) else {
+    let Ok(mut stream) = connect_as_person(socket) else {
         return false;
     };
     // Both directions: an attach must not be able to hang on a server that
@@ -512,7 +524,7 @@ fn speaks_another_version(socket: &Path) -> Result<Usage, RuntimeError> {
 pub fn stop() -> Result<bool, RuntimeError> {
     let _span = tracing::info_span!("terminal.stop").entered();
     let socket = socket_path()?;
-    let stream = match transport::connect(&socket) {
+    let stream = match connect_as_person(&socket) {
         Ok(stream) => stream,
         Err(error)
             if matches!(
@@ -647,6 +659,13 @@ pub fn serve(seat: SpaceSeat, palette: Palette) -> Result<(), RuntimeError> {
     // something [`spawn_endpoint_watch`] reclaims rather than a peer's.
     let (server, damage) = Server::new(seat, palette, socket.clone())?;
     let state = Arc::new(server);
+    // Before the shared endpoint: a client that finds the socket finds the
+    // name of this server's person endpoint already written.
+    if let Some((door, listener)) = PersonDoor::open(state.seals) {
+        let _ = state.person.set(door);
+        let accepting = Arc::clone(&state);
+        thread::spawn(move || accept_connections(listener, accepting, Door::Person));
+    }
     let listener = bind_endpoint(&socket)?;
     spawn_damage_broadcaster(Arc::clone(&state), damage);
     spawn_status_ticker(Arc::clone(&state));
@@ -658,7 +677,7 @@ pub fn serve(seat: SpaceSeat, palette: Palette) -> Result<(), RuntimeError> {
     });
 
     let accepting = Arc::clone(&state);
-    thread::spawn(move || accept_connections(listener, accepting));
+    thread::spawn(move || accept_connections(listener, accepting, Door::Shared));
 
     // Waited on rather than joined: after a rebind the first listener
     // blocks on an inode nothing can reach, so its loop never returns.
@@ -668,6 +687,7 @@ pub fn serve(seat: SpaceSeat, palette: Palette) -> Result<(), RuntimeError> {
     // progress finishes before the clearing.
     let _stopped = state.await_stop();
     transport::clear(&socket);
+    let _ = fs::remove_file(operator_path());
     state.workspace.withdraw();
     Ok(())
 }
@@ -681,7 +701,7 @@ pub(super) fn bind_endpoint(socket: &Path) -> Result<transport::Listener, Runtim
 /// Accepts until the server stops. A failed `accept` is logged and
 /// survived: returning would take every live pane down with it, for a
 /// condition (a descriptor limit, an aborted handshake) that passes.
-pub(super) fn accept_connections(listener: transport::Listener, server: Arc<Server>) {
+pub(super) fn accept_connections(listener: transport::Listener, server: Arc<Server>, door: Door) {
     loop {
         let stream = transport::accept(&listener);
         if *server.stopped.lock().expect("stop state poisoned") {
@@ -690,7 +710,7 @@ pub(super) fn accept_connections(listener: transport::Listener, server: Arc<Serv
         match stream {
             Ok(stream) => {
                 let client_state = Arc::clone(&server);
-                thread::spawn(move || client_state.handle_client(stream));
+                thread::spawn(move || client_state.handle_client(stream, door));
             }
             Err(error) => {
                 tracing::warn!(%error, "the terminal endpoint failed to accept a connection");
