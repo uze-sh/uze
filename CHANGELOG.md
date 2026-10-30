@@ -4,11 +4,45 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
-## [Unreleased]
+## [1.0.0-beta.21](https://github.com/uze-sh/uze/compare/v1.0.0-beta.20...v1.0.0-beta.21) - 2026-10-30
 
-### Refactor
+### Features
 
-- **ui:** Remove the Profiles screen, which never left its feature flag. The keys an applied profile wrote into a harness's own configuration (Claude Code's `permissions.defaultMode`, `sandbox.enabled` and `model`, Codex's `approval_policy` and `sandbox_mode`, OpenCode's `permission`, Antigravity CLI's `agentMode` and `toolPermission`) stay where they are: no receipt says UZE wrote them, so they are the operator's settings now. `state/profiles.json` is removed once [**breaking**]
+- **workspace:** Run plain setup and gate lines in a portable shell ([#302](https://github.com/uze-sh/uze/pull/302)) ([aa45711](https://github.com/uze-sh/uze/commit/aa45711c20d358f00094d1ead6aa80a0ed88b0d7))
+- **opencode:** Replace per-capability plugins with one uze.ts plugin ([#301](https://github.com/uze-sh/uze/pull/301)) [**breaking**] ([fa73394](https://github.com/uze-sh/uze/commit/fa73394bdd1880d2cb822dc3f9c46e3cc3050318))
+- **extensions:** Add the plugin extension platform to the workspace ([#309](https://github.com/uze-sh/uze/pull/309)) ([2a76efa](https://github.com/uze-sh/uze/commit/2a76efa73687bf8e0ab5fec9cc7bad5fdcde945f))
+- **workspace:** Restore each tab's surface with Entry::Return and hold ([#317](https://github.com/uze-sh/uze/pull/317)) ([283d615](https://github.com/uze-sh/uze/commit/283d6156e8942acc6f36dbf93c9bd3032dd309f4))
+- **workspace:** Read each space overview section without a project ([#320](https://github.com/uze-sh/uze/pull/320)) ([7845d86](https://github.com/uze-sh/uze/commit/7845d865b4190aea7af88b820d2555c57a685526))
+- **architect:** Resolve C4 views as a zoom tree by boundary scope ([#321](https://github.com/uze-sh/uze/pull/321)) ([bdba0a8](https://github.com/uze-sh/uze/commit/bdba0a8bd868e905bb41f2dba85787e8be630e13))
+- **workspace:** Add launch overrides to the new agent popup ([#324](https://github.com/uze-sh/uze/pull/324)) ([955b584](https://github.com/uze-sh/uze/commit/955b584e64b6e13a594e5296d75b57213558d8a2))
+- **authoring:** Add *.uze linguist attributes on extension scaffold ([#326](https://github.com/uze-sh/uze/pull/326)) ([d5f0add](https://github.com/uze-sh/uze/commit/d5f0add044cd9b0943004c4e83a710166fda60a7))
+- **workspace:** Replace Continue in with a Restart in overrides panel ([#327](https://github.com/uze-sh/uze/pull/327)) ([98d1210](https://github.com/uze-sh/uze/commit/98d1210f2fad45d5a06d61a55d21e6f0ae7319db))
+- **marketplace:** Ship the official extensions as workspace@uze, declarable by projects ([#328](https://github.com/uze-sh/uze/pull/328)) ([c7974f0](https://github.com/uze-sh/uze/commit/c7974f0c422e473de3c72d02d5e666b03ebccd89))
+- **workspace:** Open the new agent popup on the last override selection ([#330](https://github.com/uze-sh/uze/pull/330)) ([a439291](https://github.com/uze-sh/uze/commit/a4392910bb34a204a2dbd7db7b22029b64438604))
+
+### Fixes
+
+- **antigravity:** Follow the tool shapes agy 1.4.7 declares ([#310](https://github.com/uze-sh/uze/pull/310)) ([f5a7972](https://github.com/uze-sh/uze/commit/f5a7972ef0dbe8053d434b868c063143b5b7a89a))
+- **landing:** Skip the target rebase for a published branch ([#316](https://github.com/uze-sh/uze/pull/316)) ([75d6760](https://github.com/uze-sh/uze/commit/75d67602965f8ba4dba42c51b31849dc4738865d))
+- **web:** Bump next to 16.4.3 and refresh web dependencies ([#319](https://github.com/uze-sh/uze/pull/319)) ([9fc417e](https://github.com/uze-sh/uze/commit/9fc417e407ba6e19e0f380489cf3a690663b66f1))
+- **workspace:** Key held surfaces by agent instead of by tab ([#322](https://github.com/uze-sh/uze/pull/322)) ([089f97f](https://github.com/uze-sh/uze/commit/089f97f48ee56d9891893d0a0dc4d371f478ebb1))
+- **extensions:** Prune stale compiled views ([#325](https://github.com/uze-sh/uze/pull/325)) ([2ca4e88](https://github.com/uze-sh/uze/commit/2ca4e8822b07234b16c0d27982e61b71d8e7b00e))
+- **security:** Fix 16 findings of the 2026-10-30 security audit ([#329](https://github.com/uze-sh/uze/pull/329)) [**breaking**] ([539101e](https://github.com/uze-sh/uze/commit/539101efe610e3aa3976c573837e3db058837b67))
+
+### Documentation
+
+- **openspec:** Archive ten delivered changes ([#323](https://github.com/uze-sh/uze/pull/323)) ([bffce2f](https://github.com/uze-sh/uze/commit/bffce2f9ac2e1fd53c1b1aaae1affa7ddd7f58d4))
+
+### Dependencies
+
+- **deps:** Bump taiki-e/install-action from 2.87.29 to 2.87.32 ([#311](https://github.com/uze-sh/uze/pull/311)) ([b79eebe](https://github.com/uze-sh/uze/commit/b79eebe0d73d8ff1a0e49e6dcda264f219f69ba7))
+- **deps:** Bump Swatinem/rust-cache from 2.9.2 to 2.9.3 ([#312](https://github.com/uze-sh/uze/pull/312)) ([41cc2f7](https://github.com/uze-sh/uze/commit/41cc2f71b0fff9fa6092c310b6091235a65423a9))
+- **deps:** Bump the cargo-dependencies group across 1 directory with 2 updates ([#314](https://github.com/uze-sh/uze/pull/314)) ([89a5644](https://github.com/uze-sh/uze/commit/89a564494109bc2b1786bc32929684d61140fee5))
+
+### Chore
+
+- **repo:** Highlight .uze components as KDL on GitHub ([#315](https://github.com/uze-sh/uze/pull/315)) ([d954926](https://github.com/uze-sh/uze/commit/d9549260ccd491041510ef92052cf573d33945ba))
+- **marketplace:** Set categories for the gsd, focus and contributions plugins ([#318](https://github.com/uze-sh/uze/pull/318)) ([d01d65c](https://github.com/uze-sh/uze/commit/d01d65c1989ca38bec36f4315c6eb60518138de0))
 
 ## [1.0.0-beta.20](https://github.com/uze-sh/uze/compare/v1.0.0-beta.19...v1.0.0-beta.20) - 2026-10-23
 
@@ -178,7 +212,7 @@ pre-releases — see `docs/versioning.md`.
 ### Documentation
 
 - **release:** Condense generated install guidance ([#214](https://github.com/uze-sh/uze/pull/214)) ([01377a4](https://github.com/uze-sh/uze/commit/01377a461727aae8457be98f9c4e56701d9b92bb))
-- **openspec:** Add the frozen extension-platform change ([#136](https://github.com/uze-sh/uze/pull/136)) ([78890be](https://github.com/uze-sh/uze/commit/78890bed588aeffc76d0abde448a2d2cb8e9ef77))
+- **openspec:** Add the frozen add-extension-platform change ([#136](https://github.com/uze-sh/uze/pull/136)) ([78890be](https://github.com/uze-sh/uze/commit/78890bed588aeffc76d0abde448a2d2cb8e9ef77))
 - **openspec:** Propose tracking the repositories an agent touches ([#224](https://github.com/uze-sh/uze/pull/224)) ([cca01b6](https://github.com/uze-sh/uze/commit/cca01b64255226e44b778d9207fffa4991adaf04))
 
 ### CI
