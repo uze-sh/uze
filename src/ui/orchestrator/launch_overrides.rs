@@ -467,7 +467,7 @@ impl DirectoryStep {
         let offered = catalog
             .flags()
             .filter(|flag| flag.repeatable || !flag.spellings.iter().any(|s| added.contains(s)));
-        ranked(offered, |flag| match_rank(&flag.spellings, current))
+        ranked(offered, |flag| match_rank(flag.spellings, current))
             .into_iter()
             .map(OverrideRow::Flag)
             .collect()
