@@ -348,19 +348,23 @@ impl Plugins<'_> {
 impl Plugins<'_> {
     /// What an open workspace runs on its tick: fetches the marketplaces
     /// whose answer has gone stale, then applies what [`Self::auto_update`]
-    /// can settle alone among the plugins of the ones that moved. An
+    /// can settle alone among the plugins of the ones it fetched. An
     /// update that needs consent is reported, never applied.
     ///
     /// Only those: trying an update is a fetch of its own, outside the
     /// fetch's claim, and one held for the operator would otherwise be
-    /// tried, and fetched for, on every wake of every client.
+    /// tried, and fetched for, on every wake of every client. Tied to the
+    /// fetch, it is tried by one process an hour, and a failure is tried
+    /// again an hour later.
     #[tracing::instrument(name = "plugins.keep_current", skip_all)]
     pub fn keep_current(&self) -> Vec<AutoUpdateOutcome> {
-        let moved = self.0.marketplace_catalogues.refresh_stale(&self.0.home);
-        if moved.is_empty() {
+        let fetched = self.0.marketplace_catalogues.refresh_stale(&self.0.home);
+        if fetched.is_empty() {
             return Vec::new();
         }
-        self.auto_update_where(|package| moved.iter().any(|name| name == package.id.marketplace()))
+        self.auto_update_where(|package| {
+            fetched.iter().any(|name| name == package.id.marketplace())
+        })
     }
 
     /// What opening the workspace runs: the stale marketplaces fetched,

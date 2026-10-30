@@ -66,10 +66,13 @@ pull request's head. `--prune` then prunes within those namespaces only, so
 pull refs an earlier build fetched stay until the mirror is made again,
 which is harmless.
 
-**The plugin pass is the startup pass, repeated.** `Plugins::keep_current`
-fetches the stale marketplaces and then runs `auto_update` unchanged;
-opening the workspace runs it too, so a stale marketplace is fetched there
-as well. The workspace runs it on its own tick
+**The plugin pass is the startup pass, tied to the fetch.**
+`Plugins::keep_current` fetches the stale marketplaces and tries the
+pending updates of the ones it fetched, moved or not: trying an update is a
+fetch of its own outside the claim, so tying it to the claimed fetch keeps
+it to one process an hour, held updates and failures included. Opening the
+workspace (`catch_up`) fetches the stale ones and tries every pending
+update, as it did before. The workspace runs it on its own tick
 thread and raises one toast for what was applied and one, staying, for
 what waits for confirmation, each naming the plugins. The management modal
 reads the change on its next opening through the plugins' revision.

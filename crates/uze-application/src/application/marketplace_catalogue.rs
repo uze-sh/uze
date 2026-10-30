@@ -272,7 +272,9 @@ impl MarketplaceCatalogues {
     }
 
     /// Fetches each registered Git marketplace whose entry is past
-    /// [`MAX_AGE`], and answers the names that moved.
+    /// [`MAX_AGE`], and answers the names it fetched, whether or not the
+    /// fetch brought anything: something else may have moved the mirror
+    /// since the last pass.
     ///
     /// What an open workspace runs on its tick: nothing else fetches a
     /// mirror until something reads a catalogue, and keeping plugins
@@ -290,7 +292,7 @@ impl MarketplaceCatalogues {
             return Vec::new();
         };
         let now = now_unix_nanos();
-        let mut moved = Vec::new();
+        let mut fetched = Vec::new();
         for (name, record) in marketplaces {
             if record.link.is_some() || !matches!(record.source, PackageSource::Git { .. }) {
                 continue;
@@ -313,19 +315,14 @@ impl MarketplaceCatalogues {
                 &entry.join(ATTEMPT_FILE),
                 now.to_string().as_bytes(),
             );
-            let before = meta.commit;
             match self.refresh(&name, &record.source) {
-                Ok(Catalogue {
-                    reach: Reach::Mirrored { commit, .. },
-                    ..
-                }) if before.as_deref() != Some(commit.as_str()) => moved.push(name),
-                Ok(_) => {}
+                Ok(_) => fetched.push(name),
                 Err(error) => {
                     tracing::warn!(marketplace = %name, %error, "the marketplace could not be fetched");
                 }
             }
         }
-        moved
+        fetched
     }
 
     /// Forgets `name` in both tiers.

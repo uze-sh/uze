@@ -1082,9 +1082,10 @@ mod mirror_tests {
 
     /// An update the pass could not apply is not tried again on every
     /// wake: trying is a fetch of its own, outside the claim, so a wake
-    /// tries only the plugins of a marketplace this very pass fetched.
+    /// tries only the plugins of a marketplace this very pass fetched,
+    /// once its hour is out, whether or not the fetch brought anything.
     #[test]
-    fn keeping_current_tries_nothing_whose_marketplace_did_not_move() {
+    fn keeping_current_tries_the_plugins_of_marketplaces_due_on_this_wake() {
         let home_root = uze_testkit::temp::scratch("keep-current-unmoved");
         let (repository, _first) = marketplace("keep-current-unmoved-src");
         let home = UzeHome::at(home_root.join("uze"));
@@ -1120,13 +1121,19 @@ mod mirror_tests {
 
         assert!(
             application.plugins().keep_current().is_empty(),
-            "nothing moved on this wake, so nothing is tried"
+            "no marketplace was due on this wake, so nothing is tried"
         );
-        assert_eq!(
-            application.plugins().catch_up().len(),
-            1,
-            "opening the workspace still tries every pending update"
-        );
+
+        // The hour passes. The fetch brings nothing new, since something
+        // else already moved the mirror, and the plugin is tried all the same.
+        let meta_path = home.marketplace_cache_dir().join("mkt/catalogue.json");
+        let mut meta: serde_json::Value =
+            serde_json::from_slice(&fs::read(&meta_path).unwrap()).unwrap();
+        meta["cached_at_unix_nanos"] = serde_json::json!(0);
+        fs::write(&meta_path, serde_json::to_vec_pretty(&meta).unwrap()).unwrap();
+        let outcomes = application.plugins().keep_current();
+        assert_eq!(outcomes.len(), 1, "{outcomes:?}");
+        assert!(outcomes[0].applied, "{outcomes:?}");
         fs::remove_dir_all(&home_root).unwrap();
     }
 
