@@ -1551,3 +1551,40 @@ fn each_harness_opens_on_its_own_last_selection() {
     assert!(step.launch_words().is_empty());
     assert!(!step.remembers_selection());
 }
+
+/// A popup opened again before the last launch's placement answered reads
+/// the record from before it: the selection launched this run is the one
+/// it opens on, not the stale one the read brings.
+#[test]
+fn a_popup_opened_before_the_record_caught_up_opens_on_this_runs_launch() {
+    let mut popup = popup("overrides-last-this-run");
+    let harness = harness_in_front(&popup);
+    let stale = vec![words_of("--verbose"), words_of("DEBUG=1")];
+    let step = popup.model.directory_step.as_mut().unwrap();
+    step.seed_last(&harness, &stale);
+    step.open_overrides();
+    step.toggle_choice(0);
+    let fresh = popup.model.directory_step.take();
+    let mut driven = driven(popup.model_take(), &popup.home);
+    driven.attach.model.directory_step = fresh;
+    driven.press_key(chord(Action::Dismiss, Scope::LaunchOverrides));
+    driven.press_key(chord(Action::Activate, Scope::RootPicker));
+    assert!(driven.attach.model.directory_step.is_none(), "launched");
+
+    let mut again = self::popup("overrides-last-this-run-again");
+    driven.attach.model.directory_step = again.model.directory_step.take();
+    let sender = &driven.attach.channels.recent_overrides.sender;
+    sender
+        .send(RecentOverridesRead {
+            harness: harness.clone(),
+            root: PathBuf::from("/anywhere"),
+            restarting: None,
+            entries: Vec::new(),
+            recorded: None,
+            last: Some(stale),
+        })
+        .unwrap();
+    driven.attach.absorb_recent_overrides();
+
+    assert_eq!(step_of(&driven).launch_words(), ["DEBUG=1"]);
+}

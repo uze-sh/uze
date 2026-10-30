@@ -280,7 +280,14 @@ impl Attach<'_> {
             };
             // The last selection is the harness's wherever the popup
             // stands, so a directory moved to before the answer keeps it.
-            if let Some(last) = &answer.last
+            // One launched this run is newer than the record can be.
+            let last = answer.last.as_ref().map(|recorded| {
+                self.model
+                    .launched_selections
+                    .get(&answer.harness)
+                    .unwrap_or(recorded)
+            });
+            if let Some(last) = last
                 && step.asked_by(&answer)
                 && step
                     .recent_question()

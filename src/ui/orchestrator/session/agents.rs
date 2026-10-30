@@ -72,6 +72,7 @@ impl Attach<'_> {
         };
         let overrides = step.launch_words();
         let remember_selection = step.remembers_selection();
+        let selection = step.entries().to_vec();
         let DirectoryStep {
             space,
             mut harnesses,
@@ -84,6 +85,11 @@ impl Attach<'_> {
             return;
         }
         let option = harnesses.swap_remove(harness);
+        if remember_selection {
+            self.model
+                .launched_selections
+                .insert(option.integration.clone(), selection);
+        }
         self.start_agent(
             option,
             AgentLaunch::New(NewPlace {
