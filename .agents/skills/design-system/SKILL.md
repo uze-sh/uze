@@ -406,8 +406,8 @@ fails the build on an input's glyph named outside it.
 - An extension's preferences are the form in its drawer, never a dialog
   of their own: every part a click target from the start (a click on an
   option chooses it). The drawer's Preferences button, or a click on a
-  row, puts the keys on them; a detail of fixed height under the rows
-  says the row's kind, range and default (`A number from 1 to 90 ·
+  row, puts the keys on them; a detail of fixed height at the body's
+  foot, under a rule and out of the scroll, says the row's kind, range and default (`A number from 1 to 90 ·
   default 25`), or where a secret is kept, and the footer names their
   keys. ←→ step and save at once; Enter types in the row's own box or
   flips; Esc, or a click anywhere else, gives the keys back to the cards.
@@ -548,10 +548,11 @@ operator rather than assume.
   beside them hanging under their own first row. A list of named things
   (grants, programs) is a table under a section label, names in
   `TextCode` in a column as wide as the longest, what each means beside
-  it. Preferences come first in the body, as the one part that is set
-  rather than read, drawn as the form (**Forms are components**), and
-  the body scrolls to keep the row the keys are on and its detail in
-  sight. What the foot
+  it. Under the extension's name and where it comes from, its
+  preferences come before what it is allowed (grants, programs), as the
+  one part that is set rather than read, drawn as the form (**Forms are
+  components**). While the keys are on them the body scrolls only as far
+  as the row they are on needs, never under a pointer at rest. What the foot
   already says (enabled everywhere) is not said again in the body, and
   the foot's note is left empty when the headline says it all.
 - A path beside a label stays on one line, cut at its head.
