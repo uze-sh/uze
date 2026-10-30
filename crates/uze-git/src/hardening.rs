@@ -205,7 +205,8 @@ impl Overrides {
     fn set(&mut self, key: &str, value: &str) -> Result<(), String> {
         if key.contains(['=', '\n']) {
             return Err(format!(
-                "the configuration names `{}`, which UZE cannot override",
+                "this repository's Git configuration names `{}`, which UZE cannot override; \
+                 remove it from the repository's configuration",
                 key.escape_debug()
             ));
         }
@@ -325,7 +326,8 @@ fn transport_overrides(
             Some(value) => {
                 if entry.key.contains(['=', '\n']) {
                     return Err(format!(
-                        "the configuration names `{}`, which UZE cannot pass on",
+                        "your Git configuration names `{}`, which UZE cannot pass on; \
+                 rename it in your Git configuration",
                         entry.key.escape_debug()
                     ));
                 }
