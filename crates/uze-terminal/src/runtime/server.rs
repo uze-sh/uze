@@ -835,10 +835,14 @@ impl Server {
                     .lock()
                     .expect("session poisoned")
                     .space_for(seat);
-                if let (None, Some(space)) = (opened, created) {
-                    unvisited.insert(space, opener);
-                }
+                let counted = match (opened, created) {
+                    (None, Some(space)) => unvisited.insert(space, opener).is_none(),
+                    _ => false,
+                };
                 drop(unvisited);
+                if counted {
+                    self.broadcast_session();
+                }
                 return ClientEvent::Error {
                     message: format!(
                         "could not open a space at {}: {error}",

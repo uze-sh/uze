@@ -5508,6 +5508,7 @@ fn a_space_whose_shell_failed_to_start_is_still_bounded_and_never_persisted() {
             .all(|answer| answer == "refused"),
         "{answers:?}"
     );
+    server.persist();
     let persisted: serde_json::Value =
         serde_json::from_slice(&std::fs::read(persisted_state_path()).unwrap()).unwrap();
     assert_eq!(persisted["spaces"].as_array().unwrap().len(), 1);
