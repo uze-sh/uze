@@ -319,6 +319,16 @@ impl TuiModel {
                     uze_keys::Action::PreviousValue
                 })
             }
+            // The box being typed into is already answering: a click on
+            // it keeps what was typed.
+            Hit::ExtensionPreferenceValue(index)
+                if self
+                    .preferences
+                    .as_ref()
+                    .is_some_and(|editor| editor.selected == index && editor.typing.is_some()) =>
+            {
+                Intent::None
+            }
             Hit::ExtensionPreferenceValue(index) => {
                 self.focus = Focus::Content;
                 self.choose_preference(index);

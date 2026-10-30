@@ -1247,6 +1247,31 @@ fn a_refresh_that_keeps_the_selection_keeps_the_preferences() {
     );
 }
 
+/// A click on the box being typed into keeps what was typed: the typing
+/// goes on where it was.
+#[test]
+fn a_click_on_the_box_being_typed_keeps_the_typing() {
+    let mut model = focus_preferences();
+    model.apply_key(key(KeyCode::Enter));
+    model.apply_key(key(KeyCode::Backspace));
+    model.apply_key(key(KeyCode::Char('9')));
+    let typed = model
+        .preferences
+        .as_ref()
+        .and_then(|editor| editor.typing.clone());
+    assert_eq!(
+        click(&mut model, &Hit::ExtensionPreferenceValue(0)),
+        Intent::None
+    );
+    assert_eq!(
+        model
+            .preferences
+            .as_ref()
+            .and_then(|editor| editor.typing.clone()),
+        typed
+    );
+}
+
 /// Every key the footer names while the keys are on the preferences is a
 /// target doing what the key does: enter types the number, esc gives the
 /// keys back to the cards.
