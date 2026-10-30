@@ -111,7 +111,12 @@ public static class Program {
             # under a caller's `Stop` (CI runs steps so) it would throw here.
             $ErrorActionPreference = 'Continue'
             $output = & $shell -NoProfile -ExecutionPolicy Bypass -File $Script @Arguments 2>&1
-            [pscustomobject]@{ Code = $LASTEXITCODE; Output = ($output | Out-String) }
+            # PowerShell 7 wraps an error's message to the console's width,
+            # each line behind a `|` gutter, so a phrase can be split across
+            # lines depending on how long the temporary path is: the lines
+            # are joined back into one before anything reads them.
+            $joined = ($output | Out-String) -replace '\s*\r?\n\s*(\|\s*)?', ' '
+            [pscustomobject]@{ Code = $LASTEXITCODE; Output = $joined }
         } finally {
             foreach ($key in $saved.Keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key]) }
         }
