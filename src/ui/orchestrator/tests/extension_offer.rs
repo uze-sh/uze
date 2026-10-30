@@ -150,10 +150,7 @@ fn a_project_offers_its_extensions_once_with_their_grants() {
     assert!(screen.contains("Enable GSD in"), "{screen}");
     assert!(screen.contains("gsd@studio"), "attributed: {screen}");
     assert!(screen.contains("read:checkout"), "{screen}");
-    assert!(
-        screen.contains("reads the files of the checkout"),
-        "{screen}"
-    );
+    assert!(screen.contains("reads the checkout's files"), "{screen}");
     assert!(screen.contains("Enable 1"), "{screen}");
     assert!(screen.contains("this project"), "where it holds: {screen}");
 }

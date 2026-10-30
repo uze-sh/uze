@@ -119,6 +119,7 @@ fn declared(errors: &[&str]) -> uze_application::DeclaredExtensionSummary {
             id: "gsd-band".to_owned(),
         },
         linked: true,
+        official: false,
         name: "GSD".to_owned(),
         description: "Phases and plans".to_owned(),
         views: vec!["Board".to_owned()],
@@ -165,8 +166,30 @@ fn a_declared_extension_is_listed_after_the_built_ins_with_whose_it_is() {
         "{screen}"
     );
     assert!(screen.contains("Board · view"), "the drawer: {screen}");
-    assert!(screen.contains("Band · section"), "{screen}");
+    assert!(screen.contains("Band · sidebar section"), "{screen}");
     assert!(!screen.contains("last compile"), "{screen}");
+}
+
+/// Two seals, as an editor's marketplace keeps them apart: what ships
+/// inside uze is `Bundled`, and what uze publishes in its marketplace is
+/// `Official`; a third party's wears neither.
+#[test]
+fn bundled_and_official_extensions_wear_their_own_seals() {
+    let mut model = listing_a_declared_extension(&[]);
+    let screen = |model: &TuiModel| {
+        super::support::buffer_rows(&super::support::drawn_at(model, 140, 40).0).join("\n")
+    };
+    let third_party = screen(&model);
+    assert!(third_party.contains("Bundled"), "{third_party}");
+    assert!(!third_party.contains("Official"), "{third_party}");
+    model.declared_extensions[0].official = true;
+    let official = screen(&model);
+    assert!(
+        official
+            .lines()
+            .any(|row| row.contains("GSD") && row.contains("Official")),
+        "{official}"
+    );
 }
 
 #[test]
@@ -347,7 +370,9 @@ fn an_extension_that_needs_consent_says_so_and_shows_its_grants() {
     );
     assert!(screen.contains("grants"), "{screen}");
     assert!(
-        screen.contains("read:checkout · reads the files of the checkout"),
+        screen
+            .lines()
+            .any(|row| row.contains("read:checkout") && row.contains("reads the checkout's files")),
         "{screen}"
     );
     assert!(
@@ -365,14 +390,16 @@ fn enabling_an_unconsented_extension_asks_with_its_grants_first() {
     let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
     assert_eq!(model.apply_key(enter), Intent::None, "nothing recorded yet");
     let screen = screen_of(&model);
-    assert!(screen.contains("Allow this extension to run?"), "{screen}");
-    assert!(screen.contains("gsd-band · gsd@market"), "{screen}");
+    assert!(screen.contains("Allow GSD to run?"), "{screen}");
+    assert!(screen.contains("gsd@market"), "{screen}");
     assert!(
-        screen.contains("the workspace, in every"),
+        screen.contains("Runs a script in every project"),
         "this screen answers for the machine: {screen}"
     );
     assert!(
-        screen.contains("read:checkout · reads the files of the checkout"),
+        screen
+            .lines()
+            .any(|row| row.contains("read:checkout") && row.contains("reads the checkout's files")),
         "{screen}"
     );
     assert!(screen.contains("Allow and enable"), "{screen}");
@@ -399,7 +426,7 @@ fn programs_are_asked_on_their_own_step_after_the_grants() {
     let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
     assert_eq!(model.apply_key(enter), Intent::None);
     let grants = screen_of(&model);
-    assert!(grants.contains("Allow this extension to run?"), "{grants}");
+    assert!(grants.contains("Allow GSD to run?"), "{grants}");
     assert!(
         !grants.contains("Allow these programs"),
         "programs wait for their step: {grants}"
@@ -472,15 +499,17 @@ fn a_held_extension_names_what_its_update_wants_and_asks_for_it() {
             .any(|row| row.contains("gsd-band · gsd@market") && row.contains("Held")),
         "{screen}"
     );
-    assert!(
-        screen.contains("its update wants clipboard, which you have not"),
-        "{screen}"
-    );
+    assert!(screen.contains("clipboard, not allowed yet"), "{screen}");
     model.apply_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     let screen = screen_of(&model);
-    assert!(screen.contains("Allow what its update wants?"), "{screen}");
     assert!(
-        screen.contains("clipboard · copies text you choose to the"),
+        screen.contains("Allow what GSD's update wants?"),
+        "{screen}"
+    );
+    assert!(
+        screen
+            .lines()
+            .any(|row| row.contains("clipboard") && row.contains("copies what you choose")),
         "{screen}"
     );
 }
@@ -505,10 +534,7 @@ fn a_consented_extension_is_enabled_and_disabled_in_this_project_alone() {
     let screen = screen_of(&model);
     assert!(screen.contains("Enabled here"), "{screen}");
     assert!(screen.contains("enabled in 1 other project"), "{screen}");
-    assert!(
-        screen.contains("updated 2026-10-26, same grants"),
-        "{screen}"
-    );
+    assert!(screen.contains("2026-10-26, same grants"), "{screen}");
     assert_eq!(model.apply_key(enter), here(false, false));
 }
 
@@ -527,7 +553,7 @@ fn a_refused_checkout_is_the_reason_the_extension_runs_nothing() {
         "{screen}"
     );
     assert!(
-        screen.contains("runs nothing here: your home directory is not a"),
+        screen.contains("why         your home directory is not"),
         "{screen}"
     );
     assert!(!screen.contains("enter enable"), "{screen}");
@@ -590,7 +616,9 @@ fn the_drawer_lists_pinned_programs_and_resolves_them_again_on_a_click() {
     let screen = screen_of(&model);
     assert!(screen.contains("programs"), "{screen}");
     assert!(
-        screen.contains("nvidia-smi · `nvidia-smi` not found"),
+        screen
+            .lines()
+            .any(|row| row.contains("nvidia-smi") && row.contains("`nvidia-smi` not found")),
         "{screen}"
     );
     assert!(screen.contains("reads /dev/dxg"), "{screen}");
@@ -742,8 +770,13 @@ fn preferences_are_listed_and_set_from_the_keyboard() {
     let mut model = with_preferences();
     let screen = screen_of(&model);
     assert!(screen.contains("preferences"), "{screen}");
-    assert!(screen.contains("Show °F · off"), "{screen}");
-    assert!(screen.contains("Warn at · 70"), "{screen}");
+    let row_with = |label: &str, value: &str| {
+        screen
+            .lines()
+            .any(|row| row.contains(label) && row.trim_end().ends_with(value))
+    };
+    assert!(row_with("Show °F", "off"), "{screen}");
+    assert!(row_with("Warn at", "70"), "{screen}");
     assert!(screen.contains("Preferences"), "{screen}");
     assert_eq!(model.edit_selected_preferences(), Intent::None);
     let editor = screen_of(&model);
@@ -965,7 +998,11 @@ fn a_secret_is_typed_masked_and_never_shown_again() {
         max: None,
     }];
     let mut model = standing_in_a_project(standing);
-    assert!(screen_of(&model).contains("GitHub token · set"));
+    assert!(
+        screen_of(&model)
+            .lines()
+            .any(|row| row.contains("GitHub token") && row.contains("set"))
+    );
     model.edit_selected_preferences();
     let editor = screen_of(&model);
     assert!(editor.contains("GitHub token"), "{editor}");
@@ -1032,8 +1069,7 @@ fn offered_button(model: &TuiModel, action: uze_keys::Action) -> Option<Rect> {
 fn moving_a_status_row_orders_the_sidebars_header_and_a_click_is_the_action() {
     let mut model = two_status_rows();
     let screen = screen_of(&model);
-    assert!(screen.contains("Load · status row"), "{screen}");
-    assert!(screen.contains("its row in the sidebar"), "{screen}");
+    assert!(screen.contains("Load · sidebar header row"), "{screen}");
     let selected = model.selected_extension().expect("a selection").id();
     assert_eq!(selected, "gsd@market/gsd-band");
     assert!(
@@ -1085,7 +1121,7 @@ fn consenting_to_a_band_says_the_rows_it_takes_over_each_agent() {
     let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
     assert_eq!(model.apply_key(enter), Intent::None);
     let screen = screen_of(&model);
-    assert!(screen.contains("Allow this extension to run?"), "{screen}");
+    assert!(screen.contains("Allow GSD to run?"), "{screen}");
     assert!(
         screen.contains("draws 3 rows over each agent's pane"),
         "{screen}"
@@ -1151,7 +1187,7 @@ fn clicking_the_drawers_plugin_line_is_the_index_entry_that_shows_the_plugin() {
         .find(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::ShowPlugin))
         .expect("the plugin line is a target");
     let row = &super::support::buffer_rows(&terminal)[rect.y as usize];
-    assert!(row.contains("gsd-band · gsd@market"), "{row}");
+    assert!(row.contains("from") && row.contains("gsd@market"), "{row}");
     clicked.hits = hits;
     let at = |kind| MouseEvent {
         kind,
@@ -1174,7 +1210,7 @@ fn clicking_the_drawers_plugin_line_is_the_index_entry_that_shows_the_plugin() {
             .collect();
         let y = rows
             .iter()
-            .position(|row| row.contains("gsd-band · gsd@market") && !row.contains("linked"))
+            .position(|row| row.contains("from") && row.contains("gsd@market"))
             .expect("the plugin line");
         let x = rows[y].find("gsd@market").unwrap();
         let x = rows[y][..x].chars().count() as u16;

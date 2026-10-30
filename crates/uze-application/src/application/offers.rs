@@ -99,7 +99,7 @@ impl MarketplacePluginSummary {
             } else if is_protected_plugin(&self.marketplace, &self.name) {
                 ActionOffer::unavailable(
                     Action::RemovePlugin,
-                    "part of the official set, which re-seeds itself",
+                    "bundled with uze, which puts it back when it is missing",
                 )
             } else {
                 ActionOffer::available(Action::RemovePlugin)
@@ -345,13 +345,22 @@ mod tests {
     }
 
     #[test]
-    fn the_official_set_is_not_removable_and_the_row_says_so() {
+    fn a_bundled_plugin_is_not_removable_and_the_row_says_so() {
         let official = plugin(true, Some(false), uze_core::manifest::BUILT_IN_MARKETPLACE);
         assert_eq!(
             offer(&official, Action::RemovePlugin).reason(),
-            Some("part of the official set, which re-seeds itself")
+            Some("bundled with uze, which puts it back when it is missing")
         );
         assert!(offer(&plugin(true, None, "community"), Action::RemovePlugin).is_available());
+    }
+
+    /// The rest of the official marketplace is not bundled: uze never puts
+    /// it back, so taking it off is the operator's to do.
+    #[test]
+    fn an_official_plugin_uze_does_not_bundle_is_removable() {
+        let mut focus = plugin(true, Some(false), uze_core::manifest::BUILT_IN_MARKETPLACE);
+        focus.name = "focus".to_owned();
+        assert!(offer(&focus, Action::RemovePlugin).is_available());
     }
 
     /// Every list row answers "what can be done to this" with something.

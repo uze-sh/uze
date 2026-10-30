@@ -64,8 +64,7 @@ const PLUGIN_INDENT: usize = 4;
 const KIND_INDENT: usize = 6;
 const RESOURCE_INDENT: usize = 8;
 
-/// The key/value grid's key column in the panel.
-const FIELD_KEY_WIDTH: usize = 12;
+use super::FIELD_KEY_WIDTH;
 
 pub(crate) fn render_plugins(
     frame: &mut ratatui::Frame<'_>,
@@ -867,6 +866,9 @@ fn plugin_status(model: &TuiModel, plugin: &MarketplacePluginSummary) -> (String
             theme::fg(Token::StateWarning),
         ),
         FreshnessState::Linked { .. } => ("linked".to_owned(), theme::fg(Token::Accent)),
+        // uze puts it back whenever it is missing: installed, and not the
+        // operator's to remove.
+        _ if plugin.is_default => ("bundled".to_owned(), theme::fg(Token::StateSuccess)),
         _ => ("installed".to_owned(), theme::fg(Token::StateSuccess)),
     }
 }

@@ -52,6 +52,9 @@ pub(crate) struct Dialog<'a> {
     pub(crate) subject: Option<Line<'static>>,
     /// What answering yes does, one paragraph per entry.
     pub(crate) body: Vec<String>,
+    /// What it is asked for, under the body: a name and what it means a
+    /// row, the names in one column as the workspace's offer lays them.
+    pub(crate) table: Vec<(String, String)>,
     /// The affirmative, in its own word — "Delete", not "OK". `None` makes
     /// the dialog a notice with one way out.
     pub(crate) confirm: Option<&'a str>,
@@ -221,6 +224,30 @@ fn content(dialog: &Dialog<'_>, measure: usize) -> Content {
                 .into_iter()
                 .map(|line| Line::from(Span::styled(line, style))),
         );
+    }
+    if !dialog.table.is_empty() {
+        lines.push(Line::default());
+        let column = dialog
+            .table
+            .iter()
+            .map(|(name, _)| text::columns(name) + 2)
+            .max()
+            .unwrap_or(0)
+            .min(measure / 2);
+        let room = measure.saturating_sub(column).max(1);
+        for (name, meaning) in &dialog.table {
+            let name = text::elide(name, column.saturating_sub(2));
+            for (index, row) in text::fold(meaning, room).into_iter().enumerate() {
+                let cell = if index == 0 { name.as_str() } else { "" };
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        format!("{cell}{}", " ".repeat(column - text::columns(cell))),
+                        theme::fg(Token::TextCode),
+                    ),
+                    Span::styled(row, theme::fg(Token::TextSecondary)),
+                ]));
+            }
+        }
     }
     lines.push(Line::default());
     // The field's text row, then the rule under it that makes it a field.

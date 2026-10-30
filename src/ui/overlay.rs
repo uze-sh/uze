@@ -790,6 +790,7 @@ pub(crate) fn render_text_prompt(
         frame,
         area,
         &Dialog {
+            table: Vec::new(),
             tone: Tone::Neutral,
             title: prompt.title,
             subject: None,
@@ -813,45 +814,48 @@ pub(crate) fn render_text_prompt(
     );
 }
 
-/// What allowing an extension means, then each grant it wants with what
-/// it lets it do: what the operator reads before anything of it runs.
+/// Where allowing an extension lets it run, in one line, and each grant
+/// it wants with what it lets it do, as a table: what the operator reads
+/// before anything of it runs.
 fn extension_grants_body(
     here: &crate::ui::model::ExtensionHere,
     grants: &[String],
     new_grants: &[String],
     band_rows: Option<u8>,
-) -> Vec<String> {
+) -> (Vec<String>, Vec<(String, String)>) {
     let project = here.project.file_name().map_or_else(
         || here.project.display().to_string(),
         |name| name.to_string_lossy().into_owned(),
     );
-    let mut body = vec![if new_grants.is_empty() && here.reaches_agents {
-        format!(
-            "It runs a script inside the workspace, in {project} only, since it reaches its \
-             agents, and no further than this:"
-        )
-    } else if new_grants.is_empty() {
-        "It runs a script inside the workspace, in every project, and reaches no further than \
-         this:"
-            .to_owned()
-    } else {
-        "Its update wants more than you accepted. Nothing of it runs until you allow it:".to_owned()
-    }];
     let shown = if new_grants.is_empty() {
         grants
     } else {
         new_grants
     };
-    if shown.is_empty() {
-        body.push("nothing beyond drawing what its script answers".to_owned());
-    }
-    body.extend(
-        shown
-            .iter()
-            .map(|grant| format!("{grant} · {}", uze_application::grant_meaning(grant))),
-    );
+    let may = if shown.is_empty() {
+        "It only draws what its script answers."
+    } else {
+        "It may:"
+    };
+    let lead = if !new_grants.is_empty() {
+        "Its update wants more than you allowed; nothing of it runs until you do.".to_owned()
+    } else if here.reaches_agents {
+        format!("Runs a script in {project} only, since it reaches its agents. {may}")
+    } else {
+        format!("Runs a script in every project. {may}")
+    };
+    let mut body = vec![lead];
     body.extend(band_rows.map(band_rows_said));
-    body
+    let table = shown
+        .iter()
+        .map(|grant| {
+            (
+                grant.clone(),
+                uze_application::grant_meaning(grant).to_owned(),
+            )
+        })
+        .collect();
+    (body, table)
 }
 
 /// What a band costs every agent of the project, as a consent step says
@@ -915,7 +919,30 @@ pub(crate) fn programs_lines(
     body
 }
 
+/// `gsd@market` out of `gsd-band · gsd@market`: the title already names
+/// the extension.
+fn plugin_of(attribution: &str) -> &str {
+    attribution
+        .split_once(" · ")
+        .map_or(attribution, |(_, plugin)| plugin)
+}
+
 impl Confirmation {
+    /// A title that names what it asks about, for the questions whose
+    /// subject is in their heading rather than under it.
+    fn titled(&self) -> Option<String> {
+        match self {
+            Self::EnableExtension {
+                here, new_grants, ..
+            } => Some(if new_grants.is_empty() {
+                format!("Allow {} to run?", here.name)
+            } else {
+                format!("Allow what {}'s update wants?", here.name)
+            }),
+            _ => None,
+        }
+    }
+
     /// Whether this only explains, with one way out and nothing to agree to.
     fn is_notice(&self) -> bool {
         matches!(self, Self::ProtectedPlugin(_))
@@ -970,6 +997,7 @@ impl Confirmation {
     /// The question as it is drawn.
     fn dialog(&self, focus: Option<usize>) -> Dialog<'_> {
         let dialog = |tone, title, subject: Option<Line<'static>>, body: &str, confirm| Dialog {
+            table: Vec::new(),
             tone,
             title,
             subject,
@@ -1007,20 +1035,24 @@ impl Confirmation {
                 new_grants,
                 band_rows,
                 ..
-            } => Dialog {
-                body: extension_grants_body(here, grants, new_grants, *band_rows),
-                ..dialog(
-                    Tone::Caution,
-                    if new_grants.is_empty() {
-                        "Allow this extension to run?"
-                    } else {
-                        "Allow what its update wants?"
-                    },
-                    named(attribution),
-                    "",
-                    Some("Allow and enable"),
-                )
-            },
+            } => {
+                let (body, table) = extension_grants_body(here, grants, new_grants, *band_rows);
+                Dialog {
+                    body,
+                    table,
+                    ..dialog(
+                        Tone::Caution,
+                        // Named in full by `titled`, which owns the words.
+                        "",
+                        Some(Line::from(Span::styled(
+                            plugin_of(attribution).to_owned(),
+                            theme::fg(Token::TextMuted),
+                        ))),
+                        "",
+                        Some("Allow and enable"),
+                    )
+                }
+            }
             Self::RemovePlugin(id) => dialog(
                 Tone::Danger,
                 "Remove plugin",
@@ -1063,10 +1095,10 @@ impl Confirmation {
             ),
             Self::ProtectedPlugin(id) => dialog(
                 Tone::Caution,
-                "Protected plugin",
+                "Bundled plugin",
                 named(id),
-                "An official marketplace plugin can't be removed from here. Install it from a \
-                 custom source to make it removable.",
+                "Ships with uze, which puts it back whenever it is missing, so it can't be \
+                 removed.",
                 None,
             ),
             Self::Trust { plugin, detail, .. } => Dialog {
@@ -1094,10 +1126,15 @@ pub(crate) fn render_confirmation(
     focus: Option<usize>,
     hits: &mut Vec<(Rect, Hit)>,
 ) {
+    let title = kind.titled();
+    let mut asked = kind.dialog(focus);
+    if let Some(title) = &title {
+        asked.title = title;
+    }
     let targets = dialog::render(
         frame,
         area,
-        &kind.dialog(focus),
+        &asked,
         &[uze_keys::Scope::Global, uze_keys::Scope::Confirm],
         Hit::Answer(false),
         Hit::Answer(true),

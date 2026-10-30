@@ -192,7 +192,7 @@ scenes:
         expect: "Enable GPU in demo-app"
         expect_timeout: 10
       - wait: screen
-        until: "store +keeps what it remembers"
+        until: "store +keeps state for this project"
         timeout: 5
         say: the first question shows the grant that is not a program
       - click: "Enable 1"

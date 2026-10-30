@@ -99,6 +99,7 @@ pub(super) fn render_interrupt(
         frame,
         area,
         &Dialog {
+            table: Vec::new(),
             tone: Tone::Caution,
             title: &title,
             subject: None,

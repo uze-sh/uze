@@ -220,6 +220,7 @@ pub(super) fn render_approval(
         frame,
         area,
         &Dialog {
+            table: Vec::new(),
             tone: Tone::Caution,
             title: "Run this project's commands?",
             subject: Some(Line::from(open.project.clone())),

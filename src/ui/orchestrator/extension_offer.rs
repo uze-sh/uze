@@ -498,6 +498,7 @@ fn render_programs(
         frame,
         area,
         &Dialog {
+            table: Vec::new(),
             tone: if confined {
                 Tone::Caution
             } else {

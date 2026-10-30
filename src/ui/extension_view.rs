@@ -438,6 +438,7 @@ pub(crate) fn render_confirm(
     let dialog = widget::dialog::Dialog {
         // A yes-or-no is asked only before what cannot be undone; a
         // question that takes text is asking for a name.
+        table: Vec::new(),
         tone: match confirm.field {
             Some(_) => widget::dialog::Tone::Neutral,
             None => widget::dialog::Tone::Danger,

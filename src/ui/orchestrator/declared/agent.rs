@@ -471,6 +471,7 @@ pub(in crate::ui::orchestrator) fn render_agent_write(
         )
     };
     let question = Dialog {
+        table: Vec::new(),
         tone: Tone::Caution,
         title: &title,
         subject: Some(Line::from(attribution(&open.write.owner))),
@@ -488,6 +489,7 @@ pub(in crate::ui::orchestrator) fn render_agent_write(
         &question
     } else {
         too_tall = Dialog {
+            table: Vec::new(),
             tone: Tone::Caution,
             title: "Too long to read here",
             subject: question.subject.clone(),

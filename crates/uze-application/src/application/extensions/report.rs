@@ -299,38 +299,20 @@ pub fn secrets_kept_in() -> &'static str {
 /// accepting it.
 pub fn grant_meaning(grant: &str) -> &'static str {
     match uze_contract::Grant::parse(grant) {
-        Some(uze_contract::Grant::ReadCheckout) => "reads the files of the checkout in front",
-        Some(uze_contract::Grant::Clipboard) => "copies text you choose to the clipboard",
-        Some(uze_contract::Grant::OpenPath) => "opens a file of the checkout in its program",
-        Some(uze_contract::Grant::Store) => {
-            "keeps what it remembers for this project in UZE's state"
-        }
-        Some(uze_contract::Grant::StoreGlobal) => {
-            "keeps what it remembers in UZE's state, shared by every project"
-        }
+        Some(uze_contract::Grant::ReadCheckout) => "reads the checkout's files",
+        Some(uze_contract::Grant::Clipboard) => "copies what you choose",
+        Some(uze_contract::Grant::OpenPath) => "opens a checkout's file in its program",
+        Some(uze_contract::Grant::Store) => "keeps state for this project",
+        Some(uze_contract::Grant::StoreGlobal) => "keeps state shared by every project",
         Some(uze_contract::Grant::Exec(_)) => "runs this program on your machine",
-        Some(uze_contract::Grant::Net(_)) => {
-            "sends requests over HTTPS to this host, and to no other"
-        }
-        Some(uze_contract::Grant::Resident) => {
-            "keeps its script running while its surface is open, reading your keys when focused"
-        }
-        Some(uze_contract::Grant::AgentObserve) => "sees the workspace's agents and what they do",
-        Some(uze_contract::Grant::AgentPrompt) => {
-            "types a prompt into an agent when you press it, shown to you first"
-        }
-        Some(uze_contract::Grant::AgentPromptAuto) => {
-            "types its fixed prompt into an agent on its own, a few times an hour at most"
-        }
-        Some(uze_contract::Grant::AgentRestart) => {
-            "starts an agent on a new conversation, after asking you"
-        }
-        Some(uze_contract::Grant::Notify) => {
-            "notifies you and sounds a cue, a few times a minute at most"
-        }
-        Some(uze_contract::Grant::Mcp { .. }) => {
-            "calls this tool of a plugin's MCP server, which runs as your agents run it"
-        }
+        Some(uze_contract::Grant::Net(_)) => "HTTPS to this host, and no other",
+        Some(uze_contract::Grant::Resident) => "stays running while open, reads your keys",
+        Some(uze_contract::Grant::AgentObserve) => "sees the agents and what they do",
+        Some(uze_contract::Grant::AgentPrompt) => "prompts an agent when you press it, shown first",
+        Some(uze_contract::Grant::AgentPromptAuto) => "prompts an agent alone, a few times an hour",
+        Some(uze_contract::Grant::AgentRestart) => "restarts an agent, after asking you",
+        Some(uze_contract::Grant::Notify) => "notifies you, a few times a minute",
+        Some(uze_contract::Grant::Mcp { .. }) => "calls this tool of a plugin's MCP server",
         None => "a grant this build does not know",
     }
 }

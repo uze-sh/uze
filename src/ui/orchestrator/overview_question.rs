@@ -140,6 +140,7 @@ pub(super) fn render_overview_question(
         frame,
         area,
         &Dialog {
+            table: Vec::new(),
             tone: Tone::Danger,
             title,
             subject: Some(Line::from(Span::styled(subject, subject_style))),

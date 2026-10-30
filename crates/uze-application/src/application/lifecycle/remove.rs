@@ -143,13 +143,12 @@ enum Consents {
     Forget,
 }
 
-/// Whether `plugin`, offered by `marketplace`, belongs to the official set
-/// compiled into this binary — which re-seeds itself, so removing a member
-/// of it is not an operation that means anything.
+/// Whether `plugin`, offered by `marketplace`, is one this binary bundles:
+/// a default it re-seeds whenever it is absent, so removing it is not an
+/// operation that means anything. The rest of the official marketplace is
+/// installed and removed like any other.
 pub(crate) fn is_protected_plugin(marketplace: &str, plugin: &str) -> bool {
-    marketplace == BUILT_IN_MARKETPLACE
-        && bootstrap::entries()
-            .is_ok_and(|official| official.plugins.iter().any(|entry| entry.name == plugin))
+    marketplace == BUILT_IN_MARKETPLACE && bootstrap::DEFAULT_PLUGIN_IDS.contains(&plugin)
 }
 
 /// Where detaching a package's receipts got to.

@@ -302,6 +302,13 @@ on "cancel" must not save first.
   with `review` at its far end, and the whole row opens the Extensions
   screen on that extension. A state the person can act on is never a
   bare warning they have to go find the answer to.
+- Who vouches and who controls are two seals, as an editor's
+  marketplace keeps them: `Bundled` for what ships inside uze and is
+  never installed or removed (the built-in extensions, the `uze`
+  plugin, whose Marketplace status word is `bundled`), `Official` for
+  what uze publishes in its marketplace and the operator installs and
+  removes like any other. A third party's wears neither. Only a bundled
+  plugin refuses removal, and says why.
 - Marketplace says what a package brings; Extensions says what runs.
   Each links to the other and neither repeats the other's actions. A
   package's tree lists the extensions it declares as a kind like any
@@ -330,6 +337,11 @@ on "cancel" must not save first.
 - Several things waiting on the same answer are asked in one dialog, a
   list to choose from (`Scope::Choose`), never a queue of dialogs; one
   toast says what was done (`3 extensions enabled`), never one each.
+- A consent names what it asks about in its title (`Allow Focus to
+  run?`), whose it is muted under it (`focus@uze-official`), one line of
+  where it runs, then what it asks for as the same two-column table
+  the workspace's offer draws (`Dialog::table`): never a paragraph per
+  grant.
 - A question is 60 columns at most. A list to choose from takes what its
   rows need, up to 96, its rows take the height left (4 to 14, then it
   scrolls), and the marked row's detail keeps a fixed height, so moving
@@ -494,6 +506,14 @@ operator rather than assume.
 - A setting's drawer teaches: what it decides, each option with what it
   does (the default marked `· default` on its option, not a row of its
   own), and an `example` of how a project writes it.
+- A manage drawer is a key/value grid, never a label over each value:
+  keys in the shared column (`view::FIELD_KEY_WIDTH`), muted, values
+  beside them hanging under their own first row. A list of named things
+  (grants, programs) is a table under a section label, names in
+  `TextCode` in a column as wide as the longest, what each means beside
+  it; a preference's value stands against the right edge. What the foot
+  already says (enabled everywhere) is not said again in the body, and
+  the foot's note is left empty when the headline says it all.
 - A path beside a label stays on one line, cut at its head.
 - A section's status line is short and in a quiet tone
   (`worktree copy · applies once delivered`); the accent hues are for

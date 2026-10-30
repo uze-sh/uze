@@ -168,6 +168,7 @@ pub(super) fn render_proposal(
         frame,
         area,
         &Dialog {
+            table: Vec::new(),
             tone: Tone::Caution,
             title: "Keep this fact for every project?",
             subject: Some(ratatui::text::Line::from(fact.name.clone())),

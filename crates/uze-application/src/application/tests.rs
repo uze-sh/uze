@@ -1955,7 +1955,7 @@ fn official_embedded_plugin_is_protected_from_remove_but_allows_update() {
     let err = app.plugins().remove("uze").unwrap_err();
     assert!(
         err.to_string()
-            .contains("official marketplace plugin `uze@uze-official` is protected"),
+            .contains("`uze@uze-official` is bundled with uze"),
         "expected protected error, got: {err}"
     );
 

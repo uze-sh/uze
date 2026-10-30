@@ -260,11 +260,10 @@ impl TuiModel {
             Action::RemovePlugin => {
                 if let Some(plugin) = self.selected_marketplace_plugin().filter(|p| p.installed) {
                     let id = self.marketplace_plugin_id(&plugin);
-                    self.overlay = if plugin.marketplace == "uze-official" {
-                        // Anything from the embedded official snapshot is
-                        // protected — remove is blocked with an explanation
-                        // instead of silently offering a destructive (and
-                        // pointless, it re-seeds) operation.
+                    self.overlay = if plugin.is_default {
+                        // A bundled plugin re-seeds itself: remove is
+                        // blocked with an explanation instead of offering
+                        // a destructive and pointless operation.
                         Overlay::Confirm {
                             kind: Confirmation::ProtectedPlugin(id),
                             focus: None,

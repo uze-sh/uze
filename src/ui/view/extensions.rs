@@ -17,7 +17,7 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Paragraph, Wrap},
+    widgets::Paragraph,
 };
 
 use super::catalog::{Badge, Card, render_card};
@@ -183,11 +183,7 @@ fn render_extension_card(
     let card = match extension {
         ExtensionEntry::Builtin(extension) => Card {
             name: extension.name,
-            badge: Some(Badge {
-                mark: theme::glyph(Symbol::MarkOfficial),
-                label: "Official",
-                color: theme::color(Token::StateInfo),
-            }),
+            badge: Some(seal("Bundled")),
             description: extension.description,
             caption: Span::styled(extension.surface, theme::fg(Token::TextMuted)),
             state: Some(enabled_state()),
@@ -196,7 +192,7 @@ fn render_extension_card(
         // it is said only while the extension is on.
         ExtensionEntry::Declared(summary) => Card {
             name: &summary.name,
-            badge: None,
+            badge: summary.official.then(|| seal("Official")),
             description: &summary.description,
             caption: Span::styled(identity_caption(summary), theme::fg(Token::TextMuted)),
             state: Some(if enabled && !summary.errors.is_empty() {
@@ -212,6 +208,17 @@ fn render_extension_card(
         },
     };
     render_card(frame, rect, card, state);
+}
+
+/// uze's seal on a card, as a marketplace's verified publisher wears one:
+/// `Bundled` for what ships inside uze and is never installed or removed,
+/// `Official` for what uze publishes in its marketplace.
+fn seal(label: &'static str) -> Badge {
+    Badge {
+        mark: theme::glyph(Symbol::MarkOfficial),
+        label,
+        color: theme::color(Token::StateInfo),
+    }
 }
 
 /// `gsd-band · gsd@market`, and `· linked` when its author works on it
@@ -243,79 +250,63 @@ fn render_extension_drawer(
     let offers = model.extension_offers(extension);
     let standing = declared_standing(model, extension);
     let (body, status) = super::drawer_body_and_footer(inner, &offers);
+    let mut grid = Grid::new(usize::from(body.width));
 
-    let mut lines = vec![
-        super::section_label("extension"),
-        Line::from(Span::styled(
-            extension.name().to_owned(),
-            Style::default()
-                .fg(theme::color(Token::TextBright))
-                .add_modifier(Modifier::BOLD),
-        )),
-    ];
+    grid.lines.push(super::section_label("extension"));
+    grid.lines.push(Line::from(Span::styled(
+        extension.name().to_owned(),
+        Style::default()
+            .fg(theme::color(Token::TextBright))
+            .add_modifier(Modifier::BOLD),
+    )));
     if !extension.description().is_empty() {
-        lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            extension.description().to_owned(),
-            theme::fg(Token::TextSecondary),
-        )));
+        grid.gap();
+        grid.prose(extension.description(), Token::TextSecondary);
     }
-    let (surface, usage) = match extension {
-        ExtensionEntry::Builtin(extension) => (
-            vec![extension.surface.to_owned()],
-            extension.usage.to_owned(),
-        ),
-        ExtensionEntry::Declared(summary) => declared_surfaces(summary),
-    };
-    if let ExtensionEntry::Declared(summary) = extension {
-        lines.push(Line::from(""));
-        lines.push(super::section_label("from"));
-        // The plugin it comes with, a click away on the Marketplace: what
-        // the package brings is said there, what runs is said here.
-        let above: usize = lines
-            .iter()
-            .map(|line| text::fold(&line.to_string(), usize::from(body.width)).len())
-            .sum();
-        if let Ok(above) = u16::try_from(above)
-            && above < body.height
-        {
-            hits.push((
-                Rect::new(body.x, body.y + above, body.width, 1),
-                Hit::OfferedAction(uze_keys::Action::ShowPlugin),
-            ));
+    grid.gap();
+    match extension {
+        ExtensionEntry::Builtin(extension) => {
+            grid.field("opens", extension.usage, Token::TextSecondary);
         }
-        let link = if model.hovered_offer == Some(uze_keys::Action::ShowPlugin) {
-            Token::TextBright
-        } else {
-            Token::TextMuted
-        };
-        lines.push(Line::from(Span::styled(
-            summary.identity.to_string(),
-            theme::fg(link),
-        )));
-        if summary.linked {
-            lines.push(Line::from(Span::styled(
-                "linked · redrawn on every save",
-                theme::fg(Token::TextMuted),
-            )));
+        ExtensionEntry::Declared(summary) => {
+            // The plugin it comes with, a click away on the Marketplace:
+            // what the package brings is said there, what runs is said
+            // here.
+            let link = if model.hovered_offer == Some(uze_keys::Action::ShowPlugin) {
+                Token::TextBright
+            } else {
+                Token::TextMuted
+            };
+            if let Some(row) = u16::try_from(grid.lines.len())
+                .ok()
+                .filter(|row| *row < body.height)
+            {
+                hits.push((
+                    Rect::new(body.x, body.y + row, body.width, 1),
+                    Hit::OfferedAction(uze_keys::Action::ShowPlugin),
+                ));
+            }
+            let plugin = format!(
+                "{}@{}",
+                summary.identity.plugin, summary.identity.marketplace
+            );
+            grid.field("from", &plugin, link);
+            if summary.linked {
+                grid.field("", "linked · redrawn on every save", Token::TextMuted);
+            }
+            for (index, surface) in declared_surfaces(summary).iter().enumerate() {
+                grid.field(
+                    if index == 0 { "opens" } else { "" },
+                    surface,
+                    Token::TextSecondary,
+                );
+            }
         }
     }
     if let Some(standing) = standing {
-        lines.extend(standing_lines(standing, model.extension_project.as_deref()));
+        standing_lines(&mut grid, standing, model.extension_project.as_deref());
     }
-    lines.push(Line::from(""));
-    lines.push(super::section_label("surface"));
-    lines.extend(
-        surface
-            .into_iter()
-            .map(|surface| Line::from(Span::styled(surface, theme::fg(Token::TextPrimary)))),
-    );
-    lines.push(Line::from(""));
-    lines.push(super::section_label("how to open"));
-    lines.push(Line::from(Span::styled(
-        usage,
-        theme::fg(Token::TextSecondary),
-    )));
+    let lines = grid.lines;
     // What the last compile refused stands at the foot of the body, as it
     // does over a plugin's own surface while its author saves.
     let mut text_area = body;
@@ -327,11 +318,9 @@ fn render_extension_drawer(
             count => format!("the last compile has {count} errors"),
         };
         // The room under what the drawer says, a blank row apart.
-        let said: usize = lines
-            .iter()
-            .map(|line| text::fold(&line.to_string(), usize::from(body.width)).len())
-            .sum();
-        let taken = u16::try_from(said + 1).unwrap_or(u16::MAX).min(body.height);
+        let taken = u16::try_from(lines.len() + 1)
+            .unwrap_or(u16::MAX)
+            .min(body.height);
         let room = Rect {
             y: body.y + taken,
             height: body.height - taken,
@@ -340,9 +329,8 @@ fn render_extension_drawer(
         let banner = crate::ui::widget::banner::render_folded(frame, room, &title, &summary.errors);
         text_area.height = body.height.saturating_sub(banner.height);
     }
-    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), text_area);
+    frame.render_widget(Paragraph::new(lines), text_area);
 
-    let from_a_plugin = matches!(extension, ExtensionEntry::Declared(_));
     render_drawer_footer(
         frame,
         status,
@@ -359,17 +347,13 @@ fn render_extension_drawer(
             DrawerStatus {
                 color: theme::color(Token::StateSuccess),
                 headline: "Enabled",
-                subtitle: if from_a_plugin {
-                    "Comes with an installed plugin and is offered in the workspace"
-                } else {
-                    "Ships with uze and is offered in the workspace"
-                },
+                subtitle: "",
             }
         } else {
             DrawerStatus {
                 color: theme::color(Token::TextDim),
                 headline: "Disabled",
-                subtitle: "Its keys, buttons and sidebar sections are withdrawn",
+                subtitle: "Withdrawn from the workspace",
             }
         },
         &offers,
@@ -379,182 +363,220 @@ fn render_extension_drawer(
     );
 }
 
-/// What a declared extension offers, a surface a line, and how each is
-/// reached.
-fn declared_surfaces(summary: &uze_application::DeclaredExtensionSummary) -> (Vec<String>, String) {
+/// The drawer's body, folded to its width as it is built, so a row's
+/// place on screen is its index: keys in the column the Marketplace's
+/// panel uses, values hanging under their own first row, and tables whose
+/// first column is as wide as their longest name.
+struct Grid {
+    width: usize,
+    lines: Vec<Line<'static>>,
+}
+
+impl Grid {
+    fn new(width: usize) -> Self {
+        Self {
+            width: width.max(1),
+            lines: Vec::new(),
+        }
+    }
+
+    fn gap(&mut self) {
+        self.lines.push(Line::from(""));
+    }
+
+    fn prose(&mut self, said: &str, token: Token) {
+        self.lines.extend(
+            text::fold(said, self.width)
+                .into_iter()
+                .map(|row| Line::from(Span::styled(row, theme::fg(token)))),
+        );
+    }
+
+    /// `key` in the shared key column, `value` folded beside it.
+    fn field(&mut self, key: &str, value: &str, token: Token) {
+        self.row((key, Token::TextDim), super::FIELD_KEY_WIDTH, value, token);
+    }
+
+    /// A section of rows, each a name and what it says, the names in a
+    /// column as wide as the longest of them.
+    fn table(&mut self, heading: &str, rows: &[(String, String, Token)]) {
+        if rows.is_empty() {
+            return;
+        }
+        self.gap();
+        self.lines.push(super::section_label(heading));
+        let column = rows
+            .iter()
+            .map(|(name, _, _)| text::columns(name) + 2)
+            .max()
+            .unwrap_or(0)
+            .min(self.width / 2);
+        for (name, said, token) in rows {
+            self.row((name, Token::TextCode), column, said, *token);
+        }
+    }
+
+    fn row(&mut self, (key, ink): (&str, Token), column: usize, value: &str, token: Token) {
+        let room = self.width.saturating_sub(column).max(1);
+        let key = text::elide(key, column.saturating_sub(1));
+        let pad = column.saturating_sub(text::columns(&key));
+        for (index, row) in text::fold(value, room).into_iter().enumerate() {
+            let key = if index == 0 {
+                key.clone()
+            } else {
+                String::new()
+            };
+            let pad = if index == 0 { pad } else { column };
+            self.lines.push(Line::from(vec![
+                Span::styled(key, theme::fg(ink)),
+                Span::raw(" ".repeat(pad)),
+                Span::styled(row, theme::fg(token)),
+            ]));
+        }
+    }
+
+    /// A row whose value stands against the right edge, as a setting's
+    /// value does.
+    fn trailing(&mut self, label: &str, value: &str) {
+        let value_width = text::columns(value);
+        let label = text::elide(label, self.width.saturating_sub(value_width + 1));
+        let pad = self
+            .width
+            .saturating_sub(text::columns(&label) + value_width);
+        self.lines.push(Line::from(vec![
+            Span::styled(label, theme::fg(Token::TextPrimary)),
+            Span::raw(" ".repeat(pad)),
+            Span::styled(value.to_owned(), theme::fg(Token::TextSecondary)),
+        ]));
+    }
+}
+
+/// What a declared extension offers, a surface a line, each with where it
+/// is reached.
+fn declared_surfaces(summary: &uze_application::DeclaredExtensionSummary) -> Vec<String> {
     let surfaces: Vec<String> = summary
         .views
         .iter()
-        .map(|title| format!("{title} · view"))
-        .chain(
-            summary
-                .sections
-                .iter()
-                .map(|title| format!("{title} · section")),
-        )
+        .map(|title| format!("{title} · view, from the bar"))
         .chain(
             summary
                 .drawers
                 .iter()
-                .map(|title| format!("{title} · drawer")),
+                .map(|title| format!("{title} · drawer, from the bar")),
+        )
+        .chain(
+            summary
+                .sections
+                .iter()
+                .map(|title| format!("{title} · sidebar section")),
         )
         .chain(
             summary
                 .statuses
                 .iter()
-                .map(|title| format!("{title} · status row")),
+                .map(|title| format!("{title} · sidebar header row")),
         )
         .chain(summary.bands.iter().map(|(title, rows)| match rows {
-            1 => format!("{title} · band, 1 row"),
-            rows => format!("{title} · band, {rows} rows"),
+            1 => format!("{title} · band over each pane, 1 row"),
+            rows => format!("{title} · band over each pane, {rows} rows"),
         }))
         .chain(
             summary
                 .overlays
                 .iter()
-                .map(|title| format!("{title} · overlay")),
+                .map(|title| format!("{title} · overlay, from the action index")),
         )
         .collect();
-    let no_button = summary.views.is_empty() && summary.drawers.is_empty();
-    let usage = match (no_button, summary.sections.is_empty()) {
-        (false, false) => "Its button in the workspace's tab strip, and its section in the sidebar",
-        (false, true) => "Its button in the workspace's tab strip",
-        (true, false) => "Its section in the workspace's sidebar",
-        (true, true) => "",
-    };
-    let mut usage: Vec<String> = Some(usage.to_owned())
-        .filter(|usage| !usage.is_empty())
-        .into_iter()
-        .collect();
-    if !summary.statuses.is_empty() {
-        usage.push("its row in the sidebar's header".to_owned());
-    }
-    if !summary.bands.is_empty() {
-        usage.push("its band over each agent's pane".to_owned());
-    }
-    if !summary.overlays.is_empty() {
-        usage.push("Open, in the action index".to_owned());
-    }
-    let usage = match usage.split_first() {
-        None => "Nothing to open until it compiles".to_owned(),
-        Some((first, rest)) => {
-            let mut said = capitalised(first);
-            for part in rest {
-                said.push_str(" · ");
-                said.push_str(part);
-            }
-            said
-        }
-    };
     if surfaces.is_empty() {
-        (vec!["none yet".to_owned()], usage)
+        vec!["nothing until it compiles".to_owned()]
     } else {
-        (surfaces, usage)
-    }
-}
-
-fn capitalised(text: &str) -> String {
-    let mut characters = text.chars();
-    match characters.next() {
-        Some(first) => first.to_uppercase().chain(characters).collect(),
-        None => String::new(),
+        surfaces
     }
 }
 
 /// The drawer's account of where a declared extension stands: the grants
-/// it wants with what each lets it do, and, when it runs nothing, why.
-fn standing_lines(standing: &ExtensionReport, project: Option<&Path>) -> Vec<Line<'static>> {
-    let mut lines = Vec::new();
-    if !standing.grants.is_empty() {
-        lines.push(Line::from(""));
-        lines.push(super::section_label("grants"));
-        for grant in &standing.grants {
-            lines.push(Line::from(vec![
-                Span::styled(grant.clone(), theme::fg(Token::TextPrimary)),
-                Span::styled(
-                    format!(" · {}", uze_application::grant_meaning(grant)),
-                    theme::fg(Token::TextMuted),
-                ),
-            ]));
+/// it wants with what each lets it do, its programs, its preferences and,
+/// when it runs nothing here or runs elsewhere, why and where.
+fn standing_lines(grid: &mut Grid, standing: &ExtensionReport, project: Option<&Path>) {
+    let grants: Vec<_> = standing
+        .grants
+        .iter()
+        .map(|grant| {
+            (
+                grant.clone(),
+                uze_application::grant_meaning(grant).to_owned(),
+                Token::TextSecondary,
+            )
+        })
+        .collect();
+    grid.table("grants", &grants);
+
+    let mut programs = Vec::new();
+    for program in &standing.programs {
+        let (found, token) = match &program.path {
+            Some(path) => (path.display().to_string(), Token::TextMuted),
+            None if program.packaged => ("packaged with it".to_owned(), Token::TextMuted),
+            None => (
+                program
+                    .unresolved
+                    .clone()
+                    .unwrap_or_else(|| "not found".to_owned()),
+                Token::StateWarning,
+            ),
+        };
+        programs.push((program.name.clone(), found, token));
+        if !program.reads.is_empty() {
+            programs.push((
+                String::new(),
+                format!("reads {}", program.reads.join(", ")),
+                Token::TextMuted,
+            ));
         }
     }
+    grid.table("programs", &programs);
     if !standing.programs.is_empty() {
-        lines.push(Line::from(""));
-        lines.push(super::section_label("programs"));
-        for program in &standing.programs {
-            let (found, token) = match &program.path {
-                Some(path) => (path.display().to_string(), Token::TextMuted),
-                None if program.packaged => ("packaged with it".to_owned(), Token::TextMuted),
-                None => (
-                    program
-                        .unresolved
-                        .clone()
-                        .unwrap_or_else(|| "not found".to_owned()),
-                    Token::StateWarning,
-                ),
-            };
-            lines.push(Line::from(vec![
-                Span::styled(program.name.clone(), theme::fg(Token::TextPrimary)),
-                Span::styled(format!(" · {found}"), theme::fg(token)),
-            ]));
-            if !program.reads.is_empty() {
-                lines.push(Line::from(Span::styled(
-                    format!("reads {}", program.reads.join(", ")),
-                    theme::fg(Token::TextMuted),
-                )));
-            }
-        }
-        let (confinement, token) = if standing.confined == Some(true) {
-            (
-                "confined: reads the checkout, writes only a scratch folder, no network",
+        if standing.confined == Some(true) {
+            grid.prose(
+                "confined: reads the checkout, writes only scratch, no network",
                 Token::TextMuted,
-            )
+            );
         } else {
-            (
+            grid.prose(
                 "runs as you: this machine cannot confine programs",
                 Token::StateWarning,
-            )
-        };
-        lines.push(Line::from(Span::styled(confinement, theme::fg(token))));
-    }
-    if !standing.preferences.is_empty() {
-        lines.push(Line::from(""));
-        lines.push(super::section_label("preferences"));
-        for preference in &standing.preferences {
-            lines.push(Line::from(vec![
-                Span::styled(preference.label.clone(), theme::fg(Token::TextPrimary)),
-                Span::styled(
-                    format!(" · {}", preference.said()),
-                    theme::fg(Token::TextMuted),
-                ),
-            ]));
+            );
         }
     }
-    let mut said = Vec::new();
+
+    if !standing.preferences.is_empty() {
+        grid.gap();
+        grid.lines.push(super::section_label("preferences"));
+        for preference in &standing.preferences {
+            grid.trailing(&preference.label, &preference.said());
+        }
+    }
+
+    let mut notes = Vec::new();
     if standing.condition == Condition::Held {
-        said.push((
-            format!(
-                "its update wants {}, which you have not allowed",
-                standing.new_grants.join(", ")
-            ),
+        notes.push((
+            "wants",
+            format!("{}, not allowed yet", standing.new_grants.join(", ")),
             Token::StateWarning,
         ));
     }
     if let Some(reason) = &standing.checkout_refused {
-        said.push((format!("runs nothing here: {reason}"), Token::StateWarning));
+        // The foot says it runs nothing here; this says why.
+        notes.push(("why", reason.clone(), Token::StateWarning));
     }
-    if let Some(day) = standing.updated_on() {
-        said.push((format!("updated {day}, same grants"), Token::TextMuted));
-    }
+    // Every project is the foot's to say; only other projects are news.
     let elsewhere = standing
         .enabled_in
         .iter()
         .filter(|enabled| project.is_none_or(|project| enabled.as_path() != project))
         .count();
-    if standing.enabled_everywhere {
-        said.push(("enabled in every project".to_owned(), Token::TextMuted));
-    } else if elsewhere > 0 {
-        said.push((
+    if !standing.enabled_everywhere && elsewhere > 0 {
+        notes.push((
+            "elsewhere",
             match elsewhere {
                 1 => "enabled in 1 other project".to_owned(),
                 n => format!("enabled in {n} other projects"),
@@ -562,15 +584,15 @@ fn standing_lines(standing: &ExtensionReport, project: Option<&Path>) -> Vec<Lin
             Token::TextMuted,
         ));
     }
-    if !said.is_empty() {
-        lines.push(Line::from(""));
-        lines.push(super::section_label("this project"));
-        lines.extend(
-            said.into_iter()
-                .map(|(text, token)| Line::from(Span::styled(text, theme::fg(token)))),
-        );
+    if let Some(day) = standing.updated_on() {
+        notes.push(("updated", format!("{day}, same grants"), Token::TextMuted));
     }
-    lines
+    if !notes.is_empty() {
+        grid.gap();
+        for (key, said, token) in notes {
+            grid.field(key, &said, token);
+        }
+    }
 }
 
 /// The drawer's foot for a declared extension that runs code and waits
@@ -612,12 +634,12 @@ fn standing_status(
         Condition::Enabled if standing.enabled_everywhere => DrawerStatus {
             color: theme::color(Token::StateSuccess),
             headline: "Enabled everywhere",
-            subtitle: "Its scripts answer in every project",
+            subtitle: "",
         },
         Condition::Enabled => DrawerStatus {
             color: theme::color(Token::StateSuccess),
             headline: "Enabled here",
-            subtitle: "Its scripts answer in this project",
+            subtitle: "",
         },
         Condition::Consented | Condition::FixturesOnly | Condition::Broken => return None,
     })

@@ -1052,6 +1052,7 @@ fn listing_gsd_band(model: &mut TuiModel) {
     model.declared_extensions = vec![uze_application::DeclaredExtensionSummary {
         identity: extension("gsd", "uze", "gsd-band"),
         linked: false,
+        official: false,
         name: "GSD".to_owned(),
         description: String::new(),
         views: Vec::new(),
