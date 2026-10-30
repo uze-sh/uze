@@ -1048,6 +1048,38 @@ fn the_drawer_follows_the_keys_through_many_preferences() {
     );
 }
 
+/// A long secret typed stays in its box: its dots are cut at the head, as
+/// any typed value is, so the caret is still in sight.
+#[test]
+fn a_long_secret_stays_in_its_box() {
+    let mut standing = standing(uze_application::ExtensionCondition::Enabled);
+    standing.preferences = vec![uze_application::PreferenceRow {
+        name: "token".to_owned(),
+        label: "GitHub token".to_owned(),
+        kind: "secret",
+        value: serde_json::json!(false),
+        values: Vec::new(),
+        default: serde_json::Value::Null,
+        min: None,
+        max: None,
+    }];
+    let mut model = standing_in_a_project(standing);
+    model.edit_selected_preferences();
+    model.apply_key(key(KeyCode::Enter));
+    for _ in 0..60 {
+        model.apply_key(key(KeyCode::Char('x')));
+    }
+    let dot = crate::ui::theme::glyph(uze_theme::Symbol::CursorMasked);
+    let caret = crate::ui::theme::glyph(uze_theme::Symbol::CursorText);
+    let screen = screen_of(&model);
+    let row = screen
+        .lines()
+        .find(|row| row.contains("GitHub token"))
+        .expect("the secret's row");
+    assert!(row.contains(caret.as_str()), "the caret is in sight: {row}");
+    assert!(row.matches(dot.as_str()).count() < 30, "{row}");
+}
+
 /// Every key the footer names while the keys are on the preferences is a
 /// target doing what the key does: enter types the number, esc gives the
 /// keys back to the cards.

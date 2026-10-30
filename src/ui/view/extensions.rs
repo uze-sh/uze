@@ -781,8 +781,11 @@ fn preference_key(
         let shown = if row.is_secret() {
             theme::glyph(Symbol::CursorMasked).repeat(typed.chars().count())
         } else {
-            text::elide_head(typed, layout.field.saturating_sub(3))
+            typed.to_owned()
         };
+        // Cut at the head, so the end being typed and the caret stay in
+        // the box.
+        let shown = text::elide_head(&shown, layout.field.saturating_sub(3));
         return control(form::Control::Typing {
             before: &shown,
             after: "",
