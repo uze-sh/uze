@@ -77,6 +77,21 @@ thread and raises one toast for what was applied and one, staying, for
 what waits for confirmation, each naming the plugins. The management modal
 reads the change on its next opening through the plugins' revision.
 
+**Every writer of a mirror holds it.** A timer makes a background fetch
+meet an operator's `uze update` far more often than two commands ever met,
+and two fetches into one bare repository fight over its ref locks and its
+`origin`. So each marketplace's mirror has a lock in `state/`, and
+everything that fetches, clones or removes it (a catalogue refill, an
+install or update, a project reproducing its lock, the background pass)
+holds it, the code asking for the hold as proof where it records an entry.
+A foreground writer waits for the holder; the background pass does not.
+
+**Materialized plugins are immutable per commit.** Recording a newer
+commit used to clear every plugin written out, under a reader in another
+process. They now sit under the commit they were read at, are published by
+a rename of a finished directory, and are collected only once a commit no
+longer recorded has gone an hour cold.
+
 ## Risks / Trade-offs
 
 - [`latest` installs a release the moment it is found, so a bad one

@@ -506,6 +506,19 @@ impl UzeHome {
         self.state_dir().join("marketplace-fetch.lock")
     }
 
+    /// Held by whatever writes the mirror of the marketplace whose cache
+    /// entry is `entry` (the directory name under
+    /// [`Self::marketplace_cache_dir`]): a fetch, a clone, its removal. Two
+    /// processes fetching one bare repository at once fight over its ref
+    /// locks and its `origin`. In `state/`, beside the other locks, for the
+    /// reason [`Self::marketplace_fetch_lock_path`] gives. A lock, not a
+    /// record.
+    pub fn marketplace_mirror_lock_path(&self, entry: &str) -> PathBuf {
+        self.state_dir()
+            .join("marketplace-mirrors")
+            .join(format!("{entry}.lock"))
+    }
+
     /// The receipt `install.sh` leaves: the file it placed and the release
     /// it was. Inbound — UZE reads it and never writes it — which is why it
     /// is a document of its own rather than part of [`Self::binary_path`].

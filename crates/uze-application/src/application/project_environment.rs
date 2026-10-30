@@ -377,6 +377,7 @@ impl Project<'_> {
             let reached = self
                 .locked_request(recorded, &locked.marketplace)
                 .and_then(|request| {
+                    let _held = self.0.marketplace_catalogues.hold(&locked.marketplace)?;
                     uze_core::acquisition::mirror::ensure_for(
                         &request.repository.fetch,
                         &request.repository.identity,

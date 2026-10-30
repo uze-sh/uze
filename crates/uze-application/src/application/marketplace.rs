@@ -109,6 +109,9 @@ pub(crate) fn prefetch_mirrors(
             let parent = parent.clone();
             scope.spawn(move || {
                 let directory = super::marketplace_catalogue::mirror_dir(home, name);
+                let Ok(held) = catalogues.hold(name) else {
+                    return;
+                };
                 let reached = parent.in_scope(|| {
                     acquisition::mirror::ensure_for(
                         &request.repository.fetch,
@@ -119,7 +122,7 @@ pub(crate) fn prefetch_mirrors(
                     )
                 });
                 if reached.is_ok() {
-                    catalogues.absorb_fetch(home, name);
+                    catalogues.absorb_fetch(home, name, &held);
                     if let Ok(mut fetched) = fetched.lock() {
                         fetched.push(directory);
                     }
@@ -231,6 +234,7 @@ impl MarketplaceRequest {
         } else {
             at.recent
         };
+        let held = at.catalogues.hold(at.marketplace)?;
         naming_the_marketplace(
             acquisition::mirror::ensure_for(
                 &self.repository.fetch,
@@ -242,7 +246,7 @@ impl MarketplaceRequest {
             at.marketplace,
             &self.repository.identity,
         )?;
-        at.catalogues.absorb_fetch(at.home, at.marketplace);
+        at.catalogues.absorb_fetch(at.home, at.marketplace, &held);
         if let Ok(mut fetched) = at.fetched.lock()
             && !fetched.contains(&repository)
         {

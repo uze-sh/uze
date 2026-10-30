@@ -66,6 +66,9 @@ const PLUGIN_MANIFEST: &str = "plugin.json";
 const REPOSITORY_DIR: &str = "repo";
 /// Where a plugin's bytes are written when something asks about one.
 const MATERIALIZED_DIR: &str = "plugins";
+/// How a materialization still being written is named, beside the plugin
+/// it will become.
+const STAGING_PREFIX: &str = ".staging-";
 
 /// A marketplace's manifest, and how to reach the bytes of a plugin it
 /// offers.
@@ -120,37 +123,20 @@ impl Catalogue {
                 subpath,
                 materialized,
             } => {
-                let out = materialized.join(directory_name(plugin));
+                // One directory per commit, published whole: a commit never
+                // changes, so nothing written there is ever rewritten or
+                // cleared under a reader, in this process or another.
+                let out = materialized.join(commit).join(directory_name(plugin));
                 let within = subpath.plugin_path(&self.manifest, plugin)?;
-                // Asked of the plugin's own root, not of the directory that
-                // holds it. Materialization creates that directory before
-                // it writes anything, so one interrupted part-way leaves it
-                // there empty — and a guard on the directory then answers
-                // "already done" forever, leaving that plugin permanently
-                // unresolvable.
-                let root = if within == "." {
-                    out.clone()
-                } else {
-                    out.join(&within)
-                };
-                // Held from the look to the write: two readers of one
-                // plugin would otherwise each find it missing, and the
-                // second would clear what the first is writing.
-                static MATERIALIZING: std::sync::Mutex<()> = std::sync::Mutex::new(());
-                let _materializing = MATERIALIZING
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-                if !root.exists() {
-                    // Cleared first: what is there is the residue of a
-                    // materialization that did not finish, and writing over
-                    // it would mix two revisions' files.
-                    let _ = fs::remove_dir_all(&out);
-                    acquisition::mirror::materialize_subdirectory(
-                        repository,
-                        commit,
-                        Some(&within),
-                        &out,
-                    )?;
+                if !out.exists() {
+                    publish(&out, |staging| {
+                        acquisition::mirror::materialize_subdirectory(
+                            repository,
+                            commit,
+                            Some(&within),
+                            staging,
+                        )
+                    })?;
                 }
                 acquisition::marketplace::resolve_plugin_source(
                     &self.manifest,
@@ -179,16 +165,51 @@ struct Meta {
 }
 
 pub struct MarketplaceCatalogues {
+    home: UzeHome,
     root: PathBuf,
     memo: std::sync::Mutex<HashMap<String, Catalogue>>,
 }
 
+/// Proof that this process holds a marketplace's mirror: what writes the
+/// mirror, or the entry recorded from it, asks for one. Released when
+/// dropped.
+pub(crate) struct MirrorHold {
+    _lock: uze_core::persistence::FileLock,
+}
+
+/// How long a writer waits for another to finish with a mirror: a fetch
+/// over a slow link, a clone of a large marketplace.
+const MIRROR_PATIENCE: Duration = Duration::from_secs(120);
+/// How long the background pass waits: only long enough to outlast a
+/// descriptor a `fork` on another thread still holds (see
+/// `MutationLock`). A mirror another process is fetching is that
+/// process's to bring up to date.
+const BACKGROUND_PATIENCE: Duration = Duration::from_millis(25);
+
 impl MarketplaceCatalogues {
     pub fn new(home: &UzeHome) -> Self {
         Self {
+            home: home.clone(),
             root: home.marketplace_cache_dir(),
             memo: std::sync::Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Holds `name`'s mirror against every other writer, in this process
+    /// or another, waiting up to [`MIRROR_PATIENCE`] for one to finish.
+    pub(crate) fn hold(&self, name: &str) -> Result<MirrorHold> {
+        self.hold_within(name, MIRROR_PATIENCE)
+    }
+
+    fn hold_within(&self, name: &str, patience: Duration) -> Result<MirrorHold> {
+        uze_core::persistence::FileLock::acquire(
+            &self
+                .home
+                .marketplace_mirror_lock_path(&directory_name(name)),
+            patience,
+            Duration::from_millis(1).max(patience / 100),
+        )
+        .map(|lock| MirrorHold { _lock: lock })
     }
 
     /// The catalogue registered as `name` at `source`. A Git source is
@@ -203,21 +224,29 @@ impl MarketplaceCatalogues {
         {
             return Ok(catalogue.clone());
         }
-        let catalogue = match source {
-            PackageSource::Local { path } => read_in_place(path)?,
-            PackageSource::Embedded { .. } => {
-                return Err(UzeError::ExposureUnavailable(
-                    "embedded marketplace cannot be used as marketplace source".to_owned(),
-                ));
-            }
-            PackageSource::Git { .. } => match self.on_disk(name, source, false) {
-                Some(catalogue) => catalogue,
-                None => match self.refill(name, source) {
-                    Ok(catalogue) => catalogue,
-                    Err(error) => self.on_disk(name, source, true).ok_or(error)?,
+        let catalogue =
+            match source {
+                PackageSource::Local { path } => read_in_place(path)?,
+                PackageSource::Embedded { .. } => {
+                    return Err(UzeError::ExposureUnavailable(
+                        "embedded marketplace cannot be used as marketplace source".to_owned(),
+                    ));
+                }
+                PackageSource::Git { .. } => match self.on_disk(name, source, false) {
+                    Some(catalogue) => catalogue,
+                    // Read again once held: the writer waited on may have
+                    // just refilled it.
+                    None => match self.hold(name).and_then(|held| {
+                        match self.on_disk(name, source, false) {
+                            Some(catalogue) => Ok(catalogue),
+                            None => self.refill(name, source, &held),
+                        }
+                    }) {
+                        Ok(catalogue) => catalogue,
+                        Err(error) => self.on_disk(name, source, true).ok_or(error)?,
+                    },
                 },
-            },
-        };
+            };
         self.memo
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -263,7 +292,17 @@ impl MarketplaceCatalogues {
     /// for that, and it costs a fetch into the mirror this machine already
     /// has rather than a clone.
     pub fn refresh(&self, name: &str, source: &PackageSource) -> Result<Catalogue> {
-        let catalogue = self.refill(name, source)?;
+        self.refresh_within(name, source, MIRROR_PATIENCE)
+    }
+
+    fn refresh_within(
+        &self,
+        name: &str,
+        source: &PackageSource,
+        patience: Duration,
+    ) -> Result<Catalogue> {
+        let held = self.hold_within(name, patience)?;
+        let catalogue = self.refill(name, source, &held)?;
         self.memo
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -315,8 +354,11 @@ impl MarketplaceCatalogues {
                 &entry.join(ATTEMPT_FILE),
                 now.to_string().as_bytes(),
             );
-            match self.refresh(&name, &record.source) {
+            match self.refresh_within(&name, &record.source, BACKGROUND_PATIENCE) {
                 Ok(_) => fetched.push(name),
+                // Another process is fetching it, and what it brings is
+                // recorded for every reader.
+                Err(UzeError::MutationInProgress { .. }) => {}
                 Err(error) => {
                     tracing::warn!(marketplace = %name, %error, "the marketplace could not be fetched");
                 }
@@ -325,12 +367,14 @@ impl MarketplaceCatalogues {
         fetched
     }
 
-    /// Forgets `name` in both tiers.
+    /// Forgets `name` in both tiers. Best effort, as cache: an entry a
+    /// writer kept past the wait is removed all the same.
     pub fn invalidate(&self, name: &str) {
         self.memo
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .remove(name);
+        let _held = self.hold(name);
         let _ = fs::remove_dir_all(self.entry_dir(name));
     }
 
@@ -339,7 +383,7 @@ impl MarketplaceCatalogues {
     /// The first call clones; every one after it fetches. Nothing is
     /// checked out: the manifest is read from the commit, which is the
     /// whole reason the mirror has no working tree.
-    fn refill(&self, name: &str, source: &PackageSource) -> Result<Catalogue> {
+    fn refill(&self, name: &str, source: &PackageSource, held: &MirrorHold) -> Result<Catalogue> {
         let _span = tracing::info_span!("marketplace.fetch", marketplace = name).entered();
         let PackageSource::Git { url, reference, .. } = source else {
             return Err(UzeError::ExposureUnavailable(
@@ -354,7 +398,7 @@ impl MarketplaceCatalogues {
             url,
         )?;
         let commit = acquisition::mirror::resolve(&repository, reference.as_deref())?;
-        self.record(name, source, commit)
+        self.record(name, source, commit, held)
     }
 
     /// Records what `name`'s registered ref resolves to in its mirror now,
@@ -370,7 +414,7 @@ impl MarketplaceCatalogues {
     /// fetch was made for: a project may declare a different ref, and what
     /// this entry answers is what the marketplace offers. Best effort, as
     /// cache: an entry that cannot be rewritten expires on its own.
-    pub(crate) fn absorb_fetch(&self, home: &UzeHome, name: &str) {
+    pub(crate) fn absorb_fetch(&self, home: &UzeHome, name: &str, held: &MirrorHold) {
         let Ok(Some(record)) = uze_core::state::marketplace_get(home, name) else {
             return;
         };
@@ -393,7 +437,7 @@ impl MarketplaceCatalogues {
         }) {
             return;
         }
-        if let Ok(catalogue) = self.record(name, &record.source, commit) {
+        if let Ok(catalogue) = self.record(name, &record.source, commit, held) {
             self.memo
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -402,7 +446,13 @@ impl MarketplaceCatalogues {
     }
 
     /// Writes `name`'s entry as read from its mirror at `commit`.
-    fn record(&self, name: &str, source: &PackageSource, commit: String) -> Result<Catalogue> {
+    fn record(
+        &self,
+        name: &str,
+        source: &PackageSource,
+        commit: String,
+        _held: &MirrorHold,
+    ) -> Result<Catalogue> {
         let entry = self.entry_dir(name);
         let repository = entry.join(REPOSITORY_DIR);
         let subpath = subpath_of(source)?;
@@ -419,8 +469,7 @@ impl MarketplaceCatalogues {
         fs::create_dir_all(&entry).map_err(UzeError::write(&entry))?;
         fs::write(entry.join(META_FILE), payload)
             .map_err(UzeError::write(entry.join(META_FILE)))?;
-        // A plugin materialized from an older commit is not this one's.
-        let _ = fs::remove_dir_all(entry.join(MATERIALIZED_DIR));
+        prune_materialized(&entry.join(MATERIALIZED_DIR), &commit, MAX_AGE);
 
         Ok(Catalogue {
             manifest,
@@ -478,6 +527,13 @@ impl MarketplaceCatalogues {
 
         let entry = self.entry_dir(&name);
         let repository = entry.join(REPOSITORY_DIR);
+        let held = match self.hold(&name) {
+            Ok(held) => held,
+            Err(error) => {
+                let _ = fs::remove_dir_all(&staging);
+                return Err(error);
+            }
+        };
         let moved = (|| {
             if entry.exists() {
                 fs::remove_dir_all(&entry).map_err(UzeError::write(&entry))?;
@@ -498,6 +554,7 @@ impl MarketplaceCatalogues {
             let _ = fs::remove_dir_all(&staging);
         }
         moved?;
+        drop(held);
 
         let catalogue = Catalogue {
             manifest,
@@ -655,6 +712,68 @@ fn directory_name(name: &str) -> String {
         "_".to_owned()
     } else {
         sanitized
+    }
+}
+
+/// Writes `out` whole or not at all: `write` fills a staging directory
+/// beside it, which is then renamed into place. A process that finds `out`
+/// already published by another, or by a materialization this one started
+/// earlier, keeps that one and drops its own; an interrupted write leaves
+/// only its staging directory, which [`prune_materialized`] collects.
+fn publish(out: &Path, write: impl FnOnce(&Path) -> Result<()>) -> Result<()> {
+    let parent = out
+        .parent()
+        .expect("a materialized plugin has a commit directory");
+    fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
+    let staging = parent.join(format!(
+        "{STAGING_PREFIX}{}-{}",
+        std::process::id(),
+        now_unix_nanos()
+    ));
+    let written = write(&staging).and_then(|()| match fs::rename(&staging, out) {
+        Ok(()) => Ok(()),
+        Err(_) if out.exists() => Ok(()),
+        Err(error) => Err(UzeError::Write {
+            path: out.to_path_buf(),
+            source: error,
+        }),
+    });
+    let _ = fs::remove_dir_all(&staging);
+    written
+}
+
+/// Removes what no reader can still be using: the plugins materialized
+/// from a commit other than `commit`, and staging an interrupted write
+/// left, once each is `cold_after` old ([`MAX_AGE`] when an entry is
+/// recorded). Never `commit`'s own plugins, nor anything recent, which a
+/// reader in another process may be reading.
+fn prune_materialized(materialized: &Path, commit: &str, cold_after: Duration) {
+    let cold = |path: &Path| {
+        fs::metadata(path)
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age >= cold_after)
+    };
+    let Ok(entries) = fs::read_dir(materialized) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if entry.file_name() == commit {
+            for staged in fs::read_dir(&path).into_iter().flatten().flatten() {
+                if staged
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(STAGING_PREFIX)
+                    && cold(&staged.path())
+                {
+                    let _ = fs::remove_dir_all(staged.path());
+                }
+            }
+        } else if cold(&path) {
+            let _ = fs::remove_dir_all(&path);
+        }
     }
 }
 
@@ -871,8 +990,13 @@ mod tests {
 
         let flow = catalogue.plugin_root("flow").unwrap();
         assert!(flow.join("plugin.json").is_file());
+        let Reach::Mirrored { commit, .. } = &catalogue.reach else {
+            panic!("a Git marketplace is mirrored");
+        };
+        let at_commit = entry.join(MATERIALIZED_DIR).join(commit);
+        assert!(at_commit.join("flow").is_dir(), "{}", flow.display());
         assert!(
-            !entry.join(MATERIALIZED_DIR).join("review").exists(),
+            !at_commit.join("review").exists(),
             "only the plugin asked about is written out"
         );
         fs::remove_dir_all(&root).unwrap();
@@ -970,10 +1094,9 @@ mod tests {
         fs::remove_dir_all(&root).unwrap();
     }
 
-    /// A materialization interrupted part-way leaves the directory it
-    /// created and nothing inside it. Asking whether *that* exists answers
-    /// "already done" forever, so the plugin never resolves again — which
-    /// is what a second click during a slow first one produced.
+    /// A materialization interrupted part-way leaves only its staging
+    /// directory: the plugin is published whole or not at all, so what was
+    /// left behind never reads as done, and the next ask writes it again.
     #[test]
     fn a_materialization_that_was_interrupted_is_done_again() {
         let root = uze_testkit::temp::scratch("catalogue-interrupted");
@@ -982,12 +1105,16 @@ mod tests {
         let (_, catalogue) = MarketplaceCatalogues::new(&home).adopt(&source).unwrap();
 
         // What an interrupted run leaves behind.
+        let Reach::Mirrored { commit, .. } = &catalogue.reach else {
+            panic!("a Git marketplace is mirrored");
+        };
         let abandoned = home
             .marketplace_cache_dir()
             .join("remote")
             .join(MATERIALIZED_DIR)
-            .join("flow");
-        fs::create_dir_all(&abandoned).unwrap();
+            .join(commit)
+            .join(format!("{STAGING_PREFIX}1-1"));
+        fs::create_dir_all(abandoned.join("plugins/flow")).unwrap();
 
         let resolved = catalogue.plugin_root("flow").unwrap();
 
@@ -1036,5 +1163,79 @@ mod tests {
         assert_eq!(directory_name("../../etc"), "______etc");
         assert_eq!(directory_name("a/b"), "a_b");
         assert_eq!(directory_name(""), "_");
+    }
+
+    /// A writer of a marketplace's mirror holds it against every other,
+    /// in this process or another: a second fetch into one bare
+    /// repository fights the first over its refs and its `origin`.
+    #[test]
+    fn a_mirror_another_writer_holds_is_waited_for_not_shared() {
+        let root = uze_testkit::temp::scratch("catalogue-held");
+        let (_repository, source) = marketplace_repository("cat-held", "remote", &["flow"]);
+        let home = UzeHome::at(root.join("uze"));
+        let cache = MarketplaceCatalogues::new(&home);
+        cache.adopt(&source).unwrap();
+
+        let held = cache.hold("remote").unwrap();
+        assert!(matches!(
+            cache.refresh_within("remote", &source, Duration::from_millis(10)),
+            Err(UzeError::MutationInProgress { .. })
+        ));
+        drop(held);
+        cache
+            .refresh_within("remote", &source, Duration::from_millis(10))
+            .unwrap();
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Recording a newer commit leaves what was materialized from the
+    /// last one where it is, since a reader in another process may be
+    /// reading it, and collects it only once it has gone cold.
+    #[test]
+    fn a_newer_commit_leaves_the_last_ones_plugins_until_they_are_cold() {
+        let root = uze_testkit::temp::scratch("catalogue-commits");
+        let (repository, source) = marketplace_repository("cat-commits", "remote", &["flow"]);
+        let home = UzeHome::at(root.join("uze"));
+        let cache = MarketplaceCatalogues::new(&home);
+        let (_, first) = cache.adopt(&source).unwrap();
+        let read_before = first.plugin_root("flow").unwrap();
+
+        repository.git(&["commit", "--allow-empty", "-m", "second"]);
+        let second = cache.refresh("remote", &source).unwrap();
+        assert!(
+            read_before.join("plugin.json").is_file(),
+            "what a reader holds is still there"
+        );
+        assert!(
+            second
+                .plugin_root("flow")
+                .unwrap()
+                .join("plugin.json")
+                .is_file()
+        );
+
+        let (
+            Reach::Mirrored { commit: old, .. },
+            Reach::Mirrored {
+                commit: current, ..
+            },
+        ) = (&first.reach, &second.reach)
+        else {
+            panic!("a Git marketplace is mirrored");
+        };
+        let materialized = home
+            .marketplace_cache_dir()
+            .join("remote")
+            .join(MATERIALIZED_DIR);
+        prune_materialized(&materialized, current, Duration::ZERO);
+        assert!(
+            !materialized.join(old).exists(),
+            "a cold commit's plugins are collected"
+        );
+        assert!(
+            materialized.join(current).join("flow").is_dir(),
+            "the recorded commit's never are"
+        );
+        fs::remove_dir_all(&root).unwrap();
     }
 }
