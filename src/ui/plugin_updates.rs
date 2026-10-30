@@ -30,30 +30,48 @@ pub(crate) struct Told {
     pub(crate) waiting: Vec<String>,
 }
 
-static TOLD: Mutex<Told> = Mutex::new(Told {
-    updated: Vec::new(),
-    waiting: Vec::new(),
-});
-static PENDING: AtomicBool = AtomicBool::new(false);
+/// What the pass did, waiting for the workspace to take it.
+struct Mailbox {
+    told: Mutex<Told>,
+    pending: AtomicBool,
+}
+
+impl Mailbox {
+    const fn new() -> Self {
+        Self {
+            told: Mutex::new(Told {
+                updated: Vec::new(),
+                waiting: Vec::new(),
+            }),
+            pending: AtomicBool::new(false),
+        }
+    }
+
+    fn take(&self) -> Option<Told> {
+        if !self.pending.swap(false, Ordering::AcqRel) {
+            return None;
+        }
+        let told = std::mem::take(&mut *self.told.lock().unwrap_or_else(PoisonError::into_inner));
+        (told != Told::default()).then_some(told)
+    }
+
+    fn publish(&self, updated: Vec<String>, waiting: Vec<String>) {
+        if updated.is_empty() && waiting.is_empty() {
+            return;
+        }
+        let mut told = self.told.lock().unwrap_or_else(PoisonError::into_inner);
+        told.updated.extend(updated);
+        told.waiting.extend(waiting);
+        self.pending.store(true, Ordering::Release);
+    }
+}
+
+static MAILBOX: Mailbox = Mailbox::new();
 
 /// What the pass did since the last call, once: the workspace asks every
 /// frame, so the answer is one atomic load until there is something.
 pub(crate) fn take() -> Option<Told> {
-    if !PENDING.swap(false, Ordering::AcqRel) {
-        return None;
-    }
-    let told = std::mem::take(&mut *TOLD.lock().unwrap_or_else(PoisonError::into_inner));
-    (told != Told::default()).then_some(told)
-}
-
-fn publish(updated: Vec<String>, waiting: Vec<String>) {
-    if updated.is_empty() && waiting.is_empty() {
-        return;
-    }
-    let mut told = TOLD.lock().unwrap_or_else(PoisonError::into_inner);
-    told.updated.extend(updated);
-    told.waiting.extend(waiting);
-    PENDING.store(true, Ordering::Release);
+    MAILBOX.take()
 }
 
 /// Starts the pass for this process, on a thread of its own. The first
@@ -84,7 +102,7 @@ pub(crate) fn watch(home: UzeHome) {
             if !updated.is_empty() {
                 super::extension_switch::plugins_changed();
             }
-            publish(updated, waiting);
+            MAILBOX.publish(updated, waiting);
         }
     });
 }
@@ -93,18 +111,21 @@ pub(crate) fn watch(home: UzeHome) {
 mod tests {
     use super::*;
 
+    /// A mailbox of its own: the workspace's tests drain the process's
+    /// one on every pump, and would take what this one publishes.
     #[test]
     fn what_was_done_is_taken_once() {
-        assert_eq!(take(), None);
-        publish(vec!["flow@mkt".to_owned()], Vec::new());
-        publish(Vec::new(), vec!["review@mkt".to_owned()]);
+        let mailbox = Mailbox::new();
+        assert_eq!(mailbox.take(), None);
+        mailbox.publish(vec!["flow@mkt".to_owned()], Vec::new());
+        mailbox.publish(Vec::new(), vec!["review@mkt".to_owned()]);
         assert_eq!(
-            take(),
+            mailbox.take(),
             Some(Told {
                 updated: vec!["flow@mkt".to_owned()],
                 waiting: vec!["review@mkt".to_owned()],
             })
         );
-        assert_eq!(take(), None);
+        assert_eq!(mailbox.take(), None);
     }
 }
