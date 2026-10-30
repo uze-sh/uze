@@ -91,7 +91,13 @@ fn a_commit_with_no_email_is_its_name() {
     let data = answer(concat!(
         "2026-10-30\tAna\t\ta1\tfix: one\n",
         "2026-10-30\tana \t\ta2\tfix: two\n",
+        "2026-10-30\tBob\t\ta3\tfix: three\n",
     ));
-    assert_eq!(data["authors"].as_array().unwrap().len(), 1);
-    assert_eq!(data["authors"][0]["count"], 2);
+    let counts: Vec<&Value> = data["authors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|author| &author["count"])
+        .collect();
+    assert_eq!(counts, [2, 1], "Ana once, apart from Bob");
 }
