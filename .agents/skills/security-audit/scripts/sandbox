@@ -18,7 +18,12 @@ AUDIT="${AUDIT:-$(cd "$(dirname "$0")/.." && pwd)}"
 SRC="${SRC:-$(git -C "$(dirname "$0")" rev-parse --show-toplevel 2>/dev/null || pwd)}"
 box_name="$1"; shift
 network=(--unshare-net)
-if [[ "${1:-}" == "--net" ]]; then network=(); shift; fi
+if [[ "${1:-}" == "--net" ]]; then
+  # /etc/resolv.conf often points into a masked mount (/mnt/wsl, /run).
+  resolver="$(readlink -f /etc/resolv.conf)"
+  network=(--ro-bind "$resolver" "$resolver")
+  shift
+fi
 [[ "${1:-}" == "--" ]] && shift
 
 box="$AUDIT/boxes/$box_name"
