@@ -409,14 +409,13 @@ fails the build on an input's glyph named outside it.
 - Settings autosave, and the save shows no toast.
 - An extension's preferences are the form in its drawer, never a dialog
   of their own: every part a click target from the start (a click on an
-  option chooses it). The drawer's Preferences button, or a click on a
-  row, puts the keys on them; a detail of fixed height at the body's
+  option chooses it). A click on a row, or `edit-preferences` in the
+  action index, puts the keys on them; the drawer draws no Preferences
+  button, which would only repeat its rows; a detail of fixed height at the body's
   foot, under a rule and out of the scroll, says the row's kind, range and default (`A number from 1 to 90 ·
   default 25`), or where a secret is kept, and the footer names their
   keys. ←→ step and save at once; Enter types in the row's own box or
-  flips; Esc, or a click anywhere else, gives the keys back to the cards. While
-  the keys are on them the drawer offers no Preferences button: it has
-  nowhere further to take them, and the footer names the way back.
+  flips; Esc, or a click anywhere else, gives the keys back to the cards. 
 
 ## Feedback, state and timing
 

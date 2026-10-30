@@ -1215,14 +1215,15 @@ fn preferences_are_offered_wherever_they_are_drawn() {
     model.preferences = None;
     model.extension_project = None;
     model.extension_standings[0].condition = uze_application::ExtensionCondition::Consented;
+    let selected = model.selected_extension().unwrap();
     assert!(
-        offered_button(&model, uze_keys::Action::EditPreferences).is_some(),
-        "the Preferences button is drawn"
+        model
+            .extension_offers(selected)
+            .iter()
+            .any(|offer| offer.action == uze_keys::Action::EditPreferences && offer.is_available()),
+        "Preferences is offered"
     );
-    click(
-        &mut model,
-        &Hit::OfferedAction(uze_keys::Action::EditPreferences),
-    );
+    model.act(uze_keys::Action::EditPreferences);
     assert!(model.preferences.is_some());
 }
 
@@ -1269,13 +1270,21 @@ fn a_click_on_the_box_being_typed_keeps_the_typing() {
     );
 }
 
-/// While the keys are on an extension's preferences its drawer offers no
-/// Preferences button: there is nowhere further for it to take them.
+/// The drawer draws no Preferences button: the preferences are their own
+/// controls in its body, a click away, and the action stays in the index.
 #[test]
-fn the_preferences_button_is_withdrawn_while_the_keys_are_on_them() {
+fn the_drawer_offers_no_preferences_button() {
     let mut model = focus_preferences();
     model.preferences = None;
-    assert!(offered_button(&model, uze_keys::Action::EditPreferences).is_some());
+    assert!(offered_button(&model, uze_keys::Action::EditPreferences).is_none());
+    let selected = model.selected_extension().unwrap();
+    assert!(
+        model
+            .extension_offers(selected)
+            .iter()
+            .any(|offer| offer.action == uze_keys::Action::EditPreferences && offer.is_available()),
+        "the action index still reaches them"
+    );
     model.edit_selected_preferences();
     assert!(offered_button(&model, uze_keys::Action::EditPreferences).is_none());
 }

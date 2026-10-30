@@ -249,6 +249,13 @@ fn render_extension_drawer(
     let enabled = model.extension_enabled(&extension.id());
     let offers = model.extension_offers(extension);
     let standing = declared_standing(model, extension);
+    // Preferences are their own controls in the body, a click away: a
+    // button for them would only repeat what the rows already offer, so it
+    // stays in the action index alone.
+    let offers: Vec<_> = offers
+        .into_iter()
+        .filter(|offer| offer.action != uze_keys::Action::EditPreferences)
+        .collect();
     let (body, status) = super::drawer_body_and_footer(inner, &offers);
     let mut grid = Grid::new(usize::from(body.width));
     let mut plugin_line = None;
