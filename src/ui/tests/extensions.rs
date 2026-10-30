@@ -1013,6 +1013,41 @@ fn a_drawer_button_acts_while_a_preference_is_typed() {
     assert_eq!(typing.preferences, None);
 }
 
+/// More preferences than the drawer has rows: the drawer follows the keys,
+/// so the row they are on and what it holds are on screen, and a click on
+/// it lands on it.
+#[test]
+fn the_drawer_follows_the_keys_through_many_preferences() {
+    let mut model = focus_preferences();
+    let row = model.extension_standings[0].preferences[0].clone();
+    let rows: Vec<_> = (0..20)
+        .map(|at| uze_application::PreferenceRow {
+            name: format!("p{at}"),
+            label: format!("Setting {at:02}"),
+            ..row.clone()
+        })
+        .collect();
+    model.extension_standings[0].preferences = rows;
+    model.preferences = None;
+    model.edit_selected_preferences();
+    for _ in 0..19 {
+        model.apply_key(key(KeyCode::Down));
+    }
+    let screen = screen_of(&model);
+    assert!(screen.contains("Setting 19"), "{screen}");
+    assert!(screen.contains("A number from 1 to 90"), "{screen}");
+    assert_eq!(
+        click(
+            &mut model,
+            &Hit::ExtensionPreferenceStep {
+                index: 19,
+                forward: true
+            }
+        ),
+        set("p19", "Setting 19", serde_json::json!(26))
+    );
+}
+
 /// Every key the footer names while the keys are on the preferences is a
 /// target doing what the key does: enter types the number, esc gives the
 /// keys back to the cards.

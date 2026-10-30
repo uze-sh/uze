@@ -251,6 +251,7 @@ fn render_extension_drawer(
     let standing = declared_standing(model, extension);
     let (body, status) = super::drawer_body_and_footer(inner, &offers);
     let mut grid = Grid::new(usize::from(body.width));
+    let mut plugin_line = None;
 
     grid.lines.push(super::section_label("extension"));
     grid.lines.push(Line::from(Span::styled(
@@ -277,15 +278,7 @@ fn render_extension_drawer(
             } else {
                 Token::TextMuted
             };
-            if let Some(row) = u16::try_from(grid.lines.len())
-                .ok()
-                .filter(|row| *row < body.height)
-            {
-                hits.push((
-                    Rect::new(body.x, body.y + row, body.width, 1),
-                    Hit::OfferedAction(uze_keys::Action::ShowPlugin),
-                ));
-            }
+            plugin_line = Some(grid.lines.len());
             let plugin = format!(
                 "{}@{}",
                 summary.identity.plugin, summary.identity.marketplace
@@ -339,17 +332,37 @@ fn render_extension_drawer(
         let banner = crate::ui::widget::banner::render_folded(frame, room, &title, &summary.errors);
         text_area.height = body.height.saturating_sub(banner.height);
     }
-    frame.render_widget(Paragraph::new(lines), text_area);
+    let first = editing.map_or(0, |editor| {
+        following(
+            &preference_rows,
+            editor.selected,
+            usize::from(text_area.height),
+        )
+    });
+    // Where line `line` of the body stands on screen, once the body has
+    // scrolled to `first`; nothing for a line out of sight.
+    let on_screen = |line: usize| {
+        line.checked_sub(first)
+            .and_then(|row| u16::try_from(row).ok())
+            .filter(|row| *row < text_area.height)
+            .map(|row| body.y + row)
+    };
+    frame.render_widget(
+        Paragraph::new(lines).scroll((u16::try_from(first).unwrap_or(u16::MAX), 0)),
+        text_area,
+    );
+    if let Some(y) = plugin_line.and_then(on_screen) {
+        hits.push((
+            Rect::new(body.x, y, body.width, 1),
+            Hit::OfferedAction(uze_keys::Action::ShowPlugin),
+        ));
+    }
     // Each part of a control before its row, so a click on one is not
     // taken for choosing the row.
     for placed in preference_rows {
-        let Some(row) = u16::try_from(placed.line)
-            .ok()
-            .filter(|row| *row < text_area.height)
-        else {
+        let Some(y) = on_screen(placed.line) else {
             continue;
         };
-        let y = body.y + row;
         for (x, width, hit) in placed.parts {
             if x < body.width {
                 let width = width.min(body.width - x);
@@ -526,58 +539,9 @@ fn standing_lines(
     editing: Option<&PreferencesEditor>,
     hovered: Option<&Hit>,
 ) -> Vec<PlacedPreference> {
-    let grants: Vec<_> = standing
-        .grants
-        .iter()
-        .map(|grant| {
-            (
-                grant.clone(),
-                uze_application::grant_meaning(grant).to_owned(),
-                Token::TextSecondary,
-            )
-        })
-        .collect();
-    grid.table("grants", &grants);
-
-    let mut programs = Vec::new();
-    for program in &standing.programs {
-        let (found, token) = match &program.path {
-            Some(path) => (path.display().to_string(), Token::TextMuted),
-            None if program.packaged => ("packaged with it".to_owned(), Token::TextMuted),
-            None => (
-                program
-                    .unresolved
-                    .clone()
-                    .unwrap_or_else(|| "not found".to_owned()),
-                Token::StateWarning,
-            ),
-        };
-        programs.push((program.name.clone(), found, token));
-        if !program.reads.is_empty() {
-            programs.push((
-                String::new(),
-                format!("reads {}", program.reads.join(", ")),
-                Token::TextMuted,
-            ));
-        }
-    }
-    grid.table("programs", &programs);
-    if !standing.programs.is_empty() {
-        if standing.confined == Some(true) {
-            grid.prose(
-                "confined: reads the checkout, writes only scratch, no network",
-                Token::TextMuted,
-            );
-        } else {
-            grid.prose(
-                "runs as you: this machine cannot confine programs",
-                Token::StateWarning,
-            );
-        }
-    }
-
     // Each preference as a settings form draws a key: its label in a
-    // column, then the control that changes it.
+    // column, then the control that changes it. First, since it is the
+    // one part of the drawer that is set rather than read.
     let mut preference_rows = Vec::new();
     let preferences = editing.map_or(standing.preferences.as_slice(), |editor| &editor.rows);
     if !preferences.is_empty() {
@@ -642,6 +606,56 @@ fn standing_lines(
                     theme::fg(Token::TextMuted),
                 ))
             }));
+        }
+    }
+
+    let grants: Vec<_> = standing
+        .grants
+        .iter()
+        .map(|grant| {
+            (
+                grant.clone(),
+                uze_application::grant_meaning(grant).to_owned(),
+                Token::TextSecondary,
+            )
+        })
+        .collect();
+    grid.table("grants", &grants);
+
+    let mut programs = Vec::new();
+    for program in &standing.programs {
+        let (found, token) = match &program.path {
+            Some(path) => (path.display().to_string(), Token::TextMuted),
+            None if program.packaged => ("packaged with it".to_owned(), Token::TextMuted),
+            None => (
+                program
+                    .unresolved
+                    .clone()
+                    .unwrap_or_else(|| "not found".to_owned()),
+                Token::StateWarning,
+            ),
+        };
+        programs.push((program.name.clone(), found, token));
+        if !program.reads.is_empty() {
+            programs.push((
+                String::new(),
+                format!("reads {}", program.reads.join(", ")),
+                Token::TextMuted,
+            ));
+        }
+    }
+    grid.table("programs", &programs);
+    if !standing.programs.is_empty() {
+        if standing.confined == Some(true) {
+            grid.prose(
+                "confined: reads the checkout, writes only scratch, no network",
+                Token::TextMuted,
+            );
+        } else {
+            grid.prose(
+                "runs as you: this machine cannot confine programs",
+                Token::StateWarning,
+            );
         }
     }
 
@@ -827,6 +841,19 @@ fn preference_hit(index: usize, part: form::Part) -> Hit {
         form::Part::Value => Hit::ExtensionPreferenceValue(index),
         form::Part::Option(option) => Hit::ExtensionPreferenceChoice { index, option },
     }
+}
+
+/// The first line of the body to show while the keys are on preference
+/// `selected`, `height` lines being shown: none scrolled while everything
+/// fits, otherwise enough that the detail under the rows is in sight,
+/// never so far that the row the keys are on leaves it.
+fn following(rows: &[PlacedPreference], selected: usize, height: usize) -> usize {
+    let (Some(on), Some(last)) = (rows.iter().find(|row| row.index == selected), rows.last())
+    else {
+        return 0;
+    };
+    let detail_end = last.line + form::KEY_AIR + PREFERENCE_DETAIL;
+    (detail_end + 1).saturating_sub(height).min(on.line)
 }
 
 /// What the keys do on the preference they are on, in the footer: what
