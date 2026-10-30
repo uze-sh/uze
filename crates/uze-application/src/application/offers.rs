@@ -177,6 +177,22 @@ pub fn declared_extension_offers(
     standing: Option<&super::ExtensionReport>,
     in_a_project: bool,
 ) -> Vec<ActionOffer> {
+    let mut offers = switch_offers(switched_on, standing, in_a_project);
+    // Preferences are the machine's: they are set in any condition the
+    // extension stands in, here or in no project.
+    if standing.is_some_and(|standing| !standing.preferences.is_empty()) {
+        offers.push(ActionOffer::available(Action::EditPreferences));
+    }
+    offers
+}
+
+/// What switching a declared extension, and finding its programs, offers
+/// where it stands.
+fn switch_offers(
+    switched_on: bool,
+    standing: Option<&super::ExtensionReport>,
+    in_a_project: bool,
+) -> Vec<ActionOffer> {
     use super::ExtensionCondition as Condition;
     if !in_a_project
         && switched_on
@@ -232,9 +248,6 @@ pub fn declared_extension_offers(
         ),
     ];
     offers.extend(resolve);
-    if !standing.preferences.is_empty() {
-        offers.push(ActionOffer::available(Action::EditPreferences));
-    }
     offers
 }
 

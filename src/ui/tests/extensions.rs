@@ -1152,6 +1152,44 @@ fn an_action_the_preferences_do_not_answer_is_the_screens() {
     assert_eq!(editing.preferences, None);
 }
 
+/// The drawer offers Preferences wherever it draws them: with no project
+/// in front, an allowed extension's button is there, and pressing it puts
+/// the keys on them.
+#[test]
+fn preferences_are_offered_wherever_they_are_drawn() {
+    let mut model = focus_preferences();
+    model.preferences = None;
+    model.extension_project = None;
+    model.extension_standings[0].condition = uze_application::ExtensionCondition::Consented;
+    assert!(
+        offered_button(&model, uze_keys::Action::EditPreferences).is_some(),
+        "the Preferences button is drawn"
+    );
+    click(
+        &mut model,
+        &Hit::OfferedAction(uze_keys::Action::EditPreferences),
+    );
+    assert!(model.preferences.is_some());
+}
+
+/// A refresh that keeps the same extension under the selection leaves the
+/// keys on its preferences, where they were.
+#[test]
+fn a_refresh_that_keeps_the_selection_keeps_the_preferences() {
+    let mut model = focus_preferences();
+    model.apply_key(key(KeyCode::Down));
+    model.refreshed(crate::ui::model::RefreshData {
+        declared_extensions: model.declared_extensions.clone(),
+        extension_standings: model.extension_standings.clone(),
+        extension_project: model.extension_project.clone(),
+        ..Default::default()
+    });
+    assert_eq!(
+        model.preferences.as_ref().map(|editor| editor.selected),
+        Some(1)
+    );
+}
+
 /// Every key the footer names while the keys are on the preferences is a
 /// target doing what the key does: enter types the number, esc gives the
 /// keys back to the cards.
