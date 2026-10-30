@@ -839,18 +839,14 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_read_runs_nothing_the_repository_s_configuration_names() {
-        use std::os::unix::fs::PermissionsExt as _;
-
         let _environment = uze_testkit::env::scope();
         let root = repository("git-read-hardened");
         let marker = root.join("ran");
         let program = root.join("program.sh");
-        std::fs::write(
+        uze_testkit::process::install_executable(
             &program,
-            format!("#!/bin/sh\necho \"$0 $*\" >> '{}'\n", marker.display()),
-        )
-        .unwrap();
-        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+            format!("#!/bin/sh\necho \"$0 $*\" >> '{}'\n", marker.display()).as_bytes(),
+        );
         let program = program.to_str().unwrap();
         std::fs::write(root.join(".gitattributes"), "file diff=converted\n").unwrap();
         for (key, value) in [
