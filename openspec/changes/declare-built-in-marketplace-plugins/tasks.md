@@ -23,7 +23,7 @@
 
 - [x] 4.1 `/uze:try`, `make try` and the demo base install `workspace@uze` into the project, registering nothing
 - [x] 4.2 The playgrounds install their checkout's uze and register no copy of the marketplace; `make examples` gives way to `make pingpong-mcp`
-- [ ] 4.3 Run the journeys that install the official examples, and the upgrade chapter, against this build
+- [x] 4.3 Run the journeys that install the official examples, and the upgrade chapter, against this build
 
 ## 5. Close
 
