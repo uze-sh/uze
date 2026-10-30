@@ -1,7 +1,7 @@
 ## 1. Cheaper requests
 
-- [ ] 1.1 Read the `releases/latest` redirect without following it, and test the version read from a `Location`
-- [ ] 1.2 Fetch a marketplace mirror with branch and tag refspecs only, and test that a `refs/pull/*` on the origin is not fetched
+- [x] 1.1 Read the `releases/latest` redirect without following it, and test the version read from a `Location`
+- [x] 1.2 Fetch a marketplace mirror with branch and tag refspecs only, and test that a `refs/pull/*` on the origin is not fetched
 
 ## 2. Release check
 

@@ -650,18 +650,19 @@ fn base(override_url: Option<&str>, debug: bool) -> String {
 impl Releases for Published {
     /// Read from where `releases/latest` redirects rather than from the
     /// API: the redirect carries no rate limit and no JSON, and it is the
-    /// same "latest" the installer resolves.
+    /// same "latest" the installer resolves. Not followed: following it
+    /// downloaded the tag's whole page, about 170 KB, to read one version.
     fn latest(&self) -> Option<String> {
         let output = uze_platform::tools::curl()
             .args([
-                "-fsSL",
+                "-fsS",
                 "--max-time",
                 "15",
                 "-o",
                 uze_platform::fs::NULL_DEVICE,
                 "-w",
             ])
-            .arg("%{url_effective}")
+            .arg("%{redirect_url}")
             .arg(format!("{}/latest", self.base))
             .stdin(Stdio::null())
             .stderr(Stdio::null())

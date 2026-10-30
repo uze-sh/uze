@@ -103,10 +103,19 @@ pub fn ensure(fetch: &str, identity: &str, directory: &Path) -> Result<()> {
                 )?;
                 // `--prune` so a ref deleted upstream stops being resolvable
                 // here, which is the honest answer to "does this ref still
-                // exist".
+                // exist". Branches and tags only: `refs/*` on a forge
+                // brought every pull request's head, thousands of refs on a
+                // popular marketplace, and no marketplace ref names one.
                 run_as(
                     Reach::of(transport),
-                    &["fetch", "--prune", SMALL_BLOBS, "origin", "+refs/*:refs/*"],
+                    &[
+                        "fetch",
+                        "--prune",
+                        SMALL_BLOBS,
+                        "origin",
+                        "+refs/heads/*:refs/heads/*",
+                        "+refs/tags/*:refs/tags/*",
+                    ],
                     Some(directory),
                 )?;
                 let answered = super::git::holds_a_commit(directory, transport);
@@ -879,6 +888,34 @@ mod tests {
         .unwrap();
         assert_eq!(resolve(&mirror, Some("main")).unwrap(), third);
         assert_eq!(distance(&mirror, &second, &third), Some(1));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_fetch_brings_branches_and_tags_and_no_pull_request_heads() {
+        let (root, first, second) = origin("mirror-refspec");
+        let origin_dir = root.join("origin");
+        let mirror = root.join("mirror");
+        ensure(
+            &origin_dir.to_string_lossy(),
+            &origin_dir.to_string_lossy(),
+            &mirror,
+        )
+        .unwrap();
+
+        // What a forge advertises beside the branches: a pull request's head.
+        run(&["update-ref", "refs/pull/7/head", &first], Some(&origin_dir)).unwrap();
+        run(&["tag", "v1", &second], Some(&origin_dir)).unwrap();
+        ensure(
+            &origin_dir.to_string_lossy(),
+            &origin_dir.to_string_lossy(),
+            &mirror,
+        )
+        .unwrap();
+
+        assert_eq!(resolve(&mirror, Some("v1")).unwrap(), second);
+        let refs = run(&["for-each-ref", "--format=%(refname)"], Some(&mirror)).unwrap();
+        assert!(!refs.contains("refs/pull/"), "{refs}");
         fs::remove_dir_all(&root).unwrap();
     }
 }
