@@ -11,7 +11,7 @@
 //! stamp of the files, so a linked extension is recompiled only when one of
 //! them changed.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read as _;
 use std::path::{Component, Path, PathBuf};
 
@@ -110,7 +110,6 @@ fn compile_cached(
         && let Ok(compiled) = serde_json::from_slice::<CompiledExtension>(&bytes)
         && compiled.identity == *identity
     {
-        prune_revisions(home, identity, &cached_at);
         return Ok(compiled);
     }
     let compiled = compile(identity.clone(), loaded)?;
@@ -121,7 +120,6 @@ fn compile_cached(
         }
         let _ = uze_core::persistence::write_atomic(&cached_at, &bytes);
     }
-    prune_revisions(home, identity, &cached_at);
     Ok(compiled)
 }
 
@@ -142,27 +140,70 @@ fn cache_key(identity: &Identity, loaded: &Loaded) -> String {
     format!("{:016x}", fnv1a64(&stream))
 }
 
-/// Keeps one compiled view for an extension identity. This runs on the
-/// extension-load path, which has already read and hashed its files; health
-/// checks do not need to re-read every extension merely to collect a cache.
-fn prune_revisions(home: &uze_core::UzeHome, identity: &Identity, current: &Path) -> usize {
+/// Keeps the newest compiled view for each installed extension, based only
+/// on generated files. This must not read extension sources: health runs
+/// independently of opening the workspace and should stay proportional to
+/// the cache, rather than to an extension's total source bytes.
+pub(crate) fn prune_compiled_cache(
+    home: &uze_core::UzeHome,
+    installed: &[InstalledExtension],
+) -> usize {
+    let installed: BTreeSet<_> = installed
+        .iter()
+        .map(|extension| &extension.identity)
+        .collect();
     let Ok(entries) = std::fs::read_dir(home.compiled_extensions_dir()) else {
         return 0;
     };
-    entries
-        .flatten()
-        .filter_map(|entry| {
-            let path = entry.path();
-            compiled_cache_key(&path)?;
-            (path != current && entry.file_type().ok()?.is_file()).then_some(path)
+    let mut cached = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if compiled_cache_key(&path).is_none()
+            || !entry.file_type().is_ok_and(|kind| kind.is_file())
+        {
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(&path) else {
+            continue;
+        };
+        let Ok(compiled) = serde_json::from_slice::<CompiledExtension>(&bytes) else {
+            cached.push((None, path, std::time::SystemTime::UNIX_EPOCH));
+            continue;
+        };
+        let modified = entry
+            .metadata()
+            .ok()
+            .and_then(|metadata| metadata.modified().ok())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        cached.push((Some(compiled.identity), path, modified));
+    }
+
+    let mut newest = BTreeMap::new();
+    for (identity, path, modified) in &cached {
+        let Some(identity) = identity else {
+            continue;
+        };
+        if !installed.contains(identity) {
+            continue;
+        }
+        newest
+            .entry(identity.clone())
+            .and_modify(|kept: &mut (PathBuf, std::time::SystemTime)| {
+                if (modified, path) > (&kept.1, &kept.0) {
+                    *kept = (path.clone(), *modified);
+                }
+            })
+            .or_insert_with(|| (path.clone(), *modified));
+    }
+    cached
+        .into_iter()
+        .filter(|(identity, path, _)| {
+            identity.as_ref().is_none_or(|identity| {
+                !installed.contains(identity)
+                    || newest.get(identity).is_none_or(|(kept, _)| kept != path)
+            })
         })
-        .filter(|path| {
-            std::fs::read(path)
-                .ok()
-                .and_then(|bytes| serde_json::from_slice::<CompiledExtension>(&bytes).ok())
-                .is_some_and(|compiled| compiled.identity == *identity)
-        })
-        .filter(|path| std::fs::remove_file(path).is_ok())
+        .filter(|(_, path, _)| std::fs::remove_file(path).is_ok())
         .count()
 }
 
@@ -389,23 +430,28 @@ mod tests {
     }
 
     #[test]
-    fn an_extension_keeps_one_compiled_revision_without_touching_other_runtime_files() {
+    fn cache_maintenance_keeps_one_revision_per_installed_extension() {
         let root = uze_testkit::temp::scratch("extension-compile-prune");
         let home = uze_core::UzeHome::at(root.join("home"));
         let installed = extension_in(&root);
-        let compile = |_: Identity, _: &Loaded| Ok(compiled());
-
-        compile_cached(&home, &installed.identity, &loaded(&installed), compile).unwrap();
+        let cache = home.compiled_extensions_dir();
+        fs::create_dir_all(&cache).unwrap();
         fs::write(
-            installed.dir.join("extension.kdl"),
-            "protocol 1\n// saved\n",
+            cache.join("0123456789abcdef.json"),
+            serde_json::to_vec(&compiled()).unwrap(),
         )
         .unwrap();
-        compile_cached(&home, &installed.identity, &loaded(&installed), compile).unwrap();
-
-        let cache = home.compiled_extensions_dir();
+        fs::write(
+            cache.join("fedcba9876543210.json"),
+            serde_json::to_vec(&compiled()).unwrap(),
+        )
+        .unwrap();
         fs::write(cache.join("costs.json"), "generated costs").unwrap();
 
+        assert_eq!(
+            prune_compiled_cache(&home, std::slice::from_ref(&installed)),
+            1
+        );
         assert!(cache.join("costs.json").is_file());
         assert_eq!(
             fs::read_dir(&cache)
@@ -414,7 +460,7 @@ mod tests {
                 .filter(|entry| compiled_cache_key(&entry.path()).is_some())
                 .count(),
             1,
-            "the previous compiled revision is collected"
+            "one generated revision stays for the installed extension"
         );
         fs::remove_dir_all(root).unwrap();
     }
