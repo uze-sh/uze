@@ -58,10 +58,9 @@ const CARD_CHROME_ROWS: u16 = 2 + crate::ui::extension_view::tree::TITLE_ROWS;
 
 /// The open drawer, where `compute_layout` placed it: a raised card with
 /// the mark that closes it, its title across its top where nothing it
-/// draws can cover it, and its view
-/// under that. A floating drawer that fits what it
-/// holds is cut to that, against its own side. Answers whether anything in
-/// it moves with the clock.
+/// draws can cover it, and its view under that. A floating drawer that
+/// fits what it holds is cut to that, against its own side. Answers
+/// whether anything in it moves with the clock.
 pub(super) fn render_declared_drawer(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
@@ -135,7 +134,8 @@ pub(super) fn render_declared_drawer(
     if !errors.is_empty() {
         widget::banner::render(frame, content, &error_title(errors.len()), errors);
     }
-    // The edge first, so it answers before the rows beside it; the card
+    // The close mark first, since it stands on a bottom drawer's edge;
+    // then the edge, so it answers before the rows beside it; the card
     // last, behind everything it holds. Floating, the drawer stands over
     // the pane and its bands, whose targets were registered first: its own
     // go ahead of them, as an overlay's do.
