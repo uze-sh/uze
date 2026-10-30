@@ -2606,13 +2606,7 @@ fn shim_failure_is_reported_but_does_not_abort_setup() {
     let fake_bin = root.join("fake-bin");
     fs::create_dir_all(&fake_bin).unwrap();
     let fake_exe = fake_bin.join("shim-test");
-    fs::write(&fake_exe, "#!/bin/sh\necho 1.0.0\n").unwrap();
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&fake_exe).unwrap().permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&fake_exe, perms).unwrap();
-    }
+    uze_testkit::process::install_executable(&fake_exe, b"#!/bin/sh\necho 1.0.0\n");
     let mut env_scope = uze_testkit::env::scope();
     env_scope.set(
         "PATH",
