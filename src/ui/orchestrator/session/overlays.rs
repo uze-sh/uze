@@ -282,7 +282,7 @@ impl Attach<'_> {
                 continue;
             };
             let question = (answer.harness.clone(), answer.root.clone());
-            if step.recent_asked.as_ref() != Some(&question) {
+            if step.recent_asked.as_ref() != Some(&question) || !step.asked_by(&answer) {
                 continue;
             }
             step.recent_asked = None;

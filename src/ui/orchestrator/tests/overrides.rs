@@ -639,6 +639,7 @@ fn with_recent(name: &str, entries: Vec<RecentOverride>) -> (Popup, (String, Pat
             harness: question.0.clone(),
             root: question.1.clone(),
             entries,
+            restarting: None,
             recorded: None,
         });
     }
@@ -868,6 +869,7 @@ fn the_overrides_view_draws_its_choices() {
                 used(&["DEBUG=1"], "/elsewhere/api"),
                 used(&["--add-dir", "../lib"], &here),
             ],
+            restarting: None,
             recorded: None,
         });
     }
@@ -1295,6 +1297,7 @@ fn an_empty_history_and_an_empty_catalog_say_little() {
             harness,
             root,
             entries: Vec::new(),
+            restarting: None,
             recorded: None,
         });
     }
@@ -1407,6 +1410,7 @@ fn a_recent_entrys_close_mark_and_delete_both_forget_it() {
                 harness: question.0.clone(),
                 root: question.1.clone(),
                 entries: vec![used(&["GONE=1"], "/elsewhere")],
+                restarting: None,
                 recorded: None,
             });
         }

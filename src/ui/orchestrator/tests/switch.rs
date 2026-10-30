@@ -357,6 +357,57 @@ fn enter_with_nothing_changed_closes_and_relaunches_nothing() {
     assert!(!driven.attach.model.placement_pending);
 }
 
+/// Opens the selected agent's `Restart in` panel from the keyboard,
+/// leaving its read unanswered.
+fn open_the_panel_unread(driven: &mut support::Driven<'_>) {
+    driven.frame();
+    press(driven, uze_keys::Action::OpenMenu, uze_keys::Scope::Pane);
+    press(
+        driven,
+        uze_keys::Action::SelectNext,
+        uze_keys::Scope::ContextMenu,
+    );
+    press(
+        driven,
+        uze_keys::Action::FocusNext,
+        uze_keys::Scope::ContextMenu,
+    );
+    panel(driven);
+}
+
+/// Answers the panel's question as asked for `restarting`, with
+/// `recorded` as that agent's set. The panel's own read, which the scratch
+/// home answers with nothing, is waited out and dropped first, so the
+/// answer absorbed is this one whatever the threads' timing.
+fn answer_the_panel(
+    driven: &mut support::Driven<'_>,
+    restarting: Option<String>,
+    recorded: &[&str],
+) {
+    let channel = &driven.attach.channels.recent_overrides;
+    channel
+        .receiver
+        .recv_timeout(std::time::Duration::from_secs(60))
+        .expect("the panel's own read answers");
+    let (harness, root) = panel(driven).recent_asked.clone().expect("the panel asked");
+    channel
+        .sender
+        .send(RecentOverridesRead {
+            harness,
+            root,
+            restarting,
+            entries: Vec::new(),
+            recorded: Some(recorded.iter().map(|word| (*word).to_owned()).collect()),
+        })
+        .unwrap();
+    driven.attach.absorb_recent_overrides();
+}
+
+/// The agent the open panel restarts.
+fn restarted(driven: &support::Driven<'_>) -> String {
+    panel(driven).restart.as_ref().unwrap().agent.clone()
+}
+
 #[test]
 fn the_panel_opens_on_what_the_agent_carries_checked() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-restart-carried"));
@@ -364,44 +415,37 @@ fn the_panel_opens_on_what_the_agent_carries_checked() {
     model.session.as_mut().unwrap().select_tab(TabId(2));
     let mut driven = driven(model, &home);
     driven.attach.identities = identities();
-    driven.frame();
-    press(
-        &mut driven,
-        uze_keys::Action::OpenMenu,
-        uze_keys::Scope::Pane,
-    );
-    press(
-        &mut driven,
-        uze_keys::Action::SelectNext,
-        uze_keys::Scope::ContextMenu,
-    );
-    press(
-        &mut driven,
-        uze_keys::Action::FocusNext,
-        uze_keys::Scope::ContextMenu,
-    );
-    let question = panel(&driven)
-        .recent_asked
-        .clone()
-        .expect("the panel asked");
-    driven
-        .attach
-        .channels
-        .recent_overrides
-        .sender
-        .send(RecentOverridesRead {
-            harness: question.0,
-            root: question.1,
-            entries: Vec::new(),
-            recorded: Some(vec!["--verbose".to_owned(), "DEBUG=1".to_owned()]),
-        })
-        .unwrap();
-    driven.attach.absorb_recent_overrides();
+    open_the_panel_unread(&mut driven);
+
+    let agent = restarted(&driven);
+    answer_the_panel(&mut driven, Some(agent), &["--verbose", "DEBUG=1"]);
 
     assert_eq!(panel(&driven).launch_words(), ["--verbose", "DEBUG=1"]);
     assert_eq!(panel(&driven).enter_word(), "close");
     let rows = frame_rows(&mut driven.attach.model).join("\n");
     assert!(rows.contains("DEBUG=1"), "{rows}");
+}
+
+/// Two agents in one project ask the same harness from the same directory:
+/// an answer read for another agent, or for the new agent's popup, is not
+/// this panel's, however it matches the rest of the question.
+#[test]
+fn an_answer_read_for_another_asker_is_not_the_panels() {
+    for asker in [Some("another-agent".to_owned()), None] {
+        let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-restart-asker"));
+        let mut model = agents_in_the_root_session();
+        model.session.as_mut().unwrap().select_tab(TabId(2));
+        let mut driven = driven(model, &home);
+        driven.attach.identities = identities();
+        open_the_panel_unread(&mut driven);
+
+        answer_the_panel(&mut driven, asker.clone(), &["--verbose"]);
+
+        let step = panel(&driven);
+        assert!(step.launch_words().is_empty(), "{asker:?}");
+        assert!(step.recent_entries().is_none(), "{asker:?}");
+        assert!(step.recent_asked.is_some(), "still waiting: {asker:?}");
+    }
 }
 
 #[test]

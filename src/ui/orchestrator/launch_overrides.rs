@@ -101,6 +101,10 @@ impl OverridesStep {
 pub(super) struct RecentOverridesRead {
     pub(super) harness: String,
     pub(super) root: PathBuf,
+    /// The agent a `Restart in` panel asked for; none for the new agent's
+    /// popup. Two agents of one project ask the same harness from the same
+    /// directory, so this is part of the question.
+    pub(super) restarting: Option<String>,
     pub(super) entries: Vec<RecentOverride>,
     /// What the restarted agent carries on `harness`, when the read was for
     /// a `Restart in` panel.
@@ -419,8 +423,14 @@ impl DirectoryStep {
         let (harness, root) = self.recent_question()?;
         self.recent
             .as_ref()
-            .filter(|read| read.harness == harness && read.root == root)
+            .filter(|read| read.harness == harness && read.root == root && self.asked_by(read))
             .map(|read| read.entries.as_slice())
+    }
+
+    /// Whether `read` was asked by this popup: for the agent it restarts,
+    /// or, for the new agent's popup, for no agent.
+    pub(super) fn asked_by(&self, read: &RecentOverridesRead) -> bool {
+        read.restarting.as_deref() == self.restart.as_ref().map(|restart| restart.agent.as_str())
     }
 
     /// The list of choices: the entries added in this popup that the

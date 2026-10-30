@@ -1478,6 +1478,7 @@ pub(super) fn spawn_recent_overrides(
         let _ = sender.send(RecentOverridesRead {
             harness,
             root,
+            restarting,
             entries,
             recorded,
         });
