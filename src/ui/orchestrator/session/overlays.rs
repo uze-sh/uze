@@ -290,11 +290,26 @@ impl Attach<'_> {
             if let Some(overrides) = step.overrides.as_mut() {
                 overrides.marked = None;
             }
-            if let Some(recorded) = &answer.recorded {
-                step.seed_recorded(&answer.harness, recorded);
-            }
+            let unread = match &answer.recorded {
+                Some(recorded) => {
+                    step.seed_recorded(&answer.harness, recorded);
+                    false
+                }
+                None => step.restart.is_some(),
+            };
             step.recent = Some(answer);
             self.model.dirty = true;
+            // Without the set it carries there is nothing to relaunch the
+            // agent with, and the panel's Enter only closes: said, so a
+            // closed panel is not mistaken for a restart.
+            if unread {
+                self.model.raise_toast(
+                    ToastKind::Warned,
+                    "overrides not read",
+                    "it cannot be restarted from here",
+                    None,
+                );
+            }
         }
     }
 

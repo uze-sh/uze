@@ -406,9 +406,42 @@ fn the_panel_opens_on_what_the_agent_carries_checked() {
     assert!(rows.contains("DEBUG=1"), "{rows}");
 }
 
-/// Two agents in one project ask the same harness from the same directory:
-/// an answer read for another agent, or for the new agent's popup, is not
-/// this panel's, however it matches the rest of the question.
+/// A set that cannot be read is not an empty one: the panel's own read,
+/// which fails in a home where the agent was never launched, leaves Enter
+/// closing whatever is added, and says why.
+#[test]
+fn a_set_that_cannot_be_read_relaunches_nothing_and_says_so() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-restart-unreadable",
+    ));
+    let mut model = agents_in_the_root_session();
+    model.session.as_mut().unwrap().select_tab(TabId(2));
+    let mut driven = driven(model, &home);
+    driven.attach.identities = identities();
+    open_the_panel_unread(&mut driven);
+    let channel = &driven.attach.channels.recent_overrides;
+    let answer = channel
+        .receiver
+        .recv_timeout(std::time::Duration::from_secs(60))
+        .expect("the panel's own read answers");
+    assert!(answer.recorded.is_none(), "unread, not none");
+    channel.sender.send(answer).unwrap();
+    driven.attach.absorb_recent_overrides();
+
+    type_text(&mut driven, "DEBUG=1");
+    enter(&mut driven);
+
+    assert_eq!(panel(&driven).enter_word(), "close");
+    let toasts = &driven.attach.model.remembered.toasts;
+    assert!(
+        toasts
+            .iter()
+            .any(|toast| toast.text == "overrides not read"),
+        "{:?}",
+        toasts.iter().map(|toast| &toast.text).collect::<Vec<_>>()
+    );
+}
+
 /// What the operator added before the agent's set was read stays, after
 /// it: the set is taken in under it, not over it.
 #[test]
@@ -464,6 +497,9 @@ fn an_unchecked_carried_entry_stays_listed() {
     assert_eq!(step.enter_word(), "restart");
 }
 
+/// Two agents in one project ask the same harness from the same directory:
+/// an answer read for another agent, or for the new agent's popup, is not
+/// this panel's, however it matches the rest of the question.
 #[test]
 fn an_answer_read_for_another_asker_is_not_the_panels() {
     for asker in [Some("another-agent".to_owned()), None] {
