@@ -83,7 +83,11 @@ pub(super) fn observe(
     home: &Path,
     ctx: &ObservationContext,
 ) -> Option<SessionId> {
-    listing(executable, home)?
+    newest_of(listing(executable, home)?, ctx)
+}
+
+fn newest_of(listed: Vec<Listed>, ctx: &ObservationContext) -> Option<SessionId> {
+    listed
         .into_iter()
         .filter(|listed| {
             Path::new(&listed.directory) == ctx.cwd && listed.created_unix >= ctx.since_unix
@@ -173,14 +177,15 @@ mod tests {
     }
 
     fn observed(entries: &[(&str, &str, u64)], cwd: &str, since: u64) -> Option<SessionId> {
-        let listed = parse_listing(&payload(entries)).unwrap();
-        listed
-            .into_iter()
-            .filter(|listed| {
-                Path::new(&listed.directory) == Path::new(cwd) && listed.created_unix >= since
-            })
-            .max_by_key(|listed| listed.created_unix)
-            .map(|listed| SessionId::parse(listed.id).unwrap())
+        newest_of(
+            parse_listing(&payload(entries)).unwrap(),
+            &ObservationContext {
+                cwd: Path::new(cwd),
+                since_unix: since,
+                preceded_by: None,
+                claimed_elsewhere: &[],
+            },
+        )
     }
 
     /// What the harness's API lists is the harness's, and a listing can
@@ -193,6 +198,20 @@ mod tests {
         for refused in ["--yolo", "ses_", "ses_../x", "c-1", "SES_1"] {
             assert_eq!(conversation_named(refused), None, "{refused}");
         }
+    }
+
+    #[test]
+    fn a_listed_id_of_another_shape_is_never_observed() {
+        let entries = [
+            ("SES_1", "/work/slot", 400),
+            ("c-1", "/work/slot", 300),
+            ("ses_../x", "/work/slot", 200),
+            ("ses_kept", "/work/slot", 100),
+        ];
+        assert_eq!(
+            observed(&entries, "/work/slot", 50),
+            Some(SessionId::parse("ses_kept").unwrap())
+        );
     }
 
     #[test]

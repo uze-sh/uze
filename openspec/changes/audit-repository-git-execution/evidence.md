@@ -45,10 +45,15 @@
   `crates/uze-integrations/src/claude/session.rs::tests::a_transcript_not_named_by_claude_code_is_never_observed`,
   `crates/uze-integrations/src/antigravity/session.rs::tests::an_index_entry_not_named_by_the_harness_is_not_a_conversation`,
   `crates/uze-integrations/src/opencode/session.rs::tests::only_an_identifier_of_opencode_s_shape_is_a_conversation`
-  (`cargo test -p uze-core session`, `cargo test -p uze-integrations session`).
-  Red on the audited commit by reasoning: `SessionId::new` accepted any
-  string and `observe` returned the newest rollout, so the Codex, Claude and
-  Antigravity tests observe the planted id; `parse` did not exist.
+  and `::a_listed_id_of_another_shape_is_never_observed`, which drives the
+  same selection `observe` makes (`cargo test -p uze-core session`,
+  `cargo test -p uze-integrations session`).
+  Not run red on the audited commit, where `parse` did not exist and they
+  do not compile; that they fail there rests on reading it: `SessionId::new`
+  accepted any string and `observe` returned the newest rollout, so the
+  Codex, Claude and Antigravity tests observe the planted id. The OpenCode
+  observation test was run red against this branch with the shape filter
+  swapped for the bare `SessionId::parse`.
 - **Exploit re-run**: `poc3-resume-inject.sh` in the `wks` sandbox, fixed
   binary; the second launch no longer carries the planted id:
   ```
