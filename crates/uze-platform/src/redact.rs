@@ -56,19 +56,26 @@ fn redact_userinfo(word: &str, into: &mut String) {
 }
 
 /// Where the host begins in `url` (what follows `scheme://`), when a
-/// userinfo stands before it. The host follows the authority's *last*
-/// `@`. An authority with no `@` whose port is not a number is a password
-/// that carries a `/` unescaped, so the host follows the first `@` past it.
+/// userinfo stands before it. The host follows the authority's *last* `@`.
+/// An authority with no `@` whose port is not a number (an IPv6 literal
+/// aside) is a password carrying an unescaped `/`: the host then follows
+/// the last `@` before the path that comes after the first one.
 fn host_start(url: &str) -> Option<usize> {
-    let authority = &url[..url.find(['/', '?', '#']).unwrap_or(url.len())];
+    let end_of = |text: &str| text.find(['/', '?', '#']).unwrap_or(text.len());
+    let authority = &url[..end_of(url)];
     if let Some(at) = authority.rfind('@') {
         return Some(at + 1);
     }
-    let port = &authority[authority.rfind(':')? + 1..];
-    if port.chars().all(|digit| digit.is_ascii_digit()) {
+    if authority.starts_with('[') {
         return None;
     }
-    url.find('@').map(|at| at + 1)
+    let port = &authority[authority.rfind(':')? + 1..];
+    if !port.is_empty() && port.chars().all(|digit| digit.is_ascii_digit()) {
+        return None;
+    }
+    let first = url.find('@')? + 1;
+    let rest = &url[first..];
+    Some(first + rest[..end_of(rest)].rfind('@').map_or(0, |at| at + 1))
 }
 
 /// Whether `word` is a credential standing on its own.
@@ -133,6 +140,19 @@ mod tests {
             redact("https://host:8443/org/a@b"),
             "https://host:8443/org/a@b",
             "a numeric port is a port"
+        );
+        assert_eq!(
+            redact("https://user:/secret@host/r"),
+            "https://<redacted>@host/r"
+        );
+        assert_eq!(
+            redact("https://user:a/b@tail@host/r"),
+            "https://<redacted>@host/r"
+        );
+        assert_eq!(
+            redact("http://[::1]/repo@v1"),
+            "http://[::1]/repo@v1",
+            "an IPv6 host is not a password"
         );
     }
 
