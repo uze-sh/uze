@@ -760,8 +760,9 @@ pub enum NodeKind {
         height: u16,
         refused: Option<String>,
     },
-    /// One of `options` chosen, stepped with its arrows
-    /// ([`NodeAct::Step`]) or with Enter while it has focus.
+    /// One of `options` chosen: pressed outright where they stand side by
+    /// side ([`NodeAct::Choose`]), stepped where they do not
+    /// ([`NodeAct::Step`]), or with Enter while it has focus.
     Select {
         label: String,
         options: Vec<String>,
@@ -938,6 +939,9 @@ pub enum NodeAct {
     Region(usize),
     /// A [`NodeKind::Select`] stepped to its next option, or back.
     Step { forward: bool },
+    /// A [`NodeKind::Select`]'s option chosen outright, by its index: a
+    /// press on it where the options stand side by side.
+    Choose(usize),
     /// A [`NodeKind::Field`] taken to type into.
     Edit,
     /// A [`NodeKind::Withheld`] followed to where it is answered.

@@ -1648,74 +1648,84 @@ fn field(id: usize, value: &str, focused: bool, editing: bool) -> Node {
 }
 
 #[test]
-fn a_select_says_its_choice_between_arrows_that_step_it() {
+fn a_select_is_a_forms_choice_whose_options_are_chosen_with_a_press() {
     in_both(|theme| {
-        let drawn = draw(&select(3, 1, false), 30, 1, 0, at(0));
-        let back = theme::glyph(Symbol::StepPrevious);
-        let on = theme::glyph(Symbol::StepNext);
-        assert_eq!(
-            drawn.rows()[0],
-            format!("Sort {back} Oldest {on}"),
-            "{theme}"
-        );
-        let step = |forward| {
+        let drawn = draw(&select(3, 1, false), 40, 1, 0, at(0));
+        let row = &drawn.rows()[0];
+        assert!(row.starts_with("  Sort"), "{theme}: {row}");
+        let choose = |index| {
             Some(ViewHit::Node {
                 node: 3,
-                act: NodeAct::Step { forward },
+                act: NodeAct::Choose(index),
             })
         };
-        let arrow = drawn.column_of(0, &back).unwrap();
-        assert_eq!(drawn.hit_at(arrow, 0), step(false), "{theme}");
-        let choice = drawn.column_of(0, "Oldest").unwrap();
-        assert_eq!(drawn.hit_at(choice, 0), step(true), "{theme}");
-        let last = drawn.column_of(0, &on).unwrap();
-        assert_eq!(drawn.hit_at(last, 0), step(true), "{theme}");
+        let newest = drawn.column_of(0, "Newest").unwrap();
+        let oldest = drawn.column_of(0, "Oldest").unwrap();
+        assert_eq!(drawn.hit_at(newest, 0), choose(0), "{theme}");
+        assert_eq!(drawn.hit_at(oldest, 0), choose(1), "{theme}");
         assert_eq!(drawn.hit_at(0, 0), None, "{theme}: the label is no target");
         assert_eq!(
-            drawn.fg(choice, 0),
-            theme::color(Token::TextPrimary),
-            "{theme}"
-        );
-        assert_eq!(
-            draw(&select(3, 1, true), 30, 1, 0, at(0)).fg(choice, 0),
+            drawn.bg(oldest, 0),
             theme::color(Token::Accent),
-            "{theme}: focused, its choice is the accent"
+            "{theme}: the chosen option is the accent"
+        );
+        let focused = draw(&select(3, 1, true), 40, 1, 0, at(0));
+        assert!(
+            focused.rows()[0].contains(&theme::glyph(Symbol::Prompt)),
+            "{theme}: focused, it wears the keys' mark"
         );
     });
 }
 
 #[test]
-fn a_select_arrow_under_the_pointer_lights_without_changing_weight() {
-    let at_rest = draw(&select(3, 0, false), 30, 1, 0, at(0));
-    let arrow = at_rest
-        .column_of(0, &theme::glyph(Symbol::StepPrevious))
-        .unwrap();
-    assert_eq!(at_rest.fg(arrow, 0), theme::color(Token::TextFaint));
+fn a_select_too_wide_for_its_room_is_a_box_a_press_steps_on() {
+    let drawn = draw(&select(3, 1, false), 18, 1, 0, at(0));
+    let oldest = drawn.column_of(0, "Old").unwrap();
+    assert_eq!(
+        drawn.hit_at(oldest, 0),
+        Some(ViewHit::Node {
+            node: 3,
+            act: NodeAct::Step { forward: true },
+        })
+    );
+    assert_eq!(drawn.bg(oldest, 0), theme::color(Token::SurfaceRecessed));
+}
+
+#[test]
+fn a_select_option_under_the_pointer_lights_without_changing_weight() {
+    let at_rest = draw(&select(3, 1, false), 40, 1, 0, at(0));
+    let newest = at_rest.column_of(0, "Newest").unwrap();
     let held = TreeFrame {
         hovered: Some(ViewHit::Node {
             node: 3,
-            act: NodeAct::Step { forward: false },
+            act: NodeAct::Choose(0),
         }),
         ..at(0)
     };
-    let hovered = draw(&select(3, 0, false), 30, 1, 0, held);
-    assert_eq!(hovered.fg(arrow, 0), theme::color(Token::Accent));
+    let hovered = draw(&select(3, 1, false), 40, 1, 0, held);
+    assert_ne!(hovered.bg(newest, 0), at_rest.bg(newest, 0));
     assert_eq!(
-        hovered.buffer[(arrow, 0)].modifier,
-        at_rest.buffer[(arrow, 0)].modifier
+        hovered.buffer[(newest, 0)].modifier,
+        at_rest.buffer[(newest, 0)].modifier
     );
 }
 
 #[test]
-fn a_field_wears_the_input_rule_and_shows_its_caret_only_while_typed_into() {
+fn a_field_is_a_forms_box_with_its_caret_only_while_typed_into() {
     in_both(|theme| {
         let caret = theme::glyph(Symbol::CursorText);
         let resting = draw(&field(4, "", false, false), 30, 2, 0, at(0));
-        assert_eq!(resting.rows()[0], "Filter name", "{theme}");
+        assert_eq!(resting.rows()[0].trim_end(), "  Filter   name", "{theme}");
+        let name = resting.column_of(0, "name").unwrap();
         assert_eq!(
-            resting.fg(0, 1),
-            theme::color(Token::BorderDefault),
-            "{theme}: the rule says it is an input"
+            resting.bg(name, 0),
+            theme::color(Token::SurfaceRecessed),
+            "{theme}: the box says it is an input"
+        );
+        assert_eq!(
+            resting.fg(name, 0),
+            theme::color(Token::TextDim),
+            "{theme}: the placeholder is quiet"
         );
         let edit = Some(ViewHit::Node {
             node: 4,
@@ -1726,11 +1736,15 @@ fn a_field_wears_the_input_rule_and_shows_its_caret_only_while_typed_into() {
         }
 
         let typing = draw(&field(4, "bil", true, true), 30, 2, 0, at(0));
-        assert_eq!(typing.rows()[0], format!("Filter bil{caret}"), "{theme}");
-        assert_eq!(typing.fg(0, 1), theme::color(Token::Accent), "{theme}");
-
-        let empty = draw(&field(4, "", true, true), 30, 2, 0, at(0));
-        assert_eq!(empty.rows()[0], format!("Filter {caret}name"), "{theme}");
+        assert!(
+            typing.rows()[0].contains(&format!("bil{caret}")),
+            "{theme}: {:?}",
+            typing.rows()
+        );
+        assert!(
+            typing.rows()[0].contains(&theme::glyph(Symbol::Prompt)),
+            "{theme}"
+        );
     });
 }
 
@@ -1747,10 +1761,22 @@ fn a_form_draws_its_fields_then_a_button_that_sends_it() {
             ),
             vec![field(10, "ok", false, false), select(11, 0, false)],
         );
-        let drawn = draw(&form, 30, 5, 0, at(0));
+        let drawn = draw(&form, 40, 5, 0, at(0));
         let rows = drawn.rows();
-        assert!(rows[0].starts_with("Filter ok"), "{theme}: {rows:?}");
-        assert!(rows[2].starts_with("Sort"), "{theme}: {rows:?}");
+        assert!(rows[0].starts_with("  Filter"), "{theme}: {rows:?}");
+        assert!(rows[2].starts_with("  Sort"), "{theme}: {rows:?}");
+        // One label column for the form's keys: the box and the first
+        // option start together.
+        let column = |y: u16| {
+            (0..40)
+                .find(|x| {
+                    let ground = drawn.bg(*x, y);
+                    ground == theme::color(Token::SurfaceRecessed)
+                        || ground == theme::color(Token::Accent)
+                })
+                .unwrap()
+        };
+        assert_eq!(column(0), column(2), "{theme}: {rows:?}");
         assert_eq!(rows[3], "  Comment", "{theme}");
         let send = Some(ViewHit::Node {
             node: 9,

@@ -175,6 +175,26 @@ fn a_select_starts_on_its_first_choice_and_steps_by_click_or_key() {
     assert_eq!(engine.ui(VIEW).unwrap()["sort"], "old");
 }
 
+/// A press on one of a select's options chooses it outright, and focuses
+/// the select; an index it does not have chooses nothing.
+#[test]
+fn a_select_option_is_chosen_outright() {
+    let mut engine = inputs(Vec::new());
+    let select = node_of(&engine, is_select, 0);
+    engine.hit(VIEW, act(select.id, NodeAct::Choose(1)), SPACE);
+    assert_eq!(engine.ui(VIEW).unwrap()["sort"], "old");
+    assert!(matches!(
+        node_of(&engine, is_select, 0).kind,
+        NodeKind::Select {
+            focused: true,
+            chosen: 1,
+            ..
+        }
+    ));
+    engine.hit(VIEW, act(select.id, NodeAct::Choose(9)), SPACE);
+    assert_eq!(engine.ui(VIEW).unwrap()["sort"], "old");
+}
+
 #[test]
 fn focus_moves_through_the_inputs_in_the_order_drawn() {
     let mut engine = inputs(Vec::new());

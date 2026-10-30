@@ -25,7 +25,7 @@ use uze_extensions::view::{
 };
 
 use super::*;
-use crate::ui::widget::{Button, Edge, Field as Input, Rule, row::RowState};
+use crate::ui::widget::{Button, form, row::RowState};
 
 /// How long an activity mark shows each of its frames: the CLI spinner's
 /// beat, so the two read as one motion.
@@ -182,6 +182,7 @@ pub(super) fn render_tree(
         hits,
         folded: None,
         gauge_labels: None,
+        form_labels: None,
         ink: None,
         sliding: false,
     };
@@ -460,12 +461,9 @@ fn natural(node: &Node) -> u16 {
             value,
             placeholder,
             ..
-        } => lead_width(label)
-            .saturating_add(cells_of(
-                text::columns(value).max(text::columns(placeholder)),
-            ))
-            .saturating_add(1)
-            .max(FIELD_MIN_WIDTH),
+        } => lead_width(label).saturating_add(
+            cells_of(text::columns(value).max(text::columns(placeholder)) + 3).max(FIELD_MIN_WIDTH),
+        ),
         NodeKind::Form { submit, .. } => node
             .children
             .iter()
@@ -659,27 +657,20 @@ fn height(node: &Node, width: u16) -> usize {
 /// place to type.
 const FIELD_MIN_WIDTH: u16 = 16;
 
-/// A select's or a field's label and the column after it, when it has one.
+/// A select's or a field's label column, as a form's key draws it: the
+/// keys' mark, the label and a column of air; none without a label.
 fn lead_width(label: &str) -> u16 {
     match label.is_empty() {
         true => 0,
-        false => cells_of(text::columns(label)).saturating_add(1),
+        false => cells_of(form::LABEL_INDENT + text::columns(label) + 2),
     }
 }
 
-/// `label ‹ choice ›`, as wide as its widest choice so stepping never
-/// moves what follows it.
+/// A select's label column, then its options side by side, as wide as
+/// they need or as a form's control is, whichever is more.
 fn select_width(label: &str, options: &[String]) -> u16 {
-    let widest = options.iter().map(|option| text::columns(option)).max();
-    lead_width(label)
-        .saturating_add(step_width(Symbol::StepPrevious))
-        .saturating_add(cells_of(widest.unwrap_or(0)))
-        .saturating_add(step_width(Symbol::StepNext))
-}
-
-/// An arrow of a select and the column between it and the choice.
-fn step_width(symbol: Symbol) -> u16 {
-    theme::width(symbol).saturating_add(1)
+    let options: Vec<&str> = options.iter().map(String::as_str).collect();
+    lead_width(label).saturating_add(cells_of(form::choice_width(&options)))
 }
 
 /// The widest a `Markdown` asks to be: a reading measure, past which its
@@ -1261,6 +1252,9 @@ struct Painter<'p, 'f> {
     /// The label column the gauges of the stack being drawn share, so
     /// their bars start together.
     gauge_labels: Option<u16>,
+    /// The label column the inputs of the form being drawn share, so their
+    /// controls start together, as a settings form's keys do.
+    form_labels: Option<u16>,
     /// The ink every line takes while it is drawn on a box's ground, so a
     /// role never sits unreadable on another's hue.
     ink: Option<Color>,
@@ -1497,7 +1491,7 @@ impl Painter<'_, '_> {
             } => self.select(
                 node.id,
                 label,
-                options.get(*chosen),
+                (options, options.get(*chosen)),
                 *focused,
                 (x, width),
                 y,
@@ -1965,76 +1959,105 @@ impl Painter<'_, '_> {
         self.hit(y, 1, x, taken, hit);
     }
 
-    /// `label ‹ choice ›`: the label quiet, the choice strong, accent while
-    /// it has focus; a press on `‹` steps back and anywhere on the choice or
-    /// `›` steps on, as Enter does.
+    /// Where an input's label and control stand, `width` columns from its
+    /// start: the form's shared label column inside a form, its own
+    /// outside one.
+    fn input_layout(&self, label: &str, width: u16) -> form::Layout {
+        let lead = match label.is_empty() {
+            true => 0,
+            false => self.form_labels.unwrap_or_else(|| lead_width(label)),
+        };
+        let room = usize::from(width.saturating_sub(lead));
+        form::Layout {
+            label: lead,
+            control: form::CONTROL.min(room),
+            field: room,
+            room,
+        }
+    }
+
+    /// An input as a form's key: its label, then `control` with `lit` the
+    /// part under the pointer, each part a target `target` names; the keys'
+    /// mark while it has focus.
+    fn input(
+        &mut self,
+        (label, control, lit): (&str, form::Control<'_>, Option<form::Part>),
+        focused: bool,
+        target: impl Fn(form::Part) -> ViewHit,
+        (x, width): (u16, u16),
+        y: usize,
+    ) -> Vec<(u16, u16, ViewHit)> {
+        let layout = self.input_layout(label, width);
+        let state = RowState::of(focused, lit.is_some());
+        let key = match label.is_empty() {
+            true => {
+                let (spans, parts) = form::control(control, layout, lit);
+                form::Key {
+                    line: Line::from(spans),
+                    parts,
+                }
+            }
+            false => form::key(label, state, control, layout, lit),
+        };
+        self.line(y, x, width, key.line);
+        key.parts
+            .into_iter()
+            .map(|(at, cells, part)| (at, cells, target(part)))
+            .collect()
+    }
+
+    /// A select as a form's choice: its options side by side, a press on
+    /// one choosing it; where they do not fit, the chosen one in its box,
+    /// a press on it stepping on as Enter does.
     fn select(
         &mut self,
         id: usize,
         label: &str,
-        chosen: Option<&String>,
+        (options, chosen): (&[String], Option<&String>),
         focused: bool,
         (x, width): (u16, u16),
         y: usize,
     ) {
-        let back = ViewHit::Node {
-            node: id,
-            act: NodeAct::Step { forward: false },
-        };
-        let on = ViewHit::Node {
-            node: id,
-            act: NodeAct::Step { forward: true },
-        };
-        let arrow = |hovered: bool| match hovered {
-            true => Token::Accent,
-            false => Token::TextFaint,
-        };
+        let words: Vec<&str> = options.iter().map(String::as_str).collect();
         let chosen = chosen.map_or("", String::as_str);
-        let ink = match focused || self.hovered(on) {
-            true => Token::Accent,
-            false => Token::TextPrimary,
+        let target = |part| ViewHit::Node {
+            node: id,
+            act: match part {
+                form::Part::Option(index) => NodeAct::Choose(index),
+                form::Part::Decrease => NodeAct::Step { forward: false },
+                form::Part::Value | form::Part::Increase => NodeAct::Step { forward: true },
+            },
         };
-        let mut spans = Vec::new();
-        if !label.is_empty() {
-            spans.push(TextSpan::styled(
-                format!("{label} "),
-                theme::fg(Token::TextDim),
-            ));
+        let lit = match self.held.hovered {
+            Some(ViewHit::Node { node, act }) if node == id => match act {
+                NodeAct::Choose(index) => Some(form::Part::Option(index)),
+                NodeAct::Step { .. } => Some(form::Part::Value),
+                _ => None,
+            },
+            _ => None,
+        };
+        let parts = self.input(
+            (
+                label,
+                form::Control::Choice {
+                    options: &words,
+                    chosen,
+                },
+                lit,
+            ),
+            focused,
+            target,
+            (x, width),
+            y,
+        );
+        for (at, cells, hit) in parts {
+            self.hit(y, 1, x.saturating_add(at), cells, hit);
         }
-        spans.push(TextSpan::styled(
-            format!("{} ", theme::glyph(Symbol::StepPrevious)),
-            theme::fg(arrow(self.hovered(back))),
-        ));
-        spans.push(TextSpan::styled(chosen.to_owned(), theme::fg_bold(ink)));
-        spans.push(TextSpan::styled(
-            format!(" {}", theme::glyph(Symbol::StepNext)),
-            theme::fg(arrow(self.hovered(on))),
-        ));
-        self.line(y, x, width, Line::from(spans));
-        let lead = lead_width(label);
-        let back_width = step_width(Symbol::StepPrevious);
-        let on_width = cells_of(text::columns(chosen)).saturating_add(step_width(Symbol::StepNext));
-        let room = |from: u16| width.saturating_sub(from);
-        self.hit(
-            y,
-            1,
-            x.saturating_add(lead),
-            back_width.min(room(lead)),
-            back,
-        );
-        let on_from = lead.saturating_add(back_width);
-        self.hit(
-            y,
-            1,
-            x.saturating_add(on_from),
-            on_width.min(room(on_from)),
-            on,
-        );
     }
 
-    /// A field: its label and what is typed (or its placeholder), with the
-    /// caret while it is typed into, over the rule every input wears, which
-    /// lights while it has focus. The whole of it takes typing on a press.
+    /// A field as a form's key: what is typed (or its placeholder) in its
+    /// box, with the caret while it is typed into, and a row of air under
+    /// it before the next key. The whole of it takes typing on a press.
     fn field(
         &mut self,
         id: usize,
@@ -2047,26 +2070,28 @@ impl Painter<'_, '_> {
             node: id,
             act: NodeAct::Edit,
         };
-        let mut spans = Vec::new();
-        if !label.is_empty() {
-            let ink = match self.hovered(hit) {
-                true => Token::TextBright,
-                false => Token::TextDim,
-            };
-            spans.push(TextSpan::styled(format!("{label} "), theme::fg(ink)));
-        }
-        spans.extend(Input::new(value, placeholder).focused(editing).spans());
-        self.line(y, x, width, Line::from(spans));
-        let tone = match (focused || editing, self.hovered(hit)) {
-            (true, _) => Token::Accent,
-            (false, true) => Token::TextSecondary,
-            (false, false) => Token::BorderDefault,
+        let control = match (editing, value.is_empty()) {
+            (true, _) => form::Control::Typing {
+                before: value,
+                after: "",
+            },
+            (false, true) => form::Control::Boxed {
+                value: placeholder,
+                tone: Token::TextDim,
+            },
+            (false, false) => form::Control::Boxed {
+                value,
+                tone: Token::TextPrimary,
+            },
         };
-        if let (Some(row), Some((x, width))) = (self.screen_row(y + 1), self.columns(x, width)) {
-            Rule::new(Edge::Bottom)
-                .tone(tone)
-                .render(self.frame, Rect::new(x, row, width, 1));
-        }
+        let lit = self.hovered(hit).then_some(form::Part::Value);
+        self.input(
+            (label, control, lit),
+            focused || editing,
+            |_| hit,
+            (x, width),
+            y,
+        );
         self.hit(y, 2, x, width, hit);
     }
 
@@ -2080,7 +2105,20 @@ impl Painter<'_, '_> {
         (x, width): (u16, u16),
         y: usize,
     ) -> bool {
-        if !self.stacked(&node.children, 0, x, width, y) {
+        let labels = node
+            .children
+            .iter()
+            .filter_map(|child| match &child.kind {
+                NodeKind::Select { label, .. } | NodeKind::Field { label, .. } => {
+                    Some(lead_width(label))
+                }
+                _ => None,
+            })
+            .max();
+        let outer = std::mem::replace(&mut self.form_labels, labels);
+        let drawn = self.stacked(&node.children, 0, x, width, y);
+        self.form_labels = outer;
+        if !drawn {
             return false;
         }
         let at = y + node

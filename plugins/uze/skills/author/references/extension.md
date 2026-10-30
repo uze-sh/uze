@@ -159,8 +159,10 @@ Form action="comment" submit="Comment" item="{.}" {
 ```
 
 - `Select` holds one of its `Choice`s as `ui.<id>` (its first until one is
-  chosen), stepped with its arrows or Enter; `show="ui.sort=old"` names a
-  `value` it declares.
+  chosen). The host draws it as a form's choice: its options side by side,
+  a click on one choosing it, or the chosen one in a box Enter or a click
+  steps on when they do not fit. `show="ui.sort=old"` names a `value` it
+  declares.
 - `Field` is a line of text held as `ui.<id>`: a click (or Enter on it)
   types into it, Esc stops typing, Tab moves to the next input. A list's
   `filter="ui.<id>"` keeps the rows whose fields hold what was typed.

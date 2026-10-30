@@ -157,6 +157,12 @@ pub(crate) fn indent(layout: Layout) -> Span<'static> {
     Span::raw(" ".repeat(usize::from(layout.label)))
 }
 
+/// The columns a choice of `options` wants: each its widest word with a
+/// column of air either side, and never less than a form's control.
+pub(crate) fn choice_width(options: &[&str]) -> usize {
+    (segment_width(options, CONTROL) * options.len()).max(CONTROL)
+}
+
 /// Whether `options` stand side by side in `layout`: each its share of
 /// the control, within the row's room.
 pub(crate) fn fits(options: &[&str], layout: Layout) -> bool {
