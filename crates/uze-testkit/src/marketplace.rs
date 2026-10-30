@@ -82,9 +82,8 @@ mod tests {
 
     #[test]
     fn stages_a_marketplace_and_returns_market_and_install_args() {
-        let root = std::env::temp_dir().join(format!("uze-testkit-market-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
+        let scratch = crate::temp::TempDir::new("testkit-market");
+        let root = scratch.path();
         let package = root.join("pkg");
         fs::create_dir_all(&package).unwrap();
         fs::write(
@@ -92,7 +91,7 @@ mod tests {
             r#"{"name":"demo","skills":{}}"#,
         )
         .unwrap();
-        let (market, install) = marketplace_install_args(&root, &package);
+        let (market, install) = marketplace_install_args(root, &package);
         assert_eq!(market[0], "market");
         assert_eq!(market[1], "add");
         assert!(market[2].ends_with("market"));
@@ -103,6 +102,5 @@ mod tests {
         .unwrap();
         assert_eq!(marketplace["name"], "test");
         assert_eq!(marketplace["plugins"][0]["name"], "demo");
-        let _ = fs::remove_dir_all(root);
     }
 }
