@@ -795,7 +795,7 @@ fn open_workspace(home: UzeHome, verbose: bool, resumed: bool) -> Result<()> {
         // terminal-takeover path — running it here, synchronously, before
         // the alternate screen is even entered, left the terminal looking
         // frozen for however long harness detection took.
-        set_up_before_opening(&home, verbose)?;
+        set_up_before_opening(&home, verbose, resumed)?;
     }
     match uze::ui::run(home.clone(), resumed)? {
         uze::ui::Ended::Quit => Ok(()),

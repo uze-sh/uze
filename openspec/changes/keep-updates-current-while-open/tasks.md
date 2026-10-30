@@ -21,7 +21,7 @@
 - [x] 4.1 `self_update::restart` runs the receipt's binary as `workspace --resumed` through `uze_platform::process::run_in_place`
 - [x] 4.2 `--resumed` lands the client where it left off; `WorkspaceExit::Restart` and `ui::Ended::Restart`
 - [x] 4.3 The restart button at the right end of the agent area's bar, ahead of every plugin item, showing the bar; `Action::RestartUze` in the action index; click == key tests
-- [ ] 4.4 Validated on Linux and Windows in the playground
+- [ ] 4.4 Validated on Linux (done: exec in place, same runtime, a pane program survives) and Windows (pending: the Windows Sandbox playground)
 
 ## 5. Documentation and checks
 
