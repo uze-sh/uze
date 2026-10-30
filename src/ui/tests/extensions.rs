@@ -977,6 +977,27 @@ fn a_preference_is_set_with_no_project_in_front() {
     );
 }
 
+/// A refresh that puts another extension under the selection takes the
+/// keys off the preferences being set: they never write into one the
+/// drawer no longer shows.
+#[test]
+fn a_refresh_that_moves_the_selection_puts_the_preferences_away() {
+    let mut model = focus_preferences();
+    let mut other = declared(&[]);
+    other.identity.id = "gpu-meter".to_owned();
+    other.name = "GPU".to_owned();
+    let mut standing = model.extension_standings[0].clone();
+    standing.id = "gpu-meter".to_owned();
+    model.refreshed(crate::ui::model::RefreshData {
+        declared_extensions: vec![other],
+        extension_standings: vec![standing],
+        extension_project: model.extension_project.clone(),
+        ..Default::default()
+    });
+    assert_eq!(model.preferences, None);
+    assert_eq!(model.apply_key(key(KeyCode::Right)), Intent::None);
+}
+
 /// Every key the footer names while the keys are on the preferences is a
 /// target doing what the key does: enter types the number, esc gives the
 /// keys back to the cards.

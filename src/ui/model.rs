@@ -2366,6 +2366,21 @@ impl TuiModel {
         self.extension_standings = data.extension_standings;
         self.extension_project = data.extension_project;
         self.clamp_list_selection(Route::Extensions);
+        // The keys stay on preferences only while the drawer still shows
+        // the extension they belong to.
+        let still_shown = |editor: &PreferencesEditor| {
+            matches!(
+                self.selected_extension(),
+                Some(ExtensionEntry::Declared(summary)) if summary.identity == editor.identity
+            )
+        };
+        if self
+            .preferences
+            .as_ref()
+            .is_some_and(|editor| !still_shown(editor))
+        {
+            self.preferences = None;
+        }
         self.reveal_pending();
         if data.context_status.is_some() {
             self.remembered.context_status = data.context_status;
