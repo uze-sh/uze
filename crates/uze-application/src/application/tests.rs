@@ -1977,15 +1977,18 @@ fn an_official_plugin_uze_does_not_bundle_is_removed_and_stays_removed() {
     let root = uze_testkit::temp::scratch("official-unbundled-remove");
     let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
     app.marketplace()
-        .install_plugin("focus@uze", &uze_core::trust::AlwaysTrust)
+        .install_plugin("workspace@uze", &uze_core::trust::AlwaysTrust)
         .unwrap();
 
-    app.plugins().remove("focus").unwrap();
-    assert!(app.package_by_name("focus").is_err(), "focus is gone");
+    app.plugins().remove("workspace").unwrap();
+    assert!(
+        app.package_by_name("workspace").is_err(),
+        "workspace is gone"
+    );
 
     app.ensure_default_plugins().unwrap();
     assert!(
-        app.package_by_name("focus").is_err(),
+        app.package_by_name("workspace").is_err(),
         "seeding the defaults does not bring it back"
     );
     fs::remove_dir_all(root).unwrap();
@@ -1999,7 +2002,7 @@ fn an_official_plugin_uze_does_not_bundle_is_removed_and_stays_removed() {
 fn seeding_moves_plugins_off_the_official_marketplaces_old_name() {
     let root = uze_testkit::temp::scratch("retired-official-name");
     let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
-    for name in ["uze", "focus"] {
+    for name in ["uze", "workspace"] {
         app.plugins()
             .install_materialized(
                 bootstrap::materialize(name).unwrap(),
@@ -2022,7 +2025,7 @@ fn seeding_moves_plugins_off_the_official_marketplaces_old_name() {
         .map(|id| id.as_str().to_owned())
         .collect();
     ids.sort();
-    assert_eq!(ids, ["focus@uze", "uze@uze"]);
+    assert_eq!(ids, ["uze@uze", "workspace@uze"]);
     fs::remove_dir_all(root).unwrap();
 }
 

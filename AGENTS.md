@@ -21,8 +21,9 @@ an `always_on` rule.
 This repository is itself the official uze marketplace: `marketplace.json` +
 `plugins/**` at the root, with `plugins/uze` (the `uze:init`, `uze:rules`,
 `uze:worktree`, `uze:architect`, `uze:author` and `uze:try` Skills) as the
-one official plugin, and beside it the functional plugins (`gsd`, `focus`,
-`contributions`) and the `pingpong` example (category `example`), each
+one official plugin, and beside it `workspace` (the `gsd`, `focus` and
+`contributions` extensions in one package) and the `pingpong` example
+(category `example`), each
 checked by `every_plugin_of_the_repositorys_marketplace_checks_clean`.
 
 ## Commands

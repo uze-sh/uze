@@ -1,6 +1,6 @@
 # The part of the world that belongs to one user, run as that user: Git's
 # identity, uze through install.ps1 from the staged release, the pingpong
-# MCP server, this checkout's marketplace and a demo project. Its progress
+# MCP server and a demo project. Its progress
 # goes to the log named on the command line.
 param(
     [Parameter(Mandatory = $true)][string]$Stage,
@@ -37,14 +37,6 @@ try {
     New-Item -ItemType Directory -Force "$env:USERPROFILE\.local\bin" | Out-Null
     Copy-Item "$stage\pingpong-mcp.exe" "$env:USERPROFILE\.local\bin\"
     Add-UserPath "$env:USERPROFILE\.local\bin"
-
-    Note 'market: uze'
-    $market = "$env:USERPROFILE\uze-market"
-    Copy-Item "$stage\market" $market -Recurse
-    git -C $market init -q
-    git -C $market add -A
-    git -C $market commit -q -m 'uze marketplace'
-    uze market add $market *>&1 | ForEach-Object { Note "  $_" }
 
     $project = "$env:USERPROFILE\projects\demo"
     New-Item -ItemType Directory -Force $project | Out-Null

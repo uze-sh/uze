@@ -1,5 +1,0 @@
-{
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "gsd",
-  "description": "GSD (Get Shit Done) beside the agent: where the milestone stands in .planning/, the next step one click away, and a plan's checkpoint answered over the agent's pane."
-}

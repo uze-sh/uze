@@ -1,7 +1,7 @@
 # The sandbox the example plugins' demos record in: the agents' sandbox,
 # with `demo-tasks` — the project `uze:try` makes — as the project, and the
-# five examples declared and installed in it from this checkout's
-# marketplace, the way a person trying uze gets them from uze-sh/uze.
+# workspace package declared and installed in it from the marketplace this
+# checkout's uze carries built in, the way a person trying uze gets it.
 #
 # One spec per example, each published to web/public/examples/ for its
 # README. Never run two at once: they share the sandbox and its tmux session.
@@ -35,25 +35,12 @@ sandbox:
     # dates stay relative to the day the demos are recorded; the base's reset
     # rewinds it between takes like the other fixtures.
     - rm -rf {fixtures}/demo-tasks && python3 -I {project}/plugins/uze/skills/try/demo.py {fixtures}/demo-tasks
-    # This checkout's marketplace, copied into a Git repository out of
-    # $HOME, the way the playground's worlds take it: a project can declare
-    # a plugin from a marketplace it can name, never from the one built into
-    # the binary, and the workspace offers only what a project declares.
-    - |
-      rm -rf {fixtures}/uze-market && mkdir -p {fixtures}/uze-market
-      cp -R {project}/marketplace.json {project}/plugins {fixtures}/uze-market/
-      git -C {fixtures}/uze-market init -q
-      git -C {fixtures}/uze-market add -A
-      git -C {fixtures}/uze-market -c commit.gpgsign=false commit -q -m 'uze marketplace'
-      {project}/target/release/uze market list | grep -q '^ *uze ' || {project}/target/release/uze market add {fixtures}/uze-market >/dev/null
-    # The examples, declared by the project and installed. The manifest is
+    # The workspace package, declared by the project and installed. The manifest is
     # committed, as a project would: the base's reset cleans every
     # untracked file before a take.
     - |
       cd {fixtures}/demo-tasks
-      for plugin in gsd focus contributions; do
-        {project}/target/release/uze install "$plugin@uze" >/dev/null
-      done
+      {project}/target/release/uze install workspace@uze >/dev/null
       git add -A
       git -c commit.gpgsign=false -c user.name=ana -c user.email=ana@example.invalid \
         commit -q -m "chore: declare uze's plugins"
