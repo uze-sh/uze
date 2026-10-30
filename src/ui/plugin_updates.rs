@@ -74,28 +74,38 @@ pub(crate) fn take() -> Option<Told> {
     MAILBOX.take()
 }
 
+/// Says what one pass did: what it updated, and what newly waits for the
+/// operator. Opening the workspace and every wake after it tell through
+/// here, so an update found waiting at opening is said then, and not
+/// again a wake later.
+pub(crate) fn tell(outcomes: Vec<uze_application::AutoUpdateOutcome>) {
+    static TOLD_WAITING: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+    let (updated, waiting) = sort(
+        outcomes,
+        &mut TOLD_WAITING.lock().unwrap_or_else(PoisonError::into_inner),
+    );
+    if !updated.is_empty() {
+        super::extension_switch::plugins_changed();
+    }
+    MAILBOX.publish(updated, waiting);
+}
+
 /// Starts the pass for this process, on a thread of its own. The first
 /// wake is a period away: opening already ran it.
 pub(crate) fn watch(home: UzeHome) {
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let mut waiting_told = BTreeSet::new();
         loop {
             thread::sleep(crate::self_update::jittered(crate::self_update::WAKE_EVERY));
             let _span = tracing::debug_span!(parent: &parent, "plugins.watch").entered();
-            let outcomes = answered_or(
+            tell(answered_or(
                 || {
                     tui_application(home.clone())
                         .map(|app| app.plugins().keep_current())
                         .unwrap_or_default()
                 },
                 Vec::new(),
-            );
-            let (updated, waiting) = sort(outcomes, &mut waiting_told);
-            if !updated.is_empty() {
-                super::extension_switch::plugins_changed();
-            }
-            MAILBOX.publish(updated, waiting);
+            ));
         }
     });
 }

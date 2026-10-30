@@ -720,12 +720,14 @@ pub(crate) fn spawn_startup(home: UzeHome, sender: Sender<WorkerResult>, context
                 let Ok(app) = tui_application(home.clone()) else {
                     return Vec::new();
                 };
-                app.plugins()
-                    .catch_up()
-                    .into_iter()
+                let outcomes = app.plugins().catch_up();
+                let applied = outcomes
+                    .iter()
                     .filter(|outcome| outcome.applied)
-                    .map(|outcome| outcome.plugin)
-                    .collect()
+                    .map(|outcome| outcome.plugin.clone())
+                    .collect();
+                super::plugin_updates::tell(outcomes);
+                applied
             },
             Vec::new(),
         );
