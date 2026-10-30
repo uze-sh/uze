@@ -37,22 +37,23 @@ pub(super) fn render_bar(
 
     // The restart into an installed release takes the right end before
     // anything a plugin puts there: it is UZE's, and the one thing in the
-    // bar that is news.
+    // bar that is news. Text on the bar's own ground, in the hue of what
+    // went well: no fill behind it, and under the pointer a stronger
+    // version of its own green, at the same weight.
     if model.release.is_some() {
-        let restart = [GroupButton {
-            hit: WorkspaceHit::RestartIntoRelease,
-            label: format!("{} restart", theme::glyph(Symbol::ArrowUp)),
-            hue: theme::color(Token::Accent),
-            strong: false,
-            lit: false,
-            switch: false,
-        }];
-        let width = group_width(&restart).min(row.width);
+        let label = format!("{} restart", theme::glyph(Symbol::ArrowUp));
+        let width = (Span::raw(label.as_str()).width() as u16).min(row.width);
         let rect = Rect::new(right_x.saturating_sub(width), row.y, width, 1);
-        let (spans, group_hits) =
-            button_group(model, &restart, Token::SurfaceRaised, (rect.x, rect.y));
-        hits.extend(group_hits);
-        frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+        let ink = match chip_state(model, WorkspaceHit::RestartIntoRelease) {
+            ChipState::Resting => theme::color(Token::StateSuccess),
+            ChipState::Hovered => theme::lifted(Token::StateSuccess),
+            ChipState::Pressed => theme::lifted_ink(theme::lifted(Token::StateSuccess)),
+        };
+        frame.render_widget(
+            Paragraph::new(Span::styled(label, Style::default().fg(ink))),
+            rect,
+        );
+        hits.push((rect, WorkspaceHit::RestartIntoRelease));
         right_x = rect.x.saturating_sub(GAP);
     }
 

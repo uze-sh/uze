@@ -838,3 +838,36 @@ fn without_an_installed_release_nothing_offers_a_restart() {
     let index = client.attach.model.action_index.as_ref().expect("open");
     assert!(!index.offered.contains(&uze_keys::Action::RestartUze));
 }
+
+/// The restart is text on the bar's own ground: green at rest, a stronger
+/// green under the pointer, and never a fill of its own.
+#[test]
+fn the_restart_is_green_text_on_the_bars_ground() {
+    let mut model = no_bar();
+    model.release = Some(crate::self_update::Notice("9.0.1".to_owned()));
+    let row = layout(&model).bar.unwrap().y + 1;
+    let column = u16::try_from(
+        bar_row(&mut model)
+            .find("restart")
+            .expect("the restart stands"),
+    )
+    .unwrap();
+    let buffer = frame_buffer_at(&mut model, ROOMY);
+    let cell = &buffer[(column, row)];
+    assert_eq!(
+        cell.fg,
+        crate::ui::theme::color(uze_theme::Token::StateSuccess)
+    );
+    assert_eq!(
+        cell.bg,
+        buffer[(column - 4, row)].bg,
+        "no fill of its own: the ground beside it"
+    );
+
+    model.hovered = Some(WorkspaceHit::RestartIntoRelease);
+    assert_eq!(
+        frame_buffer_at(&mut model, ROOMY)[(column, row)].fg,
+        crate::ui::theme::lifted(uze_theme::Token::StateSuccess),
+        "a stronger version of itself under the pointer"
+    );
+}
