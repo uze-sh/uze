@@ -1111,21 +1111,32 @@ const VERSION: &str = "2.0.29";
 /// Bun, to load a generated plugin in a test. A developer without it skips
 /// those checks; CI installs it, so there its absence fails the job rather
 /// than leaving the plugin unchecked.
+///
+/// The executable Bun reports running as, never the `bun` found on `PATH`:
+/// that one may be a version manager's shim, which finds its tool through
+/// `HOME`, and the checks run Bun under a `HOME` of their own.
 // Only the Unix jobs install Bun, as for the sibling plugin checks.
 #[cfg(all(test, unix))]
 pub(crate) fn bun_for_tests() -> Option<&'static str> {
-    let available = std::process::Command::new("bun")
-        .arg("--version")
-        .output()
-        .is_ok_and(|output| output.status.success());
-    if !available {
-        assert!(
-            std::env::var_os("CI").is_none(),
-            "bun is not installed, and CI must run the OpenCode plugin checks"
-        );
-        eprintln!("bun is not installed; the OpenCode plugin check is skipped");
-    }
-    available.then_some("bun")
+    static BUN: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    let bun = BUN.get_or_init(|| {
+        let executable = std::process::Command::new("bun")
+            .args(["-e", "process.stdout.write(process.execPath)"])
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .filter(|path| !path.is_empty());
+        if executable.is_none() {
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "bun is not installed, and CI must run the OpenCode plugin checks"
+            );
+            eprintln!("bun is not installed; the OpenCode plugin check is skipped");
+        }
+        executable
+    });
+    bun.as_deref()
 }
 
 #[cfg(test)]
