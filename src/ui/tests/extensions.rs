@@ -946,6 +946,37 @@ fn a_preference_is_set_from_the_drawer_without_opening_anything() {
     assert_eq!(model.preferences, None);
 }
 
+/// Preferences are the machine's: with no project in front, an extension
+/// that is allowed still has them set from its drawer, and a click on its
+/// value never reaches the screen's Enter, which would switch it off.
+#[test]
+fn a_preference_is_set_with_no_project_in_front() {
+    let mut model = focus_preferences();
+    model.preferences = None;
+    model.extension_project = None;
+    model.extension_standings[0].condition = uze_application::ExtensionCondition::Consented;
+    assert_eq!(
+        click(
+            &mut model,
+            &Hit::ExtensionPreferenceStep {
+                index: 0,
+                forward: true
+            }
+        ),
+        set("minutes", "Minutes in a session", serde_json::json!(26))
+    );
+    model.preferences = None;
+    assert_eq!(
+        click(&mut model, &Hit::ExtensionPreferenceValue(1)),
+        Intent::None,
+        "a click on a number types it"
+    );
+    assert!(
+        matches!(&model.preferences, Some(editor) if editor.typing.is_some()),
+        "the value is being typed"
+    );
+}
+
 /// Every key the footer names while the keys are on the preferences is a
 /// target doing what the key does: enter types the number, esc gives the
 /// keys back to the cards.

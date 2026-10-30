@@ -1411,14 +1411,20 @@ impl TuiModel {
         }
     }
 
-    /// Opening the selected extension's preferences, when it declares any.
+    /// Putting the keys on the selected extension's preferences, when it
+    /// declares any.
     pub(crate) fn edit_selected_preferences(&mut self) -> crate::ui::worker::Intent {
         use crate::ui::worker::Intent;
         let Some(extension) = self.selected_extension() else {
             return Intent::None;
         };
+        // Preferences are the machine's, so whichever condition it stands
+        // in, as the drawer's Preferences offer has it.
+        let ExtensionEntry::Declared(summary) = extension else {
+            return Intent::None;
+        };
         let Some(standing) = self
-            .standing_in_a_project(extension)
+            .extension_standing(&summary.identity)
             .filter(|standing| !standing.preferences.is_empty())
             .cloned()
         else {
