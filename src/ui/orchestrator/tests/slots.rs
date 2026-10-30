@@ -533,7 +533,7 @@ fn an_overlay_is_offered_in_the_index_and_opens_from_it() {
         .iter()
         .find(|door| door.label() == "Open Notes")
         .unwrap_or_else(|| panic!("offered: {doors:?}"));
-    assert_eq!(door.description(), "notes · proof@proving");
+    assert_eq!(door.description(), "proof@proving/notes");
     let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("overlay-index"));
     let mut driven = driven(model, &home);
     let uze_keys::Action::Extension(id) = *door else {

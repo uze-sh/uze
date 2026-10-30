@@ -583,7 +583,7 @@ pub(crate) enum ContextAction {
 pub(crate) enum MarketAction {
     /// Add a marketplace discovery source (local path or https://...).
     Add { source: String },
-    /// List registered marketplaces (including embedded uze-official).
+    /// List registered marketplaces (including embedded uze).
     List {
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,

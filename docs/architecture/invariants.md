@@ -1132,6 +1132,12 @@ diagnostic command.
 > `crates/uze-application/src/application/tests.rs::bootstrap_never_mutates_an_already_installed_default_plugin`
 > `crates/uze-application/src/application/tests.rs::read_only_bootstrap_leaves_store_state_byte_identical_on_repeat`
 
+The one exception is a name an earlier release used: a package recorded under
+the official marketplace's retired name, `uze-official`, is taken off with its
+receipts and installed again under `uze`, once.
+
+> `crates/uze-application/src/application/tests.rs::seeding_moves_plugins_off_the_official_marketplaces_old_name`
+
 ### A newer snapshot is reported, never silently applied
 
 `PluginSummary::update_available` is a pure read (a scratch-directory
@@ -1140,6 +1146,18 @@ explicit `update_plugin` call. Every CLI dispatch — `doctor`/`list`
 included — stays on the reporting side of that line.
 
 > `crates/uze-application/src/application/tests.rs::bootstrap_never_mutates_an_already_installed_default_plugin`
+
+### A project's built-in plugins follow the binary that runs
+
+A project declares the official marketplace's plugins under `uze` with no
+source, and the lock pins them by the uze version and their bytes. Bytes
+another build left, on the machine or in the lock, are replaced by the
+running binary's on install and reported as updated, never refused: the
+binary is the only source. The bundled `uze` plugin is never declared.
+
+> `tests/lifecycle/manifest_and_lock.rs::a_built_in_plugin_installs_from_the_manifest_alone`
+> `tests/lifecycle/manifest_and_lock.rs::a_built_in_plugin_follows_the_binary_it_runs`
+> `tests/lifecycle/manifest_and_lock.rs::adding_the_bundled_plugin_declares_nothing`
 
 ### A managed reference that resolves to nothing is adopted, not preserved
 

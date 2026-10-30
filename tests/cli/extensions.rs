@@ -8,7 +8,7 @@ use std::process::{Command, Output};
 
 use uze_testkit::process::{IsolatedHome, NotLaunchedByUze};
 
-const BAND: &str = "gsd-band · gsd@studio";
+const BAND: &str = "gsd@studio/gsd-band";
 
 /// A machine with the `gsd` fixture plugin's marketplace added, and a
 /// project that is a Git repository of its own.
@@ -123,7 +123,7 @@ fn an_install_off_a_terminal_leaves_a_script_extension_disabled_and_says_where_t
         "{said}"
     );
     assert!(
-        !said.contains("gsd-panel · gsd@studio"),
+        !said.contains("gsd@studio/gsd-panel"),
         "a fixtures-only extension waits for nothing: {said}"
     );
     assert!(
@@ -192,7 +192,7 @@ fn status_and_inspect_report_each_extension_and_its_state() {
     assert!(row.contains("wants read:checkout"), "{row}");
     assert!(
         text.lines()
-            .any(|line| line.contains("gsd-panel · gsd@studio") && line.contains("runs nothing")),
+            .any(|line| line.contains("gsd@studio/gsd-panel") && line.contains("runs nothing")),
         "{text}"
     );
 

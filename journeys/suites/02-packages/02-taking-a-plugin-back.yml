@@ -84,7 +84,7 @@ scenes:
         about: the generated native package is gone
       - json: "{uze_home}/state/attachments.json"
         at: receipts.*.package_id
-        includes: [uze@uze-official]
+        includes: [uze@uze]
         about: and the receipts that were not this plugin's are untouched
 
   - scene: nothing at all was left behind

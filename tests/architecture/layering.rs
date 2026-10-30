@@ -719,6 +719,56 @@ fn chrome_is_built_from_the_widget_vocabulary() {
     );
 }
 
+/// Every input a person sets a value with is a component of
+/// `widget::form`: a stepper, a choice side by side, a box, a combo, a
+/// list's check mark. Their glyphs are named nowhere else in the client,
+/// so a screen cannot grow a control of its own beside the form's.
+#[test]
+fn form_inputs_are_drawn_from_the_form_components() {
+    /// The glyphs only a form's input wears.
+    const INPUT_GLYPHS: &[&str] = &[
+        "Symbol::StepIncrease",
+        "Symbol::StepDecrease",
+        "Symbol::MarkToggleOn",
+        "Symbol::MarkToggleOff",
+    ];
+    /// Where they legitimately appear, and why.
+    const SANCTIONED: &[(&str, &str)] = &[
+        ("src/ui/widget/form.rs", "the form components themselves"),
+        ("src/ui/theme.rs", "where every glyph is resolved"),
+    ];
+
+    let root = repository_root();
+    let mut drawn = Vec::new();
+    for (path, contents) in production_sources(&root.join("src/ui")) {
+        let relative = path
+            .strip_prefix(&root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        if SANCTIONED.iter().any(|(scope, _)| relative == *scope) {
+            continue;
+        }
+        for (number, line) in contents.lines().enumerate() {
+            let code = line.split("//").next().unwrap_or_default();
+            if INPUT_GLYPHS.iter().any(|glyph| code.contains(glyph)) {
+                drawn.push(format!("  {relative}:{}", number + 1));
+            }
+        }
+    }
+
+    assert!(
+        drawn.is_empty(),
+        "\n\nan input drawn outside the form components:\n\n{}\n\n\
+         Build it from `widget::form` — `form::key` with a `form::Control`, \
+         `form::check` for a list of choices — and add a `Control` there if \
+         none of them is the input you need. A control drawn at its call \
+         site is how the settings form, the preferences and three lists of \
+         choices came to wear four looks.\n",
+        drawn.join("\n")
+    );
+}
+
 /// Every frame the client draws reaches the terminal through
 /// `TerminalSession::draw`, which takes out of it the controls ratatui lets
 /// through (a bidi override a plugin's name carries). A second ratatui

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Opens a fresh Windows Sandbox with this checkout's uze installed the way a
-# person installs it and its marketplace registered, for an
+# person installs it, its marketplace built in, for an
 # ordinary account (`UZE_PLAYGROUND_USER=admin` for the Sandbox's
 # administrator, in Windows Terminal). Run from WSL: `make playground-windows`.
 #
@@ -69,7 +69,6 @@ with zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as archive:
     archive.write(sys.argv[1], "uze.exe")
 PY
 stage_release "$stage" "$stage/uze-x86_64-windows.zip"
-stage_market "$stage"
 stage_installer "$stage" "${repo_root}/install.ps1"
 cp "${playground_root}/windows/prepare.ps1" \
   "${playground_root}/windows/setup-user.ps1" "$built/pingpong-mcp.exe" "$stage/"

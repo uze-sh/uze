@@ -185,7 +185,7 @@ scenes:
         expect: "its update wants more than you allowed"
         expect_timeout: 10
       - wait: screen
-        until: "store +keeps what it remembers"
+        until: "store +keeps state for this project"
         timeout: 5
         say: the question names the new grant
       # An update that wants more starts left off: allowing it is the

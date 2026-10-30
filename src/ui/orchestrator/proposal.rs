@@ -169,7 +169,7 @@ pub(super) fn render_proposal(
         area,
         &Dialog {
             tone: Tone::Caution,
-            title: "Keep this fact for every project?",
+            title: "Keep this fact for every project?".into(),
             subject: Some(ratatui::text::Line::from(fact.name.clone())),
             body: vec![
                 fact.description.clone(),
@@ -182,6 +182,7 @@ pub(super) fn render_proposal(
             confirm: Some("Accept"),
             focus: Some(open.focus),
             field: None,
+            ..Default::default()
         },
         &[uze_keys::Scope::Global, uze_keys::Scope::Confirm],
         WorkspaceHit::ProposalAnswer(ProposalChoice::Leave),

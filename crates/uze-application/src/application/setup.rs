@@ -17,6 +17,10 @@ pub enum ProvisionRoute {
     Existing,
 }
 
+/// The official marketplace's name before it was `uze`: what an earlier
+/// release recorded its plugins under.
+const RETIRED_BUILT_IN_MARKETPLACE: &str = "uze-official";
+
 impl UzeApplication {
     /// Ensures every plugin `bootstrap::DEFAULT_PLUGIN_IDS` names is present
     /// in the Store. Each default plugin's *first install* goes through the
@@ -31,7 +35,9 @@ impl UzeApplication {
     /// (including read-only ones like `doctor`/`list`), and an observational
     /// command must not mutate installed plugin content. A newer snapshot is
     /// surfaced as `PluginSummary::update_available` (a pure read) for an
-    /// explicit `Plugins::update` to act on later, not applied silently. See
+    /// explicit `Plugins::update` to act on later, not applied silently. The
+    /// one exception is a plugin recorded under the marketplace's retired
+    /// name, which is moved under `uze` once. See
     /// `docs/architecture/invariants.md`'s "Official marketplace" section.
     ///
     /// Idempotent. Returns `true` if it installed at least one Store entry.
@@ -85,6 +91,13 @@ impl UzeApplication {
         let Ok(packages) = self.installed_packages_checked() else {
             return false;
         };
+        let retired = format!("@{RETIRED_BUILT_IN_MARKETPLACE}");
+        if packages
+            .iter()
+            .any(|package| package.id.as_str().ends_with(&retired))
+        {
+            return false;
+        }
         let seeded = bootstrap::DEFAULT_PLUGIN_IDS.iter().all(|id| {
             let qualified = format!("{id}@{BUILT_IN_MARKETPLACE}");
             packages
@@ -104,7 +117,7 @@ impl UzeApplication {
     /// lock, which is not reentrant.
     fn ensure_default_plugins_locked(&self) -> Result<bool> {
         let _span = tracing::info_span!("bootstrap.ensure_default_plugins").entered();
-        let mut installed_any = false;
+        let mut installed_any = self.move_off_the_retired_official_name()?;
         for &id in bootstrap::DEFAULT_PLUGIN_IDS {
             installed_any |= self.ensure_default_plugin_installed(id)?;
         }
@@ -120,6 +133,51 @@ impl UzeApplication {
         // was most of what a read-only command cost.
         if let Ok(packages) = self.installed_packages_checked() {
             let _ = self.republish_unpublished(&packages);
+        }
+        Ok(installed_any)
+    }
+
+    /// Every plugin an earlier release installed under the official
+    /// marketplace's old name, taken off as a removal takes it (its receipts
+    /// say what it delivered) and installed again under `uze`; the bundled
+    /// ones are seeded again right after. Answers whether it installed any.
+    fn move_off_the_retired_official_name(&self) -> Result<bool> {
+        let retired = format!("@{RETIRED_BUILT_IN_MARKETPLACE}");
+        let names: Vec<String> = self
+            .store
+            .package_ids()?
+            .iter()
+            .filter_map(|id| id.as_str().strip_suffix(&retired).map(str::to_owned))
+            .collect();
+        for name in &names {
+            let id = format!("{name}{retired}");
+            if let Err(error) = self.plugins().detach_and_remove_unpublished(&id, true) {
+                tracing::warn!(plugin = %id, %error, "a plugin under the retired name stayed");
+            }
+        }
+        let mut installed_any = false;
+        for name in names
+            .iter()
+            .filter(|name| !bootstrap::DEFAULT_PLUGIN_IDS.contains(&name.as_str()))
+        {
+            let installed = bootstrap::materialize(name).and_then(|materialized| {
+                self.plugins().install_materialized(
+                    materialized,
+                    BUILT_IN_MARKETPLACE,
+                    None,
+                    &trust::NoTrustAuthority,
+                    &uze_core::naming::NoNameCollisionAuthority,
+                    trust::SourceOrigin::Operator,
+                )
+            });
+            match installed {
+                Ok(_) => installed_any = true,
+                Err(error) => tracing::warn!(
+                    plugin = %name,
+                    %error,
+                    "a plugin under the retired name was not installed again"
+                ),
+            }
         }
         Ok(installed_any)
     }

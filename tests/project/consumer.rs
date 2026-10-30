@@ -192,7 +192,7 @@ fn install_project_environment_reproduces_a_lock_on_a_fresh_machine() {
     );
     assert!(
         fresh_app.marketplace().list().unwrap().len() == 1,
-        "fresh machine starts with only the embedded uze-official marketplace"
+        "fresh machine starts with only the embedded uze marketplace"
     );
 
     let report = fresh_app
@@ -819,7 +819,7 @@ fn adding_a_built_in_plugin_installs_it_without_writing_the_project_files() {
         .project()
         .add(
             "uze",
-            "uze-official",
+            "uze",
             &fx.project_root,
             &AlwaysTrust,
             &uze_application::NoNameCollisionAuthority,
@@ -835,7 +835,7 @@ fn adding_a_built_in_plugin_installs_it_without_writing_the_project_files() {
             .list()
             .unwrap()
             .iter()
-            .any(|plugin| plugin.id == "uze@uze-official"),
+            .any(|plugin| plugin.id == "uze@uze"),
         "the plugin is installed on the machine"
     );
     assert!(

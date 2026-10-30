@@ -28,7 +28,11 @@ The rules are in two places, and they do not overlap:
 2. If the vocabulary has no widget or constructor for your case, add one to
    `src/ui/widget/` (or a helper to `src/progress.rs`). Never build it at the
    call site.
-3. Read the sections below that apply to your change. When the rule you need
+3. Asking a person for a value (a setting, a preference, an option, a
+   list to tick) is a form: build it from the components of `widget::form`
+   (see **Forms are components**), and grow them there when they lack
+   the input you need.
+4. Read the sections below that apply to your change. When the rule you need
    isn't here, ask the operator once, then write the answer down here.
 
 ## Interaction (TUI)
@@ -48,8 +52,8 @@ on "cancel" must not save first.
 - `Hints::line()` (text with no target) is only for hints inside scrolling
   prose.
 - A `run` (↑↓, 1–9) is read, never clicked.
-- A dialog's bottom border is a hint bar too: draw it with
-  `dialog::BorderHint` and register its `targets` along the popup.
+- A dialog's bottom border is a hint bar too: its keys answer a click as
+  its buttons do.
 - Prove a new hint bar with a click == key test. See
   `clicking_an_overview_foot_hint_is_pressing_its_key` and
   `clicking_a_surface_footer_hint_is_pressing_its_key`.
@@ -302,6 +306,13 @@ on "cancel" must not save first.
   with `review` at its far end, and the whole row opens the Extensions
   screen on that extension. A state the person can act on is never a
   bare warning they have to go find the answer to.
+- Who vouches and who controls are two seals, as an editor's
+  marketplace keeps them: `Bundled` for what ships inside uze and is
+  never installed or removed (the built-in extensions, the `uze`
+  plugin, whose Marketplace status word is `bundled`), `Official` for
+  what uze publishes in its marketplace and the operator installs and
+  removes like any other. A third party's wears neither. Only a bundled
+  plugin refuses removal, and says why.
 - Marketplace says what a package brings; Extensions says what runs.
   Each links to the other and neither repeats the other's actions. A
   package's tree lists the extensions it declares as a kind like any
@@ -330,6 +341,11 @@ on "cancel" must not save first.
 - Several things waiting on the same answer are asked in one dialog, a
   list to choose from (`Scope::Choose`), never a queue of dialogs; one
   toast says what was done (`3 extensions enabled`), never one each.
+- A consent names what it asks about in its title (`Allow Focus to
+  run?`), whose it is muted under it (`focus@uze`), one line of
+  where it runs, then what it asks for as the same two-column table
+  the workspace's offer draws (`Dialog::table`): never a paragraph per
+  grant.
 - A question is 60 columns at most. A list to choose from takes what its
   rows need, up to 96, its rows take the height left (4 to 14, then it
   scrolls), and the marked row's detail keeps a fixed height, so moving
@@ -347,21 +363,59 @@ on "cancel" must not save first.
 - UI state (collapsed sections, navigation, widths) survives navigation and
   restarts.
 
-**Forms:**
-- Inputs share one look: an underline that lights on focus, and a visible
-  caret so the field reads as an input before anyone types.
-- Numbers use `- value +` steppers sized for two digits.
-- A fixed set of choices uses a combobox or radio buttons.
+**Forms are components.** Every value a person sets, on any screen, is
+drawn from `widget::form`, the way a web app draws its inputs from one
+component library: same anatomy, same states, same spacing everywhere.
+Before drawing an input, find its component; when none fits, add a
+`form::Control` (or a sibling component) there and use it, never a
+control assembled at the call site. `form_inputs_are_drawn_from_the_form_components`
+fails the build on an input's glyph named outside it.
+
+- The components:
+  - `form::Layout`: the label column, a control's width, a box's width
+    and the row's room. `Layout::fit` sizes it to the labels; a screen
+    with a fixed column states its own.
+  - `form::key(label, state, Control, layout, lit)`: one key, its label
+    with the keys' `❯` while they are on it, then its control. It answers
+    with its line and each `form::Part` (`Decrease`, `Value`, `Increase`,
+    `Option(n)`); the caller maps parts to its own hits.
+  - `form::Control`: `Stepper` (a number between raised `−` `+`),
+    `Choice` (a few options side by side, the chosen one in the accent;
+    in a box when they do not fit), `Boxed` (a typed value in a recessed
+    box), `Combo` (a box with the mark that says a list opens: only when
+    one does), `Typing` (the box being typed into, its caret), `Add`
+    (`+ add`, where a list's first entry would stand).
+  - `form::check(on, lit)`: a row's mark in a list of choices, `◉` in the
+    accent or `○` quiet, stronger under the pointer.
+  - `form::heading`, `form::GROUP_AIR`, `form::KEY_AIR`: a group stands
+    apart the settings way, never with a bar down its side: two blank
+    lines above it, a ruled heading (`Preferences ───`), a blank line,
+    then its keys with a line of air between each.
+- Two inputs take text and they are not the same: a key's value is typed
+  in its own recessed box (`Control::Typing`); a line typed into at the
+  head of a list or a popover (a search, a path, a prompt) is
+  `widget::Field`, with its underline that lights on focus. Both show a
+  caret before anything is typed.
+- Controls start from the label column, never right-aligned against the
+  edge.
+- What a plugin's view declares to be set is the form too, drawn by the
+  host: a `Select` is a `Choice` (a press on an option chooses it, through
+  `NodeAct::Choose`), a `Field` its box, and the inputs of a `Form` share
+  one label column.
+- Numbers are steppers sized for two digits; a few fixed choices stand
+  side by side, more go in a combo with its list; a list where several
+  rows can be on is a list of `check`s.
 - Files and branches come from a picker of real options.
 - Settings autosave, and the save shows no toast.
-- An extension's preferences open as a dialog (`dialog::shell`) titled
-  `Focus preferences`, never a bare menu of `label  value`: one row per
-  preference, its label on the left and its value as the control that
-  changes it in one column against the right edge (`widget::control`:
-  `− 25 +`, `‹ dark ›`, `◉ on`, a field), then under a rule a detail of
-  fixed height saying the selected row's kind, range and default (`A
-  number from 1 to 90 · default 25`), or where a secret is kept. ←→ step
-  and save at once; Enter types or flips.
+- An extension's preferences are the form in its drawer, never a dialog
+  of their own: every part a click target from the start (a click on an
+  option chooses it). A click on a row, or `edit-preferences` in the
+  action index, puts the keys on them; the drawer draws no Preferences
+  button, which would only repeat its rows; a detail of fixed height at the body's
+  foot, under a rule and out of the scroll, says the row's kind, range and default (`A number from 1 to 90 ·
+  default 25`), or where a secret is kept, and the footer names their
+  keys. ←→ step and save at once; Enter types in the row's own box or
+  flips; Esc, or a click anywhere else, gives the keys back to the cards. 
 
 ## Feedback, state and timing
 
@@ -494,6 +548,19 @@ operator rather than assume.
 - A setting's drawer teaches: what it decides, each option with what it
   does (the default marked `· default` on its option, not a row of its
   own), and an `example` of how a project writes it.
+- A manage drawer is a key/value grid, never a label over each value:
+  keys in the shared column (`view::FIELD_KEY_WIDTH`), muted, values
+  beside them hanging under their own first row. A list of named things
+  (grants, programs) is a table under a section label, names in
+  `TextCode` in a column as wide as the longest, what each means beside
+  it. It reads what the extension is, what it may reach (grants,
+  programs), then what is set: its preferences, drawn as the form
+  (**Forms are components**). A body longer than the drawer scrolls under
+  the wheel with the standard scrollbar in the drawer's margin, and while
+  the keys are on the preferences it moves only as far as the row they
+  are on needs, never under a pointer at rest. What the foot
+  already says (enabled everywhere) is not said again in the body, and
+  the foot's note is left empty when the headline says it all.
 - A path beside a label stays on one line, cut at its head.
 - A section's status line is short and in a quiet tone
   (`worktree copy · applies once delivered`); the accent hues are for
@@ -629,7 +696,7 @@ Answer each of these. A "no" is a fix, not a note in the report:
 3. Does it match the nearest sibling surface's structure, spacing and
    alignment? Did I check edges against the title?
 4. Is every colour a token, every glyph a `Symbol`, every piece of chrome a
-   widget?
+   widget, every input a `widget::form` component?
 5. Did I check it at a narrow width, in an empty state, in light mode, and
    with long text?
 6. Does each toast have a title and a detail, and is it about something

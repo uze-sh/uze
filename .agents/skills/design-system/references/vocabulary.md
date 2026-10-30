@@ -27,9 +27,9 @@ ratatui primitives (`chrome_is_built_from_the_widget_vocabulary`).
 | segmented | `Segment`, `segmented`: a few views of one place as spans for a row, the one in front in the accent, the rest lit under the pointer |
 | a detail column | `drawer::render`, `drawer::foot` |
 | a drawer docked beside a live pane | `drawer::render_docked`, `drawer::docked_width` |
-| a question or notice | `dialog::Dialog`, `render_choice`, `shell` |
-| a dialog's bottom border whose keys answer a click | `dialog::BorderHint` (`BorderKey::Key`/`Run`), `.line()` to `shell`, `.targets(popup)` to register |
-| a setting's value as its control, in a column | `control::Control` (`Stepper`, `Choice`, `Toggle`, `Field`), `render` returns its parts to register |
+| a question or notice | `dialog::Dialog` (its `table` for what a consent asks for), `render_choice`, `shell` |
+| a form: a key and the control that sets its value, a group's heading and air, a list's check mark | `widget::form`: `Layout`, `key` + `Control` (`Stepper`, `Choice`, `Boxed`, `Combo`, `Typing`, `Add`) answering `Part`s, `label`/`indent` for a key of prose, `check`, `heading`, `GROUP_AIR`/`KEY_AIR` |
+| names with what each says beside them (a panel's fields, a drawer's grants, a consent's grants) | `definitions::lines` with `Column::Fixed(view::FIELD_KEY_WIDTH)` for a panel's keys or `Column::Fit` for a table of names, one list of lines per entry |
 | a list to choose from, answered once | `dialog::shell` with `Scope::Choose` (`orchestrator/extension_offer.rs`) |
 | a titled card over a scrim | `modal`, `footer::render` (returns `Drawn{trailers, hints}`), `scrim` |
 | what to check, worst first | `alerts` |

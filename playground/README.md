@@ -2,7 +2,7 @@
 
 Two disposable worlds for trying this checkout by hand, the way a person
 meets uze: a fresh machine, uze installed through the real installer, Git,
-and this checkout's marketplace to install from. Nothing is installed on your own system, and
+and the marketplace built into this checkout's uze to install from. Nothing is installed on your own system, and
 each world starts over every time it is opened.
 
 Both are started from WSL.
@@ -21,8 +21,6 @@ world, which then:
 - installs Git;
 - installs uze through the installer, from that local release;
 - puts `pingpong-mcp` on `PATH`;
-- registers this checkout's marketplace, `uze`: the official plugin and the
-  examples in [`plugins/`](../plugins), copied into a Git repository;
 - creates `~/projects/demo`, a Git repository with an `AGENTS.md`;
 - opens a shell there, as an ordinary user.
 
@@ -107,6 +105,6 @@ No world needed to try the example plugins against this checkout:
 make try        # ~/uze-try (or TRY_DIR=…): a demo project with every example installed
 ```
 
-`make examples` alone links the `uze` marketplace to this checkout, so an
-edit under `plugins/` reaches the harnesses on the next `uze install` with no
-commit. What each example is, `pingpong` among them, is in its own README.
+The examples come built into the uze `make try` installs from this
+checkout, so an edit under `plugins/` reaches them on the next `make try`.
+What each example is, `pingpong` among them, is in its own README.

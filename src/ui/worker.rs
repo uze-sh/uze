@@ -854,8 +854,18 @@ fn spawn_mutation(
                 tui_application(home.clone())
                     .and_then(|app| {
                         let message = operation(&app)?;
+                        // Read after the operation, which may itself have
+                        // moved the revision: unstamped, what it changed
+                        // reads as older than the screen and is dropped.
+                        let revision = super::extension_switch::plugins_revision();
                         let data = load_refresh_data(home, &context_root)?;
-                        Ok((message, data))
+                        Ok((
+                            message,
+                            RefreshData {
+                                plugins_revision: revision,
+                                ..data
+                            },
+                        ))
                     })
                     .map_err(|error| error.to_string())
             },
@@ -1545,6 +1555,37 @@ mod tests {
             matches!(&answer, WorkerResult::Mutated(answered, Err(error))
                 if *answered == ticket && error == "The operation failed"),
             "a panic is a failure the screen can say"
+        );
+    }
+
+    /// What a mutation changed reaches the screen even when the plugins
+    /// moved since it opened: the Extensions screen showed an extension
+    /// as needing consent after it was allowed, until reopened.
+    #[test]
+    fn a_mutations_own_refresh_is_never_stale() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("worker-revision"));
+        let (sender, receiver) = mpsc::channel();
+        let mut model = TuiModel::default();
+        crate::ui::extension_switch::plugins_changed();
+        model.remembered.plugins_revision = crate::ui::extension_switch::plugins_revision();
+
+        spawn_mutation(
+            Mutation::asked(&mut model, "Allowing…".to_owned(), &home, &sender),
+            |_| {
+                crate::ui::extension_switch::plugins_changed();
+                Ok("allowed".to_owned())
+            },
+        );
+
+        let answer = receiver
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .expect("the worker answered");
+        let WorkerResult::Mutated(_, Ok((_, data))) = answer else {
+            panic!("the mutation succeeded");
+        };
+        assert!(
+            data.plugins_revision >= model.remembered.plugins_revision,
+            "a refresh read after the change is not older than the screen"
         );
     }
 

@@ -34,7 +34,7 @@ The system SHALL list installed plugins with their marketplace and update availa
 
 #### Scenario: List plugins
 - **WHEN** user runs `uze plugin list`
-- **THEN** output includes `name`, `marketplace` (e.g., `ai`, `uze-official`), `version`, and `update_available`
+- **THEN** output includes `name`, `marketplace` (e.g., `ai`, `uze`), `version`, and `update_available`
 
 ### Requirement: Plugin update and remove use marketplace-resolved source
 The system SHALL update a marketplace-installed plugin by re-resolving its marketplace entry and running the existing update pipeline, and remove SHALL detach via native projection then delete Store bytes, respecting ADR-009.

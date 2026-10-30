@@ -366,7 +366,7 @@ pub struct MarketplaceSummary {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct MarketplacePluginSummary {
-    /// Which registered marketplace this plugin came from (`uze-official`
+    /// Which registered marketplace this plugin came from (`uze`
     /// for the embedded snapshot, or the name it was registered under via
     /// `marketplace add`). Needed once more than one marketplace can
     /// contribute plugins to the same list — see `Marketplace::plugins`.

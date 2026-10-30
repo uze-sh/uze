@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Starts a fresh, throwaway WSL distribution (Ubuntu 24.04) with this
-# checkout's uze installed the way a person installs it and its
-# marketplace registered, and opens a shell in it. Run from WSL:
+# checkout's uze installed the way a person installs it, its marketplace
+# built in, and opens a shell in it. Run from WSL:
 #
 #   make playground-linux          a new distribution, replacing the last one
 #   make playground-linux-down     remove it
@@ -41,7 +41,6 @@ mkdir -p "$stage"
 archive="uze-$(uname -m)-linux-gnu.tar.gz"
 tar -czf "$stage/$archive" -C "$built" uze
 stage_release "$stage" "$stage/$archive"
-stage_market "$stage"
 stage_sessions "$stage"
 stage_installer "$stage" "${repo_root}/install.sh"
 cp "${playground_root}/linux/prepare.sh" "$built/pingpong-mcp" "$stage/"

@@ -1036,7 +1036,7 @@ fn a_declared_extensions_question_is_attributed() {
             render_confirm(
                 frame,
                 &confirm,
-                Some("gsd-band · gsd@studio"),
+                Some("gsd@studio/gsd-band"),
                 frame.area(),
                 uze_keys::Scope::Declared,
                 &mut Vec::new(),
@@ -1050,10 +1050,7 @@ fn a_declared_extensions_question_is_attributed() {
         .iter()
         .map(|cell| cell.symbol())
         .collect();
-    assert!(
-        screen.contains("phase 12  gsd-band · gsd@studio"),
-        "{screen}"
-    );
+    assert!(screen.contains("phase 12  gsd@studio/gsd-band"), "{screen}");
 }
 
 fn draw_with_menu(view: &View, at: Option<Rect>) -> (Vec<String>, Vec<(Rect, ViewHit)>) {

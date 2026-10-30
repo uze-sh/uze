@@ -27,7 +27,7 @@ use super::view::health::{Alert, actionable_alerts};
 pub(crate) enum Route {
     Overview,
     /// The agentic side of the product: skills, agents, MCP — everything
-    /// installable from a marketplace (the embedded `uze-official` snapshot
+    /// installable from a marketplace (the embedded `uze` snapshot
     /// included). Browse the catalog, install, update, remove.
     Plugins,
     /// The tool side: extensions of the workspace itself, the official
@@ -376,12 +376,10 @@ pub(crate) enum Overlay {
     /// Free-text input, appended to on every character key and popped on
     /// backspace — see `TuiModel::overlay_key`'s `AddMarketplace` arms.
     AddMarketplace(String),
-    /// A declared extension's preferences, one row each: Enter flips a
-    /// toggle, moves a choice on, or types a text or a number.
-    Preferences(PreferencesEditor),
 }
 
-/// The preferences of one declared extension, being set.
+/// The preferences of one declared extension, being set in its drawer:
+/// while there is one, the keys are on its rows rather than the cards.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PreferencesEditor {
     pub(crate) identity: uze_application::ExtensionIdentity,
@@ -590,6 +588,14 @@ pub(crate) struct TuiModel {
     pub(crate) route: Route,
     pub(crate) focus: Focus,
     pub(crate) overlay: Overlay,
+    /// The selected extension's preferences while the keys are on them in
+    /// its drawer.
+    pub(crate) preferences: Option<PreferencesEditor>,
+    /// The Extensions drawer's body scrolled: the selected entry it was
+    /// scrolled for, and its first line in sight. Kept from frame to frame,
+    /// so it moves only as far as the wheel or the keys ask, never under a
+    /// pointer at rest.
+    pub(crate) extension_drawer_scroll: std::cell::Cell<(usize, usize)>,
     pub(crate) status: Status,
     pub(crate) status_expires_at: Option<Instant>,
     /// What each mutation asked for and not yet answered is doing, oldest
@@ -887,6 +893,8 @@ impl TuiModel {
                 .unwrap_or_else(Route::first_offered),
             focus: Focus::Sidebar,
             overlay: Overlay::None,
+            preferences: None,
+            extension_drawer_scroll: std::cell::Cell::new((0, 0)),
             key_screen: ListScreen::default(),
             drawer_width: layout.drawer_width,
             settings_selected: 0,
@@ -1243,6 +1251,15 @@ impl TuiModel {
                     self.extension_standing(&summary.identity),
                     self.extension_project.is_some(),
                 );
+                // With the keys already on its preferences, there is nowhere
+                // further for the button to take them.
+                if self
+                    .preferences
+                    .as_ref()
+                    .is_some_and(|editor| editor.identity == summary.identity)
+                {
+                    offers.retain(|offer| offer.action != uze_keys::Action::EditPreferences);
+                }
                 if !summary.statuses.is_empty() {
                     let keys = self.status_keys();
                     let (up, down) = super::status_order::can_move(
@@ -1409,20 +1426,29 @@ impl TuiModel {
         }
     }
 
-    /// Opening the selected extension's preferences, when it declares any.
+    /// Putting the keys on the selected extension's preferences, when it
+    /// declares any.
     pub(crate) fn edit_selected_preferences(&mut self) -> crate::ui::worker::Intent {
         use crate::ui::worker::Intent;
         let Some(extension) = self.selected_extension() else {
             return Intent::None;
         };
+        // Preferences are the machine's, so whichever condition it stands
+        // in, as the drawer's Preferences offer has it.
+        let ExtensionEntry::Declared(summary) = extension else {
+            return Intent::None;
+        };
         let Some(standing) = self
-            .standing_in_a_project(extension)
+            .extension_standing(&summary.identity)
             .filter(|standing| !standing.preferences.is_empty())
             .cloned()
         else {
             return Intent::None;
         };
-        self.overlay = Overlay::Preferences(PreferencesEditor {
+        if self.preferences.is_some() {
+            return Intent::None;
+        }
+        self.preferences = Some(PreferencesEditor {
             identity: standing.identity(),
             name: extension.name().to_owned(),
             rows: standing.preferences,
@@ -1841,6 +1867,15 @@ impl TuiModel {
     /// was already decided by the keymap (`Scope::consumes_text`); this
     /// only says where the character lands.
     pub(crate) fn type_character(&mut self, character: char) -> super::worker::Intent {
+        if self.overlay == Overlay::None
+            && let Some(PreferencesEditor {
+                typing: Some(input),
+                ..
+            }) = &mut self.preferences
+        {
+            input.push(character);
+            return super::worker::Intent::None;
+        }
         match &mut self.overlay {
             Overlay::ActionIndex {
                 filter, selected, ..
@@ -1849,10 +1884,6 @@ impl TuiModel {
                 *selected = 0;
             }
             Overlay::AddMarketplace(input) => input.push(character),
-            Overlay::Preferences(PreferencesEditor {
-                typing: Some(input),
-                ..
-            }) => input.push(character),
             _ => self.edit_filter(|filter| filter.push(character)),
         }
         super::worker::Intent::None
@@ -2350,6 +2381,21 @@ impl TuiModel {
         self.extension_standings = data.extension_standings;
         self.extension_project = data.extension_project;
         self.clamp_list_selection(Route::Extensions);
+        // The keys stay on preferences only while the drawer still shows
+        // the extension they belong to.
+        let still_shown = |editor: &PreferencesEditor| {
+            matches!(
+                self.selected_extension(),
+                Some(ExtensionEntry::Declared(summary)) if summary.identity == editor.identity
+            )
+        };
+        if self
+            .preferences
+            .as_ref()
+            .is_some_and(|editor| !still_shown(editor))
+        {
+            self.preferences = None;
+        }
         self.reveal_pending();
         if data.context_status.is_some() {
             self.remembered.context_status = data.context_status;

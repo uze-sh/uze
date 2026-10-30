@@ -1466,3 +1466,109 @@ fn a_toast_s_close_mark_turns_to_danger_under_the_pointer() {
         theme::color(Token::StateDanger)
     );
 }
+
+/// A form's key keeps its columns whatever its label is written in: a
+/// label of wide characters takes the label column in terminal columns,
+/// so its control starts where the parts it answers with say.
+#[test]
+fn a_form_key_measures_a_wide_label_in_columns() {
+    let layout = super::form::Layout {
+        label: 12,
+        control: 24,
+        field: 24,
+        room: 40,
+    };
+    for label in ["Minutes", "作業時間"] {
+        let key = super::form::key(
+            label,
+            RowState::Resting,
+            super::form::Control::Choice {
+                options: &["オフ", "on"],
+                chosen: "on",
+            },
+            layout,
+            None,
+        );
+        let drawn: usize = key.line.spans.iter().map(|span| span.width()).sum();
+        let (x, width, _) = *key.parts.last().expect("the last option");
+        assert_eq!(
+            drawn,
+            usize::from(x + width),
+            "{label}: the line ends where its last part does"
+        );
+        assert_eq!(key.parts[0].0, layout.label, "{label}");
+    }
+}
+
+/// Every part of a form's control a click lands on lifts under the
+/// pointer: a box's value and a stepper's number as much as its steps.
+#[test]
+fn a_form_controls_value_lifts_under_the_pointer() {
+    let layout = super::form::Layout {
+        label: 12,
+        control: 24,
+        field: 24,
+        room: 40,
+    };
+    let value_style = |control, lit| {
+        let key = super::form::key("Key", RowState::Resting, control, layout, lit);
+        let (x, _, _) = *key
+            .parts
+            .iter()
+            .find(|(_, _, part)| *part == super::form::Part::Value)
+            .expect("a value part");
+        let mut at = 0;
+        key.line
+            .spans
+            .iter()
+            .find(|span| {
+                at += span.width();
+                at > usize::from(x)
+            })
+            .expect("the value's span")
+            .style
+    };
+    for control in [
+        super::form::Control::Boxed {
+            value: "conventional",
+            tone: Token::TextPrimary,
+        },
+        super::form::Control::Stepper {
+            value: "25",
+            tone: Token::TextPrimary,
+            editable: true,
+        },
+    ] {
+        assert_ne!(
+            value_style(control, None).fg,
+            value_style(control, Some(super::form::Part::Value)).fg,
+            "{control:?}"
+        );
+        assert_eq!(
+            value_style(control, None).add_modifier,
+            value_style(control, Some(super::form::Part::Value)).add_modifier,
+            "the hover keeps the weight: {control:?}"
+        );
+    }
+}
+
+/// A label column fitted to its labels gives a label all it needs while
+/// the control keeps room to be read: a drawer's narrow width cuts the
+/// control's share, not the label.
+#[test]
+fn a_fitted_layout_keeps_a_long_label_whole_in_a_narrow_room() {
+    let label = "Show each phase's name";
+    let layout = super::form::Layout::fit([label], 42);
+    let key = super::form::key(
+        label,
+        RowState::Resting,
+        super::form::Control::Choice {
+            options: &["off", "on"],
+            chosen: "on",
+        },
+        layout,
+        None,
+    );
+    assert!(key.line.to_string().contains(label), "{}", key.line);
+    assert!(key.line.width() <= 42, "{}", key.line);
+}

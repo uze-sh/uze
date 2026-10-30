@@ -93,8 +93,8 @@ Remove-Item "$stage\sessions", "$env:PUBLIC\uze-playground" -Recurse -Force -Err
 $project = "$home_\projects\demo"
 $who = if ($asAdministrator) { 'the Sandbox administrator' } else { 'person, an ordinary account' }
 $welcome = @"
-uze $((Get-Content "$stage\version" -Raw).Trim()) from your checkout, as $who, with Git and the
-its marketplace: the uze plugin and the examples.
+uze $((Get-Content "$stage\version" -Raw).Trim()) from your checkout, as $who, with Git and
+its marketplace, uze, built in: the uze plugin and the examples.
 
   uze doctor
   uze setup claude-code            (or codex, opencode, antigravity)

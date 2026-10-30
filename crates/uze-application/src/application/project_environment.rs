@@ -82,6 +82,105 @@ fn stays_inside_the_project(path: &Path) -> bool {
             .any(|component| component == std::path::Component::ParentDir)
 }
 
+/// What bringing one built-in plugin to the running binary's bytes did.
+struct SettledBuiltIn {
+    /// The integrity of the binary's bytes, which the lock records.
+    integrity: String,
+    /// Whether the machine's copy moved: installed, or replaced.
+    moved: bool,
+    deliveries: Vec<HarnessDeliveryReport>,
+    /// Why nothing could be replaced, when it could not.
+    held: Option<String>,
+    /// The install's own report, when the machine lacked the plugin.
+    installed: Option<AddPluginReport>,
+}
+
+impl SettledBuiltIn {
+    fn installed(integrity: String, report: AddPluginReport) -> Self {
+        Self {
+            integrity,
+            moved: true,
+            deliveries: report.deliveries.clone(),
+            held: None,
+            installed: Some(report),
+        }
+    }
+
+    fn replaced(integrity: String, deliveries: Vec<HarnessDeliveryReport>) -> Self {
+        Self {
+            integrity,
+            moved: true,
+            deliveries,
+            held: None,
+            installed: None,
+        }
+    }
+
+    fn unchanged(integrity: String) -> Self {
+        Self {
+            integrity,
+            moved: false,
+            deliveries: Vec::new(),
+            held: None,
+            installed: None,
+        }
+    }
+
+    fn held(integrity: String, reason: String) -> Self {
+        Self {
+            integrity,
+            moved: false,
+            deliveries: Vec::new(),
+            held: Some(reason),
+            installed: None,
+        }
+    }
+}
+
+/// The built-in plugins the manifest declares that the lock does not answer
+/// for from this uze: not locked yet, or locked by another version. Read
+/// from the two files alone; a rebuild of the same version is the
+/// install's to notice, since it means reading the binary's bytes.
+fn built_ins_behind(manifest: &manifest::ProjectManifest, lock: &ProjectLock) -> Vec<String> {
+    let marketplace = uze_core::manifest::BUILT_IN_MARKETPLACE;
+    let this_version = lock.uze.as_deref() == Some(env!("CARGO_PKG_VERSION"));
+    manifest
+        .declared_plugins()
+        .filter(|(_, declared)| *declared == marketplace)
+        .filter(|(plugin, _)| {
+            !this_version
+                || lock
+                    .plugins
+                    .get(*plugin)
+                    .is_none_or(|locked| locked.marketplace != marketplace)
+        })
+        .map(|(plugin, _)| plugin.to_owned())
+        .collect()
+}
+
+/// Writes the running uze version into the lock only when it answers for
+/// every built-in plugin the lock pins: each was resolved by this run
+/// (`resolved_now`), or the lock already says this version. Otherwise the
+/// version another build wrote stays, so the plan still sees what that
+/// build left; and it goes once no built-in plugin is locked.
+fn stamp_uze_version(lock: &mut ProjectLock, resolved_now: &[&str]) {
+    let current = env!("CARGO_PKG_VERSION");
+    let built_ins: Vec<&str> = lock
+        .plugins
+        .iter()
+        .filter(|(_, locked)| locked.marketplace == uze_core::manifest::BUILT_IN_MARKETPLACE)
+        .map(|(name, _)| name.as_str())
+        .collect();
+    if built_ins.is_empty() {
+        lock.uze = None;
+        return;
+    }
+    let all_resolved = built_ins.iter().all(|name| resolved_now.contains(name));
+    if all_resolved || lock.uze.as_deref() == Some(current) {
+        lock.uze = Some(current.to_owned());
+    }
+}
+
 /// What an install's phases did, gathered for its report.
 #[derive(Default)]
 struct InstallProgress {
@@ -108,6 +207,7 @@ impl Project<'_> {
         let unresolved: Vec<String> = project_lock::stale_against(&manifest, &lock)
             .into_iter()
             .map(|stale| stale.plugin)
+            .chain(built_ins_behind(&manifest, &lock))
             .collect();
         let surplus = project_lock::surplus_against(&manifest, &lock);
         let stale_projection = self.stale_projection(&canonical);
@@ -324,8 +424,9 @@ impl Project<'_> {
         // entry recording something nobody declared is a line that cannot
         // be acted on. A directory that is no project takes the same road:
         // the machine half alone, and the report says nothing was declared.
-        let declared =
-            canonical.filter(|_| marketplace != uze_core::manifest::BUILT_IN_MARKETPLACE);
+        let bundled = marketplace == uze_core::manifest::BUILT_IN_MARKETPLACE
+            && uze_core::manifest::BUNDLED_PLUGINS.contains(&plugin);
+        let declared = canonical.filter(|_| !bundled);
         let Some(canonical) = declared else {
             // No mutation lock taken here: the call below takes it, and it
             // is not re-entrant.
@@ -335,6 +436,10 @@ impl Project<'_> {
                 name_authority,
             );
         };
+
+        if marketplace == uze_core::manifest::BUILT_IN_MARKETPLACE {
+            return self.add_built_in(plugin, &canonical, authority);
+        }
 
         // Taken before the lock is read, so what gets written back is not a
         // copy another command changed in the meantime.
@@ -431,6 +536,142 @@ impl Project<'_> {
         })
     }
 
+    /// [`Self::add`] for a plugin of the marketplace built into uze: the
+    /// machine's copy brought to the binary's bytes, the lock told which
+    /// bytes and which uze version, and the manifest given a source-less
+    /// `uze` entry naming it.
+    fn add_built_in(
+        &self,
+        plugin: &str,
+        canonical: &Path,
+        authority: &dyn TrustAuthority,
+    ) -> Result<AddPluginReport> {
+        let marketplace = uze_core::manifest::BUILT_IN_MARKETPLACE;
+        let declared_elsewhere = |lock: &ProjectLock| match lock.plugins.get(plugin) {
+            Some(existing) if existing.marketplace != marketplace => {
+                Err(UzeError::MarketplaceMismatch {
+                    plugin: plugin.to_owned(),
+                    expected: existing.marketplace.clone(),
+                    found: marketplace.to_owned(),
+                })
+            }
+            _ => Ok(()),
+        };
+        // Asked before anything is installed, and again under the mutation
+        // lock below, where the lock file is read for writing.
+        let before = project_lock::load_lock(canonical)?.unwrap_or_default();
+        declared_elsewhere(&before)?;
+        let checkout = checkout_of(canonical);
+        let previous =
+            self.expected_rules(&before, plugin, marketplace, Reach::WhenJudging, &checkout);
+        let mut mutation = None;
+        let settled = self.settle_built_in(plugin, authority, &mut mutation)?;
+        if let Some(reason) = settled.held {
+            return Err(UzeError::LifecycleBlocked(format!(
+                "`{plugin}@{marketplace}` was not brought to this uze's bytes: {reason}"
+            )));
+        }
+        if mutation.is_none() {
+            mutation = Some(uze_core::persistence::MutationLock::acquire(&self.0.home)?);
+        }
+        let report = match settled.installed {
+            Some(report) => report,
+            // The Store is idempotent by origin: installing what it now
+            // holds answers with that package's report and changes nothing.
+            None => self.0.plugins().install_materialized(
+                crate::bootstrap::materialize(plugin)?,
+                marketplace,
+                None,
+                authority,
+                &uze_core::naming::NoNameCollisionAuthority,
+                SourceOrigin::Project,
+            )?,
+        };
+        // Read again under the mutation lock, so what is written back is not
+        // a copy another command changed meanwhile.
+        let mut lock = project_lock::load_lock(canonical)?.unwrap_or_default();
+        declared_elsewhere(&lock)?;
+        lock.plugins.insert(
+            plugin.to_owned(),
+            LockedPlugin::resolved(marketplace, Some(settled.integrity)),
+        );
+        stamp_uze_version(&mut lock, &[plugin]);
+        manifest::declare_plugin(
+            canonical,
+            plugin,
+            marketplace,
+            &DeclaredMarketplace::default(),
+        )?;
+        project_lock::save_lock(canonical, &lock)?;
+        drop(mutation);
+        let rules =
+            match self.expected_rules(&lock, plugin, marketplace, Reach::Acquire, &checkout) {
+                Some(next) => Some(self.converge_rules(
+                    &checkout,
+                    &Namespace::new(plugin, marketplace),
+                    previous.as_ref().unwrap_or(&next),
+                    &next,
+                )?),
+                None => None,
+            }
+            .filter(|copies| !copies.is_quiet());
+        Ok(AddPluginReport {
+            declared: true,
+            rules,
+            ..report
+        })
+    }
+
+    /// One declared plugin of the marketplace built into uze, in `update`:
+    /// brought to the running binary's bytes, which is the only newer
+    /// revision it has, and the lock rewritten when they moved.
+    fn update_built_in(
+        &self,
+        canonical: &Path,
+        lock: &mut ProjectLock,
+        name: &str,
+        authority: &dyn TrustAuthority,
+        rules: &mut Vec<RuleCopies>,
+    ) -> Result<UpdateOutcome> {
+        let marketplace = uze_core::manifest::BUILT_IN_MARKETPLACE;
+        let checkout = checkout_of(canonical);
+        let previous_rules =
+            self.expected_rules(lock, name, marketplace, Reach::WhenJudging, &checkout);
+        let mut mutation = None;
+        let settled = self.settle_built_in(name, authority, &mut mutation)?;
+        drop(mutation);
+        if let Some(reason) = settled.held {
+            return Ok(UpdateOutcome::Held {
+                plugin: name.to_owned(),
+                reason,
+            });
+        }
+        let pinned = lock
+            .plugins
+            .get(name)
+            .and_then(|locked| locked.integrity.as_deref());
+        let moved = settled.moved || pinned != Some(settled.integrity.as_str());
+        lock.plugins.insert(
+            name.to_owned(),
+            LockedPlugin::resolved(marketplace, Some(settled.integrity)),
+        );
+        stamp_uze_version(lock, &[name]);
+        rules.extend(self.follow_rules(&checkout, lock, name, marketplace, previous_rules)?);
+        project_lock::save_lock(canonical, lock)?;
+        Ok(if moved {
+            UpdateOutcome::Moved {
+                plugin: name.to_owned(),
+                revision: env!("CARGO_PKG_VERSION").to_owned(),
+                deliveries: settled.deliveries,
+            }
+        } else {
+            UpdateOutcome::AlreadyCurrent {
+                plugin: name.to_owned(),
+                deliveries: settled.deliveries,
+            }
+        })
+    }
+
     /// Removes a plugin's declaration and the entry it resolved to. The
     /// Store keeps the bytes: another project may want them, and this
     /// command is about what *this* project declares.
@@ -496,6 +737,7 @@ impl Project<'_> {
                 plugin: plugin.to_owned(),
             });
         }
+        stamp_uze_version(&mut lock, &[]);
 
         // A lock with nothing left to reproduce is not an empty lock, it is
         // no lock: leaving `agents.lock` behind declaring nothing invites
@@ -600,6 +842,12 @@ impl Project<'_> {
         let mut rules = Vec::new();
         let checkout = checkout_of(&canonical);
         for (name, marketplace) in declared {
+            if marketplace == uze_core::manifest::BUILT_IN_MARKETPLACE {
+                outcomes.push(
+                    self.update_built_in(&canonical, &mut lock, &name, authority, &mut rules)?,
+                );
+                continue;
+            }
             let declared_marketplace =
                 manifest.marketplaces.get(&marketplace).ok_or_else(|| {
                     UzeError::MarketplaceMismatch {
@@ -952,6 +1200,14 @@ impl Project<'_> {
             &mut progress,
         )?;
         self.reproduce_locked(&lock, authority, &mut progress)?;
+        self.settle_built_ins(
+            &canonical,
+            &manifest,
+            &mut lock,
+            authority,
+            &mut mutation,
+            &mut progress,
+        )?;
         self.rise_to_lock(&lock, authority, &mut mutation, &mut progress)?;
         let InstallProgress {
             installed: installed_plugins,
@@ -1204,6 +1460,11 @@ impl Project<'_> {
             .map(|(name, locked)| (name.to_owned(), locked.clone()))
             .collect();
         for (name, locked) in missing {
+            // The built-in marketplace's plugins follow the binary, in a
+            // phase of their own: there is no locked source to reproduce.
+            if locked.marketplace == uze_core::manifest::BUILT_IN_MARKETPLACE {
+                continue;
+            }
             // A fresh machine reproducing a cloned `agents.lock` has never
             // run `market add`, so this registers the
             // locked marketplace globally (from the source the lock itself
@@ -1510,6 +1771,143 @@ impl Project<'_> {
         Ok(true)
     }
 
+    /// The install's phase for the marketplace built into uze: each of its
+    /// plugins the manifest declares brought to the running binary's bytes,
+    /// and the lock told which bytes and which uze version that was.
+    fn settle_built_ins(
+        &self,
+        canonical: &Path,
+        manifest: &manifest::ProjectManifest,
+        lock: &mut ProjectLock,
+        authority: &dyn TrustAuthority,
+        mutation: &mut Option<uze_core::persistence::MutationLock>,
+        progress: &mut InstallProgress,
+    ) -> Result<()> {
+        let marketplace = uze_core::manifest::BUILT_IN_MARKETPLACE;
+        let declared = manifest
+            .marketplaces
+            .get(marketplace)
+            .map(|declared| declared.plugins.clone())
+            .unwrap_or_default();
+        let before = lock.clone();
+        let mut resolved = Vec::new();
+        for plugin in declared {
+            let settled = self.settle_built_in(&plugin, authority, mutation)?;
+            if let Some(reason) = settled.held {
+                progress.skipped.push(SkippedPlugin {
+                    plugin,
+                    marketplace: marketplace.to_owned(),
+                    reason,
+                });
+                continue;
+            }
+            progress.undelivered.extend(
+                settled
+                    .deliveries
+                    .iter()
+                    .filter(|delivery| delivery.error().is_some())
+                    .map(|delivery| (plugin.clone(), delivery.clone())),
+            );
+            // Moved when the machine's bytes did, or the lock's: a lock
+            // another build wrote, rewritten, is an update too.
+            let pinned = lock
+                .plugins
+                .get(&plugin)
+                .and_then(|locked| locked.integrity.as_deref());
+            if settled.moved || pinned != Some(settled.integrity.as_str()) {
+                progress.installed.push(plugin.clone());
+            }
+            lock.plugins.insert(
+                plugin.clone(),
+                LockedPlugin::resolved(marketplace, Some(settled.integrity)),
+            );
+            resolved.push(plugin);
+        }
+        let resolved: Vec<&str> = resolved.iter().map(String::as_str).collect();
+        stamp_uze_version(lock, &resolved);
+        if *lock != before {
+            project_lock::save_lock(canonical, lock)?;
+        }
+        if mutation.is_none() {
+            *mutation = Some(uze_core::persistence::MutationLock::acquire(&self.0.home)?);
+        }
+        Ok(())
+    }
+
+    /// Brings built-in `plugin` to the running binary's bytes: installed
+    /// when the machine lacks it, replaced when its bytes differ, left when
+    /// they agree. The binary is the only source, so a difference is another
+    /// uze build and is followed, never refused. Holds the mutation lock to
+    /// install and gives it up to replace, since `replace_with` takes its
+    /// own.
+    fn settle_built_in(
+        &self,
+        plugin: &str,
+        authority: &dyn TrustAuthority,
+        mutation: &mut Option<uze_core::persistence::MutationLock>,
+    ) -> Result<SettledBuiltIn> {
+        let marketplace = uze_core::manifest::BUILT_IN_MARKETPLACE;
+        let materialized = crate::bootstrap::materialize(plugin)?;
+        let integrity = materialized.digest()?;
+        let qualified = format!("{plugin}@{marketplace}");
+        let stored = match self.0.package_by_name(&qualified) {
+            Ok(stored) => Some(stored),
+            Err(UzeError::UnknownPackage(_)) => None,
+            Err(error) => return Err(error),
+        };
+        match stored {
+            None => {
+                if mutation.is_none() {
+                    *mutation = Some(uze_core::persistence::MutationLock::acquire(&self.0.home)?);
+                }
+                let report = self.0.plugins().install_materialized(
+                    materialized,
+                    marketplace,
+                    None,
+                    authority,
+                    &uze_core::naming::NoNameCollisionAuthority,
+                    SourceOrigin::Project,
+                )?;
+                Ok(SettledBuiltIn::installed(integrity, report))
+            }
+            Some(stored) if self.0.store.digest(&stored)? == integrity => {
+                Ok(SettledBuiltIn::unchanged(integrity))
+            }
+            Some(_) => {
+                drop(mutation.take());
+                // Held rather than failed, as a Git plugin raised to its lock
+                // is: one plugin this machine cannot take does not stop the
+                // rest of the project.
+                match self.0.plugins().replace_with(
+                    &qualified,
+                    materialized,
+                    authority,
+                    SourceOrigin::Project,
+                ) {
+                    Ok(UpdatePluginReport::Updated { deliveries, .. }) => {
+                        Ok(SettledBuiltIn::replaced(integrity, deliveries))
+                    }
+                    Ok(UpdatePluginReport::Blocked { .. }) => Ok(SettledBuiltIn::held(
+                        integrity,
+                        "managed state has drifted; nothing was changed".to_owned(),
+                    )),
+                    Err(UzeError::TrustRequired { detail, .. }) => Ok(SettledBuiltIn::held(
+                        integrity,
+                        format!(
+                            "this uze's revision asks to execute something new ({detail}); \
+                             confirm it explicitly"
+                        ),
+                    )),
+                    Err(UzeError::TrustDenied(_)) => Ok(SettledBuiltIn::held(
+                        integrity,
+                        "this uze's revision was not trusted".to_owned(),
+                    )),
+                    Err(error) => Err(error),
+                }
+            }
+        }
+    }
+
     /// Refuses bytes that are not the bytes the lock pinned. An entry with
     /// no `integrity` is not checked — a local path has none to record, and
     /// so has nothing to contradict.
@@ -1588,6 +1986,16 @@ impl Project<'_> {
         else {
             return false;
         };
+        let differs_in_bytes = || {
+            locked.integrity.as_ref().is_some_and(|expected| {
+                self.0.store.digest(&stored).ok().as_ref() != Some(expected)
+            })
+        };
+        // The built-in marketplace has no revision to compare: its bytes are
+        // the whole answer.
+        if locked.marketplace == uze_core::manifest::BUILT_IN_MARKETPLACE {
+            return differs_in_bytes();
+        }
         let uze_core::acquisition::ResolvedSource::Git { commit, .. } = &stored.provenance.resolved
         else {
             return false;
@@ -1599,10 +2007,7 @@ impl Project<'_> {
         {
             return false;
         }
-        locked
-            .integrity
-            .as_ref()
-            .is_some_and(|expected| self.0.store.digest(&stored).ok().as_ref() != Some(expected))
+        differs_in_bytes()
     }
 }
 

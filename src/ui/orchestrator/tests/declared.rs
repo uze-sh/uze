@@ -368,7 +368,7 @@ fn a_declared_view_opens_from_the_index() {
         panic!("one view, one entry: {doors:?}");
     };
     assert!(door.label().starts_with("Open "), "{}", door.label());
-    assert_eq!(door.description(), "gsd-band · gsd@market");
+    assert_eq!(door.description(), "gsd@market/gsd-band");
 
     driven.press_key(key_event(uze_keys::Chord::parse("f1").unwrap()));
     let index = driven.attach.model.action_index.as_ref().expect("open");
@@ -405,10 +405,10 @@ fn a_declared_extensions_toasts_are_attributed() {
     model.follow_surface(Outcome::Copy("phase 12".to_owned()));
     let said = format!("{:?}", model.toast_stack());
     assert!(
-        said.contains("gsd-band · gsd@market: phase 12 is in use"),
+        said.contains("gsd@market/gsd-band: phase 12 is in use"),
         "{said}"
     );
-    assert!(said.contains("gsd-band · gsd@market: phase 12"), "{said}");
+    assert!(said.contains("gsd@market/gsd-band: phase 12"), "{said}");
     assert_eq!(
         model.clipboard.as_deref(),
         Some("phase 12"),

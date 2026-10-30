@@ -122,6 +122,19 @@ impl DeclaredExtension {
         self.set_ui(surface, key, values[next].clone());
     }
 
+    /// A select's option `index`, chosen outright; nothing for one it does
+    /// not have.
+    pub(super) fn choose(&mut self, surface: &str, select: Act, index: usize) {
+        let Act::Select { key, values, .. } = select else {
+            return;
+        };
+        let Some(value) = values.get(index) else {
+            return;
+        };
+        self.focus(surface, &key);
+        self.set_ui(surface, key, value.clone());
+    }
+
     /// A press on a field: focus, and typing into it.
     pub(super) fn press_field(&mut self, surface: &str, field: Act) {
         if let Act::Field { key, .. } = field {

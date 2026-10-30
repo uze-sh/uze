@@ -17,15 +17,15 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Paragraph, Wrap},
+    widgets::Paragraph,
 };
 
 use super::catalog::{Badge, Card, render_card};
 use super::{DrawerStatus, render_drawer_footer};
 use crate::ui::hit::Hit;
-use crate::ui::model::{ExtensionEntry, ResizablePanel, Route, TuiModel};
+use crate::ui::model::{ExtensionEntry, PreferencesEditor, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::{RowState, text};
+use crate::ui::widget::{RowState, definitions, form, text};
 use crate::ui::{content_area, render_screen_header};
 use uze_application::{ExtensionCondition as Condition, ExtensionReport};
 
@@ -183,11 +183,7 @@ fn render_extension_card(
     let card = match extension {
         ExtensionEntry::Builtin(extension) => Card {
             name: extension.name,
-            badge: Some(Badge {
-                mark: theme::glyph(Symbol::MarkOfficial),
-                label: "Official",
-                color: theme::color(Token::StateInfo),
-            }),
+            badge: Some(seal("Bundled")),
             description: extension.description,
             caption: Span::styled(extension.surface, theme::fg(Token::TextMuted)),
             state: Some(enabled_state()),
@@ -196,7 +192,7 @@ fn render_extension_card(
         // it is said only while the extension is on.
         ExtensionEntry::Declared(summary) => Card {
             name: &summary.name,
-            badge: None,
+            badge: summary.official.then(|| seal("Official")),
             description: &summary.description,
             caption: Span::styled(identity_caption(summary), theme::fg(Token::TextMuted)),
             state: Some(if enabled && !summary.errors.is_empty() {
@@ -214,7 +210,18 @@ fn render_extension_card(
     render_card(frame, rect, card, state);
 }
 
-/// `gsd-band · gsd@market`, and `· linked` when its author works on it
+/// uze's seal on a card, as a marketplace's verified publisher wears one:
+/// `Bundled` for what ships inside uze and is never installed or removed,
+/// `Official` for what uze publishes in its marketplace.
+fn seal(label: &'static str) -> Badge {
+    Badge {
+        mark: theme::glyph(Symbol::MarkOfficial),
+        label,
+        color: theme::color(Token::StateInfo),
+    }
+}
+
+/// `gsd@market/gsd-band`, and `· linked` when its author works on it
 /// here.
 fn identity_caption(summary: &uze_application::DeclaredExtensionSummary) -> String {
     if summary.linked {
@@ -242,80 +249,23 @@ fn render_extension_drawer(
     let enabled = model.extension_enabled(&extension.id());
     let offers = model.extension_offers(extension);
     let standing = declared_standing(model, extension);
+    // Preferences are their own controls in the body, a click away: a
+    // button for them would only repeat what the rows already offer, so it
+    // stays in the action index alone.
+    let offers: Vec<_> = offers
+        .into_iter()
+        .filter(|offer| offer.action != uze_keys::Action::EditPreferences)
+        .collect();
     let (body, status) = super::drawer_body_and_footer(inner, &offers);
-
-    let mut lines = vec![
-        super::section_label("extension"),
-        Line::from(Span::styled(
-            extension.name().to_owned(),
-            Style::default()
-                .fg(theme::color(Token::TextBright))
-                .add_modifier(Modifier::BOLD),
-        )),
-    ];
-    if !extension.description().is_empty() {
-        lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            extension.description().to_owned(),
-            theme::fg(Token::TextSecondary),
-        )));
-    }
-    let (surface, usage) = match extension {
-        ExtensionEntry::Builtin(extension) => (
-            vec![extension.surface.to_owned()],
-            extension.usage.to_owned(),
-        ),
-        ExtensionEntry::Declared(summary) => declared_surfaces(summary),
-    };
-    if let ExtensionEntry::Declared(summary) = extension {
-        lines.push(Line::from(""));
-        lines.push(super::section_label("from"));
-        // The plugin it comes with, a click away on the Marketplace: what
-        // the package brings is said there, what runs is said here.
-        let above: usize = lines
-            .iter()
-            .map(|line| text::fold(&line.to_string(), usize::from(body.width)).len())
-            .sum();
-        if let Ok(above) = u16::try_from(above)
-            && above < body.height
-        {
-            hits.push((
-                Rect::new(body.x, body.y + above, body.width, 1),
-                Hit::OfferedAction(uze_keys::Action::ShowPlugin),
-            ));
-        }
-        let link = if model.hovered_offer == Some(uze_keys::Action::ShowPlugin) {
-            Token::TextBright
-        } else {
-            Token::TextMuted
-        };
-        lines.push(Line::from(Span::styled(
-            summary.identity.to_string(),
-            theme::fg(link),
-        )));
-        if summary.linked {
-            lines.push(Line::from(Span::styled(
-                "linked · redrawn on every save",
-                theme::fg(Token::TextMuted),
-            )));
-        }
-    }
-    if let Some(standing) = standing {
-        lines.extend(standing_lines(standing, model.extension_project.as_deref()));
-    }
-    lines.push(Line::from(""));
-    lines.push(super::section_label("surface"));
-    lines.extend(
-        surface
-            .into_iter()
-            .map(|surface| Line::from(Span::styled(surface, theme::fg(Token::TextPrimary)))),
-    );
-    lines.push(Line::from(""));
-    lines.push(super::section_label("how to open"));
-    lines.push(Line::from(Span::styled(
-        usage,
-        theme::fg(Token::TextSecondary),
-    )));
+    let editing = model
+        .preferences
+        .as_ref()
+        .filter(|editor| matches!(extension, ExtensionEntry::Declared(summary) if summary.identity == editor.identity));
+    let DrawerBody {
+        lines,
+        preference_rows,
+        plugin_line,
+    } = drawer_body(model, extension, standing, editing, usize::from(body.width));
     // What the last compile refused stands at the foot of the body, as it
     // does over a plugin's own surface while its author saves.
     let mut text_area = body;
@@ -327,11 +277,9 @@ fn render_extension_drawer(
             count => format!("the last compile has {count} errors"),
         };
         // The room under what the drawer says, a blank row apart.
-        let said: usize = lines
-            .iter()
-            .map(|line| text::fold(&line.to_string(), usize::from(body.width)).len())
-            .sum();
-        let taken = u16::try_from(said + 1).unwrap_or(u16::MAX).min(body.height);
+        let taken = u16::try_from(lines.len() + 1)
+            .unwrap_or(u16::MAX)
+            .min(body.height);
         let room = Rect {
             y: body.y + taken,
             height: body.height - taken,
@@ -340,9 +288,82 @@ fn render_extension_drawer(
         let banner = crate::ui::widget::banner::render_folded(frame, room, &title, &summary.errors);
         text_area.height = body.height.saturating_sub(banner.height);
     }
-    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), text_area);
+    // While the keys are on the preferences, what the row they are on
+    // holds stands at the body's foot, out of the scroll, as a dialog's
+    // detail does: in sight whichever row it is.
+    if let Some(editor) = editing {
+        let detail = Rect {
+            y: text_area.bottom().saturating_sub(PREFERENCE_DETAIL_ROWS),
+            height: PREFERENCE_DETAIL_ROWS.min(text_area.height),
+            ..text_area
+        };
+        text_area.height = text_area.height.saturating_sub(detail.height);
+        render_preference_detail(frame, detail, editor);
+    }
+    let visible = usize::from(text_area.height);
+    // Where the wheel left the body, for the extension it was left on; at
+    // most as far as puts its end at the bottom, and as far again as brings
+    // the row the keys are on into sight.
+    let (scrolled_for, scrolled) = model.extension_drawer_scroll.get();
+    let selected = model.remembered.extension_screen.selected;
+    let mut first = if scrolled_for == selected {
+        scrolled
+    } else {
+        0
+    };
+    first = first.min(lines.len().saturating_sub(visible));
+    if let Some(editor) = editing {
+        first = following(&preference_rows, editor.selected, first, visible);
+    }
+    model.extension_drawer_scroll.set((selected, first));
+    // In the drawer's own margin beside the body, so it never stands over
+    // what it scrolls.
+    if let Some(bar) = crate::ui::widget::Scrollbar::measure(
+        Rect::new(body.right() + 1, text_area.y, 1, text_area.height),
+        visible,
+        lines.len(),
+    ) {
+        bar.render(frame, first);
+    }
+    // Where line `line` of the body stands on screen, once the body has
+    // scrolled to `first`; nothing for a line out of sight.
+    let on_screen = |line: usize| {
+        line.checked_sub(first)
+            .and_then(|row| u16::try_from(row).ok())
+            .filter(|row| *row < text_area.height)
+            .map(|row| body.y + row)
+    };
+    frame.render_widget(
+        Paragraph::new(lines).scroll((u16::try_from(first).unwrap_or(u16::MAX), 0)),
+        text_area,
+    );
+    if let Some(y) = plugin_line.and_then(on_screen) {
+        hits.push((
+            Rect::new(body.x, y, body.width, 1),
+            Hit::OfferedAction(uze_keys::Action::ShowPlugin),
+        ));
+    }
+    // Each part of a control before its row, so a click on one is not
+    // taken for choosing the row.
+    for placed in preference_rows {
+        let Some(y) = on_screen(placed.line) else {
+            continue;
+        };
+        for (x, width, hit) in placed.parts {
+            if x < body.width {
+                let width = width.min(body.width - x);
+                hits.push((Rect::new(body.x + x, y, width, 1), hit));
+            }
+        }
+        hits.push((
+            Rect::new(body.x, y, body.width, 1),
+            Hit::ExtensionPreferenceRow(placed.index),
+        ));
+    }
+    // Last, so every target in the body answers before it: what the wheel
+    // scrolls.
+    hits.push((text_area, Hit::ExtensionDrawerBody));
 
-    let from_a_plugin = matches!(extension, ExtensionEntry::Declared(_));
     render_drawer_footer(
         frame,
         status,
@@ -359,17 +380,13 @@ fn render_extension_drawer(
             DrawerStatus {
                 color: theme::color(Token::StateSuccess),
                 headline: "Enabled",
-                subtitle: if from_a_plugin {
-                    "Comes with an installed plugin and is offered in the workspace"
-                } else {
-                    "Ships with uze and is offered in the workspace"
-                },
+                subtitle: "",
             }
         } else {
             DrawerStatus {
                 color: theme::color(Token::TextDim),
                 headline: "Disabled",
-                subtitle: "Its keys, buttons and sidebar sections are withdrawn",
+                subtitle: "Withdrawn from the workspace",
             }
         },
         &offers,
@@ -379,182 +396,334 @@ fn render_extension_drawer(
     );
 }
 
-/// What a declared extension offers, a surface a line, and how each is
-/// reached.
-fn declared_surfaces(summary: &uze_application::DeclaredExtensionSummary) -> (Vec<String>, String) {
+/// What the drawer's body says, folded to `width`: its lines, where each
+/// preference's row stands among them, and the line naming its plugin.
+struct DrawerBody {
+    lines: Vec<Line<'static>>,
+    preference_rows: Vec<PlacedPreference>,
+    plugin_line: Option<usize>,
+}
+
+fn drawer_body(
+    model: &TuiModel,
+    extension: ExtensionEntry<'_>,
+    standing: Option<&ExtensionReport>,
+    editing: Option<&PreferencesEditor>,
+    width: usize,
+) -> DrawerBody {
+    let mut grid = Grid::new(width);
+    let mut plugin_line = None;
+
+    grid.lines.push(super::section_label("extension"));
+    grid.lines.push(Line::from(Span::styled(
+        extension.name().to_owned(),
+        Style::default()
+            .fg(theme::color(Token::TextBright))
+            .add_modifier(Modifier::BOLD),
+    )));
+    if !extension.description().is_empty() {
+        grid.gap();
+        grid.prose(extension.description(), Token::TextSecondary);
+    }
+    grid.gap();
+    match extension {
+        ExtensionEntry::Builtin(extension) => {
+            grid.field("opens", extension.usage, Token::TextSecondary);
+        }
+        ExtensionEntry::Declared(summary) => {
+            // The plugin it comes with, a click away on the Marketplace:
+            // what the package brings is said there, what runs is said
+            // here.
+            let link = if model.hovered_offer == Some(uze_keys::Action::ShowPlugin) {
+                Token::TextBright
+            } else {
+                Token::TextMuted
+            };
+            plugin_line = Some(grid.lines.len());
+            let plugin = format!(
+                "{}@{}",
+                summary.identity.plugin, summary.identity.marketplace
+            );
+            grid.field("from", &plugin, link);
+            if summary.linked {
+                grid.field("", "linked · redrawn on every save", Token::TextMuted);
+            }
+            for (index, surface) in declared_surfaces(summary).iter().enumerate() {
+                grid.field(
+                    if index == 0 { "opens" } else { "" },
+                    surface,
+                    Token::TextSecondary,
+                );
+            }
+        }
+    }
+    let preference_rows = standing.map_or_else(Vec::new, |standing| {
+        standing_lines(
+            &mut grid,
+            standing,
+            model.extension_project.as_deref(),
+            editing,
+            model.hovered.as_ref(),
+        )
+    });
+    DrawerBody {
+        lines: grid.lines,
+        preference_rows,
+        plugin_line,
+    }
+}
+
+/// The drawer's body, folded to its width as it is built, so a row's
+/// place on screen is its index: keys in the column the Marketplace's
+/// panel uses, values hanging under their own first row, and tables whose
+/// first column is as wide as their longest name.
+struct Grid {
+    width: usize,
+    lines: Vec<Line<'static>>,
+}
+
+impl Grid {
+    fn new(width: usize) -> Self {
+        Self {
+            width: width.max(1),
+            lines: Vec::new(),
+        }
+    }
+
+    fn gap(&mut self) {
+        self.lines.push(Line::from(""));
+    }
+
+    fn air(&mut self, rows: usize) {
+        for _ in 0..rows {
+            self.gap();
+        }
+    }
+
+    fn prose(&mut self, said: &str, token: Token) {
+        self.lines.extend(
+            text::fold(said, self.width)
+                .into_iter()
+                .map(|row| Line::from(Span::styled(row, theme::fg(token)))),
+        );
+    }
+
+    /// `key` in the shared key column, `value` folded beside it.
+    fn field(&mut self, key: &str, value: &str, token: Token) {
+        self.define(
+            &[(key.to_owned(), value.to_owned(), token)],
+            Token::TextDim,
+            definitions::Column::Fixed(super::FIELD_KEY_WIDTH),
+        );
+    }
+
+    /// A section of rows, each a name and what it says, the names in a
+    /// column as wide as the longest of them.
+    fn table(&mut self, heading: &str, rows: &[(String, String, Token)]) {
+        if rows.is_empty() {
+            return;
+        }
+        self.gap();
+        self.lines.push(super::section_label(heading));
+        self.define(rows, Token::TextCode, definitions::Column::Fit);
+    }
+
+    fn define(
+        &mut self,
+        rows: &[(String, String, Token)],
+        ink: Token,
+        column: definitions::Column,
+    ) {
+        let entries: Vec<_> = rows
+            .iter()
+            .map(|(name, said, token)| definitions::Entry {
+                name,
+                said,
+                name_style: theme::fg(ink),
+                said_style: theme::fg(*token),
+            })
+            .collect();
+        self.lines.extend(
+            definitions::lines(&entries, column, self.width)
+                .into_iter()
+                .flatten(),
+        );
+    }
+}
+
+/// What a declared extension offers, a surface a line, each with where it
+/// is reached.
+fn declared_surfaces(summary: &uze_application::DeclaredExtensionSummary) -> Vec<String> {
     let surfaces: Vec<String> = summary
         .views
         .iter()
-        .map(|title| format!("{title} · view"))
-        .chain(
-            summary
-                .sections
-                .iter()
-                .map(|title| format!("{title} · section")),
-        )
+        .map(|title| format!("{title} · view, from the bar"))
         .chain(
             summary
                 .drawers
                 .iter()
-                .map(|title| format!("{title} · drawer")),
+                .map(|title| format!("{title} · drawer, from the bar")),
+        )
+        .chain(
+            summary
+                .sections
+                .iter()
+                .map(|title| format!("{title} · sidebar section")),
         )
         .chain(
             summary
                 .statuses
                 .iter()
-                .map(|title| format!("{title} · status row")),
+                .map(|title| format!("{title} · sidebar header row")),
         )
         .chain(summary.bands.iter().map(|(title, rows)| match rows {
-            1 => format!("{title} · band, 1 row"),
-            rows => format!("{title} · band, {rows} rows"),
+            1 => format!("{title} · band over each pane, 1 row"),
+            rows => format!("{title} · band over each pane, {rows} rows"),
         }))
         .chain(
             summary
                 .overlays
                 .iter()
-                .map(|title| format!("{title} · overlay")),
+                .map(|title| format!("{title} · overlay, from the action index")),
         )
         .collect();
-    let no_button = summary.views.is_empty() && summary.drawers.is_empty();
-    let usage = match (no_button, summary.sections.is_empty()) {
-        (false, false) => "Its button in the workspace's tab strip, and its section in the sidebar",
-        (false, true) => "Its button in the workspace's tab strip",
-        (true, false) => "Its section in the workspace's sidebar",
-        (true, true) => "",
-    };
-    let mut usage: Vec<String> = Some(usage.to_owned())
-        .filter(|usage| !usage.is_empty())
-        .into_iter()
-        .collect();
-    if !summary.statuses.is_empty() {
-        usage.push("its row in the sidebar's header".to_owned());
-    }
-    if !summary.bands.is_empty() {
-        usage.push("its band over each agent's pane".to_owned());
-    }
-    if !summary.overlays.is_empty() {
-        usage.push("Open, in the action index".to_owned());
-    }
-    let usage = match usage.split_first() {
-        None => "Nothing to open until it compiles".to_owned(),
-        Some((first, rest)) => {
-            let mut said = capitalised(first);
-            for part in rest {
-                said.push_str(" · ");
-                said.push_str(part);
-            }
-            said
-        }
-    };
     if surfaces.is_empty() {
-        (vec!["none yet".to_owned()], usage)
+        vec!["nothing until it compiles".to_owned()]
     } else {
-        (surfaces, usage)
-    }
-}
-
-fn capitalised(text: &str) -> String {
-    let mut characters = text.chars();
-    match characters.next() {
-        Some(first) => first.to_uppercase().chain(characters).collect(),
-        None => String::new(),
+        surfaces
     }
 }
 
 /// The drawer's account of where a declared extension stands: the grants
-/// it wants with what each lets it do, and, when it runs nothing, why.
-fn standing_lines(standing: &ExtensionReport, project: Option<&Path>) -> Vec<Line<'static>> {
-    let mut lines = Vec::new();
-    if !standing.grants.is_empty() {
-        lines.push(Line::from(""));
-        lines.push(super::section_label("grants"));
-        for grant in &standing.grants {
-            lines.push(Line::from(vec![
-                Span::styled(grant.clone(), theme::fg(Token::TextPrimary)),
-                Span::styled(
-                    format!(" · {}", uze_application::grant_meaning(grant)),
-                    theme::fg(Token::TextMuted),
-                ),
-            ]));
+/// it wants with what each lets it do, its programs, its preferences and,
+/// when it runs nothing here or runs elsewhere, why and where.
+fn standing_lines(
+    grid: &mut Grid,
+    standing: &ExtensionReport,
+    project: Option<&Path>,
+    editing: Option<&PreferencesEditor>,
+    hovered: Option<&Hit>,
+) -> Vec<PlacedPreference> {
+    let grants: Vec<_> = standing
+        .grants
+        .iter()
+        .map(|grant| {
+            (
+                grant.clone(),
+                uze_application::grant_meaning(grant).to_owned(),
+                Token::TextSecondary,
+            )
+        })
+        .collect();
+    grid.table("grants", &grants);
+
+    let mut programs = Vec::new();
+    for program in &standing.programs {
+        let (found, token) = match &program.path {
+            Some(path) => (path.display().to_string(), Token::TextMuted),
+            None if program.packaged => ("packaged with it".to_owned(), Token::TextMuted),
+            None => (
+                program
+                    .unresolved
+                    .clone()
+                    .unwrap_or_else(|| "not found".to_owned()),
+                Token::StateWarning,
+            ),
+        };
+        programs.push((program.name.clone(), found, token));
+        if !program.reads.is_empty() {
+            programs.push((
+                String::new(),
+                format!("reads {}", program.reads.join(", ")),
+                Token::TextMuted,
+            ));
         }
     }
+    grid.table("programs", &programs);
     if !standing.programs.is_empty() {
-        lines.push(Line::from(""));
-        lines.push(super::section_label("programs"));
-        for program in &standing.programs {
-            let (found, token) = match &program.path {
-                Some(path) => (path.display().to_string(), Token::TextMuted),
-                None if program.packaged => ("packaged with it".to_owned(), Token::TextMuted),
-                None => (
-                    program
-                        .unresolved
-                        .clone()
-                        .unwrap_or_else(|| "not found".to_owned()),
-                    Token::StateWarning,
-                ),
-            };
-            lines.push(Line::from(vec![
-                Span::styled(program.name.clone(), theme::fg(Token::TextPrimary)),
-                Span::styled(format!(" · {found}"), theme::fg(token)),
-            ]));
-            if !program.reads.is_empty() {
-                lines.push(Line::from(Span::styled(
-                    format!("reads {}", program.reads.join(", ")),
-                    theme::fg(Token::TextMuted),
-                )));
-            }
-        }
-        let (confinement, token) = if standing.confined == Some(true) {
-            (
-                "confined: reads the checkout, writes only a scratch folder, no network",
+        if standing.confined == Some(true) {
+            grid.prose(
+                "confined: reads the checkout, writes only scratch, no network",
                 Token::TextMuted,
-            )
+            );
         } else {
-            (
+            grid.prose(
                 "runs as you: this machine cannot confine programs",
                 Token::StateWarning,
-            )
-        };
-        lines.push(Line::from(Span::styled(confinement, theme::fg(token))));
-    }
-    if !standing.preferences.is_empty() {
-        lines.push(Line::from(""));
-        lines.push(super::section_label("preferences"));
-        for preference in &standing.preferences {
-            lines.push(Line::from(vec![
-                Span::styled(preference.label.clone(), theme::fg(Token::TextPrimary)),
-                Span::styled(
-                    format!(" · {}", preference.said()),
-                    theme::fg(Token::TextMuted),
-                ),
-            ]));
+            );
         }
     }
-    let mut said = Vec::new();
+
+    // Each preference as a settings form draws a key: its label in a
+    // column, then the control that changes it.
+    let mut preference_rows = Vec::new();
+    let preferences = editing.map_or(standing.preferences.as_slice(), |editor| &editor.rows);
+    if !preferences.is_empty() {
+        // A group of the form, as the settings form spaces one.
+        grid.air(form::GROUP_AIR);
+        grid.lines.push(form::heading("preferences", grid.width));
+        grid.air(form::KEY_AIR);
+        let layout =
+            form::Layout::fit(preferences.iter().map(|row| row.label.as_str()), grid.width);
+        for (index, row) in preferences.iter().enumerate() {
+            if index > 0 {
+                grid.air(form::KEY_AIR);
+            }
+            let marked = editing.filter(|editor| editor.selected == index);
+            let state = RowState::of(
+                marked.is_some(),
+                hovered == Some(&Hit::ExtensionPreferenceRow(index)),
+            );
+            let lit = match hovered {
+                Some(Hit::ExtensionPreferenceStep { index: at, forward }) if *at == index => {
+                    Some(if *forward {
+                        form::Part::Increase
+                    } else {
+                        form::Part::Decrease
+                    })
+                }
+                Some(Hit::ExtensionPreferenceChoice { index: at, option }) if *at == index => {
+                    Some(form::Part::Option(*option))
+                }
+                Some(Hit::ExtensionPreferenceValue(at)) if *at == index => Some(form::Part::Value),
+                _ => None,
+            };
+            let typing = marked.and_then(|editor| editor.typing.as_deref());
+            let key = preference_key(row, state, typing, layout, lit);
+            preference_rows.push(PlacedPreference {
+                line: grid.lines.len(),
+                index,
+                parts: key
+                    .parts
+                    .into_iter()
+                    .map(|(x, width, part)| (x, width, preference_hit(index, part)))
+                    .collect(),
+            });
+            grid.lines.push(key.line);
+        }
+    }
+
+    let mut notes = Vec::new();
     if standing.condition == Condition::Held {
-        said.push((
-            format!(
-                "its update wants {}, which you have not allowed",
-                standing.new_grants.join(", ")
-            ),
+        notes.push((
+            "wants",
+            format!("{}, not allowed yet", standing.new_grants.join(", ")),
             Token::StateWarning,
         ));
     }
     if let Some(reason) = &standing.checkout_refused {
-        said.push((format!("runs nothing here: {reason}"), Token::StateWarning));
+        // The foot says it runs nothing here; this says why.
+        notes.push(("why", reason.clone(), Token::StateWarning));
     }
-    if let Some(day) = standing.updated_on() {
-        said.push((format!("updated {day}, same grants"), Token::TextMuted));
-    }
+    // Every project is the foot's to say; only other projects are news.
     let elsewhere = standing
         .enabled_in
         .iter()
         .filter(|enabled| project.is_none_or(|project| enabled.as_path() != project))
         .count();
-    if standing.enabled_everywhere {
-        said.push(("enabled in every project".to_owned(), Token::TextMuted));
-    } else if elsewhere > 0 {
-        said.push((
+    if !standing.enabled_everywhere && elsewhere > 0 {
+        notes.push((
+            "elsewhere",
             match elsewhere {
                 1 => "enabled in 1 other project".to_owned(),
                 n => format!("enabled in {n} other projects"),
@@ -562,15 +731,16 @@ fn standing_lines(standing: &ExtensionReport, project: Option<&Path>) -> Vec<Lin
             Token::TextMuted,
         ));
     }
-    if !said.is_empty() {
-        lines.push(Line::from(""));
-        lines.push(super::section_label("this project"));
-        lines.extend(
-            said.into_iter()
-                .map(|(text, token)| Line::from(Span::styled(text, theme::fg(token)))),
-        );
+    if let Some(day) = standing.updated_on() {
+        notes.push(("updated", format!("{day}, same grants"), Token::TextMuted));
     }
-    lines
+    if !notes.is_empty() {
+        grid.gap();
+        for (key, said, token) in notes {
+            grid.field(key, &said, token);
+        }
+    }
+    preference_rows
 }
 
 /// The drawer's foot for a declared extension that runs code and waits
@@ -612,13 +782,220 @@ fn standing_status(
         Condition::Enabled if standing.enabled_everywhere => DrawerStatus {
             color: theme::color(Token::StateSuccess),
             headline: "Enabled everywhere",
-            subtitle: "Its scripts answer in every project",
+            subtitle: "",
         },
         Condition::Enabled => DrawerStatus {
             color: theme::color(Token::StateSuccess),
             headline: "Enabled here",
-            subtitle: "Its scripts answer in this project",
+            subtitle: "",
         },
         Condition::Consented | Condition::FixturesOnly | Condition::Broken => return None,
     })
+}
+
+/// The rows a preference's detail keeps under the rows while the keys are
+/// on them.
+const PREFERENCE_DETAIL: usize = 2;
+/// The rows the detail takes at the body's foot: its rule, then the
+/// detail.
+const PREFERENCE_DETAIL_ROWS: u16 = 1 + PREFERENCE_DETAIL as u16;
+
+/// A preference's row in the drawer, and where on it each part of its
+/// control answers a click.
+struct PlacedPreference {
+    /// The line of the drawer's body it stands on.
+    line: usize,
+    /// Its place among the extension's preferences.
+    index: usize,
+    /// Each part's column from the body's start, its width, and its hit.
+    parts: Vec<(u16, u16, Hit)>,
+}
+
+/// `row` as a key of the form: a number between its steps, a toggle or a
+/// short choice side by side, anything else in its box, typed into while
+/// `typing` holds what is typed.
+fn preference_key(
+    row: &uze_application::PreferenceRow,
+    state: RowState,
+    typing: Option<&str>,
+    layout: form::Layout,
+    lit: Option<form::Part>,
+) -> form::Key {
+    let said = row.said();
+    let control = |control| form::key(&row.label, state, control, layout, lit);
+    if let Some(typed) = typing {
+        // A secret is drawn as one dot per character typed.
+        let shown = if row.is_secret() {
+            theme::glyph(Symbol::CursorMasked).repeat(typed.chars().count())
+        } else {
+            typed.to_owned()
+        };
+        // Cut at the head, so the end being typed and the caret stay in
+        // the box.
+        let shown = text::elide_head(&shown, layout.field.saturating_sub(3));
+        return control(form::Control::Typing {
+            before: &shown,
+            after: "",
+        });
+    }
+    match row.kind {
+        "number" => control(form::Control::Stepper {
+            value: &said,
+            tone: Token::TextBright,
+            editable: true,
+        }),
+        "toggle" => control(form::Control::Choice {
+            options: &["off", "on"],
+            chosen: &said,
+        }),
+        "choice" => {
+            let options: Vec<&str> = row.values.iter().map(String::as_str).collect();
+            control(form::Control::Choice {
+                options: &options,
+                chosen: &said,
+            })
+        }
+        _ => {
+            let quiet = if row.is_secret() {
+                row.value != serde_json::Value::Bool(true)
+            } else {
+                row.value.as_str().is_none_or(str::is_empty)
+            };
+            control(form::Control::Boxed {
+                value: if quiet && !row.is_secret() {
+                    "empty"
+                } else {
+                    &said
+                },
+                tone: if quiet {
+                    Token::TextDim
+                } else {
+                    Token::TextPrimary
+                },
+            })
+        }
+    }
+}
+
+/// What a click on `part` of preference `index`'s control is.
+fn preference_hit(index: usize, part: form::Part) -> Hit {
+    match part {
+        form::Part::Decrease => Hit::ExtensionPreferenceStep {
+            index,
+            forward: false,
+        },
+        form::Part::Increase => Hit::ExtensionPreferenceStep {
+            index,
+            forward: true,
+        },
+        form::Part::Value => Hit::ExtensionPreferenceValue(index),
+        form::Part::Option(option) => Hit::ExtensionPreferenceChoice { index, option },
+    }
+}
+
+/// The first line of the body to show while the keys are on preference
+/// `selected`, `height` lines being shown: `first`, moved only as far as
+/// brings the row into sight.
+fn following(rows: &[PlacedPreference], selected: usize, first: usize, height: usize) -> usize {
+    let Some(on) = rows.iter().find(|row| row.index == selected) else {
+        return first;
+    };
+    if on.line < first {
+        on.line
+    } else if on.line >= first + height {
+        on.line + 1 - height
+    } else {
+        first
+    }
+}
+
+/// What the row the keys are on holds, under a rule at the foot of the
+/// body: its kind, range and default, in rows kept whatever it says.
+fn render_preference_detail(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    editor: &PreferencesEditor,
+) {
+    let Some(row) = editor.rows.get(editor.selected) else {
+        return;
+    };
+    let content = crate::ui::widget::Rule::new(crate::ui::widget::Edge::Top).render(frame, area);
+    let mut said = preference_meaning(row);
+    if row.is_secret() {
+        said.push_str(" · empty forgets it");
+    }
+    let lines: Vec<Line<'static>> = text::fold(&said, usize::from(content.width).max(1))
+        .into_iter()
+        .take(PREFERENCE_DETAIL)
+        .map(|folded| Line::from(Span::styled(folded, theme::fg(Token::TextSecondary))))
+        .collect();
+    frame.render_widget(Paragraph::new(lines), content);
+}
+
+/// What the keys do on the preference they are on, in the footer: what
+/// the arrows and Enter do to a row of its kind, and Esc back to the
+/// cards.
+pub(crate) fn preference_hints<'a>(
+    hints: crate::ui::widget::hint::Hints<'a>,
+    editor: &PreferencesEditor,
+) -> crate::ui::widget::hint::Hints<'a> {
+    use uze_keys::Action;
+    let Some(selected) = editor.rows.get(editor.selected) else {
+        return hints;
+    };
+    if editor.typing.is_some() {
+        return hints
+            .named(Action::Activate, "set")
+            .named(Action::Dismiss, "cancel");
+    }
+    let mut hints = hints;
+    if editor.rows.len() > 1 {
+        hints = hints.run(Action::SelectPrevious, Action::SelectNext, "move");
+    }
+    let (step, enter) = match selected.kind {
+        "number" => (Some("step"), "type"),
+        "choice" => (Some("choose"), "next"),
+        "toggle" => (None, "switch"),
+        _ => (None, "type"),
+    };
+    if let Some(step) = step {
+        hints = hints.run(Action::PreviousValue, Action::NextValue, step);
+    }
+    hints
+        .named(Action::Activate, enter)
+        .named(Action::Dismiss, "back")
+}
+
+/// What `row` holds, as the detail and the typing step say it: its kind
+/// with its range, then its default (`A number from 1 to 90 · default
+/// 25`), or for a secret where it is kept.
+fn preference_meaning(row: &uze_application::PreferenceRow) -> String {
+    let kind = match row.kind {
+        "number" => match (row.min, row.max) {
+            (Some(min), Some(max)) => format!("A number from {min} to {max}"),
+            (Some(min), None) => format!("A number, {min} or more"),
+            (None, Some(max)) => format!("A number up to {max}"),
+            (None, None) => "A number".to_owned(),
+        },
+        "toggle" => "On or off".to_owned(),
+        "choice" => format!("One of {}", row.values.join(", ")),
+        "secret" => {
+            return format!(
+                "A secret, kept in {} and never shown again",
+                uze_application::secrets_kept_in()
+            );
+        }
+        _ => "Text".to_owned(),
+    };
+    let default = match &row.default {
+        serde_json::Value::Null => None,
+        serde_json::Value::Bool(on) => Some(if *on { "on" } else { "off" }.to_owned()),
+        serde_json::Value::String(text) if text.is_empty() => None,
+        serde_json::Value::String(text) => Some(text.clone()),
+        other => Some(other.to_string()),
+    };
+    match default {
+        Some(default) => format!("{kind} · default {default}"),
+        None => kind,
+    }
 }

@@ -1100,6 +1100,10 @@ impl DeclaredExtension {
                 self.step(surface, act, forward);
                 Outcome::Stay
             }
+            (act @ Act::Select { .. }, NodeAct::Choose(index)) => {
+                self.choose(surface, act, index);
+                Outcome::Stay
+            }
             (act @ Act::Field { .. }, NodeAct::Edit) => {
                 self.press_field(surface, act);
                 Outcome::Stay

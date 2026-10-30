@@ -44,13 +44,14 @@ impl TuiModel {
             scopes.push(Scope::Filter);
         }
         match self.overlay {
-            Overlay::None | Overlay::HarnessHelp | Overlay::Health => {}
+            Overlay::None => match &self.preferences {
+                Some(editor) if editor.typing.is_some() => scopes.push(Scope::TextPrompt),
+                Some(_) => scopes.push(Scope::ExtensionPreferences),
+                None => {}
+            },
+            Overlay::HarnessHelp | Overlay::Health => {}
             Overlay::ActionIndex { .. } => scopes.push(Scope::ActionIndex),
             Overlay::AddMarketplace(_) => scopes.push(Scope::TextPrompt),
-            Overlay::Preferences(ref editor) if editor.typing.is_some() => {
-                scopes.push(Scope::TextPrompt)
-            }
-            Overlay::Preferences(_) => scopes.push(Scope::ExtensionPreferences),
             Overlay::Confirm { .. } => scopes.push(Scope::Confirm),
             Overlay::ReleaseNotes(_) => scopes.push(Scope::ReleaseNotes),
         }
@@ -133,6 +134,9 @@ impl TuiModel {
     fn perform(&mut self, action: Action) -> Intent {
         if self.overlay != Overlay::None {
             return self.overlay_action(action);
+        }
+        if let Some(editor) = self.preferences.clone() {
+            return self.preferences_action(editor, action);
         }
         match action {
             Action::OpenActionIndex => {
@@ -260,11 +264,10 @@ impl TuiModel {
             Action::RemovePlugin => {
                 if let Some(plugin) = self.selected_marketplace_plugin().filter(|p| p.installed) {
                     let id = self.marketplace_plugin_id(&plugin);
-                    self.overlay = if plugin.marketplace == "uze-official" {
-                        // Anything from the embedded official snapshot is
-                        // protected — remove is blocked with an explanation
-                        // instead of silently offering a destructive (and
-                        // pointless, it re-seeds) operation.
+                    self.overlay = if plugin.is_default {
+                        // A bundled plugin re-seeds itself: remove is
+                        // blocked with an explanation instead of offering
+                        // a destructive and pointless operation.
                         Overlay::Confirm {
                             kind: Confirmation::ProtectedPlugin(id),
                             focus: None,
@@ -602,6 +605,24 @@ impl TuiModel {
                 if self.overlay == Overlay::None
                     && matches!(
                         self.hit_at(event.column, event.row),
+                        Some(Hit::ExtensionDrawerBody)
+                    ) =>
+            {
+                let (scrolled_for, first) = self.extension_drawer_scroll.get();
+                let rows = usize::from(PREVIEW_WHEEL.unsigned_abs());
+                let first = if event.kind == MouseEventKind::ScrollDown {
+                    first + rows
+                } else {
+                    first.saturating_sub(rows)
+                };
+                // The drawer holds it within its end when it next draws.
+                self.extension_drawer_scroll.set((scrolled_for, first));
+                Intent::None
+            }
+            MouseEventKind::ScrollDown | MouseEventKind::ScrollUp
+                if self.overlay == Overlay::None
+                    && matches!(
+                        self.hit_at(event.column, event.row),
                         Some(Hit::ResourcePreview)
                     ) =>
             {
@@ -624,24 +645,6 @@ impl TuiModel {
                     uze_extensions::view::ScrollDirection::Up
                 };
                 self.scroll_page(direction)
-            }
-            // Over an extension's preferences, only what the dialog drew
-            // lights: the screen under its scrim answers nothing.
-            MouseEventKind::Moved if matches!(self.overlay, Overlay::Preferences(_)) => {
-                self.hovered = self
-                    .hit_at(event.column, event.row)
-                    .filter(|hit| {
-                        matches!(
-                            hit,
-                            Hit::ExtensionPreferenceRow(_)
-                                | Hit::ExtensionPreferenceStep { .. }
-                                | Hit::ExtensionPreferenceValue(_)
-                                | Hit::OfferedAction(_)
-                        )
-                    })
-                    .cloned();
-                self.pointer_row = Some(event.row);
-                Intent::None
             }
             MouseEventKind::Moved if self.overlay == Overlay::None => {
                 // One read of the hit list answers every hover the chrome

@@ -597,7 +597,7 @@ pub(in crate::ui::orchestrator) fn commit_detail_layout(
         Line::default(),
         Line::from(vec![
             Span::styled(
-                format!("{} ", theme::glyph(Symbol::MarkToggleOn)),
+                format!("{} ", theme::glyph(Symbol::Commit)),
                 theme::fg(Token::StateInfo),
             ),
             Span::styled(detail.author.clone(), theme::fg(Token::TextPrimary)),

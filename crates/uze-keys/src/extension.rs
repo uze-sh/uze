@@ -326,7 +326,7 @@ mod tests {
 
     #[test]
     fn a_free_suggestion_answers_only_while_its_surface_is_in_front() {
-        let owner = "gsd@luizfbalves/gsd-band";
+        let owner = "gsd@market/gsd-band";
         let keymap = default_keymap().with_extensions(vec![table(
             owner,
             vec![offered(owner, "refresh", "board", Some("ctrl+r"))],
@@ -448,12 +448,12 @@ mod tests {
 
     #[test]
     fn the_operators_file_beats_the_suggestion() {
-        let owner = "gsd@luizfbalves/gsd-band";
+        let owner = "gsd@market/gsd-band";
         let keymap = written(
             r#"{"bindings":{"declared":{
-                "ext.gsd@luizfbalves/gsd-band.refresh":["r"],
-                "ext.gsd@luizfbalves/gsd-band.inspect":["i"],
-                "ext.gsd@luizfbalves/gsd-band.archive":[]
+                "ext.gsd@market/gsd-band.refresh":["r"],
+                "ext.gsd@market/gsd-band.inspect":["i"],
+                "ext.gsd@market/gsd-band.archive":[]
             }}}"#,
         )
         .with_extensions(vec![table(
@@ -492,7 +492,7 @@ mod tests {
         // What is saved back keeps what the operator wrote.
         let saved = load::difference_from_default(&keymap);
         assert_eq!(
-            saved.bindings["declared"]["ext.gsd@luizfbalves/gsd-band.refresh"],
+            saved.bindings["declared"]["ext.gsd@market/gsd-band.refresh"],
             vec!["r".to_owned()]
         );
         // And a rebind of a host key keeps the tables.
@@ -574,13 +574,13 @@ mod tests {
 
     #[test]
     fn a_name_is_its_owner_and_its_action() {
-        let name = action_name("gsd@luizfbalves/gsd-band", "refresh");
-        assert_eq!(name, "ext.gsd@luizfbalves/gsd-band.refresh");
+        let name = action_name("gsd@market/gsd-band", "refresh");
+        assert_eq!(name, "ext.gsd@market/gsd-band.refresh");
         assert!(is_name(&name));
         let id = intern(&name);
         assert_eq!(intern(&name), id, "one name, one number");
         assert_eq!(self::name(id), name);
-        assert_eq!(owner(id), "gsd@luizfbalves/gsd-band");
+        assert_eq!(owner(id), "gsd@market/gsd-band");
         assert_eq!(local(id), "refresh");
     }
 
@@ -590,10 +590,10 @@ mod tests {
             "refresh",
             "ext.refresh",
             "ext.gsd/gsd-band.refresh",
-            "ext.gsd@luizfbalves.refresh",
-            "ext.gsd@luizfbalves/gsd-band.",
-            "ext.@luizfbalves/gsd-band.refresh",
-            "ext.gsd@luizfbalves/gsd band.refresh",
+            "ext.gsd@market.refresh",
+            "ext.gsd@market/gsd-band.",
+            "ext.@market/gsd-band.refresh",
+            "ext.gsd@market/gsd band.refresh",
         ] {
             assert!(!is_name(bad), "{bad}");
         }

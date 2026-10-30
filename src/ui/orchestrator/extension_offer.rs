@@ -507,12 +507,14 @@ fn render_programs(
                 "Allow these programs to run, confined?"
             } else {
                 "Allow these programs to run as you?"
-            },
+            }
+            .into(),
             subject: Some(Line::from(subject)),
             body,
             confirm: Some("Allow and enable"),
             focus: Some(if open.on_allow { 1 } else { CANCEL }),
             field: None,
+            ..Default::default()
         },
         &[uze_keys::Scope::Global, uze_keys::Scope::Confirm],
         WorkspaceHit::ExtensionOfferAnswer(false),
@@ -839,17 +841,7 @@ fn render_rows(
         let attribution_width = usize::from(row.width)
             .saturating_sub(cursor_width + 2 + name_width + 2 + tag_width + 2);
         let mark_hit = WorkspaceHit::ExtensionOfferMark(index);
-        let mark = if open.chosen[index] {
-            Span::styled(
-                theme::glyph(Symbol::MarkToggleOn).to_string(),
-                theme::fg_bold(lit.tone(mark_hit, Token::TextPrimary)),
-            )
-        } else {
-            Span::styled(
-                theme::glyph(Symbol::MarkToggleOff).to_string(),
-                theme::fg(lit.tone(mark_hit, Token::TextFaint)),
-            )
-        };
+        let mark = crate::ui::widget::form::check(open.chosen[index], lit.0 == Some(mark_hit));
         let name = text::elide(&offer.name, name_width);
         let attribution = text::elide(
             &format!("{}@{}", offer.plugin, offer.marketplace),

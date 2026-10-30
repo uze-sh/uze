@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs as root inside the fresh distribution (see up.sh): an ordinary user
 # with sudo, Git, then uze installed through install.sh from the staged
-# release, this checkout's marketplace registered and a demo project.
+# release, and a demo project.
 set -euo pipefail
 stage="$1"
 user=person
@@ -33,12 +33,6 @@ UZE_BASE_URL='file://${stage}/release' UZE_VERSION='$(cat "$stage/version")' sh 
 export PATH="\$HOME/.local/bin:\$PATH"
 install -m 0755 '${stage}/pingpong-mcp' "\$HOME/.local/bin/pingpong-mcp"
 
-cp -R '${stage}/market' "\$HOME/uze-market"
-git -C "\$HOME/uze-market" init -q
-git -C "\$HOME/uze-market" add -A
-git -C "\$HOME/uze-market" commit -q -m 'uze marketplace'
-uze market add "\$HOME/uze-market"
-
 touch "\$HOME/.hushlogin"
 mkdir -p "\$HOME/projects/demo"
 git -C "\$HOME/projects/demo" init -q
@@ -51,7 +45,7 @@ git -C "\$HOME/projects/demo" commit -q -m init
 cat >> "\$HOME/.bashrc" <<'RC'
 export PATH="\$HOME/.local/bin:\$PATH"
 cat <<'WELCOME'
-uze from your checkout, with Git and its marketplace: the uze plugin and the examples.
+uze from your checkout, with Git; its marketplace, uze, is built in: the uze plugin and the examples.
 
   uze doctor
   uze setup claude-code            (or codex, opencode, antigravity)

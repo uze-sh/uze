@@ -173,7 +173,7 @@ fn a_plugins_section_is_drawn_flat_under_its_own_title() {
     assert!(
         !sidebar
             .iter()
-            .any(|row| row.contains("gsd-band · gsd@market")),
+            .any(|row| row.contains("gsd@market/gsd-band")),
         "no strip in the sidebar: {sidebar:#?}"
     );
 }
@@ -211,7 +211,7 @@ fn an_action_that_asks_first_is_a_host_dialog_attributed_and_esc_runs_nothing() 
     assert!(shown(&rows, "Archive auth?"), "{rows:#?}");
     assert!(
         rows.iter()
-            .filter(|row| row.contains("gsd-band · gsd@market"))
+            .filter(|row| row.contains("gsd@market/gsd-band"))
             .count()
             == 1,
         "the question names whose it is, and only the question: {rows:#?}"

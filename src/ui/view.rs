@@ -127,6 +127,10 @@ pub(crate) fn section_label(text: &str) -> Line<'static> {
     Line::from(Span::styled(text.to_lowercase(), theme::fg(Token::TextDim)))
 }
 
+/// The key column of a drawer's key/value grid, the same on every
+/// manage screen so their values line up when one replaces another.
+pub(crate) const FIELD_KEY_WIDTH: usize = 12;
+
 /// Rows a screen gives its search row: the row and the blank one under it.
 pub(crate) const FILTER_ROWS: u16 = 2;
 

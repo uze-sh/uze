@@ -38,7 +38,8 @@ the test behind each property.
   projects what a harness does not read itself (Claude Code's `.agents/`)
   without writing into the project and must never invoke itself (`tests/integrations/runtime_boundary.rs`).
 - **`agents.yaml` is authored, `agents.lock` is derived**: the lock holds
-  only a commit per marketplace and a digest per package, so it is
+  only a commit per marketplace, a digest per package and, while a plugin
+  of the built-in marketplace is locked, the uze version that resolved it, so it is
   regenerated, never repaired. A marketplace is a Git repository whether
   spelled as a URL or a local path. `uze install` converges the manifest in
   both directions: a plugin dropped from `agents.yaml` leaves the lock,

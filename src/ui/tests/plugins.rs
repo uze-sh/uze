@@ -150,7 +150,7 @@ fn trust_required_overlay_confirm_regrants_with_trust() {
                 detail: "acme -> mcp-server".to_owned(),
                 retry: TrustedRetry::Install {
                     name: "acme".to_owned(),
-                    marketplace: "uze-official".to_owned(),
+                    marketplace: "uze".to_owned(),
                 },
             },
             focus: None,
@@ -162,7 +162,7 @@ fn trust_required_overlay_confirm_regrants_with_trust() {
         intent,
         Intent::Install {
             name: "acme".to_owned(),
-            marketplace: "uze-official".to_owned(),
+            marketplace: "uze".to_owned(),
             grant: TrustGrant::Granted,
         }
     );
@@ -684,7 +684,7 @@ fn the_active_group_keeps_its_ground_while_a_plugin_is_selected() {
     }
     let other = hits
         .iter()
-        .find(|(_, hit)| *hit == Hit::PluginMarket(Some("uze-official".to_owned())))
+        .find(|(_, hit)| *hit == Hit::PluginMarket(Some("uze".to_owned())))
         .map(|(rect, _)| *rect)
         .expect("the other heading is a target");
     assert_ne!(
@@ -799,11 +799,7 @@ fn the_selection_lights_its_whole_container() {
             "{row} is inside the selected card"
         );
     }
-    assert_ne!(
-        ground_of(&model, "uze-official"),
-        selected,
-        "the other card is not"
-    );
+    assert_ne!(ground_of(&model, "uze"), selected, "the other card is not");
 
     let rows = model.marketplace_rows();
     let git = model
@@ -875,7 +871,7 @@ fn a_missing_requirement_reads_on_the_plugin_and_hands_its_install_to_a_shell() 
         status: RequirementStatus::Missing,
         install_command: install.map(str::to_owned),
     };
-    let mut model = model_with_plugins(&["flow@uze-official"]);
+    let mut model = model_with_plugins(&["flow@uze"]);
     model.remembered.plugins[0].requirement_gaps = vec![
         gap(
             "python3",
@@ -885,7 +881,7 @@ fn a_missing_requirement_reads_on_the_plugin_and_hands_its_install_to_a_shell() 
         gap("uze-lab-tool", None, &[]),
     ];
     model.remembered.marketplace_plugins = vec![MarketplacePluginSummary {
-        marketplace: "uze-official".to_owned(),
+        marketplace: "uze".to_owned(),
         name: "flow".to_owned(),
         description: Some("A flow plugin".to_owned()),
         keywords: Vec::new(),
@@ -1052,6 +1048,7 @@ fn listing_gsd_band(model: &mut TuiModel) {
     model.declared_extensions = vec![uze_application::DeclaredExtensionSummary {
         identity: extension("gsd", "uze", "gsd-band"),
         linked: false,
+        official: false,
         name: "GSD".to_owned(),
         description: String::new(),
         views: Vec::new(),

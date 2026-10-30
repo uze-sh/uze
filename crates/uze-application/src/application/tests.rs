@@ -1730,7 +1730,7 @@ fn bootstrap_installs_exactly_the_default_policy_and_is_idempotent() {
         .collect();
     let expected: Vec<String> = bootstrap::DEFAULT_PLUGIN_IDS
         .iter()
-        .map(|name| format!("{name}@uze-official"))
+        .map(|name| format!("{name}@uze"))
         .collect();
     assert_eq!(installed, expected);
 
@@ -1801,11 +1801,11 @@ fn existing_receipts_survive_repeated_bootstrap_unchanged() {
         })],
     );
     app.ensure_default_plugins().unwrap();
-    let before = state::receipts(&home, Some("uze@uze-official")).unwrap();
+    let before = state::receipts(&home, Some("uze@uze")).unwrap();
     assert!(!before.is_empty());
 
     app.ensure_default_plugins().unwrap();
-    let after = state::receipts(&home, Some("uze@uze-official")).unwrap();
+    let after = state::receipts(&home, Some("uze@uze")).unwrap();
     assert_eq!(before, after);
     fs::remove_dir_all(root).unwrap();
 }
@@ -1898,7 +1898,7 @@ fn auto_update_applies_a_pending_official_snapshot_update() {
     let outcomes = app.plugins().auto_update();
     assert_eq!(outcomes.len(), 1, "one pending update, got: {outcomes:?}");
     assert!(outcomes[0].applied, "expected applied, got: {outcomes:?}");
-    assert_eq!(outcomes[0].plugin, "uze@uze-official");
+    assert_eq!(outcomes[0].plugin, "uze@uze");
 
     assert_eq!(fs::read_to_string(&manifest).unwrap(), pristine);
     assert_eq!(
@@ -1949,13 +1949,12 @@ fn official_embedded_plugin_is_protected_from_remove_but_allows_update() {
     let home = UzeHome::at(&root);
     let app = UzeApplication::new(home, Vec::new());
     app.marketplace()
-        .install_plugin("uze@uze-official", &uze_core::trust::AlwaysTrust)
+        .install_plugin("uze@uze", &uze_core::trust::AlwaysTrust)
         .unwrap();
 
     let err = app.plugins().remove("uze").unwrap_err();
     assert!(
-        err.to_string()
-            .contains("official marketplace plugin `uze@uze-official` is protected"),
+        err.to_string().contains("`uze@uze` is bundled with uze"),
         "expected protected error, got: {err}"
     );
 
@@ -1968,6 +1967,65 @@ fn official_embedded_plugin_is_protected_from_remove_but_allows_update() {
         "expected Updated, got: {report:?}"
     );
     assert!(app.package_by_name("uze").is_ok());
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// The official marketplace's other plugins are not bundled: uze never
+/// puts them back, so they are removed like any other, and stay removed.
+#[test]
+fn an_official_plugin_uze_does_not_bundle_is_removed_and_stays_removed() {
+    let root = uze_testkit::temp::scratch("official-unbundled-remove");
+    let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
+    app.marketplace()
+        .install_plugin("workspace@uze", &uze_core::trust::AlwaysTrust)
+        .unwrap();
+
+    app.plugins().remove("workspace").unwrap();
+    assert!(
+        app.package_by_name("workspace").is_err(),
+        "workspace is gone"
+    );
+
+    app.ensure_default_plugins().unwrap();
+    assert!(
+        app.package_by_name("workspace").is_err(),
+        "seeding the defaults does not bring it back"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// A machine an earlier release seeded keeps the official plugins under
+/// the marketplace's old name, `uze-official`. Seeding takes each off as a
+/// removal would and installs it again under `uze`: nothing is left under
+/// the old name, and the bundled one is not installed twice.
+#[test]
+fn seeding_moves_plugins_off_the_official_marketplaces_old_name() {
+    let root = uze_testkit::temp::scratch("retired-official-name");
+    let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
+    for name in ["uze", "workspace"] {
+        app.plugins()
+            .install_materialized(
+                bootstrap::materialize(name).unwrap(),
+                "uze-official",
+                None,
+                &uze_core::trust::AlwaysTrust,
+                &uze_core::naming::NoNameCollisionAuthority,
+                uze_core::trust::SourceOrigin::Operator,
+            )
+            .unwrap();
+    }
+
+    app.ensure_default_plugins().unwrap();
+
+    let mut ids: Vec<String> = app
+        .store
+        .package_ids()
+        .unwrap()
+        .iter()
+        .map(|id| id.as_str().to_owned())
+        .collect();
+    ids.sort();
+    assert_eq!(ids, ["uze@uze", "workspace@uze"]);
     fs::remove_dir_all(root).unwrap();
 }
 

@@ -184,9 +184,9 @@ impl World {
     }
 }
 
-/// The `focus` example: one extension, nothing else.
+/// The `workspace` package: uze's own extensions, nothing else.
 fn extension_only() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("plugins/focus")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("plugins/workspace")
 }
 
 #[test]
@@ -195,7 +195,7 @@ fn a_plugin_of_extensions_only_is_stored_and_found_but_reaches_no_harness() {
 
     let report = world.install(&extension_only());
 
-    assert_eq!(report.plugin.id, "focus@local");
+    assert_eq!(report.plugin.id, "workspace@local");
     assert_eq!(report.plugin.kind, PackageKind::Extension);
     assert!(report.deliveries.is_empty(), "{:?}", report.deliveries);
     assert!(report.attachments.is_empty());
@@ -215,7 +215,7 @@ fn a_plugin_of_extensions_only_is_stored_and_found_but_reaches_no_harness() {
         world
             .app
             .plugins()
-            .inspect("focus")
+            .inspect("workspace")
             .unwrap()
             .deliveries
             .is_empty(),
@@ -231,7 +231,7 @@ fn update_and_remove_reach_no_harness_either() {
     let updated = world
         .app
         .plugins()
-        .update("focus", &AlwaysTrust)
+        .update("workspace", &AlwaysTrust)
         .expect("it updates");
     assert!(
         matches!(&updated, UpdatePluginReport::Updated { attachments, .. } if attachments.is_empty()),
@@ -240,7 +240,11 @@ fn update_and_remove_reach_no_harness_either() {
     assert_eq!(world.attached.load(Ordering::SeqCst), 0);
     assert!(world.receipts().is_empty());
 
-    let removed = world.app.plugins().remove("focus").expect("it is removed");
+    let removed = world
+        .app
+        .plugins()
+        .remove("workspace")
+        .expect("it is removed");
     assert!(
         matches!(
             removed,
@@ -251,7 +255,7 @@ fn update_and_remove_reach_no_harness_either() {
         ),
         "{removed:?}"
     );
-    assert!(world.stored("focus").is_none());
+    assert!(world.stored("workspace").is_none());
 }
 
 /// A plugin of extensions an earlier build delivered as a harness plugin:
@@ -261,13 +265,17 @@ fn update_and_remove_reach_no_harness_either() {
 fn an_update_takes_off_what_an_earlier_build_delivered() {
     let world = world("extension-only-upgrade-update");
     world.install(&extension_only());
-    let package = world.package("focus");
+    let package = world.package("workspace");
     world
         .harness()
         .delivered_by_an_earlier_build(&world.home, &package);
     assert_eq!(world.harness_files().len(), 1);
 
-    let updated = world.app.plugins().update("focus", &AlwaysTrust).unwrap();
+    let updated = world
+        .app
+        .plugins()
+        .update("workspace", &AlwaysTrust)
+        .unwrap();
 
     assert!(
         matches!(updated, UpdatePluginReport::Updated { .. }),
@@ -282,12 +290,12 @@ fn an_update_takes_off_what_an_earlier_build_delivered() {
 fn a_removal_takes_off_what_an_earlier_build_delivered() {
     let world = world("extension-only-upgrade-remove");
     world.install(&extension_only());
-    let package = world.package("focus");
+    let package = world.package("workspace");
     world
         .harness()
         .delivered_by_an_earlier_build(&world.home, &package);
 
-    let removed = world.app.plugins().remove("focus").unwrap();
+    let removed = world.app.plugins().remove("workspace").unwrap();
 
     assert!(
         matches!(removed, RemovePluginReport::Removed { .. }),
@@ -304,7 +312,7 @@ fn a_removal_takes_off_what_an_earlier_build_delivered() {
 fn delivering_again_takes_off_only_what_still_matches_its_receipt() {
     let world = world("extension-only-upgrade-reinstall");
     world.install(&extension_only());
-    let package = world.package("focus");
+    let package = world.package("workspace");
     let harness = world.harness();
     harness.delivered_by_an_earlier_build(&world.home, &package);
 

@@ -34,7 +34,7 @@ include!(concat!(env!("OUT_DIR"), "/embedded_marketplace.rs"));
 /// marketplace itself — it names plugins, nothing else. A future
 /// marketplace entry the policy doesn't list stays available but
 /// uninstalled.
-pub const DEFAULT_PLUGIN_IDS: &[&str] = &["uze"];
+pub const DEFAULT_PLUGIN_IDS: &[&str] = uze_core::manifest::BUNDLED_PLUGINS;
 
 /// Materializes `plugin_name` from the embedded official marketplace
 /// snapshot: extracts the whole snapshot into a fresh scratch directory and

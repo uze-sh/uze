@@ -122,7 +122,7 @@ fn a_project_offers_its_extensions_once_with_their_grants() {
             .iter()
             .map(|offer| offer.attribution())
             .collect::<Vec<_>>(),
-        ["gsd-band · gsd@studio"],
+        ["gsd@studio/gsd-band"],
         "a fixtures-only extension waits for nothing"
     );
     let mut driven = driven(WorkspaceModel::default(), &world.home);
@@ -150,10 +150,7 @@ fn a_project_offers_its_extensions_once_with_their_grants() {
     assert!(screen.contains("Enable GSD in"), "{screen}");
     assert!(screen.contains("gsd@studio"), "attributed: {screen}");
     assert!(screen.contains("read:checkout"), "{screen}");
-    assert!(
-        screen.contains("reads the files of the checkout"),
-        "{screen}"
-    );
+    assert!(screen.contains("reads the checkout's files"), "{screen}");
     assert!(screen.contains("Enable 1"), "{screen}");
     assert!(screen.contains("this project"), "where it holds: {screen}");
 }

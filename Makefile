@@ -5,7 +5,7 @@ UZE_BIN ?= target/debug/uze
 RELEASE_BIN ?= target/release/uze
 INSTALL_ARGS ?= --force
 
-.PHONY: help build release install examples try playground-windows playground-linux playground-linux-down run test test-acceptance test-conformance test-installer harness-matrix extension-docs check ci fmt lint deny msrv web audit secrets installer attributions attributions-check coverage version clean changelog release-notes lab-image lab-run lab-all lab-evidence lab-sandbox lab-experiment lab-matrix lab-replay python-fmt python-lint
+.PHONY: help build release install pingpong-mcp try playground-windows playground-linux playground-linux-down run test test-acceptance test-conformance test-installer harness-matrix extension-docs check ci fmt lint deny msrv web audit secrets installer attributions attributions-check coverage version clean changelog release-notes lab-image lab-run lab-all lab-evidence lab-sandbox lab-experiment lab-matrix lab-replay python-fmt python-lint
 
 help: ## Show the available local-development targets.
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-12s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -33,15 +33,13 @@ release-notes: ## Preview the GitHub Release page for the latest tag (cliff.rele
 install: ## Force-rebuild (no version bump) and install/replace `uze`, with the OTLP exporter compiled in.
 	$(CARGO) install --path . --bin uze --locked --features telemetry $(INSTALL_ARGS)
 
-examples: ## Link the uze marketplace to this checkout, examples included, and install pingpong's MCP server.
+pingpong-mcp: ## Install the pingpong example's MCP server on PATH.
 	cargo install --locked --force --path . --features dev-servers --bin pingpong-mcp
-	uze market list | grep -q '^ *uze ' || uze market add "$(CURDIR)"
-	uze market link uze "$(CURDIR)"
 
 TRY_DIR ?= $(HOME)/uze-try
-EXAMPLES := gsd focus contributions pingpong
+EXAMPLES := workspace pingpong
 
-try: examples ## Make a project in TRY_DIR (~/uze-try) with this checkout's example plugins installed in it.
+try: install pingpong-mcp ## Make a project in TRY_DIR (~/uze-try) with this checkout's examples, built into its uze, installed in it.
 	python3 plugins/uze/skills/try/demo.py "$(TRY_DIR)"
 	cd "$(TRY_DIR)" && for plugin in $(EXAMPLES); do uze install --trust "$$plugin@uze" || exit 1; done
 	@echo "cd $(TRY_DIR) && uze workspace"

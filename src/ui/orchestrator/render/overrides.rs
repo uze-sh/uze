@@ -194,11 +194,6 @@ fn render_choice_row(
         (false, true) => Style::default().fg(theme::lifted(tone)),
         (false, false) => theme::fg(tone),
     };
-    let (symbol, mark_tone) = if choice.checked {
-        (Symbol::MarkToggleOn, Token::Accent)
-    } else {
-        (Symbol::MarkToggleOff, Token::TextMuted)
-    };
     let words_tone = match (costly, choice.checked) {
         (true, _) => Token::StateWarning,
         (false, true) => Token::TextPrimary,
@@ -207,10 +202,14 @@ fn render_choice_row(
     let row_lit = model.hovered == Some(WorkspaceHit::OverrideRow(row.offset));
     let mut left = vec![
         picker_lead(),
-        Span::styled(
-            theme::glyph(symbol),
-            ink(mark_tone, model.hovered == Some(toggle)),
-        ),
+        {
+            let mut mark =
+                crate::ui::widget::form::check(choice.checked, model.hovered == Some(toggle));
+            if row.marked {
+                mark.style = on_bar;
+            }
+            mark
+        },
         Span::styled(" ", ink(words_tone, false)),
     ];
     let mut words = ink(words_tone, row_lit);
@@ -251,7 +250,7 @@ fn render_choice_row(
     }
     frame.render_widget(paragraph, rect);
 
-    let mark_width = theme::width(symbol).max(1);
+    let mark_width = crate::ui::widget::form::check_width().max(1);
     hits.push((
         Rect::new(rect.x + PICKER_LEAD as u16, rect.y, mark_width, 1),
         toggle,

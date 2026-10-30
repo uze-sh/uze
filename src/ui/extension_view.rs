@@ -412,7 +412,7 @@ pub(crate) fn render_row_menu(
 /// question in the product is asked in, centred in `area`, with the keys
 /// that answer it where the surface is open: `scope`. The caller puts the
 /// scrim behind it and its answers ahead of everything it covers.
-/// `attribution` names a third party's extension (`id · plugin@marketplace`)
+/// `attribution` names a third party's extension (`plugin@marketplace/id`)
 /// beside what it asks about: a question that may close a pane or delete
 /// a file says whose question it is.
 pub(crate) fn render_confirm(
@@ -442,7 +442,7 @@ pub(crate) fn render_confirm(
             Some(_) => widget::dialog::Tone::Neutral,
             None => widget::dialog::Tone::Danger,
         },
-        title: &confirm.title,
+        title: confirm.title.as_str().into(),
         subject: Some(subject),
         body: vec![confirm.body.clone()],
         confirm: Some(&confirm.confirm),
@@ -454,6 +454,7 @@ pub(crate) fn render_confirm(
             .field
             .as_deref()
             .map(|text| widget::field::Field::new(text, "")),
+        ..Default::default()
     };
     let answers = widget::dialog::render(
         frame,

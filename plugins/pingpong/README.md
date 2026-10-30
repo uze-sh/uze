@@ -36,7 +36,7 @@ worlds ([`playground/`](../../playground)) try first.
 Outside a playground world, install it on your own machine with:
 
 ```sh
-make examples                 # pingpong-mcp on PATH, the uze marketplace linked here
+make pingpong-mcp             # pingpong-mcp on PATH
 uze pingpong@uze              # in a project: its rules arrive there
 uze install -m pingpong@uze   # the machine only: no rules
 ```

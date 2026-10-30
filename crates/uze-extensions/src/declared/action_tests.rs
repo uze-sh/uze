@@ -148,7 +148,7 @@ fn a_confirmed_action_asks_with_its_arguments_attributed_and_runs_only_once_acce
         .confirm
         .expect("a question");
     assert_eq!(asked.title, "Archive auth?");
-    assert_eq!(asked.subject, "gsd-band · gsd@luizfbalves");
+    assert_eq!(asked.subject, "gsd@market/gsd-band");
     assert!(
         asked.body.starts_with("Runs archive in archive.uze on "),
         "{asked:?}"

@@ -1,5 +1,0 @@
-{
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "focus",
-  "description": "A pomodoro beside the agent: the time running in the bar, a sound and a notification when a session ends, and the last seven days in a drawer."
-}

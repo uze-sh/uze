@@ -22,8 +22,9 @@ pub(crate) const CANCEL: usize = 0;
 /// acted on and the button that acts — the only two places the answer
 /// lands — and nothing else, so the dialog reads calm until the eye
 /// reaches what it would do.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub(crate) enum Tone {
+    #[default]
     Neutral,
     Caution,
     Danger,
@@ -44,14 +45,18 @@ impl Tone {
 /// Every dialog is the same four things in the same order — what is being
 /// asked, of what, what it means, and the answers — so that someone who
 /// has read one knows where to look in the next.
+#[derive(Default)]
 pub(crate) struct Dialog<'a> {
     pub(crate) tone: Tone,
     /// What is being asked, as a heading: "Remove marketplace".
-    pub(crate) title: &'a str,
+    pub(crate) title: std::borrow::Cow<'a, str>,
     /// The thing it would happen to, when there is one: the marketplace's name.
     pub(crate) subject: Option<Line<'static>>,
     /// What answering yes does, one paragraph per entry.
     pub(crate) body: Vec<String>,
+    /// What it is asked for, under the body: a name and what it means a
+    /// row, the names in one column as the workspace's offer lays them.
+    pub(crate) table: Vec<(String, String)>,
     /// The affirmative, in its own word — "Delete", not "OK". `None` makes
     /// the dialog a notice with one way out.
     pub(crate) confirm: Option<&'a str>,
@@ -198,7 +203,7 @@ fn content(dialog: &Dialog<'_>, measure: usize) -> Content {
     let mut lines = vec![
         Line::default(),
         Line::from(Span::styled(
-            dialog.title.to_owned(),
+            dialog.title.to_string(),
             theme::fg_bold(Token::TextBright),
         )),
     ];
@@ -220,6 +225,24 @@ fn content(dialog: &Dialog<'_>, measure: usize) -> Content {
             text::fold(paragraph, measure)
                 .into_iter()
                 .map(|line| Line::from(Span::styled(line, style))),
+        );
+    }
+    if !dialog.table.is_empty() {
+        lines.push(Line::default());
+        let entries: Vec<_> = dialog
+            .table
+            .iter()
+            .map(|(name, meaning)| super::definitions::Entry {
+                name,
+                said: meaning,
+                name_style: theme::fg(Token::TextCode),
+                said_style: theme::fg(Token::TextSecondary),
+            })
+            .collect();
+        lines.extend(
+            super::definitions::lines(&entries, super::definitions::Column::Fit, measure)
+                .into_iter()
+                .flatten(),
         );
     }
     lines.push(Line::default());
@@ -307,107 +330,6 @@ pub(crate) fn border_hint(
     spans.extend(answer_spans(scopes, answers));
     spans.push(Span::raw(" "));
     Line::from(spans)
-}
-
-/// One entry of a dialog's bottom border: a key and what it does, or a
-/// run of keys doing the same thing to two ends (`↑↓ move`), which is read
-/// and never pointed at.
-pub(crate) enum BorderKey<'a> {
-    Key(uze_keys::Action, &'a str),
-    Run(uze_keys::Action, uze_keys::Action, &'a str),
-}
-
-/// A dialog's bottom border that answers the pointer: the same words as
-/// [`border_hint`], arrows drawn as arrows, and each key a target once the
-/// dialog is placed. Hand [`BorderHint::line`] to [`shell`], then register
-/// [`BorderHint::targets`] along the popup it answered with.
-pub(crate) struct BorderHint {
-    line: Line<'static>,
-    /// Each key's column from the line's start, its width, and its action.
-    placed: Vec<(u16, u16, uze_keys::Action)>,
-}
-
-impl BorderHint {
-    /// The keys `keys` names, read from `scopes`; the one under the
-    /// pointer, `hovered`, drawn lit. A key bound to nothing here is left
-    /// out.
-    pub(crate) fn new(
-        scopes: &[uze_keys::Scope],
-        keys: &[BorderKey<'_>],
-        hovered: Option<uze_keys::Action>,
-    ) -> Self {
-        use crate::ui::widget::hint::{key_text, run_text};
-        let keymap = uze_keys::active();
-        let mut spans = vec![Span::raw(" ")];
-        let mut used = 1usize;
-        let mut placed = Vec::new();
-        for key in keys {
-            let (chord, action, word) = match key {
-                BorderKey::Key(action, word) => {
-                    let Some(chord) = keymap.chord_for(*action, scopes) else {
-                        continue;
-                    };
-                    (key_text(chord), Some(*action), *word)
-                }
-                BorderKey::Run(first, last, word) => {
-                    let (Some(first), Some(last)) = (
-                        keymap.chord_for(*first, scopes),
-                        keymap.chord_for(*last, scopes),
-                    ) else {
-                        continue;
-                    };
-                    (run_text(first, last), None, *word)
-                }
-            };
-            if used > 1 {
-                let separator = format!(" {} ", theme::glyph(Symbol::HintSeparator));
-                used += text::columns(&separator);
-                spans.push(Span::styled(separator, theme::fg(Token::TextDim)));
-            }
-            let word = format!(" {word}");
-            let width = text::columns(&chord) + text::columns(&word);
-            if let Some(action) = action {
-                placed.push((used as u16, width as u16, action));
-            }
-            let lit = action.is_some() && action == hovered;
-            spans.push(Span::styled(chord, theme::fg(Token::TextSecondary)));
-            spans.push(Span::styled(
-                word,
-                theme::fg(if lit {
-                    Token::TextBright
-                } else {
-                    Token::TextMuted
-                }),
-            ));
-            used += width;
-        }
-        spans.push(Span::raw(" "));
-        Self {
-            line: Line::from(spans),
-            placed,
-        }
-    }
-
-    pub(crate) fn line(&self) -> Line<'static> {
-        self.line.clone()
-    }
-
-    /// Where each key landed along `popup`'s bottom border, right-aligned
-    /// between its corners as [`Surface::hint`] draws it.
-    #[must_use = "register each target as a hit, so a click performs the key"]
-    pub(crate) fn targets(&self, popup: Rect) -> Vec<(Rect, uze_keys::Action)> {
-        let room = popup.width.saturating_sub(2);
-        let width = (self.line.width() as u16).min(room);
-        let start = popup.x + 1 + room - width;
-        let y = popup.bottom().saturating_sub(1);
-        self.placed
-            .iter()
-            .filter(|(offset, key_width, _)| offset + key_width <= width)
-            .map(|(offset, key_width, action)| {
-                (Rect::new(start + offset, y, *key_width, 1), *action)
-            })
-            .collect()
-    }
 }
 
 /// Where a dialog drawn by [`shell`] puts its content: the rows under its

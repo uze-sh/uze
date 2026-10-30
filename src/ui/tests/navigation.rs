@@ -100,7 +100,7 @@ fn read_only_navigation_never_produces_a_mutating_intent() {
     let mut model = model_with_plugins(&["one", "two"]);
     model.set_route(Route::Plugins);
     model.remembered.marketplace_plugins = vec![MarketplacePluginSummary {
-        marketplace: "uze-official".to_owned(),
+        marketplace: "uze".to_owned(),
         name: "uze".to_owned(),
         description: None,
         keywords: Vec::new(),

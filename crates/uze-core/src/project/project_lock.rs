@@ -13,10 +13,11 @@
 //!    it makes a reader moving between the two files learn the same thing
 //!    twice.
 //!
-//! What resolution adds to a declaration is exactly two things:
-//! `revision:` — the immutable commit a Git marketplace was read at — and
-//! `integrity:` — a digest of the bytes that landed, recorded only when
-//! those bytes cannot change under it. Everything else in the file was
+//! What resolution adds to a declaration is `revision:` — the immutable
+//! commit a Git marketplace was read at — and `integrity:` — a digest of the
+//! bytes that landed, recorded only when those bytes cannot change under
+//! it. The marketplace built into uze has no commit: the top-level `uze:`
+//! is the version whose binary its plugins came from. Everything else in the file was
 //! already in the manifest, and is repeated here only so the lock stands
 //! alone on a machine that has not read one.
 //!
@@ -53,6 +54,11 @@ pub const LOCK_FILE_NAME: &str = "agents.lock";
 #[serde(deny_unknown_fields)]
 pub struct ProjectLock {
     pub version: u32,
+    /// The uze version whose built-in marketplace the project's `uze`
+    /// plugins were resolved from: that marketplace's only revision, since
+    /// the binary is its source. Written only while one is locked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uze: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub marketplaces: BTreeMap<String, LockedMarketplace>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -63,6 +69,7 @@ impl Default for ProjectLock {
     fn default() -> Self {
         Self {
             version: SUPPORTED_LOCK_VERSION,
+            uze: None,
             marketplaces: BTreeMap::new(),
             plugins: BTreeMap::new(),
         }
@@ -180,6 +187,11 @@ pub fn stale_against(
 ) -> Vec<StaleEntry> {
     let mut stale = Vec::new();
     for (plugin, marketplace) in manifest.declared_plugins() {
+        // The built-in marketplace has no source to resolve against: its
+        // plugins follow the binary, in a phase of their own.
+        if marketplace == crate::manifest::BUILT_IN_MARKETPLACE {
+            continue;
+        }
         let entry = |locked: Option<&str>| StaleEntry {
             plugin: plugin.to_owned(),
             marketplace: marketplace.to_owned(),
@@ -328,6 +340,29 @@ pub fn save_lock(root: &Path, lock: &ProjectLock) -> Result<()> {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    /// The built-in marketplace's version stands at the top of the lock, and
+    /// its plugins are ordinary entries with no marketplace entry above them.
+    #[test]
+    fn a_built_in_plugin_round_trips_with_the_uze_version() {
+        let text = "version: 1\nuze: 1.2.3\nplugins:\n  workspace:\n    marketplace: uze\n    integrity: sha256:abc\n";
+        let lock = parse_lock_str(text, Path::new("agents.lock")).unwrap();
+        assert_eq!(lock.uze.as_deref(), Some("1.2.3"));
+        assert!(lock.marketplaces.is_empty());
+        assert_eq!(
+            serde_yaml::to_string(&lock).unwrap().trim_end(),
+            text.trim_end()
+        );
+    }
+
+    /// A built-in declaration is never stale against the lock: there is no
+    /// source to resolve it from, and the binary is followed elsewhere.
+    #[test]
+    fn a_built_in_declaration_is_never_stale() {
+        let manifest: crate::manifest::ProjectManifest =
+            serde_yaml::from_str("marketplaces:\n  uze:\n    plugins: [workspace]\n").unwrap();
+        assert!(stale_against(&manifest, &ProjectLock::default()).is_empty());
+    }
 
     fn locked(marketplace: &str) -> LockedPlugin {
         LockedPlugin {

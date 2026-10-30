@@ -1,0 +1,5 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "workspace",
+  "description": "uze's own workspace extensions in one package: GSD beside the agent, a pomodoro, and the repository's contribution graph; each one off until you allow and enable it."
+}

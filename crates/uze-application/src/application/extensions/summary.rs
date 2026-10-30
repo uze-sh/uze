@@ -15,6 +15,9 @@ pub struct DeclaredExtensionSummary {
     pub identity: Identity,
     /// Read from a linked marketplace's working tree.
     pub linked: bool,
+    /// Published by uze itself, in the official marketplace: who vouches
+    /// for it, as a marketplace's verified publisher would.
+    pub official: bool,
     /// What its manifest calls it, or its id when it did not compile.
     pub name: String,
     pub description: String,
@@ -61,6 +64,7 @@ fn summarize(
     let clean = |text: &str| Clean::label(text).into_string();
     let mut summary = DeclaredExtensionSummary {
         name: clean(&installed.identity.id),
+        official: installed.identity.marketplace == uze_core::manifest::BUILT_IN_MARKETPLACE,
         identity: installed.identity,
         linked: installed.linked,
         description: String::new(),

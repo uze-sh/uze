@@ -305,7 +305,7 @@ pub enum UzeError {
     SymlinkUnsupported(PathBuf),
     #[error("the plugin store cannot preserve special filesystem entry `{0}`")]
     UnpreservableEntry(PathBuf),
-    #[error("official marketplace plugin `{0}` is protected and cannot be removed")]
+    #[error("`{0}` is bundled with uze and cannot be removed")]
     ProtectedPackage(String),
     #[error("unknown harness `{requested}` (registered: {known})")]
     UnknownHarness { requested: String, known: String },

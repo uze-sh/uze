@@ -2,7 +2,7 @@
 //!
 //! The agentic side of the product: skills, agents, MCP — everything
 //! installable from a marketplace. One tree on the left: every
-//! marketplace is a group (the embedded `uze-official` snapshot as `uze`,
+//! marketplace is a group (the embedded `uze` snapshot among them,
 //! and a `local` group for ad-hoc installs no catalogue knows about, so a
 //! direct install never disappears from the TUI), its plugins under it,
 //! and under an unfolded plugin its resources by kind, the extensions it
@@ -36,7 +36,9 @@ use crate::ui::content_area;
 use crate::ui::hit::Hit;
 use crate::ui::model::{Focus, PluginTreeRow, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
-use crate::ui::widget::{Align, Button, button_row, hint::Hints, mark, row, screen_header, text};
+use crate::ui::widget::{
+    Align, Button, button_row, definitions, hint::Hints, mark, row, screen_header, text,
+};
 
 /// Below this many columns the panel goes and the tree takes the width.
 /// Low, since the panel is the detail of the row chosen and the tree gives
@@ -64,8 +66,7 @@ const PLUGIN_INDENT: usize = 4;
 const KIND_INDENT: usize = 6;
 const RESOURCE_INDENT: usize = 8;
 
-/// The key/value grid's key column in the panel.
-const FIELD_KEY_WIDTH: usize = 12;
+use super::FIELD_KEY_WIDTH;
 
 pub(crate) fn render_plugins(
     frame: &mut ratatui::Frame<'_>,
@@ -149,16 +150,6 @@ impl Screen<'_> {
                 .plugin(*position)
                 .map(|plugin| plugin.marketplace.as_str()),
         }
-    }
-}
-
-/// The group name as rendered: "uze-official" reads oddly right above a
-/// child plugin that's *also* named "uze" — the source beside it already
-/// says what the suffix did.
-fn group_display_name(marketplace: &str) -> &str {
-    match marketplace {
-        "uze-official" => "uze",
-        other => other,
     }
 }
 
@@ -639,7 +630,7 @@ fn market_line(
             MARKET_INDENT,
             vec![
                 Span::styled(
-                    group_display_name(market).to_owned(),
+                    market.to_owned(),
                     name_style(selected, resting).add_modifier(Modifier::BOLD),
                 ),
                 Span::raw("  "),
@@ -867,6 +858,9 @@ fn plugin_status(model: &TuiModel, plugin: &MarketplacePluginSummary) -> (String
             theme::fg(Token::StateWarning),
         ),
         FreshnessState::Linked { .. } => ("linked".to_owned(), theme::fg(Token::Accent)),
+        // uze puts it back whenever it is missing: installed, and not the
+        // operator's to remove.
+        _ if plugin.is_default => ("bundled".to_owned(), theme::fg(Token::StateSuccess)),
         _ => ("installed".to_owned(), theme::fg(Token::StateSuccess)),
     }
 }
@@ -1022,26 +1016,26 @@ fn render_panel(
         // Folded rather than cut: an address is read in full before it is
         // trusted, and a list of names cut at the edge hides which ones
         // are missing.
-        let value_room = room.saturating_sub(FIELD_KEY_WIDTH).max(1);
-        for (key, value, style, hit) in &detail.fields {
+        let entries: Vec<_> = detail
+            .fields
+            .iter()
+            .map(|(key, value, style, _)| definitions::Entry {
+                name: key,
+                said: value,
+                name_style: theme::fg(Token::TextDim),
+                said_style: *style,
+            })
+            .collect();
+        let drawn = definitions::lines(&entries, definitions::Column::Fixed(FIELD_KEY_WIDTH), room);
+        for ((_, _, _, hit), rows) in detail.fields.iter().zip(drawn) {
             let y = body.y + lines.len() as u16;
-            let rows = text::fold(value, value_room);
             if let Some(hit) = hit
                 && y < body.bottom()
             {
                 let height = (rows.len() as u16).min(body.bottom() - y);
                 hits.push((Rect::new(body.x, y, body.width, height), hit.clone()));
             }
-            for (index, row) in rows.into_iter().enumerate() {
-                let key = if index == 0 { *key } else { "" };
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        format!("{key:<FIELD_KEY_WIDTH$}"),
-                        theme::fg(Token::TextDim),
-                    ),
-                    Span::styled(row, *style),
-                ]));
-            }
+            lines.extend(rows);
         }
         frame.render_widget(Paragraph::new(lines), body);
     }
@@ -1212,7 +1206,7 @@ fn market_detail(screen: &Screen<'_>, market: &str) -> Detail {
     Detail {
         kind: kind.to_owned(),
         status,
-        title: group_display_name(market).to_owned(),
+        title: market.to_owned(),
         subtitle: None,
         description: Some(format!(
             "{} · {installed}/{} installed",
@@ -1297,19 +1291,15 @@ fn plugin_detail(model: &TuiModel, plugin: &MarketplacePluginSummary) -> Detail 
         }
     }
     Detail {
-        kind: format!("plugin · {}", group_display_name(&plugin.marketplace)),
+        kind: format!("plugin · {}", plugin.marketplace),
         status: plugin_status(model, plugin),
         title: plugin.name.clone(),
         subtitle: None,
         description: plugin.description.clone(),
         tags: (!plugin.keywords.is_empty()).then(|| plugin.keywords.join(", ")),
         fields,
-        update: (plugin.installed && plugin.freshness.behind()).then(|| {
-            format!(
-                "new revision from {}",
-                group_display_name(&plugin.marketplace)
-            )
-        }),
+        update: (plugin.installed && plugin.freshness.behind())
+            .then(|| format!("new revision from {}", plugin.marketplace)),
         offers: plugin.offers(),
     }
 }
@@ -1364,12 +1354,8 @@ fn resource_detail(plugin: &MarketplacePluginSummary, resource: &PluginCapabilit
         description: None,
         tags: None,
         fields: Vec::new(),
-        update: (plugin.installed && plugin.freshness.behind()).then(|| {
-            format!(
-                "new revision from {}",
-                group_display_name(&plugin.marketplace)
-            )
-        }),
+        update: (plugin.installed && plugin.freshness.behind())
+            .then(|| format!("new revision from {}", plugin.marketplace)),
         // Its plugin's actions, labelled as the plugin's row labels them:
         // the panel above already names which plugin they are about.
         offers: plugin.offers(),
@@ -1421,12 +1407,8 @@ fn extension_detail(
             })
             .into_iter()
             .collect(),
-        update: (plugin.installed && plugin.freshness.behind()).then(|| {
-            format!(
-                "new revision from {}",
-                group_display_name(&plugin.marketplace)
-            )
-        }),
+        update: (plugin.installed && plugin.freshness.behind())
+            .then(|| format!("new revision from {}", plugin.marketplace)),
         offers: plugin.offers(),
     }
 }
