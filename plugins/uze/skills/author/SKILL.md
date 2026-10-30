@@ -107,7 +107,9 @@ each; `--mcp` adds an `mcp.json` and a working stdio server stub under
 `board.uze` component both draw (its `<view>`, and the `<script>` the live source runs), the `fixtures/board.json` it is bound to, and
 `tests/board.test.kdl` with the snapshot its first test takes (the id is
 lowercase with single hyphens, and `code`, `architect`, `spec` and `uze`
-are taken). Writing the extension itself (its manifest, a script or a
+are taken). The first extension also adds `*.uze linguist-language=KDL` to
+the marketplace's `.gitattributes`, so forges highlight components as KDL;
+a file that already names `*.uze` is left as it is. Writing the extension itself (its manifest, a script or a
 program, its grants, its tests, and the consent it needs before it runs)
 is in [references/extension.md](references/extension.md): read it when
 the plugin carries one, and come back here for check, install and

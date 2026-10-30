@@ -60,6 +60,10 @@ const PLUGIN_ROOT_TOKEN: &str = "${PLUGIN_ROOT}";
 /// The file name of the rule `--rules` scaffolds.
 const EXAMPLE_RULE: &str = "conventions.md";
 
+/// The attributes file a marketplace's components are described in, at its
+/// root so it covers every plugin's `.uze` files.
+const GIT_ATTRIBUTES: &str = ".gitattributes";
+
 /// The initial commit message a scaffolded marketplace is born with.
 const INITIAL_COMMIT_MESSAGE: &str = "chore: scaffold marketplace";
 
@@ -295,6 +299,9 @@ pub fn scaffold_plugin(
     }
 
     write_plugin_files(&plugin_root, name, description, caps)?;
+    if caps.extension.is_some() {
+        describe_components(market_root)?;
+    }
 
     // The entry locates and files the plugin; what describes it is
     // `plugin.json`'s, written above, and nowhere else.
@@ -456,6 +463,32 @@ fn write_extension_files(plugin_root: &Path, id: &str) -> Result<()> {
         &tests.join("board.test.kdl"),
         include_str!("authoring/board.test.kdl.template"),
     )
+}
+
+/// Appends the `*.uze` attributes to the marketplace's `.gitattributes`
+/// unless a line already names `*.uze`: the file may be the operator's
+/// project's, so what is there is never rewritten, only added to.
+fn describe_components(market_root: &Path) -> Result<()> {
+    let path = market_root.join(GIT_ATTRIBUTES);
+    let existing = match fs::read_to_string(&path) {
+        Ok(existing) => existing,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(UzeError::read(&path)(error)),
+    };
+    let described = existing
+        .lines()
+        .filter_map(|line| line.split_whitespace().next())
+        .any(|pattern| pattern.ends_with("*.uze"));
+    if described {
+        return Ok(());
+    }
+    let separator = match existing.as_str() {
+        "" => "",
+        text if text.ends_with('\n') => "\n",
+        _ => "\n\n",
+    };
+    let attributes = include_str!("authoring/gitattributes");
+    write_file(&path, format!("{existing}{separator}{attributes}"))
 }
 
 /// A description as a YAML double-quoted scalar. JSON's string escaping is

@@ -547,6 +547,73 @@ fn a_scaffolded_extension_compiles() -> Result<()> {
     Ok(())
 }
 
+/// The first extension describes `.uze` files in the marketplace's
+/// `.gitattributes`; a later one finds them described and adds nothing.
+#[test]
+fn an_extension_describes_its_components_once() -> Result<()> {
+    let _git_identity = git_identity();
+    let root = scratch("authoring-attributes");
+    let market = scaffold_marketplace("tools", None, &root.join("market"))?;
+    scaffold_plugin(
+        &market,
+        "plain",
+        None,
+        None,
+        &ScaffoldCapabilities::default(),
+    )?;
+    assert!(!market.join(".gitattributes").exists(), "no component yet");
+
+    for name in ["greet", "wave"] {
+        scaffold_plugin(
+            &market,
+            name,
+            None,
+            None,
+            &ScaffoldCapabilities {
+                extension: Some("board".to_owned()),
+                ..ScaffoldCapabilities::default()
+            },
+        )?;
+    }
+
+    let attributes = fs::read_to_string(market.join(".gitattributes")).unwrap();
+    assert_eq!(attributes, include_str!("gitattributes"));
+    fs::remove_dir_all(&root).expect("teardown");
+    Ok(())
+}
+
+/// A project's own `.gitattributes` is added to, never rewritten, and one
+/// that already names `*.uze` is the operator's answer and stays as it is.
+#[test]
+fn a_projects_own_attributes_are_kept() -> Result<()> {
+    let root = scratch("authoring-attributes-local");
+    let extension = ScaffoldCapabilities {
+        extension: Some("board".to_owned()),
+        ..ScaffoldCapabilities::default()
+    };
+    for (existing, expected) in [
+        (
+            "* text=auto",
+            format!("* text=auto\n\n{}", include_str!("gitattributes")),
+        ),
+        (
+            "*.uze linguist-language=Vue\n",
+            "*.uze linguist-language=Vue\n".to_owned(),
+        ),
+    ] {
+        let project = root.join(format!("project-{}", existing.len()));
+        fs::create_dir_all(&project).unwrap();
+        fs::write(project.join(".gitattributes"), existing).unwrap();
+        scaffold_local_marketplace("tools", None, &project, "plugins")?;
+        scaffold_plugin(&project, "greet", None, None, &extension)?;
+
+        let attributes = fs::read_to_string(project.join(".gitattributes")).unwrap();
+        assert_eq!(attributes, expected, "{existing:?}");
+    }
+    fs::remove_dir_all(&root).expect("teardown");
+    Ok(())
+}
+
 /// An extension id a built-in already answers to, or one the manifest
 /// would refuse, is refused before the plugin is written at all.
 #[test]
