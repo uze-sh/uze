@@ -93,13 +93,24 @@ label = "billing api"
 Leave the name empty, or give it the directory's own, and the directory's
 name is back.
 
+## Restarting with other flags
+
+Right-click the agent (or press `Alt+.`) and open **Restart in** ›. A panel
+opens beside the menu on the harness the agent runs, holding the flags and
+variables it was launched with. Change them as you would for a new agent and
+press Enter: the agent restarts in the same directory and resumes its
+conversation with them. Enter says what it will do: `restart`, `close` when
+nothing changed, or `continue in` another harness. If the agent is in the
+middle of a turn, uze asks before interrupting it.
+
 ## Continuing in another harness
 
 When a harness stops being able to work, for example because it hit its
-usage limit, right-click the agent (or press `Alt+.`) and pick
-**Continue in** › **Codex**, or any other harness set up on this machine. The same agent carries on in the
-same directory, on the same branch, under the same name. If the agent is in
-the middle of a turn, uze asks before interrupting it.
+usage limit, open **Restart in** › and move the panel's harness (`←` `→`
+with nothing typed, or its arrows) to **Codex**, or any other harness set up
+on this machine. The same agent carries on in the same directory, on the
+same branch, under the same name, with the flags it last had on that
+harness.
 
 The harness it leaves keeps its conversation. Switch back later and that
 harness picks up exactly where it was.
