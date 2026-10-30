@@ -1668,6 +1668,49 @@ mod tests {
         assert_eq!(still.checked_at, 10_000, "not asked again within the hour");
     }
 
+    /// The attempt is on record while the request is out, so a process
+    /// waking meanwhile, or one that outlives a request that never ends,
+    /// does not ask again.
+    #[test]
+    fn the_attempt_is_recorded_before_the_request_is_made() {
+        struct Watching<'a> {
+            home: &'a UzeHome,
+            seen: RefCell<Option<u64>>,
+        }
+        impl Releases for Watching<'_> {
+            fn latest(&self) -> Option<String> {
+                let ledger = read_json::<Ledger>(&ledger_path(self.home)).unwrap_or_default();
+                *self.seen.borrow_mut() = Some(ledger.checked_at);
+                None
+            }
+            fn age(&self, _: &str) -> Option<u64> {
+                None
+            }
+            fn changelog(&self, _: &str) -> Option<String> {
+                None
+            }
+            fn install(&self, _: &str, _: &Path, _: &Path) -> Result<(), String> {
+                Ok(())
+            }
+        }
+
+        let (_dir, home, binary) = world();
+        let watching = Watching {
+            home: &home,
+            seen: RefCell::default(),
+        };
+        pass(
+            &home,
+            Policy::Install,
+            Channel::Latest,
+            Some(&binary),
+            &watching,
+            10_000,
+            false,
+        );
+        assert_eq!(*watching.seen.borrow(), Some(10_000));
+    }
+
     #[test]
     fn a_wake_is_moved_by_at_most_a_fifth() {
         for _ in 0..64 {
