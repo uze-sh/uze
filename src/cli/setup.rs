@@ -527,8 +527,8 @@ mod capturing_runner_tests {
 
     #[test]
     fn a_child_past_its_deadline_is_reported_timed_out() {
-        let log = std::env::temp_dir().join(format!("uze-capturing-{}.log", std::process::id()));
-        let runner = CapturingRunner::new(log.clone(), false);
+        let scratch = uze_testkit::temp::TempDir::new("capturing");
+        let runner = CapturingRunner::new(scratch.join("setup.log"), false);
         let mut spec = ProcessSpec::new("sh", ["-c", "sleep 30 & sleep 30"]);
         spec.timeout = Duration::from_millis(200);
 
@@ -538,13 +538,12 @@ mod capturing_runner_tests {
         assert!(result.timed_out);
         assert!(!result.success);
         assert!(started.elapsed() < Duration::from_secs(10));
-        let _ = std::fs::remove_file(log);
     }
 
     #[test]
     fn a_child_that_exits_reports_its_own_status() {
-        let log = std::env::temp_dir().join(format!("uze-capturing-ok-{}.log", std::process::id()));
-        let runner = CapturingRunner::new(log.clone(), false);
+        let scratch = uze_testkit::temp::TempDir::new("capturing-ok");
+        let runner = CapturingRunner::new(scratch.join("setup.log"), false);
         let result = runner
             .run(&ProcessSpec::new("sh", ["-c", "exit 0"]))
             .unwrap();
@@ -553,6 +552,5 @@ mod capturing_runner_tests {
             .run(&ProcessSpec::new("sh", ["-c", "exit 3"]))
             .unwrap();
         assert!(!failed.success && !failed.timed_out);
-        let _ = std::fs::remove_file(log);
     }
 }

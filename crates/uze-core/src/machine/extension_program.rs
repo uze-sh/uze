@@ -572,7 +572,8 @@ mod tests {
 
     #[test]
     fn a_hang_is_ended_with_its_children() {
-        let marker = std::env::temp_dir().join(format!("uze-program-hang-{}", std::process::id()));
+        let scratch = uze_testkit::temp::TempDir::new("program-hang");
+        let marker = scratch.join("child");
         let script = format!("sleep 30 & echo $! > {}; wait", marker.display());
         let started = Instant::now();
         assert_eq!(
@@ -587,7 +588,6 @@ mod tests {
             .trim()
             .parse()
             .unwrap();
-        let _ = std::fs::remove_file(&marker);
         thread::sleep(Duration::from_millis(100));
         assert_eq!(
             uze_platform::process::alive(child),
@@ -690,18 +690,13 @@ mod tests {
 
     #[test]
     fn a_program_is_pinned_to_its_real_path_and_never_beneath_the_project() {
-        let root = std::env::temp_dir().join(format!("uze-resolve-{}", std::process::id()));
-        let project = root.join("project");
-        let bin = root.join("bin");
+        let scratch = uze_testkit::temp::TempDir::new("resolve");
+        let project = scratch.join("project");
+        let bin = scratch.join("bin");
         std::fs::create_dir_all(project.join("node_modules/.bin")).unwrap();
         std::fs::create_dir_all(&bin).unwrap();
         let planted = project.join("node_modules/.bin/uze-planted-gh");
-        std::fs::write(&planted, "#!/bin/sh\n").unwrap();
-        std::fs::set_permissions(
-            &planted,
-            std::os::unix::fs::PermissionsExt::from_mode(0o755),
-        )
-        .unwrap();
+        uze_testkit::process::install_executable(&planted, b"#!/bin/sh\n");
         std::os::unix::fs::symlink(&planted, bin.join("uze-planted-gh")).unwrap();
         let search = vec![
             project.join("node_modules/.bin"),
@@ -719,7 +714,6 @@ mod tests {
             resolve("no-such-program", &search, &[]),
             Err(Unresolved::NotFound)
         );
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

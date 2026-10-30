@@ -564,11 +564,12 @@ mod plugin_tests {
     // It is a POSIX shell script.
     #[cfg(unix)]
     fn agy_listing(home: &Path, listing: &str) -> String {
-        use std::os::unix::fs::PermissionsExt;
         let agy = home.join("agy");
         fs::create_dir_all(home).unwrap();
-        fs::write(&agy, format!("#!/bin/sh\ncat <<'EOF'\n{listing}\nEOF\n")).unwrap();
-        fs::set_permissions(&agy, fs::Permissions::from_mode(0o755)).unwrap();
+        uze_testkit::process::install_executable(
+            &agy,
+            format!("#!/bin/sh\ncat <<'EOF'\n{listing}\nEOF\n").as_bytes(),
+        );
         agy.to_string_lossy().into_owned()
     }
 

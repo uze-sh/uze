@@ -712,8 +712,6 @@ fn setup_delivers_a_package_stored_before_the_harness_once_and_natively() {
 // Drives the POSIX installer route (`curl … | sh`) with stand-ins.
 #[cfg(unix)]
 fn setup_opencode_reports_where_a_fresh_install_landed_outside_path() {
-    use std::os::unix::fs::PermissionsExt;
-
     let home = temporary_home("cli-setup-opencode-fresh-home");
     let uze_home = temporary_home("cli-setup-opencode-fresh-uze-home");
     let fake_bin = temporary_home("cli-setup-opencode-fresh-bin");
@@ -722,17 +720,16 @@ fn setup_opencode_reports_where_a_fresh_install_landed_outside_path() {
     // Stands in for `sh -c "installer=$(curl ...) && ... | bash"`: it
     // records the route it was handed and installs where the real one does.
     let sh = fake_bin.join("sh");
-    std::fs::write(
+    uze_testkit::process::install_executable(
         &sh,
         format!(
             "#!/bin/sh\necho \"$*\" >> \"{log}\"\nmkdir -p \"{dir}\"\nprintf '#!/bin/sh\\necho opencode v9.9.9\\n' > \"{bin}\"\nchmod 755 \"{bin}\"\n",
             log = fake_bin.join("commands.log").display(),
             dir = installed.parent().unwrap().display(),
             bin = installed.display(),
-        ),
-    )
-    .unwrap();
-    std::fs::set_permissions(&sh, std::fs::Permissions::from_mode(0o755)).unwrap();
+        )
+        .as_bytes(),
+    );
 
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &uze_home)
@@ -790,8 +787,6 @@ fn assert_fresh_native_install_found_outside_path(
     installer: &str,
     version_line: &str,
 ) {
-    use std::os::unix::fs::PermissionsExt;
-
     let home = temporary_home(&format!("cli-setup-{program}-fresh-home"));
     let uze_home = temporary_home(&format!("cli-setup-{program}-fresh-uze-home"));
     let fake_bin = temporary_home(&format!("cli-setup-{program}-fresh-bin"));
@@ -800,17 +795,16 @@ fn assert_fresh_native_install_found_outside_path(
     // Stands in for the vendor's `curl ... | sh` route: it records the
     // route it was handed and installs where the real one does.
     let sh = fake_bin.join("sh");
-    std::fs::write(
+    uze_testkit::process::install_executable(
         &sh,
         format!(
             "#!/bin/sh\necho \"$*\" >> \"{log}\"\nmkdir -p \"{dir}\"\nprintf '#!/bin/sh\\necho \"$0|$*\" >> \"{log}\"\\nif [ \"$1\" = --version ]; then echo \"{version_line}\"; fi\\n' > \"{bin}\"\nchmod 755 \"{bin}\"\n",
             log = fake_bin.join("commands.log").display(),
             dir = installed.parent().unwrap().display(),
             bin = installed.display(),
-        ),
-    )
-    .unwrap();
-    std::fs::set_permissions(&sh, std::fs::Permissions::from_mode(0o755)).unwrap();
+        )
+        .as_bytes(),
+    );
 
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
         .env("UZE_HOME", &uze_home)

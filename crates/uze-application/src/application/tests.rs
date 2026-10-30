@@ -2404,8 +2404,7 @@ fn runtime_shim_writes_no_shell_file() {
     fs::create_dir_all(&shims_dir).unwrap();
     fs::create_dir_all(&real_bin_dir).unwrap();
     let real_executable = real_bin_dir.join(uze_platform::executable::file_name("shim-test"));
-    fs::write(&real_executable, "#!/bin/sh\nexit 0\n").unwrap();
-    uze_platform::executable::make_runnable(&real_executable).unwrap();
+    uze_testkit::process::install_executable(&real_executable, b"#!/bin/sh\nexit 0\n");
 
     let rc_file = root.join(".zshrc");
     let rc_content = format!("export PATH=\"{}:$PATH\"\n", real_bin_dir.display());
@@ -2607,13 +2606,7 @@ fn shim_failure_is_reported_but_does_not_abort_setup() {
     let fake_bin = root.join("fake-bin");
     fs::create_dir_all(&fake_bin).unwrap();
     let fake_exe = fake_bin.join("shim-test");
-    fs::write(&fake_exe, "#!/bin/sh\necho 1.0.0\n").unwrap();
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&fake_exe).unwrap().permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&fake_exe, perms).unwrap();
-    }
+    uze_testkit::process::install_executable(&fake_exe, b"#!/bin/sh\necho 1.0.0\n");
     let mut env_scope = uze_testkit::env::scope();
     env_scope.set(
         "PATH",

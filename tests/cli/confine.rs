@@ -119,8 +119,7 @@ fn a_program_reads_its_grants_and_nothing_of_home() {
     std::fs::write(home.join(".ssh/id"), "secret").unwrap();
     std::fs::write(checkout.join("readme"), "public").unwrap();
     let script = checkout.join("script");
-    std::fs::write(&script, "#!/bin/sh\necho ran\n").unwrap();
-    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    uze_testkit::process::install_executable(&script, b"#!/bin/sh\necho ran\n");
     let confinement = confinement(&[&checkout], &[], false);
 
     let granted = run(

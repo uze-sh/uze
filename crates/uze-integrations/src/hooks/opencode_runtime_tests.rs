@@ -1,5 +1,5 @@
 use super::*;
-use std::{os::unix::fs::PermissionsExt, process::Command};
+use std::process::Command;
 use uze_core::hook::{CommandHandlerType, HookEvent};
 
 /// Loads the runtime plugin's hooks section over one document carrying
@@ -147,8 +147,7 @@ fn the_plugin_runs_the_handlers_on_the_harnesss_own_runtime() {
         ),
     ] {
         let path = scripts.join(name);
-        fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        uze_testkit::process::install_executable(&path, format!("#!/bin/sh\n{body}\n").as_bytes());
     }
 
     let hook = PortableHook {
@@ -451,8 +450,10 @@ fn a_package_root_with_a_space_reaches_the_handler_as_one_word() {
     let scripts = root.join("scripts");
     fs::create_dir_all(&scripts).unwrap();
     let guard = scripts.join("guard");
-    fs::write(&guard, "#!/bin/sh\necho \"blocked by guard\" >&2\nexit 3\n").unwrap();
-    fs::set_permissions(&guard, fs::Permissions::from_mode(0o755)).unwrap();
+    uze_testkit::process::install_executable(
+        &guard,
+        b"#!/bin/sh\necho \"blocked by guard\" >&2\nexit 3\n",
+    );
     let reported = drive(
         &root,
         &deciding(HookEffect::Deny, "${PLUGIN_ROOT}/scripts/guard"),

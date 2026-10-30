@@ -487,8 +487,8 @@ mod tests {
 
     #[test]
     fn an_extension_starts_a_server_as_a_harness_is_handed_it_or_says_why_not() {
-        let root = std::env::temp_dir().join(format!("uze-mcp-launch-{}", std::process::id()));
-        std::fs::create_dir_all(&root).unwrap();
+        let scratch = uze_testkit::temp::TempDir::new("mcp-launch");
+        let root = scratch.path().to_path_buf();
         std::fs::write(
             root.join("mcp.json"),
             r#"{"mcpServers":{
@@ -534,6 +534,5 @@ mod tests {
                 .unwrap_err()
                 .contains("no MCP server `absent`")
         );
-        let _ = std::fs::remove_dir_all(root);
     }
 }

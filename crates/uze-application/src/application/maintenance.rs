@@ -15,6 +15,7 @@ use uze_core::{
     state,
 };
 
+use super::extensions::prune_compiled_cache;
 use super::lifecycle::remove::ReceiptTeardown;
 use super::services::Health;
 
@@ -172,6 +173,8 @@ impl Health<'_> {
         };
 
         let mut report = MaintenanceReport::default();
+        let extensions = self.0.extensions().installed();
+        prune_compiled_cache(&self.0.home, &extensions);
         // Prunes any Store registration whose directory is gone and cleans
         // every receipt left behind under an id nothing answers to any
         // more — first, so `installed_packages` below never treats a

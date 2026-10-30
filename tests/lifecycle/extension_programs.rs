@@ -426,8 +426,10 @@ fn a_helper_that_cannot_confine_runs_nothing() {
         return;
     }
     let helper = world.checkout.parent().unwrap().join("broken-helper");
-    fs::write(&helper, "#!/bin/sh\necho 'cannot apply' >&2\nexit 125\n").unwrap();
-    uze_platform::executable::make_runnable(&helper).unwrap();
+    uze_testkit::process::install_executable(
+        &helper,
+        b"#!/bin/sh\necho 'cannot apply' >&2\nexit 125\n",
+    );
     let runner = ExtensionRunner::confining_through(Some(helper));
     match world.ask(&runner, "answer", "") {
         Answer::Withheld { reason } => {

@@ -1215,7 +1215,7 @@ fn a_label_with_no_room_is_kept_in_the_key() {
     let long = "a relationship whose label is far too long to fit on any line of this board at all";
     let state = drawing(vec![Artifact::read(
         "a.mmd",
-        &format!("C4Context\nSystem(a, \"A\")\nSystem(b, \"B\")\nRel(a, b, \"{long}\")\n"),
+        format!("C4Context\nSystem(a, \"A\")\nSystem(b, \"B\")\nRel(a, b, \"{long}\")\n"),
     )]);
     let key = key_of(&state);
     assert!(key.contains(&format!("A ► B: {long}")), "{key}");

@@ -449,9 +449,7 @@ mod tests {
     // Its stand-in programs are POSIX shell scripts.
     #[cfg(unix)]
     fn make_executable(path: &Path) {
-        use std::os::unix::fs::PermissionsExt;
-        fs::write(path, b"#!/bin/sh\nexit 0\n").unwrap();
-        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+        uze_testkit::process::install_executable(path, b"#!/bin/sh\nexit 0\n");
     }
 
     #[test]

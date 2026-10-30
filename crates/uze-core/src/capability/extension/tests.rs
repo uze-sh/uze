@@ -907,17 +907,16 @@ fn a_test_file_is_bounded_like_a_view() {
 
 #[test]
 fn test_files_are_found_under_tests_by_their_suffix() {
-    let root = std::env::temp_dir().join(format!("uze-test-files-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
+    let scratch = uze_testkit::temp::TempDir::new("test-files");
+    let root = scratch.path();
     std::fs::create_dir_all(root.join("tests")).unwrap();
     for name in ["b.test.kdl", "a.test.kdl", "notes.md", "c.uze"] {
         std::fs::write(root.join("tests").join(name), "").unwrap();
     }
     assert_eq!(
-        super::test_files(&root),
+        super::test_files(root),
         ["tests/a.test.kdl", "tests/b.test.kdl"]
     );
-    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]

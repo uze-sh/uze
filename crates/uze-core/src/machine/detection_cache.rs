@@ -277,8 +277,7 @@ mod tests {
     fn fake_executable(dir: &Path, name: &str) -> PathBuf {
         fs::create_dir_all(dir).unwrap();
         let path = dir.join(uze_platform::executable::file_name(name));
-        fs::write(&path, "#!/bin/sh\n").unwrap();
-        uze_platform::executable::make_runnable(&path).unwrap();
+        uze_testkit::process::install_executable(&path, b"#!/bin/sh\n");
         path
     }
 

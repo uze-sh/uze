@@ -186,8 +186,14 @@ mod imp {
 
     pub(super) fn install(path: &Path, bytes: &[u8]) -> io::Result<()> {
         use std::process::{Command, Stdio};
+        // `command -p` looks in the system's default PATH: the one this
+        // process inherits may be a test's, naming a stand-in and no `cat`.
         let mut writer = Command::new("/bin/sh")
-            .args(["-c", r#"cat > "$1" && chmod 0755 "$1""#, "sh"])
+            .args([
+                "-c",
+                r#"command -p cat > "$1" && command -p chmod 0755 "$1""#,
+                "sh",
+            ])
             .arg(path)
             .stdin(Stdio::piped())
             .spawn()?;

@@ -39,8 +39,7 @@ fn package(label: &str) -> PathBuf {
 }
 
 fn write_script(path: &Path, body: &str) {
-    fs::write(path, format!("#!/bin/sh\n{body}\n")).unwrap();
-    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    uze_testkit::process::install_executable(path, format!("#!/bin/sh\n{body}\n").as_bytes());
 }
 
 /// A handler's command as the manifest carries it: a bare script name

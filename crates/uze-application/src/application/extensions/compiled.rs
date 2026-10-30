@@ -11,7 +11,7 @@
 //! stamp of the files, so a linked extension is recompiled only when one of
 //! them changed.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read as _;
 use std::path::{Component, Path, PathBuf};
 
@@ -138,6 +138,79 @@ fn cache_key(identity: &Identity, loaded: &Loaded) -> String {
         push_field(&mut stream, part.as_bytes());
     }
     format!("{:016x}", fnv1a64(&stream))
+}
+
+/// Keeps the newest compiled view for each installed extension, based only
+/// on generated files. This must not read extension sources: health runs
+/// independently of opening the workspace and should stay proportional to
+/// the cache, rather than to an extension's total source bytes.
+pub(crate) fn prune_compiled_cache(
+    home: &uze_core::UzeHome,
+    installed: &[InstalledExtension],
+) -> usize {
+    let installed: BTreeSet<_> = installed
+        .iter()
+        .map(|extension| &extension.identity)
+        .collect();
+    let Ok(entries) = std::fs::read_dir(home.compiled_extensions_dir()) else {
+        return 0;
+    };
+    let mut cached = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if compiled_cache_key(&path).is_none()
+            || !entry.file_type().is_ok_and(|kind| kind.is_file())
+        {
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(&path) else {
+            continue;
+        };
+        let Ok(compiled) = serde_json::from_slice::<CompiledExtension>(&bytes) else {
+            cached.push((None, path, std::time::SystemTime::UNIX_EPOCH));
+            continue;
+        };
+        let modified = entry
+            .metadata()
+            .ok()
+            .and_then(|metadata| metadata.modified().ok())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        cached.push((Some(compiled.identity), path, modified));
+    }
+
+    let mut newest = BTreeMap::new();
+    for (identity, path, modified) in &cached {
+        let Some(identity) = identity else {
+            continue;
+        };
+        if !installed.contains(identity) {
+            continue;
+        }
+        newest
+            .entry(identity.clone())
+            .and_modify(|kept: &mut (PathBuf, std::time::SystemTime)| {
+                if (modified, path) > (&kept.1, &kept.0) {
+                    *kept = (path.clone(), *modified);
+                }
+            })
+            .or_insert_with(|| (path.clone(), *modified));
+    }
+    cached
+        .into_iter()
+        .filter(|(identity, path, _)| {
+            identity.as_ref().is_none_or(|identity| {
+                !installed.contains(identity)
+                    || newest.get(identity).is_none_or(|(kept, _)| kept != path)
+            })
+        })
+        .filter(|(_, path, _)| std::fs::remove_file(path).is_ok())
+        .count()
+}
+
+fn compiled_cache_key(path: &Path) -> Option<&str> {
+    let name = path.file_name()?.to_str()?;
+    let key = name.strip_suffix(".json")?;
+    (key.len() == 16 && key.bytes().all(|byte| byte.is_ascii_hexdigit())).then_some(key)
 }
 
 /// A stamp of when each of an extension's files last changed: equal stamps
@@ -353,6 +426,42 @@ mod tests {
         .unwrap();
         compile_cached(&home, &identity(), &loaded(&installed), compile).unwrap();
         assert_eq!(compiles.get(), 2, "a saved file compiles again");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cache_maintenance_keeps_one_revision_per_installed_extension() {
+        let root = uze_testkit::temp::scratch("extension-compile-prune");
+        let home = uze_core::UzeHome::at(root.join("home"));
+        let installed = extension_in(&root);
+        let cache = home.compiled_extensions_dir();
+        fs::create_dir_all(&cache).unwrap();
+        fs::write(
+            cache.join("0123456789abcdef.json"),
+            serde_json::to_vec(&compiled()).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            cache.join("fedcba9876543210.json"),
+            serde_json::to_vec(&compiled()).unwrap(),
+        )
+        .unwrap();
+        fs::write(cache.join("costs.json"), "generated costs").unwrap();
+
+        assert_eq!(
+            prune_compiled_cache(&home, std::slice::from_ref(&installed)),
+            1
+        );
+        assert!(cache.join("costs.json").is_file());
+        assert_eq!(
+            fs::read_dir(&cache)
+                .unwrap()
+                .flatten()
+                .filter(|entry| compiled_cache_key(&entry.path()).is_some())
+                .count(),
+            1,
+            "one generated revision stays for the installed extension"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
