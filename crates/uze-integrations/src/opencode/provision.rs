@@ -307,8 +307,7 @@ mod provision_tests {
         let bin = root.join(".opencode/bin");
         std::fs::create_dir_all(&bin).unwrap();
         let installed = bin.join(uze_platform::executable::file_name("opencode"));
-        std::fs::write(&installed, "#!/bin/sh\n").unwrap();
-        uze_platform::executable::make_runnable(&installed).unwrap();
+        uze_testkit::process::install_executable(&installed, b"#!/bin/sh\n");
         let found = installed_outside_path(&[root.join("bin"), bin.clone()]);
         assert_eq!(found, Some(installed));
         let _ = std::fs::remove_dir_all(root);
