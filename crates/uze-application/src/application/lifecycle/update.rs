@@ -348,10 +348,25 @@ impl Plugins<'_> {
 impl Plugins<'_> {
     /// What an open workspace runs on its tick: fetches the marketplaces
     /// whose answer has gone stale, then applies what [`Self::auto_update`]
-    /// can settle alone. An update that needs consent is reported, never
-    /// applied.
+    /// can settle alone among the plugins of the ones that moved. An
+    /// update that needs consent is reported, never applied.
+    ///
+    /// Only those: trying an update is a fetch of its own, outside the
+    /// fetch's claim, and one held for the operator would otherwise be
+    /// tried, and fetched for, on every wake of every client.
     #[tracing::instrument(name = "plugins.keep_current", skip_all)]
     pub fn keep_current(&self) -> Vec<AutoUpdateOutcome> {
+        let moved = self.0.marketplace_catalogues.refresh_stale(&self.0.home);
+        if moved.is_empty() {
+            return Vec::new();
+        }
+        self.auto_update_where(|package| moved.iter().any(|name| name == package.id.marketplace()))
+    }
+
+    /// What opening the workspace runs: the stale marketplaces fetched,
+    /// then every pending update tried, held ones included.
+    #[tracing::instrument(name = "plugins.catch_up", skip_all)]
+    pub fn catch_up(&self) -> Vec<AutoUpdateOutcome> {
         self.0.marketplace_catalogues.refresh_stale(&self.0.home);
         self.auto_update()
     }
@@ -384,6 +399,13 @@ impl Plugins<'_> {
     /// Not called from the CLI dispatch path. Interactive surfaces call it.
     #[tracing::instrument(name = "plugins.auto_update", skip_all)]
     pub fn auto_update(&self) -> Vec<AutoUpdateOutcome> {
+        self.auto_update_where(|_| true)
+    }
+
+    fn auto_update_where(
+        &self,
+        wanted: impl Fn(&uze_core::StoredPackage) -> bool,
+    ) -> Vec<AutoUpdateOutcome> {
         // Only what is already known to be behind. Freshness is a local
         // read — the installed commit against the head its mirror last
         // recorded — so deciding *whether* to update costs no network at
@@ -392,7 +414,7 @@ impl Plugins<'_> {
             .0
             .installed_packages()
             .into_iter()
-            .filter(|package| self.0.freshness_of(package).behind())
+            .filter(|package| wanted(package) && self.0.freshness_of(package).behind())
             .map(|package| package.id.as_str().to_owned())
             .collect();
 

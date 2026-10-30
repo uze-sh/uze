@@ -1080,6 +1080,56 @@ mod mirror_tests {
         fs::remove_dir_all(&home_root).unwrap();
     }
 
+    /// An update the pass could not apply is not tried again on every
+    /// wake: trying is a fetch of its own, outside the claim, so a wake
+    /// tries only the plugins of a marketplace this very pass fetched.
+    #[test]
+    fn keeping_current_tries_nothing_whose_marketplace_did_not_move() {
+        let home_root = uze_testkit::temp::scratch("keep-current-unmoved");
+        let (repository, _first) = marketplace("keep-current-unmoved-src");
+        let home = UzeHome::at(home_root.join("uze"));
+        let application = UzeApplication::new(home.clone(), Vec::new());
+        application
+            .marketplace()
+            .add(&format!("file://{}", repository.root().display()))
+            .unwrap();
+        application
+            .marketplace()
+            .install_plugin("flow@mkt", &uze_core::trust::AlwaysTrust)
+            .unwrap();
+        fs::write(
+            repository.root().join("plugins/flow/skills/one/SKILL.md"),
+            "---\nname: one\ndescription: d\n---\n\nflow second.\n",
+        )
+        .unwrap();
+        repository.git(&["add", "-A"]);
+        repository.git(&["commit", "-m", "second"]);
+        // Learned as behind by a fresh read, the way a listing learns it,
+        // and left there: an update held for the operator reads the same.
+        application
+            .marketplace()
+            .add(&format!("file://{}", repository.root().display()))
+            .unwrap();
+        assert!(
+            application
+                .plugin_summary(&application.package_by_name("flow").unwrap())
+                .unwrap()
+                .freshness
+                .behind()
+        );
+
+        assert!(
+            application.plugins().keep_current().is_empty(),
+            "nothing moved on this wake, so nothing is tried"
+        );
+        assert_eq!(
+            application.plugins().catch_up().len(),
+            1,
+            "opening the workspace still tries every pending update"
+        );
+        fs::remove_dir_all(&home_root).unwrap();
+    }
+
     /// A fetch another process is making is not made again: the tick that
     /// finds the claim held fetches nothing.
     #[test]

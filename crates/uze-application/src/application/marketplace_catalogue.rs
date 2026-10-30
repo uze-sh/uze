@@ -313,15 +313,11 @@ impl MarketplaceCatalogues {
             }
             let before = meta.commit;
             match self.refresh(&name, &record.source) {
-                Ok(_) => {
-                    let after = fs::read(&meta_path)
-                        .ok()
-                        .and_then(|bytes| serde_json::from_slice::<Meta>(&bytes).ok())
-                        .and_then(|meta| meta.commit);
-                    if after != before {
-                        moved.push(name);
-                    }
-                }
+                Ok(Catalogue {
+                    reach: Reach::Mirrored { commit, .. },
+                    ..
+                }) if before.as_deref() != Some(commit.as_str()) => moved.push(name),
+                Ok(_) => {}
                 Err(error) => {
                     tracing::warn!(marketplace = %name, %error, "the marketplace could not be fetched");
                 }
