@@ -94,7 +94,7 @@ fn a_resumed_launch_takes_its_overrides_after_the_resume_on_every_harness() {
             continue;
         }
         let flag = an_operator_flag(integration);
-        let resume = integration.resume_session_args(&SessionId::new("recorded"));
+        let resume = integration.resume_session_args(&SessionId::parse("recorded").unwrap());
         assert!(!resume.is_empty(), "{} spells a resume", integration.id());
         let session = plan(
             integration,
@@ -191,7 +191,7 @@ fn memory_off_comes_last_and_leaves_out_the_override_it_collides_with() {
             continue;
         };
         let flag = an_operator_flag(integration);
-        let resume = integration.resume_session_args(&SessionId::new("recorded"));
+        let resume = integration.resume_session_args(&SessionId::parse("recorded").unwrap());
         let mut words = flag.clone();
         if integration.id() == "codex" {
             words.extend(["-c".to_owned(), "features.memories=true".to_owned()]);

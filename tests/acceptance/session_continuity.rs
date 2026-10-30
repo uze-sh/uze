@@ -332,12 +332,13 @@ fn the_bypass_escape_hatch_still_carries_nothing() {
 }
 
 /// The upgrade case: an agent placed by a release that issued no launch
-/// key is relaunched by the terminal runtime, after the upgrade, with the
-/// tab it persisted then — an identity and no key. It is still that agent,
-/// and comes back to its conversation rather than starting over as an
-/// ordinary invocation would.
+/// key is relaunched by the terminal runtime with the tab it persisted then:
+/// an identity and no key. A record holding no key proves nothing about
+/// who names it (audit WKS-5), so the launch is an ordinary invocation: the
+/// harness starts as it would outside UZE, and the agent's next placement
+/// issues it a key.
 #[test]
-fn an_agent_placed_before_launch_keys_still_comes_back_to_its_conversation() {
+fn an_agent_placed_before_launch_keys_is_an_ordinary_invocation() {
     let env = TestEnvironment::isolated();
     let harness = harness_recording_its_conversations(&env);
     let shim = shim(&env);
@@ -350,28 +351,8 @@ fn an_agent_placed_before_launch_keys_still_comes_back_to_its_conversation() {
         &[],
         Launch::ComposedBeforeKeys { identity: &id },
     );
-    launch(
-        &env,
-        &shim,
-        &slot,
-        &[],
-        Launch::ComposedBeforeKeys { identity: &id },
-    );
 
-    let launches = launches(&harness);
-    assert_eq!(launches.len(), 2, "{launches:?}");
-    // After the continuity flags, each launch carries its context's
-    // channel: every agent the workspace launches is given its
-    // instructions.
-    let [flag, started, ..] = launches[0].as_slice() else {
-        panic!("the first launch names a conversation: {launches:?}");
-    };
-    assert_eq!(flag, "--session-id", "{launches:?}");
-    assert_eq!(
-        launches[1][..2],
-        ["--resume".to_owned(), started.clone()],
-        "the relaunch continues the conversation: {launches:?}"
-    );
+    assert_eq!(launches(&harness), vec![Vec::<String>::new()]);
 }
 
 /// Records `line` as the managed agent's overrides on the harness, as the

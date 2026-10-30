@@ -1412,6 +1412,35 @@ fn a_branch_is_asked_about_where_it_was_pushed() {
     assert!(publication(primary, work(&agent)).is_some());
 }
 
+/// The push URL is read back from the repository's configuration, which
+/// an agent can write: one shaped like an option is a URL no remote
+/// answers, never an `--upload-pack` that `ls-remote` runs.
+// The planted upload pack is a POSIX shell command.
+#[cfg(unix)]
+#[test]
+fn a_push_url_shaped_like_an_option_runs_nothing() {
+    let (repository, _other) = published("landing-forget-option-url");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let agent = launch(&repository, &mut store, "planted");
+    agent_commits(&repository, work(&agent), "a.rs", "");
+    let slot = slot_path(primary, work(&agent)).unwrap();
+    repository.git_in(&slot, &["push", "--quiet", REMOTE, "HEAD"]);
+    let marker = primary.with_file_name("upload-pack-ran");
+    repository.git(&[
+        "config",
+        "remote.origin.pushurl",
+        &format!("--upload-pack=touch '{}'; false", marker.display()),
+    ]);
+
+    forget_unpublished(primary, [work(&agent)]);
+    assert!(!marker.exists(), "the push URL ran as an upload pack");
+    assert!(
+        publication(primary, work(&agent)).is_some(),
+        "a remote that could not be asked forgets nothing"
+    );
+}
+
 /// The other half the agent can do alone. UZE learns the number from
 /// the remote on the pass that already runs, so a request opened
 /// outside a delivery is still the request this branch has.

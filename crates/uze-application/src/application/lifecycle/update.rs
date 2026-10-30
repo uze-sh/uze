@@ -121,7 +121,7 @@ impl Plugins<'_> {
         let active_name = installed.active_name.clone();
         let bare_name = installed.id.plugin_name().to_owned();
 
-        let previous = executable_capabilities_of(&installed)?;
+        let previous = self.executable_capabilities_of(&installed)?;
         self.0
             .authorize(&materialized, authority, &previous, true, origin)?;
 
@@ -143,7 +143,7 @@ impl Plugins<'_> {
         // including the trust answer, which was given against what it could
         // already execute then.
         let installed = self.0.package_by_name(id)?;
-        let trusted_now = executable_capabilities_of(&installed)?;
+        let trusted_now = self.executable_capabilities_of(&installed)?;
         if trusted_now != previous {
             self.0
                 .authorize(&materialized, authority, &trusted_now, true, origin)?;
@@ -323,15 +323,26 @@ impl UzeApplication {
     }
 }
 
-fn executable_capabilities_of(
-    package: &uze_core::StoredPackage,
-) -> Result<Vec<trust::ExecutableCapability>> {
-    let resources = uze_core::engine::package_resources(package)?;
-    let resources: Vec<&uze_core::Resource> = resources.iter().collect();
-    let requirements = uze_core::store::read_plugin_manifest(&package.root)
-        .map(|manifest| manifest.requirements)
-        .unwrap_or_default();
-    Ok(trust::package_executions(&resources, &requirements))
+impl Plugins<'_> {
+    /// What the installed revision already lets run, read the way a new
+    /// revision is (`UzeApplication::package_executions`), so the two
+    /// compare like for like.
+    fn executable_capabilities_of(
+        &self,
+        package: &uze_core::StoredPackage,
+    ) -> Result<Vec<trust::ExecutableCapability>> {
+        let resources = uze_core::engine::package_resources(package)?;
+        let resources: Vec<&uze_core::Resource> = resources.iter().collect();
+        let requirements = uze_core::store::read_plugin_manifest(&package.root)
+            .map(|manifest| manifest.requirements)
+            .unwrap_or_default();
+        self.0.package_executions(
+            &package.root,
+            &resources,
+            &requirements,
+            &self.0.store.digest(package)?,
+        )
+    }
 }
 
 impl Plugins<'_> {

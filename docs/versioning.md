@@ -136,16 +136,19 @@ itself are skipped; dependency bumps have a group of their own.
 
 A release is deliberately *not* published with `--prerelease`, even though
 every version until 1.0.0 is a pre-release: GitHub keeps pre-releases out of
-`releases/latest`, which is the URL `install.sh` downloads from when
+`releases/latest`, which is what `install.sh` resolves to a version when
 `UZE_VERSION` is unset.
 
 Each tarball carries `LICENSE`, `NOTICE` and `CREDITS.md` beside the binary:
 Apache-2.0 §4(a) obliges whoever receives the binary to receive the licence
 with it.
 
-The version is deliberately absent from the asset name: the default install
-resolves `releases/latest/download/<asset>`, a URL that only works when the
-filename is the same in every release.
+The version is deliberately absent from the asset name, so an asset's URL
+differs between releases only in its `download/v<version>` segment. That
+also means an archive's name and its signed checksum do not say which
+release it is: the installers resolve `releases/latest` to `v<version>`
+first, download from that release's own path, and install the binary only
+once its own `--version` reports that release, as the updater does.
 
 `https://uze.sh/i` serves `install.sh` (and `install.ps1` to PowerShell)
 from the latest release's own assets, not from `main`: the installer a
@@ -155,12 +158,13 @@ installs.
 `install.sh` picks the artifact for the host (`uname -s`/`uname -m`, musl
 detection via `ldd --version`), verifies the signature over
 `SHASUMS256.txt` with `ssh-keygen -Y verify` against the release key it
-carries, verifies the SHA-256 against `SHASUMS256.txt`, refuses to install
-when either fails, then installs to `$XDG_BIN_HOME` or
+carries, verifies the SHA-256 against `SHASUMS256.txt`, checks that the
+binary reports the release it resolved or was pinned to, refuses to install
+when any of them fails, then installs to `$XDG_BIN_HOME` or
 `~/.local/bin` (`UZE_BIN_DIR` overrides; `UZE_VERSION` pins a release;
 `UZE_BASE_URL` points at a mirror). It opens with the same
-centred header `uze --help` does, reports one step at a time — download,
-checksum, install, verify — with a spinner on the line in flight and a
+centred header `uze --help` does, reports one step at a time — resolve,
+download, signature, checksum, version, install — with a spinner on the line in flight and a
 check on every line already settled, closes on the two commands worth
 running next, and falls back to a plain, escape-free transcript whenever
 stdout is not a terminal or `NO_COLOR` is set, which is what CI and the

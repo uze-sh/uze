@@ -209,6 +209,13 @@ impl IntegrationPort for CodexIntegration {
         crate::rules::withheld(package).into_iter().collect()
     }
 
+    fn package_executions(
+        &self,
+        package_root: &Path,
+    ) -> Result<Vec<uze_core::trust::ExecutableCapability>> {
+        plugin::envelope_executions(package_root)
+    }
+
     fn rules_route(&self) -> uze_core::integration::RulesRoute {
         crate::rules::adapted_route(hooks::RULES_REASON)
     }

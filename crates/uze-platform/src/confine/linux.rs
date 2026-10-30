@@ -26,7 +26,7 @@ pub(super) fn availability() -> Availability {
 }
 
 /// The Landlock ABI this kernel answers, or 0 or less when it has none.
-fn landlock_abi() -> i32 {
+pub(crate) fn landlock_abi() -> i32 {
     // SAFETY: asking for the version passes no attribute and no size.
     let version = unsafe {
         libc::syscall(

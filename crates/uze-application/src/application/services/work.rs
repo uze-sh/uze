@@ -106,6 +106,13 @@ impl Workspace<'_> {
             );
             child.label = topic.to_owned();
             child.parent = Some(caller.agent.clone());
+            // Issued and dropped: a subagent runs under its agent's stamp
+            // and never names itself, so no process holds this. It is what
+            // makes the record refuse a claim, here and in an older build
+            // on the same machine that still admits a record without one.
+            child.issue_launch_key().map_err(|error| {
+                refused(&format!("could not issue the subagent a key: {error}"))
+            })?;
             let owner = child.id.clone();
             let isolation = child
                 .isolation_mut()

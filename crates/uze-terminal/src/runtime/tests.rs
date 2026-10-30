@@ -562,6 +562,7 @@ fn damage_that_changes_nothing_drawn_is_not_offered() {
             env: Vec::new(),
         },
         Arc::new(Mutex::new(Palette::default())),
+        false,
     )
     .unwrap();
 
@@ -584,6 +585,7 @@ fn damage_since_last_is_sparse_after_a_small_change() {
         damage,
         Launch::Shell,
         Arc::new(Mutex::new(Palette::default())),
+        false,
     )
     .unwrap();
     // Baseline covers every cell — a fresh client has nothing to diff against.
@@ -623,6 +625,7 @@ fn pane_process_keeps_output_until_explicit_stop() {
         damage,
         Launch::Shell,
         Arc::new(Mutex::new(Palette::default())),
+        false,
     )
     .unwrap();
     pane.write(b"printf uze-runtime-live\\r");
@@ -678,6 +681,7 @@ fn foreground_status_reports_the_spawned_shell_and_its_cwd() {
         damage,
         Launch::Shell,
         Arc::new(Mutex::new(Palette::default())),
+        false,
     )
     .unwrap();
     let expected_name = Path::new(shell)
@@ -779,6 +783,7 @@ fn foreground_status_prefers_the_shim_identity_over_a_version_named_comm() {
             env: Vec::new(),
         },
         Arc::new(Mutex::new(Palette::default())),
+        false,
     )
     .unwrap();
 
@@ -838,6 +843,7 @@ fn the_shim_caught_before_its_exec_counts_as_the_launcher() {
             env: Vec::new(),
         },
         Arc::new(Mutex::new(Palette::default())),
+        false,
     )
     .unwrap();
 
@@ -899,7 +905,7 @@ fn only_asking_to_open_a_space_may_create_one() {
         let (client, driver) = super::transport::pair().unwrap();
         let serving = {
             let server = Arc::clone(&server);
-            std::thread::spawn(move || server.handle_client(client))
+            std::thread::spawn(move || server.handle_client(client, super::Door::Shared))
         };
         let mut writer = driver.try_clone().unwrap();
         let mut reader = std::io::BufReader::new(driver);
@@ -987,7 +993,7 @@ fn a_tab_asked_for_in_a_space_opens_there() {
     let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
-        std::thread::spawn(move || server.handle_client(client))
+        std::thread::spawn(move || server.handle_client(client, super::Door::Shared))
     };
     let mut writer = driver.try_clone().unwrap();
     let mut reader = std::io::BufReader::new(driver);
@@ -1062,7 +1068,7 @@ fn a_tab_asked_for_after_selecting_a_space_opens_in_that_space() {
     let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
-        std::thread::spawn(move || server.handle_client(client))
+        std::thread::spawn(move || server.handle_client(client, super::Door::Shared))
     };
     let mut writer = driver.try_clone().unwrap();
     let mut reader = std::io::BufReader::new(driver);
@@ -1164,6 +1170,7 @@ fn a_stopped_pane_takes_its_process_group_with_it() {
             env: Vec::new(),
         },
         Arc::new(Mutex::new(Palette::default())),
+        false,
     )
     .unwrap();
     // Opening for reading waits for the worker to open its end.
@@ -1226,6 +1233,7 @@ fn a_finished_agent_takes_what_it_left_in_its_group_with_it() {
             env: Vec::new(),
         },
         Arc::new(Mutex::new(Palette::default())),
+        false,
     )
     .unwrap();
     // Opening for reading waits for the worker to open its end.
@@ -1286,7 +1294,7 @@ fn a_client_that_stops_reading_is_bounded_and_resynchronized() {
     let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
-        std::thread::spawn(move || server.handle_client(client))
+        std::thread::spawn(move || server.handle_client(client, super::Door::Shared))
     };
     let mut writer = driver.try_clone().unwrap();
     let mut reader = std::io::BufReader::new(driver);
@@ -1380,6 +1388,7 @@ fn a_stopped_pane_leaves_no_zombie() {
             env: Vec::new(),
         },
         Arc::new(Mutex::new(Palette::default())),
+        false,
     )
     .unwrap();
     // Only once the trap is in place does the hangup go unheard; a
@@ -1771,7 +1780,7 @@ fn attaching_without_a_root_neither_creates_nor_reopens_a_space() {
     let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
-        std::thread::spawn(move || server.handle_client(client))
+        std::thread::spawn(move || server.handle_client(client, super::Door::Shared))
     };
     let mut writer = driver.try_clone().unwrap();
     let mut reader = std::io::BufReader::new(driver);
@@ -2350,7 +2359,7 @@ fn a_resize_to_the_largest_number_on_the_wire_leaves_the_server_answering() {
     let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
-        std::thread::spawn(move || server.handle_client(client))
+        std::thread::spawn(move || server.handle_client(client, super::Door::Shared))
     };
     let mut writer = driver.try_clone().unwrap();
     // So a server that stops answering fails this test instead of
@@ -2532,7 +2541,7 @@ fn an_attach_paints_only_the_client_that_attached() {
         let (client, driver) = super::transport::pair().unwrap();
         let serving = {
             let server = Arc::clone(&server);
-            std::thread::spawn(move || server.handle_client(client))
+            std::thread::spawn(move || server.handle_client(client, super::Door::Shared))
         };
         let writer = driver.try_clone().unwrap();
         driver
@@ -2628,7 +2637,7 @@ fn a_selection_is_put_away_when_it_covers_nothing_or_its_client_leaves() {
     let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
-        std::thread::spawn(move || server.handle_client(client))
+        std::thread::spawn(move || server.handle_client(client, super::Door::Shared))
     };
     let mut writer = driver.try_clone().unwrap();
     driver
@@ -2708,6 +2717,7 @@ fn a_pane_does_not_inherit_the_servers_shim_identity() {
         damage,
         Launch::Shell,
         Arc::new(Mutex::new(Palette::default())),
+        false,
     )
     .unwrap();
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
@@ -2866,6 +2876,7 @@ fn a_launch_environment_reaches_the_first_process() {
             env: stamp("agent-31"),
         },
         Arc::new(Mutex::new(Palette::default())),
+        false,
     )
     .unwrap();
     assert_eq!(read_when_written(&report), "agent-31");
@@ -2895,6 +2906,7 @@ fn a_pane_does_not_inherit_the_servers_agent_identity() {
             env: Vec::new(),
         },
         Arc::new(Mutex::new(Palette::default())),
+        false,
     )
     .unwrap();
     assert_eq!(read_when_written(&report), "unset");
@@ -3031,6 +3043,7 @@ fn foreground_status_ignores_a_shim_identity_stamped_for_another_process() {
             env: Vec::new(),
         },
         Arc::new(Mutex::new(Palette::default())),
+        false,
     )
     .unwrap();
 
@@ -3287,7 +3300,7 @@ fn holds_the_workspace_claim_while_its_stdin_is_open() {
                     std::iter::repeat_with(|| super::transport::accept(&listener)).flatten()
                 {
                     let server = Arc::clone(&server);
-                    std::thread::spawn(move || server.handle_client(stream));
+                    std::thread::spawn(move || server.handle_client(stream, super::Door::Shared));
                 }
             });
             None
@@ -3640,7 +3653,7 @@ fn a_client_is_told_what_the_runtime_could_not_carry() {
     let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
-        std::thread::spawn(move || server.handle_client(client))
+        std::thread::spawn(move || server.handle_client(client, super::Door::Shared))
     };
     let mut writer = driver.try_clone().unwrap();
     let mut reader = std::io::BufReader::new(driver);
@@ -3828,7 +3841,7 @@ fn every_pane_reaches_a_client_when_one_frame_could_not_have_carried_them_all() 
     let (client, driver) = super::transport::pair().unwrap();
     let serving = {
         let server = Arc::clone(&server);
-        std::thread::spawn(move || server.handle_client(client))
+        std::thread::spawn(move || server.handle_client(client, super::Door::Shared))
     };
     let mut writer = driver.try_clone().unwrap();
     driver
@@ -4083,7 +4096,7 @@ fn a_peer_the_server_refuses_is_hung_up_on() {
     let listener = super::transport::bind(&socket).unwrap();
     let serving = thread::spawn(move || {
         let stream = super::transport::accept(&listener).unwrap();
-        server.handle_client(stream);
+        server.handle_client(stream, super::Door::Shared);
     });
 
     let mut peer = super::transport::connect(&socket).unwrap();
@@ -4139,7 +4152,7 @@ fn a_server_that_answers_this_builds_handshake_serves_it() {
     let listener = super::transport::bind(&socket).unwrap();
     let serving = std::thread::spawn(move || {
         let stream = super::transport::accept(&listener).unwrap();
-        server.handle_client(stream);
+        server.handle_client(stream, super::Door::Shared);
     });
 
     assert!(
@@ -4472,6 +4485,7 @@ mod windows_panes {
             damage,
             Launch::Shell,
             Arc::new(Mutex::new(Palette::default())),
+            false,
         )
         .unwrap();
         (pane, damage_events)
@@ -4623,7 +4637,7 @@ fn listening_server(project: &Path) -> (Arc<Server>, PathBuf) {
     let server = Arc::new(server);
     let listener = bind_endpoint(&socket).unwrap();
     let accepting = Arc::clone(&server);
-    thread::spawn(move || super::accept_connections(listener, accepting));
+    thread::spawn(move || super::accept_connections(listener, accepting, super::Door::Shared));
     (server, socket)
 }
 
@@ -5219,6 +5233,7 @@ fn a_closed_panes_program_is_reaped_before_the_close_returns() {
                 env: Vec::new(),
             },
             Arc::new(Mutex::new(Palette::default())),
+            false,
         )
         .unwrap(),
     );
@@ -5232,4 +5247,314 @@ fn a_closed_panes_program_is_reaped_before_the_close_returns() {
         Some(false),
         "the pane's program was still in the process table when the close returned"
     );
+}
+
+/// What `request` was answered on `stream`, as [`first_answer_to`] says it.
+// Linux only: used by the seal's tests, which only Linux can run.
+#[cfg(target_os = "linux")]
+fn first_answer_through(
+    stream: std::io::Result<super::Stream>,
+    request: &crate::ClientRequest,
+) -> String {
+    let Ok(mut stream) = stream else {
+        return "unreachable".into();
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
+    if send_request(&mut stream, request).is_err() {
+        return "unsent".into();
+    }
+    let answer = match read_event(&mut stream) {
+        Ok(Some(crate::ClientEvent::Snapshot { .. })) => "attached".to_owned(),
+        Ok(Some(crate::ClientEvent::Refused { .. })) => "refused".to_owned(),
+        Ok(Some(crate::ClientEvent::Stopped)) => "stopped".to_owned(),
+        Ok(Some(other)) => format!("answered {other:?}"),
+        Ok(None) => "hung up".to_owned(),
+        Err(error) => format!("failed {error}"),
+    };
+    let _ = send_request(&mut stream, &crate::ClientRequest::Detach);
+    answer
+}
+
+/// A server of this test's own with both endpoints, as [`serve`] opens
+/// them: the person's, where the kernel can seal a pane, and the shared one.
+// Linux only: used by the seal's tests, which only Linux can run.
+#[cfg(target_os = "linux")]
+fn listening_server_with_both_doors(project: &Path) -> (Arc<Server>, PathBuf) {
+    let socket = socket_path().unwrap();
+    let (server, _damage) =
+        Server::new(seat_at(project), Palette::default(), socket.clone()).unwrap();
+    let server = Arc::new(server);
+    if let Some((door, listener)) = super::PersonDoor::open(server.seals) {
+        let _ = server.person.set(door);
+        let accepting = Arc::clone(&server);
+        thread::spawn(move || super::accept_connections(listener, accepting, super::Door::Person));
+    }
+    let listener = bind_endpoint(&socket).unwrap();
+    let accepting = Arc::clone(&server);
+    thread::spawn(move || super::accept_connections(listener, accepting, super::Door::Shared));
+    (server, socket)
+}
+
+/// Audit TERM-1: a process in an agent's pane that leaves the pane's
+/// session (`setsid --fork`, orphaned to init) is no longer classified as
+/// the pane's, and it can read the key. It still cannot attach or stop:
+/// the kernel keeps it from the person's endpoint, and the shared one
+/// serves attaching to nobody while that endpoint stands. The person,
+/// unsealed, attaches through it. Skipped where the kernel cannot seal.
+// Linux only: the seal is a Landlock scope, which no other kernel has.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_process_that_escapes_its_pane_cannot_attach_even_with_the_key() {
+    if !uze_platform::seal::available() {
+        eprintln!("skipped: this kernel cannot seal a pane");
+        return;
+    }
+    let scratch = uze_testkit::temp::socket_scratch("pane-escape");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    for directory in [&uze_home, &project] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let (server, socket) = listening_server_with_both_doors(&project);
+    let report = scratch.join("report");
+
+    let pane = server
+        .session
+        .lock()
+        .expect("session poisoned")
+        .selected_tab()
+        .pane
+        .id;
+    // The pane's own program outlives the escape: a pane whose program
+    // exits is ended with every process carrying its mark, the escaped
+    // helper among them, before it can report.
+    let escape = Launch::Program {
+        argv: vec![
+            "sh".into(),
+            "-c".into(),
+            "setsid --fork \"$@\"; exec sleep 30".into(),
+            "sh".into(),
+            std::env::current_exe().unwrap().display().to_string(),
+            "--ignored".into(),
+            "--exact".into(),
+            "--nocapture".into(),
+            "runtime::tests::escapes_a_pane_and_tries_to_attach".into(),
+        ],
+        env: vec![
+            (PANE_PROBE.into(), report.display().to_string()),
+            ("UZE_HOME".into(), uze_home.display().to_string()),
+        ],
+    };
+    server.spawn_pane(pane, escape).unwrap();
+    let answers = read_when_written(&report);
+    let answers: Vec<&str> = answers.lines().collect();
+
+    assert_eq!(answers[0], "outside", "the escape left the pane's session");
+    assert_eq!(
+        answers[1], "sealed off",
+        "the person's endpoint, with the key"
+    );
+    assert_eq!(
+        answers[2], "refused",
+        "the shared endpoint's attach, with the key"
+    );
+    assert_eq!(
+        answers[3], "refused",
+        "the shared endpoint's stop, with the key"
+    );
+    assert!(!*server.stopped.lock().unwrap());
+    assert_eq!(
+        first_answer_through(
+            super::connect_as_person(&socket),
+            &attach_with(super::server_key())
+        ),
+        "attached",
+        "the person's own client attaches through the person's endpoint"
+    );
+    assert_eq!(
+        first_answer_to(&socket, &attach_with(super::server_key())),
+        "refused",
+        "and nobody attaches at the shared one while it stands"
+    );
+
+    server.shut_down();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// Not a test of its own: what the escaped helper runs for the test above.
+// Linux only: run by the Linux-only test above, through `setsid --fork`.
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "run escaped from a pane by a_process_that_escapes_its_pane_cannot_attach_even_with_the_key"]
+fn escapes_a_pane_and_tries_to_attach() {
+    let Some(report) = std::env::var_os(PANE_PROBE).map(PathBuf::from) else {
+        return;
+    };
+    let socket = socket_path().unwrap();
+    // SAFETY: `getsid(0)` and `getpid` read this process's own ids.
+    let (session, me) = unsafe { (libc::getsid(0), libc::getpid()) };
+    let escaped = if session == me { "outside" } else { "inside" };
+    let door = std::fs::read_to_string(super::operator_path()).unwrap_or_default();
+    let answers = [
+        escaped.to_owned(),
+        match uze_platform::seal::connect(door.trim()) {
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                "sealed off".to_owned()
+            }
+            reached => first_answer_through(reached, &attach_with(super::server_key())),
+        },
+        first_answer_to(&socket, &attach_with(super::server_key())),
+        first_answer_to(
+            &socket,
+            &crate::ClientRequest::Stop {
+                key: super::server_key(),
+            },
+        ),
+    ];
+    let partial = report.with_extension("partial");
+    std::fs::write(&partial, answers.join("\n")).unwrap();
+    std::fs::rename(&partial, &report).unwrap();
+}
+
+/// Audit TERM-2: a pane asking for spaces in a loop is turned away past a
+/// bound, and no space it opened is persisted, so a restart relaunches
+/// none, until a client visits one.
+#[test]
+fn spaces_opened_unseen_are_bounded_and_never_persisted() {
+    let scratch = uze_testkit::temp::socket_scratch("open-space-bound");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    for directory in [&uze_home, &project] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let (server, socket) = listening_server(&project);
+    server.persist();
+
+    let answers: Vec<String> = (1..=25)
+        .map(|n| {
+            let directory = scratch.join(format!("sp{n}"));
+            std::fs::create_dir_all(&directory).unwrap();
+            first_answer_to(
+                &socket,
+                &crate::ClientRequest::OpenSpace {
+                    version: crate::PROTOCOL_VERSION,
+                    seat: seat_at(&directory),
+                },
+            )
+        })
+        .collect();
+    let opened = answers
+        .iter()
+        .filter(|answer| answer.starts_with("opened "))
+        .count();
+    assert_eq!(opened, super::MAX_UNVISITED_SPACES, "{answers:?}");
+    assert!(
+        answers[super::MAX_UNVISITED_SPACES..]
+            .iter()
+            .all(|answer| answer == "refused")
+    );
+
+    let persisted_spaces = || {
+        let persisted: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(persisted_state_path()).unwrap()).unwrap();
+        persisted["spaces"].as_array().unwrap().len()
+    };
+    assert_eq!(persisted_spaces(), 1, "only the person's own space is kept");
+
+    let visited = server
+        .session
+        .lock()
+        .expect("session poisoned")
+        .space_for(&seat_at(&scratch.join("sp1")))
+        .unwrap();
+    server.visited(visited);
+    assert_eq!(persisted_spaces(), 2, "a visited space is the person's");
+
+    server.shut_down();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// Audit TERM-2: a space whose shell could not start is still one a pane
+/// opened, so it counts against the bound and is not persisted either.
+#[test]
+fn a_space_whose_shell_failed_to_start_is_still_bounded_and_never_persisted() {
+    let scratch = uze_testkit::temp::socket_scratch("open-space-failed-shell");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    for directory in [&uze_home, &project] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let (server, socket) = listening_server(&project);
+    server.persist();
+    env.set("UZE_SHELL", scratch.join("no-such-shell"));
+
+    let answers: Vec<String> = (1..=super::MAX_UNVISITED_SPACES + 3)
+        .map(|n| {
+            let directory = scratch.join(format!("sp{n}"));
+            std::fs::create_dir_all(&directory).unwrap();
+            first_answer_to(
+                &socket,
+                &crate::ClientRequest::OpenSpace {
+                    version: crate::PROTOCOL_VERSION,
+                    seat: seat_at(&directory),
+                },
+            )
+        })
+        .collect();
+    assert!(
+        answers[super::MAX_UNVISITED_SPACES..]
+            .iter()
+            .all(|answer| answer == "refused"),
+        "{answers:?}"
+    );
+    server.persist();
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(persisted_state_path()).unwrap()).unwrap();
+    assert_eq!(persisted["spaces"].as_array().unwrap().len(), 1);
+
+    server.shut_down();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// Audit TERM-2: one pane is held to fewer unseen spaces than the whole
+/// workspace, so one agent cannot take every place.
+#[test]
+fn one_pane_is_held_to_its_own_bound_of_unseen_spaces() {
+    let scratch = uze_testkit::temp::socket_scratch("open-space-pane-bound");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    for directory in [&uze_home, &project] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let (server, _socket) = listening_server(&project);
+    let pane = server
+        .session
+        .lock()
+        .expect("session poisoned")
+        .selected_tab()
+        .pane
+        .id;
+
+    let opened = (1..=super::MAX_UNVISITED_SPACES)
+        .filter(|n| {
+            let directory = scratch.join(format!("pane-sp{n}"));
+            std::fs::create_dir_all(&directory).unwrap();
+            matches!(
+                server.open_space_and_say(&seat_at(&directory), super::Origin::Pane(pane)),
+                crate::ClientEvent::SpaceOpened { .. }
+            )
+        })
+        .count();
+    assert_eq!(opened, super::MAX_UNVISITED_PER_PANE);
+
+    server.shut_down();
+    let _ = std::fs::remove_dir_all(&scratch);
 }

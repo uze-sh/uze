@@ -4,7 +4,8 @@
 #
 # Downloads the prebuilt `uze.exe` for this machine from GitHub Releases,
 # verifies the release's signature over its checksums (with the OpenSSH
-# client Windows ships) and the archive's SHA-256 checksum, installs it
+# client Windows ships), the archive's SHA-256 checksum and that the binary
+# is the release asked for, installs it
 # into the user's programs directory and puts that directory on the user's
 # Path. Windows PowerShell
 # 5.1 or PowerShell 7; Windows 10 22H2 or Windows 11, x64 and ARM64.
@@ -215,7 +216,33 @@ public static extern IntPtr SendMessageTimeout(
     [Net.ServicePointManager]::SecurityProtocol =
         [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
     $baseUrl = if ($env:UZE_BASE_URL) { $env:UZE_BASE_URL.TrimEnd('/') } else { $DefaultBaseUrl }
-    $releasePath = if ($env:UZE_VERSION) { "download/v$($env:UZE_VERSION)" } else { 'latest/download' }
+    # A release's version becomes a path segment, so it is spelled as one
+    # or refused: SemVer's characters and nothing else, starting with a digit.
+    function Test-ReleaseVersion([string]$Version) {
+        $Version -cmatch '^[0-9][0-9A-Za-z.-]*$' -and -not $Version.Contains('..')
+    }
+
+    # "latest" is resolved to the release it names before anything is
+    # downloaded, the way the updater resolves it: where `<base>/latest`
+    # redirects to, `.../tag/v<version>`. Everything after is fetched from
+    # that release's own path, and the version is what the binary must
+    # prove to be below.
+    function Resolve-LatestVersion([string]$BaseUrl) {
+        $request = [Net.WebRequest]::Create("$BaseUrl/latest")
+        if (-not ($request -is [Net.HttpWebRequest])) {
+            throw "cannot tell which release is the latest from $BaseUrl; set UZE_VERSION"
+        }
+        $response = $request.GetResponse()
+        try { $tag = $response.ResponseUri.Segments[-1] } finally { $response.Close() }
+        if (-not $tag.StartsWith('v') -or -not (Test-ReleaseVersion $tag.Substring(1))) {
+            throw "$BaseUrl/latest does not name a release"
+        }
+        $tag.Substring(1)
+    }
+
+    if ($env:UZE_VERSION -and -not (Test-ReleaseVersion $env:UZE_VERSION)) {
+        throw "UZE_VERSION is not a release version: $($env:UZE_VERSION)"
+    }
     $scratch = Join-Path ([IO.Path]::GetTempPath()) ("uze-install-" + [Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $scratch | Out-Null
 
@@ -224,6 +251,18 @@ public static extern IntPtr SendMessageTimeout(
         Write-Host "$Muted$(Centred "$arch-windows")$Reset"
         Write-Host "$Muted$(Centred 'Agents come and go. Your work stays.')$Reset"
         Write-Host ''
+        if ($env:UZE_VERSION) {
+            $version = $env:UZE_VERSION
+        } else {
+            try {
+                $version = Resolve-LatestVersion $baseUrl
+            } catch {
+                Write-Host "$Danger$Cross$Reset Finding the latest release"
+                throw
+            }
+            Ok "Latest release is v$version"
+        }
+        $releasePath = "download/v$version"
         Note "$baseUrl/$releasePath/$archive"
 
         # A release served from a directory (a mirror on a share, a local
@@ -297,13 +336,28 @@ public static extern IntPtr SendMessageTimeout(
             }
         }
 
-        Step "Installing into $binDir" "Installed $binary" {
-            $unpacked = Join-Path $scratch 'unpacked'
+        # The signature says the archive is one uze released, not that it is
+        # the release asked for: archive names carry no version, so an
+        # older, genuinely signed build verifies under any tag. The binary's
+        # own `--version` says which release it is (the check the updater
+        # makes before it replaces anything), and it is asked before
+        # anything is placed.
+        $unpacked = Join-Path $scratch 'unpacked'
+        Step "Checking the binary is v$version" "Checked v$version" {
             # .NET's own reader rather than Expand-Archive: that cmdlet's
             # module fails to load in a Windows PowerShell started from
             # PowerShell 7, whose module path it inherits.
             Add-Type -AssemblyName System.IO.Compression.FileSystem
             [IO.Compression.ZipFile]::ExtractToDirectory((Join-Path $scratch $archive), $unpacked)
+            $reported = (@(& (Join-Path $unpacked 'uze.exe') --version) -join ' ').Trim()
+            if ($LASTEXITCODE -ne 0) { throw "the release's binary failed to run" }
+            if (-not (($reported -split '\s+') -ccontains $version)) {
+                throw "the release's binary reports $($reported -replace '^uze ', ''), not $version"
+            }
+            $reported
+        }
+
+        Step "Installing into $binDir" "Installed $binary" {
             New-Item -ItemType Directory -Force -Path $binDir | Out-Null
             # A running uze.exe cannot be replaced, but it can be renamed: it
             # steps aside, and the next uze to start sweeps it away.
@@ -312,13 +366,6 @@ public static extern IntPtr SendMessageTimeout(
             }
             Copy-Item -LiteralPath (Join-Path $unpacked 'uze.exe') -Destination $binary
         }
-
-        Step 'Verifying the install' 'Verified' {
-            $reported = & $binary --version
-            if ($LASTEXITCODE -ne 0) { throw "installed binary failed to run: $binary" }
-            ([string]$reported).Trim()
-        }
-        $version = ([string](& $binary --version)).Trim() -replace '^uze ', ''
 
         # The receipt the updater reads (`src/self_update.rs`): the file this
         # installer placed, and the release it was. UTF-8 without a byte-order

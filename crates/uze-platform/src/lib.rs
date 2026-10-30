@@ -27,6 +27,8 @@ pub mod notify;
 pub mod path;
 pub mod probe;
 pub mod process;
+pub mod redact;
+pub mod seal;
 pub mod secret;
 pub mod secrets;
 pub mod shell;

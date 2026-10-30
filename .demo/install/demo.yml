@@ -72,8 +72,10 @@ sandbox:
     # the release's own, and the install.sh the mirror serves names that key:
     # the verification on camera is real, against what the mirror holds.
     - |
-      mirror={root}/mirror/latest/download
+      version=$({project}/target/release/uze --version | sed -n 's/^uze //p')
+      mirror={root}/mirror/download/v$version
       rm -rf {root}/mirror {root}/stage && mkdir -p "$mirror" {root}/stage
+      printf 'v%s' "$version" > {root}/mirror/latest-tag
       cp {project}/target/release/uze {root}/stage/uze
       tar -C {root}/stage -czf "$mirror/uze-x86_64-linux-gnu.tar.gz" uze
       (cd "$mirror" && sha256sum uze-x86_64-linux-gnu.tar.gz > SHASUMS256.txt)
@@ -103,12 +105,17 @@ sandbox:
         #!/bin/sh
         # install.sh pins its downloads to HTTPS (`--proto =https`), which
         # refuses the file:// this answers with: the pin is dropped for the
-        # two URLs served from the mirror, and kept for everything else.
+        # URLs served from the mirror, and kept for everything else. Asked
+        # where `releases/latest` leads, it names the mirror's release, as
+        # the redirect would.
         mirror={root}/mirror
         mirrored=
         for arg do
           case "$arg" in
-            https://uze.sh/i|https://github.com/uze-sh/uze/releases/latest/download/*) mirrored=1 ;;
+            https://github.com/uze-sh/uze/releases/latest)
+              printf 'https://github.com/uze-sh/uze/releases/tag/%s' "$(cat "$mirror/latest-tag")"
+              exit 0 ;;
+            https://uze.sh/i|https://github.com/uze-sh/uze/releases/download/*) mirrored=1 ;;
           esac
         done
         skip=
@@ -119,8 +126,8 @@ sandbox:
             --proto|--proto-redir) [ -n "$mirrored" ] && { skip=1; continue; } ;;
             --proto=*|--proto-redir=*) [ -n "$mirrored" ] && continue ;;
             https://uze.sh/i) arg="file://$mirror/install.sh" ;;
-            https://github.com/uze-sh/uze/releases/latest/download/*)
-              arg="file://$mirror/latest/download/${arg##*/}" ;;
+            https://github.com/uze-sh/uze/releases/download/*)
+              arg="file://$mirror/download/${arg#https://github.com/uze-sh/uze/releases/download/}" ;;
           esac
           set -- "$@" "$arg"
         done

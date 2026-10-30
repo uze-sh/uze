@@ -213,7 +213,9 @@ pub fn forget_unpublished<'a>(primary: &Path, isolations: impl IntoIterator<Item
     else {
         return;
     };
-    let mut args = vec!["ls-remote", "--heads", pushed_to.trim()];
+    // Read back from the repository's configuration, which an agent can
+    // write: after `--`, a URL shaped like `--upload-pack=…` is a URL.
+    let mut args = vec!["ls-remote", "--heads", "--", pushed_to.trim()];
     args.extend(patterns.iter().map(String::as_str));
     let Some(listing) = crate::git::read(primary, &args)
         .ok()

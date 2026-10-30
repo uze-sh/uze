@@ -4,9 +4,9 @@
 #   curl -fsSL https://uze.sh/i | sh
 #
 # Downloads the prebuilt `uze` binary for this machine from GitHub
-# Releases, verifies the release's signature over its checksums and the
-# archive's SHA-256 checksum, and installs it into the user binary
-# directory. Pure POSIX sh; Linux and macOS, x86_64 and aarch64. Needs
+# Releases, verifies the release's signature over its checksums, the
+# archive's SHA-256 checksum and that the binary is the release asked for,
+# and installs it into the user binary directory. Pure POSIX sh; Linux and macOS, x86_64 and aarch64. Needs
 # OpenSSH's `ssh-keygen` (8.1 or later) to check the signature.
 #
 # Environment overrides:
@@ -227,9 +227,12 @@ archive="uze-${platform}.tar.gz"
 tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/uze-install.XXXXXX")"
 step_log="${tmpdir}/step.log"
 settled_line="${tmpdir}/settled"
+# The binary waiting beside its destination for its version to be checked;
+# set once it exists, and gone again by the time the installer exits.
+staged=""
 # The spinner is stopped here too: an interrupt mid-download would otherwise
 # leave a detached frame loop writing over the shell prompt.
-trap 'spinner_stop; rm -rf -- "$tmpdir"' EXIT HUP INT TERM
+trap 'spinner_stop; rm -rf -- "$tmpdir"; [ -z "$staged" ] || rm -f -- "$staged"' EXIT HUP INT TERM
 
 # Fractional sleep is a GNU/busybox extension, not POSIX. Asking once costs a
 # tenth of a second and keeps a minimal `sleep` from turning the spinner into
@@ -248,19 +251,51 @@ if [ -n "${UZE_BASE_URL:-}" ]; then
 else
   protocols="=https"
 fi
-if [ -n "${UZE_VERSION:-}" ]; then
-  path="download/v${UZE_VERSION}"
-else
-  path="latest/download"
-fi
+# A release's version becomes a path segment, so it is spelled as one or
+# refused: SemVer's characters and nothing else, starting with a digit.
+release_version() {
+  case "$1" in
+    [0-9]*) ;;
+    *) return 1 ;;
+  esac
+  case "$1" in
+    *[!0-9A-Za-z.-]* | *..*) return 1 ;;
+  esac
+}
 
 # The version slot carries the platform instead: which build this machine
-# gets is the one fact the header can state before the download resolves
-# what "latest" currently means.
+# gets is the one fact the header can state before "latest" is resolved.
 printf '%s%s%s\n' "$BRIGHT" "$(centred UZE)" "$RESET"
 printf '%s%s%s\n' "$MUTED" "$(centred "$platform")" "$RESET"
 printf '%s%s%s\n' "$MUTED" "$(centred 'Agents come and go. Your work stays.')" "$RESET"
 say ""
+
+# "latest" is resolved to the release it names before anything is
+# downloaded, the way the updater resolves it: where `<base>/latest`
+# redirects to, `…/tag/v<version>`. Everything after is fetched from that
+# release's own path, so the pointer moving mid-install changes nothing,
+# and the version is what the binary must prove to be below.
+resolve_latest() {
+  effective="$(curl -q -fsSL --proto "$protocols" --proto-redir "$protocols" --tlsv1.2 \
+    -o /dev/null -w '%{url_effective}' "${base_url}/latest")" || {
+    echo "cannot reach ${base_url}/latest" >&2
+    return 1
+  }
+  tag="${effective##*/}"
+  version="${tag#v}"
+  if [ "$tag" = "$version" ] || ! release_version "$version"; then
+    echo "${base_url}/latest does not name a release" >&2
+    return 1
+  fi
+  printf 'Latest release is v%s\n' "$version" >"$settled_line"
+}
+if [ -n "${UZE_VERSION:-}" ]; then
+  version="$UZE_VERSION"
+  release_version "$version" || die "UZE_VERSION is not a release version: $version"
+else
+  step "Finding the latest release" "Found the latest release" resolve_latest
+fi
+path="download/v${version}"
 note "${base_url}/${path}/${archive}"
 
 # `-q` first, so no `.curlrc` adds a CA bundle or `--insecure` to this.
@@ -311,12 +346,19 @@ if [ -z "$bin_dir" ]; then
   fi
 fi
 
-place() {
+# The signature says the archive is one uze released, not that it is the
+# release asked for: archive names carry no version, so an older, genuinely
+# signed build verifies under any tag. The binary's own `--version` is what
+# says which release it is — the check `src/self_update.rs` makes before it
+# replaces anything — and it is asked before anything is placed. Staged
+# beside its destination rather than in $TMPDIR, which may be mounted
+# noexec, and on the same filesystem, so placing it is one rename.
+stage() {
   mkdir -p "$bin_dir" || {
     echo "cannot create directory: $bin_dir" >&2
     return 1
   }
-  # Unpacking and placing are asked separately: chained with `&&` before a
+  # Unpacking and staging are asked separately: chained with `&&` before a
   # shared `||`, an unpack that failed was reported as an install that
   # could not write — the one message the reader would have acted on was
   # the one thing that had not gone wrong.
@@ -324,24 +366,34 @@ place() {
     echo "cannot unpack: ${archive}" >&2
     return 1
   }
-  install -m 0755 "${tmpdir}/uze" "${bin_dir}/uze" || {
+  staged="${bin_dir}/.uze-install.$$"
+  install -m 0755 "${tmpdir}/uze" "$staged" || {
+    echo "cannot install into: ${bin_dir}" >&2
+    return 1
+  }
+  reported="$("$staged" --version 2>&1)" || {
+    echo "the release's binary failed to run" >&2
+    return 1
+  }
+  for word in $reported; do
+    if [ "$word" = "$version" ]; then
+      printf '%s\n' "$reported" >"$settled_line"
+      return 0
+    fi
+  done
+  echo "the release's binary reports ${reported#uze }, not ${version}" >&2
+  return 1
+}
+step "Checking the binary is v${version}" "Checked v${version}" stage
+
+place() {
+  mv -f "$staged" "${bin_dir}/uze" || {
     echo "cannot install into: ${bin_dir}/uze" >&2
     return 1
   }
+  staged=""
 }
 step "Installing into ${bin_dir}" "Installed ${bin_dir}/uze" place
-
-# The last thing every step has in common: the binary that came out of it
-# answers. It settles on the version it reports, which is the one line
-# worth keeping on screen out of all of this.
-confirm() {
-  version_output="$("${bin_dir}/uze" --version 2>&1)" || {
-    echo "installed binary failed to run: ${bin_dir}/uze" >&2
-    return 1
-  }
-  printf '%s\n' "$version_output" >"$settled_line"
-}
-step "Verifying the install" "Verified" confirm
 
 # The receipt the updater reads (`src/self_update.rs`): the file this
 # installer placed, and the release it was. The updater replaces that file
@@ -354,11 +406,9 @@ record_receipt() {
     receipt_home="${HOME}/.uze"
   fi
   installed="$(cd "$bin_dir" && pwd -P)/uze"
-  installed_version="$("${bin_dir}/uze" --version 2>/dev/null | sed -n 's/^uze //p')"
-  [ -n "$installed_version" ] || return 1
   mkdir -p "${receipt_home}/state" || return 1
   printf '{\n  "binary": "%s",\n  "version": "%s"\n}\n' \
-    "$(json_escape "$installed")" "$(json_escape "$installed_version")" \
+    "$(json_escape "$installed")" "$(json_escape "$version")" \
     >"${receipt_home}/state/install.json"
 }
 json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }

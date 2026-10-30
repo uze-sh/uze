@@ -47,7 +47,10 @@ pub(super) fn index_path(cli_root: &Path) -> PathBuf {
 pub(super) fn recorded_for(cli_root: &Path, cwd: &Path) -> Option<SessionId> {
     index(cli_root)?
         .get(cwd.to_string_lossy().as_ref())
-        .map(|id| SessionId::new(id.clone()))
+        // Antigravity names every conversation with a UUID, and the index
+        // is a plain file anything can write.
+        .and_then(|id| SessionId::parse(id.clone()).ok())
+        .filter(SessionId::is_uuid)
 }
 
 /// The conversation the index names for `ctx.cwd`, once it is one this
@@ -97,7 +100,7 @@ mod tests {
     #[test]
     fn resuming_names_the_conversation() {
         assert_eq!(
-            resume_args(&SessionId::new("c-1")),
+            resume_args(&SessionId::parse("c-1").unwrap()),
             vec![OsString::from("--conversation"), OsString::from("c-1")]
         );
     }
@@ -107,7 +110,10 @@ mod tests {
         let root = cli_root("agy-session-observe");
         write_index(
             &root,
-            &[("/work/slot", "c-new"), ("/work/other", "c-other")],
+            &[
+                ("/work/slot", "f85c1dbb-27bc-438b-9191-b007994e8f65"),
+                ("/work/other", "f85c1dbb-27bc-438b-9191-b007994e8f63"),
+            ],
         );
 
         assert_eq!(
@@ -116,11 +122,13 @@ mod tests {
                 &ObservationContext {
                     cwd: Path::new("/work/slot"),
                     since_unix: 0,
-                    preceded_by: Some(&SessionId::new("c-previous")),
+                    preceded_by: Some(
+                        &SessionId::parse("f85c1dbb-27bc-438b-9191-b007994e8f64").unwrap()
+                    ),
                     claimed_elsewhere: &[],
                 },
             ),
-            Some(SessionId::new("c-new"))
+            Some(SessionId::parse("f85c1dbb-27bc-438b-9191-b007994e8f65").unwrap())
         );
     }
 
@@ -130,7 +138,10 @@ mod tests {
     #[test]
     fn an_index_entry_unchanged_since_the_launch_is_not_this_task_s_conversation() {
         let root = cli_root("agy-session-previous");
-        write_index(&root, &[("/work/slot", "c-previous")]);
+        write_index(
+            &root,
+            &[("/work/slot", "f85c1dbb-27bc-438b-9191-b007994e8f64")],
+        );
 
         assert_eq!(
             observe(
@@ -138,7 +149,9 @@ mod tests {
                 &ObservationContext {
                     cwd: Path::new("/work/slot"),
                     since_unix: 0,
-                    preceded_by: Some(&SessionId::new("c-previous")),
+                    preceded_by: Some(
+                        &SessionId::parse("f85c1dbb-27bc-438b-9191-b007994e8f64").unwrap()
+                    ),
                     claimed_elsewhere: &[],
                 },
             ),
@@ -149,13 +162,30 @@ mod tests {
     #[test]
     fn what_the_index_held_at_launch_is_readable_on_its_own() {
         let root = cli_root("agy-session-recorded");
-        write_index(&root, &[("/work/slot", "c-1")]);
+        write_index(
+            &root,
+            &[("/work/slot", "f85c1dbb-27bc-438b-9191-b007994e8f62")],
+        );
 
         assert_eq!(
             recorded_for(&root, Path::new("/work/slot")),
-            Some(SessionId::new("c-1"))
+            Some(SessionId::parse("f85c1dbb-27bc-438b-9191-b007994e8f62").unwrap())
         );
         assert_eq!(recorded_for(&root, Path::new("/work/unknown")), None);
+    }
+
+    /// The index is a plain file anything can write: an entry that is not
+    /// one of the harness's own identifiers is no conversation at all.
+    #[test]
+    fn an_index_entry_not_named_by_the_harness_is_not_a_conversation() {
+        let root = cli_root("agy-session-shape");
+        write_index(
+            &root,
+            &[("/work/slot", "--yolo"), ("/work/other", "../../escape")],
+        );
+
+        assert_eq!(recorded_for(&root, Path::new("/work/slot")), None);
+        assert_eq!(recorded_for(&root, Path::new("/work/other")), None);
     }
 
     #[test]
@@ -164,13 +194,13 @@ mod tests {
         fs::create_dir_all(root.join("conversations")).unwrap();
         fs::write(root.join("conversations").join("kept.db"), b"").unwrap();
 
-        assert!(exists(&root, &SessionId::new("kept")));
-        assert!(!exists(&root, &SessionId::new("deleted")));
+        assert!(exists(&root, &SessionId::parse("kept").unwrap()));
+        assert!(!exists(&root, &SessionId::parse("deleted").unwrap()));
     }
 
     #[test]
     fn a_first_turn_is_an_interactive_prompt_beside_the_conversation() {
-        let session = SessionId::new("conv-1");
+        let session = SessionId::parse("conv-1").unwrap();
         let line: Vec<OsString> = resume_args(&session)
             .into_iter()
             .chain(first_turn_args("carry on"))

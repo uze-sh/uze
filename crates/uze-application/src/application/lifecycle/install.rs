@@ -524,6 +524,30 @@ impl Plugins<'_> {
 }
 
 impl UzeApplication {
+    /// Everything the package at `root` lets run once installed: what its
+    /// canonical sources declare, and what every harness — detected or not,
+    /// since one installed later receives the package without asking —
+    /// would run from the package's own vendor files. Each covers
+    /// `package_digest`, the whole tree.
+    pub(crate) fn package_executions(
+        &self,
+        root: &std::path::Path,
+        resources: &[&uze_core::Resource],
+        requirements: &[uze_core::requirement::Requirement],
+        package_digest: &str,
+    ) -> Result<Vec<trust::ExecutableCapability>> {
+        let mut delivered = Vec::new();
+        for integration in &self.integrations {
+            delivered.extend(integration.package_executions(root)?);
+        }
+        Ok(trust::package_executions(
+            resources,
+            requirements,
+            delivered,
+            package_digest,
+        ))
+    }
+
     /// Asks the supplied authority about any capability that would introduce
     /// process execution, and refuses to proceed without a grant.
     ///
@@ -544,7 +568,12 @@ impl UzeApplication {
         }
         let inspected = uze_core::acquisition::inspect_capabilities(materialized)?;
         let resources: Vec<&uze_core::Resource> = inspected.resources.iter().collect();
-        let executable = trust::package_executions(&resources, &inspected.requirements);
+        let executable = self.package_executions(
+            materialized.root(),
+            &resources,
+            &inspected.requirements,
+            &materialized.digest()?,
+        )?;
         if executable.is_empty() || !trust::introduces_new_execution(already_trusted, &executable) {
             return Ok(());
         }
@@ -586,7 +615,11 @@ impl UzeApplication {
                             line.push(' ');
                             line.push_str(&inert(argument));
                         }
-                        if let Some(code) = &capability.code {
+                        if let Some(code) = capability
+                            .code
+                            .as_ref()
+                            .filter(|code| !code.entries.is_empty())
+                        {
                             line.push_str(&format!(" [code {}]", inert(&code.entries.join(", "))));
                         }
                         line

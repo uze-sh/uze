@@ -130,6 +130,7 @@ class World:
             "repo": machine.spell(REPO),
             "shell_rc": machine.spell(self.home / machine.shell_rc_name()),
             "shell": machine.SHELL,
+            "prompt": machine.PROMPT,
             "fake_harness": machine.spell(standin_binary()),
         }
         # Only for a journey that asks for it: resolving it eagerly would
@@ -652,7 +653,7 @@ class Runner:
         getattr(self, f"_{action}")(step)
         if expect := step.get("expect"):
             self.await_screen(
-                expect,
+                self.resolve(expect),
                 step.get("expect_in", "screen"),
                 float(step.get("expect_timeout", 15)),
                 step,

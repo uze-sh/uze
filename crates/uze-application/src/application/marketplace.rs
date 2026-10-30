@@ -14,6 +14,7 @@ use uze_core::{
 };
 
 use crate::bootstrap;
+use uze_platform::redact::redact;
 
 use super::marketplace_catalogue::read_in_place;
 use super::services::Marketplace;
@@ -301,7 +302,7 @@ impl Marketplace<'_> {
     /// refreshed on demand: the clone made here to learn the marketplace's
     /// name is what the catalogue cache keeps, so the listing that follows
     /// does not pay it a second time.
-    #[tracing::instrument(name = "marketplace.add", skip_all, fields(source_str = %source_str), err)]
+    #[tracing::instrument(name = "marketplace.add", skip_all, fields(source_str = %redact(source_str)), err)]
     pub fn add(&self, source_str: &str) -> Result<bool> {
         self.register(source_str)
             .map(|registration| registration.added)
@@ -314,7 +315,7 @@ impl Marketplace<'_> {
     /// found" for a private repository the caller cannot see, so a
     /// fallback would resolve the operator's own private name to whoever
     /// owns it elsewhere. The failure suggests the other hosts instead.
-    #[tracing::instrument(name = "marketplace.register", skip_all, fields(source_str = %source_str), err)]
+    #[tracing::instrument(name = "marketplace.register", skip_all, fields(source_str = %redact(source_str)), err)]
     pub fn register(&self, source_str: &str) -> Result<MarketplaceRegistration> {
         let hosts = uze_core::hosts::load(&self.0.home)?;
         let (source, short) = self.parse_source(source_str, &hosts)?;
@@ -630,7 +631,7 @@ impl Marketplace<'_> {
             .ok_or_else(|| UzeError::UnknownMarketplace(name.to_owned()))
     }
 
-    #[tracing::instrument(name = "marketplace.install_plugin", skip_all, fields(spec = %spec), err)]
+    #[tracing::instrument(name = "marketplace.install_plugin", skip_all, fields(spec = %redact(spec)), err)]
     pub fn install_plugin(
         &self,
         spec: &str,
@@ -642,7 +643,7 @@ impl Marketplace<'_> {
     /// `Marketplace::install_plugin`, with an explicit answer for a bare-plugin-name
     /// collision with an already-active, differently-marketplaced package
     /// (ADR-036) — see `Marketplace::install_plugin_resolving`.
-    #[tracing::instrument(name = "marketplace.install_plugin_resolving", skip_all, fields(spec = %spec), err)]
+    #[tracing::instrument(name = "marketplace.install_plugin_resolving", skip_all, fields(spec = %redact(spec)), err)]
     pub fn install_plugin_resolving(
         &self,
         spec: &str,
@@ -775,7 +776,7 @@ impl Marketplace<'_> {
         Ok(out)
     }
 
-    #[tracing::instrument(name = "marketplace.inspect_plugin", skip_all, fields(marketplace = %marketplace, name = %name), err)]
+    #[tracing::instrument(name = "marketplace.inspect_plugin", skip_all, fields(marketplace = %redact(marketplace), name = %name), err)]
     pub fn inspect_plugin(&self, marketplace: &str, name: &str) -> Result<MarketplacePluginDetail> {
         let summary = self
             .plugins_offered_by(|asked| asked == marketplace)?

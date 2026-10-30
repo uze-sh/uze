@@ -349,8 +349,9 @@ fn refuse_an_agent(asker: Asker, what: &str) -> Result<()> {
     match asker {
         Asker::Operator => Ok(()),
         Asker::AgentPane => Err(refusal(format!(
-            "an agent cannot {what} an extension; the operator does, on the workspace's \
-             Extensions screen or from a terminal of their own"
+            "an agent cannot {what} an extension, nor can anything in a sandbox; the operator \
+             does, on the workspace's Extensions screen or from an unsandboxed terminal of \
+             their own"
         ))),
     }
 }

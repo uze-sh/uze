@@ -117,7 +117,7 @@ mod tests {
     #[test]
     fn the_document_is_written_under_the_assigned_conversation() {
         let root = uze_testkit::temp::scratch("opencode-agent-context-deliver");
-        let session = SessionId::new("ses_abc");
+        let session = SessionId::parse("ses_abc").unwrap();
         let contribution = deliver(
             &root,
             &AgentContext {

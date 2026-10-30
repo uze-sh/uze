@@ -25,6 +25,10 @@ from pathlib import Path
 PLATFORM = "macos" if sys.platform == "darwin" else "linux"
 # What the shell a pane opens is called in the process table.
 SHELL = "bash"
+# What that shell shows once it reads input. The prompt itself is the
+# host's (a distribution's bashrc writes its own over the world's `PS1`),
+# and every one of them ends a line in `$`.
+PROMPT = r"(?m)\$ *$"
 EXECUTABLE_SUFFIX = ""
 REQUIRED_TOOLS = ("tmux", "git")
 DEFAULT_WORLDS = "/tmp/uze-journeys"

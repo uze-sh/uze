@@ -301,6 +301,13 @@ impl IntegrationPort for AntigravityIntegration {
         crate::rules::withheld(package).into_iter().collect()
     }
 
+    fn package_executions(
+        &self,
+        package_root: &Path,
+    ) -> Result<Vec<uze_core::trust::ExecutableCapability>> {
+        plugin::vendor_executions(package_root)
+    }
+
     /// `agy` reads `.agents/rules/` of the checkout itself, in this format,
     /// with its own four triggers (1.2.17; the PoC of 2026-10-06), so the
     /// engine is never delivered here.

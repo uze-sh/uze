@@ -287,8 +287,10 @@ A journey addresses the world through `{world}`, `{home}`, `{uze_home}`,
 `{project}`, `{repo}`, `{uze}`, `{python}` (the interpreter running the
 suite, for a journey that stands a server up in its world or reads a
 document in a check), `{fake_harness}` (the stand-in writer, for a
-journey that stages one of its own) and `{shell}` (the shell a pane opens,
-as the process table names it) — plus
+journey that stages one of its own), `{shell}` (the shell a pane opens,
+as the process table names it) and `{prompt}` (a pattern for that shell's
+prompt, which an `expect` waits on before a check reads the shell's
+process: the sidebar names the project before the pane's shell is up) — plus
 `{shell_rc}`, which is the file the
 world's shell actually reads its startup from. That one is a placeholder
 rather than a path because the answer differs by platform: bash reads

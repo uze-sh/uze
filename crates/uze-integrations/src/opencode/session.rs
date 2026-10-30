@@ -39,10 +39,22 @@ const MILLISECONDS: u64 = 1_000;
 
 /// A name in the only shape OpenCode's schema requires: a `ses` prefix.
 pub(super) fn new_id() -> SessionId {
-    SessionId::new(format!(
+    conversation_named(format!(
         "ses_{}",
         SessionId::generate().as_str().replace('-', "")
     ))
+    .expect("a minted name has OpenCode's shape")
+}
+
+/// The conversation `id` names, when it has OpenCode's shape: `ses_`
+/// followed by letters and digits, as it lists them and as UZE mints them.
+fn conversation_named(id: impl Into<String>) -> Option<SessionId> {
+    SessionId::parse(id).ok().filter(|session| {
+        session
+            .as_str()
+            .strip_prefix("ses_")
+            .is_some_and(|rest| !rest.is_empty() && rest.chars().all(|c| c.is_ascii_alphanumeric()))
+    })
 }
 
 /// The operator's first turn. Behind `--prompt`, which the TUI takes beside
@@ -71,12 +83,16 @@ pub(super) fn observe(
     home: &Path,
     ctx: &ObservationContext,
 ) -> Option<SessionId> {
-    listing(executable, home)?
+    newest_of(listing(executable, home)?, ctx)
+}
+
+fn newest_of(listed: Vec<Listed>, ctx: &ObservationContext) -> Option<SessionId> {
+    listed
         .into_iter()
         .filter(|listed| {
             Path::new(&listed.directory) == ctx.cwd && listed.created_unix >= ctx.since_unix
         })
-        .map(|listed| (listed.created_unix, SessionId::new(listed.id)))
+        .filter_map(|listed| Some((listed.created_unix, conversation_named(listed.id)?)))
         .filter(|(_, session)| ctx.is_unclaimed(session))
         .max_by_key(|(created_unix, _)| *created_unix)
         .map(|(_, session)| session)
@@ -161,20 +177,47 @@ mod tests {
     }
 
     fn observed(entries: &[(&str, &str, u64)], cwd: &str, since: u64) -> Option<SessionId> {
-        let listed = parse_listing(&payload(entries)).unwrap();
-        listed
-            .into_iter()
-            .filter(|listed| {
-                Path::new(&listed.directory) == Path::new(cwd) && listed.created_unix >= since
-            })
-            .max_by_key(|listed| listed.created_unix)
-            .map(|listed| SessionId::new(listed.id))
+        newest_of(
+            parse_listing(&payload(entries)).unwrap(),
+            &ObservationContext {
+                cwd: Path::new(cwd),
+                since_unix: since,
+                preceded_by: None,
+                claimed_elsewhere: &[],
+            },
+        )
+    }
+
+    /// What the harness's API lists is the harness's, and a listing can
+    /// be answered by whatever is first on the path: only an identifier of
+    /// OpenCode's own shape is a conversation.
+    #[test]
+    fn only_an_identifier_of_opencode_s_shape_is_a_conversation() {
+        assert!(conversation_named("ses_3b8fZq0aB1").is_some());
+        assert!(conversation_named(new_id().as_str()).is_some());
+        for refused in ["--yolo", "ses_", "ses_../x", "c-1", "SES_1"] {
+            assert_eq!(conversation_named(refused), None, "{refused}");
+        }
+    }
+
+    #[test]
+    fn a_listed_id_of_another_shape_is_never_observed() {
+        let entries = [
+            ("SES_1", "/work/slot", 400),
+            ("c-1", "/work/slot", 300),
+            ("ses_../x", "/work/slot", 200),
+            ("ses_kept", "/work/slot", 100),
+        ];
+        assert_eq!(
+            observed(&entries, "/work/slot", 50),
+            Some(SessionId::parse("ses_kept").unwrap())
+        );
     }
 
     #[test]
     fn resuming_names_the_session() {
         assert_eq!(
-            resume_args(&SessionId::new("ses_1")),
+            resume_args(&SessionId::parse("ses_1").unwrap()),
             vec![OsString::from("--session"), OsString::from("ses_1")]
         );
     }
@@ -188,7 +231,7 @@ mod tests {
         ];
         assert_eq!(
             observed(&entries, "/work/slot", 50),
-            Some(SessionId::new("ses_new"))
+            Some(SessionId::parse("ses_new").unwrap())
         );
     }
 
@@ -225,7 +268,7 @@ mod tests {
 
     #[test]
     fn a_first_turn_rides_on_its_prompt_flag_beside_the_session() {
-        let session = SessionId::new("ses_1");
+        let session = SessionId::parse("ses_1").unwrap();
         let line: Vec<OsString> = resume_args(&session)
             .into_iter()
             .chain(first_turn_args("carry on"))

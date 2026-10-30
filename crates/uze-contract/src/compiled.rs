@@ -49,6 +49,56 @@ pub struct CompiledView {
     pub lookups: Vec<Lookup>,
 }
 
+/// The most entries one bind of a view may walk: each node it considers and
+/// each `use` it follows, once per place it stands and per item of an
+/// `each`. What the bind spends is bounded by this, not only what it draws:
+/// a template used ten times by one used ten times draws little and walks
+/// a lot. A view whose templates alone expand past it is refused by the
+/// check; one whose data takes it past is folded by the binder.
+pub const EXPANSION_MAX: usize = 20_000;
+
+impl CompiledView {
+    /// The entries one bind walks when every `each` repeats once: each
+    /// node and each `use` once per place it stands, through the templates.
+    /// Saturates rather than overflows. A `use` naming no template counts
+    /// one, and a cycle (which the check refuses) is cut where it closes.
+    pub fn expansion(&self) -> usize {
+        let mut sizes = BTreeMap::new();
+        expansion_of(&self.items, &self.templates, &mut sizes)
+    }
+}
+
+fn expansion_of<'a>(
+    items: &'a [Item],
+    templates: &'a BTreeMap<String, Vec<Item>>,
+    sizes: &mut BTreeMap<&'a str, usize>,
+) -> usize {
+    items.iter().fold(0usize, |total, item| {
+        let below = match item {
+            Item::Node(node) => expansion_of(&node.children, templates, sizes),
+            Item::Use { template, .. } => template_expansion(template, templates, sizes),
+        };
+        total.saturating_add(1).saturating_add(below)
+    })
+}
+
+fn template_expansion<'a>(
+    template: &str,
+    templates: &'a BTreeMap<String, Vec<Item>>,
+    sizes: &mut BTreeMap<&'a str, usize>,
+) -> usize {
+    let Some((name, items)) = templates.get_key_value(template) else {
+        return 0;
+    };
+    if let Some(size) = sizes.get(name.as_str()) {
+        return *size;
+    }
+    sizes.insert(name, 0);
+    let size = expansion_of(items, templates, sizes);
+    sizes.insert(name, size);
+    size
+}
+
 /// One entry of a node list: a node, or a template used in its place.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Item {
@@ -141,6 +191,70 @@ mod tests {
             look_up(&lookups, "t", "next", "fr"),
             Some("▶ executar fase")
         );
+    }
+
+    fn text() -> Item {
+        Item::Node(Node {
+            name: NodeName::Text,
+            args: Vec::new(),
+            props: BTreeMap::new(),
+            each: None,
+            condition: None,
+            children: Vec::new(),
+            span: Span::default(),
+        })
+    }
+
+    fn uses(template: &str, times: usize) -> Vec<Item> {
+        (0..times)
+            .map(|_| Item::Use {
+                template: template.to_owned(),
+                span: Span::default(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_template_fan_out_expands_to_every_entry_it_walks() {
+        let mut view = CompiledView {
+            items: uses("t2", 1),
+            ..CompiledView::default()
+        };
+        view.templates.insert("t0".into(), vec![text()]);
+        view.templates.insert("t1".into(), uses("t0", 10));
+        view.templates.insert("t2".into(), uses("t1", 10));
+        // 1 use of t2, 10 uses of t1, 100 uses of t0, 100 texts.
+        assert_eq!(view.expansion(), 211);
+    }
+
+    #[test]
+    fn a_twelve_level_fan_out_saturates_far_past_the_bound() {
+        let mut view = CompiledView {
+            items: uses("t12", 1),
+            ..CompiledView::default()
+        };
+        view.templates.insert("t0".into(), vec![text()]);
+        for level in 1..=12 {
+            view.templates
+                .insert(format!("t{level}"), uses(&format!("t{}", level - 1), 10));
+        }
+        assert!(view.expansion() > EXPANSION_MAX);
+    }
+
+    #[test]
+    fn a_cycle_or_a_missing_template_is_counted_once() {
+        let mut view = CompiledView {
+            items: uses("a", 1),
+            ..CompiledView::default()
+        };
+        view.templates.insert("a".into(), uses("b", 1));
+        view.templates.insert("b".into(), uses("a", 1));
+        assert_eq!(view.expansion(), 3);
+        let missing = CompiledView {
+            items: uses("nowhere", 2),
+            ..CompiledView::default()
+        };
+        assert_eq!(missing.expansion(), 2);
     }
 
     #[test]

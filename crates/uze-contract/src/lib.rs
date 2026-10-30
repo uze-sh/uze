@@ -40,7 +40,7 @@ pub mod testing;
 pub use binding::{Binding, Condition, Path, Scope, TextPart};
 pub use catalog::{NodeName, PropKind, RoleName};
 pub use clean::Clean;
-pub use compiled::{CompiledExtension, CompiledView, Item, Lookup, Node, Span};
+pub use compiled::{CompiledExtension, CompiledView, EXPANSION_MAX, Item, Lookup, Node, Span};
 pub use manifest::{
     ActionDecl, AgentEvent, AgentTarget, AutoPrompt, BAND_ROWS_MAX, BandDecl, BandPlace, BarAlign,
     BarDecl, DRAWER_SIZES, Deliver, Does, DrawerDecl, DrawerSide, EVENTS_MAX, EVERY_FLOOR,

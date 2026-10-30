@@ -219,6 +219,9 @@ struct Scanner<'a> {
     /// A `/-` was read and the next block, until the node ends, is
     /// commented out with it.
     slashdash: Slashdash,
+    /// A `\` outside a string continues the node past the next line
+    /// break (KDL's escline), so that break ends nothing.
+    continued: bool,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -237,6 +240,7 @@ impl<'a> Scanner<'a> {
             at: 0,
             open: Vec::new(),
             slashdash: Slashdash::None,
+            continued: false,
         }
     }
 
@@ -257,12 +261,11 @@ impl<'a> Scanner<'a> {
                     self.slashdash = Slashdash::None;
                     self.at += 1;
                 }
-                b'\n' | b'\r' => {
-                    if self.slashdash == Slashdash::Applied {
-                        self.slashdash = Slashdash::None;
-                    }
+                b'\\' => {
+                    self.continued = true;
                     self.at += 1;
                 }
+                b'\n' | b'\r' => self.line_break(byte),
                 b' ' | b'\t' => self.at += 1,
                 _ => {
                     self.mark_token();
@@ -277,6 +280,23 @@ impl<'a> Scanner<'a> {
                 suggestion: Some("close it with `}`".to_owned()),
             }),
             None => Ok(()),
+        }
+    }
+
+    /// A line break ends the node a `/-` applies to, unless an escline
+    /// carried the node over it. `\r\n` is one break, so the escline
+    /// covers both bytes.
+    fn line_break(&mut self, byte: u8) {
+        self.at += if byte == b'\r' && self.peek(1) == Some(b'\n') {
+            2
+        } else {
+            1
+        };
+        if std::mem::take(&mut self.continued) {
+            return;
+        }
+        if self.slashdash == Slashdash::Applied {
+            self.slashdash = Slashdash::None;
         }
     }
 
@@ -478,6 +498,40 @@ mod tests {
         assert_eq!(scan("a /-{ b }\nc /-{ d }"), Ok(()));
         assert_eq!(scan("/-\na {\n}\n/-b {\n}"), Ok(()));
         assert_eq!(refused("/- a {\n /- b {\n }\n}").offset, 13);
+    }
+
+    /// The audit's EXT-2 shape: `Row {` + (`/-n \`⏎`{ `)×N + `}`×N, the
+    /// escline carrying each slashdashed node onto the line of its block.
+    fn esclined(depth: usize, line: &str) -> String {
+        format!(
+            "Row {{\n{}}}{}\n}}",
+            format!("/-n \\{line}{{ ").repeat(depth),
+            "}".repeat(depth.saturating_sub(1))
+        )
+    }
+
+    #[test]
+    fn an_escline_does_not_hide_a_slashdashed_block_inside_another() {
+        for line in [
+            "\n",
+            "\r\n",
+            "  \n",
+            " // carried\n",
+            " /* c */\n",
+            "\u{a0}\n",
+        ] {
+            let source = esclined(14, line);
+            let started = Instant::now();
+            let refusal = refused(&source);
+            assert!(started.elapsed() < Duration::from_millis(100));
+            assert!(
+                refusal.message.contains("/-"),
+                "{line:?}: {}",
+                refusal.message
+            );
+        }
+        assert_eq!(scan(&esclined(1, "\n")), Ok(()));
+        assert_eq!(scan("a \\\n  1 {\n}\n/-b {\n}"), Ok(()));
     }
 
     #[test]

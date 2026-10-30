@@ -238,7 +238,7 @@ where
         let layer = tracing_subscriber::fmt::layer()
             .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stderr()))
             .with_span_events(span_close)
-            .with_writer(std::io::stderr)
+            .with_writer(Redacting(std::io::stderr))
             .boxed();
         return (layer, None);
     };
@@ -263,7 +263,7 @@ where
     let layer = tracing_subscriber::fmt::layer()
         .with_ansi(false)
         .with_span_events(span_close)
-        .with_writer(writer)
+        .with_writer(Redacting(writer))
         .boxed();
     (layer, Some(guard))
 }
@@ -343,38 +343,45 @@ pub fn command_span(command: &str, argv: &[String]) -> tracing::Span {
 /// not a mistake — and a log is exactly the place it must not survive.
 fn redact(argv: &[String]) -> String {
     argv.iter()
-        .map(|argument| redacted(argument))
+        .map(|argument| uze_platform::redact::redact(argument))
         .collect::<Vec<_>>()
         .join(" ")
 }
 
-const REDACTED: &str = "<redacted>";
+/// A text layer's writer that redacts every line before it is written.
+///
+/// The net under the rule each span field follows: an error message or a
+/// field added tomorrow that echoes a URL somebody typed still cannot put
+/// its credentials in the journal or on stderr. `fmt` formats a whole
+/// event and writes it in one call, so a line is never split across two.
+struct Redacting<M>(M);
 
-fn redacted(argument: &str) -> String {
-    if let Some(scheme) = argument.find("://") {
-        let (scheme, rest) = argument.split_at(scheme + 3);
-        // Only the authority carries userinfo; an `@` past the first `/`
-        // belongs to the path and is nobody's password.
-        let authority = rest.find('/').unwrap_or(rest.len());
-        return match rest[..authority].find('@') {
-            Some(at) => format!("{scheme}{REDACTED}@{}", &rest[at + 1..]),
-            None => argument.to_owned(),
-        };
+impl<'a, M: tracing_subscriber::fmt::MakeWriter<'a>> tracing_subscriber::fmt::MakeWriter<'a>
+    for Redacting<M>
+{
+    type Writer = RedactingWriter<M::Writer>;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        RedactingWriter(self.0.make_writer())
     }
-    if looks_minted(argument) {
-        return REDACTED.to_owned();
+
+    fn make_writer_for(&'a self, meta: &tracing::Metadata<'_>) -> Self::Writer {
+        RedactingWriter(self.0.make_writer_for(meta))
     }
-    argument.to_owned()
 }
 
-/// Whether an argument is a credential standing on its own. Only shapes a
-/// provider actually mints: a length-and-alphabet guess would redact the
-/// digests and package ids this trace exists to show.
-fn looks_minted(argument: &str) -> bool {
-    const MINTED: [&str; 7] = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_", "xox"];
-    MINTED
-        .iter()
-        .any(|prefix| argument.starts_with(prefix) && argument.len() > prefix.len() + 8)
+struct RedactingWriter<W>(W);
+
+impl<W: std::io::Write> std::io::Write for RedactingWriter<W> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0
+            .write_all(uze_platform::redact::redact(&String::from_utf8_lossy(bytes)).as_bytes())?;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.flush()
+    }
 }
 
 /// Puts the current span's trace context into `command`'s environment as
@@ -592,6 +599,40 @@ mod tests {
         assert!(
             written.contains("a space was created") && written.contains("/somewhere"),
             "the event and its fields are in the journal: {written:?}"
+        );
+        let _ = std::fs::remove_dir_all(scratch);
+    }
+
+    /// ENV-1's net: whatever a span field or an error forgot to redact,
+    /// the journal line is redacted as it is written.
+    #[test]
+    fn the_journal_never_keeps_the_credentials_of_a_url() {
+        let scratch = uze_testkit::temp::scratch("telemetry-journal-credentials");
+        let (layer, guard) = text_layer(Sink::journal(scratch.clone(), "probe"));
+        let subscriber = tracing_subscriber::registry().with(layer);
+        let _alone = one_subscriber_at_a_time();
+        tracing::subscriber::with_default(subscriber, || {
+            let span = tracing::info_span!(
+                "marketplace.add",
+                source = "https://alice:s3cretpassw0rd@127.0.0.1:9/m.git"
+            );
+            let _entered = span.enter();
+            tracing::error!(error = "cannot reach https://bob:hunter2@host/x", "failed");
+        });
+        drop(guard);
+
+        let written: String = std::fs::read_dir(&scratch)
+            .expect("the journal directory")
+            .filter_map(|entry| std::fs::read_to_string(entry.ok()?.path()).ok())
+            .collect();
+        assert!(
+            written.contains("https://<redacted>@127.0.0.1:9/m.git")
+                && written.contains("https://<redacted>@host/x"),
+            "the line is kept, less its credentials: {written:?}"
+        );
+        assert!(
+            !written.contains("s3cret") && !written.contains("hunter2"),
+            "{written:?}"
         );
         let _ = std::fs::remove_dir_all(scratch);
     }

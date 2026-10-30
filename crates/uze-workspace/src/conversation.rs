@@ -586,7 +586,7 @@ mod tests {
         record.launched(
             "claude-code",
             ConversationOrigin::Assigned,
-            Some(SessionId::new("c-1")),
+            Some(SessionId::parse("c-1").unwrap()),
             None,
         );
         save(&home, &root, &record).unwrap();
@@ -594,7 +594,7 @@ mod tests {
         let read = load(&home, &root, &task);
         assert_eq!(
             read.get("claude-code").and_then(|e| e.conversation.clone()),
-            Some(SessionId::new("c-1"))
+            Some(SessionId::parse("c-1").unwrap())
         );
     }
 
@@ -616,7 +616,7 @@ mod tests {
                         record.launched(
                             &format!("harness-{writer}"),
                             ConversationOrigin::Assigned,
-                            Some(SessionId::new(format!("c-{writer}"))),
+                            Some(SessionId::parse(format!("c-{writer}")).unwrap()),
                             None,
                         );
                     })
@@ -679,14 +679,14 @@ mod tests {
         record.launched(
             "claude-code",
             ConversationOrigin::Assigned,
-            Some(SessionId::new("c-1")),
+            Some(SessionId::parse("c-1").unwrap()),
             None,
         );
         record.launched("codex", ConversationOrigin::Observed, None, None);
 
         assert_eq!(
             record.get("claude-code").unwrap().conversation,
-            Some(SessionId::new("c-1"))
+            Some(SessionId::parse("c-1").unwrap())
         );
         assert_eq!(record.get("codex").unwrap().conversation, None);
     }
@@ -701,12 +701,12 @@ mod tests {
         record.launched("codex", ConversationOrigin::Observed, None, None);
         record.harnesses.get_mut("codex").unwrap().launched_at_unix = stale + 1;
 
-        assert!(!record.observed("codex", stale, SessionId::new("late")));
+        assert!(!record.observed("codex", stale, SessionId::parse("late").unwrap()));
         assert_eq!(record.get("codex").unwrap().conversation, None);
-        assert!(record.observed("codex", stale + 1, SessionId::new("current")));
+        assert!(record.observed("codex", stale + 1, SessionId::parse("current").unwrap()));
         assert_eq!(
             record.get("codex").unwrap().conversation,
-            Some(SessionId::new("current"))
+            Some(SessionId::parse("current").unwrap())
         );
     }
 
@@ -794,12 +794,12 @@ mod tests {
         assert_eq!(previous_owner.agent, previous_id);
     }
 
-    /// An agent placed before launches were issued a key has a record with
-    /// none and a tab that relaunches it with none: it is still that agent,
-    /// and comes back to its conversation. A record that was issued a key
-    /// is no less strict for it.
+    /// A record holding no key digest proves nothing about who names it:
+    /// absent proof is no proof (audit WKS-5). Whatever a claim offers,
+    /// even nothing, it is refused, and a record issued a key admits only
+    /// that key.
     #[test]
-    fn a_record_issued_no_key_admits_the_launch_that_names_it() {
+    fn a_record_issued_no_key_admits_no_claim() {
         let home = home("conversation-before-keys");
         let primary = project("conversation-before-keys-project");
         let slot = primary.join(".worktrees").join("slot-1");
@@ -825,15 +825,11 @@ mod tests {
             )
             .map(|owner| owner.agent)
         };
+        assert_eq!(owner(&before_keys_id, ""), None, "no key offered");
         assert_eq!(
-            owner(&before_keys_id, ""),
-            Some(before_keys_id.clone()),
-            "a launch carrying no key names the record that was issued none"
-        );
-        assert_eq!(
-            owner(&before_keys_id, "anything"),
-            Some(before_keys_id),
-            "whatever it carries, since nothing was issued to compare with"
+            owner(&before_keys_id, "guessed-anything"),
+            None,
+            "nothing was issued to compare with, so nothing is admitted"
         );
         assert_eq!(
             owner(&keyed_id, ""),
@@ -882,7 +878,7 @@ mod tests {
         record.launched(
             "claude-code",
             ConversationOrigin::Assigned,
-            Some(SessionId::new("old")),
+            Some(SessionId::parse("old").unwrap()),
             None,
         );
         save(&home, &root, &record).unwrap();

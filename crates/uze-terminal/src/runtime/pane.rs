@@ -203,6 +203,9 @@ fn answer_queries(replies: mpsc::Receiver<Vec<u8>>, writer: Arc<Mutex<Box<dyn Wr
 }
 
 impl PaneRuntime {
+    /// `sealed`: started sealed from the person's endpoint
+    /// ([`uze_platform::seal`]), which the server decides per launch.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn spawn(
         id: PaneId,
         cwd: PathBuf,
@@ -211,6 +214,7 @@ impl PaneRuntime {
         damage: mpsc::Sender<PaneId>,
         launch: Launch,
         palette: Arc<Mutex<Palette>>,
+        sealed: bool,
     ) -> Result<Self, RuntimeError> {
         let pty = native_pty_system();
         let pair = pty
@@ -222,18 +226,24 @@ impl PaneRuntime {
             })
             .map_err(|error| RuntimeError::Pty(error.to_string()))?;
         let (command, made_group, mark) = pane_command(id, cwd, &launch)?;
-        let mut child = pair
-            .slave
-            .spawn_command(command)
-            .map_err(|error| RuntimeError::Pty(error.to_string()))?;
+        let portable_pty::PtyPair { master, slave } = pair;
+        let spawned = if sealed {
+            // From a thread sealed for this alone: the program and all it
+            // starts are, and the server is not.
+            uze_platform::seal::sealed(move || slave.spawn_command(command))
+                .map_err(|error| RuntimeError::Pty(format!("could not seal the pane: {error}")))?
+        } else {
+            slave.spawn_command(command)
+        };
+        let mut child = spawned.map_err(|error| RuntimeError::Pty(error.to_string()))?;
         let leader = child.process_id();
         let group = made_group
             .or_else(|| {
                 leader.and_then(|pid| uze_platform::process::pane::Group::adopt(pid, &mark))
             })
             .map(Arc::new);
-        let endpoints = pair.master.try_clone_reader().and_then(|reader| {
-            pair.master
+        let endpoints = master.try_clone_reader().and_then(|reader| {
+            master
                 .take_writer()
                 .map(|writer| (reader, Arc::new(Mutex::new(writer))))
         });
@@ -264,7 +274,7 @@ impl PaneRuntime {
         answer_queries(reply_receiver, Arc::clone(&writer));
         Ok(Self {
             id,
-            master: Mutex::new(Some(pair.master)),
+            master: Mutex::new(Some(master)),
             writer,
             child: Arc::new(Mutex::new(child)),
             leader,

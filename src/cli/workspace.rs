@@ -18,8 +18,9 @@ pub(crate) fn allow_project_commands(app: &UzeApplication, path: &Path) -> Resul
     };
     if asker() == uze_application::Asker::AgentPane {
         return Err(refusal(
-            "an agent cannot approve the commands its project runs; the operator approves \
-             them, in the workspace or with `uze workspace allow` from their own terminal",
+            "an agent cannot approve the commands its project runs, nor can anything in a \
+             sandbox; the operator approves them, in the workspace or with `uze workspace allow` \
+             from an unsandboxed terminal of their own",
         ));
     }
     if !prompt::interactive() {

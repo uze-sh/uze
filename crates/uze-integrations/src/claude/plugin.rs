@@ -534,6 +534,55 @@ pub(super) fn claude_exact_coverage(
         .collect()
 }
 
+/// What Claude runs from a package that ships its own envelope, beyond the
+/// canonical sources: the package is mirrored to it whole
+/// (`materialize_explicit_package`), so every hook, server and component
+/// the envelope declares or Claude discovers beside it is listed for the
+/// trust question, and a manifest key nobody taught UZE is listed as it is.
+pub(super) fn envelope_executions(
+    root: &Path,
+) -> Result<Vec<uze_core::trust::ExecutableCapability>> {
+    use crate::shared::envelope::{Executions, METADATA_KEYS, unknown_keys};
+    const MANIFEST: &str = ".claude-plugin/plugin.json";
+    if !root.join(MANIFEST).is_file() {
+        return Ok(Vec::new());
+    }
+    let mut executions = Executions::new(root);
+    if let Some(manifest) = executions.document(MANIFEST) {
+        unknown_keys(
+            &mut executions,
+            MANIFEST,
+            &manifest,
+            &[METADATA_KEYS, &["outputStyles"]].concat(),
+            &["skills", "agents", "hooks", "mcpServers", "lspServers"],
+        );
+        executions.paths_outside(manifest.get("skills"), "skills", "skills UZE does not read");
+        executions.paths_outside(manifest.get("agents"), "agents", "agents UZE does not read");
+        if let Some(hooks) = manifest.get("hooks") {
+            executions.hooks_field(&format!("{MANIFEST} hooks"), hooks);
+        }
+        if let Some(servers) = manifest.get("mcpServers") {
+            executions.mcp_field(&format!("{MANIFEST} mcpServers"), servers)?;
+        }
+        if let Some(servers) = manifest.get("lspServers") {
+            executions.language_servers(&format!("{MANIFEST} lspServers"), servers);
+        }
+    }
+    executions.hooks_file("hooks/hooks.json");
+    executions.mcp_file(".mcp.json")?;
+    executions.language_server_file(".lsp.json");
+    for (path, what) in [
+        ("commands", "commands, which can run shell lines"),
+        ("bin", "executables put on the shell path"),
+        ("monitors", "monitors, which run commands"),
+        ("workflows", "workflows"),
+        ("settings.json", "plugin settings"),
+    ] {
+        executions.component(path, what);
+    }
+    Ok(executions.into_inner())
+}
+
 fn skill_policy_preserved(resource: &Resource) -> bool {
     let policy = resource.skill_invocation();
     if policy.is_invalid() {

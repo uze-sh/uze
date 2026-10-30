@@ -33,6 +33,7 @@ mod framing;
 mod host;
 mod key;
 mod lock;
+mod operator;
 mod outbox;
 mod pane;
 mod persist;
@@ -47,13 +48,22 @@ pub use framing::*;
 pub use key::server_key;
 use key::*;
 use lock::*;
+use operator::*;
 use outbox::*;
 use pane::*;
 use persist::*;
 use process::*;
 use scheme::*;
 use server::*;
-pub use transport::{Stream, connect, pair as stream_pair};
+pub use transport::{Stream, pair as stream_pair};
+
+/// Reaches the running server at `socket` the way a person's client does:
+/// at the person's endpoint when the server published one, and never a
+/// server that runs more confined than this process (see
+/// [`connect_as_person`]).
+pub fn connect(socket: &Path) -> io::Result<Stream> {
+    connect_as_person(socket)
+}
 
 /// A pane's program run inside the group named `group`: what the server
 /// starts in its place where a program joins its group only from inside

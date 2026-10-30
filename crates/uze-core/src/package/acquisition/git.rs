@@ -671,7 +671,7 @@ fn spawn_git<T: Send + 'static>(
 ) -> Result<T> {
     let span = tracing::info_span!(
         "acquisition.git",
-        args = %arguments.join(" "),
+        args = %redact(&arguments.join(" ")),
         exit = tracing::field::Empty
     );
     let _entered = span.enter();
@@ -1256,32 +1256,9 @@ fn cannot_resolve_host(complaint: &str) -> bool {
     UNRESOLVED.iter().any(|phrase| lowered.contains(phrase))
 }
 
-/// Replaces anything shaped like inline credentials in a message.
-///
-/// Only the authority holds credentials, and the host follows its *last*
-/// `@`: a password may itself carry one, and a path or reference after the
-/// host (`repo@v1`) is not userinfo.
-pub fn redact(message: &str) -> String {
-    let mut result = String::with_capacity(message.len());
-    for token in message.split_inclusive(char::is_whitespace) {
-        let Some(scheme) = token.find("://") else {
-            result.push_str(token);
-            continue;
-        };
-        let start = scheme + 3;
-        let authority = &token[start..];
-        let authority = &authority[..authority.find(['/', '?', '#']).unwrap_or(authority.len())];
-        match authority.rfind('@') {
-            Some(at) => {
-                result.push_str(&token[..start]);
-                result.push_str("<redacted>@");
-                result.push_str(&token[start + at + 1..]);
-            }
-            None => result.push_str(token),
-        }
-    }
-    result
-}
+/// Replaces anything shaped like inline credentials in a message: the
+/// one rule every trace and error uses.
+pub use uze_platform::redact::redact;
 
 /// Resolves a package root inside a materialized checkout.
 ///
@@ -1562,23 +1539,6 @@ mod tests {
         ] {
             assert!(reject_inline_credentials(url).is_ok(), "rejected {url}");
         }
-    }
-
-    #[test]
-    fn redaction_takes_the_last_at_of_the_authority_and_nothing_past_it() {
-        let redacted = redact("cannot reach https://user:p@ss@example.com/repo.git");
-        assert!(!redacted.contains("ss@"), "{redacted}");
-        assert!(redacted.contains("https://<redacted>@example.com/repo.git"));
-
-        let reference = "cannot reach https://github.com/org/repo@v1 now";
-        assert_eq!(redact(reference), reference);
-    }
-
-    #[test]
-    fn redaction_removes_userinfo_from_a_message() {
-        let redacted = redact("failed to clone https://user:secret@example.com/repo.git now");
-        assert!(!redacted.contains("secret"));
-        assert!(redacted.contains("<redacted>@example.com/repo.git"));
     }
 
     /// A `git:` line is project input, and a URL beginning with `-` is an

@@ -825,6 +825,22 @@ pub trait IntegrationPort: Send + Sync {
         Vec::new()
     }
 
+    /// What this harness would run from the package at `package_root` that
+    /// its canonical sources do not declare: the hooks, servers and other
+    /// components of a vendor envelope it is handed whole, or of a vendor
+    /// file its delivery copies. A key or file it cannot read is one
+    /// execution naming it, never none. Asked of every integration before a
+    /// package crosses the trust boundary, detected or not: a harness
+    /// installed later receives the package without anyone asking again.
+    /// Empty by default, which is true only of a harness whose delivery
+    /// carries canonical sources alone. An `Err` refuses the package.
+    fn package_executions(
+        &self,
+        _package_root: &Path,
+    ) -> Result<Vec<crate::trust::ExecutableCapability>> {
+        Ok(Vec::new())
+    }
+
     /// Detects whether the harness binary is present and, if cheaply
     /// obtainable, its version. Read-only; performs no filesystem writes.
     ///
@@ -1414,7 +1430,7 @@ mod tests {
     #[test]
     fn an_integration_that_declares_nothing_contributes_no_session_argument() {
         let integration = UndeclaredIntegration;
-        let session = SessionId::new("whatever");
+        let session = SessionId::parse("whatever").unwrap();
         let cwd = std::path::Path::new("/tmp");
 
         assert_eq!(
@@ -1448,9 +1464,9 @@ mod tests {
     /// that would have worked.
     #[test]
     fn a_harness_that_cannot_answer_cheaply_is_taken_at_its_word() {
-        assert!(
-            UndeclaredIntegration
-                .session_exists(&SessionId::new("s"), std::path::Path::new("/tmp"))
-        );
+        assert!(UndeclaredIntegration.session_exists(
+            &SessionId::parse("s").unwrap(),
+            std::path::Path::new("/tmp")
+        ));
     }
 }

@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# sandbox <box> [--net] -- <command...>
+#
+# Runs a command under bubblewrap with the operator's real home hidden, so an
+# exploit against uze can only reach a disposable attacker home. Every other
+# place that holds the operator's data or a privileged socket is masked too:
+# /mnt and /media (on WSL, the Windows profile under /mnt/c), /srv, and /run
+# (the Docker socket, root in all but name, and D-Bus). Inside:
+#   HOME=/home/attacker            persisted at $AUDIT/boxes/<box>/home
+#   /home/attacker/work (cwd)      persisted at $AUDIT/boxes/<box>/work
+#   /home/src                      the checkout, read-only
+#   /home/uzebin/uze               the binary under test ($AUDIT/bin/uze), on PATH
+#   UZE_HOME=/home/attacker/.uze, no network unless --net, own PID/IPC namespace.
+# The toolchain (~/.cargo, ~/.rustup) is visible read-only; cargo credentials
+# are masked. AUDIT defaults to the directory above this script's bin/.
+set -euo pipefail
+AUDIT="${AUDIT:-$(cd "$(dirname "$0")/.." && pwd)}"
+SRC="${SRC:-$(git -C "$(dirname "$0")" rev-parse --show-toplevel 2>/dev/null || pwd)}"
+box_name="$1"; shift
+network=(--unshare-net)
+if [[ "${1:-}" == "--net" ]]; then
+  # /etc/resolv.conf often points into a masked mount (/mnt/wsl, /run).
+  resolver="$(readlink -f /etc/resolv.conf)"
+  network=(--ro-bind "$resolver" "$resolver")
+  shift
+fi
+[[ "${1:-}" == "--" ]] && shift
+
+box="$AUDIT/boxes/$box_name"
+mkdir -p "$box/home" "$box/work" "$box/tmp"
+
+toolchain=()
+for dir in "$HOME/.cargo" "$HOME/.rustup"; do
+  [[ -d "$dir" ]] && toolchain+=(--ro-bind "$dir" "$dir")
+done
+for secret in "$HOME/.cargo/credentials" "$HOME/.cargo/credentials.toml"; do
+  [[ -e "$secret" ]] && toolchain+=(--ro-bind /dev/null "$secret")
+done
+
+exec bwrap --ro-bind / / --dev /dev --proc /proc \
+  --tmpfs /home "${toolchain[@]}" --tmpfs /root --tmpfs /tmp --tmpfs /run --tmpfs /mnt --tmpfs /media --tmpfs /srv \
+  --bind "$box/home" /home/attacker --bind "$box/work" /home/attacker/work --bind "$box/tmp" /tmp \
+  --ro-bind "$SRC" /home/src --ro-bind "$AUDIT/bin" /home/uzebin \
+  --unshare-pid --unshare-ipc "${network[@]}" --die-with-parent --new-session \
+  --clearenv --setenv HOME /home/attacker --setenv USER attacker --setenv TERM xterm-256color \
+  --setenv RUSTUP_HOME "$HOME/.rustup" \
+  --setenv PATH "/home/uzebin:$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin" \
+  --setenv UZE_HOME /home/attacker/.uze --setenv GIT_CONFIG_NOSYSTEM 1 \
+  --chdir /home/attacker/work "$@"

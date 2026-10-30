@@ -89,7 +89,8 @@ impl Script {
     ) -> Answered {
         let trace = Arc::new(Mutex::new(Trace::default()));
         let outcome = if self.defines(function, 2) {
-            self.run(function, input, context, grants, reach, Arc::clone(&trace))
+            let traced = Arc::clone(&trace);
+            on_script_stack(|| self.run(function, input, context, grants, reach, traced))
         } else {
             Err(ScriptError::Compile {
                 message: format!("it defines no `fn {function}(input, context)`"),
@@ -126,6 +127,26 @@ impl Script {
             .map_err(|error| ScriptError::from_eval(&error))?;
         envelope::from_answer(function, &answer)
     }
+}
+
+/// Runs `answer` on a thread with [`engine::STACK`], whatever thread asked:
+/// the extension pool's, the CLI's main thread (1 MiB on Windows) or a
+/// test's. Every value the script built is dropped there too, so a deep
+/// one never unwinds on a stack sized for something else.
+fn on_script_stack(
+    answer: impl FnOnce() -> Result<Envelope, ScriptError> + Send,
+) -> Result<Envelope, ScriptError> {
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .name("uze-script".to_owned())
+            .stack_size(engine::STACK)
+            .spawn_scoped(scope, answer)
+            .map_err(|error| {
+                ScriptError::Question(format!("no thread to run the script on: {error}"))
+            })?
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    })
 }
 
 /// The script `file` holds: a component's `<script>` with the rest of the

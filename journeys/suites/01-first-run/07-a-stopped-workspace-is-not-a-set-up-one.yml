@@ -48,7 +48,9 @@ scenes:
         pause: 0.5
       - key: "Escape"
         say: decline the question
-        expect: demo-app
+        # The shell's prompt, not the project's name: the sidebar names the
+        # project before the pane's shell has started.
+        expect: "{prompt}"
         expect_timeout: 60
         pause: 1.0
     then:

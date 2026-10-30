@@ -123,7 +123,7 @@ pub(super) fn connect_starting_within(
 ) -> Result<Stream, RuntimeError> {
     let deadline = Instant::now() + STARTING_WITHIN;
     loop {
-        match transport::connect(socket) {
+        match connect_as_person(socket) {
             Ok(stream) => return Ok(stream),
             Err(error)
                 if matches!(
@@ -153,7 +153,7 @@ pub(super) fn connect_waiting(socket: &Path) -> Result<Stream, RuntimeError> {
 fn connect_waiting_within(socket: &Path, ready_within: Duration) -> Result<Stream, RuntimeError> {
     let deadline = Instant::now() + ready_within;
     loop {
-        match transport::connect(socket) {
+        match connect_as_person(socket) {
             Ok(stream) => return Ok(stream),
             Err(error)
                 if matches!(

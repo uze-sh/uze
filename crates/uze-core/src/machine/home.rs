@@ -862,6 +862,23 @@ fn absolute_or_refuse(variable: &'static str, value: std::ffi::OsString) -> Resu
 mod tests {
     use super::*;
 
+    /// What UZE names to a harness as writable for an agent (its context
+    /// directory, its runtime projection) lies outside `state/`, so a
+    /// harness sandbox that confines writes keeps the agent from forging
+    /// an approval or a task record there (audit WKS-4).
+    #[test]
+    fn nothing_named_writable_to_a_harness_lies_under_state() {
+        let home = UzeHome::at("/uze-home");
+        let state = home.state_dir();
+        for writable in [
+            home.agent_context_dir("project", "agent"),
+            home.runtime_projection_dir("claude-code", "project"),
+            home.session_context_dir("opencode"),
+        ] {
+            assert!(!writable.starts_with(&state), "{}", writable.display());
+        }
+    }
+
     /// The home is created for this user alone, and one an older build
     /// or a permissive umask left open is narrowed the next time UZE runs.
     // Unix file modes, which Windows does not keep.

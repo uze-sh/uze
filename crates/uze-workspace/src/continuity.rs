@@ -1460,7 +1460,7 @@ mod tests {
     fn a_first_launch_of_an_observing_harness_carries_no_argument_but_is_recorded() {
         let (home, primary, slot, id) = managed("continuity-observe");
         let mut harness = Harness::new(SessionContinuity::Observed);
-        harness.recorded_for = Some(SessionId::new("previous-tenant"));
+        harness.recorded_for = Some(SessionId::parse("previous-tenant").unwrap());
 
         assert_eq!(
             plan(&home, claim(&id, &slot), &harness),
@@ -1479,7 +1479,10 @@ mod tests {
             .expect("the launch was recorded");
         assert_eq!(entry.conversation, None);
         assert_eq!(entry.origin, ConversationOrigin::Observed);
-        assert_eq!(entry.preceded_by, Some(SessionId::new("previous-tenant")));
+        assert_eq!(
+            entry.preceded_by,
+            Some(SessionId::parse("previous-tenant").unwrap())
+        );
     }
 
     /// Without this, a harness that names its own conversation would start
@@ -1492,7 +1495,7 @@ mod tests {
         plan(&home, claim(&id, &slot), &harness);
         assert_eq!(recorded(&home, &primary), None, "still pending");
 
-        *harness.observed.lock().unwrap() = Some(SessionId::new("named-by-the-harness"));
+        *harness.observed.lock().unwrap() = Some(SessionId::parse("named-by-the-harness").unwrap());
         let plan = plan(&home, claim(&id, &slot), &harness);
 
         assert_eq!(
@@ -1504,7 +1507,7 @@ mod tests {
         );
         assert_eq!(
             recorded(&home, &primary),
-            Some(SessionId::new("named-by-the-harness"))
+            Some(SessionId::parse("named-by-the-harness").unwrap())
         );
     }
 
@@ -1637,11 +1640,12 @@ mod tests {
         let harness = Harness::new(SessionContinuity::Observed);
         plan(&home, claim(&id, &slot), &harness);
 
-        *harness.observed.lock().unwrap() = Some(SessionId::new("started-by-the-harness"));
+        *harness.observed.lock().unwrap() =
+            Some(SessionId::parse("started-by-the-harness").unwrap());
         assert!(refresh(&home, claim(&id, &slot), &harness));
         assert_eq!(
             recorded(&home, &primary),
-            Some(SessionId::new("started-by-the-harness"))
+            Some(SessionId::parse("started-by-the-harness").unwrap())
         );
 
         // Nothing new to say is not a write.
@@ -1657,7 +1661,7 @@ mod tests {
         plan(&home, claim(&id, &slot), &harness);
         let started_in = recorded(&home, &primary).unwrap();
 
-        *harness.observed.lock().unwrap() = Some(SessionId::new("moved-to"));
+        *harness.observed.lock().unwrap() = Some(SessionId::parse("moved-to").unwrap());
         assert!(refresh(&home, claim(&id, &slot), &harness));
 
         let plan = plan(&home, claim(&id, &slot), &harness);
@@ -1682,12 +1686,12 @@ mod tests {
         neighbour.launched(
             "harness",
             ConversationOrigin::Assigned,
-            Some(SessionId::new("neighbour")),
+            Some(SessionId::parse("neighbour").unwrap()),
             None,
         );
         conversation::save(&home, &primary, &neighbour).unwrap();
 
-        *harness.observed.lock().unwrap() = Some(SessionId::new("neighbour"));
+        *harness.observed.lock().unwrap() = Some(SessionId::parse("neighbour").unwrap());
         assert!(!refresh(&home, claim(&id, &slot), &harness));
         assert_eq!(recorded(&home, &primary), Some(own));
     }

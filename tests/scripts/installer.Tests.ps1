@@ -65,8 +65,11 @@ public static class Program {
     $script:archive = "uze-$arch-windows.zip"
     $script:release = Join-Path $root 'release'
 
-    function script:Publish-Release([string]$Checksum, [string]$SignedBy = $releaseKey) {
-        $download = Join-Path $release "download\v$version"
+    # `-As` publishes the stand-in, which reports $version, under another
+    # release's path: a genuinely signed build of one release served as
+    # another.
+    function script:Publish-Release([string]$Checksum, [string]$SignedBy = $releaseKey, [string]$As = $version) {
+        $download = Join-Path $release "download\v$As"
         Remove-Item -Recurse -Force $release -ErrorAction SilentlyContinue
         New-Item -ItemType Directory -Path $download | Out-Null
         Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -108,7 +111,12 @@ public static class Program {
             # under a caller's `Stop` (CI runs steps so) it would throw here.
             $ErrorActionPreference = 'Continue'
             $output = & $shell -NoProfile -ExecutionPolicy Bypass -File $Script @Arguments 2>&1
-            [pscustomobject]@{ Code = $LASTEXITCODE; Output = ($output | Out-String) }
+            # PowerShell 7 wraps an error's message to the console's width,
+            # each line behind a `|` gutter, so a phrase can be split across
+            # lines depending on how long the temporary path is: the lines
+            # are joined back into one before anything reads them.
+            $joined = ($output | Out-String) -replace '\s*\r?\n\s*(\|\s*)?', ' '
+            [pscustomobject]@{ Code = $LASTEXITCODE; Output = $joined }
         } finally {
             foreach ($key in $saved.Keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key]) }
         }
@@ -185,6 +193,31 @@ Describe 'install.ps1' {
         $run = Invoke-Installer
         $run.Code | Should -Not -Be 0
         $run.Output | Should -Match 'not signed by the uze release key'
+        Join-Path $bin 'uze.exe' | Should -Not -Exist
+    }
+
+    # ENV-2 of the 2026-10-30 audit: the checksums and the signature hold,
+    # and only the binary's own version tells the releases apart.
+    It 'refuses a signed build of another release and installs nothing' {
+        Publish-Release -As '9.9.8'
+        $run = Invoke-Installer -Environment @{ UZE_VERSION = '9.9.8' }
+        $run.Code | Should -Not -Be 0
+        $run.Output | Should -Match 'reports 9\.9\.9, not 9\.9\.8'
+        Join-Path $bin 'uze.exe' | Should -Not -Exist
+        Join-Path $home_ 'state\install.json' | Should -Not -Exist
+    }
+
+    It 'refuses a pinned version that is not a release' {
+        $run = Invoke-Installer -Environment @{ UZE_VERSION = '..\..\9.9.9' }
+        $run.Code | Should -Not -Be 0
+        $run.Output | Should -Match 'not a release version'
+        Join-Path $bin 'uze.exe' | Should -Not -Exist
+    }
+
+    It 'refuses to guess which release is the latest where nothing says' {
+        $run = Invoke-Installer -Environment @{ UZE_VERSION = '' }
+        $run.Code | Should -Not -Be 0
+        $run.Output | Should -Match 'set UZE_VERSION'
         Join-Path $bin 'uze.exe' | Should -Not -Exist
     }
 
