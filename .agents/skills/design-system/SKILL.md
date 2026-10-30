@@ -414,7 +414,9 @@ fails the build on an input's glyph named outside it.
   foot, under a rule and out of the scroll, says the row's kind, range and default (`A number from 1 to 90 ·
   default 25`), or where a secret is kept, and the footer names their
   keys. ←→ step and save at once; Enter types in the row's own box or
-  flips; Esc, or a click anywhere else, gives the keys back to the cards.
+  flips; Esc, or a click anywhere else, gives the keys back to the cards. While
+  the keys are on them the drawer offers no Preferences button: it has
+  nowhere further to take them, and the footer names the way back.
 
 ## Feedback, state and timing
 

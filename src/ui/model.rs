@@ -1249,6 +1249,15 @@ impl TuiModel {
                     self.extension_standing(&summary.identity),
                     self.extension_project.is_some(),
                 );
+                // With the keys already on its preferences, there is nowhere
+                // further for the button to take them.
+                if self
+                    .preferences
+                    .as_ref()
+                    .is_some_and(|editor| editor.identity == summary.identity)
+                {
+                    offers.retain(|offer| offer.action != uze_keys::Action::EditPreferences);
+                }
                 if !summary.statuses.is_empty() {
                     let keys = self.status_keys();
                     let (up, down) = super::status_order::can_move(

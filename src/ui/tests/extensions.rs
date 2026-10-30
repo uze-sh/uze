@@ -1269,6 +1269,17 @@ fn a_click_on_the_box_being_typed_keeps_the_typing() {
     );
 }
 
+/// While the keys are on an extension's preferences its drawer offers no
+/// Preferences button: there is nowhere further for it to take them.
+#[test]
+fn the_preferences_button_is_withdrawn_while_the_keys_are_on_them() {
+    let mut model = focus_preferences();
+    model.preferences = None;
+    assert!(offered_button(&model, uze_keys::Action::EditPreferences).is_some());
+    model.edit_selected_preferences();
+    assert!(offered_button(&model, uze_keys::Action::EditPreferences).is_none());
+}
+
 /// Every key the footer names while the keys are on the preferences is a
 /// target doing what the key does: enter types the number, esc gives the
 /// keys back to the cards.
