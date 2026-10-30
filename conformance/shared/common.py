@@ -1231,9 +1231,11 @@ def docker_base(cfg, prov_ip, final_cmd, tty=True):
         # /work is exec-capable on purpose: portable-hook handlers are shell
         # scripts executed from the derived Store under /work (ADR-033), and
         # the Lab's isolation comes from the `--internal` network, not from
-        # a noexec mount.
+        # a noexec mount. It also holds HOME: Codex's default app-server
+        # daemon stores its runtime there, and the former 512 MiB limit no
+        # longer starts the latest channel from an empty home.
         "--tmpfs",
-        "/work:rw,exec,nosuid,nodev,size=512m,uid=1000,gid=1000,mode=700",
+        "/work:rw,exec,nosuid,nodev,size=1g,uid=1000,gid=1000,mode=700",
         "-e",
         "HOME=/work/home",
         "-e",
