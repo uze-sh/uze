@@ -112,14 +112,20 @@ pub(crate) fn watch(home: UzeHome) {
 
 /// What one pass is worth saying: the plugins it updated, and the ones
 /// newly waiting for the operator. `told` is what already waits and was
-/// said; forgetting what no longer waits is what lets one that waits again
-/// be said again. A plain failure is neither: it is tried on a later pass.
+/// said. Only a plugin this pass tried and found no longer waiting is
+/// forgotten, which is what lets one that waits again be said again; a
+/// pass that did not try it says nothing about it. A plain failure is
+/// neither: it is tried on a later pass.
 fn sort(
     outcomes: Vec<uze_application::AutoUpdateOutcome>,
     told: &mut BTreeSet<String>,
 ) -> (Vec<String>, Vec<String>) {
     let mut updated = Vec::new();
     let mut waiting = BTreeSet::new();
+    let tried: BTreeSet<String> = outcomes
+        .iter()
+        .map(|outcome| outcome.plugin.clone())
+        .collect();
     for outcome in outcomes {
         if outcome.applied {
             updated.push(outcome.plugin);
@@ -128,7 +134,8 @@ fn sort(
         }
     }
     let new = waiting.difference(told).cloned().collect();
-    *told = waiting;
+    told.retain(|plugin| !tried.contains(plugin));
+    told.extend(waiting);
     (updated, new)
 }
 
@@ -166,11 +173,19 @@ mod tests {
         let waits = || vec![outcome("review@mkt", false, true)];
         assert_eq!(sort(waits(), &mut told).1, ["review@mkt"]);
         assert!(sort(waits(), &mut told).1.is_empty(), "said once");
-        assert!(sort(Vec::new(), &mut told).1.is_empty());
+        assert!(
+            sort(Vec::new(), &mut told).1.is_empty(),
+            "a wake that tried nothing"
+        );
+        assert!(
+            sort(waits(), &mut told).1.is_empty(),
+            "a wake that tried nothing is not the update stopping to wait"
+        );
+        sort(vec![outcome("review@mkt", false, false)], &mut told);
         assert_eq!(
             sort(waits(), &mut told).1,
             ["review@mkt"],
-            "waiting again is said again"
+            "waiting again after it stopped is said again"
         );
     }
 
