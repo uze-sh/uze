@@ -1463,9 +1463,11 @@ pub(super) fn spawn_recent_overrides(
                         match &restarting {
                             Some(agent) => match app.workspace().standing_overrides(&root, agent, &harness) {
                                 Ok(standing) => (standing.recent, Some(standing.recorded)),
+                                // Unread is not none: answered as none, a
+                                // relaunch would record it over the set.
                                 Err(error) => {
                                     tracing::warn!(%error, "the agent's overrides could not be read");
-                                    (Vec::new(), Some(Vec::new()))
+                                    (Vec::new(), None)
                                 }
                             },
                             None => (app.workspace().recent_overrides(&harness, &root), None),

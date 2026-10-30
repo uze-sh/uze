@@ -151,7 +151,8 @@ pub(super) enum EnterDoes {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum RestartDoes {
     /// The agent's recorded overrides on the harness in front are not read
-    /// yet: nothing to tell a change from, nor to relaunch with.
+    /// yet, or could not be: nothing to tell a change from, nor to
+    /// relaunch with, so Enter closes.
     Pending,
     /// The same harness and the same overrides: nothing to relaunch.
     Close,

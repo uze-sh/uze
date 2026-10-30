@@ -171,7 +171,8 @@ impl Attach<'_> {
 
     /// Relaunches the agent the `Restart in` panel is over, as its Enter
     /// says: on the same harness when its overrides changed, on another
-    /// when the field names one, and nowhere when nothing changed.
+    /// when the field names one, and nowhere when nothing changed or the
+    /// agent's set is not read, which leaves nothing to relaunch with.
     fn apply_restart(&mut self) {
         let Some(does) = self
             .model
@@ -181,15 +182,12 @@ impl Attach<'_> {
         else {
             return;
         };
-        if does == RestartDoes::Pending {
-            return;
-        }
         let Some(step) = self.model.directory_step.take() else {
             return;
         };
         self.model.context_menu = None;
         self.model.dirty = true;
-        if does == RestartDoes::Close {
+        if matches!(does, RestartDoes::Close | RestartDoes::Pending) {
             return;
         }
         let overrides = step.launch_words();

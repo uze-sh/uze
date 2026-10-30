@@ -298,44 +298,24 @@ fn the_panel_stands_beside_its_entry_and_closes_back_to_it() {
     assert_eq!(menu.selected, 1, "on the entry that opened the panel");
 }
 
+/// Until the agent's set is read there is nothing to relaunch with: Enter
+/// is named `close`, and closes, relaunching nothing.
 #[test]
-fn enter_waits_for_the_agents_overrides_to_be_read() {
+fn enter_before_the_agents_set_is_read_closes_and_relaunches_nothing() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-restart-pending"));
     let mut model = agents_in_the_root_session();
     model.session.as_mut().unwrap().select_tab(TabId(2));
     let mut driven = driven(model, &home);
     driven.attach.identities = identities();
-    driven.frame();
-    press(
-        &mut driven,
-        uze_keys::Action::OpenMenu,
-        uze_keys::Scope::Pane,
-    );
-    press(
-        &mut driven,
-        uze_keys::Action::SelectNext,
-        uze_keys::Scope::ContextMenu,
-    );
-    press(
-        &mut driven,
-        uze_keys::Action::FocusNext,
-        uze_keys::Scope::ContextMenu,
-    );
-    driven
-        .attach
-        .model
-        .directory_step
-        .as_mut()
-        .unwrap()
-        .restart
-        .as_mut()
-        .unwrap()
-        .recorded
-        .clear();
+    open_the_panel_unread(&mut driven);
+    type_text(&mut driven, "DEBUG=1");
+    enter(&mut driven);
+    assert_eq!(panel(&driven).enter_word(), "close");
 
     enter(&mut driven);
 
-    assert!(driven.attach.model.directory_step.is_some(), "nothing yet");
+    assert!(driven.attach.model.directory_step.is_none());
+    assert!(driven.attach.model.context_menu.is_none());
     assert!(!driven.attach.model.placement_pending);
 }
 
