@@ -289,9 +289,12 @@ impl TuiModel {
                 );
                 Intent::ReadReleaseNotes(version)
             }
-            Hit::OpenReleaseNotes => match &self.release {
-                Some(notice) => {
-                    let version = notice.version().to_owned();
+            Hit::OpenReleaseNotes => match self
+                .release
+                .as_ref()
+                .and_then(|notice| notice.arrived.clone())
+            {
+                Some(version) => {
                     self.overlay = Overlay::ReleaseNotes(
                         crate::ui::release_notes::ReleaseNotesModal::opening(&version),
                     );

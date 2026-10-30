@@ -111,23 +111,26 @@ const RELEASE_KEY: &str = include_str!("../release-signing.pub");
 /// a file) is not a release signature.
 const SIGNATURE_NAMESPACE: &str = "uze-release";
 
-/// What the sidebar says about releases: that a newer release replaced
-/// this binary on disk and the next launch runs it. It is the only thing
-/// said. A release that is merely available is news the reader can do
-/// nothing with while the updater is doing it for them, and one the updater
-/// cannot install is `uze upgrade`'s to explain.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Notice(pub(crate) String);
+/// What the workspace says about releases, at two moments. Before a
+/// restart, the release the updater put in place and this process is not:
+/// the bar's restart, which runs it. After, the release now running that
+/// the updater put in place, until its notes are put away: the sidebar's
+/// notice, which opens them. Nothing else is said. A release merely
+/// available is news the reader can do nothing with while the updater is
+/// doing it for them, and one the updater cannot install is
+/// `uze upgrade`'s to explain.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct Notice {
+    /// Installed and not running: what a restart runs.
+    pub(crate) waiting: Option<String>,
+    /// Running, put in place by the updater, its notes not put away yet.
+    pub(crate) arrived: Option<String>,
+}
 
 impl Notice {
-    pub(crate) fn version(&self) -> &str {
-        &self.0
-    }
-
-    /// What the row says. Clicking it opens the release's notes.
-    pub(crate) fn action(&self) -> &'static str {
-        "restart to use it"
-    }
+    /// What the sidebar's notice says under the version. Clicking it opens
+    /// the release's notes.
+    pub(crate) const WHATS_NEW: &'static str = "see what's new";
 }
 
 /// The release this binary is.
@@ -317,9 +320,17 @@ fn this_binary() -> Option<PathBuf> {
     env::current_exe().and_then(fs::canonicalize).ok()
 }
 
-/// Puts the notice about `version` away, here and in every client after.
+/// Puts the sidebar's notice about `version` away, here and in every
+/// client after. A release waiting on a restart keeps its button.
 pub(crate) fn acknowledge(home: &UzeHome, version: &str) {
-    publish(None);
+    let current = NOTICE.lock().map(|notice| notice.clone()).unwrap_or(None);
+    publish(current.and_then(|notice| {
+        let waiting = notice.waiting?;
+        Some(Notice {
+            waiting: Some(waiting),
+            arrived: None,
+        })
+    }));
     let (home, version) = (home.clone(), version.to_owned());
     thread::spawn(move || {
         amend_ledger(&home, |ledger| ledger.acknowledged = Some(version));
@@ -707,9 +718,19 @@ fn upgrade_with(
 /// What to say, from what is running and what the installer's file now
 /// is (when this is the installer's binary at all).
 fn decide(running: &str, on_disk: Option<&str>, ledger: &Ledger) -> Option<Notice> {
-    let on_disk = on_disk?;
-    (newer(on_disk, running) && ledger.acknowledged.as_deref() != Some(on_disk))
-        .then(|| Notice(on_disk.to_owned()))
+    let notice = Notice {
+        waiting: on_disk
+            .filter(|on_disk| newer(on_disk, running))
+            .map(str::to_owned),
+        arrived: ledger
+            .installed
+            .as_deref()
+            .filter(|installed| {
+                *installed == running && ledger.acknowledged.as_deref() != Some(running)
+            })
+            .map(str::to_owned),
+    };
+    (notice != Notice::default()).then_some(notice)
 }
 
 /// The releases `install.sh` downloads, fetched the way it fetches them.
@@ -1443,26 +1464,50 @@ mod tests {
     }
 
     #[test]
-    fn the_sidebar_speaks_only_of_an_update_waiting_on_a_restart() {
+    fn a_release_waits_on_the_restart_and_arrives_after_it() {
+        let waiting = |version: &str| Notice {
+            waiting: Some(version.to_owned()),
+            arrived: None,
+        };
+        let arrived = |version: &str| Notice {
+            waiting: None,
+            arrived: Some(version.to_owned()),
+        };
         let replaced = ledger(Some("1.1.0"), Some("1.1.0"), None);
 
         // The installer's binary was replaced; this process is the old one.
         assert_eq!(
             decide("1.0.0", Some("1.1.0"), &replaced),
-            Some(Notice("1.1.0".to_owned()))
+            Some(waiting("1.1.0")),
+            "the restart, and nothing in the sidebar yet"
+        );
+        // The restart ran it: what is new in it, until put away.
+        assert_eq!(
+            decide("1.1.0", Some("1.1.0"), &replaced),
+            Some(arrived("1.1.0"))
         );
         assert_eq!(
             decide(
-                "1.0.0",
+                "1.1.0",
                 Some("1.1.0"),
                 &ledger(Some("1.1.0"), Some("1.1.0"), Some("1.1.0"))
             ),
             None,
-            "until it is put away"
+            "put away"
         );
-        // The restart ran it: there is nothing left to do.
-        assert_eq!(decide("1.1.0", Some("1.1.0"), &replaced), None);
-        // A newer release that was not installed is not the sidebar's news.
+        // Running what arrived while a newer one already waits: both.
+        assert_eq!(
+            decide(
+                "1.1.0",
+                Some("1.2.0"),
+                &ledger(Some("1.2.0"), Some("1.1.0"), None)
+            ),
+            Some(Notice {
+                waiting: Some("1.2.0".to_owned()),
+                arrived: Some("1.1.0".to_owned()),
+            })
+        );
+        // A newer release that was not installed is not news.
         assert_eq!(
             decide("1.0.0", Some("1.0.0"), &ledger(Some("1.1.0"), None, None)),
             None
@@ -1472,6 +1517,8 @@ mod tests {
             None,
             "nor is one for a binary the installer did not place"
         );
+        // A binary the installer placed and the updater never replaced has
+        // nothing new to say.
         assert_eq!(decide("1.0.0", Some("1.0.0"), &Ledger::default()), None);
     }
 
@@ -1581,7 +1628,11 @@ mod tests {
             releases.installs.borrow().as_slice(),
             [("999.0.0".to_owned(), binary.clone())]
         );
-        assert_eq!(notice, Some(Notice("999.0.0".to_owned())));
+        assert_eq!(
+            notice.and_then(|notice| notice.waiting).as_deref(),
+            Some("999.0.0"),
+            "the restart is offered"
+        );
         let written = read_json::<Receipt>(&receipt_path(&home)).unwrap();
         assert_eq!(written.version, "999.0.0", "the receipt follows the file");
 
@@ -1631,7 +1682,11 @@ mod tests {
             releases.installs.borrow().as_slice(),
             [("999.0.0".to_owned(), binary.clone())]
         );
-        assert_eq!(notice, Some(Notice("999.0.0".to_owned())));
+        assert_eq!(
+            notice.and_then(|notice| notice.waiting).as_deref(),
+            Some("999.0.0"),
+            "the restart is offered"
+        );
     }
 
     #[test]

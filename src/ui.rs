@@ -759,9 +759,11 @@ impl SidebarNotice<'_> {
     /// about it are the whole of it.
     const HEIGHT: u16 = 3;
 
-    /// The release's notice: its version, and what to do about it.
-    pub(crate) fn release(notice: &crate::self_update::Notice) -> (String, &str) {
-        (format!("v{}", notice.version()), notice.action())
+    /// The notice of the release a restart brought: its version, and the
+    /// way to what is new in it.
+    pub(crate) fn release(notice: &crate::self_update::Notice) -> Option<(String, &'static str)> {
+        let version = notice.arrived.as_deref()?;
+        Some((format!("v{version}"), crate::self_update::Notice::WHATS_NEW))
     }
 
     /// Where it goes at the foot of `column`, or nothing when the column

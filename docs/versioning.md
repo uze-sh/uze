@@ -238,8 +238,11 @@ way the installer verifies them, the binary inside is made to report the
 release it claims to be, and only then is it renamed over the old file —
 beside it, on the same filesystem, so the swap is one rename and a pane's
 shim never runs a half-written binary. Anything already running keeps the
-binary it started from; the next launch is the first to run the new one,
-and both sidebars say so — "restart to use it". Clicking the notice
+binary it started from; the next launch is the first to run the new one.
+Until then the workspace offers it at the right end of the bar under the
+agent area (`↑ v1.0.0 · restart`): the client alone restarts into it, and
+every pane keeps running. Once it runs, both sidebars say so — its version
+and "see what's new" — until the notice is put away. Clicking the notice
 opens that release's notes in a modal — its own section of the
 `CHANGELOG.md` at its tag, fetched with the release and kept in
 `~/.uze/cache/release-notes.md` — from which the release page opens. That is the only thing they say about releases: one that

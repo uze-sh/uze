@@ -131,7 +131,7 @@ impl Attach<'_> {
         if self.model.offers_waiting() {
             offered.push(Action::ReviewExtensions);
         }
-        if self.model.release.is_some() {
+        if self.model.release_waiting().is_some() {
             offered.push(Action::RestartUze);
         }
         offered
@@ -331,7 +331,7 @@ impl Attach<'_> {
             }
             // The client alone: the runtime keeps every pane, and the
             // release that takes this client's place attaches to it.
-            Action::RestartUze if self.model.release.is_some() => {
+            Action::RestartUze if self.model.release_waiting().is_some() => {
                 let _ = send_request(&mut self.stream, &ClientRequest::Detach);
                 return Flow::Exit(WorkspaceExit::Restart);
             }

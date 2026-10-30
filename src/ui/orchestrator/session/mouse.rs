@@ -1429,8 +1429,12 @@ impl Attach<'_> {
                 }
             }
             WorkspaceHit::OpenReleaseNotes => {
-                if let Some(notice) = &self.model.release {
-                    let version = notice.version().to_owned();
+                if let Some(version) = self
+                    .model
+                    .release
+                    .as_ref()
+                    .and_then(|notice| notice.arrived.clone())
+                {
                     self.model.release_notes = Some(
                         crate::ui::release_notes::ReleaseNotesModal::opening(&version),
                     );
@@ -1448,7 +1452,15 @@ impl Attach<'_> {
             }
             WorkspaceHit::DismissRelease => {
                 if let Some(notice) = self.model.release.take() {
-                    crate::self_update::acknowledge(self.home, notice.version());
+                    if let Some(version) = &notice.arrived {
+                        crate::self_update::acknowledge(self.home, version);
+                    }
+                    // The notice goes; a release waiting on a restart
+                    // keeps its button.
+                    self.model.release = notice.waiting.map(|waiting| crate::self_update::Notice {
+                        waiting: Some(waiting),
+                        arrived: None,
+                    });
                     self.model.dirty = true;
                 }
             }

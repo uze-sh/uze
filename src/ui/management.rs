@@ -514,16 +514,12 @@ fn render_footer(
     hits.extend(model.hint_targets(drawn.hints));
 }
 
-/// A newer release than this one, said where the footer says what just
-/// happened: the news is the version, and a click reads its notes.
+/// The release a restart brought, said where the footer says what just
+/// happened: the news is the version, and a click reads what is new in it.
 fn release_notice(model: &TuiModel) -> Option<Line<'static>> {
-    let notice = model.release.as_ref()?;
+    let version = model.release.as_ref()?.arrived.as_deref()?;
     Some(Line::from(Span::styled(
-        format!(
-            "{} v{} available",
-            theme::glyph(Symbol::ArrowUp),
-            notice.version()
-        ),
+        format!("{} v{version} · what's new", theme::glyph(Symbol::ArrowUp)),
         theme::fg(Token::Accent),
     )))
 }

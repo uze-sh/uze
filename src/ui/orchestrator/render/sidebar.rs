@@ -326,7 +326,7 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
     let release = model
         .release
         .as_ref()
-        .map(crate::ui::SidebarNotice::release);
+        .and_then(crate::ui::SidebarNotice::release);
     let notice = match (&model.extension_notice, &release) {
         (Some((title, body)), _) => Some((
             crate::ui::SidebarNotice {

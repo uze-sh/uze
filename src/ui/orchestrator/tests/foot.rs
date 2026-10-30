@@ -128,7 +128,10 @@ fn a_release_notice_sits_on_the_sections_at_the_foot() {
         "no release, no notice"
     );
 
-    model.release = Some(crate::self_update::Notice("0.0.0-alpha.14".to_owned()));
+    model.release = Some(crate::self_update::Notice {
+        waiting: None,
+        arrived: Some("0.0.0-alpha.14".to_owned()),
+    });
     let Sidebar { rows, hits, .. } = sidebar(&model, &identities_fixture());
     let (mark, _) = hits
         .iter()
@@ -140,7 +143,7 @@ fn a_release_notice_sits_on_the_sections_at_the_foot() {
             && rows[y].contains(&theme::glyph(theme::Symbol::MarkClose)),
         "the version, whole, with the mark on its row: {rows:?}"
     );
-    assert!(rows[y + 1].contains("restart to use it"), "{rows:?}");
+    assert!(rows[y + 1].contains("see what's new"), "{rows:?}");
     assert_eq!(
         hits.iter()
             .filter(|(_, hit)| matches!(hit, WorkspaceHit::OpenReleaseNotes))
@@ -161,7 +164,10 @@ fn a_release_notice_sits_on_the_sections_at_the_foot() {
 fn an_extensions_notice_takes_the_release_notices_place_until_put_away() {
     let mut model = session_with_timeline(&["feat: one"]);
     model.timeline_collapsed = true;
-    model.release = Some(crate::self_update::Notice("0.0.0-alpha.14".to_owned()));
+    model.release = Some(crate::self_update::Notice {
+        waiting: None,
+        arrived: Some("0.0.0-alpha.14".to_owned()),
+    });
     model.extension_notice = Some((
         "Approval".to_owned(),
         "An agent in claude-code asks for approval".to_owned(),
@@ -240,7 +246,10 @@ fn the_notice_opens_the_notes_of_its_own_release() {
     .unwrap();
     let mut model = session_with_timeline(&["feat: one"]);
     model.timeline_collapsed = true;
-    model.release = Some(crate::self_update::Notice("9.0.1".to_owned()));
+    model.release = Some(crate::self_update::Notice {
+        waiting: None,
+        arrived: Some("9.0.1".to_owned()),
+    });
     let mut driven = driven(model, &home);
     driven.frame();
     let (notice, _) = *driven

@@ -301,6 +301,13 @@ on "cancel" must not save first.
   gave them, muted, on no strip of its own: never the extension's id, its
   plugin or its marketplace, which belong to the Extensions screen, a
   consent and a question about what it would do to an agent.
+- A release is said at two moments, once each. Installed and not
+  running: the restart at the right end of the bar under the agent area,
+  in the success hue as text with no fill (`↑ v1.0.0 · restart`), first
+  from the right ahead of every plugin item, standing the bar up for
+  itself. Running after the restart: the sidebar's notice, its version and
+  "see what's new", which opens the release's notes. Never the notice
+  before the restart, and never "restart" in the sidebar.
 - A plugin has no standing line to say it has nothing to say: no "no
   notice yet" row at the top of the sidebar. What it notifies is drawn in
   the sidebar's notice, where a new release is, one notice at a time with

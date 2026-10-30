@@ -40,8 +40,8 @@ pub(super) fn render_bar(
     // bar that is news. Text on the bar's own ground, in the hue of what
     // went well: no fill behind it, and under the pointer a stronger
     // version of its own green, at the same weight.
-    if model.release.is_some() {
-        let label = format!("{} restart", theme::glyph(Symbol::ArrowUp));
+    if let Some(version) = model.release_waiting() {
+        let label = format!("{} v{version} · restart", theme::glyph(Symbol::ArrowUp));
         let width = (Span::raw(label.as_str()).width() as u16).min(row.width);
         let rect = Rect::new(right_x.saturating_sub(width), row.y, width, 1);
         let ink = match chip_state(model, WorkspaceHit::RestartIntoRelease) {

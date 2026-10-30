@@ -764,13 +764,19 @@ fn no_bar() -> WorkspaceModel {
 fn the_restart_takes_the_bars_right_end_and_stands_the_bar_up() {
     let mut bare = no_bar();
     assert_eq!(layout(&bare).bar, None, "no release, no plugin, no bar");
-    bare.release = Some(crate::self_update::Notice("9.0.1".to_owned()));
+    bare.release = Some(crate::self_update::Notice {
+        waiting: Some("9.0.1".to_owned()),
+        arrived: None,
+    });
     let bar = bar_row(&mut bare);
     assert!(bar.trim_end().ends_with("restart"), "{bar}");
 
     let mut model = hosting_a_bar(uze_contract::BarAlign::Right);
     answers(&mut model, "notes", "6h12 today");
-    model.release = Some(crate::self_update::Notice("9.0.1".to_owned()));
+    model.release = Some(crate::self_update::Notice {
+        waiting: Some("9.0.1".to_owned()),
+        arrived: None,
+    });
     let bar = bar_row(&mut model);
     let item = bar.find("6h12 today").expect("the item still stands");
     let restart = bar.find("restart").expect("the restart stands");
@@ -786,7 +792,10 @@ fn clicking_the_restart_is_choosing_it_in_the_index() {
 
     let installed = || {
         let mut model = no_bar();
-        model.release = Some(crate::self_update::Notice("9.0.1".to_owned()));
+        model.release = Some(crate::self_update::Notice {
+            waiting: Some("9.0.1".to_owned()),
+            arrived: None,
+        });
         model
     };
     let home = uze_application::UzeHome::at(uze_testkit::temp::scratch("bar-restart"));
@@ -844,7 +853,10 @@ fn without_an_installed_release_nothing_offers_a_restart() {
 #[test]
 fn the_restart_is_green_text_on_the_bars_ground() {
     let mut model = no_bar();
-    model.release = Some(crate::self_update::Notice("9.0.1".to_owned()));
+    model.release = Some(crate::self_update::Notice {
+        waiting: Some("9.0.1".to_owned()),
+        arrived: None,
+    });
     let row = layout(&model).bar.unwrap().y + 1;
     let column = u16::try_from(
         bar_row(&mut model)

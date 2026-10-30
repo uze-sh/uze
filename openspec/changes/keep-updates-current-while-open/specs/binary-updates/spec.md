@@ -65,7 +65,7 @@ NOT stop the runtime or any pane.
 #### Scenario: Restarting from the notice
 
 - **WHEN** the operator activates the restart button at the right end of
-  the bar under the agent area
+  the bar under the agent area, which names the version it runs
 - **THEN** the client is replaced by the installed release, which attaches
   to the same runtime and shows the space and tab that were in front
 
@@ -78,3 +78,56 @@ NOT stop the runtime or any pane.
 
 - **WHEN** a release is installed and the operator opens the action index
 - **THEN** it offers the restart, and choosing it restarts as the row does
+
+## MODIFIED Requirements
+
+### Requirement: The workspace sidebars announce releases
+
+Both sidebars SHALL show, above the sections at their foot, a notice for
+the release now running that the updater put in place, until it is
+dismissed, and for nothing else. The notice SHALL name the version and say
+what is new in it can be read. Activating it SHALL open that release's own
+section of the `CHANGELOG.md` in a modal; dismissing it SHALL put it away
+for that release in every client and every later run.
+
+#### Scenario: A release waiting on a restart
+
+- **WHEN** the updater replaced the binary and this client runs the older
+  release
+- **THEN** neither sidebar shows a notice, and the bar offers the restart
+
+#### Scenario: After the restart
+
+- **WHEN** the client runs the release the updater put in place
+- **THEN** the sidebars show its version and "see what's new"
+
+#### Scenario: A release that is only available
+
+- **WHEN** a newer release is published and has not been installed
+- **THEN** neither sidebar shows a notice, and `uze upgrade` is where a
+  person asks about it
+
+#### Scenario: A release this binary will not install
+
+- **WHEN** a newer release is published and the running binary is not the
+  one a receipt names
+- **THEN** neither sidebar shows a notice, and `uze upgrade` is where the
+  reason is told
+
+#### Scenario: Opening the notes
+
+- **WHEN** the operator activates the notice
+- **THEN** a modal opens on the notes of the version it names, rendered
+  rather than shown as Markdown, and shows no other release
+
+#### Scenario: Notes that cannot be read
+
+- **WHEN** the changelog cannot be fetched, or does not carry the release
+- **THEN** the modal says so and still opens the release page on request
+
+#### Scenario: Dismissing it
+
+- **WHEN** the operator dismisses the notice
+- **THEN** it disappears from both sidebars and does not return for that
+  release, and a restart the bar offers stays
+
