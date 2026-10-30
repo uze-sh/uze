@@ -828,6 +828,17 @@ impl Server {
                 space
             }
             Err(error) => {
+                // The space exists even though its shell did not start, so
+                // it is still one this pane opened.
+                let created = self
+                    .session
+                    .lock()
+                    .expect("session poisoned")
+                    .space_for(seat);
+                if let (None, Some(space)) = (opened, created) {
+                    unvisited.insert(space, opener);
+                }
+                drop(unvisited);
                 return ClientEvent::Error {
                     message: format!(
                         "could not open a space at {}: {error}",

@@ -54,9 +54,13 @@ connects to the person's endpoint.
 - **Regression test**:
   `crates/uze-terminal/src/runtime/tests.rs::spaces_opened_unseen_are_bounded_and_never_persisted`
   and `::one_pane_is_held_to_its_own_bound_of_unseen_spaces`;
-  `cargo test -p uze-terminal --lib unseen`. By reasoning: on the audited
-  commit all 25 wire `OpenSpace` requests are served and persisted (the
-  finding's evidence), where the test asserts 8 and 1 persisted.
+  `cargo test -p uze-terminal --lib unseen`. Not run red on the audited
+  commit (the bound did not exist there): the claim that they fail rests on
+  the finding's evidence, 25 wire `OpenSpace` requests served and persisted
+  where the test asserts 8 and 1 persisted.
+  `::a_space_whose_shell_failed_to_start_is_still_bounded_and_never_persisted`
+  covers a space whose shell did not start (found by the branch's review):
+  run red before the fix, 11 of 11 opened and none refused.
 - **Exploit re-run**: `run-term2.sh` (`pane_dos.sh`, 25 `OpenSpace` from a
   program pane):
   ```

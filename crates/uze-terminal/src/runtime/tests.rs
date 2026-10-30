@@ -5473,6 +5473,49 @@ fn spaces_opened_unseen_are_bounded_and_never_persisted() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
+/// Audit TERM-2: a space whose shell could not start is still one a pane
+/// opened, so it counts against the bound and is not persisted either.
+#[test]
+fn a_space_whose_shell_failed_to_start_is_still_bounded_and_never_persisted() {
+    let scratch = uze_testkit::temp::socket_scratch("open-space-failed-shell");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    for directory in [&uze_home, &project] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let (server, socket) = listening_server(&project);
+    server.persist();
+    env.set("UZE_SHELL", scratch.join("no-such-shell"));
+
+    let answers: Vec<String> = (1..=super::MAX_UNVISITED_SPACES + 3)
+        .map(|n| {
+            let directory = scratch.join(format!("sp{n}"));
+            std::fs::create_dir_all(&directory).unwrap();
+            first_answer_to(
+                &socket,
+                &crate::ClientRequest::OpenSpace {
+                    version: crate::PROTOCOL_VERSION,
+                    seat: seat_at(&directory),
+                },
+            )
+        })
+        .collect();
+    assert!(
+        answers[super::MAX_UNVISITED_SPACES..]
+            .iter()
+            .all(|answer| answer == "refused"),
+        "{answers:?}"
+    );
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(persisted_state_path()).unwrap()).unwrap();
+    assert_eq!(persisted["spaces"].as_array().unwrap().len(), 1);
+
+    server.shut_down();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
 /// Audit TERM-2: one pane is held to fewer unseen spaces than the whole
 /// workspace, so one agent cannot take every place.
 #[test]
