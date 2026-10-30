@@ -158,7 +158,7 @@ impl Attach<'_> {
             .as_ref()
             .is_none_or(|over| over.line.text().is_empty());
         match action {
-            Action::Dismiss | Action::OpenOverrides => {
+            Action::Dismiss => {
                 self.model.directory_step = None;
                 self.model.dirty = true;
             }
