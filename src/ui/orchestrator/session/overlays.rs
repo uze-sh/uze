@@ -88,6 +88,7 @@ impl Attach<'_> {
             (action, self.model.directory_step.as_mut())
         {
             step.cycle_harness(if action == Action::FocusNext { 1 } else { -1 });
+            self.ask_recent_overrides();
             self.model.dirty = true;
             return;
         }
@@ -131,17 +132,15 @@ impl Attach<'_> {
         self.model.dirty = true;
     }
 
-    /// A click on an arrow of the harness field, on either view. On the
-    /// overrides view the entries used lately are the new harness's, so
-    /// they are asked for.
+    /// A click on an arrow of the harness field, on either view: the new
+    /// harness's entries are asked for, since either view launches with
+    /// its last selection.
     pub(super) fn cycle_popup_harness(&mut self, step: isize) {
         let Some(popup) = self.model.directory_step.as_mut() else {
             return;
         };
         popup.cycle_harness(step);
-        if popup.overrides.is_some() {
-            self.ask_recent_overrides();
-        }
+        self.ask_recent_overrides();
         self.model.dirty = true;
     }
 
@@ -279,6 +278,17 @@ impl Attach<'_> {
             let Some(step) = self.model.directory_step.as_mut() else {
                 continue;
             };
+            // The last selection is the harness's wherever the popup
+            // stands, so a directory moved to before the answer keeps it.
+            if let Some(last) = &answer.last
+                && step.asked_by(&answer)
+                && step
+                    .recent_question()
+                    .is_some_and(|(harness, _)| harness == answer.harness)
+            {
+                step.seed_last(&answer.harness, last);
+                self.model.dirty = true;
+            }
             let question = (answer.harness.clone(), answer.root.clone());
             if step.recent_asked.as_ref() != Some(&question) || !step.asked_by(&answer) {
                 continue;

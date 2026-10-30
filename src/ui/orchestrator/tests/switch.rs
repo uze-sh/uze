@@ -378,6 +378,7 @@ fn answer_the_panel(
             restarting,
             entries: Vec::new(),
             recorded: Some(recorded.iter().map(|word| (*word).to_owned()).collect()),
+            last: None,
         })
         .unwrap();
     driven.attach.absorb_recent_overrides();

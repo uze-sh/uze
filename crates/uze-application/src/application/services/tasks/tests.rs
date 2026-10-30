@@ -3761,6 +3761,24 @@ mod overrides_tests {
         assert_eq!(recent, [words("--model opus"), words("DEBUG=1")]);
     }
 
+    /// The selection a new agent launched with is what the next one opens
+    /// on, read against its harness's catalog: a value a flag takes stays
+    /// with it, and a secret is left out.
+    #[test]
+    fn the_last_selection_is_remembered_entry_by_entry() {
+        let app = application("overrides-last-selection-home");
+
+        app.workspace()
+            .remember_override_selection("one", &words("--model opus GH_TOKEN=x DEBUG=1"))
+            .unwrap();
+
+        assert_eq!(
+            app.workspace().last_override_selection("one"),
+            [words("--model opus"), words("DEBUG=1")]
+        );
+        assert!(app.workspace().last_override_selection("two").is_empty());
+    }
+
     /// The client's harness list is read when it attaches, and its tab runs
     /// the command read then: a launcher set up in between must not leave
     /// the overrides recorded for a launcher the tab never runs.

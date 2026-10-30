@@ -1192,6 +1192,7 @@ pub(super) enum PlacementRequest {
         harness: String,
         space: SpaceId,
         overrides: Vec<String>,
+        remember_selection: bool,
     },
     /// The agent this checkout is being cut for, and what the operator
     /// answered about the changes their own tree holds.
@@ -1277,7 +1278,8 @@ pub(super) fn spawn_agent_placement(
         // there is, and a silent return would leave this client unable to
         // create another agent for the rest of the session.
         let placement = answered_or(
-            || match request {
+            || {
+                match request {
                 // A placement that cannot do what the space's kind asks
                 // answers with the reason and opens nothing: the operator
                 // chose the kind, and an agent landing anywhere else is
@@ -1286,14 +1288,24 @@ pub(super) fn spawn_agent_placement(
                     from,
                     harness,
                     overrides,
+                    remember_selection,
                     ..
                 } => tui_application(home)
                     .and_then(|app| {
                         // No kind travels: where an agent starts is the
                         // project's to declare, and isolating one is an
                         // action on it afterwards.
-                        app.workspace()
-                            .place_new_agent_with(&from, None, &harness, &occupied, &overrides)
+                        let placed = app.workspace().place_new_agent_with(
+                            &from, None, &harness, &occupied, &overrides,
+                        )?;
+                        if remember_selection
+                            && let Err(error) = app
+                                .workspace()
+                                .remember_override_selection(&harness, &overrides)
+                        {
+                            tracing::warn!(%error, "the override selection could not be remembered");
+                        }
+                        Ok(placed)
                     })
                     .map_err(|error| error.to_string()),
                 PlacementRequest::Isolate { from, agent, carry } => tui_application(home)
@@ -1321,6 +1333,7 @@ pub(super) fn spawn_agent_placement(
                             .resume_task(&primary, &task, &harness, &occupied)
                     })
                     .map_err(|error| error.to_string()),
+            }
             },
             Err("placing the agent failed".to_owned()),
         );
@@ -1448,7 +1461,7 @@ pub(super) fn spawn_recent_overrides(
     let parent = tracing::Span::current();
     thread::spawn(move || {
         let _pass = crate::telemetry::background_pass!("tui.recent_overrides", parent: &parent);
-        let (entries, recorded) = answered_or(
+        let (entries, recorded, last) = answered_or(
             || {
                 tui_application(home)
                     .map(|app| {
@@ -1462,20 +1475,24 @@ pub(super) fn spawn_recent_overrides(
                         // read for the project its checkout belongs to.
                         match &restarting {
                             Some(agent) => match app.workspace().standing_overrides(&root, agent, &harness) {
-                                Ok(standing) => (standing.recent, Some(standing.recorded)),
+                                Ok(standing) => (standing.recent, Some(standing.recorded), None),
                                 // Unread is not none: answered as none, a
                                 // relaunch would record it over the set.
                                 Err(error) => {
                                     tracing::warn!(%error, "the agent's overrides could not be read");
-                                    (Vec::new(), None)
+                                    (Vec::new(), None, None)
                                 }
                             },
-                            None => (app.workspace().recent_overrides(&harness, &root), None),
+                            None => (
+                                app.workspace().recent_overrides(&harness, &root),
+                                None,
+                                Some(app.workspace().last_override_selection(&harness)),
+                            ),
                         }
                     })
                     .unwrap_or_default()
             },
-            (Vec::new(), None),
+            (Vec::new(), None, None),
         );
         let _ = sender.send(RecentOverridesRead {
             harness,
@@ -1483,6 +1500,7 @@ pub(super) fn spawn_recent_overrides(
             restarting,
             entries,
             recorded,
+            last,
         });
     });
 }

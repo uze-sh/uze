@@ -109,6 +109,9 @@ pub(super) struct RecentOverridesRead {
     /// What the restarted agent carries on `harness`, when the read was for
     /// a `Restart in` panel.
     pub(super) recorded: Option<Vec<String>>,
+    /// The entries the last new agent on `harness` was launched with, when
+    /// the read was for the new agent's popup.
+    pub(super) last: Option<Vec<OverrideEntry>>,
 }
 
 /// One row of the list of choices: an entry this launch may carry.
@@ -269,6 +272,7 @@ impl DirectoryStep {
             overrides: None,
             drafts: BTreeMap::new(),
             listed: BTreeMap::new(),
+            settled: BTreeSet::new(),
             recent: None,
             recent_asked: None,
             restart: None,
@@ -365,6 +369,41 @@ impl DirectoryStep {
         }
     }
 
+    /// Opens `harness` on the entries the last new agent there was launched
+    /// with, checked, the first time they are read and unless the operator
+    /// changed its entries first. One the catalog of today refuses is left
+    /// out, as the history's are.
+    pub(super) fn seed_last(&mut self, harness: &str, selection: &[OverrideEntry]) {
+        if !self.settled.insert(harness.to_owned()) {
+            return;
+        }
+        let catalog = self
+            .harnesses
+            .iter()
+            .find(|option| option.integration == harness)
+            .map(|option| option.overrides)
+            .unwrap_or_default();
+        let entries: Vec<OverrideEntry> = selection
+            .iter()
+            .filter(|words| {
+                !catalog
+                    .check_words(words)
+                    .iter()
+                    .any(|checked| checked.verdict.is_refused())
+            })
+            .cloned()
+            .collect();
+        self.drafts.insert(harness.to_owned(), entries.clone());
+        self.listed.insert(harness.to_owned(), entries);
+    }
+
+    /// Whether the launch is remembered as the selection the next new
+    /// agent opens on: only once the operator saw the harness's entries,
+    /// so an Enter before the read answered leaves the last one as it was.
+    pub(super) fn remembers_selection(&self) -> bool {
+        self.restart.is_none() && self.settled.contains(&self.harness_key())
+    }
+
     /// What the harness in the field takes beyond what UZE composes.
     pub(super) fn catalog(&self) -> OverrideCatalog {
         self.chosen_harness()
@@ -388,6 +427,7 @@ impl DirectoryStep {
 
     fn entries_mut(&mut self) -> &mut Vec<OverrideEntry> {
         let key = self.harness_key();
+        self.settled.insert(key.clone());
         self.drafts.entry(key).or_default()
     }
 

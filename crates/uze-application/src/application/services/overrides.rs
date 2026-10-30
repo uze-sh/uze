@@ -1,5 +1,6 @@
 //! Launch overrides as presentation sees them: what a harness's launch
-//! takes, a typed line checked against it, and the entries used lately.
+//! takes, a typed line checked against it, the entries used lately, and
+//! the selection the last new agent was launched with.
 //!
 //! The catalog is static data the integration declares, so checking a line
 //! against it asks nothing of the machine: an overrides step checks on each
@@ -198,6 +199,30 @@ impl Workspace<'_> {
     )]
     pub fn forget_recent_override(&self, harness: &str, words: &[String]) -> Result<bool> {
         record::forget_recent_entry(&self.0.home, harness, words)
+    }
+
+    /// The entries the last new agent on `harness` was launched with: what
+    /// the next one opens on, checked. A read of a record: off the thread
+    /// that draws.
+    #[tracing::instrument(name = "workspace.last_override_selection", skip_all, fields(harness))]
+    pub fn last_override_selection(&self, harness: &str) -> Vec<Vec<String>> {
+        record::last_selection(&self.0.home, harness)
+    }
+
+    /// Remembers `words` as the selection the next new agent on `harness`
+    /// opens on; none remembers that nothing was checked.
+    #[tracing::instrument(
+        name = "workspace.remember_override_selection",
+        skip_all,
+        fields(harness, overrides = words.len()),
+        err
+    )]
+    pub fn remember_override_selection(&self, harness: &str, words: &[String]) -> Result<()> {
+        let catalog = self
+            .integration(harness)
+            .map(IntegrationPort::flag_catalog)
+            .unwrap_or_default();
+        record::remember_selection(&self.0.home, harness, catalog, words)
     }
 
     /// The overrides `agent` of `project_root` was last launched with on
