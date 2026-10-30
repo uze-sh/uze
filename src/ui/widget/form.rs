@@ -234,6 +234,14 @@ pub(crate) fn label(said: &str, state: RowState, layout: Layout) -> Span<'static
 type Drawn = (Vec<Span<'static>>, Vec<(u16, u16, Part)>);
 
 fn draw(control: Control<'_>, layout: Layout, lit: Option<Part>, focused: bool) -> Drawn {
+    // The value answers a click, so it lifts under the pointer.
+    let ink = |tone: Token| {
+        if lit == Some(Part::Value) {
+            ratatui::style::Style::default().fg(theme::lifted(tone))
+        } else {
+            theme::fg(tone)
+        }
+    };
     let whole = |spans: Vec<Span<'static>>| {
         let width = spans.iter().map(Span::width).sum::<usize>() as u16;
         (spans, vec![(0, width, Part::Value)])
@@ -248,10 +256,10 @@ fn draw(control: Control<'_>, layout: Layout, lit: Option<Part>, focused: bool) 
             choice(options, chosen, lit, layout.control)
         }
         Control::Choice { chosen, .. } => {
-            whole(vec![boxed(chosen, Token::TextPrimary, layout.field)])
+            whole(vec![boxed(chosen, ink(Token::TextPrimary), layout.field)])
         }
-        Control::Boxed { value, tone } => whole(vec![boxed(value, tone, layout.field)]),
-        Control::Combo { value, tone } => whole(combo(value, tone, layout.field)),
+        Control::Boxed { value, tone } => whole(vec![boxed(value, ink(tone), layout.field)]),
+        Control::Combo { value, tone } => whole(combo(value, ink(tone), layout.field)),
         Control::Typing { before, after } => whole(typing(before, after, layout.field as u16)),
         Control::Add => whole(vec![Span::styled(
             "+ add",
@@ -264,24 +272,24 @@ fn draw(control: Control<'_>, layout: Layout, lit: Option<Part>, focused: bool) 
     }
 }
 
-/// A value in its box, `width` columns wide.
-fn boxed(said: &str, tone: Token, width: usize) -> Span<'static> {
+/// A value in its box, `width` columns wide, in `ink`.
+fn boxed(said: &str, ink: ratatui::style::Style, width: usize) -> Span<'static> {
     let width = width.max(2);
     Span::styled(
         format!(" {}", pad_end(&text::elide(said, width - 2), width - 1)),
-        theme::fg(tone).bg(theme::color(Token::SurfaceRecessed)),
+        ink.bg(theme::color(Token::SurfaceRecessed)),
     )
 }
 
 /// A value chosen from a list: the box a typed value sits in, with the
 /// mark that says it opens.
-fn combo(said: &str, tone: Token, width: usize) -> Vec<Span<'static>> {
+fn combo(said: &str, ink: ratatui::style::Style, width: usize) -> Vec<Span<'static>> {
     let mark = theme::glyph(Symbol::Dropdown);
     let room = width.saturating_sub(2 + Line::from(mark.as_str()).width() + 1);
     vec![
         Span::styled(
             format!(" {} ", pad_end(&text::elide(said, room), room)),
-            theme::fg(tone).bg(theme::color(Token::SurfaceRecessed)),
+            ink.bg(theme::color(Token::SurfaceRecessed)),
         ),
         Span::styled(
             format!("{mark} "),
@@ -324,7 +332,12 @@ fn stepper(shown: &str, tone: Token, editable: bool, lit: Option<Part>, width: u
     let room = width.saturating_sub(usize::from(minus_width + plus_width));
     let middle = Span::styled(
         centred(&text::elide(shown, room), room),
-        theme::fg_bold(tone).bg(theme::color(Token::SurfaceRecessed)),
+        if lit == Some(Part::Value) {
+            theme::fg_bold(tone).fg(theme::lifted(tone))
+        } else {
+            theme::fg_bold(tone)
+        }
+        .bg(theme::color(Token::SurfaceRecessed)),
     );
     let middle_width = middle.width() as u16;
     (

@@ -1499,3 +1499,55 @@ fn a_form_key_measures_a_wide_label_in_columns() {
         assert_eq!(key.parts[0].0, layout.label, "{label}");
     }
 }
+
+/// Every part of a form's control a click lands on lifts under the
+/// pointer: a box's value and a stepper's number as much as its steps.
+#[test]
+fn a_form_controls_value_lifts_under_the_pointer() {
+    let layout = super::form::Layout {
+        label: 12,
+        control: 24,
+        field: 24,
+        room: 40,
+    };
+    let value_style = |control, lit| {
+        let key = super::form::key("Key", RowState::Resting, control, layout, lit);
+        let (x, _, _) = *key
+            .parts
+            .iter()
+            .find(|(_, _, part)| *part == super::form::Part::Value)
+            .expect("a value part");
+        let mut at = 0;
+        key.line
+            .spans
+            .iter()
+            .find(|span| {
+                at += span.width();
+                at > usize::from(x)
+            })
+            .expect("the value's span")
+            .style
+    };
+    for control in [
+        super::form::Control::Boxed {
+            value: "conventional",
+            tone: Token::TextPrimary,
+        },
+        super::form::Control::Stepper {
+            value: "25",
+            tone: Token::TextPrimary,
+            editable: true,
+        },
+    ] {
+        assert_ne!(
+            value_style(control, None).fg,
+            value_style(control, Some(super::form::Part::Value)).fg,
+            "{control:?}"
+        );
+        assert_eq!(
+            value_style(control, None).add_modifier,
+            value_style(control, Some(super::form::Part::Value)).add_modifier,
+            "the hover keeps the weight: {control:?}"
+        );
+    }
+}
