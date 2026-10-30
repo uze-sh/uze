@@ -421,20 +421,26 @@ impl Plugins<'_> {
         pending
             .into_iter()
             .map(|plugin| {
-                let detail = match self.update(&plugin, &trust::NoTrustAuthority) {
-                    Ok(UpdatePluginReport::Updated { .. }) => None,
-                    Ok(UpdatePluginReport::Blocked { .. }) => {
-                        Some("managed state was preserved; update it explicitly".to_owned())
-                    }
-                    Err(UzeError::TrustRequired { detail, .. }) => Some(format!(
-                        "the new revision asks to execute something new ({detail}); \
-                         confirm it explicitly"
-                    )),
-                    Err(error) => Some(error.to_string()),
-                };
+                let (detail, waits_for_operator) =
+                    match self.update(&plugin, &trust::NoTrustAuthority) {
+                        Ok(UpdatePluginReport::Updated { .. }) => (None, false),
+                        Ok(UpdatePluginReport::Blocked { .. }) => (
+                            Some("managed state was preserved; update it explicitly".to_owned()),
+                            true,
+                        ),
+                        Err(UzeError::TrustRequired { detail, .. }) => (
+                            Some(format!(
+                                "the new revision asks to execute something new ({detail}); \
+                                 confirm it explicitly"
+                            )),
+                            true,
+                        ),
+                        Err(error) => (Some(error.to_string()), false),
+                    };
                 AutoUpdateOutcome {
                     plugin,
                     applied: detail.is_none(),
+                    waits_for_operator,
                     detail,
                 }
             })

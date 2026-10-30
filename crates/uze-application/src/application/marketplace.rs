@@ -1130,6 +1130,52 @@ mod mirror_tests {
         fs::remove_dir_all(&home_root).unwrap();
     }
 
+    /// A revision that asks to run something new is never applied in the
+    /// background, and is reported as waiting for the operator, which a
+    /// plain failure is not.
+    #[test]
+    fn an_update_asking_to_run_something_new_waits_for_the_operator() {
+        let home_root = uze_testkit::temp::scratch("keep-current-consent");
+        let (repository, _first) = marketplace("keep-current-consent-src");
+        let home = UzeHome::at(home_root.join("uze"));
+        let application = UzeApplication::new(home.clone(), Vec::new());
+        application
+            .marketplace()
+            .add(&format!("file://{}", repository.root().display()))
+            .unwrap();
+        application
+            .marketplace()
+            .install_plugin("flow@mkt", &uze_core::trust::AlwaysTrust)
+            .unwrap();
+        fs::write(
+            repository.root().join("plugins/flow/mcp.json"),
+            r#"{"mcpServers":{"new":{"command":"new-server","args":[]}}}"#,
+        )
+        .unwrap();
+        repository.git(&["add", "-A"]);
+        repository.git(&["commit", "-m", "asks for a server"]);
+        let meta_path = home.marketplace_cache_dir().join("mkt/catalogue.json");
+        let mut meta: serde_json::Value =
+            serde_json::from_slice(&fs::read(&meta_path).unwrap()).unwrap();
+        meta["cached_at_unix_nanos"] = serde_json::json!(0);
+        fs::write(&meta_path, serde_json::to_vec_pretty(&meta).unwrap()).unwrap();
+
+        let outcomes = application.plugins().keep_current();
+        assert_eq!(outcomes.len(), 1, "{outcomes:?}");
+        assert!(!outcomes[0].applied, "{outcomes:?}");
+        assert!(outcomes[0].waits_for_operator, "{outcomes:?}");
+        assert!(
+            !application
+                .package_by_name("flow")
+                .unwrap()
+                .root
+                .join("mcp.json")
+                .exists(),
+            "the installed revision is untouched"
+        );
+        fs::remove_dir_all(&home_root).unwrap();
+    }
+
     /// A fetch another process is making is not made again: the tick that
     /// finds the claim held fetches nothing.
     #[test]

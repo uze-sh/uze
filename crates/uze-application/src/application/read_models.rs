@@ -1526,6 +1526,10 @@ pub struct AutoUpdateOutcome {
     pub plugin: String,
     /// `true` only when the new revision is installed and re-attached.
     pub applied: bool,
+    /// Whether only the operator can apply it: a trust it cannot grant on
+    /// their behalf, or managed state it refused to disturb. A failure is
+    /// not, and is tried again.
+    pub waits_for_operator: bool,
     /// Why the pending update was left for a person to apply — trust it
     /// cannot grant on their behalf, managed state it refused to disturb,
     /// or a failure. `None` when `applied`.

@@ -45,13 +45,13 @@ pub use uze_core::{
 /// A declared extension as the workspace hosts it: who it is, what it
 /// compiled to, and what was wrong with it when it did not.
 pub use application::{
-    Asker, CheckedExtension, Consented, DeclaredExtensionSummary, ExtensionCheckout,
-    ExtensionCondition, ExtensionConsent, ExtensionCost, ExtensionLoad, ExtensionOverlay,
-    ExtensionReport, ExtensionRun, ExtensionRunner, ExtensionStanding, ExtensionState,
-    FIXTURE_LIMIT, InstalledExtension, MEMORY_TARGET, MeasuredCost, MeasuredCosts, NotACheckout,
-    P95_TARGET, PreferenceRow, ProgramPin, RunOutcome, SourceData, Switched, WATCH_DEPTH,
-    WATCH_ENTRIES, bytes_text, confinement, consent_key, enabled_per_project, extension_stamp,
-    grant_meaning, paths_digest, secrets_kept_in,
+    Asker, AutoUpdateOutcome, CheckedExtension, Consented, DeclaredExtensionSummary,
+    ExtensionCheckout, ExtensionCondition, ExtensionConsent, ExtensionCost, ExtensionLoad,
+    ExtensionOverlay, ExtensionReport, ExtensionRun, ExtensionRunner, ExtensionStanding,
+    ExtensionState, FIXTURE_LIMIT, InstalledExtension, MEMORY_TARGET, MeasuredCost, MeasuredCosts,
+    NotACheckout, P95_TARGET, PreferenceRow, ProgramPin, RunOutcome, SourceData, Switched,
+    WATCH_DEPTH, WATCH_ENTRIES, bytes_text, confinement, consent_key, enabled_per_project,
+    extension_stamp, grant_meaning, paths_digest, secrets_kept_in,
 };
 pub use uze_contract::{CompiledExtension, Identity as ExtensionIdentity};
 pub use uze_core::capability::extension::Diagnostic as ExtensionDiagnostic;

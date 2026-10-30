@@ -91,14 +91,7 @@ pub(crate) fn watch(home: UzeHome) {
                 },
                 Vec::new(),
             );
-            let (applied, held): (Vec<_>, Vec<_>) =
-                outcomes.into_iter().partition(|outcome| outcome.applied);
-            let updated: Vec<String> = applied.into_iter().map(|outcome| outcome.plugin).collect();
-            let held: BTreeSet<String> = held.into_iter().map(|outcome| outcome.plugin).collect();
-            let waiting = held.difference(&waiting_told).cloned().collect();
-            // Forgetting what no longer waits is what lets one that waits
-            // again be told again.
-            waiting_told = held;
+            let (updated, waiting) = sort(outcomes, &mut waiting_told);
             if !updated.is_empty() {
                 super::extension_switch::plugins_changed();
             }
@@ -107,9 +100,69 @@ pub(crate) fn watch(home: UzeHome) {
     });
 }
 
+/// What one pass is worth saying: the plugins it updated, and the ones
+/// newly waiting for the operator. `told` is what already waits and was
+/// said; forgetting what no longer waits is what lets one that waits again
+/// be said again. A plain failure is neither: it is tried on a later pass.
+fn sort(
+    outcomes: Vec<uze_application::AutoUpdateOutcome>,
+    told: &mut BTreeSet<String>,
+) -> (Vec<String>, Vec<String>) {
+    let mut updated = Vec::new();
+    let mut waiting = BTreeSet::new();
+    for outcome in outcomes {
+        if outcome.applied {
+            updated.push(outcome.plugin);
+        } else if outcome.waits_for_operator {
+            waiting.insert(outcome.plugin);
+        }
+    }
+    let new = waiting.difference(told).cloned().collect();
+    *told = waiting;
+    (updated, new)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn outcome(plugin: &str, applied: bool, waits: bool) -> uze_application::AutoUpdateOutcome {
+        uze_application::AutoUpdateOutcome {
+            plugin: plugin.to_owned(),
+            applied,
+            waits_for_operator: waits,
+            detail: (!applied).then(|| "why".to_owned()),
+        }
+    }
+
+    #[test]
+    fn a_failure_is_not_said_to_wait_for_the_operator() {
+        let mut told = BTreeSet::new();
+        let (updated, waiting) = sort(
+            vec![
+                outcome("flow@mkt", true, false),
+                outcome("offline@mkt", false, false),
+                outcome("review@mkt", false, true),
+            ],
+            &mut told,
+        );
+        assert_eq!(updated, ["flow@mkt"]);
+        assert_eq!(waiting, ["review@mkt"]);
+    }
+
+    #[test]
+    fn a_waiting_update_is_said_once_and_again_after_it_stopped_waiting() {
+        let mut told = BTreeSet::new();
+        let waits = || vec![outcome("review@mkt", false, true)];
+        assert_eq!(sort(waits(), &mut told).1, ["review@mkt"]);
+        assert!(sort(waits(), &mut told).1.is_empty(), "said once");
+        assert!(sort(Vec::new(), &mut told).1.is_empty());
+        assert_eq!(
+            sort(waits(), &mut told).1,
+            ["review@mkt"],
+            "waiting again is said again"
+        );
+    }
 
     /// A mailbox of its own: the workspace's tests drain the process's
     /// one on every pump, and would take what this one publishes.
