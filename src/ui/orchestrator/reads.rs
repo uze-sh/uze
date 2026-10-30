@@ -1278,8 +1278,7 @@ pub(super) fn spawn_agent_placement(
         // there is, and a silent return would leave this client unable to
         // create another agent for the rest of the session.
         let placement = answered_or(
-            || {
-                match request {
+            || match request {
                 // A placement that cannot do what the space's kind asks
                 // answers with the reason and opens nothing: the operator
                 // chose the kind, and an agent landing anywhere else is
@@ -1295,17 +1294,14 @@ pub(super) fn spawn_agent_placement(
                         // No kind travels: where an agent starts is the
                         // project's to declare, and isolating one is an
                         // action on it afterwards.
-                        let placed = app.workspace().place_new_agent_with(
-                            &from, None, &harness, &occupied, &overrides,
-                        )?;
-                        if remember_selection
-                            && let Err(error) = app
-                                .workspace()
-                                .remember_override_selection(&harness, &overrides)
-                        {
-                            tracing::warn!(%error, "the override selection could not be remembered");
-                        }
-                        Ok(placed)
+                        app.workspace().place_new_agent_with(
+                            &from,
+                            None,
+                            &harness,
+                            &occupied,
+                            &overrides,
+                            remember_selection,
+                        )
                     })
                     .map_err(|error| error.to_string()),
                 PlacementRequest::Isolate { from, agent, carry } => tui_application(home)
@@ -1333,7 +1329,6 @@ pub(super) fn spawn_agent_placement(
                             .resume_task(&primary, &task, &harness, &occupied)
                     })
                     .map_err(|error| error.to_string()),
-            }
             },
             Err("placing the agent failed".to_owned()),
         );

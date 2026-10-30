@@ -32,7 +32,9 @@ impl Workspace<'_> {
     /// operator typed for this agent's harness, recorded as the agent's
     /// before its tab exists, so the launch that tab makes carries them,
     /// and remembered among the sets used lately. None is the launch the
-    /// workspace made before overrides existed.
+    /// workspace made before overrides existed. With `remember_selection`,
+    /// the operator saw this selection, and once the agent is placed it is
+    /// the one the next new agent on `harness` opens on.
     #[tracing::instrument(name = "workspace.place_new_agent_with", skip_all, fields(pane_cwd = %pane_cwd.display(), ?kind, harness, overrides = overrides.len()))]
     pub fn place_new_agent_with(
         &self,
@@ -41,8 +43,14 @@ impl Workspace<'_> {
         harness: &str,
         occupied: &[PathBuf],
         overrides: &[String],
+        remember_selection: bool,
     ) -> Result<AgentPlacement> {
         let placed = self.place(pane_cwd, kind, harness, occupied)?;
+        if remember_selection
+            && let Err(error) = self.remember_override_selection(harness, overrides)
+        {
+            tracing::warn!(%error, "the override selection could not be remembered");
+        }
         Ok(self.launching_with(placed, Some(overrides).filter(|words| !words.is_empty())))
     }
 

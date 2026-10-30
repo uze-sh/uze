@@ -3723,6 +3723,16 @@ mod overrides_tests {
     }
 
     fn placed(app: &UzeApplication, root: &Path, harness: &str, line: &str) -> AgentPlacement {
+        placed_remembering(app, root, harness, line, false)
+    }
+
+    fn placed_remembering(
+        app: &UzeApplication,
+        root: &Path,
+        harness: &str,
+        line: &str,
+        remember_selection: bool,
+    ) -> AgentPlacement {
         app.workspace()
             .place_new_agent_with(
                 root,
@@ -3730,8 +3740,29 @@ mod overrides_tests {
                 harness,
                 &[],
                 &words(line),
+                remember_selection,
             )
             .unwrap()
+    }
+
+    /// A placement remembers its selection only when asked to, as the
+    /// popup asks once the operator saw it; an empty one is remembered as
+    /// nothing checked.
+    #[test]
+    fn a_placement_remembers_its_selection_only_when_asked() {
+        let repository = uze_testkit::git::Repository::new("overrides-remembering");
+        let root = repository.root().canonical().unwrap();
+        let app = application("overrides-remembering-home");
+
+        placed_remembering(&app, &root, "one", "--model opus", true);
+        placed_remembering(&app, &root, "one", "DEBUG=1", false);
+        assert_eq!(
+            app.workspace().last_override_selection("one"),
+            [words("--model opus")]
+        );
+
+        placed_remembering(&app, &root, "one", "", true);
+        assert!(app.workspace().last_override_selection("one").is_empty());
     }
 
     #[test]
