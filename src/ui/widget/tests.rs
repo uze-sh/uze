@@ -1466,3 +1466,36 @@ fn a_toast_s_close_mark_turns_to_danger_under_the_pointer() {
         theme::color(Token::StateDanger)
     );
 }
+
+/// A form's key keeps its columns whatever its label is written in: a
+/// label of wide characters takes the label column in terminal columns,
+/// so its control starts where the parts it answers with say.
+#[test]
+fn a_form_key_measures_a_wide_label_in_columns() {
+    let layout = super::form::Layout {
+        label: 12,
+        control: 24,
+        field: 24,
+        room: 40,
+    };
+    for label in ["Minutes", "作業時間"] {
+        let key = super::form::key(
+            label,
+            RowState::Resting,
+            super::form::Control::Choice {
+                options: &["オフ", "on"],
+                chosen: "on",
+            },
+            layout,
+            None,
+        );
+        let drawn: usize = key.line.spans.iter().map(|span| span.width()).sum();
+        let (x, width, _) = *key.parts.last().expect("the last option");
+        assert_eq!(
+            drawn,
+            usize::from(x + width),
+            "{label}: the line ends where its last part does"
+        );
+        assert_eq!(key.parts[0].0, layout.label, "{label}");
+    }
+}

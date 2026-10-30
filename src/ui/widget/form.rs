@@ -222,7 +222,7 @@ pub(crate) fn label(said: &str, state: RowState, layout: Layout) -> Span<'static
     let room =
         usize::from(width).saturating_sub(Line::from(marker.as_str()).width().max(LABEL_INDENT));
     let shown = text::elide(said, room.saturating_sub(1));
-    let label = format!("{marker:>LABEL_INDENT$}{shown:<room$}");
+    let label = format!("{marker:>LABEL_INDENT$}{}", pad_end(&shown, room));
     let style = match state {
         RowState::Selected => theme::fg_bold(Token::TextBright),
         RowState::Hovered => theme::fg(Token::TextPrimary),
@@ -268,7 +268,7 @@ fn draw(control: Control<'_>, layout: Layout, lit: Option<Part>, focused: bool) 
 fn boxed(said: &str, tone: Token, width: usize) -> Span<'static> {
     let width = width.max(2);
     Span::styled(
-        format!(" {:<pad$}", text::elide(said, width - 2), pad = width - 1),
+        format!(" {}", pad_end(&text::elide(said, width - 2), width - 1)),
         theme::fg(tone).bg(theme::color(Token::SurfaceRecessed)),
     )
 }
@@ -280,7 +280,7 @@ fn combo(said: &str, tone: Token, width: usize) -> Vec<Span<'static>> {
     let room = width.saturating_sub(2 + Line::from(mark.as_str()).width() + 1);
     vec![
         Span::styled(
-            format!(" {:<room$} ", text::elide(said, room)),
+            format!(" {} ", pad_end(&text::elide(said, room), room)),
             theme::fg(tone).bg(theme::color(Token::SurfaceRecessed)),
         ),
         Span::styled(
@@ -323,7 +323,7 @@ fn stepper(shown: &str, tone: Token, editable: bool, lit: Option<Part>, width: u
     let plus_width = plus.width() as u16;
     let room = width.saturating_sub(usize::from(minus_width + plus_width));
     let middle = Span::styled(
-        format!("{:^room$}", text::elide(shown, room)),
+        centred(&text::elide(shown, room), room),
         theme::fg_bold(tone).bg(theme::color(Token::SurfaceRecessed)),
     );
     let middle_width = middle.width() as u16;
@@ -353,7 +353,7 @@ fn choice(options: &[&str], chosen: &str, lit: Option<Part>, width: usize) -> Dr
         } else {
             theme::fg(Token::TextSecondary).bg(theme::color(Token::SurfaceRaised))
         };
-        let cell = Span::styled(format!("{:^each$}", text::elide(word, each)), style);
+        let cell = Span::styled(centred(&text::elide(word, each), each), style);
         let cell_width = cell.width() as u16;
         parts.push((x, cell_width, Part::Option(option)));
         x += cell_width;
@@ -371,4 +371,20 @@ fn segment_width(options: &[&str], width: usize) -> usize {
         .max()
         .unwrap_or(0);
     (width / options.len().max(1)).max(widest)
+}
+
+/// `said` padded to `width` terminal columns, which `format!`'s width
+/// cannot do: it counts characters, and a wide one takes two columns.
+fn pad_end(said: &str, width: usize) -> String {
+    format!(
+        "{said}{}",
+        " ".repeat(width.saturating_sub(text::columns(said)))
+    )
+}
+
+/// `said` in the middle of `width` terminal columns, the odd column of air
+/// after it.
+fn centred(said: &str, width: usize) -> String {
+    let air = width.saturating_sub(text::columns(said));
+    format!("{}{said}{}", " ".repeat(air / 2), " ".repeat(air - air / 2))
 }
