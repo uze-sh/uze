@@ -696,12 +696,7 @@ mod tests {
         std::fs::create_dir_all(project.join("node_modules/.bin")).unwrap();
         std::fs::create_dir_all(&bin).unwrap();
         let planted = project.join("node_modules/.bin/uze-planted-gh");
-        std::fs::write(&planted, "#!/bin/sh\n").unwrap();
-        std::fs::set_permissions(
-            &planted,
-            std::os::unix::fs::PermissionsExt::from_mode(0o755),
-        )
-        .unwrap();
+        uze_testkit::process::install_executable(&planted, b"#!/bin/sh\n");
         std::os::unix::fs::symlink(&planted, bin.join("uze-planted-gh")).unwrap();
         let search = vec![
             project.join("node_modules/.bin"),

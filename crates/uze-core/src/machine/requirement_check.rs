@@ -551,8 +551,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_checked_executable_is_asked_once_and_again_when_it_changes() {
-        use std::os::unix::fs::PermissionsExt;
-
         let scratch = uze_testkit::temp::TempDir::new("requirement-check");
         let root = scratch.path();
         let bin = root.join("bin");
@@ -560,15 +558,14 @@ mod tests {
         let tool = bin.join("probe-tool");
         let counter = root.join("asked");
         let write_tool = |version: &str| {
-            fs::write(
+            uze_testkit::process::install_executable(
                 &tool,
                 format!(
                     "#!/bin/sh\necho x >> '{}'\necho 'probe-tool {version}'\n",
                     counter.display()
-                ),
-            )
-            .unwrap();
-            fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).unwrap();
+                )
+                .as_bytes(),
+            );
         };
         write_tool("1.0.0");
         let cache = root.join("requirements.json");
@@ -617,20 +614,16 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_relative_search_entry_is_never_probed() {
-        use std::os::unix::fs::PermissionsExt;
-
         let scratch = uze_testkit::temp::TempDir::new("requirement-relative");
         let root = scratch.path();
         let bin = root.join("bin");
         fs::create_dir_all(&bin).unwrap();
         let ran = root.join("ran");
         let tool = bin.join("relative-probe-tool");
-        fs::write(
+        uze_testkit::process::install_executable(
             &tool,
-            format!("#!/bin/sh\ntouch '{}'\necho 'tool 1.0'\n", ran.display()),
-        )
-        .unwrap();
-        fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).unwrap();
+            format!("#!/bin/sh\ntouch '{}'\necho 'tool 1.0'\n", ran.display()).as_bytes(),
+        );
         let here = std::env::current_dir().unwrap();
         let mut relative = PathBuf::new();
         for _ in here.components().skip(1) {
