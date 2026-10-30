@@ -409,6 +409,61 @@ fn the_panel_opens_on_what_the_agent_carries_checked() {
 /// Two agents in one project ask the same harness from the same directory:
 /// an answer read for another agent, or for the new agent's popup, is not
 /// this panel's, however it matches the rest of the question.
+/// What the operator added before the agent's set was read stays, after
+/// it: the set is taken in under it, not over it.
+#[test]
+fn entries_added_before_the_set_is_read_are_kept() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-restart-early"));
+    let mut model = agents_in_the_root_session();
+    model.session.as_mut().unwrap().select_tab(TabId(2));
+    let mut driven = driven(model, &home);
+    driven.attach.identities = identities();
+    open_the_panel_unread(&mut driven);
+    type_text(&mut driven, "DEBUG=1");
+    enter(&mut driven);
+
+    let agent = restarted(&driven);
+    answer_the_panel(&mut driven, Some(agent), &["--verbose"]);
+
+    assert_eq!(panel(&driven).launch_words(), ["--verbose", "DEBUG=1"]);
+    assert_eq!(panel(&driven).enter_word(), "restart");
+}
+
+/// An entry the agent carries stays in the list once unchecked, there to
+/// check again, whether or not the history still holds it.
+#[test]
+fn an_unchecked_carried_entry_stays_listed() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-restart-uncheck"));
+    let mut model = agents_in_the_root_session();
+    model.session.as_mut().unwrap().select_tab(TabId(2));
+    let mut driven = driven(model, &home);
+    driven.attach.identities = identities();
+    open_the_panel_unread(&mut driven);
+    let agent = restarted(&driven);
+    answer_the_panel(&mut driven, Some(agent), &["--verbose"]);
+
+    press(
+        &mut driven,
+        uze_keys::Action::SelectNext,
+        uze_keys::Scope::LaunchOverrides,
+    );
+    press(
+        &mut driven,
+        uze_keys::Action::ToggleChoice,
+        uze_keys::Scope::LaunchOverrides,
+    );
+
+    let step = panel(&driven);
+    assert!(step.launch_words().is_empty(), "left out");
+    let listed: Vec<(Vec<String>, bool)> = step
+        .choices()
+        .iter()
+        .map(|choice| (choice.words.to_vec(), choice.checked))
+        .collect();
+    assert_eq!(listed, [(vec!["--verbose".to_owned()], false)]);
+    assert_eq!(step.enter_word(), "restart");
+}
+
 #[test]
 fn an_answer_read_for_another_asker_is_not_the_panels() {
     for asker in [Some("another-agent".to_owned()), None] {

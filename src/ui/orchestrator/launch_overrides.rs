@@ -334,8 +334,10 @@ impl DirectoryStep {
     }
 
     /// Takes the overrides `words` recorded for the restarted agent on
-    /// `harness` as that harness's entries, checked, the first time they
-    /// are read: the panel opens on what the agent carries there.
+    /// `harness` as that harness's entries, checked and listed, the first
+    /// time they are read: the panel opens on what the agent carries there,
+    /// ahead of whatever was added before the read answered, and an entry
+    /// unchecked stays in the list to check again.
     pub(super) fn seed_recorded(&mut self, harness: &str, words: &[String]) {
         let catalog = self
             .harnesses
@@ -355,7 +357,12 @@ impl DirectoryStep {
             .map(|checked| checked.words)
             .collect();
         restart.recorded.insert(harness.to_owned(), entries.clone());
-        self.drafts.insert(harness.to_owned(), entries);
+        for map in [&mut self.drafts, &mut self.listed] {
+            let added = map.remove(harness).unwrap_or_default();
+            let mut merged = entries.clone();
+            merged.extend(added.into_iter().filter(|entry| !entries.contains(entry)));
+            map.insert(harness.to_owned(), merged);
+        }
     }
 
     /// What the harness in the field takes beyond what UZE composes.
