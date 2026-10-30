@@ -1971,6 +1971,27 @@ fn official_embedded_plugin_is_protected_from_remove_but_allows_update() {
     fs::remove_dir_all(root).unwrap();
 }
 
+/// The official marketplace's other plugins are not bundled: uze never
+/// puts them back, so they are removed like any other, and stay removed.
+#[test]
+fn an_official_plugin_uze_does_not_bundle_is_removed_and_stays_removed() {
+    let root = uze_testkit::temp::scratch("official-unbundled-remove");
+    let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
+    app.marketplace()
+        .install_plugin("focus@uze-official", &uze_core::trust::AlwaysTrust)
+        .unwrap();
+
+    app.plugins().remove("focus").unwrap();
+    assert!(app.package_by_name("focus").is_err(), "focus is gone");
+
+    app.ensure_default_plugins().unwrap();
+    assert!(
+        app.package_by_name("focus").is_err(),
+        "seeding the defaults does not bring it back"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn local_spoof_named_uze_is_not_protected() {
     let root = uze_testkit::temp::scratch("spoof-not-protected");
