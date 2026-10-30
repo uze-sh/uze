@@ -281,9 +281,15 @@ mod tests {
         command
             .args([
                 "-c",
-                // The orphan's parent says its pid and exits, so nothing
-                // but the mark ties it to the pane.
-                "sleep 30 & echo $!; setsid sh -c 'sleep 30 & echo $!'; wait",
+                // The orphan's parent starts it and exits, so nothing but
+                // the mark ties it to the pane. The orphan says its own
+                // pid, from a shell that execs nothing after (the `:` keeps
+                // it from exec'ing its last command): a pid said by its
+                // parent (`$!`) can reach the census while the child is
+                // still in `exec`, when its environment reads empty and
+                // the mark with it.
+                "sleep 30 & echo $!; \
+                 setsid sh -c 'sh -c \"echo \\$\\$; sleep 30; :\" &'; wait",
             ])
             .env(mark.variable(), mark.value())
             .stdout(std::process::Stdio::piped());
