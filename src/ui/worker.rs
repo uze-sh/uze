@@ -972,18 +972,13 @@ pub(crate) fn drain_worker_results(
             // Carried into the same `refreshed` path so the rows and the
             // badge come from one answer rather than two.
             WorkerResult::AutoUpdated { applied, data } => match data {
-                Ok(data) => {
-                    let updated = applied.len();
-                    model.refreshed(RefreshData {
-                        auto_updated: applied,
-                        ..data
-                    });
-                    model.status = Status::Success(format!(
-                        "Updated {updated} plugin{}",
-                        if updated == 1 { "" } else { "s" }
-                    ));
-                    model.status_expires_at = Some(Instant::now() + Duration::from_secs(5));
-                }
+                // Announced by the workspace, which is in front whether or
+                // not this modal is (`plugin_updates`); here it is the
+                // badge on the plugin's row.
+                Ok(data) => model.refreshed(RefreshData {
+                    auto_updated: applied,
+                    ..data
+                }),
                 // The update happened; only re-reading the machine failed.
                 // Saying so is better than a silent screen that is now one
                 // refresh behind what is on disk.
@@ -999,19 +994,9 @@ pub(crate) fn drain_worker_results(
                     .as_ref()
                     .map(|doctor| doctor.maintenance.repaired_count())
                     .unwrap_or_default();
-                let updated = data.auto_updated.len();
                 model.refreshed(data);
                 model.maintenance_in_flight = false;
-                // The badge only exists on the Plugins screen, and startup
-                // lands on Overview — this is how an operator who never
-                // opens Plugins still learns something changed under them.
-                if updated > 0 {
-                    model.status = Status::Success(format!(
-                        "Updated {updated} plugin{}",
-                        if updated == 1 { "" } else { "s" }
-                    ));
-                    model.status_expires_at = Some(Instant::now() + Duration::from_secs(5));
-                } else if repaired > 0 {
+                if repaired > 0 {
                     model.status = Status::Success(format!(
                         "Synchronized {repaired} attachment{}",
                         if repaired == 1 { "" } else { "s" }
@@ -1901,24 +1886,23 @@ mod tests {
         assert_eq!(model.status, Status::Error("store unreadable".to_owned()));
     }
 
-    /// An auto-update is announced even though its badge lives on a screen
-    /// the operator may never open, and it outranks a repair in the one
-    /// status line there is.
+    /// An auto-update is the workspace's to announce, in a toast in front
+    /// whether or not this modal is open; the modal's status line says
+    /// what it alone knows, and a plugin updated is its row's badge.
     #[test]
-    fn updated_plugins_are_announced_ahead_of_repaired_attachments() {
-        let data = RefreshData {
-            auto_updated: vec!["a@m".to_owned(), "b@m".to_owned()],
-            ..refreshed_with_repair()
-        };
-        let model = drained(vec![WorkerResult::Refreshed(Ok(data))], TuiModel::default());
-
-        assert_eq!(
-            model.status,
-            Status::Success("Updated 2 plugins".to_owned())
+    fn updated_plugins_are_not_announced_twice() {
+        let model = drained(
+            vec![WorkerResult::AutoUpdated {
+                applied: vec!["a@m".to_owned()],
+                data: Ok(RefreshData::default()),
+            }],
+            TuiModel::default(),
         );
+
         assert!(
-            model.status_expires_at.is_some(),
-            "the notice goes away on its own"
+            !matches!(&model.status, Status::Success(text) if text.contains("Updated")),
+            "{:?}",
+            model.status
         );
     }
 
