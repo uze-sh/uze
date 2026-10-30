@@ -144,6 +144,7 @@ audits proved. Update it at the end of every audit (`SKILL.md`, step 7).
 | 2026-10-30 | ENV-1, ENV-2 | `audit-secret-and-release-hygiene` |
 | 2026-10-30 | open | GHSA-97f7-95q3-wcjw |
 | 2026-10-30 | open (TERM-1 partially closed) | GHSA-w6jq-59jg-h4pg |
+| 2026-10-30 | follow-ups, not findings | `harden-audit-followups`, `refactor-audit-followups` |
 
 ## Defenses that held (2026-10-30)
 
