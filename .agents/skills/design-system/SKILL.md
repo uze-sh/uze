@@ -548,7 +548,10 @@ operator rather than assume.
   beside them hanging under their own first row. A list of named things
   (grants, programs) is a table under a section label, names in
   `TextCode` in a column as wide as the longest, what each means beside
-  it; a preference's value stands against the right edge. What the foot
+  it. Preferences come first in the body, as the one part that is set
+  rather than read, drawn as the form (**Forms are components**), and
+  the body scrolls to keep the row the keys are on and its detail in
+  sight. What the foot
   already says (enabled everywhere) is not said again in the body, and
   the foot's note is left empty when the headline says it all.
 - A path beside a label stays on one line, cut at its head.

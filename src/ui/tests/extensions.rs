@@ -805,22 +805,23 @@ fn preferences_are_listed_and_set_from_the_keyboard() {
     );
 }
 
-/// The values stand in one column against the drawer's right edge, and
-/// under them the row the keys are on says its range and its default.
+/// The values stand in one column from the label column, as the form's
+/// keys do, and under them the row the keys are on says its range and its
+/// default.
 #[test]
 fn the_drawers_preferences_align_their_values_and_say_the_range_and_default() {
     let model = focus_preferences();
     let text = screen_of(&model);
-    let dialog: Vec<&str> = text.lines().collect();
+    let rows: Vec<&str> = text.lines().collect();
     assert!(
         text.contains("A number from 1 to 90 · default 25"),
         "{text}"
     );
-    let minutes = dialog
+    let minutes = rows
         .iter()
         .find(|row| row.contains("Minutes in a session"))
         .expect("the minutes row");
-    let goal = dialog
+    let goal = rows
         .iter()
         .find(|row| row.contains("Sessions a day"))
         .expect("the goal row");
