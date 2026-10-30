@@ -41,10 +41,12 @@ AUDIT=<scratchpad>/audit; mkdir -p "$AUDIT/bin"
 cargo build --locked --bin uze && cp target/debug/uze "$AUDIT/bin/uze"
 cp .agents/skills/security-audit/scripts/sandbox "$AUDIT/bin/sandbox"
 cp .agents/skills/security-audit/references/brief.md "$AUDIT/BRIEF.md"   # fill in AUDIT
-SRC=$PWD "$AUDIT/bin/sandbox" smoke -- bash -c 'ls -A /home/*; uze --version'   # your home shows only .cargo/.rustup
+SRC=$PWD "$AUDIT/bin/sandbox" smoke -- bash -c 'ls -A /home/* /mnt /run; uze --version'
+# your home shows only .cargo/.rustup; /mnt and /run are empty
 ```
 
-The smoke test must show the real home hidden. One box per auditor
+The smoke test must show the real home, the other mounts and the
+privileged sockets hidden. One box per auditor
 (`$AUDIT/boxes/<box>`), so PoCs never interfere.
 
 ## Step 3 - the red team

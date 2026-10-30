@@ -2,7 +2,10 @@
 # sandbox <box> [--net] -- <command...>
 #
 # Runs a command under bubblewrap with the operator's real home hidden, so an
-# exploit against uze can only reach a disposable attacker home. Inside:
+# exploit against uze can only reach a disposable attacker home. Every other
+# place that holds the operator's data or a privileged socket is masked too:
+# /mnt and /media (on WSL, the Windows profile under /mnt/c), /srv, and /run
+# (the Docker socket, root in all but name, and D-Bus). Inside:
 #   HOME=/home/attacker            persisted at $AUDIT/boxes/<box>/home
 #   /home/attacker/work (cwd)      persisted at $AUDIT/boxes/<box>/work
 #   /home/src                      the checkout, read-only
@@ -30,7 +33,7 @@ for secret in "$HOME/.cargo/credentials" "$HOME/.cargo/credentials.toml"; do
 done
 
 exec bwrap --ro-bind / / --dev /dev --proc /proc \
-  --tmpfs /home "${toolchain[@]}" --tmpfs /root --tmpfs /tmp --tmpfs /run/user \
+  --tmpfs /home "${toolchain[@]}" --tmpfs /root --tmpfs /tmp --tmpfs /run --tmpfs /mnt --tmpfs /media --tmpfs /srv \
   --bind "$box/home" /home/attacker --bind "$box/work" /home/attacker/work --bind "$box/tmp" /tmp \
   --ro-bind "$SRC" /home/src --ro-bind "$AUDIT/bin" /home/uzebin \
   --unshare-pid --unshare-ipc "${network[@]}" --die-with-parent --new-session \
