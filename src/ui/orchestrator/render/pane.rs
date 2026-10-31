@@ -1,7 +1,7 @@
 //! A pane's cells, drawn from its snapshot in the active palette.
 
 use super::*;
-use crate::ui::orchestrator::pane_link::PaneLink;
+use crate::ui::orchestrator::pane_link::{self, PaneLink};
 
 pub(in crate::ui::orchestrator) fn render_pane(
     frame: &mut ratatui::Frame<'_>,
@@ -74,13 +74,10 @@ fn still_written(snapshot: &uze_terminal::PaneSnapshot, link: &PaneLink) -> bool
     let from = usize::from(written.row) * usize::from(snapshot.columns);
     snapshot
         .cells
-        .get(from + usize::from(written.start)..from + usize::from(written.end))
-        .is_some_and(|cells| {
-            cells
-                .iter()
-                .map(|cell| cell.character)
-                .filter(|character| *character != '\0')
-                .eq(written.text.chars())
+        .get(from..from + usize::from(snapshot.columns))
+        .is_some_and(|row| {
+            pane_link::text_of(row, usize::from(written.start), usize::from(written.end))
+                == written.text
         })
 }
 

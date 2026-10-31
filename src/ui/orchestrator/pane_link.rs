@@ -13,10 +13,8 @@ use ratatui::layout::Rect;
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, Instant};
+use unicode_width::UnicodeWidthChar as _;
 use uze_terminal::{PaneId, RenderCell};
-
-/// What stands in a row for the cell a wide character spills into.
-const SPILL: char = '\0';
 
 /// How long an answer about a path holds: long enough that a pointer
 /// moving along it asks once, short enough that a file a program just
@@ -267,17 +265,18 @@ pub(super) fn written_at(
 ) -> Option<Written> {
     let width = usize::from(columns);
     let from = usize::from(row) * width;
-    let line = cells.get(from..from + width)?;
+    let line = glyphs(cells.get(from..from + width)?);
     let at = usize::from(column);
-    if !line.get(at).is_some_and(|cell| in_path(cell.character)) {
+    let in_run = |index: usize| line[index].is_none_or(in_path);
+    if !line.get(at).is_some_and(|glyph| glyph.is_some_and(in_path)) {
         return None;
     }
     let mut start = at;
-    while start > 0 && in_path(line[start - 1].character) {
+    while start > 0 && in_run(start - 1) {
         start -= 1;
     }
     let mut end = at + 1;
-    while end < line.len() && in_path(line[end].character) {
+    while end < line.len() && in_run(end) {
         end += 1;
     }
     // A run against the row's edge may go on in the row beside it, and a
@@ -297,21 +296,17 @@ pub(super) fn written_at(
     }
     // Punctuation a sentence ends with, or a label's colon, is the
     // sentence's: `see src/main.rs.` names `src/main.rs`.
-    while end > start && matches!(line[end - 1].character, '.' | ':' | SPILL) {
+    while end > start && matches!(line[end - 1], Some('.' | ':')) {
         end -= 1;
     }
-    while start < end && line[start].character == ':' {
+    while start < end && line[start] == Some(':') {
         start += 1;
     }
     end = start + cells_holding(&line[start..end], located_length(&line[start..end]));
     if !(start..end).contains(&at) {
         return None;
     }
-    let text: String = line[start..end]
-        .iter()
-        .map(|cell| cell.character)
-        .filter(|character| *character != SPILL)
-        .collect();
+    let text: String = line[start..end].iter().flatten().collect();
     if !reads_as_path(&text) {
         return None;
     }
@@ -323,15 +318,37 @@ pub(super) fn written_at(
     })
 }
 
+/// What `cells` of one row read, `start..end`, as [`Written::text`] is
+/// read: what the pointer found there is still there while they match.
+pub(super) fn text_of(cells: &[RenderCell], start: usize, end: usize) -> String {
+    glyphs(cells)
+        .get(start..end)
+        .unwrap_or_default()
+        .iter()
+        .flatten()
+        .collect()
+}
+
+/// The characters of one row, with `None` for the cell a wide character
+/// spills into: the terminal fills it with a space, which is the
+/// character's second half here, not a space a program wrote.
+fn glyphs(cells: &[RenderCell]) -> Vec<Option<char>> {
+    let mut wide_before = false;
+    cells
+        .iter()
+        .map(|cell| {
+            let spill = wide_before && cell.character == ' ';
+            wide_before = !spill && cell.character.width() == Some(2);
+            (!spill).then_some(cell.character)
+        })
+        .collect()
+}
+
 /// How many characters of a run its path and location take: a search
 /// prints `src/main.rs:12:fn main`, whose match after the line is not the
 /// path's, though nothing but the colon parts them.
-fn located_length(run: &[RenderCell]) -> usize {
-    let text: Vec<char> = run
-        .iter()
-        .map(|cell| cell.character)
-        .filter(|character| *character != SPILL)
-        .collect();
+fn located_length(run: &[Option<char>]) -> usize {
+    let text: Vec<char> = run.iter().flatten().copied().collect();
     let digits_from = |from: usize| {
         from + text[from.min(text.len())..]
             .iter()
@@ -360,11 +377,11 @@ fn located_length(run: &[RenderCell]) -> usize {
 
 /// The cells of `run` that hold its first `characters` characters, a
 /// wide character's spill included.
-fn cells_holding(run: &[RenderCell], characters: usize) -> usize {
+fn cells_holding(run: &[Option<char>], characters: usize) -> usize {
     let mut seen = 0;
     run.iter()
-        .take_while(|cell| {
-            if cell.character != SPILL {
+        .take_while(|glyph| {
+            if glyph.is_some() {
                 seen += 1;
             }
             seen <= characters
@@ -400,7 +417,7 @@ fn in_path(character: char) -> bool {
     character.is_alphanumeric()
         || matches!(
             character,
-            '/' | '\\' | '.' | '-' | '_' | '~' | ':' | '@' | '+' | '%' | SPILL
+            '/' | '\\' | '.' | '-' | '_' | '~' | ':' | '@' | '+' | '%'
         )
 }
 
@@ -541,12 +558,8 @@ mod tests {
 
     #[test]
     fn the_spill_of_a_wide_character_is_part_of_the_run_not_of_the_text() {
-        let mut cells = row("docs/日?.md", 80);
-        cells[6].character = SPILL;
-        cells[7].character = '.';
-        cells[8].character = 'm';
-        cells[9].character = 'd';
-        cells[10].character = ' ';
+        // As the terminal leaves it: the second cell of 日 holds a space.
+        let cells = row("docs/日 .md is new", 80);
         assert_eq!(
             written_at(&cells, 80, 0, 0)
                 .map(|written| written.text)
