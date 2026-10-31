@@ -2079,3 +2079,24 @@ pub(super) fn spawn_extension_costs(
         );
     })
 }
+
+/// Whether a path written in a pane is there, tagged with the path: the
+/// pointer may have moved on by the time it lands.
+pub(super) struct PathCheck {
+    pub(super) target: PathBuf,
+    pub(super) on_disk: pane_link::OnDisk,
+}
+
+/// Asks the disk whether `target` is there, off the frame's thread: a
+/// path can name a slow or a network drive, and the pointer moving over
+/// it must never wait on one.
+pub(super) fn spawn_path_check(target: PathBuf, sender: mpsc::Sender<PathCheck>) {
+    thread::spawn(move || {
+        let on_disk = match std::fs::metadata(&target) {
+            Ok(metadata) if metadata.is_dir() => pane_link::OnDisk::Directory,
+            Ok(_) => pane_link::OnDisk::File,
+            Err(_) => pane_link::OnDisk::Missing,
+        };
+        let _ = sender.send(PathCheck { target, on_disk });
+    });
+}

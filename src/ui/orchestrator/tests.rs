@@ -56,6 +56,8 @@ mod overrides;
 #[cfg(test)]
 mod overview;
 #[cfg(test)]
+mod pane_links;
+#[cfg(test)]
 mod panes;
 #[cfg(all(test, feature = "bench"))]
 mod perf;
