@@ -171,6 +171,14 @@ cannot be closed. The security page says that a variable saved with
   would rewrite the DACLs of directories the operator never granted, so
   it is not done.
 
+## Open Questions
+
+Tasks 5.1 to 5.7 hold what the polish review left open: a grant cut
+short, a proxy on the loopback or LAN, batch files, `cmd.exe` inside a
+container, the profile's delete racing the job's end, kernel time and
+Git's proof on Windows Server. None changes D1 to D8. Each is settled
+before this change is archived.
+
 ## Candidate ADRs
 
 - Windows confinement by a per-run AppContainer with persistent
