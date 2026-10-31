@@ -707,7 +707,7 @@ fn a_session_start_hands_the_handler_its_source_and_no_tool() {
         let hook = group_at(HookEvent::SessionStart, HookEffect::Observe, &["probe"], 10);
         let workspace = root.join("workspace");
         fs::create_dir_all(&workspace).unwrap();
-        let workspace = workspace.canonicalize().unwrap();
+        let workspace = uze_platform::path::canonical(&workspace).unwrap();
         let answer = run(Run {
             target,
             wrapper_root: &root,
@@ -744,7 +744,7 @@ fn a_session_start_hands_the_handler_its_harness_and_its_package_root() {
         let hook = group_at(HookEvent::SessionStart, HookEffect::Observe, &["probe"], 10);
         let workspace = root.join("workspace");
         fs::create_dir_all(&workspace).unwrap();
-        let workspace = workspace.canonicalize().unwrap();
+        let workspace = uze_platform::path::canonical(&workspace).unwrap();
         let answer = run(Run {
             target,
             wrapper_root: &root,
@@ -814,7 +814,7 @@ fn recorded_answer(target: HookTarget, index: usize, fixture: &Fixture) -> serde
     };
     let workspace = root.join("workspace");
     fs::create_dir_all(&workspace).unwrap();
-    let workspace = workspace.canonicalize().unwrap();
+    let workspace = uze_platform::path::canonical(&workspace).unwrap();
     let answer = run(Run {
         target,
         wrapper_root: &root,
@@ -1303,7 +1303,7 @@ fn a_shell_call_is_told_where_it_runs_beside_the_session_s_workspace() {
         );
         let workspace = root.join("workspace");
         fs::create_dir_all(&workspace).unwrap();
-        let workspace = workspace.canonicalize().unwrap();
+        let workspace = uze_platform::path::canonical(&workspace).unwrap();
         let shown = workspace.display().to_string();
         let payload_workspace = if target == crate::antigravity::HOOKS {
             shown.clone()

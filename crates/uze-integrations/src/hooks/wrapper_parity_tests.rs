@@ -114,7 +114,7 @@ fn answered(target: HookTarget, index: usize, fixture: &Fixture) -> serde_json::
     arguments.extend(wrapper_arguments(&hook, &package_root, &hook.handlers));
     let workspace = root.join("workspace");
     std::fs::create_dir_all(&workspace).unwrap();
-    let workspace = workspace.canonicalize().unwrap();
+    let workspace = uze_platform::path::canonical(&workspace).unwrap();
     let mut command = Command::new(program);
     in_workspace(&mut command, target, &workspace);
     let mut child = command
