@@ -20,12 +20,12 @@ description "Tries one reach at a time"
 wants "exec:cmd"
 surface "board" slot="view" view="board.uze" source="read"
 source "read" {
-    run "cmd" "/d" "/c" "type" "{path}" timeout="20s"
+    run "cmd" "/d" "/c" "type" "{path}" timeout="10s"
     output "lines"
     fields "line"
 }
 source "write" {
-    run "cmd" "/d" "/c" "echo" "planted" ">" "{path}" timeout="20s"
+    run "cmd" "/d" "/c" "echo" "planted" ">" "{path}" timeout="10s"
     output "lines"
     fields "line"
 }
