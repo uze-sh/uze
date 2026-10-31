@@ -50,7 +50,10 @@ impl Attach<'_> {
             MouseEventKind::Drag(MouseButton::Left) => self.drag(mouse, viewport),
             MouseEventKind::Up(MouseButton::Left) => self.release(mouse, viewport),
             MouseEventKind::Down(MouseButton::Right) => self.open_context_menu(mouse),
-            MouseEventKind::Moved => self.hover(mouse),
+            MouseEventKind::Moved => {
+                self.point_at_pane(mouse, viewport.layout.pane);
+                self.hover(mouse)
+            }
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => self.wheel(mouse, viewport),
             MouseEventKind::ScrollLeft | MouseEventKind::ScrollRight
                 if self.model.open_slot.is_some() =>
@@ -854,6 +857,9 @@ impl Attach<'_> {
             return;
         }
         self.model.selection = None;
+        if self.follow_pane_link(mouse, pane) {
+            return;
+        }
         let press = MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
             ..mouse

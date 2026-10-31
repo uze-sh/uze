@@ -771,6 +771,17 @@ impl Driven<'_> {
     }
 
     fn mouse_answering(&mut self, column: u16, row: u16, kind: MouseEventKind) -> Flow {
+        self.mouse_holding(column, row, kind, crossterm::event::KeyModifiers::empty())
+    }
+
+    /// A mouse event with `modifiers` held, as a terminal reports one.
+    pub(super) fn mouse_holding(
+        &mut self,
+        column: u16,
+        row: u16,
+        kind: MouseEventKind,
+        modifiers: crossterm::event::KeyModifiers,
+    ) -> Flow {
         let area = self.area;
         let layout = compute_layout(
             area,
@@ -783,7 +794,10 @@ impl Driven<'_> {
             rows: layout.pane.height,
             layout,
         };
-        let event = crossterm::event::Event::Mouse(mouse_at(column, row, kind));
+        let event = crossterm::event::Event::Mouse(crossterm::event::MouseEvent {
+            modifiers,
+            ..mouse_at(column, row, kind)
+        });
         self.attach.handle(event, &viewport)
     }
 

@@ -1,6 +1,7 @@
 //! A pane's cells, drawn from its snapshot in the active palette.
 
 use super::*;
+use crate::ui::orchestrator::pane_link::PaneLink;
 
 pub(in crate::ui::orchestrator) fn render_pane(
     frame: &mut ratatui::Frame<'_>,
@@ -18,6 +19,11 @@ pub(in crate::ui::orchestrator) fn render_pane(
     let width = area.width.min(snapshot.columns);
     let height = area.height.min(snapshot.rows);
     let palette = theme::Palette::active();
+    let link = model
+        .pane_links
+        .hovered
+        .as_ref()
+        .filter(|link| link.pane == snapshot.pane && still_written(snapshot, link));
     let buffer = frame.buffer_mut();
     let mut encoded = [0u8; 4];
     for row in 0..height {
@@ -36,6 +42,11 @@ pub(in crate::ui::orchestrator) fn render_pane(
                         style.add_modifier(Modifier::REVERSED)
                     };
                 }
+                // A path ctrl+click opens is a link: underlined under the
+                // pointer, in whatever colour its program gave it.
+                if link.is_some_and(|link| link.covers(snapshot.pane, row, column)) {
+                    style = style.add_modifier(Modifier::UNDERLINED);
+                }
                 buffer[(area.x + column, area.y + row)]
                     .set_symbol(cell.character.encode_utf8(&mut encoded))
                     .set_style(style);
@@ -53,6 +64,24 @@ pub(in crate::ui::orchestrator) fn render_pane(
                     .fg(theme::color(Token::SurfaceBackground)),
             );
     }
+}
+
+/// Whether the cells under `link` still read what was found there: a
+/// program redrawing its screen moves the text from under the pointer, and
+/// an underline left behind would mark whatever took its place.
+fn still_written(snapshot: &uze_terminal::PaneSnapshot, link: &PaneLink) -> bool {
+    let written = &link.written;
+    let from = usize::from(written.row) * usize::from(snapshot.columns);
+    snapshot
+        .cells
+        .get(from + usize::from(written.start)..from + usize::from(written.end))
+        .is_some_and(|cells| {
+            cells
+                .iter()
+                .map(|cell| cell.character)
+                .filter(|character| *character != '\0')
+                .eq(written.text.chars())
+        })
 }
 
 pub(in crate::ui::orchestrator) fn cell_style(

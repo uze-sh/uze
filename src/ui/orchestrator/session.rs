@@ -39,6 +39,7 @@ mod manage;
 mod mouse;
 mod overlays;
 mod pane_input;
+mod pane_links;
 mod recent;
 mod surface;
 

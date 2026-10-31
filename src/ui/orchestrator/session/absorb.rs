@@ -783,6 +783,7 @@ impl Attach<'_> {
 
     pub(super) fn absorb_surface_answers(&mut self) {
         self.absorb_space_overview_answers();
+        self.absorb_path_checks();
         while let Ok(resolution) = self.channels.git.receiver.try_recv() {
             self.model.dirty |= self.model.absorb_git_read(resolution);
         }

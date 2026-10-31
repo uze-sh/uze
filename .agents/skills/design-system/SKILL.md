@@ -106,6 +106,12 @@ on "cancel" must not save first.
 - The one exception: a line of text that opens something (a notice's
   "see what's new") is a link, in a secondary tone at rest and, under the
   pointer, bright and underlined.
+- A path a pane's program wrote is a link the terminal's way, whatever
+  harness wrote it: ctrl+click opens it in the code surface, and under the
+  pointer with ctrl held it is underlined in the colour its program gave
+  it, never recoloured. Only a path that is there and inside a checkout
+  on screen is one; a plain click stays the program's
+  (`pane_link.rs`).
 - Hover keeps the word's weight. A word that is bold at rest stays bold; a
   word that is not never turns bold under the pointer or while pressed.
   Manage's version and health are the reference.

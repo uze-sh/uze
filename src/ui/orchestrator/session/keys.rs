@@ -144,6 +144,7 @@ impl Attach<'_> {
             return Flow::Continue;
         }
         self.drop_selection();
+        self.model.dirty |= self.model.pane_links.leave();
         // Two surfaces are notices rather than questions — read, then
         // gone — so any keystroke dismisses one. That is a property of a
         // surface with nothing to answer, not a binding, and so not the

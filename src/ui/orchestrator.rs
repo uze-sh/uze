@@ -77,6 +77,7 @@ mod interrupt;
 mod lanes;
 mod notices;
 mod overview_question;
+mod pane_link;
 mod proposal;
 mod space_issues;
 mod space_overview;
@@ -1632,6 +1633,9 @@ struct Channels {
     declaration_saves: Answers<DeclarationSaveResolution>,
     /// Removing a free worktree the operator answered for.
     worktree_removals: Answers<RemovalResolution>,
+    /// Whether a path written in a pane is there, asked while the pointer
+    /// rests on it with ctrl held.
+    path_checks: Answers<PathCheck>,
 }
 
 /// The half of [`WorkspaceModel`] that outlives one attach. Everything
@@ -2172,6 +2176,9 @@ struct WorkspaceModel {
     /// open surface drew — and, once released, the selection still drawn
     /// until the next press or key.
     selection: Option<Selection>,
+    /// Paths written in the panes, underlined under the pointer with ctrl
+    /// held and opened in the code surface by ctrl+click.
+    pane_links: pane_link::PaneLinks,
     /// What a release selected, waiting for the frame loop to hand it to
     /// the host terminal's clipboard through the handle the frames go
     /// through, so it cannot land inside one.
