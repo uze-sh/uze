@@ -21,18 +21,19 @@ use windows_sys::Win32::{
     Security::{
         ACCESS_ALLOWED_ACE, ACE_HEADER, ACL,
         Authorization::{
-            ConvertStringSidToSidW, EXPLICIT_ACCESS_W, GRANT_ACCESS, GetNamedSecurityInfoW,
-            NO_MULTIPLE_TRUSTEE, SE_FILE_OBJECT, SetEntriesInAclW, SetNamedSecurityInfoW,
-            TRUSTEE_IS_SID, TRUSTEE_IS_WELL_KNOWN_GROUP, TRUSTEE_W,
+            ConvertStringSidToSidW, EXPLICIT_ACCESS_W, GetNamedSecurityInfoW, NO_MULTIPLE_TRUSTEE,
+            SE_FILE_OBJECT, SET_ACCESS, SetEntriesInAclW, SetNamedSecurityInfoW, TRUSTEE_IS_SID,
+            TRUSTEE_IS_WELL_KNOWN_GROUP, TRUSTEE_W,
         },
-        DACL_SECURITY_INFORMATION, DeriveCapabilitySidsFromName, EqualSid, FreeSid, GetAce,
-        INHERIT_ONLY_ACE,
+        CONTAINER_INHERIT_ACE, DACL_SECURITY_INFORMATION, DeriveCapabilitySidsFromName, EqualSid,
+        FreeSid, GetAce, INHERIT_ONLY_ACE,
         Isolation::{CreateAppContainerProfile, DeleteAppContainerProfile},
-        NO_INHERITANCE, PSECURITY_DESCRIPTOR, PSID, SECURITY_CAPABILITIES, SID_AND_ATTRIBUTES,
-        SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+        NO_INHERITANCE, OBJECT_INHERIT_ACE, PSECURITY_DESCRIPTOR, PSID, SECURITY_CAPABILITIES,
+        SID_AND_ATTRIBUTES, SUB_CONTAINERS_AND_OBJECTS_INHERIT,
     },
     Storage::FileSystem::{
         DELETE, FILE_DELETE_CHILD, FILE_GENERIC_EXECUTE, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
+        FILE_TRAVERSE,
     },
     System::{
         Console::{GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE},
@@ -161,6 +162,25 @@ impl Right {
         }
     }
 
+    /// The entries a grant of this right writes, each a mask and the
+    /// inheritance it applies with, the one that covers `path` itself
+    /// first. A directory a program may only read or write is still one
+    /// it may enter, which takes `FILE_TRAVERSE`, the bit that on a file
+    /// means execute: so the files beneath get an entry of their own,
+    /// without it.
+    fn entries(self, directory: bool) -> Vec<(u32, u32)> {
+        match (self, directory) {
+            (_, false) => vec![(self.mask(), NO_INHERITANCE)],
+            (Self::ReadExecute, true) => {
+                vec![(self.mask(), SUB_CONTAINERS_AND_OBJECTS_INHERIT)]
+            }
+            (Self::Read | Self::Write, true) => vec![
+                (self.mask() | FILE_TRAVERSE, CONTAINER_INHERIT_ACE),
+                (self.mask(), OBJECT_INHERIT_ACE | INHERIT_ONLY_ACE),
+            ],
+        }
+    }
+
     /// Never execute where a program may write, as under Landlock.
     fn mask(self) -> u32 {
         match self {
@@ -185,15 +205,12 @@ fn grant(path: &Path, right: Right) -> io::Result<Sid> {
     let capability = Sid::capability(&format!("uze.{}:{}", right.name(), path.display()))?;
     let dacl = Dacl::of(path).map_err(|error| unreachable(&error))?;
     let everyone_contained = Sid::parse(ALL_APPLICATION_PACKAGES)?;
-    if dacl.allows(&capability, right.mask()) || dacl.allows(&everyone_contained, right.mask()) {
+    let entries = right.entries(metadata.is_dir());
+    let (here, _) = entries[0];
+    if dacl.allows(&capability, here) || dacl.allows(&everyone_contained, here) {
         return Ok(capability);
     }
-    let inheritance = if metadata.is_dir() {
-        SUB_CONTAINERS_AND_OBJECTS_INHERIT
-    } else {
-        NO_INHERITANCE
-    };
-    dacl.add(path, &capability, right.mask(), inheritance)
+    dacl.add(path, &capability, &entries)
         .map_err(|error| unreachable(&error))?;
     Ok(capability)
 }
@@ -342,23 +359,35 @@ impl Dacl {
 
     /// Writes this DACL back with an allow entry for `sid`, which Windows
     /// propagates to everything beneath that inherits.
-    fn add(&self, path: &Path, sid: &Sid, mask: u32, inheritance: u32) -> io::Result<()> {
-        let access = EXPLICIT_ACCESS_W {
-            grfAccessPermissions: mask,
-            grfAccessMode: GRANT_ACCESS,
-            grfInheritance: inheritance,
-            Trustee: TRUSTEE_W {
-                pMultipleTrustee: ptr::null_mut(),
-                MultipleTrusteeOperation: NO_MULTIPLE_TRUSTEE,
-                TrusteeForm: TRUSTEE_IS_SID,
-                TrusteeType: TRUSTEE_IS_WELL_KNOWN_GROUP,
-                ptstrName: sid.sid.cast(),
-            },
-        };
+    fn add(&self, path: &Path, sid: &Sid, entries: &[(u32, u32)]) -> io::Result<()> {
+        let accesses: Vec<EXPLICIT_ACCESS_W> = entries
+            .iter()
+            .map(|&(mask, inheritance)| EXPLICIT_ACCESS_W {
+                grfAccessPermissions: mask,
+                // Set, not grant: two entries for one SID that differ only
+                // in inheritance must both stay rather than merge.
+                grfAccessMode: SET_ACCESS,
+                grfInheritance: inheritance,
+                Trustee: TRUSTEE_W {
+                    pMultipleTrustee: ptr::null_mut(),
+                    MultipleTrusteeOperation: NO_MULTIPLE_TRUSTEE,
+                    TrusteeForm: TRUSTEE_IS_SID,
+                    TrusteeType: TRUSTEE_IS_WELL_KNOWN_GROUP,
+                    ptstrName: sid.sid.cast(),
+                },
+            })
+            .collect();
         let mut merged: *mut ACL = ptr::null_mut();
-        // SAFETY: `access` and the old ACL are valid; `merged` is
+        // SAFETY: `accesses` and the old ACL are valid; `merged` is
         // LocalAlloc'd and freed below.
-        let status = unsafe { SetEntriesInAclW(1, &access, self.acl, &mut merged) };
+        let status = unsafe {
+            SetEntriesInAclW(
+                accesses.len() as u32,
+                accesses.as_ptr(),
+                self.acl,
+                &mut merged,
+            )
+        };
         if status != 0 {
             return Err(io::Error::from_raw_os_error(status as i32));
         }
