@@ -227,3 +227,33 @@ fn a_directory_without_a_skill_file_is_not_a_skill() {
     fs::create_dir_all(root.join(".claude/skills/synced/some-id")).unwrap();
     assert!(inventory_of(root.path()).is_empty());
 }
+
+/// What a session said never reaches the Overview: sessions are counted
+/// by their files' times, and nothing collected keeps a session's text.
+#[test]
+fn no_session_text_reaches_the_overview() {
+    let root = uze_testkit::temp::TempDir::new("claude-inventory-sentinel");
+    let sentinel = "SENTINEL-a7f3-said-in-a-session";
+    write(
+        &root.join(".claude/projects/-work-app/one.jsonl"),
+        &format!("{{\"type\":\"user\",\"message\":{{\"content\":\"{sentinel}\"}}}}\n"),
+    );
+    write(
+        &root.join(".claude/skills/review/SKILL.md"),
+        "---\nname: review\n---\n",
+    );
+    let found = inventory_of(root.path());
+    let sessions = session_counts(&root.join(".claude/projects"), SystemTime::now());
+    let overview = uze_core::inventory::assemble(
+        vec![uze_core::inventory::HarnessInventory {
+            id: "claude-code".into(),
+            name: "Claude Code".into(),
+            found: Some(found),
+            sessions,
+        }],
+        &[],
+    );
+    let kept = serde_json::to_string(&overview).unwrap();
+    assert_eq!(sessions.unwrap().days_30, 1);
+    assert!(!kept.contains(sentinel), "{kept}");
+}

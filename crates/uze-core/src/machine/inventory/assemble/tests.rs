@@ -357,3 +357,31 @@ fn two_entries_of_one_file_are_not_duplicates() {
             .all(|row| row.status == Status::Ok)
     );
 }
+
+/// The budget a collection keeps on a machine carrying 500 resources:
+/// reading every definition, measuring it and judging it. Generous in a
+/// debug build, which is what `cargo test` runs; the release figure is the
+/// one the design states.
+#[test]
+fn five_hundred_resources_are_assembled_within_budget() {
+    let root = uze_testkit::temp::TempDir::new("inventory-budget");
+    let found: Vec<FoundResource> = (0..500)
+        .map(|n| {
+            skill(
+                root.path(),
+                &format!("a/skills/skill-{n}"),
+                "Review code before it is merged, in the project's own convention, and say why.",
+            )
+        })
+        .collect();
+    let budget = if cfg!(debug_assertions) {
+        std::time::Duration::from_millis(3_000)
+    } else {
+        std::time::Duration::from_millis(300)
+    };
+    let started = std::time::Instant::now();
+    let overview = assemble(vec![harness("a", found)], &[]);
+    let took = started.elapsed();
+    assert_eq!(overview.resources.len(), 500);
+    assert!(took < budget, "took {took:?}, budget {budget:?}");
+}
