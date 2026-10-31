@@ -41,7 +41,7 @@ EXAMPLES := workspace pingpong
 
 try: install pingpong-mcp ## Make a project in TRY_DIR (~/uze-try) with this checkout's examples, built into its uze, installed in it.
 	python3 plugins/uze/skills/try/demo.py "$(TRY_DIR)"
-	cd "$(TRY_DIR)" && for plugin in $(EXAMPLES); do uze install --trust "$$plugin@uze" || exit 1; done
+	cd "$(TRY_DIR)" && for plugin in $(EXAMPLES); do uze add --trust "$$plugin@uze" || exit 1; done
 	@echo "cd $(TRY_DIR) && uze workspace"
 
 playground-windows: ## Open a fresh Windows Sandbox with this checkout's uze installed (run from WSL).
