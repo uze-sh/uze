@@ -135,8 +135,8 @@ none:
 
 The folder names the plugin the files belong to. Every agent reads them
 exactly as it reads your own rules, and a rule of yours with the same name is
-left alone. uze adds and removes only its own entries in the manifest and
-writes every other entry and key back unchanged. If the manifest does not
+left alone. In the manifest, only its own entries are added and removed;
+every other entry and key is written back unchanged. If the manifest does not
 parse, uze leaves it as it is, copies nothing and says so. Rules are the one part of a plugin that never reaches an
 agent machine-wide: `uze install -m` reports them as delivered per project,
 and a project that does not declare the plugin never receives them.

@@ -83,12 +83,11 @@ next time the project opens.
 
 ## Turning one off
 
-The built-in ones are on until you say otherwise. Under management
-(`Ctrl+O`), on **Extensions**, select one and press `Enter` to switch it off
-or back on. The workspace follows at once: its button leaves the tab strip,
-its keys go to the program in the pane, it leaves the action index (`F1`),
-and its sidebar section is gone with it (the timeline for Code, the tasks for
-Spec). `Enter` disables one a plugin brought in the same way.
+Under management (`Ctrl+O`), on **Extensions**, select one and press `Enter`
+to switch it off or back on. The built-in ones start on. Turning one off
+takes everything it adds with it at once: its button, its keys (they go back
+to the program in the pane), its entry in the action index (`F1`) and its
+sidebar section.
 
 The choice for a built-in one is kept in `~/.uze/config.toml`. From a
 terminal, `uze config extension architect off` does the same, and
@@ -318,10 +317,9 @@ preferences the operator sets on the Extensions screen feed both.
 
 ### Grants and consent
 
-Installing a plugin is one question: may these files be stored and delivered
-to your agents. An extension is code the workspace itself runs, so running it
-is a second question, asked apart, about exactly what it may reach. Each
-grant in `wants` is a line of that question:
+Installing a plugin does not let its extensions run: the operator allows
+each one, grant by grant, on the [Extensions screen](#the-extensions-screen).
+Each grant in `wants` is one line of that question:
 
 | Grant | Lets the extension |
 | --- | --- |
@@ -336,23 +334,15 @@ grant in `wants` is a line of that question:
 | `mcp:<server>/<tool>` | Call one tool of an MCP server a plugin delivers |
 | `resident` | Keep its script running while it is shown |
 
-No grant writes the checkout. Ask for the fewest grants that do the job: each
-one is what the operator is asked about.
+No grant writes the checkout. Ask for the fewest that do the job.
 
-- A view fed only by fixtures draws with no question asked. Anything that
-  runs, a script, a program or an action calling one, waits until the
-  operator allows its grants and enables it. Until then the surface says so
-  where its data would be.
-- Consent covers the exact files allowed. An update that wants the same
-  grants or fewer is applied as it comes; one that wants a new grant is held
-  until the operator allows it again.
-- A program is pinned to the path found when it was allowed, never looked up
-  on `PATH` again, and confined where the machine can: it reads the checkout
-  and the system, writes only its own scratch folder and opens no socket.
-  Where the machine cannot confine it, allowing it says it runs as you.
-  `uze doctor` says which this machine is.
-- Only the operator answers, on the [Extensions screen](#the-extensions-screen) or when
-  `uze install` asks on a terminal. An agent cannot answer from its pane.
+- A view fed only by fixtures needs no consent. Anything that runs waits
+  until the operator allows it, and the surface says so meanwhile.
+- An update that asks for a new grant is held until it is allowed again.
+- A program is pinned to the path found when it was allowed and, where the
+  machine can, confined: it reads the checkout and the system, writes only
+  its own scratch folder and opens no socket. `uze doctor` says whether this
+  machine confines programs.
 
 ### Check, test and iterate
 
