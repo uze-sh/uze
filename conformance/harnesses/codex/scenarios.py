@@ -68,7 +68,7 @@ cp /app/fixtures/auth.json /work/home/.codex/auth.json
 printf 'sandbox_mode = "danger-full-access"\n' > /work/home/.codex/config.toml
 {materialize_marketplace(cfg)}
 uze market add /work/market >/dev/null 2>&1
-for p in {plugins}; do uze install $p@uze-lab -m >/dev/null 2>&1; done
+for p in {plugins}; do uze add $p@uze-lab -m >/dev/null 2>&1; done
 {final_cmd}
 """
 

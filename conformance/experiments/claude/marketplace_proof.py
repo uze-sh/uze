@@ -91,7 +91,7 @@ def expected():
 
 def container(cfg, prov_ip, manifest, prompt):
     installs = "\n".join(
-        f'uze install {plugin["name"]}@{manifest["name"]} -m 2>&1; echo "install-exit {plugin["name"]} $?"'
+        f'uze add {plugin["name"]}@{manifest["name"]} -m 2>&1; echo "install-exit {plugin["name"]} $?"'
         for plugin in manifest["plugins"]
     )
     script = f"""

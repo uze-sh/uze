@@ -126,7 +126,7 @@ echo '{{"name": "kit", "version": "1.0.0", "description": "Parity reference plug
 {GIT} -C /work/pm init -q && {GIT} -C /work/pm add -A && {GIT} -C /work/pm commit -q -m parity
 echo '=== install'
 uze market add /work/pm 2>&1
-uze install kit@parity-dual -m 2>&1
+uze add kit@parity-dual -m 2>&1
 echo '=== uze-inspect'
 uze inspect kit 2>&1
 """
@@ -135,7 +135,7 @@ cp -r /opt/parity/uze /work/pm
 {GIT} -C /work/pm init -q && {GIT} -C /work/pm add -A && {GIT} -C /work/pm commit -q -m parity
 echo '=== install'
 uze market add /work/pm 2>&1
-uze install kit@parity-uze -m 2>&1
+uze add kit@parity-uze -m 2>&1
 echo '=== uze-inspect'
 uze inspect kit 2>&1
 """
