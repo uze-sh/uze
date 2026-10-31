@@ -8,7 +8,7 @@
 use std::{
     ffi::{OsStr, OsString},
     io,
-    os::windows::ffi::OsStrExt,
+    os::windows::ffi::{OsStrExt, OsStringExt},
     path::Path,
     ptr,
 };
@@ -116,6 +116,7 @@ fn run(confinement: &Confinement, argv: &[OsString]) -> io::Result<u32> {
     if confinement.network {
         capabilities.push(Sid::parse(INTERNET_CLIENT)?);
     }
+    ensure_local_app_data()?;
     let profile = Profile::create(namespace)?;
     let job = job(confinement)?;
     let child = start(argv, &profile, &capabilities)?;
@@ -490,6 +491,42 @@ impl Drop for Profile {
         // SAFETY: `name` is NUL-terminated.
         unsafe { DeleteAppContainerProfile(self.name.as_ptr()) };
     }
+}
+
+/// Windows makes a profile's folder beneath `%LOCALAPPDATA%` and fails
+/// with `ERROR_ENVVAR_NOT_FOUND` without it, while the runner hands the
+/// helper only the environment a program may see. The folder is asked of
+/// Windows instead; the program never sees it, since Windows points its
+/// `LOCALAPPDATA` into the run's own profile.
+fn ensure_local_app_data() -> io::Result<()> {
+    use windows_sys::Win32::{
+        System::Com::CoTaskMemFree,
+        UI::Shell::{FOLDERID_LocalAppData, SHGetKnownFolderPath},
+    };
+    if std::env::var_os("LOCALAPPDATA").is_some() {
+        return Ok(());
+    }
+    let mut path: *mut u16 = ptr::null_mut();
+    // SAFETY: a known folder of this token; `path` is freed with
+    // CoTaskMemFree, as the API documents, whatever it returned.
+    let status =
+        unsafe { SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, ptr::null_mut(), &mut path) };
+    let folder = (status == 0).then(|| {
+        // SAFETY: a NUL-terminated wide string from the call above.
+        let length = (0..).take_while(|&i| unsafe { *path.add(i) } != 0).count();
+        // SAFETY: `length` units precede the NUL.
+        OsString::from_wide(unsafe { std::slice::from_raw_parts(path, length) })
+    });
+    // SAFETY: allocated by SHGetKnownFolderPath, or null.
+    unsafe { CoTaskMemFree(path.cast()) };
+    let folder = folder.ok_or_else(|| {
+        io::Error::other(format!(
+            "this user's local app data is unknown ({status:#x})"
+        ))
+    })?;
+    // SAFETY: the helper has a single thread until it starts the program.
+    unsafe { std::env::set_var("LOCALAPPDATA", folder) };
+    Ok(())
 }
 
 /// Every run's profile is named this, followed by its helper's pid.
