@@ -54,6 +54,7 @@ struct Measured {
     when_used: Option<u32>,
     digest: String,
     problem: Option<String>,
+    checked: bool,
 }
 
 impl Measured {
@@ -71,7 +72,11 @@ impl Measured {
             }
             (None, None) => String::new(),
         };
+        let checked = !matches!(found.definition, Definition::Entry(_))
+            || matches!(found.runs, Some(Runs::Shell(_) | Runs::Program(_)))
+            || found.problem.is_some();
         Self {
+            checked,
             description: read.description.or_else(|| found.note.clone()),
             per_session: read.per_session,
             when_used: read.when_used,
@@ -314,6 +319,7 @@ fn rows(found: Vec<Measured>) -> Vec<OverviewResource> {
                     .max(),
                 when_used: group.iter().filter_map(|measured| measured.when_used).max(),
                 status,
+                checked: group.iter().all(|measured| measured.checked),
                 removal: group
                     .iter()
                     .find_map(|measured| measured.found.removal.clone()),

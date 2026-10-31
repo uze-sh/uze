@@ -136,17 +136,20 @@ a launch calls any of this.
 
 ### 7. The screen
 
-The screen is Marketplace's shape:
-- header fields `‹ every harness ›` and `‹ 30 days ›`, where the period
-  sets only the session count;
-- the filter;
-- one tree folded by kind;
-- the fixed panel;
-- keys in the foot.
+The screen has a header with two fields, `‹ every harness ›` and `‹ 30 days ›`;
+the period sets only the session count. Below it are three columns:
 
-Columns: `name · from · per session · status`. The `uze` group reuses
-`actionable_alerts`. `Feature::Overview` is removed when complete. The
-design-system skill governs every detail.
+- a menu of sections: uze's findings while there are any, then every kind,
+  always present, each with its count and a `!` mark for what in it is
+  broken or duplicated;
+- the chosen section's table, with its own filter and the columns
+  `name · from · per session · status`;
+- the fixed panel.
+
+The keys are in the foot. `✓ ok` is drawn only where a fact on disk was
+checked, and `—` where nothing could be. The `uze` section reuses
+`actionable_alerts`. `Feature::Overview` is removed when the screen is
+complete. The design-system skill governs every detail.
 
 ### 8. Diagrams
 

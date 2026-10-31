@@ -248,6 +248,7 @@ fn an_entry_in_a_config_file_has_no_figure() {
     let row = &overview.resources[0];
     assert_eq!((row.per_session, row.when_used), (None, None));
     assert_eq!(row.status, Status::Ok);
+    assert!(!row.checked, "a server reached by URL is never judged");
 }
 
 #[test]

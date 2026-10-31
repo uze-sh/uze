@@ -1,11 +1,11 @@
 //! TUI view — the Overview route: what every harness on this machine
 //! carries, whoever installed it.
 //!
-//! Marketplace's shape: the screen's name and what it holds, two fields
-//! that narrow it (a harness, a period), the filter, one tree folded by
-//! kind with uze's own findings above it when there are any, and a panel
-//! describing the line the keyboard is on. The folded tree is the summary:
-//! each kind's row carries its totals and what in it needs looking at.
+//! The screen's name and what the machine holds, two fields that narrow
+//! it (a harness, a period), then three columns: a menu of sections (uze's
+//! own findings while there are any, then each kind of resource with its
+//! count and what in it needs looking at), the table of the section chosen
+//! with its own search, and a panel describing the row the keyboard is on.
 
 use ratatui::{
     layout::Rect,
@@ -18,7 +18,7 @@ use uze_application::machine_overview::{Origin, OverviewResource, ResourceKind, 
 
 use crate::ui::content_area;
 use crate::ui::hit::Hit;
-use crate::ui::machine::{self, Field, Group, Line as TreeLine, MachineScreen, kind_word};
+use crate::ui::machine::{self, Field, Group, Line as TreeLine, MachineScreen, Pane, kind_word};
 use crate::ui::model::{Focus, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::view::health::{Alert, Severity};
@@ -26,16 +26,18 @@ use crate::ui::widget::{definitions, row, screen_header, text};
 
 use super::FIELD_KEY_WIDTH;
 
-/// Below this many columns the panel goes and the tree takes the width.
+/// Below this many columns the panel goes and the table takes the width.
 const NARROW: u16 = 64;
 const PAD: u16 = crate::ui::CONTENT_INSET_LEFT;
 const FROM_WIDTH: usize = 16;
 const TOKENS_WIDTH: usize = 12;
 const STATUS_WIDTH: usize = 20;
-/// Below this tree width the `from` column gives way to the name.
-const FROM_NEEDS: u16 = 70;
-const GROUP_INDENT: usize = 2;
-const LINE_INDENT: usize = 6;
+/// Below this table width the `from` column gives way to the name.
+const FROM_NEEDS: u16 = 64;
+/// The menu's width, and the air between it and the table.
+const MENU_WIDTH: u16 = 22;
+const MENU_GAP: u16 = 3;
+const ROW_INDENT: usize = 2;
 /// The columns a row keeps clear inside its right edge.
 const TRAILING: usize = 2;
 
@@ -51,7 +53,7 @@ pub(crate) fn render_overview(
     } else {
         super::drawer_width(ResizablePanel::Drawer, model, content)
     };
-    let tree = Rect {
+    let left = Rect {
         width: if panel_width > 0 {
             content.right().saturating_sub(panel_width + area.x)
         } else {
@@ -61,19 +63,21 @@ pub(crate) fn render_overview(
     };
     let alerts = model.alerts();
     let lines = model.machine_lines();
-    let window = render_tree(frame, tree, model, &alerts, &lines, hits);
+    let window = render_body(frame, left, model, &alerts, &lines, hits);
     if panel_width > 0 {
         let panel = super::drawer(frame, content, ResizablePanel::Drawer, model, hits);
-        if let Some(line) = lines.get(model.remembered.machine.list.selected) {
-            render_panel(frame, panel, model, &alerts, *line, hits);
-        }
+        let screen = &model.remembered.machine;
+        let row = (screen.pane == Pane::Table)
+            .then(|| lines.get(screen.list.selected).copied())
+            .flatten();
+        render_panel(frame, panel, model, &alerts, row, hits);
         if let Some((list, window)) = window {
             super::scrollbar_on_drawer_rule(frame, content, model, list, window, hits, None);
         }
     }
 }
 
-fn render_tree(
+fn render_body(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     model: &TuiModel,
@@ -81,7 +85,6 @@ fn render_tree(
     lines: &[TreeLine],
     hits: &mut Vec<(Rect, Hit)>,
 ) -> Option<(Rect, (usize, usize, usize))> {
-    let screen = &model.remembered.machine;
     let text_area = Rect {
         x: area.x + PAD,
         width: area.width.saturating_sub(2 * PAD),
@@ -92,23 +95,150 @@ fn render_tree(
         render_header(frame, rect, model, hits);
     }
     rows.gap();
+    let top = rows.next(1).map(|rect| rect.y)?;
+    let body_height = text_area.bottom().saturating_sub(top);
+    let menu = Rect::new(
+        text_area.x,
+        top,
+        MENU_WIDTH.min(text_area.width),
+        body_height,
+    );
+    render_menu(frame, menu, model, alerts.len(), hits);
+    let table = Rect::new(
+        menu.right() + MENU_GAP,
+        top,
+        text_area.width.saturating_sub(MENU_WIDTH + MENU_GAP),
+        body_height,
+    );
+    render_table(frame, table, model, alerts, lines, hits)
+}
+
+/// The menu of sections: each kind with how many resources it has and,
+/// before the count, what in it needs looking at.
+fn render_menu(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    model: &TuiModel,
+    findings: usize,
+    hits: &mut Vec<(Rect, Hit)>,
+) {
+    let screen = &model.remembered.machine;
+    let chosen = screen.section(findings);
+    let keys_here =
+        model.focus == Focus::Content && screen.field == Field::List && screen.pane == Pane::Menu;
+    for (index, section) in screen.sections(findings).into_iter().enumerate() {
+        let y = area.y + index as u16;
+        if y >= area.bottom() {
+            break;
+        }
+        let (count, mark) = match section {
+            Group::Uze => (findings, Some((findings, Token::StateWarning))),
+            Group::Kind(kind) => {
+                let (count, broken, duplicates) = screen.count(kind);
+                let mark = if broken > 0 {
+                    Some((broken, Token::StateDanger))
+                } else if duplicates > 0 {
+                    Some((duplicates, Token::StateWarning))
+                } else {
+                    None
+                };
+                (count, mark)
+            }
+        };
+        let is_chosen = section == chosen;
+        let cursor = if is_chosen && keys_here {
+            Span::styled(
+                format!("{} ", theme::glyph(Symbol::Prompt)),
+                theme::fg_bold(Token::Accent),
+            )
+        } else {
+            Span::raw("  ")
+        };
+        let label_tone = if is_chosen {
+            Token::TextBright
+        } else if count == 0 {
+            Token::TextDim
+        } else {
+            Token::TextSecondary
+        };
+        let mut trailing = Vec::new();
+        if let Some((problems, tone)) = mark.filter(|_| section != Group::Uze) {
+            trailing.push(Span::styled(
+                format!("{} {problems}  ", theme::glyph(Symbol::MarkAttention)),
+                theme::fg(tone),
+            ));
+        }
+        trailing.push(Span::styled(
+            count.to_string(),
+            theme::fg(if section == Group::Uze {
+                Token::StateWarning
+            } else {
+                Token::TextMuted
+            }),
+        ));
+        let used: usize = 2
+            + text::columns(section.label())
+            + trailing.iter().map(Span::width).sum::<usize>()
+            + 1;
+        let mut spans = vec![
+            cursor,
+            Span::styled(section.label().to_owned(), theme::fg(label_tone)),
+        ];
+        spans.push(Span::raw(
+            " ".repeat(usize::from(area.width).saturating_sub(used)),
+        ));
+        spans.extend(trailing);
+        spans.push(Span::raw(" "));
+        let hit = Hit::MachineSection(section);
+        let ground = if is_chosen {
+            Some(if keys_here {
+                Token::SurfaceSelected
+            } else {
+                Token::SurfaceRecessed
+            })
+        } else if model.hovered.as_ref() == Some(&hit) {
+            Some(Token::SurfaceHover)
+        } else {
+            None
+        };
+        if let Some(ground) = ground {
+            row::pad_to(&mut spans, area.width, theme::color(ground));
+        }
+        let rect = Rect::new(area.x, y, area.width, 1);
+        hits.push((rect, hit));
+        frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+    }
+}
+
+/// The table of the section chosen: its search, its headings and its rows.
+fn render_table(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    model: &TuiModel,
+    alerts: &[Alert],
+    lines: &[TreeLine],
+    hits: &mut Vec<(Rect, Hit)>,
+) -> Option<(Rect, (usize, usize, usize))> {
+    let screen = &model.remembered.machine;
+    let section = screen.section(alerts.len());
+    let mut rows = crate::ui::Rows::over(area);
     if let Some(rect) = rows.next(1) {
         super::filter_box(
             frame,
             rect,
             &screen.list.filter,
-            "filter by name, origin or status…",
+            &format!("filter {}…", section.label()),
             model.filtering,
         );
         hits.push((rect, Hit::FocusFilter));
     }
     rows.gap();
-    let columns = Columns::for_width(text_area.width);
+    let columns = Columns::for_width(area.width);
     if let Some(rect) = rows.next(1) {
         let heading = columns.row(
-            text_area.width,
+            area.width,
             false,
-            GROUP_INDENT,
+            ROW_INDENT,
             vec![Span::styled("name", theme::fg(Token::TextDim))],
             [
                 Span::styled("from", theme::fg(Token::TextDim)),
@@ -121,15 +251,17 @@ fn render_tree(
     rows.gap();
     let list_top = rows.next(1).map(|rect| rect.y)?;
     let list = Rect::new(
-        text_area.x,
+        area.x,
         list_top,
-        text_area.width,
+        area.width,
         area.bottom().saturating_sub(list_top),
     );
     if lines.is_empty() {
-        let message = empty_message(screen);
         frame.render_widget(
-            Paragraph::new(Span::styled(message, theme::fg(Token::TextDim))),
+            Paragraph::new(Span::styled(
+                empty_message(screen, section),
+                theme::fg(Token::TextDim),
+            )),
             Rect {
                 height: 1.min(list.height),
                 ..list
@@ -144,22 +276,16 @@ fn render_tree(
         lines.len(),
         usize::from(list.height),
     );
-    let cursor_shown = model.focus == Focus::Content && screen.field == Field::List;
+    let keys_here =
+        model.focus == Focus::Content && screen.field == Field::List && screen.pane == Pane::Table;
     for (position, line) in lines.iter().enumerate().skip(offset) {
         let y = list.y + (position - offset) as u16;
         if y >= list.bottom() {
             break;
         }
-        let chosen = position == selected;
+        let chosen = position == selected && keys_here;
         let hit = Hit::MachineLine(position);
-        let mut drawn = draw_line(
-            screen,
-            alerts,
-            *line,
-            &columns,
-            list.width,
-            chosen && cursor_shown,
-        );
+        let mut drawn = draw_line(screen, alerts, *line, &columns, list.width, chosen);
         let ground = if chosen {
             Some(Token::SurfaceSelected)
         } else if model.hovered.as_ref() == Some(&hit) {
@@ -177,8 +303,8 @@ fn render_tree(
     Some((list, (usize::from(list.height), lines.len(), offset)))
 }
 
-/// What the tree says when it has no line to draw.
-fn empty_message(screen: &MachineScreen) -> String {
+/// What the table says when it has no row to draw.
+fn empty_message(screen: &MachineScreen, section: Group) -> String {
     match &screen.overview {
         _ if screen.filtering() => {
             format!("nothing matches “{}”", screen.list.filter.trim())
@@ -186,7 +312,7 @@ fn empty_message(screen: &MachineScreen) -> String {
         None if screen.collecting.is_some() => "Reading what each harness carries…".to_owned(),
         None => "Nothing read yet.".to_owned(),
         Some(overview) if overview.harnesses.is_empty() => "No harness on this machine.".to_owned(),
-        Some(_) => "Nothing found in any harness.".to_owned(),
+        Some(_) => format!("No {} on this machine.", section.label()),
     }
 }
 
@@ -388,7 +514,6 @@ fn draw_line(
     cursor: bool,
 ) -> Line<'static> {
     match line {
-        TreeLine::Group(group) => group_line(screen, alerts, group, columns, width, cursor),
         TreeLine::Finding(index) => {
             let Some(alert) = alerts.get(index) else {
                 return Line::default();
@@ -397,7 +522,7 @@ fn draw_line(
             columns.row(
                 width,
                 cursor,
-                LINE_INDENT,
+                ROW_INDENT,
                 vec![Span::styled(
                     alert.label.clone(),
                     theme::fg(Token::TextTertiary),
@@ -413,16 +538,10 @@ fn draw_line(
             let Some(resource) = screen.resource(index) else {
                 return Line::default();
             };
-            // Only what needs looking at is said in the list: a column of
-            // "ok" says nothing a reader acts on.
-            let (word, tone) = match resource.status {
-                Status::Ok => ("", Token::TextMuted),
-                _ => status_style(&resource.status),
-            };
             columns.row(
                 width,
                 cursor,
-                LINE_INDENT,
+                ROW_INDENT,
                 vec![Span::styled(
                     resource.name.clone(),
                     theme::fg(Token::TextTertiary),
@@ -433,65 +552,31 @@ fn draw_line(
                         theme::fg(Token::TextMuted),
                     ),
                     figure(resource.per_session),
-                    Span::styled(word.to_owned(), theme::fg(tone)),
+                    status_cell(resource),
                 ],
             )
         }
     }
 }
 
-fn group_line(
-    screen: &MachineScreen,
-    alerts: &[Alert],
-    group: Group,
-    columns: &Columns,
-    width: u16,
-    cursor: bool,
-) -> Line<'static> {
-    let chevron = if screen.is_open(group) {
-        Symbol::ChevronExpanded
-    } else {
-        Symbol::ChevronCollapsed
-    };
-    let (count, tokens, look) = match group {
-        Group::Uze => (
-            alerts.len(),
-            None,
-            Some((counted(alerts.len(), "finding"), Token::StateWarning)),
+/// A row's status: a check only where a fact was checked and nothing was
+/// found against it; a dash for what nothing on disk can judge.
+fn status_cell(resource: &OverviewResource) -> Span<'static> {
+    match &resource.status {
+        Status::Ok if resource.checked => Span::styled(
+            format!("{} ok", theme::glyph(Symbol::MarkOk)),
+            theme::fg(Token::StateSuccess),
         ),
-        Group::Kind(kind) => {
-            let members: Vec<&OverviewResource> = screen
-                .members(kind)
-                .into_iter()
-                .filter_map(|index| screen.resource(index))
-                .collect();
-            let tokens: u32 = members.iter().filter_map(|r| r.per_session).sum();
-            (
-                members.len(),
-                (tokens > 0).then_some(tokens),
-                group_look(&members),
-            )
-        }
-    };
-    let (look, tone) = look.unwrap_or((String::new(), Token::TextMuted));
-    columns.row(
-        width,
-        cursor,
-        GROUP_INDENT,
-        vec![
-            Span::styled(
-                format!("{} ", theme::glyph(chevron)),
-                theme::fg(Token::TextDim),
-            ),
-            Span::styled(group.label().to_owned(), theme::fg(Token::TextPrimary)),
-            Span::styled(format!("  {count}"), theme::fg(Token::TextMuted)),
-        ],
-        [
-            Span::raw(""),
-            figure(tokens),
-            Span::styled(look, theme::fg(tone)),
-        ],
-    )
+        Status::Ok => Span::styled("—", theme::fg(Token::TextFaint)),
+        Status::Duplicate { .. } => Span::styled(
+            format!("{} duplicate", theme::glyph(Symbol::MarkAttention)),
+            theme::fg(Token::StateWarning),
+        ),
+        Status::Broken { .. } => Span::styled(
+            format!("{} broken", theme::glyph(Symbol::MarkFailed)),
+            theme::fg(Token::StateDanger),
+        ),
+    }
 }
 
 /// What in a kind needs looking at: its broken resources first, its
@@ -558,17 +643,17 @@ fn render_panel(
     area: Rect,
     model: &TuiModel,
     alerts: &[Alert],
-    line: TreeLine,
+    line: Option<TreeLine>,
     hits: &mut Vec<(Rect, Hit)>,
 ) {
     let screen = &model.remembered.machine;
     let detail = match line {
-        TreeLine::Group(group) => group_detail(screen, alerts, group),
-        TreeLine::Finding(index) => match alerts.get(index) {
+        None => group_detail(screen, alerts, screen.section(alerts.len())),
+        Some(TreeLine::Finding(index)) => match alerts.get(index) {
             Some(alert) => finding_detail(alert),
             None => return,
         },
-        TreeLine::Resource(index) => match screen.resource(index) {
+        Some(TreeLine::Resource(index)) => match screen.resource(index) {
             Some(resource) => resource_detail(model, resource),
             None => return,
         },

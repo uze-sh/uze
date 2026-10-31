@@ -7,7 +7,6 @@
 //! it answers, and one for a collection no longer wanted is dropped.
 
 use std::{
-    collections::BTreeSet,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -60,17 +59,26 @@ pub(crate) fn kind_word(kind: ResourceKind) -> &'static str {
     }
 }
 
-/// One line of the tree the keyboard can stand on.
+/// One row of the table the keyboard can stand on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Line {
-    Group(Group),
     /// One of uze's own findings, by position in the health alerts.
     Finding(usize),
     /// A resource, by position in the Overview's resources.
     Resource(usize),
 }
 
-/// What the keyboard is on: the tree, or one of the header's two fields.
+/// Which half of the screen the keyboard is in: the menu of sections, or
+/// the table of the section chosen.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Pane {
+    #[default]
+    Menu,
+    Table,
+}
+
+/// What the keyboard is on: the menu and table, or one of the header's
+/// two fields.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum Field {
     #[default]
@@ -113,8 +121,10 @@ pub(crate) struct MachineScreen {
     pub(crate) harness: Option<String>,
     /// A position in [`PERIODS`].
     pub(crate) period: usize,
-    pub(crate) open: BTreeSet<Group>,
-    pub(crate) uze_folded: bool,
+    /// The menu's choice; `None` is the first section on offer.
+    pub(crate) section: Option<Group>,
+    pub(crate) pane: Pane,
+    /// The table's search and the row the keyboard is on.
     pub(crate) list: ListScreen,
     pub(crate) field: Field,
     in_front_since: Option<Instant>,
@@ -207,23 +217,22 @@ impl MachineScreen {
         !self.list.filter.trim().is_empty()
     }
 
-    pub(crate) fn is_open(&self, group: Group) -> bool {
-        match group {
-            Group::Uze => !self.uze_folded,
-            Group::Kind(_) => self.filtering() || self.open.contains(&group),
-        }
+    /// The menu: uze's own findings while there are any, then every kind,
+    /// whether or not it has anything, so the menu never moves under the
+    /// keyboard.
+    pub(crate) fn sections(&self, findings: usize) -> Vec<Group> {
+        let uze = (findings > 0).then_some(Group::Uze);
+        uze.into_iter()
+            .chain(ResourceKind::ALL.into_iter().map(Group::Kind))
+            .collect()
     }
 
-    pub(crate) fn set_open(&mut self, group: Group, open: bool) {
-        match group {
-            Group::Uze => self.uze_folded = !open,
-            Group::Kind(_) if open => {
-                self.open.insert(group);
-            }
-            Group::Kind(_) => {
-                self.open.remove(&group);
-            }
-        }
+    /// The section the table shows.
+    pub(crate) fn section(&self, findings: usize) -> Group {
+        let sections = self.sections(findings);
+        self.section
+            .filter(|section| sections.contains(section))
+            .unwrap_or(sections[0])
     }
 
     /// The resources of `kind` on screen, as positions in the Overview's.
@@ -239,42 +248,37 @@ impl MachineScreen {
         })
     }
 
-    /// Every line of the tree, top to bottom. `findings` is how many of
-    /// uze's own there are; they head the tree while there are any and no
-    /// search is on.
+    /// How many resources of `kind` there are with the harness chosen,
+    /// whatever is typed in the search.
+    pub(crate) fn count(&self, kind: ResourceKind) -> (usize, usize, usize) {
+        let resources: Vec<&OverviewResource> = self
+            .overview
+            .iter()
+            .flat_map(|overview| overview.resources.iter())
+            .filter(|resource| resource.kind == kind)
+            .filter(|resource| self.harness.as_ref().is_none_or(|h| resource.reaches(h)))
+            .collect();
+        let broken = resources
+            .iter()
+            .filter(|r| matches!(r.status, Status::Broken { .. }))
+            .count();
+        let duplicates = resources
+            .iter()
+            .filter(|r| matches!(r.status, Status::Duplicate { .. }))
+            .count();
+        (resources.len(), broken, duplicates)
+    }
+
+    /// Every row of the table, top to bottom, for the section chosen.
     pub(crate) fn lines(&self, findings: usize) -> Vec<Line> {
-        let mut lines = Vec::new();
-        if findings > 0 && !self.filtering() {
-            lines.push(Line::Group(Group::Uze));
-            if self.is_open(Group::Uze) {
-                lines.extend((0..findings).map(Line::Finding));
-            }
+        match self.section(findings) {
+            Group::Uze => (0..findings).map(Line::Finding).collect(),
+            Group::Kind(kind) => self.members(kind).into_iter().map(Line::Resource).collect(),
         }
-        for kind in ResourceKind::ALL {
-            let members = self.members(kind);
-            if members.is_empty() {
-                continue;
-            }
-            let group = Group::Kind(kind);
-            lines.push(Line::Group(group));
-            if self.is_open(group) {
-                lines.extend(members.into_iter().map(Line::Resource));
-            }
-        }
-        lines
     }
 
     pub(crate) fn resource(&self, index: usize) -> Option<&OverviewResource> {
         self.overview.as_ref()?.resources.get(index)
-    }
-
-    /// The group a line belongs to.
-    pub(crate) fn group_of(&self, line: Line) -> Option<Group> {
-        match line {
-            Line::Group(group) => Some(group),
-            Line::Finding(_) => Some(Group::Uze),
-            Line::Resource(index) => self.resource(index).map(|r| Group::Kind(r.kind)),
-        }
     }
 
     /// Moves the harness or the period field one step.
@@ -410,65 +414,68 @@ use super::model::{Focus, Overlay, Route, TuiModel};
 use super::worker::Intent;
 
 impl TuiModel {
-    /// Moves the Overview's cursor by `delta` lines, back onto the tree.
+    /// The sections of the Overview's menu, as it is drawn now.
+    pub(crate) fn machine_sections(&self) -> Vec<Group> {
+        self.remembered.machine.sections(self.alerts().len())
+    }
+
+    pub(crate) fn machine_section(&self) -> Group {
+        self.remembered.machine.section(self.alerts().len())
+    }
+
+    /// `↑↓`: the menu changes section, the table moves its row.
     pub(crate) fn machine_move(&mut self, delta: isize) -> Intent {
-        let len = self.machine_lines().len();
-        let screen = &mut self.remembered.machine;
-        screen.field = Field::List;
-        screen.list.selected = screen
-            .list
-            .selected
-            .saturating_add_signed(delta)
-            .min(len.saturating_sub(1));
+        self.remembered.machine.field = Field::List;
+        match self.remembered.machine.pane {
+            Pane::Menu => {
+                let sections = self.machine_sections();
+                let at = sections
+                    .iter()
+                    .position(|section| *section == self.machine_section())
+                    .unwrap_or(0);
+                let next = at
+                    .saturating_add_signed(delta)
+                    .min(sections.len().saturating_sub(1));
+                self.remembered.machine.section = Some(sections[next]);
+                self.remembered.machine.list.selected = 0;
+            }
+            Pane::Table => {
+                let len = self.machine_lines().len();
+                let list = &mut self.remembered.machine.list;
+                list.selected = list
+                    .selected
+                    .saturating_add_signed(delta)
+                    .min(len.saturating_sub(1));
+            }
+        }
         Intent::None
     }
 
-    /// `→`: a field steps forward; a folded group unfolds; an unfolded one
-    /// steps onto its first line.
+    /// `→`: a field steps forward; the menu hands the keys to its table.
     pub(crate) fn machine_step_in(&mut self) -> Intent {
         let field = self.remembered.machine.field;
         if field != Field::List {
             self.remembered.machine.turn(field, true);
-            return Intent::None;
-        }
-        if let Some(Line::Group(group)) = self.machine_line() {
-            if self.remembered.machine.is_open(group) {
-                return self.machine_move(1);
-            }
-            self.remembered.machine.set_open(group, true);
+        } else if !self.machine_lines().is_empty() {
+            self.remembered.machine.pane = Pane::Table;
         }
         Intent::None
     }
 
-    /// `←`: a field steps back; a line goes to its group; a group folds.
+    /// `←`: a field steps back; the table gives the keys back to the menu.
     pub(crate) fn machine_step_back(&mut self) -> Intent {
         let field = self.remembered.machine.field;
         if field != Field::List {
             self.remembered.machine.turn(field, false);
-            return Intent::None;
-        }
-        let Some(line) = self.machine_line() else {
-            return Intent::None;
-        };
-        match line {
-            Line::Group(group) => self.remembered.machine.set_open(group, false),
-            line => {
-                let group = self.remembered.machine.group_of(line);
-                if let Some(at) = self
-                    .machine_lines()
-                    .iter()
-                    .position(|candidate| Some(*candidate) == group.map(Line::Group))
-                {
-                    self.remembered.machine.list.selected = at;
-                }
-            }
+        } else {
+            self.remembered.machine.pane = Pane::Menu;
         }
         Intent::None
     }
 
-    /// `tab`: the keyboard moves from the tree to the harness field, to the
-    /// period field, and on to the screens' strip, as it does from every
-    /// other screen; `shift+tab` walks back.
+    /// `tab`: the keyboard moves from the menu and table to the harness
+    /// field, to the period field, and on to the screens' strip, as it does
+    /// from every other screen; `shift+tab` walks back.
     pub(crate) fn machine_next_field(&mut self, forward: bool) -> Intent {
         let screen = &mut self.remembered.machine;
         let leaves = matches!(
@@ -484,14 +491,12 @@ impl TuiModel {
         Intent::None
     }
 
-    /// What Enter does on the line the keyboard is on.
+    /// What Enter does where the keyboard is.
     pub(crate) fn machine_activate(&mut self) -> Intent {
+        if self.remembered.machine.pane == Pane::Menu {
+            return self.machine_step_in();
+        }
         match self.machine_line() {
-            Some(Line::Group(group)) => {
-                let open = self.remembered.machine.is_open(group);
-                self.remembered.machine.set_open(group, !open);
-                Intent::None
-            }
             Some(Line::Finding(_)) => {
                 self.overlay = Overlay::Health;
                 Intent::None
@@ -507,19 +512,10 @@ impl TuiModel {
 
     /// What Enter does, in the footer's word, or `None` where it does nothing.
     pub(crate) fn machine_activate_label(&self) -> Option<String> {
+        if self.remembered.machine.pane == Pane::Menu {
+            return (!self.machine_lines().is_empty()).then(|| "open".to_owned());
+        }
         match self.machine_line()? {
-            Line::Group(group) if self.remembered.machine.filtering() => {
-                let _ = group;
-                None
-            }
-            Line::Group(group) => Some(
-                if self.remembered.machine.is_open(group) {
-                    "fold"
-                } else {
-                    "unfold"
-                }
-                .to_owned(),
-            ),
             Line::Finding(_) => Some("details".to_owned()),
             Line::Resource(index) => match self.machine_offer(index)? {
                 MachineOffer::ShowPackage(_) => Some("show plugin".to_owned()),
@@ -559,16 +555,26 @@ impl TuiModel {
         self.marketplace_inspect_intent()
     }
 
-    /// A click on a line of the tree: it is chosen, and a group folds or
-    /// unfolds at once — the first click acts.
+    /// A click on a section of the menu: it is chosen, the keys on the menu.
+    pub(crate) fn machine_choose(&mut self, section: Group) -> Intent {
+        self.focus = Focus::Content;
+        let screen = &mut self.remembered.machine;
+        screen.field = Field::List;
+        screen.pane = Pane::Menu;
+        if screen.section != Some(section) {
+            screen.section = Some(section);
+            screen.list.selected = 0;
+        }
+        Intent::None
+    }
+
+    /// A click on a row of the table: it is chosen, the keys on the table.
     pub(crate) fn machine_click(&mut self, position: usize) -> Intent {
         self.focus = Focus::Content;
-        self.remembered.machine.field = Field::List;
-        self.remembered.machine.list.selected = position;
-        if let Some(Line::Group(group)) = self.machine_line() {
-            let open = self.remembered.machine.is_open(group);
-            self.remembered.machine.set_open(group, !open);
-        }
+        let screen = &mut self.remembered.machine;
+        screen.field = Field::List;
+        screen.pane = Pane::Table;
+        screen.list.selected = position;
         Intent::None
     }
 

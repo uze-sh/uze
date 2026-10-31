@@ -55,7 +55,9 @@ pub(crate) enum Hit {
     TypeInShell(String),
     ExtensionRow(usize),
     HarnessRow(usize),
-    /// A line of the Overview's tree, by position in it.
+    /// A section of the Overview's menu.
+    MachineSection(crate::ui::machine::Group),
+    /// A row of the Overview's table, by position in it.
     MachineLine(usize),
     /// One of a header field's arrows on the Overview: forward or back.
     MachineField(crate::ui::machine::Field, bool),
@@ -294,6 +296,7 @@ impl TuiModel {
                 self.focus = Focus::Content;
                 Intent::None
             }
+            Hit::MachineSection(section) => self.machine_choose(section),
             Hit::MachineLine(position) => self.machine_click(position),
             Hit::MachineField(field, forward) => self.machine_turn(field, forward),
             Hit::ShowPackage(id) => self.show_package(&id),
