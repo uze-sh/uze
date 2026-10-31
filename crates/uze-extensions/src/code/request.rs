@@ -77,6 +77,12 @@ pub enum FileRequest {
         root: PathBuf,
         paths: Vec<PathBuf>,
     },
+    /// Find `query` in every file of `root` Git would show — tracked or
+    /// not, never what it ignores — ignoring case.
+    Search {
+        root: PathBuf,
+        query: String,
+    },
 }
 
 /// What the host did about a [`FileRequest`].
@@ -127,6 +133,11 @@ pub enum FileAnswer {
     Restored {
         paths: Vec<PathBuf>,
         outcome: Result<(), String>,
+    },
+    /// What [`FileRequest::Search`] found, beside the query it was for.
+    Found {
+        query: String,
+        outcome: Result<super::search::Findings, String>,
     },
     Renamed {
         from: PathBuf,
@@ -196,6 +207,10 @@ pub fn unanswered(request: &FileRequest, reason: &str) -> FileAnswer {
         },
         FileRequest::Restore { paths, .. } => FileAnswer::Restored {
             paths: paths.clone(),
+            outcome: Err(reason.to_owned()),
+        },
+        FileRequest::Search { query, .. } => FileAnswer::Found {
+            query: query.clone(),
             outcome: Err(reason.to_owned()),
         },
     }
@@ -273,7 +288,34 @@ pub fn fulfill(host: &dyn Host, request: FileRequest) -> FileAnswer {
             outcome: host.restore_to_head(&root, &paths),
             paths,
         },
+        FileRequest::Search { root, query } => FileAnswer::Found {
+            outcome: search(host, &root, &query),
+            query,
+        },
     }
+}
+
+/// `git grep` for `query` as plain text, ignoring case, binary files left
+/// out. Exit 1 is "nothing found", an answer like any other.
+fn search(host: &dyn Host, root: &Path, query: &str) -> Result<super::search::Findings, String> {
+    let output = host.git(
+        root,
+        &[
+            "grep",
+            "-z",
+            "-n",
+            "--column",
+            "-I",
+            "-i",
+            "-F",
+            "--untracked",
+            "--no-color",
+            "-e",
+            query,
+        ],
+        &[1],
+    )?;
+    Ok(super::search::parse(root, &output))
 }
 
 /// The checkout's `files.exclude`. Its directory is listed first, so a

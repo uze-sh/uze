@@ -1149,20 +1149,7 @@ pub(super) fn render_query_row(
     // head: its end, where the cursor is, is what is being typed.
     let taken: usize = left.iter().map(Span::width).sum();
     let room = usize::from(rect.width).saturating_sub(taken + 1 + count.len() + 2);
-    left.push(Span::styled(
-        text::elide_head(needle, room),
-        theme::fg_bold(Token::TextBright),
-    ));
-    left.push(Span::styled(
-        theme::glyph(Symbol::CursorText),
-        theme::fg(Token::Accent),
-    ));
-    if needle.is_empty() {
-        left.push(Span::styled(
-            FILTER_PLACEHOLDER,
-            theme::fg(Token::TextFaint),
-        ));
-    }
+    left.extend(crate::ui::widget::Field::new(needle, FILTER_PLACEHOLDER).query(room));
     let right = vec![Span::styled(count, theme::fg(Token::TextFaint))];
     frame.render_widget(Paragraph::new(spread(rect, left, right)), rect);
     Some(rect)

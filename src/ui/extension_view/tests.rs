@@ -352,9 +352,11 @@ const MENU_ROW: usize = 0;
 
 fn sample() -> View {
     View {
+        tabs: Vec::new(),
         title: vec![Span::new("demo", Role::Bright)],
         caption: Vec::new(),
         navigator: Some(Navigator {
+            field: None,
             heading: "CHANGES".to_owned(),
             badge: "2".to_owned(),
             focused: true,
@@ -384,6 +386,7 @@ fn sample() -> View {
         content: Content::Lines {
             first: 0,
             caret: None,
+            editable: false,
             medium: Medium::Text,
             total: 1,
             heading: "DIFF · src/ui.rs".to_owned(),
@@ -762,9 +765,11 @@ fn a_flat_row_pins_its_marker_right_and_gives_up_the_detail_first() {
 #[test]
 fn the_navigation_is_the_bars_and_does_not_move_with_the_layout() {
     let sidebar = View {
+        tabs: Vec::new(),
         title: vec![Span::new("code", Role::Muted)],
         caption: Vec::new(),
         navigator: Some(Navigator {
+            field: None,
             heading: "FILES".to_owned(),
             badge: "7".to_owned(),
             focused: true,
@@ -794,6 +799,7 @@ fn the_navigation_is_the_bars_and_does_not_move_with_the_layout() {
                 spans: vec![Span::new("fn main() {}", Role::Default)],
             }],
             caret: None,
+            editable: false,
             medium: Medium::Text,
         },
         footer: Vec::new(),
@@ -889,9 +895,11 @@ fn a_row_menu_lies_under_its_row_and_takes_the_click() {
         icon: RowIcon::None,
     };
     let view = View {
+        tabs: Vec::new(),
         title: vec![Span::new("code", Role::Muted)],
         caption: Vec::new(),
         navigator: Some(Navigator {
+            field: None,
             heading: "CHANGES".to_owned(),
             badge: "3".to_owned(),
             focused: true,
@@ -958,6 +966,7 @@ fn a_row_menu_lies_under_its_row_and_takes_the_click() {
 #[test]
 fn a_surfaces_question_is_drawn_as_the_products_dialog() {
     let view = View {
+        tabs: Vec::new(),
         title: Vec::new(),
         caption: Vec::new(),
         navigator: None,
@@ -1097,12 +1106,14 @@ fn draw_with_menu(view: &View, at: Option<Rect>) -> (Vec<String>, Vec<(Rect, Vie
 #[test]
 fn a_boards_hints_stop_before_its_caption() {
     let view = View {
+        tabs: Vec::new(),
         title: vec![Span::new("architect", Role::Muted)],
         caption: Vec::new(),
         navigator: None,
         content: Content::Lines {
             first: 0,
             caret: None,
+            editable: false,
             medium: Medium::Text,
             total: 1,
             heading: "3 boxes · 2 edges · containers.mmd".to_owned(),
@@ -1184,6 +1195,7 @@ fn a_board_click_resolves_in_the_space_the_frame_drew_in() {
             })
             .collect();
         let view = View {
+            tabs: Vec::new(),
             title: vec![Span::new("Map", Role::Bright)],
             caption: Vec::new(),
             navigator: None,
@@ -1194,6 +1206,7 @@ fn a_board_click_resolves_in_the_space_the_frame_drew_in() {
                 total: lines.len(),
                 lines,
                 caret: None,
+                editable: false,
                 medium: Medium::Text,
             },
             footer: vec![Command::Close],
@@ -1297,9 +1310,11 @@ fn board(groups: usize, items: usize, trail: &[(&str, bool)]) -> View {
         }));
     }
     View {
+        tabs: Vec::new(),
         title: vec![Span::new("Board", Role::Bright)],
         caption: Vec::new(),
         navigator: Some(Navigator {
+            field: None,
             heading: String::new(),
             badge: String::new(),
             focused: false,
@@ -1315,6 +1330,7 @@ fn board(groups: usize, items: usize, trail: &[(&str, bool)]) -> View {
             lines: Vec::new(),
             total: 0,
             caret: None,
+            editable: false,
             medium: Medium::Text,
         },
         footer: vec![Command::Close],
@@ -1455,9 +1471,11 @@ fn a_list_longer_than_the_board_keeps_the_highlight_in_view_and_says_where_it_is
         icon: RowIcon::None,
     }));
     let view = View {
+        tabs: Vec::new(),
         title: vec![Span::new("Board", Role::Bright)],
         caption: Vec::new(),
         navigator: Some(Navigator {
+            field: None,
             heading: String::new(),
             badge: String::new(),
             focused: false,
@@ -1473,6 +1491,7 @@ fn a_list_longer_than_the_board_keeps_the_highlight_in_view_and_says_where_it_is
             lines: Vec::new(),
             total: 0,
             caret: None,
+            editable: false,
             medium: Medium::Text,
         },
         footer: vec![Command::Close],
@@ -1730,9 +1749,9 @@ fn unnumbered_content_is_inset_where_numbered_content_leans_on_its_gutter() {
     *heading = "HEADING".to_owned();
     let (rows, _) = draw(&view);
 
-    // Measured against the heading rather than the frame, because the
-    // heading is drawn at the content area's own left edge — so the
-    // difference is the margin and nothing else. In *columns*: the
+    // Measured against the heading rather than the frame: the heading
+    // stands [`HEADING_INSET`] in from the content area's edge, so the
+    // difference is the margin less that, and nothing else. In *columns*: the
     // frame's own rules are multi-byte, so a byte offset is not where
     // the terminal put anything.
     let column_of = |needle: &str| -> usize {
@@ -1742,7 +1761,7 @@ fn unnumbered_content_is_inset_where_numbered_content_leans_on_its_gutter() {
     };
     assert_eq!(
         column_of("PROSE") - column_of("HEADING"),
-        usize::from(PROSE_INSET),
+        usize::from(PROSE_INSET - HEADING_INSET),
         "prose must be inset from the edge its own heading sits on"
     );
 
@@ -2208,7 +2227,14 @@ fn drawn_with_caret(line: &ContentLine, width: u16, column: usize) -> ratatui::b
     let mut terminal = Terminal::new(TestBackend::new(area.width, area.height)).unwrap();
     terminal
         .draw(|frame| {
-            render_line(frame, area, line, GUTTER_WIDTH, true);
+            render_line(
+                frame,
+                area,
+                line,
+                GUTTER_WIDTH,
+                true,
+                lines::LineLight::Rest,
+            );
             render_caret(frame, area, line, column, GUTTER_WIDTH);
         })
         .unwrap();
@@ -2589,6 +2615,7 @@ fn a_message_without_a_hint_keeps_its_case() {
 fn an_item_without_a_marker_lines_up_with_the_groups_beside_it() {
     let view = View {
         navigator: Some(Navigator {
+            field: None,
             heading: "FILES".to_owned(),
             badge: String::new(),
             focused: true,
@@ -2658,6 +2685,7 @@ fn a_long_name_slides_under_the_pointer_and_is_cut_elsewhere() {
     let long = "0042-adopt-a-much-longer-name-than-the-column-holds.md";
     let view = View {
         navigator: Some(Navigator {
+            field: None,
             heading: "DECISIONS".to_owned(),
             badge: "1".to_owned(),
             focused: true,
@@ -2740,6 +2768,7 @@ fn a_long_name_slides_under_the_pointer_and_is_cut_elsewhere() {
 fn a_flat_rows_detail_slides_with_its_name() {
     let view = View {
         navigator: Some(Navigator {
+            field: None,
             heading: "CHANGES".to_owned(),
             badge: "1".to_owned(),
             focused: true,
@@ -2863,4 +2892,256 @@ fn a_sections_cut_line_slides_by_the_hosts_hover_beat() {
         line(0)
     );
     assert!(!line(40).contains("Tokenize"), "moved on: {:?}", line(40));
+}
+
+/// A line a click types on lifts, the whole row, under the pointer, and
+/// the line the caret is on reads as the active one; lines a click only marks
+/// stay as they rest, since nothing that is not clickable looks it.
+#[test]
+fn an_editable_line_is_banded_under_the_pointer_and_at_the_caret() {
+    let numbers = |editable: bool| {
+        let mut view = sample();
+        view.navigator = None;
+        let line = |number: &str, text: &str| ContentLine {
+            gutter: " ".to_owned(),
+            number: number.to_owned(),
+            tone: LineTone::Neutral,
+            spans: vec![Span::new(text, Role::Default)],
+        };
+        view.content = Content::Lines {
+            first: 0,
+            caret: editable.then_some(Caret { line: 2, column: 0 }),
+            editable,
+            medium: Medium::Text,
+            total: 3,
+            heading: "notes.txt".to_owned(),
+            scroll: 0,
+            lines: vec![line("1", "alpha"), line("2", "bravo"), line("3", "charlie")],
+        };
+        let mut terminal = Terminal::new(TestBackend::new(60, 12)).unwrap();
+        terminal
+            .draw(|frame| {
+                render(
+                    frame,
+                    &view,
+                    frame.area(),
+                    NavigatorFrame {
+                        width: None,
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                        sliding: Some((ViewHit::PlaceCaret { line: 1, cell: 0 }, 0)),
+                    },
+                    FooterKeys {
+                        scope: uze_keys::Scope::Code,
+                        hovered: None,
+                        host: &[],
+                    },
+                    None,
+                    &mut Vec::new(),
+                );
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        ["alpha", "bravo", "charlie"].map(|text| {
+            let row = (0..buffer.area.height)
+                .find(|&row| {
+                    (0..buffer.area.width)
+                        .map(|column| buffer[(column, row)].symbol())
+                        .collect::<String>()
+                        .contains(text)
+                })
+                .expect("the line is drawn");
+            let digit = (0..buffer.area.width)
+                .find(|&column| buffer[(column, row)].symbol().trim().parse::<u8>().is_ok())
+                .expect("its number is drawn");
+            // Past the text, where only the row's ground is drawn: the
+            // band runs the whole line, not just under its characters.
+            let past = buffer.area.width - 4;
+            (buffer[(digit, row)].fg, buffer[(past, row)].bg)
+        })
+    };
+    let [rest, pointed, caret] = numbers(true);
+    assert_eq!(
+        rest,
+        (
+            theme::color(Token::TextDim),
+            theme::color(Token::SurfaceBackground)
+        ),
+        "a line at rest"
+    );
+    assert_eq!(
+        pointed,
+        (
+            theme::color(Token::TextSecondary),
+            theme::color(Token::SurfaceHover)
+        ),
+        "under the pointer, the whole line lifts"
+    );
+    assert_eq!(
+        caret,
+        (
+            theme::color(Token::TextBright),
+            theme::color(Token::SurfaceSelected)
+        ),
+        "the caret's line is banded as the active one"
+    );
+
+    let [_, pointed, _] = numbers(false);
+    assert_eq!(
+        pointed,
+        (
+            theme::color(Token::TextDim),
+            theme::color(Token::SurfaceBackground)
+        ),
+        "a line a click does not type on does not lift"
+    );
+}
+
+/// The files open stand as tabs over the content: each answers a click
+/// on itself and on its close mark, and one with unsaved changes shows
+/// the editor's dot where the close mark stands.
+#[test]
+fn open_files_are_tabs_over_the_content_and_close_from_their_mark() {
+    let mut view = sample();
+    view.tabs = vec![
+        uze_extensions::view::FileTab {
+            name: "main.rs".to_owned(),
+            active: true,
+            ..Default::default()
+        },
+        uze_extensions::view::FileTab {
+            name: "lib.rs".to_owned(),
+            unsaved: true,
+            ..Default::default()
+        },
+    ];
+    let (rows, hits) = draw(&view);
+    let strip = rows
+        .iter()
+        .position(|row| row.contains("main.rs") && row.contains("lib.rs"))
+        .expect("one strip with both tabs");
+    let drawn = &rows[strip];
+    assert!(
+        drawn.contains(&theme::glyph(Symbol::MarkUnsaved)),
+        "the changed file's tab says so: {drawn:?}"
+    );
+    assert!(
+        drawn.contains(&theme::glyph(Symbol::MarkClose)),
+        "{drawn:?}"
+    );
+    assert!(
+        rows[strip + 1].contains("DIFF"),
+        "the content's own heading sits under the strip: {:?}",
+        rows[strip + 1]
+    );
+    for wanted in [
+        ViewHit::SelectTab(0),
+        ViewHit::SelectTab(1),
+        ViewHit::CloseTab(0),
+        ViewHit::CloseTab(1),
+    ] {
+        let (rect, _) = hits
+            .iter()
+            .find(|(_, hit)| *hit == wanted)
+            .unwrap_or_else(|| panic!("{wanted:?} is somewhere"));
+        assert_eq!(rect.y as usize, strip);
+    }
+    let close = hits
+        .iter()
+        .position(|(_, hit)| *hit == ViewHit::CloseTab(0))
+        .unwrap();
+    let select = hits
+        .iter()
+        .position(|(_, hit)| *hit == ViewHit::SelectTab(0))
+        .unwrap();
+    assert!(
+        close < select,
+        "the mark is found before the tab it lies on"
+    );
+}
+
+/// A search's field stands over its list, says what it found under it,
+/// and takes the keys when pointed at; a found line sets its match apart
+/// and answers a click as a row does.
+#[test]
+fn a_navigators_field_stands_over_what_it_found() {
+    let mut view = sample();
+    let navigator = view.navigator.as_mut().unwrap();
+    navigator.field = Some(uze_extensions::view::Field {
+        text: "fog".to_owned(),
+        placeholder: "Search".to_owned(),
+        focused: true,
+        summary: Span::new("1 result in 1 file", Role::Muted),
+    });
+    let mut found = Span::new("fog", Role::Default);
+    found.ground = Some(Role::Warning);
+    navigator.rows = vec![
+        NavigatorRow::Found {
+            id: 0,
+            name: "a.rs".to_owned(),
+            detail: "src".to_owned(),
+            count: 1,
+            collapsed: false,
+            icon: RowIcon::Code,
+        },
+        NavigatorRow::Match {
+            id: 0,
+            spans: vec![Span::new("let ", Role::Default), found],
+            selected: false,
+        },
+    ];
+    let (rows, hits) = draw(&view);
+    let at = |text: &str| {
+        rows.iter()
+            .position(|row| row.contains(text))
+            .unwrap_or_else(|| panic!("{text} is drawn: {rows:#?}"))
+    };
+    assert!(at("fog") < at("1 result in 1 file"));
+    assert!(at("1 result in 1 file") < at("a.rs src"));
+    assert!(at("a.rs src") < at("let fog"));
+    assert!(
+        rows[at("let fog")].contains(&theme::glyph(Symbol::TreeVertical)),
+        "a found line hangs from its file's guide: {:?}",
+        rows[at("let fog")]
+    );
+    let row_of = |wanted: ViewHit| {
+        hits.iter()
+            .find(|(_, hit)| *hit == wanted)
+            .map(|(rect, _)| rect.y as usize)
+    };
+    assert_eq!(row_of(ViewHit::FocusField), Some(at("fog")));
+    let clear = hits
+        .iter()
+        .position(|(_, hit)| *hit == ViewHit::ClearField)
+        .expect("a field holding text can be emptied");
+    let focus = hits
+        .iter()
+        .position(|(_, hit)| *hit == ViewHit::FocusField)
+        .unwrap();
+    assert!(
+        clear < focus,
+        "the mark is found before the field it lies on"
+    );
+    assert!(rows[at("fog")].contains(&theme::glyph(Symbol::MarkClose)));
+    assert_eq!(row_of(ViewHit::ToggleGroup(0)), Some(at("a.rs src")));
+    assert_eq!(row_of(ViewHit::SelectItem(0)), Some(at("let fog")));
+}
+
+/// A file's lines carry no marker, so their gutter is their numbers alone
+/// and sits close to the edge; a diff's keeps the marker's column. Either
+/// is as wide as its widest number, never under three digits.
+#[test]
+fn a_gutter_is_as_wide_as_its_numbers_and_marks() {
+    let line = |gutter: &str, number: &str| ContentLine {
+        gutter: gutter.to_owned(),
+        number: number.to_owned(),
+        tone: LineTone::Neutral,
+        spans: Vec::new(),
+    };
+    assert_eq!(gutter_width(&[line("", "1"), line("", "26")]), 5);
+    assert_eq!(
+        gutter_width(&[line("+", "1"), line(" ", "2")]),
+        GUTTER_WIDTH
+    );
+    assert_eq!(gutter_width(&[line("", "12345")]), 7);
 }

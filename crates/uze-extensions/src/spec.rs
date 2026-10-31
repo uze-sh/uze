@@ -764,6 +764,7 @@ fn source_lines(text: &str, path: &Path, theme: &str) -> Vec<ContentLine> {
 /// What the surface shows, for the room it has.
 pub fn view(state: &SpecView, space: Size) -> View {
     let base = View {
+        tabs: Vec::new(),
         title: checkout::name(CATALOG.name),
         caption: checkout::caption(&state.display_root, &state.branch),
         navigator: None,
@@ -874,6 +875,7 @@ fn navigator(state: &SpecView) -> Navigator {
     let selected = state.selected_row();
     let depth = usize::from(state.banded());
     Navigator {
+        field: None,
         heading: state.subject.label().to_owned(),
         badge: state.listed(state.subject).len().to_string(),
         focused: true,
@@ -1038,6 +1040,7 @@ fn content(state: &SpecView, space: Size) -> Content {
         lines: shown.iter().skip(first).take(window).cloned().collect(),
         total: shown.len(),
         caret: None,
+        editable: false,
         medium: Medium::Text,
     }
 }

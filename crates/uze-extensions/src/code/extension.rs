@@ -128,6 +128,12 @@ pub struct CodeExtension {
     /// Drawn until a read of the checkout now in front replaces it.
     history: Option<History>,
     reading_history: Option<PathBuf>,
+    /// Surfaces put away with work not yet saved, by checkout: the host
+    /// closes one when another agent comes to the front, or another tab
+    /// of the same one, and an editor never loses typing to a change of
+    /// window. The next opening on that checkout takes it back whole —
+    /// tabs, buffers, search. Only a discard the viewer answered drops it.
+    kept: BTreeMap<PathBuf, CodeView>,
 }
 
 impl CodeExtension {
@@ -550,7 +556,13 @@ impl Extension for CodeExtension {
                     return Outcome::Stay;
                 };
                 if let Some(view) = self.open.as_mut() {
+                    // The door that shuts it asks first, as Esc does.
                     if half(view.showing()) == half(wanted) {
+                        if view.has_unsaved() && !view.confirming_discard() {
+                            view.ask_to_discard();
+                            return Outcome::Stay;
+                        }
+                        view.discard_unsaved();
                         return Outcome::Close;
                     }
                     view.show(wanted);
@@ -586,6 +598,19 @@ impl Extension for CodeExtension {
             Some(Arrival::Return) => (ContentMode::Diff, None, Awaiting::Held),
             None => (ContentMode::Diff, None, Awaiting::Place),
         };
+        if let Some(mut view) = self.kept.remove(&checkout.root) {
+            // Everything it held stands as it was left; a door still says
+            // which half, and a path sent still goes to that file.
+            match sent {
+                Some(place) => view = view.resuming(place),
+                None if awaiting == Awaiting::Place => view.show(mode),
+                None => {}
+            }
+            self.awaiting = Awaiting::Nothing;
+            self.measure_asked = None;
+            self.open = Some(view);
+            return;
+        }
         let mut view = CodeView::opening(checkout.root.clone(), checkout.display.clone(), mode);
         self.awaiting = awaiting;
         if let Some(place) = sent {
@@ -599,8 +624,11 @@ impl Extension for CodeExtension {
     }
 
     fn close(&mut self, surface: &str) {
-        if surface == SURFACE {
-            self.open = None;
+        if surface == SURFACE
+            && let Some(view) = self.open.take()
+            && view.has_unsaved()
+        {
+            self.kept.insert(view.root().to_path_buf(), view);
         }
     }
 

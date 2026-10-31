@@ -1157,9 +1157,11 @@ pub fn view(state: &ArchitectView, space: Size) -> View {
         });
     }
     View {
+        tabs: Vec::new(),
         title: checkout::name(CATALOG.name),
         caption: checkout::caption(&state.display_root, &state.branch),
         navigator: Some(Navigator {
+            field: None,
             heading: "ARTIFACTS".to_owned(),
             badge: state.catalog.artifacts().len().to_string(),
             focused: false,
@@ -1245,6 +1247,7 @@ fn content(state: &ArchitectView, space: Size) -> Content {
                 // wrapped line takes.
                 lines: source_lines(source, first, usize::from(space.height).saturating_mul(2)),
                 caret: None,
+                editable: false,
                 medium: Medium::Text,
             }
         }
@@ -1260,6 +1263,7 @@ fn content(state: &ArchitectView, space: Size) -> Content {
                 total: lines.len(),
                 lines,
                 caret: None,
+                editable: false,
                 medium: Medium::Drawing,
             }
         }
