@@ -192,6 +192,8 @@ pub struct Availability {
     /// Nothing it starts outlives its run.
     pub tree: bool,
     pub memory: bool,
+    /// Its processor time is bounded: user and system time on Unix, user
+    /// time alone in a Windows job, the run's wall clock ending the rest.
     pub cpu: bool,
     pub file_size: bool,
     pub open_files: bool,

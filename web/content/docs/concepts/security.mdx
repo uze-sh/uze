@@ -106,7 +106,7 @@ right:
 | Cannot signal, debug or read another process | <Enforced is="yes" /> | <Enforced is="partly" /> | <Enforced is="yes" /> | <Enforced is="yes" /> |
 | Nothing it starts outlives its run | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="no" /> | <Enforced is="yes" /> |
 | Memory limit | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="no" /> | <Enforced is="yes" /> |
-| Processor time limit | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="yes" /> |
+| Processor time limit | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="partly" /> |
 | File size limit | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="no" /> |
 | Open files limit | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="no" /> |
 
@@ -115,6 +115,9 @@ emptying a file it may only read is refused from 6.2 and an ungranted device
 from 6.10. The system-call filter refuses debugging and reading another
 process, and limits which processes it can signal as far as it can tell from
 the call alone.
+
+On Windows the processor time limit counts the time a program spends in its
+own code, not in the system's; the run's own time limit ends it either way.
 
 `uze doctor` says which applies to this machine. Where nothing confines, the
 consent says the program runs as you.

@@ -94,6 +94,8 @@ writes later inherit it. A path the user cannot rewrite the DACL of
 The helper starts the program suspended in a new job. The job has
 `KILL_ON_JOB_CLOSE`, `PROCESS_MEMORY` set to `address_space`,
 `PER_PROCESS_USER_TIME` set to `cpu_seconds`, and `DIE_ON_UNHANDLED_EXCEPTION`.
+A job bounds user time only, so time spent in the kernel is left to the
+run's wall-clock limit; the security page marks the bound partial.
 The helper then resumes the program and waits for it, and exits with the
 program's code. The job nests inside the runner's own, so ending the
 runner's job ends this one too. A commit of 512 MiB under a 256 MiB limit
