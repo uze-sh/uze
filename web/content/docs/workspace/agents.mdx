@@ -102,9 +102,9 @@ defines. Flags and variables you used before are listed under the line, this
 project's first: `Space` checks one for this launch, and `✕` forgets it. The
 next new agent opens with the set the last one launched with.
 
-uze refuses what it manages itself (its own `UZE_*` variables, `PATH`, `HOME`,
-the agent's config directory, and the flags for sessions and resuming) and
-says so as you type. Flags that weaken the harness's safety, such as
+What uze manages itself is refused as you type: its own `UZE_*` variables,
+`PATH`, `HOME`, the agent's config directory, and the flags for sessions and
+resuming. Flags that weaken the harness's safety, such as
 skipping permission prompts, are accepted and marked. Variables that look like
 secrets, and URLs carrying credentials, are never remembered.
 
@@ -216,7 +216,7 @@ terminal, `uze workspace allow` does the same, and `uze workspace revoke`
 takes the approval back; see
 [Approving the commands](/docs/reference/project-files#approving-the-commands).
 
-uze's own Git runs no repository hooks, so a `pre-push` hook (Git LFS,
+Repository hooks never run in uze's own Git, so a `pre-push` hook (Git LFS,
 lefthook) does not run when uze pushes. Put those checks in `gate`. See
 [Security](/docs/concepts/security#git-runs-nothing-the-repository-names).
 
