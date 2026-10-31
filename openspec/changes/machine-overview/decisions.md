@@ -96,6 +96,6 @@
 - task:     4.1
 - commit:
 - trigger:  The operator asked for ordering by column, with chevrons for ascending and descending.
-- decided:  A click on a heading orders by it (names and origins from A, tokens from the heaviest, status from what needs looking at); a second click turns it round. `tab` reaches the headings after the period field; `←→` choose a column, Enter turns it. Two symbols join the vocabulary, `sort.ascending` and `sort.descending`, in every glyph set; the schema is regenerated.
+- decided:  A click on a heading orders by it (names and origins from A, tokens from the heaviest, status from what needs looking at); a second click turns it round. `tab` reaches the headings after the period field; `←→` choose a column, Enter turns it. Two symbols join the vocabulary, `sort.ascending` and `sort.descending`, in every glyph set: thin and centred so turning a column round never moves the row (`∧ ∨`; `nf-fa-angle_up`/`_down` in nerd; `^ v` in ascii); the schema is regenerated.
 - rejected: A letter key for sorting: bare letters act on the selection.
 - blast:    `machine.rs::{Column, Sort}`, `view/overview.rs::render_headings`, `uze-theme` symbols and glyph sets.
