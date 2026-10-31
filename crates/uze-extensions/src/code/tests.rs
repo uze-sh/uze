@@ -2208,9 +2208,9 @@ fn keystrokes_typed_while_a_save_is_out_survive_its_answer() {
     assert!(!view.open.as_ref().expect("still open").modified);
 }
 
-/// Moving the cursor is not a request to throw away what was typed: an
-/// unsaved buffer keeps the surface on its file, by the arrows or by a
-/// click, until it is saved.
+/// Moving the cursor is not a request to throw away what was typed, nor a
+/// wall: the changed buffer is kept while another file is shown, as an
+/// editor keeps a changed file open, and going back picks it up again.
 #[test]
 fn moving_away_from_unsaved_work_keeps_it() {
     let machine = FakeMachine::default()
@@ -2225,32 +2225,98 @@ fn moving_away_from_unsaved_work_keeps_it() {
     press(&mut view, Command::Close);
     press(&mut view, Command::FocusNext);
 
-    press(&mut view, Command::SelectNext);
     handle_mouse(&mut view, Some(ViewHit::SelectItem(1)), space());
     settle(&mut view, &machine);
-
-    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/a.txt")));
-    let open = view.open.as_ref().expect("the buffer is still open");
-    assert_eq!(open.lines, ["xaaa"]);
-    assert!(open.modified);
-    let said = super::view(&view, space()).notice;
     assert_eq!(
-        said.as_ref()
-            .map(|notice| (notice.text.as_str(), notice.role)),
-        Some(("a.txt has unsaved changes", Role::Warning)),
-        "the refusal is said where the viewer can read it"
+        view.selected.as_deref(),
+        Some(Path::new("/w/b.txt")),
+        "the cursor moves"
     );
+    assert_eq!(view.open.as_ref().expect("b is open").lines, ["bbb"]);
+    assert_eq!(view.unsaved(), [Path::new("/w/a.txt")], "a is kept");
+    let Some(crate::view::Navigator { rows, .. }) = super::view(&view, space()).navigator else {
+        panic!("the tree is drawn");
+    };
+    let details: Vec<&str> = rows
+        .iter()
+        .filter_map(|row| match row {
+            NavigatorRow::Item { detail, .. } => Some(detail.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(details, ["unsaved", ""], "and the tree says which file is");
+
+    handle_mouse(&mut view, Some(ViewHit::SelectItem(0)), space());
+    settle(&mut view, &machine);
+    let open = view.open.as_ref().expect("a is open again");
+    assert_eq!(open.lines, ["xaaa"], "from the buffer, not the disk");
+    assert!(open.modified);
 
     press(&mut view, Command::Edit);
     press(&mut view, Command::Save);
     settle(&mut view, &machine);
-    press(&mut view, Command::Close);
-    handle_mouse(&mut view, Some(ViewHit::SelectItem(1)), space());
+    assert!(view.unsaved().is_empty());
     assert_eq!(
-        view.selected.as_deref(),
-        Some(Path::new("/w/b.txt")),
-        "once it is saved, the cursor moves"
+        machine
+            .files
+            .borrow()
+            .get(Path::new("/w/a.txt"))
+            .map(String::as_str),
+        Some("xaaa\n")
     );
+}
+
+/// A change typed and then taken back is no change: the buffer is
+/// measured against the file, not against whether a key was pressed.
+#[test]
+fn typing_a_character_and_erasing_it_leaves_nothing_unsaved() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "end.\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+    press(&mut view, Command::Edit);
+    press(&mut view, Command::CaretLineEnd);
+    press(&mut view, Command::EraseBack);
+    assert!(view.open.as_ref().unwrap().modified, "the dot is gone");
+    type_text(&mut view, ".");
+    assert!(
+        !view.open.as_ref().unwrap().modified,
+        "and back again, which is the file as it was"
+    );
+    press(&mut view, Command::Close);
+    assert_eq!(
+        press(&mut view, Command::Close),
+        CodeOutcome::Close,
+        "nothing to ask about"
+    );
+}
+
+/// Closing asks about every changed buffer, the ones moved away from too.
+#[test]
+fn closing_asks_about_every_unsaved_file() {
+    let machine = FakeMachine::default()
+        .with_file("/w/a.txt", "aaa\n")
+        .with_file("/w/b.txt", "bbb\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    for index in [0, 1] {
+        handle_mouse(&mut view, Some(ViewHit::SelectItem(index)), space());
+        settle(&mut view, &machine);
+        handle_mouse(
+            &mut view,
+            Some(ViewHit::PlaceCaret { line: 0, cell: 0 }),
+            space(),
+        );
+        type_text(&mut view, "x");
+        press(&mut view, Command::Close);
+    }
+    assert_eq!(press(&mut view, Command::Close), CodeOutcome::Stay);
+    assert_eq!(
+        super::view(&view, space()).notice.map(|notice| notice.text),
+        Some("2 files have unsaved changes · close again to discard them".to_owned())
+    );
+    assert_eq!(press(&mut view, Command::Close), CodeOutcome::Close);
 }
 
 /// A caret or a diff row past what a `u16` counts is reached exactly,

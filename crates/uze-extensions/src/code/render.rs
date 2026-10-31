@@ -271,12 +271,13 @@ fn delete_confirm(code: &CodeView) -> Option<Confirm> {
 /// happened.
 fn notice(code: &CodeView) -> Option<Span> {
     if code.confirming_discard {
-        let name = code
-            .open
-            .as_ref()
-            .map_or_else(String::new, |open| super::file_name(&open.path));
+        let unsaved = code.unsaved();
+        let what = match unsaved.as_slice() {
+            [one] => format!("{} has", super::file_name(one)),
+            many => format!("{} files have", many.len()),
+        };
         return Some(Span::new(
-            format!("{name} has unsaved changes · close again to discard them"),
+            format!("{what} unsaved changes · close again to discard them"),
             Role::Warning,
         ));
     }
@@ -402,6 +403,7 @@ pub(super) fn changes_navigator(code: &CodeView) -> Navigator {
 
 fn files_navigator(code: &CodeView) -> Navigator {
     let rows = code.files.rows(&code.root);
+    let unsaved = code.unsaved();
     let anchor = code
         .selected
         .as_ref()
@@ -441,7 +443,13 @@ fn files_navigator(code: &CodeView) -> Navigator {
                         None => Span::new(String::new(), Role::Muted),
                     },
                     marker_side: MarkerSide::Leading,
-                    detail: String::new(),
+                    // Said beside the name rather than in the marker, which
+                    // is the change Git sees: a parked buffer is a change
+                    // only this surface holds.
+                    detail: match unsaved.contains(&row.path.as_path()) {
+                        true => "unsaved".to_owned(),
+                        false => String::new(),
+                    },
                     depth: row.depth,
                     selected: code.selected.as_ref() == Some(&row.path),
                     icon: super::files::icon_for(&row.name, false, false),

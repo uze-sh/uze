@@ -60,7 +60,7 @@
 //! which is what keeps it from eating a buffer someone is typing into.
 
 use std::{
-    collections::{BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
@@ -248,6 +248,12 @@ pub struct CodeView {
     changes: Changes,
     files: Files,
     open: Option<OpenFile>,
+    /// Buffers with unsaved changes the viewer moved away from, by path.
+    /// Kept rather than refused or dropped, as an editor keeps a changed
+    /// file open while another is shown: going back to one picks up the
+    /// typing where it was left, scrolled where it was, and only closing
+    /// the surface asks.
+    parked: BTreeMap<PathBuf, Parked>,
     /// What the host still has to do for the files half, oldest first.
     queue: VecDeque<FileRequest>,
     /// A failure about the surface rather than about one file.
@@ -376,6 +382,7 @@ impl CodeView {
             },
             files: Files::default(),
             open: None,
+            parked: BTreeMap::new(),
             queue: VecDeque::new(),
             error: None,
             notice: None,
@@ -521,6 +528,17 @@ impl CodeView {
                 .open
                 .as_ref()
                 .is_some_and(|open| open.editing && open.error.is_none())
+    }
+
+    /// Every file with changes not yet written, the one on show first —
+    /// what closing the surface would throw away.
+    pub(super) fn unsaved(&self) -> Vec<&Path> {
+        self.open
+            .iter()
+            .filter(|open| open.modified)
+            .map(|open| open.path.as_path())
+            .chain(self.parked.keys().map(PathBuf::as_path))
+            .collect()
     }
 
     /// Whether the file on show is text that could be typed into — what
@@ -820,7 +838,12 @@ impl CodeView {
                 {
                     self.ask_for_exclusions();
                 }
-                let open = self.open.as_mut().filter(|open| open.path == path);
+                // The buffer may have been parked while its write was out.
+                let parked = !self.open.as_ref().is_some_and(|open| open.path == path);
+                let open = match parked {
+                    false => self.open.as_mut(),
+                    true => self.parked.get_mut(&path).map(|parked| &mut parked.open),
+                };
                 let written = open.and_then(|open| {
                     let revision = open.saving.pop_front()?;
                     Some((open, revision))
@@ -837,12 +860,19 @@ impl CodeView {
                         if let Some((open, revision)) = written
                             && open.revision() == revision
                         {
-                            open.modified = false;
-                            // Re-read what was written: every line typed
-                            // since the last read was highlighted
-                            // approximately, and this is where that debt
-                            // is paid off.
-                            self.queue.push_back(FileRequest::Read(path));
+                            open.mark_saved();
+                            match parked {
+                                // Nothing unsaved is left to keep: the
+                                // file opens from the disk next time.
+                                true => {
+                                    self.parked.remove(&path);
+                                }
+                                // Re-read what was written: every line
+                                // typed since the last read was
+                                // highlighted approximately, and this is
+                                // where that debt is paid off.
+                                false => self.queue.push_back(FileRequest::Read(path)),
+                            }
                         }
                     }
                     Err(message) => self.notice = Some(Span::new(message, Role::Danger)),
@@ -863,6 +893,7 @@ impl CodeView {
                     {
                         self.open = None;
                     }
+                    self.parked.retain(|parked, _| !paths.contains(parked));
                     for parent in paths.iter().filter_map(|path| path.parent()) {
                         if self.files.listings.contains_key(parent) {
                             self.queue
@@ -890,6 +921,7 @@ impl CodeView {
                     {
                         self.open = None;
                     }
+                    self.parked.retain(|parked, _| !parked.starts_with(&path));
                     if self
                         .selected
                         .as_ref()
@@ -954,27 +986,21 @@ impl CodeView {
 
     /// Points the surface at `path`: every mode follows.
     ///
-    /// Except away from unsaved work. The buffer is the one thing here a
-    /// person authored, and moving the cursor is not a request to throw
-    /// it away — so the move is refused and the file stays open until it
-    /// is saved, or the surface is closed on the question that asks.
+    /// Unsaved work is never lost on the way. The buffer is the one thing
+    /// here a person authored, and moving the cursor is not a request to
+    /// throw it away — so a changed buffer is parked, and the file it is
+    /// of opens from it again rather than from the disk.
     fn select(&mut self, path: PathBuf) {
         if self.selected.as_deref() == Some(path.as_path()) {
             return;
         }
-        if let Some(open) = self
-            .open
-            .as_ref()
-            .filter(|open| open.modified && open.path != path)
+        if let Some(mut open) = self.open.take_if(|open| open.path != path)
+            && open.modified
         {
-            self.notice = Some(Span::new(
-                format!("{} has unsaved changes", file_name(&open.path)),
-                Role::Warning,
-            ));
-            return;
-        }
-        if self.open.as_ref().is_some_and(|open| open.path != path) {
-            self.open = None;
+            open.editing = false;
+            let scroll = self.scroll;
+            self.parked
+                .insert(open.path.clone(), Parked { open, scroll });
         }
         self.selected = Some(path);
         self.scroll = 0;
@@ -1291,13 +1317,21 @@ impl CodeView {
             }
             return;
         }
+        self.scroll = 0;
+        if let Some(Parked { mut open, scroll }) = self.parked.remove(&path) {
+            match line {
+                Some(line) => open.place_caret(line.saturating_sub(1)),
+                None => self.scroll = scroll,
+            }
+            self.open = Some(open);
+            return;
+        }
         let mut open = OpenFile::opening(path.clone());
         open.caret = Caret {
             line: line.unwrap_or(1).saturating_sub(1),
             column: 0,
         };
         self.open = Some(open);
-        self.scroll = 0;
         // Whatever was still to be coloured belonged to the file being
         // left, and the answer would be dropped on arrival. Asking for it
         // anyway is a read the viewer waits behind for nothing.
@@ -1451,6 +1485,13 @@ impl CodeView {
             self.scroll = line.saturating_sub(visible - 1);
         }
     }
+}
+
+/// A buffer with unsaved changes kept while another file is shown, and
+/// where it was scrolled to.
+struct Parked {
+    open: OpenFile,
+    scroll: usize,
 }
 
 /// A diff to read on its own — see [`CodeView::diff_request`].
@@ -1630,7 +1671,7 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
             // second press is the answer to a question the footer is now
             // asking — so the flag is read here, before anything clears
             // it, or the question is asked forever and never answered.
-            if view.open.as_ref().is_some_and(|open| open.modified) && !view.confirming_discard {
+            if !view.unsaved().is_empty() && !view.confirming_discard {
                 view.confirming_discard = true;
                 return CodeOutcome::Stay;
             }
