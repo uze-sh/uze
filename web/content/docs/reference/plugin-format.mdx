@@ -8,6 +8,12 @@ description: Every file a plugin can ship, and how each one reaches each agent
     <Folder name="agents">
       <File name="<name>.md" />
     </Folder>
+    <Folder name="extensions">
+      <Folder name="<id>">
+        <File name="extension.kdl" />
+        <File name="<component>.uze" />
+      </Folder>
+    </Folder>
     <Folder name="rules">
       <File name="<name>.md" />
     </Folder>
@@ -38,7 +44,7 @@ The [Agent Plugins](https://agent-plugins.org) 1.0 manifest:
 }
 ```
 
-`plugin.json` is the one place that describes a plugin. uze installs it by
+`plugin.json` is the one place that describes a plugin. Installing reads it
 `name`, and shows its `description` and `keywords` wherever the plugin is
 listed: the plugins screen, `uze market inspect` and the JSON reports. The
 standard also allows `version`, `author` (`name`, `email`, `url`),
@@ -69,8 +75,8 @@ Each entry names an `executable` looked up on `PATH`, and may give a minimum
 install before anything is stored. A missing or too old program does not:
 the plugin installs, and `uze install`, `uze status -m`, `uze inspect` and
 `uze doctor` name what is missing, who needs it, and the command that
-installs it with a package manager the machine has. uze never runs that
-command; you do.
+installs it with a package manager the machine has. That command is never
+run for you; you run it.
 
 A program only counts when it answers. Asked its version, a Windows
 `python3` that only opens the Microsoft Store, or the macOS `python3` that
@@ -197,6 +203,37 @@ plugin something, ship a rule with `trigger: always_on` under `rules/`
 one. `uze agent plugin check` warns about an `AGENTS.md` left at the plugin's
 root.
 
+## Extensions
+
+`extensions/<id>/`, one directory per extension: what the plugin adds to the
+[workspace](/docs/workspace/extensions), which no harness receives. Its
+`extension.kdl` declares the surfaces, sources, actions and the grants it
+asks for; `.uze` components hold each view and its script; `fixtures/` and
+`tests/` feed and test it.
+
+```kdl title="extensions/todo/extension.kdl"
+protocol 1
+id "todo"
+name "Todo"
+description "The open items of the checkout's TODO.md"
+
+wants "read:checkout"
+
+surface "list" slot="drawer" view="list.uze" source="items" title="Todo"
+
+source "items" {
+    script "items.uze"
+    input file="TODO.md"
+}
+```
+
+Nothing in `plugin.json` names an extension: the directory is enough. (Its
+`extensions` field is the standard's settings per tool, and unrelated.) A
+plugin may carry several, and one that carries only extensions is listed as
+an extension rather than a plugin. Installing the plugin stores them; none
+runs anything until the operator allows its grants and enables it. How to
+write one is in [Writing an extension](/docs/workspace/extensions#writing-an-extension).
+
 ## Files your plugin ships
 
 A skill, an agent, a hook or an MCP server can use any other file of the
@@ -274,7 +311,7 @@ use a tool or has used one, or when it stops:
 With `args` (a list, empty when there are none), `command` is the path of a
 script inside your plugin, relative to its root, and each word in `args`
 reaches it exactly as written. Nothing is read by a shell, so nothing needs
-quoting. uze starts the script with the program the platform calls for:
+quoting. The script starts with the program the platform calls for:
 
 | Script | Linux and macOS | Windows |
 | --- | --- | --- |

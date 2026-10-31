@@ -93,6 +93,23 @@ label = "billing api"
 Leave the name empty, or give it the directory's own, and the directory's
 name is back.
 
+## Launching with other flags
+
+`Alt+→` in the new agent popup opens its **overrides**: extra flags for the
+harness and `NAME=value` variables, for this launch only. Type them as you
+would on a command line; `Tab` completes from the flags the harness itself
+defines. Flags and variables you used before are listed under the line, this
+project's first: `Space` checks one for this launch, and `✕` forgets it. The
+next new agent opens with the set the last one launched with.
+
+What uze manages itself is refused as you type: its own `UZE_*` variables,
+`PATH`, `HOME`, the agent's config directory, and the flags for sessions and
+resuming. Flags that weaken the harness's safety, such as
+skipping permission prompts, are accepted and marked. Variables that look like
+secrets, and URLs carrying credentials, are never remembered.
+
+An agent keeps its overrides when it restarts or resumes.
+
 ## Restarting with other flags
 
 Right-click the agent (or press `Alt+.`) and open **Restart in** ›. A panel
@@ -174,7 +191,7 @@ workspace:
 ```
 
 - **merge** fast-forwards your local target branch.
-- **push** pushes the branch to the remote. uze opens no pull request itself.
+- **push** pushes the branch to the remote. No pull request is opened.
 
 Delivering again later brings a published branch up to date with the target,
 and `F1` also offers **Deliver all**, for every agent in the space that is
@@ -198,6 +215,10 @@ waits. If someone changes the lines later, the workspace asks again. From a
 terminal, `uze workspace allow` does the same, and `uze workspace revoke`
 takes the approval back; see
 [Approving the commands](/docs/reference/project-files#approving-the-commands).
+
+Repository hooks never run in uze's own Git, so a `pre-push` hook (Git LFS,
+lefthook) does not run when uze pushes. Put those checks in `gate`. See
+[Security](/docs/concepts/security#git-runs-nothing-the-repository-names).
 
 ## Subagents
 
@@ -269,6 +290,6 @@ forgets the agent instead: it removes uze's record and its conversation, and
 touches nothing else on disk.
 
 <Cards>
-  <Card title="Extensions" href="/docs/workspace#extensions" />
+  <Card title="Extensions" href="/docs/workspace/extensions" />
   <Card title="All worktrees options" href="/docs/reference/project-files#workspace" />
 </Cards>

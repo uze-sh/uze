@@ -5,6 +5,7 @@ import { File, Files, Folder } from 'fumadocs-ui/components/files';
 import { Mermaid } from './mermaid';
 import { Support, SupportLegend } from './support';
 import { Demo } from './demo';
+import { ExtensionCatalog } from './extension-catalog';
 import type { MDXComponents } from 'mdx/types';
 
 export function getMDXComponents(components?: MDXComponents) {
@@ -20,6 +21,7 @@ export function getMDXComponents(components?: MDXComponents) {
     Support,
     SupportLegend,
     Demo,
+    ExtensionCatalog,
     Files,
     File,
     Folder,

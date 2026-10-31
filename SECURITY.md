@@ -2,14 +2,14 @@
 
 ## Supported versions
 
-UZE is pre-1.0 alpha software. The public contract can change between
-releases, and there are no maintenance branches: **only the latest release
-receives fixes.** If you are running anything older, the first step of any
+UZE is pre-release software (`1.0.0-beta.N`). The public contract can
+change between releases, and there are no maintenance branches: **only the
+latest release receives fixes.** If you are running anything older, the first step of any
 security response is to upgrade.
 
 | Version | Supported |
 | --- | --- |
-| Latest `0.y.z-alpha.N` release | ✅ |
+| Latest release | ✅ |
 | Any earlier release | ❌ |
 | `main` between releases | Best effort |
 

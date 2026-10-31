@@ -5,7 +5,7 @@ UZE_BIN ?= target/debug/uze
 RELEASE_BIN ?= target/release/uze
 INSTALL_ARGS ?= --force
 
-.PHONY: help build release install pingpong-mcp try playground-windows playground-linux playground-linux-down run test test-acceptance test-conformance test-installer harness-matrix extension-docs check ci fmt lint deny msrv web audit secrets installer attributions attributions-check coverage version clean changelog release-notes lab-image lab-run lab-all lab-evidence lab-sandbox lab-experiment lab-matrix lab-replay python-fmt python-lint
+.PHONY: help build release install pingpong-mcp try playground-windows playground-linux playground-linux-down run test test-acceptance test-conformance test-installer harness-matrix extension-docs check ci fmt lint deny msrv web web-check audit secrets installer attributions attributions-check coverage version clean changelog release-notes lab-image lab-run lab-all lab-evidence lab-sandbox lab-experiment lab-matrix lab-replay python-fmt python-lint
 
 help: ## Show the available local-development targets.
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-12s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -107,7 +107,10 @@ attributions-check: ## Fail if CREDITS.md is stale relative to Cargo.lock.
 msrv: ## Build on the MSRV declared in Cargo.toml (needs `rustup toolchain install 1.97`).
 	$(CARGO) +1.97 check --workspace --all-targets --locked
 
-web: ## Typecheck and build the documentation site (needs bun).
+web: ## Serve the documentation site with live reload on http://localhost:3000 (needs bun).
+	cd web && bun install --frozen-lockfile && bun run dev
+
+web-check: ## Typecheck and build the documentation site, as CI does (needs bun).
 	cd web && bun install --frozen-lockfile && bun run types:check && bun run build
 
 audit: ## Check the dependency tree against the RustSec advisory database.
@@ -144,7 +147,7 @@ check: fmt lint deny test test-telemetry python-fmt python-lint artifacts ## Loc
 # and Coverage, which has `coverage`. What no local run can reproduce: the
 # release attestation (it needs GitHub's OIDC identity), the path filters that
 # decide whether the Lab runs at all, and the rulesets.
-ci: check msrv web audit attributions-check secrets installer coverage ## Every fast CI job, locally.
+ci: check msrv web-check audit attributions-check secrets installer coverage ## Every fast CI job, locally.
 
 
 # --- Harness Conformance Lab (Python, Real Harness + Synthetic World) ---

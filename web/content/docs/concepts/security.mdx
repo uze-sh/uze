@@ -1,0 +1,121 @@
+---
+title: Security
+description: What uze runs, what it asks before running, and what keeps an agent in its place
+---
+
+Installing a plugin puts other people's code on your machine, and the
+workspace starts agents that act on your behalf. Both are trust decisions, and
+uze makes them yours: nothing a plugin, a project or an extension brings runs
+before you said yes to it, and an agent never answers for you.
+
+This page is the whole model. Each part points to the page that explains it in
+detail.
+
+## What uze protects
+
+| Boundary | What can cross it | Who decides |
+| --- | --- | --- |
+| A plugin reaching your agents | Its MCP servers, hooks, and skills or agents that run commands | You, before install and again on every change |
+| A project's commands | The `setup` and `gate` lines in `agents.yaml` | You, after reading the exact lines |
+| An extension in the workspace | Only the grants it declared | You, grant by grant |
+| An agent's pane | Its own work, never your answers | No one: the kernel keeps it out, where it can |
+| A repository uze works in | Its files, never the programs its config names | No one: uze never runs them |
+
+## Plugins run only what you approved
+
+A plugin can run commands on your machine: its MCP servers, its hooks, a skill
+or agent whose text runs a command when it loads or grants itself tools, and
+the version check of a program it requires. Before installing, uze lists every
+one and asks. Files written for one agent's own plugin format
+(`.claude-plugin/`, `.codex-plugin/`, `.mcp.json`, `hooks/hooks.json`) are
+listed too, and anything uze cannot read the meaning of is listed as such
+rather than passed over.
+
+What you approve is the whole plugin, byte for byte. If any file of a plugin
+that runs something changes, the next update asks again, and an automatic
+update leaves it for you to review. Where there is nobody to ask, as in CI, uze
+refuses unless you pass `--trust`.
+
+Plugins are fetched as untrusted input: without your Git config or credentials,
+never running the repository's own hooks, and never following a path outside
+the plugin. [Delivery →](/docs/plugins/delivery#running-code-is-your-decision)
+
+## A project's commands wait for you
+
+A project can declare commands that prepare an agent's checkout (`setup`) and
+that must pass before its work is delivered (`gate`). They run only once you
+have read the exact lines and approved them, in the workspace or with
+`uze workspace allow`. Any edit to those lines asks again, and
+`uze workspace revoke` withdraws the approval.
+[Approving the commands →](/docs/reference/project-files#approving-the-commands)
+
+## Agents cannot answer for you
+
+An approval means a person read something and said yes, so an agent can never
+give one. `uze workspace allow` and an extension's consent refuse inside an
+agent uze launched, and refuse any process running in a sandbox. Approve from
+a terminal of your own.
+
+On Linux 6.12 or later (Landlock ABI 6), every pane uze starts an agent
+in is sealed from the workspace's own controls: the agent, and every process
+it starts, cannot reach the endpoint where you attach to and stop the
+workspace. The seal changes nothing else: the agent reads, writes and reaches
+the network as before. Because nothing in a sealed pane can gain privileges,
+`sudo` and `su` do not work there; run them from a shell tab.
+
+Each agent works in a checkout of its own, and claims on its work need a key
+only that agent was given.
+
+## Extensions reach only what they were granted
+
+An extension is code a plugin brings into the workspace, and it is a trust
+class of its own: installing the plugin does not allow it. Each extension
+declares grants, such as reading the checkout, running one named program, or
+fetching from one host, and you consent to them before it runs. It never
+touches uze's own state, and it may write only a file it was shown.
+
+Its scripts run with bounded time, memory and stack, a program it was granted
+runs confined to what it needs, and a view can only expand so far before it is
+cut short. [Extensions →](/docs/workspace/extensions)
+
+## Git runs nothing the repository names
+
+Every Git process uze starts runs without hooks, without a filesystem monitor,
+and without the `ext::` transport. Where Git would start a program the
+configuration names (a filter, a merge driver, a credential helper, an SSH
+command), only your own system and global configuration counts; what a
+repository's own config names is ignored.
+
+This includes uze's own push when it delivers an agent's work, so hooks such as
+`pre-push` (Git LFS, lefthook) do not run there. If your project relies on one,
+put the check in the project's `gate`.
+
+## Releases are verified
+
+A release is checked against a signature made with a key the binary was built
+with, and nothing is unpacked if the check fails. The installer resolves the
+exact release before downloading and refuses a binary that does not report
+that version. Logs and traces never carry the credentials in a URL you gave
+uze. [Staying current →](/docs/installation#staying-current)
+
+## Where this does not reach
+
+- The seal around agent panes needs Linux with Landlock. On macOS and Windows,
+  agent panes keep the other layers.
+- A process of your own user, running outside every sandbox, can do what you
+  can. No tool defends you from yourself.
+- A harness's own behaviour is its vendor's. Report problems in it to them.
+
+## Reporting a vulnerability
+
+Do not open a public issue. Use GitHub's private reporting on
+[uze-sh/uze](https://github.com/uze-sh/uze/security/advisories/new); the
+[security policy](https://github.com/uze-sh/uze/blob/main/SECURITY.md) says
+what to include and what happens next. Nothing is disclosed before a fix is
+released.
+
+<Cards>
+  <Card title="Delivery" href="/docs/plugins/delivery" />
+  <Card title="Project files" href="/docs/reference/project-files" />
+  <Card title="Running agents" href="/docs/workspace/agents" />
+</Cards>

@@ -47,7 +47,7 @@ const PHASES: Face[][] = [
   [
     capability('Worktrees', '/docs/workspace/agents#where-an-agent-works', GitFork),
     capability('Memory', '/docs/workspace/agents#continuing-in-another-harness', Brain),
-    capability('Specs & diagrams', '/docs/workspace#extensions', DraftingCompass),
+    capability('Specs & diagrams', '/docs/workspace/extensions', DraftingCompass),
     capability('Changes', '/docs/workspace/code', GitCompare),
   ],
 ];

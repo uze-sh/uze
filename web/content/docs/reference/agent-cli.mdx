@@ -26,7 +26,8 @@ uze agent market create <name> --at <dir>   # scaffold, register and link a mark
 uze agent market create <name> --local      # the project as its own marketplace (--plugins-dir, default plugins)
 uze agent market check <path>               # validate a marketplace, offline
 uze agent plugin create <name> --market <m> # scaffold a plugin (--hook --mcp --agent --rules --extension <id> --category --description)
-uze agent plugin check <path>               # validate a plugin and its extensions, offline
+uze agent plugin check <path>               # validate a plugin offline, and run its extensions' tests (--update-snapshots)
+uze agent plugin lsp                        # completion, hover and diagnostics for extension files, over stdio
 ```
 
 Every command but `work split` and `work join` takes `--format json`; `split`

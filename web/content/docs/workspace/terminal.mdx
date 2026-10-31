@@ -51,6 +51,20 @@ transcript: uze forwards keystrokes without interpreting them, so entries can
 be missing. The file is readable only by you, and `X` clears an agent's
 prompts after asking.
 
+## Tab marks
+
+A shell tab running a program shows `▸`. When the program ends while you are
+on another tab, the shell shows `✓` until you look at it. A return to the
+prompt counts only after two seconds, so the gap between two commands of
+`make && ./run` is not taken for an end.
+
+## Agent panes are sealed
+
+On Linux 6.12 or later, the panes agents run in are sealed from the
+workspace's own controls, and nothing in them can gain privileges: `sudo` and
+`su` do not work there. Run them from a shell tab. See
+[Security](/docs/concepts/security#agents-cannot-answer-for-you).
+
 ## Notifications
 
 `uze config notification` takes three states, and `test`:

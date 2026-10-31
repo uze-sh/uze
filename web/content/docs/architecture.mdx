@@ -21,6 +21,8 @@ graph TD
     KEYS["uze-keys<br/>actions · scopes · chords"]
     DOC["uze-document<br/>the shape a record declares, and its ladder"]
     PLAT["uze-platform<br/>what uze asks the operating system"]
+    CONTRACT["uze-contract<br/>the extension contract: plain data"]
+    SCRIPT["uze-script<br/>an extension's bounded script engine"]
 
     CLI --> EXT
     CLI --> APP
@@ -31,6 +33,10 @@ graph TD
     APP --> CORE
     APP --> INTEG
     APP --> KEYS
+    APP --> SCRIPT
+    EXT --> CONTRACT
+    SCRIPT --> CONTRACT
+    SCRIPT --> PLAT
     WS --> CORE
     INTEG --> CORE
     CORE --> GIT
@@ -77,14 +83,22 @@ drawn only where it explains a boundary.
   with. **Nothing outside `src/ui/theme.rs` may name a colour value or write a
   chrome glyph inline**: two architecture rules fail the build over it. See
   [Appearance](/docs/workspace/appearance).
-- **`uze-extensions`**: built-in TUI extensions. An extension answers with a
+- **`uze-extensions`**: the built-in TUI extensions, and the engine for the
+  extensions a plugin declares. An extension answers with a
   view or a section and **never draws**: the host owns rendering, geometry,
   hit-testing and the palette, and every other capability (running Git, reading a
   file, resolving `$HOME`) arrives through a `Host` it is handed. The crate
-  depends on no uze crate at all and names no process, filesystem or environment
-  API, since an extension is code uze runs in its own process, a different trust class
-  from plugin bytes a harness reads (ADR-041). Three ship today:
-  [Spec, Architect and Code](/docs/workspace#extensions).
+  depends on no uze crate but `uze-contract` and names no process, filesystem or
+  environment API, since an extension is code uze runs in its own process, a
+  different trust class from plugin bytes a harness reads (ADR-041). Three are
+  built in, [Spec](/docs/workspace/spec), [Architect](/docs/workspace/architect) and [Code](/docs/workspace/code), and a plugin
+  can [declare more](/docs/workspace/extensions#writing-an-extension).
+- **`uze-contract`**: the extension contract, plain data: the manifest and
+  compiled-view types, the binding grammar, the catalog and the sanitizer.
+  `uze_contract::component` is the one reader of a `.uze` file's blocks.
+- **`uze-script`**: the engine a declared extension's script runs in, the only
+  crate that names Rhai. It is bounded, and reaches the machine only through the
+  host functions the extension's grants register.
 - **`uze-document`**: the one rule for reading a record another build wrote: the
   shape a record declares, the ladder that carries it across a version, and the
   floor beneath that. A record written in a shape this build knows is carried
@@ -118,7 +132,9 @@ part; everything else is where to look.
 | `crates/uze-application` | Orchestration: add, install, remove, update, context |
 | `crates/uze-workspace` | The workspace's domain: tasks, checkouts, landing, conversations |
 | `crates/uze-integrations` | The vendor adapters, one module per harness |
-| `crates/uze-extensions` | Built-in TUI extensions |
+| `crates/uze-extensions` | Built-in TUI extensions, and the engine for those a plugin declares |
+| `crates/uze-contract` | The extension contract: manifest, compiled views, catalog, sanitizer |
+| `crates/uze-script` | The engine a declared extension's script runs in |
 | `crates/uze-terminal` | The local terminal runtime |
 | `crates/uze-git` | The one transport to the Git binary |
 | `crates/uze-theme` | Colour tokens, symbols, and the theme resolver |

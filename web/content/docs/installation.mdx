@@ -96,14 +96,31 @@ the workspace, which puts them first on `PATH` in its own panes.
 
 ## Staying current
 
-Updates come on their own: the workspace checks for a new release when it opens
-and every hour after, installs one once it has been out for a day, and tells
-you; restart to use it. `uze upgrade` installs the latest release right away.
+Updates come on their own: GitHub is asked for a new release at most once an
+hour, and an open workspace looks again every quarter of an hour, so a
+workspace left open for days still hears of one. A release is installed as soon
+as it is found and the workspace tells you: press `↑ restart` at the right end
+of the bar under the agent area, and the workspace comes back where you left
+it. `uze upgrade` installs the latest release right away.
+
+Every release is checked against a signature before it is unpacked. One that
+fails the check is never installed.
+
+| Variable | Value | Effect |
+| --- | --- | --- |
+| `UZE_RELEASE_CHANNEL` | `latest` (default) | Install a release as soon as a check finds it |
+| | `stable` | Wait until it has been the latest for a day |
+| `UZE_AUTOUPDATE` | `notify` | Tell you, without installing |
+| | `off` | Stop checking. In CI (`CI` set) this is the default |
 
 Only a uze the installer placed updates itself: one from `cargo install` or a
 package manager is left to whatever put it there, and `uze upgrade` says so.
-Set `UZE_AUTOUPDATE=notify` to be told without installing, or `off` to stop
-checking; in CI it is off unless you set it.
+
+Plugins keep current in the same pass. The workspace fetches your marketplaces
+when it opens and again each hour, and applies the updates that need nothing
+from you. An update that would run something new, or change what an approved
+plugin runs, waits for you: a notice offers **Review**, which opens the plugin
+list. Nothing that executes is updated without asking.
 
 ## Removing uze
 
@@ -117,7 +134,7 @@ checking; in CI it is off unless you set it.
 2. Stop the workspace and every process in it: `uze workspace stop`.
 3. In each project, delete `agents.yaml`, `agents.lock` and `.worktrees/` if you
    no longer want them, the plugin folders named `<plugin>@<market>` under
-   `.agents/rules/`, and their entries in `.agents/rules.json`. uze writes nothing into `AGENTS.md`, so there is nothing to
+   `.agents/rules/`, and their entries in `.agents/rules.json`. Nothing was written into `AGENTS.md`, so there is nothing to
    take out of it.
 4. Delete the binary and uze's home:
 

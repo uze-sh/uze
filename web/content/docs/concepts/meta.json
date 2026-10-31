@@ -1,5 +1,5 @@
 {
   "title": "Concepts",
   "icon": "Lightbulb",
-  "pages": ["index", "standards", "influences"]
+  "pages": ["index", "standards", "security", "influences"]
 }
