@@ -336,3 +336,39 @@ fn ctrl_clicking_a_directory_opens_it_unfolded() {
         "a directory is unfolded, not selected as a file"
     );
 }
+
+/// Alt+click follows a link only where the platform says it does: on a
+/// Mac, whose terminals may keep ctrl+click for a secondary click.
+#[test]
+fn alt_clicking_a_path_follows_it_only_where_the_platform_says() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("pane-link-alt-home"));
+    let (_root, model) = a_pane_naming_a_file("pane-link-alt");
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    driven.frame();
+    let (column, row) = at(&driven, "main.rs");
+
+    for kind in [
+        MouseEventKind::Down(MouseButton::Left),
+        MouseEventKind::Up(MouseButton::Left),
+    ] {
+        driven.mouse_holding(column, row, kind, KeyModifiers::ALT);
+    }
+    let follows = uze_platform::pointer::LINK_KEYS.contains(&uze_platform::pointer::LinkKey::Alt);
+    if follows {
+        assert!(pumped_until(&mut driven, |model| {
+            model.showing(uze_extensions::code::CATALOG.id)
+        }));
+    } else {
+        let _ = driven.pump();
+        assert!(
+            !driven.attach.model.pane_links.is_asking(),
+            "nothing is asked"
+        );
+        assert!(
+            !driven
+                .attach
+                .model
+                .showing(uze_extensions::code::CATALOG.id)
+        );
+    }
+}

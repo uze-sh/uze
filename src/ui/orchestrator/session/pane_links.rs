@@ -3,12 +3,21 @@
 
 use super::*;
 use crate::ui::orchestrator::pane_link::{self, Clicked, HeldClick, PaneLink, Settled};
+use uze_platform::pointer::LinkKey;
 
-/// Whether the pointer's gesture follows links: ctrl, as in a terminal.
-/// A terminal reports shift, alt and ctrl with the mouse and nothing else,
-/// so the platform's own link key (cmd on a Mac) never reaches here.
+/// Whether the pointer's gesture follows links: one of the keys this
+/// platform follows them with is held (`uze_platform::pointer`).
 fn follows_links(modifiers: KeyModifiers) -> bool {
-    modifiers.contains(KeyModifiers::CONTROL)
+    uze_platform::pointer::LINK_KEYS
+        .iter()
+        .any(|key| modifiers.contains(link_modifier(*key)))
+}
+
+fn link_modifier(key: LinkKey) -> KeyModifiers {
+    match key {
+        LinkKey::Ctrl => KeyModifiers::CONTROL,
+        LinkKey::Alt => KeyModifiers::ALT,
+    }
 }
 
 impl Attach<'_> {

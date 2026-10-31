@@ -25,6 +25,7 @@ pub mod machine;
 pub mod mounts;
 pub mod notify;
 pub mod path;
+pub mod pointer;
 pub mod probe;
 pub mod process;
 pub mod redact;

@@ -111,7 +111,9 @@ on "cancel" must not save first.
   pointer with ctrl held it is underlined in the colour its program gave
   it, never recoloured. Only a path that is there and inside a checkout
   on screen is one; a plain click stays the program's
-  (`pane_link.rs`).
+  (`pane_link.rs`). On a Mac alt+click follows it too, since a terminal
+  never passes cmd on and some keep ctrl+click for a secondary click;
+  which keys follow links is `uze_platform::pointer`, never a `cfg!`.
 - Hover keeps the word's weight. A word that is bold at rest stays bold; a
   word that is not never turns bold under the pointer or while pressed.
   Manage's version and health are the reference.

@@ -1,6 +1,8 @@
 //! A path a pane's program wrote, found under the pointer: ctrl+click opens
 //! it in the code surface, and the pointer resting on it with ctrl held
-//! underlines it, as a terminal's own links are.
+//! underlines it, as a terminal's own links are. "Ctrl" is short for the
+//! keys the platform follows links with (`uze_platform::pointer`): alt
+//! too, on a Mac.
 //!
 //! Found in the cells the client already holds, so finding one is a scan
 //! of one row, whatever program wrote it: nothing here asks a harness for
