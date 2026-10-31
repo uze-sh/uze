@@ -6,7 +6,10 @@
 //! process with the program, so it is meant for a helper process started for
 //! that purpose alone, single-threaded, before it does anything else: on
 //! Linux a Landlock ruleset and a seccomp filter, on macOS a Seatbelt
-//! profile, and elsewhere nothing, said by [`availability`].
+//! profile, on Windows an AppContainer made for the run inside a Job
+//! Object, and elsewhere nothing, said by [`availability`]. Windows cannot
+//! replace a process, so there the helper starts the program, waits for
+//! it and ends with its exit code.
 //!
 //! What this machine enforces is reported right by right, because a kernel
 //! can enforce some rights and not others; what it cannot enforce is never
@@ -77,38 +80,44 @@ impl Limits {
     }
 }
 
-/// What confines a program's filesystem reach on this machine.
+/// What confines a program on this machine.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum Filesystem {
-    /// The Linux Landlock LSM, at the ABI this kernel and UZE both know.
+    /// The Linux Landlock LSM, at the ABI this kernel and UZE both know,
+    /// with a seccomp filter.
     Landlock { abi: u32 },
     /// macOS's Seatbelt, through `sandbox-exec`.
     Seatbelt,
+    /// An AppContainer of the run's own, in a Job Object (Windows).
+    AppContainer,
     /// Nothing: a program runs with the reach of the user running it.
     Unavailable,
 }
 
-/// What this machine enforces, right by right.
+/// What this machine enforces, each field an outcome: what a confined
+/// program cannot do, or which of its resources is bounded. Every platform
+/// answers every field, whatever mechanism it answers with, so a person
+/// compares machines by what a program could do on them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Availability {
     pub filesystem: Filesystem,
-    /// Truncating a file outside the writable paths is refused (Landlock ABI 3).
+    /// It cannot empty a file it may only read.
     pub truncate: bool,
-    /// TCP binding, and without network connecting, is refused by the
-    /// filesystem mechanism itself (Landlock ABI 4).
-    pub tcp: bool,
-    /// `ioctl` on a device outside the granted paths is refused (Landlock ABI 5).
-    pub ioctl_dev: bool,
-    /// Abstract Unix sockets and signals stop at the confinement's edge
-    /// (Landlock ABI 6); below it signals are limited by the syscall filter.
-    pub scoping: bool,
-    /// System calls are filtered (seccomp), which is what refuses sockets
-    /// and `ptrace` on Linux.
-    pub syscall_filter: bool,
-    /// The program's address space is bounded (`RLIMIT_AS`); macOS refuses
-    /// any bound below what a process already maps.
+    /// Without network it reaches no host; with it, Internet hosts and
+    /// never a local socket.
+    pub network: bool,
+    /// Nothing reaches a port it listens on.
+    pub listening: bool,
+    /// It reaches no device it was not granted.
+    pub devices: bool,
+    /// It cannot signal, debug or read the memory of a process outside its
+    /// run.
+    pub processes: bool,
     pub memory: bool,
+    pub cpu: bool,
+    pub file_size: bool,
+    pub open_files: bool,
 }
 
 impl Availability {
@@ -117,17 +126,23 @@ impl Availability {
         Self {
             filesystem: Filesystem::Unavailable,
             truncate: false,
-            tcp: false,
-            ioctl_dev: false,
-            scoping: false,
-            syscall_filter: false,
+            network: false,
+            listening: false,
+            devices: false,
+            processes: false,
             memory: false,
+            cpu: false,
+            file_size: false,
+            open_files: false,
         }
     }
 
     /// What a Linux kernel answering Landlock `abi` (0 or less: none) and
     /// with seccomp filters or not enforces. Landlock alone does not keep a
     /// program off the network, so without seccomp nothing is available.
+    /// The filter refuses `listen` and every socket but the Internet's at
+    /// any ABI; signals stop at the run's edge only from ABI 6, below
+    /// which the filter checks their target as far as an argument can say.
     pub fn of_linux(abi: i32, seccomp: bool) -> Self {
         let Ok(abi) = u32::try_from(abi) else {
             return Self::unavailable();
@@ -138,11 +153,49 @@ impl Availability {
         Self {
             filesystem: Filesystem::Landlock { abi },
             truncate: abi >= 3,
-            tcp: abi >= 4,
-            ioctl_dev: abi >= 5,
-            scoping: abi >= 6,
-            syscall_filter: true,
+            network: true,
+            listening: true,
+            devices: abi >= 5,
+            processes: abi >= 6,
             memory: true,
+            cpu: true,
+            file_size: true,
+            open_files: true,
+        }
+    }
+
+    /// What Seatbelt enforces. macOS bounds no process's memory for it:
+    /// `RLIMIT_AS` is accepted only above the hundreds of GiB a process
+    /// already maps and then refuses `mmap` alone, never `malloc`.
+    pub const fn of_seatbelt() -> Self {
+        Self {
+            filesystem: Filesystem::Seatbelt,
+            truncate: true,
+            network: true,
+            listening: true,
+            devices: true,
+            processes: true,
+            memory: false,
+            cpu: true,
+            file_size: true,
+            open_files: true,
+        }
+    }
+
+    /// What an AppContainer in a Job Object enforces. A job bounds memory
+    /// and processor time and nothing else a process spends.
+    pub const fn of_app_container() -> Self {
+        Self {
+            filesystem: Filesystem::AppContainer,
+            truncate: true,
+            network: true,
+            listening: true,
+            devices: true,
+            processes: true,
+            memory: true,
+            cpu: true,
+            file_size: false,
+            open_files: false,
         }
     }
 
@@ -151,28 +204,56 @@ impl Availability {
         self.filesystem != Filesystem::Unavailable
     }
 
-    /// One line a person reads: what confines, and each right it does not.
+    /// One line a person reads: what confines, what a program can still
+    /// reach, and which limits it runs without.
     pub fn summary(&self) -> String {
         let mechanism = match self.filesystem {
             Filesystem::Unavailable => return "programs cannot be confined here".to_owned(),
             Filesystem::Landlock { abi } => format!("Landlock ABI {abi} and seccomp"),
             Filesystem::Seatbelt => "Seatbelt".to_owned(),
+            Filesystem::AppContainer => "AppContainer".to_owned(),
         };
-        let missing: Vec<&str> = [
-            (self.truncate, "truncate"),
-            (self.tcp, "TCP"),
-            (self.ioctl_dev, "device ioctl"),
-            (self.scoping, "signal and abstract socket scoping"),
-            (self.memory, "a memory bound"),
-        ]
-        .into_iter()
-        .filter_map(|(enforced, right)| (!enforced).then_some(right))
-        .collect();
-        if missing.is_empty() {
-            format!("confined by {mechanism}")
-        } else {
-            format!("confined by {mechanism}, without {}", missing.join(", "))
+        let reaches = unenforced(&[
+            (self.network, "reach the network"),
+            (self.listening, "accept connections"),
+            (self.truncate, "empty files it may only read"),
+            (self.devices, "reach ungranted devices"),
+            (self.processes, "signal other processes"),
+        ]);
+        let limits = unenforced(&[
+            (self.memory, "memory"),
+            (self.cpu, "processor time"),
+            (self.file_size, "file size"),
+            (self.open_files, "open files"),
+        ]);
+        let mut line = format!("confined by {mechanism}");
+        if !limits.is_empty() {
+            line.push_str(&format!(", without a {} limit", listed(&limits, "or")));
         }
+        if !reaches.is_empty() {
+            let joint = if limits.is_empty() { ", but" } else { ", and" };
+            line.push_str(&format!(
+                "{joint} a program can still {}",
+                listed(&reaches, "and")
+            ));
+        }
+        line
+    }
+}
+
+fn unenforced<'a>(rights: &[(bool, &'a str)]) -> Vec<&'a str> {
+    rights
+        .iter()
+        .filter_map(|&(enforced, right)| (!enforced).then_some(right))
+        .collect()
+}
+
+/// `a`, `a or b`, `a, b or c`.
+fn listed(items: &[&str], conjunction: &str) -> String {
+    match items {
+        [] => String::new(),
+        [only] => (*only).to_owned(),
+        [init @ .., last] => format!("{} {conjunction} {last}", init.join(", ")),
     }
 }
 
@@ -208,8 +289,10 @@ mod seatbelt;
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 mod unavailable;
+#[cfg(windows)]
+mod windows;
 
 #[cfg(target_os = "linux")]
 use linux as imp;
@@ -217,21 +300,28 @@ use linux as imp;
 pub(crate) use linux::landlock_abi;
 #[cfg(target_os = "macos")]
 use macos as imp;
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 use unavailable as imp;
+#[cfg(windows)]
+use windows as imp;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn each_landlock_abi_enforces_the_rights_it_introduced() {
+    fn each_landlock_abi_enforces_the_outcomes_it_introduced() {
+        let v2 = Availability::of_linux(2, true);
+        assert!(!v2.truncate && !v2.devices && !v2.processes);
+        assert!(v2.network && v2.listening, "the filter's at every ABI");
         let v3 = Availability::of_linux(3, true);
         assert_eq!(v3.filesystem, Filesystem::Landlock { abi: 3 });
-        assert!(v3.truncate && !v3.tcp && !v3.ioctl_dev && !v3.scoping);
+        assert!(v3.truncate && !v3.devices && !v3.processes);
+        let v5 = Availability::of_linux(5, true);
+        assert!(v5.devices && !v5.processes);
         let v6 = Availability::of_linux(6, true);
-        assert!(v6.truncate && v6.tcp && v6.ioctl_dev && v6.scoping);
-        assert!(v6.syscall_filter);
+        assert!(v6.truncate && v6.devices && v6.processes);
+        assert!(v6.memory && v6.cpu && v6.file_size && v6.open_files);
     }
 
     #[test]
@@ -244,15 +334,35 @@ mod tests {
     }
 
     #[test]
-    fn the_summary_names_each_right_not_enforced() {
+    fn the_summary_names_what_a_program_can_still_do_and_the_limits_it_lacks() {
         assert_eq!(
             Availability::of_linux(7, true).summary(),
             "confined by Landlock ABI 7 and seccomp"
         );
         assert_eq!(
             Availability::of_linux(3, true).summary(),
-            "confined by Landlock ABI 3 and seccomp, without TCP, device ioctl, \
-             signal and abstract socket scoping"
+            "confined by Landlock ABI 3 and seccomp, but a program can still \
+             reach ungranted devices and signal other processes"
+        );
+        assert_eq!(
+            Availability::of_linux(2, true).summary(),
+            "confined by Landlock ABI 2 and seccomp, but a program can still \
+             empty files it may only read, reach ungranted devices and signal other processes"
+        );
+        assert_eq!(
+            Availability::of_seatbelt().summary(),
+            "confined by Seatbelt, without a memory limit"
+        );
+        assert_eq!(
+            Availability::of_app_container().summary(),
+            "confined by AppContainer, without a file size or open files limit"
+        );
+        let mut both = Availability::of_seatbelt();
+        both.devices = false;
+        assert_eq!(
+            both.summary(),
+            "confined by Seatbelt, without a memory limit, and a program can still \
+             reach ungranted devices"
         );
         assert_eq!(
             Availability::unavailable().summary(),
