@@ -742,7 +742,7 @@ pub(crate) struct SidebarNotice<'a> {
     /// The second row, quieter: what it means or what to do about it.
     pub(crate) detail: &'a str,
     /// Where the notice opens something, how the pointer stands on it: its
-    /// detail is then a link, underlined at rest and lit under the pointer.
+    /// detail is then a link, lit and underlined under the pointer.
     pub(crate) link: Option<widget::ChipState>,
 }
 
@@ -828,8 +828,7 @@ impl SidebarNotice<'_> {
                 ),
                 match self.link {
                     None => theme::fg(theme::Token::TextDim),
-                    Some(widget::ChipState::Resting) => theme::fg(theme::Token::TextSecondary)
-                        .add_modifier(ratatui::style::Modifier::UNDERLINED),
+                    Some(widget::ChipState::Resting) => theme::fg(theme::Token::TextSecondary),
                     Some(widget::ChipState::Hovered | widget::ChipState::Pressed) => {
                         theme::fg(theme::Token::TextBright)
                             .add_modifier(ratatui::style::Modifier::UNDERLINED)

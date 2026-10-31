@@ -528,8 +528,8 @@ fn the_foot_sections_stand_on_the_columns_own_grid() {
     );
 }
 
-/// The release's "see what's new" is a link: underlined at rest, so it
-/// reads as something to click, and lit under the pointer.
+/// The release's "see what's new" is a link: in the secondary tone at
+/// rest, lit and underlined under the pointer.
 #[test]
 fn the_release_notices_whats_new_reads_as_a_link() {
     let mut model = session_with_timeline(&["feat: one"]);
@@ -546,15 +546,13 @@ fn the_release_notices_whats_new_reads_as_a_link() {
         let x = rows[y].find("see").unwrap() as u16;
         buffer[(x, y as u16)].clone()
     };
+    let underlined =
+        |cell: &ratatui::buffer::Cell| cell.modifier.contains(ratatui::style::Modifier::UNDERLINED);
     let resting = link(&model);
-    assert!(
-        resting
-            .modifier
-            .contains(ratatui::style::Modifier::UNDERLINED),
-        "underlined at rest"
-    );
+    assert_eq!(resting.fg, theme::color(theme::Token::TextSecondary));
+    assert!(!underlined(&resting), "no underline at rest");
     model.hovered = Some(WorkspaceHit::OpenReleaseNotes);
     let hovered = link(&model);
     assert_eq!(hovered.fg, theme::color(theme::Token::TextBright));
-    assert_ne!(hovered.fg, resting.fg, "lit under the pointer");
+    assert!(underlined(&hovered), "underlined under the pointer");
 }
