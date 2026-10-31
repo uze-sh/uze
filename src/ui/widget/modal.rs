@@ -204,9 +204,43 @@ impl<'a> Modal<'a> {
     }
 }
 
+/// `area` of a modal's body split for content that scrolls: the room the
+/// content takes, and the scrollbar's track against the area's right end,
+/// one column clear of it. The track stays inside the body, in the modal's
+/// own padding: a border is a divider only where it parts two panels, and
+/// a modal's parts none. The column is kept whether or not the content
+/// overflows, so content never reflows when it starts to.
+pub(crate) fn scrolling(area: Rect) -> (Rect, Rect) {
+    let width = super::Scrollbar::width();
+    let content = Rect {
+        width: area.width.saturating_sub(width + 1),
+        ..area
+    };
+    let track = Rect::new(
+        area.right().saturating_sub(width),
+        area.y,
+        width.min(area.width),
+        area.height,
+    );
+    (content, track)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A modal's scrollbar stands inside its body, at its right end and a
+    /// column clear of the content: never on the border, which a modal has
+    /// no divider to share.
+    #[test]
+    fn a_scrolling_body_keeps_its_scrollbar_inside_a_column_clear() {
+        let body = Rect::new(10, 5, 40, 12);
+        let (content, track) = scrolling(body);
+        assert_eq!(track.right(), body.right(), "against the body's right end");
+        assert_eq!(content.x, body.x);
+        assert_eq!(content.right() + 1, track.x, "one column clear");
+        assert_eq!((track.y, track.height), (body.y, body.height));
+    }
 
     /// A terminal with room to spare keeps the backdrop visible around
     /// the modal; one without gives the whole frame to what is in front.

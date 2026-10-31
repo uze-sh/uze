@@ -133,7 +133,10 @@ on "cancel" must not save first.
 **Scrollbars:**
 - Every list that can overflow has the standard `Scrollbar`, which can be
   dragged.
-- It sits **on** the separator or divider, not in a column of its own.
+- In a view or a drawer it sits **on** the separator or divider, not in a
+  column of its own. In a modal there is no divider: it stands at the right
+  end of the body, inside the modal's padding, one column clear of the
+  content (`modal::scrolling`), never on the modal's border.
 - A click on the bar never falls through to the list, nor closes the modal
   it is in: its track is a target, and a drag that starts on it follows
   the pointer until the release.

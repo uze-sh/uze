@@ -117,18 +117,17 @@ pub(crate) fn render<H>(
     .render_centred(frame, area, width, shown + FIELD_ROWS);
     let chrome = modal.keys;
     let inner = modal.body;
-    let popup = modal.popup;
 
     // Always focused: the index is open, so every key reaches this field.
     // The same search row every list in the product heads itself with.
     Field::new(filter, "type to narrow").render_search(frame, Rect { height: 1, ..inner });
 
-    let list = Rect::new(
+    let (list, track) = super::modal::scrolling(Rect::new(
         inner.x,
         inner.y + FIELD_ROWS,
         inner.width,
         inner.height.saturating_sub(FIELD_ROWS),
-    );
+    ));
     let visible = usize::from(list.height);
     // The window is derived from the selection rather than kept as an
     // offset of its own — moving with the arrows is the only way this list
@@ -137,18 +136,7 @@ pub(crate) fn render<H>(
     let first = selected
         .saturating_sub(visible / 2)
         .min(rows.len().saturating_sub(visible));
-    // On the border itself, where the hairline thickens into the handle,
-    // as every list's does: the rows keep their whole width.
-    let bar = Scrollbar::measure(
-        Rect::new(
-            popup.right().saturating_sub(Scrollbar::width()),
-            list.y,
-            Scrollbar::width(),
-            list.height,
-        ),
-        visible,
-        rows.len(),
-    );
+    let bar = Scrollbar::measure(track, visible, rows.len());
     // The keys first, and every row of the scrollbar's track: a click or a
     // drag on it is the list moving there, and never falls through to
     // what closes the index. The window follows the selection, so the

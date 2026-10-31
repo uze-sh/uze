@@ -158,6 +158,9 @@ fn layout(area: Rect, modal: &ReleaseNotesModal) -> Layout {
         popup.width.saturating_sub(modal::CHROME_COLUMNS),
         popup.height.saturating_sub(modal::CHROME_ROWS),
     );
+    // The column the scrollbar keeps, and the gap before it, are taken
+    // from the text's measure.
+    let (body, _) = modal::scrolling(body);
     let lines = body_lines(modal, body.width);
     let wrap = usize::from(body.width.max(1));
     let rows = lines
@@ -285,10 +288,8 @@ pub(crate) fn render(
             .scroll((scroll, 0)),
         layout.body,
     );
-    // On the border itself, where the hairline thickens into the handle
-    // rather than a second line standing beside it.
     let track = Rect::new(
-        layout.popup.right().saturating_sub(Scrollbar::width()),
+        layout.body.right() + 1,
         layout.body.y,
         Scrollbar::width(),
         layout.body.height,
