@@ -4027,3 +4027,108 @@ fn clearing_a_search_shows_the_file_it_opened_in_the_tree() {
         "the tree is open down to the file, on it: {rows:?}"
     );
 }
+
+#[test]
+#[ignore = "a measurement, run by hand"]
+fn measure_the_editors_hot_paths() {
+    use std::time::Instant;
+    let best = |runs: usize, mut work: Box<dyn FnMut() + '_>| {
+        (0..runs)
+            .map(|_| {
+                let start = Instant::now();
+                work();
+                start.elapsed()
+            })
+            .min()
+            .unwrap()
+    };
+    // 2000 found lines across 100 files.
+    let mut grep = String::new();
+    for file in 0..100 {
+        for line in 0..20 {
+            grep.push_str(&format!(
+                "src/f{file}.rs\0{}\01\0    <value name=\"c_fog_{line}_ref\">0.000000</value>\n",
+                line + 1
+            ));
+        }
+    }
+    let machine = FakeMachine::default().with_file(
+        "/w/big.rs",
+        &"let value = some_call(argument, other);\n".repeat(70_000),
+    );
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+    let size = Size {
+        width: 160,
+        height: 50,
+    };
+
+    println!(
+        "frame, 70k-line file:        {:?}",
+        best(
+            50,
+            Box::new(|| {
+                render::view(&view, size);
+            })
+        )
+    );
+    handle_mouse(
+        &mut view,
+        Some(ViewHit::PlaceCaret {
+            line: 69_990,
+            cell: 3,
+        }),
+        size,
+    );
+    let mut flip = false;
+    println!(
+        "keystroke near end of 70k:   {:?}",
+        best(
+            50,
+            Box::new(|| {
+                press(
+                    &mut view,
+                    if flip {
+                        Command::EraseBack
+                    } else {
+                        Command::Type('x')
+                    },
+                );
+                flip = !flip;
+            })
+        )
+    );
+    press(&mut view, Command::Close);
+
+    view.search.query = "fog".to_owned();
+    println!(
+        "absorb 2000 hits:            {:?}",
+        best(
+            20,
+            Box::new(|| {
+                let findings = search::parse(Path::new("/w"), &grep);
+                view.search.absorb("fog", Ok(findings));
+            })
+        )
+    );
+    println!(
+        "frame, 2000 search results:  {:?}",
+        best(
+            50,
+            Box::new(|| {
+                render::view(&view, size);
+            })
+        )
+    );
+    println!("frame, 70k file beside search:{:?}", {
+        view.search.cursor = Some((0, 0));
+        best(
+            50,
+            Box::new(|| {
+                render::view(&view, size);
+            }),
+        )
+    });
+}

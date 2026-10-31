@@ -1749,9 +1749,9 @@ fn unnumbered_content_is_inset_where_numbered_content_leans_on_its_gutter() {
     *heading = "HEADING".to_owned();
     let (rows, _) = draw(&view);
 
-    // Measured against the heading rather than the frame, because the
-    // heading is drawn at the content area's own left edge — so the
-    // difference is the margin and nothing else. In *columns*: the
+    // Measured against the heading rather than the frame: the heading
+    // stands [`HEADING_INSET`] in from the content area's edge, so the
+    // difference is the margin less that, and nothing else. In *columns*: the
     // frame's own rules are multi-byte, so a byte offset is not where
     // the terminal put anything.
     let column_of = |needle: &str| -> usize {
@@ -1761,7 +1761,7 @@ fn unnumbered_content_is_inset_where_numbered_content_leans_on_its_gutter() {
     };
     assert_eq!(
         column_of("PROSE") - column_of("HEADING"),
-        usize::from(PROSE_INSET),
+        usize::from(PROSE_INSET - HEADING_INSET),
         "prose must be inset from the edge its own heading sits on"
     );
 
@@ -3125,4 +3125,23 @@ fn a_navigators_field_stands_over_what_it_found() {
     assert!(rows[at("fog")].contains(&theme::glyph(Symbol::MarkClose)));
     assert_eq!(row_of(ViewHit::ToggleGroup(0)), Some(at("a.rs src")));
     assert_eq!(row_of(ViewHit::SelectItem(0)), Some(at("let fog")));
+}
+
+/// A file's lines carry no marker, so their gutter is their numbers alone
+/// and sits close to the edge; a diff's keeps the marker's column. Either
+/// is as wide as its widest number, never under three digits.
+#[test]
+fn a_gutter_is_as_wide_as_its_numbers_and_marks() {
+    let line = |gutter: &str, number: &str| ContentLine {
+        gutter: gutter.to_owned(),
+        number: number.to_owned(),
+        tone: LineTone::Neutral,
+        spans: Vec::new(),
+    };
+    assert_eq!(gutter_width(&[line("", "1"), line("", "26")]), 5);
+    assert_eq!(
+        gutter_width(&[line("+", "1"), line(" ", "2")]),
+        GUTTER_WIDTH
+    );
+    assert_eq!(gutter_width(&[line("", "12345")]), 7);
 }

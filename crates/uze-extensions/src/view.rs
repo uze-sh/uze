@@ -1058,7 +1058,9 @@ pub struct Caret {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContentLine {
-    /// One character before the number: `+`, `-`, or blank.
+    /// One character before the number: `+`, `-`, or blank — or empty,
+    /// for lines that never carry one (a file's own), which the host then
+    /// draws without the column, closer to the edge.
     pub gutter: String,
     pub number: String,
     pub tone: LineTone,

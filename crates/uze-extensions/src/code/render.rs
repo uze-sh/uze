@@ -731,7 +731,7 @@ fn contents_content(code: &CodeView, space: Size) -> Content {
                 (
                     text,
                     ContentLine {
-                        gutter: " ".to_owned(),
+                        gutter: String::new(),
                         number: (index + 1).to_string(),
                         tone: LineTone::Neutral,
                         // A line with no colouring yet — one past the glance the

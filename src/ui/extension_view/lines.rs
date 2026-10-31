@@ -50,15 +50,18 @@ pub(super) fn render_lines(
     } = content_lines;
     let marked = selection.and_then(|selection| selection.marked_in(heading));
     let mut drawn = Vec::new();
+    // One column in, where a tab's name starts over it.
     frame.render_widget(
         Paragraph::new(TextSpan::styled(
             heading.to_owned(),
             theme::fg(Token::TextSecondary),
         )),
         Rect::new(
-            area.x,
+            area.x.saturating_add(HEADING_INSET),
             area.y,
-            area.width.saturating_sub(modes_width(modes)),
+            area.width
+                .saturating_sub(modes_width(modes))
+                .saturating_sub(HEADING_INSET),
             1,
         ),
     );
@@ -374,12 +377,44 @@ pub(super) fn text_width(width: u16, gutter: u16) -> usize {
 /// anyway indents the whole thing by seven cells of blank — which is
 /// what the gutter looked like in preview, and what it cost was the
 /// left margin of every paragraph.
+///
+/// Otherwise as wide as its numbers, and a marker's column only where the
+/// lines carry one: a fixed seven cells left a file's `1` five blanks off
+/// the edge.
 pub(super) fn gutter_width(lines: &[ContentLine]) -> u16 {
     let numbered = lines
         .iter()
         .any(|line| !line.number.is_empty() || !line.gutter.trim().is_empty());
-    if numbered { GUTTER_WIDTH } else { 0 }
+    if !numbered {
+        return 0;
+    }
+    let lead = match lines.iter().any(|line| !line.gutter.is_empty()) {
+        true => MARKER_COLUMNS,
+        false => 1,
+    };
+    lead + number_columns(lines) + 1
 }
+
+/// The columns a gutter's line numbers are right-aligned in: the widest
+/// number on show, never under [`MIN_NUMBER_COLUMNS`] so a file's first
+/// thousand lines scroll without the text moving under them.
+fn number_columns(lines: &[ContentLine]) -> u16 {
+    let widest = lines
+        .iter()
+        .map(|line| line.number.chars().count())
+        .max()
+        .unwrap_or(0);
+    u16::try_from(widest)
+        .unwrap_or(u16::MAX)
+        .max(MIN_NUMBER_COLUMNS)
+}
+
+/// Where a content heading starts: under a tab's name, past its lead.
+pub(super) const HEADING_INSET: u16 = 1;
+
+/// A marker and the space after it.
+const MARKER_COLUMNS: u16 = 2;
+const MIN_NUMBER_COLUMNS: u16 = 3;
 
 /// The caret, drawn by inverting the cell it sits on rather than by
 /// drawing a mark into it.
@@ -578,10 +613,15 @@ pub(super) fn render_line(
         .constraints([Constraint::Length(gutter), Constraint::Min(1)])
         .split(area);
     if gutter > 0 {
+        let lead = match line.gutter.is_empty() {
+            true => " ".to_owned(),
+            false => format!("{} ", line.gutter),
+        };
+        let digits = usize::from(gutter).saturating_sub(text::columns(&lead) + 1);
         frame.render_widget(
             Paragraph::new(Line::from(vec![
-                TextSpan::styled(format!("{} ", line.gutter), marker_style),
-                TextSpan::styled(format!("{:>4} ", line.number), theme::fg(number)),
+                TextSpan::styled(lead, marker_style),
+                TextSpan::styled(format!("{:>digits$} ", line.number), theme::fg(number)),
             ]))
             .style(
                 Style::default().bg(background.unwrap_or(theme::color(Token::SurfaceBackground))),

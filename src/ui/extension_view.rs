@@ -54,7 +54,10 @@ const MIN_NAVIGATOR_WIDTH: u16 = 20;
 const MAX_NAVIGATOR_WIDTH: u16 = 50;
 const MIN_EXTENSION_CONTENT_WIDTH: u16 = 40;
 
-const GUTTER_WIDTH: u16 = 7;
+/// The gutter of lines that carry a marker and up to three digits: the
+/// marker and its space, the number, and the space before the text.
+#[cfg(test)]
+const GUTTER_WIDTH: u16 = 6;
 
 /// Columns of padding on each side of a mode segment's label. The padding
 /// is part of the button — it is filled, and clicked, like the label is.
