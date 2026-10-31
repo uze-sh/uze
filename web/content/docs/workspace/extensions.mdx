@@ -1,0 +1,136 @@
+---
+title: Official extensions
+description: gsd, focus and contributions, uze's own extensions in the workspace plugin
+---
+
+uze's own marketplace carries three extensions in one plugin, `workspace`:
+
+| | Shows |
+| --- | --- |
+| [gsd](#gsd) | A [GSD](https://github.com/gsd-build/get-shit-done) milestone beside the agent: the step it is at, the next one a click away, a checkpoint answered over the agent's pane |
+| [focus](#focus) | A pomodoro: the time left in the bar, the sessions of the last seven days |
+| [contributions](#contributions) | The repository's commits as a contribution graph, day by day |
+
+One install brings all three. Each one is off until you allow what it may
+reach and enable it, so installing the plugin runs nothing on its own.
+
+## Installing them
+
+The marketplace is built into uze, so there is nothing to add. In a project:
+
+```bash
+uze install workspace@uze
+```
+
+This installs the plugin and declares it in the project's `agents.yaml`,
+under the built-in marketplace and with no source:
+
+```yaml
+marketplaces:
+  uze:
+    plugins:
+      - workspace
+```
+
+Anyone who runs `uze install` in that project gets it too. To have it on
+this machine without declaring it anywhere, use `uze install -m workspace@uze`.
+[Project files](/docs/reference/project-files) has the rest of `agents.yaml`.
+
+Then open the workspace. The first time it opens on the project, it offers
+the extensions the project's plugins bring: review what each one may reach,
+and enable the ones you want. You can do the same later under management
+(`Ctrl+O`), on **Extensions**, where these three wear **Official**.
+[The Extensions screen](/docs/workspace#the-extensions-screen) says how
+allowing and enabling work.
+
+To try them without a project of your own, ask any agent for `/uze:try`. It
+makes a demo project with a commit history and a GSD milestone, installs the
+plugin there, and tells you how to open it.
+
+## gsd
+
+![The GSD drawer shows plan 3-03 waiting at its checkpoint, answered from a band over the agent's pane and typed into the agent](/examples/gsd.gif)
+
+[GSD (Get Shit Done)](https://github.com/gsd-build/get-shit-done) keeps a
+project's plan in `.planning/`. The extension reads it and shows where the
+milestone stands while the agent works. It shows only in a checkout that has
+a `.planning/` directory.
+
+| Where | What |
+| --- | --- |
+| Bar | The milestone, the phase in front and its step, such as `◆ v1.4 · 3 plan`. While a checkpoint waits, `3-04 waits for you` |
+| Drawer | How far the milestone is, what waits for you, and every phase on one row, its steps as marks: D, P, E, V for discuss, plan, execute and verify. The phase in front opens to its goal and its plans, wave by wave, with one button for its next step |
+| Band | Over the agent's pane, while a plan waits at a checkpoint: what to check, **approved** and **report a problem** |
+
+A checkpoint that starts to wait is also a notification. The drawer reads
+`.planning/` again whenever a file there changes, so it follows the agent on
+its own. The band's row is kept in every GSD checkout and stays blank while
+nothing waits, so a checkpoint never resizes the agent's terminal.
+
+The plugin brings no GSD skills: install GSD yourself, for the harnesses you
+run. Each button types plain words into the agent in front, naming the step
+and its GSD command, so it works the same on every harness:
+
+```text
+Run GSD's plan-phase step (gsd-plan-phase) for phase 3.
+approved
+Checkpoint 3-04 is not right: ask me what I saw.
+```
+
+You see each one before it is typed, and it is typed only into an agent that
+is ready. GSD's workstreams are not shown yet.
+
+**It may** read the checkout, type into an agent once you confirm, notify you,
+and remember which checkpoint it already told you about. Since it reaches
+your agents, it is enabled one project at a time.
+
+## focus
+
+![The focus drawer starts a 25-minute session, and its time runs in the drawer and in the bar](/examples/focus.gif)
+
+A pomodoro beside the agent. When a session ends you get a sound and a
+notification, and the day counts one more.
+
+| Where | What |
+| --- | --- |
+| Bar | What is left of the session, counting down, or the day's sessions against your goal |
+| Drawer | A card over the agent area: what is left in large digits, how far the session is, start (`Ctrl+S`) and stop (`Ctrl+X`), and the last seven days |
+
+Its sessions are kept once for the machine, so a session goes on whichever
+project is in front. Set the minutes in a session (25 by default) and the
+sessions a day you aim for (4 by default) in its drawer on the Extensions
+screen.
+
+**It may** keep its sessions on this machine and notify you.
+
+## contributions
+
+![The contribution graph opens from the bar; a click on a day lists its commits](/examples/contributions.gif)
+
+A contribution graph of the repository, as GitHub and GitLab draw one, read
+from Git.
+
+| Where | What |
+| --- | --- |
+| Bar | Today's commits and the last 14 days |
+| Drawer | Along the bottom, over the agent: the commits, active days and streaks, a map of the last twenty weeks with its months and weekdays, and the commits of the day you click and who made them |
+
+Each day's shade is set by its place among the days that had a commit, so the
+map reads the same for one commit a week as for a hundred a day. It is read
+again whenever the checkout changes, so a new commit shows up on its own.
+
+**It may** run `git`, confined where the machine confines programs, and
+remember the day you chose.
+
+## Removing them
+
+`uze remove workspace` takes the plugin out of the project's `agents.yaml`,
+and `uze remove -m workspace` off this machine, its three extensions with it.
+To keep the plugin and stop one extension, disable it on the Extensions
+screen.
+
+<Cards>
+  <Card title="Workspace" href="/docs/workspace" />
+  <Card title="Writing an extension" href="/docs/plugins/extensions" />
+  <Card title="Project files" href="/docs/reference/project-files" />
+</Cards>

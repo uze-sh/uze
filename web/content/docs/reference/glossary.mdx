@@ -124,9 +124,11 @@ project's `agents.yaml` runs, once per project on each machine, asked again
 when a line changes. Only a person at a terminal can give it. See
 [Approving the commands](/docs/reference/project-files#approving-the-commands).
 
-**Extension.** A surface built into the workspace: **Spec**, **Architect** and
-**Code**.
-See [Extensions](/docs/workspace#extensions).
+**Extension.** Something the workspace shows beside your agents. Three are
+built in (**Spec**, **Architect** and **Code**), and a plugin can declare more,
+which run nothing until you allow what they may reach and enable them.
+See [Extensions](/docs/workspace#extensions) and
+[writing one](/docs/plugins/extensions).
 
 **Conformance Lab.** Tests that run each real harness binary in a sealed Docker
 world, with no internet and no tokens. See
