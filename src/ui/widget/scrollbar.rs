@@ -38,6 +38,11 @@ pub(crate) struct Scrollbar {
     pub(crate) total: usize,
 }
 
+/// The handle's tone at rest: a step above the line it rides. In the line's
+/// own tone the handle differed from it by weight alone, which on a hairline
+/// drawn a shade off the ground was no difference anyone could see.
+const HANDLE: Token = Token::TextFaint;
+
 impl Scrollbar {
     /// A scrollbar for a list of `total` rows showing `visible` of them,
     /// or `None` when everything fits.
@@ -95,7 +100,7 @@ impl Scrollbar {
     /// box-drawing rule is centred, and mixing the two is a line with a
     /// jog in it.
     pub(crate) fn render(self, frame: &mut Frame<'_>, first: usize) {
-        self.render_in(frame, first, Token::BorderDefault);
+        self.render_in(frame, first, HANDLE);
     }
 
     /// The handle on a divider the pointer can drag. It goes accent with
@@ -104,7 +109,7 @@ impl Scrollbar {
     pub(crate) fn render_on_draggable(self, frame: &mut Frame<'_>, first: usize, dragging: bool) {
         let tone = match dragging {
             true => Token::Accent,
-            false => Token::BorderDefault,
+            false => HANDLE,
         };
         self.render_in(frame, first, tone);
     }
@@ -177,7 +182,12 @@ mod tests {
             terminal.backend().buffer()[(0, 0)].fg
         };
 
-        assert_eq!(handle_tone(false), theme::color(Token::BorderDefault));
+        assert_eq!(handle_tone(false), theme::color(HANDLE));
+        assert_ne!(
+            theme::color(HANDLE),
+            theme::color(Token::BorderDefault),
+            "at rest it stands out from the line it rides"
+        );
         assert_eq!(handle_tone(true), theme::color(Token::Accent));
     }
 

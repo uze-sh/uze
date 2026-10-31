@@ -134,7 +134,12 @@ on "cancel" must not save first.
 - Every list that can overflow has the standard `Scrollbar`, which can be
   dragged.
 - It sits **on** the separator or divider, not in a column of its own.
-- A click on the bar never falls through to the list.
+- A click on the bar never falls through to the list, nor closes the modal
+  it is in: its track is a target, and a drag that starts on it follows
+  the pointer until the release.
+- Its handle is seen: a step brighter than the line it rides
+  (`TextFaint`), accent while dragged. In the line's own tone it differed
+  by weight alone, which nobody could see.
 
 **Resize:**
 - Every split and drawer is resizable, in the same way everywhere.
