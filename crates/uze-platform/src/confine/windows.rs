@@ -443,8 +443,9 @@ struct Profile {
 impl Profile {
     fn create(namespace: &str) -> io::Result<Self> {
         let pid = std::process::id();
-        let started = process_started(pid)
-            .ok_or_else(|| io::Error::other("this helper's own start time is unknown"))?;
+        let Started::At(started) = process_started(pid) else {
+            return Err(io::Error::other("this helper's own start time is unknown"));
+        };
         let name = wide(OsStr::new(&profile_name(namespace, pid, started)));
         let mut sid: PSID = ptr::null_mut();
         // SAFETY: the strings are NUL-terminated; the SID is freed with
@@ -551,17 +552,32 @@ fn profile_owner(moniker: &str, prefix: &str) -> Option<(u32, u64)> {
     Some((pid.parse().ok()?, started.parse().ok()?))
 }
 
-/// When process `pid` started, in the system's 100-nanosecond ticks, or
-/// `None` when nothing runs as that pid that this user may ask.
-fn process_started(pid: u32) -> Option<u64> {
+/// What Windows says of a pid when asked when it started.
+#[derive(Debug, PartialEq, Eq)]
+enum Started {
+    /// It runs, and started at this time, in 100-nanosecond ticks.
+    At(u64),
+    /// Nothing runs as it: the one answer Windows gives plainly.
+    Gone,
+    /// It runs, or may, and this process may not ask (another user's, or
+    /// one it is refused).
+    Unknown,
+}
+
+fn process_started(pid: u32) -> Started {
     use windows_sys::Win32::{
-        Foundation::FILETIME,
+        Foundation::{ERROR_INVALID_PARAMETER, FILETIME, GetLastError},
         System::Threading::{GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION},
     };
     // SAFETY: opening a handle to ask its times; null on failure.
     let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
     if process.is_null() {
-        return None;
+        // SAFETY: reads this thread's last error, set by the failed open.
+        return if unsafe { GetLastError() } == ERROR_INVALID_PARAMETER {
+            Started::Gone
+        } else {
+            Started::Unknown
+        };
     }
     let process = Owned(process);
     let zero = FILETIME {
@@ -572,8 +588,10 @@ fn process_started(pid: u32) -> Option<u64> {
     // SAFETY: a valid handle; every output outlives the call.
     let asked =
         unsafe { GetProcessTimes(process.0, &mut created, &mut exited, &mut kernel, &mut user) };
-    (asked != 0)
-        .then(|| (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
+    if asked == 0 {
+        return Started::Unknown;
+    }
+    Started::At((u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
 }
 
 /// `HRESULT_FROM_WIN32`.
@@ -605,7 +623,12 @@ fn sweep_profiles(namespace: &str) {
             let (pid, started) = profile_owner(&moniker, &prefix)?;
             // A pid running again with another start time is another
             // process: the run that made this profile is gone.
-            (process_started(pid) != Some(started)).then_some(moniker)
+            match process_started(pid) {
+                Started::At(now) if now == started => None,
+                Started::At(_) | Started::Gone => Some(moniker),
+                // A run this process may not ask about is left alone.
+                Started::Unknown => None,
+            }
         })
         .collect();
     for moniker in stale {
@@ -997,7 +1020,9 @@ mod tests {
 
     #[test]
     fn this_process_knows_when_it_started() {
-        assert!(process_started(std::process::id()).is_some_and(|started| started > 0));
+        assert!(matches!(process_started(std::process::id()), Started::At(started) if started > 0));
+        // A pid this large is never handed out.
+        assert_eq!(process_started(u32::MAX - 2), Started::Gone);
     }
 
     #[test]
