@@ -771,25 +771,30 @@ fn render_field(
     // field over a tree costs the tree one row less.
     let said = !field.summary.text.is_empty();
     let taken = (2 + u16::from(said)).min(rows.height);
-    let line = Rect::new(
-        rows.x + 1,
-        rows.y,
-        rows.width.saturating_sub(1),
-        2.min(taken),
+    // Drawn as the new agent's directory filter is: one row typed into,
+    // the caret alone saying the keys are here, over a faint rule.
+    let line = Rect::new(rows.x, rows.y, rows.width.saturating_sub(TRAILING_PAD), 1);
+    let mark = theme::width(Symbol::MarkClose);
+    let clearable = !field.text.is_empty();
+    let reserved = match clearable {
+        true => usize::from(mark) + 1,
+        false => 0,
+    };
+    let room = usize::from(line.width).saturating_sub(1 + reserved + 1);
+    let mut spans = vec![TextSpan::raw(" ")];
+    spans.extend(
+        crate::ui::widget::Field::new(&field.text, &field.placeholder)
+            .focused(field.focused)
+            .query(room),
     );
-    let typed = crate::ui::widget::Field::new(&field.text, &field.placeholder)
-        .focused(field.focused)
-        .render(frame, line);
+    frame.render_widget(Paragraph::new(Line::from(spans)), line);
+    if taken > 1 {
+        let _ = Rule::new(Edge::Top).render(frame, Rect::new(rows.x, rows.y + 1, rows.width, 1));
+    }
     // A field holding text can be emptied with a click, at its end; its
     // hit goes first, since it lies on the field.
-    if !field.text.is_empty() {
-        let mark = theme::width(Symbol::MarkClose);
-        let clear = Rect::new(
-            typed.right().saturating_sub(mark + TRAILING_PAD),
-            typed.y,
-            mark,
-            1,
-        );
+    if clearable {
+        let clear = Rect::new(line.right().saturating_sub(mark), line.y, mark, 1);
         let state = match hovered == Some(ViewHit::ClearField) {
             true => widget::ChipState::Hovered,
             false => widget::ChipState::Resting,

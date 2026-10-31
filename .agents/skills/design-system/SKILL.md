@@ -128,8 +128,10 @@ on "cancel" must not save first.
   close mark again under the pointer). Moving away from unsaved work never
   refuses; the buffer is kept and the tree says `unsaved`.
 - The code surface's search is the files list's own, never a half of its
-  own: a fixed field over the tree (`Navigator::field`, drawn by
-  `widget::Field`) whose results take the tree's place while it holds
+  own: a fixed field over the tree (`Navigator::field`) drawn as the new
+  agent's directory filter is — `widget::Field::query`, one row, bold
+  text, the caret alone saying it has the keys, over a faint `Rule` —
+  never the accent-ruled form field; its results take the tree's place while it holds
   text, and `Esc` or the field's own `×` (`mark::close_tone`) empties it,
   takes the keys out of it and gives the tree back, opened down to the
   selection. What it found is said under the
