@@ -42,7 +42,6 @@ const config = {
       '/docs/advanced/keyboard': '/docs/reference/keyboard',
       '/docs/workspace/themes': '/docs/reference/themes',
       '/docs/workspace/keyboard': '/docs/reference/keyboard',
-      '/docs/workspace/extensions': '/docs/workspace#extensions',
       '/docs/advanced/agent-cli': '/docs/reference/agent-cli',
       '/docs/concepts/delivery': '/docs/plugins/delivery',
       '/docs/plugins/skills': '/docs/reference/skills',

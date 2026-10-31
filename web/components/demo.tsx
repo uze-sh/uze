@@ -14,7 +14,7 @@ type Recording =
   | { cast: string; posterAt: number; src?: never; poster?: never }
   | { src: string; poster: string; cast?: never; posterAt?: never };
 
-function Frame({ small, children }: { small?: boolean; children: ReactNode }) {
+export function Frame({ small, children }: { small?: boolean; children: ReactNode }) {
   const dot = small ? 'size-2.5' : 'size-3';
   return (
     <div className={`dark cast-frame bg-[#16181a] text-ink ${small ? 'rounded-[16px] p-1.5' : 'rounded-[22px] p-2'}`}>

@@ -104,58 +104,12 @@ selected tab is and closes with the same key.
 | [Architect](/docs/workspace/architect) | `Alt+A` | The project's diagrams |
 | [Code](/docs/workspace/code) | `Alt+G` | What the agent changed, its files and a map of the checkout |
 
-An extension a plugin brings stands in the bar under the agent area, in the
-sidebar, in a drawer beside the agent or in a band over its pane. uze's own
+A plugin can bring more, in the bar under the agent area, in the sidebar, in
+a drawer beside the agent or in a band over its pane. The official
 marketplace has three, in the `workspace` plugin: **gsd**, **focus** and
-**contributions**. [Official extensions](/docs/workspace/extensions) says
-what each one shows and how to install them, and
-[Extensions](/docs/plugins/creating#extensions) how to write your own.
-
-### The Extensions screen
-
-Under management (`Ctrl+O`), **Extensions** lists every extension on this
-machine. The built-in ones wear **Bundled**, and those from uze's own
-marketplace wear **Official**. Select one to open its drawer: the plugin it
-comes from, whether it runs here, what it may reach, and its preferences,
-which you set right there.
-
-An extension a plugin brings runs nothing until you allow it. Press `Enter`
-on it to enable it: a dialog names it and lists what it may reach, such as
-reading the checkout, running `git` or typing into an agent, and **Allow and
-enable** turns it on. Until then, where it would show, it says it needs
-consent.
-
-- Enabling one here turns it on in every project. One that reaches your
-  agents is the exception: it is enabled one project at a time.
-- An update that wants more than you allowed is **held** and runs nothing
-  until you allow it again. One that wants the same or less is applied as it
-  comes.
-- A program an extension runs, such as `git`, is asked about on a step of its
-  own, which says where it was found and whether it runs confined.
-- Only you can allow one. An agent cannot answer for you from its pane.
-
-When you open a project whose plugins bring an extension that is not enabled
-there, the workspace offers it in one dialog, for that project or for every
-project. Putting the dialog away answers nothing: it is offered again the
-next time the project opens.
-
-### Turning one off
-
-The built-in ones are on until you say otherwise. Under management
-(`Ctrl+O`), on **Extensions**, select one and press `Enter` to switch it off
-or back on. The workspace follows at once: its button leaves the tab strip,
-its keys go to the program in the pane, it leaves the action index (`F1`),
-and its sidebar section is gone with it (the timeline for Code, the tasks for
-Spec). `Enter` disables one a plugin brought in the same way.
-
-The choice for a built-in one is kept in `~/.uze/config.toml`. From a
-terminal, `uze config extension architect off` does the same, and
-`uze config extension` lists them. You can also write it by hand:
-
-```toml
-[extensions]
-architect = false
-```
+**contributions**. [Extensions](/docs/workspace/extensions) says how you
+allow and turn off each one and what the official ones show, and
+[Writing an extension](/docs/workspace/extensions#writing-an-extension) how to write your own.
 
 ## Management
 
@@ -168,6 +122,6 @@ mouse.
 <Cards>
   <Card title="Running agents" href="/docs/workspace/agents" />
   <Card title="Spec" href="/docs/workspace/spec" />
-  <Card title="Official extensions" href="/docs/workspace/extensions" />
+  <Card title="Extensions" href="/docs/workspace/extensions" />
   <Card title="Shortcuts" href="/docs/workspace/keys" />
 </Cards>
