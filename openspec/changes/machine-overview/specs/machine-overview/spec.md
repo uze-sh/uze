@@ -112,11 +112,11 @@ When the health report has findings an operator can act on, the Overview SHALL s
 - **THEN** the first group shows that finding and the command that frees the name
 
 ### Requirement: The Overview changes nothing outside uze's cache
-Collecting and showing the Overview SHALL write nothing outside `$UZE_HOME/cache`, start no MCP server, and run no harness command that changes state. To remove what uze installed it SHALL lead to the Marketplace; for what it did not, it SHALL show the harness's own command, or that deleting the file removes it.
+Collecting and showing the Overview SHALL write nothing outside `$UZE_HOME/cache`, start no MCP server, and run no harness command that changes state. To remove what uze installed it SHALL lead to the Marketplace; for what it did not, it SHALL type the harness's own command into a new shell, unrun, or say that deleting the file removes it.
 
 #### Scenario: Removing a harness plugin
 - **WHEN** the operator asks to remove a plugin the harness installed itself
-- **THEN** the Overview offers to copy the harness's own uninstall command and runs nothing
+- **THEN** the Overview types the harness's own uninstall command into a new shell and runs nothing
 
 ### Requirement: No session's content is read
 Counting sessions SHALL read at most a record's opening metadata, never what a session said, and nothing collected SHALL keep text from any session.

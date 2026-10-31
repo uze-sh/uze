@@ -13,7 +13,7 @@
 - [x] 2.1 Name `cache/machine-overview.json` in `UzeHome`; names, paths, origins, figures and statuses only; collected again when unreadable
 - [x] 2.2 Add the snapshot to the cache-is-not-required-for-correctness invariant and its test
 - [x] 2.3 `uze-application` read model and staged collection (inventory, tokens and health, sessions), one harness at a time, re-exported for `src/`
-- [ ] 2.4 Collection id on every answer, stale answers dropped, panic answers "not known", cancel on leaving the route or closing the modal
+- [x] 2.4 Collection id on every answer, stale answers dropped, panic answers "not known", cancel on leaving the route or closing the modal
 
 ## 3. Integrations
 
@@ -26,20 +26,20 @@
 
 ## 4. Screen
 
-- [ ] 4.1 Overview in Marketplace's shape: header fields, filter, tree folded by kind, panel, foot keys, per the design-system skill's checklist
-- [ ] 4.2 Harness field narrows every row, group and total; period sets the session count; a test with ten harnesses keeps the columns
-- [ ] 4.3 `uze` findings group from `actionable_alerts`, drawn only with findings
-- [ ] 4.4 Drawn at once from the snapshot, in-flight header while collecting, broken reasons, duplicates naming each other, removal guidance (Marketplace link or the harness's command, copy only); click == key tests for every hint
-- [ ] 4.5 Remove `Feature::Overview` and offer the route in every build
+- [x] 4.1 Overview in Marketplace's shape: header fields, filter, tree folded by kind, panel, foot keys, per the design-system skill's checklist
+- [x] 4.2 Harness field narrows every row, group and total; period sets the session count; a test with ten harnesses keeps the columns
+- [x] 4.3 `uze` findings group from `actionable_alerts`, drawn only with findings
+- [x] 4.4 Drawn at once from the snapshot, in-flight header while collecting, broken reasons, duplicates naming each other, removal guidance (Marketplace link or the harness's command, copy only); click == key tests for every hint
+- [x] 4.5 Remove `Feature::Overview` and offer the route in every build
 
 ## 5. Performance and privacy guard
 
-- [ ] 5.1 Tests that nothing is collected by: an agent launch, the shim, any CLI command, the modal opened on another screen; and that leaving the Overview cancels a collection
-- [ ] 5.2 A test that the Overview's first frame draws from the snapshot with every integration blocked
-- [ ] 5.3 A test that no session transcript is opened beyond Codex's first line (a sentinel in a transcript's body never reaches the snapshot)
-- [ ] 5.4 A benchmark with a pass/fail budget: a full collection over a machine with 500 resources under 300 ms excluding the `opencode stats` spawn
+- [x] 5.1 Tests that nothing is collected by: an agent launch, the shim, any CLI command, the modal opened on another screen; and that leaving the Overview cancels a collection
+- [x] 5.2 A test that the Overview's first frame draws from the snapshot with every integration blocked
+- [x] 5.3 A test that no session transcript is opened beyond Codex's first line (a sentinel in a transcript's body never reaches the snapshot)
+- [x] 5.4 A benchmark with a pass/fail budget: a full collection over a machine with 500 resources under 300 ms excluding the `opencode stats` spawn
 
 ## 6. Architecture
 
-- [ ] 6.1 Update `docs/architecture/core-components.mmd`; run `make artifacts` and `cargo test -p uze-extensions`
+- [x] 6.1 Update `docs/architecture/core-components.mmd`; run `make artifacts` and `cargo test -p uze-extensions`
 - [ ] 6.2 `openspec validate --all --strict`, `make check`
