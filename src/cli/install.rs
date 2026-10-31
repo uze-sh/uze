@@ -85,29 +85,61 @@ pub(crate) fn nearest_command(word: &str) -> Option<String> {
         .map(|(_, name)| name)
 }
 
+/// The `uze add` an `uze install` argv meant, when it holds what only
+/// `add` takes — a plugin spec or one of `add`'s flags. Read from argv
+/// because clap refuses `add`'s flags before any of `install`'s code runs,
+/// with a tip toward `install --help`. A directory is a project root's to
+/// claim, whatever its name holds. The hint repeats what was typed, so it
+/// is redacted the way every other echo of a spec is.
+pub(crate) fn add_meant_by_install(argv: &[String]) -> Option<String> {
+    let (verb, rest) = argv.split_first()?;
+    if verb != "install" && verb != "i" {
+        return None;
+    }
+    let names_a_plugin =
+        |word: &str| !word.starts_with('-') && word.contains('@') && !Path::new(word).is_dir();
+    let flag_of_add = |word: &str| {
+        matches!(word, "-m" | "--machine" | "--replace" | "--alias") || word.starts_with("--alias=")
+    };
+    if !rest
+        .iter()
+        .any(|word| names_a_plugin(word) || flag_of_add(word))
+    {
+        return None;
+    }
+    let mut add = vec!["uze add".to_owned()];
+    if !rest.iter().any(|word| names_a_plugin(word)) {
+        add.push("<plugin>@<market>".to_owned());
+    }
+    add.extend(rest.iter().map(|word| uze_platform::redact::redact(word)));
+    Some(add.join(" "))
+}
+
 /// The project `uze install` converges: the root directory given, or the
 /// project here. Only a root: any other directory is far likelier a
 /// package's own directory handed over as a direct source, which the
 /// marketplace contract refuses — and converging whatever project happens
-/// to enclose it would write into one nobody named. A plugin is `uze
-/// add`'s, so either mistake is answered with the add it meant.
+/// to enclose it would write into one nobody named. A bare name is a
+/// plugin named without its marketplace.
 pub(crate) fn install_target(app: &UzeApplication, positional: Option<String>) -> Option<PathBuf> {
     let positional = positional?;
-    if !positional.contains('@') && app.project().is_root(Path::new(&positional)) {
+    if app.project().is_root(Path::new(&positional)) {
         return Some(PathBuf::from(positional));
     }
-    let (message, plugin) = if positional.contains('@') {
-        (
-            "`uze install` installs what this project declares".to_owned(),
-            positional,
-        )
+    let shown = uze_platform::redact::redact(&positional);
+    let hint = if uze_application::parse_plugin_marketplace_spec(&format!("{positional}@m")).is_ok()
+    {
+        format!("uze add {shown}@<market>")
     } else {
-        (
-            format!("`{positional}` is not a project directory"),
-            format!("{positional}@<market>"),
+        format!(
+            "uze install  {}",
+            progress::label("from inside the project, or with its root directory")
         )
     };
-    progress::error(&message, Some(&format!("uze add {plugin}")));
+    progress::error(
+        &format!("`{shown}` is not a project's root directory"),
+        Some(&hint),
+    );
     std::process::exit(2);
 }
 

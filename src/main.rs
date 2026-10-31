@@ -95,6 +95,13 @@ fn main() {
     if let Some(replacement) = removed_spelling(args.get(1..).unwrap_or_default()) {
         usage_error(Cli::command().error(ErrorKind::InvalidSubcommand, replacement));
     }
+    if let Some(add) = add_meant_by_install(args.get(1..).unwrap_or_default()) {
+        progress::error(
+            "`uze install` installs what this project declares",
+            Some(&add),
+        );
+        std::process::exit(2);
+    }
     if let Some(topic) = help_topic(args.get(1..).unwrap_or_default()) {
         die_quietly_on_a_closed_pipe();
         print_help(topic);

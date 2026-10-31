@@ -549,21 +549,32 @@ fn a_package_add_outside_a_project_reports_the_machine_scope() {
 
 /// `install` converges what the project declares and adds nothing: a
 /// plugin spec, or a flag that only shapes one plugin's add, is refused
-/// with the `uze add` it meant, and no project file is touched.
+/// with the whole `uze add` it meant, and no project file is touched.
 #[test]
 fn install_refuses_what_belongs_to_add_and_touches_no_project_file() {
     let home = temporary_home("install-refuses-add");
     uze_testkit::git::mark_repository(&home);
 
-    for (arguments, expected) in [
+    for (arguments, meant) in [
         (vec!["install", "x@y"], "uze add x@y"),
-        (vec!["install", "-m"], "-m"),
-        (vec!["install", "--alias", "x"], "--alias"),
+        (vec!["i", "x@y"], "uze add x@y"),
+        (vec!["install", "x@y", "-m"], "uze add x@y -m"),
+        (vec!["install", "-m", "x@y"], "uze add -m x@y"),
+        (vec!["install", "--replace", "x@y"], "uze add --replace x@y"),
+        (vec!["install", "-m"], "uze add <plugin>@<market> -m"),
+        (
+            vec!["install", "--alias", "x"],
+            "uze add <plugin>@<market> --alias x",
+        ),
     ] {
         let output = uze(&home).args(&arguments).output().unwrap();
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert_eq!(output.status.code(), Some(2), "{arguments:?}: {stderr}");
-        assert!(stderr.contains(expected), "{arguments:?}: {stderr}");
+        assert!(
+            stderr.contains(meant),
+            "{arguments:?} must name `{meant}`: {stderr}"
+        );
+        assert!(!stderr.contains("--help"), "{arguments:?}: {stderr}");
     }
     for file in ["agents.yaml", "agents.lock", "AGENTS.md"] {
         assert!(!home.join(file).exists(), "`install` wrote {file}");
@@ -571,25 +582,81 @@ fn install_refuses_what_belongs_to_add_and_touches_no_project_file() {
     let _ = std::fs::remove_dir_all(home);
 }
 
-/// `uze install <path>` converges the project whose root `path` is.
+/// The refusal repeats what was typed, and what was typed is a spec like
+/// any other: printed as every other echo of one is.
+#[test]
+fn an_install_refusal_prints_the_spec_redacted() {
+    let home = temporary_home("install-refusal-redacted");
+    std::fs::create_dir_all(&home).unwrap();
+    let output = uze(&home)
+        .args(["install", "x@https://user:pass@host/market.git"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(2), "{stderr}");
+    assert!(
+        stderr.contains("uze add x@https://<redacted>@host/market.git"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("pass"), "{stderr}");
+    let _ = std::fs::remove_dir_all(home);
+}
+
+/// A directory inside a project is not the project: it is refused rather
+/// than the enclosing project converged, and the next step is one that
+/// runs — `uze install` for a path, `uze add` for a bare name.
+#[test]
+fn install_refuses_a_directory_that_is_not_a_project_root() {
+    let home = temporary_home("install-not-a-root");
+    uze_testkit::git::mark_repository(&home);
+    std::fs::create_dir_all(home.join("plugins/lint")).unwrap();
+
+    for (argument, next) in [
+        ("plugins/lint", "→ uze install"),
+        ("lint", "uze add lint@<market>"),
+    ] {
+        let output = uze(&home).args(["install", argument]).output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(2), "{argument}: {stderr}");
+        assert!(
+            stderr.contains("not a project's root directory"),
+            "{argument}: {stderr}"
+        );
+        assert!(
+            stderr.contains(next),
+            "{argument} must point to `{next}`: {stderr}"
+        );
+    }
+    for file in ["agents.yaml", "agents.lock"] {
+        assert!(
+            !home.join(file).exists(),
+            "`install` converged the enclosing project"
+        );
+    }
+    let _ = std::fs::remove_dir_all(home);
+}
+
+/// `uze install <path>` converges the project whose root `path` is,
+/// whatever its name holds: an `@` in a directory's name is not a spec.
 #[test]
 fn install_with_a_project_directory_converges_that_project() {
     let home = temporary_home("install-project-path");
-    let project = home.join("project");
-    uze_testkit::git::mark_repository(&project);
-
-    for (directory, argument) in [(&home, "project"), (&project, ".")] {
-        let output = uze(directory).args(["install", argument]).output().unwrap();
-        assert!(
-            output.status.success(),
-            "`uze install {argument}` failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(
-            project.join("agents.yaml").is_file(),
-            "`uze install {argument}` did not converge the project"
-        );
-        std::fs::remove_file(project.join("agents.yaml")).unwrap();
+    for name in ["project", "me@v2"] {
+        let project = home.join(name);
+        uze_testkit::git::mark_repository(&project);
+        for (directory, argument) in [(&home, name), (&project, ".")] {
+            let output = uze(directory).args(["install", argument]).output().unwrap();
+            assert!(
+                output.status.success(),
+                "`uze install {argument}` failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(
+                project.join("agents.yaml").is_file(),
+                "`uze install {argument}` did not converge the project"
+            );
+            std::fs::remove_file(project.join("agents.yaml")).unwrap();
+        }
     }
     let _ = std::fs::remove_dir_all(home);
 }
