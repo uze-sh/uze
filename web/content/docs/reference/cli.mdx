@@ -87,16 +87,25 @@ uze setup list              # every agent and whether it is ready
 uze setup inspect <agent>
 uze setup --verbose         # stream each installer's output instead of keeping it in a log
 uze doctor                  # diagnose, repair what is safe, and check each plugin reached every agent
+uze usage                   # the CPU, memory and disk uze and its agents use on this machine
 uze upgrade                 # replace uze with the latest release now (not plugins)
 ```
 
 A uze placed by the install script keeps itself current. Commands check for a
-release at most once an hour, in the background, and install one a day after it
-is first seen; the next command says it was updated. `uze upgrade` does it now,
+release at most once an hour, in the background, and install one as soon as
+they find it; the next command says it was updated. `UZE_RELEASE_CHANNEL=stable`
+waits until a release has been the latest for a day. `uze upgrade` installs now,
 without waiting. A uze installed any other way (cargo, a package manager) is
 left to that, and `uze upgrade` says so. `UZE_AUTOUPDATE=off` stops the check,
 `UZE_AUTOUPDATE=notify` only tells you, and in CI (`CI` set) it is off unless
-you set it.
+you set it. [Staying current](/docs/installation#staying-current) has the
+whole picture, plugins included.
+
+`uze usage` reports uze as a whole: the machine, the workspace's uptime, a
+table of processes (agents, shells, the terminal server, clients) with their
+CPU and memory, and a table of disk (the checkouts uze made, then packages,
+records, cache and settings). CPU is the machine's share over one second;
+memory is each process's own share.
 
 `uze doctor` also checks every program an installed plugin needs (see
 [Requirements](/docs/reference/plugin-format#requirements)) and names each
@@ -120,7 +129,7 @@ uze config extension [<id> [on | off]]               # workspace only
 warnings and errors, and `--color auto|always|never` decides colour
 (`NO_COLOR` is honoured). `--format json` gives machine-readable output on the
 commands that report: `install`, `update`, `remove`, `status`, `inspect`,
-`doctor`, `market list|inspect|remove|host`, and `config theme list|show`,
+`doctor`, `usage`, `market list|inspect|remove|host`, and `config theme list|show`,
 `icons`, `extension`, `notification`.
 
 The commands agents call are in [The agent CLI](/docs/reference/agent-cli).
