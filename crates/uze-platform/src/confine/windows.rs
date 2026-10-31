@@ -101,6 +101,12 @@ fn run(confinement: &Confinement, argv: &[OsString]) -> io::Result<u32> {
             "a confinement on Windows names its namespace",
         ));
     }
+    if is_batch(Path::new(&argv[0])) {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "a batch file cannot run confined: its arguments are read again by cmd.exe",
+        ));
+    }
     let namespace = confinement.namespace.as_str();
     sweep_profiles(namespace);
     let mut capabilities = Vec::new();
@@ -842,6 +848,15 @@ impl Drop for AttributeList {
     }
 }
 
+/// Whether Windows starts `program` through `cmd.exe`, which reads the
+/// command line again by rules of its own that no quoting of the C
+/// runtime's survives.
+fn is_batch(program: &Path) -> bool {
+    program.extension().is_some_and(|extension| {
+        extension.eq_ignore_ascii_case("bat") || extension.eq_ignore_ascii_case("cmd")
+    })
+}
+
 /// `argv` as one command line the C runtime splits back into the same
 /// arguments: each quoted when it must be, backslashes doubled only before
 /// a quote.
@@ -910,6 +925,14 @@ mod tests {
             "x \"C:\\dir with space\\\\\""
         );
         assert_eq!(line(&["x", "a\\\\b c"]), "x \"a\\\\b c\"");
+    }
+
+    #[test]
+    fn a_batch_file_is_told_from_a_program() {
+        assert!(is_batch(Path::new("C:\\tools\\npx.cmd")));
+        assert!(is_batch(Path::new("C:\\tools\\RUN.BAT")));
+        assert!(!is_batch(Path::new("C:\\Windows\\System32\\cmd.exe")));
+        assert!(!is_batch(Path::new("C:\\tools\\cmd")));
     }
 
     #[test]

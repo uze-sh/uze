@@ -333,3 +333,16 @@ fn git_reads_the_checkout_it_was_granted() {
     assert!(inside.status.success(), "{inside:?}");
     assert_eq!(stdout(&inside).len(), 40, "{inside:?}");
 }
+
+#[test]
+fn a_batch_file_is_refused_rather_than_run() {
+    let root = root();
+    let script = root.path().join("tool.cmd");
+    std::fs::write(&script, "@echo off\r\necho ran\r\n").unwrap();
+    let output = run(
+        &confinement(&[root.path()], &[], false),
+        &[&script.display().to_string(), "plain"],
+    );
+    assert_eq!(output.status.code(), Some(NOT_ENFORCED_EXIT), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+}
