@@ -38,6 +38,7 @@ mod digest;
 mod flags;
 mod generate;
 mod hooks;
+mod inventory;
 mod mcp;
 mod memory;
 mod plugin;
@@ -300,6 +301,22 @@ impl IntegrationPort for ClaudeIntegration {
 
     fn managed_environment(&self) -> &'static [&'static str] {
         flags::MANAGED_ENVIRONMENT
+    }
+
+    fn machine_inventory(&self) -> Option<Vec<uze_core::inventory::FoundResource>> {
+        let config = self.skills_dir.parent()?;
+        Some(inventory::machine_inventory(&inventory::ClaudeHome {
+            config,
+            command_home: &self.command_home,
+            uze_home: &self.uze_home,
+        }))
+    }
+
+    fn session_counts(
+        &self,
+        now: std::time::SystemTime,
+    ) -> Option<uze_core::inventory::SessionCounts> {
+        inventory::session_counts(&self.transcripts_root, now)
     }
 
     fn conversation_digest(

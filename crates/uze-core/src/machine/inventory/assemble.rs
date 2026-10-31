@@ -215,7 +215,7 @@ fn origin_of(found: &FoundResource, harness: &str, receipts: &[AttachmentReceipt
     let owner = receipts
         .iter()
         .filter(|receipt| receipt.integration == harness)
-        .find(|receipt| receipt_owns(&receipt.artifact, path, found.claim.as_ref()));
+        .find(|receipt| receipt_owns(&receipt.artifact, path, found));
     if let Some(receipt) = owner {
         return Origin::Uze {
             package: receipt.package_id.clone(),
@@ -228,15 +228,23 @@ fn origin_of(found: &FoundResource, harness: &str, receipts: &[AttachmentReceipt
     }
 }
 
-fn receipt_owns(artifact: &ManagedArtifact, definition: &Path, claim: Option<&Claim>) -> bool {
+fn receipt_owns(artifact: &ManagedArtifact, definition: &Path, found: &FoundResource) -> bool {
+    let claim = found.claim.as_ref();
     match artifact {
         ManagedArtifact::SymlinkReference { path, .. }
         | ManagedArtifact::GeneratedFile { path, .. }
         | ManagedArtifact::GeneratedTree { path, .. }
         | ManagedArtifact::ManagedHookFile { path } => definition.starts_with(path),
-        ManagedArtifact::VendorConfigEntry { entry_name, .. }
-        | ManagedArtifact::HookConfigEntry { entry_name, .. } => {
+        ManagedArtifact::VendorConfigEntry { entry_name, .. } => {
             matches!(claim, Some(Claim::Entry(name)) if name == entry_name)
+        }
+        // A hook entry is known by the wrapper it runs, which uze generated.
+        ManagedArtifact::HookConfigEntry {
+            entry_name, wrapper, ..
+        } => {
+            matches!(claim, Some(Claim::Entry(name)) if name == entry_name)
+                || matches!(&found.runs, Some(Runs::Shell(line) | Runs::Program(line))
+                    if line.contains(&*wrapper.to_string_lossy()))
         }
         ManagedArtifact::IntegrationOwned { kind, selector, .. } => matches!(
             claim,
