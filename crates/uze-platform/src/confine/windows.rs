@@ -15,8 +15,8 @@ use std::{
 
 use windows_sys::Win32::{
     Foundation::{
-        ERROR_ALREADY_EXISTS, HANDLE, HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, LocalFree,
-        SetHandleInformation, WAIT_OBJECT_0,
+        HANDLE, HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, LocalFree, SetHandleInformation,
+        WAIT_OBJECT_0,
     },
     Security::{
         ACCESS_ALLOWED_ACE, ACE_HEADER, ACL,
@@ -450,7 +450,7 @@ impl Profile {
         let mut sid: PSID = ptr::null_mut();
         // SAFETY: the strings are NUL-terminated; the SID is freed with
         // FreeSid, as the API documents.
-        let mut created = unsafe {
+        let created = unsafe {
             CreateAppContainerProfile(
                 name.as_ptr(),
                 name.as_ptr(),
@@ -460,22 +460,6 @@ impl Profile {
                 &mut sid,
             )
         };
-        if created == hresult(ERROR_ALREADY_EXISTS) {
-            // Left by an earlier helper with this pid, which is gone.
-            // SAFETY: `name` is NUL-terminated.
-            unsafe { DeleteAppContainerProfile(name.as_ptr()) };
-            // SAFETY: as above.
-            created = unsafe {
-                CreateAppContainerProfile(
-                    name.as_ptr(),
-                    name.as_ptr(),
-                    name.as_ptr(),
-                    ptr::null(),
-                    0,
-                    &mut sid,
-                )
-            };
-        }
         if created != 0 {
             return Err(io::Error::other(format!(
                 "the run's AppContainer could not be made ({created:#x})"
@@ -592,11 +576,6 @@ fn process_started(pid: u32) -> Started {
         return Started::Unknown;
     }
     Started::At((u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
-}
-
-/// `HRESULT_FROM_WIN32`.
-fn hresult(error: u32) -> i32 {
-    ((error & 0xFFFF) | 0x8007_0000) as i32
 }
 
 /// Deletes the profile of every run whose helper is gone without deleting
@@ -1023,10 +1002,5 @@ mod tests {
         assert!(matches!(process_started(std::process::id()), Started::At(started) if started > 0));
         // A pid this large is never handed out.
         assert_eq!(process_started(u32::MAX - 2), Started::Gone);
-    }
-
-    #[test]
-    fn a_win32_error_reads_as_its_hresult() {
-        assert_eq!(hresult(183) as u32, 0x8007_00B7);
     }
 }
