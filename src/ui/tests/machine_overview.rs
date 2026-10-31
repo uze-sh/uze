@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use ratatui::layout::Rect;
 use uze_application::machine_overview::{
     HarnessReport, Location, MachineOverview, Origin, OverviewResource, ResourceKind,
-    SessionCounts, Status,
+    SessionCounts, Status, Uses,
 };
 
 use super::support::{buffer_rows, drawn_at};
@@ -502,5 +502,97 @@ fn an_empty_section_says_so_in_the_middle_of_its_room_with_no_headings() {
     assert!(
         at > 8,
         "centred down the room, not on its first row: row {at}"
+    );
+}
+
+fn used(days_7: u64, days_30: u64, estimate: bool, complete: bool) -> Option<Uses> {
+    Some(Uses {
+        days_7,
+        days_30,
+        days_90: days_30,
+        estimate,
+        complete,
+    })
+}
+
+#[test]
+fn each_skill_says_how_often_it_was_used_in_the_period() {
+    let mut model = model();
+    let mut overview = overview();
+    overview.resources[0].uses = used(2, 12, false, true);
+    overview.resources[1].uses = used(0, 3, true, true);
+    model.remembered.machine.overview = Some(overview);
+    let drawn = rows(&model);
+    let header = drawn
+        .iter()
+        .find(|row| row.contains("per session") && row.contains("status"))
+        .unwrap();
+    assert!(header.contains("uses"), "{header}");
+    let commit = drawn.iter().find(|row| row.contains("git:commit")).unwrap();
+    assert!(commit.contains(" 12 "), "uses in 30 days: {commit}");
+    let vercel = drawn
+        .iter()
+        .find(|row| row.contains("vercel:nextjs"))
+        .unwrap();
+    assert!(vercel.contains("~3"), "a partly inferred count: {vercel}");
+}
+
+#[test]
+fn a_skill_nobody_used_reads_unused_only_when_every_harness_was_read() {
+    let mut model = model();
+    let mut overview = overview();
+    overview.resources[0].uses = used(0, 0, false, true);
+    overview.resources[1].uses = used(0, 0, false, false);
+    model.remembered.machine.overview = Some(overview);
+    let drawn = rows(&model);
+    let commit = drawn.iter().find(|row| row.contains("git:commit")).unwrap();
+    assert!(commit.contains("unused"), "{commit}");
+    let vercel = drawn
+        .iter()
+        .find(|row| row.contains("vercel:nextjs"))
+        .unwrap();
+    assert!(
+        !vercel.contains("unused"),
+        "a harness left unread: {vercel}"
+    );
+    assert_eq!(
+        names(&model),
+        ["git:commit", "vercel:nextjs"],
+        "unused comes before what is fine"
+    );
+}
+
+#[test]
+fn uses_nobody_could_read_are_unknown_and_a_rule_has_none() {
+    let model = model();
+    let drawn = rows(&model);
+    let commit = drawn.iter().find(|row| row.contains("git:commit")).unwrap();
+    assert!(commit.contains(" ? "), "{commit}");
+}
+
+#[test]
+fn the_uses_heading_orders_the_most_used_first() {
+    let mut model = model();
+    let mut overview = overview();
+    overview.resources[0].uses = used(1, 1, false, true);
+    overview.resources[1].uses = used(5, 5, false, true);
+    model.remembered.machine.overview = Some(overview);
+    click(&mut model, &Hit::MachineSort(Column::Uses));
+    assert_eq!(names(&model), ["vercel:nextjs", "git:commit"]);
+}
+
+#[test]
+fn the_panel_says_what_a_use_count_rests_on() {
+    let mut model = model();
+    let mut overview = overview();
+    overview.resources[0].uses = used(1, 4, true, false);
+    model.remembered.machine.overview = Some(overview);
+    on_resource(&mut model, ResourceKind::Skill, "git:commit");
+    let drawn = rows(&model);
+    assert!(
+        drawn
+            .iter()
+            .any(|row| row.contains("4 in 30 days · partly inferred")),
+        "{drawn:#?}"
     );
 }

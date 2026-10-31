@@ -87,6 +87,7 @@ pub mod machine_overview {
         HarnessReport, Location, MachineOverview, Origin, OverviewResource, PERIODS, ResourceKind,
         SessionCounts, Status,
     };
+    pub use uze_core::usage::{COUNTED, Uses};
 }
 pub use uze_core::path;
 

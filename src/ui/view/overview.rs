@@ -14,7 +14,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use uze_application::machine_overview::{Origin, OverviewResource, ResourceKind, Status};
+use uze_application::machine_overview::{COUNTED, Origin, OverviewResource, ResourceKind, Status};
 
 use crate::ui::content_area;
 use crate::ui::hit::Hit;
@@ -33,6 +33,7 @@ const NARROW: u16 = 64;
 const PAD: u16 = crate::ui::CONTENT_INSET_LEFT;
 const FROM_WIDTH: usize = 16;
 const TOKENS_WIDTH: usize = 15;
+const USES_WIDTH: usize = 8;
 const STATUS_WIDTH: usize = 20;
 /// Below this table width the `from` column gives way to the name.
 const FROM_NEEDS: u16 = 64;
@@ -382,6 +383,7 @@ fn render_headings(
         [
             heading(Column::From),
             heading(Column::PerSession),
+            heading(Column::Uses),
             heading(Column::Status),
         ],
     );
@@ -527,7 +529,7 @@ impl Columns {
     }
 
     fn trailing(&self) -> usize {
-        TOKENS_WIDTH + STATUS_WIDTH + if self.from { FROM_WIDTH } else { 0 } + TRAILING
+        TOKENS_WIDTH + USES_WIDTH + STATUS_WIDTH + if self.from { FROM_WIDTH } else { 0 } + TRAILING
     }
 
     /// Where each column's heading stands in a row `width` wide, as
@@ -535,7 +537,8 @@ impl Columns {
     fn cells(&self, width: u16) -> Vec<(Column, u16, u16)> {
         let end = width.saturating_sub(TRAILING as u16);
         let status = end.saturating_sub(STATUS_WIDTH as u16);
-        let tokens = status.saturating_sub(TOKENS_WIDTH as u16);
+        let uses = status.saturating_sub(USES_WIDTH as u16);
+        let tokens = uses.saturating_sub(TOKENS_WIDTH as u16);
         let from = tokens.saturating_sub(FROM_WIDTH as u16);
         let name_end = if self.from { from } else { tokens };
         let indent = ROW_INDENT as u16;
@@ -544,6 +547,7 @@ impl Columns {
             cells.push((Column::From, from, FROM_WIDTH as u16));
         }
         cells.push((Column::PerSession, tokens, TOKENS_WIDTH as u16));
+        cells.push((Column::Uses, uses, USES_WIDTH as u16));
         cells.push((Column::Status, status, STATUS_WIDTH as u16));
         cells
     }
@@ -555,7 +559,7 @@ impl Columns {
         cursor: bool,
         indent: usize,
         lead: Vec<Span<'static>>,
-        [from, tokens, status]: [Span<'static>; 3],
+        [from, tokens, uses, status]: [Span<'static>; 4],
     ) -> Line<'static> {
         let width = usize::from(width);
         let trailing = self.trailing();
@@ -582,6 +586,7 @@ impl Columns {
             spans.push(cell(from, FROM_WIDTH, false));
         }
         spans.push(cell(tokens, TOKENS_WIDTH, true));
+        spans.push(cell(uses, USES_WIDTH, true));
         spans.push(cell(status, STATUS_WIDTH, true));
         spans.push(Span::raw(" ".repeat(TRAILING)));
         Line::from(spans)
@@ -626,6 +631,7 @@ fn draw_line(
                 [
                     Span::raw(""),
                     Span::raw(""),
+                    Span::raw(""),
                     Span::styled(word, theme::fg(tone)),
                 ],
             )
@@ -648,16 +654,50 @@ fn draw_line(
                         theme::fg(Token::TextMuted),
                     ),
                     figure(resource.per_session),
-                    status_cell(resource),
+                    uses_cell(resource, screen.period_days()),
+                    status_cell(resource, screen.period_days()),
                 ],
             )
         }
     }
 }
 
+/// A row's uses in the period: blank for what is never counted (an
+/// instruction file, a hook), `?` where no harness carrying it could be
+/// read, `~` before a count that was partly inferred.
+fn uses_cell(resource: &OverviewResource, days: u32) -> Span<'static> {
+    if !COUNTED.contains(&resource.kind) {
+        return Span::raw("");
+    }
+    match resource.uses {
+        None => Span::styled("?", theme::fg(Token::TextFaint)),
+        Some(uses) => {
+            let count = uses.within(days);
+            let text = if uses.estimate {
+                format!("~{count}")
+            } else {
+                count.to_string()
+            };
+            let tone = if count == 0 {
+                Token::TextFaint
+            } else {
+                Token::TextSecondary
+            };
+            Span::styled(text, theme::fg(tone))
+        }
+    }
+}
+
 /// A row's status: a check only where a fact was checked and nothing was
-/// found against it; a dash for what nothing on disk can judge.
-fn status_cell(resource: &OverviewResource) -> Span<'static> {
+/// found against it; a dash for what nothing on disk can judge; unused for
+/// what nobody used in the period, every harness carrying it read.
+fn status_cell(resource: &OverviewResource, days: u32) -> Span<'static> {
+    if resource.unused(days) {
+        return Span::styled(
+            format!("{} unused", theme::glyph(Symbol::MarkUnused)),
+            theme::fg(Token::TextMuted),
+        );
+    }
     match &resource.status {
         Status::Ok if resource.checked => Span::styled(
             format!("{} ok", theme::glyph(Symbol::MarkOk)),
@@ -704,7 +744,11 @@ fn figure(tokens: Option<u32>) -> Span<'static> {
     }
 }
 
-fn status_style(status: &Status) -> (&'static str, Token) {
+fn status_style(resource: &OverviewResource, days: u32) -> (&'static str, Token) {
+    if resource.unused(days) {
+        return ("unused", Token::TextMuted);
+    }
+    let status = &resource.status;
     let word = machine::status_word(status);
     let tone = match status {
         Status::Broken { .. } => Token::StateDanger,
@@ -712,6 +756,21 @@ fn status_style(status: &Status) -> (&'static str, Token) {
         Status::Ok => Token::TextMuted,
     };
     (word, tone)
+}
+
+/// A resource's uses in the panel, with what the figure rests on.
+fn uses_said(resource: &OverviewResource, days: u32) -> String {
+    let Some(uses) = resource.uses else {
+        return "not known: no harness's records could be read".to_owned();
+    };
+    let mut said = format!("{} in {days} days", uses.within(days));
+    if uses.estimate {
+        said.push_str(" · partly inferred");
+    }
+    if !uses.complete {
+        said.push_str(" · not every harness could be read");
+    }
+    said
 }
 
 fn finding_word(severity: Severity) -> (String, Token) {
@@ -940,7 +999,8 @@ fn finding_detail(alert: &Alert) -> Detail {
 
 fn resource_detail(model: &TuiModel, resource: &OverviewResource) -> Detail {
     let screen = &model.remembered.machine;
-    let (word, tone) = status_style(&resource.status);
+    let days = screen.period_days();
+    let (word, tone) = status_style(resource, days);
     let mut fields = Vec::new();
     let from = match &resource.origin {
         Origin::Uze { package } if package.contains('@') => format!("uze · {package}"),
@@ -975,6 +1035,14 @@ fn resource_detail(model: &TuiModel, resource: &OverviewResource) -> Detail {
         theme::fg(Token::TextSecondary),
         None,
     ));
+    if COUNTED.contains(&resource.kind) {
+        fields.push((
+            "uses",
+            uses_said(resource, days),
+            theme::fg(Token::TextSecondary),
+            None,
+        ));
+    }
     if matches!(resource.kind, ResourceKind::Skill | ResourceKind::Agent) {
         let when_used = resource.when_used.map_or_else(
             || "nothing more".to_owned(),

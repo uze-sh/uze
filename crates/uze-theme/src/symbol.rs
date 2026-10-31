@@ -423,6 +423,9 @@ vocabulary! {
         SortAscending = "sort.ascending",
         /// A table ordered by this column, most first.
         SortDescending = "sort.descending",
+        /// Nothing is wrong with it, and nobody used it in the period
+        /// shown.
+        MarkUnused = "mark.unused",
         /// A section that is folded shut.
         ChevronCollapsed = "chevron.collapsed",
         /// A section that is open.

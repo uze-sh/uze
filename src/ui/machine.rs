@@ -111,17 +111,24 @@ pub(crate) enum Column {
     Name,
     From,
     PerSession,
+    Uses,
     #[default]
     Status,
 }
 
 impl Column {
-    pub(crate) const ALL: [Column; 4] = [Self::Name, Self::From, Self::PerSession, Self::Status];
+    pub(crate) const ALL: [Column; 5] = [
+        Self::Name,
+        Self::From,
+        Self::PerSession,
+        Self::Uses,
+        Self::Status,
+    ];
 
     /// The way a column is first read: names and origins from A, figures
     /// from the heaviest, status from what needs looking at.
     pub(crate) fn natural_ascending(self) -> bool {
-        !matches!(self, Self::PerSession)
+        !matches!(self, Self::PerSession | Self::Uses)
     }
 
     pub(crate) fn label(self) -> &'static str {
@@ -129,6 +136,7 @@ impl Column {
             Self::Name => "name",
             Self::From => "from",
             Self::PerSession => "per session",
+            Self::Uses => "uses",
             Self::Status => "status",
         }
     }
@@ -167,12 +175,13 @@ impl Sort {
         }
     }
 
-    fn order(self, a: &OverviewResource, b: &OverviewResource) -> std::cmp::Ordering {
+    fn order(self, a: &OverviewResource, b: &OverviewResource, days: u32) -> std::cmp::Ordering {
         let primary = match self.column {
             Column::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
             Column::From => origin_word(&a.origin).cmp(&origin_word(&b.origin)),
             Column::PerSession => a.per_session.cmp(&b.per_session),
-            Column::Status => status_rank(a).cmp(&status_rank(b)),
+            Column::Uses => uses_within(a, days).cmp(&uses_within(b, days)),
+            Column::Status => status_rank(a, days).cmp(&status_rank(b, days)),
         };
         let primary = if self.ascending {
             primary
@@ -180,20 +189,26 @@ impl Sort {
             primary.reverse()
         };
         primary
-            .then_with(|| status_rank(a).cmp(&status_rank(b)))
+            .then_with(|| status_rank(a, days).cmp(&status_rank(b, days)))
             .then_with(|| b.per_session.cmp(&a.per_session))
             .then_with(|| a.name.cmp(&b.name))
     }
 }
 
-/// What needs looking at first: broken, duplicate, checked, unjudged.
-fn status_rank(resource: &OverviewResource) -> u8 {
+/// What needs looking at first: broken, duplicate, unused in the last
+/// `days`, checked, unjudged.
+fn status_rank(resource: &OverviewResource, days: u32) -> u8 {
     match resource.status {
         Status::Broken { .. } => 0,
         Status::Duplicate { .. } => 1,
-        Status::Ok if resource.checked => 2,
-        Status::Ok => 3,
+        Status::Ok if resource.unused(days) => 2,
+        Status::Ok if resource.checked => 3,
+        Status::Ok => 4,
     }
+}
+
+fn uses_within(resource: &OverviewResource, days: u32) -> Option<u64> {
+    resource.uses.map(|uses| uses.within(days))
 }
 
 /// A collection's cancel switch, carried by the intent that starts it.
@@ -342,6 +357,7 @@ impl MachineScreen {
         let Some(overview) = self.overview.as_ref() else {
             return Vec::new();
         };
+        let days = self.period_days();
         let mut members: Vec<usize> = overview
             .resources
             .iter()
@@ -351,7 +367,7 @@ impl MachineScreen {
             .collect();
         members.sort_by(|a, b| {
             self.sort
-                .order(&overview.resources[*a], &overview.resources[*b])
+                .order(&overview.resources[*a], &overview.resources[*b], days)
         });
         members
     }
