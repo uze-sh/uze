@@ -83,14 +83,29 @@ cut short. [Extensions →](/docs/workspace/extensions)
 A confined program reads the checkout and the system, writes only a scratch
 folder of its own, and reaches no other process. It opens no socket unless the
 extension was granted the network, and even then reaches no local service.
-Each system does this its own way:
+Each system does this its own way, and not every system can refuse every
+reach:
 
-| System | Confined by | What it does not limit |
-|---|---|---|
-| Linux 6.12 or later | Landlock and a system-call filter | nothing |
-| Linux 5.13 to 6.11 | Landlock and a system-call filter | by kernel: signals to other processes, devices it was not granted (before 6.10), emptying files it may only read (before 6.2) |
-| macOS | Seatbelt | memory, and a program can leave the group its run is ended by |
-| Windows | an AppContainer made for the run, in a Job Object | the size of a file and the number of open files |
+| | Linux 6.12 or later | Linux 5.13 to 6.11 | macOS | Windows |
+|---|---|---|---|---|
+| Confined by | Landlock and a system-call filter | Landlock and a system-call filter | Seatbelt | an AppContainer made for the run, in a Job Object |
+| Reads, runs and writes only what it was granted | yes | yes | yes | yes |
+| Cannot empty a file it may only read | yes | from 6.2 | yes | yes |
+| Reaches no host without the network grant, the loopback included | yes | yes | yes | yes |
+| With the grant, still reaches no Unix socket or named pipe | yes | yes | yes | yes |
+| With the grant, still reaches no service on the loopback | no | no | no | yes |
+| Nothing reaches a port it listens on | yes | yes | yes | yes |
+| Reaches no device it was not granted | yes | from 6.10 | yes | yes |
+| Cannot signal, debug or read another process | yes | partly | yes | yes |
+| Nothing it starts outlives its run | yes | yes | no | yes |
+| Memory limit | yes | yes | no | yes |
+| Processor time limit | yes | yes | yes | yes |
+| File size limit | yes | yes | yes | no |
+| Open files limit | yes | yes | yes | no |
+
+On Linux before 6.12 the system-call filter still refuses debugging and
+reading another process, and limits which processes a program can signal as
+far as it can tell from the call alone.
 
 `uze doctor` says which applies to this machine. Where nothing confines, the
 consent says the program runs as you.
