@@ -92,10 +92,18 @@ pub(crate) fn nearest_command(word: &str) -> Option<String> {
 /// claim, whatever its name holds. The hint repeats what was typed, so it
 /// is redacted the way every other echo of a spec is.
 pub(crate) fn add_meant_by_install(argv: &[String]) -> Option<String> {
-    let (verb, rest) = argv.split_first()?;
-    if verb != "install" && verb != "i" {
-        return None;
-    }
+    let mut words = argv.iter().map(String::as_str);
+    let rest: Vec<&str> = loop {
+        match words.next()? {
+            "--verbose" | "-q" | "--quiet" => {}
+            "--color" => {
+                words.next()?;
+            }
+            word if word.starts_with("--color=") => {}
+            "install" | "i" => break words.collect(),
+            _ => return None,
+        }
+    };
     let names_a_plugin =
         |word: &str| !word.starts_with('-') && word.contains('@') && !Path::new(word).is_dir();
     let flag_of_add = |word: &str| {
@@ -119,16 +127,17 @@ pub(crate) fn add_meant_by_install(argv: &[String]) -> Option<String> {
 /// project here. Only a root: any other directory is far likelier a
 /// package's own directory handed over as a direct source, which the
 /// marketplace contract refuses — and converging whatever project happens
-/// to enclose it would write into one nobody named. A bare name is a
-/// plugin named without its marketplace.
+/// to enclose it would write into one nobody named. A bare name that is no
+/// directory here is a plugin named without its marketplace.
 pub(crate) fn install_target(app: &UzeApplication, positional: Option<String>) -> Option<PathBuf> {
     let positional = positional?;
     if app.project().is_root(Path::new(&positional)) {
         return Some(PathBuf::from(positional));
     }
     let shown = uze_platform::redact::redact(&positional);
-    let hint = if uze_application::parse_plugin_marketplace_spec(&format!("{positional}@m")).is_ok()
-    {
+    let names_a_plugin = !Path::new(&positional).is_dir()
+        && uze_application::parse_plugin_marketplace_spec(&format!("{positional}@m")).is_ok();
+    let hint = if names_a_plugin {
         format!("uze add {shown}@<market>")
     } else {
         format!(

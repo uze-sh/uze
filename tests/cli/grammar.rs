@@ -558,6 +558,11 @@ fn install_refuses_what_belongs_to_add_and_touches_no_project_file() {
     for (arguments, meant) in [
         (vec!["install", "x@y"], "uze add x@y"),
         (vec!["i", "x@y"], "uze add x@y"),
+        (vec!["--verbose", "install", "x@y"], "uze add x@y"),
+        (
+            vec!["--color", "never", "i", "-m"],
+            "uze add <plugin>@<market> -m",
+        ),
         (vec!["install", "x@y", "-m"], "uze add x@y -m"),
         (vec!["install", "-m", "x@y"], "uze add -m x@y"),
         (vec!["install", "--replace", "x@y"], "uze add --replace x@y"),
@@ -613,6 +618,7 @@ fn install_refuses_a_directory_that_is_not_a_project_root() {
 
     for (argument, next) in [
         ("plugins/lint", "→ uze install"),
+        ("plugins", "→ uze install"),
         ("lint", "uze add lint@<market>"),
     ] {
         let output = uze(&home).args(["install", argument]).output().unwrap();
