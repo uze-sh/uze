@@ -206,7 +206,7 @@ impl Plugins<'_> {
                     Err(restore_failure) => format!(
                         "`{id}` could not be updated: {failure}\nPutting the installed revision \
                          back also failed: {restore_failure}\nIts bytes are kept at {superseded}. \
-                         Remove {plugin_dir} if it is still there, then `uze install \
+                         Remove {plugin_dir} if it is still there, then `uze add -m \
                          {qualified}` to restore it.",
                         qualified = installed.id.as_str(),
                         superseded = superseded.display(),
