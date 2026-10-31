@@ -3418,32 +3418,6 @@ outside what UZE delivers, and the code site names that decision.
 > `conformance/tests/test_lint.py::FixturesAnswerNothingTest`
 > `conformance/tests/test_lint.py::LaunchesAreAPersonsTest`
 
-## Unfinished surfaces
-
-### What a person downloads carries no half-built screen
-
-A surface the product has not committed to is named in
-`uze_core::features`: off in a release build, on in a development one, and
-overridable either way by `UZE_FEATURES`. Resolved at runtime rather than
-through a Cargo feature, because the vocabularies it gates (a route, a
-scope, an action) are exhaustive enums that tests walk, and a build that
-stopped compiling the hidden code would stop testing it — a flag whose
-purpose is to defer a decision must not delete the evidence that decision
-needs.
-
-> `uze-core::machine::features::tests::what_a_person_downloads_carries_no_unfinished_surface`
-> `uze-core::machine::features::tests::the_environment_answers_either_way`
-
-### A screen behind a feature is absent or whole
-
-The sidebar, the walk from one screen to the next, the id a layout file
-remembers and the Shortcuts screen that documents a surface all read the
-same list. A build where three of them agree and the fourth still offers a
-way in is the failure mode a runtime flag has in place of a compile error,
-so it is the one this guards.
-
-> `src/ui/tests/navigation.rs::a_screen_behind_a_feature_is_absent_or_whole`
-
 ## Decisions deliberately *not* taken
 
 Recorded because absence is a decision, and because each one has been proposed

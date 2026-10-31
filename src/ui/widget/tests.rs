@@ -1344,18 +1344,15 @@ fn row_text(buffer: &ratatui::buffer::Buffer, y: u16) -> String {
         .collect()
 }
 
-/// A strip with room says everything; one without gives up the badges,
-/// then the names of the tabs that are not open — never the open one's,
-/// and never a tab's mark.
+/// A strip with room says everything; one without gives up the names of
+/// the tabs that are not open — never the open one's, and never a tab's
+/// mark.
 #[test]
-fn a_tab_bar_gives_up_badges_then_the_closed_tabs_names() {
+fn a_tab_bar_gives_up_the_closed_tabs_names() {
     use super::tabs::{Tab, tab_bar};
     let strip = [
         (Tab::new("Context").lead("!", Token::StateWarning), 'c'),
-        (
-            Tab::new("Plugins").badge(Some("beta"), Token::StateWarning),
-            'p',
-        ),
+        (Tab::new("Plugins"), 'p'),
     ];
     let at = |width: u16| {
         let mut placed = Vec::new();
@@ -1367,7 +1364,7 @@ fn a_tab_bar_gives_up_badges_then_the_closed_tabs_names() {
 
     let (wide, placed) = at(40);
     assert!(
-        wide.contains(" 1 ! Context ") && wide.contains("Plugins ʙᴇᴛᴀ"),
+        wide.contains(" 1 ! Context ") && wide.contains("Plugins"),
         "{wide}"
     );
     assert_eq!(
@@ -1377,10 +1374,7 @@ fn a_tab_bar_gives_up_badges_then_the_closed_tabs_names() {
     assert_eq!(placed[1].0.x, placed[0].0.right() + super::tabs::GAP);
 
     let (named, _) = at(26);
-    assert!(
-        named.contains("Context") && !named.contains("ʙᴇᴛᴀ"),
-        "{named}"
-    );
+    assert!(named.contains("Context"), "{named}");
 
     let (narrow, _) = at(18);
     assert!(

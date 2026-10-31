@@ -17,14 +17,13 @@ use crate::ui::theme;
 /// Between one tab and the next.
 pub(crate) const GAP: u16 = 2;
 
-/// One tab: its name, an optional mark before it (a state glyph) and an
-/// optional badge after it. Its number is its position, which is the key
+/// One tab: its name and an optional mark before it (a state glyph). Its
+/// number is its position, which is the key
 /// that reaches it, so the caller never spells it.
 #[derive(Clone, Debug)]
 pub(crate) struct Tab {
     label: String,
     lead: Option<(String, Token)>,
-    badge: Option<(String, Token)>,
 }
 
 impl Tab {
@@ -32,7 +31,6 @@ impl Tab {
         Self {
             label: label.into(),
             lead: None,
-            badge: None,
         }
     }
 
@@ -42,23 +40,15 @@ impl Tab {
         self.lead = Some((mark.into(), tone));
         self
     }
-
-    /// A badge after the name, in small caps and `tone` — the first thing
-    /// a strip that does not fit gives up.
-    pub(crate) fn badge(mut self, badge: Option<&str>, tone: Token) -> Self {
-        self.badge = badge.map(|badge| (super::text::small_caps(badge), tone));
-        self
-    }
 }
 
 /// How much of itself a tab says, from all of it down to its number
-/// alone: a strip that does not fit gives up the badges first, then the
-/// names of the tabs that are not open. The open one keeps its name.
+/// alone: a strip that does not fit gives up the names of the tabs that
+/// are not open. The open one keeps its name.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Detail {
     OpenNameOnly,
     Name,
-    Badge,
 }
 
 /// Draws `tabs` along `row` at the most detail that fits, the one at
@@ -108,11 +98,12 @@ fn fitted<T>(
             .sum::<u16>()
             .saturating_sub(GAP)
     };
-    [Detail::Badge, Detail::Name]
-        .into_iter()
-        .map(lines)
-        .find(|candidate| width(candidate) <= room)
-        .unwrap_or_else(|| lines(Detail::OpenNameOnly))
+    let named = lines(Detail::Name);
+    if width(&named) <= room {
+        named
+    } else {
+        lines(Detail::OpenNameOnly)
+    }
 }
 
 fn line(position: usize, tab: &Tab, open: bool, focused: bool, detail: Detail) -> Line<'static> {
@@ -148,12 +139,6 @@ fn line(position: usize, tab: &Tab, open: bool, focused: bool, detail: Detail) -
     }
     if open || detail >= Detail::Name {
         spans.push(Span::styled(format!(" {}", tab.label), with_ground(label)));
-    }
-    if let (Detail::Badge, Some((badge, tone))) = (detail, &tab.badge) {
-        spans.push(Span::styled(
-            format!(" {badge}"),
-            with_ground(theme::fg(*tone)),
-        ));
     }
     spans.push(Span::styled(" ", with_ground(Style::default())));
     Line::from(spans)

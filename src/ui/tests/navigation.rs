@@ -6,9 +6,7 @@ use ratatui::layout::Rect;
 use uze_application::application::MarketplacePluginSummary;
 
 use crate::ui::hit::Hit;
-use crate::ui::model::{
-    Confirmation, Focus, Overlay, ROUTES, Route, TuiModel, routes, scope_is_offered,
-};
+use crate::ui::model::{Confirmation, Focus, Overlay, ROUTES, Route, TuiModel};
 use crate::ui::worker::Intent;
 
 use super::support::*;
@@ -33,7 +31,10 @@ fn sidebar_keyboard_navigation_cycles_routes() {
 
 #[test]
 fn tab_toggles_focus_between_sidebar_and_content() {
-    let mut model = TuiModel::default();
+    let mut model = TuiModel {
+        route: Route::Plugins,
+        ..TuiModel::default()
+    };
     assert_eq!(model.focus, Focus::Sidebar);
     model.apply_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     assert_eq!(model.focus, Focus::Content);
@@ -177,114 +178,6 @@ fn every_first_step_can_be_taken_from_every_screen() {
     }
 }
 
-/// A screen behind a feature is absent or whole. The sidebar, the walk
-/// from one screen to the next, the id a layout file remembers and the
-/// shortcuts screen all read the same list — a build where three of them
-/// agree and the fourth still offers a way in is the failure mode a flag
-/// like this has instead of a compile error.
-#[test]
-fn a_screen_behind_a_feature_is_absent_or_whole() {
-    let offered = routes();
-    for route in ROUTES {
-        let shown = offered.contains(&route);
-        assert_eq!(
-            shown,
-            route.feature().is_none_or(uze_application::feature_enabled),
-            "{route:?} is drawn on a different rule from the one it declares"
-        );
-        assert_eq!(
-            Route::from_id(route.id()).is_some(),
-            shown,
-            "{route:?} is remembered on a different rule from the one it is drawn on"
-        );
-    }
-    for route in &offered {
-        assert!(
-            offered.contains(&route.neighbour(1)) && offered.contains(&route.neighbour(-1)),
-            "walking the sidebar from {route:?} lands on a screen nobody can see"
-        );
-    }
-
-    let model = model_with_data();
-    let undocumented: Vec<_> = model
-        .key_rows()
-        .into_iter()
-        .filter(|row| !scope_is_offered(row.scope))
-        .map(|row| format!("{}.{}", row.scope.name(), row.action))
-        .collect();
-    assert!(
-        undocumented.is_empty(),
-        "the shortcuts screen documents a surface this build hides: {undocumented:?}"
-    );
-
-    // Whether a surface is on offer is answered by the screen that owns
-    // it, so a scope two screens claim would be answered twice, and
-    // differently once one of them is behind a feature.
-    let mut claimed: std::collections::BTreeMap<uze_keys::Scope, Route> =
-        std::collections::BTreeMap::new();
-    for route in ROUTES {
-        for scope in route.scopes() {
-            if let Some(other) = claimed.insert(*scope, route) {
-                panic!(
-                    "{} is claimed by both {other:?} and {route:?}",
-                    scope.name()
-                );
-            }
-        }
-    }
-}
-
-// The tab strip is where someone decides which screen to open, so a route
-// that is not settled has to say so there — and keep saying it when the
-// strip runs short of room, which gives up the counts before the badges.
-#[test]
-fn the_unsettled_routes_are_the_only_badged_ones_in_either_layout() {
-    let badge = crate::ui::widget::text::small_caps(
-        Route::Overview
-            .badge()
-            .expect("a screen behind a feature says so"),
-    );
-    let unsettled: Vec<Route> = crate::ui::model::routes()
-        .into_iter()
-        .filter(|route| route.feature().is_some())
-        .collect();
-    for width in [190u16, 150] {
-        for route in [Route::Overview, Route::Plugins] {
-            let model = TuiModel {
-                route,
-                focus: Focus::Content,
-                overlay: Overlay::None,
-                ..model_with_data()
-            };
-            let (terminal, hits) = drawn_at(&model, width, 30);
-            let rows = buffer_rows(&terminal);
-            let header = &rows[0];
-            assert_eq!(
-                header.matches(badge.as_str()).count(),
-                unsettled.len(),
-                "at {width} on {route:?}: {header:?}"
-            );
-            for (rect, hit) in &hits {
-                let Hit::Route(tab) = hit else { continue };
-                let drawn: String = header
-                    .chars()
-                    .skip(rect.x as usize)
-                    .take(rect.width as usize)
-                    .collect();
-                assert_eq!(
-                    drawn.contains(badge.as_str()),
-                    unsettled.contains(tab),
-                    "the badge sits on exactly the unsettled tabs: {drawn:?}"
-                );
-            }
-        }
-    }
-}
-
-/// A tab is the screen's number and name, and a badge only where the
-/// screen is not settled: no count beside any of them. The count said how
-/// big an inventory was in the one place a reader is choosing where to go,
-/// and the screen's own header says it once they are there.
 #[test]
 fn no_tab_carries_a_count() {
     let model = TuiModel {

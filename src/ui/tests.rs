@@ -11,6 +11,8 @@ mod keys;
 #[cfg(test)]
 mod layout;
 #[cfg(test)]
+mod machine_overview;
+#[cfg(test)]
 mod marketplaces;
 #[cfg(test)]
 mod navigation;

@@ -27,7 +27,6 @@ pub use uze_core::{
     Result, UzeError, UzeHome,
     anchor::anchor_root_or_self,
     capability::CapabilityKind,
-    features::{ALL_FEATURES, Feature},
     hosts::HostEntry,
     integration::{AttachmentState, HarnessDetection, PublicationStatus, RulesRoute, WithheldPath},
     naming::{
@@ -122,12 +121,6 @@ pub use uze_workspace::{
     reports::Report as AgentReport,
     worktree::{CompletionBehavior, PolicyStep, isolated_checkout},
 };
-
-/// Whether this build offers an unfinished surface — see
-/// [`uze_core::features`], which holds the rule and the reason.
-pub fn feature_enabled(feature: Feature) -> bool {
-    uze_core::features::enabled(feature)
-}
 
 /// The repository a directory's tasks hang off, resolved lexically.
 ///

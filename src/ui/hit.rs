@@ -55,6 +55,12 @@ pub(crate) enum Hit {
     TypeInShell(String),
     ExtensionRow(usize),
     HarnessRow(usize),
+    /// A line of the Overview's tree, by position in it.
+    MachineLine(usize),
+    /// One of a header field's arrows on the Overview: forward or back.
+    MachineField(crate::ui::machine::Field, bool),
+    /// The Marketplace, on an installed package (`name@market`).
+    ShowPackage(String),
     /// A route-local divider between two content panels.
     ResizePanel(ResizablePanel),
     /// One row of the open index of everything, by position in it.
@@ -288,6 +294,9 @@ impl TuiModel {
                 self.focus = Focus::Content;
                 Intent::None
             }
+            Hit::MachineLine(position) => self.machine_click(position),
+            Hit::MachineField(field, forward) => self.machine_turn(field, forward),
+            Hit::ShowPackage(id) => self.show_package(&id),
             Hit::HarnessRow(index) => {
                 self.remembered.harness_screen.selected = index;
                 self.focus = Focus::Content;

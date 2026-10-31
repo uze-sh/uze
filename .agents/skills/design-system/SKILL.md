@@ -589,9 +589,8 @@ operator rather than assume.
 **Chrome:**
 - Dividers are thin, dim and one colour. Use few separators: inside a line
   separate with ` · `, not more bars.
-- No heavy frames. No small caps, save a tab's badge (`text::small_caps`),
-  the one place the vocabulary keeps them: never for a title, a label or a
-  hint.
+- No heavy frames. No small caps: never for a title, a label, a badge or
+  a hint.
 - Glyphs say something and are all the same size. Nerd-only icons appear
   only under the nerd scheme.
 - The spinner is `Symbol::StatusWorking`, whose frames the theme declares
