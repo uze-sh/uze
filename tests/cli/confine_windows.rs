@@ -206,8 +206,11 @@ fn without_network_nothing_answers_and_with_it_the_loopback_still_does_not() {
 
 #[test]
 fn another_process_is_out_of_reach() {
-    let mut bystander = Command::new(cmd())
-        .args(["/d", "/c", "ping -n 30 127.0.0.1 >NUL"])
+    let mut bystander = Command::new(system("System32\\PING.EXE"))
+        .args(["-n", "30", "127.0.0.1"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .spawn()
         .unwrap();
     let pid = bystander.id();
@@ -235,7 +238,7 @@ fn memory_past_the_bound_is_refused() {
             "-NoProfile",
             "-NonInteractive",
             "-Command",
-            "$a = New-Object byte[] (1GB); $a[0] = 1; 'allocated'",
+            "$ErrorActionPreference = 'Stop'; $a = New-Object byte[] (1GB); $a[0] = 1; 'allocated'",
         ],
     );
     assert!(!stdout(&output).contains("allocated"), "{output:?}");
@@ -298,6 +301,15 @@ fn git_reads_the_checkout_it_was_granted() {
     let git = PathBuf::from(program_files).join("Git\\cmd\\git.exe");
     if !git.is_file() {
         eprintln!("skipped: no Git at {}", git.display());
+        return;
+    }
+    // Git opens `NUL` as it starts, and Windows Server closes it to app
+    // containers where Windows 11 does not (`confinement-parity`).
+    if !shell(&confinement(&[], &[], false), "type NUL")
+        .status
+        .success()
+    {
+        eprintln!("skipped: this Windows closes NUL to app containers");
         return;
     }
     let root = root();
