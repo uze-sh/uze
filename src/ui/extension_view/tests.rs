@@ -3110,6 +3110,19 @@ fn a_navigators_field_stands_over_what_it_found() {
             .map(|(rect, _)| rect.y as usize)
     };
     assert_eq!(row_of(ViewHit::FocusField), Some(at("fog")));
+    let clear = hits
+        .iter()
+        .position(|(_, hit)| *hit == ViewHit::ClearField)
+        .expect("a field holding text can be emptied");
+    let focus = hits
+        .iter()
+        .position(|(_, hit)| *hit == ViewHit::FocusField)
+        .unwrap();
+    assert!(
+        clear < focus,
+        "the mark is found before the field it lies on"
+    );
+    assert!(rows[at("fog")].contains(&theme::glyph(Symbol::MarkClose)));
     assert_eq!(row_of(ViewHit::ToggleGroup(0)), Some(at("a.rs src")));
     assert_eq!(row_of(ViewHit::SelectItem(0)), Some(at("let fog")));
 }

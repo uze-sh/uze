@@ -1644,10 +1644,14 @@ impl CodeView {
     }
 
     /// Lets go of the search: the field empties and the tree is back.
+    ///
+    /// The tree opens down to the selection, which a search may have
+    /// moved to a file in a directory the tree never had open.
     fn clear_search(&mut self) {
         self.search.typing = false;
         self.search.query.clear();
         self.ask_search();
+        self.reveal_selection();
     }
 
     /// Asks again for what the field holds now, in place of any search
@@ -2235,13 +2239,19 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
         return row_menu::mouse(view, hit);
     }
     // A click anywhere but the field takes the keys out of it.
-    if hit != Some(ViewHit::FocusField) {
+    if !matches!(hit, Some(ViewHit::FocusField | ViewHit::ClearField)) {
         view.search.typing = false;
     }
     match hit {
         Some(ViewHit::SelectTab(index)) => view.show_tab(index),
         Some(ViewHit::CloseTab(index)) => view.close_tab(index, asked),
         Some(ViewHit::FocusField) => view.find(),
+        // Emptied and still typed into, the way a field's clear mark
+        // works everywhere else.
+        Some(ViewHit::ClearField) => {
+            view.clear_search();
+            view.find();
+        }
         Some(ViewHit::OpenMenu(index)) => match view.navigator() {
             NavigatorMode::Search => {}
             NavigatorMode::Changes => row_menu::open(view, index),

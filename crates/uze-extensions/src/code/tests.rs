@@ -3991,3 +3991,39 @@ fn the_files_search_replaces_the_tree_while_it_holds_text() {
     );
     assert_eq!(press(&mut view, Command::Close), CodeOutcome::Close);
 }
+
+/// The field's clear mark empties it and leaves the keys in it; letting go
+/// of a search opens the tree down to the file it opened, wherever that is.
+#[test]
+fn clearing_a_search_shows_the_file_it_opened_in_the_tree() {
+    let machine = FakeMachine::default()
+        .with_directory("/w/src")
+        .with_directory("/w/src/deep")
+        .with_file("/w/src/deep/b.rs", "fog();\n")
+        .with_file("/w/a.txt", "nothing\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fog");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Newline);
+    settle(&mut view, &machine);
+    assert_eq!(
+        view.selected.as_deref(),
+        Some(Path::new("/w/src/deep/b.rs"))
+    );
+
+    handle_mouse(&mut view, Some(ViewHit::ClearField), space());
+    settle(&mut view, &machine);
+    assert!(view.search.query.is_empty());
+    assert!(view.typing(), "still typed into");
+    let Some(crate::view::Navigator { rows, anchor, .. }) = render::view(&view, space()).navigator
+    else {
+        panic!("the tree");
+    };
+    let shown = anchor.and_then(|row| rows.get(row));
+    assert!(
+        matches!(shown, Some(NavigatorRow::Item { name, selected: true, .. }) if name == "b.rs"),
+        "the tree is open down to the file, on it: {rows:?}"
+    );
+}

@@ -1169,6 +1169,8 @@ pub enum ViewHit {
     CloseTab(usize),
     /// The navigator's [`Field`], pointed at to type into.
     FocusField,
+    /// Its clear mark: empty it.
+    ClearField,
     /// The selector that offers the groups, pressed: open the list of
     /// them, or shut it.
     ChooseGroup,

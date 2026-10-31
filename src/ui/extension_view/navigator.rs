@@ -518,7 +518,7 @@ pub(super) fn render_navigator(
         inner.height.saturating_sub(1),
     );
     if let Some(field) = &navigator.field {
-        rows = render_field(frame, rows, field, hits);
+        rows = render_field(frame, rows, field, sliding.map(|(hit, _)| hit), hits);
     }
     // The groove comes out of the list's own width, so a row is never
     // drawn under the handle that would sit on top of it.
@@ -764,6 +764,7 @@ fn render_field(
     frame: &mut ratatui::Frame<'_>,
     rows: Rect,
     field: &uze_extensions::view::Field,
+    hovered: Option<ViewHit>,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> Rect {
     // The line under it only while it has something to say, so an empty
@@ -776,9 +777,32 @@ fn render_field(
         rows.width.saturating_sub(1),
         2.min(taken),
     );
-    crate::ui::widget::Field::new(&field.text, &field.placeholder)
+    let typed = crate::ui::widget::Field::new(&field.text, &field.placeholder)
         .focused(field.focused)
         .render(frame, line);
+    // A field holding text can be emptied with a click, at its end; its
+    // hit goes first, since it lies on the field.
+    if !field.text.is_empty() {
+        let mark = theme::width(Symbol::MarkClose);
+        let clear = Rect::new(
+            typed.right().saturating_sub(mark + TRAILING_PAD),
+            typed.y,
+            mark,
+            1,
+        );
+        let state = match hovered == Some(ViewHit::ClearField) {
+            true => widget::ChipState::Hovered,
+            false => widget::ChipState::Resting,
+        };
+        frame.render_widget(
+            Paragraph::new(TextSpan::styled(
+                theme::glyph(Symbol::MarkClose),
+                theme::fg(mark::close_tone(state)),
+            )),
+            clear,
+        );
+        hits.push((clear, ViewHit::ClearField));
+    }
     hits.push((line, ViewHit::FocusField));
     if said && taken == 3 {
         frame.render_widget(

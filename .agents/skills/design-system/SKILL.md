@@ -129,7 +129,8 @@ on "cancel" must not save first.
 - The code surface's search is the files list's own, never a half of its
   own: a fixed field over the tree (`Navigator::field`, drawn by
   `widget::Field`) whose results take the tree's place while it holds
-  text, and `Esc` gives the tree back. What it found is said under the
+  text, and `Esc` or the field's own `×` (`mark::close_tone`) gives the
+  tree back, opened down to the selection. What it found is said under the
   field, its results grouped by file with a count, each file's lines
   hanging from a `tree.vertical` guide under its fold mark. A match is set
   apart in its own hue, bold, on its ground — a ground alone is a tint the
