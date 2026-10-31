@@ -1,4 +1,4 @@
-journey: installing with -m inside a project declares nothing the command does not state
+journey: adding with -m inside a project declares nothing the command does not state
 tags: [gate, cli, packages]
 proves: openspec/specs/command-grammar
 about: |
@@ -39,7 +39,7 @@ scenes:
   - scene: the project has a lock, and the command is about to leave it alone
     when:
       - shell: "{uze} market add {world}/market"
-      - shell: "{uze} install flow@demo"
+      - shell: "{uze} add flow@demo"
         say: declare the package the project's own way first
     then:
       - file: "{project}/agents.lock"
@@ -49,7 +49,7 @@ scenes:
 
   - scene: -m installs the machine half and the project files do not move
     when:
-      - shell: "{uze} install -m flow@demo"
+      - shell: "{uze} add -m flow@demo"
         say: state machine scope from inside a project
     then:
       - tree: "{project}"

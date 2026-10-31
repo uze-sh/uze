@@ -108,20 +108,20 @@ fn market_add_never_touches_the_project_lock() {
     let _ = std::fs::remove_dir_all(home);
 }
 
-/// `uze install <path>` — a direct source without a marketplace is
+/// `uze add <path>` — a direct source without a marketplace is
 /// rejected by the product (the marketplace is the provenance contract,
 /// ADR-019), and the marketplace flow never touches the project lock.
 #[test]
-fn plugin_install_requires_a_marketplace_and_never_touches_the_project_lock() {
+fn plugin_add_requires_a_marketplace_and_never_touches_the_project_lock() {
     let home = temporary_home("plugin-install-path");
     std::fs::create_dir_all(&home).unwrap();
     let rejected = uze(&home)
-        .args(["install", package_fixture().to_str().unwrap()])
+        .args(["add", package_fixture().to_str().unwrap()])
         .output()
         .unwrap();
     assert!(
         !rejected.status.success(),
-        "a direct-path install must be rejected"
+        "a direct-path add must be rejected"
     );
     let stderr = String::from_utf8_lossy(&rejected.stderr);
     assert!(
@@ -130,27 +130,27 @@ fn plugin_install_requires_a_marketplace_and_never_touches_the_project_lock() {
     );
     assert!(
         !home.join("agents.lock").is_file(),
-        "`install` must never create agents.lock"
+        "`add` must never create agents.lock"
     );
 
     // The marketplace flow is the supported path.
-    let (market_args, install_args) =
-        uze_testkit::marketplace::marketplace_install_args(&home, &package_fixture());
+    let (market_args, add_args) =
+        uze_testkit::marketplace::marketplace_add_args(&home, &package_fixture());
     let market_add = uze(&home).args(&market_args).output().unwrap();
     assert!(
         market_add.status.success(),
         "market add failed: {}",
         String::from_utf8_lossy(&market_add.stderr)
     );
-    let output = uze(&home).args(&install_args).output().unwrap();
+    let output = uze(&home).args(&add_args).output().unwrap();
     assert!(
         output.status.success(),
-        "marketplace install failed: {}",
+        "marketplace add failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
         !home.join("agents.lock").is_file(),
-        "`install -m` must never create agents.lock"
+        "`add -m` must never create agents.lock"
     );
     let _ = std::fs::remove_dir_all(home);
 }
@@ -287,9 +287,9 @@ fn help_lists_commands_flat_and_ends_at_the_documentation() {
     assert!(!stdout.contains("Machine:"), "a scope heading is back");
     assert!(
         stdout.contains("plugin@market"),
-        "missing the install example"
+        "missing the shorthand example"
     );
-    for command in ["install", "market", "workspace", "setup"] {
+    for command in ["add", "install", "market", "workspace", "setup"] {
         assert!(
             stdout
                 .lines()
@@ -394,7 +394,7 @@ fn no_builtin_command_name_contains_at() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     for line in stdout.lines() {
         // Skip the lines that legitimately document/demonstrate the
-        // shorthand form itself (the install example and the Examples section).
+        // shorthand form itself (the add example and the Examples section).
         if line.contains("<plugin>@<market>")
             || line.contains("plugin@market")
             || line.contains("flow@ai")
@@ -501,30 +501,30 @@ fn a_trailing_help_positional_is_a_value_not_a_help_request() {
 /// Registers the staged test marketplace from `home` and returns the
 /// package spec it offers.
 fn staged_market(home: &PathBuf) -> String {
-    let (market_args, install_args) =
-        uze_testkit::marketplace::marketplace_install_args(home, &package_fixture());
+    let (market_args, add_args) =
+        uze_testkit::marketplace::marketplace_add_args(home, &package_fixture());
     let market_add = uze(home).args(&market_args).output().unwrap();
     assert!(
         market_add.status.success(),
         "market add failed: {}",
         String::from_utf8_lossy(&market_add.stderr)
     );
-    install_args.last().unwrap().clone()
+    add_args.last().unwrap().clone()
 }
 
-/// Outside a project a package install is the machine half alone, and
-/// both spellings of it — `install` and the shorthand — say so, in the
+/// Outside a project a package add is the machine half alone, and both
+/// spellings of it — `add` and the shorthand — say so, in the
 /// scope line they end with rather than a title claiming a project.
 #[test]
-fn a_package_install_outside_a_project_reports_the_machine_scope() {
-    let home = temporary_home("install-scope-no-project");
+fn a_package_add_outside_a_project_reports_the_machine_scope() {
+    let home = temporary_home("add-scope-no-project");
     std::fs::create_dir_all(&home).unwrap();
     let spec = staged_market(&home);
 
     for arguments in [
-        vec!["install", spec.as_str()],
+        vec!["add", spec.as_str()],
         vec![spec.as_str()],
-        vec!["install", "-m", spec.as_str()],
+        vec!["add", "-m", spec.as_str()],
     ] {
         let output = uze(&home).args(&arguments).output().unwrap();
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -547,47 +547,122 @@ fn a_package_install_outside_a_project_reports_the_machine_scope() {
     let _ = std::fs::remove_dir_all(home);
 }
 
-/// `-m` promises no project file is touched; converging a project is
-/// nothing but touching them, so `install -m` with no package is refused.
+/// `install` converges what the project declares and adds nothing: a
+/// plugin spec, or a flag that only shapes one plugin's add, is refused
+/// with the whole `uze add` it meant, and no project file is touched.
 #[test]
-fn install_m_without_a_package_is_refused_and_touches_no_project_file() {
-    let home = temporary_home("install-m-no-package");
+fn install_refuses_what_belongs_to_add_and_touches_no_project_file() {
+    let home = temporary_home("install-refuses-add");
     uze_testkit::git::mark_repository(&home);
 
-    let output = uze(&home).args(["install", "-m"]).output().unwrap();
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!output.status.success(), "`install -m` converged: {stderr}");
-    assert!(
-        stderr.contains("-m") && stderr.contains("<name>@<marketplace>"),
-        "the refusal must say `-m` needs a package: {stderr}"
-    );
+    for (arguments, meant) in [
+        (vec!["install", "x@y"], "uze add x@y"),
+        (vec!["i", "x@y"], "uze add x@y"),
+        (vec!["--verbose", "install", "x@y"], "uze add x@y"),
+        (
+            vec!["--color", "never", "i", "-m"],
+            "uze add <plugin>@<market> -m",
+        ),
+        (vec!["install", "x@y", "-m"], "uze add x@y -m"),
+        (vec!["install", "-m", "x@y"], "uze add -m x@y"),
+        (vec!["install", "--replace", "x@y"], "uze add --replace x@y"),
+        (vec!["install", "-m"], "uze add <plugin>@<market> -m"),
+        (
+            vec!["install", "--alias", "x"],
+            "uze add <plugin>@<market> --alias x",
+        ),
+    ] {
+        let output = uze(&home).args(&arguments).output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(2), "{arguments:?}: {stderr}");
+        assert!(
+            stderr.contains(meant),
+            "{arguments:?} must name `{meant}`: {stderr}"
+        );
+        assert!(!stderr.contains("--help"), "{arguments:?}: {stderr}");
+    }
     for file in ["agents.yaml", "agents.lock", "AGENTS.md"] {
-        assert!(!home.join(file).exists(), "`install -m` wrote {file}");
+        assert!(!home.join(file).exists(), "`install` wrote {file}");
     }
     let _ = std::fs::remove_dir_all(home);
 }
 
-/// `uze install <path>` converged the project at `path` before the package
-/// form shared the positional, and still does when the path is a
-/// project's root.
+/// The refusal repeats what was typed, and what was typed is a spec like
+/// any other: printed as every other echo of one is.
+#[test]
+fn an_install_refusal_prints_the_spec_redacted() {
+    let home = temporary_home("install-refusal-redacted");
+    std::fs::create_dir_all(&home).unwrap();
+    let output = uze(&home)
+        .args(["install", "x@https://user:pass@host/market.git"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(2), "{stderr}");
+    assert!(
+        stderr.contains("uze add x@https://<redacted>@host/market.git"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("pass"), "{stderr}");
+    let _ = std::fs::remove_dir_all(home);
+}
+
+/// A directory inside a project is not the project: it is refused rather
+/// than the enclosing project converged, and the next step is one that
+/// runs — `uze install` for a path, `uze add` for a bare name.
+#[test]
+fn install_refuses_a_directory_that_is_not_a_project_root() {
+    let home = temporary_home("install-not-a-root");
+    uze_testkit::git::mark_repository(&home);
+    std::fs::create_dir_all(home.join("plugins/lint")).unwrap();
+
+    for (argument, next) in [
+        ("plugins/lint", "→ uze install"),
+        ("plugins", "→ uze install"),
+        ("lint", "uze add lint@<market>"),
+    ] {
+        let output = uze(&home).args(["install", argument]).output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(2), "{argument}: {stderr}");
+        assert!(
+            stderr.contains("not a project's root directory"),
+            "{argument}: {stderr}"
+        );
+        assert!(
+            stderr.contains(next),
+            "{argument} must point to `{next}`: {stderr}"
+        );
+    }
+    for file in ["agents.yaml", "agents.lock"] {
+        assert!(
+            !home.join(file).exists(),
+            "`install` converged the enclosing project"
+        );
+    }
+    let _ = std::fs::remove_dir_all(home);
+}
+
+/// `uze install <path>` converges the project whose root `path` is,
+/// whatever its name holds: an `@` in a directory's name is not a spec.
 #[test]
 fn install_with_a_project_directory_converges_that_project() {
     let home = temporary_home("install-project-path");
-    let project = home.join("project");
-    uze_testkit::git::mark_repository(&project);
-
-    for (directory, argument) in [(&home, "project"), (&project, ".")] {
-        let output = uze(directory).args(["install", argument]).output().unwrap();
-        assert!(
-            output.status.success(),
-            "`uze install {argument}` failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(
-            project.join("agents.yaml").is_file(),
-            "`uze install {argument}` did not converge the project"
-        );
-        std::fs::remove_file(project.join("agents.yaml")).unwrap();
+    for name in ["project", "me@v2"] {
+        let project = home.join(name);
+        uze_testkit::git::mark_repository(&project);
+        for (directory, argument) in [(&home, name), (&project, ".")] {
+            let output = uze(directory).args(["install", argument]).output().unwrap();
+            assert!(
+                output.status.success(),
+                "`uze install {argument}` failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(
+                project.join("agents.yaml").is_file(),
+                "`uze install {argument}` did not converge the project"
+            );
+            std::fs::remove_file(project.join("agents.yaml")).unwrap();
+        }
     }
     let _ = std::fs::remove_dir_all(home);
 }
@@ -809,7 +884,7 @@ fn a_plugin_named_outside_the_rule_is_refused_at_install() {
     );
 
     let install = uze(&home)
-        .args(["install", "-m", "flow@test"])
+        .args(["add", "-m", "flow@test"])
         .output()
         .unwrap();
     let stderr = String::from_utf8_lossy(&install.stderr);
@@ -835,12 +910,12 @@ fn two_spellings_of_one_name_are_one_package() {
     let spec = staged_market(&home);
     for typed in [spec.clone(), spec.to_uppercase()] {
         let output = uze(&home)
-            .args(["install", "-m", typed.as_str()])
+            .args(["add", "-m", typed.as_str()])
             .output()
             .unwrap();
         assert!(
             output.status.success(),
-            "`install -m {typed}` failed: {}",
+            "`add -m {typed}` failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
     }

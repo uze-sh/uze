@@ -784,7 +784,7 @@ only ever enabled project by project.
   allowed to run as the operator is asked again on every update, and one
   allowed confined is asked again if the machine stops confining.
 - Both answers are the operator's: they are given on the workspace's
-  Extensions screen, which shows the grants, and asked by `uze install`
-  on a terminal. From an agent's pane both are refused. An agent writing
+  Extensions screen, which shows the grants, and asked by `uze add` or
+  `uze install` on a terminal. From an agent's pane both are refused. An agent writing
   an extension tells the person what to consent to and where, and does
   not try to answer for them.

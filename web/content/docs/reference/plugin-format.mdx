@@ -73,10 +73,10 @@ A plugin whose scripts need a program on the machine says so under
 Each entry names an `executable` looked up on `PATH`, and may give a minimum
 `version` (`>=3.10` or `3.10`) and a `purpose`. A malformed entry stops the
 install before anything is stored. A missing or too old program does not:
-the plugin installs, and `uze install`, `uze status -m`, `uze inspect` and
-`uze doctor` name what is missing, who needs it, and the command that
-installs it with a package manager the machine has. That command is never
-run for you; you run it.
+the plugin installs, and `uze add`, `uze install`, `uze status -m`,
+`uze inspect` and `uze doctor` name what is missing, who needs it, and the
+command that installs it with a package manager the machine has. That command
+is never run for you; you run it.
 
 A program only counts when it answers. Asked its version, a Windows
 `python3` that only opens the Microsoft Store, or the macOS `python3` that
@@ -327,7 +327,7 @@ runtime and needs nothing from the machine. `interpreter` (a list of words,
 such as `["uv", "run", "--script"]`) replaces the table for one handler.
 
 What the launcher needs from the machine (`python3`, `node`, or `pwsh` for a
-`.ps1` on Linux and macOS) becomes a requirement of the plugin: `uze install` and `uze doctor` say when it is
+`.ps1` on Linux and macOS) becomes a requirement of the plugin: `uze add`, `uze install` and `uze doctor` say when it is
 missing and how to install it. A guard whose interpreter is missing denies
 every call it matches until it is installed.
 

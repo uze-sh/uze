@@ -91,7 +91,7 @@ scenes:
     when:
       # Run as the agent: the stamp is the one its launch carried, read
       # from its own process rather than from any record.
-      - shell: "cd {project} && {uze} install notes@studio > {world}/install.log 2>&1"
+      - shell: "cd {project} && {uze} add notes@studio > {world}/install.log 2>&1"
         inherit: { from: "{world}/bin/claude", names: [UZE_AGENT, UZE_AGENT_KEY] }
         say: the agent installs the plugin from a shell in its pane
     then:

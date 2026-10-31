@@ -96,7 +96,10 @@ pub(crate) fn summary(command: &clap::Command) -> String {
 pub(crate) fn spelling(command: &clap::Command) -> String {
     let mut spelled = command.get_name().to_owned();
     for argument in command.get_positionals() {
-        let name = argument.get_id().as_str();
+        let name = argument
+            .get_value_names()
+            .and_then(|names| names.first())
+            .map_or_else(|| argument.get_id().to_string(), |name| name.to_lowercase());
         if argument.is_required_set() {
             spelled.push_str(&format!(" <{name}>"));
         } else {
@@ -146,10 +149,11 @@ pub(crate) const ROOT_COMMANDS: &[(progress::CommandGroup, &[RootCommand])] = &[
         progress::CommandGroup::Packages,
         &[
             (
-                "install",
-                "[plugin@market]",
-                "Install a plugin, or everything declared here",
+                "add",
+                "<plugin@market>",
+                "Add a plugin from its marketplace",
             ),
+            ("install", "[path]", "Install what this project declares"),
             ("update", "[plugin]", "Move plugins to their newest version"),
             (
                 "remove",
@@ -300,13 +304,10 @@ pub(crate) fn print_command_help(command: &clap::Command, path: &str) {
 /// easiest to get wrong from their names alone.
 pub(crate) const COMMAND_EXAMPLES: &[(&str, &[&str])] = &[
     (
-        "install",
-        &[
-            "uze install",
-            "uze install lint@acme",
-            "uze install -m lint@acme",
-        ],
+        "add",
+        &["uze add lint@acme", "uze add -m lint@acme", "uze lint@acme"],
     ),
+    ("install", &["uze install", "uze install ~/src/app"]),
     ("update", &["uze update", "uze update lint"]),
     ("remove", &["uze remove lint", "uze remove lint -m"]),
     ("status", &["uze status", "uze status -m"]),

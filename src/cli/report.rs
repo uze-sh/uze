@@ -670,7 +670,7 @@ pub(crate) fn warn_blocked(report: &AddPluginReport, app: &UzeApplication) {
     }
 }
 
-/// An install as a line per package and a closing count, the way a package
+/// An add as a line per package and a closing count, the way a package
 /// manager reports one: a harness is named only when it did not receive the
 /// whole package. Everything else waits for `--verbose` and `uze inspect`.
 pub(crate) fn render_add_summary(report: &AddPluginReport) -> String {
@@ -689,7 +689,7 @@ pub(crate) fn render_add_summary(report: &AddPluginReport) -> String {
     } else {
         format!("1 {noun} installed on this machine only")
     };
-    progress::change_report("install", &lines, &scope)
+    progress::change_report("add", &lines, &scope)
 }
 
 /// What a lifecycle operation did to each plugin's rules in the checkout:

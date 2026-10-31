@@ -680,6 +680,9 @@ Use the `src/progress.rs` helpers and never hand-format:
 **Help:**
 - Flat, grouped only by spacing and the `Command*` colours. Never add
   category titles.
+- The root help's rows are named verbs. The shorthand `uze
+  <plugin>@<market>` is `add` without its verb and appears only under
+  Examples, never as a row of its own.
 - Docs URL at the end. `uze` alone prints help.
 - Examples show the command and its output, with room between them.
 

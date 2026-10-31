@@ -35,8 +35,8 @@ workspace:
   delivery: push
 ```
 
-Created by `uze install` or `uze <plugin>@<market>`, explicit acts of setting a
-project up, with the package manager's vocabulary written out and commented.
+Created by `uze install` or `uze add <plugin>@<market>`, explicit acts of
+setting a project up, with the package manager's vocabulary written out and commented.
 Nothing about the workspace is written, not even commented: the section appears
 when you choose something in the workspace or write it yourself. Nothing that
 merely *reads* a project creates the file.
@@ -418,7 +418,7 @@ says what a machine starts from:
 ## What these files are not
 
 They are **project scope**. Neither records what is installed on your machine:
-that lives in the Store under `~/.uze`, and `uze install -m` never writes
+that lives in the Store under `~/.uze`, and `uze add -m` never writes
 here. The two are independent by design; see
 [Machine and project](/docs/plugins/delivery#machine-and-project).
 

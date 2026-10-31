@@ -5,7 +5,7 @@ marketplace built into uze held only the bundled `uze` plugin, which
 bootstrap installs on every machine, so a project declaring it said
 nothing. It now carries plugins bootstrap does not install (`pingpong`,
 and the official extensions), and a project that uses one cannot say so:
-`uze install focus@uze` in a project writes nothing, and the workspace
+`uze add focus@uze` in a project writes nothing, and the workspace
 offers a project only the extensions it declares. The only way around it
 was registering this same repository a second time, under a second name,
 which the marketplace's rename to `uze` now refuses.

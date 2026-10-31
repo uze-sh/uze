@@ -136,7 +136,7 @@ printf '%s' '{mcp}' > {MARKET}/plugins/{PLUGIN}/mcp.json
 git -C {MARKET} init -q && git -C {MARKET} add -A
 git -C {MARKET} -c user.name=lab -c user.email=lab@uze.invalid commit -q -m remote
 uze market add {MARKET} >/dev/null 2>&1
-uze install {PLUGIN}@remote-lab -m 2>&1 | tail -4
+uze add {PLUGIN}@remote-lab -m 2>&1 | tail -4
 echo '===== delivered mcp_config.json'
 find /work/home/.gemini -name mcp_config.json -path '*{PLUGIN}*' -exec cat {{}} \\;
 echo

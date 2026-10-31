@@ -40,7 +40,7 @@ sandbox:
     # untracked file before a take.
     - |
       cd {fixtures}/demo-tasks
-      {project}/target/release/uze install workspace@uze >/dev/null
+      {project}/target/release/uze add workspace@uze >/dev/null
       git add -A
       git -c commit.gpgsign=false -c user.name=ana -c user.email=ana@example.invalid \
         commit -q -m "chore: declare uze's plugins"

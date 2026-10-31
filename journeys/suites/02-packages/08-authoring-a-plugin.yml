@@ -59,7 +59,7 @@ scenes:
 
   - scene: the install reads the working tree, before any second commit
     when:
-      - shell: "{uze} install -m greet@tools"
+      - shell: "{uze} add -m greet@tools"
         say: install what the linked marketplace's working tree holds
     then:
       - file: "{home}/.config/opencode/skills/greet:greet/SKILL.md"

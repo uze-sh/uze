@@ -21,7 +21,7 @@ fn remove_lifecycle_cleans_artifacts_and_keeps_project_lock_untouched() {
 
     let fixture = fixtures::canonical("skill-plugin");
     let (market_args, install_args) =
-        uze_testkit::marketplace::marketplace_install_args(&env.home, &fixture);
+        uze_testkit::marketplace::marketplace_add_args(&env.home, &fixture);
     env.run_ok(
         uze_bin(),
         &market_args.iter().map(String::as_str).collect::<Vec<_>>(),
@@ -96,7 +96,7 @@ fn drift_blocks_destructive_remove_and_preserves_the_artifact() {
 
     let fixture = fixtures::canonical("skill-plugin");
     let (market_args, install_args) =
-        uze_testkit::marketplace::marketplace_install_args(&env.home, &fixture);
+        uze_testkit::marketplace::marketplace_add_args(&env.home, &fixture);
     env.run_ok(
         uze_bin(),
         &market_args.iter().map(String::as_str).collect::<Vec<_>>(),
@@ -176,7 +176,7 @@ fn a_plugin_with_several_hook_groups_removes_cleanly() {
     .unwrap();
 
     let (market_args, install_args) =
-        uze_testkit::marketplace::marketplace_install_args(&env.home, &plugin);
+        uze_testkit::marketplace::marketplace_add_args(&env.home, &plugin);
     env.run_ok(
         uze_bin(),
         &market_args.iter().map(String::as_str).collect::<Vec<_>>(),

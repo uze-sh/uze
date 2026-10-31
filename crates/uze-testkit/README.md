@@ -10,7 +10,7 @@ notion of isolation.
 - `fixtures` — resolves `tests/_fixtures/**` from any crate
 - `scenario::Scenario` — a deliberate system state from a few declarative steps
 - `forge` — a forge on loopback (smart HTTP, SSH, a proxy) with nothing leaving the machine
-- `marketplace` — stages a marketplace so a test installs the way a user does (`uze market add`, then `uze install -m`)
+- `marketplace` — stages a marketplace so a test installs the way a user does (`uze market add`, then `uze add -m`)
 - `assertions` — semantic assertions that name the fixture, harness or path involved
 
 Test-only; depends on nothing product-specific but the Git transport,

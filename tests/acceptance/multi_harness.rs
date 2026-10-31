@@ -25,7 +25,7 @@ fn one_plugin_reaches_every_harness_with_no_duplicate_delivery() {
     env.run_ok(uze_bin(), &["setup"]);
     let fixture = fixtures::canonical("skill-plugin");
     let (market_args, install_args) =
-        uze_testkit::marketplace::marketplace_install_args(&env.home, &fixture);
+        uze_testkit::marketplace::marketplace_add_args(&env.home, &fixture);
     env.run_ok(
         uze_bin(),
         &market_args.iter().map(String::as_str).collect::<Vec<_>>(),
@@ -122,7 +122,7 @@ fn invocation_policy_projects_per_harness_classification() {
         ],
     );
     let (market_args, install_args) =
-        uze_testkit::marketplace::marketplace_install_args(&env.home, &policy_package);
+        uze_testkit::marketplace::marketplace_add_args(&env.home, &policy_package);
     env.run_ok(
         uze_bin(),
         &market_args.iter().map(String::as_str).collect::<Vec<_>>(),
@@ -200,7 +200,7 @@ fn a_model_only_skill_reaches_opencode_in_its_own_encoding() {
         &[("audit", &model_only_body("audit"))],
     );
     let (market_args, install_args) =
-        uze_testkit::marketplace::marketplace_install_args(&env.home, &conflict_package);
+        uze_testkit::marketplace::marketplace_add_args(&env.home, &conflict_package);
     env.run_ok(
         uze_bin(),
         &market_args.iter().map(String::as_str).collect::<Vec<_>>(),
@@ -253,7 +253,7 @@ fn claude_agents_ride_in_the_plugin_and_an_earlier_loose_copy_is_retired() {
     )
     .unwrap();
     let (market_args, install_args) =
-        uze_testkit::marketplace::marketplace_install_args(&env.home, &package);
+        uze_testkit::marketplace::marketplace_add_args(&env.home, &package);
     env.run_ok(
         uze_bin(),
         &market_args.iter().map(String::as_str).collect::<Vec<_>>(),

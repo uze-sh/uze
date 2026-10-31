@@ -296,7 +296,7 @@ world:
 scenes:
   - scene: a plugin from a linked marketplace is installed, its extension with it
     when:
-      - shell: "{uze} market add {world}/market && {uze} market link studio {world}/market && {uze} install -m gsd@studio"
+      - shell: "{uze} market add {world}/market && {uze} market link studio {world}/market && {uze} add -m gsd@studio"
         say: register the marketplace, link it to its working tree, install the plugin
     then:
       - json: "{uze_home}/state/marketplaces.json"

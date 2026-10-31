@@ -6,7 +6,7 @@ uze, listed under its name with no source: the binary is the source. A
 `git:` or `path:` on that name SHALL be refused, naming it as built in.
 
 #### Scenario: Installing a built-in plugin in a project declares it
-- **WHEN** `uze install workspace@uze` runs in a project
+- **WHEN** `uze add workspace@uze` runs in a project
 - **THEN** `agents.yaml` lists `workspace` under `uze`, with no `git:` or
   `path:`, and the workspace offers that project the plugin's extensions
 
@@ -26,7 +26,7 @@ into a project manifest: every project has it already, and a line
 declaring it says nothing.
 
 #### Scenario: Installing the bundled plugin in a project writes nothing
-- **WHEN** `uze install uze@uze` runs in a project
+- **WHEN** `uze add uze@uze` runs in a project
 - **THEN** nothing is written to `agents.yaml`, and a project that had no
   manifest still has none
 

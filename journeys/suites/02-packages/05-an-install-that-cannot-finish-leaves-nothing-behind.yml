@@ -53,7 +53,7 @@ scenes:
         say: |
           spelled as a URL, so the install goes through the mirror — which
           is the path a marketplace anyone else publishes actually takes
-      - shell: "{uze} install -m flow@demo"
+      - shell: "{uze} add -m flow@demo"
         say: install the one plugin it offers
     then:
       - file: "{uze_home}/store/plugins/demo/flow/plugin.json"
@@ -78,15 +78,15 @@ scenes:
 
   - scene: a plugin the marketplace does not offer is refused, and writes nothing
     when:
-      - shell: "{uze} install -m ghost@demo"
+      - shell: "{uze} add -m ghost@demo"
         check: false
         say: ask for a name that is not in the manifest
     then:
       - cmd:
-          run: "{uze} install -m ghost@demo"
+          run: "{uze} add -m ghost@demo"
           exit: 1
         about: |
-          UZE says no with a status a script can read — `uze install -m
+          UZE says no with a status a script can read — `uze add -m
           x && …` is not told the install happened
       - dir: "{uze_home}/store/plugins/demo/ghost"
         exists: false

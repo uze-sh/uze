@@ -95,6 +95,13 @@ fn main() {
     if let Some(replacement) = removed_spelling(args.get(1..).unwrap_or_default()) {
         usage_error(Cli::command().error(ErrorKind::InvalidSubcommand, replacement));
     }
+    if let Some(add) = add_meant_by_install(args.get(1..).unwrap_or_default()) {
+        progress::error(
+            "`uze install` installs what this project declares",
+            Some(&add),
+        );
+        std::process::exit(2);
+    }
     if let Some(topic) = help_topic(args.get(1..).unwrap_or_default()) {
         die_quietly_on_a_closed_pipe();
         print_help(topic);
@@ -218,7 +225,7 @@ fn removed_spelling(argv: &[String]) -> Option<String> {
     const REMOVED: &[(&[&str], &str)] = &[
         (
             &["plugin"],
-            "the plugin namespace is gone — install, remove, update, inspect and status are \
+            "the plugin namespace is gone — add, install, remove, update, inspect and status are \
              root verbs now, and `-m` states machine scope",
         ),
         (
@@ -450,74 +457,39 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
     // Best-effort: failures here must not block `doctor`/`list` etc.
     let _ = app.ensure_default_plugins();
     match command {
+        Command::Add(add) => add_package(&app, add, verbose)?,
         Command::Install {
-            plugin,
-            path,
+            project,
             trust,
-            machine,
-            alias,
-            replace,
             format,
         } => {
             let authority = trust_authority(trust);
-            match install_target(&app, plugin, path)? {
-                InstallTarget::Package {
-                    plugin,
-                    marketplace,
-                } => install_package(
-                    &app,
-                    PackageInstall {
-                        plugin: &plugin,
-                        marketplace: &marketplace,
-                        machine,
-                        authority: authority.as_ref(),
-                        name_authority: name_collision_authority(alias, replace).as_ref(),
-                        format,
-                        verbose,
-                    },
-                )?,
-                // `-m` promises no project file is touched, and converging
-                // a project is nothing but writing its files.
-                InstallTarget::Project(_) if machine => usage_error(Cli::command().error(
-                    ErrorKind::MissingRequiredArgument,
-                    "`-m` installs one package on this machine and needs it named: \
-                         `uze install -m <name>@<marketplace>`",
-                )),
-                // The project's environment: resolved, reproduced and left
-                // reconciled — or, outside a project, an answer that says
-                // so rather than a fault.
-                InstallTarget::Project(path) => {
-                    let report = with_spinner("Installing project environment...", || {
-                        app.project()
-                            .install(&context_path(path), authority.as_ref())
-                    })?;
-                    emit(format, &report, render_install);
-                    if matches!(format, OutputFormat::Text)
-                        && let uze_application::application::InstallReport::Installed {
-                            plugins,
-                            ..
-                        } = &report
-                    {
-                        print!(
-                            "{}",
-                            progress::for_terminal(&render_requirement_gaps_of(
-                                &app,
-                                plugins.iter().map(String::as_str)
-                            ))
-                        );
-                    }
-                    if matches!(format, OutputFormat::Text)
-                        && let uze_application::application::InstallReport::Installed {
-                            plugins,
-                            ..
-                        } = &report
-                    {
-                        ask_about_extensions(&app, plugins);
-                    }
-                    if let Some(failure) = undelivered_failure(report.undelivered()) {
-                        return Err(failure);
-                    }
-                }
+            let path = install_target(&app, project);
+            let report = with_spinner("Installing project environment...", || {
+                app.project()
+                    .install(&context_path(path), authority.as_ref())
+            })?;
+            emit(format, &report, render_install);
+            if matches!(format, OutputFormat::Text)
+                && let uze_application::application::InstallReport::Installed { plugins, .. } =
+                    &report
+            {
+                print!(
+                    "{}",
+                    progress::for_terminal(&render_requirement_gaps_of(
+                        &app,
+                        plugins.iter().map(String::as_str)
+                    ))
+                );
+            }
+            if matches!(format, OutputFormat::Text)
+                && let uze_application::application::InstallReport::Installed { plugins, .. } =
+                    &report
+            {
+                ask_about_extensions(&app, plugins);
+            }
+            if let Some(failure) = undelivered_failure(report.undelivered()) {
+                return Err(failure);
             }
         }
         Command::Update {
@@ -861,14 +833,13 @@ mod grammar_tests {
 
     /// Every name on record is lowercase, so every argument that names a
     /// plugin, a marketplace or an alias is forgiven the case it was typed
-    /// in before anything resolves. The install positional is not here: it
-    /// may be a project directory, so its `name@marketplace` form is
-    /// lowercased where it is parsed.
+    /// in before anything resolves. A `name@marketplace` spec is not here:
+    /// it is lowercased where it is parsed.
     #[test]
     fn every_typed_name_argument_arrives_lowercase() {
         use clap::Parser;
         for argv in [
-            vec!["install", "-m", "x@y", "--alias", "MiXeD"],
+            vec!["add", "-m", "x@y", "--alias", "MiXeD"],
             vec!["update", "MiXeD"],
             vec!["remove", "MiXeD"],
             vec!["inspect", "MiXeD"],
@@ -888,7 +859,7 @@ mod grammar_tests {
         }
         let shorthand =
             super::ShorthandArgs::try_parse_from(["uze", "x@y", "--alias", "MiXeD"]).unwrap();
-        assert_eq!(shorthand.alias.as_deref(), Some("mixed"));
+        assert_eq!(shorthand.add.alias.as_deref(), Some("mixed"));
     }
 
     /// Context lives on the agent's surface and nowhere else. A root

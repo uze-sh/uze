@@ -390,8 +390,8 @@ anything is written or attached. A declarative package requires none.
 > `tests/packages/acquisition.rs::a_non_interactive_process_reports_trust_required_rather_than_assuming_consent`
 
 **This is a consent boundary, not a security sandbox, and not a provenance
-guarantee.** A local path the operator typed (`uze add ./local`, a marketplace
-they registered with `market add`) is treated as an operator-controlled
+guarantee.** A local path the operator typed (a marketplace they registered
+with `market add <path>`) is treated as an operator-controlled
 source and asks nothing, even with an MCP server. Cloning a repository by
 hand and installing the result as a local path deliberately changes the
 classification of that origin. UZE does not fingerprint downloads, mark them,
@@ -793,7 +793,7 @@ create-new semantics so a link that appears after the check is refused too.
 
 `Blocked` means nothing was removed or updated, so `uze remove <plugin> -m` and
 `uze update -m` render the report and then exit non-zero — in both text
-and JSON. A caller chaining `uze remove x -m && uze install y -m`
+and JSON. A caller chaining `uze remove x -m && uze add y -m`
 must not run the second half after the first did nothing.
 
 > `tests/cli/machine.rs::a_blocked_removal_reports_and_fails`

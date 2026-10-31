@@ -30,39 +30,27 @@ pub(crate) struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum Command {
-    /// Install what this project declares, or one package from its
-    /// marketplace
+    /// Add a plugin from its marketplace
     ///
-    /// With `name@marketplace`, that package is installed on this machine
-    /// and, inside a project, declared in agents.yaml — `-m` installs and
-    /// declares nothing. With no package, or with a project directory, that
-    /// project's environment is converged: agents.yaml resolved into
-    /// agents.lock, then installed. A package is never installed from a
-    /// direct path or Git URL — the marketplace is the product's
-    /// provenance contract (see ADR-019).
+    /// The package is installed on this machine and, inside a project,
+    /// declared in agents.yaml — `-m` installs and declares nothing. A
+    /// package is never added from a direct path or Git URL — the
+    /// marketplace is the product's provenance contract (see ADR-019).
+    /// `uze <plugin>@<market>` is the same command.
+    Add(AddArgs),
+    /// Install what this project declares
+    ///
+    /// The project's environment converged: agents.yaml resolved into
+    /// agents.lock, then installed — the project here, or the one whose
+    /// root directory is given. Adding a plugin is `uze add`.
     #[command(visible_alias = "i")]
     Install {
-        /// `<name>@<marketplace>`, or a project directory to converge;
-        /// omitted, converge the project here
-        plugin: Option<String>,
-        path: Option<PathBuf>,
+        /// A project's root directory; omitted, the project here
+        #[arg(value_name = "PATH")]
+        project: Option<String>,
         /// Authorize executable capabilities
         #[arg(long)]
         trust: bool,
-        /// Machine scope: install and declare nothing, project or not
-        #[arg(short = 'm', long)]
-        machine: bool,
-        /// If the package's bare name is already active from a different
-        /// marketplace, install this one under `NAME` instead, so both stay
-        /// active side by side. Package installs only; conflicts with
-        /// `--replace`.
-        #[arg(long, conflicts_with = "replace", value_parser = typed_name)]
-        alias: Option<String>,
-        /// If the package's bare name is already active from a different
-        /// marketplace, remove that one first (once safe to) and let this
-        /// install claim the name. Package installs only.
-        #[arg(long)]
-        replace: bool,
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
@@ -717,17 +705,10 @@ pub(crate) enum OutputFormat {
     Json,
 }
 
-/// `uze <plugin>@<market>` — the sole consumer of `Command::External`. A
-/// real `clap::Parser`, not a hand-rolled loop: an unrecognized flag here
-/// is rejected by `clap` itself (`try_parse_from` returns an `Err` this
-/// binary's caller turns into `clap`'s own formatted error + exit), not
-/// silently ignored, and `uze <plugin>@<market> --help` works for free.
-#[derive(Debug, Parser)]
-#[command(
-    name = "uze",
-    about = "Add a plugin to this project (project shorthand)"
-)]
-pub(crate) struct ShorthandArgs {
+/// One plugin and how it is added: what `uze add` and the
+/// `uze <plugin>@<market>` shorthand both take.
+#[derive(Debug, clap::Args)]
+pub(crate) struct AddArgs {
     /// `<plugin>@<market>`
     #[arg(value_name = "PLUGIN@MARKET")]
     pub(crate) spec: String,
@@ -738,8 +719,8 @@ pub(crate) struct ShorthandArgs {
     #[arg(short = 'm', long)]
     pub(crate) machine: bool,
     /// If the package's bare name is already active from a different
-    /// marketplace, install this one under `NAME` instead. Conflicts with
-    /// `--replace`.
+    /// marketplace, install this one under `NAME` instead, so both stay
+    /// active side by side. Conflicts with `--replace`.
     #[arg(long, conflicts_with = "replace", value_parser = typed_name)]
     pub(crate) alias: Option<String>,
     /// If the package's bare name is already active from a different
@@ -747,9 +728,22 @@ pub(crate) struct ShorthandArgs {
     /// install claim the name.
     #[arg(long)]
     pub(crate) replace: bool,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
+/// `uze <plugin>@<market>` — `uze add` without its verb, and the sole
+/// consumer of `Command::External`. A real `clap::Parser`, not a
+/// hand-rolled loop: an unrecognized flag here is rejected by `clap`
+/// itself (`try_parse_from` returns an `Err` this binary's caller turns
+/// into `clap`'s own formatted error + exit), not silently ignored, and
+/// `uze <plugin>@<market> --help` works for free.
+#[derive(Debug, Parser)]
+#[command(name = "uze", about = "Add a plugin from its marketplace")]
+pub(crate) struct ShorthandArgs {
+    #[command(flatten)]
+    pub(crate) add: AddArgs,
     /// Show delivery evidence and full attachment details
     #[arg(long)]
     pub(crate) verbose: bool,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
-    pub(crate) format: OutputFormat,
 }

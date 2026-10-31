@@ -23,17 +23,16 @@ fn contains_fixture_skill(entries: &[PathBuf]) -> bool {
     })
 }
 
-/// `uze install -m` through a staged test marketplace — the product
+/// `uze add -m` through a staged test marketplace — the product
 /// rejects direct-path installs, so the test exercises the real user flow:
-/// `market add` first, then `install -m <name>@<market>`.
+/// `market add` first, then `add -m <name>@<market>`.
 fn install_via_marketplace_json(
     home: &std::path::Path,
     uze_home: &std::path::Path,
     package: &std::path::Path,
     path: &std::ffi::OsStr,
 ) -> std::process::Output {
-    let (market_args, install_args) =
-        uze_testkit::marketplace::marketplace_install_args(home, package);
+    let (market_args, install_args) = uze_testkit::marketplace::marketplace_add_args(home, package);
     let base = || {
         Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", uze_home)
@@ -70,8 +69,7 @@ fn install_via_marketplace(
     package: &std::path::Path,
     path: &std::ffi::OsStr,
 ) -> std::process::Output {
-    let (market_args, install_args) =
-        uze_testkit::marketplace::marketplace_install_args(home, package);
+    let (market_args, install_args) = uze_testkit::marketplace::marketplace_add_args(home, package);
     let base = || {
         Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", uze_home)
@@ -929,7 +927,7 @@ fn setup_then_add_attaches_transparently_without_a_separate_sync_step() {
     // see `IntegrationPort::status`'s doc comment.
     assert!(doctor.matches("✓ set up").count() >= 2, "{doctor}");
 
-    // `uze install -m` alone attaches both, without any separate sync
+    // `uze add -m` alone attaches both, without any separate sync
     // command.
     //
     // Both the default `uze` package and this single-skill fixture qualify
@@ -940,7 +938,7 @@ fn setup_then_add_attaches_transparently_without_a_separate_sync_step() {
     // either package and still decomposes at the capability level, so its
     // resource-level attachment output is unchanged.
     let (market_args, install_args) =
-        uze_testkit::marketplace::marketplace_install_args(&home, &package_fixture());
+        uze_testkit::marketplace::marketplace_add_args(&home, &package_fixture());
     run(&market_args.iter().map(String::as_str).collect::<Vec<_>>());
     // The route each harness took is the detailed report's to say.
     let mut add_args: Vec<&str> = install_args.iter().map(String::as_str).collect();
@@ -1101,7 +1099,7 @@ fn setup_then_add_attaches_the_mcp_fixture_idempotently_and_removal_works() {
     // resource-level `mcp add` for either. Opencode has no package envelope
     // and stays resource-level as a native `mcp.servers` config entry.
     let (market_args, install_args) =
-        uze_testkit::marketplace::marketplace_install_args(&home, &package);
+        uze_testkit::marketplace::marketplace_add_args(&home, &package);
     run(&market_args.iter().map(String::as_str).collect::<Vec<_>>());
     // The route each harness took is the detailed report's to say.
     let mut add_args: Vec<&str> = install_args.iter().map(String::as_str).collect();
@@ -1173,7 +1171,7 @@ fn setup_then_add_attaches_the_mcp_fixture_idempotently_and_removal_works() {
         "generated"
     );
 
-    // Idempotent: `install -m` a second time does not fail. Both
+    // Idempotent: `add -m` a second time does not fail. Both
     // integrations' package delivery re-resolves to the same
     // already-installed selector — no reinstall, no resource-level replay.
     let second_add = run(&add_args);
@@ -1252,7 +1250,7 @@ fn plugin_remove_uses_the_package_centric_application_flow() {
 fn a_name_typed_in_another_case_resolves_to_the_one_on_record() {
     let home = temporary_home("cli-typed-case");
     let (market_args, install_args) =
-        uze_testkit::marketplace::marketplace_install_args(&home, &package_fixture());
+        uze_testkit::marketplace::marketplace_add_args(&home, &package_fixture());
     let uze = |args: &[String]| {
         Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", &home)
@@ -1382,7 +1380,7 @@ fn drift_a_managed_attachment(home: &std::path::Path) {
 
 /// `Blocked` means the safety check refused and nothing was removed. The
 /// report used to print and the process exit 0, so
-/// `uze remove x -m && uze install y -m` ran the second half after
+/// `uze remove x -m && uze add y -m` ran the second half after
 /// the first had done nothing.
 #[test]
 fn a_blocked_removal_reports_and_fails() {
@@ -1582,7 +1580,7 @@ fn a_machine_update_of_a_linked_edit_says_it_moved_from_the_working_tree() {
         market.to_str().unwrap(),
     ]);
     uze(&["agent", "plugin", "create", "greet", "--market", "tools"]);
-    uze(&["install", "-m", "greet@tools"]);
+    uze(&["add", "-m", "greet@tools"]);
     let stored_skill = || {
         let store = uze_home.join("store/plugins");
         [store.join("tools/greet"), store.join("greet")]
@@ -1653,7 +1651,7 @@ fn a_machine_update_of_a_linked_edit_says_it_moved_from_the_working_tree() {
                 .success()
         );
     }
-    in_project(&["install", "greet@tools"]);
+    in_project(&["add", "greet@tools"]);
     std::fs::write(
         &skill,
         format!(
@@ -1988,7 +1986,7 @@ fn a_skill_and_an_agent_of_one_name_are_both_delivered() {
 }
 
 /// A project's `uze install` that places a plugin one harness refuses says
-/// so and exits non-zero, as `install -m` does: the environment it reports
+/// so and exits non-zero, as `add -m` does: the environment it reports
 /// is not the one every harness received.
 #[test]
 fn a_project_install_one_harness_refuses_fails_and_names_it() {

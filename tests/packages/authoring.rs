@@ -168,7 +168,7 @@ fn a_scaffolded_plugin_is_installable_before_any_second_commit() {
     // And it installs: the linked marketplace reads the working tree, so
     // nothing has been committed since the scaffold's initial commit.
     let install = uze(&root)
-        .args(["install", "-m", "greet@tools"])
+        .args(["add", "-m", "greet@tools"])
         .output()
         .unwrap();
     assert!(
@@ -239,7 +239,7 @@ fn a_local_marketplace_is_the_project_itself_and_installs_immediately() {
     // The install reads the project's working tree through the link.
     let install = uze(&root)
         .current_dir(&project)
-        .args(["install", "-m", "greet@tools"])
+        .args(["add", "-m", "greet@tools"])
         .output()
         .unwrap();
     assert!(

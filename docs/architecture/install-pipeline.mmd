@@ -3,6 +3,7 @@ title: Install pipeline
 ---
 flowchart LR
   install([uze install]) --> manifest[agents.yaml]
+  add([uze add]) -->|declares one plugin, in a project| manifest
   update([uze update]) -->|the declared ref, not the locked revision| resolve
   manifest --> resolve[Resolve marketplaces]
   resolve -->|unreachable by declaration| skip[Skip it, and name it]

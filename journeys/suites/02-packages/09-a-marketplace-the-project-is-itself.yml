@@ -36,7 +36,7 @@ scenes:
   - scene: a plugin authored into it is installable from the working tree
     when:
       - shell: "{uze} agent plugin create greet --market tools"
-      - shell: "{uze} install -m greet@tools"
+      - shell: "{uze} add -m greet@tools"
         say: install from the project's working tree
     then:
       - file: "{project}/plugins/greet/skills/greet/SKILL.md"

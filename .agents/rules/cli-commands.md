@@ -9,12 +9,17 @@ globs: "**/src/cli/**, **/src/main.rs, **/src/command_performance.rs"
   `every_cli_command_is_classified` fails on an unclassified one.
 - **Machine and project scope are independent, and always reported**
   (ADR-054). `uze setup`, `doctor`, `config …`, `upgrade` and `market …`
-  act on the machine (`~/.uze`). `uze <plugin>@<market>`, `install`
-  (`i`), `update`, `remove`, `status` and `inspect` act where they run: in
+  act on the machine (`~/.uze`). `add` (and `uze <plugin>@<market>`,
+  which is `add` without its verb), `install` (`i`), `update`, `remove`,
+  `status` and `inspect` act where they run: in
   a project on the machine plus `agents.yaml`, `agents.lock` and
   `AGENTS.md`, outside one on the machine only; `-m`/`--machine` states
   machine scope on every verb that has two. Neither scope is inferred from
   the other's state.
+- **One meaning per verb.** `add` declares and installs one plugin and
+  pairs with `remove`; `install` reproduces what the project declares and
+  takes no plugin; `update` moves pins. A flag that shapes one plugin's
+  add (`-m`, `--alias`, `--replace`) belongs to `add` alone.
 - **`uze agent …` is an audience, not a category.** Its reader is an agent
   UZE launched, so it is hidden from `uze --help` and documented in the
   launch instructions and the official plugin's Skills. Anything a person

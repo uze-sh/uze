@@ -43,7 +43,7 @@ scenes:
     when:
       - shell: "{uze} setup"
       - shell: "{uze} market add {world}/market"
-      - shell: "{uze} install -m flow@demo"
+      - shell: "{uze} add -m flow@demo"
         say: install and deliver it
     then:
       - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"

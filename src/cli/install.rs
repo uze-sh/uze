@@ -8,63 +8,55 @@ pub(crate) fn typed_name(value: &str) -> std::result::Result<String, std::conver
     Ok(uze_application::typed_name(value))
 }
 
-/// `uze <plugin>@<market>` — the project shorthand. Reached only from
+/// `uze <plugin>@<market>` — `uze add` without its verb. Reached only from
 /// `Command::External`; see that variant's doc comment for the precedence
-/// argument. Semantically equivalent to `add_project_plugin`: this
-/// function does no acquisition/reconciliation logic of its own, only
-/// argument classification and rendering — the Application layer owns
-/// desired-project-state → `agents.lock` → reconciliation → machine
-/// delivery (see `docs/adr/019-...md`).
+/// argument. This function only tells a shorthand from a mistyped command;
+/// the add itself is [`add_package`]'s, as it is for `uze add`.
 pub(crate) fn run_shorthand(app: &UzeApplication, args: Vec<String>, verbose: bool) -> Result<()> {
     // `external_subcommand` only ever fires with at least one token: the
     // unrecognized first argument that caused the fallback.
-    let first = args[0].clone();
-    let (plugin, marketplace) = match uze_application::parse_plugin_marketplace_spec(&first) {
-        Ok(parsed) => parsed,
-        // No `@` at all: this was never shorthand — it's an unrecognized
-        // command. Reuse `clap`'s own error type/formatting/exit code
-        // rather than a hand-rolled message, so this reads exactly like
-        // any other "unrecognized subcommand" `clap` produces natively.
-        Err(_) if !first.contains('@') => {
-            // A near miss of a command is a typo; anything else may be a
-            // plugin named without the marketplace it comes from.
-            let hint = match nearest_command(&first) {
-                Some(command) => format!("uze {command}"),
-                None => format!(
-                    "uze {first}@<market>  {}",
-                    progress::label("a plugin is named with its marketplace")
-                ),
-            };
-            progress::error(&format!("unknown command `{first}`"), Some(&hint));
-            std::process::exit(2);
-        }
-        // Contains `@` but fails the shorthand's own validation (e.g. a
-        // path segment, an empty half) — a real shorthand-input error, not
-        // a missing command, so it flows through the ordinary `uze:
-        // {error}` path like every other application error.
-        Err(error) => return Err(error),
-    };
+    let first = &args[0];
+    if !first.contains('@') {
+        // A near miss of a command is a typo; anything else may be a
+        // plugin named without the marketplace it comes from.
+        let hint = match nearest_command(first) {
+            Some(command) => format!("uze {command}"),
+            None => format!(
+                "uze add {first}@<market>  {}",
+                progress::label("a plugin is named with its marketplace")
+            ),
+        };
+        progress::error(&format!("unknown command `{first}`"), Some(&hint));
+        std::process::exit(2);
+    }
 
     // Parses the *rest* of argv through `clap` — not a hand-rolled loop —
     // so an unrecognized flag is rejected with `clap`'s own error and exit
-    // code instead of being silently ignored (the exact bug this replaces;
-    // see docs/adr/019-...md).
+    // code instead of being silently ignored (see docs/adr/019-...md).
     let shorthand = ShorthandArgs::try_parse_from(std::iter::once("uze".to_owned()).chain(args))
         .unwrap_or_else(|error| usage_error(error));
 
     if shorthand.verbose {
         progress::follow_steps(true);
     }
+    add_package(app, shorthand.add, verbose || shorthand.verbose)
+}
+
+/// `uze add` and the shorthand: one plugin, added in the scope asked for.
+/// A spec that contains `@` but fails its own validation (a path segment,
+/// an empty half) is an input error, reported like any other.
+pub(crate) fn add_package(app: &UzeApplication, add: AddArgs, verbose: bool) -> Result<()> {
+    let (plugin, marketplace) = uze_application::parse_plugin_marketplace_spec(&add.spec)?;
     install_package(
         app,
         PackageInstall {
             plugin: &plugin,
             marketplace: &marketplace,
-            machine: shorthand.machine,
-            authority: trust_authority(shorthand.trust).as_ref(),
-            name_authority: name_collision_authority(shorthand.alias, shorthand.replace).as_ref(),
-            format: shorthand.format,
-            verbose: verbose || shorthand.verbose,
+            machine: add.machine,
+            authority: trust_authority(add.trust).as_ref(),
+            name_authority: name_collision_authority(add.alias, add.replace).as_ref(),
+            format: add.format,
+            verbose,
         },
     )
 }
@@ -93,48 +85,75 @@ pub(crate) fn nearest_command(word: &str) -> Option<String> {
         .map(|(_, name)| name)
 }
 
-/// What `uze install <spec>` was handed: one package, or a project to
-/// converge — the directory given, or the one it was run from.
-pub(crate) enum InstallTarget {
-    Package { plugin: String, marketplace: String },
-    Project(Option<PathBuf>),
-}
-
-/// Reads the install positional. A `name@marketplace` spec is a package; a
-/// project's root directory is the project to converge, which is what
-/// `uze install <path>` meant before the package form shared its position.
-/// Only a root: any other directory is far likelier a package's own
-/// directory handed over as a direct source, which the marketplace
-/// contract refuses — and converging whatever project happens to enclose
-/// it would write into one nobody named.
-pub(crate) fn install_target(
-    app: &UzeApplication,
-    positional: Option<String>,
-    path: Option<PathBuf>,
-) -> Result<InstallTarget> {
-    let Some(positional) = positional else {
-        return Ok(InstallTarget::Project(path));
+/// The `uze add` an `uze install` argv meant, when it holds what only
+/// `add` takes — a plugin spec or one of `add`'s flags. Read from argv
+/// because clap refuses `add`'s flags before any of `install`'s code runs,
+/// with a tip toward `install --help`. A directory is a project root's to
+/// claim, whatever its name holds. The hint repeats what was typed, so it
+/// is redacted the way every other echo of a spec is.
+pub(crate) fn add_meant_by_install(argv: &[String]) -> Option<String> {
+    let mut words = argv.iter().map(String::as_str);
+    let rest: Vec<&str> = loop {
+        match words.next()? {
+            "--verbose" | "-q" | "--quiet" => {}
+            "--color" => {
+                words.next()?;
+            }
+            word if word.starts_with("--color=") => {}
+            "install" | "i" => break words.collect(),
+            _ => return None,
+        }
     };
-    if positional.contains('@') {
-        let (plugin, marketplace) = uze_application::parse_plugin_marketplace_spec(&positional)?;
-        return Ok(InstallTarget::Package {
-            plugin,
-            marketplace,
-        });
+    let names_a_plugin =
+        |word: &str| !word.starts_with('-') && word.contains('@') && !Path::new(word).is_dir();
+    let flag_of_add = |word: &str| {
+        matches!(word, "-m" | "--machine" | "--replace" | "--alias") || word.starts_with("--alias=")
+    };
+    if !rest
+        .iter()
+        .any(|word| names_a_plugin(word) || flag_of_add(word))
+    {
+        return None;
     }
-    if path.is_none() && app.project().is_root(Path::new(&positional)) {
-        return Ok(InstallTarget::Project(Some(PathBuf::from(positional))));
+    let mut add = vec!["uze add".to_owned()];
+    if !rest.iter().any(|word| names_a_plugin(word)) {
+        add.push("<plugin>@<market>".to_owned());
     }
-    Err(uze_application::UzeError::UnknownPackage(format!(
-        "`{positional}` is not a `name@marketplace` spec; add its marketplace with \
-         `uze market add <market>` first, then install with \
-         `uze install {positional}@<market>`"
-    )))
+    add.extend(rest.iter().map(|word| uze_platform::redact::redact(word)));
+    Some(add.join(" "))
 }
 
-/// One package install as the caller asked for it — `uze install <spec>`
-/// and the `uze <spec>` shorthand are the same operation with two
-/// spellings, so they share this and its rendering.
+/// The project `uze install` converges: the root directory given, or the
+/// project here. Only a root: any other directory is far likelier a
+/// package's own directory handed over as a direct source, which the
+/// marketplace contract refuses — and converging whatever project happens
+/// to enclose it would write into one nobody named. A bare name that is no
+/// directory here is a plugin named without its marketplace.
+pub(crate) fn install_target(app: &UzeApplication, positional: Option<String>) -> Option<PathBuf> {
+    let positional = positional?;
+    if app.project().is_root(Path::new(&positional)) {
+        return Some(PathBuf::from(positional));
+    }
+    let shown = uze_platform::redact::redact(&positional);
+    let names_a_plugin = !Path::new(&positional).is_dir()
+        && uze_application::parse_plugin_marketplace_spec(&format!("{positional}@m")).is_ok();
+    let hint = if names_a_plugin {
+        format!("uze add {shown}@<market>")
+    } else {
+        format!(
+            "uze install  {}",
+            progress::label("from inside the project, or with its root directory")
+        )
+    };
+    progress::error(
+        &format!("`{shown}` is not a project's root directory"),
+        Some(&hint),
+    );
+    std::process::exit(2);
+}
+
+/// One package install as the caller asked for it, from `uze add` or its
+/// shorthand.
 pub(crate) struct PackageInstall<'a> {
     pub(crate) plugin: &'a str,
     pub(crate) marketplace: &'a str,
@@ -250,7 +269,7 @@ pub(crate) fn report_scope(scope: &str) {
 /// `Blocked` means the safety check refused and nothing was removed or
 /// updated. Rendered and then returned as an error, so the report is still
 /// on screen (or in the JSON a caller parses) while the exit status says
-/// the machine is unchanged — `uze remove x -m && uze install y -m`
+/// the machine is unchanged — `uze remove x -m && uze add y -m`
 /// used to run the second half after the first did nothing. The same shape
 /// `uze setup` uses for a provisioning step that did not complete.
 pub(crate) fn blocked(
@@ -290,7 +309,7 @@ impl uze_application::TrustAuthority for PromptingAuthority {
     fn authorize(&self, request: &uze_application::TrustRequest) -> uze_application::TrustOutcome {
         progress::uninterrupted(|| {
             // On stderr, with the question: the widget asks there, so
-            // evidence printed to stdout left `uze install > install.log`
+            // evidence printed to stdout left `uze add x@y > add.log`
             // asking a person to trust a package whose capabilities they
             // could not see. What is being decided and the decision belong
             // to one stream.

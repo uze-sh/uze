@@ -6,7 +6,7 @@
 #   tui-record probe  .demo/spec   # the app in its sandbox, to try a selector out
 #   tui-record run    .demo/spec   # record → cut → leak-check → render → poster
 #
-# `tui-record` ships with the `tui` plugin: uze install -m tui@ai
+# `tui-record` ships with the `tui` plugin: uze add -m tui@ai
 #
 # It records in the sandbox the agent demos share
 # (.demo/_shared/agents.yml) — one {root}, one {fixtures}, one remembered

@@ -108,14 +108,14 @@ EOF
 {plugin("nn-late", "deny", LATE)}
 {GIT} init -q && {GIT} add -A && {GIT} commit -q -m probe
 uze market add /work/xmarket >/dev/null 2>&1
-for p in aa-observe mm-deny zz-observe zz-census; do uze install $p@xp -m >/dev/null 2>&1; done
+for p in aa-observe mm-deny zz-observe zz-census; do uze add $p@xp -m >/dev/null 2>&1; done
 echo "### plugins: $(ls /work/home/.config/opencode/plugins/ | tr '\\n' ' ')"
 mkdir -p /work/p && cd /work/p && git init -q .
 opencode service stop >/dev/null 2>&1
 echo A > /work/phase && touch /work/deny
 timeout 180 opencode run "UZE_XP_TURN_A shell please"
 rm -f /work/deny && echo B > /work/phase
-uze install nn-late@xp -m >/dev/null 2>&1
+uze add nn-late@xp -m >/dev/null 2>&1
 sleep 2
 timeout 180 opencode run "UZE_XP_TURN_B shell please"
 uze remove nn-late -m >/dev/null 2>&1
