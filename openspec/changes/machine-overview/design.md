@@ -75,11 +75,17 @@ the integration supplies the text its harness lists:
 - a skill's or agent's frontmatter name and description;
 - an always-on file whole;
 - an MCP server's tool names, as the harness lists them. Claude Code defers
-  MCP tools, and its latest transcript's `deferred_tools_delta.addedNames`
-  carries them, so they are read from there; otherwise the figure is
-  unknown;
+  MCP tools and announces them as deltas (`deferred_tools_delta`: names
+  added and removed). The full list is the net of the deltas across the
+  latest root session. It is read in the uses stage and kept in the index;
+  until then the figure is unknown;
 - for a hook, the context its last runs injected
-  (`hook_additional_context`), otherwise zero.
+  (`hook_additional_context`), read in the uses stage and kept in the
+  index; otherwise zero.
+
+Only the tokens on disk are computed in the first stage. Anything that
+comes from a transcript is computed in the uses stage, so the first stage
+never reads a session.
 
 Schemas are never fetched, because that would start servers. A real BPE
 tokenizer was rejected: it is a dependency with MBs of tables, and still
@@ -96,11 +102,11 @@ not each vendor's tokenizer. The ranking needs only an estimate.
   - `CLAUDE.md`.
 - Broken: `mcp-needs-auth-cache.json` and `failedMcpServers`.
 - Sessions: `projects/*/*.jsonl` roots only.
-- Uses, all `Complete`, read from roots and `subagents/`:
+- Uses, read from roots and `subagents/`, `Complete` unless noted:
   - skills: `Skill` tool uses, `<command-name>` slash invocations and `invoked_skills` attachments, deduplicated per turn;
   - agents: `Agent` uses with a `subagent_type`;
   - MCP: `mcp__<server>__<tool>`, resolved by longest normalized server prefix;
-  - hooks: `hook_success` matched to a configured hook by event and command, stored by inventory id.
+  - hooks: `hook_success` matched to a configured hook by event and command, stored by inventory id; a `Floor` until the Lab proves a silent run is recorded.
 
 **Codex**
 - Inventory:
@@ -136,15 +142,16 @@ A pass starts only while the Overview is the route in front, after a short
 debounce, if the index is older than a minute, or on refresh (`f5`). It is
 cancelled when another route is chosen or the modal closes. The steps are:
 
-1. inventory and tokens;
+1. inventory and the tokens on disk;
 2. sessions;
-3. uses.
+3. uses, and the tokens only transcripts show.
 
 Uses are read one source at a time with a byte budget per step, on one
 low-priority thread, checking the cancel flag between steps. Each answer
 carries the pass id and a stale one is dropped. A panic answers "not
-known". Only one pass runs at a time. A second TUI client finds the lock
-taken and draws from the index. No CLI command, the shim or a launch calls
+known". Only one pass runs at a time: it holds an exclusive lock on
+`cache/machine-usage.lock`, named in `UzeHome`. A second TUI client finds
+the lock taken and draws from the index. No CLI command, the shim or a launch calls
 any of this.
 
 ### 5. The reader
@@ -173,8 +180,19 @@ Counts are kept per source, so a source that shrank or whose time went back
 drops its own counts and is read again from zero. Days older than 90 are
 dropped. The file is written as a whole snapshot with
 `persistence::write_atomic`. Being in `cache/` it has no shape: unreadable
-means rebuild. "Unused" requires every source of the period to be
-`complete`. Only inventory ids reach it.
+means rebuild.
+
+- **Complete:** a source is complete when a pass read it up to the size it
+  had when that pass started. A session still being written is complete for
+  that pass, so statuses do not flicker while agents run. "Unused" requires
+  every source of the period to be complete.
+- **Resource id:** stable across reinstalls and upgrades, and never a path
+  or a version:
+  - `(package, kind, name)` for what uze delivered, so one delivered
+    resource is one id on every harness;
+  - `(harness, kind, name)` for the rest.
+
+  Only inventory ids reach the index.
 
 ### 7. The screen
 

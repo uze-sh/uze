@@ -12,16 +12,16 @@
 - [ ] 2.2 Name `cache/machine-usage.json` in `UzeHome`; counts per source, drop a source's counts on shrink or time going back, drop days over 90, whole-snapshot `write_atomic`
 - [ ] 2.3 Add `machine-usage.json` to the cache-is-not-required-for-correctness invariant and its test (delete it, the Overview is rebuilt)
 - [ ] 2.4 Privacy test: a transcript with an invented skill name, a hook's command and its output; none reaches the index
-- [ ] 2.5 Single-pass lock, pass id on every answer, late answers dropped, panic answers "not known", cancel between steps
+- [ ] 2.5 Single-pass lock on `cache/machine-usage.lock` named in `UzeHome` (a second client draws from the index), "complete" as read to the size seen at the pass's start, stable resource ids (package or harness, kind, name; never a path or version) with a reinstall test, pass id on every answer, late answers dropped, panic answers "not known", cancel between steps
 - [ ] 2.6 `uze-application` read model and staged scan (inventory and tokens, sessions, uses), re-exported for `src/`; "unused" only when every source of the period is complete
 
 ## 3. Integrations
 
-- [ ] 3.1 Claude Code: inventory (incl. broken from needs-auth and failed servers), root session sources, usage reader (Skill, slash commands, invoked_skills, Agent with subagent_type, mcp__ by longest server prefix, hook_success matched to configured hooks), deferred MCP names for tokens; fixtures from the latest release
+- [ ] 3.1 Claude Code: inventory (incl. broken from needs-auth and failed servers), root session sources, usage reader (Skill, slash commands, invoked_skills, Agent with subagent_type, mcp__ by longest server prefix, hook_success matched to configured hooks, as a floor until 3.5 proves silent runs are recorded), MCP names as the net of deferred-tool deltas and injected hook context, both in the uses stage and kept in the index; fixtures from the latest release
 - [ ] 3.2 Codex: inventory (shared `~/.agents/skills`, plugins, hooks, MCP, AGENTS.md), root rollouts by `parent_thread_id`, `spawn_agent.agent_type` complete, `<skill>` blocks as floor; fixtures from the latest release
 - [ ] 3.3 OpenCode: inventory incl. global AGENTS.md; sessions from the API listing following its cursor, `time.updated`, run outside every project; unknown unless proven machine-wide
 - [ ] 3.4 Antigravity: inventory incl. built-in skills, agents, hooks; sessions by `conversations/*.db` with the `-wal` time, opening none
-- [ ] 3.5 Lab checks: each harness's inventory finds a resource placed at machine level; the OpenCode listing is machine-wide; whether a silent Claude hook run is recorded; Codex MCP call record shape
+- [ ] 3.5 Lab checks: each harness's inventory finds a resource placed at machine level; the OpenCode listing is machine-wide; whether a silent Claude hook run is recorded; Codex MCP call record shape; which global instructions file Antigravity reads
 
 ## 4. Screen
 
