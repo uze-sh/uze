@@ -1,5 +1,5 @@
 ## Purpose
-What the manage Overview reports about the machine's harnesses — every resource they carry, where it came from, what it costs in context and whether it can work — limited to what every harness can answer, and the bounds that keep collecting it cheap, private and read only.
+What the manage Overview reports about the machine's harnesses — every resource they carry, where it came from, what it costs in context, how often it is used and whether it can work — limited to what every harness can answer, and the bounds that keep collecting it cheap, private and read only.
 
 ## ADDED Requirements
 
@@ -95,18 +95,22 @@ A resource SHALL read `broken` only when a fact on disk proves it cannot work: a
 - **THEN** it is not judged broken, since nothing on disk can prove it
 
 ### Requirement: Status orders each kind
-Each resource SHALL carry one status — `broken`, `duplicate` or `ok` — and within a kind broken resources SHALL come first, then duplicates, then the rest by tokens per session, heaviest first. `ok` SHALL be shown as a check only where a fact on disk was checked; a resource nothing on disk can judge SHALL show no check.
+Each resource SHALL carry one status — `broken`, `duplicate`, `unused` or `ok` — and within a kind broken resources SHALL come first, then duplicates, then unused, then the rest by tokens per session, heaviest first. `ok` SHALL be shown as a check only where a fact on disk was checked; a resource nothing on disk can judge SHALL show no check.
 
 #### Scenario: Ordering skills
 - **WHEN** the skills group holds one broken skill, one duplicate and three others
 - **THEN** the broken one is first, the duplicate second, and the three others follow heaviest first
+
+#### Scenario: A skill nobody used
+- **WHEN** a skill has no use in the period on any harness that carries it, and every one of them could be read
+- **THEN** it reads `unused` and comes after the duplicates
 
 #### Scenario: A server reached by URL
 - **WHEN** an MCP server is reached by URL and nothing is found against it
 - **THEN** its status shows no check
 
 ### Requirement: Harness and period narrow the screen
-The Overview SHALL offer a harness field (every harness, or one) that narrows every row, group and total, and a period field that sets the period sessions are counted over. Neither field SHALL grow with the number of harnesses.
+The Overview SHALL offer a harness field (every harness, or one) that narrows every row, group and total, and a period field that sets the period sessions and uses are counted over. Neither field SHALL grow with the number of harnesses.
 
 #### Scenario: Ten harnesses
 - **WHEN** ten harnesses are detected
@@ -126,12 +130,41 @@ Collecting and showing the Overview SHALL write nothing outside `$UZE_HOME/cache
 - **WHEN** the operator asks to remove a plugin the harness installed itself
 - **THEN** the Overview types the harness's own uninstall command into a new shell and runs nothing
 
-### Requirement: No session's content is read
-Counting sessions SHALL read at most a record's opening metadata, never what a session said, and nothing collected SHALL keep text from any session.
+### Requirement: Uses are counted from the harnesses' own records
+Each skill, agent and MCP server SHALL show its uses in the period, read from the records each harness keeps of its sessions: one the person typed (a slash command, a `$` or `@` mention) and one the model chose (a tool call, the read of a skill's file) alike, subagents' records included. One use SHALL count once however many signs of it a record holds. A failed read of a skill's file SHALL NOT count. No hook SHALL be added to any harness to count.
 
-#### Scenario: Counting Codex sessions
-- **WHEN** Codex's sessions are counted
-- **THEN** only each record's opening metadata and file time are read
+#### Scenario: A skill typed by the person
+- **WHEN** the person typed `/review` in a session and the harness expanded it with no tool call
+- **THEN** that skill's uses grow by one
+
+#### Scenario: A mention followed by the call it asked for
+- **WHEN** the person mentioned an agent and the model then dispatched it in the same turn
+- **THEN** the agent's uses grow by one
+
+#### Scenario: Uses before uze was installed
+- **WHEN** the Overview is opened for the first time on a machine with a month of sessions
+- **THEN** the uses cover that month
+
+### Requirement: A use inferred rather than recorded is an estimate
+Where a harness's record does not name a use but lets it be inferred from what the model wrote (an MCP tool spelled inside a script), the count SHALL be shown as an estimate, with `~`. A harness whose records this build cannot read SHALL show its uses as unknown, and a resource it carries SHALL NOT read `unused`.
+
+#### Scenario: MCP tools called from a script
+- **WHEN** a harness records an MCP call only inside the script that made it
+- **THEN** that server's uses read with `~`
+
+### Requirement: A record already read is not read again
+A record unchanged since the last collection SHALL NOT be opened again, and one only appended to SHALL be read from where the last reading stopped. Only records with activity in the longest period SHALL be read. Losing what was kept between readings SHALL cost only a fresh reading.
+
+#### Scenario: A second opening
+- **WHEN** the Overview is opened again after one session grew by ten lines
+- **THEN** only those ten lines are read
+
+### Requirement: Only what was used leaves a session's record
+Counting sessions SHALL read at most a record's opening metadata and file time. Counting uses SHALL take from a record only which skill, agent or MCP server was used, by whom and when; nothing collected or kept SHALL hold any other text from a session.
+
+#### Scenario: A prompt's words
+- **WHEN** a session's prompt carries a phrase alongside a skill's name
+- **THEN** the phrase is in neither the snapshot nor anything kept between readings
 
 ### Requirement: The first frame never waits on collection
 Opening the Overview SHALL draw at once from what was last collected, and a fresh collection SHALL run in the background, marked in flight in the header. No frame SHALL wait on reading a harness's files or running a harness's command.
@@ -152,7 +185,7 @@ Collection SHALL run only while the Overview is the screen in front, or on its e
 - **THEN** nothing is collected for the Overview
 
 ### Requirement: A harness that cannot answer degrades alone
-A harness whose integration reports no inventory or no session count, or whose files this build cannot parse, SHALL show that part as unknown while every other harness is reported in full. A new harness SHALL need no change to the Overview to appear in it.
+A harness whose integration reports no inventory, no session count or no uses, or whose files this build cannot parse, SHALL show that part as unknown while every other harness is reported in full. A new harness SHALL need no change to the Overview to appear in it.
 
 #### Scenario: A config format changed by a harness release
 - **WHEN** a harness release changes a config file's format

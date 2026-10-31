@@ -14,6 +14,8 @@ What exists today and shapes the approach:
 - The integrations already parse each harness's skills, agents, MCP and
   hook configuration to deliver uze's packages
   (`crates/uze-integrations/src/<harness>/{skills,mcp,hooks,plugin}.rs`).
+- `conversation_digest` already reads a harness's own session records for
+  the briefing; uses are read from the same records.
 - OpenCode's sessions are asked of the harness, never of its database.
   Antigravity's per-conversation databases are never opened. Neither
   stance changes.
@@ -23,35 +25,42 @@ What exists today and shapes the approach:
   dropped, a panicking read answers "not known", and cache is never
   required for correctness (`docs/architecture/invariants.md`).
 
-Why only this scope: a review of the four harnesses' data showed that what
-comes from disk and configuration is answerable by all four. What comes from
-session history (per-resource uses, per-session tokens of MCP tools and
-hooks, MCP sign-in state) is complete for one harness, partial for one, and
-unreadable for two. That is left for a later version.
+Why this scope: what comes from disk and configuration is answerable by all
+four harnesses. Uses were measured in the Lab on each harness's latest
+release (`conformance/experiments/<harness>/{usage-trace,user-invocation}.py`):
+every use of a skill, an agent or an MCP server reaches the harness's own
+records, including the ones the person types, which no tool hook sees. The
+one gap is Codex's MCP calls, recorded only inside the `exec` script that made
+them. Per-session tokens of MCP tools and hooks, hook runs and MCP sign-in
+state stay out.
 
 ## Goals / Non-Goals
 
 **Goals:**
 - The same answers from all four harnesses; a new harness appears by
-  implementing two optional methods.
+  implementing its optional methods.
 - No cost on any path but the Overview in front: launch, shim, CLI, other
   screens, any frame.
-- No session transcript read at all.
+- No hook delivered and no cost on an agent's turn: uses are read after the
+  fact, from records the harnesses already write.
+- From a record, only which resource was used, by whom and when.
 
 **Non-Goals:**
-- Per-resource uses, "unused", per-session tokens of MCP servers and hooks,
-  MCP sign-in state.
+- Per-session tokens of MCP servers and hooks, hook runs, MCP sign-in state.
+- Uses of an instruction file (always on) or of a hook.
 - Adopt; executing any removal; starting any MCP server.
 - Per-project resources; a CLI report; an exact per-model tokenizer.
 
 ## Decisions
 
-### 1. Two optional `IntegrationPort` methods; the core owns the rest
+### 1. Optional `IntegrationPort` methods; the core owns the rest
 
 | method | answers | default |
 |---|---|---|
 | `machine_inventory()` | found resources: kind, name, the files that define it, origin hint (harness plugin, built-in, by hand), the command or path it runs (hooks, local MCP), the harness's own removal command when there is one | empty |
 | `session_count(since)` | sessions with activity since a time, subagents excluded | `None`, so the count is unknown |
+| `usage_records(since)` | the records of sessions active since a time, each with a stamp (length and modification time, or the harness's own "updated"), from metadata only | `None`, so uses are unknown |
+| `read_usage(record, from)` | the uses in one record from a resume point, and where the next reading resumes | `None` |
 
 The core owns everything harness-neutral:
 - `uze` ownership from receipts;
@@ -59,6 +68,8 @@ The core owns everything harness-neutral:
 - duplicate detection (same kind and name, different content digest);
 - token estimation from the files;
 - the static health checks;
+- which records to read again, the cursors, the period buckets, and joining
+  a use to the resource it names;
 - status and order;
 - the snapshot and scheduling.
 
@@ -122,7 +133,8 @@ short debounce, if the snapshot is older than a minute, or on refresh
 (`f5`). It runs on the management worker, one harness at a time:
 1. inventory;
 2. tokens and health;
-3. sessions.
+3. sessions;
+4. uses.
 
 Each answer carries the collection's id and a stale one is dropped. Leaving
 the route or closing the modal cancels the collection; a panic answers "not
@@ -143,7 +155,8 @@ the period sets only the session count. Below it are three columns:
   always present, each with its count and a `!` mark for what in it is
   broken or duplicated;
 - the chosen section's table, with its own filter and the columns
-  `name · from · per session · status`;
+  `name · from · per session · uses · status`; `uses` is blank for hooks and
+  rules, `?` where unknown, `~` before an estimate;
 - the fixed panel.
 
 The keys are in the foot. `✓ ok` is drawn only where a fact on disk was
@@ -155,6 +168,43 @@ complete. The design-system skill governs every detail.
 
 `docs/architecture/core-components.mmd` gains the machine inventory
 component and its relation to `IntegrationPort`.
+
+### 9. Uses, from the records the harnesses keep
+
+Uses are read from each harness's session records, never counted by a hook.
+A hook would cost every agent's turn (2–5 ms per use, synchronous: Codex's
+`async` lost calls, Antigravity has none), need delivery and upkeep in four
+configurations, start empty on the day uze is installed, and miss what the
+person types in two harnesses. The records cost nothing on the turn, already
+hold the past, and carry the typed uses. Decision D11.
+
+The integration only parses; the core owns the rest:
+
+- **Records.** `usage_records(since)` lists, from metadata, the records of
+  sessions active in the longest period (90 days), subagents' included.
+- **Reading.** The core reads a record again only when its stamp changed, and
+  an append-only one from the byte offset where it stopped (`Resume::At`);
+  one rewritten as a whole is read from the start (`Resume::Start`) and its
+  earlier uses are replaced. Lines are filtered by a plain substring before any
+  is parsed, and the collection's cancel is checked between records.
+- **A use** is a kind, a target (a name, an MCP server, or the path of a
+  definition file the core joins to the inventory), a time, who invoked it
+  (person or model) and whether it is exact or inferred.
+- **Kept.** `cache/machine-usage.json` holds, per record, its stamp, its
+  resume point and its uses as daily counts per target. Losing it costs one
+  fresh reading.
+
+| | records | a use, typed by the person | a use, chosen by the model | resume |
+|---|---|---|---|---|
+| Claude Code | `projects/**/*.jsonl` | `<command-name>/<name>` (skill, plugin skill, MCP prompt); `agent_mention` | `tool_use` `Skill` / `Agent` / `mcp__<server>__<tool>` (a plugin's as `mcp__plugin_<plugin>_<server>__`) | offset |
+| Codex | `sessions/**/rollout-*.jsonl` | `<skill><name>…<path>` | the `exec` script's read of `…/<dir>/SKILL.md` when its output shows it succeeded; `spawn_agent` `agent_type`; `mcp__<server>__<tool>` in the script, as an estimate | offset |
+| OpenCode | sessions updated in the period, asked of `opencode` | `skills[]` / `agents[]` of a user message | tool `skill` `id`, `subagent` `agent`, `<key>_<tool>` matched against the configured keys | start (`session export`) |
+| Antigravity | `brain/*/.system_generated/logs/transcript.jsonl` | `[Slash Command]` with `<SKILL>…(<name>)` | `read_file`/`view_file` of an absolute `SKILL.md` path, or a `run_command` reading it, not an `ERROR` step; `invoke_subagent` `TypeName`; `call_mcp_tool` `ServerName` | offset |
+
+One use counts once: within a message, a mention and the call it led to are
+one use, and an agent counts by its dispatch, never by its start and stop
+events as well. Codex's `rN/` aliases are resolved against its skill roots;
+one that cannot be resolved does not count.
 
 ## Candidate ADRs
 
@@ -169,8 +219,15 @@ component and its relation to `IntegrationPort`.
   reads unknown and the others are unaffected.
 - [`opencode stats` costs a process spawn] → it runs only with the Overview
   in front, off every frame, with a timeout, at most once per collection.
-- [No usage data] → the screen cannot say what is unused; it says what
-  weighs, what is broken and what is duplicated. Uses are a later version
-  that adds a column without changing the layout.
+- [A harness release changes its record's shape] → that harness's uses read
+  unknown, never zero, so nothing turns `unused` by mistake; each reader has a
+  Lab experiment against the latest release.
+- [The first reading is large: 562 MB of Claude records in 30 days on the
+  author's machine, about 2.4 s cold] → off every frame, per harness, after
+  the inventory has drawn, cancellable; the next readings take only what was
+  appended.
+- [Codex's MCP uses are inferred] → shown with `~`.
+- [`opencode session export` is a process per session] → only sessions whose
+  stamp changed are exported, with a timeout.
 - [Estimated tokens differ from the vendor's count] → always `~`; the panel
   calls them an estimate.

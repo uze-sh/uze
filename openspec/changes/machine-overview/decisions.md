@@ -99,3 +99,13 @@
 - decided:  A click on a heading orders by it (names and origins from A, tokens from the heaviest, status from what needs looking at); a second click turns it round. `tab` reaches the headings after the period field; `←→` choose a column, Enter turns it. Two symbols join the vocabulary, `sort.ascending` and `sort.descending`, in every glyph set (`▴ ▾`; the thin, centred `nf-fa-angle_up`/`_down` in nerd; `^ v` in ascii); the schema is regenerated.
 - rejected: A letter key for sorting: bare letters act on the selection.
 - blast:    `machine.rs::{Column, Sort}`, `view/overview.rs::render_headings`, `uze-theme` symbols and glyph sets.
+
+## D11 — Uses are read from the harnesses' records, never counted by a hook
+
+- status:   pending
+- task:     7.1
+- commit:
+- trigger:  The operator asked for uses per skill, agent and MCP server, mostly typed by the person; the Lab showed where each use is recorded on all four harnesses.
+- decided:  Read each harness's own session records after the fact, incrementally (stamp and offset per record in `cache/`), taking only names, invoker and time. Codex's MCP uses, recorded only inside the `exec` script, are an estimate shown with `~`.
+- rejected: A uze hook per harness: synchronous cost on every turn (Codex's `async` lost 2 of 10 calls; Antigravity has none), delivery and upkeep in four configurations, empty until the day of install, and blind to typed uses in Antigravity and OpenCode. A hook only for Codex's MCP: kept for later, if the estimate proves poor.
+- blast:    `IntegrationPort`, `machine/usage`, the four integrations' readers, the Overview's columns and statuses, the spec's privacy requirement.
