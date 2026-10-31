@@ -9,7 +9,7 @@
 #   tui-record run    .demo   # record → cut → leak-check → render → poster
 #   tui-record recut  .demo   # re-cut the last take, without recording
 #
-# `tui-record` ships with the `tui` plugin: uze install -m tui@ai
+# `tui-record` ships with the `tui` plugin: uze add -m tui@ai
 
 extends:
   - _shared/agents.yml

@@ -1,4 +1,4 @@
-# The package manager, as a spec: add a marketplace, install one plugin
+# The package manager, as a spec: add a marketplace, add one plugin
 # into a project, and ask how each agent received it. Shown at the top of
 # the Package manager overview.
 #
@@ -147,8 +147,8 @@ beats:
     until: 1 marketplace added
     timeout: 60
     pause: 1.6
-  - say: install one plugin into the project
-    type: uze install review@acme
+  - say: add one plugin to the project
+    type: uze add review@acme
     pause: 0.3
   - wait: screen
     until: added to this project
