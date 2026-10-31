@@ -298,8 +298,9 @@ pub struct CodeView {
 /// the directories opened to reach it, and how far down it. Deliberately not the content mode: the mode is the door that
 /// was used (`Alt+G` reviews, `Alt+E` navigates), and a door that
 /// remembered where it last led would stop being one. Deliberately not a
-/// buffer either: an unsaved edit belongs to the surface that has it
-/// open, and reopening a closed one must not resurrect typing.
+/// buffer either: a surface put away with unsaved work is kept whole by
+/// the extension (`CodeExtension::kept`), and one closed on a discard the
+/// viewer answered must not resurrect the typing.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CodePlace {
     selected: Option<PathBuf>,
@@ -562,6 +563,30 @@ impl CodeView {
             .map(|open| open.path.as_path())
             .chain(self.parked.keys().map(PathBuf::as_path))
             .collect()
+    }
+
+    /// Whether anything here has changes not yet written.
+    pub fn has_unsaved(&self) -> bool {
+        self.open.as_ref().is_some_and(|open| open.modified) || !self.parked.is_empty()
+    }
+
+    /// Whether closing has asked about unsaved work and waits for the
+    /// answer.
+    pub(super) fn confirming_discard(&self) -> bool {
+        self.confirming_discard
+    }
+
+    /// Asks, in the footer, before closing over unsaved work.
+    pub(super) fn ask_to_discard(&mut self) {
+        self.confirming_discard = true;
+    }
+
+    /// Throws away every change not yet written, as the viewer asked.
+    pub(super) fn discard_unsaved(&mut self) {
+        self.parked.clear();
+        if self.open.as_ref().is_some_and(|open| open.modified) {
+            self.open = None;
+        }
     }
 
     /// Whether `path` has changes not yet written: the buffer on show, or
@@ -1949,10 +1974,13 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
             // second press is the answer to a question the footer is now
             // asking — so the flag is read here, before anything clears
             // it, or the question is asked forever and never answered.
-            if !view.unsaved().is_empty() && !view.confirming_discard {
+            if view.has_unsaved() && !view.confirming_discard {
                 view.confirming_discard = true;
                 return CodeOutcome::Stay;
             }
+            // Answered yes: what was unsaved goes, rather than be kept for
+            // the next opening as a surface put away unasked keeps it.
+            view.discard_unsaved();
             return CodeOutcome::Close;
         }
         // Anything that is not an answer to the question withdraws it.

@@ -3503,6 +3503,93 @@ mod hosted {
         );
     }
 
+    /// Typing in `extension`'s open file, then put away the way the host
+    /// puts it away when another agent comes to the front.
+    fn typed_then_put_away(extension: &mut CodeExtension, machine: &FakeMachine) {
+        settle_hosted(extension, machine);
+        let view = extension.code_view_mut().unwrap();
+        press(view, Command::Activate);
+        settle_hosted(extension, machine);
+        let view = extension.code_view_mut().unwrap();
+        handle_mouse(
+            view,
+            Some(ViewHit::PlaceCaret { line: 0, cell: 0 }),
+            space(),
+        );
+        type_text(view, "x");
+        extension.close(SURFACE);
+    }
+
+    /// An editor never loses typing to a change of window: put away by
+    /// the host with work unsaved, the surface comes back whole on its
+    /// checkout — the buffer, its tab — however it is opened again.
+    #[test]
+    fn unsaved_work_survives_the_surface_being_put_away() {
+        let machine = FakeMachine::default().with_file("/w/a.txt", "aaa\n");
+        let mut extension = opened(FILES, "/w");
+        typed_then_put_away(&mut extension, &machine);
+
+        extension.enter(SURFACE, Entry::Return);
+        extension.open(SURFACE, &checkout("/w"));
+        let view = extension.code_view().expect("open again");
+        let open = view.open.as_ref().expect("the buffer");
+        assert_eq!(open.lines, ["xaaa"]);
+        assert!(view.has_unsaved());
+        assert_eq!(view.file_tabs().len(), 1, "its tab");
+
+        // Another checkout opens fresh; this one's work waits for it.
+        extension.close(SURFACE);
+        let mut elsewhere = CodeExtension::default();
+        std::mem::swap(&mut elsewhere, &mut extension);
+        elsewhere.enter(SURFACE, Entry::Door(FILES.to_owned()));
+        elsewhere.open(SURFACE, &checkout("/v"));
+        assert!(!elsewhere.code_view().unwrap().has_unsaved());
+        elsewhere.close(SURFACE);
+        elsewhere.enter(SURFACE, Entry::Door(CHANGES.to_owned()));
+        elsewhere.open(SURFACE, &checkout("/w"));
+        let view = elsewhere.code_view().unwrap();
+        assert_eq!(
+            view.showing(),
+            ContentMode::Diff,
+            "the door still says which half"
+        );
+        assert!(view.has_unsaved(), "and the work is still there");
+    }
+
+    /// The door that shuts the surface asks over unsaved work, as Esc
+    /// does; answered, the work is gone and does not come back.
+    #[test]
+    fn the_door_asks_before_shutting_over_unsaved_work() {
+        let machine = FakeMachine::default().with_file("/w/a.txt", "aaa\n");
+        let mut extension = opened(FILES, "/w");
+        settle_hosted(&mut extension, &machine);
+        let view = extension.code_view_mut().unwrap();
+        press(view, Command::Activate);
+        settle_hosted(&mut extension, &machine);
+        let view = extension.code_view_mut().unwrap();
+        handle_mouse(
+            view,
+            Some(ViewHit::PlaceCaret { line: 0, cell: 0 }),
+            space(),
+        );
+        type_text(view, "x");
+        press(view, Command::Close);
+
+        assert_eq!(
+            extension.enter(SURFACE, Entry::Door(FILES.to_owned())),
+            Outcome::Stay,
+            "asked, not shut"
+        );
+        assert_eq!(
+            extension.enter(SURFACE, Entry::Door(FILES.to_owned())),
+            Outcome::Close
+        );
+        extension.close(SURFACE);
+        extension.enter(SURFACE, Entry::Door(FILES.to_owned()));
+        extension.open(SURFACE, &checkout("/w"));
+        assert!(!extension.code_view().unwrap().has_unsaved(), "discarded");
+    }
+
     #[test]
     fn a_path_sent_from_another_surface_wins_over_the_last_place() {
         let mut extension = CodeExtension::default();

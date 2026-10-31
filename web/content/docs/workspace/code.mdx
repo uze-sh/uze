@@ -30,8 +30,10 @@ highlighted.
 A file counts as changed only while its text differs from the file on disk:
 deleting a character and typing it back leaves nothing to save. You can move to
 another file without saving. The changed file stays open, marked `unsaved` in
-the tree, and comes back as you left it. Closing the surface asks once when
-something is unsaved.
+the tree, and comes back as you left it. Switching to another agent or tab keeps
+it too: the surface comes back with its tabs and edits when you return. Closing
+the surface with `Esc`, or its key again, asks once when something is unsaved.
+Edits are kept in memory only. Quitting the workspace loses them, so save first.
 
 ## Tabs
 

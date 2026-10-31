@@ -15,11 +15,18 @@ lines SHALL NOT be highlighted under the pointer.
 A buffer SHALL count as unsaved only while its text differs from what the
 file last held. Moving to another file SHALL keep an unsaved buffer and
 SHALL NOT refuse the move. Returning to the file SHALL show the buffer.
-Closing the surface SHALL ask once while any buffer is unsaved.
+Closing the surface SHALL ask once while any buffer is unsaved. A surface
+put away without being asked, as when another agent comes to the front,
+SHALL keep its unsaved work and give it back when opened again on its
+checkout.
 
 #### Scenario: Typing undone
 - **WHEN** the viewer erases a character and types it back
 - **THEN** the file is not unsaved, and closing does not ask
+
+#### Scenario: Another agent comes to the front
+- **WHEN** a buffer is unsaved and the viewer switches to another agent and back
+- **THEN** the code surface opens with the buffer and its tab as they were
 
 #### Scenario: Moving away from unsaved work
 - **WHEN** a buffer is unsaved and the viewer selects another file
