@@ -114,6 +114,8 @@ pub struct Availability {
     /// It cannot signal, debug or read the memory of a process outside its
     /// run.
     pub processes: bool,
+    /// Nothing it starts outlives its run.
+    pub tree: bool,
     pub memory: bool,
     pub cpu: bool,
     pub file_size: bool,
@@ -130,6 +132,7 @@ impl Availability {
             listening: false,
             devices: false,
             processes: false,
+            tree: false,
             memory: false,
             cpu: false,
             file_size: false,
@@ -157,6 +160,7 @@ impl Availability {
             listening: true,
             devices: abi >= 5,
             processes: abi >= 6,
+            tree: true,
             memory: true,
             cpu: true,
             file_size: true,
@@ -164,9 +168,11 @@ impl Availability {
         }
     }
 
-    /// What Seatbelt enforces. macOS bounds no process's memory for it:
-    /// `RLIMIT_AS` is accepted only above the hundreds of GiB a process
-    /// already maps and then refuses `mmap` alone, never `malloc`.
+    /// What Seatbelt enforces. Seatbelt filters no system call, so a
+    /// program can leave the process group its run is ended by. macOS
+    /// bounds no process's memory for it either: `RLIMIT_AS` is accepted
+    /// only above the hundreds of GiB a process already maps and then
+    /// refuses `mmap` alone, never `malloc`.
     pub const fn of_seatbelt() -> Self {
         Self {
             filesystem: Filesystem::Seatbelt,
@@ -175,6 +181,7 @@ impl Availability {
             listening: true,
             devices: true,
             processes: true,
+            tree: false,
             memory: false,
             cpu: true,
             file_size: true,
@@ -192,6 +199,7 @@ impl Availability {
             listening: true,
             devices: true,
             processes: true,
+            tree: true,
             memory: true,
             cpu: true,
             file_size: false,
@@ -219,6 +227,7 @@ impl Availability {
             (self.truncate, "empty files it may only read"),
             (self.devices, "reach ungranted devices"),
             (self.processes, "signal other processes"),
+            (self.tree, "outlive its run"),
         ]);
         let limits = unenforced(&[
             (self.memory, "memory"),
@@ -351,18 +360,20 @@ mod tests {
         );
         assert_eq!(
             Availability::of_seatbelt().summary(),
-            "confined by Seatbelt, without a memory limit"
+            "confined by Seatbelt, without a memory limit, and a program can still \
+             outlive its run"
         );
         assert_eq!(
             Availability::of_app_container().summary(),
             "confined by AppContainer, without a file size or open files limit"
         );
-        let mut both = Availability::of_seatbelt();
-        both.devices = false;
+        let mut reach_only = Availability::of_app_container();
+        reach_only.file_size = true;
+        reach_only.open_files = true;
+        reach_only.devices = false;
         assert_eq!(
-            both.summary(),
-            "confined by Seatbelt, without a memory limit, and a program can still \
-             reach ungranted devices"
+            reach_only.summary(),
+            "confined by AppContainer, but a program can still reach ungranted devices"
         );
         assert_eq!(
             Availability::unavailable().summary(),
