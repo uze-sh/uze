@@ -28,7 +28,7 @@ accepted through its own keys (`bindings.hook_turn`), never by a flag.
 import json
 import subprocess
 
-from contract import declared
+from contract import declared, hook_directories
 from shared import common, markers, vocabulary
 from shared.common import check, check_absence, declare, describe, provider_struct
 
@@ -46,6 +46,8 @@ def assert_contract(cfg, prov_ip, bindings):
     expected = vocabulary.load_expectation(bindings.harness)
     with describe("hooks"):
         _rows(cfg, bindings, expected)
+        if expected["aliases"].get("shell"):
+            hook_directories.assert_contract(cfg, bindings, expected, _scene)
         effects = set(expected["effects"])
         if "deny" in effects:
             _deny(cfg, bindings, expected)
@@ -208,18 +210,27 @@ def _rows(cfg, bindings, expected):
 
 def _deny(cfg, bindings, expected):
     """First deny wins, and the denied tool never runs; an allowed call
-    runs every handler and the tool."""
+    runs every handler and the tool. A command the harness's second shell
+    carrier starts is denied as a `shell` call too."""
     shell = expected["aliases"]["shell"]
     denied = bindings.call(shell["call"], mark=MARKED, side=f"{SIDE}/denied")
     allowed = bindings.call(shell["call"], side=f"{SIDE}/allowed")
     calls = [
         {"tool": vocabulary.call_tool(shell), "args": a} for a in (denied, allowed)
     ]
+    carried = _carried(bindings, shell, mark=MARKED, side=f"{SIDE}/carrier")
+    if carried:
+        calls += carried[1]
     with describe("deny"):
         found, side, turn = _scene(cfg, bindings, "deny", "hook-effects", calls)
         settled = turn is not None and turn.settled
         guard = found.get("effect-guard", [])
-        guard_denied = [r for r in guard if MARKED in r.get("HOOK_COMMAND", "")]
+        guard_denied = [
+            r
+            for r in guard
+            if MARKED in r.get("HOOK_COMMAND", "")
+            and not (carried and r.get("HOOK_COMMAND") == carried[0])
+        ]
         guard_allowed = [r for r in guard if MARKED not in r.get("HOOK_COMMAND", "")]
         reason = relayed(cfg, f"{DENIED}effect-guard")
         check(
@@ -279,6 +290,42 @@ def _deny(cfg, bindings, expected):
             if "allowed" in side
             else f"side: {sorted(side)}",
         )
+        if carried:
+            command = carried[0]
+            seen = [
+                r
+                for r in guard
+                if r.get("HOOK_TOOL") == "shell" and r.get("HOOK_COMMAND") == command
+            ]
+            check(
+                "hooks-deny-carrier-guard-ran",
+                bool(seen),
+                "the guard ran on the command the carrier started, as `shell`"
+                if seen
+                else f"records: {guard}",
+            )
+            check_absence(
+                "hooks-deny-carrier-blocked",
+                "carrier" not in side,
+                settled,
+                proof=bool(seen),
+                detail="the carrier's command never ran"
+                if "carrier" not in side
+                else "it ran",
+            )
+
+
+def _carried(bindings, shell, mark="", side=""):
+    """(command, calls) that run the `shell` row's command, made to leave
+    `side`, through the harness's second shell carrier; `None` for a
+    harness that has none (`bindings.shell_carrier`). Asked before the
+    command is read: a harness whose shell call is code has no command
+    field to read it from."""
+    if bindings.shell_carrier("") is None:
+        return None
+    args = bindings.call(shell["call"], mark=mark, side=side)
+    command = args[shell["fields"]["command"]]
+    return command, bindings.shell_carrier(command)
 
 
 def _deny_unprompted(cfg, bindings, expected):
@@ -601,18 +648,24 @@ def _unmet_requirement(cfg, bindings, expected):
 def _transform(cfg, bindings, expected):
     """A `transform` group rewrites the call before it runs: the tool does
     what the rewrite says and never what the model asked for. Read from the
-    disk, where only the command that actually ran can leave its file."""
+    disk, where only the command that actually ran can leave its file.
+    Whether the rewrite reaches a command the second shell carrier starts
+    is measured too, and a harness that refuses it declares so."""
     shell = expected["aliases"]["shell"]
     asked = bindings.call(shell["call"], side=f"{SIDE}/from")
+    calls = [{"tool": vocabulary.call_tool(shell), "args": asked}]
+    # The probe rewrites `lab-side/from` to `lab-side/to`, so the carrier's
+    # side files are `from-carrier` as asked and `to-carrier` as rewritten.
+    carried = _carried(bindings, shell, side=f"{SIDE}/from-carrier")
+    if carried:
+        calls += carried[1]
     with describe("transform"):
-        found, side, turn = _scene(
-            cfg,
-            bindings,
-            "transform",
-            "hook-transform",
-            [{"tool": vocabulary.call_tool(shell), "args": asked}],
-        )
-        ran = bool(found.get("effect-transform"))
+        found, side, turn = _scene(cfg, bindings, "transform", "hook-transform", calls)
+        records = found.get("effect-transform", [])
+        on_carrier = [
+            r for r in records if carried and r.get("HOOK_COMMAND") == carried[0]
+        ]
+        ran = any(r not in on_carrier for r in records)
         check(
             "hooks-transform-guard-ran",
             ran,
@@ -634,6 +687,18 @@ def _transform(cfg, bindings, expected):
             if "to" in side
             else f"side: {sorted(side)}",
         )
+        if carried:
+            rewritten = "to-carrier" in side and "from-carrier" not in side
+            declared.presence(
+                bindings,
+                "hooks-transform-carrier-rewritten",
+                "hooks.transform-carrier",
+                rewritten,
+                "the carrier's command ran rewritten"
+                if rewritten
+                else f"the transform group ran on the carrier's command; side: {sorted(side)}",
+                measured=bool(on_carrier) and turn is not None and turn.settled,
+            )
 
 
 def _events(cfg, bindings, expected, events):

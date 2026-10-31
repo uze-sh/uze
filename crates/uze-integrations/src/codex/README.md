@@ -107,7 +107,9 @@ empty) `provided_resource_identities`. Undeclared resources fall through to
 individual attachment (Skill directory / `codex mcp add`), never silently
 dropped. `attach_package` then ensures the derived catalogue is registered as
 a Codex marketplace and runs `codex plugin add <id>@uze-local`, idempotent
-via a pre-check against `codex plugin list --json`.
+via a pre-check against `codex plugin list --json --marketplace <name>`:
+unfiltered, the listing waits on Codex's remote catalogue whenever its
+cache is three hours old (25s on codex-cli 0.166, against 50ms filtered).
 
 **Generated Native Package** (`codex/generate.rs`, ADR-013): mirrors
 Claude's `claude/generate.rs` structurally, adapted to Codex's own manifest
@@ -136,7 +138,7 @@ trusted the project in Codex (`~/.codex/config.toml`); passthrough otherwise.
 |---|---|---|---|
 | Skill directory | `GeneratedTree` (standard) | `tree_sha256` against the receipt | Standard, only when it still matches |
 | MCP entry | `VendorConfigEntry` | `codex mcp get --json`; absence = exit 1 + stable stderr string, any other non-zero stays `Blocked` | `codex mcp remove` |
-| Native plugin (explicit) | `IntegrationOwned{kind:"marketplace-plugin"}` | `codex plugin marketplace list --json` + `codex plugin list --json`, checked before every destructive call (ADR-009) | `codex plugin remove` |
+| Native plugin (explicit) | `IntegrationOwned{kind:"marketplace-plugin"}` | `codex plugin marketplace list --json` + `codex plugin list --json --marketplace <name>`, checked before every destructive call (ADR-009) | `codex plugin remove` |
 | Native plugin (generated) | `IntegrationOwned{kind:"marketplace-plugin-generated"}` | Same `inspect_codex_plugin` (marketplace-root-agnostic) | Same `CodexMarketplace::remove_plugin`, plus `shared::marketplace::remove_generated_package` (Derived Artifact) |
 
 MCP inspection is fully structured (`--json`), unlike Claude's raw-file read

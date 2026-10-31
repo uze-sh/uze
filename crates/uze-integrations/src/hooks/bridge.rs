@@ -269,6 +269,7 @@ pub(crate) fn opencode_hooks_section(target: HookTarget, documents: &Path) -> St
     let reason_limit = HANDLER_REASON_LIMIT;
     let output_limit = wrapper::TRANSFORM_OUTPUT_LIMIT;
     let value_limit = wrapper::HOOK_VALUE_LIMIT;
+    let workdir_alias = wrapper::WORKDIR_ALIAS;
     format!(
         r#"// Portable hooks. A handler receives the hook context as HOOK_* environment
 // and answers with an exit code: 0 allows, {deny} denies with the reason on
@@ -326,6 +327,17 @@ async function hooks(ctx) {{
     unreadable = broken;
   }};
 
+  // The workspace: the location OpenCode set this plugin up for. The shared
+  // service's own directory is whichever location started it.
+  const WORKSPACE = typeof ctx.location?.directory === "string" ? ctx.location.directory : "";
+  // Where a shell command runs: the workspace unless the call names another
+  // directory, which is relative to the workspace when it is not absolute.
+  const workdir = (input) => {{
+    const named = typeof input?.workdir === "string" ? input.workdir : "";
+    if (!named) return WORKSPACE;
+    return isAbsolute(named) || !WORKSPACE ? named : join(WORKSPACE, named);
+  }};
+
   const closed = (effect) => effect === "deny" || effect === "ask" || effect === "transform";
   const select = (event, native, accept) =>
     groups.filter(
@@ -350,7 +362,8 @@ async function hooks(ctx) {{
       HOOK_EVENT: group.event,
       HOOK_TOOL: alias?.tool ?? "",
       HOOK_TOOL_NATIVE: native ?? "",
-      HOOK_CWD: process.cwd(),
+      HOOK_CWD: WORKSPACE,
+      HOOK_WORKDIR: alias?.tool === "{workdir_alias}" ? workdir(input) : "",
       HOOK_INPUT: JSON.stringify(input ?? {{}}),
       HOOK_SOURCE: source ?? "",
       ...(alias ? alias.fields(input ?? {{}}) : {{}}),

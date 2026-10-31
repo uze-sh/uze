@@ -355,6 +355,12 @@ class Bindings:
 
         return render(template)
 
+    def shell_in(self, command, workdir=None):
+        """A `shell` call running `command`, in `workdir` when one is given,
+        through the parameter this harness's command tool declares for it;
+        None where that tool declares no working directory."""
+        return None
+
     def read_call(self, expected, path):
         """A scripted call that reads the file at `path` and hands its
         content to the model, from the Lab's template for this harness's
@@ -435,6 +441,13 @@ class Bindings:
         """The scripted calls that run the delivered server's tool in this
         harness, loading it first where the harness defers MCP tools; `None`
         while the vertical proves execution in a phase of its own."""
+        return None
+
+    def shell_carrier(self, command):
+        """The scripted calls that run `command` through a second tool of
+        this harness, one its hook system hands to the `shell` alias's
+        groups as a shell call; `None` for a harness whose shell commands
+        reach a hook through the shell tool alone."""
         return None
 
     def hook_error(self, plain):

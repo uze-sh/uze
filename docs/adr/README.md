@@ -130,6 +130,7 @@ naming them, and the absorbed records are listed under
 - [058 — A space is a group of agents, not a directory](058-a-space-is-a-group-of-agents-not-a-directory.md)
 - [059 — Delivery names a destination, and UZE stops at writing it](059-delivery-names-a-destination-and-uze-stops-at-writing-it.md)
 - [060 — Extension views are KDL v2, read by UZE's own bounded decoder](060-extension-views-are-kdl-v2-read-by-uzes-own-bounded-decoder.md)
+- [061 — A hook's workspace and a command's directory are two values](061-a-hook-s-workspace-and-a-command-s-directory-are-two-values.md)
 
 ## Consolidated records
 

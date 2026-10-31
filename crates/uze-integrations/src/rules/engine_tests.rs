@@ -105,10 +105,23 @@ impl Checkout {
     }
 
     fn ask_with(&self, payload: &str, environment: &[(&str, &str)]) -> Answer {
+        self.ask_from(&self.root, &[], payload, environment)
+    }
+
+    /// The engine started in `directory`, as a harness starts its hook, with
+    /// `arguments` after the sessions directory.
+    fn ask_from(
+        &self,
+        directory: &Path,
+        arguments: &[&str],
+        payload: &str,
+        environment: &[(&str, &str)],
+    ) -> Answer {
         let mut command = Command::new(&self.engine);
         command
             .arg(&self.sessions)
-            .current_dir(&self.scratch)
+            .args(arguments)
+            .current_dir(directory)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -515,9 +528,13 @@ fn a_checkout_without_rules_or_outside_git_pays_nothing() {
     )
     .unwrap();
     let payload = serde_json::json!({
-        "hook_event_name": "SessionStart", "source": "startup", "session_id": "s", "cwd": outside,
+        "hook_event_name": "SessionStart", "source": "startup", "session_id": "s",
     });
-    assert!(checkout.ask(&payload.to_string()).is_silent());
+    assert!(
+        checkout
+            .ask_from(&outside, &[], &payload.to_string(), &[])
+            .is_silent()
+    );
     let _ = fs::remove_dir_all(outside);
 }
 
@@ -900,5 +917,74 @@ fn a_rule_in_a_registered_folder_answers_a_tool_call_like_a_flat_one() {
     assert_eq!(
         context,
         "<rule path=\".agents/rules/acme@corp/ui.md\" trigger=\"glob\" matched=\"src/ui/button.ts\">\nUse the design tokens.\n</rule>"
+    );
+}
+
+#[test]
+fn the_checkout_is_the_workspace_the_harness_names_whatever_directory_a_command_ran_in() {
+    let workspace = Checkout::with_every_trigger("rules-engine-workspace");
+    let other = Checkout::new("rules-engine-workspace-other");
+    other.rule("style.md", "trigger: always_on", "OTHER");
+    other.file("src/ui/button.ts");
+    let start = serde_json::json!({
+        "hook_event_name": "SessionStart", "source": "startup", "session_id": "s",
+        "cwd": other.root,
+    })
+    .to_string();
+    let root = workspace.root.display().to_string();
+    let environment = [("LAB_WORKSPACE", root.as_str())];
+    for answer in [
+        workspace.ask(&start),
+        workspace.ask_from(&workspace.scratch, &["LAB_WORKSPACE"], &start, &environment),
+    ] {
+        let context = answer.context("SessionStart");
+        assert!(!context.contains("OTHER"), "{context}");
+    }
+    assert!(
+        workspace
+            .ask_from(&other.root, &["LAB_WORKSPACE"], &start, &[])
+            .is_silent(),
+        "a variable that names no directory names no checkout"
+    );
+    assert!(
+        workspace
+            .ask_from(&workspace.root, &["not a name"], &start, &[])
+            .is_silent()
+    );
+
+    let read = |cwd: &Path, path: &str| {
+        serde_json::json!({
+            "hook_event_name": "PostToolUse",
+            "session_id": format!("read-{}", path.len()),
+            "cwd": cwd,
+            "tool_name": "Bash",
+            "tool_input": {"command": format!("cat {path}")},
+        })
+        .to_string()
+    };
+    assert!(
+        workspace
+            .ask(&read(&other.root, "src/ui/button.ts"))
+            .is_silent(),
+        "a relative path is read where the command ran, outside this checkout"
+    );
+    let inside = workspace
+        .root
+        .join("src/ui/button.ts")
+        .display()
+        .to_string();
+    assert!(
+        workspace
+            .ask(&read(&other.root, &inside))
+            .context("PostToolUse")
+            .contains(UI_RULE),
+        "an absolute path into the checkout still counts"
+    );
+    assert!(
+        workspace
+            .ask(&read(Path::new("src"), "ui/button.ts"))
+            .context("PostToolUse")
+            .contains(UI_RULE),
+        "a relative directory is relative to the workspace"
     );
 }

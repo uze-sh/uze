@@ -901,7 +901,7 @@ const FACTS: &[HarnessFact] = &[
     },
 ];
 /// The version the facts above were measured on.
-const VERSION: &str = "2.1.299";
+const VERSION: &str = "2.1.314";
 
 #[cfg(test)]
 mod lifecycle_tests {

@@ -3,7 +3,7 @@
 use uze_core::hook::{HookEffect, HookEvent, ToolBinding};
 
 use crate::hooks::{
-    Decisions, EntryShape, HookRunner, HookTarget, PayloadPaths, UNBOUND, WrapperDialect,
+    Decisions, EntryShape, HookRunner, HookTarget, PayloadPaths, UNBOUND, Workspace, WrapperDialect,
 };
 use crate::rules::{RulesDelivery, RulesTarget};
 
@@ -33,7 +33,12 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
             payload: PayloadPaths {
                 tool: ".tool_name // empty",
                 input: ".tool_input // {}",
-                cwd: ".cwd // empty",
+                // Codex starts a hook in its session's directory, a second
+                // session served by the same app-server daemon included,
+                // while the payload's `cwd` is the call's `workdir` since
+                // 0.166 (measured, `experiments/codex/hook-daemon`).
+                workspace: Workspace::LaunchDirectory,
+                workdir: Some(".cwd // empty"),
                 implied_source: None,
             },
             // Stop is the one event whose stdout must parse as JSON even
@@ -77,6 +82,8 @@ pub(crate) const RULES: RulesTarget = RulesTarget {
     delivery: RulesDelivery::Entries {
         shape: EntryShape::EventLine,
         tools: "Bash|exec_command|shell|apply_patch",
+        // A Codex hook starts in its session's directory.
+        workspace: None,
     },
 };
 

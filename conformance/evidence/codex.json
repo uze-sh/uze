@@ -1,12 +1,12 @@
 {
  "harness": "codex",
- "harness_version": "codex-cli 0.162.1",
- "uze_version": "uze 1.0.0-beta.15",
- "fixture_revision": "23ead9eeae7f4704",
- "recorded_at": "2026-10-14T18:32:45-0300",
+ "harness_version": "codex-cli 0.166.0",
+ "uze_version": "uze 1.0.0-beta.21",
+ "fixture_revision": "7fc7124d308c7b4f",
+ "recorded_at": "2026-10-30T22:33:25-0300",
  "gate": {
-  "passed": 127,
-  "total": 127,
+  "passed": 185,
+  "total": 185,
   "declared": 5,
   "retry": 0,
   "failures": []

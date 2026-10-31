@@ -18,10 +18,12 @@ async function rules(ctx) {
 
   // The engine's additional context for `payload`, or null.
   async function ask(payload) {
+    if (!cwd) return null;
     let proc;
     try {
-      proc = Bun.spawn(ENGINE, { stdin: "pipe", stdout: "pipe", stderr: "ignore" });
-      proc.stdin.write(JSON.stringify({ ...payload, cwd }));
+      // Started in the workspace, which is what the engine reads it from.
+      proc = Bun.spawn(ENGINE, { cwd, stdin: "pipe", stdout: "pipe", stderr: "ignore" });
+      proc.stdin.write(JSON.stringify(payload));
       proc.stdin.end();
     } catch {
       return null;
@@ -69,6 +71,8 @@ async function rules(ctx) {
       session_id: event.sessionID ?? "",
       tool_name: event.tool,
       tool_input: event.input ?? {},
+      // Where a shell command ran, when it named a directory of its own.
+      ...(typeof event.input?.workdir === "string" ? { cwd: event.input.workdir } : {}),
     });
     if (text) result.content.push({ type: "text", text });
   }));

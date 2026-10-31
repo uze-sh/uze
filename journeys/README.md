@@ -189,7 +189,7 @@ scenes:
 | `key` | one key or a list (`Escape`, `C-g`, `BSpace`) |
 | `shell` | a command in the world (what an agent would do to its own checkout), with a controlling terminal nobody answers and 120s to finish (see stand-ins); `inherit: { from: <pattern>, names: [...] }` runs it with those variables from the newest matching process's environment, as that process |
 | `kill` | ends every process of the world whose command line matches the pattern, at once and without asking, as a reboot does, and waits until they are gone |
-| `wait` | `screen` / `file` / `shell` with `until:` and a `timeout:` |
+| `wait` | `screen` / `file` / `shell` with `until:`, or `agents` with `agents:` as the `agents` check states it (what a reconciliation records after the screen moves on), and a `timeout:` |
 
 Aiming a click: `in:` bands the search (`strip`, `bar`, `sidebar`, `pane`),
 `occurrence:` picks among hits (`first`, `last`, or an index), `glyph:` aims

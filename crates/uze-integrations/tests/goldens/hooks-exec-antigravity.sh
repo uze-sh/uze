@@ -14,6 +14,8 @@
 #              everything it started are stopped, and the group's effect
 #              decides, exactly as for any other handler failure
 set -u
+# Where the harness started this hook, before anything here moves.
+launched_in=$(pwd -P 2>/dev/null) || launched_in=
 PLUGIN_ROOT=$1
 HOOK_EVENT=$2
 effect=$3
@@ -66,7 +68,7 @@ json_string() {
 # --- the harness's payload becomes the hook context ----------------------
 # Inherited from the harness, any of these would already be exported, and
 # so handed to every program below whatever its size.
-unset HOOK_TOOL HOOK_TOOL_NATIVE HOOK_CWD HOOK_INPUT HOOK_SOURCE HOOK_COMMAND HOOK_PATH HOOK_QUERY
+unset HOOK_TOOL HOOK_TOOL_NATIVE HOOK_CWD HOOK_WORKDIR HOOK_INPUT HOOK_SOURCE HOOK_COMMAND HOOK_PATH HOOK_QUERY
 JQ=${HOOK_JQ:-jq}
 command -v "$JQ" >/dev/null 2>&1 || fail "hooks/exec: jq is not installed"
 JQ_READY=1
@@ -79,6 +81,7 @@ printf '%s' "$payload" | "$JQ" -e . >/dev/null 2>&1 \
   || fail "hooks/exec: the harness payload is not JSON"
 HOOK_TOOL_NATIVE=$(printf '%s' "$payload" | "$JQ" -r '.toolCall.name // empty')
 HOOK_CWD=$(printf '%s' "$payload" | "$JQ" -r '.workspacePaths[0] // empty')
+workdir=
 HOOK_INPUT=$(printf '%s' "$payload" | "$JQ" -c '.toolCall.args // {}')
 HOOK_SOURCE=
 [ "$HOOK_EVENT" = session_start ] \
@@ -107,9 +110,18 @@ portable_fields() {
     invoke_subagent) HOOK_TOOL=agent.spawn; ;;
     send_message) HOOK_TOOL=agent.message; ;;
   esac
-  bounded HOOK_TOOL_NATIVE HOOK_CWD HOOK_INPUT HOOK_SOURCE HOOK_COMMAND HOOK_PATH HOOK_QUERY \
+  # Where a shell command runs: the workspace unless the call names another.
+  HOOK_WORKDIR=
+  if [ "$HOOK_TOOL" = shell ]; then
+    case $workdir in
+      '') HOOK_WORKDIR=$HOOK_CWD ;;
+      /*) HOOK_WORKDIR=$workdir ;;
+      *) HOOK_WORKDIR=${HOOK_CWD:+$HOOK_CWD/}$workdir ;;
+    esac
+  fi
+  bounded HOOK_TOOL_NATIVE HOOK_CWD HOOK_WORKDIR HOOK_INPUT HOOK_SOURCE HOOK_COMMAND HOOK_PATH HOOK_QUERY \
     || fail "hooks/exec: the tool input is larger than the 32000 bytes a HOOK_* variable carries"
-  export HOOK_TOOL HOOK_TOOL_NATIVE HOOK_CWD HOOK_INPUT HOOK_SOURCE HOOK_COMMAND HOOK_PATH HOOK_QUERY
+  export HOOK_TOOL HOOK_TOOL_NATIVE HOOK_CWD HOOK_WORKDIR HOOK_INPUT HOOK_SOURCE HOOK_COMMAND HOOK_PATH HOOK_QUERY
 }
 portable_fields
 

@@ -33,7 +33,18 @@ impl WrapperTemplate for PowerShellWrapper {
         let deny_exit_code = uze_core::hook::DENY_EXIT_CODE;
         let reason_limit = HANDLER_REASON_LIMIT;
         let tool = powershell_filter(dialect.payload.tool, "$payload")?;
-        let cwd = powershell_filter(dialect.payload.cwd, "$payload")?;
+        let workspace = match dialect.payload.workspace {
+            Workspace::Payload(filter) => {
+                format!("Text {}", powershell_filter(filter, "$payload")?)
+            }
+            Workspace::Environment(name) => format!("Text $env:{name}"),
+            Workspace::LaunchDirectory => "$launchedIn".to_owned(),
+        };
+        let workdir = match dialect.payload.workdir {
+            Some(filter) => format!("Text {}", powershell_filter(filter, "$payload")?),
+            None => "''".to_owned(),
+        };
+        let workdir_alias = WORKDIR_ALIAS;
         let input = powershell_filter(dialect.payload.input, "$payload")?;
         let implied_source = dialect.payload.implied_source.map_or_else(String::new, |source| {
             format!(
@@ -69,6 +80,8 @@ impl WrapperTemplate for PowerShellWrapper {
 #
 #   usage: exec.ps1 <plugin-root> <event> <effect> <seconds>:<handler>...
 $ErrorActionPreference = 'Stop'
+# Where the harness started this hook, before anything here moves.
+$launchedIn = (Get-Location).ProviderPath
 $utf8 = New-Object System.Text.UTF8Encoding $false
 [Console]::InputEncoding = $utf8
 [Console]::OutputEncoding = $utf8
@@ -156,7 +169,8 @@ try {{
 }}
 if ($payload -isnot [System.Collections.IDictionary]) {{ Fail 'hooks/exec: the harness payload is not JSON' }}
 Set-Hook 'HOOK_TOOL_NATIVE' (Text {tool})
-Set-Hook 'HOOK_CWD' (Text {cwd})
+Set-Hook 'HOOK_CWD' ({workspace})
+$workdir = {workdir}
 $toolInput = {input}
 Set-Hook 'HOOK_INPUT' $(if ($null -eq $toolInput) {{ '{{}}' }} else {{ $json.Serialize($toolInput) }})
 Set-Hook 'HOOK_SOURCE' $(if ($hookEvent -eq 'session_start') {{ Text (Pick $payload @('source')) }} else {{ '' }})
@@ -165,6 +179,11 @@ function Portable-Fields {{
 $env:HOOK_TOOL = ''
 {field_defaults}switch -CaseSensitive ($env:HOOK_TOOL_NATIVE) {{  # the portable vocabulary
 {aliases}}}
+# Where a shell command runs: the workspace unless the call names another.
+$env:HOOK_WORKDIR = ''
+if ($env:HOOK_TOOL -eq '{workdir_alias}') {{
+  Set-Hook 'HOOK_WORKDIR' $(if (-not $workdir) {{ "$env:HOOK_CWD" }} elseif ([System.IO.Path]::IsPathRooted($workdir) -or -not $env:HOOK_CWD) {{ $workdir }} else {{ [System.IO.Path]::Combine($env:HOOK_CWD, $workdir) }})
+}}
 }}
 Portable-Fields
 
@@ -323,11 +342,15 @@ mod tests {
             let Some(dialect) = target.dialect() else {
                 continue;
             };
-            for path in [
-                dialect.payload.tool,
-                dialect.payload.cwd,
-                dialect.payload.input,
-            ] {
+            let workspace = match dialect.payload.workspace {
+                Workspace::Payload(filter) => Some(filter),
+                Workspace::Environment(_) | Workspace::LaunchDirectory => None,
+            };
+            for path in [dialect.payload.tool, dialect.payload.input]
+                .into_iter()
+                .chain(workspace)
+                .chain(dialect.payload.workdir)
+            {
                 assert!(
                     powershell_filter(path, "$payload").is_some(),
                     "{}: {path}",

@@ -1,7 +1,7 @@
 //! The flags an Antigravity CLI launch takes, as offered to an operator's
 //! overrides. This integration manages no variable of its own.
 //!
-//! Described from `help.txt`, the `--help` of agy 1.4.10; every flag it
+//! Described from `help.txt`, the `--help` of agy 1.4.12; every flag it
 //! defines is catalogued or left out for a reason the tests name, and only
 //! flags that act in print mode alone are left out.
 

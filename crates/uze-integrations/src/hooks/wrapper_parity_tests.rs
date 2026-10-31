@@ -112,7 +112,12 @@ fn answered(target: HookTarget, index: usize, fixture: &Fixture) -> serde_json::
     );
     let (program, mut arguments) = uze_platform::shell::script(&wrapper.display().to_string());
     arguments.extend(wrapper_arguments(&hook, &package_root, &hook.handlers));
-    let mut child = Command::new(program)
+    let workspace = root.join("workspace");
+    std::fs::create_dir_all(&workspace).unwrap();
+    let workspace = uze_platform::path::canonical(&workspace).unwrap();
+    let mut command = Command::new(program);
+    in_workspace(&mut command, target, &workspace);
+    let mut child = command
         .args(arguments)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -132,7 +137,7 @@ fn answered(target: HookTarget, index: usize, fixture: &Fixture) -> serde_json::
         "stdout": document,
         "said": String::from_utf8_lossy(&output.stderr).trim(),
     });
-    let answer = portable(answer, &root);
+    let answer = portable(answer, &workspace, &root);
     let _ = std::fs::remove_dir_all(&root);
     answer
 }
@@ -140,12 +145,15 @@ fn answered(target: HookTarget, index: usize, fixture: &Fixture) -> serde_json::
 /// Every string in `value` with the throwaway root written back as the
 /// placeholder, in the spelling the POSIX wrapper's answers were recorded
 /// in.
-fn portable(value: serde_json::Value, root: &Path) -> serde_json::Value {
+fn portable(value: serde_json::Value, workspace: &Path, root: &Path) -> serde_json::Value {
     match value {
         serde_json::Value::String(text) => {
+            let workspace = workspace.display().to_string();
             let root = root.display().to_string();
             serde_json::Value::String(
-                text.replace(&root, "${PLUGIN_ROOT}")
+                text.replace(&workspace, FIXTURE_WORKSPACE)
+                    .replace(&workspace.replace('\\', "/"), FIXTURE_WORKSPACE)
+                    .replace(&root, "${PLUGIN_ROOT}")
                     .replace(&root.replace('\\', "/"), "${PLUGIN_ROOT}")
                     .replace("${PLUGIN_ROOT}\\", "${PLUGIN_ROOT}/"),
             )
@@ -153,7 +161,7 @@ fn portable(value: serde_json::Value, root: &Path) -> serde_json::Value {
         serde_json::Value::Object(fields) => serde_json::Value::Object(
             fields
                 .into_iter()
-                .map(|(key, value)| (key, portable(value, root)))
+                .map(|(key, value)| (key, portable(value, workspace, root)))
                 .collect(),
         ),
         other => other,

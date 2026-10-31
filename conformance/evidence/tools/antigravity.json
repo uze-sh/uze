@@ -1,7 +1,7 @@
 {
  "harness": "antigravity",
- "harness_version": "1.4.8",
- "recorded_at": "2026-10-27",
+ "harness_version": "1.4.12",
+ "recorded_at": "2026-10-30",
  "tools": {
   "ask_question": [
    "questions"

@@ -43,7 +43,8 @@ impl WrapperTemplate for PosixWrapper {
                 PayloadPaths {
                     tool: tool_filter,
                     input: input_filter,
-                    cwd: cwd_filter,
+                    workspace,
+                    workdir,
                     implied_source,
                 },
             posix:
@@ -58,11 +59,23 @@ impl WrapperTemplate for PosixWrapper {
             ..
         } = dialect;
         let value_limit = HOOK_VALUE_LIMIT;
+        let workdir_alias = WORKDIR_ALIAS;
         // Where the harness takes no rewritten input a transform group is
         // never delivered; the wrapper still answers it, closed.
         let transform_document = transform_document
             .unwrap_or("deny_native \"hooks/exec: this harness takes no rewritten input\"");
         let output_limit = TRANSFORM_OUTPUT_LIMIT;
+        let workspace = match workspace {
+            Workspace::Payload(filter) => {
+                format!("HOOK_CWD=$(printf '%s' \"$payload\" | \"$JQ\" -r '{filter}')")
+            }
+            Workspace::Environment(name) => format!("HOOK_CWD=${{{name}:-}}"),
+            Workspace::LaunchDirectory => "HOOK_CWD=$launched_in".to_owned(),
+        };
+        let workdir = workdir.map_or_else(
+            || "workdir=".to_owned(),
+            |filter| format!("workdir=$(printf '%s' \"$payload\" | \"$JQ\" -r '{filter}')"),
+        );
         let source_filter = implied_source.map_or_else(
             || ".source // empty".to_owned(),
             |source| format!(".source // \"{source}\""),
@@ -83,6 +96,8 @@ impl WrapperTemplate for PosixWrapper {
 #              everything it started are stopped, and the group's effect
 #              decides, exactly as for any other handler failure
 set -u
+# Where the harness started this hook, before anything here moves.
+launched_in=$(pwd -P 2>/dev/null) || launched_in=
 PLUGIN_ROOT=$1
 HOOK_EVENT=$2
 effect=$3
@@ -135,7 +150,7 @@ json_string() {{
 # --- the harness's payload becomes the hook context ----------------------
 # Inherited from the harness, any of these would already be exported, and
 # so handed to every program below whatever its size.
-unset HOOK_TOOL HOOK_TOOL_NATIVE HOOK_CWD HOOK_INPUT HOOK_SOURCE {field_exports}
+unset HOOK_TOOL HOOK_TOOL_NATIVE HOOK_CWD HOOK_WORKDIR HOOK_INPUT HOOK_SOURCE {field_exports}
 JQ=${{HOOK_JQ:-jq}}
 command -v "$JQ" >/dev/null 2>&1 || fail "hooks/exec: jq is not installed"
 JQ_READY=1
@@ -147,7 +162,8 @@ payload=$(cat)
 printf '%s' "$payload" | "$JQ" -e . >/dev/null 2>&1 \
   || fail "hooks/exec: the harness payload is not JSON"
 HOOK_TOOL_NATIVE=$(printf '%s' "$payload" | "$JQ" -r '{tool_filter}')
-HOOK_CWD=$(printf '%s' "$payload" | "$JQ" -r '{cwd_filter}')
+{workspace}
+{workdir}
 HOOK_INPUT=$(printf '%s' "$payload" | "$JQ" -c '{input_filter}')
 HOOK_SOURCE=
 [ "$HOOK_EVENT" = session_start ] \
@@ -169,9 +185,18 @@ portable_fields() {{
   HOOK_TOOL= {field_defaults}
   case "$HOOK_TOOL_NATIVE" in                     # the portable vocabulary
 {aliases}  esac
-  bounded HOOK_TOOL_NATIVE HOOK_CWD HOOK_INPUT HOOK_SOURCE {field_exports} \
+  # Where a shell command runs: the workspace unless the call names another.
+  HOOK_WORKDIR=
+  if [ "$HOOK_TOOL" = {workdir_alias} ]; then
+    case $workdir in
+      '') HOOK_WORKDIR=$HOOK_CWD ;;
+      /*) HOOK_WORKDIR=$workdir ;;
+      *) HOOK_WORKDIR=${{HOOK_CWD:+$HOOK_CWD/}}$workdir ;;
+    esac
+  fi
+  bounded HOOK_TOOL_NATIVE HOOK_CWD HOOK_WORKDIR HOOK_INPUT HOOK_SOURCE {field_exports} \
     || fail "hooks/exec: the tool input is larger than the {value_limit} bytes a HOOK_* variable carries"
-  export HOOK_TOOL HOOK_TOOL_NATIVE HOOK_CWD HOOK_INPUT HOOK_SOURCE {field_exports}
+  export HOOK_TOOL HOOK_TOOL_NATIVE HOOK_CWD HOOK_WORKDIR HOOK_INPUT HOOK_SOURCE {field_exports}
 }}
 portable_fields
 

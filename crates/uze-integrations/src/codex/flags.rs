@@ -2,7 +2,7 @@
 //! and the variables this integration reads.
 //!
 //! Described from `help.txt` and `resume-help.txt`, the `--help` of
-//! codex-cli 0.164.0 and of its `resume`: overrides follow `resume <id>` on
+//! codex-cli 0.166.0 and of its `resume`: overrides follow `resume <id>` on
 //! a resumed launch, so every flag here must be one `codex resume` takes
 //! too. Codex has no session flag to own: resuming is a subcommand, and the
 //! check refuses a positional. What UZE composes travels as `-c` keys,

@@ -3,7 +3,7 @@
 use uze_core::hook::{HookEffect, HookEvent, ToolBinding};
 
 use crate::hooks::{
-    Decisions, EntryShape, HookRunner, HookTarget, PayloadPaths, UNBOUND, WrapperDialect,
+    Decisions, EntryShape, HookRunner, HookTarget, PayloadPaths, UNBOUND, Workspace, WrapperDialect,
 };
 use crate::rules::{RulesDelivery, RulesTarget};
 
@@ -34,7 +34,12 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
             payload: PayloadPaths {
                 tool: ".tool_name // empty",
                 input: ".tool_input // {}",
-                cwd: ".cwd // .context.cwd // empty",
+                // The project the session was opened in; the payload's
+                // `cwd` is the shell's, which a `cd` moves: where a command
+                // starts on `PreToolUse`, and where its shell was left on
+                // `PostToolUse` (measured on 2.1.314).
+                workspace: Workspace::Environment("CLAUDE_PROJECT_DIR"),
+                workdir: Some(".cwd // empty"),
                 implied_source: None,
             },
             // A decision is JSON on stdout with exit 0: Claude reads
@@ -95,6 +100,9 @@ pub(crate) const RULES: RulesTarget = RulesTarget {
     delivery: RulesDelivery::Entries {
         shape: EntryShape::EventExec,
         tools: "Read|Edit|MultiEdit|Write|Bash",
+        // A Claude hook starts in the shell's directory, which a `cd`
+        // moves; the project is this variable (measured on 2.1.314).
+        workspace: Some("CLAUDE_PROJECT_DIR"),
     },
 };
 

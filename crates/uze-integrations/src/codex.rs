@@ -930,7 +930,7 @@ const FACTS: &[HarnessFact] = &[
     },
 ];
 /// The version the facts above were measured on.
-const VERSION: &str = "0.162.1";
+const VERSION: &str = "0.166.0";
 
 /// The installer's documented switch for skipping its "Start Codex now?" prompt.
 const NON_INTERACTIVE: &str = "CODEX_NON_INTERACTIVE";

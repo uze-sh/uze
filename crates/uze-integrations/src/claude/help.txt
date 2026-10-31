@@ -271,8 +271,7 @@ Commands:
                                         lists. Part of the session name works
                                         too
   auth                                  Manage authentication
-  auto-mode                             Inspect or reset auto mode classifier
-                                        configuration
+  auto-mode                             Inspect or reset auto mode configuration
   doctor                                Check the health of your Claude Code
                                         installation. Reads settings files in
                                         the current directory without a trust

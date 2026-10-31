@@ -208,7 +208,7 @@ fn claude_receives_exec_form_entries_beside_its_foreign_hooks() {
             "hooks": [{
                 "type": "command",
                 "command": engine.display().to_string(),
-                "args": [sessions.display().to_string()],
+                "args": [sessions.display().to_string(), "CLAUDE_PROJECT_DIR"],
                 "timeout": 10,
             }]
         }]),

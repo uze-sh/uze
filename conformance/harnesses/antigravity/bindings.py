@@ -144,12 +144,33 @@ timeout 240 agy --print {shlex.quote(prompt)} --dangerously-skip-permissions \\
         steps = [{"name": c["tool"], "args": c["args"]} for c in calls]
         return "toolcall", {"TOOL_SEQUENCE": json.dumps(steps)}
 
+    def shell_in(self, command, workdir=None):
+        """`run_command`, with `Cwd` when a directory is asked for."""
+        args = {
+            "CommandLine": command,
+            "WaitMsBeforeAsync": 2000,
+            "toolSummary": "Lab command",
+        }
+        if workdir is not None:
+            args["Cwd"] = workdir
+        return {"tool": "run_command", "args": args}
+
     def unsupported(self, prop):
         """An agent's model is not Antigravity's to choose here: its shipped
         docs (1.2.12) describe no agent field, and an agent carrying `model`
         is dropped silently, with an id from its own catalogue as much as
         without one. UZE leaves `harness.antigravity.model` out, so the agent
         still arrives, on the session's model."""
+        if prop == "hooks.shell-workdir-parameter":
+            # Measured on 1.4.12: a `run_command` call carrying `Cwd` is
+            # answered "invalid arguments: additional properties 'Cwd' not
+            # allowed" before any hook, and its declaration says each
+            # command runs in a new session in the workspace.
+            return (
+                "Antigravity's `run_command` declares no working directory: "
+                "every command runs in the workspace, and a call naming one "
+                "is refused before any hook runs"
+            )
         if prop == "rules-always-on-after-compaction":
             # Measured on 1.4.2: `/compact` (added in 1.3.5) answers
             # "Unknown command: /compact"; the binary gates it behind the

@@ -840,6 +840,11 @@ class Runner:
                 ok = bool(globlib.glob(machine.host_path(until)))
             elif kind == "screen":
                 ok = self.screen.shows(until, step.get("in", "screen"))
+            elif kind == "agents":
+                # What UZE recorded about its agents, read the way the
+                # `agents` check reads it: a reconciliation writes it after
+                # the screen has moved on, and a slow machine takes longer.
+                ok, _ = Checker(self)._agents({"agents": step["agents"]})
             else:
                 raise Failed(f"unknown wait kind {kind!r}")
             if ok:
@@ -1493,6 +1498,11 @@ def validate(spec: dict, path: Path | None = None) -> list[str]:
             # A gate is a pattern, and one that cannot compile is found here
             # rather than as a crash mid-run, one gesture into the journey.
             gates = ["expect"] + (["until"] if step.get("wait") == "screen" else [])
+            if step.get("wait") == "agents" and not isinstance(step.get("agents"), dict):
+                problems.append(
+                    f"{where}: `wait: agents` states no `agents:` — what it waits "
+                    "for, as the `agents` check states it"
+                )
             for key in gates:
                 pattern = step.get(key)
                 if not isinstance(pattern, str):
