@@ -19,7 +19,7 @@ use uze_application::machine_overview::{COUNTED, Origin, OverviewResource, Resou
 use crate::ui::content_area;
 use crate::ui::hit::Hit;
 use crate::ui::machine::{
-    self, Column, Field, Group, Line as TreeLine, MachineScreen, Pane, kind_word,
+    self, Column, Field, Group, Line as TreeLine, MachineScreen, On, Pane, kind_word,
 };
 use crate::ui::model::{Focus, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
@@ -654,8 +654,8 @@ fn draw_line(
                         theme::fg(Token::TextMuted),
                     ),
                     figure(resource.per_session),
-                    uses_cell(resource, screen.period_days()),
-                    status_cell(resource, screen.period_days()),
+                    uses_cell(resource, screen.on()),
+                    status_cell(resource, screen.on()),
                 ],
             )
         }
@@ -665,14 +665,14 @@ fn draw_line(
 /// A row's uses in the period: blank for what is never counted (an
 /// instruction file, a hook), `?` where no harness carrying it could be
 /// read, `~` before a count that was partly inferred.
-fn uses_cell(resource: &OverviewResource, days: u32) -> Span<'static> {
+fn uses_cell(resource: &OverviewResource, on: On<'_>) -> Span<'static> {
     if !COUNTED.contains(&resource.kind) {
         return Span::raw("");
     }
-    match resource.uses {
+    match resource.uses_on(on.harness) {
         None => Span::styled("?", theme::fg(Token::TextFaint)),
         Some(uses) => {
-            let count = uses.within(days);
+            let count = uses.within(on.days);
             let text = if uses.estimate {
                 format!("~{count}")
             } else {
@@ -691,8 +691,8 @@ fn uses_cell(resource: &OverviewResource, days: u32) -> Span<'static> {
 /// A row's status: a check only where a fact was checked and nothing was
 /// found against it; a dash for what nothing on disk can judge; unused for
 /// what nobody used in the period, every harness carrying it read.
-fn status_cell(resource: &OverviewResource, days: u32) -> Span<'static> {
-    if resource.unused(days) {
+fn status_cell(resource: &OverviewResource, on: On<'_>) -> Span<'static> {
+    if resource.unused(on.days, on.harness) {
         return Span::styled(
             format!("{} unused", theme::glyph(Symbol::MarkUnused)),
             theme::fg(Token::TextMuted),
@@ -744,8 +744,8 @@ fn figure(tokens: Option<u32>) -> Span<'static> {
     }
 }
 
-fn status_style(resource: &OverviewResource, days: u32) -> (&'static str, Token) {
-    if resource.unused(days) {
+fn status_style(resource: &OverviewResource, on: On<'_>) -> (&'static str, Token) {
+    if resource.unused(on.days, on.harness) {
         return ("unused", Token::TextMuted);
     }
     let status = &resource.status;
@@ -759,8 +759,9 @@ fn status_style(resource: &OverviewResource, days: u32) -> (&'static str, Token)
 }
 
 /// A resource's uses in the panel, with what the figure rests on.
-fn uses_said(resource: &OverviewResource, days: u32) -> String {
-    let Some(uses) = resource.uses else {
+fn uses_said(resource: &OverviewResource, on: On<'_>) -> String {
+    let days = on.days;
+    let Some(uses) = resource.uses_on(on.harness) else {
         return "not known: no harness's records could be read".to_owned();
     };
     let mut said = format!("{} in {days} days", uses.within(days));
@@ -768,7 +769,7 @@ fn uses_said(resource: &OverviewResource, days: u32) -> String {
         said.push_str(" · partly inferred");
     }
     if !uses.complete {
-        said.push_str(" · not every harness could be read");
+        said.push_str(" · some harnesses unread");
     }
     said
 }
@@ -999,8 +1000,8 @@ fn finding_detail(alert: &Alert) -> Detail {
 
 fn resource_detail(model: &TuiModel, resource: &OverviewResource) -> Detail {
     let screen = &model.remembered.machine;
-    let days = screen.period_days();
-    let (word, tone) = status_style(resource, days);
+    let on = screen.on();
+    let (word, tone) = status_style(resource, on);
     let mut fields = Vec::new();
     let from = match &resource.origin {
         Origin::Uze { package } if package.contains('@') => format!("uze · {package}"),
@@ -1038,7 +1039,7 @@ fn resource_detail(model: &TuiModel, resource: &OverviewResource) -> Detail {
     if COUNTED.contains(&resource.kind) {
         fields.push((
             "uses",
-            uses_said(resource, days),
+            uses_said(resource, on),
             theme::fg(Token::TextSecondary),
             None,
         ));

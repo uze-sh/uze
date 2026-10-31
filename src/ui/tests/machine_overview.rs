@@ -53,7 +53,7 @@ fn resource(
         status: Status::Ok,
         checked: true,
         removal: None,
-        uses: None,
+        uses: Default::default(),
     }
 }
 
@@ -505,22 +505,33 @@ fn an_empty_section_says_so_in_the_middle_of_its_room_with_no_headings() {
     );
 }
 
-fn used(days_7: u64, days_30: u64, estimate: bool, complete: bool) -> Option<Uses> {
-    Some(Uses {
-        days_7,
-        days_30,
-        days_90: days_30,
-        estimate,
-        complete,
-    })
+/// `resource` used `days_30` times in 30 days on each harness named.
+fn used_on(resource: &mut OverviewResource, harnesses: &[&str], days_30: u64, estimate: bool) {
+    for harness in harnesses {
+        resource.uses.insert(
+            (*harness).to_owned(),
+            Uses {
+                days_7: days_30,
+                days_30,
+                days_90: days_30,
+                estimate,
+                complete: true,
+            },
+        );
+    }
 }
 
 #[test]
 fn each_skill_says_how_often_it_was_used_in_the_period() {
     let mut model = model();
     let mut overview = overview();
-    overview.resources[0].uses = used(2, 12, false, true);
-    overview.resources[1].uses = used(0, 3, true, true);
+    used_on(
+        &mut overview.resources[0],
+        &["claude-code", "codex"],
+        6,
+        false,
+    );
+    used_on(&mut overview.resources[1], &["claude-code"], 3, true);
     model.remembered.machine.overview = Some(overview);
     let drawn = rows(&model);
     let header = drawn
@@ -529,7 +540,7 @@ fn each_skill_says_how_often_it_was_used_in_the_period() {
         .unwrap();
     assert!(header.contains("uses"), "{header}");
     let commit = drawn.iter().find(|row| row.contains("git:commit")).unwrap();
-    assert!(commit.contains(" 12 "), "uses in 30 days: {commit}");
+    assert!(commit.contains(" 12 "), "every harness's uses: {commit}");
     let vercel = drawn
         .iter()
         .find(|row| row.contains("vercel:nextjs"))
@@ -538,11 +549,33 @@ fn each_skill_says_how_often_it_was_used_in_the_period() {
 }
 
 #[test]
+fn a_harness_narrows_the_uses_to_its_own() {
+    let mut model = model();
+    let mut overview = overview();
+    used_on(&mut overview.resources[0], &["claude-code"], 9, false);
+    used_on(&mut overview.resources[0], &["codex"], 0, false);
+    model.remembered.machine.overview = Some(overview);
+    model.remembered.machine.harness = Some("codex".to_owned());
+    let drawn = rows(&model);
+    let commit = drawn.iter().find(|row| row.contains("git:commit")).unwrap();
+    assert!(
+        commit.contains("unused"),
+        "nobody used it on Codex: {commit}"
+    );
+    assert!(!commit.contains(" 9 "), "{commit}");
+}
+
+#[test]
 fn a_skill_nobody_used_reads_unused_only_when_every_harness_was_read() {
     let mut model = model();
     let mut overview = overview();
-    overview.resources[0].uses = used(0, 0, false, true);
-    overview.resources[1].uses = used(0, 0, false, false);
+    used_on(
+        &mut overview.resources[0],
+        &["claude-code", "codex"],
+        0,
+        false,
+    );
+    used_on(&mut overview.resources[1], &[], 0, false);
     model.remembered.machine.overview = Some(overview);
     let drawn = rows(&model);
     let commit = drawn.iter().find(|row| row.contains("git:commit")).unwrap();
@@ -563,7 +596,7 @@ fn a_skill_nobody_used_reads_unused_only_when_every_harness_was_read() {
 }
 
 #[test]
-fn uses_nobody_could_read_are_unknown_and_a_rule_has_none() {
+fn uses_nobody_could_read_are_unknown() {
     let model = model();
     let drawn = rows(&model);
     let commit = drawn.iter().find(|row| row.contains("git:commit")).unwrap();
@@ -574,8 +607,8 @@ fn uses_nobody_could_read_are_unknown_and_a_rule_has_none() {
 fn the_uses_heading_orders_the_most_used_first() {
     let mut model = model();
     let mut overview = overview();
-    overview.resources[0].uses = used(1, 1, false, true);
-    overview.resources[1].uses = used(5, 5, false, true);
+    used_on(&mut overview.resources[0], &["claude-code"], 1, false);
+    used_on(&mut overview.resources[1], &["claude-code"], 5, false);
     model.remembered.machine.overview = Some(overview);
     click(&mut model, &Hit::MachineSort(Column::Uses));
     assert_eq!(names(&model), ["vercel:nextjs", "git:commit"]);
@@ -585,14 +618,14 @@ fn the_uses_heading_orders_the_most_used_first() {
 fn the_panel_says_what_a_use_count_rests_on() {
     let mut model = model();
     let mut overview = overview();
-    overview.resources[0].uses = used(1, 4, true, false);
+    used_on(&mut overview.resources[0], &["claude-code"], 4, true);
     model.remembered.machine.overview = Some(overview);
     on_resource(&mut model, ResourceKind::Skill, "git:commit");
     let drawn = rows(&model);
     assert!(
         drawn
             .iter()
-            .any(|row| row.contains("4 in 30 days · partly inferred")),
+            .any(|row| row.contains("4 in 30 days · partly inferred · some")),
         "{drawn:#?}"
     );
 }

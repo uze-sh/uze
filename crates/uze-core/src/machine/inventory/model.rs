@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     path::PathBuf,
     time::{Duration, SystemTime},
 };
@@ -294,19 +295,44 @@ pub struct OverviewResource {
     #[serde(default)]
     pub checked: bool,
     pub removal: Option<String>,
-    /// How often it was used, for a skill, an agent or an MCP server whose
-    /// uses some harness carrying it could read; `None` otherwise.
+    /// How often it was used, per harness carrying it whose records could
+    /// be read: a harness missing here is one whose uses are not known.
     #[serde(default)]
-    pub uses: Option<crate::usage::Uses>,
+    pub uses: BTreeMap<String, crate::usage::Uses>,
 }
 
 impl OverviewResource {
+    /// Its uses on `harness`, or on every harness carrying it: `None` when
+    /// none of them could be read, and not `complete` when some could not.
+    pub fn uses_on(&self, harness: Option<&str>) -> Option<crate::usage::Uses> {
+        let mut carrying = self
+            .locations
+            .iter()
+            .map(|location| location.harness.as_str())
+            .filter(|carrier| harness.is_none_or(|harness| harness == *carrier))
+            .peekable();
+        carrying.peek()?;
+        let mut total: Option<crate::usage::Uses> = None;
+        let mut complete = true;
+        for carrier in carrying {
+            match self.uses.get(carrier) {
+                Some(uses) => total.get_or_insert_with(Default::default).add(uses),
+                None => complete = false,
+            }
+        }
+        total.map(|mut total| {
+            total.complete = complete;
+            total
+        })
+    }
+
     /// Nothing is wrong with it, and no use of it is found in the last
-    /// `days` on any harness that carries it, every one of them read.
-    pub fn unused(&self, days: u32) -> bool {
+    /// `days` on `harness` (or on any harness carrying it), every one of
+    /// them read.
+    pub fn unused(&self, days: u32, harness: Option<&str>) -> bool {
         self.status == Status::Ok
             && self
-                .uses
+                .uses_on(harness)
                 .is_some_and(|uses| uses.complete && uses.within(days) == 0)
     }
 

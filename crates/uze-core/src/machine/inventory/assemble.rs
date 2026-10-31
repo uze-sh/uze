@@ -324,7 +324,7 @@ fn rows(found: Vec<Measured>) -> Vec<OverviewResource> {
                 removal: group
                     .iter()
                     .find_map(|measured| measured.found.removal.clone()),
-                uses: None,
+                uses: Default::default(),
             }
         })
         .collect();

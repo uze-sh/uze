@@ -167,6 +167,14 @@ impl Uses {
         }
     }
 
+    /// Adds what another harness counted.
+    pub fn add(&mut self, other: &Uses) {
+        self.days_7 += other.days_7;
+        self.days_30 += other.days_30;
+        self.days_90 += other.days_90;
+        self.estimate |= other.estimate;
+    }
+
     /// Adds `tally` to every period it falls in, as of `today`.
     pub fn count(&mut self, tally: &Tally, today: u64) {
         let total = u64::from(tally.by_person) + u64::from(tally.by_model);
@@ -295,10 +303,9 @@ impl Ledger {
     }
 }
 
-/// Gives every skill, agent and MCP server of `overview` its uses, from
-/// each harness's tallies (`None`: that harness's uses are unknown), as of
-/// `now`. A resource none of its harnesses could read keeps `None`; one
-/// some of them could not is counted, but never reads unused.
+/// Gives every skill, agent and MCP server of `overview` its uses on each
+/// harness carrying it, from that harness's tallies (`None`: its uses are
+/// unknown, and it is left out), as of `now`.
 pub fn count_uses(
     overview: &mut MachineOverview,
     tallies: &BTreeMap<String, Option<Vec<Tally>>>,
@@ -312,17 +319,18 @@ pub fn count_uses(
         if !COUNTED.contains(&resource.kind) {
             continue;
         }
-        let mut uses = Uses {
-            complete: true,
-            ..Uses::default()
-        };
-        let mut any = false;
+        resource.uses.clear();
         for location in &resource.locations {
             let Some(Some(harness)) = tallies.get(&location.harness) else {
-                uses.complete = false;
                 continue;
             };
-            any = true;
+            let uses = resource
+                .uses
+                .entry(location.harness.clone())
+                .or_insert(Uses {
+                    complete: true,
+                    ..Uses::default()
+                });
             for tally in harness.iter().filter(|tally| {
                 tally.kind == resource.kind
                     && match &tally.target {
@@ -333,7 +341,6 @@ pub fn count_uses(
                 uses.count(tally, today);
             }
         }
-        resource.uses = any.then_some(uses);
     }
 }
 
