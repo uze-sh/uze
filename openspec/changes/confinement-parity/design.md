@@ -35,7 +35,8 @@ lived under `lab/` in this change and is removed with it.
 
 ### D1. One AppContainer profile per run
 
-The helper creates a profile named `uze.run.<pid>.<n>`, starts the
+The helper creates a profile named `<namespace>.run.<pid>.<started>`,
+the caller's namespace, its own pid and the time it started, starts the
 program in it and deletes it after the program ends. Creating one took
 5 to 10 ms and deleting one about 3 ms. A run's `%TEMP%` and
 `%LOCALAPPDATA%` therefore belong to that run, as its scratch does on
@@ -45,7 +46,7 @@ Linux, and nothing one extension's run writes there reaches the next.
 registered.
 
 A run that is killed leaves its profile behind. The next helper removes
-any `uze.run.*` profile whose process no longer runs, read from the
+any of its namespace's profiles whose process no longer runs, read from the
 `AppContainer\Mappings` monikers under `HKCU`.
 
 - Rejected: one fixed profile for every run. Its folder outlives the

@@ -448,11 +448,10 @@ struct Profile {
 
 impl Profile {
     fn create(namespace: &str) -> io::Result<Self> {
-        let name = wide(OsStr::new(&format!(
-            "{}{}",
-            profile_prefix(namespace),
-            std::process::id()
-        )));
+        let pid = std::process::id();
+        let started = process_started(pid)
+            .ok_or_else(|| io::Error::other("this helper's own start time is unknown"))?;
+        let name = wide(OsStr::new(&profile_name(namespace, pid, started)));
         let mut sid: PSID = ptr::null_mut();
         // SAFETY: the strings are NUL-terminated; the SID is freed with
         // FreeSid, as the API documents.
@@ -545,6 +544,44 @@ fn profile_prefix(namespace: &str) -> String {
     format!("{namespace}.run.")
 }
 
+/// A run's profile: its helper's pid and the time that process started,
+/// which together name one process even after the pid is used again.
+fn profile_name(namespace: &str, pid: u32, started: u64) -> String {
+    format!("{}{pid}.{started}", profile_prefix(namespace))
+}
+
+/// The helper a profile named `moniker` was made by, when it is one of
+/// this namespace's runs.
+fn profile_owner(moniker: &str, prefix: &str) -> Option<(u32, u64)> {
+    let (pid, started) = moniker.strip_prefix(prefix)?.split_once('.')?;
+    Some((pid.parse().ok()?, started.parse().ok()?))
+}
+
+/// When process `pid` started, in the system's 100-nanosecond ticks, or
+/// `None` when nothing runs as that pid that this user may ask.
+fn process_started(pid: u32) -> Option<u64> {
+    use windows_sys::Win32::{
+        Foundation::FILETIME,
+        System::Threading::{GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION},
+    };
+    // SAFETY: opening a handle to ask its times; null on failure.
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if process.is_null() {
+        return None;
+    }
+    let process = Owned(process);
+    let zero = FILETIME {
+        dwLowDateTime: 0,
+        dwHighDateTime: 0,
+    };
+    let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
+    // SAFETY: a valid handle; every output outlives the call.
+    let asked =
+        unsafe { GetProcessTimes(process.0, &mut created, &mut exited, &mut kernel, &mut user) };
+    (asked != 0)
+        .then(|| (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
+}
+
 /// `HRESULT_FROM_WIN32`.
 fn hresult(error: u32) -> i32 {
     ((error & 0xFFFF) | 0x8007_0000) as i32
@@ -571,8 +608,10 @@ fn sweep_profiles(namespace: &str) {
             .flatten()?
             .into_string()
             .ok()?;
-            let pid: u32 = moniker.strip_prefix(&prefix)?.parse().ok()?;
-            (crate::process::alive(pid) == Some(false)).then_some(moniker)
+            let (pid, started) = profile_owner(&moniker, &prefix)?;
+            // A pid running again with another start time is another
+            // process: the run that made this profile is gone.
+            (process_started(pid) != Some(started)).then_some(moniker)
         })
         .collect();
     for moniker in stale {
@@ -938,6 +977,23 @@ mod tests {
         assert!(is_batch(Path::new("C:\\tools\\RUN.BAT")));
         assert!(!is_batch(Path::new("C:\\Windows\\System32\\cmd.exe")));
         assert!(!is_batch(Path::new("C:\\tools\\cmd")));
+    }
+
+    #[test]
+    fn a_profile_names_the_process_that_made_it() {
+        let name = profile_name("uze", 4321, 133_000_000_000_000_000);
+        assert_eq!(name, "uze.run.4321.133000000000000000");
+        assert_eq!(
+            profile_owner(&name, &profile_prefix("uze")),
+            Some((4321, 133_000_000_000_000_000))
+        );
+        assert_eq!(profile_owner("uze.run.4321", &profile_prefix("uze")), None);
+        assert_eq!(profile_owner(&name, &profile_prefix("other")), None);
+    }
+
+    #[test]
+    fn this_process_knows_when_it_started() {
+        assert!(process_started(std::process::id()).is_some_and(|started| started > 0));
     }
 
     #[test]
