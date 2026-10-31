@@ -227,9 +227,6 @@ pub struct FileTab {
     /// Holding changes not yet written, which the host marks where the
     /// close mark stands, as an editor does.
     pub unsaved: bool,
-    /// Opened by passing over it rather than kept: the next file passed
-    /// over takes its place. The host sets its name apart.
-    pub preview: bool,
 }
 
 /// A line to type into, standing over a navigator's rows: a search.

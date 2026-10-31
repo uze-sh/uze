@@ -1575,7 +1575,6 @@ impl CodeView {
                     },
                     active: self.open.as_ref().is_some_and(|open| open.path == tab.path),
                     unsaved: modified,
-                    preview: tab.preview && !modified,
                 }
             })
             .collect()
@@ -2246,12 +2245,8 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
         Some(ViewHit::SelectTab(index)) => view.show_tab(index),
         Some(ViewHit::CloseTab(index)) => view.close_tab(index, asked),
         Some(ViewHit::FocusField) => view.find(),
-        // Emptied and still typed into, the way a field's clear mark
-        // works everywhere else.
-        Some(ViewHit::ClearField) => {
-            view.clear_search();
-            view.find();
-        }
+        // Emptied and let go of: the tree is back, and the keys with it.
+        Some(ViewHit::ClearField) => view.clear_search(),
         Some(ViewHit::OpenMenu(index)) => match view.navigator() {
             NavigatorMode::Search => {}
             NavigatorMode::Changes => row_menu::open(view, index),

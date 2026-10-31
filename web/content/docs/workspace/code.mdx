@@ -35,8 +35,9 @@ something is unsaved.
 
 ## Tabs
 
-Each file you open gets a tab over the content. A file you only pass over opens
-in an italic tab, which the next file you pass over replaces. Changing a file
+Each file you open gets a tab over the content. A file you only pass over
+takes the tab the previous one passed over had, so walking the tree leaves one
+tab behind. Changing a file
 keeps its tab. A tab with unsaved changes shows a dot where its close mark
 would be.
 
@@ -53,8 +54,8 @@ ignored, and files Git ignores are skipped. Results are grouped by file, with a
 count for each file. `↓` moves from the field to the results, `Enter` opens a
 result with the caret on the match, and a click shows it while keeping the list
 in focus. Matches are also highlighted in the open file. `Esc`, or the `×` at the
-end of the field, clears the search and brings the tree back, opened down to the
-file you are on. A search stops at 2000 results.
+end of the field, clears the search, leaves the field and brings the tree back,
+opened down to the file you are on. A search stops at 2000 results.
 
 Right-click a changed file, or press `Alt+.`, for what you can do with the change:
 open the file, copy its path (absolute or relative), or discard the change.

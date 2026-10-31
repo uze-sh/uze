@@ -1,5 +1,5 @@
 //! The files open in a surface's content, as a strip of tabs over it: the
-//! one on show raised, the one only passed over set in italics, each with
+//! one on show raised, each with
 //! its close mark — or, while it holds unsaved changes, the editor's dot
 //! in that place, which turns back into the close mark under the pointer.
 
@@ -69,10 +69,7 @@ fn chip(index: usize, tab: &FileTab, hovered: Option<ViewHit>) -> Vec<TextSpan<'
         true => Token::TextBright,
         false => Token::TextMuted,
     };
-    let mut name = theme::fg(ink);
-    if tab.preview {
-        name = name.add_modifier(Modifier::ITALIC);
-    }
+    let name = theme::fg(ink);
     let closing = hovered == Some(ViewHit::CloseTab(index));
     let mark = match (tab.unsaved, closing) {
         (true, false) => TextSpan::styled(

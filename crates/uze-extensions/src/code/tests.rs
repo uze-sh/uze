@@ -3866,11 +3866,11 @@ fn files_open_in_tabs_the_way_an_editor_keeps_them() {
         .with_file("/w/c.txt", "ccc\n");
     let mut view = files_at("/w");
     settle(&mut view, &machine);
-    let tabs = |view: &CodeView| -> Vec<(String, bool, bool, bool)> {
+    let tabs = |view: &CodeView| -> Vec<(String, bool, bool)> {
         render::view(view, space())
             .tabs
             .into_iter()
-            .map(|tab| (tab.name, tab.active, tab.unsaved, tab.preview))
+            .map(|tab| (tab.name, tab.active, tab.unsaved))
             .collect()
     };
     let open = |view: &mut CodeView, index: usize| {
@@ -3882,7 +3882,7 @@ fn files_open_in_tabs_the_way_an_editor_keeps_them() {
     open(&mut view, 1);
     assert_eq!(
         tabs(&view),
-        [("b.txt".to_owned(), true, false, true)],
+        [("b.txt".to_owned(), true, false)],
         "the passed-over tab was taken by the next file"
     );
 
@@ -3897,8 +3897,8 @@ fn files_open_in_tabs_the_way_an_editor_keeps_them() {
     assert_eq!(
         tabs(&view),
         [
-            ("b.txt".to_owned(), false, true, false),
-            ("c.txt".to_owned(), true, false, true)
+            ("b.txt".to_owned(), false, true),
+            ("c.txt".to_owned(), true, false)
         ]
     );
 
@@ -3920,7 +3920,7 @@ fn files_open_in_tabs_the_way_an_editor_keeps_them() {
     );
     handle_mouse(&mut view, Some(ViewHit::CloseTab(0)), space());
     settle(&mut view, &machine);
-    assert_eq!(tabs(&view), [("c.txt".to_owned(), true, false, true)]);
+    assert_eq!(tabs(&view), [("c.txt".to_owned(), true, false)]);
     assert!(view.unsaved().is_empty(), "the changes went with it");
     assert_eq!(
         machine
@@ -3992,7 +3992,7 @@ fn the_files_search_replaces_the_tree_while_it_holds_text() {
     assert_eq!(press(&mut view, Command::Close), CodeOutcome::Close);
 }
 
-/// The field's clear mark empties it and leaves the keys in it; letting go
+/// The field's clear mark empties it and lets go of it; letting go
 /// of a search opens the tree down to the file it opened, wherever that is.
 #[test]
 fn clearing_a_search_shows_the_file_it_opened_in_the_tree() {
@@ -4016,7 +4016,7 @@ fn clearing_a_search_shows_the_file_it_opened_in_the_tree() {
     handle_mouse(&mut view, Some(ViewHit::ClearField), space());
     settle(&mut view, &machine);
     assert!(view.search.query.is_empty());
-    assert!(view.typing(), "still typed into");
+    assert!(!view.typing(), "and let go of");
     let Some(crate::view::Navigator { rows, anchor, .. }) = render::view(&view, space()).navigator
     else {
         panic!("the tree");
