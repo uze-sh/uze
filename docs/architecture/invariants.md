@@ -3219,6 +3219,18 @@ the helper cannot apply the confinement, nothing runs.
 > `crates/uze-core/src/machine/extension_program.rs::tests::a_token_in_the_environment_does_not_reach_the_program`
 > `crates/uze-core/src/machine/extension_program.rs::tests::a_hang_is_ended_with_its_children`
 
+On Windows the same holds through an AppContainer made for the run, in a
+Job Object, and its container is gone when the run ends. What a machine
+cannot enforce is named as an outcome, the same way on every platform.
+
+> `tests/cli/confine_windows.rs::a_program_reads_its_grants_and_nothing_else`
+> `tests/cli/confine_windows.rs::a_program_writes_only_where_it_was_granted`
+> `tests/cli/confine_windows.rs::without_network_nothing_answers_and_with_it_the_loopback_still_does_not`
+> `tests/cli/confine_windows.rs::another_process_is_out_of_reach`
+> `tests/cli/confine_windows.rs::the_run_leaves_no_container_behind`
+> `tests/lifecycle/extension_programs_windows.rs::a_confined_program_writes_nowhere_but_its_scratch`
+> `crates/uze-platform/src/confine.rs::tests::the_summary_names_what_a_program_can_still_do_and_the_limits_it_lacks`
+
 ### An extension's store is its own, bounded, and leaves with its plugin
 
 What an extension keeps is one record per extension and project (or for

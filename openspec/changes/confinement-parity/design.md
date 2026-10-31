@@ -151,6 +151,18 @@ cannot be closed. The security page says that a variable saved with
   does for a pinned program's directory.
 - [A profile left behind when a helper is killed] → the next helper
   removes it (D1).
+- [A directory granted for reading must still be entered] → its own entry
+  carries `FILE_TRAVERSE` and only its files get the entry without it,
+  since on a file that bit means execute. The lab found this when Git
+  could not `chdir` into a checkout it was granted.
+- [`NUL` on Windows Server] → Server 2025 does not let an app container
+  open it, while Windows 11 does. A program that opens `NUL` itself fails
+  there. The security page says so.
+- [`cmd`'s `dir` and `cd /d`] → these read the attributes of every parent
+  directory, which a container is not granted, so they fail where
+  PowerShell, Git and Python succeed. Granting metadata on every parent
+  would rewrite the DACLs of directories the operator never granted, so
+  it is not done.
 
 ## Candidate ADRs
 

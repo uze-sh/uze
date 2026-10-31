@@ -78,6 +78,26 @@ Its scripts run with bounded time, memory and stack, a program it was granted
 runs confined to what it needs, and a view can only expand so far before it is
 cut short. [Extensions →](/docs/workspace/extensions)
 
+### How a program is confined
+
+A confined program reads the checkout and the system, writes only a scratch
+folder of its own, and reaches no other process. It opens no socket unless the
+extension was granted the network, and even then reaches no local service.
+Each system does this its own way:
+
+| System | Confined by | What it does not limit |
+|---|---|---|
+| Linux 6.12 or later | Landlock and a system-call filter | nothing |
+| Linux 5.13 to 6.11 | Landlock and a system-call filter | by kernel: signals to other processes, devices it was not granted (before 6.10), emptying files it may only read (before 6.2) |
+| macOS | Seatbelt | memory, and a program can leave the group its run is ended by |
+| Windows | an AppContainer made for the run, in a Job Object | the size of a file and the number of open files |
+
+`uze doctor` says which applies to this machine. Where nothing confines, the
+consent says the program runs as you.
+
+On Windows, granting a folder adds an entry to its permissions that only a
+program uze starts can use. The entry stays, so the next run starts at once.
+
 ## Git runs nothing the repository names
 
 Every Git process uze starts runs without hooks, without a filesystem monitor,
@@ -102,6 +122,9 @@ uze. [Staying current →](/docs/installation#staying-current)
 
 - The seal around agent panes needs Linux with Landlock. On macOS and Windows,
   agent panes keep the other layers.
+- On Windows, a confined program can still read the environment variables you
+  saved with `setx` (`HKCU\Environment`), as every Windows app can. Keep
+  tokens out of them. On Windows Server it cannot open `NUL`.
 - A process of your own user, running outside every sandbox, can do what you
   can. No tool defends you from yourself.
 - A harness's own behaviour is its vendor's. Report problems in it to them.
