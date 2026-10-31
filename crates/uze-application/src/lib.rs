@@ -45,13 +45,13 @@ pub use uze_core::{
 /// A declared extension as the workspace hosts it: who it is, what it
 /// compiled to, and what was wrong with it when it did not.
 pub use application::{
-    Asker, CheckedExtension, Consented, DeclaredExtensionSummary, ExtensionCheckout,
-    ExtensionCondition, ExtensionConsent, ExtensionCost, ExtensionLoad, ExtensionOverlay,
-    ExtensionReport, ExtensionRun, ExtensionRunner, ExtensionStanding, ExtensionState,
-    FIXTURE_LIMIT, InstalledExtension, MEMORY_TARGET, MeasuredCost, MeasuredCosts, NotACheckout,
-    P95_TARGET, PreferenceRow, ProgramPin, RunOutcome, SourceData, Switched, WATCH_DEPTH,
-    WATCH_ENTRIES, bytes_text, confinement, consent_key, enabled_per_project, extension_stamp,
-    grant_meaning, paths_digest, secrets_kept_in,
+    Asker, AutoUpdateOutcome, CheckedExtension, Consented, DeclaredExtensionSummary,
+    ExtensionCheckout, ExtensionCondition, ExtensionConsent, ExtensionCost, ExtensionLoad,
+    ExtensionOverlay, ExtensionReport, ExtensionRun, ExtensionRunner, ExtensionStanding,
+    ExtensionState, FIXTURE_LIMIT, InstalledExtension, MEMORY_TARGET, MeasuredCost, MeasuredCosts,
+    NotACheckout, P95_TARGET, PreferenceRow, ProgramPin, RunOutcome, SourceData, Switched,
+    WATCH_DEPTH, WATCH_ENTRIES, bytes_text, confinement, consent_key, enabled_per_project,
+    extension_stamp, grant_meaning, paths_digest, secrets_kept_in,
 };
 pub use uze_contract::{CompiledExtension, Identity as ExtensionIdentity};
 pub use uze_core::capability::extension::Diagnostic as ExtensionDiagnostic;
@@ -86,7 +86,7 @@ pub use uze_core::path;
 /// The one writer for anything UZE owns. The binary writes its own update
 /// ledger, and doing that with a second atomic-rename of its own is how
 /// two conventions for one thing start.
-pub use uze_core::persistence::{write_atomic, write_atomic_preserving};
+pub use uze_core::persistence::{FileLock, write_atomic, write_atomic_preserving};
 
 /// What one `setup` did to a harness, as `SetupResult` reports it.
 pub use uze_core::provisioning::{

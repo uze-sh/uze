@@ -46,53 +46,53 @@
 ---
  aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  a bbb                                         a
- a                                             a
- a  cccccccccc cc ccccc c cccccc c      dddd   a
- a  b bbbb  b  b bb b bbbbb  b  bb             a
- a                                             a
- a  e eeeeee eeeeeeee e eee eeeeeeeeee eee     a
- a    eeeeeeee ee eeeeeee                      a
- a                                             a
- a  fffffffffffff fffffffffffff fffffffffffff  a
- a                                             a
- a  ggggg                                 fff  a
- a   e bb cccccccccccccccccc cc cccccc eeeee   a
- a        cc ccccc                             a
- a   c bb ccccccc cc cccccc cc cccccccccc      a
- a   c bb ccccccccc cccc c ccc                 a
- a                                             a
- a  ggggggggg                             ee   a
- a   e ccccccc cc cccc ccccccccc cccccccccc    a
- a     c cccccccccccc cccccccccc ccccccc cc    a
- a     ccccccc cc cccccccccc                   a
- a   e cccccccccccc ccccccccccccc ccc          a
- a     ccccccccc ccccccccccccccccccc cc        a
- a     ccccccccccccccc                         a
- a   e ccccccccccccc cccccccc cc ccccccc       a
- a     ccccccc cc ccc cccc ccccccccccccc       a
- a  fff f ffff ff ffffffff                     a
- a                                             a
- a  ggggg gg                                   a
- a  ccccc ccccc cccccccccccccc ccccccccccc cc  a
- a  ccccccccccccc cc ccccccc cccc cc           a
- a  ccccccccccc ccccc cc ccccccccc cccccc c    a
- a  ccccccccccccccccccccccccccccccc c          a
- a  ccccccccccccccccccccccccc c cccccccc       a
- a  cccccccccccccccccccccccccccccccc ccccccc   a
- a  cccccc cc cccccc ccccccc ccccccc           a
- a  ccccccccc ccccccccccc ccccccc ccc c        a
- a  cccccccccc cccc ccccccccccccccccc cc       a
- a  ccccccccc cccccc ccc cccccc cccccc c       a
- a  ccccccccc cccc cc cccccccc                 a
- a                                             a
+ a                                             c
+ a  dddddddddd dd ddddd d dddddd d      eeee   c
+ a  b bbbb  b  b bb b bbbbb  b  bb             c
+ a                                             c
+ a  f ffffff ffffffff f fff ffffffffff fff     c
+ a    ffffffff ff fffffff                      c
+ a                                             c
+ a  ccccccccccccc ccccccccccccc ccccccccccccc  c
+ a                                             c
+ a  ggggg                                 ccc  c
+ a   f bb dddddddddddddddddd dd dddddd fffff   c
+ a        dd ddddd                             c
+ a   d bb ddddddd dd dddddd dd dddddddddd      c
+ a   d bb ddddddddd dddd d ddd                 c
+ a                                             c
+ a  ggggggggg                             ff   c
+ a   f ddddddd dd dddd ddddddddd dddddddddd    c
+ a     d dddddddddddd dddddddddd ddddddd dd    c
+ a     ddddddd dd dddddddddd                   c
+ a   f dddddddddddd ddddddddddddd ddd          c
+ a     ddddddddd ddddddddddddddddddd dd        c
+ a     ddddddddddddddd                         c
+ a   f ddddddddddddd dddddddd dd ddddddd       c
+ a     ddddddd dd ddd dddd ddddddddddddd       c
+ a  ccc c cccc cc cccccccc                     c
+ a                                             c
+ a  ggggg gg                                   c
+ a  ddddd ddddd dddddddddddddd ddddddddddd dd  c
+ a  ddddddddddddd dd ddddddd dddd dd           c
+ a  ddddddddddd ddddd dd ddddddddd dddddd d    c
+ a  ddddddddddddddddddddddddddddddd d          c
+ a  ddddddddddddddddddddddddd d dddddddd       c
+ a  dddddddddddddddddddddddddddddddd ddddddd   c
+ a  dddddd dd dddddd ddddddd ddddddd           c
+ a  ddddddddd ddddddddddd ddddddd ddd d        c
+ a  dddddddddd dddd ddddddddddddddddd dd       c
+ a  ddddddddd dddddd ddd dddddd dddddd d       c
+ a  ddddddddd dddd dd dddddddd                 c
+ a                                             c
  a    g gggggggggggggggggg gg                  a
  a                                             a
  aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 ---
 a border.default
 b text.muted
-c text.bright
-d state.info
-e state.warning
-f text.faint
+c text.faint
+d text.bright
+e state.info
+f state.warning
 g text.secondary

@@ -33,3 +33,7 @@ journeys/.evidence/
 
 # Python bytecode, from the Lab, the journeys runner and the CI scripts.
 __pycache__/
+
+# The Windows SDK and CRT xwin downloads for a cross-build, when it runs
+# from the checkout: Microsoft's to distribute, never this repository's.
+.xwin-cache/

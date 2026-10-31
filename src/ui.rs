@@ -64,6 +64,7 @@ mod management;
 mod model;
 mod orchestrator;
 mod overlay;
+mod plugin_updates;
 mod release_notes;
 mod root_picker;
 mod selection;
@@ -104,14 +105,25 @@ fn tui_application(home: UzeHome) -> Result<UzeApplication> {
     UzeApplication::from_env_with_runner(home, Box::new(SilentProcessRunner))
 }
 
+/// How the workspace client ended.
+pub enum Ended {
+    Quit,
+    /// The operator asked to restart into the installed release: the
+    /// caller runs it in this process's place, now that the terminal is
+    /// restored.
+    Restart,
+}
+
 /// Runs the TUI. `home` is passed to workers, which construct the same
-/// production application composition root as the CLI.
-pub fn run(home: UzeHome) -> Result<()> {
+/// production application composition root as the CLI. `resumed` is a
+/// client a release restart started, which lands where the last left off.
+pub fn run(home: UzeHome, resumed: bool) -> Result<Ended> {
     let session = tracing::info_span!("tui.session");
     let _entered = session.enter();
     // Once per process rather than per attach: attaching again is not a
     // reason to ask GitHub again, and both surfaces read the one answer.
     crate::self_update::watch(home.clone());
+    plugin_updates::watch(home.clone());
     // Before the session starts reading input, which would take the
     // terminal's reply for keystrokes.
     crate::theme::observe_appearance(&home);
@@ -157,7 +169,11 @@ pub fn run(home: UzeHome) -> Result<()> {
     // Only the first attach lands the client in a space for the directory
     // `uze` was started in; an attach after the runtime went away takes
     // the session as it stands (see `orchestrator::Landing`).
-    let mut landing = orchestrator::Landing::AtLaunchDirectory;
+    let mut landing = if resumed {
+        orchestrator::Landing::WhereItLeftOff
+    } else {
+        orchestrator::Landing::AtLaunchDirectory
+    };
     let outcome = loop {
         match orchestrator::attach_workspace(
             &mut terminal,
@@ -168,7 +184,8 @@ pub fn run(home: UzeHome) -> Result<()> {
             &mut management_memory,
             landing,
         ) {
-            Ok(orchestrator::WorkspaceExit::Quit) => break Ok(()),
+            Ok(orchestrator::WorkspaceExit::Quit) => break Ok(Ended::Quit),
+            Ok(orchestrator::WorkspaceExit::Restart) => break Ok(Ended::Restart),
             Ok(orchestrator::WorkspaceExit::Disconnected) => {
                 landing = orchestrator::Landing::WhereItLeftOff;
             }
@@ -724,6 +741,9 @@ pub(crate) struct SidebarNotice<'a> {
     pub(crate) headline: &'a str,
     /// The second row, quieter: what it means or what to do about it.
     pub(crate) detail: &'a str,
+    /// Where the notice opens something, how the pointer stands on it: its
+    /// detail is then a link, lit and underlined under the pointer.
+    pub(crate) link: Option<widget::ChipState>,
 }
 
 /// What a drawn notice answers to.
@@ -742,9 +762,11 @@ impl SidebarNotice<'_> {
     /// about it are the whole of it.
     const HEIGHT: u16 = 3;
 
-    /// The release's notice: its version, and what to do about it.
-    pub(crate) fn release(notice: &crate::self_update::Notice) -> (String, &str) {
-        (format!("v{}", notice.version()), notice.action())
+    /// The notice of the release a restart brought: its version, and the
+    /// way to what is new in it.
+    pub(crate) fn release(notice: &crate::self_update::Notice) -> Option<(String, &'static str)> {
+        let version = notice.arrived.as_deref()?;
+        Some((format!("v{version}"), crate::self_update::Notice::WHATS_NEW))
     }
 
     /// Where it goes at the foot of `column`, or nothing when the column
@@ -804,7 +826,14 @@ impl SidebarNotice<'_> {
                     self.detail,
                     usize::from(area.width.saturating_sub(gutter + TRAILING_PAD)),
                 ),
-                theme::fg(theme::Token::TextDim),
+                match self.link {
+                    None => theme::fg(theme::Token::TextDim),
+                    Some(widget::ChipState::Resting) => theme::fg(theme::Token::TextSecondary),
+                    Some(widget::ChipState::Hovered | widget::ChipState::Pressed) => {
+                        theme::fg(theme::Token::TextBright)
+                            .add_modifier(ratatui::style::Modifier::UNDERLINED)
+                    }
+                },
             ),
         ];
         frame.render_widget(Paragraph::new(Line::from(spans)), detail);

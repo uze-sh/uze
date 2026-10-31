@@ -109,6 +109,9 @@ pub(crate) fn prefetch_mirrors(
             let parent = parent.clone();
             scope.spawn(move || {
                 let directory = super::marketplace_catalogue::mirror_dir(home, name);
+                let Ok(held) = catalogues.hold(name) else {
+                    return;
+                };
                 let reached = parent.in_scope(|| {
                     acquisition::mirror::ensure_for(
                         &request.repository.fetch,
@@ -119,7 +122,7 @@ pub(crate) fn prefetch_mirrors(
                     )
                 });
                 if reached.is_ok() {
-                    catalogues.absorb_fetch(home, name);
+                    catalogues.absorb_fetch(home, name, &held);
                     if let Ok(mut fetched) = fetched.lock() {
                         fetched.push(directory);
                     }
@@ -231,6 +234,7 @@ impl MarketplaceRequest {
         } else {
             at.recent
         };
+        let held = at.catalogues.hold(at.marketplace)?;
         naming_the_marketplace(
             acquisition::mirror::ensure_for(
                 &self.repository.fetch,
@@ -242,7 +246,7 @@ impl MarketplaceRequest {
             at.marketplace,
             &self.repository.identity,
         )?;
-        at.catalogues.absorb_fetch(at.home, at.marketplace);
+        at.catalogues.absorb_fetch(at.home, at.marketplace, &held);
         if let Ok(mut fetched) = at.fetched.lock()
             && !fetched.contains(&repository)
         {
@@ -1021,6 +1025,261 @@ mod mirror_tests {
              readable as an answer rather than as a guess"
         );
 
+        fs::remove_dir_all(&home_root).unwrap();
+    }
+
+    /// An open workspace learns of a plugin's new revision from its own
+    /// tick: nothing reads a catalogue there, so keeping current is what
+    /// fetches the stale marketplace, and only the stale one.
+    #[test]
+    fn keeping_current_fetches_a_stale_marketplace_and_applies_what_it_brought() {
+        let home_root = uze_testkit::temp::scratch("keep-current");
+        let (repository, _first) = marketplace("keep-current-src");
+        let home = UzeHome::at(home_root.join("uze"));
+        let application = UzeApplication::new(home.clone(), Vec::new());
+        application
+            .marketplace()
+            .add(&format!("file://{}", repository.root().display()))
+            .unwrap();
+        application
+            .marketplace()
+            .install_plugin("flow@mkt", &uze_core::trust::AlwaysTrust)
+            .unwrap();
+
+        fs::write(
+            repository.root().join("plugins/flow/skills/one/SKILL.md"),
+            "---\nname: one\ndescription: d\n---\n\nflow second.\n",
+        )
+        .unwrap();
+        repository.git(&["add", "-A"]);
+        repository.git(&["commit", "-m", "second"]);
+        let second = repository.head();
+
+        assert!(
+            application.plugins().keep_current().is_empty(),
+            "an answer inside the hour is not asked again"
+        );
+
+        let meta_path = home.marketplace_cache_dir().join("mkt/catalogue.json");
+        let mut meta: serde_json::Value =
+            serde_json::from_slice(&fs::read(&meta_path).unwrap()).unwrap();
+        meta["cached_at_unix_nanos"] = serde_json::json!(0);
+        fs::write(&meta_path, serde_json::to_vec_pretty(&meta).unwrap()).unwrap();
+
+        let outcomes = application.plugins().keep_current();
+        assert_eq!(outcomes.len(), 1, "{outcomes:?}");
+        assert!(outcomes[0].applied, "{outcomes:?}");
+        assert_eq!(
+            mirrored_head(&home, "mkt").map(|head| head.commit),
+            Some(second)
+        );
+        let flow = application.package_by_name("flow").unwrap();
+        assert!(
+            fs::read_to_string(flow.root.join("skills/one/SKILL.md"))
+                .unwrap()
+                .contains("flow second."),
+            "the new revision is what is installed"
+        );
+
+        fs::remove_dir_all(&home_root).unwrap();
+    }
+
+    /// An update the pass could not apply is not tried again on every
+    /// wake: trying is a fetch of its own, outside the claim, so a wake
+    /// tries only the plugins of a marketplace this very pass fetched,
+    /// once its hour is out, whether or not the fetch brought anything.
+    #[test]
+    fn keeping_current_tries_the_plugins_of_marketplaces_due_on_this_wake() {
+        let home_root = uze_testkit::temp::scratch("keep-current-unmoved");
+        let (repository, _first) = marketplace("keep-current-unmoved-src");
+        let home = UzeHome::at(home_root.join("uze"));
+        let application = UzeApplication::new(home.clone(), Vec::new());
+        application
+            .marketplace()
+            .add(&format!("file://{}", repository.root().display()))
+            .unwrap();
+        application
+            .marketplace()
+            .install_plugin("flow@mkt", &uze_core::trust::AlwaysTrust)
+            .unwrap();
+        fs::write(
+            repository.root().join("plugins/flow/skills/one/SKILL.md"),
+            "---\nname: one\ndescription: d\n---\n\nflow second.\n",
+        )
+        .unwrap();
+        repository.git(&["add", "-A"]);
+        repository.git(&["commit", "-m", "second"]);
+        // Learned as behind by a fresh read, the way a listing learns it,
+        // and left there: an update held for the operator reads the same.
+        application
+            .marketplace()
+            .add(&format!("file://{}", repository.root().display()))
+            .unwrap();
+        assert!(
+            application
+                .plugin_summary(&application.package_by_name("flow").unwrap())
+                .unwrap()
+                .freshness
+                .behind()
+        );
+
+        assert!(
+            application.plugins().keep_current().is_empty(),
+            "no marketplace was due on this wake, so nothing is tried"
+        );
+
+        // The hour passes. The fetch brings nothing new, since something
+        // else already moved the mirror, and the plugin is tried all the same.
+        let meta_path = home.marketplace_cache_dir().join("mkt/catalogue.json");
+        let mut meta: serde_json::Value =
+            serde_json::from_slice(&fs::read(&meta_path).unwrap()).unwrap();
+        meta["cached_at_unix_nanos"] = serde_json::json!(0);
+        fs::write(&meta_path, serde_json::to_vec_pretty(&meta).unwrap()).unwrap();
+        let outcomes = application.plugins().keep_current();
+        assert_eq!(outcomes.len(), 1, "{outcomes:?}");
+        assert!(outcomes[0].applied, "{outcomes:?}");
+        fs::remove_dir_all(&home_root).unwrap();
+    }
+
+    /// A revision that asks to run something new is never applied in the
+    /// background, and is reported as waiting for the operator, which a
+    /// plain failure is not.
+    #[test]
+    fn an_update_asking_to_run_something_new_waits_for_the_operator() {
+        let home_root = uze_testkit::temp::scratch("keep-current-consent");
+        let (repository, _first) = marketplace("keep-current-consent-src");
+        let home = UzeHome::at(home_root.join("uze"));
+        let application = UzeApplication::new(home.clone(), Vec::new());
+        application
+            .marketplace()
+            .add(&format!("file://{}", repository.root().display()))
+            .unwrap();
+        application
+            .marketplace()
+            .install_plugin("flow@mkt", &uze_core::trust::AlwaysTrust)
+            .unwrap();
+        fs::write(
+            repository.root().join("plugins/flow/mcp.json"),
+            r#"{"mcpServers":{"new":{"command":"new-server","args":[]}}}"#,
+        )
+        .unwrap();
+        repository.git(&["add", "-A"]);
+        repository.git(&["commit", "-m", "asks for a server"]);
+        let meta_path = home.marketplace_cache_dir().join("mkt/catalogue.json");
+        let mut meta: serde_json::Value =
+            serde_json::from_slice(&fs::read(&meta_path).unwrap()).unwrap();
+        meta["cached_at_unix_nanos"] = serde_json::json!(0);
+        fs::write(&meta_path, serde_json::to_vec_pretty(&meta).unwrap()).unwrap();
+
+        let outcomes = application.plugins().keep_current();
+        assert_eq!(outcomes.len(), 1, "{outcomes:?}");
+        assert!(!outcomes[0].applied, "{outcomes:?}");
+        assert!(outcomes[0].waits_for_operator, "{outcomes:?}");
+        assert!(
+            !application
+                .package_by_name("flow")
+                .unwrap()
+                .root
+                .join("mcp.json")
+                .exists(),
+            "the installed revision is untouched"
+        );
+        fs::remove_dir_all(&home_root).unwrap();
+    }
+
+    /// A remote that did not answer is not asked again on every wake: the
+    /// attempt waits out the hour like an answer, and leaves the entry it
+    /// could not refresh as it was.
+    #[test]
+    fn an_unanswered_marketplace_fetch_waits_the_hour() {
+        let home_root = uze_testkit::temp::scratch("keep-current-unanswered");
+        let (repository, first) = marketplace("keep-current-unanswered-src");
+        let home = UzeHome::at(home_root.join("uze"));
+        let application = UzeApplication::new(home.clone(), Vec::new());
+        application
+            .marketplace()
+            .add(&format!("file://{}", repository.root().display()))
+            .unwrap();
+        let meta_path = home.marketplace_cache_dir().join("mkt/catalogue.json");
+        let mut meta: serde_json::Value =
+            serde_json::from_slice(&fs::read(&meta_path).unwrap()).unwrap();
+        meta["cached_at_unix_nanos"] = serde_json::json!(0);
+        let aged = serde_json::to_vec_pretty(&meta).unwrap();
+        fs::write(&meta_path, &aged).unwrap();
+
+        let away = repository.root().with_extension("away");
+        fs::rename(repository.root(), &away).unwrap();
+        assert!(
+            application
+                .marketplace_catalogues
+                .refresh_stale(&home)
+                .is_empty()
+        );
+        assert_eq!(
+            fs::read(&meta_path).unwrap(),
+            aged,
+            "the entry is as it was"
+        );
+
+        fs::rename(&away, repository.root()).unwrap();
+        repository.git(&["commit", "--allow-empty", "-m", "second"]);
+        assert!(
+            application
+                .marketplace_catalogues
+                .refresh_stale(&home)
+                .is_empty(),
+            "not asked again within the hour"
+        );
+        assert_eq!(
+            mirrored_head(&home, "mkt").map(|head| head.commit),
+            Some(first)
+        );
+        fs::remove_dir_all(&home_root).unwrap();
+    }
+
+    /// A fetch another process is making is not made again: the tick that
+    /// finds the claim held fetches nothing.
+    #[test]
+    fn a_marketplace_fetch_another_process_holds_is_skipped() {
+        let home_root = uze_testkit::temp::scratch("keep-current-claimed");
+        let (repository, first) = marketplace("keep-current-claimed-src");
+        let home = UzeHome::at(home_root.join("uze"));
+        let application = UzeApplication::new(home.clone(), Vec::new());
+        application
+            .marketplace()
+            .add(&format!("file://{}", repository.root().display()))
+            .unwrap();
+        repository.git(&["commit", "--allow-empty", "-m", "second"]);
+        let meta_path = home.marketplace_cache_dir().join("mkt/catalogue.json");
+        let mut meta: serde_json::Value =
+            serde_json::from_slice(&fs::read(&meta_path).unwrap()).unwrap();
+        meta["cached_at_unix_nanos"] = serde_json::json!(0);
+        fs::write(&meta_path, serde_json::to_vec_pretty(&meta).unwrap()).unwrap();
+
+        let held = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(home.marketplace_fetch_lock_path())
+            .unwrap();
+        uze_platform::lock::try_lock(&held, uze_platform::lock::Mode::Exclusive).unwrap();
+
+        assert!(
+            application
+                .marketplace_catalogues
+                .refresh_stale(&home)
+                .is_empty()
+        );
+        assert_eq!(
+            mirrored_head(&home, "mkt").map(|head| head.commit),
+            Some(first)
+        );
+
+        drop(held);
+        assert_eq!(
+            application.marketplace_catalogues.refresh_stale(&home),
+            ["mkt".to_owned()]
+        );
         fs::remove_dir_all(&home_root).unwrap();
     }
 

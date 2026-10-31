@@ -261,6 +261,9 @@ actions! {
     ReviewExtensions => "review-extensions", false,
         "Review extensions",
         "Enable, or put away, the extensions a project's plugins offer where it opens";
+    RestartUze => "restart-uze", false,
+        "Restart uze",
+        "Restart into the release installed while uze was open; every pane keeps running";
     PauseAgentWrites => "pause-agent-writes", false,
         "Pause extensions",
         "Hold every prompt an extension would type into an agent, until pressed again";

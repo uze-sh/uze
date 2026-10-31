@@ -107,6 +107,31 @@ impl WorkspaceModel {
         self.dirty = true;
     }
 
+    /// Says what keeping plugins current did while the workspace was open:
+    /// what was updated, and, staying until it is answered, what waits for
+    /// the operator's consent.
+    pub(in crate::ui) fn tell_plugin_updates(&mut self, told: crate::ui::plugin_updates::Told) {
+        if !told.updated.is_empty() {
+            let title = match told.updated.len() {
+                1 => "plugin updated".to_owned(),
+                n => format!("{n} plugins updated"),
+            };
+            self.raise_toast(ToastKind::Done, title, named(&told.updated), None);
+        }
+        if !told.waiting.is_empty() {
+            let title = match told.waiting.len() {
+                1 => "plugin update to review".to_owned(),
+                n => format!("{n} plugin updates to review"),
+            };
+            self.raise_toast(
+                ToastKind::Warned,
+                title,
+                named(&told.waiting),
+                Some(("Review".to_owned(), WorkspaceHit::ReviewPluginUpdates)),
+            );
+        }
+    }
+
     /// Puts one away by its place in the stack **as drawn**, which is the
     /// only index a click can carry.
     ///
@@ -200,9 +225,67 @@ impl WorkspaceModel {
     }
 }
 
+/// Plugins named the way a toast's detail can hold them whole: one by its
+/// full name, a few by name alone, more counted.
+fn named(plugins: &[String]) -> String {
+    let short = |plugin: &String| plugin.split('@').next().unwrap_or(plugin).to_owned();
+    match plugins {
+        [one] => one.clone(),
+        [first, second] => format!("{} and {}", short(first), short(second)),
+        [first, second, rest @ ..] => {
+            format!(
+                "{}, {} and {} more",
+                short(first),
+                short(second),
+                rest.len()
+            )
+        }
+        [] => String::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What keeping plugins current did while the workspace was open is
+    /// said as it happens: an update in a toast that leaves, one that
+    /// waits for consent in one that stays with the way to review it.
+    #[test]
+    fn plugin_updates_are_told_and_the_one_waiting_stays_with_its_review() {
+        let mut model = WorkspaceModel::default();
+        model.tell_plugin_updates(crate::ui::plugin_updates::Told {
+            updated: vec!["flow@mkt".to_owned()],
+            waiting: vec![
+                "review@mkt".to_owned(),
+                "lint@mkt".to_owned(),
+                "docs@mkt".to_owned(),
+            ],
+        });
+
+        let drawn = format!("{:?}", model.toast_stack());
+        assert!(drawn.contains("plugin updated"), "{drawn}");
+        assert!(drawn.contains("flow@mkt"), "{drawn}");
+        assert!(drawn.contains("3 plugin updates to review"), "{drawn}");
+        assert!(drawn.contains("review, lint and 1 more"), "{drawn}");
+        assert_eq!(
+            model.toast_offer(0),
+            Some(WorkspaceHit::ReviewPluginUpdates)
+        );
+
+        for toast in &mut model.remembered.toasts {
+            toast.raised = Instant::now() - super::TOAST_TTL - Duration::from_secs(1);
+        }
+        model.retire_toasts();
+        assert_eq!(model.toast_stack().len(), 1, "the one to review stays");
+    }
+
+    #[test]
+    fn nothing_done_is_nothing_told() {
+        let mut model = WorkspaceModel::default();
+        model.tell_plugin_updates(crate::ui::plugin_updates::Told::default());
+        assert!(model.toast_stack().is_empty());
+    }
 
     /// Two things finishing at once is the ordinary case, and the notice's
     /// single slot loses one of them. The stack keeps both, newest on top.

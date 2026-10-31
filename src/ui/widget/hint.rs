@@ -113,8 +113,8 @@ impl<'a> Hints<'a> {
             .collect()
     }
 
-    /// The line as text, for a hint written inside text that scrolls: there
-    /// is no fixed place to point at, so it answers no click.
+    /// The whole line as it is drawn, for a test that reads its styles.
+    #[cfg(test)]
     pub(crate) fn line(&self) -> Line<'static> {
         self.layout(u16::MAX).0
     }

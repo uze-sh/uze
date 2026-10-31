@@ -749,6 +749,9 @@ pub(crate) struct TuiModel {
     /// the mousedown that armed it so every following drag maps against
     /// the geometry the gesture started on.
     pub(crate) dragging_keys_track: Option<Rect>,
+    /// Whether the pointer holds the help index's scrollbar, from the press
+    /// on its track to the release.
+    pub(crate) dragging_index_track: bool,
     /// Whether the sidebar's first-steps section is folded to its header.
     pub(crate) first_steps_collapsed: bool,
     /// Whether it has been put away for good, which is offered only once
@@ -758,9 +761,6 @@ pub(crate) struct TuiModel {
     /// client, because it is one list drawn at the foot of both sidebars
     /// and a step taken in one surface is taken.
     pub(crate) steps_taken: std::collections::BTreeSet<String>,
-    /// What the sidebar's foot says about releases, as of `release_revision`.
-    pub(crate) release: Option<crate::self_update::Notice>,
-    pub(crate) release_revision: u64,
 }
 
 impl Default for TuiModel {
@@ -947,11 +947,10 @@ impl TuiModel {
             hits: Vec::new(),
             dragging_panel: None,
             dragging_keys_track: None,
+            dragging_index_track: false,
             first_steps_collapsed: false,
             first_steps_closed: false,
             steps_taken: std::collections::BTreeSet::new(),
-            release: None,
-            release_revision: 0,
         };
         model.plugin_pane = model.remembered.plugin_pane;
         let remembered = &mut model.remembered;

@@ -408,11 +408,16 @@ fn an_action_with_no_key_dims_the_column_it_would_have_filled() {
                 rows.len(),
                 "",
                 0,
-                ratatui::text::Line::default(),
-                |_| (),
+                &[],
+                super::hint::Hints::new(&[]),
+                None,
+                |_| true,
+                |_| false,
+                |_| false,
             )
-            .first()
-            .map(|(rect, ())| (rect.x, rect.y));
+            .into_iter()
+            .find(|(_, row)| *row)
+            .map(|(rect, _)| (rect.x, rect.y));
         });
         // Past the cursor column every row keeps, selected or not.
         let cursor = theme::width(theme::Symbol::Prompt) + 1;
@@ -494,7 +499,11 @@ fn the_open_index_says_it_can_be_typed_into_before_anything_is() {
             0,
             "",
             0,
-            ratatui::text::Line::default(),
+            &[],
+            super::hint::Hints::new(&[]),
+            None,
+            |_| (),
+            |_| (),
             |_| (),
         );
     });
@@ -556,7 +565,11 @@ fn narrowing_the_index_does_not_resize_it() {
                 all.len(),
                 "x",
                 0,
-                ratatui::text::Line::default(),
+                &[],
+                super::hint::Hints::new(&[]),
+                None,
+                |_| (),
+                |_| (),
                 |_| (),
             );
         });
@@ -573,36 +586,57 @@ fn narrowing_the_index_does_not_resize_it() {
     );
 }
 
-/// The title names the surface, and the keys that close it sit in its
-/// bottom border, where every dialog carries its answers.
+/// The index is a modal like every other: its title and its way out,
+/// `esc close`, share the header row, its keys stand in the footer row, and
+/// each is a target answered as its key. No mark sits on its border.
 #[test]
-fn the_index_is_titled_help_and_says_how_to_close() {
-    let hint = super::dialog::border_hint(
-        &[uze_keys::Scope::Global, uze_keys::Scope::ActionIndex],
-        &[(uze_keys::Action::Dismiss, "close")],
-    );
+fn the_index_is_a_modal_titled_help_with_its_way_out_in_the_header() {
+    let scopes = [uze_keys::Scope::Global, uze_keys::Scope::ActionIndex];
+    let keys = super::hint::Hints::new(&scopes).named(uze_keys::Action::Activate, "run");
+    let mut placed = Vec::new();
     let buffer = drawn(80, 24, |frame| {
-        action_index::render(
+        placed = action_index::render(
             frame,
             Rect::new(0, 0, 80, 24),
             &[],
             4,
             "",
             0,
-            hint.clone(),
-            |_| (),
+            &scopes,
+            keys.clone(),
+            None,
+            |_| None,
+            Some,
+            |_| None,
         );
     });
-    let text: String = (0..24)
-        .map(|y| (0..80).map(|x| buffer[(x, y)].symbol()).collect::<String>())
-        .collect();
-
-    assert!(text.contains("Help"), "titled for what it is");
-    assert!(!text.contains("Everything you can do"));
-    assert!(text.contains("esc close"), "the way out is in its border");
+    let row = |y: u16| (0..80).map(|x| buffer[(x, y)].symbol()).collect::<String>();
+    let text: String = (0..24).map(row).collect();
     assert!(
         !text.contains(&theme::glyph(theme::Symbol::MarkClose)),
-        "and no second control for it on the top border"
+        "no mark"
+    );
+
+    let target = |action| {
+        placed
+            .iter()
+            .find(|(_, answers)| *answers == Some(action))
+            .map(|(rect, _)| *rect)
+            .unwrap_or_else(|| panic!("{action:?} is a target"))
+    };
+    let close = target(uze_keys::Action::Dismiss);
+    let header = row(close.y);
+    assert!(header.contains("Help"), "beside the title: {header}");
+    assert!(
+        header.contains("esc close") && header.find("esc") > header.find("Help"),
+        "at its end: {header}"
+    );
+    let run = target(uze_keys::Action::Activate);
+    assert!(run.y > close.y + 2, "the keys are in the footer");
+    assert!(row(run.y).contains("run"));
+    assert!(
+        !row(run.y).contains("close"),
+        "and none of them is the way out"
     );
 }
 
@@ -629,7 +663,11 @@ fn the_index_is_capped_and_scrolls_rather_than_growing_with_the_product() {
             many.len(),
             "",
             0,
-            ratatui::text::Line::default(),
+            &[],
+            super::hint::Hints::new(&[]),
+            None,
+            |_| (),
+            |_| (),
             |_| (),
         );
     });
@@ -641,10 +679,11 @@ fn the_index_is_capped_and_scrolls_rather_than_growing_with_the_product() {
         .find(|&y| (0..80).any(|x| buffer[(x, y)].symbol() == "\u{250c}"))
         .expect("the surface was drawn");
 
-    assert!(
-        bottom - top < 20,
-        "twelve rows plus chrome, not forty: got {}",
-        bottom - top + 1
+    // Twelve rows, the search field and its air, and a modal's chrome.
+    assert_eq!(
+        bottom - top + 1,
+        12 + 2 + super::modal::CHROME_ROWS,
+        "capped, not forty"
     );
 }
 
@@ -674,10 +713,15 @@ fn the_window_follows_the_selection_past_the_cap() {
                 many.len(),
                 "",
                 selected,
-                ratatui::text::Line::default(),
+                &[],
+                super::hint::Hints::new(&[]),
+                None,
                 |p| p,
+                |_| usize::MAX,
+                |_| usize::MAX,
             );
         });
+        placed.retain(|(_, position)| *position != usize::MAX);
         placed
     };
 
@@ -1394,7 +1438,7 @@ fn an_alert_draws_what_it_quotes_as_code_and_alerts_stand_apart() {
     use super::alerts::{self, Alert, Severity};
     let (width, height) = (80, 20);
     let buffer = drawn(width, height, |frame| {
-        alerts::render(
+        let _ = alerts::render(
             frame,
             Rect::new(0, 0, width, height),
             "To check",
@@ -1410,7 +1454,8 @@ fn an_alert_draws_what_it_quotes_as_code_and_alerts_stand_apart() {
                     detail: "reads the first bytes".to_owned(),
                 },
             ],
-            ratatui::text::Line::default(),
+            &[],
+            None,
         );
     });
     let rows: Vec<String> = (0..height)

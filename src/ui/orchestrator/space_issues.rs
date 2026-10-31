@@ -3,7 +3,6 @@
 //! its own, and anything but a click on the list puts it away.
 
 use super::*;
-use crate::ui::widget::dialog;
 
 impl WorkspaceModel {
     pub(super) fn shows_space_issues(&self) -> bool {
@@ -31,6 +30,7 @@ impl Attach<'_> {
     /// A press while the list is open: on it nothing, anywhere else it
     /// closes.
     pub(super) fn space_issues_press(&mut self, column: u16, row: u16) {
+        // Its `esc close` is Esc; anywhere outside it puts it away too.
         if self.model.hit_at(column, row) != Some(WorkspaceHit::OverviewIssuesBody) {
             self.model.set_space_issues(false);
         }
@@ -42,18 +42,24 @@ pub(super) fn render_space_issues(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     overview: &SpaceOverviewView,
+    hovered: Option<Action>,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
     crate::ui::widget::scrim::render(frame, area);
-    let popup = crate::ui::widget::alerts::render(
+    let drawn = crate::ui::widget::alerts::render(
         frame,
         area,
         "To check",
         &overview.issues(),
-        dialog::border_hint(
-            &[uze_keys::Scope::Global, uze_keys::Scope::Confirm],
-            &[(Action::Dismiss, "close")],
-        ),
+        &[uze_keys::Scope::Global, uze_keys::Scope::Confirm],
+        hovered,
     );
-    hits.insert(0, (popup, WorkspaceHit::OverviewIssuesBody));
+    hits.insert(0, (drawn.popup, WorkspaceHit::OverviewIssuesBody));
+    hits.splice(
+        0..0,
+        drawn
+            .keys
+            .into_iter()
+            .map(|(rect, action)| (rect, WorkspaceHit::HintAction(action))),
+    );
 }

@@ -368,13 +368,14 @@ pub(crate) fn shell(
         .hint(hint)
         .padding(Padding::horizontal(PAD_X))
         .render(frame, popup);
+    let title_row = Rect::new(inner.x, inner.y + 1, inner.width, 1);
     if inner.height > 1 {
         frame.render_widget(
             Paragraph::new(Span::styled(
                 title.to_owned(),
                 theme::fg_bold(Token::TextBright),
             )),
-            Rect::new(inner.x, inner.y + 1, inner.width, 1),
+            title_row,
         );
     }
     let body = Rect::new(

@@ -558,6 +558,17 @@ impl TuiModel {
         let column = event.column.saturating_sub(surface.x);
         match event.kind {
             MouseEventKind::Down(MouseButton::Left) => self.click(event.column, event.row),
+            MouseEventKind::Drag(MouseButton::Left) if self.dragging_index_track => {
+                // The row the pointer is on, wherever it wandered sideways.
+                let to = self.hits.iter().find_map(|(rect, hit)| match hit {
+                    Hit::ActionIndexScroll(to) if rect.y == event.row => Some(*to),
+                    _ => None,
+                });
+                if let (Some(to), Overlay::ActionIndex { selected, .. }) = (to, &mut self.overlay) {
+                    *selected = to;
+                }
+                Intent::None
+            }
             MouseEventKind::Drag(MouseButton::Left)
                 if let Some(track) = self.dragging_keys_track =>
             {
@@ -575,6 +586,7 @@ impl TuiModel {
             MouseEventKind::Up(MouseButton::Left) => {
                 self.dragging_panel = None;
                 self.dragging_keys_track = None;
+                self.dragging_index_track = false;
                 Intent::None
             }
             // The wheel walks whatever the arrow keys walk. It used to
@@ -645,6 +657,16 @@ impl TuiModel {
                     uze_extensions::view::ScrollDirection::Up
                 };
                 self.scroll_page(direction)
+            }
+            // Over an overlay only its own keys and close mark light: the
+            // screen behind it answers no pointer while it is open.
+            MouseEventKind::Moved if self.overlay != Overlay::None => {
+                let hovered = match self.hit_at(event.column, event.row) {
+                    Some(Hit::OfferedAction(action)) => Some(*action),
+                    _ => None,
+                };
+                self.hovered_offer = hovered;
+                Intent::None
             }
             MouseEventKind::Moved if self.overlay == Overlay::None => {
                 // One read of the hit list answers every hover the chrome

@@ -45,7 +45,14 @@ impl WorkspaceModel {
 
     /// Whether a plugin puts anything in the bar: a door or an item.
     pub(in crate::ui::orchestrator) fn has_bar(&self) -> bool {
-        !self.bar_doors().is_empty() || !self.bar_items().is_empty()
+        self.release_waiting().is_some()
+            || !self.bar_doors().is_empty()
+            || !self.bar_items().is_empty()
+    }
+
+    /// The release installed and waiting on a restart, which the bar offers.
+    pub(in crate::ui::orchestrator) fn release_waiting(&self) -> Option<&str> {
+        self.release.as_ref()?.waiting.as_deref()
     }
 
     /// The surfaces an item of the bar in front opens: their item is their

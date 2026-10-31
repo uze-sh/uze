@@ -49,8 +49,8 @@ on "cancel" must not save first.
   right only when a target already registered covers the same rect (the
   manage modal's close mark, Recents' show-all toggle), and the comment
   above it says which.
-- `Hints::line()` (text with no target) is only for hints inside scrolling
-  prose.
+- A key is never written loose in a body as text with no target: it stands
+  in the surface's own hint bar or footer, where it is one.
 - A `run` (↑↓, 1–9) is read, never clicked.
 - A dialog's bottom border is a hint bar too: its keys answer a click as
   its buttons do.
@@ -103,6 +103,9 @@ on "cancel" must not save first.
 - Everything clickable has a hover, and nothing that isn't clickable does.
 - Hover is a change of colour only (a "realce"): never underline, an arrow
   or a background overlay.
+- The one exception: a line of text that opens something (a notice's
+  "see what's new") is a link, in a secondary tone at rest and, under the
+  pointer, bright and underlined.
 - Hover keeps the word's weight. A word that is bold at rest stays bold; a
   word that is not never turns bold under the pointer or while pressed.
   Manage's version and health are the reference.
@@ -130,8 +133,16 @@ on "cancel" must not save first.
 **Scrollbars:**
 - Every list that can overflow has the standard `Scrollbar`, which can be
   dragged.
-- It sits **on** the separator or divider, not in a column of its own.
-- A click on the bar never falls through to the list.
+- In a view or a drawer it sits **on** the separator or divider, not in a
+  column of its own. In a modal there is no divider: it stands at the right
+  end of the body, inside the modal's padding, one column clear of the
+  content (`modal::scrolling`), never on the modal's border.
+- A click on the bar never falls through to the list, nor closes the modal
+  it is in: its track is a target, and a drag that starts on it follows
+  the pointer until the release.
+- Its handle is seen: a step brighter than the line it rides
+  (`TextFaint`), accent while dragged. In the line's own tone it differed
+  by weight alone, which nobody could see.
 
 **Resize:**
 - Every split and drawer is resizable, in the same way everywhere.
@@ -249,12 +260,19 @@ on "cancel" must not save first.
   dismisses it.
 
 **Closing:**
-- Esc closes everything, and a modal or a drawer says so nowhere: its
-  closing is a bare `x` at the top right, with no label, no footer "close"
-  button and no "esc" hint. A plugin's drawer and overlay wear it too,
-  drawn by the host on the card's top hairline against its corner
-  (`─✕┐`), never a cell in from it, whatever the plugin
-  declares: no surface is closed by Esc alone.
+- Esc closes everything. A modal says so in one place: `esc close` at the
+  end of its header row, a key like any other (lit under the pointer, a
+  click on it is Esc), never a mark on its border and never a key in its
+  footer. Every modal is `widget::modal::Modal`, the manage modal's shape:
+  a header row (title, `esc close`) over a hairline, the body, and a
+  footer row (the keys that act on the body, each a target) under a
+  hairline. A modal that draws its own frame is the inconsistency this
+  widget exists to end.
+- A drawer says so nowhere: its closing is a bare `x` at the top right,
+  with no label. A plugin's drawer and overlay wear it too, drawn by the
+  host on the card's top hairline against its corner (`─✕┐`), never a
+  cell in from it, whatever the plugin declares: no surface is closed by
+  Esc alone.
 - A step opened inside a dialog (everything a row asks for, in the list's
   place) goes back before it closes: its heading starts with `‹`
   (`Symbol::StepPrevious`) and is a target, and the bottom border names
@@ -301,6 +319,13 @@ on "cancel" must not save first.
   gave them, muted, on no strip of its own: never the extension's id, its
   plugin or its marketplace, which belong to the Extensions screen, a
   consent and a question about what it would do to an agent.
+- A release is said at two moments, once each. Installed and not
+  running: the restart at the right end of the bar under the agent area,
+  in the success hue as text with no fill (`↑ v1.0.0 · restart`), first
+  from the right ahead of every plugin item, standing the bar up for
+  itself. Running after the restart: the sidebar's notice, its version and
+  "see what's new", which opens the release's notes. Never the notice
+  before the restart, and never "restart" in the sidebar.
 - A plugin has no standing line to say it has nothing to say: no "no
   notice yet" row at the top of the sidebar. What it notifies is drawn in
   the sidebar's notice, where a new release is, one notice at a time with

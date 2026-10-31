@@ -24,7 +24,7 @@
 //! one it was handed.
 //!
 //! `UZE_BASE_URL` is `install.sh`'s testing override and stops there. A
-//! shipped `uze` fetches from [`RELEASES`] and nowhere else, because this
+//! shipped `uze` fetches from `RELEASES` and nowhere else, because this
 //! module downloads a binary and renames it over the one in `PATH`: were
 //! the download root an environment variable, anything that can set one —
 //! a cloned repository's `.envrc`, a `Makefile`, a parent process — would
@@ -41,13 +41,14 @@
 //! checksums too. So `SHASUMS256.txt` carries a signature,
 //! `SHASUMS256.txt.sig`, made with a key that never sits in CI unguarded,
 //! and nothing is unpacked until `ssh-keygen -Y verify` (the system's own,
-//! by path) accepts it against [`RELEASE_KEY`], the public key this binary
+//! by path) accepts it against `RELEASE_KEY`, the public key this binary
 //! was built with. No signature, a bad one, or no `ssh-keygen` all end the
 //! same way: nothing is installed.
 //!
-//! A release is installed in the background only once it has been the
-//! latest for [`SETTLE`]: a release found to be bad and pulled within that
-//! window never reaches a machine that was only waiting. The window is
+//! A release is installed in the background as soon as a check finds it,
+//! unless `UZE_RELEASE_CHANNEL` is `stable`: then only once it has been the
+//! latest for `SETTLE`, so a release found to be bad and pulled within
+//! that window never reaches a machine that was only waiting. The window is
 //! counted from when the release was published, and one that saw it out
 //! before a newer one replaced it is still installed while that one waits:
 //! counting from when a machine first heard, and forgetting the release a
@@ -87,10 +88,17 @@ const SOURCES: &str = "https://raw.githubusercontent.com/uze-sh/uze";
 /// asking again a minute after the first one did.
 const CHECK_EVERY: Duration = Duration::from_secs(60 * 60);
 
+/// How often an open client looks at the answer's age. Far shorter than
+/// [`CHECK_EVERY`] because a client stays open for days: waking hourly
+/// from whenever it started left an hour-old answer standing for up to
+/// another hour. Looking costs a file read; only an answer past
+/// [`CHECK_EVERY`] reaches the network.
+pub(crate) const WAKE_EVERY: Duration = Duration::from_secs(15 * 60);
+
 const RUNNING: &str = env!("CARGO_PKG_VERSION");
 
 /// How long a release must have been the latest before the background
-/// pass installs it.
+/// pass installs it, on the [`Channel::Stable`] channel.
 const SETTLE: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// The committed public key releases are signed with, as built into this
@@ -103,23 +111,26 @@ const RELEASE_KEY: &str = include_str!("../release-signing.pub");
 /// a file) is not a release signature.
 const SIGNATURE_NAMESPACE: &str = "uze-release";
 
-/// What the sidebar says about releases: that a newer release replaced
-/// this binary on disk and the next launch runs it. It is the only thing
-/// said. A release that is merely available is news the reader can do
-/// nothing with while the updater is doing it for them, and one the updater
-/// cannot install is `uze upgrade`'s to explain.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Notice(pub(crate) String);
+/// What the workspace says about releases, at two moments. Before a
+/// restart, the release the updater put in place and this process is not:
+/// the bar's restart, which runs it. After, the release now running that
+/// the updater put in place, until its notes are put away: the sidebar's
+/// notice, which opens them. Nothing else is said. A release merely
+/// available is news the reader can do nothing with while the updater is
+/// doing it for them, and one the updater cannot install is
+/// `uze upgrade`'s to explain.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct Notice {
+    /// Installed and not running: what a restart runs.
+    pub(crate) waiting: Option<String>,
+    /// Running, put in place by the updater, its notes not put away yet.
+    pub(crate) arrived: Option<String>,
+}
 
 impl Notice {
-    pub(crate) fn version(&self) -> &str {
-        &self.0
-    }
-
-    /// What the row says. Clicking it opens the release's notes.
-    pub(crate) fn action(&self) -> &'static str {
-        "restart to use it"
-    }
+    /// What the sidebar's notice says under the version. Clicking it opens
+    /// the release's notes.
+    pub(crate) const WHATS_NEW: &'static str = "see what's new";
 }
 
 /// The release this binary is.
@@ -127,9 +138,10 @@ pub(crate) fn running() -> &'static str {
     RUNNING
 }
 
-/// The release's own page, where its notes are published.
-pub(crate) fn release_page(version: &str) -> String {
-    format!("{RELEASES}/tag/v{version}")
+/// The release's entry in the site's changelog: each release heading there
+/// carries its version as its anchor (`web/lib/changelog.ts`).
+pub(crate) fn changelog_entry(version: &str) -> String {
+    format!("{CHANGELOG}#{version}")
 }
 
 /// The notice as it stands, and a counter that moves whenever it does —
@@ -157,8 +169,10 @@ fn publish(notice: Option<Notice>) {
     REVISION.fetch_add(1, Ordering::AcqRel);
 }
 
-/// Starts the check for this process: now, and once every [`CHECK_EVERY`]
-/// after, on a thread of its own. Nothing a client draws waits on it.
+/// Starts the check for this process: now, and on every wake after, about
+/// every [`WAKE_EVERY`], on a thread of its own. A wake asks the network
+/// only once the answer is [`CHECK_EVERY`] old. Nothing a client draws
+/// waits on it.
 pub(crate) fn watch(home: UzeHome) {
     let policy = Policy::current();
     if policy == Policy::Off {
@@ -170,13 +184,24 @@ pub(crate) fn watch(home: UzeHome) {
     // process was never the installer's.
     let this = this_binary();
     let releases = Published::current();
+    let channel = Channel::current();
     let parent = tracing::Span::current();
     thread::spawn(move || {
         loop {
-            let notice = tracing::debug_span!(parent: &parent, "self_update.watch")
-                .in_scope(|| pass(&home, policy, this.as_deref(), &releases, unix_now(), false));
+            let notice =
+                tracing::debug_span!(parent: &parent, "self_update.watch").in_scope(|| {
+                    pass(
+                        &home,
+                        policy,
+                        channel,
+                        this.as_deref(),
+                        &releases,
+                        unix_now(),
+                        false,
+                    )
+                });
             publish(notice);
-            thread::sleep(CHECK_EVERY);
+            thread::sleep(jittered(WAKE_EVERY));
         }
     });
 }
@@ -190,6 +215,7 @@ pub fn check_now(home: &UzeHome) {
         pass(
             home,
             policy,
+            Channel::current(),
             this.as_deref(),
             &Published::current(),
             unix_now(),
@@ -219,6 +245,28 @@ pub fn after_command(home: &UzeHome) -> Option<String> {
         hand_off_check();
     }
     updated_to(home, ledger)
+}
+
+/// Runs the installed release in this process's place, as a workspace
+/// client landing where this one left off. Returns only when it could not
+/// be started, saying why.
+///
+/// The file the installer's receipt names, not this process's own image:
+/// that is the release the notice announced, and on Linux a binary renamed
+/// over no longer has the path it ran from. Through
+/// `uze_platform::process::run_in_place`: `exec` on Unix, and on Windows a
+/// child on this console, waited for, whose exit is this process's.
+pub fn restart(home: &UzeHome) -> String {
+    let binary = read_json::<Receipt>(&receipt_path(home))
+        .map(|receipt| receipt.binary)
+        .or_else(|| env::current_exe().ok());
+    let Some(binary) = binary else {
+        return "the installed release could not be found".to_owned();
+    };
+    let mut command = Command::new(&binary);
+    command.args(["workspace", "--resumed"]);
+    let error = uze_platform::process::run_in_place(&mut command);
+    format!("{} could not be started: {error}", binary.display())
 }
 
 /// The site's changelog, where a command points after an update.
@@ -252,17 +300,63 @@ fn hand_off_check() {
     let _ = uze_platform::process::spawn_detached(&mut command);
 }
 
+/// `period` moved by up to a fifth either way, so clients started
+/// together, or woken together from sleep, do not ask together. Not
+/// cryptographic: `RandomState`'s keys are seeded per process.
+pub(crate) fn jittered(period: Duration) -> Duration {
+    use std::hash::{BuildHasher as _, Hasher as _};
+    let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+    hasher.write_u128(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos(),
+    );
+    let spread = period / 5;
+    let offset = Duration::from_nanos(hasher.finish() % (2 * spread.as_nanos().max(1)) as u64);
+    period - spread + offset
+}
+
 fn this_binary() -> Option<PathBuf> {
     env::current_exe().and_then(fs::canonicalize).ok()
 }
 
-/// Puts the notice about `version` away, here and in every client after.
+/// Puts the sidebar's notice about `version` away, here and in every
+/// client after. A release waiting on a restart keeps its button.
 pub(crate) fn acknowledge(home: &UzeHome, version: &str) {
-    publish(None);
+    let current = NOTICE.lock().map(|notice| notice.clone()).unwrap_or(None);
+    publish(current.and_then(|notice| {
+        let waiting = notice.waiting?;
+        Some(Notice {
+            waiting: Some(waiting),
+            arrived: None,
+        })
+    }));
     let (home, version) = (home.clone(), version.to_owned());
     thread::spawn(move || {
         amend_ledger(&home, |ledger| ledger.acknowledged = Some(version));
     });
+}
+
+/// When a release found by a check is installed: at once on `latest`,
+/// once it has been the latest for [`SETTLE`] on `stable`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Channel {
+    Latest,
+    Stable,
+}
+
+impl Channel {
+    fn current() -> Self {
+        Self::from_env(env::var("UZE_RELEASE_CHANNEL").ok().as_deref())
+    }
+
+    fn from_env(setting: Option<&str>) -> Self {
+        match setting.map(str::trim) {
+            Some("stable") => Self::Stable,
+            _ => Self::Latest,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -359,25 +453,35 @@ trait Releases {
 fn pass(
     home: &UzeHome,
     policy: Policy,
+    channel: Channel,
     this: Option<&Path>,
     releases: &dyn Releases,
     now: u64,
     ask: bool,
 ) -> Option<Notice> {
     let _span = tracing::info_span!("self_update.pass", running = RUNNING).entered();
+    let stale = |ledger: &Ledger| now.saturating_sub(ledger.checked_at) >= CHECK_EVERY.as_secs();
     let mut ledger = read_json::<Ledger>(&ledger_path(home)).unwrap_or_default();
-    if ask || now.saturating_sub(ledger.checked_at) >= CHECK_EVERY.as_secs() {
-        // Kept when the question went unanswered, and stamped all the same:
-        // offline is a state that lasts, and asking again on every launch
-        // changes nothing about it.
-        let latest = releases.latest().or(ledger.latest.clone());
-        ledger = observe(home, latest, releases, now);
+    if (ask || stale(&ledger))
+        && let Some(_claim) = claim_check(home)
+    {
+        // Read again under the claim: whoever held it last may have just
+        // answered, and asking again would be the duplicate it prevents.
+        ledger = read_json::<Ledger>(&ledger_path(home)).unwrap_or_default();
+        if ask || stale(&ledger) {
+            // Stamped before asking, and kept when the question goes
+            // unanswered: offline is a state that lasts, and asking again
+            // on every wake changes nothing about it.
+            amend_ledger(home, |stored| stored.checked_at = now);
+            let latest = releases.latest().or(ledger.latest.clone());
+            ledger = observe(home, latest, releases, now);
+        }
     }
 
     let mut receipt = read_json::<Receipt>(&receipt_path(home))
         .filter(|receipt| this.is_some_and(|this| is_same_file(this, &receipt.binary)));
     if let (Some(owned), Some(target), Policy::Install) =
-        (&mut receipt, settled(&ledger, now), policy)
+        (&mut receipt, settled(&ledger, now, channel), policy)
         && newer(&target, &owned.version)
     {
         match install_over(home, owned, &target, releases) {
@@ -445,11 +549,11 @@ fn observe(home: &UzeHome, latest: Option<String>, releases: &dyn Releases, now:
     observed.unwrap_or_default()
 }
 
-/// The newest release the background pass may install at `now`: the
-/// latest once it has been out for [`SETTLE`], otherwise the last one that
-/// was.
-fn settled(ledger: &Ledger, now: u64) -> Option<String> {
-    if now.saturating_sub(ledger.latest_since) >= SETTLE.as_secs() {
+/// The newest release the background pass may install at `now`: on
+/// `latest` the latest, and on `stable` the latest once it has been out
+/// for [`SETTLE`], otherwise the last one that was.
+fn settled(ledger: &Ledger, now: u64, channel: Channel) -> Option<String> {
+    if channel == Channel::Latest || now.saturating_sub(ledger.latest_since) >= SETTLE.as_secs() {
         ledger.latest.clone()
     } else {
         ledger.settled.clone()
@@ -615,9 +719,19 @@ fn upgrade_with(
 /// What to say, from what is running and what the installer's file now
 /// is (when this is the installer's binary at all).
 fn decide(running: &str, on_disk: Option<&str>, ledger: &Ledger) -> Option<Notice> {
-    let on_disk = on_disk?;
-    (newer(on_disk, running) && ledger.acknowledged.as_deref() != Some(on_disk))
-        .then(|| Notice(on_disk.to_owned()))
+    let notice = Notice {
+        waiting: on_disk
+            .filter(|on_disk| newer(on_disk, running))
+            .map(str::to_owned),
+        arrived: ledger
+            .installed
+            .as_deref()
+            .filter(|installed| {
+                *installed == running && ledger.acknowledged.as_deref() != Some(running)
+            })
+            .map(str::to_owned),
+    };
+    (notice != Notice::default()).then_some(notice)
 }
 
 /// The releases `install.sh` downloads, fetched the way it fetches them.
@@ -650,18 +764,19 @@ fn base(override_url: Option<&str>, debug: bool) -> String {
 impl Releases for Published {
     /// Read from where `releases/latest` redirects rather than from the
     /// API: the redirect carries no rate limit and no JSON, and it is the
-    /// same "latest" the installer resolves.
+    /// same "latest" the installer resolves. Not followed: following it
+    /// downloaded the tag's whole page, about 170 KB, to read one version.
     fn latest(&self) -> Option<String> {
         let output = uze_platform::tools::curl()
             .args([
-                "-fsSL",
+                "-fsS",
                 "--max-time",
                 "15",
                 "-o",
                 uze_platform::fs::NULL_DEVICE,
                 "-w",
             ])
-            .arg("%{url_effective}")
+            .arg("%{redirect_url}")
             .arg(format!("{}/latest", self.base))
             .stdin(Stdio::null())
             .stderr(Stdio::null())
@@ -1124,6 +1239,23 @@ fn ledger_path(home: &UzeHome) -> PathBuf {
     home.binary_path()
 }
 
+/// The right to ask for the latest release, held by one process at a
+/// time so clients that wake together ask once; `None` while another
+/// process holds it. Released when dropped.
+///
+/// The wait is only long enough to outlast a descriptor a `fork` on
+/// another thread still holds for a lock this process just let go of
+/// (`MutationLock` explains it): a holder that is another process is not
+/// waited for, and its answer is read instead.
+fn claim_check(home: &UzeHome) -> Option<uze_application::FileLock> {
+    uze_application::FileLock::acquire(
+        &home.binary_check_lock_path(),
+        Duration::from_millis(25),
+        Duration::from_millis(1),
+    )
+    .ok()
+}
+
 /// Read, changed and written back in one step rather than from a copy held
 /// across a download: the notice can be put away while a pass is running,
 /// and a pass writing back what it read before would bring it back.
@@ -1333,26 +1465,50 @@ mod tests {
     }
 
     #[test]
-    fn the_sidebar_speaks_only_of_an_update_waiting_on_a_restart() {
+    fn a_release_waits_on_the_restart_and_arrives_after_it() {
+        let waiting = |version: &str| Notice {
+            waiting: Some(version.to_owned()),
+            arrived: None,
+        };
+        let arrived = |version: &str| Notice {
+            waiting: None,
+            arrived: Some(version.to_owned()),
+        };
         let replaced = ledger(Some("1.1.0"), Some("1.1.0"), None);
 
         // The installer's binary was replaced; this process is the old one.
         assert_eq!(
             decide("1.0.0", Some("1.1.0"), &replaced),
-            Some(Notice("1.1.0".to_owned()))
+            Some(waiting("1.1.0")),
+            "the restart, and nothing in the sidebar yet"
+        );
+        // The restart ran it: what is new in it, until put away.
+        assert_eq!(
+            decide("1.1.0", Some("1.1.0"), &replaced),
+            Some(arrived("1.1.0"))
         );
         assert_eq!(
             decide(
-                "1.0.0",
+                "1.1.0",
                 Some("1.1.0"),
                 &ledger(Some("1.1.0"), Some("1.1.0"), Some("1.1.0"))
             ),
             None,
-            "until it is put away"
+            "put away"
         );
-        // The restart ran it: there is nothing left to do.
-        assert_eq!(decide("1.1.0", Some("1.1.0"), &replaced), None);
-        // A newer release that was not installed is not the sidebar's news.
+        // Running what arrived while a newer one already waits: both.
+        assert_eq!(
+            decide(
+                "1.1.0",
+                Some("1.2.0"),
+                &ledger(Some("1.2.0"), Some("1.1.0"), None)
+            ),
+            Some(Notice {
+                waiting: Some("1.2.0".to_owned()),
+                arrived: Some("1.1.0".to_owned()),
+            })
+        );
+        // A newer release that was not installed is not news.
         assert_eq!(
             decide("1.0.0", Some("1.0.0"), &ledger(Some("1.1.0"), None, None)),
             None
@@ -1362,6 +1518,8 @@ mod tests {
             None,
             "nor is one for a binary the installer did not place"
         );
+        // A binary the installer placed and the updater never replaced has
+        // nothing new to say.
         assert_eq!(decide("1.0.0", Some("1.0.0"), &Ledger::default()), None);
     }
 
@@ -1460,6 +1618,7 @@ mod tests {
         let notice = pass(
             &home,
             Policy::Install,
+            Channel::Stable,
             Some(&binary),
             &releases,
             SETTLED,
@@ -1470,7 +1629,11 @@ mod tests {
             releases.installs.borrow().as_slice(),
             [("999.0.0".to_owned(), binary.clone())]
         );
-        assert_eq!(notice, Some(Notice("999.0.0".to_owned())));
+        assert_eq!(
+            notice.and_then(|notice| notice.waiting).as_deref(),
+            Some("999.0.0"),
+            "the restart is offered"
+        );
         let written = read_json::<Receipt>(&receipt_path(&home)).unwrap();
         assert_eq!(written.version, "999.0.0", "the receipt follows the file");
 
@@ -1479,12 +1642,163 @@ mod tests {
         pass(
             &home,
             Policy::Install,
+            Channel::Stable,
             Some(&binary),
             &again,
             SETTLED + 1,
             false,
         );
         assert!(again.installs.borrow().is_empty());
+    }
+
+    #[test]
+    fn the_channel_is_read_from_the_environment() {
+        assert_eq!(Channel::from_env(None), Channel::Latest);
+        assert_eq!(Channel::from_env(Some("latest")), Channel::Latest);
+        assert_eq!(Channel::from_env(Some(" stable ")), Channel::Stable);
+        assert_eq!(
+            Channel::from_env(Some("nightly")),
+            Channel::Latest,
+            "an unknown channel is the default"
+        );
+    }
+
+    #[test]
+    fn on_the_latest_channel_a_release_is_installed_when_found() {
+        let (_dir, home, binary) = world();
+        receipt(&home, &binary, RUNNING);
+        let releases = fake(Some("999.0.0"));
+
+        let notice = pass(
+            &home,
+            Policy::Install,
+            Channel::Latest,
+            Some(&binary),
+            &releases,
+            10_000,
+            false,
+        );
+
+        assert_eq!(
+            releases.installs.borrow().as_slice(),
+            [("999.0.0".to_owned(), binary.clone())]
+        );
+        assert_eq!(
+            notice.and_then(|notice| notice.waiting).as_deref(),
+            Some("999.0.0"),
+            "the restart is offered"
+        );
+    }
+
+    #[test]
+    fn a_check_another_process_is_making_is_not_made_again() {
+        let (_dir, home, binary) = world();
+        receipt(&home, &binary, RUNNING);
+        let releases = fake(Some("999.0.0"));
+
+        let other = claim_check(&home).expect("nobody holds it yet");
+        pass(
+            &home,
+            Policy::Install,
+            Channel::Latest,
+            Some(&binary),
+            &releases,
+            10_000,
+            false,
+        );
+        let ledger = read_json::<Ledger>(&ledger_path(&home)).unwrap_or_default();
+        assert_eq!(ledger.latest, None, "nothing was asked");
+        assert!(releases.installs.borrow().is_empty());
+
+        drop(other);
+        pass(
+            &home,
+            Policy::Install,
+            Channel::Latest,
+            Some(&binary),
+            &releases,
+            10_001,
+            false,
+        );
+        let ledger = read_json::<Ledger>(&ledger_path(&home)).unwrap_or_default();
+        assert_eq!(ledger.latest.as_deref(), Some("999.0.0"));
+    }
+
+    #[test]
+    fn an_unanswered_check_waits_the_hour_like_an_answered_one() {
+        let (_dir, home, binary) = world();
+        receipt(&home, &binary, RUNNING);
+        let offline = fake(None);
+        let ask = |now| {
+            pass(
+                &home,
+                Policy::Install,
+                Channel::Latest,
+                Some(&binary),
+                &offline,
+                now,
+                false,
+            )
+        };
+
+        ask(10_000);
+        let stamped = read_json::<Ledger>(&ledger_path(&home)).unwrap_or_default();
+        assert_eq!(stamped.checked_at, 10_000);
+        ask(10_000 + CHECK_EVERY.as_secs() - 1);
+        let still = read_json::<Ledger>(&ledger_path(&home)).unwrap_or_default();
+        assert_eq!(still.checked_at, 10_000, "not asked again within the hour");
+    }
+
+    /// The attempt is on record while the request is out, so a process
+    /// waking meanwhile, or one that outlives a request that never ends,
+    /// does not ask again.
+    #[test]
+    fn the_attempt_is_recorded_before_the_request_is_made() {
+        struct Watching<'a> {
+            home: &'a UzeHome,
+            seen: RefCell<Option<u64>>,
+        }
+        impl Releases for Watching<'_> {
+            fn latest(&self) -> Option<String> {
+                let ledger = read_json::<Ledger>(&ledger_path(self.home)).unwrap_or_default();
+                *self.seen.borrow_mut() = Some(ledger.checked_at);
+                None
+            }
+            fn age(&self, _: &str) -> Option<u64> {
+                None
+            }
+            fn changelog(&self, _: &str) -> Option<String> {
+                None
+            }
+            fn install(&self, _: &str, _: &Path, _: &Path) -> Result<(), String> {
+                Ok(())
+            }
+        }
+
+        let (_dir, home, binary) = world();
+        let watching = Watching {
+            home: &home,
+            seen: RefCell::default(),
+        };
+        pass(
+            &home,
+            Policy::Install,
+            Channel::Latest,
+            Some(&binary),
+            &watching,
+            10_000,
+            false,
+        );
+        assert_eq!(*watching.seen.borrow(), Some(10_000));
+    }
+
+    #[test]
+    fn a_wake_is_moved_by_at_most_a_fifth() {
+        for _ in 0..64 {
+            let wake = jittered(WAKE_EVERY);
+            assert!(wake >= WAKE_EVERY - WAKE_EVERY / 5, "{wake:?}");
+            assert!(wake <= WAKE_EVERY + WAKE_EVERY / 5, "{wake:?}");
+        }
     }
 
     #[test]
@@ -1496,6 +1810,7 @@ mod tests {
         pass(
             &home,
             Policy::Install,
+            Channel::Stable,
             Some(&binary),
             &releases,
             10_000,
@@ -1508,6 +1823,7 @@ mod tests {
         pass(
             &home,
             Policy::Install,
+            Channel::Stable,
             Some(&binary),
             &releases,
             SETTLED - 1,
@@ -1526,6 +1842,7 @@ mod tests {
         pass(
             &home,
             Policy::Install,
+            Channel::Stable,
             Some(&binary),
             &newer_still,
             SETTLED,
@@ -1539,6 +1856,7 @@ mod tests {
         pass(
             &home,
             Policy::Install,
+            Channel::Stable,
             Some(&binary),
             &newer_still,
             SETTLED + SETTLE.as_secs(),
@@ -1565,7 +1883,15 @@ mod tests {
             age,
             ..fake(Some(latest))
         };
-        pass(home, Policy::Install, Some(binary), &releases, now, true);
+        pass(
+            home,
+            Policy::Install,
+            Channel::Stable,
+            Some(binary),
+            &releases,
+            now,
+            true,
+        );
         let installs = releases.installs.borrow();
         installs
             .iter()
@@ -1677,7 +2003,15 @@ mod tests {
         };
 
         for (now, ask) in [(pulled + 30 * HOUR, true), (pulled + 30 * HOUR + 60, false)] {
-            pass(&home, Policy::Install, Some(&binary), &undated, now, ask);
+            pass(
+                &home,
+                Policy::Install,
+                Channel::Stable,
+                Some(&binary),
+                &undated,
+                now,
+                ask,
+            );
         }
         assert!(
             undated.installs.borrow().is_empty(),
@@ -1775,6 +2109,7 @@ mod tests {
         let notice = pass(
             &home,
             Policy::Install,
+            Channel::Stable,
             Some(&elsewhere),
             &releases,
             SETTLED,
@@ -1795,6 +2130,7 @@ mod tests {
         let notice = pass(
             &home,
             Policy::Notify,
+            Channel::Stable,
             Some(&binary),
             &releases,
             SETTLED,
@@ -1818,6 +2154,7 @@ mod tests {
         let notice = pass(
             &home,
             Policy::Install,
+            Channel::Stable,
             Some(&binary),
             &releases,
             SETTLED,
@@ -1948,6 +2285,7 @@ mod tests {
             pass(
                 &home,
                 Policy::Install,
+                Channel::Stable,
                 Some(&binary),
                 &offline,
                 10_000,

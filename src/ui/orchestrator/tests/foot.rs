@@ -128,7 +128,10 @@ fn a_release_notice_sits_on_the_sections_at_the_foot() {
         "no release, no notice"
     );
 
-    model.release = Some(crate::self_update::Notice("0.0.0-alpha.14".to_owned()));
+    model.release = Some(crate::self_update::Notice {
+        waiting: None,
+        arrived: Some("0.0.0-alpha.14".to_owned()),
+    });
     let Sidebar { rows, hits, .. } = sidebar(&model, &identities_fixture());
     let (mark, _) = hits
         .iter()
@@ -140,7 +143,7 @@ fn a_release_notice_sits_on_the_sections_at_the_foot() {
             && rows[y].contains(&theme::glyph(theme::Symbol::MarkClose)),
         "the version, whole, with the mark on its row: {rows:?}"
     );
-    assert!(rows[y + 1].contains("restart to use it"), "{rows:?}");
+    assert!(rows[y + 1].contains("see what's new"), "{rows:?}");
     assert_eq!(
         hits.iter()
             .filter(|(_, hit)| matches!(hit, WorkspaceHit::OpenReleaseNotes))
@@ -161,7 +164,10 @@ fn a_release_notice_sits_on_the_sections_at_the_foot() {
 fn an_extensions_notice_takes_the_release_notices_place_until_put_away() {
     let mut model = session_with_timeline(&["feat: one"]);
     model.timeline_collapsed = true;
-    model.release = Some(crate::self_update::Notice("0.0.0-alpha.14".to_owned()));
+    model.release = Some(crate::self_update::Notice {
+        waiting: None,
+        arrived: Some("0.0.0-alpha.14".to_owned()),
+    });
     model.extension_notice = Some((
         "Approval".to_owned(),
         "An agent in claude-code asks for approval".to_owned(),
@@ -216,12 +222,16 @@ fn release_notes_open_over_the_workspace() {
     assert!(drawn.contains("v0.0.0-alpha.14"), "{drawn}");
     assert!(drawn.contains("the fix"), "{drawn}");
     full_frame(&mut model);
+    let body = model
+        .hits
+        .iter()
+        .position(|(_, hit)| *hit == WorkspaceHit::ReleaseNotesBody)
+        .expect("its area answers");
     assert!(
-        matches!(
-            model.hits.first(),
-            Some((_, WorkspaceHit::ReleaseNotesBody))
-        ),
-        "its area answers before anything underneath"
+        model.hits[..body]
+            .iter()
+            .all(|(_, hit)| matches!(hit, WorkspaceHit::HintAction(_))),
+        "only its own mark and keys answer before it, and it before anything underneath"
     );
 }
 
@@ -240,7 +250,10 @@ fn the_notice_opens_the_notes_of_its_own_release() {
     .unwrap();
     let mut model = session_with_timeline(&["feat: one"]);
     model.timeline_collapsed = true;
-    model.release = Some(crate::self_update::Notice("9.0.1".to_owned()));
+    model.release = Some(crate::self_update::Notice {
+        waiting: None,
+        arrived: Some("9.0.1".to_owned()),
+    });
     let mut driven = driven(model, &home);
     driven.frame();
     let (notice, _) = *driven
@@ -513,4 +526,33 @@ fn the_foot_sections_stand_on_the_columns_own_grid() {
         inside(&rows[steps - 1]).trim().is_empty(),
         "a row of air over the foot: {rows:?}"
     );
+}
+
+/// The release's "see what's new" is a link: in the secondary tone at
+/// rest, lit and underlined under the pointer.
+#[test]
+fn the_release_notices_whats_new_reads_as_a_link() {
+    let mut model = session_with_timeline(&["feat: one"]);
+    model.release = Some(crate::self_update::Notice {
+        waiting: None,
+        arrived: Some("0.0.0-alpha.14".to_owned()),
+    });
+    let link = |model: &WorkspaceModel| {
+        let Sidebar { buffer, rows, .. } = sidebar(model, &identities_fixture());
+        let y = rows
+            .iter()
+            .position(|row| row.contains("see what's new"))
+            .expect("the notice is drawn");
+        let x = rows[y].find("see").unwrap() as u16;
+        buffer[(x, y as u16)].clone()
+    };
+    let underlined =
+        |cell: &ratatui::buffer::Cell| cell.modifier.contains(ratatui::style::Modifier::UNDERLINED);
+    let resting = link(&model);
+    assert_eq!(resting.fg, theme::color(theme::Token::TextSecondary));
+    assert!(!underlined(&resting), "no underline at rest");
+    model.hovered = Some(WorkspaceHit::OpenReleaseNotes);
+    let hovered = link(&model);
+    assert_eq!(hovered.fg, theme::color(theme::Token::TextBright));
+    assert!(underlined(&hovered), "underlined under the pointer");
 }

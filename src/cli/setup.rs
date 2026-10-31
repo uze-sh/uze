@@ -11,11 +11,16 @@ use crate::*;
 /// The report waits for `enter` when it has something to be read — a
 /// harness that failed, a warning, or an answer the operator just gave —
 /// and otherwise gives the screen straight to the workspace.
-pub(crate) fn set_up_before_opening(home: &UzeHome, verbose: bool) -> Result<()> {
+/// `resumed` is a client restarted into an installed release: it brings
+/// the harnesses already set up to that release, and asks nothing, since
+/// the operator answered when the client it replaces opened and a restart
+/// is one click back to where they were.
+pub(crate) fn set_up_before_opening(home: &UzeHome, verbose: bool, resumed: bool) -> Result<()> {
     let app = UzeApplication::from_env(home.clone())?;
     let (targets, route) = match app.workspace().entry() {
         WorkspaceEntry::Ready => return Ok(()),
         WorkspaceEntry::SetUp(installed) => (installed, ProvisionRoute::Existing),
+        WorkspaceEntry::Choose if resumed => return Ok(()),
         WorkspaceEntry::Choose => match choose_harnesses(&app) {
             Some(chosen) => (chosen, ProvisionRoute::Official),
             None => return Ok(()),
@@ -26,7 +31,7 @@ pub(crate) fn set_up_before_opening(home: &UzeHome, verbose: bool) -> Result<()>
     if let Err(error) = &ending {
         progress::error(&error.to_string(), hint_for(error).as_deref());
     }
-    if asked || !matches!(ending, Ok(SetupEnding::Clean)) {
+    if !resumed && (asked || !matches!(ending, Ok(SetupEnding::Clean))) {
         let _ = prompt::ask("Press enter to open uze");
     }
     Ok(())

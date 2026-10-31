@@ -355,3 +355,120 @@ fn a_toast_over_the_management_modal_is_drawn_and_answers_there() {
     );
     assert!(driven.attach.model.manage.is_some(), "and the modal stayed");
 }
+
+/// The toast about plugin updates that wait for consent offers the way
+/// to them, and a click on its button opens the plugins screen, where
+/// each is updated with its consent.
+#[test]
+fn a_waiting_plugin_updates_review_opens_the_plugins_screen() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-plugin-review"));
+    let mut driven = driven(agent_with_task(WorkStateView::Ready, 1), &home).on_a_roomy_terminal();
+    driven
+        .attach
+        .model
+        .tell_plugin_updates(crate::ui::plugin_updates::Told {
+            updated: Vec::new(),
+            waiting: vec!["flow@mkt".to_owned()],
+        });
+    driven.frame();
+    let review = driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .find_map(|(rect, hit)| (*hit == WorkspaceHit::ToastAction(0)).then_some(*rect))
+        .expect("the toast offers its review");
+    driven.press(review.x, review.y);
+    assert_eq!(manage_route(&driven), crate::ui::model::Route::Plugins);
+}
+
+/// The notes and the index are modals like every other: their way out is
+/// the `esc close` in their header, lit under the pointer and answered as
+/// Esc.
+#[test]
+fn the_notes_and_the_index_close_on_their_headers_esc_close() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-modal-close"));
+    let close_of = |driven: &mut Driven<'_>| {
+        driven.frame();
+        driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .find_map(|(rect, hit)| {
+                (*hit == WorkspaceHit::HintAction(uze_keys::Action::Dismiss)).then_some(*rect)
+            })
+            .expect("its esc close answers a click")
+    };
+
+    let mut notes = driven(agent_with_task(WorkStateView::Ready, 1), &home).on_a_roomy_terminal();
+    notes.attach.model.release_notes = Some(crate::ui::release_notes::ReleaseNotesModal::opening(
+        "9.0.1",
+    ));
+    let close = close_of(&mut notes);
+    let area = notes.area;
+    // The key's name, which is what lights: the key itself is bright already.
+    let name = (close.right() - 1, close.y);
+    let resting = frame_buffer_at(&mut notes.attach.model, area)[name].fg;
+    notes.attach.model.hovered = Some(WorkspaceHit::HintAction(uze_keys::Action::Dismiss));
+    assert_ne!(
+        frame_buffer_at(&mut notes.attach.model, area)[name].fg,
+        resting,
+        "the pointer lights it"
+    );
+    notes.attach.model.hovered = None;
+    notes.press(close.x, close.y);
+    assert!(notes.attach.model.release_notes.is_none(), "closed");
+
+    let mut index = driven(agent_with_task(WorkStateView::Ready, 1), &home).on_a_roomy_terminal();
+    index.press_key(key_event(uze_keys::Chord::parse("f1").unwrap()));
+    assert!(index.attach.model.action_index.is_some());
+    let close = close_of(&mut index);
+    index.press(close.x, close.y);
+    assert!(index.attach.model.action_index.is_none(), "closed");
+}
+
+/// The help's scrollbar rides its border and answers the pointer: a press
+/// on it moves the list there, a drag follows, and neither closes the
+/// index the way a click outside it does.
+#[test]
+fn the_helps_scrollbar_moves_the_list_and_never_closes_it() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-help-scroll"));
+    let mut index = driven(agent_with_task(WorkStateView::Ready, 1), &home).on_a_roomy_terminal();
+    index.press_key(key_event(uze_keys::Chord::parse("f1").unwrap()));
+    index.frame();
+    let track: Vec<Rect> = index
+        .attach
+        .model
+        .hits
+        .iter()
+        .filter(|(_, hit)| matches!(hit, WorkspaceHit::ActionIndexScroll(_)))
+        .map(|(rect, _)| *rect)
+        .collect();
+    let (top, bottom) = (
+        track[0],
+        *track.last().expect("a list longer than its room"),
+    );
+    let selected =
+        |index: &Driven<'_>| index.attach.model.action_index.as_ref().map(|i| i.selected);
+
+    index.press(bottom.x, bottom.y);
+    let pressed = selected(&index).expect("still open");
+    assert!(pressed > 0, "the press moved the list down");
+    index.mouse(
+        bottom.x,
+        top.y,
+        crossterm::event::MouseEventKind::Drag(crossterm::event::MouseButton::Left),
+    );
+    let dragged = selected(&index).expect("still open");
+    assert!(dragged < pressed, "the drag followed the pointer up");
+    index.mouse(
+        bottom.x,
+        top.y,
+        crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left),
+    );
+    assert!(
+        index.attach.model.action_index.is_some(),
+        "the index stays open"
+    );
+}

@@ -3,7 +3,7 @@
 //!
 //! Only the release the notice names: the reader asked what they just got,
 //! and the history of every other release is the changelog's to keep, one
-//! key away on the release page.
+//! key away in the site's changelog.
 //!
 //! Both clients carry it — the management screen as an overlay, the
 //! workspace client as a modal of its own — and neither draws it: this
@@ -16,7 +16,7 @@ use ratatui::{
     Frame,
     layout::Rect,
     text::{Line, Span},
-    widgets::{Clear, Padding, Paragraph, Wrap},
+    widgets::{Paragraph, Wrap},
 };
 use uze_keys::{Action, Scope};
 
@@ -24,7 +24,11 @@ use crate::self_update::ReleaseNotes;
 use crate::ui::{
     extension_view,
     theme::{self, Token},
-    widget::{Scrollbar, Surface, dialog, hint::Hints},
+    widget::{
+        Scrollbar,
+        hint::Hints,
+        modal::{self, Modal},
+    },
 };
 
 /// The notes, as far as they have arrived.
@@ -32,7 +36,7 @@ use crate::ui::{
 pub(crate) enum Notes {
     Loading,
     /// Nothing could be read: offline, or a changelog that does not carry
-    /// the release. The release page is still one key away.
+    /// the release. The site's changelog is still one key away.
     Unavailable,
     Ready(ReleaseNotes),
 }
@@ -89,7 +93,7 @@ impl ReleaseNotesModal {
         match action {
             Action::Dismiss => return Outcome::Close,
             Action::Activate => {
-                return Outcome::OpenLink(crate::self_update::release_page(&self.version));
+                return Outcome::OpenLink(crate::self_update::changelog_entry(&self.version));
             }
             Action::SelectNext => self.scroll_to(self.scroll.saturating_add(1)),
             Action::SelectPrevious => self.scroll = self.scroll.saturating_sub(1),
@@ -115,7 +119,6 @@ impl ReleaseNotesModal {
 /// Where everything goes.
 struct Layout {
     popup: Rect,
-    header: Rect,
     body: Rect,
     lines: Vec<Line<'static>>,
     rows: u16,
@@ -147,16 +150,17 @@ fn layout(area: Rect, modal: &ReleaseNotesModal) -> Layout {
         width,
         height,
     );
-    let inner = surface().into_block().inner(popup);
-    let header = Rect::new(inner.x, inner.y, inner.width, 1.min(inner.height));
-    // A blank row under the header. The scrollbar takes no column of its
-    // own: it rides the right border.
+    // Where `Modal` puts its body inside `popup`. The scrollbar takes no
+    // column of its own: it rides the right border.
     let body = Rect::new(
-        inner.x,
-        inner.y.saturating_add(2).min(inner.bottom()),
-        inner.width,
-        inner.height.saturating_sub(2),
+        popup.x + 1 + modal::INSET,
+        popup.y + 4,
+        popup.width.saturating_sub(modal::CHROME_COLUMNS),
+        popup.height.saturating_sub(modal::CHROME_ROWS),
     );
+    // The column the scrollbar keeps, and the gap before it, are taken
+    // from the text's measure.
+    let (body, _) = modal::scrolling(body);
     let lines = body_lines(modal, body.width);
     let wrap = usize::from(body.width.max(1));
     let rows = lines
@@ -165,25 +169,11 @@ fn layout(area: Rect, modal: &ReleaseNotesModal) -> Layout {
         .fold(0u16, u16::saturating_add);
     Layout {
         popup,
-        header,
         body,
         lines,
         rows,
     }
 }
-
-/// The same frame every dialog is drawn in: a plain border, a row of air,
-/// the heading inside, the text three columns in from the sides, and the
-/// keys that answer it in the bottom border. The release page is only
-/// worth offering when the notes could not be read — where the body says
-/// so itself.
-fn surface() -> Surface {
-    Surface::floating().padding(Padding::new(DIALOG_PAD, DIALOG_PAD, 1, 1))
-}
-
-/// The columns between the border and the text, on each side — the
-/// inset every dialog keeps.
-const DIALOG_PAD: u16 = 3;
 
 fn body_lines(modal: &ReleaseNotesModal, width: u16) -> Vec<Line<'static>> {
     let muted = |text: &str| {
@@ -194,16 +184,8 @@ fn body_lines(modal: &ReleaseNotesModal, width: u16) -> Vec<Line<'static>> {
     };
     match &modal.notes {
         Notes::Loading => muted("Reading the notes…"),
-        Notes::Unavailable => {
-            let mut lines = muted("The notes could not be read. The release page has them:");
-            lines.push(Line::default());
-            lines.push(
-                Hints::new(&[Scope::ReleaseNotes])
-                    .key(Action::Activate)
-                    .line(),
-            );
-            lines
-        }
+        // The way to them is the footer's `enter changelog`, said once.
+        Notes::Unavailable => muted("The notes could not be read. The changelog has them."),
         Notes::Ready(notes) => rendered_notes(&notes.body, width),
     }
 }
@@ -233,11 +215,13 @@ fn rendered_notes(body: &str, width: u16) -> Vec<Line<'static>> {
             .as_ref()
             .is_some_and(|notes| notes.body == body && notes.theme == theme && notes.width == width)
         {
-            let lines = extension_view::prose(&uze_extensions::shared::markdown::render(
-                body,
-                &theme,
-                width.into(),
-            ));
+            // Folded here rather than left to the paragraph's wrap, which
+            // starts a carried-on line back at the edge: an item's goes on
+            // under its text, past the bullet.
+            let lines = uze_extensions::shared::markdown::render(body, &theme, width.into())
+                .iter()
+                .flat_map(|line| extension_view::prose_rows(line, width.into()))
+                .collect();
             *cached = Some(RenderedNotes {
                 body: body.to_owned(),
                 theme,
@@ -275,19 +259,26 @@ fn header_line(modal: &ReleaseNotesModal) -> Line<'static> {
 pub(crate) struct Targets {
     /// The whole modal: a click inside it is reading, one outside closes it.
     pub(crate) popup: Rect,
+    /// Its close mark and its keys: a click on one is its key.
+    pub(crate) keys: Vec<(Rect, Action)>,
 }
 
 /// Draws the modal centred in `area`.
-pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, modal: &ReleaseNotesModal) -> Targets {
+pub(crate) fn render(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    modal: &ReleaseNotesModal,
+    hovered: Option<Action>,
+) -> Targets {
     let layout = layout(area, modal);
-    frame.render_widget(Clear, layout.popup);
-    surface()
-        .hint(dialog::border_hint(
-            &[Scope::ReleaseNotes],
-            &[(Action::SelectNext, "scroll"), (Action::Dismiss, "close")],
-        ))
+    let drawn = Modal::new(header_line(modal), &[Scope::ReleaseNotes])
+        .keys(
+            Hints::new(&[Scope::ReleaseNotes])
+                .run(Action::SelectPrevious, Action::SelectNext, "scroll")
+                .named(Action::Activate, "changelog"),
+        )
+        .hovered(hovered)
         .render(frame, layout.popup);
-    frame.render_widget(Paragraph::new(header_line(modal)), layout.header);
     let scroll = modal.scroll.min(layout.scroll_limit());
     modal.drawn.set(Drawn {
         limit: layout.scroll_limit(),
@@ -299,10 +290,8 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, modal: &ReleaseNotesModa
             .scroll((scroll, 0)),
         layout.body,
     );
-    // On the border itself, where the hairline thickens into the handle
-    // rather than a second line standing beside it.
     let track = Rect::new(
-        layout.popup.right().saturating_sub(Scrollbar::width()),
+        layout.body.right() + 1,
         layout.body.y,
         Scrollbar::width(),
         layout.body.height,
@@ -316,6 +305,7 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, modal: &ReleaseNotesModa
     }
     Targets {
         popup: layout.popup,
+        keys: drawn.keys,
     }
 }
 
@@ -336,7 +326,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
         terminal
             .draw(|frame| {
-                render(frame, frame.area(), modal);
+                let _ = render(frame, frame.area(), modal, None);
             })
             .unwrap();
         let buffer = terminal.backend().buffer();
@@ -366,30 +356,73 @@ mod tests {
         );
         assert!(screen.contains("the fix"), "rendered, not raw: {screen}");
         assert!(
-            screen.contains("What's new") && screen.contains("esc close"),
-            "headed like every dialog, its way out in the border: {screen}"
+            screen.contains("What's new")
+                && screen.contains("esc close")
+                && screen.contains("changelog")
+                && !screen.contains(&theme::glyph(crate::ui::theme::Symbol::MarkClose)),
+            "a modal like every other, its way out in its header: {screen}"
         );
         assert!(!screen.contains("**terminal:**"), "{screen}");
 
         assert_eq!(
             modal.act(Action::Activate),
-            Outcome::OpenLink(crate::self_update::release_page("9.0.1"))
+            Outcome::OpenLink(crate::self_update::changelog_entry("9.0.1"))
         );
         assert_eq!(modal.act(Action::Dismiss), Outcome::Close);
     }
 
     #[test]
-    fn notes_that_cannot_be_read_still_offer_the_release_page() {
+    fn notes_that_cannot_be_read_still_offer_the_changelog() {
         let mut modal = ReleaseNotesModal::opening("9.0.1");
         assert!(
             !modal.absorb("9.0.0", None),
             "an answer for another release"
         );
         assert!(modal.absorb("9.0.1", None));
-        assert!(drawn(&modal).contains("could not be read"));
+        let screen = drawn(&modal);
+        assert!(screen.contains("could not be read"));
+        assert_eq!(
+            screen.matches("enter").count(),
+            1,
+            "the way to the changelog is said once, in the footer: {screen}"
+        );
         assert_eq!(
             modal.act(Action::Activate),
-            Outcome::OpenLink(crate::self_update::release_page("9.0.1"))
+            Outcome::OpenLink(crate::self_update::changelog_entry("9.0.1"))
+        );
+    }
+
+    /// A list item too long for its row goes on under its own text, past
+    /// the bullet, never back at the edge where it reads as a new item.
+    #[test]
+    fn a_long_item_goes_on_under_its_text() {
+        let mut modal = ReleaseNotesModal::opening("9.0.1");
+        modal.absorb(
+            "9.0.1",
+            Some(notes(
+                "9.0.1",
+                "### Fixes\n\n- **workspace:** a fix described in words enough to need a \
+                 second row in any modal this test draws (fa73394)",
+            )),
+        );
+        let screen = drawn(&modal);
+        let rows: Vec<&str> = screen.lines().collect();
+        let item = rows
+            .iter()
+            .position(|row| row.contains("• workspace:"))
+            .expect("the item is drawn");
+        // In columns, not bytes: the bullet and the border are wider than one.
+        let column = |row: &str, at: usize| row[..at].chars().count();
+        let text_at = column(rows[item], rows[item].find("workspace").unwrap());
+        let next = rows[item + 1];
+        let carried_at = column(
+            next,
+            next.find(|c: char| !c.is_whitespace() && c != '│').unwrap(),
+        );
+        assert_eq!(
+            carried_at, text_at,
+            "under its text:\n{}\n{}",
+            rows[item], next
         );
     }
 

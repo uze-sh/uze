@@ -59,13 +59,14 @@ pub(crate) enum Hit {
     ResizePanel(ResizablePanel),
     /// One row of the open index of everything, by position in it.
     ActionIndexEntry(usize),
+    /// A row of the index's scrollbar track: the selection that brings its
+    /// window there.
+    ActionIndexScroll(usize),
     /// An overlay's own area — the release notes, a dialog: a click on it
     /// is reading or typing, and only one outside it closes the overlay.
     OverlayBody,
     /// The footer's version: the notes of the release this binary is.
     RunningReleaseNotes,
-    /// The footer's notice of a newer release: that release's notes.
-    OpenReleaseNotes,
     /// The footer's health status: what needs attention, if anything.
     HealthStatus,
     /// A detail view's button for one of the selected row's offers, or a
@@ -131,6 +132,20 @@ impl TuiModel {
 
     pub(crate) fn click(&mut self, column: u16, row: u16) -> Intent {
         if let Overlay::ActionIndex { scopes, filter, .. } = self.overlay.clone() {
+            match self.hit_at(column, row).cloned() {
+                // Its keys are the keys they name.
+                Some(Hit::OfferedAction(action)) => return self.overlay_action(action),
+                // Its scrollbar moves the list, and keeps hold of it until
+                // the release.
+                Some(Hit::ActionIndexScroll(to)) => {
+                    if let Overlay::ActionIndex { selected, .. } = &mut self.overlay {
+                        *selected = to;
+                    }
+                    self.dragging_index_track = true;
+                    return Intent::None;
+                }
+                _ => {}
+            }
             // A click on a row performs it, the way choosing it with the
             // keyboard does; anywhere else closes without acting.
             let chosen = match self.hit_at(column, row) {
@@ -289,16 +304,6 @@ impl TuiModel {
                 );
                 Intent::ReadReleaseNotes(version)
             }
-            Hit::OpenReleaseNotes => match &self.release {
-                Some(notice) => {
-                    let version = notice.version().to_owned();
-                    self.overlay = Overlay::ReleaseNotes(
-                        crate::ui::release_notes::ReleaseNotesModal::opening(&version),
-                    );
-                    Intent::ReadReleaseNotes(version)
-                }
-                None => Intent::None,
-            },
             Hit::ResizePanel(panel) => {
                 self.dragging_panel = Some(panel);
                 Intent::None
@@ -306,6 +311,7 @@ impl TuiModel {
             // Only reachable while the index is open, which the guarded
             // arm above already answered.
             Hit::ActionIndexEntry(_)
+            | Hit::ActionIndexScroll(_)
             | Hit::OverlayBody
             | Hit::Answer(_)
             | Hit::ExtensionDrawerBody => Intent::None,

@@ -233,6 +233,8 @@ pub(crate) enum WorkspaceExit {
     /// again rather than leaving the operator with a frozen session.
     Disconnected,
     Quit,
+    /// The operator asked to restart into the installed release.
+    Restart,
 }
 
 /// How often every visible repository's tasks are re-read even when no
@@ -314,6 +316,9 @@ struct ActionIndexOverlay {
     offered: Vec<uze_keys::Action>,
     filter: String,
     selected: usize,
+    /// Whether the pointer holds its scrollbar, from the press on the
+    /// track to the release: a drag moves the list only then.
+    grabbed: bool,
 }
 
 /// What an evaluation of `cwd` is reserved under.
@@ -873,6 +878,12 @@ pub(super) enum WorkspaceHit {
     /// The toast's way to an extension the project offers to enable:
     /// opens the question about it.
     ReviewExtensions,
+    /// The bar's restart into the installed release: what
+    /// [`Action::RestartUze`] does.
+    RestartIntoRelease,
+    /// The toast's way to plugin updates that wait for the operator:
+    /// opens the plugins screen, where each is updated with its consent.
+    ReviewPluginUpdates,
     /// An answer to that question: allow and enable, or put it away.
     ExtensionOfferAnswer(bool),
     /// A row of its list, by index: marks it.
@@ -1079,6 +1090,9 @@ pub(super) enum WorkspaceHit {
     PopupLine,
     /// One row of the open index, by position in it.
     ActionIndexEntry(usize),
+    /// A row of the index's scrollbar track: the selection that brings its
+    /// window there.
+    ActionIndexScroll(usize),
     /// The release notes modal's own area: a click on it is reading, and
     /// only one outside it closes the modal.
     ReleaseNotesBody,

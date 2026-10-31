@@ -32,7 +32,8 @@ ratatui primitives (`chrome_is_built_from_the_widget_vocabulary`).
 | a form: a key and the control that sets its value, a group's heading and air, a list's check mark | `widget::form`: `Layout`, `key` + `Control` (`Stepper`, `Choice`, `Boxed`, `Combo`, `Typing`, `Add`) answering `Part`s, `label`/`indent` for a key of prose, `check`, `heading`, `GROUP_AIR`/`KEY_AIR` |
 | names with what each says beside them (a panel's fields, a drawer's grants, a consent's grants) | `definitions::lines` with `Column::Fixed(view::FIELD_KEY_WIDTH)` for a panel's keys or `Column::Fit` for a table of names, one list of lines per entry |
 | a list to choose from, answered once | `dialog::shell` with `Scope::Choose` (`orchestrator/extension_offer.rs`) |
-| a titled card over a scrim | `modal`, `footer::render` (returns `Drawn{trailers, hints}`), `scrim` |
+| a modal over the frame (notes, help, health, a glossary) | `modal::Modal` (header with `esc close`, body, footer of keys; returns `Drawn{popup, body, keys}`), `scrim` |
+| the manage modal's placement on the frame | `modal::area`, `modal::inside`, `footer::render` (returns `Drawn{trailers, hints}`) |
 | what to check, worst first | `alerts` |
 | a problem with content still drawn under it | `banner::render` |
 | actions on a thing | `menu::render` over `menu::Entry` (`opens` draws the submenu arrow) |

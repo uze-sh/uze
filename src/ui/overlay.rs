@@ -35,9 +35,15 @@ impl TuiModel {
         }
         let overlay = self.overlay.clone();
         match overlay {
-            Overlay::None | Overlay::HarnessHelp | Overlay::Health | Overlay::ReleaseNotes(_) => {
+            // Read and then gone: their header's `esc close` is the one
+            // action they answer.
+            Overlay::HarnessHelp | Overlay::Health => {
+                if action == Action::Dismiss {
+                    self.close_overlay();
+                }
                 Intent::None
             }
+            Overlay::None | Overlay::ReleaseNotes(_) => Intent::None,
             Overlay::ActionIndex {
                 scopes,
                 filter,
@@ -274,10 +280,7 @@ pub(crate) fn render_action_index(
     let reachable = model.action_index_rows(scopes, "").len();
     let mut answering = scopes.to_vec();
     answering.push(uze_keys::Scope::ActionIndex);
-    let hint = dialog::border_hint(
-        &answering,
-        &[(Action::Activate, "run"), (Action::Dismiss, "close")],
-    );
+    let keys = crate::ui::widget::hint::Hints::new(&answering).named(Action::Activate, "run");
     let entries = action_index::render(
         frame,
         area,
@@ -285,8 +288,12 @@ pub(crate) fn render_action_index(
         reachable,
         filter,
         selected,
-        hint,
+        &answering,
+        keys,
+        model.hovered_offer,
         Hit::ActionIndexEntry,
+        Hit::OfferedAction,
+        Hit::ActionIndexScroll,
     );
     // Prepended, so the list underneath cannot answer a click meant here.
     hits.splice(0..0, entries);
@@ -296,7 +303,12 @@ pub(crate) fn render_action_index(
 /// glyphs/labels stand for, written out in plain language. Kept separate
 /// from the generic `Help` keybinding overlay: this is reference material
 /// about what the data *means*, not what a key *does*.
-pub(crate) fn render_harness_help(frame: &mut ratatui::Frame<'_>, area: Rect) {
+pub(crate) fn render_harness_help(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    hovered: Option<Action>,
+    hits: &mut Vec<(Rect, Hit)>,
+) {
     // Width covers the longest label ("Not implemented", 16 chars) plus at
     // least one separating space — `{:<N}` never truncates or forces a gap
     // once content already reaches N, so anything shorter than the longest
@@ -334,7 +346,7 @@ pub(crate) fn render_harness_help(frame: &mut ratatui::Frame<'_>, area: Rect) {
     };
     const WIDTH: u16 = 84;
     const LABEL: usize = 20;
-    let measure = usize::from(WIDTH.saturating_sub(dialog::shell_chrome_width()));
+    let measure = usize::from(WIDTH.saturating_sub(crate::ui::widget::modal::CHROME_COLUMNS));
     // A label, then its meaning hung beside it: folded under itself rather
     // than back under the label, so the column of labels stays a column.
     let entry = |label: Span<'static>, detail: &str| -> Vec<Line<'static>> {
@@ -422,15 +434,14 @@ pub(crate) fn render_harness_help(frame: &mut ratatui::Frame<'_>, area: Rect) {
     ] {
         sections.extend(entry(mark(symbol, label, hue), detail));
     }
-    let shell = dialog::shell(
-        frame,
-        area,
-        WIDTH,
-        sections.len() as u16,
-        "Harness status",
-        dialog::border_hint(&scopes, &[(Action::Dismiss, "close")]),
-    );
-    frame.render_widget(Paragraph::new(sections), shell.body);
+    let drawn = crate::ui::widget::modal::Modal::new(
+        Span::styled("Harness status", theme::fg_bold(Token::TextBright)),
+        &scopes,
+    )
+    .hovered(hovered)
+    .render_centred(frame, area, WIDTH, sections.len() as u16);
+    frame.render_widget(Paragraph::new(sections), drawn.body);
+    register_modal(drawn, hits);
 }
 
 /// What the footer's health status stands for: every problem an operator
@@ -439,16 +450,30 @@ pub(crate) fn render_health(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     alerts: &[crate::ui::view::health::Alert],
+    hovered: Option<Action>,
+    hits: &mut Vec<(Rect, Hit)>,
 ) {
-    crate::ui::widget::alerts::render(
+    let drawn = crate::ui::widget::alerts::render(
         frame,
         area,
         "Health",
         alerts,
-        dialog::border_hint(
-            &[uze_keys::Scope::Global, uze_keys::Scope::Management],
-            &[(Action::Dismiss, "close")],
-        ),
+        &[uze_keys::Scope::Global, uze_keys::Scope::Management],
+        hovered,
+    );
+    register_modal(drawn, hits);
+}
+
+/// A modal's hits in the management client: its keys first, answered as
+/// the keys they name, then its area, which a click inside only reads.
+fn register_modal(drawn: crate::ui::widget::modal::Drawn, hits: &mut Vec<(Rect, Hit)>) {
+    hits.insert(0, (drawn.popup, Hit::OverlayBody));
+    hits.splice(
+        0..0,
+        drawn
+            .keys
+            .into_iter()
+            .map(|(rect, action)| (rect, Hit::OfferedAction(action))),
     );
 }
 

@@ -242,8 +242,10 @@ mod tests {
         command
             // Said by the stray itself, once it is in a session of its own:
             // `$!` is known before `setsid` runs, while a group signal would
-            // still reach it.
-            .args(["-c", "setsid sh -c 'echo $$; exec sleep 30' & wait"])
+            // still reach it. And from a shell that execs nothing after (the
+            // `:` keeps it from exec'ing its last command): one still in
+            // `exec` reads its environment empty, the mark with it.
+            .args(["-c", "setsid sh -c 'echo $$; sleep 30; :' & wait"])
             .env(mark.variable(), mark.value())
             .stdout(std::process::Stdio::piped());
         let (mut leader, _tree) = spawn_tree(&mut command, Seat::NoTerminal).unwrap();
@@ -281,9 +283,15 @@ mod tests {
         command
             .args([
                 "-c",
-                // The orphan's parent says its pid and exits, so nothing
-                // but the mark ties it to the pane.
-                "sleep 30 & echo $!; setsid sh -c 'sleep 30 & echo $!'; wait",
+                // The orphan's parent starts it and exits, so nothing but
+                // the mark ties it to the pane. The orphan says its own
+                // pid, from a shell that execs nothing after (the `:` keeps
+                // it from exec'ing its last command): a pid said by its
+                // parent (`$!`) can reach the census while the child is
+                // still in `exec`, when its environment reads empty and
+                // the mark with it.
+                "sleep 30 & echo $!; \
+                 setsid sh -c 'sh -c \"echo \\$\\$; sleep 30; :\" &'; wait",
             ])
             .env(mark.variable(), mark.value())
             .stdout(std::process::Stdio::piped());

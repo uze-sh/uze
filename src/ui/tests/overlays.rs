@@ -545,3 +545,79 @@ fn a_hint_beneath_a_dialog_is_no_target() {
         "no hint key is registered while a dialog is open"
     );
 }
+
+/// The notes, the index, the health and the glossary are modals like every
+/// other: their way out is the `esc close` in their header, which answers
+/// the pointer and closes as Esc does.
+#[test]
+fn the_modals_close_on_their_headers_esc_close() {
+    for overlay in [
+        Overlay::ReleaseNotes(crate::ui::release_notes::ReleaseNotesModal::opening(
+            "9.0.1",
+        )),
+        Overlay::ActionIndex {
+            scopes: vec![uze_keys::Scope::Global, uze_keys::Scope::Management],
+            filter: String::new(),
+            selected: 0,
+        },
+        Overlay::Health,
+        Overlay::HarnessHelp,
+    ] {
+        let mut model = model_with_plugins(&["flow"]);
+        model.overlay = overlay.clone();
+        let (terminal, hits) = drawn_at(&model, 120, 40);
+        let (close, _) = *hits
+            .iter()
+            .find(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::Dismiss))
+            .unwrap_or_else(|| panic!("{overlay:?}: its esc close answers a click"));
+        let row: String = (close.x..close.right())
+            .map(|x| terminal.backend().buffer()[(x, close.y)].symbol())
+            .collect();
+        assert_eq!(row, "esc close", "{overlay:?}");
+        model.hits = hits;
+        model.apply_mouse(
+            MouseEvent {
+                kind: MouseEventKind::Moved,
+                column: close.x,
+                row: close.y,
+                modifiers: KeyModifiers::NONE,
+            },
+            Rect::new(0, 0, 120, 40),
+        );
+        assert_eq!(
+            model.hovered_offer,
+            Some(uze_keys::Action::Dismiss),
+            "{overlay:?}: it answers the pointer"
+        );
+        let _ = model.click(close.x, close.y);
+        assert_eq!(model.overlay, Overlay::None, "{overlay:?}: closed as Esc");
+    }
+}
+
+/// The help's scrollbar answers the pointer in the management modal too: a
+/// press on it moves the list and keeps the index open.
+#[test]
+fn the_helps_scrollbar_moves_the_list_in_manage() {
+    let mut model = model_with_plugins(&["flow"]);
+    model.overlay = Overlay::ActionIndex {
+        scopes: model.scopes(),
+        filter: String::new(),
+        selected: 0,
+    };
+    let (_, hits) = drawn_at(&model, 120, 40);
+    let track: Vec<Rect> = hits
+        .iter()
+        .filter(|(_, hit)| matches!(hit, Hit::ActionIndexScroll(_)))
+        .map(|(rect, _)| *rect)
+        .collect();
+    let Some(bottom) = track.last().copied() else {
+        return;
+    };
+    model.hits = hits;
+    let _ = model.click(bottom.x, bottom.y);
+    assert!(
+        matches!(model.overlay, Overlay::ActionIndex { selected, .. } if selected > 0),
+        "{:?}",
+        model.overlay
+    );
+}

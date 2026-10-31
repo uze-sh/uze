@@ -176,6 +176,12 @@ pub(crate) enum Command {
     Workspace {
         #[command(subcommand)]
         action: Option<WorkspaceAction>,
+        /// Internal: a client restarted into an installed release, which
+        /// lands where the one it replaced left off rather than in a space
+        /// for its directory. Written by the release being replaced, so
+        /// every later release must keep reading it.
+        #[arg(long, hide = true)]
+        resumed: bool,
     },
     /// The workspace's local server, spelled apart from `workspace` because
     /// the client that spawns it may be an older build than the binary now

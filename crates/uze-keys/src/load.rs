@@ -757,6 +757,9 @@ mod tests {
                 // Offered by its toast and the index only while a project
                 // offers something: rare, and never a reflex.
                 "review-extensions",
+                // Offered only while a release waits to run: its button in
+                // the bar under the agent area and its index row.
+                "restart-uze",
                 // The same, and the menu is also what names the harness
                 // the agent continues in.
                 "switch-harness",

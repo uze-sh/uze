@@ -346,6 +346,35 @@ impl Plugins<'_> {
 }
 
 impl Plugins<'_> {
+    /// What an open workspace runs on its tick: fetches the marketplaces
+    /// whose answer has gone stale, then applies what [`Self::auto_update`]
+    /// can settle alone among the plugins of the ones it fetched. An
+    /// update that needs consent is reported, never applied.
+    ///
+    /// Only those: trying an update is a fetch of its own, outside the
+    /// fetch's claim, and one held for the operator would otherwise be
+    /// tried, and fetched for, on every wake of every client. Tied to the
+    /// fetch, it is tried by one process an hour, and a failure is tried
+    /// again an hour later.
+    #[tracing::instrument(name = "plugins.keep_current", skip_all)]
+    pub fn keep_current(&self) -> Vec<AutoUpdateOutcome> {
+        let fetched = self.0.marketplace_catalogues.refresh_stale(&self.0.home);
+        if fetched.is_empty() {
+            return Vec::new();
+        }
+        self.auto_update_where(|package| {
+            fetched.iter().any(|name| name == package.id.marketplace())
+        })
+    }
+
+    /// What opening the workspace runs: the stale marketplaces fetched,
+    /// then every pending update tried, held ones included.
+    #[tracing::instrument(name = "plugins.catch_up", skip_all)]
+    pub fn catch_up(&self) -> Vec<AutoUpdateOutcome> {
+        self.0.marketplace_catalogues.refresh_stale(&self.0.home);
+        self.auto_update()
+    }
+
     /// Applies every pending update this machine can settle on its own,
     /// and reports what it did.
     ///
@@ -374,6 +403,13 @@ impl Plugins<'_> {
     /// Not called from the CLI dispatch path. Interactive surfaces call it.
     #[tracing::instrument(name = "plugins.auto_update", skip_all)]
     pub fn auto_update(&self) -> Vec<AutoUpdateOutcome> {
+        self.auto_update_where(|_| true)
+    }
+
+    fn auto_update_where(
+        &self,
+        wanted: impl Fn(&uze_core::StoredPackage) -> bool,
+    ) -> Vec<AutoUpdateOutcome> {
         // Only what is already known to be behind. Freshness is a local
         // read — the installed commit against the head its mirror last
         // recorded — so deciding *whether* to update costs no network at
@@ -382,27 +418,33 @@ impl Plugins<'_> {
             .0
             .installed_packages()
             .into_iter()
-            .filter(|package| self.0.freshness_of(package).behind())
+            .filter(|package| wanted(package) && self.0.freshness_of(package).behind())
             .map(|package| package.id.as_str().to_owned())
             .collect();
 
         pending
             .into_iter()
             .map(|plugin| {
-                let detail = match self.update(&plugin, &trust::NoTrustAuthority) {
-                    Ok(UpdatePluginReport::Updated { .. }) => None,
-                    Ok(UpdatePluginReport::Blocked { .. }) => {
-                        Some("managed state was preserved; update it explicitly".to_owned())
-                    }
-                    Err(UzeError::TrustRequired { detail, .. }) => Some(format!(
-                        "the new revision asks to execute something new ({detail}); \
-                         confirm it explicitly"
-                    )),
-                    Err(error) => Some(error.to_string()),
-                };
+                let (detail, waits_for_operator) =
+                    match self.update(&plugin, &trust::NoTrustAuthority) {
+                        Ok(UpdatePluginReport::Updated { .. }) => (None, false),
+                        Ok(UpdatePluginReport::Blocked { .. }) => (
+                            Some("managed state was preserved; update it explicitly".to_owned()),
+                            true,
+                        ),
+                        Err(UzeError::TrustRequired { detail, .. }) => (
+                            Some(format!(
+                                "the new revision asks to execute something new ({detail}); \
+                                 confirm it explicitly"
+                            )),
+                            true,
+                        ),
+                        Err(error) => (Some(error.to_string()), false),
+                    };
                 AutoUpdateOutcome {
                     plugin,
                     applied: detail.is_none(),
+                    waits_for_operator,
                     detail,
                 }
             })

@@ -175,6 +175,9 @@ impl Attach<'_> {
             self.model.release_revision = revision;
             self.model.dirty = true;
         }
+        if let Some(told) = crate::ui::plugin_updates::take() {
+            self.model.tell_plugin_updates(told);
+        }
         loop {
             match events.try_recv() {
                 Ok(event) => {
