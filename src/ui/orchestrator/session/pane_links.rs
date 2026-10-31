@@ -30,7 +30,6 @@ impl Attach<'_> {
     /// held back from the program until then. Answers whether the click
     /// was taken; one on anything else is the program's at once.
     pub(super) fn follow_pane_link(&mut self, mouse: MouseEvent, area: Rect) -> bool {
-        self.let_go_of_held_click();
         if !follows_links(mouse.modifiers) {
             return false;
         }
@@ -71,8 +70,8 @@ impl Attach<'_> {
         }
     }
 
-    /// Gives up on a held click, as a key or another click does: it goes
-    /// to the program it was held from.
+    /// Gives up on a held click, as a key or any press does: it goes to
+    /// the program it was held from.
     pub(super) fn let_go_of_held_click(&mut self) {
         if let Some(click) = self.model.pane_links.let_go() {
             self.hand_click_to_program(&click);
@@ -81,9 +80,10 @@ impl Attach<'_> {
 
     /// The press and release of `click`, delivered together to the pane it
     /// landed in, as a click that was never a drag is
-    /// (`release_selection`) — unless that pane is no longer in front.
+    /// (`release_selection`) — unless that pane is no longer what stands
+    /// in front.
     fn hand_click_to_program(&mut self, click: &HeldClick) {
-        if click.link.pane != self.model.focused_pane() {
+        if click.link.pane != self.model.focused_pane() || !self.model.shows_pane() {
             return;
         }
         let press = MouseEvent {

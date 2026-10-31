@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use uze_core::UzeHome;
 use uze_terminal::{Cursor, MouseMode};
 
-const LINE: &str = "see src/main.rs or src/gone.rs now";
+const LINE: &str = "see src/main.rs or src/gone.rs now, all in src/ here";
 
 /// A checkout holding `src/main.rs`, and a pane standing in it showing
 /// [`LINE`].
@@ -233,5 +233,106 @@ fn a_ctrl_click_on_a_path_that_is_not_there_reaches_the_program() {
             .attach
             .model
             .showing(uze_extensions::code::CATALOG.id)
+    );
+}
+
+fn reporting_clicks() -> MouseMode {
+    MouseMode {
+        reports_clicks: true,
+        reports_drag: true,
+        sgr: true,
+    }
+}
+
+fn ctrl_click(driven: &mut Driven<'_>, column: u16, row: u16) {
+    for kind in [
+        MouseEventKind::Down(MouseButton::Left),
+        MouseEventKind::Up(MouseButton::Left),
+    ] {
+        driven.mouse_holding(column, row, kind, KeyModifiers::CONTROL);
+    }
+}
+
+fn inputs(driven: &mut Driven<'_>) -> usize {
+    driven
+        .sent()
+        .into_iter()
+        .filter(|request| matches!(request, uze_terminal::ClientRequest::Input { .. }))
+        .count()
+}
+
+/// A key typed while a ctrl+click waits on the disk is the person moving
+/// on: the click is the program's then, and the answer opens nothing.
+#[test]
+fn a_key_typed_before_the_answer_hands_the_click_to_the_program() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("pane-link-key-home"));
+    let (_root, model) = a_pane_naming_a_file_to("pane-link-key", reporting_clicks());
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    driven.frame();
+    let (column, row) = at(&driven, "main.rs");
+    let _ = driven.sent();
+
+    ctrl_click(&mut driven, column, row);
+    driven.press_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Char('x'),
+        KeyModifiers::NONE,
+    ));
+    assert!(pumped_until(&mut driven, |model| !model
+        .pane_links
+        .is_asking()));
+
+    assert!(
+        !driven
+            .attach
+            .model
+            .showing(uze_extensions::code::CATALOG.id)
+    );
+    assert_eq!(inputs(&mut driven), 3, "the press, the release and the key");
+}
+
+/// A click on the chrome while a ctrl+click waits on the disk is the
+/// person moving on too: the answer opens nothing over what they chose.
+#[test]
+fn a_click_elsewhere_before_the_answer_lets_the_held_click_go() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("pane-link-elsewhere-home"));
+    let (_root, model) = a_pane_naming_a_file_to("pane-link-elsewhere", reporting_clicks());
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    driven.frame();
+    let (column, row) = at(&driven, "main.rs");
+
+    ctrl_click(&mut driven, column, row);
+    driven.press(0, 0);
+    driven.mouse(0, 0, MouseEventKind::Up(MouseButton::Left));
+    assert!(pumped_until(&mut driven, |model| !model
+        .pane_links
+        .is_asking()));
+
+    assert!(
+        !driven
+            .attach
+            .model
+            .showing(uze_extensions::code::CATALOG.id)
+    );
+}
+
+/// A directory opens unfolded in the tree, with nothing in it selected:
+/// the disk said it is one, off the frame's thread.
+#[test]
+fn ctrl_clicking_a_directory_opens_it_unfolded() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("pane-link-directory-home"));
+    let (_root, model) = a_pane_naming_a_file("pane-link-directory");
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    driven.frame();
+    let (column, row) = at(&driven, "src/ here");
+
+    ctrl_click(&mut driven, column, row);
+
+    assert!(pumped_until(&mut driven, |model| {
+        model.showing(uze_extensions::code::CATALOG.id)
+    }));
+    assert_eq!(
+        code_view(&driven.attach.model).and_then(|view| view.selected()),
+        None,
+        "a directory is unfolded, not selected as a file"
     );
 }

@@ -131,6 +131,7 @@ impl Attach<'_> {
     pub(super) fn press(&mut self, mouse: MouseEvent, viewport: &Viewport) -> Flow {
         let Viewport { ref layout, .. } = *viewport;
         self.drop_selection();
+        self.let_go_of_held_click();
         if self.resident_press(mouse.column, mouse.row) {
             return Flow::Continue;
         }
