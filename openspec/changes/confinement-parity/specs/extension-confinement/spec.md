@@ -57,4 +57,4 @@ mechanism another platform has. Every platform SHALL answer every right.
 
 #### Scenario: A Linux kernel before ABI 6 names what it lacks
 - **WHEN** the kernel answers Landlock ABI 3
-- **THEN** the summary says a program can still reach ungranted devices and other processes, rather than naming the Landlock ABI that would refuse them
+- **THEN** the summary says a program can still reach ungranted devices and signal other processes, rather than naming the Landlock ABI that would refuse them
