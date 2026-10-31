@@ -69,7 +69,7 @@ scenes:
     when:
       - shell: "{uze} market add {world}/market"
         say: register the marketplace, linked to nothing
-      - shell: "cd {project} && {uze} install release@studio > {world}/install.log 2>&1"
+      - shell: "cd {project} && {uze} add release@studio > {world}/install.log 2>&1"
         say: add the plugin to the project, with nobody at a terminal to answer
     then:
       - file: "{uze_home}/store/plugins/studio/release/extensions/release/said.uze"

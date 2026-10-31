@@ -76,7 +76,7 @@ scenes:
 
   - scene: installing keeps one copy of the bytes, in the Store
     when:
-      - shell: "{uze} install -m flow@demo"
+      - shell: "{uze} add -m flow@demo"
         say: install the plugin once
     then:
       - file: "{uze_home}/store/plugins/demo/flow/plugin.json"

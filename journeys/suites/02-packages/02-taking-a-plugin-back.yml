@@ -54,7 +54,7 @@ scenes:
 
   - scene: installing puts something in every one of those trees
     when:
-      - shell: "{uze} install -m flow@demo"
+      - shell: "{uze} add -m flow@demo"
         say: install the plugin
     then:
       - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"

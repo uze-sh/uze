@@ -46,7 +46,7 @@ scenes:
 
   - scene: the install acts on the machine, and says nothing was declared
     when:
-      - shell: "cd {home} && {uze} install flow@demo"
+      - shell: "cd {home} && {uze} add flow@demo"
         say: install from the home directory — the machine half alone
     then:
       - file: "{uze_home}/store/plugins/demo/flow/plugin.json"
