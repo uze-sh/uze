@@ -584,6 +584,9 @@ fn hints<'a>(model: &TuiModel, scopes: &'a [uze_keys::Scope]) -> Hints<'a> {
             crate::ui::machine::Field::Period => {
                 hints.run(Action::FocusContent, Action::FocusSidebar, "period")
             }
+            crate::ui::machine::Field::Columns => {
+                hints.run(Action::FocusContent, Action::FocusSidebar, "column")
+            }
         };
     }
     if let Some(label) = activate_label(model) {
@@ -599,7 +602,8 @@ fn hints<'a>(model: &TuiModel, scopes: &'a [uze_keys::Scope]) -> Hints<'a> {
         let next = match model.remembered.machine.field {
             crate::ui::machine::Field::List => "harness",
             crate::ui::machine::Field::Harness => "period",
-            crate::ui::machine::Field::Period => "screens",
+            crate::ui::machine::Field::Period => "order",
+            crate::ui::machine::Field::Columns => "screens",
         };
         hints = hints.named(Action::FocusNext, next);
     }

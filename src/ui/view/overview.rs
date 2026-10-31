@@ -18,11 +18,13 @@ use uze_application::machine_overview::{Origin, OverviewResource, ResourceKind, 
 
 use crate::ui::content_area;
 use crate::ui::hit::Hit;
-use crate::ui::machine::{self, Field, Group, Line as TreeLine, MachineScreen, Pane, kind_word};
+use crate::ui::machine::{
+    self, Column, Field, Group, Line as TreeLine, MachineScreen, Pane, kind_word,
+};
 use crate::ui::model::{Focus, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::view::health::{Alert, Severity};
-use crate::ui::widget::{definitions, row, screen_header, text};
+use crate::ui::widget::{definitions, message, row, screen_header, text};
 
 use super::FIELD_KEY_WIDTH;
 
@@ -30,7 +32,7 @@ use super::FIELD_KEY_WIDTH;
 const NARROW: u16 = 64;
 const PAD: u16 = crate::ui::CONTENT_INSET_LEFT;
 const FROM_WIDTH: usize = 16;
-const TOKENS_WIDTH: usize = 12;
+const TOKENS_WIDTH: usize = 15;
 const STATUS_WIDTH: usize = 20;
 /// Below this table width the `from` column gives way to the name.
 const FROM_NEEDS: u16 = 64;
@@ -233,20 +235,24 @@ fn render_table(
         hits.push((rect, Hit::FocusFilter));
     }
     rows.gap();
+    if lines.is_empty() {
+        // Nothing to head: the message stands alone in the table's room,
+        // centred across and down, as every empty list does.
+        let top = rows.next(1).map(|rect| rect.y)?;
+        let room = Rect::new(area.x, top, area.width, area.bottom().saturating_sub(top));
+        let (title, hint) = empty_message(screen, section);
+        message::render_message(
+            frame,
+            room,
+            &title,
+            Some(&hint),
+            theme::color(Token::TextMuted),
+        );
+        return None;
+    }
     let columns = Columns::for_width(area.width);
     if let Some(rect) = rows.next(1) {
-        let heading = columns.row(
-            area.width,
-            false,
-            ROW_INDENT,
-            vec![Span::styled("name", theme::fg(Token::TextDim))],
-            [
-                Span::styled("from", theme::fg(Token::TextDim)),
-                Span::styled("per session", theme::fg(Token::TextDim)),
-                Span::styled("status", theme::fg(Token::TextDim)),
-            ],
-        );
-        frame.render_widget(Paragraph::new(heading), rect);
+        render_headings(frame, rect, model, &columns, hits);
     }
     rows.gap();
     let list_top = rows.next(1).map(|rect| rect.y)?;
@@ -256,19 +262,6 @@ fn render_table(
         area.width,
         area.bottom().saturating_sub(list_top),
     );
-    if lines.is_empty() {
-        frame.render_widget(
-            Paragraph::new(Span::styled(
-                empty_message(screen, section),
-                theme::fg(Token::TextDim),
-            )),
-            Rect {
-                height: 1.min(list.height),
-                ..list
-            },
-        );
-        return None;
-    }
     let selected = screen.list.selected.min(lines.len() - 1);
     let offset = super::settle(
         &screen.list.scroll,
@@ -303,16 +296,101 @@ fn render_table(
     Some((list, (usize::from(list.height), lines.len(), offset)))
 }
 
-/// What the table says when it has no row to draw.
-fn empty_message(screen: &MachineScreen, section: Group) -> String {
+/// What the table says when it has no row to draw: a short title and
+/// the line under it.
+fn empty_message(screen: &MachineScreen, section: Group) -> (String, String) {
     match &screen.overview {
-        _ if screen.filtering() => {
-            format!("nothing matches “{}”", screen.list.filter.trim())
+        _ if screen.filtering() => (
+            "Nothing matches".to_owned(),
+            format!(
+                "clear the filter to see every one of the {}",
+                section.label()
+            ),
+        ),
+        None if screen.collecting.is_some() => (
+            "Reading the harnesses".to_owned(),
+            "what each one carries appears here as it answers".to_owned(),
+        ),
+        None => (
+            "Nothing read yet".to_owned(),
+            "f5 reads what each harness carries".to_owned(),
+        ),
+        Some(overview) if overview.harnesses.is_empty() => (
+            "No harness on this machine".to_owned(),
+            "set one up from Integrations".to_owned(),
+        ),
+        Some(_) => (
+            format!("No {}", section.label()),
+            empty_hint(section).to_owned(),
+        ),
+    }
+}
+
+/// What a section would hold, said where it holds nothing.
+fn empty_hint(section: Group) -> &'static str {
+    match section {
+        Group::Uze => "uze needs nothing from you",
+        Group::Kind(ResourceKind::Skill) => "no harness here carries a skill",
+        Group::Kind(ResourceKind::Agent) => "no harness here carries an agent",
+        Group::Kind(ResourceKind::Mcp) => "no harness here starts or reaches an MCP server",
+        Group::Kind(ResourceKind::Hook) => "no harness here runs a command on its events",
+        Group::Kind(ResourceKind::Rule) => {
+            "no instruction file is read in every project, like ~/.claude/CLAUDE.md"
         }
-        None if screen.collecting.is_some() => "Reading what each harness carries…".to_owned(),
-        None => "Nothing read yet.".to_owned(),
-        Some(overview) if overview.harnesses.is_empty() => "No harness on this machine.".to_owned(),
-        Some(_) => format!("No {} on this machine.", section.label()),
+    }
+}
+
+/// The table's headings, each a target that orders the table by it, the
+/// column it is ordered by carrying the way it runs.
+fn render_headings(
+    frame: &mut ratatui::Frame<'_>,
+    rect: Rect,
+    model: &TuiModel,
+    columns: &Columns,
+    hits: &mut Vec<(Rect, Hit)>,
+) {
+    let screen = &model.remembered.machine;
+    let keys_on_headings = model.focus == Focus::Content && screen.field == Field::Columns;
+    let heading = |column: Column| -> Span<'static> {
+        let hit = Hit::MachineSort(column);
+        let tone = if keys_on_headings && screen.column == column {
+            Token::Accent
+        } else if model.hovered.as_ref() == Some(&hit) {
+            Token::TextBright
+        } else if screen.sort.column == column {
+            Token::TextSecondary
+        } else {
+            Token::TextDim
+        };
+        let text = if screen.sort.column == column {
+            let chevron = if screen.sort.ascending {
+                Symbol::SortAscending
+            } else {
+                Symbol::SortDescending
+            };
+            format!("{} {}", column.label(), theme::glyph(chevron))
+        } else {
+            column.label().to_owned()
+        };
+        Span::styled(text, theme::fg(tone))
+    };
+    let line = columns.row(
+        rect.width,
+        false,
+        ROW_INDENT,
+        vec![heading(Column::Name)],
+        [
+            heading(Column::From),
+            heading(Column::PerSession),
+            heading(Column::Status),
+        ],
+    );
+    frame.render_widget(Paragraph::new(line), rect);
+    for (column, x, width) in columns.cells(rect.width) {
+        hits.push((
+            Rect::new(rect.x + x, rect.y, width, 1),
+            Hit::MachineSort(column),
+        ));
     }
 }
 
@@ -450,6 +528,24 @@ impl Columns {
 
     fn trailing(&self) -> usize {
         TOKENS_WIDTH + STATUS_WIDTH + if self.from { FROM_WIDTH } else { 0 } + TRAILING
+    }
+
+    /// Where each column's heading stands in a row `width` wide, as
+    /// `(column, x, width)`.
+    fn cells(&self, width: u16) -> Vec<(Column, u16, u16)> {
+        let end = width.saturating_sub(TRAILING as u16);
+        let status = end.saturating_sub(STATUS_WIDTH as u16);
+        let tokens = status.saturating_sub(TOKENS_WIDTH as u16);
+        let from = tokens.saturating_sub(FROM_WIDTH as u16);
+        let name_end = if self.from { from } else { tokens };
+        let indent = ROW_INDENT as u16;
+        let mut cells = vec![(Column::Name, indent, name_end.saturating_sub(indent + 1))];
+        if self.from {
+            cells.push((Column::From, from, FROM_WIDTH as u16));
+        }
+        cells.push((Column::PerSession, tokens, TOKENS_WIDTH as u16));
+        cells.push((Column::Status, status, STATUS_WIDTH as u16));
+        cells
     }
 
     /// One row: the cursor, the lead at `indent`, then the columns.

@@ -59,6 +59,8 @@ pub(crate) enum Hit {
     MachineSection(crate::ui::machine::Group),
     /// A row of the Overview's table, by position in it.
     MachineLine(usize),
+    /// A column heading of the Overview's table: orders the table by it.
+    MachineSort(crate::ui::machine::Column),
     /// One of a header field's arrows on the Overview: forward or back.
     MachineField(crate::ui::machine::Field, bool),
     /// The Marketplace, on an installed package (`name@market`).
@@ -298,6 +300,7 @@ impl TuiModel {
             }
             Hit::MachineSection(section) => self.machine_choose(section),
             Hit::MachineLine(position) => self.machine_click(position),
+            Hit::MachineSort(column) => self.machine_sort(column),
             Hit::MachineField(field, forward) => self.machine_turn(field, forward),
             Hit::ShowPackage(id) => self.show_package(&id),
             Hit::HarnessRow(index) => {

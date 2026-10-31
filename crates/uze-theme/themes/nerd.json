@@ -110,6 +110,14 @@
       "glyph": "",
       "width": 1
     },
+    "sort.ascending": {
+      "glyph": "",
+      "width": 1
+    },
+    "sort.descending": {
+      "glyph": "",
+      "width": 1
+    },
     "chevron.collapsed": {
       "glyph": "",
       "width": 1

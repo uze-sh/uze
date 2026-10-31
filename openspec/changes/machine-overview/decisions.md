@@ -89,3 +89,13 @@
 - decided:  Menu of sections (uze's findings, then every kind, always listed, with counts and a `!` for problems), the chosen section's table with its own search, and the panel. Status reads `✓ ok` where a fact was checked (`OverviewResource::checked`), `—` where nothing could be, `! duplicate`, `✕ broken`.
 - rejected: Hiding the status column when empty: it would come and go between sections and harnesses.
 - blast:    `src/ui/view/overview.rs`, `src/ui/machine.rs`, the spec's layout and status requirements.
+
+## D10 — Column headings order the table; the keyboard reaches them by tab
+
+- status:   pending
+- task:     4.1
+- commit:
+- trigger:  The operator asked for ordering by column, with chevrons for ascending and descending.
+- decided:  A click on a heading orders by it (names and origins from A, tokens from the heaviest, status from what needs looking at); a second click turns it round. `tab` reaches the headings after the period field; `←→` choose a column, Enter turns it. Two symbols join the vocabulary, `sort.ascending` and `sort.descending`, in every glyph set; the schema is regenerated.
+- rejected: A letter key for sorting: bare letters act on the selection.
+- blast:    `machine.rs::{Column, Sort}`, `view/overview.rs::render_headings`, `uze-theme` symbols and glyph sets.

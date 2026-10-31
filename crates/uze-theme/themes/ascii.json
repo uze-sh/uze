@@ -135,6 +135,8 @@
     "step.next": ">",
     "step.decrease": "-",
     "step.increase": "+",
+    "sort.ascending": "^",
+    "sort.descending": "v",
     "chevron.collapsed": ">",
     "chevron.expanded": "v",
     "submenu": ">",
