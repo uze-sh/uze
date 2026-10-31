@@ -41,6 +41,7 @@ mod runtime;
 mod session;
 mod skills;
 mod trust;
+mod usage;
 
 pub(crate) use hooks::{HOOKS, RULES};
 pub use mcp::detach_mcp_entry;
@@ -405,6 +406,21 @@ impl IntegrationPort for CodexIntegration {
         now: std::time::SystemTime,
     ) -> Option<uze_core::inventory::SessionCounts> {
         Some(inventory::session_counts(&self.inventory_places(), now))
+    }
+
+    fn usage_records(
+        &self,
+        since: std::time::SystemTime,
+    ) -> Option<Vec<uze_core::usage::UsageRecord>> {
+        Some(usage::records(&self.sessions_dir(), since))
+    }
+
+    fn read_usage(
+        &self,
+        record: &uze_core::usage::UsageRecord,
+        from: uze_core::usage::Resume,
+    ) -> Option<uze_core::usage::UsageRead> {
+        usage::read(record, from, &self.config_toml_path())
     }
 
     fn conversation_digest(
