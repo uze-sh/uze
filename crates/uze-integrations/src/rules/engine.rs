@@ -42,7 +42,10 @@ pub(crate) const SOURCE: &str = r#"#!/bin/sh
 # never alters a tool's input, and every failure (no jq, no git, a rule it
 # cannot read, a payload it does not know) exits 0 having said nothing.
 #
-#   usage: engine <sessions-dir>
+#   usage: engine <sessions-dir> [<workspace-variable>]
+#     workspace-variable  the variable the harness keeps the session's
+#                   workspace in; without one, the workspace is the
+#                   directory the harness started the engine in
 #     SessionStart  every always_on rule's body, and one line per
 #                   model_decision rule naming its file and description
 #     PostToolUse   every glob rule matching a path the tool touched, once
@@ -50,6 +53,8 @@ pub(crate) const SOURCE: &str = r#"#!/bin/sh
 #
 # Each rule arrives as <rule path="…" trigger="…" matched="…">body</rule>.
 sessions=${1:-}
+workspace_variable=${2:-}
+launched_in=$(pwd -P 2>/dev/null) || launched_in=
 LC_ALL=C
 export LC_ALL
 
@@ -78,9 +83,10 @@ NORMALIZE='
 function relative(p,   n, parts, kept, k, i, s, r) {
   if (substr(p, 1, 1) == "/") {
     if (index(p, root "/") == 1) p = substr(p, length(root) + 2)
-    else if (cwd != "" && index(p, cwd "/") == 1) p = base "/" substr(p, length(cwd) + 2)
+    else if (!outside && cwd != "" && index(p, cwd "/") == 1) p = base "/" substr(p, length(cwd) + 2)
     else return ""
-  } else p = base "/" p
+  } else if (outside) return ""
+  else p = base "/" p
   n = split(p, parts, "/"); k = 0
   for (i = 1; i <= n; i++) {
     s = parts[i]
@@ -101,6 +107,7 @@ function emit(kind, p,   q) {
 }
 BEGIN {
   root = ENVIRON["ROOT"]; base = ENVIRON["BASE"]; cwd = ENVIRON["CWD"]
+  outside = ENVIRON["OUTSIDE"] != ""
   sub(/\/+$/, "", cwd)
   separators = "[ \t\r\047\"`;|&<>()=]"
 }
@@ -310,9 +317,15 @@ case $event in
   *) exit 0 ;;
 esac
 
-# The checkout the session is in, and the two stats a checkout without rules
-# costs.
-[ -n "$cwd" ] && cd "$cwd" 2>/dev/null || exit 0
+# The checkout the session is in, from the workspace the harness names, and
+# the two stats a checkout without rules costs. The payload's `cwd` is where
+# a command ran, which the call chooses.
+case $workspace_variable in
+  '') workspace=$launched_in ;;
+  *[!A-Za-z0-9_]*|[0-9]*) exit 0 ;;
+  *) eval "workspace=\${$workspace_variable:-}" ;;
+esac
+[ -n "$workspace" ] && cd "$workspace" 2>/dev/null || exit 0
 root=$(git rev-parse --show-toplevel 2>/dev/null) && [ -n "$root" ] || exit 0
 manifest=$root/.agents/rules.json
 [ -d "$root/.agents/rules" ] || [ -f "$manifest" ] || exit 0
@@ -395,15 +408,23 @@ if [ "$event" = SessionStart ]; then
     compact|clear) [ -n "$ledger" ] && (: > "$ledger") 2>/dev/null ;;
   esac
 else
-  here=$(pwd -P) || exit 0
+  # Where the command ran, which its relative paths are read against: the
+  # payload's `cwd`, relative to the workspace when it is not absolute.
+  case $cwd in
+    '') workdir=$workspace ;;
+    /*) workdir=$cwd ;;
+    *) workdir=$workspace/$cwd ;;
+  esac
+  here=$(cd "$workdir" 2>/dev/null && pwd -P) || here=
+  outside=
   case $here in
     "$root") base= ;;
     "$root"/*) base=${here#"$root"/} ;;
-    *) exit 0 ;;
+    *) base= outside=1 ;;
   esac
   candidates=$(printf '%s' "$payload" | "$JQ" -r "$CANDIDATES" 2>/dev/null) || exit 0
   [ -n "$candidates" ] || exit 0
-  touched=$(printf '%s\n' "$candidates" | ROOT=$root BASE=$base CWD=$cwd awk "$NORMALIZE" 2>/dev/null) || exit 0
+  touched=$(printf '%s\n' "$candidates" | ROOT=$root BASE=$base CWD=$workdir OUTSIDE=$outside awk "$NORMALIZE" 2>/dev/null) || exit 0
   paths=$(printf '%s\n' "$touched" | touched_paths)
   [ -n "$paths" ] || exit 0
 fi

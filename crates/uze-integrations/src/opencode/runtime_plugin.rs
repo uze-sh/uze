@@ -112,7 +112,7 @@ pub(crate) fn source(sections: &[Section]) -> String {
 // only itself.
 
 import {{ existsSync, lstatSync, readdirSync, readFileSync, watch }} from "node:fs";
-import {{ basename, join }} from "node:path";
+import {{ basename, isAbsolute, join }} from "node:path";
 import {{ homedir }} from "node:os";
 
 // What a section could not do, under the section's name.

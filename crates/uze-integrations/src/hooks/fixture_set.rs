@@ -2,11 +2,32 @@
 //! recorded for them: shared by the POSIX wrapper's exact golden and the
 //! parity every platform's wrapper is held to.
 
-use std::path::PathBuf;
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use uze_core::hook::{HookEffect, HookEvent};
 
-use super::HookTarget;
+use super::{HookTarget, Workspace};
+
+/// The workspace every fixture is fired in, as its answers spell it.
+pub(super) const FIXTURE_WORKSPACE: &str = "/repo";
+
+/// Hands `command` the workspace `directory` where `target`'s harness puts
+/// it: in its variable, or as the directory it starts the hook in. A
+/// harness that says it in the payload reads the fixture's own.
+pub(super) fn in_workspace(command: &mut Command, target: HookTarget, directory: &Path) {
+    match target.dialect().map(|dialect| dialect.payload.workspace) {
+        Some(Workspace::Environment(name)) => {
+            command.env(name, directory);
+        }
+        Some(Workspace::LaunchDirectory) => {
+            command.current_dir(directory);
+        }
+        Some(Workspace::Payload(_)) | None => {}
+    }
+}
 
 pub(super) const TARGETS: [HookTarget; 3] = [
     crate::claude::HOOKS,

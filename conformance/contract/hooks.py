@@ -28,7 +28,7 @@ accepted through its own keys (`bindings.hook_turn`), never by a flag.
 import json
 import subprocess
 
-from contract import declared
+from contract import declared, hook_directories
 from shared import common, markers, vocabulary
 from shared.common import check, check_absence, declare, describe, provider_struct
 
@@ -46,6 +46,8 @@ def assert_contract(cfg, prov_ip, bindings):
     expected = vocabulary.load_expectation(bindings.harness)
     with describe("hooks"):
         _rows(cfg, bindings, expected)
+        if expected["aliases"].get("shell"):
+            hook_directories.assert_contract(cfg, bindings, expected, _scene)
         effects = set(expected["effects"])
         if "deny" in effects:
             _deny(cfg, bindings, expected)

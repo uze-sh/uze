@@ -234,6 +234,15 @@ timeout 240 codex exec {shlex.quote(prompt)} 2>&1
         )
         return [{"tool": "functions.exec", "args": script}]
 
+    def shell_in(self, command, workdir=None):
+        """Code mode's nested `exec_command` declares `workdir` ("Defaults
+        to the turn cwd", 0.166.0 capture)."""
+        args = {"cmd": command}
+        if workdir is not None:
+            args["workdir"] = workdir
+        script = f'await tools.exec_command({json.dumps(args)});\ntext("done");'
+        return {"tool": "functions.exec", "args": script}
+
     def read_call(self, expected, path):
         """Code mode offers no tool that reads a file (0.160.1, the census):
         the model reads through the shell, inside `exec`, and hands the

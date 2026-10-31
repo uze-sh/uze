@@ -3,7 +3,7 @@
 use uze_core::hook::{HookEffect, HookEvent, ToolBinding};
 
 use crate::hooks::{
-    Decisions, EntryShape, HookRunner, HookTarget, PayloadPaths, UNBOUND, WrapperDialect,
+    Decisions, EntryShape, HookRunner, HookTarget, PayloadPaths, UNBOUND, Workspace, WrapperDialect,
 };
 
 /// Antigravity CLI's named hooks carry camelCase payloads and native
@@ -34,7 +34,10 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
             payload: PayloadPaths {
                 tool: ".toolCall.name // empty",
                 input: ".toolCall.args // {}",
-                cwd: ".workspacePaths[0] // empty",
+                workspace: Workspace::Payload(".workspacePaths[0] // empty"),
+                // `run_command` declares no working directory, and each
+                // command runs in a new session in the workspace (1.4.12).
+                workdir: None,
                 // Its session-start hook fires for a new conversation only
                 // and carries no source (measured on 1.2.17).
                 implied_source: Some("startup"),

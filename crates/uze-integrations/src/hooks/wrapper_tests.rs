@@ -95,6 +95,8 @@ struct Run<'a> {
     package_root: &'a Path,
     /// The harness's own working directory, when it matters.
     cwd: Option<&'a Path>,
+    /// The session's workspace, handed over the way the harness does.
+    workspace: Option<&'a Path>,
     hook: &'a PortableHook,
     payload: &'a str,
     jq: Option<&'a str>,
@@ -114,6 +116,7 @@ fn run_wrapper(
         wrapper_root: root,
         package_root: root,
         cwd: None,
+        workspace: None,
         hook,
         payload,
         jq,
@@ -126,6 +129,7 @@ fn run(execution: Run<'_>) -> Answer {
         wrapper_root,
         package_root,
         cwd,
+        workspace,
         hook,
         payload,
         jq,
@@ -139,6 +143,9 @@ fn run(execution: Run<'_>) -> Answer {
     command
         .arg(&wrapper)
         .args(wrapper_arguments(hook, package_root, &hook.handlers));
+    if let Some(workspace) = workspace {
+        in_workspace(&mut command, target, workspace);
+    }
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
@@ -520,6 +527,7 @@ fn a_package_root_that_is_gone_never_runs_the_checkouts_own_script() {
             wrapper_root: &root,
             package_root: &gone,
             cwd: Some(&checkout),
+            workspace: None,
             hook: &closed,
             payload: &payload(target, "ls"),
             jq: None,
@@ -697,7 +705,19 @@ fn a_session_start_hands_the_handler_its_source_and_no_tool() {
                  > \"$PLUGIN_ROOT/seen.txt\"\nexit 0",
         );
         let hook = group_at(HookEvent::SessionStart, HookEffect::Observe, &["probe"], 10);
-        let answer = run_wrapper(target, &root, &hook, &session_payload(), None);
+        let workspace = root.join("workspace");
+        fs::create_dir_all(&workspace).unwrap();
+        let workspace = workspace.canonicalize().unwrap();
+        let answer = run(Run {
+            target,
+            wrapper_root: &root,
+            package_root: &root,
+            cwd: None,
+            workspace: Some(&workspace),
+            hook: &hook,
+            payload: &session_payload(),
+            jq: None,
+        });
         assert_eq!(answer.exit, 0, "{target}: the session opens");
         assert!(
             answer.stdout.trim().is_empty(),
@@ -705,7 +725,7 @@ fn a_session_start_hands_the_handler_its_source_and_no_tool() {
         );
         assert_eq!(
             fs::read_to_string(root.join("seen.txt")).unwrap(),
-            "session_start|startup||/repo",
+            format!("session_start|startup||{}", workspace.display()),
         );
         let _ = fs::remove_dir_all(root);
     }
@@ -722,7 +742,19 @@ fn a_session_start_hands_the_handler_its_harness_and_its_package_root() {
             "printf '%s|%s' \"$HOOK_HARNESS\" \"$PLUGIN_ROOT\" > \"$PLUGIN_ROOT/seen.txt\"\nexit 0",
         );
         let hook = group_at(HookEvent::SessionStart, HookEffect::Observe, &["probe"], 10);
-        let answer = run_wrapper(target, &root, &hook, &session_payload(), None);
+        let workspace = root.join("workspace");
+        fs::create_dir_all(&workspace).unwrap();
+        let workspace = workspace.canonicalize().unwrap();
+        let answer = run(Run {
+            target,
+            wrapper_root: &root,
+            package_root: &root,
+            cwd: None,
+            workspace: Some(&workspace),
+            hook: &hook,
+            payload: &session_payload(),
+            jq: None,
+        });
         assert_eq!(answer.exit, 0, "{target}: the session opens");
         assert_eq!(
             fs::read_to_string(root.join("seen.txt")).unwrap(),
@@ -780,17 +812,22 @@ fn recorded_answer(target: HookTarget, index: usize, fixture: &Fixture) -> serde
     } else {
         root.clone()
     };
+    let workspace = root.join("workspace");
+    fs::create_dir_all(&workspace).unwrap();
+    let workspace = workspace.canonicalize().unwrap();
     let answer = run(Run {
         target,
         wrapper_root: &root,
         package_root: &package_root,
         cwd: None,
+        workspace: Some(&workspace),
         hook: &hook,
         payload: &raw,
         jq: None,
     });
     let portable = |text: &str| {
         text.trim()
+            .replace(&workspace.display().to_string(), FIXTURE_WORKSPACE)
             .replace(&root.display().to_string(), "${PLUGIN_ROOT}")
     };
     let stdout = portable(&answer.stdout);
@@ -1249,4 +1286,118 @@ fn a_denial_that_cannot_be_written_exits_with_the_blocking_status() {
         String::from_utf8_lossy(&answer.stderr)
     );
     let _ = fs::remove_dir_all(root);
+}
+
+/// `HOOK_CWD` is the session's workspace wherever the call runs, and
+/// `HOOK_WORKDIR` is where a shell command runs: the directory the harness
+/// reports for the call, relative to the workspace when it is not
+/// absolute, and the workspace itself where it reports none.
+#[test]
+fn a_shell_call_is_told_where_it_runs_beside_the_session_s_workspace() {
+    for target in TARGETS {
+        let root = package(&format!("wrapper-workdir-{target}"));
+        write_script(
+            &root.join("scripts").join("probe"),
+            "printf '%s|%s|%s' \"$HOOK_TOOL\" \"$HOOK_CWD\" \"$HOOK_WORKDIR\" \
+                 > \"$PLUGIN_ROOT/seen.txt\"\nexit 0",
+        );
+        let workspace = root.join("workspace");
+        fs::create_dir_all(&workspace).unwrap();
+        let workspace = workspace.canonicalize().unwrap();
+        let shown = workspace.display().to_string();
+        let payload_workspace = if target == crate::antigravity::HOOKS {
+            shown.clone()
+        } else {
+            FIXTURE_WORKSPACE.to_owned()
+        };
+        let reports_a_directory = target
+            .dialect()
+            .is_some_and(|dialect| dialect.payload.workdir.is_some());
+        let seen = |event: HookEvent, payload: serde_json::Value| {
+            let _ = fs::remove_file(root.join("seen.txt"));
+            let hook = group_at(event, HookEffect::Observe, &["probe"], 10);
+            let answer = run(Run {
+                target,
+                wrapper_root: &root,
+                package_root: &root,
+                cwd: None,
+                workspace: Some(&workspace),
+                hook: &hook,
+                payload: &payload.to_string(),
+                jq: None,
+            });
+            assert_eq!(answer.exit, 0, "{target}: {}", answer.stderr);
+            fs::read_to_string(root.join("seen.txt")).unwrap()
+        };
+        let shell = |directory: Option<&str>| {
+            if target == crate::antigravity::HOOKS {
+                serde_json::json!({
+                    "toolCall": {"name": "run_command", "args": {"CommandLine": "ls"}},
+                    "workspacePaths": [payload_workspace],
+                })
+            } else {
+                let mut payload = serde_json::json!({
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "ls"},
+                });
+                if let Some(directory) = directory {
+                    payload["cwd"] = serde_json::json!(directory);
+                }
+                payload
+            }
+        };
+        for (directory, expected) in [
+            (None, shown.clone()),
+            (Some("/elsewhere"), "/elsewhere".to_owned()),
+            (Some("sub"), format!("{shown}/sub")),
+        ] {
+            let expected = if reports_a_directory {
+                expected
+            } else {
+                shown.clone()
+            };
+            assert_eq!(
+                seen(HookEvent::PreToolUse, shell(directory)),
+                format!("shell|{shown}|{expected}"),
+                "{target}: {directory:?}"
+            );
+        }
+        if target != crate::antigravity::HOOKS {
+            let other = serde_json::json!({
+                "tool_name": "WebFetch",
+                "tool_input": {"url": "https://example.invalid"},
+                "cwd": "/elsewhere",
+            });
+            let mut hook = group_at(HookEvent::PreToolUse, HookEffect::Observe, &["probe"], 10);
+            hook.matchers.clear();
+            let _ = fs::remove_file(root.join("seen.txt"));
+            run(Run {
+                target,
+                wrapper_root: &root,
+                package_root: &root,
+                cwd: None,
+                workspace: Some(&workspace),
+                hook: &hook,
+                payload: &other.to_string(),
+                jq: None,
+            });
+            assert!(
+                fs::read_to_string(root.join("seen.txt"))
+                    .unwrap()
+                    .ends_with(&format!("|{shown}|")),
+                "{target}: only a shell call is told where it runs"
+            );
+        }
+        let stop = if target == crate::antigravity::HOOKS {
+            serde_json::json!({"workspacePaths": [payload_workspace]})
+        } else {
+            serde_json::json!({"cwd": "/elsewhere"})
+        };
+        assert_eq!(
+            seen(HookEvent::Stop, stop),
+            format!("|{shown}|"),
+            "{target}"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
 }

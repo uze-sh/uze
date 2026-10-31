@@ -355,6 +355,12 @@ class Bindings:
 
         return render(template)
 
+    def shell_in(self, command, workdir=None):
+        """A `shell` call running `command`, in `workdir` when one is given,
+        through the parameter this harness's command tool declares for it;
+        None where that tool declares no working directory."""
+        return None
+
     def read_call(self, expected, path):
         """A scripted call that reads the file at `path` and hands its
         content to the model, from the Lab's template for this harness's

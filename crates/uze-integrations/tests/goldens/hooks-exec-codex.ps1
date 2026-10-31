@@ -8,6 +8,8 @@
 #
 #   usage: exec.ps1 <plugin-root> <event> <effect> <seconds>:<handler>...
 $ErrorActionPreference = 'Stop'
+# Where the harness started this hook, before anything here moves.
+$launchedIn = (Get-Location).ProviderPath
 $utf8 = New-Object System.Text.UTF8Encoding $false
 [Console]::InputEncoding = $utf8
 [Console]::OutputEncoding = $utf8
@@ -95,7 +97,8 @@ try {
 }
 if ($payload -isnot [System.Collections.IDictionary]) { Fail 'hooks/exec: the harness payload is not JSON' }
 Set-Hook 'HOOK_TOOL_NATIVE' (Text (First @((Pick $payload @('tool_name')), $null)))
-Set-Hook 'HOOK_CWD' (Text (First @((Pick $payload @('cwd')), $null)))
+Set-Hook 'HOOK_CWD' ($launchedIn)
+$workdir = Text (First @((Pick $payload @('cwd')), $null))
 $toolInput = (First @((Pick $payload @('tool_input')), @{}))
 Set-Hook 'HOOK_INPUT' $(if ($null -eq $toolInput) { '{}' } else { $json.Serialize($toolInput) })
 Set-Hook 'HOOK_SOURCE' $(if ($hookEvent -eq 'session_start') { Text (Pick $payload @('source')) } else { '' })
@@ -109,6 +112,11 @@ switch -CaseSensitive ($env:HOOK_TOOL_NATIVE) {  # the portable vocabulary
   'Bash' { $env:HOOK_TOOL = 'shell'; Set-Hook 'HOOK_COMMAND' (Text (Pick $toolInput @('command'))) }
   'collaborationspawn_agent' { $env:HOOK_TOOL = 'agent.spawn' }
   'collaborationsend_message' { $env:HOOK_TOOL = 'agent.message' }
+}
+# Where a shell command runs: the workspace unless the call names another.
+$env:HOOK_WORKDIR = ''
+if ($env:HOOK_TOOL -eq 'shell') {
+  Set-Hook 'HOOK_WORKDIR' $(if (-not $workdir) { "$env:HOOK_CWD" } elseif ([System.IO.Path]::IsPathRooted($workdir) -or -not $env:HOOK_CWD) { $workdir } else { [System.IO.Path]::Combine($env:HOOK_CWD, $workdir) })
 }
 }
 Portable-Fields

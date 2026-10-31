@@ -2,6 +2,9 @@ use super::*;
 use std::process::Command;
 use uze_core::hook::{CommandHandlerType, HookEvent};
 
+/// The location every driven plugin is set up for.
+const LOCATION: &str = "/lab/workspace";
+
 /// Loads the runtime plugin's hooks section over one document carrying
 /// `hook` under `root`, and runs `calls` against it, answering with what it
 /// reported on the console.
@@ -27,6 +30,7 @@ fn drive(root: &Path, hook: &PortableHook, calls: &str) -> Vec<String> {
             r#"import plugin from "./uze.ts";
 const hooks = {{}};
 const cleanup = await plugin.setup({{
+  location: {{ directory: "{LOCATION}" }},
   tool: {{ hook: async (name, fn) => {{ hooks[name] = fn; }} }},
   permission: {{ hook: async (name, fn) => {{ hooks[`permission.${{name}}`] = fn; }} }},
   event: {{ subscribe: () => ({{ [Symbol.asyncIterator]: () => ({{ next: () => new Promise(() => {{}}) }}) }}) }},
@@ -576,6 +580,42 @@ console.error(`tool ${call.tool}`);"#,
             .any(|line| line.starts_with("tool read (refused by a hook: ")
                 && line.contains("broken.json cannot be read")),
         "{reported:?}"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+/// `HOOK_CWD` is the location the plugin was set up for, and a shell call's
+/// `HOOK_WORKDIR` the directory it names, relative to that location when it
+/// is not absolute, or the location itself.
+#[test]
+fn a_shell_call_is_told_where_it_runs_beside_the_location_s_workspace() {
+    if crate::opencode::bun_for_tests().is_none() {
+        return;
+    }
+    let root = uze_testkit::temp::scratch("opencode-workdir");
+    let log = root.join("seen.log");
+    let hook = observing(
+        &format!(
+            "printf '%s|%s|%s\\n' \"$HOOK_TOOL\" \"$HOOK_CWD\" \"$HOOK_WORKDIR\" >> '{}'",
+            log.display()
+        ),
+        10,
+    );
+    let mut hook = hook;
+    hook.matchers.clear();
+    drive(
+        &root,
+        &hook,
+        r#"await hooks["execute.before"]({ tool: "shell", input: { command: "ls" } });
+await hooks["execute.before"]({ tool: "shell", input: { command: "ls", workdir: "/elsewhere" } });
+await hooks["execute.before"]({ tool: "shell", input: { command: "ls", workdir: "sub" } });
+await hooks["execute.before"]({ tool: "read", input: { path: "/x", workdir: "/elsewhere" } });"#,
+    );
+    assert_eq!(
+        fs::read_to_string(&log).unwrap(),
+        format!(
+            "shell|{LOCATION}|{LOCATION}\nshell|{LOCATION}|/elsewhere\nshell|{LOCATION}|{LOCATION}/sub\nfile.read|{LOCATION}|\n"
+        )
     );
     let _ = fs::remove_dir_all(root);
 }

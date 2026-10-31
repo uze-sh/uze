@@ -94,6 +94,9 @@ pub(crate) enum RulesDelivery {
     Entries {
         shape: EntryShape,
         tools: &'static str,
+        /// The variable the harness keeps the session's workspace in, for
+        /// a harness that does not start its hooks there.
+        workspace: Option<&'static str>,
     },
     /// A section of the harness's runtime plugin, the harness's own runtime
     /// running the engine. The plugin is written by setup with every other
@@ -192,18 +195,20 @@ impl RulesTarget {
             }
         };
         match self.delivery {
-            RulesDelivery::Entries { shape, tools } => {
-                [HookEvent::SessionStart, HookEvent::PostToolUse]
-                    .into_iter()
-                    .map(|event| {
-                        let entry = entry(shape, tools, event, &engine, &sessions);
-                        artifact(
-                            hook_event_name(event),
-                            serde_json::to_string(&entry).expect("an entry serializes"),
-                        )
-                    })
-                    .collect()
-            }
+            RulesDelivery::Entries {
+                shape,
+                tools,
+                workspace,
+            } => [HookEvent::SessionStart, HookEvent::PostToolUse]
+                .into_iter()
+                .map(|event| {
+                    let entry = entry(shape, tools, workspace, event, &engine, &sessions);
+                    artifact(
+                        hook_event_name(event),
+                        serde_json::to_string(&entry).expect("an entry serializes"),
+                    )
+                })
+                .collect(),
             RulesDelivery::Plugin => {
                 vec![artifact(
                     PLUGIN_SELECTOR,
@@ -268,12 +273,14 @@ impl RulesTarget {
 fn entry(
     shape: EntryShape,
     tools: &str,
+    workspace: Option<&str>,
     event: HookEvent,
     engine: &Path,
     sessions: &Path,
 ) -> serde_json::Value {
     let (program, mut arguments) = uze_platform::shell::script(&engine.display().to_string());
     arguments.push(sessions.display().to_string());
+    arguments.extend(workspace.map(str::to_owned));
     let mut handler = serde_json::Map::new();
     handler.insert("type".to_owned(), serde_json::json!("command"));
     if shape == EntryShape::EventExec {

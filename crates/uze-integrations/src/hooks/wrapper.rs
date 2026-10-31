@@ -46,12 +46,33 @@ pub(crate) struct PayloadPaths {
     pub(crate) tool: &'static str,
     /// The tool input object.
     pub(crate) input: &'static str,
-    /// The workspace directory.
-    pub(crate) cwd: &'static str,
+    /// Where the workspace (`HOOK_CWD`) is read from.
+    pub(crate) workspace: Workspace,
+    /// The directory a shell command runs in, where the harness reports
+    /// one; `None` where its command tool runs every command in the
+    /// workspace. A relative answer is resolved against the workspace.
+    pub(crate) workdir: Option<&'static str>,
     /// How a session began when the harness's session-start payload does
     /// not say: a harness that announces only a new session implies it.
     pub(crate) implied_source: Option<&'static str>,
 }
+
+/// Where a harness says which workspace a hook belongs to: a source the
+/// call itself does not choose. Where a command runs, which the call does
+/// choose, is [`PayloadPaths::workdir`].
+#[derive(Clone, Copy)]
+pub(crate) enum Workspace {
+    /// A `jq` path filter into the payload.
+    Payload(&'static str),
+    /// An environment variable the harness sets for every hook it starts.
+    Environment(&'static str),
+    /// The directory the harness starts the hook in, read before the
+    /// wrapper moves.
+    LaunchDirectory,
+}
+
+/// The portable alias whose calls carry `HOOK_WORKDIR`.
+pub(crate) const WORKDIR_ALIAS: &str = "shell";
 
 /// The most one `HOOK_*` value may carry into a handler's environment, in
 /// UTF-8 bytes, on every platform alike. Windows holds an environment

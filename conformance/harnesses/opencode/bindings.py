@@ -198,6 +198,13 @@ timeout 240 opencode run {shlex.quote(prompt)} 2>&1
         steps = [{"name": c["tool"], "args": json.dumps(c["args"])} for c in calls]
         return "toolcall", {"TOOL_SEQUENCE": json.dumps(steps), "TOOL_TRIGGER": trigger}
 
+    def shell_in(self, command, workdir=None):
+        """`shell`, with the `workdir` its tool snapshot lists."""
+        args = {"command": command}
+        if workdir is not None:
+            args["workdir"] = workdir
+        return {"tool": "shell", "args": args}
+
     def unsupported(self, prop):
         """What OpenCode V2 cannot express, each re-measured by the run.
 

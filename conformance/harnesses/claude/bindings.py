@@ -143,6 +143,12 @@ timeout 240 claude -p {shlex.quote(prompt)} --permission-mode bypassPermissions 
     #: (2.1.290).
     MCP_TOOL = "mcp__plugin_uze-mcp-conformance_uze-conformance__uze_conformance"
 
+    def shell_in(self, command, workdir=None):
+        """`Bash` declares no working directory; a session moves with `cd`."""
+        if workdir is not None:
+            return None
+        return {"tool": "Bash", "args": {"command": command, "description": "lab"}}
+
     def mcp_calls(self):
         return [
             {
@@ -182,6 +188,14 @@ timeout 240 claude -p {shlex.quote(prompt)} --permission-mode bypassPermissions 
         and from a hand-written hook with no UZE in it
         (`experiments/claude/deny-render`). UZE answers in the JSON dialect,
         which at least shows the reason without the handler's path."""
+        if prop == "hooks.post-workdir-is-start":
+            # Measured on 2.1.314: a hook's `cwd` is the shell's own, which
+            # a `cd` moves, and `PostToolUse` reports it after the command.
+            return (
+                "Claude Code reports a post-tool hook's directory after the "
+                "command ran, so a `cd` inside the command moves it; no "
+                "payload field says where the command started"
+            )
         if prop == "hooks.deny-rendered-as-decision":
             return (
                 "Claude Code renders every PreToolUse denial as a hook error, "

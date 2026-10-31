@@ -229,6 +229,28 @@
         "1.4.8"
       ],
       "observed_at": "2026-10-27"
+    },
+    {
+      "harness": "antigravity",
+      "check": "hooks-directories-named",
+      "suite": "hooks",
+      "reason": "Antigravity's `run_command` declares no working directory: every command runs in the workspace, and a call naming one is refused before any hook runs",
+      "measurement": "the shell calls naming a directory (`Cwd`) reached no hook and left no trace of having run",
+      "versions": [
+        "1.4.12"
+      ],
+      "observed_at": "2026-10-31"
+    },
+    {
+      "harness": "claude",
+      "check": "hooks-directories-post-is-start",
+      "suite": "hooks",
+      "reason": "Claude Code reports a post-tool hook's directory after the command ran, so a `cd` inside the command moves it",
+      "measurement": "after `cd <dir>` the post-tool HOOK_WORKDIR named the directory the shell was left in, not the one the command started in",
+      "versions": [
+        "2.1.314 (Claude Code)"
+      ],
+      "observed_at": "2026-10-31"
     }
   ]
 }

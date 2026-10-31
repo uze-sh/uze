@@ -105,9 +105,29 @@ exit code. It never parses a harness payload and never writes harness JSON.
 | `HOOK_TOOL` | the portable alias that matched; empty for a tool the vocabulary does not bind, and on `stop` and `session_start`, which carry no tool |
 | `HOOK_TOOL_NATIVE` | the harness's own tool name, as its hook system reports it (`Bash`, `run_command`, `shell`) |
 | `HOOK_CWD` | the workspace directory; may be empty |
+| `HOOK_WORKDIR` | `shell` only: the absolute directory the command runs in, `HOOK_CWD` when the call names none; empty for every other tool and on `stop` and `session_start` |
 | `HOOK_INPUT` | the tool input, as JSON, for anything the alias does not name |
 | `PLUGIN_ROOT` | the package root the handler was delivered from |
 | `HOOK_<FIELD>` | one per portable field of the matched alias — see the vocabulary below |
+
+`HOOK_CWD` is the session's workspace, read from what the harness says
+about the session, never from the call: a call can name the directory its
+command runs in (Codex's and OpenCode's `workdir`, a `cd` in Claude Code's
+shell), and that directory is `HOOK_WORKDIR`. A guard that confines a call
+to the workspace compares against `HOOK_CWD`; one that resolves the
+command's relative paths reads them against `HOOK_WORKDIR`. Where each one
+comes from, measured per harness:
+
+| | `HOOK_CWD` | `HOOK_WORKDIR` |
+|---|---|---|
+| Claude Code | `CLAUDE_PROJECT_DIR` | the hook's `cwd`: the shell's directory, which a `cd` moves |
+| Codex | the directory Codex starts the hook in, its session's (one per session, under a shared app-server too) | the hook's `cwd`, the call's `workdir` resolved |
+| Antigravity | `workspacePaths[0]` | `HOOK_CWD`: `run_command` declares no working directory |
+| OpenCode | the location the plugin was set up for | the call's `workdir`, relative to the location when it is not absolute |
+
+On Claude Code a `post_tool_use` handler is told the directory the shell
+was left in, so a `cd` inside the command moves it; every other harness
+reports the directory the command started in.
 
 | Exit code | Meaning |
 |---|---|
@@ -324,7 +344,7 @@ stated) · **—** = not expressible.
 
 A `SessionStart` group observes a session opening. Its handler gets
 `HOOK_HARNESS`, `HOOK_EVENT=session_start`, `HOOK_CWD`, `PLUGIN_ROOT` and
-`HOOK_SOURCE`, and no tool fields. Nothing it answers can keep the session
+`HOOK_SOURCE`, and no tool fields (`HOOK_WORKDIR` is empty). Nothing it answers can keep the session
 from starting: a failure, a timeout or the deny exit code is reported on
 stderr and the session opens. Without a matcher the delivered entry names
 the three portable sources explicitly, so a harness's own further source (a
