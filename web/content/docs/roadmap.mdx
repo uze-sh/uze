@@ -44,7 +44,12 @@ too, installed by `irm https://uze.sh/i | iex` (see
   [Architect](/docs/workspace/architect), for the project's own
   Mermaid diagrams drawn in the terminal; and
   [Code](/docs/workspace/code), for a checkout's changes, files,
-  history and map.
+  history and map. A plugin can bring its own
+  [extensions](/docs/plugins/extensions), each running only with the grants
+  you consented to; `workspace@uze` ships the official ones.
+- **Security**: nothing a plugin, a project or an extension brings runs before
+  you approve it, agents cannot answer for you, and uze's Git runs nothing a
+  repository names. [Security](/docs/concepts/security)
 - **Freshness**: `uze status -m` reports each package against its
   marketplace's mirror, and `uze update` moves the pins when you decide to.
 - **Records that survive an upgrade**: a record written in a shape a build
@@ -57,7 +62,8 @@ too, installed by `irm https://uze.sh/i | iex` (see
 
 - **Plugin versioning**: a plugin is pinned to a commit today. A version a
   project can ask for by range is not decided yet.
-- **Security & trust**: beyond today's consent boundary.
+- **Agent containment beyond Linux**: the seal between agent panes and the
+  workspace's controls needs Linux with Landlock today.
 - **Runtime context projection**: the PATH shim that reaches a harness without
   writing into the project is still experimental.
 - **Signed Windows binaries**: Windows releases ship

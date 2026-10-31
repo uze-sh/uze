@@ -44,10 +44,13 @@ only rebuilds what it owns and can prove is safe to rebuild.
 A plugin can run commands on your machine: its MCP servers and hooks, a skill
 or agent whose text runs a command when it loads (`` !`…` ``) or grants itself
 tools, and the version check of a program it requires. Before installing, uze
-lists every one and asks; an update that adds one, or changes a script one of
-them runs, asks again. This holds for plugins a cloned project's `agents.yaml`
-declares too. Where there is nobody to ask, it refuses unless you pass
-`--trust`.
+lists every one and asks, including what a plugin carries in one agent's own
+format (`.claude-plugin/`, `.codex-plugin/`, `.mcp.json`, `hooks/hooks.json`).
+What you approve is the whole plugin: an update that changes any of its files
+asks again. This holds for plugins a cloned project's `agents.yaml` declares
+too. Where there is nobody to ask, it refuses unless you pass `--trust`, and
+an update made in the background waits for you to review it. The whole model
+is on [Security](/docs/concepts/security).
 
 Plugins are fetched as untrusted input: without your Git config or credentials
 leaking into the clone, never running a repository's own hooks, and never
