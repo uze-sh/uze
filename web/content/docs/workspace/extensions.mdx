@@ -16,11 +16,11 @@ install brings all three, and each stays off until you allow what it may
 reach and enable it:
 
 ```bash
-uze install workspace@uze
+uze add workspace@uze
 ```
 
 This declares the plugin in the project's `agents.yaml`, so anyone who runs
-`uze install` there gets it too; `uze install -m workspace@uze` keeps it on
+`uze install` there gets it too; `uze add -m workspace@uze` keeps it on
 this machine only, and `uze remove workspace` takes it out. To try them
 without a project of your own, ask any agent for `/uze:try`.
 
