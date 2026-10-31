@@ -419,6 +419,10 @@ vocabulary! {
         StepDecrease = "step.decrease",
         /// Adds one to a number.
         StepIncrease = "step.increase",
+        /// A table ordered by this column, least first.
+        SortAscending = "sort.ascending",
+        /// A table ordered by this column, most first.
+        SortDescending = "sort.descending",
         /// A section that is folded shut.
         ChevronCollapsed = "chevron.collapsed",
         /// A section that is open.

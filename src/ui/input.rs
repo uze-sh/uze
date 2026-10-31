@@ -123,7 +123,10 @@ impl TuiModel {
     fn step_landed(&self, action: Action, intent: &Intent) -> bool {
         match action {
             Action::SwitchMode => *intent == Intent::CloseModal,
-            Action::Refresh => *intent == Intent::Refresh,
+            Action::Refresh => matches!(
+                intent,
+                Intent::Refresh | Intent::CollectMachineOverview { .. }
+            ),
             Action::OpenActionIndex => matches!(self.overlay, Overlay::ActionIndex { .. }),
             _ => false,
         }
@@ -153,9 +156,17 @@ impl TuiModel {
             }
             Action::SwitchMode => Intent::CloseModal,
             Action::Quit => Intent::Quit,
+            Action::Refresh if self.route == Route::Overview => {
+                self.collect_machine(std::time::Instant::now(), true)
+            }
             Action::Refresh => Intent::Refresh,
             Action::SelectNext => self.move_by(1),
             Action::SelectPrevious => self.move_by(-1),
+            Action::FocusNext | Action::FocusPrevious
+                if self.route == Route::Overview && self.focus == Focus::Content =>
+            {
+                self.machine_next_field(action == Action::FocusNext)
+            }
             Action::FocusNext | Action::FocusPrevious => self.toggle_focus(),
             // Choosing a screen is wanting to be on it, so the focus lands
             // in the screen rather than on its name.
@@ -167,6 +178,16 @@ impl TuiModel {
                 }
                 None => Intent::None,
             },
+            Action::FocusSidebar
+                if self.route == Route::Overview && self.focus == Focus::Content =>
+            {
+                self.machine_step_back()
+            }
+            Action::FocusContent
+                if self.route == Route::Overview && self.focus == Focus::Content =>
+            {
+                self.machine_step_in()
+            }
             Action::FocusSidebar if self.in_plugins_content() => {
                 self.step_plugins_back();
                 Intent::None
@@ -194,6 +215,9 @@ impl TuiModel {
                 }
                 if self.route == Route::Settings {
                     return self.activate_settings();
+                }
+                if self.route == Route::Overview {
+                    return self.machine_activate();
                 }
                 if self.route == Route::Plugins && self.plugin_pane == PluginPane::Markets {
                     return self.step_plugins_in();
@@ -385,6 +409,7 @@ impl TuiModel {
                 self.move_settings_selection(delta);
                 Intent::None
             }
+            Route::Overview => self.machine_move(delta),
             Route::Plugins => {
                 self.move_plugin_row(delta);
                 self.selection_moved_at = Some(std::time::Instant::now());

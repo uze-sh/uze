@@ -43,6 +43,7 @@ mod agent_context;
 mod distribution;
 mod flags;
 mod hooks;
+mod inventory;
 mod mcp;
 mod project_agents;
 mod provision;
@@ -272,6 +273,18 @@ impl IntegrationPort for OpenCodeIntegration {
     /// person starts from inside the TUI.
     fn flag_catalog(&self) -> uze_core::flag_catalog::FlagCatalog {
         flags::CATALOG
+    }
+
+    fn machine_inventory(&self) -> Option<Vec<uze_core::inventory::FoundResource>> {
+        Some(inventory::inventory(self.config_root(), &self.config_path))
+    }
+
+    fn session_counts(
+        &self,
+        _now: std::time::SystemTime,
+    ) -> Option<uze_core::inventory::SessionCounts> {
+        let (executable, home) = self.session_query()?;
+        inventory::session_counts(&executable, &home)
     }
 
     fn managed_environment(&self) -> &'static [&'static str] {

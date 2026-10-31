@@ -131,7 +131,7 @@ fn add_marketplace_overlay_esc_cancels_without_intent() {
 fn a_letter_names_one_action_and_refreshing_has_its_own() {
     let mut model = TuiModel {
         focus: Focus::Content,
-        route: Route::Overview,
+        route: Route::Harnesses,
         ..TuiModel::default()
     };
     assert_eq!(

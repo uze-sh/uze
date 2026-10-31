@@ -27,7 +27,6 @@ pub use uze_core::{
     Result, UzeError, UzeHome,
     anchor::anchor_root_or_self,
     capability::CapabilityKind,
-    features::{ALL_FEATURES, Feature},
     hosts::HostEntry,
     integration::{AttachmentState, HarnessDetection, PublicationStatus, RulesRoute, WithheldPath},
     naming::{
@@ -81,6 +80,14 @@ pub use uze_core::exposure::PackageEnvelope;
 
 /// Paths as the platform compares them: what a root shown or compared in
 /// the TUI must agree with, since the domain hands it roots this way.
+/// What the machine Overview shows: the read model `src/` draws, so it
+/// never names `uze_core`.
+pub mod machine_overview {
+    pub use uze_core::inventory::{
+        HarnessReport, Location, MachineOverview, Origin, OverviewResource, PERIODS, ResourceKind,
+        SessionCounts, Status,
+    };
+}
 pub use uze_core::path;
 
 /// The one writer for anything UZE owns. The binary writes its own update
@@ -114,12 +121,6 @@ pub use uze_workspace::{
     reports::Report as AgentReport,
     worktree::{CompletionBehavior, PolicyStep, isolated_checkout},
 };
-
-/// Whether this build offers an unfinished surface — see
-/// [`uze_core::features`], which holds the rule and the reason.
-pub fn feature_enabled(feature: Feature) -> bool {
-    uze_core::features::enabled(feature)
-}
 
 /// The repository a directory's tasks hang off, resolved lexically.
 ///
