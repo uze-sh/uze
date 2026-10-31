@@ -93,6 +93,23 @@ label = "billing api"
 Leave the name empty, or give it the directory's own, and the directory's
 name is back.
 
+## Launching with other flags
+
+`Alt+→` in the new agent popup opens its **overrides**: extra flags for the
+harness and `NAME=value` variables, for this launch only. Type them as you
+would on a command line; `Tab` completes from the flags the harness itself
+defines. Flags and variables you used before are listed under the line, this
+project's first: `Space` checks one for this launch, and `✕` forgets it. The
+next new agent opens with the set the last one launched with.
+
+uze refuses what it manages itself (its own `UZE_*` variables, `PATH`, `HOME`,
+the agent's config directory, and the flags for sessions and resuming) and
+says so as you type. Flags that weaken the harness's safety, such as
+skipping permission prompts, are accepted and marked. Variables that look like
+secrets, and URLs carrying credentials, are never remembered.
+
+An agent keeps its overrides when it restarts or resumes.
+
 ## Restarting with other flags
 
 Right-click the agent (or press `Alt+.`) and open **Restart in** ›. A panel
@@ -198,6 +215,10 @@ waits. If someone changes the lines later, the workspace asks again. From a
 terminal, `uze workspace allow` does the same, and `uze workspace revoke`
 takes the approval back; see
 [Approving the commands](/docs/reference/project-files#approving-the-commands).
+
+uze's own Git runs no repository hooks, so a `pre-push` hook (Git LFS,
+lefthook) does not run when uze pushes. Put those checks in `gate`. See
+[Security](/docs/concepts/security#git-runs-nothing-the-repository-names).
 
 ## Subagents
 
