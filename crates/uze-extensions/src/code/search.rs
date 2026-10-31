@@ -380,14 +380,23 @@ pub(super) fn grounded(spans: Vec<Span>, ranges: &[Range<usize>]) -> Vec<Span> {
     out
 }
 
+/// A piece of `span`, set apart as a match when `found`: in the match's
+/// own hue and weight on its ground, so it reads at a glance among the
+/// text around it — a ground alone is a tint, and a tint is easy to miss.
 fn cut(span: &Span, text: String, found: bool) -> Span {
-    Span {
-        text,
-        ground: match found {
-            true => Some(MATCH),
-            false => span.ground,
+    match found {
+        true => Span {
+            text,
+            role: MATCH,
+            color: None,
+            ground: Some(MATCH),
+            bold: true,
+            ..span.clone()
         },
-        ..span.clone()
+        false => Span {
+            text,
+            ..span.clone()
+        },
     }
 }
 
@@ -466,18 +475,19 @@ mod tests {
     #[test]
     fn a_found_line_sets_its_matches_apart_and_drops_its_indent() {
         let spans = marked("    let fog = 1;", "fog");
-        let texts: Vec<(&str, Option<Role>)> = spans
+        let texts: Vec<(&str, Option<Role>, bool)> = spans
             .iter()
-            .map(|span| (span.text.as_str(), span.ground))
+            .map(|span| (span.text.as_str(), span.ground, span.bold))
             .collect();
         assert_eq!(
             texts,
             [
-                ("let ", None),
-                ("fog", Some(Role::Warning)),
-                (" = 1;", None)
+                ("let ", None, false),
+                ("fog", Some(Role::Warning), true),
+                (" = 1;", None, false)
             ]
         );
+        assert_eq!(spans[1].role, Role::Warning, "in the match's own hue");
     }
 
     #[test]

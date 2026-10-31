@@ -3099,6 +3099,11 @@ fn a_navigators_field_stands_over_what_it_found() {
     assert!(at("fog") < at("1 result in 1 file"));
     assert!(at("1 result in 1 file") < at("a.rs src"));
     assert!(at("a.rs src") < at("let fog"));
+    assert!(
+        rows[at("let fog")].contains(&theme::glyph(Symbol::TreeVertical)),
+        "a found line hangs from its file's guide: {:?}",
+        rows[at("let fog")]
+    );
     let row_of = |wanted: ViewHit| {
         hits.iter()
             .find(|(_, hit)| *hit == wanted)

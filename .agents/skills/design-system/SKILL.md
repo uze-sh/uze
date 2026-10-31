@@ -130,8 +130,10 @@ on "cancel" must not save first.
   own: a fixed field over the tree (`Navigator::field`, drawn by
   `widget::Field`) whose results take the tree's place while it holds
   text, and `Esc` gives the tree back. What it found is said under the
-  field, its results grouped by file with a count; a match is set apart by
-  a ground, in the list and in the file.
+  field, its results grouped by file with a count, each file's lines
+  hanging from a `tree.vertical` guide under its fold mark. A match is set
+  apart in its own hue, bold, on its ground — a ground alone is a tint the
+  eye misses — in the list and in the file.
 - Hover keeps the word's weight. A word that is bold at rest stays bold; a
   word that is not never turns bold under the pointer or while pressed.
   Manage's version and health are the reference.

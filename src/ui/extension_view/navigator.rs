@@ -610,9 +610,15 @@ pub(super) fn render_navigator(
                 spans: found,
                 selected,
             } => {
+                // The guide stands under the file's fold mark, so the lines
+                // read as the file's own, apart from the next file's.
                 let mut spans = vec![
                     selection_bar(*selected),
-                    TextSpan::raw(tree_indent(1, rect.width)),
+                    TextSpan::styled(
+                        theme::glyph(Symbol::TreeVertical),
+                        theme::fg(Token::TextFaint),
+                    ),
+                    TextSpan::raw(" "),
                 ];
                 spans.extend(found.iter().map(styled));
                 // Under what has no ground of its own: a match keeps its
