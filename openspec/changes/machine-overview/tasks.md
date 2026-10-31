@@ -1,12 +1,12 @@
 ## 1. Core model
 
-- [ ] 1.1 Add the harness-neutral types to `uze-core`'s `machine/` concern (found resource with definition files, origin hint, command or path it runs, removal command; session count), re-exported flat
-- [ ] 1.2 Add `machine_inventory` and `session_count` to `IntegrationPort` with "not known" defaults; prove an integration that declares nothing contributes nothing
-- [ ] 1.3 Token estimator with a calibration test against known counts (within ~15%); a file over 1 MB measured by size
-- [ ] 1.4 `uze` ownership from attachment receipts, merging what uze delivered across harnesses, `built-in`; tests for each
-- [ ] 1.5 Duplicate detection by kind, name and content digest, each naming the others; test
-- [ ] 1.6 Static health checks (hook command file, local MCP command on `PATH` via `uze-platform`, unreadable or invalid frontmatter, missing plugin directory; a URL server never judged); tests per check
-- [ ] 1.7 Status and order (broken, duplicate, ok; heaviest first); test
+- [x] 1.1 Add the harness-neutral types to `uze-core`'s `machine/` concern (found resource with definition files, origin hint, command or path it runs, removal command; session count), re-exported flat
+- [x] 1.2 Add `machine_inventory` and `session_count` to `IntegrationPort` with "not known" defaults; prove an integration that declares nothing contributes nothing
+- [x] 1.3 Token estimator with a calibration test against known counts (within ~15%); a file over 1 MB measured by size
+- [x] 1.4 `uze` ownership from attachment receipts, merging what uze delivered across harnesses, `built-in`; tests for each
+- [x] 1.5 Duplicate detection by kind, name and content digest, each naming the others; test
+- [x] 1.6 Static health checks (hook command file, local MCP command on `PATH` via `uze-platform`, unreadable or invalid frontmatter, missing plugin directory; a URL server never judged); tests per check
+- [x] 1.7 Status and order (broken, duplicate, ok; heaviest first); test
 
 ## 2. Collection
 
