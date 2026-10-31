@@ -23,7 +23,34 @@ that could see one (`UserPromptSubmit`, `UserPromptExpansion`, `PreToolUse`,
    (`claude mcp add -s user`, a few lines of Node).
 
 In turns 2–5 the provider calls no tool, so a `Skill` the harness ran on
-its own would be the harness double counting.
+its own would be the harness double counting. Turn 1 also opens with the
+model's own `Skill` call of the same skill.
+
+Finding (2026-10-31, 2.1.316), 12/12:
+
+- A typed skill, global or a plugin's, and an MCP prompt fire
+  `UserPromptExpansion` once each, with `command_name` (`usage-probe`,
+  `flow:review`, `mcp__probe__probe_prompt`), `command_args`,
+  `command_source` (`userSettings`, `plugin`, `mcp`) and `expansion_type`
+  (`slash_command`, `mcp_prompt`). Two stacked skills fire it twice, one per
+  skill. No `Skill` tool runs for a typed skill, and the model's own `Skill`
+  call fires no expansion: the two channels never overlap.
+  `UserPromptSubmit` gets the line as typed, and also fires on turns Claude
+  starts itself (`<task-notification>`), so it is not a count.
+- Transcript: a typed skill or prompt is a `user` entry
+  `<command-name>/<name></command-name><command-args>…`, followed by an
+  `isMeta` entry holding the expanded body.
+- `@agent-<name>` is the raw text in `UserPromptSubmit` and an
+  `agent_mention` attachment (`agentType`) in the transcript; the agent
+  runs only when the model calls `Agent`, which fires `SubagentStart` once
+  with `agent_type` (`usage-probe-agent`, a plugin's `flow:scout`).
+  `SubagentStop` fires several times per agent (each time it goes idle), so
+  it is not a count either.
+- Cost: a `PostToolUse` matcher `^(Skill|Agent|mcp__.*)$` ran its hook for
+  exactly the matching calls, never for `Read`, `Bash` or `ToolSearch`. A
+  synchronous hook holds the turn for its whole run (`sleep 2` → 2.06 s
+  before the next call, against 0.05–0.2 s otherwise); an `async: true`
+  one does not (0.05 s). A minimal `sh` hook costs about 2 ms a run.
 
 Run: python3 conformance/lab.py --harness claude --experiment claude/user-invocation --discovery
 """
