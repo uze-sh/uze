@@ -594,21 +594,13 @@ pub(super) fn render_navigator(
                     TextSpan::styled(format!("{fold} "), theme::fg(Token::TextMuted)),
                 ];
                 spans.extend(row_icon(*icon));
-                spans.push(TextSpan::styled(
-                    name.clone(),
-                    theme::fg(Token::TextSecondary),
-                ));
-                if !detail.is_empty() {
-                    spans.push(TextSpan::styled(
-                        format!(" {detail}"),
-                        theme::fg(Token::TextMuted),
-                    ));
-                }
-                row::push_trailing(
+                push_flat_label(
                     &mut spans,
-                    rect.width + TRAILING_PAD,
-                    count.to_string(),
-                    theme::color(Token::TextMuted),
+                    rect.width,
+                    name,
+                    detail,
+                    theme::fg(Token::TextSecondary),
+                    &Span::new(count.to_string(), Role::Muted),
                 );
                 frame.render_widget(Paragraph::new(Line::from(spans)), rect);
                 hits.push((rect, ViewHit::ToggleGroup(*id)));
@@ -619,20 +611,13 @@ pub(super) fn render_navigator(
                 selected,
             } => {
                 let mut spans = vec![
-                    TextSpan::styled(
-                        if *selected {
-                            theme::glyph(Symbol::TreeColumnDivider)
-                        } else {
-                            " ".to_owned()
-                        },
-                        theme::fg(Token::Accent),
-                    ),
+                    selection_bar(*selected),
                     TextSpan::raw(tree_indent(1, rect.width)),
                 ];
                 spans.extend(found.iter().map(styled));
-                if *selected {
-                    row::pad_to(&mut spans, rect.width, theme::color(Token::SurfaceSelected));
-                }
+                // Under what has no ground of its own: a match keeps its
+                // own on the selected row.
+                row::fill_under(&mut spans, rect.width, row::RowState::of(*selected, false));
                 frame.render_widget(Paragraph::new(Line::from(spans)), rect);
                 hits.push((rect, ViewHit::SelectItem(*id)));
             }
@@ -687,14 +672,7 @@ pub(super) fn render_navigator(
                 // selected surface the status listing uses — rather than a
                 // neutral lift that the diff beside it easily outshone.
                 let mut spans = vec![
-                    TextSpan::styled(
-                        if *selected {
-                            theme::glyph(Symbol::TreeColumnDivider)
-                        } else {
-                            " ".to_owned()
-                        },
-                        theme::fg(Token::Accent),
-                    ),
+                    selection_bar(*selected),
                     TextSpan::raw(tree_indent(*depth, rect.width)),
                 ];
                 match marker_side {
@@ -709,13 +687,12 @@ pub(super) fn render_navigator(
                                 label_style,
                             )),
                         }
-                        // In a tree the depth says where a row sits, so a
-                        // detail here is a state — a buffer not yet saved —
-                        // said quieter after the name while it fits.
+                        // Quieter after the name, as a flat row says it, for
+                        // as much of it as the row has room for.
                         let left = label_room(&spans, rect.width);
-                        if !detail.is_empty() && detail.chars().count() < left {
+                        if !detail.is_empty() && left > 1 {
                             spans.push(TextSpan::styled(
-                                format!(" {detail}"),
+                                format!(" {}", text::elide(detail, left - 1)),
                                 theme::fg(Token::TextMuted),
                             ));
                         }
@@ -761,6 +738,18 @@ pub(super) fn render_navigator(
         bar.render_on_draggable(frame, settled.first, resizing);
     }
     (settled, bar, slid)
+}
+
+/// The accent bar a list's selected row stands behind, or the blank
+/// column it leaves on every other row.
+fn selection_bar(selected: bool) -> TextSpan<'static> {
+    TextSpan::styled(
+        match selected {
+            true => theme::glyph(Symbol::TreeColumnDivider),
+            false => " ".to_owned(),
+        },
+        theme::fg(Token::Accent),
+    )
 }
 
 /// A navigator's line to type into, its rule under it and what it found

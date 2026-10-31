@@ -507,9 +507,10 @@ pub enum NavigatorRow {
         marker: Span,
         /// Which end of the row the marker stands at.
         marker_side: MarkerSide,
-        /// Drawn quieter after the name, when the row's depth does not
-        /// already say where it sits — a flat list's `mod.rs` is only
-        /// told from another `mod.rs` by its directory. Empty for none.
+        /// Drawn quieter after the name, for as much as fits: in a flat
+        /// list, where the row sits — a `mod.rs` is only told from another
+        /// `mod.rs` by its directory — and in a tree, which already says
+        /// where, a word about the row's state (`unsaved`). Empty for none.
         detail: String,
         selected: bool,
         /// What this row is, for the mark the host draws before its name.

@@ -38,10 +38,12 @@ pub(super) fn render_file_tabs(
         }
         let width = (*width).min(strip.right() - x);
         let rect = Rect::new(x, strip.y, width, 1);
-        let close = Rect::new(rect.right().saturating_sub(2), strip.y, 1, 1);
+        // The mark sits before the chip's last blank column.
+        let mark = theme::width(Symbol::MarkClose);
+        let close = Rect::new(rect.right().saturating_sub(mark + 1), strip.y, mark, 1);
         // The close mark first: the hit list is read first-come, and the
         // mark lies on the tab it closes.
-        if rect.width >= 3 {
+        if rect.width > mark + 1 {
             hits.push((close, ViewHit::CloseTab(index)));
         }
         hits.push((rect, ViewHit::SelectTab(index)));
@@ -95,10 +97,7 @@ fn chip(index: usize, tab: &FileTab, hovered: Option<ViewHit>) -> Vec<TextSpan<'
     spans.push(TextSpan::raw(" "));
     spans.push(mark);
     spans.push(TextSpan::raw(" "));
-    let ground = theme::color(ground);
-    for span in &mut spans {
-        span.style = span.style.bg(ground);
-    }
+    row::pad_to(&mut spans, 0, theme::color(ground));
     spans
 }
 

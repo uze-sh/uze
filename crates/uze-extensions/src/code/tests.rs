@@ -3946,3 +3946,27 @@ fn files_open_in_tabs_the_way_an_editor_keeps_them() {
     assert!(tabs(&view).is_empty());
     assert!(view.open.is_none());
 }
+
+/// The map is entered over the search and left back onto it: what was
+/// typed and found is still there.
+#[test]
+fn leaving_the_map_returns_to_the_search_it_was_entered_from() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fog");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Close);
+    view.absorb_measure(measured());
+
+    press(&mut view, Command::ToggleMap);
+    assert_eq!(view.showing(), ContentMode::Map);
+    press(&mut view, Command::ToggleMap);
+    let field = render::view(&view, space())
+        .navigator
+        .and_then(|navigator| navigator.field)
+        .expect("the search's field, again");
+    assert_eq!(field.text, "fog");
+    assert_eq!(field.summary.text, "1 result in 1 file");
+}

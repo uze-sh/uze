@@ -566,6 +566,22 @@ impl CodeView {
             .collect()
     }
 
+    /// Whether `path` has changes not yet written: the buffer on show, or
+    /// one kept while another file is.
+    pub(super) fn is_unsaved(&self, path: &Path) -> bool {
+        self.open
+            .as_ref()
+            .is_some_and(|open| open.modified && open.path == path)
+            || self.parked.contains_key(path)
+    }
+
+    /// Whether any tab is drawn — the question [`Self::file_tabs`] answers
+    /// in full, asked without building them.
+    pub(super) fn has_tabs(&self) -> bool {
+        !self.tabs.is_empty()
+            && matches!(self.content, ContentMode::Contents | ContentMode::Preview)
+    }
+
     /// Whether the file on show is text that could be typed into — what
     /// makes a click on one of its lines start editing there, the way
     /// every editor a person has used puts the caret where they click.
@@ -1209,7 +1225,11 @@ impl CodeView {
     /// a way through the files. It is; going there is also leaving the
     /// changes, and that is what the press said.
     pub(super) fn show_half(&mut self, half: Half) {
-        self.searching = half == Half::Search;
+        // The map is entered over whichever list was on show, and leaving
+        // it goes back to that list, so it leaves the choice alone.
+        if half != Half::Map {
+            self.searching = half == Half::Search;
+        }
         match half {
             // The content beside a search is the file a line of it was
             // found in, which is the files half's content.
@@ -1547,30 +1567,25 @@ impl CodeView {
     /// The tabs as the host draws them. Only beside a file: a diff and the
     /// map are not a file open.
     pub(super) fn file_tabs(&self) -> Vec<crate::view::FileTab> {
-        if !matches!(self.content, ContentMode::Contents | ContentMode::Preview) {
+        if !self.has_tabs() {
             return Vec::new();
         }
-        let unsaved = self.unsaved();
-        let name = |path: &Path| file_name(path);
+        let names: Vec<String> = self.tabs.iter().map(|tab| file_name(&tab.path)).collect();
+        let mut seen: BTreeMap<&str, usize> = BTreeMap::new();
+        for name in &names {
+            *seen.entry(name).or_default() += 1;
+        }
         self.tabs
             .iter()
-            .map(|tab| {
-                let shared = self
-                    .tabs
-                    .iter()
-                    .filter(|other| name(&other.path) == name(&tab.path))
-                    .count()
-                    > 1;
-                let modified = unsaved.contains(&tab.path.as_path());
+            .zip(&names)
+            .map(|(tab, name)| {
+                let modified = self.is_unsaved(&tab.path);
                 crate::view::FileTab {
-                    name: name(&tab.path),
-                    detail: match shared {
-                        true => tab
-                            .path
-                            .parent()
-                            .and_then(|parent| parent.strip_prefix(&self.root).ok())
-                            .map(|parent| parent.display().to_string())
-                            .unwrap_or_default(),
+                    name: name.clone(),
+                    // Only where two tabs share a name does the directory
+                    // earn its room.
+                    detail: match seen[name.as_str()] > 1 {
+                        true => relative_dir(&self.root, &tab.path),
                         false => String::new(),
                     },
                     active: self.open.as_ref().is_some_and(|open| open.path == tab.path),
@@ -1616,7 +1631,7 @@ impl CodeView {
         let Some(path) = self.tabs.get(index).map(|tab| tab.path.clone()) else {
             return;
         };
-        if self.unsaved().contains(&path.as_path()) && asked.as_ref() != Some(&path) {
+        if self.is_unsaved(&path) && asked.as_ref() != Some(&path) {
             self.closing_tab = Some(path);
             return;
         }
@@ -1775,6 +1790,15 @@ fn file_name(path: &Path) -> String {
     path.file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.display().to_string())
+}
+
+/// The directory `path` sits in, as the checkout at `root` names it —
+/// empty at the checkout's top.
+fn relative_dir(root: &Path, path: &Path) -> String {
+    path.parent()
+        .and_then(|parent| parent.strip_prefix(root).ok())
+        .map(|parent| parent.display().to_string())
+        .unwrap_or_default()
 }
 
 /// The map answers the keys the tree answers, about tiles rather than

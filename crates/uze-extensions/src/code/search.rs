@@ -10,6 +10,7 @@
 
 use std::{
     collections::BTreeSet,
+    ops::Range,
     path::{Path, PathBuf},
 };
 
@@ -18,6 +19,9 @@ use crate::view::{Field, NavigatorRow, Role, Span};
 /// How many lines one search reports before it stops. A search wide
 /// enough to pass it is one to narrow, and the list says so.
 pub(super) const LIMIT: usize = 2000;
+
+/// The ground a match is set on, in the list and in the file.
+const MATCH: Role = Role::Warning;
 
 /// How much of a found line is kept before its first match: enough to
 /// read what it is in, without pushing the match off a narrow column.
@@ -29,12 +33,18 @@ pub(super) struct Hit {
     /// Counted from one, as the file's line numbers are.
     pub(super) line: usize,
     pub(super) text: String,
+    /// The line as the list draws it, made once when the answer lands
+    /// rather than on every frame.
+    spans: Vec<Span>,
 }
 
 /// The lines found in one file, in the order the file has them.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct FoundFile {
     pub(super) path: PathBuf,
+    /// Its name and its directory, as the list heads its lines with.
+    name: String,
+    directory: String,
     pub(super) hits: Vec<Hit>,
 }
 
@@ -70,10 +80,13 @@ pub(super) fn parse(root: &Path, output: &str) -> Findings {
         let hit = Hit {
             line,
             text: text.trim_end_matches('\r').to_owned(),
+            spans: Vec::new(),
         };
         match findings.files.last_mut() {
             Some(file) if file.path == path => file.hits.push(hit),
             _ => findings.files.push(FoundFile {
+                name: super::file_name(&path),
+                directory: super::relative_dir(root, &path),
                 path,
                 hits: vec![hit],
             }),
@@ -114,7 +127,10 @@ impl Search {
         self.folded.clear();
         self.cursor = None;
         match outcome {
-            Ok(findings) => {
+            Ok(mut findings) => {
+                for hit in findings.files.iter_mut().flat_map(|file| &mut file.hits) {
+                    hit.spans = marked(&hit.text, query);
+                }
                 self.findings = findings;
                 self.error = None;
             }
@@ -217,12 +233,16 @@ impl Search {
     /// The field over the list, saying what the text found.
     pub(super) fn field(&self, focused: bool) -> Field {
         let lines: usize = self.findings.files.iter().map(|file| file.hits.len()).sum();
-        let summary = match (&self.error, self.pending()) {
-            _ if self.query.is_empty() => Span::new("", Role::Muted),
-            (_, true) => Span::new("searching…", Role::Muted),
-            (Some(message), false) => Span::new(message.clone(), Role::Danger),
-            (None, false) if lines == 0 => Span::new("no results", Role::Muted),
-            (None, false) => Span::new(
+        let summary = if self.query.is_empty() {
+            Span::new("", Role::Muted)
+        } else if self.pending() {
+            Span::new("searching…", Role::Muted)
+        } else if let Some(message) = &self.error {
+            Span::new(message.clone(), Role::Danger)
+        } else if lines == 0 {
+            Span::new("no results", Role::Muted)
+        } else {
+            Span::new(
                 format!(
                     "{lines}{} {} in {} {}",
                     if self.findings.truncated { "+" } else { "" },
@@ -231,7 +251,7 @@ impl Search {
                     plural(self.findings.files.len(), "file", "files"),
                 ),
                 Role::Muted,
-            ),
+            )
         };
         Field {
             text: self.query.clone(),
@@ -242,40 +262,29 @@ impl Search {
     }
 
     /// The list: each file, then each of its lines unless it is folded.
-    pub(super) fn rows(&self, root: &Path) -> Vec<NavigatorRow> {
+    pub(super) fn rows(&self) -> Vec<NavigatorRow> {
         let mut rows = Vec::new();
         let mut id = 0;
         for (index, file) in self.findings.files.iter().enumerate() {
             let collapsed = self.folded.contains(&file.path);
-            let name = file
-                .path
-                .file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            let detail = file
-                .path
-                .parent()
-                .and_then(|parent| parent.strip_prefix(root).ok())
-                .map(|parent| parent.display().to_string())
-                .unwrap_or_default();
             rows.push(NavigatorRow::Found {
                 id: index,
-                icon: super::files::icon_for(&name, false, false),
-                name,
-                detail,
+                icon: super::files::icon_for(&file.name, false, false),
+                name: file.name.clone(),
+                detail: file.directory.clone(),
                 count: file.hits.len(),
                 collapsed,
             });
-            for (hit_index, hit) in file.hits.iter().enumerate() {
-                if !collapsed {
-                    rows.push(NavigatorRow::Match {
-                        id,
-                        spans: marked(&hit.text, &self.query),
+            if !collapsed {
+                rows.extend(file.hits.iter().enumerate().map(|(hit_index, hit)| {
+                    NavigatorRow::Match {
+                        id: id + hit_index,
+                        spans: hit.spans.clone(),
                         selected: self.cursor == Some((index, hit_index)),
-                    });
-                }
-                id += 1;
+                    }
+                }));
             }
+            id += file.hits.len();
         }
         rows
     }
@@ -304,38 +313,82 @@ fn plural<'a>(count: usize, one: &'a str, many: &'a str) -> &'a str {
     }
 }
 
-/// Where `query` occurs in `text`, ignoring case, as character ranges.
-pub(super) fn occurrences(text: &str, query: &str) -> Vec<std::ops::Range<usize>> {
+/// Where `query` occurs in `text`, ignoring case, as character ranges,
+/// none overlapping.
+///
+/// Compared on one lowercased copy of the text, each of its characters
+/// remembering the character of `text` it came from — a few characters
+/// lowercase to more than one, and a range has to name `text`'s.
+pub(super) fn occurrences(text: &str, query: &str) -> Vec<Range<usize>> {
     let needle: Vec<char> = query.chars().flat_map(char::to_lowercase).collect();
-    let haystack: Vec<char> = text.chars().collect();
-    let lowered: Vec<Vec<char>> = haystack
-        .iter()
-        .map(|character| character.to_lowercase().collect())
-        .collect();
-    let mut found = Vec::new();
     if needle.is_empty() {
-        return found;
+        return Vec::new();
     }
-    let mut start = 0;
-    'outer: while start < haystack.len() {
-        let mut at = start;
-        let mut matched = 0;
-        while matched < needle.len() {
-            let Some(lower) = lowered.get(at) else {
-                break 'outer;
-            };
-            if needle[matched..].starts_with(lower) {
-                matched += lower.len();
-                at += 1;
-            } else {
-                start += 1;
-                continue 'outer;
-            }
+    let mut lowered = Vec::with_capacity(text.len());
+    let mut from = Vec::with_capacity(text.len());
+    for (index, character) in text.chars().enumerate() {
+        for lower in character.to_lowercase() {
+            lowered.push(lower);
+            from.push(index);
         }
-        found.push(start..at);
-        start = at.max(start + 1);
+    }
+    let mut found = Vec::new();
+    let mut at = 0;
+    while at + needle.len() <= lowered.len() {
+        // A match starts where a character of `text` starts.
+        let starts = at == 0 || from[at] != from[at - 1];
+        if starts && lowered[at..at + needle.len()] == needle[..] {
+            let end = at + needle.len();
+            let last = from[end - 1] + 1;
+            found.push(from[at]..last);
+            at = end;
+        } else {
+            at += 1;
+        }
     }
     found
+}
+
+/// `spans` with the characters in `ranges` — sorted, as [`occurrences`]
+/// gives them — set on the ground a match is drawn on, each span cut where
+/// a range starts or ends.
+pub(super) fn grounded(spans: Vec<Span>, ranges: &[Range<usize>]) -> Vec<Span> {
+    let mut out: Vec<Span> = Vec::new();
+    let mut ranges = ranges.iter().peekable();
+    let mut at = 0;
+    for span in spans {
+        let mut piece = String::new();
+        let mut piece_in = None;
+        for character in span.text.chars() {
+            while ranges.next_if(|range| range.end <= at).is_some() {}
+            let here = ranges.peek().is_some_and(|range| range.contains(&at));
+            if piece_in.is_some_and(|was| was != here) {
+                out.push(cut(
+                    &span,
+                    std::mem::take(&mut piece),
+                    piece_in == Some(true),
+                ));
+            }
+            piece_in = Some(here);
+            piece.push(character);
+            at += 1;
+        }
+        if !piece.is_empty() {
+            out.push(cut(&span, piece, piece_in == Some(true)));
+        }
+    }
+    out
+}
+
+fn cut(span: &Span, text: String, found: bool) -> Span {
+    Span {
+        text,
+        ground: match found {
+            true => Some(MATCH),
+            false => span.ground,
+        },
+        ..span.clone()
+    }
 }
 
 /// `text` as spans, every occurrence of `query` on a ground of its own —
@@ -351,34 +404,20 @@ pub(super) fn marked(text: &str, query: &str) -> Vec<Span> {
         Some(first) if first.start > indent + LEAD => first.start - LEAD,
         _ => indent,
     };
-    let characters: Vec<char> = text.chars().collect();
+    let shifted: Vec<Range<usize>> = found
+        .iter()
+        .filter(|range| range.end > from)
+        .map(|range| range.start.saturating_sub(from)..range.end - from)
+        .collect();
+    let kept = vec![Span::new(
+        text.chars().skip(from).collect::<String>(),
+        Role::Default,
+    )];
     let mut spans = Vec::new();
     if from > indent {
         spans.push(Span::new("…", Role::Muted));
     }
-    let mut at = from;
-    for range in found.into_iter().filter(|range| range.end > from) {
-        let start = range.start.max(from);
-        if start > at {
-            spans.push(Span::new(
-                characters[at..start].iter().collect::<String>(),
-                Role::Default,
-            ));
-        }
-        let mut hit = Span::new(
-            characters[start..range.end].iter().collect::<String>(),
-            Role::Default,
-        );
-        hit.ground = Some(Role::Warning);
-        spans.push(hit);
-        at = range.end;
-    }
-    if at < characters.len() {
-        spans.push(Span::new(
-            characters[at..].iter().collect::<String>(),
-            Role::Default,
-        ));
-    }
+    spans.extend(grounded(kept, &shifted));
     spans
 }
 
@@ -392,18 +431,18 @@ mod tests {
         let found = parse(Path::new("/w"), output);
         assert_eq!(found.files.len(), 2);
         assert_eq!(found.files[0].path, Path::new("/w/src/a.rs"));
+        let hits: Vec<(usize, &str)> = found.files[0]
+            .hits
+            .iter()
+            .map(|hit| (hit.line, hit.text.as_str()))
+            .collect();
+        assert_eq!(hits, [(3, "let foo = 1;"), (9, "foo()")]);
         assert_eq!(
-            found.files[0].hits,
-            [
-                Hit {
-                    line: 3,
-                    text: "let foo = 1;".to_owned()
-                },
-                Hit {
-                    line: 9,
-                    text: "foo()".to_owned()
-                }
-            ]
+            (
+                found.files[0].name.as_str(),
+                found.files[0].directory.as_str()
+            ),
+            ("a.rs", "src")
         );
         assert_eq!(found.files[1].hits[0].text, "FOO", "a CR is not text");
         assert!(!found.truncated);

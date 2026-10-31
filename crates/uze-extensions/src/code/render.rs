@@ -362,7 +362,7 @@ fn footer(code: &CodeView) -> Vec<Command> {
     if code.navigator() != NavigatorMode::Search {
         commands.push(Command::Find);
     }
-    if !code.file_tabs().is_empty() {
+    if code.has_tabs() {
         commands.push(Command::CloseTab);
     }
     commands.push(Command::ToggleMap);
@@ -387,7 +387,7 @@ fn search_navigator(code: &CodeView) -> Navigator {
         heading: "SEARCH".to_owned(),
         badge: String::new(),
         focused,
-        rows: code.search.rows(&code.root),
+        rows: code.search.rows(),
         anchor: code.search.anchor(),
         choosing: None,
         menu: None,
@@ -445,7 +445,6 @@ pub(super) fn changes_navigator(code: &CodeView) -> Navigator {
 
 fn files_navigator(code: &CodeView) -> Navigator {
     let rows = code.files.rows(&code.root);
-    let unsaved = code.unsaved();
     let anchor = code
         .selected
         .as_ref()
@@ -489,7 +488,7 @@ fn files_navigator(code: &CodeView) -> Navigator {
                     // Said beside the name rather than in the marker, which
                     // is the change Git sees: a parked buffer is a change
                     // only this surface holds.
-                    detail: match unsaved.contains(&row.path.as_path()) {
+                    detail: match code.is_unsaved(&row.path) {
                         true => "unsaved".to_owned(),
                         false => String::new(),
                     },
@@ -690,46 +689,6 @@ fn not_text(path: &std::path::Path, hint: &str) -> Content {
     }
 }
 
-/// `spans` with the characters in `ranges` set on the ground a search's
-/// match is drawn on, each span cut where a range starts or ends.
-fn grounded(spans: Vec<Span>, ranges: &[std::ops::Range<usize>]) -> Vec<Span> {
-    let inside = |at: usize| ranges.iter().any(|range| range.contains(&at));
-    let mut out: Vec<Span> = Vec::new();
-    let mut at = 0;
-    for span in spans {
-        let mut piece = String::new();
-        let mut piece_in = None;
-        for character in span.text.chars() {
-            let here = inside(at);
-            if piece_in.is_some_and(|was| was != here) {
-                out.push(cut(
-                    &span,
-                    std::mem::take(&mut piece),
-                    piece_in == Some(true),
-                ));
-            }
-            piece_in = Some(here);
-            piece.push(character);
-            at += 1;
-        }
-        if !piece.is_empty() {
-            out.push(cut(&span, piece, piece_in == Some(true)));
-        }
-    }
-    out
-}
-
-fn cut(span: &Span, text: String, found: bool) -> Span {
-    Span {
-        text,
-        ground: match found {
-            true => Some(Role::Warning),
-            false => span.ground,
-        },
-        ..span.clone()
-    }
-}
-
 fn contents_content(code: &CodeView, space: Size) -> Content {
     // Beside a search, what it found is set apart in the file too.
     let searched = (code.navigator() == NavigatorMode::Search)
@@ -769,38 +728,42 @@ fn contents_content(code: &CodeView, space: Size) -> Content {
             .enumerate()
             .skip(code.scroll)
             .take(usize::from(space.height).saturating_mul(2))
-            .map(|(index, text)| ContentLine {
-                gutter: " ".to_owned(),
-                number: (index + 1).to_string(),
-                tone: LineTone::Neutral,
-                // A line with no colouring yet — one past the glance the
-                // read coloured, or one just typed — is drawn as the text
-                // it is until the pass that colours it lands.
-                spans: open
-                    .highlighted
-                    .get(index)
-                    .filter(|spans| !spans.is_empty())
-                    .map(|spans| {
-                        spans
-                            .iter()
-                            .map(|(colour, piece)| Span {
-                                text: piece.clone(),
-                                role: Role::Default,
-                                color: Some(*colour),
-                                ground: None,
-                                bold: false,
-                                italic: false,
+            .map(|(index, text)| {
+                (
+                    text,
+                    ContentLine {
+                        gutter: " ".to_owned(),
+                        number: (index + 1).to_string(),
+                        tone: LineTone::Neutral,
+                        // A line with no colouring yet — one past the glance the
+                        // read coloured, or one just typed — is drawn as the text
+                        // it is until the pass that colours it lands.
+                        spans: open
+                            .highlighted
+                            .get(index)
+                            .filter(|spans| !spans.is_empty())
+                            .map(|spans| {
+                                spans
+                                    .iter()
+                                    .map(|(colour, piece)| Span {
+                                        text: piece.clone(),
+                                        role: Role::Default,
+                                        color: Some(*colour),
+                                        ground: None,
+                                        bold: false,
+                                        italic: false,
+                                    })
+                                    .collect()
                             })
-                            .collect()
-                    })
-                    .unwrap_or_else(|| vec![Span::new(text.clone(), Role::Default)]),
+                            .unwrap_or_else(|| vec![Span::new(text.clone(), Role::Default)]),
+                    },
+                )
             })
-            .map(|mut line| {
+            .map(|(text, mut line)| {
                 if let Some(query) = searched {
-                    let text: String = line.spans.iter().map(|span| span.text.as_str()).collect();
-                    let found = super::search::occurrences(&text, query);
+                    let found = super::search::occurrences(text, query);
                     if !found.is_empty() {
-                        line.spans = grounded(line.spans, &found);
+                        line.spans = super::search::grounded(line.spans, &found);
                     }
                 }
                 line
