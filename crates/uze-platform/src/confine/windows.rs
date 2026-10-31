@@ -70,9 +70,9 @@ const ALL_APPLICATION_PACKAGES: &str = "S-1-15-2-1";
 /// The well-known `internetClient` capability: outbound connections to the
 /// Internet, never to the loopback or the local network.
 const INTERNET_CLIENT: &str = "S-1-15-3-1";
-/// Where Windows records each AppContainer profile, by SID, under `HKCU`.
 /// `SE_GROUP_ENABLED`: a capability counts only when enabled.
 const ENABLED: u32 = 0x4;
+/// Where Windows records each AppContainer profile, by SID, under `HKCU`.
 const PROFILE_MAPPINGS: &str = "Software\\Classes\\Local Settings\\Software\\Microsoft\\Windows\\CurrentVersion\\AppContainer\\Mappings";
 
 /// Every app container reads and executes the system and the programs
@@ -98,12 +98,6 @@ fn run(confinement: &Confinement, argv: &[OsString]) -> io::Result<u32> {
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "Windows grants no device by its path",
-        ));
-    }
-    if confinement.namespace.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "a confinement on Windows names its namespace",
         ));
     }
     if is_batch(Path::new(&argv[0])) {

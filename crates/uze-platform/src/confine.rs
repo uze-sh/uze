@@ -49,9 +49,8 @@ pub struct Confinement {
     pub network: bool,
     pub limits: Limits,
     /// The name the objects a confinement makes for itself go under, the
-    /// caller's to choose: on Windows the run's container and the
-    /// capability each grant writes. Required there; nothing else reads it.
-    #[serde(default)]
+    /// caller's to choose (on Windows, the run's container and the
+    /// capability each grant writes): never empty, on every platform.
     pub namespace: String,
 }
 
@@ -348,9 +347,11 @@ pub fn availability() -> Availability {
     imp::availability()
 }
 
-/// Applies `confinement` to this process and replaces it with `argv`
-/// (`argv[0]` an absolute path), under the current environment. Returns only
-/// when either fails, and then the program never ran: the caller ends with
+/// Applies `confinement` to this process and becomes `argv` (`argv[0]` an
+/// absolute path), under the current environment: on Unix it replaces this
+/// process; on Windows it starts the program, waits for it and ends this
+/// process with its exit code. Returns only when the confinement or the
+/// start fails, and then the program never ran: the caller ends with
 /// [`NOT_ENFORCED_EXIT`]. Meant for a process started for this alone, while
 /// it has a single thread.
 pub fn enter(confinement: &Confinement, argv: &[OsString]) -> io::Error {
@@ -361,6 +362,12 @@ pub fn enter(confinement: &Confinement, argv: &[OsString]) -> io::Error {
         return io::Error::new(
             io::ErrorKind::InvalidInput,
             "the program to run must be an absolute path",
+        );
+    }
+    if confinement.namespace.is_empty() {
+        return io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "a confinement names the namespace it makes things under",
         );
     }
     imp::enter(confinement, argv)
@@ -508,10 +515,20 @@ mod tests {
             devices: Vec::new(),
             network: false,
             limits: Limits::with_cpu_seconds(1),
-            namespace: String::new(),
+            namespace: "probe".to_owned(),
         };
         let error = enter(&confinement, &["sh".into()]);
         assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
         assert_eq!(enter(&confinement, &[]).kind(), io::ErrorKind::InvalidInput);
+        let unnamed = Confinement {
+            namespace: String::new(),
+            ..confinement
+        };
+        let absolute = std::env::current_exe().unwrap().into_os_string();
+        assert_eq!(
+            enter(&unnamed, &[absolute]).kind(),
+            io::ErrorKind::InvalidInput,
+            "a confinement without its namespace is refused before anything applies"
+        );
     }
 }

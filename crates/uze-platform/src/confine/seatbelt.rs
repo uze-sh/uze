@@ -146,7 +146,7 @@ mod tests {
             devices: Vec::new(),
             network,
             limits: Limits::with_cpu_seconds(10),
-            namespace: String::new(),
+            namespace: "probe".to_owned(),
         }
     }
 

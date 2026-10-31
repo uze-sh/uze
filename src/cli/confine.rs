@@ -50,7 +50,7 @@ mod tests {
 
     const CONFINEMENT: &str = r#"{"read":[],"read_execute":["/usr"],"write":[],
         "network":false,"limits":{"cpu_seconds":2,"file_size":1,"open_files":8,
-        "address_space":1}}"#;
+        "address_space":1},"namespace":"uze"}"#;
 
     fn words(words: &[&str]) -> Vec<OsString> {
         words.iter().map(OsString::from).collect()
