@@ -285,10 +285,14 @@ fn rows(found: Vec<Measured>) -> Vec<OverviewResource> {
         .map(|(index, group)| {
             let first = &group[0];
             let siblings = &by_name[&(first.found.kind as u8, first.found.name.clone())];
+            // Two entries of one configuration file (two hooks in one
+            // `settings.json`) are neighbours, not copies of each other.
+            let own_paths: Vec<_> = locations[index].iter().map(|l| &l.path).collect();
             let others: Vec<Location> = siblings
                 .iter()
                 .filter(|other| **other != index)
                 .flat_map(|other| locations[*other].clone())
+                .filter(|location| !own_paths.contains(&&location.path))
                 .collect();
             let status = match group.iter().find_map(|measured| measured.problem.clone()) {
                 Some(reason) => Status::Broken { reason },

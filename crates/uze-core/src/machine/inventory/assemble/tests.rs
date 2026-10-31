@@ -336,3 +336,24 @@ fn broken_then_duplicates_then_the_rest() {
     let names: Vec<_> = overview.resources.iter().map(|r| r.name.as_str()).collect();
     assert_eq!(names, ["broken", "twin", "twin", "heavy"]);
 }
+
+#[test]
+fn two_entries_of_one_file_are_not_duplicates() {
+    let root = uze_testkit::temp::TempDir::new("inventory-neighbours");
+    let settings = root.join("settings.json");
+    let on_start = FoundResource::new(
+        ResourceKind::Hook,
+        "engine",
+        Definition::Entry(settings.clone()),
+    )
+    .running(Runs::Url("https://example.invalid/a".into()));
+    let on_tool = FoundResource::new(ResourceKind::Hook, "engine", Definition::Entry(settings))
+        .running(Runs::Url("https://example.invalid/b".into()));
+    let overview = assemble(vec![harness("a", vec![on_start, on_tool])], &[]);
+    assert!(
+        overview
+            .resources
+            .iter()
+            .all(|row| row.status == Status::Ok)
+    );
+}
