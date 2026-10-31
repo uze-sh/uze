@@ -11,7 +11,7 @@ use uze_application::machine_overview::{
 
 use super::support::{buffer_rows, drawn_at};
 use crate::ui::hit::Hit;
-use crate::ui::machine::{Field, Group, Line, Pane};
+use crate::ui::machine::{Column, Field, Group, Line, Pane};
 use crate::ui::model::{Focus, Route, TuiModel};
 use crate::ui::worker::Intent;
 
@@ -288,6 +288,8 @@ fn tab_walks_the_fields_and_reaches_the_screens() {
     key(&mut model, KeyCode::Tab);
     assert_eq!(model.remembered.machine.field, Field::Period);
     key(&mut model, KeyCode::Tab);
+    assert_eq!(model.remembered.machine.field, Field::Columns);
+    key(&mut model, KeyCode::Tab);
     assert_eq!(model.focus, Focus::Sidebar, "on to the screens' strip");
 }
 
@@ -402,4 +404,101 @@ fn the_first_frame_draws_what_was_collected_without_asking_anything() {
     let drawn = rows(&model);
     assert!(drawn.iter().any(|row| row.contains("skills")));
     assert!(model.remembered.machine.collecting.is_none());
+}
+
+fn names(model: &TuiModel) -> Vec<String> {
+    model
+        .machine_lines()
+        .iter()
+        .filter_map(|line| match line {
+            Line::Resource(index) => model
+                .remembered
+                .machine
+                .resource(*index)
+                .map(|r| r.name.clone()),
+            Line::Finding(_) => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_heading_orders_the_table_and_a_second_click_turns_it_round() {
+    let mut model = model();
+    let mut overview = overview();
+    overview.resources[0].per_session = Some(10);
+    model.remembered.machine.overview = Some(overview);
+    click(&mut model, &Hit::MachineSort(Column::Name));
+    assert_eq!(names(&model), ["git:commit", "vercel:nextjs"]);
+    click(&mut model, &Hit::MachineSort(Column::Name));
+    assert_eq!(names(&model), ["vercel:nextjs", "git:commit"]);
+    click(&mut model, &Hit::MachineSort(Column::PerSession));
+    assert_eq!(
+        names(&model),
+        ["vercel:nextjs", "git:commit"],
+        "the heaviest first"
+    );
+}
+
+#[test]
+fn the_headings_are_reached_by_the_keyboard_too() {
+    let mut clicked = model();
+    let mut pressed = model();
+    click(&mut clicked, &Hit::MachineSort(Column::Name));
+    for _ in 0..3 {
+        key(&mut pressed, KeyCode::Tab);
+    }
+    assert_eq!(pressed.remembered.machine.field, Field::Columns);
+    assert_eq!(
+        pressed.remembered.machine.column,
+        Column::Status,
+        "the keys land on the column the table is ordered by"
+    );
+    key(&mut pressed, KeyCode::Right);
+    assert_eq!(
+        pressed.remembered.machine.column,
+        Column::Name,
+        "wrapped round"
+    );
+    key(&mut pressed, KeyCode::Enter);
+    assert_eq!(
+        pressed.remembered.machine.sort,
+        clicked.remembered.machine.sort
+    );
+}
+
+#[test]
+fn the_column_ordered_by_carries_its_chevron() {
+    let model = model();
+    let drawn = rows(&model);
+    let heading = drawn
+        .iter()
+        .find(|row| row.contains("name") && row.contains("per session"))
+        .unwrap();
+    let ascending = crate::ui::theme::glyph(crate::ui::theme::Symbol::SortAscending);
+    assert!(
+        heading.contains(&format!("status {ascending}")),
+        "{heading}"
+    );
+}
+
+#[test]
+fn an_empty_section_says_so_in_the_middle_of_its_room_with_no_headings() {
+    let mut model = model();
+    model.remembered.machine.section = Some(Group::Kind(ResourceKind::Rule));
+    let drawn = rows(&model);
+    assert!(drawn.iter().any(|row| row.contains("NO RULES")));
+    assert!(
+        !drawn
+            .iter()
+            .any(|row| row.contains("per session") && row.contains("name")),
+        "nothing to head"
+    );
+    let at = drawn
+        .iter()
+        .position(|row| row.contains("NO RULES"))
+        .unwrap();
+    assert!(
+        at > 8,
+        "centred down the room, not on its first row: row {at}"
+    );
 }

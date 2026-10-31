@@ -77,23 +77,122 @@ pub(crate) enum Pane {
     Table,
 }
 
-/// What the keyboard is on: the menu and table, or one of the header's
-/// two fields.
+/// What the keyboard is on: the menu and table, one of the header's two
+/// fields, or the table's column headings, which order it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum Field {
     #[default]
     List,
     Harness,
     Period,
+    Columns,
 }
 
 impl Field {
+    const ORDER: [Field; 4] = [Self::List, Self::Harness, Self::Period, Self::Columns];
+
     pub(crate) fn next(self, forward: bool) -> Self {
-        match (self, forward) {
-            (Self::List, true) | (Self::Period, false) => Self::Harness,
-            (Self::Harness, true) | (Self::List, false) => Self::Period,
-            (Self::Period, true) | (Self::Harness, false) => Self::List,
+        let at = Self::ORDER
+            .iter()
+            .position(|field| *field == self)
+            .unwrap_or(0);
+        let len = Self::ORDER.len();
+        Self::ORDER[if forward {
+            (at + 1) % len
+        } else {
+            (at + len - 1) % len
+        }]
+    }
+}
+
+/// A column of the table, which the table can be ordered by.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Column {
+    Name,
+    From,
+    PerSession,
+    #[default]
+    Status,
+}
+
+impl Column {
+    pub(crate) const ALL: [Column; 4] = [Self::Name, Self::From, Self::PerSession, Self::Status];
+
+    /// The way a column is first read: names and origins from A, figures
+    /// from the heaviest, status from what needs looking at.
+    pub(crate) fn natural_ascending(self) -> bool {
+        !matches!(self, Self::PerSession)
+    }
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Name => "name",
+            Self::From => "from",
+            Self::PerSession => "per session",
+            Self::Status => "status",
         }
+    }
+}
+
+/// How the table is ordered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Sort {
+    pub(crate) column: Column,
+    pub(crate) ascending: bool,
+}
+
+impl Default for Sort {
+    fn default() -> Self {
+        Self {
+            column: Column::Status,
+            ascending: true,
+        }
+    }
+}
+
+impl Sort {
+    /// A click on `column`'s heading: the same column turns around, another
+    /// is read its natural way.
+    pub(crate) fn by(self, column: Column) -> Self {
+        if column == self.column {
+            Self {
+                column,
+                ascending: !self.ascending,
+            }
+        } else {
+            Self {
+                column,
+                ascending: column.natural_ascending(),
+            }
+        }
+    }
+
+    fn order(self, a: &OverviewResource, b: &OverviewResource) -> std::cmp::Ordering {
+        let primary = match self.column {
+            Column::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+            Column::From => origin_word(&a.origin).cmp(&origin_word(&b.origin)),
+            Column::PerSession => a.per_session.cmp(&b.per_session),
+            Column::Status => status_rank(a).cmp(&status_rank(b)),
+        };
+        let primary = if self.ascending {
+            primary
+        } else {
+            primary.reverse()
+        };
+        primary
+            .then_with(|| status_rank(a).cmp(&status_rank(b)))
+            .then_with(|| b.per_session.cmp(&a.per_session))
+            .then_with(|| a.name.cmp(&b.name))
+    }
+}
+
+/// What needs looking at first: broken, duplicate, checked, unjudged.
+fn status_rank(resource: &OverviewResource) -> u8 {
+    match resource.status {
+        Status::Broken { .. } => 0,
+        Status::Duplicate { .. } => 1,
+        Status::Ok if resource.checked => 2,
+        Status::Ok => 3,
     }
 }
 
@@ -124,6 +223,9 @@ pub(crate) struct MachineScreen {
     /// The menu's choice; `None` is the first section on offer.
     pub(crate) section: Option<Group>,
     pub(crate) pane: Pane,
+    pub(crate) sort: Sort,
+    /// The column the keyboard is on while it is on the headings.
+    pub(crate) column: Column,
     /// The table's search and the row the keyboard is on.
     pub(crate) list: ListScreen,
     pub(crate) field: Field,
@@ -237,15 +339,21 @@ impl MachineScreen {
 
     /// The resources of `kind` on screen, as positions in the Overview's.
     pub(crate) fn members(&self, kind: ResourceKind) -> Vec<usize> {
-        self.overview.as_ref().map_or_else(Vec::new, |overview| {
-            overview
-                .resources
-                .iter()
-                .enumerate()
-                .filter(|(_, resource)| resource.kind == kind && self.shows(resource))
-                .map(|(index, _)| index)
-                .collect()
-        })
+        let Some(overview) = self.overview.as_ref() else {
+            return Vec::new();
+        };
+        let mut members: Vec<usize> = overview
+            .resources
+            .iter()
+            .enumerate()
+            .filter(|(_, resource)| resource.kind == kind && self.shows(resource))
+            .map(|(index, _)| index)
+            .collect();
+        members.sort_by(|a, b| {
+            self.sort
+                .order(&overview.resources[*a], &overview.resources[*b])
+        });
+        members
     }
 
     /// How many resources of `kind` there are with the harness chosen,
@@ -302,6 +410,18 @@ impl MachineScreen {
                 };
                 self.harness = ids[next].clone();
                 self.list.selected = 0;
+            }
+            Field::Columns => {
+                let at = Column::ALL
+                    .iter()
+                    .position(|column| *column == self.column)
+                    .unwrap_or(0);
+                let len = Column::ALL.len();
+                self.column = Column::ALL[if forward {
+                    (at + 1) % len
+                } else {
+                    (at + len - 1) % len
+                }];
             }
             Field::Period => {
                 self.period = if forward {
@@ -474,25 +594,37 @@ impl TuiModel {
     }
 
     /// `tab`: the keyboard moves from the menu and table to the harness
-    /// field, to the period field, and on to the screens' strip, as it does
-    /// from every other screen; `shift+tab` walks back.
+    /// field, the period field, the table's headings, and on to the
+    /// screens' strip, as it does from every other screen; `shift+tab`
+    /// walks back.
     pub(crate) fn machine_next_field(&mut self, forward: bool) -> Intent {
         let screen = &mut self.remembered.machine;
         let leaves = matches!(
             (screen.field, forward),
-            (Field::Period, true) | (Field::List, false)
+            (Field::Columns, true) | (Field::List, false)
         );
         if leaves {
             screen.field = Field::List;
             self.focus = Focus::Sidebar;
         } else {
             screen.field = screen.field.next(forward);
+            if screen.field == Field::Columns {
+                screen.column = screen.sort.column;
+            }
         }
         Intent::None
     }
 
     /// What Enter does where the keyboard is.
     pub(crate) fn machine_activate(&mut self) -> Intent {
+        if self.remembered.machine.field == Field::Columns {
+            let screen = &mut self.remembered.machine;
+            screen.sort = screen.sort.by(screen.column);
+            return Intent::None;
+        }
+        if self.remembered.machine.field != Field::List {
+            return Intent::None;
+        }
         if self.remembered.machine.pane == Pane::Menu {
             return self.machine_step_in();
         }
@@ -512,6 +644,11 @@ impl TuiModel {
 
     /// What Enter does, in the footer's word, or `None` where it does nothing.
     pub(crate) fn machine_activate_label(&self) -> Option<String> {
+        match self.remembered.machine.field {
+            Field::Columns => return Some("reverse".to_owned()),
+            Field::Harness | Field::Period => return None,
+            Field::List => {}
+        }
         if self.remembered.machine.pane == Pane::Menu {
             return (!self.machine_lines().is_empty()).then(|| "open".to_owned());
         }
@@ -575,6 +712,15 @@ impl TuiModel {
         screen.field = Field::List;
         screen.pane = Pane::Table;
         screen.list.selected = position;
+        Intent::None
+    }
+
+    /// A click on a column's heading: the table is ordered by it, or the
+    /// other way round when it already was.
+    pub(crate) fn machine_sort(&mut self, column: Column) -> Intent {
+        let screen = &mut self.remembered.machine;
+        screen.column = column;
+        screen.sort = screen.sort.by(column);
         Intent::None
     }
 
