@@ -275,6 +275,7 @@ pub(super) fn written_at(
     while start < end && line[start].character == ':' {
         start += 1;
     }
+    end = start + cells_holding(&line[start..end], located_length(&line[start..end]));
     if !(start..end).contains(&at) {
         return None;
     }
@@ -292,6 +293,55 @@ pub(super) fn written_at(
         end: u16::try_from(end).ok()?,
         text,
     })
+}
+
+/// How many characters of a run its path and location take: a search
+/// prints `src/main.rs:12:fn main`, whose match after the line is not the
+/// path's, though nothing but the colon parts them.
+fn located_length(run: &[RenderCell]) -> usize {
+    let text: Vec<char> = run
+        .iter()
+        .map(|cell| cell.character)
+        .filter(|character| *character != SPILL)
+        .collect();
+    let digits_from = |from: usize| {
+        from + text[from.min(text.len())..]
+            .iter()
+            .take_while(|character| character.is_ascii_digit())
+            .count()
+    };
+    for (colon, _) in text.iter().enumerate().filter(|(_, c)| **c == ':') {
+        let line_end = digits_from(colon + 1);
+        if line_end == colon + 1 {
+            continue;
+        }
+        if line_end == text.len() {
+            return line_end;
+        }
+        if text[line_end] == ':' {
+            let column_end = digits_from(line_end + 1);
+            return if column_end > line_end + 1 {
+                column_end
+            } else {
+                line_end
+            };
+        }
+    }
+    text.len()
+}
+
+/// The cells of `run` that hold its first `characters` characters, a
+/// wide character's spill included.
+fn cells_holding(run: &[RenderCell], characters: usize) -> usize {
+    let mut seen = 0;
+    run.iter()
+        .take_while(|cell| {
+            if cell.character != SPILL {
+                seen += 1;
+            }
+            seen <= characters
+        })
+        .count()
 }
 
 /// What `text` names, from a program standing in `cwd`: a `:line:column`
@@ -416,6 +466,17 @@ mod tests {
     fn a_path_between_brackets_or_quotes_is_inside_them() {
         assert_eq!(found("(src/main.rs)", 3).as_deref(), Some("src/main.rs"));
         assert_eq!(found("`src/ui.rs:12`", 3).as_deref(), Some("src/ui.rs:12"));
+    }
+
+    #[test]
+    fn a_match_a_search_printed_is_its_path_and_line() {
+        let line = "src/main.rs:12:fn main() {}";
+        assert_eq!(found(line, 2).as_deref(), Some("src/main.rs:12"));
+        assert_eq!(found(line, 16), None, "the matched text is not the path");
+        assert_eq!(
+            found("src/a.rs:3:7:let x", 2).as_deref(),
+            Some("src/a.rs:3:7")
+        );
     }
 
     #[test]
