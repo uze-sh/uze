@@ -352,9 +352,11 @@ const MENU_ROW: usize = 0;
 
 fn sample() -> View {
     View {
+        tabs: Vec::new(),
         title: vec![Span::new("demo", Role::Bright)],
         caption: Vec::new(),
         navigator: Some(Navigator {
+            field: None,
             heading: "CHANGES".to_owned(),
             badge: "2".to_owned(),
             focused: true,
@@ -763,9 +765,11 @@ fn a_flat_row_pins_its_marker_right_and_gives_up_the_detail_first() {
 #[test]
 fn the_navigation_is_the_bars_and_does_not_move_with_the_layout() {
     let sidebar = View {
+        tabs: Vec::new(),
         title: vec![Span::new("code", Role::Muted)],
         caption: Vec::new(),
         navigator: Some(Navigator {
+            field: None,
             heading: "FILES".to_owned(),
             badge: "7".to_owned(),
             focused: true,
@@ -891,9 +895,11 @@ fn a_row_menu_lies_under_its_row_and_takes_the_click() {
         icon: RowIcon::None,
     };
     let view = View {
+        tabs: Vec::new(),
         title: vec![Span::new("code", Role::Muted)],
         caption: Vec::new(),
         navigator: Some(Navigator {
+            field: None,
             heading: "CHANGES".to_owned(),
             badge: "3".to_owned(),
             focused: true,
@@ -960,6 +966,7 @@ fn a_row_menu_lies_under_its_row_and_takes_the_click() {
 #[test]
 fn a_surfaces_question_is_drawn_as_the_products_dialog() {
     let view = View {
+        tabs: Vec::new(),
         title: Vec::new(),
         caption: Vec::new(),
         navigator: None,
@@ -1099,6 +1106,7 @@ fn draw_with_menu(view: &View, at: Option<Rect>) -> (Vec<String>, Vec<(Rect, Vie
 #[test]
 fn a_boards_hints_stop_before_its_caption() {
     let view = View {
+        tabs: Vec::new(),
         title: vec![Span::new("architect", Role::Muted)],
         caption: Vec::new(),
         navigator: None,
@@ -1187,6 +1195,7 @@ fn a_board_click_resolves_in_the_space_the_frame_drew_in() {
             })
             .collect();
         let view = View {
+            tabs: Vec::new(),
             title: vec![Span::new("Map", Role::Bright)],
             caption: Vec::new(),
             navigator: None,
@@ -1301,9 +1310,11 @@ fn board(groups: usize, items: usize, trail: &[(&str, bool)]) -> View {
         }));
     }
     View {
+        tabs: Vec::new(),
         title: vec![Span::new("Board", Role::Bright)],
         caption: Vec::new(),
         navigator: Some(Navigator {
+            field: None,
             heading: String::new(),
             badge: String::new(),
             focused: false,
@@ -1460,9 +1471,11 @@ fn a_list_longer_than_the_board_keeps_the_highlight_in_view_and_says_where_it_is
         icon: RowIcon::None,
     }));
     let view = View {
+        tabs: Vec::new(),
         title: vec![Span::new("Board", Role::Bright)],
         caption: Vec::new(),
         navigator: Some(Navigator {
+            field: None,
             heading: String::new(),
             badge: String::new(),
             focused: false,
@@ -2602,6 +2615,7 @@ fn a_message_without_a_hint_keeps_its_case() {
 fn an_item_without_a_marker_lines_up_with_the_groups_beside_it() {
     let view = View {
         navigator: Some(Navigator {
+            field: None,
             heading: "FILES".to_owned(),
             badge: String::new(),
             focused: true,
@@ -2671,6 +2685,7 @@ fn a_long_name_slides_under_the_pointer_and_is_cut_elsewhere() {
     let long = "0042-adopt-a-much-longer-name-than-the-column-holds.md";
     let view = View {
         navigator: Some(Navigator {
+            field: None,
             heading: "DECISIONS".to_owned(),
             badge: "1".to_owned(),
             focused: true,
@@ -2753,6 +2768,7 @@ fn a_long_name_slides_under_the_pointer_and_is_cut_elsewhere() {
 fn a_flat_rows_detail_slides_with_its_name() {
     let view = View {
         navigator: Some(Navigator {
+            field: None,
             heading: "CHANGES".to_owned(),
             badge: "1".to_owned(),
             focused: true,
@@ -2979,4 +2995,116 @@ fn an_editable_line_is_banded_under_the_pointer_and_at_the_caret() {
         ),
         "a line a click does not type on does not lift"
     );
+}
+
+/// The files open stand as tabs over the content: each answers a click
+/// on itself and on its close mark, and one with unsaved changes shows
+/// the editor's dot where the close mark stands.
+#[test]
+fn open_files_are_tabs_over_the_content_and_close_from_their_mark() {
+    let mut view = sample();
+    view.tabs = vec![
+        uze_extensions::view::FileTab {
+            name: "main.rs".to_owned(),
+            active: true,
+            ..Default::default()
+        },
+        uze_extensions::view::FileTab {
+            name: "lib.rs".to_owned(),
+            unsaved: true,
+            ..Default::default()
+        },
+    ];
+    let (rows, hits) = draw(&view);
+    let strip = rows
+        .iter()
+        .position(|row| row.contains("main.rs") && row.contains("lib.rs"))
+        .expect("one strip with both tabs");
+    let drawn = &rows[strip];
+    assert!(
+        drawn.contains(&theme::glyph(Symbol::MarkUnsaved)),
+        "the changed file's tab says so: {drawn:?}"
+    );
+    assert!(
+        drawn.contains(&theme::glyph(Symbol::MarkClose)),
+        "{drawn:?}"
+    );
+    assert!(
+        rows[strip + 1].contains("DIFF"),
+        "the content's own heading sits under the strip: {:?}",
+        rows[strip + 1]
+    );
+    for wanted in [
+        ViewHit::SelectTab(0),
+        ViewHit::SelectTab(1),
+        ViewHit::CloseTab(0),
+        ViewHit::CloseTab(1),
+    ] {
+        let (rect, _) = hits
+            .iter()
+            .find(|(_, hit)| *hit == wanted)
+            .unwrap_or_else(|| panic!("{wanted:?} is somewhere"));
+        assert_eq!(rect.y as usize, strip);
+    }
+    let close = hits
+        .iter()
+        .position(|(_, hit)| *hit == ViewHit::CloseTab(0))
+        .unwrap();
+    let select = hits
+        .iter()
+        .position(|(_, hit)| *hit == ViewHit::SelectTab(0))
+        .unwrap();
+    assert!(
+        close < select,
+        "the mark is found before the tab it lies on"
+    );
+}
+
+/// A search's field stands over its list, says what it found under it,
+/// and takes the keys when pointed at; a found line sets its match apart
+/// and answers a click as a row does.
+#[test]
+fn a_navigators_field_stands_over_what_it_found() {
+    let mut view = sample();
+    let navigator = view.navigator.as_mut().unwrap();
+    navigator.field = Some(uze_extensions::view::Field {
+        text: "fog".to_owned(),
+        placeholder: "Search".to_owned(),
+        focused: true,
+        summary: Span::new("1 result in 1 file", Role::Muted),
+    });
+    let mut found = Span::new("fog", Role::Default);
+    found.ground = Some(Role::Warning);
+    navigator.rows = vec![
+        NavigatorRow::Found {
+            id: 0,
+            name: "a.rs".to_owned(),
+            detail: "src".to_owned(),
+            count: 1,
+            collapsed: false,
+            icon: RowIcon::Code,
+        },
+        NavigatorRow::Match {
+            id: 0,
+            spans: vec![Span::new("let ", Role::Default), found],
+            selected: false,
+        },
+    ];
+    let (rows, hits) = draw(&view);
+    let at = |text: &str| {
+        rows.iter()
+            .position(|row| row.contains(text))
+            .unwrap_or_else(|| panic!("{text} is drawn: {rows:#?}"))
+    };
+    assert!(at("fog") < at("1 result in 1 file"));
+    assert!(at("1 result in 1 file") < at("a.rs src"));
+    assert!(at("a.rs src") < at("let fog"));
+    let row_of = |wanted: ViewHit| {
+        hits.iter()
+            .find(|(_, hit)| *hit == wanted)
+            .map(|(rect, _)| rect.y as usize)
+    };
+    assert_eq!(row_of(ViewHit::FocusField), Some(at("fog")));
+    assert_eq!(row_of(ViewHit::ToggleGroup(0)), Some(at("a.rs src")));
+    assert_eq!(row_of(ViewHit::SelectItem(0)), Some(at("let fog")));
 }

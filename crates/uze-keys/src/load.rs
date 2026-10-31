@@ -472,6 +472,17 @@ fn default_bindings() -> Vec<Binding> {
         // over the pane alike: not a letter, because it opens a list of
         // actions rather than naming one.
         bind(Scope::Code, "alt+.", Action::OpenMenu),
+        // An editor's own: search every file, and the tabs of the files
+        // open, the chords every editor gives them — answered while typing
+        // too, since they are not letters.
+        bind(Scope::Code, "ctrl+f", Action::FindInFiles),
+        bind(Scope::Code, "ctrl+w", Action::CloseFileTab),
+        bind(Scope::Code, "ctrl+pagedown", Action::NextFileTab),
+        bind(Scope::Code, "ctrl+pageup", Action::PreviousFileTab),
+        bind(Scope::CodeEditing, "ctrl+f", Action::FindInFiles),
+        bind(Scope::CodeEditing, "ctrl+w", Action::CloseFileTab),
+        bind(Scope::CodeEditing, "ctrl+pagedown", Action::NextFileTab),
+        bind(Scope::CodeEditing, "ctrl+pageup", Action::PreviousFileTab),
         // Typing has a scope of its own so nothing behind it answers a
         // letter — the same reason the action index has one.
         bind(Scope::CodeEditing, "esc", Action::Dismiss),

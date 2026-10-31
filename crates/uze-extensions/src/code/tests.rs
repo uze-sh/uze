@@ -1089,8 +1089,30 @@ impl FakeMachine {
 }
 
 impl Host for FakeMachine {
-    fn git(&self, _root: &Path, _args: &[&str], _answers: &[i32]) -> Result<String, String> {
-        Err("no git here".to_owned())
+    /// `git grep` over the files in memory, as Git would print it for the
+    /// search's flags; nothing else of Git is here.
+    fn git(&self, root: &Path, args: &[&str], _answers: &[i32]) -> Result<String, String> {
+        let ["grep", .., query] = args else {
+            return Err("no git here".to_owned());
+        };
+        let query = query.to_lowercase();
+        let mut output = String::new();
+        for (path, text) in self.files.borrow().iter() {
+            let Ok(relative) = path.strip_prefix(root) else {
+                continue;
+            };
+            for (index, line) in text.lines().enumerate() {
+                if let Some(column) = line.to_lowercase().find(&query) {
+                    output.push_str(&format!(
+                        "{}\0{}\0{}\0{line}\n",
+                        relative.display(),
+                        index + 1,
+                        column + 1
+                    ));
+                }
+            }
+        }
+        Ok(output)
     }
 
     fn repository_root(&self, _path: &Path) -> Result<PathBuf, String> {
@@ -2882,7 +2904,7 @@ fn the_changes_list_marks_status_rather_than_kind() {
         rows.iter().all(|row| match row {
             crate::view::NavigatorRow::Group { icon, .. }
             | crate::view::NavigatorRow::Item { icon, .. } => *icon == crate::view::RowIcon::None,
-            crate::view::NavigatorRow::Band { .. } | crate::view::NavigatorRow::Gap => true,
+            _ => true,
         }),
         "the changes list asked for a file icon: {rows:?}"
     );
@@ -3160,7 +3182,12 @@ fn the_header_offers_the_halves_on_one_side_and_the_renderings_on_the_other() {
     let drawn = render::view(&view, space());
     assert_eq!(
         chips(&drawn.subjects),
-        [("Files", true), ("Map", false), ("Changes", false)]
+        [
+            ("Files", true),
+            ("Search", false),
+            ("Map", false),
+            ("Changes", false)
+        ]
     );
     assert_eq!(chips(&drawn.modes), [("Preview", true), ("Source", false)]);
     // Each half is a thing, and says which. A way of *drawing* one is
@@ -3171,7 +3198,12 @@ fn the_header_offers_the_halves_on_one_side_and_the_renderings_on_the_other() {
             .iter()
             .map(|mode| mode.icon)
             .collect::<Vec<_>>(),
-        [RowIcon::Directory, RowIcon::Map, RowIcon::Changes]
+        [
+            RowIcon::Directory,
+            RowIcon::Search,
+            RowIcon::Map,
+            RowIcon::Changes
+        ]
     );
     assert!(
         drawn.modes.iter().all(|mode| mode.icon == RowIcon::None),
@@ -3188,7 +3220,12 @@ fn the_header_offers_the_halves_on_one_side_and_the_renderings_on_the_other() {
     let drawn = render::view(&view, space());
     assert_eq!(
         chips(&drawn.subjects),
-        [("Files", true), ("Map", false), ("Changes", false)],
+        [
+            ("Files", true),
+            ("Search", false),
+            ("Map", false),
+            ("Changes", false)
+        ],
         "the halves never come and go — the row that says where you are \
          is the one thing that may not move when it is used"
     );
@@ -3230,7 +3267,12 @@ fn the_map_takes_the_frame_and_says_which_level_it_is_on() {
     assert_eq!(steps, ["repo"], "the checkout, and nothing entered yet");
     assert_eq!(
         chips(&drawn.subjects),
-        [("Files", false), ("Map", true), ("Changes", false)],
+        [
+            ("Files", false),
+            ("Search", false),
+            ("Map", true),
+            ("Changes", false)
+        ],
         "which half you are in, and the way to the others as chips \
          somebody can point at rather than keys they have to know"
     );
@@ -3730,4 +3772,177 @@ mod hosted {
             "and none in front"
         );
     }
+}
+
+/// Typing in the search's field asks every file as it goes; what it found
+/// is listed by file, and Enter opens the first line where it was found,
+/// with the match under the caret.
+#[test]
+fn a_search_finds_lines_in_every_file_and_opens_one() {
+    let machine = FakeMachine::default()
+        .with_file("/w/a.txt", "nothing\nthe Fog rolls\n")
+        .with_file("/w/src/b.rs", "fog();\nfog();\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+
+    press(&mut view, Command::Find);
+    assert!(view.typing(), "the keys are in the field");
+    type_text(&mut view, "fog");
+    settle(&mut view, &machine);
+
+    let drawn = render::view(&view, space());
+    let navigator = drawn.navigator.expect("the search's list");
+    let field = navigator.field.expect("its field");
+    assert_eq!(field.text, "fog");
+    assert_eq!(field.summary.text, "3 results in 2 files");
+    let rows: Vec<String> = navigator
+        .rows
+        .iter()
+        .map(|row| match row {
+            NavigatorRow::Found {
+                name,
+                detail,
+                count,
+                ..
+            } => format!("{name} {detail} {count}"),
+            NavigatorRow::Match { spans, .. } => spans
+                .iter()
+                .map(|span| match span.ground {
+                    Some(_) => format!("[{}]", span.text),
+                    None => span.text.clone(),
+                })
+                .collect(),
+            other => panic!("not a search's row: {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            "a.txt  1",
+            "the [Fog] rolls",
+            "b.rs src 2",
+            "[fog]();",
+            "[fog]();"
+        ]
+    );
+
+    press(&mut view, Command::Newline);
+    settle(&mut view, &machine);
+    assert!(!view.typing(), "Enter leaves the field");
+    let open = view.open.as_ref().expect("the file it was found in");
+    assert_eq!(open.path, Path::new("/w/a.txt"));
+    assert_eq!(open.caret, Caret { line: 1, column: 4 });
+    assert_eq!(
+        render::view(&view, space())
+            .subjects
+            .iter()
+            .find(|mode| mode.active)
+            .map(|mode| mode.label.as_str()),
+        Some("Search"),
+        "the list beside it is still the search"
+    );
+}
+
+/// An answer for text the field no longer holds is not drawn: only the
+/// latest search is asked, and only its answer kept.
+#[test]
+fn only_the_latest_search_is_asked() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fo");
+    type_text(&mut view, "x");
+    let searches = std::iter::from_fn(|| view.take_request())
+        .filter(|request| matches!(request, FileRequest::Search { .. }))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        searches,
+        [FileRequest::Search {
+            root: PathBuf::from("/w"),
+            query: "fox".to_owned()
+        }]
+    );
+}
+
+/// Passing over files leaves one tab, in italics, that the next file
+/// takes; a file changed keeps its tab and marks it; closing it asks
+/// once, and the tab beside it comes on show.
+#[test]
+fn files_open_in_tabs_the_way_an_editor_keeps_them() {
+    let machine = FakeMachine::default()
+        .with_file("/w/a.txt", "aaa\n")
+        .with_file("/w/b.txt", "bbb\n")
+        .with_file("/w/c.txt", "ccc\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    let tabs = |view: &CodeView| -> Vec<(String, bool, bool, bool)> {
+        render::view(view, space())
+            .tabs
+            .into_iter()
+            .map(|tab| (tab.name, tab.active, tab.unsaved, tab.preview))
+            .collect()
+    };
+    let open = |view: &mut CodeView, index: usize| {
+        handle_mouse(view, Some(ViewHit::SelectItem(index)), space());
+        settle(view, &machine);
+    };
+
+    open(&mut view, 0);
+    open(&mut view, 1);
+    assert_eq!(
+        tabs(&view),
+        [("b.txt".to_owned(), true, false, true)],
+        "the passed-over tab was taken by the next file"
+    );
+
+    handle_mouse(
+        &mut view,
+        Some(ViewHit::PlaceCaret { line: 0, cell: 0 }),
+        space(),
+    );
+    type_text(&mut view, "x");
+    press(&mut view, Command::Close);
+    open(&mut view, 2);
+    assert_eq!(
+        tabs(&view),
+        [
+            ("b.txt".to_owned(), false, true, false),
+            ("c.txt".to_owned(), true, false, true)
+        ]
+    );
+
+    handle_mouse(&mut view, Some(ViewHit::SelectTab(0)), space());
+    settle(&mut view, &machine);
+    assert_eq!(
+        view.open.as_ref().unwrap().lines,
+        ["xbbb"],
+        "the buffer, kept"
+    );
+
+    handle_mouse(&mut view, Some(ViewHit::CloseTab(0)), space());
+    assert_eq!(tabs(&view).len(), 2, "asked, not closed");
+    assert_eq!(
+        render::view(&view, space())
+            .notice
+            .map(|notice| notice.text),
+        Some("b.txt has unsaved changes · close the tab again to discard them".to_owned())
+    );
+    handle_mouse(&mut view, Some(ViewHit::CloseTab(0)), space());
+    settle(&mut view, &machine);
+    assert_eq!(tabs(&view), [("c.txt".to_owned(), true, false, true)]);
+    assert!(view.unsaved().is_empty(), "the changes went with it");
+    assert_eq!(
+        machine
+            .files
+            .borrow()
+            .get(Path::new("/w/b.txt"))
+            .map(String::as_str),
+        Some("bbb\n"),
+        "and were never written"
+    );
+
+    press(&mut view, Command::CloseTab);
+    assert!(tabs(&view).is_empty());
+    assert!(view.open.is_none());
 }

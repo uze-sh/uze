@@ -121,6 +121,15 @@ on "cancel" must not save first.
   in `SurfaceHover` under the pointer and in `SurfaceSelected` where the
   caret is, its number lit (`lines::LineLight`); lines a click only
   marks, a diff's, never lift.
+- The code surface's open files are tabs over its content, as an editor's
+  are: a file passed over is an italic tab the next one replaces, a changed
+  one keeps its tab with `mark.unsaved` where its close mark stands (the
+  close mark again under the pointer). Moving away from unsaved work never
+  refuses; the buffer is kept and the tree says `unsaved`.
+- A search lives in a fixed field over its list (`Navigator::field`, drawn
+  by `widget::Field`), what it found said under it, its results grouped
+  by file with a count; a match is set apart by a ground, in the list and
+  in the file.
 - Hover keeps the word's weight. A word that is bold at rest stays bold; a
   word that is not never turns bold under the pointer or while pressed.
   Manage's version and health are the reference.

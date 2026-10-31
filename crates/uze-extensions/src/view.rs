@@ -208,6 +208,40 @@ pub struct View {
     /// [`View::modes`] that say how it is drawn: a board's diagram by its
     /// title, which a trail names only by its level. Empty for none.
     pub label: String,
+    /// The files open in the content, one tab each, in the order they
+    /// were opened. Empty for a surface that shows one thing at a time;
+    /// the host draws a strip of them over the content only when there
+    /// are some.
+    pub tabs: Vec<FileTab>,
+}
+
+/// One file open in the content, as a tab: chosen with
+/// [`ViewHit::SelectTab`], put away with [`ViewHit::CloseTab`].
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct FileTab {
+    pub name: String,
+    /// What tells two tabs of one name apart — the directory — or empty.
+    pub detail: String,
+    /// The one on show.
+    pub active: bool,
+    /// Holding changes not yet written, which the host marks where the
+    /// close mark stands, as an editor does.
+    pub unsaved: bool,
+    /// Opened by passing over it rather than kept: the next file passed
+    /// over takes its place. The host sets its name apart.
+    pub preview: bool,
+}
+
+/// A line to type into, standing over a navigator's rows: a search.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Field {
+    pub text: String,
+    /// What it says while nothing is typed.
+    pub placeholder: String,
+    /// Whether keys land here, which the host shows with the caret.
+    pub focused: bool,
+    /// Said under it: what the text found.
+    pub summary: Span,
 }
 
 /// One step of a [`View::trail`].
@@ -315,6 +349,8 @@ pub struct Navigator {
     /// [`Navigator::choosing`]: the host draws it beside the row and hands
     /// a pick back as [`ViewHit::MenuEntry`].
     pub menu: Option<RowMenu>,
+    /// A line to type into above the rows — a search — or `None`.
+    pub field: Option<Field>,
 }
 
 /// Asked before something that cannot be undone: what, of what, what
@@ -400,6 +436,8 @@ pub enum RowIcon {
     Finished,
     /// A decision the project keeps.
     Decision,
+    /// Finding something in every file.
+    Search,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -440,6 +478,24 @@ pub enum NavigatorRow {
         collapsed: bool,
         /// What this row is, for the mark the host draws before its name.
         icon: RowIcon,
+    },
+    /// A file a search found something in, heading the lines it was found
+    /// on: its name, its directory quieter after it, and how many. Folds
+    /// as a group does, handed back as [`ViewHit::ToggleGroup`].
+    Found {
+        id: usize,
+        name: String,
+        detail: String,
+        count: usize,
+        collapsed: bool,
+        icon: RowIcon,
+    },
+    /// One line a search found, as spans: what matched carries a ground
+    /// of its own. Chosen as an item is, by [`ViewHit::SelectItem`].
+    Match {
+        id: usize,
+        spans: Vec<Span>,
+        selected: bool,
     },
     Item {
         /// The extension's own identifier, handed back verbatim in
@@ -1108,6 +1164,12 @@ pub enum ViewHit {
     MenuEntry(usize),
     /// An answer to the open [`Confirm`]: `true` for the affirmative.
     Answer(bool),
+    /// One of the [`View::tabs`], by its index, chosen.
+    SelectTab(usize),
+    /// One of them, put away.
+    CloseTab(usize),
+    /// The navigator's [`Field`], pointed at to type into.
+    FocusField,
     /// The selector that offers the groups, pressed: open the list of
     /// them, or shut it.
     ChooseGroup,
@@ -1310,6 +1372,14 @@ pub enum Command {
     /// Show the checkout as a map, or leave the map for whatever was on
     /// show before it.
     ToggleMap,
+
+    // --- Asked of a surface with files open in tabs ----------------------
+    /// Search, wherever the search lives — and into its field.
+    Find,
+    /// Put the tab on show away.
+    CloseTab,
+    NextTab,
+    PreviousTab,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

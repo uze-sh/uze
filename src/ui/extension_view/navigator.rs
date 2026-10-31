@@ -197,7 +197,8 @@ pub(super) fn groups_of(navigator: &Navigator) -> Vec<MenuGroup<'_>> {
                     group.items += 1;
                 }
             }
-            NavigatorRow::Gap => {}
+            // A search's rows are a sidebar's, never a board's menu.
+            NavigatorRow::Found { .. } | NavigatorRow::Match { .. } | NavigatorRow::Gap => {}
         }
     }
     groups
@@ -216,7 +217,10 @@ pub(super) fn items_of(navigator: &Navigator, group: usize) -> Vec<MenuItem<'_>>
                 name,
                 selected: *selected,
             }),
-            NavigatorRow::Item { .. } | NavigatorRow::Gap => {}
+            NavigatorRow::Item { .. }
+            | NavigatorRow::Found { .. }
+            | NavigatorRow::Match { .. }
+            | NavigatorRow::Gap => {}
         }
     }
     items
@@ -233,13 +237,19 @@ pub(super) fn active_group(navigator: &Navigator) -> Option<usize> {
         match row {
             NavigatorRow::Group { id, .. } | NavigatorRow::Band { id, .. } => group = Some(*id),
             NavigatorRow::Item { selected: true, .. } => return group,
-            NavigatorRow::Item { .. } | NavigatorRow::Gap => {}
+            NavigatorRow::Item { .. }
+            | NavigatorRow::Found { .. }
+            | NavigatorRow::Match { .. }
+            | NavigatorRow::Gap => {}
         }
     }
     // Nothing selected is still somewhere: the first group.
     navigator.rows.iter().find_map(|row| match row {
         NavigatorRow::Group { id, .. } | NavigatorRow::Band { id, .. } => Some(*id),
-        NavigatorRow::Item { .. } | NavigatorRow::Gap => None,
+        NavigatorRow::Item { .. }
+        | NavigatorRow::Found { .. }
+        | NavigatorRow::Match { .. }
+        | NavigatorRow::Gap => None,
     })
 }
 
@@ -501,12 +511,15 @@ pub(super) fn render_navigator(
         Rect::new(inner.x, inner.y, inner.width, 1),
     );
 
-    let rows = Rect::new(
+    let mut rows = Rect::new(
         inner.x,
         inner.y.saturating_add(1),
         inner.width,
         inner.height.saturating_sub(1),
     );
+    if let Some(field) = &navigator.field {
+        rows = render_field(frame, rows, field, hits);
+    }
     // The groove comes out of the list's own width, so a row is never
     // drawn under the handle that would sit on top of it.
     // On the divider itself, not beside it. Beside it was two lines, and
@@ -566,6 +579,62 @@ pub(super) fn render_navigator(
                 ];
                 frame.render_widget(Paragraph::new(Line::from(spans)), rect);
                 hits.push((rect, ViewHit::ToggleGroup(*id)));
+            }
+            NavigatorRow::Found {
+                id,
+                name,
+                detail,
+                count,
+                collapsed,
+                icon,
+            } => {
+                let fold = mark::disclosure(!*collapsed);
+                let mut spans = vec![
+                    TextSpan::raw(" "),
+                    TextSpan::styled(format!("{fold} "), theme::fg(Token::TextMuted)),
+                ];
+                spans.extend(row_icon(*icon));
+                spans.push(TextSpan::styled(
+                    name.clone(),
+                    theme::fg(Token::TextSecondary),
+                ));
+                if !detail.is_empty() {
+                    spans.push(TextSpan::styled(
+                        format!(" {detail}"),
+                        theme::fg(Token::TextMuted),
+                    ));
+                }
+                row::push_trailing(
+                    &mut spans,
+                    rect.width + TRAILING_PAD,
+                    count.to_string(),
+                    theme::color(Token::TextMuted),
+                );
+                frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+                hits.push((rect, ViewHit::ToggleGroup(*id)));
+            }
+            NavigatorRow::Match {
+                id,
+                spans: found,
+                selected,
+            } => {
+                let mut spans = vec![
+                    TextSpan::styled(
+                        if *selected {
+                            theme::glyph(Symbol::TreeColumnDivider)
+                        } else {
+                            " ".to_owned()
+                        },
+                        theme::fg(Token::Accent),
+                    ),
+                    TextSpan::raw(tree_indent(1, rect.width)),
+                ];
+                spans.extend(found.iter().map(styled));
+                if *selected {
+                    row::pad_to(&mut spans, rect.width, theme::color(Token::SurfaceSelected));
+                }
+                frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+                hits.push((rect, ViewHit::SelectItem(*id)));
             }
             NavigatorRow::Group {
                 id,
@@ -640,6 +709,16 @@ pub(super) fn render_navigator(
                                 label_style,
                             )),
                         }
+                        // In a tree the depth says where a row sits, so a
+                        // detail here is a state — a buffer not yet saved —
+                        // said quieter after the name while it fits.
+                        let left = label_room(&spans, rect.width);
+                        if !detail.is_empty() && detail.chars().count() < left {
+                            spans.push(TextSpan::styled(
+                                format!(" {detail}"),
+                                theme::fg(Token::TextMuted),
+                            ));
+                        }
                     }
                     MarkerSide::Trailing => {
                         spans.extend(row_icon(*icon));
@@ -682,6 +761,39 @@ pub(super) fn render_navigator(
         bar.render_on_draggable(frame, settled.first, resizing);
     }
     (settled, bar, slid)
+}
+
+/// A navigator's line to type into, its rule under it and what it found
+/// under that, at the top of `rows`; answers with the rows left below.
+fn render_field(
+    frame: &mut ratatui::Frame<'_>,
+    rows: Rect,
+    field: &uze_extensions::view::Field,
+    hits: &mut Vec<(Rect, ViewHit)>,
+) -> Rect {
+    let taken = 3.min(rows.height);
+    let line = Rect::new(
+        rows.x + 1,
+        rows.y,
+        rows.width.saturating_sub(1),
+        2.min(taken),
+    );
+    crate::ui::widget::Field::new(&field.text, &field.placeholder)
+        .focused(field.focused)
+        .render(frame, line);
+    hits.push((line, ViewHit::FocusField));
+    if taken == 3 && !field.summary.text.is_empty() {
+        frame.render_widget(
+            Paragraph::new(Line::from(styled(&field.summary))),
+            Rect::new(rows.x + 1, rows.y + 2, rows.width.saturating_sub(1), 1),
+        );
+    }
+    Rect::new(
+        rows.x,
+        rows.y + taken,
+        rows.width,
+        rows.height.saturating_sub(taken),
+    )
 }
 
 /// A tree row's marker: in the column a group's fold mark stands in, and

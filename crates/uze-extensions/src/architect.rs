@@ -1157,9 +1157,11 @@ pub fn view(state: &ArchitectView, space: Size) -> View {
         });
     }
     View {
+        tabs: Vec::new(),
         title: checkout::name(CATALOG.name),
         caption: checkout::caption(&state.display_root, &state.branch),
         navigator: Some(Navigator {
+            field: None,
             heading: "ARTIFACTS".to_owned(),
             badge: state.catalog.artifacts().len().to_string(),
             focused: false,

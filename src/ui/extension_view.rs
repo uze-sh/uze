@@ -30,6 +30,7 @@ use crate::ui::widget::{
     self, Edge, Rule, Scrollbar, Surface, TRAILING_PAD, hint::Hints, mark, row, text,
 };
 
+mod file_tabs;
 mod footer;
 mod geometry;
 mod lines;
@@ -249,6 +250,13 @@ fn render_surface(
         Some(_) => content_columns(area, held.width),
         None => whole_width(area),
     };
+    let content_area = file_tabs::render_file_tabs(
+        frame,
+        content_area,
+        &view.tabs,
+        held.sliding.map(|(hit, _)| hit),
+        hits,
+    );
     // What the surface is about is the workspace bar's to show (see
     // [`render_navigation`]); inside, only the ways of drawing what is on
     // show remain, at the end of the content's own heading row.

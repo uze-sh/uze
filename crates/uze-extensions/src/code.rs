@@ -82,6 +82,7 @@ mod map;
 mod render;
 mod request;
 mod row_menu;
+mod search;
 mod treemap;
 
 pub use changes::{ChangeSummary, change_summary};
@@ -94,6 +95,7 @@ pub use history::{Commit, CommitDetail, Timeline, commit_detail, timeline, timel
 pub use map::{FileMeasure, Measure, measure};
 pub use render::view;
 pub use request::{FileAnswer, FileRequest, LoadedFile, fulfill, unanswered};
+pub use search::Findings;
 
 use changes::Changes;
 use diff::DiffLineKind;
@@ -109,10 +111,13 @@ pub const CATALOG: crate::registry::BuiltinExtension = crate::registry::BuiltinE
     name: "Code",
     description: "Changes, contents, history and a map of the active checkout.",
     surface: "Workspace TUI",
-    usage: "The timeline sits in the sidebar; open the changes with Alt+G or the changes chip, and the files with Alt+E or the code chip. `m`, or the Map chip, shows the checkout as a map of where its lines are.",
+    usage: "The timeline sits in the sidebar; open the changes with Alt+G or the changes chip, and the files with Alt+E or the code chip. `m`, or the Map chip, shows the checkout as a map of where its lines are. Ctrl+F searches every file; open files stand as tabs over the content.",
 };
 
 const REFRESH_INTERVAL: Duration = Duration::from_millis(750);
+
+/// Lines kept above a line a search opened, so it is read in its place.
+const SEARCH_CONTEXT: usize = 5;
 
 /// How many times its own duration a periodic read waits before the next
 /// one: Git gets at most a fifth of the clock, however large the checkout.
@@ -141,6 +146,8 @@ enum NavigatorMode {
     Changes,
     /// The checkout's own tree, listed as it is opened.
     Files,
+    /// What a search of every file found.
+    Search,
 }
 
 /// Which half answers for the selection. Also which door was used: the
@@ -178,6 +185,8 @@ pub(super) enum Half {
     Map,
     /// What is different from the branch this one started from.
     Changes,
+    /// Every file, searched.
+    Search,
 }
 
 /// One entry of the control that says how the half on show is *drawn* —
@@ -254,6 +263,15 @@ pub struct CodeView {
     /// typing where it was left, scrolled where it was, and only closing
     /// the surface asks.
     parked: BTreeMap<PathBuf, Parked>,
+    /// The files open in the content, as tabs, in the order opened.
+    tabs: Vec<OpenTab>,
+    /// A tab with unsaved changes asked to close, waiting for the second
+    /// ask that discards them.
+    closing_tab: Option<PathBuf>,
+    /// Whether the list beside the content is the search's rather than
+    /// the tree's. The content is a file either way.
+    searching: bool,
+    search: search::Search,
     /// What the host still has to do for the files half, oldest first.
     queue: VecDeque<FileRequest>,
     /// A failure about the surface rather than about one file.
@@ -383,6 +401,10 @@ impl CodeView {
             files: Files::default(),
             open: None,
             parked: BTreeMap::new(),
+            tabs: Vec::new(),
+            closing_tab: None,
+            searching: false,
+            search: search::Search::default(),
             queue: VecDeque::new(),
             error: None,
             notice: None,
@@ -424,8 +446,10 @@ impl CodeView {
         self.read_selection_as_what_it_is();
         match self.navigator() {
             // A directory is where the cursor was, and nothing to read.
-            NavigatorMode::Files if selected_is_a_file => self.load_selection(None),
-            NavigatorMode::Files => {}
+            NavigatorMode::Files | NavigatorMode::Search if selected_is_a_file => {
+                self.load_selection(None)
+            }
+            NavigatorMode::Files | NavigatorMode::Search => {}
             // The list and the diff both arrive from the refresh the host
             // schedules the moment the surface opens.
             NavigatorMode::Changes => self.changes.diff_pending = true,
@@ -484,6 +508,7 @@ impl CodeView {
     fn navigator(&self) -> NavigatorMode {
         match self.content {
             ContentMode::Diff => NavigatorMode::Changes,
+            ContentMode::Contents | ContentMode::Preview if self.searching => NavigatorMode::Search,
             ContentMode::Contents | ContentMode::Preview | ContentMode::Map => NavigatorMode::Files,
         }
     }
@@ -555,7 +580,12 @@ impl CodeView {
     /// Whether a letter is text here rather than a shortcut: a file open
     /// for typing, or a new name being typed for one.
     pub fn typing(&self) -> bool {
-        self.editing() || self.renaming.is_some()
+        self.editing() || self.renaming.is_some() || self.typing_a_search()
+    }
+
+    /// Whether keys land in the search's field.
+    fn typing_a_search(&self) -> bool {
+        self.navigator() == NavigatorMode::Search && self.search.typing
     }
 
     /// The path the cursor stands on, whichever half it is in.
@@ -878,6 +908,7 @@ impl CodeView {
                     Err(message) => self.notice = Some(Span::new(message, Role::Danger)),
                 }
             }
+            FileAnswer::Found { query, outcome } => self.search.absorb(&query, outcome),
             FileAnswer::Restored { paths, outcome } => match outcome {
                 Ok(()) => {
                     if let Some(path) = paths.first() {
@@ -922,6 +953,7 @@ impl CodeView {
                         self.open = None;
                     }
                     self.parked.retain(|parked, _| !parked.starts_with(&path));
+                    self.tabs.retain(|tab| !tab.path.starts_with(&path));
                     if self
                         .selected
                         .as_ref()
@@ -958,6 +990,11 @@ impl CodeView {
                         |path: &Path| path.strip_prefix(&from).ok().map(|rest| to.join(rest));
                     if let Some(selected) = self.selected.as_deref().and_then(moved) {
                         self.selected = Some(selected);
+                    }
+                    for tab in &mut self.tabs {
+                        if let Some(path) = moved(&tab.path) {
+                            tab.path = path;
+                        }
                     }
                     // The open file is read again under its new name; an
                     // unsaved buffer stays where it is rather than be
@@ -998,6 +1035,7 @@ impl CodeView {
             && open.modified
         {
             open.editing = false;
+            self.pin_tab(&open.path);
             let scroll = self.scroll;
             self.parked
                 .insert(open.path.clone(), Parked { open, scroll });
@@ -1149,8 +1187,8 @@ impl CodeView {
     /// when you use it: a control whose members come and go is one you
     /// have to look at again after every press, and the eye was already
     /// on the place the chip used to be.
-    pub(super) fn halves(&self) -> [Half; 3] {
-        [Half::Files, Half::Map, Half::Changes]
+    pub(super) fn halves(&self) -> [Half; 4] {
+        [Half::Files, Half::Search, Half::Map, Half::Changes]
     }
 
     /// Which of them is on show.
@@ -1158,6 +1196,7 @@ impl CodeView {
         match self.content {
             ContentMode::Map => Half::Map,
             ContentMode::Diff => Half::Changes,
+            ContentMode::Contents | ContentMode::Preview if self.searching => Half::Search,
             ContentMode::Contents | ContentMode::Preview => Half::Files,
         }
     }
@@ -1170,7 +1209,15 @@ impl CodeView {
     /// a way through the files. It is; going there is also leaving the
     /// changes, and that is what the press said.
     pub(super) fn show_half(&mut self, half: Half) {
+        self.searching = half == Half::Search;
         match half {
+            // The content beside a search is the file a line of it was
+            // found in, which is the files half's content.
+            Half::Search => {
+                if matches!(self.content, ContentMode::Diff | ContentMode::Map) {
+                    self.show(ContentMode::Contents);
+                }
+            }
             Half::Changes => self.show(ContentMode::Diff),
             // As whatever the selection is: a document opens as the
             // document it is, which is the same rule arriving at a file
@@ -1318,6 +1365,7 @@ impl CodeView {
             return;
         }
         self.scroll = 0;
+        self.keep_tab(&path);
         if let Some(Parked { mut open, scroll }) = self.parked.remove(&path) {
             match line {
                 Some(line) => open.place_caret(line.saturating_sub(1)),
@@ -1399,6 +1447,7 @@ impl CodeView {
     /// Moves the selection one row in whichever list is showing.
     fn step(&mut self, direction: ScrollDirection) {
         match self.navigator() {
+            NavigatorMode::Search => self.search.step(direction == ScrollDirection::Down),
             NavigatorMode::Changes => {
                 let Some(from) = self.selected_change() else {
                     if let Some(first) = self.changes.files.first().map(|file| file.path.clone()) {
@@ -1471,6 +1520,174 @@ impl CodeView {
         });
     }
 
+    /// Gives `path` a tab, as it opens: in the place of the tab only
+    /// passed over, when there is one, so walking the tree leaves one tab
+    /// behind it rather than a tab per file.
+    fn keep_tab(&mut self, path: &Path) {
+        if self.tabs.iter().any(|tab| tab.path == path) {
+            return;
+        }
+        let tab = OpenTab {
+            path: path.to_path_buf(),
+            preview: true,
+        };
+        match self.tabs.iter_mut().find(|tab| tab.preview) {
+            Some(passed) => *passed = tab,
+            None => self.tabs.push(tab),
+        }
+    }
+
+    /// Keeps `path`'s tab: a file changed is a file being worked on.
+    fn pin_tab(&mut self, path: &Path) {
+        if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.path == path) {
+            tab.preview = false;
+        }
+    }
+
+    /// The tabs as the host draws them. Only beside a file: a diff and the
+    /// map are not a file open.
+    pub(super) fn file_tabs(&self) -> Vec<crate::view::FileTab> {
+        if !matches!(self.content, ContentMode::Contents | ContentMode::Preview) {
+            return Vec::new();
+        }
+        let unsaved = self.unsaved();
+        let name = |path: &Path| file_name(path);
+        self.tabs
+            .iter()
+            .map(|tab| {
+                let shared = self
+                    .tabs
+                    .iter()
+                    .filter(|other| name(&other.path) == name(&tab.path))
+                    .count()
+                    > 1;
+                let modified = unsaved.contains(&tab.path.as_path());
+                crate::view::FileTab {
+                    name: name(&tab.path),
+                    detail: match shared {
+                        true => tab
+                            .path
+                            .parent()
+                            .and_then(|parent| parent.strip_prefix(&self.root).ok())
+                            .map(|parent| parent.display().to_string())
+                            .unwrap_or_default(),
+                        false => String::new(),
+                    },
+                    active: self.open.as_ref().is_some_and(|open| open.path == tab.path),
+                    unsaved: modified,
+                    preview: tab.preview && !modified,
+                }
+            })
+            .collect()
+    }
+
+    /// Shows the file in tab `index`.
+    fn show_tab(&mut self, index: usize) {
+        let Some(path) = self.tabs.get(index).map(|tab| tab.path.clone()) else {
+            return;
+        };
+        self.select(path);
+        self.load_selection(None);
+        self.focus = Focus::Content;
+    }
+
+    /// The tab beside the one on show, `forward` or back, round the ends.
+    fn step_tab(&mut self, forward: bool) {
+        let count = self.tabs.len();
+        let Some(at) = self.active_tab() else {
+            return;
+        };
+        let next = match forward {
+            true => (at + 1) % count,
+            false => (at + count - 1) % count,
+        };
+        self.show_tab(next);
+    }
+
+    fn active_tab(&self) -> Option<usize> {
+        let open = self.open.as_ref()?;
+        self.tabs.iter().position(|tab| tab.path == open.path)
+    }
+
+    /// Puts tab `index` away. Unsaved changes are asked about first: the
+    /// first ask says so, and a second, with nothing between, discards
+    /// them. The tab beside it comes on show when it was the one there.
+    fn close_tab(&mut self, index: usize, asked: Option<PathBuf>) {
+        let Some(path) = self.tabs.get(index).map(|tab| tab.path.clone()) else {
+            return;
+        };
+        if self.unsaved().contains(&path.as_path()) && asked.as_ref() != Some(&path) {
+            self.closing_tab = Some(path);
+            return;
+        }
+        self.parked.remove(&path);
+        self.tabs.remove(index);
+        if self.open.as_ref().is_some_and(|open| open.path == path) {
+            self.open = None;
+            let beside = index.min(self.tabs.len().saturating_sub(1));
+            if !self.tabs.is_empty() {
+                self.show_tab(beside);
+            }
+        }
+    }
+
+    /// Goes to the search and into its field, from anywhere.
+    fn find(&mut self) {
+        if let Some(open) = self.open.as_mut() {
+            open.editing = false;
+        }
+        self.show_half(Half::Search);
+        self.search.typing = true;
+        self.focus = Focus::Navigator;
+    }
+
+    /// Asks again for what the field holds now, in place of any search
+    /// still waiting its turn: only the latest one is worth running.
+    fn ask_search(&mut self) {
+        self.search.typed();
+        self.queue
+            .retain(|request| !matches!(request, FileRequest::Search { .. }));
+        if !self.search.query.is_empty() {
+            self.queue.push_back(FileRequest::Search {
+                root: self.root.clone(),
+                query: self.search.query.clone(),
+            });
+        }
+    }
+
+    /// Opens the line the search's cursor is on, its first match under
+    /// the caret, a few lines down from the top so what is around it reads.
+    fn open_hit(&mut self, focus_content: bool) {
+        let Some((path, line)) = self
+            .search
+            .cursor
+            .and_then(|cursor| self.search.at(cursor))
+            .map(|(path, line)| (path.to_path_buf(), line))
+        else {
+            return;
+        };
+        self.select(path);
+        self.content = ContentMode::Contents;
+        self.load_selection(Some(line));
+        let column = self.search.cursor.and_then(|(file, hit)| {
+            let text = &self.search.files().get(file)?.hits.get(hit)?.text;
+            search::occurrences(text, &self.search.query)
+                .first()
+                .map(|range| range.start)
+        });
+        if let Some(open) = self.open.as_mut() {
+            open.caret = Caret {
+                line: line.saturating_sub(1),
+                column: column.unwrap_or(0),
+            };
+        }
+        self.scroll = line.saturating_sub(1 + SEARCH_CONTEXT);
+        self.focus = match focus_content {
+            true => Focus::Content,
+            false => Focus::Navigator,
+        };
+    }
+
     /// Keeps the caret on screen after it moved, given how many lines the
     /// host says fit.
     fn follow_caret(&mut self, visible: u16) {
@@ -1485,6 +1702,15 @@ impl CodeView {
             self.scroll = line.saturating_sub(visible - 1);
         }
     }
+}
+
+/// A file open in a tab.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct OpenTab {
+    path: PathBuf,
+    /// Opened by passing over it: the next file passed over replaces it,
+    /// as in an editor, until it is changed.
+    preview: bool,
 }
 
 /// A buffer with unsaved changes kept while another file is shown, and
@@ -1620,6 +1846,26 @@ fn map_command(view: &mut CodeView, command: Command, space: Size) -> CodeOutcom
 /// nothing but keeping the caret and the page keys inside the file.
 pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> CodeOutcome {
     view.notice = None;
+    let asked = view.closing_tab.take();
+    // An editor's own keys, answered wherever the keys are — typing
+    // included, since none of them is a letter.
+    match command {
+        Command::Find => {
+            view.find();
+            return CodeOutcome::Stay;
+        }
+        Command::CloseTab => {
+            if let Some(index) = view.active_tab() {
+                view.close_tab(index, asked);
+            }
+            return CodeOutcome::Stay;
+        }
+        Command::NextTab | Command::PreviousTab => {
+            view.step_tab(command == Command::NextTab);
+            return CodeOutcome::Stay;
+        }
+        _ => {}
+    }
     // Typing is modal, and the host says so by asking in the editing
     // scope. What is left here is the same command set the reading modes
     // answer, plus the two that leave typing.
@@ -1634,6 +1880,10 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
     // surface.
     if view.content == ContentMode::Map {
         return map_command(view, command, space);
+    }
+    if view.typing_a_search() {
+        search_field_command(view, command);
+        return CodeOutcome::Stay;
     }
 
     if view.renaming.is_some() {
@@ -1701,6 +1951,11 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         {
             fold_tree_row(view)
         }
+        Command::Collapse | Command::Expand
+            if view.focus == Focus::Navigator && view.navigator() == NavigatorMode::Search =>
+        {
+            view.search.fold_cursor(command == Command::Expand)
+        }
         Command::Expand
             if view.focus == Focus::Navigator && view.navigator() == NavigatorMode::Files =>
         {
@@ -1723,6 +1978,7 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         // The move the whole surface is for: from a line of the diff into
         // that line of the file, ready to change it.
         Command::OpenMenu => match view.navigator() {
+            NavigatorMode::Search => {}
             NavigatorMode::Changes => {
                 if let Some(index) = view.selected_change() {
                     row_menu::open(view, index);
@@ -1741,6 +1997,8 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         // A change is reviewed, kept or thrown away here; the file itself
         // is edited and deleted in the files half, where it is the subject.
         Command::Edit | Command::Delete if view.navigator() == NavigatorMode::Changes => {}
+        // A search's list is lines of files, not files: nothing to delete.
+        Command::Delete if view.navigator() == NavigatorMode::Search => {}
         Command::Edit => {
             view.show(ContentMode::Contents);
             if let Some(open) = view
@@ -1777,6 +2035,36 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         _ => {}
     }
     CodeOutcome::Stay
+}
+
+/// A command while the search's field has the keys: text edits the query
+/// and asks again; the way down, or Enter, goes to what it found.
+fn search_field_command(view: &mut CodeView, command: Command) {
+    match command {
+        Command::Type(character) => {
+            view.search.query.push(character);
+            view.ask_search();
+        }
+        Command::EraseBack => {
+            view.search.query.pop();
+            view.ask_search();
+        }
+        Command::Close => view.search.typing = false,
+        Command::SelectNext => {
+            view.search.typing = false;
+            view.search.step(true);
+        }
+        Command::Newline | Command::Activate => {
+            view.search.typing = false;
+            view.search.step(true);
+            view.open_hit(true);
+        }
+        Command::FocusNext => {
+            view.search.typing = false;
+            view.focus = Focus::Content;
+        }
+        _ => {}
+    }
 }
 
 /// A file or a directory asked about before it is deleted, and which
@@ -1860,6 +2148,7 @@ fn fold_tree_row(view: &mut CodeView) {
 /// becomes the selection and the content follows.
 fn activate_selection(view: &mut CodeView) {
     match view.navigator() {
+        NavigatorMode::Search => view.open_hit(true),
         NavigatorMode::Changes => {
             if view.selected.is_some() {
                 view.focus = Focus::Content;
@@ -1903,6 +2192,8 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
         return CodeOutcome::Stay;
     }
     view.notice = None;
+    // Anything but a second close of the same tab withdraws the question.
+    let asked = view.closing_tab.take();
     if view.content == ContentMode::Map {
         return map_mouse(view, hit, space);
     }
@@ -1918,7 +2209,11 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
         return row_menu::mouse(view, hit);
     }
     match hit {
+        Some(ViewHit::SelectTab(index)) => view.show_tab(index),
+        Some(ViewHit::CloseTab(index)) => view.close_tab(index, asked),
+        Some(ViewHit::FocusField) => view.find(),
         Some(ViewHit::OpenMenu(index)) => match view.navigator() {
+            NavigatorMode::Search => {}
             NavigatorMode::Changes => row_menu::open(view, index),
             NavigatorMode::Files => {
                 if let Some(row) = view.files.rows(&view.root).into_iter().nth(index) {
@@ -1927,6 +2222,13 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
             }
         },
         Some(ViewHit::SelectItem(index)) => match view.navigator() {
+            // A click shows the line and leaves the keys on the list, so
+            // the next line is one arrow away.
+            NavigatorMode::Search => {
+                view.search.typing = false;
+                view.search.cursor = view.search.hit_of(index);
+                view.open_hit(false);
+            }
             NavigatorMode::Changes => {
                 if let Some(file) = view.changes.files.get(index) {
                     let path = file.path.clone();
@@ -1944,6 +2246,7 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
         Some(ViewHit::ToggleGroup(row)) => match view.navigator() {
             // A flat list has no groups to toggle.
             NavigatorMode::Changes => {}
+            NavigatorMode::Search => view.search.toggle(row),
             NavigatorMode::Files => {
                 if let Some(row) = view.files.rows(&view.root).into_iter().nth(row) {
                     view.selected = Some(row.path.clone());
@@ -1960,6 +2263,7 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
         // only once asked.
         Some(ViewHit::PlaceCaret { line, cell }) => {
             view.focus = Focus::Content;
+            view.search.typing = false;
             let editable = view.editable();
             if let Some(open) = view.open.as_mut().filter(|_| editable) {
                 let line = line.min(open.lines.len().saturating_sub(1));

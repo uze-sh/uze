@@ -34,6 +34,7 @@ pub fn view(code: &CodeView, space: Size) -> View {
     // which is why that one is reported as content.
     if let Some(message) = &code.error {
         return View {
+            tabs: Vec::new(),
             title,
             caption,
             navigator: None,
@@ -59,6 +60,7 @@ pub fn view(code: &CodeView, space: Size) -> View {
     // and the tree it replaces is what the toggle goes back to.
     if code.content == ContentMode::Map {
         return View {
+            tabs: Vec::new(),
             title,
             caption,
             navigator: None,
@@ -75,11 +77,13 @@ pub fn view(code: &CodeView, space: Size) -> View {
     }
 
     View {
+        tabs: code.file_tabs(),
         title,
         caption,
         navigator: listing(code).then(|| match code.navigator() {
             NavigatorMode::Changes => changes_navigator(code),
             NavigatorMode::Files => files_navigator(code),
+            NavigatorMode::Search => search_navigator(code),
         }),
         content: match code.content {
             ContentMode::Diff => diff_content(code, space),
@@ -207,11 +211,13 @@ fn subjects(code: &CodeView) -> Vec<Mode> {
                 Half::Files => "Files".to_owned(),
                 Half::Map => "Map".to_owned(),
                 Half::Changes => "Changes".to_owned(),
+                Half::Search => "Search".to_owned(),
             },
             icon: match half {
                 Half::Files => RowIcon::Directory,
                 Half::Map => RowIcon::Map,
                 Half::Changes => RowIcon::Changes,
+                Half::Search => RowIcon::Search,
             },
             active: half == here,
         })
@@ -270,6 +276,15 @@ fn delete_confirm(code: &CodeView) -> Option<Confirm> {
 /// answers while one is waiting, and otherwise the last thing that
 /// happened.
 fn notice(code: &CodeView) -> Option<Span> {
+    if let Some(path) = &code.closing_tab {
+        return Some(Span::new(
+            format!(
+                "{} has unsaved changes · close the tab again to discard them",
+                super::file_name(path)
+            ),
+            Role::Warning,
+        ));
+    }
     if code.confirming_discard {
         let unsaved = code.unsaved();
         let what = match unsaved.as_slice() {
@@ -297,7 +312,10 @@ fn footer(code: &CodeView) -> Vec<Command> {
         return vec![Command::Close];
     }
     if code.editing() {
-        return vec![Command::Save, Command::Close];
+        return vec![Command::Save, Command::Find, Command::Close];
+    }
+    if code.typing_a_search() {
+        return vec![Command::SelectNext, Command::Close];
     }
     if code.menu.is_some() {
         return vec![Command::SelectNext, Command::Activate, Command::Close];
@@ -325,6 +343,7 @@ fn footer(code: &CodeView) -> Vec<Command> {
         commands.push(Command::TogglePreview);
     }
     match code.navigator() {
+        NavigatorMode::Search => commands.push(Command::Activate),
         NavigatorMode::Changes if code.selected_change().is_some() => {
             commands.push(Command::OpenMenu);
         }
@@ -340,6 +359,12 @@ fn footer(code: &CodeView) -> Vec<Command> {
         }
         NavigatorMode::Files => {}
     }
+    if code.navigator() != NavigatorMode::Search {
+        commands.push(Command::Find);
+    }
+    if !code.file_tabs().is_empty() {
+        commands.push(Command::CloseTab);
+    }
     commands.push(Command::ToggleMap);
     commands.push(Command::FocusNext);
     commands.push(Command::Close);
@@ -350,8 +375,24 @@ fn footer(code: &CodeView) -> Vec<Command> {
 /// read them, is a message and nothing else: an empty column with a zero
 /// over it pushes the message aside to say what the message already says.
 fn listing(code: &CodeView) -> bool {
-    code.navigator() == NavigatorMode::Files
+    code.navigator() != NavigatorMode::Changes
         || (code.changes.error.is_none() && !code.changes.files.is_empty())
+}
+
+/// The search: its field, then each file it found something in and the
+/// lines it found.
+fn search_navigator(code: &CodeView) -> Navigator {
+    let focused = code.focus == super::Focus::Navigator;
+    Navigator {
+        heading: "SEARCH".to_owned(),
+        badge: String::new(),
+        focused,
+        rows: code.search.rows(&code.root),
+        anchor: code.search.anchor(),
+        choosing: None,
+        menu: None,
+        field: Some(code.search.field(focused)),
+    }
 }
 
 /// The changes as one flat list, each file named first and its directory
@@ -360,6 +401,7 @@ fn listing(code: &CodeView) -> bool {
 pub(super) fn changes_navigator(code: &CodeView) -> Navigator {
     let selected = code.selected_change();
     Navigator {
+        field: None,
         heading: "CHANGES".to_owned(),
         badge: code.changes.files.len().to_string(),
         focused: code.focus == Focus::Navigator,
@@ -409,6 +451,7 @@ fn files_navigator(code: &CodeView) -> Navigator {
         .as_ref()
         .and_then(|path| rows.iter().position(|row| &row.path == path));
     Navigator {
+        field: None,
         heading: "FILES".to_owned(),
         badge: rows.iter().filter(|row| !row.directory).count().to_string(),
         focused: code.focus == Focus::Navigator,
@@ -647,7 +690,51 @@ fn not_text(path: &std::path::Path, hint: &str) -> Content {
     }
 }
 
+/// `spans` with the characters in `ranges` set on the ground a search's
+/// match is drawn on, each span cut where a range starts or ends.
+fn grounded(spans: Vec<Span>, ranges: &[std::ops::Range<usize>]) -> Vec<Span> {
+    let inside = |at: usize| ranges.iter().any(|range| range.contains(&at));
+    let mut out: Vec<Span> = Vec::new();
+    let mut at = 0;
+    for span in spans {
+        let mut piece = String::new();
+        let mut piece_in = None;
+        for character in span.text.chars() {
+            let here = inside(at);
+            if piece_in.is_some_and(|was| was != here) {
+                out.push(cut(
+                    &span,
+                    std::mem::take(&mut piece),
+                    piece_in == Some(true),
+                ));
+            }
+            piece_in = Some(here);
+            piece.push(character);
+            at += 1;
+        }
+        if !piece.is_empty() {
+            out.push(cut(&span, piece, piece_in == Some(true)));
+        }
+    }
+    out
+}
+
+fn cut(span: &Span, text: String, found: bool) -> Span {
+    Span {
+        text,
+        ground: match found {
+            true => Some(Role::Warning),
+            false => span.ground,
+        },
+        ..span.clone()
+    }
+}
+
 fn contents_content(code: &CodeView, space: Size) -> Content {
+    // Beside a search, what it found is set apart in the file too.
+    let searched = (code.navigator() == NavigatorMode::Search)
+        .then_some(code.search.query.as_str())
+        .filter(|query| !query.is_empty());
     let open = match readable_open_file(
         code,
         "No file selected",
@@ -707,6 +794,16 @@ fn contents_content(code: &CodeView, space: Size) -> Content {
                             .collect()
                     })
                     .unwrap_or_else(|| vec![Span::new(text.clone(), Role::Default)]),
+            })
+            .map(|mut line| {
+                if let Some(query) = searched {
+                    let text: String = line.spans.iter().map(|span| span.text.as_str()).collect();
+                    let found = super::search::occurrences(&text, query);
+                    if !found.is_empty() {
+                        line.spans = grounded(line.spans, &found);
+                    }
+                }
+                line
             })
             .collect(),
         caret: (open.editing && code.content == ContentMode::Contents).then_some(open.caret),

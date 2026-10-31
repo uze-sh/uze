@@ -60,6 +60,7 @@ impl Extension for Probe {
             ));
         }
         Some(View {
+            tabs: Vec::new(),
             title: vec![Span::new("Notes", Role::Muted)],
             caption: Vec::new(),
             navigator: None,

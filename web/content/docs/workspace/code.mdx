@@ -17,9 +17,42 @@ Everything about the checkout the selected agent works in.
 | `Alt+G` | What changed, with the diff |
 | `Alt+E` | The files. `p` switches a document between preview and source |
 | `m` | A map of the checkout: where its code is, and what changes most |
+| `Ctrl+F` | Search every file of the checkout |
 
-The file you select stays selected when you switch between them. In the files,
-`e` edits a file and `Ctrl+S` saves.
+The file you select stays selected when you switch between them.
+
+## Editing
+
+Click a line of a file to start typing there, or press `e`. `Ctrl+S` saves and
+`Esc` stops typing. The line under the pointer and the line you type on are
+highlighted.
+
+A file counts as changed only while its text differs from the file on disk:
+deleting a character and typing it back leaves nothing to save. You can move to
+another file without saving. The changed file stays open, marked `unsaved` in
+the tree, and comes back as you left it. Closing the surface asks once when
+something is unsaved.
+
+## Tabs
+
+Each file you open gets a tab over the content. A file you only pass over opens
+in an italic tab, which the next file you pass over replaces. Changing a file
+keeps its tab. A tab with unsaved changes shows a dot where its close mark
+would be.
+
+| Key | Does |
+| --- | --- |
+| `Ctrl+PageDown` / `Ctrl+PageUp` | Next / previous tab |
+| `Ctrl+W` | Close the tab. With unsaved changes it asks once, and closing again discards them |
+
+## Search
+
+`Ctrl+F`, or the Search chip, puts a field over the list. Results update as you
+type: case is ignored, and files Git ignores are skipped. Results are grouped by
+file, with a count for each file. `↓` moves from the field to the results, `Enter`
+opens a result with the caret on the match, and a click shows it while keeping
+the list in focus. Matches are also highlighted in the open file. A search stops
+at 2000 results.
 
 Right-click a changed file, or press `Alt+.`, for what you can do with the change:
 open the file, copy its path (absolute or relative), or discard the change.
