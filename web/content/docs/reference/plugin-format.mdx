@@ -206,7 +206,7 @@ root.
 ## Extensions
 
 `extensions/<id>/`, one directory per extension: what the plugin adds to the
-[workspace](/docs/workspace#extensions), which no harness receives. Its
+[workspace](/docs/workspace/extensions), which no harness receives. Its
 `extension.kdl` declares the surfaces, sources, actions and the grants it
 asks for; `.uze` components hold each view and its script; `fixtures/` and
 `tests/` feed and test it.
@@ -232,7 +232,7 @@ Nothing in `plugin.json` names an extension: the directory is enough. (Its
 plugin may carry several, and one that carries only extensions is listed as
 an extension rather than a plugin. Installing the plugin stores them; none
 runs anything until the operator allows its grants and enables it. How to
-write one is in [Extensions](/docs/plugins/creating#extensions).
+write one is in [Writing extensions](/docs/workspace/writing-extensions).
 
 ## Files your plugin ships
 

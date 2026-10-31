@@ -1,7 +1,61 @@
 ---
-title: Official extensions
-description: gsd, focus and contributions, uze's own extensions in the workspace plugin
+title: Extensions
+description: What the workspace shows beside your agents, how you allow it, and the official ones
 ---
+
+An extension is something the workspace shows beside your agents: a line in
+the bar under the agent area, a drawer beside the agent, a block of the
+sidebar, a band over its pane, a full-frame view. Harnesses never see one.
+Three are built in ([Spec](/docs/workspace/spec), [Architect](/docs/workspace/architect)
+and [Code](/docs/workspace/code)), and a plugin can bring more.
+
+## The Extensions screen
+
+Under management (`Ctrl+O`), **Extensions** lists every extension on this
+machine. The built-in ones wear **Bundled**, and those from uze's own
+marketplace wear **Official**. Select one to open its drawer: the plugin it
+comes from, whether it runs here, what it may reach, and its preferences,
+which you set right there.
+
+An extension a plugin brings runs nothing until you allow it. Press `Enter`
+on it to enable it: a dialog names it and lists what it may reach, such as
+reading the checkout, running `git` or typing into an agent, and **Allow and
+enable** turns it on. Until then, where it would show, it says it needs
+consent.
+
+- Enabling one here turns it on in every project. One that reaches your
+  agents is the exception: it is enabled one project at a time.
+- An update that wants more than you allowed is **held** and runs nothing
+  until you allow it again. One that wants the same or less is applied as it
+  comes.
+- A program an extension runs, such as `git`, is asked about on a step of its
+  own, which says where it was found and whether it runs confined.
+- Only you can allow one. An agent cannot answer for you from its pane.
+
+When you open a project whose plugins bring an extension that is not enabled
+there, the workspace offers it in one dialog, for that project or for every
+project. Putting the dialog away answers nothing: it is offered again the
+next time the project opens.
+
+## Turning one off
+
+The built-in ones are on until you say otherwise. Under management
+(`Ctrl+O`), on **Extensions**, select one and press `Enter` to switch it off
+or back on. The workspace follows at once: its button leaves the tab strip,
+its keys go to the program in the pane, it leaves the action index (`F1`),
+and its sidebar section is gone with it (the timeline for Code, the tasks for
+Spec). `Enter` disables one a plugin brought in the same way.
+
+The choice for a built-in one is kept in `~/.uze/config.toml`. From a
+terminal, `uze config extension architect off` does the same, and
+`uze config extension` lists them. You can also write it by hand:
+
+```toml
+[extensions]
+architect = false
+```
+
+## The official extensions
 
 The official marketplace, `uze`, carries three extensions in one plugin, `workspace`:
 
@@ -14,7 +68,7 @@ The official marketplace, `uze`, carries three extensions in one plugin, `worksp
 One install brings all three. Each one is off until you allow what it may
 reach and enable it, so installing the plugin runs nothing on its own.
 
-## Installing them
+### Installing them
 
 The marketplace is built into uze, so there is nothing to add. In a project:
 
@@ -40,14 +94,14 @@ Then open the workspace. The first time it opens on the project, it offers
 the extensions the project's plugins bring: review what each one may reach,
 and enable the ones you want. You can do the same later under management
 (`Ctrl+O`), on **Extensions**, where these three wear **Official**.
-[The Extensions screen](/docs/workspace#the-extensions-screen) says how
+[The Extensions screen](#the-extensions-screen) says how
 allowing and enabling work.
 
 To try them without a project of your own, ask any agent for `/uze:try`. It
 makes a demo project with a commit history and a GSD milestone, installs the
 plugin there, and tells you how to open it.
 
-## gsd
+### gsd
 
 ![The GSD drawer shows plan 3-03 waiting at its checkpoint, answered from a band over the agent's pane and typed into the agent](/examples/gsd.gif)
 
@@ -84,7 +138,7 @@ is ready. GSD's workstreams are not shown yet.
 and remember which checkpoint it already told you about. Since it reaches
 your agents, it is enabled one project at a time.
 
-## focus
+### focus
 
 ![The focus drawer starts a 25-minute session, and its time runs in the drawer and in the bar](/examples/focus.gif)
 
@@ -103,7 +157,7 @@ screen.
 
 **It may** keep its sessions on this machine and notify you.
 
-## contributions
+### contributions
 
 ![The contribution graph opens from the bar; a click on a day lists its commits](/examples/contributions.gif)
 
@@ -122,7 +176,7 @@ again whenever the checkout changes, so a new commit shows up on its own.
 **It may** run `git`, confined where the machine confines programs, and
 remember the day you chose.
 
-## Removing them
+### Removing them
 
 `uze remove workspace` takes the plugin out of the project's `agents.yaml`,
 and `uze remove -m workspace` off this machine, its three extensions with it.
@@ -130,7 +184,7 @@ To keep the plugin and stop one extension, disable it on the Extensions
 screen.
 
 <Cards>
+  <Card title="Writing extensions" href="/docs/workspace/writing-extensions" />
   <Card title="Workspace" href="/docs/workspace" />
-  <Card title="Writing an extension" href="/docs/plugins/creating#extensions" />
   <Card title="Project files" href="/docs/reference/project-files" />
 </Cards>
