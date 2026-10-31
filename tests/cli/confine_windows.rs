@@ -176,19 +176,27 @@ fn a_program_reads_its_grants_and_nothing_else() {
     assert!(read.stdout.is_empty(), "{read:?}");
 }
 
-/// Whether the confined program itself can start `program`. The helper
-/// opens the program it is given with the operator's own rights, so only a
-/// start from inside the container meets the container's grants.
+/// Whether the confined program itself can start `program`: `started`,
+/// or `refused` and why. The helper opens the program it is given with the
+/// operator's own rights, so only a start from inside the container meets
+/// the container's grants.
 fn starts(confinement: &Confinement, dir: &Path, program: &str) -> String {
     script_in(
         confinement,
         dir,
-        &format!("try {{ $null = & '{program}'; 'started' }} catch {{ 'refused' }}"),
+        &format!(
+            "try {{ $i = New-Object Diagnostics.ProcessStartInfo '{program}'; \
+             $i.UseShellExecute = $false; $i.RedirectStandardOutput = $true; \
+             ([Diagnostics.Process]::Start($i)).WaitForExit(); 'started' }} \
+             catch {{ 'refused: ' + $_.Exception.GetBaseException().Message }}"
+        ),
     )
 }
 
-fn whoami() -> String {
-    system("System32\\whoami.exe")
+/// The program the execution tests copy. Its system copy starts inside an
+/// app container on Windows Server too, where `whoami.exe` does not.
+fn ping() -> String {
+    system("System32\\PING.EXE")
 }
 
 #[test]
@@ -197,13 +205,11 @@ fn a_read_grant_executes_nothing() {
     let checkout = root.path().join("checkout");
     std::fs::create_dir_all(&checkout).unwrap();
     let confinement = confinement(&[&checkout], &[], false);
-    let copy = checkout.join("whoami.exe");
-    std::fs::copy(whoami(), &copy).unwrap();
-    assert_eq!(starts(&confinement, &checkout, &whoami()), "started");
-    assert_eq!(
-        starts(&confinement, &checkout, &copy.display().to_string()),
-        "refused"
-    );
+    let copy = checkout.join("PING.EXE");
+    std::fs::copy(ping(), &copy).unwrap();
+    assert_eq!(starts(&confinement, &checkout, &ping()), "started");
+    let copied_start = starts(&confinement, &checkout, &copy.display().to_string());
+    assert!(copied_start.starts_with("refused"), "{copied_start}");
 }
 
 #[test]
@@ -212,20 +218,18 @@ fn a_write_grant_executes_nothing() {
     let scratch = root.path().join("scratch");
     std::fs::create_dir_all(&scratch).unwrap();
     let confinement = confinement(&[], &[&scratch], false);
-    let copy = scratch.join("whoami.exe");
+    let copy = scratch.join("PING.EXE");
     let copied = shell(
         &confinement,
-        &format!("copy /y {} {}", whoami(), copy.display()),
+        &format!("copy /y {} {}", ping(), copy.display()),
     );
     assert!(
         copied.status.success(),
         "the copy is a write it may make: {copied:?}"
     );
-    assert_eq!(starts(&confinement, &scratch, &whoami()), "started");
-    assert_eq!(
-        starts(&confinement, &scratch, &copy.display().to_string()),
-        "refused"
-    );
+    assert_eq!(starts(&confinement, &scratch, &ping()), "started");
+    let copied_start = starts(&confinement, &scratch, &copy.display().to_string());
+    assert!(copied_start.starts_with("refused"), "{copied_start}");
 }
 
 #[test]
