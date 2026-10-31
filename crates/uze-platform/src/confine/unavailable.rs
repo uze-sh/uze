@@ -5,6 +5,9 @@ use std::{ffi::OsString, io};
 
 use super::{Availability, Confinement};
 
+/// Nothing confines here, so nothing is granted.
+pub(super) const SYSTEM: super::System = super::System::NONE;
+
 pub(super) fn availability() -> Availability {
     Availability::unavailable()
 }

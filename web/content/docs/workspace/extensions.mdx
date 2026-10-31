@@ -341,8 +341,9 @@ No grant writes the checkout. Ask for the fewest that do the job.
 - An update that asks for a new grant is held until it is allowed again.
 - A program is pinned to the path found when it was allowed and, where the
   machine can, confined: it reads the checkout and the system, writes only
-  its own scratch folder and opens no socket. `uze doctor` says whether this
-  machine confines programs.
+  its own scratch folder and opens no socket. Linux, macOS and Windows each
+  confine programs; `uze doctor` says how this machine does.
+  [How a program is confined →](/docs/concepts/security#how-a-program-is-confined)
 
 ### Check, test and iterate
 
