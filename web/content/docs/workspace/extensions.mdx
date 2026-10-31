@@ -24,11 +24,34 @@ This declares the plugin in the project's `agents.yaml`, so anyone who runs
 this machine only, and `uze remove workspace` takes it out. To try them
 without a project of your own, ask any agent for `/uze:try`.
 
-<Cards>
-  <Card title="gsd" href="https://github.com/uze-sh/uze/blob/main/plugins/workspace/README.md#gsd" description="A GSD milestone beside the agent: the step it is at, the next one a click away, a checkpoint answered over its pane" />
-  <Card title="focus" href="https://github.com/uze-sh/uze/blob/main/plugins/workspace/README.md#focus" description="A pomodoro: the time left in the bar, the sessions of the last seven days" />
-  <Card title="contributions" href="https://github.com/uze-sh/uze/blob/main/plugins/workspace/README.md#contributions" description="The repository's commits as a contribution graph, day by day" />
-</Cards>
+<ExtensionCatalog
+  items={[
+    {
+      id: 'gsd',
+      summary: 'A GSD milestone beside the agent: the step it is at, the next one a click away, and a checkpoint answered over its pane.',
+      gif: '/examples/gsd.gif',
+      slots: ['bar', 'drawer', 'band'],
+      may: 'Read the checkout, type into an agent once you confirm, and notify you. Enabled one project at a time.',
+      href: 'https://github.com/uze-sh/uze/blob/main/plugins/workspace/README.md#gsd',
+    },
+    {
+      id: 'focus',
+      summary: 'A pomodoro: the time left in the bar, a sound when a session ends, and the sessions of the last seven days.',
+      gif: '/examples/focus.gif',
+      slots: ['bar', 'drawer'],
+      may: 'Keep its sessions on this machine and notify you.',
+      href: 'https://github.com/uze-sh/uze/blob/main/plugins/workspace/README.md#focus',
+    },
+    {
+      id: 'contributions',
+      summary: "The repository's commits as a contribution graph, day by day, with the commits of the day you click.",
+      gif: '/examples/contributions.gif',
+      slots: ['bar', 'drawer'],
+      may: 'Run git, confined where the machine confines programs, and remember the day you chose.',
+      href: 'https://github.com/uze-sh/uze/blob/main/plugins/workspace/README.md#contributions',
+    },
+  ]}
+/>
 
 ## The Extensions screen
 
