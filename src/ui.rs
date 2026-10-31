@@ -60,6 +60,7 @@ mod graphics;
 mod hit;
 mod input;
 mod keys;
+mod machine;
 mod management;
 mod model;
 mod orchestrator;

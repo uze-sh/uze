@@ -58,36 +58,9 @@ pub(crate) const ROUTES: [Route; 6] = [
     Route::Settings,
 ];
 
-/// Whether the Shortcuts screen has anything to say about a surface.
-///
-/// The keymap is the whole vocabulary, screens this build hides included
-/// — a keymap file written on one build has to keep meaning the same
-/// thing on another. What a person reads is only the surfaces they can
-/// reach, or the shortcuts screen would document a screen that is not
-/// there.
-///
-/// Derived from the screen that owns the scope rather than stated again
-/// here: a screen already says which feature it waits on, and a second
-/// list saying it too is a list that can disagree with the first.
-pub(crate) fn scope_is_offered(scope: uze_keys::Scope) -> bool {
-    ROUTES
-        .into_iter()
-        .find(|route| route.scopes().contains(&scope))
-        .is_none_or(|route| routes().contains(&route))
-}
-
 /// The screens this build offers, in sidebar order.
-///
-/// [`ROUTES`] is the vocabulary — every screen the code knows — and this
-/// is what a person can reach. A screen still being decided names a
-/// feature (`uze_application::Feature`), and a release build leaves it
-/// out: what is downloaded offers nothing half-built, and the build that
-/// does offer it says so with the screen's badge.
 pub(crate) fn routes() -> Vec<Route> {
-    ROUTES
-        .into_iter()
-        .filter(|route| route.feature().is_none_or(uze_application::feature_enabled))
-        .collect()
+    ROUTES.to_vec()
 }
 
 impl Route {
@@ -115,19 +88,6 @@ impl Route {
         }
     }
 
-    /// The badge a route carries beside its name on the tab strip, or
-    /// `None` for one that is finished. The tab strip is where someone
-    /// decides which screen to open, so it is where "not settled yet" has
-    /// to be said — a warning found only after arriving is a warning that
-    /// came too late.
-    ///
-    /// A screen behind a feature is exactly the unsettled kind, so the
-    /// two answers are one: the feature decides whether the screen is on
-    /// offer at all, and the badge says so wherever it is.
-    pub(crate) fn badge(self) -> Option<&'static str> {
-        self.feature().map(|_| "Beta")
-    }
-
     /// The keyboard surfaces this screen answers for: its own first, then
     /// any surface that exists only inside it.
     ///
@@ -152,15 +112,6 @@ impl Route {
             .first()
             .copied()
             .expect("every screen answers for a scope of its own")
-    }
-
-    /// The feature this screen waits on, or `None` for one this build
-    /// offers unconditionally.
-    pub(crate) fn feature(self) -> Option<uze_application::Feature> {
-        match self {
-            Route::Overview => Some(uze_application::Feature::Overview),
-            _ => None,
-        }
     }
 
     /// The screen the modal opens on when it remembers none this build
@@ -827,6 +778,8 @@ pub(crate) struct Remembered {
     pub(crate) declared_extensions: Vec<DeclaredExtensionSummary>,
     pub(crate) extension_standings: Vec<uze_application::ExtensionReport>,
     pub(crate) extension_project: Option<PathBuf>,
+    /// The Overview: what the machine's harnesses carry, as last collected.
+    pub(crate) machine: super::machine::MachineScreen,
 }
 
 /// Which asked mutation an answer is for. An answer is paired with its
@@ -1932,16 +1885,17 @@ impl TuiModel {
         }
     }
 
-    /// The list screen `route` is, if it is one: Plugins, Extensions,
-    /// Integrations and Keys. The Overview is a report and Settings a
-    /// catalogue with headings.
+    /// The list screen `route` is, if it is one: the Overview, Plugins,
+    /// Extensions, Integrations and Keys. Settings is a catalogue with
+    /// headings.
     pub(crate) fn list(&self, route: Route) -> Option<&ListScreen> {
         match route {
             Route::Plugins => Some(&self.remembered.plugin_screen),
             Route::Extensions => Some(&self.remembered.extension_screen),
             Route::Harnesses => Some(&self.remembered.harness_screen),
             Route::Keys => Some(&self.key_screen),
-            Route::Overview | Route::Settings => None,
+            Route::Overview => Some(&self.remembered.machine.list),
+            Route::Settings => None,
         }
     }
 
@@ -1951,7 +1905,8 @@ impl TuiModel {
             Route::Extensions => Some(&mut self.remembered.extension_screen),
             Route::Harnesses => Some(&mut self.remembered.harness_screen),
             Route::Keys => Some(&mut self.key_screen),
-            Route::Overview | Route::Settings => None,
+            Route::Overview => Some(&mut self.remembered.machine.list),
+            Route::Settings => None,
         }
     }
 
@@ -1962,7 +1917,8 @@ impl TuiModel {
             Route::Extensions => self.extension_visible_indices().len(),
             Route::Harnesses => self.harness_visible_indices().len(),
             Route::Keys => self.key_rows().len(),
-            Route::Overview | Route::Settings => 0,
+            Route::Overview => self.machine_lines().len(),
+            Route::Settings => 0,
         }
     }
 
@@ -2137,7 +2093,6 @@ impl TuiModel {
             )
         });
         pairs.dedup();
-        pairs.retain(|(scope, _)| scope_is_offered(*scope));
         let chord_in = |keymap: &uze_keys::Keymap, scope, action| {
             keymap
                 .bindings()
@@ -2448,6 +2403,42 @@ impl TuiModel {
 
     pub(crate) fn alerts(&self) -> Vec<Alert> {
         actionable_alerts(self.remembered.doctor.as_ref())
+    }
+
+    /// The Overview's tree, as it is drawn now.
+    pub(crate) fn machine_lines(&self) -> Vec<super::machine::Line> {
+        self.remembered.machine.lines(self.alerts().len())
+    }
+
+    /// The Overview line the keyboard is on.
+    pub(crate) fn machine_line(&self) -> Option<super::machine::Line> {
+        self.machine_lines()
+            .get(self.remembered.machine.list.selected)
+            .copied()
+    }
+
+    /// What the Overview asks of the machine this turn of the clock: a
+    /// collection once it has stood in front long enough and the last one
+    /// no longer stands. Any other screen in front stops one in flight.
+    pub(crate) fn machine_intent(&mut self, now: Instant) -> crate::ui::worker::Intent {
+        if self.route != Route::Overview {
+            self.remembered.machine.leave();
+            return crate::ui::worker::Intent::None;
+        }
+        self.collect_machine(now, false)
+    }
+
+    pub(crate) fn collect_machine(
+        &mut self,
+        now: Instant,
+        force: bool,
+    ) -> crate::ui::worker::Intent {
+        match self.remembered.machine.wanted(now, force) {
+            Some((id, cancel, force)) => {
+                crate::ui::worker::Intent::CollectMachineOverview { id, cancel, force }
+            }
+            None => crate::ui::worker::Intent::None,
+        }
     }
 
     pub(crate) fn set_route(&mut self, route: Route) -> crate::ui::worker::Intent {

@@ -82,13 +82,13 @@ fn extension_filter_narrows_visible_selection() {
 #[test]
 fn a_key_with_nothing_to_act_on_here_says_so() {
     let mut model = TuiModel {
-        route: Route::Overview,
+        route: Route::Settings,
         focus: Focus::Content,
         ..model_with_data()
     };
 
     model.act(uze_keys::Action::StartFilter);
-    assert!(!model.filtering, "the Overview has nothing to search");
+    assert!(!model.filtering, "Settings has nothing to search");
     assert!(
         matches!(&model.status, Status::Success(said) if said.contains("search")),
         "and the key says so: {:?}",

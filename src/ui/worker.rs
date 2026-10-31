@@ -105,6 +105,14 @@ pub(crate) enum Intent {
     /// Read the notes of this release for the modal already open on it —
     /// off the render thread, since reading them may reach the network.
     ReadReleaseNotes(String),
+    /// Collect what every harness carries, for the Overview: the last
+    /// snapshot first, then the machine itself unless that one still
+    /// stands or `force` says to look again. Stops when `cancel` is set.
+    CollectMachineOverview {
+        id: u64,
+        cancel: super::machine::Cancel,
+        force: bool,
+    },
     ContextAnalyze(PathBuf),
     ContextApply(PathBuf),
     /// Reproduce the detected consumer workspace's `agents.lock` through
@@ -140,6 +148,7 @@ impl Intent {
             Self::OpenLink(_) => "open_link",
             Self::TypeInShell(_) => "type_in_shell",
             Self::ReadReleaseNotes(_) => "read_release_notes",
+            Self::CollectMachineOverview { .. } => "collect_machine_overview",
             Self::ContextAnalyze(_) => "context_analyze",
             Self::ContextApply(_) => "context_apply",
             Self::InstallProjectEnvironment(_) => "install_project_environment",
@@ -184,6 +193,13 @@ pub(crate) enum WorkerResult {
         std::result::Result<(String, ContextReconciliationReport), String>,
     ),
     ReleaseNotesRead(String, Option<crate::self_update::ReleaseNotes>),
+    /// One step of an Overview collection, by the collection's id.
+    MachineOverview {
+        id: u64,
+        overview: Option<uze_application::machine_overview::MachineOverview>,
+        collected_at: Option<std::time::SystemTime>,
+        done: bool,
+    },
     /// A link handed to a browser, and the opener that took it.
     LinkOpened {
         url: String,
@@ -297,6 +313,9 @@ pub(crate) fn dispatch(
             inspect_marketplace_plugin(name, marketplace, home, sender, model)
         }
         Intent::ReadReleaseNotes(version) => read_release_notes(version, home, sender),
+        Intent::CollectMachineOverview { id, cancel, force } => {
+            collect_machine_overview(id, cancel, force, home, sender)
+        }
         Intent::OpenLink(url) => {
             let sender = sender.clone();
             open_link(url, move |url, opener| {
@@ -433,6 +452,61 @@ fn inspect_marketplace_plugin(
             Err(format!("Inspecting {name} failed")),
         );
         let _ = sender.send(WorkerResult::MarketplaceInspected(asked, result));
+    });
+}
+
+/// The Overview's collection: answers with the snapshot first so the
+/// screen draws at once, then collects unless the snapshot still stands.
+/// A panic answers "done" with nothing, so the screen never waits on it.
+fn collect_machine_overview(
+    id: u64,
+    cancel: super::machine::Cancel,
+    force: bool,
+    home: &UzeHome,
+    sender: &Sender<WorkerResult>,
+) {
+    let home = home.clone();
+    let sender = sender.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _span = tracing::info_span!(parent: &parent, "tui.machine_overview").entered();
+        let answer = |overview, collected_at, done| {
+            let _ = sender.send(WorkerResult::MachineOverview {
+                id,
+                overview,
+                collected_at,
+                done,
+            });
+        };
+        answered_or(
+            || {
+                let Ok(app) = tui_application(home.clone()) else {
+                    return answer(None, None, true);
+                };
+                let snapshot = app.machine_overview_snapshot();
+                let stands = snapshot.as_ref().is_some_and(|(_, at)| {
+                    at.elapsed()
+                        .is_ok_and(|age| age < super::machine::STANDS_FOR)
+                });
+                if let Some((overview, at)) = snapshot {
+                    answer(Some(overview), Some(at), stands && !force);
+                }
+                if stands && !force {
+                    return;
+                }
+                let collected = app.collect_machine_overview(&cancel.0, |overview| {
+                    answer(Some(overview.clone()), None, false)
+                });
+                answer(collected, Some(std::time::SystemTime::now()), true);
+            },
+            (),
+        );
+        let _ = sender.send(WorkerResult::MachineOverview {
+            id,
+            overview: None,
+            collected_at: None,
+            done: true,
+        });
     });
 }
 
@@ -951,6 +1025,17 @@ pub(crate) fn drain_worker_results(
     while let Ok(result) = receiver.try_recv() {
         arrived = true;
         match result {
+            WorkerResult::MachineOverview {
+                id,
+                overview,
+                collected_at,
+                done,
+            } => {
+                model
+                    .remembered
+                    .machine
+                    .absorb(id, overview, collected_at, done);
+            }
             WorkerResult::ReleaseNotesRead(version, notes) => {
                 if let Overlay::ReleaseNotes(modal) = &mut model.overlay {
                     modal.absorb(&version, notes);
