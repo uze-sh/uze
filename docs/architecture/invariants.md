@@ -793,7 +793,7 @@ create-new semantics so a link that appears after the check is refused too.
 
 `Blocked` means nothing was removed or updated, so `uze remove <plugin> -m` and
 `uze update -m` render the report and then exit non-zero — in both text
-and JSON. A caller chaining `uze remove x -m && uze install y -m`
+and JSON. A caller chaining `uze remove x -m && uze add y -m`
 must not run the second half after the first did nothing.
 
 > `tests/cli/machine.rs::a_blocked_removal_reports_and_fails`

@@ -17,7 +17,7 @@ each answering with a marker you can look for:
 
 The rules reach only a project that declares the plugin
 (`uze pingpong@uze` in it), never one that only has it on the
-machine (`uze install -m`). A playground world's demo project also keeps a rule of its own,
+machine (`uze add -m`). A playground world's demo project also keeps a rule of its own,
 `.agents/rules/marco.md`: asked `marco`, an agent answers
 `polo (UZE_PINGPONG_PROJECT_RULE)`. `uze status` in the project lists both.
 
@@ -37,8 +37,8 @@ Outside a playground world, install it on your own machine with:
 
 ```sh
 make pingpong-mcp             # pingpong-mcp on PATH
-uze pingpong@uze              # in a project: its rules arrive there
-uze install -m pingpong@uze   # the machine only: no rules
+uze add pingpong@uze          # in a project: its rules arrive there
+uze add -m pingpong@uze       # the machine only: no rules
 ```
 
 The marketplace is linked to this checkout, so an edit here reaches the

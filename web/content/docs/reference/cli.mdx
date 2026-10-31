@@ -23,9 +23,10 @@ makes it act on the machine alone.
 ### Plugins
 
 ```bash
-uze <plugin>@<market>         # add a plugin to this project
-uze install [dir]             # bring this project to what agents.yaml declares (alias: i)
-uze install <plugin>@<market> # the same as the shorthand
+uze add <plugin>@<market>     # add a plugin to this project
+uze add <plugin>@<market> -m  # add it to this machine only
+uze <plugin>@<market>         # the same as uze add
+uze install [dir]             # install what agents.yaml declares (alias: i)
 uze update [plugin]           # move plugins to where agents.yaml points now
 uze remove <plugin>           # take it out of this project
 uze remove <plugin> -m        # take it off this machine
@@ -35,17 +36,35 @@ uze status                    # this project: plugins, context, what is still ow
 uze status -m                 # this machine: every installed plugin
 ```
 
-`uze install` creates `agents.yaml` when the project has none, records what it
-resolved in `agents.lock`, drops from the lock what `agents.yaml` no longer
-declares, and copies the declared plugins' rules into `.agents/rules/`. `install`, `update` and `status`
-take a project directory, and otherwise act on the project you are in.
+`add` and `remove` change what is declared, `install` reproduces it, and
+`update` moves the pins.
+
+#### `uze add`
+
+`uze add <plugin>@<market>` installs one plugin from a marketplace you added
+and, inside a project, declares it in `agents.yaml` and records it in
+`agents.lock`. With `-m` it installs on this machine and declares nothing,
+project or not. `uze <plugin>@<market>` is the same command without its verb.
+A plugin always comes from a marketplace, never from a path or a Git URL: add
+the marketplace first with `uze market add`.
+
+#### `uze install`
+
+`uze install` brings a project to what it declares: it creates `agents.yaml`
+when the project has none, resolves it into `agents.lock`, drops from the lock
+what `agents.yaml` no longer declares, installs what the lock records, and
+copies the declared plugins' rules into `.agents/rules/`. It never moves a
+version and takes no plugin, so after `git clone` it is the one command a
+teammate runs. Given a project's root directory it acts on that project, and
+otherwise on the project you are in. `update` and `status` take a project
+directory the same way.
 
 | Flag | On | Does |
 | --- | --- | --- |
-| `-m` | `install`, `update`, `remove`, `status`, `<plugin>@<market>` | Act on the machine only |
-| `--trust` | `install`, `update`, `<plugin>@<market>` | Approve the commands a plugin runs, for CI |
-| `--alias <name>` | `install`, `<plugin>@<market>` | Install under another name when another marketplace's plugin has it. Cannot be combined with `--replace` |
-| `--replace` | `install`, `<plugin>@<market>` | Replace the other marketplace's plugin of the same name |
+| `-m` | `add`, `update`, `remove`, `status`, `<plugin>@<market>` | Act on the machine only |
+| `--trust` | `add`, `install`, `update`, `<plugin>@<market>` | Approve the commands a plugin runs, for CI |
+| `--alias <name>` | `add`, `<plugin>@<market>` | Install under another name when another marketplace's plugin has it. Cannot be combined with `--replace` |
+| `--replace` | `add`, `<plugin>@<market>` | Replace the other marketplace's plugin of the same name |
 | `--harness <agent>` | `inspect` | Only this agent: each capability's name, route, where it lands and what it loses |
 
 ### Marketplaces
@@ -128,7 +147,7 @@ uze config extension [<id> [on | off]]               # workspace only
 `--verbose` prints what happened in detail, `-q`/`--quiet` prints only
 warnings and errors, and `--color auto|always|never` decides colour
 (`NO_COLOR` is honoured). `--format json` gives machine-readable output on the
-commands that report: `install`, `update`, `remove`, `status`, `inspect`,
+commands that report: `add`, `install`, `update`, `remove`, `status`, `inspect`,
 `doctor`, `usage`, `market list|inspect|remove|host`, and `config theme list|show`,
 `icons`, `extension`, `notification`.
 

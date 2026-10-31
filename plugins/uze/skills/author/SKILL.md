@@ -161,13 +161,14 @@ that receives the rule, so write them for that project, not for the plugin.
 
 Rules are the one capability that is never delivered machine-wide: a rule
 fires whenever a path matches, so delivered for every project it would
-govern code in projects that never asked for it. Instead `uze <name>@<market>`
-in a project, and `uze install` there, copy each rule byte for byte into
-that project's checkout as `.agents/rules/<name>@<market>/<rule>.md`,
+govern code in projects that never asked for it. Instead `uze add
+<name>@<market>` in a project, and `uze install` there, copy each rule
+byte for byte into that project's checkout as
+`.agents/rules/<name>@<market>/<rule>.md`,
 registering that folder in `.agents/rules.json`, and the consumer commits
 the copies and the manifest beside `agents.lock`. Every harness reads
 them from there, Antigravity natively and the others through the rules
-engine, and a clone has them without running UZE. `uze install -m`
+engine, and a clone has them without running UZE. `uze add -m`
 reports them as delivered per project only. An update of the plugin is a
 reviewable diff of those files in the consumer's pull request, and a copy
 the consumer edited is reported as drift and never overwritten.
@@ -219,12 +220,12 @@ values that differ. Apply each, then check again until no warning is left.
 ## 4. Install and iterate
 
 ```bash
-uze install -m <name>@<market>
+uze add -m <name>@<market>
 ```
 
-The first install is `install`. Because the marketplace was born linked,
+The first install is `add`. Because the marketplace was born linked,
 it reads the working tree — but the Store is idempotent by origin: a
-*repeated* `install` of a package it already holds hands back the stored
+*repeated* `add` of a package it already holds hands back the stored
 bytes without re-reading the source. So the loop's re-delivery verb is
 **`update`**:
 

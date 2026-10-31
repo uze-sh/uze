@@ -18,12 +18,13 @@ plain CLI and does not need the workspace.
   alt="Adding a marketplace, installing one plugin into a project, and inspecting how Claude Code, Codex, OpenCode and Antigravity each received it."
 />
 
-## Installing a plugin
+## Adding a plugin
 
 ```bash
-uze <plugin>@<marketplace>    # add it to this project
-uze inspect <plugin>          # what it carries, and how each agent receives it
-uze remove <plugin>           # take it out of this project
+uze add <plugin>@<marketplace>  # add it to this project
+uze <plugin>@<marketplace>      # the same, without the verb
+uze inspect <plugin>            # what it carries, and how each agent receives it
+uze remove <plugin>             # take it out of this project
 ```
 
 A plugin that runs commands on your machine (an MCP server, a hook, a skill
@@ -36,7 +37,9 @@ Adding a plugin writes two files at the project root. Commit them:
 - `agents.yaml`: the plugins this project wants.
 - `agents.lock`: the exact version each one resolved to.
 
-Anyone who clones the project gets the same plugins, at the same versions:
+Anyone who clones the project gets the same plugins, at the same versions,
+with `uze install`, which installs what the project declares and takes no
+plugin:
 
 ```bash
 git clone …
@@ -59,10 +62,10 @@ them safe.
 
 ## Only on this machine
 
-To install a plugin for yourself without writing it into the project, add `-m`:
+To add a plugin for yourself without writing it into the project, add `-m`:
 
 ```bash
-uze install <plugin>@<marketplace> -m
+uze add <plugin>@<marketplace> -m
 uze remove <plugin> -m
 ```
 

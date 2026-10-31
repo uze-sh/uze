@@ -77,8 +77,8 @@ attachment; nothing is projected silently.
   names an `interpreter` runs the file it names on every platform. On
   OpenCode a JavaScript or TypeScript script runs in OpenCode's own Bun.
   The program the launcher needs joins the package's requirements,
-  attributed to the hook, so `uze install`, `uze status -m` and
-  `uze doctor` name it when it is missing.
+  attributed to the hook, so `uze add`, `uze install`, `uze status -m`
+  and `uze doctor` name it when it is missing.
   A script no launcher can start on a platform is treated there like a
   line with no spelling for it.
 - **Shell line**: `command` alone, one POSIX line or a `posix`/`windows`
@@ -367,7 +367,7 @@ runs exactly once for a new headless session, with `HOOK_SOURCE=startup`.
   the exact managed content, removal refuses drift, and foreign hooks,
   plugins, files, entries and ordering are never changed.
 - All generated artifacts are derived: safe to delete and regenerate from
-  the Store (`uze install -m` / `uze update -m` rebuilds them). The
+  the Store (`uze add -m` / `uze update -m` rebuilds them). The
   shared wrapper is removed with the last entry that needs it.
 - Existing installs are re-projected on the next install/update: nothing is
   migrated in place, and a receipt-owned entry from a previous release is
@@ -384,9 +384,9 @@ runs exactly once for a new headless session, with `HOOK_SOURCE=startup`.
   it is answering in; the portable fields are inputs only.
 - **`jq` is the shell wrapper's dependency.** It joins the package's
   requirements as one the wrapper introduced, so the author never declares
-  it: `uze install`, `uze status -m`, `uze inspect` and `uze doctor` name it
-  when it is missing, with the command that installs it, and UZE never runs
-  that command. Until it is installed a `deny` group denies while an
+  it: `uze add`, `uze install`, `uze status -m`, `uze inspect` and
+  `uze doctor` name it when it is missing, with the command that installs
+  it, and UZE never runs that command. Until it is installed a `deny` group denies while an
   `observe` group proceeds and reports. What a package's own scripts need
   is declared by the author the same way (`extensions["sh.uze"].requirements`
   in `plugin.json`, see the plugin format reference).

@@ -15,9 +15,11 @@ Plugins come from marketplaces: Git repositories that list them. Add one, then
 add a plugin from it to this project:
 
 ```bash
-uze market add owner/repo      # a marketplace on GitHub
-uze <plugin>@<marketplace>     # add one of its plugins
+uze market add owner/repo        # a marketplace on GitHub
+uze add <plugin>@<marketplace>   # add one of its plugins
 ```
+
+`uze <plugin>@<marketplace>` is the same command, shorter.
 
 `agents.yaml` and `agents.lock` now record it. Commit them, and whoever clones
 the project runs `uze install` to get the same plugins.

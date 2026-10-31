@@ -112,8 +112,8 @@ project that receives the rule.
 
 ### Declaring the plugin
 
-In a project, `uze acme-conventions@acme` (or `uze install`, once the plugin
-is in `agents.yaml`) copies each rule, byte for byte, into the project:
+In a project, `uze add acme-conventions@acme` (or `uze install`, once the
+plugin is in `agents.yaml`) copies each rule, byte for byte, into the project:
 
 ```text
 .agents/rules/acme-conventions@acme/ui.md
@@ -138,7 +138,7 @@ exactly as it reads your own rules, and a rule of yours with the same name is
 left alone. In the manifest, only its own entries are added and removed;
 every other entry and key is written back unchanged. If the manifest does not
 parse, uze leaves it as it is, copies nothing and says so. Rules are the one part of a plugin that never reaches an
-agent machine-wide: `uze install -m` reports them as delivered per project,
+agent machine-wide: `uze add -m` reports them as delivered per project,
 and a project that does not declare the plugin never receives them.
 
 An `always_on` rule is how a plugin says something to every agent of every

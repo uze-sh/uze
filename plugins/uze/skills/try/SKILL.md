@@ -33,8 +33,8 @@ it. The person then opens the workspace.
    repository with twenty weeks of commits, a GSD milestone in `.planning/`
    and an empty `agents.yaml`, touches nothing outside the directory, and
    prints its path.
-4. **Install the package into it**, from inside the directory:
-   `uze install workspace@uze`, declared in its `agents.yaml`. Leave
+4. **Add the package to it**, from inside the directory:
+   `uze add workspace@uze`, declared in its `agents.yaml`. Leave
    `pingpong` out unless they ask: its server is not in a release, and its
    hooks and MCP server ask the person to trust them.
 5. **Hand over.** The workspace is a terminal UI the person runs, never
