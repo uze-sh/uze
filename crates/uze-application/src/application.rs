@@ -43,6 +43,7 @@ mod freshness;
 mod harness_floor;
 mod inspection_cache;
 mod lifecycle;
+mod machine_overview;
 mod maintenance;
 mod marketplace;
 mod marketplace_catalogue;
