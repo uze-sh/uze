@@ -27,6 +27,11 @@ source "read" {
     output "lines"
     fields "line"
 }
+source "scratch" {
+    run "cmd" "/d" "/c" "echo kept> %TMPDIR%\\note && type %TMPDIR%\\note" timeout="10s"
+    output "lines"
+    fields "line"
+}
 source "write" {
     run "cmd" "/d" "/c" "echo planted> %UZE_IN_PATH%" timeout="10s"
     output "lines"
@@ -183,6 +188,11 @@ fn a_confined_program_reads_the_checkout_and_nothing_outside_it() {
 fn a_confined_program_writes_nowhere_but_its_scratch() {
     let world = World::new("write");
     let runner = confining();
+    assert_eq!(
+        lines(&world.ask(&runner, "scratch", &world.checkout)),
+        ["kept"],
+        "its own scratch is the one place it writes"
+    );
     for target in [
         world.checkout.join("README.md"),
         world.outside.join("planted"),

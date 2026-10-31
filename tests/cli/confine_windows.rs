@@ -79,8 +79,9 @@ fn stdout(output: &Output) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_owned()
 }
 
-/// A directory the test owns, outside the profile Windows hides from a
-/// container: the system's temporary directory is beneath it.
+/// A directory the test owns, under the system's temporary directory: a
+/// container reaches it only through the grants each test gives, since
+/// the profile it sits in is hidden from a container.
 fn root() -> TempDir {
     TempDir::new("confine")
 }
@@ -147,11 +148,14 @@ fn a_program_reads_its_grants_and_nothing_else() {
     assert!(!secret.status.success(), "{secret:?}");
     assert!(secret.stdout.is_empty(), "{secret:?}");
 
-    let profile = shell(&confinement, "dir /b \"%USERPROFILE%\\Desktop\"");
-    assert!(
-        !profile.status.success(),
-        "the profile is hidden: {profile:?}"
-    );
+    // A file of the operator's own, where their keys and settings live.
+    let profile = PathBuf::from(std::env::var_os("USERPROFILE").unwrap())
+        .join(format!(".uze-confine-{}", std::process::id()));
+    std::fs::write(&profile, "secret").unwrap();
+    let read = shell(&confinement, &format!("type {}", profile.display()));
+    let _ = std::fs::remove_file(&profile);
+    assert!(!read.status.success(), "the profile is hidden: {read:?}");
+    assert!(read.stdout.is_empty(), "{read:?}");
 }
 
 #[test]
@@ -167,6 +171,123 @@ fn a_read_grant_executes_nothing() {
     );
     assert!(!executed.status.success(), "{executed:?}");
     assert!(executed.stdout.is_empty(), "{executed:?}");
+}
+
+#[test]
+fn a_write_grant_executes_nothing() {
+    let root = root();
+    let scratch = root.path().join("scratch");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let confinement = confinement(&[], &[&scratch], false);
+    let copy = scratch.join("whoami.exe");
+    let copied = shell(
+        &confinement,
+        &format!(
+            "copy /y {} {}",
+            system("System32\\whoami.exe"),
+            copy.display()
+        ),
+    );
+    assert!(
+        copied.status.success(),
+        "the copy is a write it may make: {copied:?}"
+    );
+    let executed = shell(&confinement, &copy.display().to_string());
+    assert!(!executed.status.success(), "{executed:?}");
+    assert!(executed.stdout.is_empty(), "{executed:?}");
+}
+
+#[test]
+fn without_network_no_name_resolves() {
+    let resolve = "try { [Net.Dns]::GetHostAddresses('example.com') | Select-Object -First 1 | \
+                   ForEach-Object { 'resolved' } } catch { 'refused' }";
+    // Only a machine that resolves names itself can say whether the
+    // confinement is what stops it.
+    if std::net::ToSocketAddrs::to_socket_addrs("example.com:443").is_err() {
+        eprintln!("skipped: this machine resolves no name");
+        return;
+    }
+    assert_eq!(script(&confinement(&[], &[], false), resolve), "refused");
+}
+
+#[test]
+fn nothing_reaches_a_port_it_listens_on() {
+    use std::io::{BufRead, BufReader};
+    let listen = "$l = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0); $l.Start(); \
+                  [Console]::Out.WriteLine($l.LocalEndpoint.Port); [Console]::Out.Flush(); \
+                  if ($l.Server.Poll(10000000, [Net.Sockets.SelectMode]::SelectRead)) { 'accepted' } else { 'nothing came' }";
+    let mut listener = confined(
+        &confinement(&[], &[], false),
+        &[
+            &powershell(),
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            listen,
+        ],
+    )
+    .stdout(std::process::Stdio::piped())
+    .stderr(std::process::Stdio::piped())
+    .spawn()
+    .unwrap();
+    let mut lines = BufReader::new(listener.stdout.take().unwrap()).lines();
+    let port: u16 = lines
+        .next()
+        .and_then(Result::ok)
+        .and_then(|line| line.trim().parse().ok())
+        .expect("the program says the port it listens on");
+    let reached = std::net::TcpStream::connect_timeout(
+        &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+        std::time::Duration::from_secs(3),
+    );
+    assert!(reached.is_err(), "a connection reached the program's port");
+    let said: Vec<String> = lines.map_while(Result::ok).collect();
+    let _ = listener.wait();
+    assert_eq!(
+        said.last().map(String::as_str),
+        Some("nothing came"),
+        "{said:?}"
+    );
+}
+
+#[test]
+fn nothing_it_starts_outlives_its_run() {
+    // A child of its own, started out of the way and left running.
+    let start = "$i = New-Object Diagnostics.ProcessStartInfo \"$env:SystemRoot\\System32\\PING.EXE\", '-n 60 127.0.0.1'; \
+                 $i.UseShellExecute = $false; $i.RedirectStandardOutput = $true; \
+                 ([Diagnostics.Process]::Start($i)).Id";
+    let child: u32 = script(&confinement(&[], &[], false), start)
+        .parse()
+        .expect("the program says the pid of the child it started");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while uze_platform::process::alive(child) == Some(true) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "process {child} outlived the run that started it"
+        );
+        std::thread::yield_now();
+    }
+}
+
+#[test]
+fn processor_time_past_the_bound_ends_the_program() {
+    let mut confinement = confinement(&[], &[], false);
+    confinement.limits.cpu_seconds = 3;
+    let started = std::time::Instant::now();
+    // Spins for longer than its bound, and says so if nothing stops it.
+    let output = run(
+        &confinement,
+        &[
+            &powershell(),
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "$s = [Diagnostics.Stopwatch]::StartNew(); while ($s.Elapsed.TotalSeconds -lt 60) {}; 'finished'",
+        ],
+    );
+    assert!(!output.status.success(), "{output:?}");
+    assert!(!stdout(&output).contains("finished"), "{output:?}");
+    assert!(started.elapsed() < std::time::Duration::from_secs(45));
 }
 
 #[test]
@@ -214,14 +335,15 @@ fn another_process_is_out_of_reach() {
         .spawn()
         .unwrap();
     let pid = bystander.id();
+    // Ending it takes a handle to it, which a container is refused.
     let answer = script(
         &confinement(&[], &[], false),
         &format!(
             "try {{ (Get-Process -Id {pid} -ErrorAction Stop).Kill(); 'killed' }} \
-             catch {{ 'refused' }}"
+             catch {{ $_.Exception.GetBaseException().GetType().Name }}"
         ),
     );
-    assert_eq!(answer, "refused");
+    assert_ne!(answer, "killed");
     assert!(bystander.try_wait().unwrap().is_none(), "it still runs");
     let _ = bystander.kill();
     let _ = bystander.wait();
@@ -238,10 +360,16 @@ fn memory_past_the_bound_is_refused() {
             "-NoProfile",
             "-NonInteractive",
             "-Command",
-            "$ErrorActionPreference = 'Stop'; $a = New-Object byte[] (1GB); $a[0] = 1; 'allocated'",
+            "$ErrorActionPreference = 'Stop'; 'started'; $a = New-Object byte[] (1GB); $a[0] = 1; 'allocated'",
         ],
     );
-    assert!(!stdout(&output).contains("allocated"), "{output:?}");
+    let said = stdout(&output);
+    assert!(said.contains("started"), "the program ran: {output:?}");
+    assert!(!said.contains("allocated"), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("OutOfMemory"),
+        "{output:?}"
+    );
 }
 
 #[test]

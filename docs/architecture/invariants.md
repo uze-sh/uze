@@ -3228,6 +3228,14 @@ cannot enforce is named as an outcome, the same way on every platform.
 > `tests/cli/confine_windows.rs::without_network_nothing_answers_and_with_it_the_loopback_still_does_not`
 > `tests/cli/confine_windows.rs::another_process_is_out_of_reach`
 > `tests/cli/confine_windows.rs::the_run_leaves_no_container_behind`
+> `tests/cli/confine_windows.rs::a_write_grant_executes_nothing`
+> `tests/cli/confine_windows.rs::without_network_no_name_resolves`
+> `tests/cli/confine_windows.rs::nothing_reaches_a_port_it_listens_on`
+> `tests/cli/confine_windows.rs::nothing_it_starts_outlives_its_run`
+> `tests/cli/confine_windows.rs::processor_time_past_the_bound_ends_the_program`
+> `tests/cli/confine_windows.rs::the_program_gets_its_environment_and_its_own_exit_status`
+> `tests/cli/confine_windows.rs::a_confinement_that_cannot_be_applied_runs_nothing_and_says_so`
+> `tests/cli/confine_windows.rs::a_batch_file_is_refused_rather_than_run`
 > `tests/lifecycle/extension_programs_windows.rs::a_confined_program_writes_nowhere_but_its_scratch`
 > `crates/uze-platform/src/confine.rs::tests::the_summary_names_what_a_program_can_still_do_and_the_limits_it_lacks`
 
