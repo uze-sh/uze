@@ -1,7 +1,10 @@
 //! A declared extension's program on Windows, consented to and enabled,
 //! run by the runner through this build's own `uze __confine` in an
 //! AppContainer (`confinement-parity`). The program is the system's
-//! `cmd.exe`, pinned at consent, so each source is one reach tried.
+//! `cmd.exe`, pinned at consent, so each source is one reach tried. The
+//! path arrives as `UZE_IN_PATH`, which `cmd` expands itself: an argument
+//! substituted from the input would have to follow `--`, which `cmd`'s own
+//! commands do not take.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -20,12 +23,12 @@ description "Tries one reach at a time"
 wants "exec:cmd"
 surface "board" slot="view" view="board.uze" source="read"
 source "read" {
-    run "cmd" "/d" "/c" "type" "{path}" timeout="10s"
+    run "cmd" "/d" "/c" "type %UZE_IN_PATH%" timeout="10s"
     output "lines"
     fields "line"
 }
 source "write" {
-    run "cmd" "/d" "/c" "echo" "planted" ">" "{path}" timeout="10s"
+    run "cmd" "/d" "/c" "echo planted> %UZE_IN_PATH%" timeout="10s"
     output "lines"
     fields "line"
 }
