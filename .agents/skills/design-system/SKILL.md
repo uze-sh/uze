@@ -710,9 +710,7 @@ Use the `src/progress.rs` helpers and never hand-format:
   on this machine only`, `1 plugin and 1 extension updated`
   (`progress::count_packages`). Only a package a harness receives is a
   plugin.
-- "uze" is lowercase, and a sentence shouldn't start with it. This holds
-  for the documentation site (`web/content/`) too, where a paragraph
-  opening on a lowercase "uze" reads as a typo.
+- "uze" is lowercase, and a sentence shouldn't start with it.
 - Don't claim more than the product does, and don't repeat a claim
   everywhere.
 - Prompts UZE writes into a project are generic and never mention uze.
