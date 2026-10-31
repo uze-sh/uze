@@ -8,204 +8,145 @@ What exists today and shapes the approach:
   (`crates/uze-core/src/machine/features.rs`), whose comment says what the
   screen should be is undecided. `src/ui/view/overview.rs` draws two
   counts.
-- `IntegrationPort` already has optional readers of a harness's own records
-  whose default is "not known": `conversation_digest` (Claude Code, Codex),
-  `memory_source`, `session_recorded_for`. This change follows that
-  pattern.
-- `shared/transcript.rs::records` streams JSONL from the start of a file,
-  through `lines()`, into a `serde_json::Value` per line. There is no
-  offset, and invalid UTF-8 ends the read.
-- OpenCode's sessions are asked of `opencode api` (`opencode/session.rs`).
-  Antigravity's per-conversation databases are never opened
-  (`antigravity/session.rs`). Neither stance changes.
+- `IntegrationPort` already has optional readers whose default is "not
+  known" (`conversation_digest`, `memory_source`, `session_recorded_for`).
+  This change follows that pattern.
+- The integrations already parse each harness's skills, agents, MCP and
+  hook configuration to deliver uze's packages
+  (`crates/uze-integrations/src/<harness>/{skills,mcp,hooks,plugin}.rs`).
+- OpenCode's sessions are asked of the harness, never of its database.
+  Antigravity's per-conversation databases are never opened. Neither
+  stance changes.
 - uze never touches foreign hooks, plugins or order (delivery model). A
   read-only Overview keeps that.
 - Every background read answers through a channel, a late answer is
-  dropped, and a panicking read answers "not known"
-  (`docs/architecture/invariants.md`). Cache is never required for
-  correctness.
-- Observed on a real machine:
-  - `~/.claude/projects` is 756 MB, with files up to 83 MB and lines over
-    1 MB. Of 248 transcripts, 195 are `<session>/subagents/*.jsonl`.
-  - 4 of 9 Codex rollouts are subagent threads
-    (`session_meta.payload.parent_thread_id`).
+  dropped, a panicking read answers "not known", and cache is never
+  required for correctness (`docs/architecture/invariants.md`).
+
+Why only this scope: a review of the four harnesses' data showed that what
+comes from disk and configuration is answerable by all four. What comes from
+session history (per-resource uses, per-session tokens of MCP tools and
+hooks, MCP sign-in state) is complete for one harness, partial for one, and
+unreadable for two. That is left for a later version.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- One harness-neutral model; a new harness appears by implementing the
-  optional methods and nothing else.
-- No cost on any path that is not the Overview in front: launch, shim, CLI,
-  any other screen, any frame.
-- A screen that draws at once and never claims more than it read.
+- The same answers from all four harnesses; a new harness appears by
+  implementing two optional methods.
+- No cost on any path but the Overview in front: launch, shim, CLI, other
+  screens, any frame.
+- No session transcript read at all.
 
 **Non-Goals:**
-- Adopt, executing any removal, starting any MCP server.
-- OpenCode and Antigravity uses. They report inventory and sessions, and
-  their uses stay unknown.
-- Per-project resources, a CLI report, an exact per-model tokenizer.
+- Per-resource uses, "unused", per-session tokens of MCP servers and hooks,
+  MCP sign-in state.
+- Adopt; executing any removal; starting any MCP server.
+- Per-project resources; a CLI report; an exact per-model tokenizer.
 
 ## Decisions
 
-### 1. Three optional `IntegrationPort` methods; the core owns the rest
+### 1. Two optional `IntegrationPort` methods; the core owns the rest
 
 | method | answers | default |
 |---|---|---|
-| `machine_inventory()` | found resources: kind, name, location, origin hint (harness plugin, built-in, account, by hand), text listed every session, text loaded when used, a problem the harness reports, and the harness's own removal command when there is one | empty |
-| `session_sources(since)` | root session records (never subagents') with last-activity time, plus the child records that hold uses | `None`, so sessions are unknown |
-| `read_usage(source, resume_at, budget, inventory)` | `(events, resume_at, reached_end)`; each event is already resolved to an inventory resource id, harness, day and completeness (`Complete` or `Floor`); unresolved names are dropped inside the integration | `None`, so uses are unknown |
+| `machine_inventory()` | found resources: kind, name, the files that define it, origin hint (harness plugin, built-in, by hand), the command or path it runs (hooks, local MCP), the harness's own removal command when there is one | empty |
+| `session_count(since)` | sessions with activity since a time, subagents excluded | `None`, so the count is unknown |
 
-The core owns, independent of harness:
+The core owns everything harness-neutral:
 - `uze` ownership from receipts;
-- merging across harnesses;
-- token estimation;
-- status, order, floors, period and totals;
-- the index;
-- scheduling.
+- merging what uze delivered across harnesses;
+- duplicate detection (same kind and name, different content digest);
+- token estimation from the files;
+- the static health checks;
+- status and order;
+- the snapshot and scheduling.
 
-The removal command is a field of a found resource, not a fourth method.
-`src/` reaches all of it through a `uze-application` read model, never
-`uze_core` (layering).
+A third method was rejected: the removal command is a field of a found
+resource. `src/` reaches all of this through a `uze-application` read
+model, never `uze_core`, as the layering rules require.
 
-### 2. Tokens: a local estimator over what the harness lists
+### 2. Tokens: a local estimator over the artifact's files
 
 The core estimates tokens from text length, with a per-script ratio
-calibrated by a test, and always shows them with `~`. For each resource,
-the integration supplies the text its harness lists:
-- a skill's or agent's frontmatter name and description;
-- an always-on file whole;
-- an MCP server's tool names, as the harness lists them. Claude Code defers
-  MCP tools and announces them as deltas (`deferred_tools_delta`: names
-  added and removed). The full list is the net of the deltas across the
-  latest root session. It is read in the uses stage and kept in the index;
-  until then the figure is unknown;
-- for a hook, the context its last runs injected
-  (`hook_additional_context`), read in the uses stage and kept in the
-  index; otherwise zero.
+calibrated by a test, and always shows them with `~`. What counts per
+session:
+- a skill's or agent's frontmatter `name` and `description`;
+- an always-on instruction file, whole.
 
-Only the tokens on disk are computed in the first stage. Anything that
-comes from a transcript is computed in the uses stage, so the first stage
-never reads a session.
+What counts when used is the rest of the definition file. A file over a
+cap (1 MB) is measured by its size, without reading it all.
 
-Schemas are never fetched, because that would start servers. A real BPE
-tokenizer was rejected: it is a dependency with MBs of tables, and still
-not each vendor's tokenizer. The ranking needs only an estimate.
+A real BPE tokenizer was rejected: it is a dependency with MBs of tables,
+and still not each vendor's tokenizer. The screen ranks resources and needs
+only an estimate.
 
-### 3. What each harness gives, in this change
+### 3. Static health, in core
 
-**Claude Code**
-- Inventory:
-  - skills and agents under `~/.claude`;
-  - plugins from `plugins/installed_plugins.json`;
-  - `settings.json` hooks;
-  - MCP from `~/.claude.json` and plugins;
-  - `CLAUDE.md`.
-- Broken: `mcp-needs-auth-cache.json` and `failedMcpServers`.
-- Sessions: `projects/*/*.jsonl` roots only.
-- Uses, read from roots and `subagents/`, `Complete` unless noted:
-  - skills: `Skill` tool uses, `<command-name>` slash invocations and `invoked_skills` attachments, deduplicated per turn;
-  - agents: `Agent` uses with a `subagent_type`;
-  - MCP: `mcp__<server>__<tool>`, resolved by longest normalized server prefix;
-  - hooks: `hook_success` matched to a configured hook by event and command, stored by inventory id; a `Floor` until the Lab proves a silent run is recorded.
+The core judges broken from the facts the inventory hands it:
+- a hook command whose file is missing;
+- a local MCP command not found, resolved on `PATH` through `uze-platform`
+  (no `cfg!` at the call site);
+- a skill or agent file that cannot be read, or whose frontmatter does not
+  parse;
+- a plugin directory that is missing.
 
-**Codex**
-- Inventory:
-  - skills in `~/.agents/skills` and `~/.codex/skills`;
-  - agents;
-  - `[plugins.*]`;
-  - `hooks.json`;
-  - `config.toml` MCP;
-  - `~/.codex/AGENTS.md`.
-- Sessions: rollouts without `parent_thread_id`.
-- Uses:
-  - agents: `spawn_agent.agent_type`, `Complete`;
-  - skills: injected `<skill><name>` blocks, `Floor` (explicit invocations only);
-  - MCP and hooks: unknown until a Lab fixture proves their record shape.
+A URL-reached MCP server is never judged, since nothing on disk can prove
+it. Nothing is executed to check.
 
-**OpenCode**
-- Inventory: skills, agents, plugins, `opencode.json` MCP, the global `AGENTS.md`.
-- Sessions: the API listing, following its cursor, reading `time.updated`, run from a directory outside every project. Unknown unless the Lab proves the listing is machine-wide.
-- Uses: unknown.
+### 4. Sessions, per harness
 
-**Antigravity**
-- Inventory:
-  - skills, `built-in` skills, agents, hooks, plugins, MCP under `~/.gemini`;
-  - the global instructions file, wherever the Lab shows agy reads it.
-- Sessions: `conversations/*.db` counted by the newest modification time of the file or its `-wal`, none opened.
-- Uses: unknown.
+| | how sessions are counted | subagents excluded by |
+|---|---|---|
+| Claude Code | root `projects/*/*.jsonl` by modification time | living under `<session>/subagents/` |
+| Codex | rollouts under `sessions/` by modification time | the opening `session_meta` carrying `parent_thread_id` (the first line only) |
+| OpenCode | `opencode stats --days N --json`, run from a directory outside every project with a short timeout | its own `sessions` / `subagents` split |
+| Antigravity | `conversations/*.db` by the newer of the file's and its `-wal`'s modification time, none opened | not needed: it records no subagent conversations there |
 
-A rule's uses are its harness's sessions.
+The OpenCode figure is used only if the Lab proves it is machine-wide;
+otherwise it is unknown.
 
-### 4. Scheduling
+### 5. Inventory, per harness
 
-A pass starts only while the Overview is the route in front, after a short
-debounce, if the index is older than a minute, or on refresh (`f5`). It is
-cancelled when another route is chosen or the modal closes. The steps are:
+| | skills | agents | mcp | hooks | rules | plugins |
+|---|---|---|---|---|---|---|
+| Claude Code | `~/.claude/skills`, plugins | `~/.claude/agents`, plugins | `~/.claude.json`, plugins | `settings.json` | `~/.claude/CLAUDE.md` | `plugins/installed_plugins.json` |
+| Codex | `~/.agents/skills`, `~/.codex/skills` | `~/.codex/agents` | `config.toml` | `hooks.json` | `~/.codex/AGENTS.md` | `[plugins.*]` |
+| OpenCode | `~/.config/opencode/skills` | `…/agents` | `opencode.json` | its plugins | global `AGENTS.md` | `…/plugins` |
+| Antigravity | `~/.gemini/…/skills`, `builtin/skills` | `~/.gemini/config/agents` | its MCP config | `hooks.json` | the global instructions file the Lab confirms | its plugins |
 
-1. inventory and the tokens on disk;
-2. sessions;
-3. uses, and the tokens only transcripts show.
+### 6. Scheduling and the snapshot
 
-Uses are read one source at a time with a byte budget per step, on one
-low-priority thread, checking the cancel flag between steps. Each answer
-carries the pass id and a stale one is dropped. A panic answers "not
-known". Only one pass runs at a time: it holds an exclusive lock on
-`cache/machine-usage.lock`, named in `UzeHome`. A second TUI client finds
-the lock taken and draws from the index. No CLI command, the shim or a launch calls
-any of this.
+A collection starts only while the Overview is the route in front, after a
+short debounce, if the snapshot is older than a minute, or on refresh
+(`f5`). It runs on the management worker, one harness at a time:
+1. inventory;
+2. tokens and health;
+3. sessions.
 
-### 5. The reader
+Each answer carries the collection's id and a stale one is dropped. Leaving
+the route or closing the modal cancels the collection; a panic answers "not
+known".
 
-`shared::transcript` gains a resumable reader:
-- it seeks to a byte offset;
-- it reads raw bytes up to the next newline, skipping a line longer than a
-  cap (4 MB) without holding it;
-- it treats a non-UTF-8 line as one skipped line;
-- it reports the end of the last complete line as the resume point, since
-  a half-written tail is left for the next pass;
-- it filters by substring (`"tool_use"`, `command-name`, `hook_`,
-  `invoked_skills`, `spawn_agent`, `<skill>`) before parsing a line.
-
-Memory stays bounded by the cap whatever the file size.
-
-### 6. The index
-
-`UzeHome` names `cache/machine-usage.json`. For each source it holds:
-- path, size, modification time, root or child;
-- the resume point;
-- complete;
-- counts as `day → (resource id, completeness) → n`.
-
-Counts are kept per source, so a source that shrank or whose time went back
-drops its own counts and is read again from zero. Days older than 90 are
-dropped. The file is written as a whole snapshot with
-`persistence::write_atomic`. Being in `cache/` it has no shape: unreadable
-means rebuild.
-
-- **Complete:** a source is complete when a pass read it up to the size it
-  had when that pass started. A session still being written is complete for
-  that pass, so statuses do not flicker while agents run. "Unused" requires
-  every source of the period to be complete.
-- **Resource id:** stable across reinstalls and upgrades, and never a path
-  or a version:
-  - `(package, kind, name)` for what uze delivered, so one delivered
-    resource is one id on every harness;
-  - `(harness, kind, name)` for the rest.
-
-  Only inventory ids reach the index.
+The result is kept in `cache/machine-overview.json`, named in `UzeHome`,
+so the next opening draws at once. Being in `cache/`, it has no shape: if it
+cannot be read, it is collected again. It holds only names, kinds, paths of
+definition files, origins, figures and statuses. No CLI command, the shim or
+a launch calls any of this.
 
 ### 7. The screen
 
 The screen is Marketplace's shape:
-- header fields `‹ every harness ›` and `‹ 30 days ›`;
+- header fields `‹ every harness ›` and `‹ 30 days ›`, where the period
+  sets only the session count;
 - the filter;
 - one tree folded by kind;
 - the fixed panel;
 - keys in the foot.
 
-Floors read `≥ n`. The `uze` group reuses `actionable_alerts`.
-`Feature::Overview` is removed when complete. The design-system skill
-governs every detail.
+Columns: `name · from · per session · status`. The `uze` group reuses
+`actionable_alerts`. `Feature::Overview` is removed when complete. The
+design-system skill governs every detail.
 
 ### 8. Diagrams
 
@@ -214,19 +155,19 @@ component and its relation to `IntegrationPort`.
 
 ## Candidate ADRs
 
-- **The machine overview reads harness records but never writes them**: it
+- **The machine overview reads harness files but never writes them**: it
   sets the line between observing and managing foreign resources, which a
   later adopt or remove would have to cross deliberately.
 
 ## Risks / Trade-offs
 
-- [A harness release changes its record format] → Lab fixtures from the
-  latest release per reader; `harness-watch` flags drift. Until a reader is
-  fixed, that harness reads unknown and the others are unaffected.
-- [A cold pass over hundreds of MB] → it is bounded, cancellable,
-  low-priority and resumable, and has a benchmark budget (task 5.3). Uses
-  read as being read, and never as unused, until it finishes.
-- [Hook runs may be recorded only for some hooks] → the Lab proves whether
-  a silent run is recorded. If not, hook uses are a floor.
-- [Estimated tokens differ from the vendor's count] → always `~`, and the
-  panel calls them an estimate.
+- [A harness release moves a config file] → each inventory reader has a Lab
+  check against the latest release. Until a reader is fixed, that harness
+  reads unknown and the others are unaffected.
+- [`opencode stats` costs a process spawn] → it runs only with the Overview
+  in front, off every frame, with a timeout, at most once per collection.
+- [No usage data] → the screen cannot say what is unused; it says what
+  weighs, what is broken and what is duplicated. Uses are a later version
+  that adds a column without changing the layout.
+- [Estimated tokens differ from the vendor's count] → always `~`; the panel
+  calls them an estimate.
