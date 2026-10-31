@@ -197,7 +197,8 @@ pub(super) fn groups_of(navigator: &Navigator) -> Vec<MenuGroup<'_>> {
                     group.items += 1;
                 }
             }
-            NavigatorRow::Gap => {}
+            // A search's rows are a sidebar's, never a board's menu.
+            NavigatorRow::Found { .. } | NavigatorRow::Match { .. } | NavigatorRow::Gap => {}
         }
     }
     groups
@@ -216,7 +217,10 @@ pub(super) fn items_of(navigator: &Navigator, group: usize) -> Vec<MenuItem<'_>>
                 name,
                 selected: *selected,
             }),
-            NavigatorRow::Item { .. } | NavigatorRow::Gap => {}
+            NavigatorRow::Item { .. }
+            | NavigatorRow::Found { .. }
+            | NavigatorRow::Match { .. }
+            | NavigatorRow::Gap => {}
         }
     }
     items
@@ -233,13 +237,19 @@ pub(super) fn active_group(navigator: &Navigator) -> Option<usize> {
         match row {
             NavigatorRow::Group { id, .. } | NavigatorRow::Band { id, .. } => group = Some(*id),
             NavigatorRow::Item { selected: true, .. } => return group,
-            NavigatorRow::Item { .. } | NavigatorRow::Gap => {}
+            NavigatorRow::Item { .. }
+            | NavigatorRow::Found { .. }
+            | NavigatorRow::Match { .. }
+            | NavigatorRow::Gap => {}
         }
     }
     // Nothing selected is still somewhere: the first group.
     navigator.rows.iter().find_map(|row| match row {
         NavigatorRow::Group { id, .. } | NavigatorRow::Band { id, .. } => Some(*id),
-        NavigatorRow::Item { .. } | NavigatorRow::Gap => None,
+        NavigatorRow::Item { .. }
+        | NavigatorRow::Found { .. }
+        | NavigatorRow::Match { .. }
+        | NavigatorRow::Gap => None,
     })
 }
 
@@ -501,12 +511,15 @@ pub(super) fn render_navigator(
         Rect::new(inner.x, inner.y, inner.width, 1),
     );
 
-    let rows = Rect::new(
+    let mut rows = Rect::new(
         inner.x,
         inner.y.saturating_add(1),
         inner.width,
         inner.height.saturating_sub(1),
     );
+    if let Some(field) = &navigator.field {
+        rows = render_field(frame, rows, field, sliding.map(|(hit, _)| hit), hits);
+    }
     // The groove comes out of the list's own width, so a row is never
     // drawn under the handle that would sit on top of it.
     // On the divider itself, not beside it. Beside it was two lines, and
@@ -567,6 +580,53 @@ pub(super) fn render_navigator(
                 frame.render_widget(Paragraph::new(Line::from(spans)), rect);
                 hits.push((rect, ViewHit::ToggleGroup(*id)));
             }
+            NavigatorRow::Found {
+                id,
+                name,
+                detail,
+                count,
+                collapsed,
+                icon,
+            } => {
+                let fold = mark::disclosure(!*collapsed);
+                let mut spans = vec![
+                    TextSpan::raw(" "),
+                    TextSpan::styled(format!("{fold} "), theme::fg(Token::TextMuted)),
+                ];
+                spans.extend(row_icon(*icon));
+                push_flat_label(
+                    &mut spans,
+                    rect.width,
+                    name,
+                    detail,
+                    theme::fg(Token::TextSecondary),
+                    &Span::new(count.to_string(), Role::Muted),
+                );
+                frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+                hits.push((rect, ViewHit::ToggleGroup(*id)));
+            }
+            NavigatorRow::Match {
+                id,
+                spans: found,
+                selected,
+            } => {
+                // The guide stands under the file's fold mark, so the lines
+                // read as the file's own, apart from the next file's.
+                let mut spans = vec![
+                    selection_bar(*selected),
+                    TextSpan::styled(
+                        theme::glyph(Symbol::TreeVertical),
+                        theme::fg(Token::TextFaint),
+                    ),
+                    TextSpan::raw(" "),
+                ];
+                spans.extend(found.iter().map(styled));
+                // Under what has no ground of its own: a match keeps its
+                // own on the selected row.
+                row::fill_under(&mut spans, rect.width, row::RowState::of(*selected, false));
+                frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+                hits.push((rect, ViewHit::SelectItem(*id)));
+            }
             NavigatorRow::Group {
                 id,
                 name,
@@ -618,14 +678,7 @@ pub(super) fn render_navigator(
                 // selected surface the status listing uses — rather than a
                 // neutral lift that the diff beside it easily outshone.
                 let mut spans = vec![
-                    TextSpan::styled(
-                        if *selected {
-                            theme::glyph(Symbol::TreeColumnDivider)
-                        } else {
-                            " ".to_owned()
-                        },
-                        theme::fg(Token::Accent),
-                    ),
+                    selection_bar(*selected),
                     TextSpan::raw(tree_indent(*depth, rect.width)),
                 ];
                 match marker_side {
@@ -639,6 +692,15 @@ pub(super) fn render_navigator(
                                 text::elide_file_name(name, room),
                                 label_style,
                             )),
+                        }
+                        // Quieter after the name, as a flat row says it, for
+                        // as much of it as the row has room for.
+                        let left = label_room(&spans, rect.width);
+                        if !detail.is_empty() && left > 1 {
+                            spans.push(TextSpan::styled(
+                                format!(" {}", text::elide(detail, left - 1)),
+                                theme::fg(Token::TextMuted),
+                            ));
                         }
                     }
                     MarkerSide::Trailing => {
@@ -682,6 +744,83 @@ pub(super) fn render_navigator(
         bar.render_on_draggable(frame, settled.first, resizing);
     }
     (settled, bar, slid)
+}
+
+/// The accent bar a list's selected row stands behind, or the blank
+/// column it leaves on every other row.
+fn selection_bar(selected: bool) -> TextSpan<'static> {
+    TextSpan::styled(
+        match selected {
+            true => theme::glyph(Symbol::TreeColumnDivider),
+            false => " ".to_owned(),
+        },
+        theme::fg(Token::Accent),
+    )
+}
+
+/// A navigator's line to type into, its rule under it and what it found
+/// under that, at the top of `rows`; answers with the rows left below.
+fn render_field(
+    frame: &mut ratatui::Frame<'_>,
+    rows: Rect,
+    field: &uze_extensions::view::Field,
+    hovered: Option<ViewHit>,
+    hits: &mut Vec<(Rect, ViewHit)>,
+) -> Rect {
+    // The line under it only while it has something to say, so an empty
+    // field over a tree costs the tree one row less.
+    let said = !field.summary.text.is_empty();
+    let taken = (2 + u16::from(said)).min(rows.height);
+    // Drawn as the new agent's directory filter is: one row typed into,
+    // the caret alone saying the keys are here, over a faint rule.
+    let line = Rect::new(rows.x, rows.y, rows.width.saturating_sub(TRAILING_PAD), 1);
+    let mark = theme::width(Symbol::MarkClose);
+    let clearable = !field.text.is_empty();
+    let reserved = match clearable {
+        true => usize::from(mark) + 1,
+        false => 0,
+    };
+    let room = usize::from(line.width).saturating_sub(1 + reserved + 1);
+    let mut spans = vec![TextSpan::raw(" ")];
+    spans.extend(
+        crate::ui::widget::Field::new(&field.text, &field.placeholder)
+            .focused(field.focused)
+            .query(room),
+    );
+    frame.render_widget(Paragraph::new(Line::from(spans)), line);
+    if taken > 1 {
+        let _ = Rule::new(Edge::Top).render(frame, Rect::new(rows.x, rows.y + 1, rows.width, 1));
+    }
+    // A field holding text can be emptied with a click, at its end; its
+    // hit goes first, since it lies on the field.
+    if clearable {
+        let clear = Rect::new(line.right().saturating_sub(mark), line.y, mark, 1);
+        let state = match hovered == Some(ViewHit::ClearField) {
+            true => widget::ChipState::Hovered,
+            false => widget::ChipState::Resting,
+        };
+        frame.render_widget(
+            Paragraph::new(TextSpan::styled(
+                theme::glyph(Symbol::MarkClose),
+                theme::fg(mark::close_tone(state)),
+            )),
+            clear,
+        );
+        hits.push((clear, ViewHit::ClearField));
+    }
+    hits.push((line, ViewHit::FocusField));
+    if said && taken == 3 {
+        frame.render_widget(
+            Paragraph::new(Line::from(styled(&field.summary))),
+            Rect::new(rows.x + 1, rows.y + 2, rows.width.saturating_sub(1), 1),
+        );
+    }
+    Rect::new(
+        rows.x,
+        rows.y + taken,
+        rows.width,
+        rows.height.saturating_sub(taken),
+    )
 }
 
 /// A tree row's marker: in the column a group's fold mark stands in, and

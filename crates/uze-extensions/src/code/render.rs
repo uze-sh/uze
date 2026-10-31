@@ -34,6 +34,7 @@ pub fn view(code: &CodeView, space: Size) -> View {
     // which is why that one is reported as content.
     if let Some(message) = &code.error {
         return View {
+            tabs: Vec::new(),
             title,
             caption,
             navigator: None,
@@ -59,6 +60,7 @@ pub fn view(code: &CodeView, space: Size) -> View {
     // and the tree it replaces is what the toggle goes back to.
     if code.content == ContentMode::Map {
         return View {
+            tabs: Vec::new(),
             title,
             caption,
             navigator: None,
@@ -75,11 +77,13 @@ pub fn view(code: &CodeView, space: Size) -> View {
     }
 
     View {
+        tabs: code.file_tabs(),
         title,
         caption,
         navigator: listing(code).then(|| match code.navigator() {
             NavigatorMode::Changes => changes_navigator(code),
             NavigatorMode::Files => files_navigator(code),
+            NavigatorMode::Search => search_navigator(code),
         }),
         content: match code.content {
             ContentMode::Diff => diff_content(code, space),
@@ -137,6 +141,7 @@ fn map_content(code: &CodeView, space: Size) -> Content {
         total: lines.len(),
         lines,
         caret: None,
+        editable: false,
         medium: Medium::Drawing,
     }
 }
@@ -269,13 +274,23 @@ fn delete_confirm(code: &CodeView) -> Option<Confirm> {
 /// answers while one is waiting, and otherwise the last thing that
 /// happened.
 fn notice(code: &CodeView) -> Option<Span> {
-    if code.confirming_discard {
-        let name = code
-            .open
-            .as_ref()
-            .map_or_else(String::new, |open| super::file_name(&open.path));
+    if let Some(path) = &code.closing_tab {
         return Some(Span::new(
-            format!("{name} has unsaved changes · close again to discard them"),
+            format!(
+                "{} has unsaved changes · close the tab again to discard them",
+                super::file_name(path)
+            ),
+            Role::Warning,
+        ));
+    }
+    if code.confirming_discard {
+        let unsaved = code.unsaved();
+        let what = match unsaved.as_slice() {
+            [one] => format!("{} has", super::file_name(one)),
+            many => format!("{} files have", many.len()),
+        };
+        return Some(Span::new(
+            format!("{what} unsaved changes · close again to discard them"),
             Role::Warning,
         ));
     }
@@ -295,7 +310,10 @@ fn footer(code: &CodeView) -> Vec<Command> {
         return vec![Command::Close];
     }
     if code.editing() {
-        return vec![Command::Save, Command::Close];
+        return vec![Command::Save, Command::Find, Command::Close];
+    }
+    if code.typing_a_search() {
+        return vec![Command::SelectNext, Command::Close];
     }
     if code.menu.is_some() {
         return vec![Command::SelectNext, Command::Activate, Command::Close];
@@ -323,6 +341,7 @@ fn footer(code: &CodeView) -> Vec<Command> {
         commands.push(Command::TogglePreview);
     }
     match code.navigator() {
+        NavigatorMode::Search => commands.push(Command::Activate),
         NavigatorMode::Changes if code.selected_change().is_some() => {
             commands.push(Command::OpenMenu);
         }
@@ -338,6 +357,12 @@ fn footer(code: &CodeView) -> Vec<Command> {
         }
         NavigatorMode::Files => {}
     }
+    if code.navigator() != NavigatorMode::Search {
+        commands.push(Command::Find);
+    }
+    if code.has_tabs() {
+        commands.push(Command::CloseTab);
+    }
     commands.push(Command::ToggleMap);
     commands.push(Command::FocusNext);
     commands.push(Command::Close);
@@ -348,8 +373,24 @@ fn footer(code: &CodeView) -> Vec<Command> {
 /// read them, is a message and nothing else: an empty column with a zero
 /// over it pushes the message aside to say what the message already says.
 fn listing(code: &CodeView) -> bool {
-    code.navigator() == NavigatorMode::Files
+    code.navigator() != NavigatorMode::Changes
         || (code.changes.error.is_none() && !code.changes.files.is_empty())
+}
+
+/// The files' list while its search holds text: the field, then each file
+/// it found something in and the lines it found.
+fn search_navigator(code: &CodeView) -> Navigator {
+    let focused = code.focus == super::Focus::Navigator;
+    Navigator {
+        heading: "FILES".to_owned(),
+        badge: String::new(),
+        focused,
+        rows: code.search.rows(),
+        anchor: code.search.anchor(),
+        choosing: None,
+        menu: None,
+        field: Some(code.search.field(focused)),
+    }
 }
 
 /// The changes as one flat list, each file named first and its directory
@@ -358,6 +399,7 @@ fn listing(code: &CodeView) -> bool {
 pub(super) fn changes_navigator(code: &CodeView) -> Navigator {
     let selected = code.selected_change();
     Navigator {
+        field: None,
         heading: "CHANGES".to_owned(),
         badge: code.changes.files.len().to_string(),
         focused: code.focus == Focus::Navigator,
@@ -406,6 +448,8 @@ fn files_navigator(code: &CodeView) -> Navigator {
         .as_ref()
         .and_then(|path| rows.iter().position(|row| &row.path == path));
     Navigator {
+        // The search stands over the tree, ready to be typed into.
+        field: Some(code.search.field(code.focus == Focus::Navigator)),
         heading: "FILES".to_owned(),
         badge: rows.iter().filter(|row| !row.directory).count().to_string(),
         focused: code.focus == Focus::Navigator,
@@ -440,7 +484,13 @@ fn files_navigator(code: &CodeView) -> Navigator {
                         None => Span::new(String::new(), Role::Muted),
                     },
                     marker_side: MarkerSide::Leading,
-                    detail: String::new(),
+                    // Said beside the name rather than in the marker, which
+                    // is the change Git sees: a parked buffer is a change
+                    // only this surface holds.
+                    detail: match code.is_unsaved(&row.path) {
+                        true => "unsaved".to_owned(),
+                        false => String::new(),
+                    },
                     depth: row.depth,
                     selected: code.selected.as_ref() == Some(&row.path),
                     icon: super::files::icon_for(&row.name, false, false),
@@ -510,6 +560,7 @@ fn diff_content(code: &CodeView, space: Size) -> Content {
     let diff = &code.changes.diff;
     Content::Lines {
         caret: None,
+        editable: false,
         medium: Medium::Text,
         total: diff.len(),
         heading: format!(
@@ -554,6 +605,7 @@ fn preview_content(code: &CodeView, space: Size) -> Content {
     );
     Content::Lines {
         caret: None,
+        editable: false,
         medium: Medium::Text,
         total,
         heading: format!(
@@ -637,6 +689,10 @@ fn not_text(path: &std::path::Path, hint: &str) -> Content {
 }
 
 fn contents_content(code: &CodeView, space: Size) -> Content {
+    // Beside a search, what it found is set apart in the file too.
+    let searched = (code.navigator() == NavigatorMode::Search)
+        .then_some(code.search.query.as_str())
+        .filter(|query| !query.is_empty());
     let open = match readable_open_file(
         code,
         "No file selected",
@@ -671,34 +727,49 @@ fn contents_content(code: &CodeView, space: Size) -> Content {
             .enumerate()
             .skip(code.scroll)
             .take(usize::from(space.height).saturating_mul(2))
-            .map(|(index, text)| ContentLine {
-                gutter: " ".to_owned(),
-                number: (index + 1).to_string(),
-                tone: LineTone::Neutral,
-                // A line with no colouring yet — one past the glance the
-                // read coloured, or one just typed — is drawn as the text
-                // it is until the pass that colours it lands.
-                spans: open
-                    .highlighted
-                    .get(index)
-                    .filter(|spans| !spans.is_empty())
-                    .map(|spans| {
-                        spans
-                            .iter()
-                            .map(|(colour, piece)| Span {
-                                text: piece.clone(),
-                                role: Role::Default,
-                                color: Some(*colour),
-                                ground: None,
-                                bold: false,
-                                italic: false,
+            .map(|(index, text)| {
+                (
+                    text,
+                    ContentLine {
+                        gutter: String::new(),
+                        number: (index + 1).to_string(),
+                        tone: LineTone::Neutral,
+                        // A line with no colouring yet — one past the glance the
+                        // read coloured, or one just typed — is drawn as the text
+                        // it is until the pass that colours it lands.
+                        spans: open
+                            .highlighted
+                            .get(index)
+                            .filter(|spans| !spans.is_empty())
+                            .map(|spans| {
+                                spans
+                                    .iter()
+                                    .map(|(colour, piece)| Span {
+                                        text: piece.clone(),
+                                        role: Role::Default,
+                                        color: Some(*colour),
+                                        ground: None,
+                                        bold: false,
+                                        italic: false,
+                                    })
+                                    .collect()
                             })
-                            .collect()
-                    })
-                    .unwrap_or_else(|| vec![Span::new(text.clone(), Role::Default)]),
+                            .unwrap_or_else(|| vec![Span::new(text.clone(), Role::Default)]),
+                    },
+                )
+            })
+            .map(|(text, mut line)| {
+                if let Some(query) = searched {
+                    let found = super::search::occurrences(text, query);
+                    if !found.is_empty() {
+                        line.spans = super::search::grounded(line.spans, &found);
+                    }
+                }
+                line
             })
             .collect(),
         caret: (open.editing && code.content == ContentMode::Contents).then_some(open.caret),
+        editable: code.editable(),
         medium: Medium::Text,
     }
 }

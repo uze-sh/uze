@@ -129,6 +129,9 @@ vocabulary! {
         MarkFailed = "mark.failed",
         /// A list bullet in running text.
         MarkDot = "mark.dot",
+        /// A file holding changes not yet written, where its close mark
+        /// would stand — the editor's own sign for it.
+        MarkUnsaved = "mark.unsaved",
         /// More to do with the thing it sits on than the strip has room
         /// to name — the space's own door.
         MarkMore = "mark.more",

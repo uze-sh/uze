@@ -114,6 +114,31 @@ on "cancel" must not save first.
   (`pane_link.rs`). On a Mac alt+click follows it too, since a terminal
   never passes cmd on and some keep ctrl+click for a secondary click;
   which keys follow links is `uze_platform::pointer`, never a `cfg!`.
+- A file's text in the code surface is typed into where it is clicked,
+  as in every editor: a click on a line opens it for typing with the
+  caret there, no key first (`Content::Lines::editable`). Such a line is
+  the one place hover is a ground, as in VS Code: the whole row is banded
+  in `SurfaceHover` under the pointer and in `SurfaceSelected` where the
+  caret is, its number lit (`lines::LineLight`); lines a click only
+  marks, a diff's, never lift.
+- The code surface's open files are tabs over its content, as an editor's
+  are: a file passed over takes the tab the last one passed over had,
+  drawn like any other (the operator found an italic tab off), a changed
+  one keeps its tab with `mark.unsaved` where its close mark stands (the
+  close mark again under the pointer). Moving away from unsaved work never
+  refuses; the buffer is kept and the tree says `unsaved`.
+- The code surface's search is the files list's own, never a half of its
+  own: a fixed field over the tree (`Navigator::field`) drawn as the new
+  agent's directory filter is — `widget::Field::query`, one row, bold
+  text, the caret alone saying it has the keys, over a faint `Rule` —
+  never the accent-ruled form field; its results take the tree's place while it holds
+  text, and `Esc` or the field's own `×` (`mark::close_tone`) empties it,
+  takes the keys out of it and gives the tree back, opened down to the
+  selection. What it found is said under the
+  field, its results grouped by file with a count, each file's lines
+  hanging from a `tree.vertical` guide under its fold mark. A match is set
+  apart in its own hue, bold, on its ground — a ground alone is a tint the
+  eye misses — in the list and in the file.
 - Hover keeps the word's weight. A word that is bold at rest stays bold; a
   word that is not never turns bold under the pointer or while pressed.
   Manage's version and health are the reference.

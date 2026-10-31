@@ -29,6 +29,7 @@ impl Extension for Keyed {
 
     fn view(&self, _surface: &str, _space: Size) -> Option<View> {
         Some(View {
+            tabs: Vec::new(),
             title: vec![Span::new("Keyed", Role::Muted)],
             caption: Vec::new(),
             navigator: None,

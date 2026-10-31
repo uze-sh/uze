@@ -1213,6 +1213,7 @@ impl Extension for DeclaredExtension {
         let root = self.with_built(surface, space, |built| built.root.clone())?;
         self.frames.set(self.frames.get() + 1);
         Some(View {
+            tabs: Vec::new(),
             title: vec![Span::clean(title, Role::Muted)],
             caption: Vec::new(),
             navigator: None,

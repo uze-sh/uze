@@ -208,6 +208,37 @@ pub struct View {
     /// [`View::modes`] that say how it is drawn: a board's diagram by its
     /// title, which a trail names only by its level. Empty for none.
     pub label: String,
+    /// The files open in the content, one tab each, in the order they
+    /// were opened. Empty for a surface that shows one thing at a time;
+    /// the host draws a strip of them over the content only when there
+    /// are some.
+    pub tabs: Vec<FileTab>,
+}
+
+/// One file open in the content, as a tab: chosen with
+/// [`ViewHit::SelectTab`], put away with [`ViewHit::CloseTab`].
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct FileTab {
+    pub name: String,
+    /// What tells two tabs of one name apart — the directory — or empty.
+    pub detail: String,
+    /// The one on show.
+    pub active: bool,
+    /// Holding changes not yet written, which the host marks where the
+    /// close mark stands, as an editor does.
+    pub unsaved: bool,
+}
+
+/// A line to type into, standing over a navigator's rows: a search.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Field {
+    pub text: String,
+    /// What it says while nothing is typed.
+    pub placeholder: String,
+    /// Whether keys land here, which the host shows with the caret.
+    pub focused: bool,
+    /// Said under it: what the text found.
+    pub summary: Span,
 }
 
 /// One step of a [`View::trail`].
@@ -315,6 +346,8 @@ pub struct Navigator {
     /// [`Navigator::choosing`]: the host draws it beside the row and hands
     /// a pick back as [`ViewHit::MenuEntry`].
     pub menu: Option<RowMenu>,
+    /// A line to type into above the rows — a search — or `None`.
+    pub field: Option<Field>,
 }
 
 /// Asked before something that cannot be undone: what, of what, what
@@ -441,6 +474,24 @@ pub enum NavigatorRow {
         /// What this row is, for the mark the host draws before its name.
         icon: RowIcon,
     },
+    /// A file a search found something in, heading the lines it was found
+    /// on: its name, its directory quieter after it, and how many. Folds
+    /// as a group does, handed back as [`ViewHit::ToggleGroup`].
+    Found {
+        id: usize,
+        name: String,
+        detail: String,
+        count: usize,
+        collapsed: bool,
+        icon: RowIcon,
+    },
+    /// One line a search found, as spans: what matched carries a ground
+    /// of its own. Chosen as an item is, by [`ViewHit::SelectItem`].
+    Match {
+        id: usize,
+        spans: Vec<Span>,
+        selected: bool,
+    },
     Item {
         /// The extension's own identifier, handed back verbatim in
         /// [`ViewHit::SelectItem`]. Opaque to the host.
@@ -451,9 +502,10 @@ pub enum NavigatorRow {
         marker: Span,
         /// Which end of the row the marker stands at.
         marker_side: MarkerSide,
-        /// Drawn quieter after the name, when the row's depth does not
-        /// already say where it sits — a flat list's `mod.rs` is only
-        /// told from another `mod.rs` by its directory. Empty for none.
+        /// Drawn quieter after the name, for as much as fits: in a flat
+        /// list, where the row sits — a `mod.rs` is only told from another
+        /// `mod.rs` by its directory — and in a tree, which already says
+        /// where, a word about the row's state (`unsaved`). Empty for none.
         detail: String,
         selected: bool,
         /// What this row is, for the mark the host draws before its name.
@@ -520,6 +572,11 @@ pub enum Content {
         /// than reading. `None` for content nobody is typing into, which
         /// is every view that only shows.
         caret: Option<Caret>,
+        /// Whether a click on a line puts a caret there, to type at —
+        /// what the host lights a line under the pointer for. False for
+        /// lines a click only marks, so nothing that is not clickable
+        /// looks it.
+        editable: bool,
         /// Whether the lines are text a reader may mark and copy, or a
         /// drawing whose cells are places to point at.
         medium: Medium,
@@ -1001,7 +1058,9 @@ pub struct Caret {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContentLine {
-    /// One character before the number: `+`, `-`, or blank.
+    /// One character before the number: `+`, `-`, or blank — or empty,
+    /// for lines that never carry one (a file's own), which the host then
+    /// draws without the column, closer to the edge.
     pub gutter: String,
     pub number: String,
     pub tone: LineTone,
@@ -1103,6 +1162,14 @@ pub enum ViewHit {
     MenuEntry(usize),
     /// An answer to the open [`Confirm`]: `true` for the affirmative.
     Answer(bool),
+    /// One of the [`View::tabs`], by its index, chosen.
+    SelectTab(usize),
+    /// One of them, put away.
+    CloseTab(usize),
+    /// The navigator's [`Field`], pointed at to type into.
+    FocusField,
+    /// Its clear mark: empty it.
+    ClearField,
     /// The selector that offers the groups, pressed: open the list of
     /// them, or shut it.
     ChooseGroup,
@@ -1305,6 +1372,14 @@ pub enum Command {
     /// Show the checkout as a map, or leave the map for whatever was on
     /// show before it.
     ToggleMap,
+
+    // --- Asked of a surface with files open in tabs ----------------------
+    /// Search, wherever the search lives — and into its field.
+    Find,
+    /// Put the tab on show away.
+    CloseTab,
+    NextTab,
+    PreviousTab,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

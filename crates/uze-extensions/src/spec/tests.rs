@@ -564,6 +564,9 @@ fn row_names(state: &SpecView) -> Vec<String> {
             NavigatorRow::Gap => String::new(),
             NavigatorRow::Group { name, .. } => format!("# {name}"),
             NavigatorRow::Item { name, depth, .. } => format!("{}{name}", "  ".repeat(*depth)),
+            NavigatorRow::Found { .. } | NavigatorRow::Match { .. } => {
+                unreachable!("spec searches nothing")
+            }
         })
         .collect()
 }
