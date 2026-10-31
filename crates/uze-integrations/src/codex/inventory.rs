@@ -376,6 +376,7 @@ fn hooks(path: &Path, receipts: &[AttachmentReceipt]) -> Vec<FoundResource> {
             .running(Runs::Shell(command.to_owned()))
             .noted(format!("runs on {event}"));
             if let Some(claim) = rules_engine_claim(receipts, event, command) {
+                hook.name = uze_core::inventory::UZE_RULES.to_owned();
                 hook = hook.claimed(claim);
             }
             found.push(hook);

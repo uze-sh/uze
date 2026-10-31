@@ -64,7 +64,11 @@ fn entries(directory: &Path) -> Vec<(String, PathBuf)> {
 fn skills(directory: &Path) -> Vec<FoundResource> {
     entries(directory)
         .into_iter()
-        .filter(|(_, path)| path.is_dir() || path.is_symlink())
+        .filter(|(_, path)| {
+            // A directory is a skill when it holds a `SKILL.md`; a link whose
+            // target is gone still names one, and reads as broken.
+            path.join("SKILL.md").is_file() || (path.is_symlink() && !path.exists())
+        })
         .map(|(name, path)| {
             FoundResource::new(
                 ResourceKind::Skill,
@@ -163,6 +167,7 @@ fn plugin_files(directory: &Path) -> Vec<FoundResource> {
                 FoundResource::new(ResourceKind::Hook, name.clone(), Definition::Entry(path))
                     .noted("plugin");
             if name == super::runtime_plugin::FILE {
+                found.name = uze_core::inventory::UZE_RULES.to_owned();
                 found = found.claimed(Claim::Owned {
                     kind: RULES_RECEIPT_KIND.to_owned(),
                     selector: RULES_RECEIPT_SELECTOR.to_owned(),
@@ -324,9 +329,9 @@ mod tests {
         let found = inventory(root.path(), &root.join("opencode.json"));
         assert_eq!(
             names(&found, ResourceKind::Hook),
-            ["guard.js", "uze.ts", "opencode-wakatime"]
+            ["guard.js", "uze-rules", "opencode-wakatime"]
         );
-        let uze = found.iter().find(|f| f.name == "uze.ts").unwrap();
+        let uze = found.iter().find(|f| f.name == "uze-rules").unwrap();
         assert_eq!(
             uze.claim,
             Some(Claim::Owned {

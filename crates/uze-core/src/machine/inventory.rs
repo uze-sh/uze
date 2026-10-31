@@ -24,6 +24,7 @@ pub use assemble::assemble;
 pub use model::{
     Claim, Definition, FoundResource, HarnessInventory, HarnessReport, Location, MachineOverview,
     Origin, OverviewResource, PERIODS, ResourceKind, Runs, SessionCounts, Source, Status,
+    UZE_RULES,
 };
 pub use snapshot::{load_snapshot, save_snapshot};
 pub use tokens::estimate_tokens;

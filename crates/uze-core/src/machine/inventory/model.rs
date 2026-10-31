@@ -9,6 +9,11 @@ use serde::{Deserialize, Serialize};
 /// Overview offers them.
 pub const PERIODS: [u32; 3] = [30, 90, 7];
 
+/// The name every harness lists uze's own rules engine hook by, so the
+/// one resource it is reads as one row whatever file each harness keeps
+/// it in.
+pub const UZE_RULES: &str = "uze-rules";
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ResourceKind {

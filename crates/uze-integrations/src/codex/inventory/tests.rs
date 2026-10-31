@@ -175,7 +175,7 @@ fn hooks_are_named_by_their_program_and_uzes_engine_is_claimed() {
         serde_json::json!({"engine": "/uze/rules/engine"}),
     );
     let found = inventory(&places(&root), &[receipt]);
-    let engine = found.iter().find(|r| r.name == "engine").unwrap();
+    let engine = found.iter().find(|r| r.name == "uze-rules").unwrap();
     assert_eq!(
         engine.claim,
         Some(Claim::Owned {

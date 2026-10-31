@@ -97,7 +97,7 @@ fn hooks_are_named_by_what_they_run_and_uzes_engine_is_claimed() {
     assert_eq!(format.note.as_deref(), Some("on PostToolUse · Edit"));
     assert_eq!(format.claim, None);
     assert_eq!(
-        named(&found, "engine").claim,
+        named(&found, "uze-rules").claim,
         Some(Claim::Owned {
             kind: "rules-engine".into(),
             selector: "SessionStart".into()
@@ -219,4 +219,11 @@ fn sessions_are_root_transcripts_and_never_subagents() {
 fn no_transcripts_directory_is_unknown() {
     let root = uze_testkit::temp::TempDir::new("claude-sessions-none");
     assert!(session_counts(&root.join("projects"), SystemTime::now()).is_none());
+}
+
+#[test]
+fn a_directory_without_a_skill_file_is_not_a_skill() {
+    let root = uze_testkit::temp::TempDir::new("claude-inventory-not-a-skill");
+    fs::create_dir_all(root.join(".claude/skills/synced/some-id")).unwrap();
+    assert!(inventory_of(root.path()).is_empty());
 }

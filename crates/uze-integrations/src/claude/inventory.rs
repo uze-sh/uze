@@ -16,7 +16,7 @@ use std::{
 use serde_json::Value;
 use uze_core::{
     UzeHome,
-    inventory::{Claim, Definition, FoundResource, ResourceKind, Runs, SessionCounts},
+    inventory::{Claim, Definition, FoundResource, ResourceKind, Runs, SessionCounts, UZE_RULES},
 };
 
 use super::plugin::ClaudeMarketplace;
@@ -165,7 +165,7 @@ fn switched_off(settings: Option<&Value>, key: &str) -> bool {
 fn skills_in(root: &Path, plugin: Option<&Plugin>) -> Vec<FoundResource> {
     entries(root)
         .into_iter()
-        .filter(|path| path.is_dir())
+        .filter(|path| holds_a_skill(path))
         .filter_map(|dir| {
             let name = file_name(&dir)?;
             let skill = FoundResource::new(
@@ -179,6 +179,12 @@ fn skills_in(root: &Path, plugin: Option<&Plugin>) -> Vec<FoundResource> {
             })
         })
         .collect()
+}
+
+/// A directory is a skill when it holds a `SKILL.md`; a link whose target
+/// is gone still names one, and reads as broken.
+fn holds_a_skill(path: &Path) -> bool {
+    path.join("SKILL.md").is_file() || (path.is_symlink() && !path.exists())
 }
 
 fn agents_in(root: &Path, plugin: Option<&Plugin>) -> Vec<FoundResource> {
@@ -303,6 +309,7 @@ fn hooks_in(
                 if let Some(plugin) = plugin {
                     resource = plugin.mark(resource);
                 } else if uze_root.is_some_and(|root| !root.is_empty() && command.contains(root)) {
+                    resource.name = UZE_RULES.to_owned();
                     resource = resource.claimed(Claim::Owned {
                         kind: RULES_ENGINE_KIND.to_owned(),
                         selector: event.clone(),
