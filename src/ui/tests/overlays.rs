@@ -593,3 +593,31 @@ fn the_modals_close_on_their_headers_esc_close() {
         assert_eq!(model.overlay, Overlay::None, "{overlay:?}: closed as Esc");
     }
 }
+
+/// The help's scrollbar answers the pointer in the management modal too: a
+/// press on it moves the list and keeps the index open.
+#[test]
+fn the_helps_scrollbar_moves_the_list_in_manage() {
+    let mut model = model_with_plugins(&["flow"]);
+    model.overlay = Overlay::ActionIndex {
+        scopes: model.scopes(),
+        filter: String::new(),
+        selected: 0,
+    };
+    let (_, hits) = drawn_at(&model, 120, 40);
+    let track: Vec<Rect> = hits
+        .iter()
+        .filter(|(_, hit)| matches!(hit, Hit::ActionIndexScroll(_)))
+        .map(|(rect, _)| *rect)
+        .collect();
+    let Some(bottom) = track.last().copied() else {
+        return;
+    };
+    model.hits = hits;
+    let _ = model.click(bottom.x, bottom.y);
+    assert!(
+        matches!(model.overlay, Overlay::ActionIndex { selected, .. } if selected > 0),
+        "{:?}",
+        model.overlay
+    );
+}

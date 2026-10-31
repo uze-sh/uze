@@ -316,6 +316,9 @@ struct ActionIndexOverlay {
     offered: Vec<uze_keys::Action>,
     filter: String,
     selected: usize,
+    /// Whether the pointer holds its scrollbar, from the press on the
+    /// track to the release: a drag moves the list only then.
+    grabbed: bool,
 }
 
 /// What an evaluation of `cwd` is reserved under.
@@ -1087,6 +1090,9 @@ pub(super) enum WorkspaceHit {
     PopupLine,
     /// One row of the open index, by position in it.
     ActionIndexEntry(usize),
+    /// A row of the index's scrollbar track: the selection that brings its
+    /// window there.
+    ActionIndexScroll(usize),
     /// The release notes modal's own area: a click on it is reading, and
     /// only one outside it closes the modal.
     ReleaseNotesBody,

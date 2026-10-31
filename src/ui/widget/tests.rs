@@ -413,6 +413,7 @@ fn an_action_with_no_key_dims_the_column_it_would_have_filled() {
                 None,
                 |_| true,
                 |_| false,
+                |_| false,
             )
             .into_iter()
             .find(|(_, row)| *row)
@@ -503,6 +504,7 @@ fn the_open_index_says_it_can_be_typed_into_before_anything_is() {
             None,
             |_| (),
             |_| (),
+            |_| (),
         );
     });
 
@@ -568,6 +570,7 @@ fn narrowing_the_index_does_not_resize_it() {
                 None,
                 |_| (),
                 |_| (),
+                |_| (),
             );
         });
         (0..24)
@@ -604,6 +607,7 @@ fn the_index_is_a_modal_titled_help_with_its_way_out_in_the_header() {
             None,
             |_| None,
             Some,
+            |_| None,
         );
     });
     let row = |y: u16| (0..80).map(|x| buffer[(x, y)].symbol()).collect::<String>();
@@ -664,6 +668,7 @@ fn the_index_is_capped_and_scrolls_rather_than_growing_with_the_product() {
             None,
             |_| (),
             |_| (),
+            |_| (),
         );
     });
     let bottom = (0..40)
@@ -712,6 +717,7 @@ fn the_window_follows_the_selection_past_the_cap() {
                 super::hint::Hints::new(&[]),
                 None,
                 |p| p,
+                |_| usize::MAX,
                 |_| usize::MAX,
             );
         });

@@ -1291,6 +1291,7 @@ pub(in crate::ui::orchestrator) fn render_action_index(
         hovered,
         WorkspaceHit::ActionIndexEntry,
         WorkspaceHit::HintAction,
+        WorkspaceHit::ActionIndexScroll,
     );
     // Prepended: what is underneath must not answer a click meant here.
     hits.splice(0..0, entries);

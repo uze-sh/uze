@@ -349,6 +349,7 @@ impl Attach<'_> {
                     offered: self.offered_without_a_key(),
                     filter: String::new(),
                     selected: 0,
+                    grabbed: false,
                 });
                 self.model.dirty = true;
                 return Flow::Continue;

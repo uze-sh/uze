@@ -293,6 +293,7 @@ pub(crate) fn render_action_index(
         model.hovered_offer,
         Hit::ActionIndexEntry,
         Hit::OfferedAction,
+        Hit::ActionIndexScroll,
     );
     // Prepended, so the list underneath cannot answer a click meant here.
     hits.splice(0..0, entries);

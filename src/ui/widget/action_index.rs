@@ -94,6 +94,7 @@ pub(crate) fn render<H>(
     hovered: Option<uze_keys::Action>,
     entry: impl Fn(usize) -> H,
     key: impl Fn(uze_keys::Action) -> H,
+    scroll: impl Fn(usize) -> H,
 ) -> Vec<(Rect, H)> {
     let key_width = rows
         .iter()
@@ -116,12 +117,13 @@ pub(crate) fn render<H>(
     .render_centred(frame, area, width, shown + FIELD_ROWS);
     let chrome = modal.keys;
     let inner = modal.body;
+    let popup = modal.popup;
 
     // Always focused: the index is open, so every key reaches this field.
     // The same search row every list in the product heads itself with.
     Field::new(filter, "type to narrow").render_search(frame, Rect { height: 1, ..inner });
 
-    let mut list = Rect::new(
+    let list = Rect::new(
         inner.x,
         inner.y + FIELD_ROWS,
         inner.width,
@@ -135,9 +137,11 @@ pub(crate) fn render<H>(
     let first = selected
         .saturating_sub(visible / 2)
         .min(rows.len().saturating_sub(visible));
+    // On the border itself, where the hairline thickens into the handle,
+    // as every list's does: the rows keep their whole width.
     let bar = Scrollbar::measure(
         Rect::new(
-            list.right().saturating_sub(Scrollbar::width()),
+            popup.right().saturating_sub(Scrollbar::width()),
             list.y,
             Scrollbar::width(),
             list.height,
@@ -145,14 +149,24 @@ pub(crate) fn render<H>(
         visible,
         rows.len(),
     );
-    if bar.is_some() {
-        list.width = list.width.saturating_sub(Scrollbar::width());
-    }
-    // The mark and the keys first: they sit on the border, over no row.
+    // The keys first, and every row of the scrollbar's track: a click or a
+    // drag on it is the list moving there, and never falls through to
+    // what closes the index. The window follows the selection, so the
+    // track answers with the selection that puts that window in view.
     let mut entries: Vec<(Rect, H)> = chrome
         .into_iter()
         .map(|(rect, action)| (rect, key(action)))
         .collect();
+    if let Some(bar) = bar {
+        for y in bar.track.y..bar.track.bottom() {
+            let first = bar.first_at(y);
+            let selected = (first + visible / 2).min(rows.len().saturating_sub(1));
+            entries.push((
+                Rect::new(bar.track.x, y, bar.track.width, 1),
+                scroll(selected),
+            ));
+        }
+    }
     for (position, (action, chord)) in rows.iter().enumerate().skip(first).take(visible) {
         let y = list.y + (position - first) as u16;
         if y >= list.bottom() {
@@ -198,11 +212,21 @@ pub(crate) fn render<H>(
                 ),
                 Span::styled(action.label(), label),
                 Span::styled(
-                    format!(
-                        "  {} {}",
-                        theme::glyph(Symbol::EmDash),
-                        action.description()
-                    ),
+                    format!("  {} {}", theme::glyph(Symbol::EmDash), {
+                        // Cut at its end, where it no longer fits, never
+                        // mid-word at the row's edge.
+                        let taken = usize::from(theme::width(Symbol::Prompt))
+                            + 1
+                            + key_width
+                            + 2
+                            + action.label().chars().count()
+                            + 3
+                            + usize::from(theme::width(Symbol::EmDash));
+                        super::text::elide(
+                            &action.description(),
+                            usize::from(row.width).saturating_sub(taken),
+                        )
+                    }),
                     theme::fg(Token::TextMuted),
                 ),
             ])),

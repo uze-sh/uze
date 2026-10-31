@@ -749,6 +749,9 @@ pub(crate) struct TuiModel {
     /// the mousedown that armed it so every following drag maps against
     /// the geometry the gesture started on.
     pub(crate) dragging_keys_track: Option<Rect>,
+    /// Whether the pointer holds the help index's scrollbar, from the press
+    /// on its track to the release.
+    pub(crate) dragging_index_track: bool,
     /// Whether the sidebar's first-steps section is folded to its header.
     pub(crate) first_steps_collapsed: bool,
     /// Whether it has been put away for good, which is offered only once
@@ -944,6 +947,7 @@ impl TuiModel {
             hits: Vec::new(),
             dragging_panel: None,
             dragging_keys_track: None,
+            dragging_index_track: false,
             first_steps_collapsed: false,
             first_steps_closed: false,
             steps_taken: std::collections::BTreeSet::new(),

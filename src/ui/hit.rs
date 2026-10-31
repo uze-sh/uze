@@ -59,6 +59,9 @@ pub(crate) enum Hit {
     ResizePanel(ResizablePanel),
     /// One row of the open index of everything, by position in it.
     ActionIndexEntry(usize),
+    /// A row of the index's scrollbar track: the selection that brings its
+    /// window there.
+    ActionIndexScroll(usize),
     /// An overlay's own area — the release notes, a dialog: a click on it
     /// is reading or typing, and only one outside it closes the overlay.
     OverlayBody,
@@ -129,9 +132,19 @@ impl TuiModel {
 
     pub(crate) fn click(&mut self, column: u16, row: u16) -> Intent {
         if let Overlay::ActionIndex { scopes, filter, .. } = self.overlay.clone() {
-            // Its keys and its mark are the keys they name.
-            if let Some(Hit::OfferedAction(action)) = self.hit_at(column, row).cloned() {
-                return self.overlay_action(action);
+            match self.hit_at(column, row).cloned() {
+                // Its keys are the keys they name.
+                Some(Hit::OfferedAction(action)) => return self.overlay_action(action),
+                // Its scrollbar moves the list, and keeps hold of it until
+                // the release.
+                Some(Hit::ActionIndexScroll(to)) => {
+                    if let Overlay::ActionIndex { selected, .. } = &mut self.overlay {
+                        *selected = to;
+                    }
+                    self.dragging_index_track = true;
+                    return Intent::None;
+                }
+                _ => {}
             }
             // A click on a row performs it, the way choosing it with the
             // keyboard does; anywhere else closes without acting.
@@ -298,6 +311,7 @@ impl TuiModel {
             // Only reachable while the index is open, which the guarded
             // arm above already answered.
             Hit::ActionIndexEntry(_)
+            | Hit::ActionIndexScroll(_)
             | Hit::OverlayBody
             | Hit::Answer(_)
             | Hit::ExtensionDrawerBody => Intent::None,

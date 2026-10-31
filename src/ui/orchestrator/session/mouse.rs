@@ -227,11 +227,22 @@ impl Attach<'_> {
                 }
             }
             _ if self.model.action_index.is_some() => {
-                // Its keys and its mark are the keys they name.
-                if let Some(WorkspaceHit::HintAction(action)) =
-                    hit_at(&self.model, mouse.column, mouse.row)
-                {
-                    return self.action_index_action(action, viewport);
+                match hit_at(&self.model, mouse.column, mouse.row) {
+                    // Its keys are the keys they name.
+                    Some(WorkspaceHit::HintAction(action)) => {
+                        return self.action_index_action(action, viewport);
+                    }
+                    // Its scrollbar moves the list, and keeps hold of it
+                    // until the release.
+                    Some(WorkspaceHit::ActionIndexScroll(selected)) => {
+                        if let Some(index) = self.model.action_index.as_mut() {
+                            index.selected = selected;
+                            index.grabbed = true;
+                        }
+                        self.model.dirty = true;
+                        return Flow::Continue;
+                    }
+                    _ => {}
                 }
                 // A click on a row performs it, the way choosing it with
                 // the keyboard does; anywhere else closes without acting.
@@ -499,6 +510,25 @@ impl Attach<'_> {
             size, ref layout, ..
         } = *viewport;
         match mouse {
+            _ if self
+                .model
+                .action_index
+                .as_ref()
+                .is_some_and(|index| index.grabbed) =>
+            {
+                // The row the pointer is on, wherever it wandered sideways.
+                let selected = self.model.hits.iter().find_map(|(rect, hit)| match hit {
+                    WorkspaceHit::ActionIndexScroll(selected) if rect.y == mouse.row => {
+                        Some(*selected)
+                    }
+                    _ => None,
+                });
+                if let (Some(selected), Some(index)) = (selected, self.model.action_index.as_mut())
+                {
+                    index.selected = selected;
+                    self.model.dirty = true;
+                }
+            }
             _ if matches!(self.model.selection, Some(Selection::Pane(_))) => {
                 let requests = match self.model.selection.as_mut() {
                     Some(Selection::Pane(selection)) => {
@@ -648,6 +678,9 @@ impl Attach<'_> {
     /// it would.
     pub(super) fn release(&mut self, mouse: MouseEvent, viewport: &Viewport) -> Flow {
         let Viewport { ref layout, .. } = *viewport;
+        if let Some(index) = self.model.action_index.as_mut() {
+            index.grabbed = false;
+        }
         if let Some(over) = self
             .model
             .directory_step
@@ -1480,7 +1513,9 @@ impl Attach<'_> {
             WorkspaceHit::ToggleFirstSteps => self.press_foot_header(hit, hit_rect),
             // Only reachable while the index is open, which the guarded
             // arm in `press` answers first.
-            WorkspaceHit::ActionIndexEntry(_) | WorkspaceHit::ReleaseNotesBody => {}
+            WorkspaceHit::ActionIndexEntry(_)
+            | WorkspaceHit::ActionIndexScroll(_)
+            | WorkspaceHit::ReleaseNotesBody => {}
             WorkspaceHit::SelectTab(tab) | WorkspaceHit::ProjectName(tab) => {
                 self.model.put_away_space_overview();
                 // Whether this click landed on the tab already

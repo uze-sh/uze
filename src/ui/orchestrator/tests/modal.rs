@@ -427,3 +427,48 @@ fn the_notes_and_the_index_close_on_their_headers_esc_close() {
     index.press(close.x, close.y);
     assert!(index.attach.model.action_index.is_none(), "closed");
 }
+
+/// The help's scrollbar rides its border and answers the pointer: a press
+/// on it moves the list there, a drag follows, and neither closes the
+/// index the way a click outside it does.
+#[test]
+fn the_helps_scrollbar_moves_the_list_and_never_closes_it() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-help-scroll"));
+    let mut index = driven(agent_with_task(WorkStateView::Ready, 1), &home).on_a_roomy_terminal();
+    index.press_key(key_event(uze_keys::Chord::parse("f1").unwrap()));
+    index.frame();
+    let track: Vec<Rect> = index
+        .attach
+        .model
+        .hits
+        .iter()
+        .filter(|(_, hit)| matches!(hit, WorkspaceHit::ActionIndexScroll(_)))
+        .map(|(rect, _)| *rect)
+        .collect();
+    let (top, bottom) = (
+        track[0],
+        *track.last().expect("a list longer than its room"),
+    );
+    let selected =
+        |index: &Driven<'_>| index.attach.model.action_index.as_ref().map(|i| i.selected);
+
+    index.press(bottom.x, bottom.y);
+    let pressed = selected(&index).expect("still open");
+    assert!(pressed > 0, "the press moved the list down");
+    index.mouse(
+        bottom.x,
+        top.y,
+        crossterm::event::MouseEventKind::Drag(crossterm::event::MouseButton::Left),
+    );
+    let dragged = selected(&index).expect("still open");
+    assert!(dragged < pressed, "the drag followed the pointer up");
+    index.mouse(
+        bottom.x,
+        top.y,
+        crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left),
+    );
+    assert!(
+        index.attach.model.action_index.is_some(),
+        "the index stays open"
+    );
+}
