@@ -129,7 +129,10 @@ fn an_appended_record_is_read_from_where_it_was_left() {
     harness.write("a", vec![typed("review"), typed("review"), typed("review")]);
     let tallies = read(&mut ledger, &harness, &carried).unwrap();
     assert_eq!(total(&tallies), 3);
-    assert_eq!(harness.reads.lock().unwrap()[1], ("a".to_owned(), Resume::At(1)));
+    assert_eq!(
+        harness.reads.lock().unwrap()[1],
+        ("a".to_owned(), Resume::At(1))
+    );
 }
 
 #[test]
@@ -306,9 +309,7 @@ fn an_inferred_use_makes_the_count_an_estimate() {
     let mut harness = Harness::default();
     harness.write(
         "a",
-        vec![
-            Use::named(ResourceKind::Skill, "review", days_ago(1), Invoker::Model).inferred(),
-        ],
+        vec![Use::named(ResourceKind::Skill, "review", days_ago(1), Invoker::Model).inferred()],
     );
     let mut ledger = Ledger::default();
     let tallies = read(&mut ledger, &harness, &[skill("review")]).unwrap();

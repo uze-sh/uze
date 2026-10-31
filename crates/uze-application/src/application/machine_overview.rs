@@ -14,8 +14,8 @@ use std::{
 };
 
 use uze_core::{
-    integration::IntegrationPort,
     UzeHome,
+    integration::IntegrationPort,
     inventory::{self, HarnessInventory, MachineOverview},
     usage,
 };

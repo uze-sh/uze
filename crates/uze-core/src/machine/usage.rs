@@ -339,7 +339,8 @@ pub fn count_uses(
 
 /// The kinds a use is counted for: an instruction file is always on, and a
 /// hook's runs are not recorded.
-pub const COUNTED: [ResourceKind; 3] = [ResourceKind::Skill, ResourceKind::Agent, ResourceKind::Mcp];
+pub const COUNTED: [ResourceKind; 3] =
+    [ResourceKind::Skill, ResourceKind::Agent, ResourceKind::Mcp];
 
 /// What one harness carries, as a use can name it.
 struct Carried<'a> {

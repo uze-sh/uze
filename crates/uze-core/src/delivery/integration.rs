@@ -556,7 +556,10 @@ pub trait IntegrationPort: Send + Sync {
     /// The records this harness kept of sessions active since `since`,
     /// subagents' included, from their metadata alone: nothing is opened to
     /// answer. `None` is "this harness's uses are not known".
-    fn usage_records(&self, _since: std::time::SystemTime) -> Option<Vec<crate::usage::UsageRecord>> {
+    fn usage_records(
+        &self,
+        _since: std::time::SystemTime,
+    ) -> Option<Vec<crate::usage::UsageRecord>> {
         None
     }
 
