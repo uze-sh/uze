@@ -267,6 +267,21 @@ pub(super) fn written_at(
     while end < line.len() && in_path(line[end].character) {
         end += 1;
     }
+    // A run against the row's edge may go on in the row beside it, and a
+    // half of a path names some other path: rather no link than the
+    // wrong file.
+    let runs_on_from_above = start == 0
+        && row > 0
+        && cells
+            .get(from - 1)
+            .is_some_and(|cell| in_path(cell.character));
+    let runs_on_below = end == width
+        && cells
+            .get(from + width)
+            .is_some_and(|cell| in_path(cell.character));
+    if runs_on_from_above || runs_on_below {
+        return None;
+    }
     // Punctuation a sentence ends with, or a label's colon, is the
     // sentence's: `see src/main.rs.` names `src/main.rs`.
     while end > start && matches!(line[end - 1].character, '.' | ':' | SPILL) {
@@ -476,6 +491,26 @@ mod tests {
         assert_eq!(
             found("src/a.rs:3:7:let x", 2).as_deref(),
             Some("src/a.rs:3:7")
+        );
+    }
+
+    /// A path wider than what is left of its row runs on to the next one,
+    /// and either half alone names something else: `src/lib.rs` at the
+    /// head of the second row is not the file the whole names.
+    #[test]
+    fn a_path_running_on_to_the_next_row_is_not_read_in_halves() {
+        let mut cells = row("see /repo/crates", 16);
+        cells.extend(row("/src/lib.rs now", 16));
+        assert_eq!(written_at(&cells, 16, 1, 3), None);
+        assert_eq!(written_at(&cells, 16, 0, 8), None);
+        let mut cells = row("see /repo/a.rs  ", 16);
+        cells.extend(row("/src/lib.rs now", 16));
+        assert_eq!(
+            written_at(&cells, 16, 1, 3)
+                .map(|written| written.text)
+                .as_deref(),
+            Some("/src/lib.rs"),
+            "a row that ends in a space ends what it wrote"
         );
     }
 
