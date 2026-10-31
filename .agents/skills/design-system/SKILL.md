@@ -114,6 +114,11 @@ on "cancel" must not save first.
   (`pane_link.rs`). On a Mac alt+click follows it too, since a terminal
   never passes cmd on and some keep ctrl+click for a secondary click;
   which keys follow links is `uze_platform::pointer`, never a `cfg!`.
+- A file's text in the code surface is typed into where it is clicked,
+  as in every editor: a click on a line opens it for typing with the
+  caret there, no key first (`Content::Lines::editable`). Its line number
+  lifts under the pointer, and the caret's line number is the bright one;
+  lines a click only marks, a diff's, never lift.
 - Hover keeps the word's weight. A word that is bold at rest stays bold; a
   word that is not never turns bold under the pointer or while pressed.
   Manage's version and health are the reference.

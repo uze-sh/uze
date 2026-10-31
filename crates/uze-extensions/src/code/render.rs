@@ -137,6 +137,7 @@ fn map_content(code: &CodeView, space: Size) -> Content {
         total: lines.len(),
         lines,
         caret: None,
+        editable: false,
         medium: Medium::Drawing,
     }
 }
@@ -510,6 +511,7 @@ fn diff_content(code: &CodeView, space: Size) -> Content {
     let diff = &code.changes.diff;
     Content::Lines {
         caret: None,
+        editable: false,
         medium: Medium::Text,
         total: diff.len(),
         heading: format!(
@@ -554,6 +556,7 @@ fn preview_content(code: &CodeView, space: Size) -> Content {
     );
     Content::Lines {
         caret: None,
+        editable: false,
         medium: Medium::Text,
         total,
         heading: format!(
@@ -699,6 +702,7 @@ fn contents_content(code: &CodeView, space: Size) -> Content {
             })
             .collect(),
         caret: (open.editing && code.content == ContentMode::Contents).then_some(open.caret),
+        editable: code.editable(),
         medium: Medium::Text,
     }
 }

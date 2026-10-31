@@ -1038,6 +1038,7 @@ fn content(state: &SpecView, space: Size) -> Content {
         lines: shown.iter().skip(first).take(window).cloned().collect(),
         total: shown.len(),
         caret: None,
+        editable: false,
         medium: Medium::Text,
     }
 }

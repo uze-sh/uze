@@ -2085,6 +2085,55 @@ fn a_click_lands_on_the_character_its_cells_reach() {
     }
 }
 
+/// A click in a file's text is where typing starts, with no key first —
+/// what every editor a person has used does — and its lines say so, so
+/// the host lights the one under the pointer.
+#[test]
+fn a_click_on_a_line_starts_typing_there() {
+    let machine = FakeMachine::default().with_file("/w/notes.txt", "one\ntwo\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+    assert!(!view.editing(), "opening a file only reads it");
+    let Content::Lines { editable, .. } = render::view(&view, space()).content else {
+        panic!("the file is drawn as lines");
+    };
+    assert!(editable, "its lines answer a click");
+
+    handle_mouse(
+        &mut view,
+        Some(ViewHit::PlaceCaret { line: 1, cell: 2 }),
+        space(),
+    );
+    assert!(view.editing(), "the click opened it for typing");
+    press(&mut view, Command::Type('x'));
+    assert_eq!(
+        view.open.as_ref().expect("a file is open").lines,
+        ["one", "twxo"],
+        "typed where the click landed"
+    );
+
+    press(&mut view, Command::Close);
+    assert!(!view.editing(), "Esc still leaves typing");
+}
+
+/// A file still being read has no text to type into, so a click on it
+/// places nothing, and nothing lights to say it would.
+#[test]
+fn a_click_on_a_file_still_reading_does_not_start_typing() {
+    let machine = FakeMachine::default().with_file("/w/notes.txt", "one\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Activate);
+    handle_mouse(
+        &mut view,
+        Some(ViewHit::PlaceCaret { line: 0, cell: 0 }),
+        space(),
+    );
+    assert!(!view.editing());
+}
+
 /// A file that opens is a file that scrolls to its end, however long:
 /// the scroll stopped at line 65,536 once, and everything past it was
 /// out of reach.

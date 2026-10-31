@@ -520,6 +520,11 @@ pub enum Content {
         /// than reading. `None` for content nobody is typing into, which
         /// is every view that only shows.
         caret: Option<Caret>,
+        /// Whether a click on a line puts a caret there, to type at —
+        /// what the host lights a line under the pointer for. False for
+        /// lines a click only marks, so nothing that is not clickable
+        /// looks it.
+        editable: bool,
         /// Whether the lines are text a reader may mark and copy, or a
         /// drawing whose cells are places to point at.
         medium: Medium,

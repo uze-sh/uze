@@ -22,6 +22,9 @@ pub(super) struct Lines<'a> {
     pub(super) lines: &'a [ContentLine],
     pub(super) total: usize,
     pub(super) caret: Option<Caret>,
+    /// The line under the pointer, when a click there would place a
+    /// caret: its number is lit, the hover of a line that answers one.
+    pub(super) pointed: Option<usize>,
     pub(super) medium: Medium,
     pub(super) selection: Option<&'a TextSelection>,
     pub(super) modes: &'a [Mode],
@@ -40,6 +43,7 @@ pub(super) fn render_lines(
         lines,
         total,
         caret,
+        pointed,
         medium,
         selection,
         modes,
@@ -113,7 +117,16 @@ pub(super) fn render_lines(
             break;
         }
         let row = Rect::new(content.x, y, content.width, height);
-        render_line(frame, row, line, gutter, true);
+        // The line being typed on reads as the active one, as in every
+        // editor; the one under the pointer lifts to say a click lands there.
+        let number = if caret.is_some_and(|caret| caret.line == offset) {
+            Token::TextBright
+        } else if pointed == Some(offset) {
+            Token::TextSecondary
+        } else {
+            Token::TextDim
+        };
+        render_line(frame, row, line, gutter, true, number);
         if medium == Medium::Text {
             let rows = text_rows(
                 line,
@@ -511,6 +524,7 @@ pub(super) fn render_line(
     line: &ContentLine,
     gutter: u16,
     wrapped: bool,
+    number: Token,
 ) {
     let (marker_style, background) = match line.tone {
         LineTone::Neutral => (theme::fg(Token::TextFaint), None),
@@ -537,7 +551,7 @@ pub(super) fn render_line(
         frame.render_widget(
             Paragraph::new(Line::from(vec![
                 TextSpan::styled(format!("{} ", line.gutter), marker_style),
-                TextSpan::styled(format!("{:>4} ", line.number), theme::fg(Token::TextDim)),
+                TextSpan::styled(format!("{:>4} ", line.number), theme::fg(number)),
             ]))
             .style(
                 Style::default().bg(background.unwrap_or(theme::color(Token::SurfaceBackground))),

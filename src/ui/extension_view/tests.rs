@@ -384,6 +384,7 @@ fn sample() -> View {
         content: Content::Lines {
             first: 0,
             caret: None,
+            editable: false,
             medium: Medium::Text,
             total: 1,
             heading: "DIFF · src/ui.rs".to_owned(),
@@ -794,6 +795,7 @@ fn the_navigation_is_the_bars_and_does_not_move_with_the_layout() {
                 spans: vec![Span::new("fn main() {}", Role::Default)],
             }],
             caret: None,
+            editable: false,
             medium: Medium::Text,
         },
         footer: Vec::new(),
@@ -1103,6 +1105,7 @@ fn a_boards_hints_stop_before_its_caption() {
         content: Content::Lines {
             first: 0,
             caret: None,
+            editable: false,
             medium: Medium::Text,
             total: 1,
             heading: "3 boxes · 2 edges · containers.mmd".to_owned(),
@@ -1194,6 +1197,7 @@ fn a_board_click_resolves_in_the_space_the_frame_drew_in() {
                 total: lines.len(),
                 lines,
                 caret: None,
+                editable: false,
                 medium: Medium::Text,
             },
             footer: vec![Command::Close],
@@ -1315,6 +1319,7 @@ fn board(groups: usize, items: usize, trail: &[(&str, bool)]) -> View {
             lines: Vec::new(),
             total: 0,
             caret: None,
+            editable: false,
             medium: Medium::Text,
         },
         footer: vec![Command::Close],
@@ -1473,6 +1478,7 @@ fn a_list_longer_than_the_board_keeps_the_highlight_in_view_and_says_where_it_is
             lines: Vec::new(),
             total: 0,
             caret: None,
+            editable: false,
             medium: Medium::Text,
         },
         footer: vec![Command::Close],
@@ -2208,7 +2214,7 @@ fn drawn_with_caret(line: &ContentLine, width: u16, column: usize) -> ratatui::b
     let mut terminal = Terminal::new(TestBackend::new(area.width, area.height)).unwrap();
     terminal
         .draw(|frame| {
-            render_line(frame, area, line, GUTTER_WIDTH, true);
+            render_line(frame, area, line, GUTTER_WIDTH, true, Token::TextDim);
             render_caret(frame, area, line, column, GUTTER_WIDTH);
         })
         .unwrap();
@@ -2863,4 +2869,84 @@ fn a_sections_cut_line_slides_by_the_hosts_hover_beat() {
         line(0)
     );
     assert!(!line(40).contains("Tokenize"), "moved on: {:?}", line(40));
+}
+
+/// A line a click types on lifts its number under the pointer, and the
+/// line the caret is on reads as the active one; lines a click only marks
+/// stay as they rest, since nothing that is not clickable looks it.
+#[test]
+fn an_editable_line_lights_its_number_under_the_pointer_and_at_the_caret() {
+    let numbers = |editable: bool| {
+        let mut view = sample();
+        view.navigator = None;
+        let line = |number: &str, text: &str| ContentLine {
+            gutter: " ".to_owned(),
+            number: number.to_owned(),
+            tone: LineTone::Neutral,
+            spans: vec![Span::new(text, Role::Default)],
+        };
+        view.content = Content::Lines {
+            first: 0,
+            caret: editable.then_some(Caret { line: 2, column: 0 }),
+            editable,
+            medium: Medium::Text,
+            total: 3,
+            heading: "notes.txt".to_owned(),
+            scroll: 0,
+            lines: vec![line("1", "alpha"), line("2", "bravo"), line("3", "charlie")],
+        };
+        let mut terminal = Terminal::new(TestBackend::new(60, 12)).unwrap();
+        terminal
+            .draw(|frame| {
+                render(
+                    frame,
+                    &view,
+                    frame.area(),
+                    NavigatorFrame {
+                        width: None,
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                        sliding: Some((ViewHit::PlaceCaret { line: 1, cell: 0 }, 0)),
+                    },
+                    FooterKeys {
+                        scope: uze_keys::Scope::Code,
+                        hovered: None,
+                        host: &[],
+                    },
+                    None,
+                    &mut Vec::new(),
+                );
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        ["alpha", "bravo", "charlie"].map(|text| {
+            let row = (0..buffer.area.height)
+                .find(|&row| {
+                    (0..buffer.area.width)
+                        .map(|column| buffer[(column, row)].symbol())
+                        .collect::<String>()
+                        .contains(text)
+                })
+                .expect("the line is drawn");
+            let digit = (0..buffer.area.width)
+                .find(|&column| buffer[(column, row)].symbol().trim().parse::<u8>().is_ok())
+                .expect("its number is drawn");
+            buffer[(digit, row)].fg
+        })
+    };
+    let [rest, pointed, caret] = numbers(true);
+    assert_eq!(rest, theme::color(Token::TextDim), "a line at rest");
+    assert_eq!(
+        pointed,
+        theme::color(Token::TextSecondary),
+        "under the pointer"
+    );
+    assert_eq!(caret, theme::color(Token::TextBright), "the caret's line");
+
+    let [_, pointed, _] = numbers(false);
+    assert_eq!(
+        pointed,
+        theme::color(Token::TextDim),
+        "a line a click does not type on does not lift"
+    );
 }

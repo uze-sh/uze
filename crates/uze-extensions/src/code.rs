@@ -523,6 +523,17 @@ impl CodeView {
                 .is_some_and(|open| open.editing && open.error.is_none())
     }
 
+    /// Whether the file on show is text that could be typed into — what
+    /// makes a click on one of its lines start editing there, the way
+    /// every editor a person has used puts the caret where they click.
+    pub(super) fn editable(&self) -> bool {
+        self.content == ContentMode::Contents
+            && self
+                .open
+                .as_ref()
+                .is_some_and(|open| open.error.is_none() && !open.loading)
+    }
+
     /// Whether a letter is text here rather than a shortcut: a file open
     /// for typing, or a new name being typed for one.
     pub fn typing(&self) -> bool {
@@ -1903,16 +1914,20 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
                 }
             }
         },
+        // A click in the text is where typing starts: no key first, as in
+        // every editor. Esc still leaves typing, and the buffer with it
+        // only once asked.
         Some(ViewHit::PlaceCaret { line, cell }) => {
             view.focus = Focus::Content;
-            if view.content == ContentMode::Contents
-                && let Some(open) = view.open.as_mut()
-            {
+            let editable = view.editable();
+            if let Some(open) = view.open.as_mut().filter(|_| editable) {
                 let line = line.min(open.lines.len().saturating_sub(1));
                 open.caret = Caret {
                     line,
                     column: open.column_at_cell(line, cell),
                 };
+                open.editing = true;
+                view.confirming_discard = false;
             }
         }
         // The order is `render::modes`' own, and it is the only side
