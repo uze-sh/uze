@@ -222,11 +222,23 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     // --- The code surface, and typing into a file -----------------------
     put(
         Action::EditFile,
-        KeyboardOnly(
-            "typing is a mode, and a click that entered it would make every \
-             click into a file's contents ambiguous — the same click has to \
-             keep meaning `put the caret here`, which is what it does",
-        ),
+        Control("a click on a line of a file's contents, which types there"),
+    );
+    put(
+        Action::FindInFiles,
+        Control("the search field over the code surface's files list"),
+    );
+    put(
+        Action::CloseFileTab,
+        Control("the close mark on each tab over the code surface's content"),
+    );
+    put(
+        Action::NextFileTab,
+        Control("the tabs over the code surface's content"),
+    );
+    put(
+        Action::PreviousFileTab,
+        Control("the tabs over the code surface's content"),
     );
     put(
         Action::SaveFile,
@@ -424,7 +436,6 @@ fn a_bound_action_is_never_reachable_by_keyboard_alone_without_a_reason() {
                 "caret-line-end",
                 "caret-line-start",
                 "caret-right",
-                "edit-file",
                 "erase-back",
                 "erase-forward",
                 "insert-indent",

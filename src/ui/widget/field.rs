@@ -98,6 +98,27 @@ impl<'a> Field<'a> {
         spans
     }
 
+    /// The field as a query row draws it — the new agent's directory
+    /// filter, a list's search: what is typed bright and bold, kept from
+    /// its end within `room` columns since the end is where typing is, the
+    /// caret after it, and the placeholder faint while nothing is typed.
+    pub(crate) fn query(&self, room: usize) -> Vec<Span<'static>> {
+        let mut spans = vec![Span::styled(
+            super::text::elide_head(self.text, room),
+            theme::fg_bold(Token::TextBright),
+        )];
+        if self.focused {
+            spans.push(caret());
+        }
+        if self.text.is_empty() && !self.placeholder.is_empty() {
+            spans.push(Span::styled(
+                self.placeholder.to_owned(),
+                theme::fg(Token::TextFaint),
+            ));
+        }
+        spans
+    }
+
     pub(crate) fn line(&self) -> Line<'static> {
         Line::from(self.spans())
     }

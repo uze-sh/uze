@@ -79,6 +79,7 @@
     "mark.close": "✕",
     "mark.failed": "✕",
     "mark.dot": "•",
+    "mark.unsaved": "●",
     "mark.more": "⋯",
     "mark.cross": "×",
     "mark.done": "✓",

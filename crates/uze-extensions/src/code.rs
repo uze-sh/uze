@@ -60,7 +60,7 @@
 //! which is what keeps it from eating a buffer someone is typing into.
 
 use std::{
-    collections::{BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
@@ -82,6 +82,7 @@ mod map;
 mod render;
 mod request;
 mod row_menu;
+mod search;
 mod treemap;
 
 pub use changes::{ChangeSummary, change_summary};
@@ -94,6 +95,7 @@ pub use history::{Commit, CommitDetail, Timeline, commit_detail, timeline, timel
 pub use map::{FileMeasure, Measure, measure};
 pub use render::view;
 pub use request::{FileAnswer, FileRequest, LoadedFile, fulfill, unanswered};
+pub use search::Findings;
 
 use changes::Changes;
 use diff::DiffLineKind;
@@ -109,10 +111,13 @@ pub const CATALOG: crate::registry::BuiltinExtension = crate::registry::BuiltinE
     name: "Code",
     description: "Changes, contents, history and a map of the active checkout.",
     surface: "Workspace TUI",
-    usage: "The timeline sits in the sidebar; open the changes with Alt+G or the changes chip, and the files with Alt+E or the code chip. `m`, or the Map chip, shows the checkout as a map of where its lines are.",
+    usage: "The timeline sits in the sidebar; open the changes with Alt+G or the changes chip, and the files with Alt+E or the code chip. `m`, or the Map chip, shows the checkout as a map of where its lines are. Ctrl+F searches every file; open files stand as tabs over the content.",
 };
 
 const REFRESH_INTERVAL: Duration = Duration::from_millis(750);
+
+/// Lines kept above a line a search opened, so it is read in its place.
+const SEARCH_CONTEXT: usize = 5;
 
 /// How many times its own duration a periodic read waits before the next
 /// one: Git gets at most a fifth of the clock, however large the checkout.
@@ -141,6 +146,8 @@ enum NavigatorMode {
     Changes,
     /// The checkout's own tree, listed as it is opened.
     Files,
+    /// What a search of every file found.
+    Search,
 }
 
 /// Which half answers for the selection. Also which door was used: the
@@ -248,6 +255,18 @@ pub struct CodeView {
     changes: Changes,
     files: Files,
     open: Option<OpenFile>,
+    /// Buffers with unsaved changes the viewer moved away from, by path.
+    /// Kept rather than refused or dropped, as an editor keeps a changed
+    /// file open while another is shown: going back to one picks up the
+    /// typing where it was left, scrolled where it was, and only closing
+    /// the surface asks.
+    parked: BTreeMap<PathBuf, Parked>,
+    /// The files open in the content, as tabs, in the order opened.
+    tabs: Vec<OpenTab>,
+    /// A tab with unsaved changes asked to close, waiting for the second
+    /// ask that discards them.
+    closing_tab: Option<PathBuf>,
+    search: search::Search,
     /// What the host still has to do for the files half, oldest first.
     queue: VecDeque<FileRequest>,
     /// A failure about the surface rather than about one file.
@@ -279,8 +298,9 @@ pub struct CodeView {
 /// the directories opened to reach it, and how far down it. Deliberately not the content mode: the mode is the door that
 /// was used (`Alt+G` reviews, `Alt+E` navigates), and a door that
 /// remembered where it last led would stop being one. Deliberately not a
-/// buffer either: an unsaved edit belongs to the surface that has it
-/// open, and reopening a closed one must not resurrect typing.
+/// buffer either: a surface put away with unsaved work is kept whole by
+/// the extension (`CodeExtension::kept`), and one closed on a discard the
+/// viewer answered must not resurrect the typing.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CodePlace {
     selected: Option<PathBuf>,
@@ -376,6 +396,10 @@ impl CodeView {
             },
             files: Files::default(),
             open: None,
+            parked: BTreeMap::new(),
+            tabs: Vec::new(),
+            closing_tab: None,
+            search: search::Search::default(),
             queue: VecDeque::new(),
             error: None,
             notice: None,
@@ -417,8 +441,10 @@ impl CodeView {
         self.read_selection_as_what_it_is();
         match self.navigator() {
             // A directory is where the cursor was, and nothing to read.
-            NavigatorMode::Files if selected_is_a_file => self.load_selection(None),
-            NavigatorMode::Files => {}
+            NavigatorMode::Files | NavigatorMode::Search if selected_is_a_file => {
+                self.load_selection(None)
+            }
+            NavigatorMode::Files | NavigatorMode::Search => {}
             // The list and the diff both arrive from the refresh the host
             // schedules the moment the surface opens.
             NavigatorMode::Changes => self.changes.diff_pending = true,
@@ -477,6 +503,11 @@ impl CodeView {
     fn navigator(&self) -> NavigatorMode {
         match self.content {
             ContentMode::Diff => NavigatorMode::Changes,
+            // The files' list is the tree until something is typed into its
+            // search, and what that found while it holds text.
+            ContentMode::Contents | ContentMode::Preview if !self.search.query.is_empty() => {
+                NavigatorMode::Search
+            }
             ContentMode::Contents | ContentMode::Preview | ContentMode::Map => NavigatorMode::Files,
         }
     }
@@ -523,10 +554,77 @@ impl CodeView {
                 .is_some_and(|open| open.editing && open.error.is_none())
     }
 
+    /// Every file with changes not yet written, the one on show first —
+    /// what closing the surface would throw away.
+    pub(super) fn unsaved(&self) -> Vec<&Path> {
+        self.open
+            .iter()
+            .filter(|open| open.modified)
+            .map(|open| open.path.as_path())
+            .chain(self.parked.keys().map(PathBuf::as_path))
+            .collect()
+    }
+
+    /// Whether anything here has changes not yet written.
+    pub fn has_unsaved(&self) -> bool {
+        self.open.as_ref().is_some_and(|open| open.modified) || !self.parked.is_empty()
+    }
+
+    /// Whether closing has asked about unsaved work and waits for the
+    /// answer.
+    pub(super) fn confirming_discard(&self) -> bool {
+        self.confirming_discard
+    }
+
+    /// Asks, in the footer, before closing over unsaved work.
+    pub(super) fn ask_to_discard(&mut self) {
+        self.confirming_discard = true;
+    }
+
+    /// Throws away every change not yet written, as the viewer asked.
+    pub(super) fn discard_unsaved(&mut self) {
+        self.parked.clear();
+        if self.open.as_ref().is_some_and(|open| open.modified) {
+            self.open = None;
+        }
+    }
+
+    /// Whether `path` has changes not yet written: the buffer on show, or
+    /// one kept while another file is.
+    pub(super) fn is_unsaved(&self, path: &Path) -> bool {
+        self.open
+            .as_ref()
+            .is_some_and(|open| open.modified && open.path == path)
+            || self.parked.contains_key(path)
+    }
+
+    /// Whether any tab is drawn — the question [`Self::file_tabs`] answers
+    /// in full, asked without building them.
+    pub(super) fn has_tabs(&self) -> bool {
+        !self.tabs.is_empty()
+            && matches!(self.content, ContentMode::Contents | ContentMode::Preview)
+    }
+
+    /// Whether the file on show is text that could be typed into — what
+    /// makes a click on one of its lines start editing there, the way
+    /// every editor a person has used puts the caret where they click.
+    pub(super) fn editable(&self) -> bool {
+        self.content == ContentMode::Contents
+            && self
+                .open
+                .as_ref()
+                .is_some_and(|open| open.error.is_none() && !open.loading)
+    }
+
     /// Whether a letter is text here rather than a shortcut: a file open
     /// for typing, or a new name being typed for one.
     pub fn typing(&self) -> bool {
-        self.editing() || self.renaming.is_some()
+        self.editing() || self.renaming.is_some() || self.typing_a_search()
+    }
+
+    /// Whether keys land in the search's field, over the files' list.
+    fn typing_a_search(&self) -> bool {
+        self.search.typing && matches!(self.content, ContentMode::Contents | ContentMode::Preview)
     }
 
     /// The path the cursor stands on, whichever half it is in.
@@ -809,7 +907,12 @@ impl CodeView {
                 {
                     self.ask_for_exclusions();
                 }
-                let open = self.open.as_mut().filter(|open| open.path == path);
+                // The buffer may have been parked while its write was out.
+                let parked = !self.open.as_ref().is_some_and(|open| open.path == path);
+                let open = match parked {
+                    false => self.open.as_mut(),
+                    true => self.parked.get_mut(&path).map(|parked| &mut parked.open),
+                };
                 let written = open.and_then(|open| {
                     let revision = open.saving.pop_front()?;
                     Some((open, revision))
@@ -826,17 +929,25 @@ impl CodeView {
                         if let Some((open, revision)) = written
                             && open.revision() == revision
                         {
-                            open.modified = false;
-                            // Re-read what was written: every line typed
-                            // since the last read was highlighted
-                            // approximately, and this is where that debt
-                            // is paid off.
-                            self.queue.push_back(FileRequest::Read(path));
+                            open.mark_saved();
+                            match parked {
+                                // Nothing unsaved is left to keep: the
+                                // file opens from the disk next time.
+                                true => {
+                                    self.parked.remove(&path);
+                                }
+                                // Re-read what was written: every line
+                                // typed since the last read was
+                                // highlighted approximately, and this is
+                                // where that debt is paid off.
+                                false => self.queue.push_back(FileRequest::Read(path)),
+                            }
                         }
                     }
                     Err(message) => self.notice = Some(Span::new(message, Role::Danger)),
                 }
             }
+            FileAnswer::Found { query, outcome } => self.search.absorb(&query, outcome),
             FileAnswer::Restored { paths, outcome } => match outcome {
                 Ok(()) => {
                     if let Some(path) = paths.first() {
@@ -852,6 +963,7 @@ impl CodeView {
                     {
                         self.open = None;
                     }
+                    self.parked.retain(|parked, _| !paths.contains(parked));
                     for parent in paths.iter().filter_map(|path| path.parent()) {
                         if self.files.listings.contains_key(parent) {
                             self.queue
@@ -879,6 +991,8 @@ impl CodeView {
                     {
                         self.open = None;
                     }
+                    self.parked.retain(|parked, _| !parked.starts_with(&path));
+                    self.tabs.retain(|tab| !tab.path.starts_with(&path));
                     if self
                         .selected
                         .as_ref()
@@ -916,6 +1030,11 @@ impl CodeView {
                     if let Some(selected) = self.selected.as_deref().and_then(moved) {
                         self.selected = Some(selected);
                     }
+                    for tab in &mut self.tabs {
+                        if let Some(path) = moved(&tab.path) {
+                            tab.path = path;
+                        }
+                    }
                     // The open file is read again under its new name; an
                     // unsaved buffer stays where it is rather than be
                     // dropped, and its save then says the old path is gone.
@@ -943,27 +1062,22 @@ impl CodeView {
 
     /// Points the surface at `path`: every mode follows.
     ///
-    /// Except away from unsaved work. The buffer is the one thing here a
-    /// person authored, and moving the cursor is not a request to throw
-    /// it away — so the move is refused and the file stays open until it
-    /// is saved, or the surface is closed on the question that asks.
+    /// Unsaved work is never lost on the way. The buffer is the one thing
+    /// here a person authored, and moving the cursor is not a request to
+    /// throw it away — so a changed buffer is parked, and the file it is
+    /// of opens from it again rather than from the disk.
     fn select(&mut self, path: PathBuf) {
         if self.selected.as_deref() == Some(path.as_path()) {
             return;
         }
-        if let Some(open) = self
-            .open
-            .as_ref()
-            .filter(|open| open.modified && open.path != path)
+        if let Some(mut open) = self.open.take_if(|open| open.path != path)
+            && open.modified
         {
-            self.notice = Some(Span::new(
-                format!("{} has unsaved changes", file_name(&open.path)),
-                Role::Warning,
-            ));
-            return;
-        }
-        if self.open.as_ref().is_some_and(|open| open.path != path) {
-            self.open = None;
+            open.editing = false;
+            self.pin_tab(&open.path);
+            let scroll = self.scroll;
+            self.parked
+                .insert(open.path.clone(), Parked { open, scroll });
         }
         self.selected = Some(path);
         self.scroll = 0;
@@ -1280,13 +1394,22 @@ impl CodeView {
             }
             return;
         }
+        self.scroll = 0;
+        self.keep_tab(&path);
+        if let Some(Parked { mut open, scroll }) = self.parked.remove(&path) {
+            match line {
+                Some(line) => open.place_caret(line.saturating_sub(1)),
+                None => self.scroll = scroll,
+            }
+            self.open = Some(open);
+            return;
+        }
         let mut open = OpenFile::opening(path.clone());
         open.caret = Caret {
             line: line.unwrap_or(1).saturating_sub(1),
             column: 0,
         };
         self.open = Some(open);
-        self.scroll = 0;
         // Whatever was still to be coloured belonged to the file being
         // left, and the answer would be dropped on arrival. Asking for it
         // anyway is a read the viewer waits behind for nothing.
@@ -1354,6 +1477,7 @@ impl CodeView {
     /// Moves the selection one row in whichever list is showing.
     fn step(&mut self, direction: ScrollDirection) {
         match self.navigator() {
+            NavigatorMode::Search => self.search.step(direction == ScrollDirection::Down),
             NavigatorMode::Changes => {
                 let Some(from) = self.selected_change() else {
                     if let Some(first) = self.changes.files.first().map(|file| file.path.clone()) {
@@ -1426,6 +1550,181 @@ impl CodeView {
         });
     }
 
+    /// Gives `path` a tab, as it opens: in the place of the tab only
+    /// passed over, when there is one, so walking the tree leaves one tab
+    /// behind it rather than a tab per file.
+    fn keep_tab(&mut self, path: &Path) {
+        if self.tabs.iter().any(|tab| tab.path == path) {
+            return;
+        }
+        let tab = OpenTab {
+            path: path.to_path_buf(),
+            preview: true,
+        };
+        match self.tabs.iter_mut().find(|tab| tab.preview) {
+            Some(passed) => *passed = tab,
+            None => self.tabs.push(tab),
+        }
+    }
+
+    /// Keeps `path`'s tab: a file changed is a file being worked on.
+    fn pin_tab(&mut self, path: &Path) {
+        if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.path == path) {
+            tab.preview = false;
+        }
+    }
+
+    /// The tabs as the host draws them. Only beside a file: a diff and the
+    /// map are not a file open.
+    pub(super) fn file_tabs(&self) -> Vec<crate::view::FileTab> {
+        if !self.has_tabs() {
+            return Vec::new();
+        }
+        let names: Vec<String> = self.tabs.iter().map(|tab| file_name(&tab.path)).collect();
+        let mut seen: BTreeMap<&str, usize> = BTreeMap::new();
+        for name in &names {
+            *seen.entry(name).or_default() += 1;
+        }
+        self.tabs
+            .iter()
+            .zip(&names)
+            .map(|(tab, name)| {
+                let modified = self.is_unsaved(&tab.path);
+                crate::view::FileTab {
+                    name: name.clone(),
+                    // Only where two tabs share a name does the directory
+                    // earn its room.
+                    detail: match seen[name.as_str()] > 1 {
+                        true => relative_dir(&self.root, &tab.path),
+                        false => String::new(),
+                    },
+                    active: self.open.as_ref().is_some_and(|open| open.path == tab.path),
+                    unsaved: modified,
+                }
+            })
+            .collect()
+    }
+
+    /// Shows the file in tab `index`.
+    fn show_tab(&mut self, index: usize) {
+        let Some(path) = self.tabs.get(index).map(|tab| tab.path.clone()) else {
+            return;
+        };
+        self.select(path);
+        self.load_selection(None);
+        self.focus = Focus::Content;
+    }
+
+    /// The tab beside the one on show, `forward` or back, round the ends.
+    fn step_tab(&mut self, forward: bool) {
+        let count = self.tabs.len();
+        let Some(at) = self.active_tab() else {
+            return;
+        };
+        let next = match forward {
+            true => (at + 1) % count,
+            false => (at + count - 1) % count,
+        };
+        self.show_tab(next);
+    }
+
+    fn active_tab(&self) -> Option<usize> {
+        let open = self.open.as_ref()?;
+        self.tabs.iter().position(|tab| tab.path == open.path)
+    }
+
+    /// Puts tab `index` away. Unsaved changes are asked about first: the
+    /// first ask says so, and a second, with nothing between, discards
+    /// them. The tab beside it comes on show when it was the one there.
+    fn close_tab(&mut self, index: usize, asked: Option<PathBuf>) {
+        let Some(path) = self.tabs.get(index).map(|tab| tab.path.clone()) else {
+            return;
+        };
+        if self.is_unsaved(&path) && asked.as_ref() != Some(&path) {
+            self.closing_tab = Some(path);
+            return;
+        }
+        self.parked.remove(&path);
+        self.tabs.remove(index);
+        if self.open.as_ref().is_some_and(|open| open.path == path) {
+            self.open = None;
+            let beside = index.min(self.tabs.len().saturating_sub(1));
+            if !self.tabs.is_empty() {
+                self.show_tab(beside);
+            }
+        }
+    }
+
+    /// Goes to the search and into its field, from anywhere.
+    fn find(&mut self) {
+        if let Some(open) = self.open.as_mut() {
+            open.editing = false;
+        }
+        if !matches!(self.content, ContentMode::Contents | ContentMode::Preview) {
+            self.show_half(Half::Files);
+        }
+        self.search.typing = true;
+        self.focus = Focus::Navigator;
+    }
+
+    /// Lets go of the search: the field empties and the tree is back.
+    ///
+    /// The tree opens down to the selection, which a search may have
+    /// moved to a file in a directory the tree never had open.
+    fn clear_search(&mut self) {
+        self.search.typing = false;
+        self.search.query.clear();
+        self.ask_search();
+        self.reveal_selection();
+    }
+
+    /// Asks again for what the field holds now, in place of any search
+    /// still waiting its turn: only the latest one is worth running.
+    fn ask_search(&mut self) {
+        self.search.typed();
+        self.queue
+            .retain(|request| !matches!(request, FileRequest::Search { .. }));
+        if !self.search.query.is_empty() {
+            self.queue.push_back(FileRequest::Search {
+                root: self.root.clone(),
+                query: self.search.query.clone(),
+            });
+        }
+    }
+
+    /// Opens the line the search's cursor is on, its first match under
+    /// the caret, a few lines down from the top so what is around it reads.
+    fn open_hit(&mut self, focus_content: bool) {
+        let Some((path, line)) = self
+            .search
+            .cursor
+            .and_then(|cursor| self.search.at(cursor))
+            .map(|(path, line)| (path.to_path_buf(), line))
+        else {
+            return;
+        };
+        self.select(path);
+        self.content = ContentMode::Contents;
+        self.load_selection(Some(line));
+        let column = self.search.cursor.and_then(|(file, hit)| {
+            let text = &self.search.files().get(file)?.hits.get(hit)?.text;
+            search::occurrences(text, &self.search.query)
+                .first()
+                .map(|range| range.start)
+        });
+        if let Some(open) = self.open.as_mut() {
+            open.caret = Caret {
+                line: line.saturating_sub(1),
+                column: column.unwrap_or(0),
+            };
+        }
+        self.scroll = line.saturating_sub(1 + SEARCH_CONTEXT);
+        self.focus = match focus_content {
+            true => Focus::Content,
+            false => Focus::Navigator,
+        };
+    }
+
     /// Keeps the caret on screen after it moved, given how many lines the
     /// host says fit.
     fn follow_caret(&mut self, visible: u16) {
@@ -1440,6 +1739,22 @@ impl CodeView {
             self.scroll = line.saturating_sub(visible - 1);
         }
     }
+}
+
+/// A file open in a tab.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct OpenTab {
+    path: PathBuf,
+    /// Opened by passing over it: the next file passed over replaces it,
+    /// as in an editor, until it is changed.
+    preview: bool,
+}
+
+/// A buffer with unsaved changes kept while another file is shown, and
+/// where it was scrolled to.
+struct Parked {
+    open: OpenFile,
+    scroll: usize,
 }
 
 /// A diff to read on its own — see [`CodeView::diff_request`].
@@ -1497,6 +1812,15 @@ fn file_name(path: &Path) -> String {
     path.file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.display().to_string())
+}
+
+/// The directory `path` sits in, as the checkout at `root` names it —
+/// empty at the checkout's top.
+fn relative_dir(root: &Path, path: &Path) -> String {
+    path.parent()
+        .and_then(|parent| parent.strip_prefix(root).ok())
+        .map(|parent| parent.display().to_string())
+        .unwrap_or_default()
 }
 
 /// The map answers the keys the tree answers, about tiles rather than
@@ -1568,6 +1892,26 @@ fn map_command(view: &mut CodeView, command: Command, space: Size) -> CodeOutcom
 /// nothing but keeping the caret and the page keys inside the file.
 pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> CodeOutcome {
     view.notice = None;
+    let asked = view.closing_tab.take();
+    // An editor's own keys, answered wherever the keys are — typing
+    // included, since none of them is a letter.
+    match command {
+        Command::Find => {
+            view.find();
+            return CodeOutcome::Stay;
+        }
+        Command::CloseTab => {
+            if let Some(index) = view.active_tab() {
+                view.close_tab(index, asked);
+            }
+            return CodeOutcome::Stay;
+        }
+        Command::NextTab | Command::PreviousTab => {
+            view.step_tab(command == Command::NextTab);
+            return CodeOutcome::Stay;
+        }
+        _ => {}
+    }
     // Typing is modal, and the host says so by asking in the editing
     // scope. What is left here is the same command set the reading modes
     // answer, plus the two that leave typing.
@@ -1582,6 +1926,10 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
     // surface.
     if view.content == ContentMode::Map {
         return map_command(view, command, space);
+    }
+    if view.typing_a_search() {
+        search_field_command(view, command);
+        return CodeOutcome::Stay;
     }
 
     if view.renaming.is_some() {
@@ -1613,16 +1961,26 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         return CodeOutcome::Stay;
     }
 
+    // What a search found is a level over the tree: the way out of it
+    // comes before the way out of the surface, as the map's levels do.
+    if command == Command::Close && view.navigator() == NavigatorMode::Search {
+        view.clear_search();
+        return CodeOutcome::Stay;
+    }
+
     match command {
         Command::Close => {
             // Unsaved work is never closed away on one keystroke. The
             // second press is the answer to a question the footer is now
             // asking — so the flag is read here, before anything clears
             // it, or the question is asked forever and never answered.
-            if view.open.as_ref().is_some_and(|open| open.modified) && !view.confirming_discard {
+            if view.has_unsaved() && !view.confirming_discard {
                 view.confirming_discard = true;
                 return CodeOutcome::Stay;
             }
+            // Answered yes: what was unsaved goes, rather than be kept for
+            // the next opening as a surface put away unasked keeps it.
+            view.discard_unsaved();
             return CodeOutcome::Close;
         }
         // Anything that is not an answer to the question withdraws it.
@@ -1649,6 +2007,11 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         {
             fold_tree_row(view)
         }
+        Command::Collapse | Command::Expand
+            if view.focus == Focus::Navigator && view.navigator() == NavigatorMode::Search =>
+        {
+            view.search.fold_cursor(command == Command::Expand)
+        }
         Command::Expand
             if view.focus == Focus::Navigator && view.navigator() == NavigatorMode::Files =>
         {
@@ -1671,6 +2034,7 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         // The move the whole surface is for: from a line of the diff into
         // that line of the file, ready to change it.
         Command::OpenMenu => match view.navigator() {
+            NavigatorMode::Search => {}
             NavigatorMode::Changes => {
                 if let Some(index) = view.selected_change() {
                     row_menu::open(view, index);
@@ -1689,6 +2053,8 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         // A change is reviewed, kept or thrown away here; the file itself
         // is edited and deleted in the files half, where it is the subject.
         Command::Edit | Command::Delete if view.navigator() == NavigatorMode::Changes => {}
+        // A search's list is lines of files, not files: nothing to delete.
+        Command::Delete if view.navigator() == NavigatorMode::Search => {}
         Command::Edit => {
             view.show(ContentMode::Contents);
             if let Some(open) = view
@@ -1725,6 +2091,37 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         _ => {}
     }
     CodeOutcome::Stay
+}
+
+/// A command while the search's field has the keys: text edits the query
+/// and asks again; the way down, or Enter, goes to what it found.
+fn search_field_command(view: &mut CodeView, command: Command) {
+    match command {
+        Command::Type(character) => {
+            view.search.query.push(character);
+            view.ask_search();
+        }
+        Command::EraseBack => {
+            view.search.query.pop();
+            view.ask_search();
+        }
+        // Out of the field and back to the tree, as a filter is let go of.
+        Command::Close => view.clear_search(),
+        Command::SelectNext => {
+            view.search.typing = false;
+            view.search.step(true);
+        }
+        Command::Newline | Command::Activate => {
+            view.search.typing = false;
+            view.search.step(true);
+            view.open_hit(true);
+        }
+        Command::FocusNext => {
+            view.search.typing = false;
+            view.focus = Focus::Content;
+        }
+        _ => {}
+    }
 }
 
 /// A file or a directory asked about before it is deleted, and which
@@ -1808,6 +2205,7 @@ fn fold_tree_row(view: &mut CodeView) {
 /// becomes the selection and the content follows.
 fn activate_selection(view: &mut CodeView) {
     match view.navigator() {
+        NavigatorMode::Search => view.open_hit(true),
         NavigatorMode::Changes => {
             if view.selected.is_some() {
                 view.focus = Focus::Content;
@@ -1851,6 +2249,8 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
         return CodeOutcome::Stay;
     }
     view.notice = None;
+    // Anything but a second close of the same tab withdraws the question.
+    let asked = view.closing_tab.take();
     if view.content == ContentMode::Map {
         return map_mouse(view, hit, space);
     }
@@ -1865,8 +2265,18 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
     if view.menu.is_some() {
         return row_menu::mouse(view, hit);
     }
+    // A click anywhere but the field takes the keys out of it.
+    if !matches!(hit, Some(ViewHit::FocusField | ViewHit::ClearField)) {
+        view.search.typing = false;
+    }
     match hit {
+        Some(ViewHit::SelectTab(index)) => view.show_tab(index),
+        Some(ViewHit::CloseTab(index)) => view.close_tab(index, asked),
+        Some(ViewHit::FocusField) => view.find(),
+        // Emptied and let go of: the tree is back, and the keys with it.
+        Some(ViewHit::ClearField) => view.clear_search(),
         Some(ViewHit::OpenMenu(index)) => match view.navigator() {
+            NavigatorMode::Search => {}
             NavigatorMode::Changes => row_menu::open(view, index),
             NavigatorMode::Files => {
                 if let Some(row) = view.files.rows(&view.root).into_iter().nth(index) {
@@ -1875,6 +2285,13 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
             }
         },
         Some(ViewHit::SelectItem(index)) => match view.navigator() {
+            // A click shows the line and leaves the keys on the list, so
+            // the next line is one arrow away.
+            NavigatorMode::Search => {
+                view.search.typing = false;
+                view.search.cursor = view.search.hit_of(index);
+                view.open_hit(false);
+            }
             NavigatorMode::Changes => {
                 if let Some(file) = view.changes.files.get(index) {
                     let path = file.path.clone();
@@ -1892,6 +2309,7 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
         Some(ViewHit::ToggleGroup(row)) => match view.navigator() {
             // A flat list has no groups to toggle.
             NavigatorMode::Changes => {}
+            NavigatorMode::Search => view.search.toggle(row),
             NavigatorMode::Files => {
                 if let Some(row) = view.files.rows(&view.root).into_iter().nth(row) {
                     view.selected = Some(row.path.clone());
@@ -1903,16 +2321,21 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
                 }
             }
         },
+        // A click in the text is where typing starts: no key first, as in
+        // every editor. Esc still leaves typing, and the buffer with it
+        // only once asked.
         Some(ViewHit::PlaceCaret { line, cell }) => {
             view.focus = Focus::Content;
-            if view.content == ContentMode::Contents
-                && let Some(open) = view.open.as_mut()
-            {
+            view.search.typing = false;
+            let editable = view.editable();
+            if let Some(open) = view.open.as_mut().filter(|_| editable) {
                 let line = line.min(open.lines.len().saturating_sub(1));
                 open.caret = Caret {
                     line,
                     column: open.column_at_cell(line, cell),
                 };
+                open.editing = true;
+                view.confirming_discard = false;
             }
         }
         // The order is `render::modes`' own, and it is the only side

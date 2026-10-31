@@ -341,6 +341,14 @@ actions! {
         "Actions", "Open what can be done to what is selected: an agent, or a change in the code surface";
     DeleteFile => "delete-file", true,
         "Delete", "Delete the selected file, having been asked once";
+    FindInFiles => "find-in-files", false,
+        "Search", "Search every file of the checkout, from the field over the list";
+    CloseFileTab => "close-file-tab", false,
+        "Close tab", "Put away the file on show, asking first when it has unsaved changes";
+    NextFileTab => "next-file-tab", false,
+        "Next tab", "Show the next file open in a tab";
+    PreviousFileTab => "previous-file-tab", false,
+        "Previous tab", "Show the previous file open in a tab";
     CaretLeft => "caret-left", false,
         "Left", "Move the caret one character left";
     CaretRight => "caret-right", false,

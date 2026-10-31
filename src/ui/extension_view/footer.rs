@@ -63,7 +63,7 @@ pub(super) fn render_footer(
 /// is bound to. Kept here, beside the render that needs it, rather than in
 /// the extension, which knows nothing of either. Where two actions reach
 /// one command, the first row is the one a footer names.
-pub(super) const COMMAND_ACTIONS: [(Command, uze_keys::Action); 38] = [
+pub(super) const COMMAND_ACTIONS: [(Command, uze_keys::Action); 42] = [
     (Command::Close, uze_keys::Action::Dismiss),
     (Command::FocusNext, uze_keys::Action::FocusNext),
     (Command::FocusNext, uze_keys::Action::FocusPrevious),
@@ -117,6 +117,10 @@ pub(super) const COMMAND_ACTIONS: [(Command, uze_keys::Action); 38] = [
     ),
     (Command::Back, uze_keys::Action::LevelUp),
     (Command::ToggleMap, uze_keys::Action::ToggleMap),
+    (Command::Find, uze_keys::Action::FindInFiles),
+    (Command::CloseTab, uze_keys::Action::CloseFileTab),
+    (Command::NextTab, uze_keys::Action::NextFileTab),
+    (Command::PreviousTab, uze_keys::Action::PreviousFileTab),
 ];
 
 /// The action a command is named by. `None` for typing, which has no

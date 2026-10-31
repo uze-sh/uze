@@ -79,6 +79,7 @@ impl Extension for Board {
             ),
         ];
         Some(View {
+            tabs: Vec::new(),
             title: vec![Span::new("Board", Role::Muted)],
             caption: Vec::new(),
             navigator: None,

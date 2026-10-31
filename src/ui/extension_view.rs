@@ -30,6 +30,7 @@ use crate::ui::widget::{
     self, Edge, Rule, Scrollbar, Surface, TRAILING_PAD, hint::Hints, mark, row, text,
 };
 
+mod file_tabs;
 mod footer;
 mod geometry;
 mod lines;
@@ -53,7 +54,10 @@ const MIN_NAVIGATOR_WIDTH: u16 = 20;
 const MAX_NAVIGATOR_WIDTH: u16 = 50;
 const MIN_EXTENSION_CONTENT_WIDTH: u16 = 40;
 
-const GUTTER_WIDTH: u16 = 7;
+/// The gutter of lines that carry a marker and up to three digits: the
+/// marker and its space, the number, and the space before the text.
+#[cfg(test)]
+const GUTTER_WIDTH: u16 = 6;
 
 /// Columns of padding on each side of a mode segment's label. The padding
 /// is part of the button — it is filled, and clicked, like the label is.
@@ -249,6 +253,13 @@ fn render_surface(
         Some(_) => content_columns(area, held.width),
         None => whole_width(area),
     };
+    let content_area = file_tabs::render_file_tabs(
+        frame,
+        content_area,
+        &view.tabs,
+        held.sliding.map(|(hit, _)| hit),
+        hits,
+    );
     // What the surface is about is the workspace bar's to show (see
     // [`render_navigation`]); inside, only the ways of drawing what is on
     // show remain, at the end of the content's own heading row.
@@ -321,6 +332,7 @@ fn render_surface(
             lines,
             total,
             caret,
+            editable,
             medium,
         } => {
             rendered.content_gutter = gutter_width(lines);
@@ -339,6 +351,10 @@ fn render_surface(
                     lines,
                     total: *total,
                     caret: *caret,
+                    pointed: match held.sliding {
+                        Some((ViewHit::PlaceCaret { line, .. }, _)) if *editable => Some(line),
+                        _ => None,
+                    },
                     medium: *medium,
                     selection,
                     modes: column_modes,
@@ -557,7 +573,7 @@ fn render_board(
                 .enumerate()
             {
                 let rect = Rect::new(board.x, board.y + row as u16, board.width, 1);
-                render_line(frame, rect, line, gutter, false);
+                render_line(frame, rect, line, gutter, false, lines::LineLight::Rest);
                 // Cut at the edge rather than folded: the whole line is
                 // one row, however far past the edge it runs.
                 if *medium == Medium::Text {

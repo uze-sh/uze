@@ -109,8 +109,14 @@ pub(super) struct OpenFile {
     pub(super) theme: String,
     pub(super) caret: Caret,
     pub(super) editing: bool,
-    /// Edited since the last save. What makes closing ask twice.
+    /// Differs from what the file holds on disk. What keeps the buffer
+    /// when another file is shown, and makes closing ask twice.
     pub(super) modified: bool,
+    /// The lines as the file last held them — read or saved. `modified`
+    /// is measured against these rather than set by any keystroke, so a
+    /// character typed and then erased again is no change, as in every
+    /// editor.
+    saved: Vec<String>,
     /// Whether the read that fills this in has landed yet.
     pub(super) loading: bool,
     /// Why it could not be shown, when it could not be.
@@ -162,6 +168,7 @@ impl OpenFile {
             caret: Caret::default(),
             editing: false,
             modified: false,
+            saved: Vec::new(),
             loading: true,
             error: None,
             picture: None,
@@ -218,9 +225,21 @@ impl OpenFile {
         // removes in both lists at once and they cannot drift apart.
         self.partial = !complete;
         self.highlighted.resize(self.lines.len(), Vec::new());
+        self.saved = self.lines.clone();
         self.modified = false;
         self.error = None;
         self.changed();
+    }
+
+    /// Whether the text still differs from the file, after an edit.
+    fn edited(&mut self) {
+        self.modified = self.lines != self.saved;
+    }
+
+    /// The text just written is what the file now holds.
+    pub(super) fn mark_saved(&mut self) {
+        self.saved = self.lines.clone();
+        self.modified = false;
     }
 
     pub(super) fn revision(&self) -> u64 {
@@ -310,7 +329,7 @@ impl OpenFile {
         let at = byte_offset(text, self.caret.column);
         text.insert(at, character);
         self.caret.column += 1;
-        self.modified = true;
+        self.edited();
         self.recolour_caret_line();
     }
 
@@ -377,7 +396,7 @@ impl OpenFile {
         let column = self.line_len(line);
         self.lines[line].push_str(&tail);
         self.caret = Caret { line, column };
-        self.modified = true;
+        self.edited();
         self.recolour(first..=line);
     }
 
@@ -423,7 +442,7 @@ impl OpenFile {
             column: 0,
         };
         self.recolour_caret_line();
-        self.modified = true;
+        self.edited();
     }
 
     pub(super) fn backspace(&mut self) {
@@ -435,7 +454,7 @@ impl OpenFile {
             let at = byte_offset(text, self.caret.column - 1);
             text.remove(at);
             self.caret.column -= 1;
-            self.modified = true;
+            self.edited();
             self.recolour_caret_line();
         } else if self.caret.line > 0 {
             let removed = self.lines.remove(self.caret.line);
@@ -445,7 +464,7 @@ impl OpenFile {
             if let Some(text) = self.lines.get_mut(self.caret.line) {
                 text.push_str(&removed);
             }
-            self.modified = true;
+            self.edited();
             self.recolour_caret_line();
         }
     }
@@ -461,7 +480,7 @@ impl OpenFile {
             };
             let at = byte_offset(text, column);
             text.remove(at);
-            self.modified = true;
+            self.edited();
             self.recolour_caret_line();
         } else if self.caret.line + 1 < self.lines.len() {
             let removed = self.lines.remove(self.caret.line + 1);
@@ -469,7 +488,7 @@ impl OpenFile {
             if let Some(text) = self.lines.get_mut(self.caret.line) {
                 text.push_str(&removed);
             }
-            self.modified = true;
+            self.edited();
             self.recolour_caret_line();
         }
     }

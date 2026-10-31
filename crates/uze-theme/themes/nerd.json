@@ -37,6 +37,7 @@
       "glyph": "󰧞",
       "width": 1
     },
+    "mark.unsaved": {"glyph": "\uf111", "width": 1},
     "mark.more": {
       "glyph": "󰇘",
       "width": 1

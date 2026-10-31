@@ -1446,6 +1446,7 @@ impl WorkspaceModel {
                 )
             };
             View {
+                tabs: Vec::new(),
                 title: vec![uze_extensions::view::Span::new(
                     slot.surface.title.clone(),
                     Role::Muted,

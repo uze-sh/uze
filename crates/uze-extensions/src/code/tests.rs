@@ -1089,8 +1089,30 @@ impl FakeMachine {
 }
 
 impl Host for FakeMachine {
-    fn git(&self, _root: &Path, _args: &[&str], _answers: &[i32]) -> Result<String, String> {
-        Err("no git here".to_owned())
+    /// `git grep` over the files in memory, as Git would print it for the
+    /// search's flags; nothing else of Git is here.
+    fn git(&self, root: &Path, args: &[&str], _answers: &[i32]) -> Result<String, String> {
+        let ["grep", .., query] = args else {
+            return Err("no git here".to_owned());
+        };
+        let query = query.to_lowercase();
+        let mut output = String::new();
+        for (path, text) in self.files.borrow().iter() {
+            let Ok(relative) = path.strip_prefix(root) else {
+                continue;
+            };
+            for (index, line) in text.lines().enumerate() {
+                if let Some(column) = line.to_lowercase().find(&query) {
+                    output.push_str(&format!(
+                        "{}\0{}\0{}\0{line}\n",
+                        relative.display(),
+                        index + 1,
+                        column + 1
+                    ));
+                }
+            }
+        }
+        Ok(output)
     }
 
     fn repository_root(&self, _path: &Path) -> Result<PathBuf, String> {
@@ -2085,6 +2107,55 @@ fn a_click_lands_on_the_character_its_cells_reach() {
     }
 }
 
+/// A click in a file's text is where typing starts, with no key first —
+/// what every editor a person has used does — and its lines say so, so
+/// the host lights the one under the pointer.
+#[test]
+fn a_click_on_a_line_starts_typing_there() {
+    let machine = FakeMachine::default().with_file("/w/notes.txt", "one\ntwo\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+    assert!(!view.editing(), "opening a file only reads it");
+    let Content::Lines { editable, .. } = render::view(&view, space()).content else {
+        panic!("the file is drawn as lines");
+    };
+    assert!(editable, "its lines answer a click");
+
+    handle_mouse(
+        &mut view,
+        Some(ViewHit::PlaceCaret { line: 1, cell: 2 }),
+        space(),
+    );
+    assert!(view.editing(), "the click opened it for typing");
+    press(&mut view, Command::Type('x'));
+    assert_eq!(
+        view.open.as_ref().expect("a file is open").lines,
+        ["one", "twxo"],
+        "typed where the click landed"
+    );
+
+    press(&mut view, Command::Close);
+    assert!(!view.editing(), "Esc still leaves typing");
+}
+
+/// A file still being read has no text to type into, so a click on it
+/// places nothing, and nothing lights to say it would.
+#[test]
+fn a_click_on_a_file_still_reading_does_not_start_typing() {
+    let machine = FakeMachine::default().with_file("/w/notes.txt", "one\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Activate);
+    handle_mouse(
+        &mut view,
+        Some(ViewHit::PlaceCaret { line: 0, cell: 0 }),
+        space(),
+    );
+    assert!(!view.editing());
+}
+
 /// A file that opens is a file that scrolls to its end, however long:
 /// the scroll stopped at line 65,536 once, and everything past it was
 /// out of reach.
@@ -2159,9 +2230,9 @@ fn keystrokes_typed_while_a_save_is_out_survive_its_answer() {
     assert!(!view.open.as_ref().expect("still open").modified);
 }
 
-/// Moving the cursor is not a request to throw away what was typed: an
-/// unsaved buffer keeps the surface on its file, by the arrows or by a
-/// click, until it is saved.
+/// Moving the cursor is not a request to throw away what was typed, nor a
+/// wall: the changed buffer is kept while another file is shown, as an
+/// editor keeps a changed file open, and going back picks it up again.
 #[test]
 fn moving_away_from_unsaved_work_keeps_it() {
     let machine = FakeMachine::default()
@@ -2176,32 +2247,98 @@ fn moving_away_from_unsaved_work_keeps_it() {
     press(&mut view, Command::Close);
     press(&mut view, Command::FocusNext);
 
-    press(&mut view, Command::SelectNext);
     handle_mouse(&mut view, Some(ViewHit::SelectItem(1)), space());
     settle(&mut view, &machine);
-
-    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/a.txt")));
-    let open = view.open.as_ref().expect("the buffer is still open");
-    assert_eq!(open.lines, ["xaaa"]);
-    assert!(open.modified);
-    let said = super::view(&view, space()).notice;
     assert_eq!(
-        said.as_ref()
-            .map(|notice| (notice.text.as_str(), notice.role)),
-        Some(("a.txt has unsaved changes", Role::Warning)),
-        "the refusal is said where the viewer can read it"
+        view.selected.as_deref(),
+        Some(Path::new("/w/b.txt")),
+        "the cursor moves"
     );
+    assert_eq!(view.open.as_ref().expect("b is open").lines, ["bbb"]);
+    assert_eq!(view.unsaved(), [Path::new("/w/a.txt")], "a is kept");
+    let Some(crate::view::Navigator { rows, .. }) = super::view(&view, space()).navigator else {
+        panic!("the tree is drawn");
+    };
+    let details: Vec<&str> = rows
+        .iter()
+        .filter_map(|row| match row {
+            NavigatorRow::Item { detail, .. } => Some(detail.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(details, ["unsaved", ""], "and the tree says which file is");
+
+    handle_mouse(&mut view, Some(ViewHit::SelectItem(0)), space());
+    settle(&mut view, &machine);
+    let open = view.open.as_ref().expect("a is open again");
+    assert_eq!(open.lines, ["xaaa"], "from the buffer, not the disk");
+    assert!(open.modified);
 
     press(&mut view, Command::Edit);
     press(&mut view, Command::Save);
     settle(&mut view, &machine);
-    press(&mut view, Command::Close);
-    handle_mouse(&mut view, Some(ViewHit::SelectItem(1)), space());
+    assert!(view.unsaved().is_empty());
     assert_eq!(
-        view.selected.as_deref(),
-        Some(Path::new("/w/b.txt")),
-        "once it is saved, the cursor moves"
+        machine
+            .files
+            .borrow()
+            .get(Path::new("/w/a.txt"))
+            .map(String::as_str),
+        Some("xaaa\n")
     );
+}
+
+/// A change typed and then taken back is no change: the buffer is
+/// measured against the file, not against whether a key was pressed.
+#[test]
+fn typing_a_character_and_erasing_it_leaves_nothing_unsaved() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "end.\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+    press(&mut view, Command::Edit);
+    press(&mut view, Command::CaretLineEnd);
+    press(&mut view, Command::EraseBack);
+    assert!(view.open.as_ref().unwrap().modified, "the dot is gone");
+    type_text(&mut view, ".");
+    assert!(
+        !view.open.as_ref().unwrap().modified,
+        "and back again, which is the file as it was"
+    );
+    press(&mut view, Command::Close);
+    assert_eq!(
+        press(&mut view, Command::Close),
+        CodeOutcome::Close,
+        "nothing to ask about"
+    );
+}
+
+/// Closing asks about every changed buffer, the ones moved away from too.
+#[test]
+fn closing_asks_about_every_unsaved_file() {
+    let machine = FakeMachine::default()
+        .with_file("/w/a.txt", "aaa\n")
+        .with_file("/w/b.txt", "bbb\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    for index in [0, 1] {
+        handle_mouse(&mut view, Some(ViewHit::SelectItem(index)), space());
+        settle(&mut view, &machine);
+        handle_mouse(
+            &mut view,
+            Some(ViewHit::PlaceCaret { line: 0, cell: 0 }),
+            space(),
+        );
+        type_text(&mut view, "x");
+        press(&mut view, Command::Close);
+    }
+    assert_eq!(press(&mut view, Command::Close), CodeOutcome::Stay);
+    assert_eq!(
+        super::view(&view, space()).notice.map(|notice| notice.text),
+        Some("2 files have unsaved changes · close again to discard them".to_owned())
+    );
+    assert_eq!(press(&mut view, Command::Close), CodeOutcome::Close);
 }
 
 /// A caret or a diff row past what a `u16` counts is reached exactly,
@@ -2767,7 +2904,7 @@ fn the_changes_list_marks_status_rather_than_kind() {
         rows.iter().all(|row| match row {
             crate::view::NavigatorRow::Group { icon, .. }
             | crate::view::NavigatorRow::Item { icon, .. } => *icon == crate::view::RowIcon::None,
-            crate::view::NavigatorRow::Band { .. } | crate::view::NavigatorRow::Gap => true,
+            _ => true,
         }),
         "the changes list asked for a file icon: {rows:?}"
     );
@@ -3366,6 +3503,93 @@ mod hosted {
         );
     }
 
+    /// Typing in `extension`'s open file, then put away the way the host
+    /// puts it away when another agent comes to the front.
+    fn typed_then_put_away(extension: &mut CodeExtension, machine: &FakeMachine) {
+        settle_hosted(extension, machine);
+        let view = extension.code_view_mut().unwrap();
+        press(view, Command::Activate);
+        settle_hosted(extension, machine);
+        let view = extension.code_view_mut().unwrap();
+        handle_mouse(
+            view,
+            Some(ViewHit::PlaceCaret { line: 0, cell: 0 }),
+            space(),
+        );
+        type_text(view, "x");
+        extension.close(SURFACE);
+    }
+
+    /// An editor never loses typing to a change of window: put away by
+    /// the host with work unsaved, the surface comes back whole on its
+    /// checkout — the buffer, its tab — however it is opened again.
+    #[test]
+    fn unsaved_work_survives_the_surface_being_put_away() {
+        let machine = FakeMachine::default().with_file("/w/a.txt", "aaa\n");
+        let mut extension = opened(FILES, "/w");
+        typed_then_put_away(&mut extension, &machine);
+
+        extension.enter(SURFACE, Entry::Return);
+        extension.open(SURFACE, &checkout("/w"));
+        let view = extension.code_view().expect("open again");
+        let open = view.open.as_ref().expect("the buffer");
+        assert_eq!(open.lines, ["xaaa"]);
+        assert!(view.has_unsaved());
+        assert_eq!(view.file_tabs().len(), 1, "its tab");
+
+        // Another checkout opens fresh; this one's work waits for it.
+        extension.close(SURFACE);
+        let mut elsewhere = CodeExtension::default();
+        std::mem::swap(&mut elsewhere, &mut extension);
+        elsewhere.enter(SURFACE, Entry::Door(FILES.to_owned()));
+        elsewhere.open(SURFACE, &checkout("/v"));
+        assert!(!elsewhere.code_view().unwrap().has_unsaved());
+        elsewhere.close(SURFACE);
+        elsewhere.enter(SURFACE, Entry::Door(CHANGES.to_owned()));
+        elsewhere.open(SURFACE, &checkout("/w"));
+        let view = elsewhere.code_view().unwrap();
+        assert_eq!(
+            view.showing(),
+            ContentMode::Diff,
+            "the door still says which half"
+        );
+        assert!(view.has_unsaved(), "and the work is still there");
+    }
+
+    /// The door that shuts the surface asks over unsaved work, as Esc
+    /// does; answered, the work is gone and does not come back.
+    #[test]
+    fn the_door_asks_before_shutting_over_unsaved_work() {
+        let machine = FakeMachine::default().with_file("/w/a.txt", "aaa\n");
+        let mut extension = opened(FILES, "/w");
+        settle_hosted(&mut extension, &machine);
+        let view = extension.code_view_mut().unwrap();
+        press(view, Command::Activate);
+        settle_hosted(&mut extension, &machine);
+        let view = extension.code_view_mut().unwrap();
+        handle_mouse(
+            view,
+            Some(ViewHit::PlaceCaret { line: 0, cell: 0 }),
+            space(),
+        );
+        type_text(view, "x");
+        press(view, Command::Close);
+
+        assert_eq!(
+            extension.enter(SURFACE, Entry::Door(FILES.to_owned())),
+            Outcome::Stay,
+            "asked, not shut"
+        );
+        assert_eq!(
+            extension.enter(SURFACE, Entry::Door(FILES.to_owned())),
+            Outcome::Close
+        );
+        extension.close(SURFACE);
+        extension.enter(SURFACE, Entry::Door(FILES.to_owned()));
+        extension.open(SURFACE, &checkout("/w"));
+        assert!(!extension.code_view().unwrap().has_unsaved(), "discarded");
+    }
+
     #[test]
     fn a_path_sent_from_another_surface_wins_over_the_last_place() {
         let mut extension = CodeExtension::default();
@@ -3615,4 +3839,383 @@ mod hosted {
             "and none in front"
         );
     }
+}
+
+/// Typing in the search's field asks every file as it goes; what it found
+/// is listed by file, and Enter opens the first line where it was found,
+/// with the match under the caret.
+#[test]
+fn a_search_finds_lines_in_every_file_and_opens_one() {
+    let machine = FakeMachine::default()
+        .with_file("/w/a.txt", "nothing\nthe Fog rolls\n")
+        .with_file("/w/src/b.rs", "fog();\nfog();\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+
+    press(&mut view, Command::Find);
+    assert!(view.typing(), "the keys are in the field");
+    type_text(&mut view, "fog");
+    settle(&mut view, &machine);
+
+    let drawn = render::view(&view, space());
+    let navigator = drawn.navigator.expect("the search's list");
+    let field = navigator.field.expect("its field");
+    assert_eq!(field.text, "fog");
+    assert_eq!(field.summary.text, "3 results in 2 files");
+    let rows: Vec<String> = navigator
+        .rows
+        .iter()
+        .map(|row| match row {
+            NavigatorRow::Found {
+                name,
+                detail,
+                count,
+                ..
+            } => format!("{name} {detail} {count}"),
+            NavigatorRow::Match { spans, .. } => spans
+                .iter()
+                .map(|span| match span.ground {
+                    Some(_) => format!("[{}]", span.text),
+                    None => span.text.clone(),
+                })
+                .collect(),
+            other => panic!("not a search's row: {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            "a.txt  1",
+            "the [Fog] rolls",
+            "b.rs src 2",
+            "[fog]();",
+            "[fog]();"
+        ]
+    );
+
+    press(&mut view, Command::Newline);
+    settle(&mut view, &machine);
+    assert!(!view.typing(), "Enter leaves the field");
+    let open = view.open.as_ref().expect("the file it was found in");
+    assert_eq!(open.path, Path::new("/w/a.txt"));
+    assert_eq!(open.caret, Caret { line: 1, column: 4 });
+    let drawn = render::view(&view, space());
+    assert_eq!(
+        drawn
+            .subjects
+            .iter()
+            .find(|mode| mode.active)
+            .map(|mode| mode.label.as_str()),
+        Some("Files"),
+        "the search is the files' own"
+    );
+    assert!(
+        drawn
+            .navigator
+            .expect("a list")
+            .rows
+            .iter()
+            .any(|row| matches!(row, NavigatorRow::Found { .. })),
+        "the list beside it is still what the search found"
+    );
+}
+
+/// An answer for text the field no longer holds is not drawn: only the
+/// latest search is asked, and only its answer kept.
+#[test]
+fn only_the_latest_search_is_asked() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fo");
+    type_text(&mut view, "x");
+    let searches = std::iter::from_fn(|| view.take_request())
+        .filter(|request| matches!(request, FileRequest::Search { .. }))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        searches,
+        [FileRequest::Search {
+            root: PathBuf::from("/w"),
+            query: "fox".to_owned()
+        }]
+    );
+}
+
+/// Passing over files leaves one tab, in italics, that the next file
+/// takes; a file changed keeps its tab and marks it; closing it asks
+/// once, and the tab beside it comes on show.
+#[test]
+fn files_open_in_tabs_the_way_an_editor_keeps_them() {
+    let machine = FakeMachine::default()
+        .with_file("/w/a.txt", "aaa\n")
+        .with_file("/w/b.txt", "bbb\n")
+        .with_file("/w/c.txt", "ccc\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    let tabs = |view: &CodeView| -> Vec<(String, bool, bool)> {
+        render::view(view, space())
+            .tabs
+            .into_iter()
+            .map(|tab| (tab.name, tab.active, tab.unsaved))
+            .collect()
+    };
+    let open = |view: &mut CodeView, index: usize| {
+        handle_mouse(view, Some(ViewHit::SelectItem(index)), space());
+        settle(view, &machine);
+    };
+
+    open(&mut view, 0);
+    open(&mut view, 1);
+    assert_eq!(
+        tabs(&view),
+        [("b.txt".to_owned(), true, false)],
+        "the passed-over tab was taken by the next file"
+    );
+
+    handle_mouse(
+        &mut view,
+        Some(ViewHit::PlaceCaret { line: 0, cell: 0 }),
+        space(),
+    );
+    type_text(&mut view, "x");
+    press(&mut view, Command::Close);
+    open(&mut view, 2);
+    assert_eq!(
+        tabs(&view),
+        [
+            ("b.txt".to_owned(), false, true),
+            ("c.txt".to_owned(), true, false)
+        ]
+    );
+
+    handle_mouse(&mut view, Some(ViewHit::SelectTab(0)), space());
+    settle(&mut view, &machine);
+    assert_eq!(
+        view.open.as_ref().unwrap().lines,
+        ["xbbb"],
+        "the buffer, kept"
+    );
+
+    handle_mouse(&mut view, Some(ViewHit::CloseTab(0)), space());
+    assert_eq!(tabs(&view).len(), 2, "asked, not closed");
+    assert_eq!(
+        render::view(&view, space())
+            .notice
+            .map(|notice| notice.text),
+        Some("b.txt has unsaved changes · close the tab again to discard them".to_owned())
+    );
+    handle_mouse(&mut view, Some(ViewHit::CloseTab(0)), space());
+    settle(&mut view, &machine);
+    assert_eq!(tabs(&view), [("c.txt".to_owned(), true, false)]);
+    assert!(view.unsaved().is_empty(), "the changes went with it");
+    assert_eq!(
+        machine
+            .files
+            .borrow()
+            .get(Path::new("/w/b.txt"))
+            .map(String::as_str),
+        Some("bbb\n"),
+        "and were never written"
+    );
+
+    press(&mut view, Command::CloseTab);
+    assert!(tabs(&view).is_empty());
+    assert!(view.open.is_none());
+}
+
+/// The map is entered over the search and left back onto it: what was
+/// typed and found is still there.
+#[test]
+fn leaving_the_map_returns_to_the_search_it_was_entered_from() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fog");
+    settle(&mut view, &machine);
+    press(&mut view, Command::SelectNext);
+    view.absorb_measure(measured());
+
+    press(&mut view, Command::ToggleMap);
+    assert_eq!(view.showing(), ContentMode::Map);
+    press(&mut view, Command::ToggleMap);
+    let field = render::view(&view, space())
+        .navigator
+        .and_then(|navigator| navigator.field)
+        .expect("the search's field, again");
+    assert_eq!(field.text, "fog");
+    assert_eq!(field.summary.text, "1 result in 1 file");
+}
+
+/// The search stands over the files' tree: typing into it lists what it
+/// found in the tree's place, and Esc lets go of it, tree back.
+#[test]
+fn the_files_search_replaces_the_tree_while_it_holds_text() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    let list = |view: &CodeView| render::view(view, space()).navigator.expect("a list");
+    let tree = list(&view);
+    assert_eq!(tree.field.expect("a field over the tree").text, "");
+    assert!(
+        matches!(tree.rows[0], NavigatorRow::Item { .. }),
+        "the tree"
+    );
+
+    handle_mouse(&mut view, Some(ViewHit::FocusField), space());
+    type_text(&mut view, "fog");
+    settle(&mut view, &machine);
+    assert!(matches!(list(&view).rows[0], NavigatorRow::Found { .. }));
+
+    press(&mut view, Command::Close);
+    assert!(!view.typing());
+    let back = list(&view);
+    assert_eq!(back.field.expect("the field").text, "");
+    assert!(
+        matches!(back.rows[0], NavigatorRow::Item { .. }),
+        "the tree, back"
+    );
+    assert_eq!(press(&mut view, Command::Close), CodeOutcome::Close);
+}
+
+/// The field's clear mark empties it and lets go of it; letting go
+/// of a search opens the tree down to the file it opened, wherever that is.
+#[test]
+fn clearing_a_search_shows_the_file_it_opened_in_the_tree() {
+    let machine = FakeMachine::default()
+        .with_directory("/w/src")
+        .with_directory("/w/src/deep")
+        .with_file("/w/src/deep/b.rs", "fog();\n")
+        .with_file("/w/a.txt", "nothing\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fog");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Newline);
+    settle(&mut view, &machine);
+    assert_eq!(
+        view.selected.as_deref(),
+        Some(Path::new("/w/src/deep/b.rs"))
+    );
+
+    handle_mouse(&mut view, Some(ViewHit::ClearField), space());
+    settle(&mut view, &machine);
+    assert!(view.search.query.is_empty());
+    assert!(!view.typing(), "and let go of");
+    let Some(crate::view::Navigator { rows, anchor, .. }) = render::view(&view, space()).navigator
+    else {
+        panic!("the tree");
+    };
+    let shown = anchor.and_then(|row| rows.get(row));
+    assert!(
+        matches!(shown, Some(NavigatorRow::Item { name, selected: true, .. }) if name == "b.rs"),
+        "the tree is open down to the file, on it: {rows:?}"
+    );
+}
+
+#[test]
+#[ignore = "a measurement, run by hand"]
+fn measure_the_editors_hot_paths() {
+    use std::time::Instant;
+    let best = |runs: usize, mut work: Box<dyn FnMut() + '_>| {
+        (0..runs)
+            .map(|_| {
+                let start = Instant::now();
+                work();
+                start.elapsed()
+            })
+            .min()
+            .unwrap()
+    };
+    // 2000 found lines across 100 files.
+    let mut grep = String::new();
+    for file in 0..100 {
+        for line in 0..20 {
+            grep.push_str(&format!(
+                "src/f{file}.rs\0{}\01\0    <value name=\"c_fog_{line}_ref\">0.000000</value>\n",
+                line + 1
+            ));
+        }
+    }
+    let machine = FakeMachine::default().with_file(
+        "/w/big.rs",
+        &"let value = some_call(argument, other);\n".repeat(70_000),
+    );
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+    let size = Size {
+        width: 160,
+        height: 50,
+    };
+
+    println!(
+        "frame, 70k-line file:        {:?}",
+        best(
+            50,
+            Box::new(|| {
+                render::view(&view, size);
+            })
+        )
+    );
+    handle_mouse(
+        &mut view,
+        Some(ViewHit::PlaceCaret {
+            line: 69_990,
+            cell: 3,
+        }),
+        size,
+    );
+    let mut flip = false;
+    println!(
+        "keystroke near end of 70k:   {:?}",
+        best(
+            50,
+            Box::new(|| {
+                press(
+                    &mut view,
+                    if flip {
+                        Command::EraseBack
+                    } else {
+                        Command::Type('x')
+                    },
+                );
+                flip = !flip;
+            })
+        )
+    );
+    press(&mut view, Command::Close);
+
+    view.search.query = "fog".to_owned();
+    println!(
+        "absorb 2000 hits:            {:?}",
+        best(
+            20,
+            Box::new(|| {
+                let findings = search::parse(Path::new("/w"), &grep);
+                view.search.absorb("fog", Ok(findings));
+            })
+        )
+    );
+    println!(
+        "frame, 2000 search results:  {:?}",
+        best(
+            50,
+            Box::new(|| {
+                render::view(&view, size);
+            })
+        )
+    );
+    println!("frame, 70k file beside search:{:?}", {
+        view.search.cursor = Some((0, 0));
+        best(
+            50,
+            Box::new(|| {
+                render::view(&view, size);
+            }),
+        )
+    });
 }
