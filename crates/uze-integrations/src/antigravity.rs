@@ -86,6 +86,7 @@ mod plugin;
 mod provision;
 mod session;
 mod skills;
+mod usage;
 
 pub(crate) use hooks::HOOKS;
 
@@ -194,6 +195,13 @@ impl AntigravityIntegration {
         }
     }
 
+    fn usage_locations(&self) -> usage::Usage<'_> {
+        usage::Usage {
+            cli_root: &self.cli_root,
+            config_dir: &self.config_dir,
+        }
+    }
+
     /// Env-based constructor for the CLI composition root (`registry.rs`).
     pub fn from_env(uze_home: UzeHome) -> Result<Self> {
         let home = uze_core::user_home().ok_or(UzeError::MissingHomeDirectory)?;
@@ -262,6 +270,23 @@ impl IntegrationPort for AntigravityIntegration {
         self.cli_root
             .is_dir()
             .then(|| self.inventory_locations().session_counts(now))
+    }
+
+    fn usage_records(
+        &self,
+        since: std::time::SystemTime,
+    ) -> Option<Vec<uze_core::usage::UsageRecord>> {
+        self.cli_root
+            .is_dir()
+            .then(|| self.usage_locations().records(since))
+    }
+
+    fn read_usage(
+        &self,
+        record: &uze_core::usage::UsageRecord,
+        from: uze_core::usage::Resume,
+    ) -> Option<uze_core::usage::UsageRead> {
+        self.usage_locations().read(record, from)
     }
 
     /// Skills stay model-discoverable and slash-invocable (ADR-031) — same
