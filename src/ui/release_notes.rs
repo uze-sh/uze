@@ -181,16 +181,8 @@ fn body_lines(modal: &ReleaseNotesModal, width: u16) -> Vec<Line<'static>> {
     };
     match &modal.notes {
         Notes::Loading => muted("Reading the notes…"),
-        Notes::Unavailable => {
-            let mut lines = muted("The notes could not be read. The changelog has them:");
-            lines.push(Line::default());
-            lines.push(
-                Hints::new(&[Scope::ReleaseNotes])
-                    .key(Action::Activate)
-                    .line(),
-            );
-            lines
-        }
+        // The way to them is the footer's `enter changelog`, said once.
+        Notes::Unavailable => muted("The notes could not be read. The changelog has them."),
         Notes::Ready(notes) => rendered_notes(&notes.body, width),
     }
 }
@@ -384,7 +376,13 @@ mod tests {
             "an answer for another release"
         );
         assert!(modal.absorb("9.0.1", None));
-        assert!(drawn(&modal).contains("could not be read"));
+        let screen = drawn(&modal);
+        assert!(screen.contains("could not be read"));
+        assert_eq!(
+            screen.matches("enter").count(),
+            1,
+            "the way to the changelog is said once, in the footer: {screen}"
+        );
         assert_eq!(
             modal.act(Action::Activate),
             Outcome::OpenLink(crate::self_update::changelog_entry("9.0.1"))

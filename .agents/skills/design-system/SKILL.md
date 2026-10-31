@@ -49,8 +49,8 @@ on "cancel" must not save first.
   right only when a target already registered covers the same rect (the
   manage modal's close mark, Recents' show-all toggle), and the comment
   above it says which.
-- `Hints::line()` (text with no target) is only for hints inside scrolling
-  prose.
+- A key is never written loose in a body as text with no target: it stands
+  in the surface's own hint bar or footer, where it is one.
 - A `run` (↑↓, 1–9) is read, never clicked.
 - A dialog's bottom border is a hint bar too: its keys answer a click as
   its buttons do.
