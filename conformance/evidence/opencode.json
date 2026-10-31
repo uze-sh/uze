@@ -1,13 +1,13 @@
 {
  "harness": "opencode",
- "harness_version": "opencode v2.0.29",
- "uze_version": "uze 1.0.0-beta.15",
- "fixture_revision": "23ead9eeae7f4704",
- "recorded_at": "2026-10-14T18:27:23-0300",
+ "harness_version": "opencode v2.2.5",
+ "uze_version": "uze 1.0.0-beta.21",
+ "fixture_revision": "7fc7124d308c7b4f",
+ "recorded_at": "2026-10-30T22:53:45-0300",
  "gate": {
-  "passed": 132,
-  "total": 132,
-  "declared": 4,
+  "passed": 196,
+  "total": 196,
+  "declared": 3,
   "retry": 0,
   "failures": []
  }

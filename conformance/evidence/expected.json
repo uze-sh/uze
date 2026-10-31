@@ -8,7 +8,8 @@
       "reason": "Codex has no documented way to disable explicit `$skill` invocation; `allow_implicit_invocation: false` leaves it invocable by the person",
       "measurement": "the model-only Skill is listed in the person's skill catalog",
       "versions": [
-        "codex-cli 0.160.1"
+        "codex-cli 0.160.1",
+        "codex-cli 0.166.0"
       ],
       "observed_at": "2026-10-05"
     },
@@ -19,7 +20,8 @@
       "reason": "Codex has no documented way to disable explicit `$skill` invocation",
       "measurement": "typing `$flow:analyze` put the model-only Skill's body in the model request",
       "versions": [
-        "codex-cli 0.160.1"
+        "codex-cli 0.160.1",
+        "codex-cli 0.166.0"
       ],
       "observed_at": "2026-10-05"
     },
@@ -31,7 +33,8 @@
       "measurement": "the model-only Skill is listed in the `/skills` browser",
       "versions": [
         "opencode v2.0.23",
-        "opencode v2.0.24"
+        "opencode v2.0.24",
+        "opencode v2.2.5"
       ],
       "observed_at": "2026-10-05"
     },
@@ -43,7 +46,8 @@
       "measurement": "mentioning `@flow:analyze` put the model-only Skill's body in the model request",
       "versions": [
         "opencode v2.0.23",
-        "opencode v2.0.24"
+        "opencode v2.0.24",
+        "opencode v2.2.5"
       ],
       "observed_at": "2026-10-05"
     },
@@ -57,7 +61,8 @@
         "1.2.17",
         "1.3.3",
         "1.4.4",
-        "1.4.8"
+        "1.4.8",
+        "1.4.12"
       ],
       "observed_at": "2026-10-05"
     },
@@ -68,7 +73,8 @@
       "reason": "Claude Code's native build searches through Bash (`grep` is its bundled ugrep) and offers `Grep` to the main model only on opt-in (`--allowedTools`/`--tools`) or to a subagent whose tools name it without Bash",
       "measurement": "the main session's request declares no `Grep`",
       "versions": [
-        "2.1.290 (Claude Code)"
+        "2.1.290 (Claude Code)",
+        "2.1.314 (Claude Code)"
       ],
       "observed_at": "2026-10-05"
     },
@@ -79,7 +85,8 @@
       "reason": "Claude Code's native build searches through Bash (`grep` is its bundled ugrep) and offers `Grep` to the main model only on opt-in (`--allowedTools`/`--tools`) or to a subagent whose tools name it without Bash",
       "measurement": "the session did not offer `Grep`, so no search reached the `search.files` group",
       "versions": [
-        "2.1.290 (Claude Code)"
+        "2.1.290 (Claude Code)",
+        "2.1.314 (Claude Code)"
       ],
       "observed_at": "2026-10-05"
     },
@@ -90,7 +97,8 @@
       "reason": "Codex 0.160 writes and edits files through `apply_patch`, which reaches a hook with the whole patch in `command` and no path field, so the alias cannot carry the `path` it promises; UZE leaves it unbound",
       "measurement": "the census saw the call reach hooks as `apply_patch` with `{\"command\"}` alone, and no group ran with the alias",
       "versions": [
-        "codex-cli 0.160.1"
+        "codex-cli 0.160.1",
+        "codex-cli 0.166.0"
       ],
       "observed_at": "2026-10-06"
     },
@@ -101,7 +109,8 @@
       "reason": "Codex 0.160 writes and edits files through `apply_patch`, which reaches a hook with the whole patch in `command` and no path field, so the alias cannot carry the `path` it promises; UZE leaves it unbound",
       "measurement": "the census saw the call reach hooks as `apply_patch` with `{\"command\"}` alone, and no group ran with the alias",
       "versions": [
-        "codex-cli 0.160.1"
+        "codex-cli 0.160.1",
+        "codex-cli 0.166.0"
       ],
       "observed_at": "2026-10-06"
     },
@@ -112,7 +121,8 @@
       "reason": "Claude Code renders every PreToolUse denial as `PreToolUse:<tool> hook error: <reason>`, the documented `permissionDecision: deny` JSON on exit 0 included; a hand-written hook with no UZE in it shows the same (experiments/claude/deny-render)",
       "measurement": "the turn that a delivered guard denied shows `hook error` beside the denial's reason",
       "versions": [
-        "2.1.290 (Claude Code)"
+        "2.1.290 (Claude Code)",
+        "2.1.314 (Claude Code)"
       ],
       "observed_at": "2026-10-06"
     },
@@ -134,7 +144,8 @@
       "reason": "OpenCode V2's permission prompt renders the call and never the request's message, so the handler's reason is not shown when it asks (tui/src/routes/session/permission.tsx)",
       "measurement": "the prompt OpenCode showed for the asked call did not carry the handler's reason",
       "versions": [
-        "opencode v2.0.24"
+        "opencode v2.0.24",
+        "opencode v2.2.5"
       ],
       "observed_at": "2026-10-06"
     },
@@ -145,7 +156,8 @@
       "reason": "Codex hook entries have no setting that blocks a call when the hook command cannot start; a handler that never runs lets the call through",
       "measurement": "with the delivered wrapper deleted, the denied shell call ran",
       "versions": [
-        "codex-cli 0.162.1"
+        "codex-cli 0.162.1",
+        "codex-cli 0.166.0"
       ],
       "observed_at": "2026-10-14"
     },
@@ -158,7 +170,8 @@
       "versions": [
         "1.4.2",
         "1.4.4",
-        "1.4.8"
+        "1.4.8",
+        "1.4.12"
       ],
       "observed_at": "2026-10-19"
     },
@@ -171,7 +184,8 @@
       "versions": [
         "1.4.3",
         "1.4.4",
-        "1.4.8"
+        "1.4.8",
+        "1.4.12"
       ],
       "observed_at": "2026-10-20"
     },
@@ -182,7 +196,8 @@
       "reason": "Antigravity attaches no `trigger: glob` rule since 1.4.7 renamed its file tools: 1.4.6 appends the rule to `view_file`'s result, 1.4.8 appends none to `read_file`'s or after `write_file` (google-antigravity/antigravity-cli#1349). The declaration fails the day a glob rule reaches the model again.",
       "measurement": "the turn settled after the matching write returned, and no request carried the glob rule's body",
       "versions": [
-        "1.4.8"
+        "1.4.8",
+        "1.4.12"
       ],
       "observed_at": "2026-10-27"
     },
@@ -193,7 +208,8 @@
       "reason": "Antigravity attaches no `trigger: glob` rule since 1.4.7 renamed its file tools: 1.4.6 appends the rule to `view_file`'s result, 1.4.8 appends none to `read_file`'s or after `write_file` (google-antigravity/antigravity-cli#1349). The declaration fails the day a glob rule reaches the model again.",
       "measurement": "no glob rule reached the model at all, so its early arrival is unobservable while the rule is missing",
       "versions": [
-        "1.4.8"
+        "1.4.8",
+        "1.4.12"
       ],
       "observed_at": "2026-10-27"
     },
@@ -204,7 +220,8 @@
       "reason": "Antigravity attaches no `trigger: glob` rule since 1.4.7 renamed its file tools: 1.4.6 appends the rule to `view_file`'s result, 1.4.8 appends none to `read_file`'s or after `write_file` (google-antigravity/antigravity-cli#1349). The declaration fails the day a glob rule reaches the model again.",
       "measurement": "the plugin's glob rule is copied into the declaring checkout, and no request after the matching write carried it",
       "versions": [
-        "1.4.8"
+        "1.4.8",
+        "1.4.12"
       ],
       "observed_at": "2026-10-27"
     },
@@ -215,7 +232,8 @@
       "reason": "Antigravity attaches no `trigger: glob` rule since 1.4.7 renamed its file tools: 1.4.6 appends the rule to `view_file`'s result, 1.4.8 appends none to `read_file`'s or after `write_file` (google-antigravity/antigravity-cli#1349). The declaration fails the day a glob rule reaches the model again.",
       "measurement": "the plugin's glob rule never reached the model, so its count is unobservable while the rule is missing",
       "versions": [
-        "1.4.8"
+        "1.4.8",
+        "1.4.12"
       ],
       "observed_at": "2026-10-27"
     },
@@ -226,7 +244,8 @@
       "reason": "Antigravity attaches no `trigger: glob` rule since 1.4.7 renamed its file tools: 1.4.6 appends the rule to `view_file`'s result, 1.4.8 appends none to `read_file`'s or after `write_file` (google-antigravity/antigravity-cli#1349). The declaration fails the day a glob rule reaches the model again.",
       "measurement": "the plugin's glob rule never reached the model, so a leak into the undeclaring checkout is unobservable while the rule is missing",
       "versions": [
-        "1.4.8"
+        "1.4.8",
+        "1.4.12"
       ],
       "observed_at": "2026-10-27"
     },
