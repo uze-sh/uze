@@ -598,7 +598,8 @@ holding the pipe open is swept once before the reader is given up on.
 harness detection (`harness_detection.json`), requirement version probes
 (`requirements.json`), the shell's observed refusals (`shell.json`),
 attachment inspection (`inspection.json`), the last appearance seen
-(`appearance`), the installed release's notes (`release-notes.md`) and, for
+(`appearance`), the installed release's notes (`release-notes.md`), the last
+machine Overview collected (`machine-overview.json`) and, for
 every marketplace registered by URL, a mirror of its repository (`marketplaces/<name>/repo`, which remembers in
 `transport.json` how it was last reached) with whatever plugins have
 been asked about written out beside it (`marketplaces/<name>/plugins`).
@@ -618,6 +619,7 @@ which is what every harness reads and what must stand with this gone.
 > `crates/uze-application/src/application/marketplace_catalogue.rs::tests::nothing_is_materialized_until_a_plugin_is_asked_about`
 > `crates/uze-core/src/package/acquisition/mirror.rs::tests::a_mirror_of_another_repository_is_replaced_not_fetched_into`
 > `crates/uze-application/src/application/doctor.rs::tests::installation_invalidates_the_inspection_cache`
+> `crates/uze-application/src/application/machine_overview/tests.rs::deleting_the_snapshot_costs_only_a_collection`
 
 ---
 

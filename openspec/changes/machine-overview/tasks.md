@@ -10,18 +10,18 @@
 
 ## 2. Collection
 
-- [ ] 2.1 Name `cache/machine-overview.json` in `UzeHome`; names, paths, origins, figures and statuses only; collected again when unreadable
-- [ ] 2.2 Add the snapshot to the cache-is-not-required-for-correctness invariant and its test
-- [ ] 2.3 `uze-application` read model and staged collection (inventory, tokens and health, sessions), one harness at a time, re-exported for `src/`
+- [x] 2.1 Name `cache/machine-overview.json` in `UzeHome`; names, paths, origins, figures and statuses only; collected again when unreadable
+- [x] 2.2 Add the snapshot to the cache-is-not-required-for-correctness invariant and its test
+- [x] 2.3 `uze-application` read model and staged collection (inventory, tokens and health, sessions), one harness at a time, re-exported for `src/`
 - [ ] 2.4 Collection id on every answer, stale answers dropped, panic answers "not known", cancel on leaving the route or closing the modal
 
 ## 3. Integrations
 
-- [ ] 3.1 Claude Code: inventory per design §5 and root-session count by path and file time
-- [ ] 3.2 Codex: inventory per design §5 and rollout count excluding `parent_thread_id`, reading the first line only
-- [ ] 3.3 OpenCode: inventory per design §5 and `opencode stats --json` from a directory outside every project, with a timeout
-- [ ] 3.4 Antigravity: inventory per design §5 incl. built-in skills, and `conversations/*.db` count with the `-wal` time, opening none
-- [ ] 3.5 Each integration's removal command for what the harness installed, shown only
+- [x] 3.1 Claude Code: inventory per design §5 and root-session count by path and file time
+- [x] 3.2 Codex: inventory per design §5 and rollout count excluding `parent_thread_id`, reading the first line only
+- [x] 3.3 OpenCode: inventory per design §5 and `opencode stats --json` from a directory outside every project, with a timeout
+- [x] 3.4 Antigravity: inventory per design §5 incl. built-in skills, and `conversations/*.db` count with the `-wal` time, opening none
+- [x] 3.5 Each integration's removal command for what the harness installed, shown only
 - [ ] 3.6 Lab checks: each harness's inventory finds a resource placed at each machine-level location; `opencode stats` is machine-wide and excludes subagents; which global instructions file Antigravity reads
 
 ## 4. Screen
