@@ -408,11 +408,14 @@ fn an_action_with_no_key_dims_the_column_it_would_have_filled() {
                 rows.len(),
                 "",
                 0,
-                ratatui::text::Line::default(),
-                |_| (),
+                &super::hint::Hints::new(&[]),
+                None,
+                |_| true,
+                |_| false,
             )
-            .first()
-            .map(|(rect, ())| (rect.x, rect.y));
+            .into_iter()
+            .find(|(_, row)| *row)
+            .map(|(rect, _)| (rect.x, rect.y));
         });
         // Past the cursor column every row keeps, selected or not.
         let cursor = theme::width(theme::Symbol::Prompt) + 1;
@@ -494,7 +497,9 @@ fn the_open_index_says_it_can_be_typed_into_before_anything_is() {
             0,
             "",
             0,
-            ratatui::text::Line::default(),
+            &super::hint::Hints::new(&[]),
+            None,
+            |_| (),
             |_| (),
         );
     });
@@ -556,7 +561,9 @@ fn narrowing_the_index_does_not_resize_it() {
                 all.len(),
                 "x",
                 0,
-                ratatui::text::Line::default(),
+                &super::hint::Hints::new(&[]),
+                None,
+                |_| (),
                 |_| (),
             );
         });
@@ -573,24 +580,26 @@ fn narrowing_the_index_does_not_resize_it() {
     );
 }
 
-/// The title names the surface, and the keys that close it sit in its
-/// bottom border, where every dialog carries its answers.
+/// The title names the surface. Its way out is the bare mark on its top
+/// border, which a click answers as Esc, and its keys sit in its bottom
+/// border as targets; no key there names closing it.
 #[test]
-fn the_index_is_titled_help_and_says_how_to_close() {
-    let hint = super::dialog::border_hint(
-        &[uze_keys::Scope::Global, uze_keys::Scope::ActionIndex],
-        &[(uze_keys::Action::Dismiss, "close")],
-    );
+fn the_index_is_titled_help_and_closes_on_its_mark() {
+    let scopes = [uze_keys::Scope::Global, uze_keys::Scope::ActionIndex];
+    let keys = super::hint::Hints::new(&scopes).named(uze_keys::Action::Activate, "run");
+    let mut placed = Vec::new();
     let buffer = drawn(80, 24, |frame| {
-        action_index::render(
+        placed = action_index::render(
             frame,
             Rect::new(0, 0, 80, 24),
             &[],
             4,
             "",
             0,
-            hint.clone(),
-            |_| (),
+            &keys,
+            None,
+            |_| None,
+            Some,
         );
     });
     let text: String = (0..24)
@@ -599,10 +608,21 @@ fn the_index_is_titled_help_and_says_how_to_close() {
 
     assert!(text.contains("Help"), "titled for what it is");
     assert!(!text.contains("Everything you can do"));
-    assert!(text.contains("esc close"), "the way out is in its border");
+    assert!(text.contains("run"), "its keys are in its border");
+    assert!(!text.contains("close"), "and none of them is the way out");
+    let (mark, _) = placed
+        .iter()
+        .find(|(_, action)| *action == Some(uze_keys::Action::Dismiss))
+        .expect("the mark answers as Esc");
+    assert_eq!(
+        buffer[(mark.x, mark.y)].symbol(),
+        theme::glyph(theme::Symbol::MarkClose)
+    );
     assert!(
-        !text.contains(&theme::glyph(theme::Symbol::MarkClose)),
-        "and no second control for it on the top border"
+        placed
+            .iter()
+            .any(|(_, action)| *action == Some(uze_keys::Action::Activate)),
+        "run is a target"
     );
 }
 
@@ -629,7 +649,9 @@ fn the_index_is_capped_and_scrolls_rather_than_growing_with_the_product() {
             many.len(),
             "",
             0,
-            ratatui::text::Line::default(),
+            &super::hint::Hints::new(&[]),
+            None,
+            |_| (),
             |_| (),
         );
     });
@@ -674,10 +696,13 @@ fn the_window_follows_the_selection_past_the_cap() {
                 many.len(),
                 "",
                 selected,
-                ratatui::text::Line::default(),
+                &super::hint::Hints::new(&[]),
+                None,
                 |p| p,
+                |_| usize::MAX,
             );
         });
+        placed.retain(|(_, position)| *position != usize::MAX);
         placed
     };
 

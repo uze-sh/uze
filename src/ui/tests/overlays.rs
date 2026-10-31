@@ -545,3 +545,49 @@ fn a_hint_beneath_a_dialog_is_no_target() {
         "no hint key is registered while a dialog is open"
     );
 }
+
+/// The notes and the index close on the bare mark on their top border, as
+/// Esc does, and the mark lights under the pointer: a modal names its way
+/// out nowhere else.
+#[test]
+fn the_notes_and_the_index_close_on_their_mark() {
+    for overlay in [
+        Overlay::ReleaseNotes(crate::ui::release_notes::ReleaseNotesModal::opening(
+            "9.0.1",
+        )),
+        Overlay::ActionIndex {
+            scopes: vec![uze_keys::Scope::Global, uze_keys::Scope::Management],
+            filter: String::new(),
+            selected: 0,
+        },
+    ] {
+        let mut model = model_with_plugins(&["flow"]);
+        model.overlay = overlay;
+        let (terminal, hits) = drawn_at(&model, 120, 40);
+        let (mark, _) = *hits
+            .iter()
+            .find(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::Dismiss))
+            .expect("the mark answers a click");
+        assert_eq!(
+            terminal.backend().buffer()[(mark.x, mark.y)].symbol(),
+            theme::glyph(theme::Symbol::MarkClose)
+        );
+        model.hits = hits;
+        model.apply_mouse(
+            MouseEvent {
+                kind: MouseEventKind::Moved,
+                column: mark.x,
+                row: mark.y,
+                modifiers: KeyModifiers::NONE,
+            },
+            Rect::new(0, 0, 120, 40),
+        );
+        assert_eq!(
+            model.hovered_offer,
+            Some(uze_keys::Action::Dismiss),
+            "it answers the pointer"
+        );
+        let _ = model.click(mark.x, mark.y);
+        assert_eq!(model.overlay, Overlay::None, "and closes as Esc does");
+    }
+}

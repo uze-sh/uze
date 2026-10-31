@@ -381,3 +381,45 @@ fn a_waiting_plugin_updates_review_opens_the_plugins_screen() {
     driven.press(review.x, review.y);
     assert_eq!(manage_route(&driven), crate::ui::model::Route::Plugins);
 }
+
+/// The notes and the index close on the bare mark on their top border, as
+/// Esc does: a modal names its way out nowhere else, and the mark lights in
+/// the danger hue under the pointer.
+#[test]
+fn the_notes_and_the_index_close_on_their_mark_in_the_workspace() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-modal-marks"));
+    let mark_of = |driven: &mut Driven<'_>| {
+        driven.frame();
+        driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .find_map(|(rect, hit)| {
+                (*hit == WorkspaceHit::HintAction(uze_keys::Action::Dismiss)).then_some(*rect)
+            })
+            .expect("the mark answers a click")
+    };
+
+    let mut notes = driven(agent_with_task(WorkStateView::Ready, 1), &home).on_a_roomy_terminal();
+    notes.attach.model.release_notes = Some(crate::ui::release_notes::ReleaseNotesModal::opening(
+        "9.0.1",
+    ));
+    let mark = mark_of(&mut notes);
+    notes.attach.model.hovered = Some(WorkspaceHit::HintAction(uze_keys::Action::Dismiss));
+    let area = notes.area;
+    assert_eq!(
+        frame_buffer_at(&mut notes.attach.model, area)[(mark.x, mark.y)].fg,
+        theme::color(Token::StateDanger),
+        "the pointer shows it takes the modal away"
+    );
+    notes.press(mark.x, mark.y);
+    assert!(notes.attach.model.release_notes.is_none(), "closed");
+
+    let mut index = driven(agent_with_task(WorkStateView::Ready, 1), &home).on_a_roomy_terminal();
+    index.press_key(key_event(uze_keys::Chord::parse("f1").unwrap()));
+    assert!(index.attach.model.action_index.is_some());
+    let mark = mark_of(&mut index);
+    index.press(mark.x, mark.y);
+    assert!(index.attach.model.action_index.is_none(), "closed");
+}

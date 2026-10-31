@@ -222,12 +222,16 @@ fn release_notes_open_over_the_workspace() {
     assert!(drawn.contains("v0.0.0-alpha.14"), "{drawn}");
     assert!(drawn.contains("the fix"), "{drawn}");
     full_frame(&mut model);
+    let body = model
+        .hits
+        .iter()
+        .position(|(_, hit)| *hit == WorkspaceHit::ReleaseNotesBody)
+        .expect("its area answers");
     assert!(
-        matches!(
-            model.hits.first(),
-            Some((_, WorkspaceHit::ReleaseNotesBody))
-        ),
-        "its area answers before anything underneath"
+        model.hits[..body]
+            .iter()
+            .all(|(_, hit)| matches!(hit, WorkspaceHit::HintAction(_))),
+        "only its own mark and keys answer before it, and it before anything underneath"
     );
 }
 

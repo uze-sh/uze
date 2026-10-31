@@ -274,10 +274,7 @@ pub(crate) fn render_action_index(
     let reachable = model.action_index_rows(scopes, "").len();
     let mut answering = scopes.to_vec();
     answering.push(uze_keys::Scope::ActionIndex);
-    let hint = dialog::border_hint(
-        &answering,
-        &[(Action::Activate, "run"), (Action::Dismiss, "close")],
-    );
+    let keys = crate::ui::widget::hint::Hints::new(&answering).named(Action::Activate, "run");
     let entries = action_index::render(
         frame,
         area,
@@ -285,8 +282,10 @@ pub(crate) fn render_action_index(
         reachable,
         filter,
         selected,
-        hint,
+        &keys,
+        model.hovered_offer,
         Hit::ActionIndexEntry,
+        Hit::OfferedAction,
     );
     // Prepended, so the list underneath cannot answer a click meant here.
     hits.splice(0..0, entries);

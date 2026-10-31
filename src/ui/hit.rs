@@ -64,8 +64,6 @@ pub(crate) enum Hit {
     OverlayBody,
     /// The footer's version: the notes of the release this binary is.
     RunningReleaseNotes,
-    /// The footer's notice of a newer release: that release's notes.
-    OpenReleaseNotes,
     /// The footer's health status: what needs attention, if anything.
     HealthStatus,
     /// A detail view's button for one of the selected row's offers, or a
@@ -131,6 +129,10 @@ impl TuiModel {
 
     pub(crate) fn click(&mut self, column: u16, row: u16) -> Intent {
         if let Overlay::ActionIndex { scopes, filter, .. } = self.overlay.clone() {
+            // Its keys and its mark are the keys they name.
+            if let Some(Hit::OfferedAction(action)) = self.hit_at(column, row).cloned() {
+                return self.overlay_action(action);
+            }
             // A click on a row performs it, the way choosing it with the
             // keyboard does; anywhere else closes without acting.
             let chosen = match self.hit_at(column, row) {
@@ -289,19 +291,6 @@ impl TuiModel {
                 );
                 Intent::ReadReleaseNotes(version)
             }
-            Hit::OpenReleaseNotes => match self
-                .release
-                .as_ref()
-                .and_then(|notice| notice.arrived.clone())
-            {
-                Some(version) => {
-                    self.overlay = Overlay::ReleaseNotes(
-                        crate::ui::release_notes::ReleaseNotesModal::opening(&version),
-                    );
-                    Intent::ReadReleaseNotes(version)
-                }
-                None => Intent::None,
-            },
             Hit::ResizePanel(panel) => {
                 self.dragging_panel = Some(panel);
                 Intent::None

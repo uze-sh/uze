@@ -646,6 +646,16 @@ impl TuiModel {
                 };
                 self.scroll_page(direction)
             }
+            // Over an overlay only its own keys and close mark light: the
+            // screen behind it answers no pointer while it is open.
+            MouseEventKind::Moved if self.overlay != Overlay::None => {
+                let hovered = match self.hit_at(event.column, event.row) {
+                    Some(Hit::OfferedAction(action)) => Some(*action),
+                    _ => None,
+                };
+                self.hovered_offer = hovered;
+                Intent::None
+            }
             MouseEventKind::Moved if self.overlay == Overlay::None => {
                 // One read of the hit list answers every hover the chrome
                 // has: a target that lights up under the pointer is only

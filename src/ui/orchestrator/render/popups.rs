@@ -1270,19 +1270,15 @@ pub(in crate::ui::orchestrator) fn render_action_index(
     area: Rect,
     index: &ActionIndexOverlay,
     disabled: &std::collections::BTreeSet<String>,
+    hovered: Option<uze_keys::Action>,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
     let rows = action_index_rows(&index.scopes, &index.offered, &index.filter, disabled);
     let reachable = action_index_rows(&index.scopes, &index.offered, "", disabled).len();
     let mut answering = index.scopes.clone();
     answering.push(uze_keys::Scope::ActionIndex);
-    let hint = crate::ui::widget::dialog::border_hint(
-        &answering,
-        &[
-            (uze_keys::Action::Activate, "run"),
-            (uze_keys::Action::Dismiss, "close"),
-        ],
-    );
+    let keys =
+        crate::ui::widget::hint::Hints::new(&answering).named(uze_keys::Action::Activate, "run");
     let entries = action_index::render(
         frame,
         area,
@@ -1290,8 +1286,10 @@ pub(in crate::ui::orchestrator) fn render_action_index(
         reachable,
         &index.filter,
         index.selected,
-        hint,
+        &keys,
+        hovered,
         WorkspaceHit::ActionIndexEntry,
+        WorkspaceHit::HintAction,
     );
     // Prepended: what is underneath must not answer a click meant here.
     hits.splice(0..0, entries);

@@ -758,9 +758,6 @@ pub(crate) struct TuiModel {
     /// client, because it is one list drawn at the foot of both sidebars
     /// and a step taken in one surface is taken.
     pub(crate) steps_taken: std::collections::BTreeSet<String>,
-    /// What the sidebar's foot says about releases, as of `release_revision`.
-    pub(crate) release: Option<crate::self_update::Notice>,
-    pub(crate) release_revision: u64,
 }
 
 impl Default for TuiModel {
@@ -950,8 +947,6 @@ impl TuiModel {
             first_steps_collapsed: false,
             first_steps_closed: false,
             steps_taken: std::collections::BTreeSet::new(),
-            release: None,
-            release_revision: 0,
         };
         model.plugin_pane = model.remembered.plugin_pane;
         let remembered = &mut model.remembered;

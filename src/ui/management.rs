@@ -215,11 +215,6 @@ impl ManagementMemory {
         let mut changed = matches!(model.status, model::Status::Working(_));
         changed |= model.expire_status();
         changed |= model.expire_update_badges();
-        if let Some((revision, notice)) = crate::self_update::since(model.release_revision) {
-            model.release = notice;
-            model.release_revision = revision;
-            changed = true;
-        }
         changed |= drain_worker_results(model, &self.receiver);
         let drawer = if model.selection_settling(Instant::now()) {
             Intent::None
@@ -393,8 +388,15 @@ pub(crate) fn render(
         Overlay::HarnessHelp => overlay::render_harness_help(frame, area),
         Overlay::Health => overlay::render_health(frame, area, &model.alerts()),
         Overlay::ReleaseNotes(modal) => {
-            let targets = super::release_notes::render(frame, area, modal);
+            let targets = super::release_notes::render(frame, area, modal, model.hovered_offer);
             hits.insert(0, (targets.popup, Hit::OverlayBody));
+            hits.splice(
+                0..0,
+                targets
+                    .keys
+                    .into_iter()
+                    .map(|(rect, action)| (rect, Hit::OfferedAction(action))),
+            );
         }
         Overlay::Confirm { kind, focus } => {
             overlay::render_confirmation(frame, area, kind, *focus, hits)
@@ -500,7 +502,6 @@ fn render_footer(
     ));
     let mut trailers = vec![(version, Hit::RunningReleaseNotes)];
     trailers.extend(health_status(model).map(|line| (line, Hit::HealthStatus)));
-    trailers.extend(release_notice(model).map(|line| (line, Hit::OpenReleaseNotes)));
     let (lines, targets): (Vec<_>, Vec<_>) = trailers.into_iter().unzip();
     let scopes = model.scopes();
     let drawn = widget::footer::render(
@@ -512,16 +513,6 @@ fn render_footer(
     );
     hits.extend(drawn.trailers.into_iter().zip(targets));
     hits.extend(model.hint_targets(drawn.hints));
-}
-
-/// The release a restart brought, said where the footer says what just
-/// happened: the news is the version, and a click reads what is new in it.
-fn release_notice(model: &TuiModel) -> Option<Line<'static>> {
-    let version = model.release.as_ref()?.arrived.as_deref()?;
-    Some(Line::from(Span::styled(
-        format!("{} v{version} · what's new", theme::glyph(Symbol::ArrowUp)),
-        theme::fg(Token::Accent),
-    )))
 }
 
 /// The machine's health in a few words, beside the version: the one place

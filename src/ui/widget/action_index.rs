@@ -78,8 +78,9 @@ const FIELD_ROWS: u16 = 2;
 /// The caller registers the rects: they belong on *top* of whatever is
 /// underneath, which is the caller's list to splice into.
 ///
-/// `hint` is the keys that answer it, which the caller's keymap scopes
-/// decide, for the bottom border.
+/// `keys` answer it on the bottom border, lit while `hovered`; they and the
+/// close mark are answered as `key` of their action, each row as `entry`
+/// of its position.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render<H>(
     frame: &mut ratatui::Frame<'_>,
@@ -88,8 +89,10 @@ pub(crate) fn render<H>(
     reachable: usize,
     filter: &str,
     selected: usize,
-    hint: Line<'static>,
+    keys: &super::hint::Hints<'_>,
+    hovered: Option<uze_keys::Action>,
     entry: impl Fn(usize) -> H,
+    key: impl Fn(uze_keys::Action) -> H,
 ) -> Vec<(Rect, H)> {
     let key_width = rows
         .iter()
@@ -103,7 +106,15 @@ pub(crate) fn render<H>(
     // the reader is aiming at, and the first keystroke is when they are
     // least able to follow.
     let shown = reachable.min(MAX_ROWS) as u16;
-    let shell = super::dialog::shell(frame, area, width, shown + FIELD_ROWS, "Help", hint);
+    let shell = super::dialog::shell(
+        frame,
+        area,
+        width,
+        shown + FIELD_ROWS,
+        "Help",
+        Line::default(),
+    );
+    let chrome = super::dialog::render_card_chrome(frame, shell.popup, keys, hovered);
     let inner = shell.body;
 
     // Always focused: the index is open, so every key reaches this field.
@@ -137,7 +148,11 @@ pub(crate) fn render<H>(
     if bar.is_some() {
         list.width = list.width.saturating_sub(Scrollbar::width());
     }
-    let mut entries = Vec::with_capacity(visible);
+    // The mark and the keys first: they sit on the border, over no row.
+    let mut entries: Vec<(Rect, H)> = chrome
+        .into_iter()
+        .map(|(rect, action)| (rect, key(action)))
+        .collect();
     for (position, (action, chord)) in rows.iter().enumerate().skip(first).take(visible) {
         let y = list.y + (position - first) as u16;
         if y >= list.bottom() {

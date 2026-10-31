@@ -216,15 +216,23 @@ impl Attach<'_> {
                 return self.overlay_press(mouse.column, mouse.row, viewport);
             }
             _ if self.model.release_notes.is_some() && self.model.action_index.is_none() => {
-                if !matches!(
-                    self.model.hit_at(mouse.column, mouse.row),
-                    Some(WorkspaceHit::ReleaseNotesBody)
-                ) {
-                    self.model.release_notes = None;
-                    self.model.dirty = true;
+                match self.model.hit_at(mouse.column, mouse.row) {
+                    // Its mark and its keys are the keys they name.
+                    Some(WorkspaceHit::HintAction(action)) => return self.act(action, viewport),
+                    Some(WorkspaceHit::ReleaseNotesBody) => {}
+                    _ => {
+                        self.model.release_notes = None;
+                        self.model.dirty = true;
+                    }
                 }
             }
             _ if self.model.action_index.is_some() => {
+                // Its keys and its mark are the keys they name.
+                if let Some(WorkspaceHit::HintAction(action)) =
+                    hit_at(&self.model, mouse.column, mouse.row)
+                {
+                    return self.action_index_action(action, viewport);
+                }
                 // A click on a row performs it, the way choosing it with
                 // the keyboard does; anywhere else closes without acting.
                 let chosen = match hit_at(&self.model, mouse.column, mouse.row) {

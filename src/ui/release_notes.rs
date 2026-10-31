@@ -275,18 +275,28 @@ fn header_line(modal: &ReleaseNotesModal) -> Line<'static> {
 pub(crate) struct Targets {
     /// The whole modal: a click inside it is reading, one outside closes it.
     pub(crate) popup: Rect,
+    /// Its close mark and its keys: a click on one is its key.
+    pub(crate) keys: Vec<(Rect, Action)>,
 }
 
 /// Draws the modal centred in `area`.
-pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, modal: &ReleaseNotesModal) -> Targets {
+pub(crate) fn render(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    modal: &ReleaseNotesModal,
+    hovered: Option<Action>,
+) -> Targets {
     let layout = layout(area, modal);
     frame.render_widget(Clear, layout.popup);
-    surface()
-        .hint(dialog::border_hint(
-            &[Scope::ReleaseNotes],
-            &[(Action::SelectNext, "scroll"), (Action::Dismiss, "close")],
-        ))
-        .render(frame, layout.popup);
+    surface().render(frame, layout.popup);
+    let keys = dialog::render_card_chrome(
+        frame,
+        layout.popup,
+        &Hints::new(&[Scope::ReleaseNotes])
+            .run(Action::SelectPrevious, Action::SelectNext, "scroll")
+            .named(Action::Activate, "release page"),
+        hovered,
+    );
     frame.render_widget(Paragraph::new(header_line(modal)), layout.header);
     let scroll = modal.scroll.min(layout.scroll_limit());
     modal.drawn.set(Drawn {
@@ -316,6 +326,7 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, modal: &ReleaseNotesModa
     }
     Targets {
         popup: layout.popup,
+        keys,
     }
 }
 
@@ -336,7 +347,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
         terminal
             .draw(|frame| {
-                render(frame, frame.area(), modal);
+                let _ = render(frame, frame.area(), modal, None);
             })
             .unwrap();
         let buffer = terminal.backend().buffer();
@@ -366,8 +377,11 @@ mod tests {
         );
         assert!(screen.contains("the fix"), "rendered, not raw: {screen}");
         assert!(
-            screen.contains("What's new") && screen.contains("esc close"),
-            "headed like every dialog, its way out in the border: {screen}"
+            screen.contains("What's new")
+                && screen.contains(&theme::glyph(crate::ui::theme::Symbol::MarkClose))
+                && screen.contains("release page")
+                && !screen.contains("close"),
+            "headed like every dialog, its way out the mark on its corner: {screen}"
         );
         assert!(!screen.contains("**terminal:**"), "{screen}");
 

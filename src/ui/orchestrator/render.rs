@@ -464,12 +464,22 @@ pub(super) fn render(
         );
     }
     if let Some(modal) = &model.release_notes {
-        let targets = crate::ui::release_notes::render(frame, frame.area(), modal);
-        // Prepended: what is underneath must not answer a click meant here.
+        let targets =
+            crate::ui::release_notes::render(frame, frame.area(), modal, model.hovered_hint());
+        // Prepended: what is underneath must not answer a click meant here,
+        // and the keys and the mark answer before the body under them.
         hits.insert(0, (targets.popup, WorkspaceHit::ReleaseNotesBody));
+        hits.splice(0..0, hint_targets(targets.keys));
     }
     if let Some(index) = &model.action_index {
-        render_action_index(frame, frame.area(), index, &model.disabled_extensions, hits);
+        render_action_index(
+            frame,
+            frame.area(),
+            index,
+            &model.disabled_extensions,
+            model.hovered_hint(),
+            hits,
+        );
     }
     if let Some(step) = model
         .directory_step

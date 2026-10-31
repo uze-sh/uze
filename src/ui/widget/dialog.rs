@@ -332,6 +332,56 @@ pub(crate) fn border_hint(
     Line::from(spans)
 }
 
+/// Draws the two pieces of a card's chrome a pointer answers: the mark
+/// that closes it, on its top hairline against the right corner, and its
+/// `keys`, on its bottom border against the right end. Answers where each
+/// landed, the mark as [`Action::Dismiss`]: a click on it is Esc.
+///
+/// Esc closes every card, and a card says so nowhere but in that mark: no
+/// key on the border names it. Each key is drawn lit while `hovered` is
+/// its action, the mark in the danger hue while it is `Dismiss`.
+///
+/// [`Action::Dismiss`]: uze_keys::Action::Dismiss
+#[must_use = "register each target as a hit, so a click performs its key"]
+pub(crate) fn render_card_chrome(
+    frame: &mut ratatui::Frame<'_>,
+    popup: Rect,
+    keys: &super::hint::Hints<'_>,
+    hovered: Option<uze_keys::Action>,
+) -> Vec<(Rect, uze_keys::Action)> {
+    let mut targets = Vec::new();
+    let mark = theme::width(Symbol::MarkClose);
+    // One column of the hairline kept between the mark and the corner.
+    if popup.width > mark + 3 && popup.height > 0 {
+        let rect = Rect::new(popup.right() - 2 - mark, popup.y, mark, 1);
+        let state = match hovered {
+            Some(uze_keys::Action::Dismiss) => super::ChipState::Hovered,
+            _ => super::ChipState::Resting,
+        };
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                theme::glyph(Symbol::MarkClose),
+                theme::fg(super::mark::close_tone(state)),
+            )),
+            rect,
+        );
+        targets.push((rect, uze_keys::Action::Dismiss));
+    }
+    let keys = keys.clone().hovered(hovered);
+    // A space each side breaks the hairline around the keys, as a border
+    // title does.
+    let room = popup.width.saturating_sub(4);
+    let width = keys.width().min(room.saturating_sub(2));
+    if width > 0 && popup.height > 1 {
+        let y = popup.bottom() - 1;
+        let x = popup.right() - 2 - width;
+        frame.render_widget(Paragraph::new(" "), Rect::new(x - 1, y, 1, 1));
+        frame.render_widget(Paragraph::new(" "), Rect::new(x + width, y, 1, 1));
+        targets.extend(keys.render(frame, Rect::new(x, y, width, 1)));
+    }
+    targets
+}
+
 /// Where a dialog drawn by [`shell`] puts its content: the rows under its
 /// title.
 pub(crate) struct Shell {
