@@ -152,6 +152,23 @@ timeout 240 claude -p {shlex.quote(prompt)} --permission-mode bypassPermissions 
             {"tool": self.MCP_TOOL, "args": {}},
         ]
 
+    def shell_carrier(self, command):
+        """Claude's `Monitor` runs a shell command as an event stream; since
+        2.1.314 its command reaches the hooks that match `Bash` as a `Bash`
+        call (`{command, description}`), while a hook with no matcher sees
+        it as `Monitor`. The tool is deferred, and `description` and
+        `timeout_ms` are the fields its schema requires (2.1.314)."""
+        return [
+            {
+                "tool": "ToolSearch",
+                "args": {"query": "select:Monitor", "max_results": 1},
+            },
+            {
+                "tool": "Monitor",
+                "args": {"command": command, "description": "lab", "timeout_ms": 60000},
+            },
+        ]
+
     def unsupported(self, prop):
         """Claude Code documents both halves of the invocation policy:
         `disable-model-invocation: true` and `user-invocable: false` (the
@@ -170,5 +187,11 @@ timeout 240 claude -p {shlex.quote(prompt)} --permission-mode bypassPermissions 
                 "Claude Code renders every PreToolUse denial as a hook error, "
                 "the documented JSON decision included (measured with a "
                 "hand-written hook, experiments/claude/deny-render)"
+            )
+        if prop == "hooks.transform-carrier":
+            return (
+                "Claude Code lets a hook matching Bash block or ask on a "
+                "command the Monitor tool starts, but not approve or rewrite "
+                "it (2.1.314 changelog)"
             )
         return None

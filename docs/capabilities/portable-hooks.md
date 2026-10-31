@@ -204,7 +204,7 @@ compatibility verdicts.
 
 | Alias | Fields | Claude Code | Codex | Antigravity CLI | OpenCode |
 |---|---|---|---|---|---|
-| `shell` | `HOOK_COMMAND` | `Bash` / `command` | `Bash` / `command` | `run_command` / `CommandLine` | `shell` / `command` |
+| `shell` | `HOOK_COMMAND` | `Bash` / `command` ³ | `Bash` / `command` | `run_command` / `CommandLine` | `shell` / `command` |
 | `file.read` | `HOOK_PATH` | `Read` / `file_path` | — | `read_file` / `Path` | `read` / `path` |
 | `file.write` | `HOOK_PATH` | `Write` / `file_path` | — ¹ | `write_file` / `Path` | `write` / `path` |
 | `file.edit` | `HOOK_PATH` | `Edit` / `file_path` | — ¹ | `edit_file` / `Path` | `edit` / `path` |
@@ -229,6 +229,12 @@ unsupported there and not delivered.
 2. Claude Code's native build searches through `Bash` and offers `Grep` to
    the main model only on opt-in (`--allowedTools`/`--tools`) or to a
    subagent whose tools name it.
+3. Claude Code hands a command its `Monitor` tool starts to the hooks that
+   match `Bash`, as a `Bash` call (2.1.314), so a `shell` group's `deny` and
+   `ask` cover it too. They can block it or ask, never approve or rewrite
+   it: `allow` and `transform` do not reach it, so a transform that
+   sanitizes a command needs a `deny` beside it. A group with no matcher
+   sees the call as `Monitor`, with `HOOK_TOOL` empty.
 
 ## Delivery per harness
 

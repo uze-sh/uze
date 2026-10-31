@@ -117,6 +117,17 @@
       "observed_at": "2026-10-06"
     },
     {
+      "harness": "claude",
+      "check": "hooks-transform-carrier-rewritten",
+      "suite": "hooks",
+      "reason": "Claude Code hands a command the `Monitor` tool starts to the hooks that match `Bash`, which \"can block or ask, but not approve or rewrite those commands\" (2.1.314, https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md); a `shell` deny holds there (`hooks-deny-carrier-blocked`), a transform does not",
+      "measurement": "the transform group ran on the `Monitor` command as `shell`, and the command ran as the model asked (`from-carrier`), not rewritten",
+      "versions": [
+        "2.1.314 (Claude Code)"
+      ],
+      "observed_at": "2026-10-30"
+    },
+    {
       "harness": "opencode",
       "check": "hooks-ask-prompted-with-reason",
       "suite": "hooks",

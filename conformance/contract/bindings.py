@@ -437,6 +437,13 @@ class Bindings:
         while the vertical proves execution in a phase of its own."""
         return None
 
+    def shell_carrier(self, command):
+        """The scripted calls that run `command` through a second tool of
+        this harness, one its hook system hands to the `shell` alias's
+        groups as a shell call; `None` for a harness whose shell commands
+        reach a hook through the shell tool alone."""
+        return None
+
     def hook_error(self, plain):
         """Whether the harness reported a hook as having failed, rather
         than as having decided."""
