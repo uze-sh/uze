@@ -248,6 +248,9 @@ fn memory_past_the_bound_is_refused() {
 fn the_program_gets_its_environment_and_its_own_exit_status() {
     let confinement = confinement(&[], &[], false);
     let output = confined(&confinement, &[&cmd(), "/d", "/c", "echo %FIRST%-%SECOND%"])
+        // As the runner starts it: with nothing but what the program may
+        // see, so the helper finds what Windows needs on its own.
+        .env_clear()
         .env("FIRST", "1")
         .env("SECOND", "two words")
         .output()
