@@ -239,3 +239,74 @@ fn a_session_appended_to_is_read_from_where_it_was_left() {
         [(ResourceKind::Skill, "flow:review", Invoker::Person)]
     );
 }
+
+/// The budget a reading keeps over a transcript the size a heavy month
+/// leaves (tens of megabytes, a use in a few hundred lines), and over what
+/// one more turn appends. Generous in a debug build, which is what
+/// `cargo test` runs; the release figures are what the design states.
+#[test]
+fn a_large_transcript_is_read_within_budget_and_an_appended_turn_at_once() {
+    let root = uze_testkit::temp::TempDir::new("claude-usage-budget");
+    let path = root.join("session.jsonl");
+    let filler = prompt(
+        "2026-10-30T10:00:00Z",
+        &"lorem ipsum dolor sit amet ".repeat(80),
+    );
+    let mut text = String::with_capacity(32 * 1024 * 1024);
+    let mut uses = 0;
+    while text.len() < 30 * 1024 * 1024 {
+        for _ in 0..300 {
+            text.push_str(&filler);
+        }
+        text.push_str(&call(
+            "2026-10-30T10:00:01Z",
+            &format!("t{uses}"),
+            "Skill",
+            json!({"skill": "flow:review"}),
+        ));
+        uses += 1;
+    }
+    fs::write(&path, &text).unwrap();
+    let record = UsageRecord {
+        id: path.to_string_lossy().into_owned(),
+        stamp: uze_core::usage::Stamp::default(),
+    };
+    let (whole, appended) = if cfg!(debug_assertions) {
+        (
+            std::time::Duration::from_secs(8),
+            std::time::Duration::from_millis(200),
+        )
+    } else {
+        (
+            std::time::Duration::from_millis(400),
+            std::time::Duration::from_millis(5),
+        )
+    };
+    let started = std::time::Instant::now();
+    let read_whole = read(&record, Resume::Start).unwrap();
+    let took = started.elapsed();
+    assert_eq!(read_whole.uses.len(), uses);
+    assert!(took < whole, "30 MB took {took:?}, budget {whole:?}");
+
+    let offset = read_whole.resume_at.unwrap();
+    let mut more = fs::OpenOptions::new().append(true).open(&path).unwrap();
+    std::io::Write::write_all(
+        &mut more,
+        call(
+            "2026-10-30T11:00:00Z",
+            "last",
+            "Skill",
+            json!({"skill": "flow:review"}),
+        )
+        .as_bytes(),
+    )
+    .unwrap();
+    let started = std::time::Instant::now();
+    let read_more = read(&record, Resume::At(offset)).unwrap();
+    let took = started.elapsed();
+    assert_eq!(read_more.uses.len(), 1);
+    assert!(
+        took < appended,
+        "one turn took {took:?}, budget {appended:?}"
+    );
+}

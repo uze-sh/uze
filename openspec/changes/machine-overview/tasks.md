@@ -37,7 +37,7 @@
 - [x] 5.1 Tests that nothing is collected by: an agent launch, the shim, any CLI command, the modal opened on another screen; and that leaving the Overview cancels a collection
 - [x] 5.2 A test that the Overview's first frame draws from the snapshot with every integration blocked
 - [x] 5.3 A test that no session transcript is opened beyond Codex's first line (a sentinel in a transcript's body never reaches the snapshot)
-- [ ] 5.5 Extend 5.3 to uses: a sentinel phrase beside a skill's name in every harness's record reaches neither the snapshot nor `cache/machine-usage.json`
+- [x] 5.5 Extend 5.3 to uses: a sentinel phrase beside a skill's name in every harness's record reaches neither the snapshot nor `cache/machine-usage.json`
 - [x] 5.4 A benchmark with a pass/fail budget: a full collection over a machine with 500 resources under 300 ms excluding the `opencode stats` spawn
 
 ## 7. Uses
@@ -50,7 +50,7 @@
 - [ ] 7.6 OpenCode reader: sessions updated in the period without opening its database, `session export` only for changed ones with a timeout; `skills[]`/`agents[]`, `skill`/`subagent` tools, `<key>_<tool>`; measure the listing and export cost in the Lab first
 - [x] 7.7 Antigravity reader: `[Slash Command]`/`<SKILL>`, `read_file`/`view_file`/`run_command` of an absolute `SKILL.md` not in an `ERROR` step, `invoke_subagent`, `call_mcp_tool`, subagents' transcripts; fixture tests
 - [x] 7.8 Collection stage 4 (uses) after sessions; the `uses` column (blank for hooks and rules, `?` unknown, `~` estimate), sortable, and `unused` in the status column and the menu's marks
-- [ ] 7.9 Benchmark: first reading and an incremental one over generated records of realistic size, with a pass/fail budget; check on the real machine without printing any record
+- [x] 7.9 Benchmark: first reading and an incremental one over generated records of realistic size, with a pass/fail budget; check on the real machine without printing any record
 
 ## 6. Architecture
 
