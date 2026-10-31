@@ -80,6 +80,7 @@ mod agent_context;
 mod flags;
 mod generate;
 mod hooks;
+mod inventory;
 mod mcp;
 mod plugin;
 mod provision;
@@ -184,6 +185,15 @@ impl AntigravityIntegration {
         }
     }
 
+    /// Where this installation keeps what the machine Overview lists.
+    fn inventory_locations(&self) -> inventory::Locations<'_> {
+        inventory::Locations {
+            cli_root: &self.cli_root,
+            config_dir: &self.config_dir,
+            gemini_root: self.cli_root.parent().unwrap_or(&self.cli_root),
+        }
+    }
+
     /// Env-based constructor for the CLI composition root (`registry.rs`).
     pub fn from_env(uze_home: UzeHome) -> Result<Self> {
         let home = uze_core::user_home().ok_or(UzeError::MissingHomeDirectory)?;
@@ -237,6 +247,21 @@ impl IntegrationPort for AntigravityIntegration {
 
     fn aliases(&self) -> &'static [&'static str] {
         &["agy", "antigravity-cli"]
+    }
+
+    fn machine_inventory(&self) -> Option<Vec<uze_core::inventory::FoundResource>> {
+        self.cli_root
+            .is_dir()
+            .then(|| self.inventory_locations().inventory())
+    }
+
+    fn session_counts(
+        &self,
+        now: std::time::SystemTime,
+    ) -> Option<uze_core::inventory::SessionCounts> {
+        self.cli_root
+            .is_dir()
+            .then(|| self.inventory_locations().session_counts(now))
     }
 
     /// Skills stay model-discoverable and slash-invocable (ADR-031) — same
