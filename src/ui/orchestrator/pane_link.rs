@@ -68,19 +68,27 @@ pub(super) struct PaneLinks {
     /// is the program's after all.
     opening: Option<HeldClick>,
     asked: HashSet<PathBuf>,
-    answered: HashMap<PathBuf, (Instant, bool)>,
+    answered: HashMap<PathBuf, (Instant, OnDisk)>,
 }
 
 /// What became of a pointer resting on a link, or a click on one.
 #[derive(Debug, Eq, PartialEq)]
 pub(super) enum Pointed {
-    /// Its path is there.
-    Found,
+    /// Its path is there, a directory or not.
+    Found { directory: bool },
     /// Its path is not, or not inside a checkout the code surface shows.
     Missing,
     /// Not known yet: `Some` is the path to ask about, `None` when it is
     /// already being asked.
     Asking(Option<PathBuf>),
+}
+
+/// What the disk said a path is.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum OnDisk {
+    Missing,
+    File,
+    Directory,
 }
 
 /// A ctrl+click held back while its path is asked about: the release, and
@@ -96,8 +104,8 @@ pub(super) struct HeldClick {
 /// What an answer settles about a held click.
 #[derive(Debug, Eq, PartialEq)]
 pub(super) enum Settled {
-    /// Its path is there: open it.
-    Open(PaneLink),
+    /// Its path is there: open it, a directory or not.
+    Open { link: PaneLink, directory: bool },
     /// Its path is not: the click goes to the program it was held from.
     Release(HeldClick),
 }
@@ -105,8 +113,8 @@ pub(super) enum Settled {
 /// What a ctrl+click on a path comes to.
 #[derive(Debug, Eq, PartialEq)]
 pub(super) enum Clicked {
-    /// Its path is there: open it.
-    Open(PaneLink),
+    /// Its path is there: open it, a directory or not.
+    Open { link: PaneLink, directory: bool },
     /// Not known yet: held until the answer settles it. `Some` is the path
     /// to ask about.
     Waiting(Option<PathBuf>),
@@ -130,7 +138,7 @@ impl PaneLinks {
                 None
             }
             Some(link) => match self.point(&link, now) {
-                Pointed::Found => {
+                Pointed::Found { .. } => {
                     self.hovered = Some(link);
                     None
                 }
@@ -157,7 +165,10 @@ impl PaneLinks {
     /// one before must have been let go of (`let_go`).
     pub(super) fn click(&mut self, click: HeldClick, now: Instant) -> Clicked {
         match self.point(&click.link, now) {
-            Pointed::Found => Clicked::Open(click.link),
+            Pointed::Found { directory } => Clicked::Open {
+                link: click.link,
+                directory,
+            },
             Pointed::Missing => Clicked::NotALink,
             Pointed::Asking(ask) => {
                 self.opening = Some(click);
@@ -178,14 +189,15 @@ impl PaneLinks {
     pub(super) fn absorb(
         &mut self,
         target: PathBuf,
-        found: bool,
+        on_disk: OnDisk,
         now: Instant,
     ) -> (bool, Option<Settled>) {
         self.asked.remove(&target);
         if self.answered.len() >= REMEMBERED_AT_MOST {
             self.answered.clear();
         }
-        self.answered.insert(target.clone(), (now, found));
+        self.answered.insert(target.clone(), (now, on_disk));
+        let found = on_disk != OnDisk::Missing;
         let mut drawn = false;
         if self
             .waiting
@@ -202,7 +214,10 @@ impl PaneLinks {
         }
         let settled = match self.opening.take() {
             Some(click) if click.link.target == target => Some(if found {
-                Settled::Open(click.link)
+                Settled::Open {
+                    link: click.link,
+                    directory: on_disk == OnDisk::Directory,
+                }
             } else {
                 Settled::Release(click)
             }),
@@ -230,13 +245,11 @@ impl PaneLinks {
 
     fn point(&mut self, link: &PaneLink, now: Instant) -> Pointed {
         match self.answered.get(&link.target) {
-            Some((at, found)) if now.duration_since(*at) < REMEMBERED => {
-                if *found {
-                    Pointed::Found
-                } else {
-                    Pointed::Missing
-                }
-            }
+            Some((at, on_disk)) if now.duration_since(*at) < REMEMBERED => match on_disk {
+                OnDisk::Missing => Pointed::Missing,
+                OnDisk::File => Pointed::Found { directory: false },
+                OnDisk::Directory => Pointed::Found { directory: true },
+            },
             _ if self.asked.insert(link.target.clone()) => {
                 Pointed::Asking(Some(link.target.clone()))
             }
@@ -611,7 +624,10 @@ mod tests {
             (false, None),
             "asked once"
         );
-        assert_eq!(links.absorb(PathBuf::from("/a"), true, now), (true, None));
+        assert_eq!(
+            links.absorb(PathBuf::from("/a"), OnDisk::File, now),
+            (true, None)
+        );
         assert!(links.hovered.is_some());
         assert_eq!(
             links.hover(Some(link("/a", 0)), now),
@@ -624,7 +640,7 @@ mod tests {
             Some(PathBuf::from("/missing"))
         );
         assert_eq!(
-            links.absorb(PathBuf::from("/missing"), false, now),
+            links.absorb(PathBuf::from("/missing"), OnDisk::Missing, now),
             (false, None)
         );
         assert!(links.hovered.is_none());
@@ -651,14 +667,23 @@ mod tests {
             links.click(held("/a"), now),
             Clicked::Waiting(Some(PathBuf::from("/a")))
         );
-        let (_, settled) = links.absorb(PathBuf::from("/a"), true, now);
-        assert_eq!(settled, Some(Settled::Open(link("/a", 0))));
+        let (_, settled) = links.absorb(PathBuf::from("/a"), OnDisk::File, now);
+        assert_eq!(
+            settled,
+            Some(Settled::Open {
+                link: link("/a", 0),
+                directory: false
+            })
+        );
         assert_eq!(
             links.click(held("/a"), now),
-            Clicked::Open(link("/a", 0)),
+            Clicked::Open {
+                link: link("/a", 0),
+                directory: false
+            },
             "remembered"
         );
-        let _ = links.absorb(PathBuf::from("/b"), false, now);
+        let _ = links.absorb(PathBuf::from("/b"), OnDisk::Missing, now);
         assert_eq!(links.click(held("/b"), now), Clicked::NotALink);
     }
 
@@ -667,7 +692,7 @@ mod tests {
         let now = Instant::now();
         let mut links = PaneLinks::default();
         let _ = links.click(held("/gone"), now);
-        let (_, settled) = links.absorb(PathBuf::from("/gone"), false, now);
+        let (_, settled) = links.absorb(PathBuf::from("/gone"), OnDisk::Missing, now);
         assert_eq!(settled, Some(Settled::Release(held("/gone"))));
     }
 
@@ -677,7 +702,7 @@ mod tests {
         let mut links = PaneLinks::default();
         let _ = links.click(held("/a"), now);
         assert_eq!(links.let_go(), Some(held("/a")));
-        assert_eq!(links.absorb(PathBuf::from("/a"), true, now).1, None);
+        assert_eq!(links.absorb(PathBuf::from("/a"), OnDisk::File, now).1, None);
     }
 
     #[test]
@@ -685,7 +710,7 @@ mod tests {
         let now = Instant::now();
         let mut links = PaneLinks::default();
         let _ = links.hover(Some(link("/a", 0)), now);
-        let _ = links.absorb(PathBuf::from("/a"), false, now);
+        let _ = links.absorb(PathBuf::from("/a"), OnDisk::Missing, now);
         assert_eq!(
             links.hover(Some(link("/a", 0)), now + REMEMBERED).1,
             Some(PathBuf::from("/a")),

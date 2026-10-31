@@ -254,6 +254,17 @@ pub(super) fn open_spec(model: &mut WorkspaceModel) {
 /// path was written relative to the project and may sit outside a tab
 /// that is somewhere below it.
 pub(super) fn open_code_at(model: &mut WorkspaceModel, project: &Path, target: &Path) {
+    open_code_on(model, project, target, target.is_dir());
+}
+
+/// The code surface, opened on `target` already known to be a `directory`
+/// or not, so opening it asks the disk nothing.
+pub(super) fn open_code_on(
+    model: &mut WorkspaceModel,
+    project: &Path,
+    target: &Path,
+    directory: bool,
+) {
     let Some(slot) = code_slot(model) else {
         return;
     };
@@ -262,7 +273,7 @@ pub(super) fn open_code_at(model: &mut WorkspaceModel, project: &Path, target: &
     }
     let entry = Entry::Path {
         target: target.to_path_buf(),
-        directory: target.is_dir(),
+        directory,
     };
     if let Some(engine) = code_engine(model) {
         engine.enter(code::SURFACE, entry);

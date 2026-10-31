@@ -43,7 +43,7 @@ impl Attach<'_> {
             area,
         };
         match self.model.pane_links.click(click, Instant::now()) {
-            Clicked::Open(link) => self.model.open_pane_link(&link),
+            Clicked::Open { link, directory } => self.model.open_pane_link(&link, directory),
             Clicked::Waiting(Some(target)) => {
                 spawn_path_check(target, self.channels.path_checks.sender.clone());
             }
@@ -59,10 +59,12 @@ impl Attach<'_> {
             let (drawn, settled) =
                 self.model
                     .pane_links
-                    .absorb(check.target, check.found, Instant::now());
+                    .absorb(check.target, check.on_disk, Instant::now());
             self.model.dirty |= drawn;
             match settled {
-                Some(Settled::Open(link)) => self.model.open_pane_link(&link),
+                Some(Settled::Open { link, directory }) => {
+                    self.model.open_pane_link(&link, directory);
+                }
                 Some(Settled::Release(click)) => self.hand_click_to_program(&click),
                 None => {}
             }
@@ -136,13 +138,14 @@ impl WorkspaceModel {
     }
 
     /// Opens `link` in the code surface, unless the pane it was written in
-    /// is no longer the one in front.
-    fn open_pane_link(&mut self, link: &PaneLink) {
+    /// is no longer the one in front. Whether it is a `directory` was
+    /// answered off this thread, with whether it is there at all.
+    fn open_pane_link(&mut self, link: &PaneLink, directory: bool) {
         if link.pane != self.focused_pane() || !self.shows_pane() {
             return;
         }
         self.pane_links.leave();
-        open_code_at(self, &link.root, &link.target);
+        open_code_on(self, &link.root, &link.target, directory);
         self.dirty = true;
     }
 }
