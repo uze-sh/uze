@@ -158,17 +158,27 @@ fn a_program_reads_its_grants_and_nothing_else() {
     assert!(read.stdout.is_empty(), "{read:?}");
 }
 
+/// The program the execution tests copy, which runs in a container when
+/// started as itself. `cmd.exe` cannot start it there: inside a container
+/// cmd starts no program at all, so each run here starts it directly.
+fn whoami() -> String {
+    system("System32\\whoami.exe")
+}
+
 #[test]
 fn a_read_grant_executes_nothing() {
     let root = root();
     let checkout = root.path().join("checkout");
     std::fs::create_dir_all(&checkout).unwrap();
-    let copy = checkout.join("whoami.exe");
-    std::fs::copy(system("System32\\whoami.exe"), &copy).unwrap();
-    let executed = shell(
-        &confinement(&[&checkout], &[], false),
-        &copy.display().to_string(),
+    let confinement = confinement(&[&checkout], &[], false);
+    let original = run(&confinement, &[&whoami()]);
+    assert!(
+        original.status.success(),
+        "whoami runs in a container: {original:?}"
     );
+    let copy = checkout.join("whoami.exe");
+    std::fs::copy(whoami(), &copy).unwrap();
+    let executed = run(&confinement, &[&copy.display().to_string()]);
     assert!(!executed.status.success(), "{executed:?}");
     assert!(executed.stdout.is_empty(), "{executed:?}");
 }
@@ -179,20 +189,21 @@ fn a_write_grant_executes_nothing() {
     let scratch = root.path().join("scratch");
     std::fs::create_dir_all(&scratch).unwrap();
     let confinement = confinement(&[], &[&scratch], false);
+    let original = run(&confinement, &[&whoami()]);
+    assert!(
+        original.status.success(),
+        "whoami runs in a container: {original:?}"
+    );
     let copy = scratch.join("whoami.exe");
     let copied = shell(
         &confinement,
-        &format!(
-            "copy /y {} {}",
-            system("System32\\whoami.exe"),
-            copy.display()
-        ),
+        &format!("copy /y {} {}", whoami(), copy.display()),
     );
     assert!(
         copied.status.success(),
         "the copy is a write it may make: {copied:?}"
     );
-    let executed = shell(&confinement, &copy.display().to_string());
+    let executed = run(&confinement, &[&copy.display().to_string()]);
     assert!(!executed.status.success(), "{executed:?}");
     assert!(executed.stdout.is_empty(), "{executed:?}");
 }
@@ -265,7 +276,7 @@ fn nothing_it_starts_outlives_its_run() {
             std::time::Instant::now() < deadline,
             "process {child} outlived the run that started it"
         );
-        std::thread::yield_now();
+        std::thread::sleep(std::time::Duration::from_millis(50));
     }
 }
 
@@ -282,11 +293,13 @@ fn processor_time_past_the_bound_ends_the_program() {
             "-NoProfile",
             "-NonInteractive",
             "-Command",
-            "$s = [Diagnostics.Stopwatch]::StartNew(); while ($s.Elapsed.TotalSeconds -lt 60) {}; 'finished'",
+            "'started'; $s = [Diagnostics.Stopwatch]::StartNew(); while ($s.Elapsed.TotalSeconds -lt 60) {}; 'finished'",
         ],
     );
+    let said = stdout(&output);
+    assert!(said.contains("started"), "the program ran: {output:?}");
     assert!(!output.status.success(), "{output:?}");
-    assert!(!stdout(&output).contains("finished"), "{output:?}");
+    assert!(!said.contains("finished"), "{output:?}");
     assert!(started.elapsed() < std::time::Duration::from_secs(45));
 }
 

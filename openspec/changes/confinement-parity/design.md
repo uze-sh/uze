@@ -161,6 +161,10 @@ cannot be closed. The security page says that a variable saved with
 - [`NUL` on Windows Server] → Server 2025 does not let an app container
   open it, while Windows 11 does. A program that opens `NUL` itself fails
   there. The security page says so.
+- [`cmd` starts no program inside a container] → `cmd /c tool.exe`
+  answers "Access is denied" for every program, while the helper starts
+  the same programs directly, PowerShell starts them too, and `cmd`'s own
+  commands work. The security page says so.
 - [`cmd`'s `dir` and `cd /d`] → these read the attributes of every parent
   directory, which a container is not granted, so they fail where
   PowerShell, Git and Python succeed. Granting metadata on every parent
