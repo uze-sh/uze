@@ -4,10 +4,11 @@
 use super::*;
 use crate::ui::orchestrator::pane_link::{self, Clicked, HeldClick, PaneLink, Settled};
 
-/// Whether the pointer's gesture follows links: ctrl, as in a terminal,
-/// or the platform key a terminal reports in its place.
+/// Whether the pointer's gesture follows links: ctrl, as in a terminal.
+/// A terminal reports shift, alt and ctrl with the mouse and nothing else,
+/// so the platform's own link key (cmd on a Mac) never reaches here.
 fn follows_links(modifiers: KeyModifiers) -> bool {
-    modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::SUPER)
+    modifiers.contains(KeyModifiers::CONTROL)
 }
 
 impl Attach<'_> {
