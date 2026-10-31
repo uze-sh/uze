@@ -81,6 +81,14 @@ pub use uze_core::exposure::PackageEnvelope;
 
 /// Paths as the platform compares them: what a root shown or compared in
 /// the TUI must agree with, since the domain hands it roots this way.
+/// What the machine Overview shows: the read model `src/` draws, so it
+/// never names `uze_core`.
+pub mod machine_overview {
+    pub use uze_core::inventory::{
+        HarnessReport, Location, MachineOverview, Origin, OverviewResource, PERIODS, ResourceKind,
+        SessionCounts, Status,
+    };
+}
 pub use uze_core::path;
 
 /// The one writer for anything UZE owns. The binary writes its own update

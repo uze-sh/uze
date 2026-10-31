@@ -240,7 +240,9 @@ fn receipt_owns(artifact: &ManagedArtifact, definition: &Path, found: &FoundReso
         }
         // A hook entry is known by the wrapper it runs, which uze generated.
         ManagedArtifact::HookConfigEntry {
-            entry_name, wrapper, ..
+            entry_name,
+            wrapper,
+            ..
         } => {
             matches!(claim, Some(Claim::Entry(name)) if name == entry_name)
                 || matches!(&found.runs, Some(Runs::Shell(line) | Runs::Program(line))
