@@ -3,7 +3,9 @@
 
 use std::{ffi::OsString, io, os::unix::process::CommandExt, path::Path, process::Command};
 
-use super::{Availability, Confinement, Filesystem, rlimit, seatbelt};
+use super::{Availability, Confinement, rlimit, seatbelt};
+
+pub(super) const SYSTEM: super::System = super::UNIX;
 
 const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
 
@@ -11,15 +13,7 @@ pub(super) fn availability() -> Availability {
     if !Path::new(SANDBOX_EXEC).is_file() {
         return Availability::unavailable();
     }
-    Availability {
-        filesystem: Filesystem::Seatbelt,
-        truncate: true,
-        tcp: true,
-        ioctl_dev: true,
-        scoping: true,
-        syscall_filter: false,
-        memory: false,
-    }
+    Availability::of_seatbelt()
 }
 
 pub(super) fn enter(confinement: &Confinement, argv: &[OsString]) -> io::Error {
@@ -59,5 +53,6 @@ fn real_paths(confinement: &Confinement) -> io::Result<Confinement> {
         devices: resolve(&confinement.devices)?,
         network: confinement.network,
         limits: confinement.limits,
+        namespace: confinement.namespace.clone(),
     })
 }
