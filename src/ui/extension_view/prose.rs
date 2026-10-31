@@ -34,15 +34,6 @@ pub(super) fn token(role: Role) -> Token {
     }
 }
 
-/// Rendered Markdown as lines a wrapped `Paragraph` can draw, styled the
-/// way the code surface styles its preview.
-pub(crate) fn prose(lines: &[ContentLine]) -> Vec<Line<'static>> {
-    lines
-        .iter()
-        .map(|line| Line::from(line.spans.iter().map(styled).collect::<Vec<_>>()))
-        .collect()
-}
-
 /// Rendered Markdown folded to `width` the way prose is read: at word
 /// boundaries, with each continuation hung under where its line's text
 /// began.

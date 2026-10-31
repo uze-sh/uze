@@ -215,11 +215,13 @@ fn rendered_notes(body: &str, width: u16) -> Vec<Line<'static>> {
             .as_ref()
             .is_some_and(|notes| notes.body == body && notes.theme == theme && notes.width == width)
         {
-            let lines = extension_view::prose(&uze_extensions::shared::markdown::render(
-                body,
-                &theme,
-                width.into(),
-            ));
+            // Folded here rather than left to the paragraph's wrap, which
+            // starts a carried-on line back at the edge: an item's goes on
+            // under its text, past the bullet.
+            let lines = uze_extensions::shared::markdown::render(body, &theme, width.into())
+                .iter()
+                .flat_map(|line| extension_view::prose_rows(line, width.into()))
+                .collect();
             *cached = Some(RenderedNotes {
                 body: body.to_owned(),
                 theme,
@@ -387,6 +389,40 @@ mod tests {
         assert_eq!(
             modal.act(Action::Activate),
             Outcome::OpenLink(crate::self_update::changelog_entry("9.0.1"))
+        );
+    }
+
+    /// A list item too long for its row goes on under its own text, past
+    /// the bullet, never back at the edge where it reads as a new item.
+    #[test]
+    fn a_long_item_goes_on_under_its_text() {
+        let mut modal = ReleaseNotesModal::opening("9.0.1");
+        modal.absorb(
+            "9.0.1",
+            Some(notes(
+                "9.0.1",
+                "### Fixes\n\n- **workspace:** a fix described in words enough to need a \
+                 second row in any modal this test draws (fa73394)",
+            )),
+        );
+        let screen = drawn(&modal);
+        let rows: Vec<&str> = screen.lines().collect();
+        let item = rows
+            .iter()
+            .position(|row| row.contains("• workspace:"))
+            .expect("the item is drawn");
+        // In columns, not bytes: the bullet and the border are wider than one.
+        let column = |row: &str, at: usize| row[..at].chars().count();
+        let text_at = column(rows[item], rows[item].find("workspace").unwrap());
+        let next = rows[item + 1];
+        let carried_at = column(
+            next,
+            next.find(|c: char| !c.is_whitespace() && c != '│').unwrap(),
+        );
+        assert_eq!(
+            carried_at, text_at,
+            "under its text:\n{}\n{}",
+            rows[item], next
         );
     }
 
