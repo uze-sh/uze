@@ -85,7 +85,11 @@ scenes:
         # agent's row no longer being drawn anywhere.
         expect: '\A(?![\s\S]*agent 1)'
         expect_timeout: 20
-        pause: 2.0
+      # The record of its end is a reconciliation's, written after the row
+      # goes: two seconds were not enough on the slowest runner.
+      - wait: agents
+        agents: { live: 0 }
+        timeout: 30
     then:
       - agents: { count: 1, live: 0 }
         about: the agent is recorded as ended, and still recorded
