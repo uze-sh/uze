@@ -32,8 +32,7 @@ fn install_via_marketplace_json(
     package: &std::path::Path,
     path: &std::ffi::OsStr,
 ) -> std::process::Output {
-    let (market_args, install_args) =
-        uze_testkit::marketplace::marketplace_install_args(home, package);
+    let (market_args, install_args) = uze_testkit::marketplace::marketplace_add_args(home, package);
     let base = || {
         Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", uze_home)
@@ -70,8 +69,7 @@ fn install_via_marketplace(
     package: &std::path::Path,
     path: &std::ffi::OsStr,
 ) -> std::process::Output {
-    let (market_args, install_args) =
-        uze_testkit::marketplace::marketplace_install_args(home, package);
+    let (market_args, install_args) = uze_testkit::marketplace::marketplace_add_args(home, package);
     let base = || {
         Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", uze_home)
@@ -940,7 +938,7 @@ fn setup_then_add_attaches_transparently_without_a_separate_sync_step() {
     // either package and still decomposes at the capability level, so its
     // resource-level attachment output is unchanged.
     let (market_args, install_args) =
-        uze_testkit::marketplace::marketplace_install_args(&home, &package_fixture());
+        uze_testkit::marketplace::marketplace_add_args(&home, &package_fixture());
     run(&market_args.iter().map(String::as_str).collect::<Vec<_>>());
     // The route each harness took is the detailed report's to say.
     let mut add_args: Vec<&str> = install_args.iter().map(String::as_str).collect();
@@ -1101,7 +1099,7 @@ fn setup_then_add_attaches_the_mcp_fixture_idempotently_and_removal_works() {
     // resource-level `mcp add` for either. Opencode has no package envelope
     // and stays resource-level as a native `mcp.servers` config entry.
     let (market_args, install_args) =
-        uze_testkit::marketplace::marketplace_install_args(&home, &package);
+        uze_testkit::marketplace::marketplace_add_args(&home, &package);
     run(&market_args.iter().map(String::as_str).collect::<Vec<_>>());
     // The route each harness took is the detailed report's to say.
     let mut add_args: Vec<&str> = install_args.iter().map(String::as_str).collect();
@@ -1252,7 +1250,7 @@ fn plugin_remove_uses_the_package_centric_application_flow() {
 fn a_name_typed_in_another_case_resolves_to_the_one_on_record() {
     let home = temporary_home("cli-typed-case");
     let (market_args, install_args) =
-        uze_testkit::marketplace::marketplace_install_args(&home, &package_fixture());
+        uze_testkit::marketplace::marketplace_add_args(&home, &package_fixture());
     let uze = |args: &[String]| {
         Command::new(env!("CARGO_BIN_EXE_uze"))
             .env("UZE_HOME", &home)
@@ -1582,7 +1580,7 @@ fn a_machine_update_of_a_linked_edit_says_it_moved_from_the_working_tree() {
         market.to_str().unwrap(),
     ]);
     uze(&["agent", "plugin", "create", "greet", "--market", "tools"]);
-    uze(&["install", "-m", "greet@tools"]);
+    uze(&["add", "-m", "greet@tools"]);
     let stored_skill = || {
         let store = uze_home.join("store/plugins");
         [store.join("tools/greet"), store.join("greet")]
@@ -1653,7 +1651,7 @@ fn a_machine_update_of_a_linked_edit_says_it_moved_from_the_working_tree() {
                 .success()
         );
     }
-    in_project(&["install", "greet@tools"]);
+    in_project(&["add", "greet@tools"]);
     std::fs::write(
         &skill,
         format!(

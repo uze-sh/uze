@@ -18,7 +18,7 @@ fn fresh_machine_installs_canonical_plugin_and_inspects_healthy() {
     let _harnesses = install_fake_harnesses(&env);
 
     // The default `uze` plugin is seeded even on an empty machine.
-    let (market_args, install_args) = uze_testkit::marketplace::marketplace_install_args(
+    let (market_args, install_args) = uze_testkit::marketplace::marketplace_add_args(
         &env.home,
         &fixtures::canonical("skill-plugin"),
     );

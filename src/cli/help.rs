@@ -150,7 +150,7 @@ pub(crate) const ROOT_COMMANDS: &[(progress::CommandGroup, &[RootCommand])] = &[
         &[
             (
                 "add",
-                "<plugin@market> [-m]",
+                "<plugin@market>",
                 "Add a plugin from its marketplace",
             ),
             ("install", "[path]", "Install what this project declares"),

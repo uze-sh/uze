@@ -19,7 +19,7 @@ use crate::util::{install_fake_harnesses, uze_bin};
 /// Registers a marketplace carrying one canonical plugin and returns the
 /// plugin's `name@market` spelling.
 fn a_marketplace(env: &TestEnvironment) -> String {
-    let (market_args, install_args) = uze_testkit::marketplace::marketplace_install_args(
+    let (market_args, install_args) = uze_testkit::marketplace::marketplace_add_args(
         env.root(),
         &fixtures::canonical("skill-plugin"),
     );
@@ -45,7 +45,7 @@ fn the_package_manager_alone_never_meets_the_workspace() {
 
     let setup = env.run(uze_bin(), &["setup"]);
     let plugin = a_marketplace(&env);
-    env.run_ok(uze_bin(), &["install", &plugin]);
+    env.run_ok(uze_bin(), &["add", &plugin]);
     // Declaring and converging, as a teammate cloning the project would.
     env.run_ok(uze_bin(), &["install"]);
 

@@ -75,7 +75,7 @@ impl World {
     }
 
     fn installed(&self) -> Output {
-        let installed = self.uze(&self.project, &["install", "gsd@studio"]);
+        let installed = self.uze(&self.project, &["add", "gsd@studio"]);
         assert!(installed.status.success(), "{}", stderr(&installed));
         installed
     }
@@ -157,7 +157,7 @@ fn an_install_of_what_the_project_declares_says_the_same() {
 #[test]
 fn an_install_from_an_agents_pane_says_an_agent_cannot_enable_it() {
     let world = World::new("cli-extensions-install-agent", str::to_owned);
-    let installed = world.uze_as_an_agent(&world.project, &["install", "gsd@studio"]);
+    let installed = world.uze_as_an_agent(&world.project, &["add", "gsd@studio"]);
     assert!(installed.status.success(), "{}", stderr(&installed));
     let said = format!("{}{}", stdout(&installed), stderr(&installed));
     assert!(

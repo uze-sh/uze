@@ -28,8 +28,8 @@ pub fn stage(directory: &Path, marketplace_json: &str, plugins: &[(String, PathB
 
 /// Stages `package` as a one-plugin marketplace named `test` under `root`
 /// and returns the command sequences a test must run, in order:
-/// `(["market", "add", <dir>], ["plugin", "install", "<name>@test"])`.
-pub fn marketplace_install_args(root: &Path, package: &Path) -> (Vec<String>, Vec<String>) {
+/// `(["market", "add", <dir>], ["add", "-m", "<name>@test"])`.
+pub fn marketplace_add_args(root: &Path, package: &Path) -> (Vec<String>, Vec<String>) {
     let market = root.join("market");
     let name = package_manifest_name(package);
     let manifest = serde_json::json!({
@@ -54,11 +54,7 @@ pub fn marketplace_install_args(root: &Path, package: &Path) -> (Vec<String>, Ve
             "add".to_owned(),
             market.to_string_lossy().into_owned(),
         ],
-        vec![
-            "install".to_owned(),
-            "-m".to_owned(),
-            format!("{name}@test"),
-        ],
+        vec!["add".to_owned(), "-m".to_owned(), format!("{name}@test")],
     )
 }
 
@@ -81,7 +77,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stages_a_marketplace_and_returns_market_and_install_args() {
+    fn stages_a_marketplace_and_returns_market_and_add_args() {
         let scratch = crate::temp::TempDir::new("testkit-market");
         let root = scratch.path();
         let package = root.join("pkg");
@@ -91,11 +87,11 @@ mod tests {
             r#"{"name":"demo","skills":{}}"#,
         )
         .unwrap();
-        let (market, install) = marketplace_install_args(root, &package);
+        let (market, install) = marketplace_add_args(root, &package);
         assert_eq!(market[0], "market");
         assert_eq!(market[1], "add");
         assert!(market[2].ends_with("market"));
-        assert_eq!(install, vec!["install", "-m", "demo@test"]);
+        assert_eq!(install, vec!["add", "-m", "demo@test"]);
         let marketplace: serde_json::Value = serde_json::from_str(
             &fs::read_to_string(root.join("market/marketplace.json")).unwrap(),
         )
