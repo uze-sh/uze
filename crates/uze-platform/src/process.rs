@@ -242,8 +242,10 @@ mod tests {
         command
             // Said by the stray itself, once it is in a session of its own:
             // `$!` is known before `setsid` runs, while a group signal would
-            // still reach it.
-            .args(["-c", "setsid sh -c 'echo $$; exec sleep 30' & wait"])
+            // still reach it. And from a shell that execs nothing after (the
+            // `:` keeps it from exec'ing its last command): one still in
+            // `exec` reads its environment empty, the mark with it.
+            .args(["-c", "setsid sh -c 'echo $$; sleep 30; :' & wait"])
             .env(mark.variable(), mark.value())
             .stdout(std::process::Stdio::piped());
         let (mut leader, _tree) = spawn_tree(&mut command, Seat::NoTerminal).unwrap();
