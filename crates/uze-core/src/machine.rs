@@ -15,6 +15,7 @@ pub mod extension_program;
 pub mod features;
 pub mod harness_runtime;
 pub mod home;
+pub mod inventory;
 pub mod launcher;
 pub mod mcp;
 pub mod path;

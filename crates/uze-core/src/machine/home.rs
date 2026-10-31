@@ -635,6 +635,12 @@ impl UzeHome {
         self.cache_dir().join("shell.json")
     }
 
+    /// The last machine Overview collected (see `machine::inventory`):
+    /// observed again whenever it is missing or cannot be read.
+    pub fn machine_overview_cache_path(&self) -> PathBuf {
+        self.cache_dir().join("machine-overview.json")
+    }
+
     /// Cross-invocation cache of per-receipt attachment *read* results
     /// (see `application::inspection_cache` and ADR 018). Same
     /// reconstructable-optimization caveat as the detection cache: never
