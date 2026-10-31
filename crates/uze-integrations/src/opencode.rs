@@ -1106,7 +1106,7 @@ const FACTS: &[HarnessFact] = &[
     },
 ];
 /// The version the facts above were measured on.
-const VERSION: &str = "2.0.29";
+const VERSION: &str = "2.2.5";
 
 /// Bun, to load a generated plugin in a test. A developer without it skips
 /// those checks; CI installs it, so there its absence fails the job rather

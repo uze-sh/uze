@@ -1,7 +1,7 @@
 //! The flags an OpenCode launch takes, as offered to an operator's
 //! overrides, and the variables this integration reads.
 //!
-//! Described from `help.txt`, the `--help` of OpenCode 2.1.3; every flag it
+//! Described from `help.txt`, the `--help` of OpenCode 2.2.5; every flag it
 //! defines is catalogued or left out for a reason the tests name. Which
 //! server holds the agent's session is what the read-back asks of the
 //! background service, so `--server` is UZE's, and `--standalone` is marked

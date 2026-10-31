@@ -1,7 +1,7 @@
 //! The flags a Claude Code launch takes, as offered to an operator's
 //! overrides, and the variables this integration sets or reads.
 //!
-//! Described from `help.txt`, the `--help` of Claude Code 2.1.312; the
+//! Described from `help.txt`, the `--help` of Claude Code 2.1.314; the
 //! tests below fail unless every flag the snapshot defines is catalogued or
 //! left out for a reason they name, and the Lab fails when the snapshot no
 //! longer matches the release. Launch modes that take the session out of

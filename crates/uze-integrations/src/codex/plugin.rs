@@ -204,9 +204,9 @@ fn inspect_codex_plugin(
         };
     }
     // Unfiltered, the listing also covers the remote catalogue Codex
-    // fetches when its cache has expired: twenty-five seconds on codex-cli
-    // 0.166, against fifty milliseconds for the one marketplace the receipt
-    // belongs to.
+    // refetches once its cache is three hours old: twenty-five seconds on
+    // codex-cli 0.166, against fifty milliseconds for the one marketplace
+    // the receipt belongs to.
     let plugins = match json(
         executable,
         command_home,

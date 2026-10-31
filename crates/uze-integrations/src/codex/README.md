@@ -109,7 +109,7 @@ dropped. `attach_package` then ensures the derived catalogue is registered as
 a Codex marketplace and runs `codex plugin add <id>@uze-local`, idempotent
 via a pre-check against `codex plugin list --json --marketplace <name>`:
 unfiltered, the listing waits on Codex's remote catalogue whenever its
-cache has expired (25s on codex-cli 0.166, against 50ms filtered).
+cache is three hours old (25s on codex-cli 0.166, against 50ms filtered).
 
 **Generated Native Package** (`codex/generate.rs`, ADR-013): mirrors
 Claude's `claude/generate.rs` structurally, adapted to Codex's own manifest
