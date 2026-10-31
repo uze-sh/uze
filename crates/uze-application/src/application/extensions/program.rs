@@ -56,6 +56,10 @@ const SYSTEM_READS: &[&str] = &[
     "/proc/sys/kernel/osrelease",
 ];
 
+/// What the objects a confinement makes for itself are named under (on
+/// Windows, each run's container and the capability a grant writes).
+const CONFINEMENT_NAMESPACE: &str = "uze";
+
 /// Where a declared path beneath it is a device: spoken to, not read.
 const DEVICES: &str = "/dev/";
 
@@ -444,6 +448,7 @@ fn confinement(
         devices: existing(devices),
         network: false,
         limits: Limits::with_cpu_seconds(asked.program.time_limit().as_secs().saturating_mul(2)),
+        namespace: CONFINEMENT_NAMESPACE.to_owned(),
     }
 }
 
@@ -573,6 +578,7 @@ fn curl_confinement(run: &CurlRun<'_>, scratch: &Path, certificates: Vec<PathBuf
         devices: Vec::new(),
         network: true,
         limits: Limits::with_cpu_seconds(run.time_limit.as_secs().saturating_mul(2)),
+        namespace: CONFINEMENT_NAMESPACE.to_owned(),
     }
 }
 

@@ -8,6 +8,7 @@ mod extension_only;
 // Windows proves the same reaches with its own `cmd.exe`.
 #[cfg(unix)]
 mod extension_programs;
+// Windows' counterpart, its probe the system's cmd.exe.
 #[cfg(windows)]
 mod extension_programs_windows;
 mod install;

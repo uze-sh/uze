@@ -70,8 +70,6 @@ const ALL_APPLICATION_PACKAGES: &str = "S-1-15-2-1";
 /// The well-known `internetClient` capability: outbound connections to the
 /// Internet, never to the loopback or the local network.
 const INTERNET_CLIENT: &str = "S-1-15-3-1";
-/// Every run's profile starts with this, followed by the helper's pid.
-const PROFILE_PREFIX: &str = "uze.run.";
 /// Where Windows records each AppContainer profile, by SID, under `HKCU`.
 /// `SE_GROUP_ENABLED`: a capability counts only when enabled.
 const ENABLED: u32 = 0x4;
@@ -97,7 +95,14 @@ fn run(confinement: &Confinement, argv: &[OsString]) -> io::Result<u32> {
             "Windows grants no device by its path",
         ));
     }
-    sweep_profiles();
+    if confinement.namespace.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "a confinement on Windows names its namespace",
+        ));
+    }
+    let namespace = confinement.namespace.as_str();
+    sweep_profiles(namespace);
     let mut capabilities = Vec::new();
     for (right, paths) in [
         (Right::Read, &confinement.read),
@@ -105,13 +110,13 @@ fn run(confinement: &Confinement, argv: &[OsString]) -> io::Result<u32> {
         (Right::Write, &confinement.write),
     ] {
         for path in paths {
-            capabilities.push(grant(path, right)?);
+            capabilities.push(grant(namespace, path, right)?);
         }
     }
     if confinement.network {
         capabilities.push(Sid::parse(INTERNET_CLIENT)?);
     }
-    let profile = Profile::create()?;
+    let profile = Profile::create(namespace)?;
     let job = job(confinement)?;
     let child = start(argv, &profile, &capabilities)?;
     // SAFETY: both handles are valid; the child has not run yet.
@@ -194,7 +199,7 @@ impl Right {
 /// The capability that reaches `path` with `right`, its entry on `path`
 /// written once and kept (D3): only a process created with the capability
 /// holds it, and only this user's own processes can create one.
-fn grant(path: &Path, right: Right) -> io::Result<Sid> {
+fn grant(namespace: &str, path: &Path, right: Right) -> io::Result<Sid> {
     let unreachable = |why: &dyn std::fmt::Display| {
         io::Error::new(
             io::ErrorKind::NotFound,
@@ -202,7 +207,7 @@ fn grant(path: &Path, right: Right) -> io::Result<Sid> {
         )
     };
     let metadata = std::fs::metadata(path).map_err(|error| unreachable(&error))?;
-    let capability = Sid::capability(&format!("uze.{}:{}", right.name(), path.display()))?;
+    let capability = Sid::capability(&format!("{namespace}.{}:{}", right.name(), path.display()))?;
     let dacl = Dacl::of(path).map_err(|error| unreachable(&error))?;
     let everyone_contained = Sid::parse(ALL_APPLICATION_PACKAGES)?;
     let entries = right.entries(metadata.is_dir());
@@ -430,9 +435,10 @@ struct Profile {
 }
 
 impl Profile {
-    fn create() -> io::Result<Self> {
+    fn create(namespace: &str) -> io::Result<Self> {
         let name = wide(OsStr::new(&format!(
-            "{PROFILE_PREFIX}{}",
+            "{}{}",
+            profile_prefix(namespace),
             std::process::id()
         )));
         let mut sid: PSID = ptr::null_mut();
@@ -486,6 +492,11 @@ impl Drop for Profile {
     }
 }
 
+/// Every run's profile is named this, followed by its helper's pid.
+fn profile_prefix(namespace: &str) -> String {
+    format!("{namespace}.run.")
+}
+
 /// `HRESULT_FROM_WIN32`.
 fn hresult(error: u32) -> i32 {
     ((error & 0xFFFF) | 0x8007_0000) as i32
@@ -493,7 +504,8 @@ fn hresult(error: u32) -> i32 {
 
 /// Deletes the profile of every run whose helper is gone without deleting
 /// its own, as a helper ended with its job does.
-fn sweep_profiles() {
+fn sweep_profiles(namespace: &str) {
+    let prefix = profile_prefix(namespace);
     let Some(mappings) = Key::open(PROFILE_MAPPINGS) else {
         return;
     };
@@ -511,7 +523,7 @@ fn sweep_profiles() {
             .flatten()?
             .into_string()
             .ok()?;
-            let pid: u32 = moniker.strip_prefix(PROFILE_PREFIX)?.parse().ok()?;
+            let pid: u32 = moniker.strip_prefix(&prefix)?.parse().ok()?;
             (crate::process::alive(pid) == Some(false)).then_some(moniker)
         })
         .collect();
