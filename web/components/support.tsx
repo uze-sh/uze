@@ -17,8 +17,17 @@ const LABELS: Record<Level, string> = {
 
 const CHECK = 'M7.5 12.5l3 3 6-6.5';
 
-export function Support({ level, label }: { level: Level; label?: boolean }) {
-  const title = LABELS[level];
+export function Support({
+  level,
+  label,
+  title: named,
+}: {
+  level: Level;
+  label?: boolean;
+  /** What the mark means where the level's own words do not fit. */
+  title?: string;
+}) {
+  const title = named ?? LABELS[level];
   return (
     <span className="support" data-level={level} title={title} aria-label={title} role="img">
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -51,6 +60,35 @@ export function SupportLegend({ levels }: { levels: Level[] }) {
     <div className="support-legend">
       {levels.map((level) => (
         <Support key={level} level={level} label />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Whether a confinement holds a program to one outcome, in the same marks:
+ * a right a system enforces reads as a working one, one it enforces only in
+ * part as a stated limit.
+ */
+type Enforcement = 'yes' | 'partly' | 'no';
+
+const ENFORCEMENT: Record<Enforcement, { level: Level; title: string }> = {
+  yes: { level: 'native', title: 'Enforced' },
+  partly: { level: 'partial', title: 'Enforced in part' },
+  no: { level: 'none', title: 'Not enforced' },
+};
+
+export function Enforced({ is }: { is: Enforcement }) {
+  const { level, title } = ENFORCEMENT[is];
+  return <Support level={level} title={title} />;
+}
+
+/** The legend for a table of `Enforced` marks. */
+export function EnforcedLegend() {
+  return (
+    <div className="support-legend">
+      {(Object.keys(ENFORCEMENT) as Enforcement[]).map((is) => (
+        <Support key={is} level={ENFORCEMENT[is].level} title={ENFORCEMENT[is].title} label />
       ))}
     </div>
   );

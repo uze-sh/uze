@@ -83,29 +83,38 @@ cut short. [Extensions →](/docs/workspace/extensions)
 A confined program reads the checkout and the system, writes only a scratch
 folder of its own, and reaches no other process. It opens no socket unless the
 extension was granted the network, and even then reaches no local service.
-Each system does this its own way, and not every system can refuse every
-reach:
+Each system does this its own way, and not every system can enforce every
+right:
 
-| | Linux 6.12 or later | Linux 5.13 to 6.11 | macOS | Windows |
-|---|---|---|---|---|
-| Confined by | Landlock and a system-call filter | Landlock and a system-call filter | Seatbelt | an AppContainer made for the run, in a Job Object |
-| Reads, runs and writes only what it was granted | yes | yes | yes | yes |
-| Cannot empty a file it may only read | yes | from 6.2 | yes | yes |
-| Reaches no host without the network grant, the loopback included | yes | yes | yes | yes |
-| With the grant, still reaches no Unix socket or named pipe | yes | yes | yes | yes |
-| With the grant, still reaches no service on the loopback | no | no | no | yes |
-| Nothing reaches a port it listens on | yes | yes | yes | yes |
-| Reaches no device it was not granted | yes | from 6.10 | yes | yes |
-| Cannot signal, debug or read another process | yes | partly | yes | yes |
-| Nothing it starts outlives its run | yes | yes | no | yes |
-| Memory limit | yes | yes | no | yes |
-| Processor time limit | yes | yes | yes | yes |
-| File size limit | yes | yes | yes | no |
-| Open files limit | yes | yes | yes | no |
+| System | Confined by |
+| --- | --- |
+| Linux | Landlock and a system-call filter |
+| macOS | Seatbelt |
+| Windows | an AppContainer made for the run, in a Job Object |
 
-On Linux before 6.12 the system-call filter still refuses debugging and
-reading another process, and limits which processes a program can signal as
-far as it can tell from the call alone.
+<EnforcedLegend />
+
+| A confined program | Linux 6.12+ | Linux 5.13–6.11 | macOS | Windows |
+| --- | --- | --- | --- | --- |
+| Reads, runs and writes only what it was granted | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="yes" /> |
+| Cannot empty a file it may only read | <Enforced is="yes" /> | <Enforced is="partly" /> | <Enforced is="yes" /> | <Enforced is="yes" /> |
+| Reaches no host without the network grant, the loopback included | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="yes" /> |
+| With the grant, reaches no Unix socket or named pipe | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="yes" /> |
+| With the grant, reaches no service on the loopback | <Enforced is="no" /> | <Enforced is="no" /> | <Enforced is="no" /> | <Enforced is="yes" /> |
+| Nothing reaches a port it listens on | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="yes" /> |
+| Reaches no device it was not granted | <Enforced is="yes" /> | <Enforced is="partly" /> | <Enforced is="yes" /> | <Enforced is="yes" /> |
+| Cannot signal, debug or read another process | <Enforced is="yes" /> | <Enforced is="partly" /> | <Enforced is="yes" /> | <Enforced is="yes" /> |
+| Nothing it starts outlives its run | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="no" /> | <Enforced is="yes" /> |
+| Memory limit | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="no" /> | <Enforced is="yes" /> |
+| Processor time limit | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="yes" /> |
+| File size limit | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="no" /> |
+| Open files limit | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="yes" /> | <Enforced is="no" /> |
+
+On Linux before 6.12, what a program is held to depends on the kernel:
+emptying a file it may only read is refused from 6.2 and an ungranted device
+from 6.10. The system-call filter refuses debugging and reading another
+process, and limits which processes it can signal as far as it can tell from
+the call alone.
 
 `uze doctor` says which applies to this machine. Where nothing confines, the
 consent says the program runs as you.
