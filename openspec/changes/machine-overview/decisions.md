@@ -79,3 +79,13 @@
 - decided:  On the Overview, `tab` walks list → harness → period → strip, `shift+tab` walks back; `←→` turn a field the keys are on; the foot names where `tab` goes next.
 - rejected: Bare letters: "every bare letter here acts on a selection" (`uze-keys/src/load.rs`).
 - blast:    `machine.rs::machine_next_field`, `management.rs::hints`.
+
+## D9 — A menu of kinds and a table of each, instead of one folded tree
+
+- status:   pending
+- task:     4.1
+- commit:
+- trigger:  On the real machine the folded tree opened on four near-empty rows, and its status column stayed blank wherever nothing was wrong; the operator asked for a side menu and a table per kind, and for a status that always says something.
+- decided:  Menu of sections (uze's findings, then every kind, always listed, with counts and a `!` for problems), the chosen section's table with its own search, and the panel. Status reads `✓ ok` where a fact was checked (`OverviewResource::checked`), `—` where nothing could be, `! duplicate`, `✕ broken`.
+- rejected: Hiding the status column when empty: it would come and go between sections and harnesses.
+- blast:    `src/ui/view/overview.rs`, `src/ui/machine.rs`, the spec's layout and status requirements.

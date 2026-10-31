@@ -14,12 +14,16 @@ The Overview SHALL list the skills, agents, MCP servers, hooks and instruction f
 - **WHEN** a project declares a skill under its own `.agents/skills/`
 - **THEN** the Overview does not list it, whatever directory uze was started in
 
-### Requirement: Resources are grouped by kind in one tree
-The Overview SHALL group resources by kind — skills, agents, mcp servers, hooks, rules — in one tree that opens folded. Each group row SHALL carry the count of its resources, their tokens per session and how many are broken or duplicated, so the folded tree is the summary.
+### Requirement: A menu of kinds beside a table of each
+The Overview SHALL offer a menu of sections — uze's own findings while there are any, then skills, agents, mcp servers, hooks and rules, each always present — with each kind's count and how many of it are broken or duplicated, beside a table of the section chosen.
 
 #### Scenario: Opening the Overview
-- **WHEN** the operator opens the Overview for the first time
-- **THEN** every kind is one folded row with its totals, and no resource row is shown until a group is unfolded
+- **WHEN** the operator opens the Overview
+- **THEN** the menu lists every kind with its count, and the table shows the first section's resources
+
+#### Scenario: A kind with a broken resource
+- **WHEN** one hook is broken
+- **THEN** the hooks section carries a mark with that count before reading its table
 
 ### Requirement: Every resource names its origin
 Each resource SHALL name who manages it: `uze` when a uze receipt owns it, the harness plugin's name when one brought it, `built-in` when the harness ships it, or `you` when it was placed by hand. Ownership by uze SHALL be decided from uze's receipts, never from a path's shape.
@@ -91,11 +95,15 @@ A resource SHALL read `broken` only when a fact on disk proves it cannot work: a
 - **THEN** it is not judged broken, since nothing on disk can prove it
 
 ### Requirement: Status orders each kind
-Each resource SHALL carry one status — `broken`, `duplicate` or `ok` — and within a kind broken resources SHALL come first, then duplicates, then the rest by tokens per session, heaviest first.
+Each resource SHALL carry one status — `broken`, `duplicate` or `ok` — and within a kind broken resources SHALL come first, then duplicates, then the rest by tokens per session, heaviest first. `ok` SHALL be shown as a check only where a fact on disk was checked; a resource nothing on disk can judge SHALL show no check.
 
 #### Scenario: Ordering skills
 - **WHEN** the skills group holds one broken skill, one duplicate and three others
 - **THEN** the broken one is first, the duplicate second, and the three others follow heaviest first
+
+#### Scenario: A server reached by URL
+- **WHEN** an MCP server is reached by URL and nothing is found against it
+- **THEN** its status shows no check
 
 ### Requirement: Harness and period narrow the screen
 The Overview SHALL offer a harness field (every harness, or one) that narrows every row, group and total, and a period field that sets the period sessions are counted over. Neither field SHALL grow with the number of harnesses.

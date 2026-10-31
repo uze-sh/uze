@@ -574,10 +574,10 @@ fn hints<'a>(model: &TuiModel, scopes: &'a [uze_keys::Scope]) -> Hints<'a> {
     }
     if model.route == Route::Overview {
         hints = match model.remembered.machine.field {
-            crate::ui::machine::Field::List if model.remembered.machine.filtering() => hints,
-            crate::ui::machine::Field::List => {
-                hints.run(Action::FocusContent, Action::FocusSidebar, "fold")
-            }
+            crate::ui::machine::Field::List => match model.remembered.machine.pane {
+                crate::ui::machine::Pane::Menu => hints,
+                crate::ui::machine::Pane::Table => hints.named(Action::FocusSidebar, "back"),
+            },
             crate::ui::machine::Field::Harness => {
                 hints.run(Action::FocusContent, Action::FocusSidebar, "harness")
             }

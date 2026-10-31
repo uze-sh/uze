@@ -284,6 +284,12 @@ pub struct OverviewResource {
     /// Estimated tokens loaded when used; `None` when it adds nothing more.
     pub when_used: Option<u32>,
     pub status: Status,
+    /// Whether a fact on disk was checked at all: a definition read, or a
+    /// command looked for. A server reached by URL is listed, never judged,
+    /// so its `ok` says nothing was found against it rather than that it
+    /// works.
+    #[serde(default)]
+    pub checked: bool,
     pub removal: Option<String>,
 }
 

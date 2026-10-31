@@ -2405,12 +2405,12 @@ impl TuiModel {
         actionable_alerts(self.remembered.doctor.as_ref())
     }
 
-    /// The Overview's tree, as it is drawn now.
+    /// The Overview's table, as it is drawn now.
     pub(crate) fn machine_lines(&self) -> Vec<super::machine::Line> {
         self.remembered.machine.lines(self.alerts().len())
     }
 
-    /// The Overview line the keyboard is on.
+    /// The Overview row the table's selection is on.
     pub(crate) fn machine_line(&self) -> Option<super::machine::Line> {
         self.machine_lines()
             .get(self.remembered.machine.list.selected)
