@@ -15,7 +15,7 @@
 - [x] 3.1 A Windows half of `tests/cli/confine.rs` through the real helper, with `cmd.exe` and PowerShell: reads, writes and executes only as granted, the profile stays unreadable, there is no network without the grant, with it there is the Internet but no loopback, other processes are out of reach, memory past the bound is refused, and the exit code and environment pass through
 - [x] 3.2 The lifecycle tests that need a POSIX shell say why they skip on Windows, and one Windows lifecycle test runs a pinned `cmd.exe` that reads the checkout and nothing outside it
 - [x] 3.3 macOS is proved by the lifecycle suite, which runs its programs confined under Seatbelt; its `tree` outcome decides the one test that needs a system-call filter
-- [ ] 3.4 CI is green on Linux, macOS, Windows and Windows Arm
+- [x] 3.4 CI is green on Linux, macOS, Windows and Windows Arm
 - [x] 3.5 Remove `lab/` and `.github/workflows/confinement-lab.yml`, its findings recorded in the design
 
 ## 4. Documentation
