@@ -41,7 +41,7 @@ pub enum PerformanceClass {
 /// exactly once — see `tests::every_cli_command_is_classified`, which
 /// fails by name (missing or stale) rather than silently passing.
 pub const CLASSIFICATION: &[(&str, PerformanceClass)] = &[
-    // Project scope (root-level). `remove`, `status`, `install` and
+    // Project scope (root-level). `add`, `remove`, `status`, `install` and
     // `update` each decide their own scope; `inspect` reads one package's
     // delivery on this machine.
     ("remove", PerformanceClass::Budgeted),
@@ -99,10 +99,16 @@ pub const CLASSIFICATION: &[(&str, PerformanceClass)] = &[
     ("agent context plan", PerformanceClass::Budgeted),
     ("agent context reconcile", PerformanceClass::Budgeted),
     (
+        "add",
+        PerformanceClass::JustifiedSlow(
+            "installs a package from its marketplace, which reaches its remote",
+        ),
+    ),
+    (
         "install",
         PerformanceClass::JustifiedSlow(
-            "converges the project's agent environment or installs a package via a marketplace, \
-             which reaches its remote",
+            "converges the project's agent environment, which reaches each declared \
+             marketplace's remote",
         ),
     ),
     (

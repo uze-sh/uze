@@ -1,6 +1,6 @@
 //! Test helper for the product's marketplace contract: a plugin is only
 //! ever installed through a marketplace that was added first
-//! (`uze market add <dir>` then `uze install <name>@<market> -m`).
+//! (`uze market add <dir>` then `uze add <name>@<market> -m`).
 //! The product rejects direct path/Git installs, so tests must stage a
 //! single-plugin marketplace to exercise the real user flow.
 
