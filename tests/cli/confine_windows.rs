@@ -473,4 +473,12 @@ fn a_batch_file_is_refused_rather_than_run() {
     );
     assert_eq!(output.status.code(), Some(NOT_ENFORCED_EXIT), "{output:?}");
     assert!(output.stdout.is_empty(), "{output:?}");
+    // The same file, by a name Windows opens it through.
+    let renamed = format!("{}.", script.display());
+    let output = run(
+        &confinement(&[root.path()], &[], false),
+        &[&renamed, "plain"],
+    );
+    assert_eq!(output.status.code(), Some(NOT_ENFORCED_EXIT), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
 }

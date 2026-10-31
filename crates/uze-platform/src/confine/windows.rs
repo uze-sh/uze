@@ -889,8 +889,14 @@ impl Drop for AttributeList {
 /// Whether Windows starts `program` through `cmd.exe`, which reads the
 /// command line again by rules of its own that no quoting of the C
 /// runtime's survives.
+/// Windows opens a file by its name with any trailing dots and spaces
+/// dropped, so the extension is read from that name.
 fn is_batch(program: &Path) -> bool {
-    program.extension().is_some_and(|extension| {
+    let Some(name) = program.file_name().and_then(OsStr::to_str) else {
+        return false;
+    };
+    let opened = Path::new(name.trim_end_matches(['.', ' ']));
+    opened.extension().is_some_and(|extension| {
         extension.eq_ignore_ascii_case("bat") || extension.eq_ignore_ascii_case("cmd")
     })
 }
@@ -971,6 +977,10 @@ mod tests {
         assert!(is_batch(Path::new("C:\\tools\\RUN.BAT")));
         assert!(!is_batch(Path::new("C:\\Windows\\System32\\cmd.exe")));
         assert!(!is_batch(Path::new("C:\\tools\\cmd")));
+        for opened_the_same in ["tool.cmd.", "tool.bat ", "tool.cmd. .", "TOOL.Cmd.."] {
+            let path = format!("C:\\tools\\{opened_the_same}");
+            assert!(is_batch(Path::new(&path)), "{path}");
+        }
     }
 
     #[test]
