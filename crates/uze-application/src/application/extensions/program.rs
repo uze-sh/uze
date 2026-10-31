@@ -393,8 +393,9 @@ fn confinement(
     let (devices, reads): (Vec<PathBuf>, Vec<PathBuf>) =
         asked.reads.iter().map(PathBuf::from).partition(|path| {
             system
-                .devices
-                .is_some_and(|devices| path.starts_with(devices))
+                .device_roots
+                .iter()
+                .any(|root| path.starts_with(root))
         });
     let read_execute = system
         .read_execute
@@ -420,7 +421,7 @@ fn confinement(
         write: existing(
             [scratch.to_path_buf()]
                 .into_iter()
-                .chain(system.null.map(PathBuf::from))
+                .chain(system.discard.iter().map(PathBuf::from))
                 .collect(),
         ),
         devices: existing(devices),
@@ -550,7 +551,7 @@ fn curl_confinement(run: &CurlRun<'_>, scratch: &Path, certificates: Vec<PathBuf
         write: existing(
             [scratch.to_path_buf()]
                 .into_iter()
-                .chain(system.null.map(PathBuf::from))
+                .chain(system.discard.iter().map(PathBuf::from))
                 .collect(),
         ),
         devices: Vec::new(),

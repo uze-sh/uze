@@ -97,11 +97,11 @@ pub struct System {
     pub read: &'static [&'static str],
     /// What name resolution reads, for a program given the network.
     pub resolver: &'static [&'static str],
-    /// The device a program writes what it discards to, where it is a path.
-    pub null: Option<&'static str>,
-    /// Beneath it, a path a program declares is a device: spoken to, not
+    /// What a program writes what it discards to, where that is a path.
+    pub discard: &'static [&'static str],
+    /// Beneath each, a path a program declares is a device: spoken to, not
     /// read.
-    pub devices: Option<&'static str>,
+    pub device_roots: &'static [&'static str],
 }
 
 impl System {
@@ -110,8 +110,8 @@ impl System {
         read_execute: &[],
         read: &[],
         resolver: &[],
-        null: None,
-        devices: None,
+        discard: &[],
+        device_roots: &[],
     };
 }
 
@@ -145,8 +145,8 @@ const UNIX: System = System {
         "/etc/nsswitch.conf",
         "/etc/gai.conf",
     ],
-    null: Some("/dev/null"),
-    devices: Some("/dev/"),
+    discard: &["/dev/null"],
+    device_roots: &["/dev/"],
 };
 
 /// This machine's [`System`].
@@ -501,7 +501,7 @@ mod tests {
         if cfg!(windows) {
             assert_eq!(system(), System::NONE);
         } else if cfg!(unix) {
-            assert_eq!(system().null, Some("/dev/null"));
+            assert_eq!(system().discard, ["/dev/null"]);
             assert!(system().read_execute.contains(&"/usr"));
         }
     }
