@@ -61,7 +61,22 @@ fn shell(confinement: &Confinement, line: &str) -> Output {
 
 /// A PowerShell line, its answer the one line it prints.
 fn script(confinement: &Confinement, line: &str) -> String {
-    let output = run(
+    answer(&confined_script(confinement, line).output().unwrap())
+}
+
+/// A PowerShell line run from `dir`, as the runner runs a program from its
+/// checkout: a container starts no child from a directory it cannot reach.
+fn script_in(confinement: &Confinement, dir: &Path, line: &str) -> String {
+    answer(
+        &confined_script(confinement, line)
+            .current_dir(dir)
+            .output()
+            .unwrap(),
+    )
+}
+
+fn confined_script(confinement: &Confinement, line: &str) -> Command {
+    confined(
         confinement,
         &[
             &powershell(),
@@ -70,7 +85,10 @@ fn script(confinement: &Confinement, line: &str) -> String {
             "-Command",
             line,
         ],
-    );
+    )
+}
+
+fn answer(output: &Output) -> String {
     assert!(output.status.success(), "{output:?}");
     String::from_utf8_lossy(&output.stdout).trim().to_owned()
 }
@@ -158,9 +176,17 @@ fn a_program_reads_its_grants_and_nothing_else() {
     assert!(read.stdout.is_empty(), "{read:?}");
 }
 
-/// The program the execution tests copy, which runs in a container when
-/// started as itself. `cmd.exe` cannot start it there: inside a container
-/// cmd starts no program at all, so each run here starts it directly.
+/// Whether the confined program itself can start `program`. The helper
+/// opens the program it is given with the operator's own rights, so only a
+/// start from inside the container meets the container's grants.
+fn starts(confinement: &Confinement, dir: &Path, program: &str) -> String {
+    script_in(
+        confinement,
+        dir,
+        &format!("try {{ $null = & '{program}'; 'started' }} catch {{ 'refused' }}"),
+    )
+}
+
 fn whoami() -> String {
     system("System32\\whoami.exe")
 }
@@ -171,16 +197,13 @@ fn a_read_grant_executes_nothing() {
     let checkout = root.path().join("checkout");
     std::fs::create_dir_all(&checkout).unwrap();
     let confinement = confinement(&[&checkout], &[], false);
-    let original = run(&confinement, &[&whoami()]);
-    assert!(
-        original.status.success(),
-        "whoami runs in a container: {original:?}"
-    );
     let copy = checkout.join("whoami.exe");
     std::fs::copy(whoami(), &copy).unwrap();
-    let executed = run(&confinement, &[&copy.display().to_string()]);
-    assert!(!executed.status.success(), "{executed:?}");
-    assert!(executed.stdout.is_empty(), "{executed:?}");
+    assert_eq!(starts(&confinement, &checkout, &whoami()), "started");
+    assert_eq!(
+        starts(&confinement, &checkout, &copy.display().to_string()),
+        "refused"
+    );
 }
 
 #[test]
@@ -189,11 +212,6 @@ fn a_write_grant_executes_nothing() {
     let scratch = root.path().join("scratch");
     std::fs::create_dir_all(&scratch).unwrap();
     let confinement = confinement(&[], &[&scratch], false);
-    let original = run(&confinement, &[&whoami()]);
-    assert!(
-        original.status.success(),
-        "whoami runs in a container: {original:?}"
-    );
     let copy = scratch.join("whoami.exe");
     let copied = shell(
         &confinement,
@@ -203,9 +221,11 @@ fn a_write_grant_executes_nothing() {
         copied.status.success(),
         "the copy is a write it may make: {copied:?}"
     );
-    let executed = run(&confinement, &[&copy.display().to_string()]);
-    assert!(!executed.status.success(), "{executed:?}");
-    assert!(executed.stdout.is_empty(), "{executed:?}");
+    assert_eq!(starts(&confinement, &scratch, &whoami()), "started");
+    assert_eq!(
+        starts(&confinement, &scratch, &copy.display().to_string()),
+        "refused"
+    );
 }
 
 #[test]
@@ -267,7 +287,8 @@ fn nothing_it_starts_outlives_its_run() {
     let start = "$i = New-Object Diagnostics.ProcessStartInfo \"$env:SystemRoot\\System32\\PING.EXE\", '-n 60 127.0.0.1'; \
                  $i.UseShellExecute = $false; $i.RedirectStandardOutput = $true; \
                  ([Diagnostics.Process]::Start($i)).Id";
-    let child: u32 = script(&confinement(&[], &[], false), start)
+    let root = root();
+    let child: u32 = script_in(&confinement(&[root.path()], &[], false), root.path(), start)
         .parse()
         .expect("the program says the pid of the child it started");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
