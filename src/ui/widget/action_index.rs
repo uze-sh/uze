@@ -78,9 +78,9 @@ const FIELD_ROWS: u16 = 2;
 /// The caller registers the rects: they belong on *top* of whatever is
 /// underneath, which is the caller's list to splice into.
 ///
-/// `keys` answer it on the bottom border, lit while `hovered`; they and the
-/// close mark are answered as `key` of their action, each row as `entry`
-/// of its position.
+/// It is a [`super::modal::Modal`]: `keys` answer it in its footer, read
+/// from `scopes`, lit while `hovered`; they and its `esc close` are
+/// answered as `key` of their action, each row as `entry` of its position.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render<H>(
     frame: &mut ratatui::Frame<'_>,
@@ -89,7 +89,8 @@ pub(crate) fn render<H>(
     reachable: usize,
     filter: &str,
     selected: usize,
-    keys: &super::hint::Hints<'_>,
+    scopes: &[uze_keys::Scope],
+    keys: super::hint::Hints<'_>,
     hovered: Option<uze_keys::Action>,
     entry: impl Fn(usize) -> H,
     key: impl Fn(uze_keys::Action) -> H,
@@ -106,16 +107,15 @@ pub(crate) fn render<H>(
     // the reader is aiming at, and the first keystroke is when they are
     // least able to follow.
     let shown = reachable.min(MAX_ROWS) as u16;
-    let shell = super::dialog::shell(
-        frame,
-        area,
-        width,
-        shown + FIELD_ROWS,
-        "Help",
-        Line::default(),
-    );
-    let chrome = super::dialog::render_card_chrome(frame, shell.popup, keys, hovered);
-    let inner = shell.body;
+    let modal = super::modal::Modal::new(
+        Span::styled("Help", theme::fg_bold(Token::TextBright)),
+        scopes,
+    )
+    .keys(keys)
+    .hovered(hovered)
+    .render_centred(frame, area, width, shown + FIELD_ROWS);
+    let chrome = modal.keys;
+    let inner = modal.body;
 
     // Always focused: the index is open, so every key reaches this field.
     // The same search row every list in the product heads itself with.

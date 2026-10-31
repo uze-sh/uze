@@ -546,11 +546,11 @@ fn a_hint_beneath_a_dialog_is_no_target() {
     );
 }
 
-/// The notes and the index close on the bare mark on their top border, as
-/// Esc does, and the mark lights under the pointer: a modal names its way
-/// out nowhere else.
+/// The notes, the index, the health and the glossary are modals like every
+/// other: their way out is the `esc close` in their header, which answers
+/// the pointer and closes as Esc does.
 #[test]
-fn the_notes_and_the_index_close_on_their_mark() {
+fn the_modals_close_on_their_headers_esc_close() {
     for overlay in [
         Overlay::ReleaseNotes(crate::ui::release_notes::ReleaseNotesModal::opening(
             "9.0.1",
@@ -560,24 +560,26 @@ fn the_notes_and_the_index_close_on_their_mark() {
             filter: String::new(),
             selected: 0,
         },
+        Overlay::Health,
+        Overlay::HarnessHelp,
     ] {
         let mut model = model_with_plugins(&["flow"]);
-        model.overlay = overlay;
+        model.overlay = overlay.clone();
         let (terminal, hits) = drawn_at(&model, 120, 40);
-        let (mark, _) = *hits
+        let (close, _) = *hits
             .iter()
             .find(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::Dismiss))
-            .expect("the mark answers a click");
-        assert_eq!(
-            terminal.backend().buffer()[(mark.x, mark.y)].symbol(),
-            theme::glyph(theme::Symbol::MarkClose)
-        );
+            .unwrap_or_else(|| panic!("{overlay:?}: its esc close answers a click"));
+        let row: String = (close.x..close.right())
+            .map(|x| terminal.backend().buffer()[(x, close.y)].symbol())
+            .collect();
+        assert_eq!(row, "esc close", "{overlay:?}");
         model.hits = hits;
         model.apply_mouse(
             MouseEvent {
                 kind: MouseEventKind::Moved,
-                column: mark.x,
-                row: mark.y,
+                column: close.x,
+                row: close.y,
                 modifiers: KeyModifiers::NONE,
             },
             Rect::new(0, 0, 120, 40),
@@ -585,9 +587,9 @@ fn the_notes_and_the_index_close_on_their_mark() {
         assert_eq!(
             model.hovered_offer,
             Some(uze_keys::Action::Dismiss),
-            "it answers the pointer"
+            "{overlay:?}: it answers the pointer"
         );
-        let _ = model.click(mark.x, mark.y);
-        assert_eq!(model.overlay, Overlay::None, "and closes as Esc does");
+        let _ = model.click(close.x, close.y);
+        assert_eq!(model.overlay, Overlay::None, "{overlay:?}: closed as Esc");
     }
 }

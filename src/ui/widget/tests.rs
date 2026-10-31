@@ -408,7 +408,8 @@ fn an_action_with_no_key_dims_the_column_it_would_have_filled() {
                 rows.len(),
                 "",
                 0,
-                &super::hint::Hints::new(&[]),
+                &[],
+                super::hint::Hints::new(&[]),
                 None,
                 |_| true,
                 |_| false,
@@ -497,7 +498,8 @@ fn the_open_index_says_it_can_be_typed_into_before_anything_is() {
             0,
             "",
             0,
-            &super::hint::Hints::new(&[]),
+            &[],
+            super::hint::Hints::new(&[]),
             None,
             |_| (),
             |_| (),
@@ -561,7 +563,8 @@ fn narrowing_the_index_does_not_resize_it() {
                 all.len(),
                 "x",
                 0,
-                &super::hint::Hints::new(&[]),
+                &[],
+                super::hint::Hints::new(&[]),
                 None,
                 |_| (),
                 |_| (),
@@ -580,11 +583,11 @@ fn narrowing_the_index_does_not_resize_it() {
     );
 }
 
-/// The title names the surface. Its way out is the bare mark on its top
-/// border, which a click answers as Esc, and its keys sit in its bottom
-/// border as targets; no key there names closing it.
+/// The index is a modal like every other: its title and its way out,
+/// `esc close`, share the header row, its keys stand in the footer row, and
+/// each is a target answered as its key. No mark sits on its border.
 #[test]
-fn the_index_is_titled_help_and_closes_on_its_mark() {
+fn the_index_is_a_modal_titled_help_with_its_way_out_in_the_header() {
     let scopes = [uze_keys::Scope::Global, uze_keys::Scope::ActionIndex];
     let keys = super::hint::Hints::new(&scopes).named(uze_keys::Action::Activate, "run");
     let mut placed = Vec::new();
@@ -596,33 +599,40 @@ fn the_index_is_titled_help_and_closes_on_its_mark() {
             4,
             "",
             0,
-            &keys,
+            &scopes,
+            keys.clone(),
             None,
             |_| None,
             Some,
         );
     });
-    let text: String = (0..24)
-        .map(|y| (0..80).map(|x| buffer[(x, y)].symbol()).collect::<String>())
-        .collect();
-
-    assert!(text.contains("Help"), "titled for what it is");
-    assert!(!text.contains("Everything you can do"));
-    assert!(text.contains("run"), "its keys are in its border");
-    assert!(!text.contains("close"), "and none of them is the way out");
-    let (mark, _) = placed
-        .iter()
-        .find(|(_, action)| *action == Some(uze_keys::Action::Dismiss))
-        .expect("the mark answers as Esc");
-    assert_eq!(
-        buffer[(mark.x, mark.y)].symbol(),
-        theme::glyph(theme::Symbol::MarkClose)
-    );
+    let row = |y: u16| (0..80).map(|x| buffer[(x, y)].symbol()).collect::<String>();
+    let text: String = (0..24).map(row).collect();
     assert!(
+        !text.contains(&theme::glyph(theme::Symbol::MarkClose)),
+        "no mark"
+    );
+
+    let target = |action| {
         placed
             .iter()
-            .any(|(_, action)| *action == Some(uze_keys::Action::Activate)),
-        "run is a target"
+            .find(|(_, answers)| *answers == Some(action))
+            .map(|(rect, _)| *rect)
+            .unwrap_or_else(|| panic!("{action:?} is a target"))
+    };
+    let close = target(uze_keys::Action::Dismiss);
+    let header = row(close.y);
+    assert!(header.contains("Help"), "beside the title: {header}");
+    assert!(
+        header.contains("esc close") && header.find("esc") > header.find("Help"),
+        "at its end: {header}"
+    );
+    let run = target(uze_keys::Action::Activate);
+    assert!(run.y > close.y + 2, "the keys are in the footer");
+    assert!(row(run.y).contains("run"));
+    assert!(
+        !row(run.y).contains("close"),
+        "and none of them is the way out"
     );
 }
 
@@ -649,7 +659,8 @@ fn the_index_is_capped_and_scrolls_rather_than_growing_with_the_product() {
             many.len(),
             "",
             0,
-            &super::hint::Hints::new(&[]),
+            &[],
+            super::hint::Hints::new(&[]),
             None,
             |_| (),
             |_| (),
@@ -663,10 +674,11 @@ fn the_index_is_capped_and_scrolls_rather_than_growing_with_the_product() {
         .find(|&y| (0..80).any(|x| buffer[(x, y)].symbol() == "\u{250c}"))
         .expect("the surface was drawn");
 
-    assert!(
-        bottom - top < 20,
-        "twelve rows plus chrome, not forty: got {}",
-        bottom - top + 1
+    // Twelve rows, the search field and its air, and a modal's chrome.
+    assert_eq!(
+        bottom - top + 1,
+        12 + 2 + super::modal::CHROME_ROWS,
+        "capped, not forty"
     );
 }
 
@@ -696,7 +708,8 @@ fn the_window_follows_the_selection_past_the_cap() {
                 many.len(),
                 "",
                 selected,
-                &super::hint::Hints::new(&[]),
+                &[],
+                super::hint::Hints::new(&[]),
                 None,
                 |p| p,
                 |_| usize::MAX,
@@ -1419,7 +1432,7 @@ fn an_alert_draws_what_it_quotes_as_code_and_alerts_stand_apart() {
     use super::alerts::{self, Alert, Severity};
     let (width, height) = (80, 20);
     let buffer = drawn(width, height, |frame| {
-        alerts::render(
+        let _ = alerts::render(
             frame,
             Rect::new(0, 0, width, height),
             "To check",
@@ -1435,7 +1448,8 @@ fn an_alert_draws_what_it_quotes_as_code_and_alerts_stand_apart() {
                     detail: "reads the first bytes".to_owned(),
                 },
             ],
-            ratatui::text::Line::default(),
+            &[],
+            None,
         );
     });
     let rows: Vec<String> = (0..height)

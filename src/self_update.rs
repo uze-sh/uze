@@ -138,9 +138,10 @@ pub(crate) fn running() -> &'static str {
     RUNNING
 }
 
-/// The release's own page, where its notes are published.
-pub(crate) fn release_page(version: &str) -> String {
-    format!("{RELEASES}/tag/v{version}")
+/// The release's entry in the site's changelog: each release heading there
+/// carries its version as its anchor (`web/lib/changelog.ts`).
+pub(crate) fn changelog_entry(version: &str) -> String {
+    format!("{CHANGELOG}#{version}")
 }
 
 /// The notice as it stands, and a counter that moves whenever it does —

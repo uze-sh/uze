@@ -9,7 +9,7 @@ use ratatui::{
 };
 use uze_theme::{Symbol, Token};
 
-use super::{dialog, text};
+use super::text;
 use crate::ui::theme;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -39,15 +39,17 @@ pub(crate) struct Alert {
 
 /// Draws `alerts` in a dialog titled `title`, worst first, or says nothing
 /// needs attention; answers the rect the dialog covers.
+#[must_use = "register its keys as hits, so a click performs them"]
 pub(crate) fn render(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     title: &str,
     alerts: &[Alert],
-    hint: Line<'static>,
-) -> Rect {
+    scopes: &[uze_keys::Scope],
+    hovered: Option<uze_keys::Action>,
+) -> super::modal::Drawn {
     const WIDTH: u16 = 72;
-    let measure = usize::from(WIDTH.saturating_sub(dialog::shell_chrome_width()));
+    let measure = usize::from(WIDTH.saturating_sub(super::modal::CHROME_COLUMNS));
     let mut sorted: Vec<_> = alerts.iter().collect();
     sorted.sort_by_key(|alert| alert.severity);
     let mut lines: Vec<Line<'static>> = Vec::new();
@@ -83,9 +85,14 @@ pub(crate) fn render(
             lines.push(Line::from(spans));
         }
     }
-    let shell = dialog::shell(frame, area, WIDTH, lines.len() as u16, title, hint);
-    frame.render_widget(Paragraph::new(lines), shell.body);
-    shell.popup
+    let drawn = super::modal::Modal::new(
+        Span::styled(title.to_owned(), theme::fg_bold(Token::TextBright)),
+        scopes,
+    )
+    .hovered(hovered)
+    .render_centred(frame, area, WIDTH, lines.len() as u16);
+    frame.render_widget(Paragraph::new(lines), drawn.body);
+    drawn
 }
 
 /// One row of an alert's detail, with what it quotes in backticks drawn as

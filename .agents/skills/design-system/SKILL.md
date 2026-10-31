@@ -249,12 +249,19 @@ on "cancel" must not save first.
   dismisses it.
 
 **Closing:**
-- Esc closes everything, and a modal or a drawer says so nowhere: its
-  closing is a bare `x` at the top right, with no label, no footer "close"
-  button and no "esc" hint. A plugin's drawer and overlay wear it too,
-  drawn by the host on the card's top hairline against its corner
-  (`─✕┐`), never a cell in from it, whatever the plugin
-  declares: no surface is closed by Esc alone.
+- Esc closes everything. A modal says so in one place: `esc close` at the
+  end of its header row, a key like any other (lit under the pointer, a
+  click on it is Esc), never a mark on its border and never a key in its
+  footer. Every modal is `widget::modal::Modal`, the manage modal's shape:
+  a header row (title, `esc close`) over a hairline, the body, and a
+  footer row (the keys that act on the body, each a target) under a
+  hairline. A modal that draws its own frame is the inconsistency this
+  widget exists to end.
+- A drawer says so nowhere: its closing is a bare `x` at the top right,
+  with no label. A plugin's drawer and overlay wear it too, drawn by the
+  host on the card's top hairline against its corner (`─✕┐`), never a
+  cell in from it, whatever the plugin declares: no surface is closed by
+  Esc alone.
 - A step opened inside a dialog (everything a row asks for, in the list's
   place) goes back before it closes: its heading starts with `‹`
   (`Symbol::StepPrevious`) and is a target, and the bottom border names

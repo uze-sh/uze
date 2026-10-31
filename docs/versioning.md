@@ -245,7 +245,8 @@ every pane keeps running. Once it runs, both sidebars say so — its version
 and "see what's new" — until the notice is put away. Clicking the notice
 opens that release's notes in a modal — its own section of the
 `CHANGELOG.md` at its tag, fetched with the release and kept in
-`~/.uze/cache/release-notes.md` — from which the release page opens. That is the only thing they say about releases: one that
+`~/.uze/cache/release-notes.md` — from which its entry in the site's
+changelog (`uze.sh/docs/changelog#<version>`) opens. That is the only thing they say about releases: one that
 is merely available, or that this binary will not install itself, is left
 to `uze upgrade`. The first CLI command after an update mentions it once.
 

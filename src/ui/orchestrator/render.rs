@@ -565,7 +565,7 @@ pub(super) fn render(
         .as_ref()
         .filter(|overview| overview.issues_open)
     {
-        render_space_issues(frame, frame.area(), overview, hits);
+        render_space_issues(frame, frame.area(), overview, model.hovered_hint(), hits);
     }
     // Over everything, the management modal included. Drawn beneath the
     // popups, a toast was covered by the very dropdowns that hang off the

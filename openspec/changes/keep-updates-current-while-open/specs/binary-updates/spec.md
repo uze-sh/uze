@@ -87,7 +87,8 @@ Both sidebars SHALL show, above the sections at their foot, a notice for
 the release now running that the updater put in place, until it is
 dismissed, and for nothing else. The notice SHALL name the version and say
 what is new in it can be read. Activating it SHALL open that release's own
-section of the `CHANGELOG.md` in a modal; dismissing it SHALL put it away
+section of the `CHANGELOG.md` in a modal, from which its entry in the
+site's changelog opens; dismissing it SHALL put it away
 for that release in every client and every later run.
 
 #### Scenario: A release waiting on a restart
@@ -123,7 +124,8 @@ for that release in every client and every later run.
 #### Scenario: Notes that cannot be read
 
 - **WHEN** the changelog cannot be fetched, or does not carry the release
-- **THEN** the modal says so and still opens the release page on request
+- **THEN** the modal says so and still opens the release's entry in the
+  site's changelog on request
 
 #### Scenario: Dismissing it
 

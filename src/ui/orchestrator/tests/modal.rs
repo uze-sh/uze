@@ -382,13 +382,13 @@ fn a_waiting_plugin_updates_review_opens_the_plugins_screen() {
     assert_eq!(manage_route(&driven), crate::ui::model::Route::Plugins);
 }
 
-/// The notes and the index close on the bare mark on their top border, as
-/// Esc does: a modal names its way out nowhere else, and the mark lights in
-/// the danger hue under the pointer.
+/// The notes and the index are modals like every other: their way out is
+/// the `esc close` in their header, lit under the pointer and answered as
+/// Esc.
 #[test]
-fn the_notes_and_the_index_close_on_their_mark_in_the_workspace() {
-    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-modal-marks"));
-    let mark_of = |driven: &mut Driven<'_>| {
+fn the_notes_and_the_index_close_on_their_headers_esc_close() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-modal-close"));
+    let close_of = |driven: &mut Driven<'_>| {
         driven.frame();
         driven
             .attach
@@ -398,28 +398,32 @@ fn the_notes_and_the_index_close_on_their_mark_in_the_workspace() {
             .find_map(|(rect, hit)| {
                 (*hit == WorkspaceHit::HintAction(uze_keys::Action::Dismiss)).then_some(*rect)
             })
-            .expect("the mark answers a click")
+            .expect("its esc close answers a click")
     };
 
     let mut notes = driven(agent_with_task(WorkStateView::Ready, 1), &home).on_a_roomy_terminal();
     notes.attach.model.release_notes = Some(crate::ui::release_notes::ReleaseNotesModal::opening(
         "9.0.1",
     ));
-    let mark = mark_of(&mut notes);
-    notes.attach.model.hovered = Some(WorkspaceHit::HintAction(uze_keys::Action::Dismiss));
+    let close = close_of(&mut notes);
     let area = notes.area;
-    assert_eq!(
-        frame_buffer_at(&mut notes.attach.model, area)[(mark.x, mark.y)].fg,
-        theme::color(Token::StateDanger),
-        "the pointer shows it takes the modal away"
+    // The key's name, which is what lights: the key itself is bright already.
+    let name = (close.right() - 1, close.y);
+    let resting = frame_buffer_at(&mut notes.attach.model, area)[name].fg;
+    notes.attach.model.hovered = Some(WorkspaceHit::HintAction(uze_keys::Action::Dismiss));
+    assert_ne!(
+        frame_buffer_at(&mut notes.attach.model, area)[name].fg,
+        resting,
+        "the pointer lights it"
     );
-    notes.press(mark.x, mark.y);
+    notes.attach.model.hovered = None;
+    notes.press(close.x, close.y);
     assert!(notes.attach.model.release_notes.is_none(), "closed");
 
     let mut index = driven(agent_with_task(WorkStateView::Ready, 1), &home).on_a_roomy_terminal();
     index.press_key(key_event(uze_keys::Chord::parse("f1").unwrap()));
     assert!(index.attach.model.action_index.is_some());
-    let mark = mark_of(&mut index);
-    index.press(mark.x, mark.y);
+    let close = close_of(&mut index);
+    index.press(close.x, close.y);
     assert!(index.attach.model.action_index.is_none(), "closed");
 }

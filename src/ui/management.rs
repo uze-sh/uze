@@ -385,8 +385,12 @@ pub(crate) fn render(
             filter,
             selected,
         } => overlay::render_action_index(frame, area, model, scopes, filter, *selected, hits),
-        Overlay::HarnessHelp => overlay::render_harness_help(frame, area),
-        Overlay::Health => overlay::render_health(frame, area, &model.alerts()),
+        Overlay::HarnessHelp => {
+            overlay::render_harness_help(frame, area, model.hovered_offer, hits)
+        }
+        Overlay::Health => {
+            overlay::render_health(frame, area, &model.alerts(), model.hovered_offer, hits)
+        }
         Overlay::ReleaseNotes(modal) => {
             let targets = super::release_notes::render(frame, area, modal, model.hovered_offer);
             hits.insert(0, (targets.popup, Hit::OverlayBody));
