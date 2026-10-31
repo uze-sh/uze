@@ -4,6 +4,21 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.22](https://github.com/uze-sh/uze/compare/v1.0.0-beta.21...v1.0.0-beta.22) - 2026-10-31
+
+### Features
+
+- **updates:** Add UZE_RELEASE_CHANNEL and a periodic plugin update pass ([#333](https://github.com/uze-sh/uze/pull/333)) ([7f15b59](https://github.com/uze-sh/uze/commit/7f15b5922e098885193979b17471c0c91c055e1f))
+
+### Fixes
+
+- **contributions:** Group heatmap authors by email ([#332](https://github.com/uze-sh/uze/pull/332)) ([034adab](https://github.com/uze-sh/uze/commit/034adab7442fdcc4a5c88b682c7971d1e0a2fb3b))
+- **integrations:** Align hooks and inspection with current harness releases ([#334](https://github.com/uze-sh/uze/pull/334)) ([5a8e0e3](https://github.com/uze-sh/uze/commit/5a8e0e3f2114220200d6e4b00a1c55424971392f))
+
+### Documentation
+
+- **web:** Document extensions, release channels and the security model ([#335](https://github.com/uze-sh/uze/pull/335)) ([e02fbeb](https://github.com/uze-sh/uze/commit/e02fbeb3e9d614d5a331bd631153058b466f7599))
+
 ## [1.0.0-beta.21](https://github.com/uze-sh/uze/compare/v1.0.0-beta.20...v1.0.0-beta.21) - 2026-10-30
 
 ### Features
