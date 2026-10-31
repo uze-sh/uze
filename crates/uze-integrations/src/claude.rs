@@ -45,6 +45,7 @@ mod plugin;
 mod runtime;
 mod session;
 mod skills;
+mod usage;
 
 pub(crate) use hooks::{HOOKS, RULES};
 pub use mcp::detach_mcp_entry;
@@ -317,6 +318,21 @@ impl IntegrationPort for ClaudeIntegration {
         now: std::time::SystemTime,
     ) -> Option<uze_core::inventory::SessionCounts> {
         inventory::session_counts(&self.transcripts_root, now)
+    }
+
+    fn usage_records(
+        &self,
+        since: std::time::SystemTime,
+    ) -> Option<Vec<uze_core::usage::UsageRecord>> {
+        Some(usage::records(&self.transcripts_root, since))
+    }
+
+    fn read_usage(
+        &self,
+        record: &uze_core::usage::UsageRecord,
+        from: uze_core::usage::Resume,
+    ) -> Option<uze_core::usage::UsageRead> {
+        usage::read(record, from)
     }
 
     fn conversation_digest(
