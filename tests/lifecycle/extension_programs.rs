@@ -365,8 +365,8 @@ fn a_confined_program_cannot_leave_its_process_group() {
     // Leaving the group is refused by the syscall filter (seccomp); Seatbelt
     // filters no system call, so on macOS a confined program can call
     // `setsid` (extension-platform-closure D91).
-    if !uze_application::confinement().syscall_filter {
-        eprintln!("skipped: this machine's confinement filters no system call");
+    if !uze_application::confinement().tree {
+        eprintln!("skipped: on this machine a confined program can outlive its run");
         return;
     }
     let reason = failed(&world.ask(&runner, "escape", ""));

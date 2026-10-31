@@ -109,10 +109,12 @@ the helper's environment as it is. Windows itself points `TEMP`,
 ### D6. `Availability` names outcomes
 
 The fields become `truncate`, `network`, `listening`, `devices`,
-`processes`, `memory`, `cpu`, `file_size` and `open_files`, each saying
+`processes`, `tree`, `memory`, `cpu`, `file_size` and `open_files`, each saying
 what a program cannot do or which resource is bounded. On Linux,
 `listening` is the seccomp filter refusing `listen` at every ABI,
-`devices` is ABI 5 and `processes` is ABI 6. The ABI 6 rule stays
+`devices` is ABI 5 and `processes` is ABI 6. `tree` is the filter
+refusing `setsid` and `setpgid` on Linux and the job on Windows; Seatbelt
+filters no system call, so on macOS a program can leave its run's group. The ABI 6 rule stays
 conservative: below it the filter checks signal targets only as far as an
 argument check can. `summary()` names the mechanism once, then what a
 program can still reach and which limits are missing, in plain words
