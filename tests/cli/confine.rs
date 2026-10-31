@@ -41,6 +41,7 @@ fn confinement(read: &[&Path], write: &[&Path], network: bool) -> Confinement {
         devices: Vec::new(),
         network,
         limits: Limits::with_cpu_seconds(20),
+        namespace: String::new(),
     }
 }
 

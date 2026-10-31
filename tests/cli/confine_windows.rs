@@ -37,6 +37,7 @@ fn confinement(read: &[&Path], write: &[&Path], network: bool) -> Confinement {
         devices: Vec::new(),
         network,
         limits: Limits::with_cpu_seconds(60),
+        namespace: "uze-test".to_owned(),
     }
 }
 
@@ -261,7 +262,7 @@ fn the_run_leaves_no_container_behind() {
     assert!(output.status.success(), "{output:?}");
     let container = PathBuf::from(stdout(&output));
     assert!(
-        container.to_string_lossy().contains("uze.run."),
+        container.to_string_lossy().contains("uze-test.run."),
         "the run's own folder: {container:?}"
     );
     assert!(!container.exists(), "{container:?} outlived its run");

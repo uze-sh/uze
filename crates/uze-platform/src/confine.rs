@@ -48,6 +48,11 @@ pub struct Confinement {
     /// it, still no Unix socket and no listening TCP port.
     pub network: bool,
     pub limits: Limits,
+    /// The name the objects a confinement makes for itself go under, the
+    /// caller's to choose: on Windows the run's container and the
+    /// capability each grant writes. Required there; nothing else reads it.
+    #[serde(default)]
+    pub namespace: String,
 }
 
 /// What a confined program may spend, as resource limits on its process.
@@ -390,6 +395,7 @@ mod tests {
             devices: Vec::new(),
             network: false,
             limits: Limits::with_cpu_seconds(20),
+            namespace: "probe".to_owned(),
         };
         let json = serde_json::to_string(&confinement).unwrap();
         assert_eq!(
@@ -418,6 +424,7 @@ mod tests {
             devices: Vec::new(),
             network: false,
             limits: Limits::with_cpu_seconds(1),
+            namespace: String::new(),
         };
         let error = enter(&confinement, &["sh".into()]);
         assert_eq!(error.kind(), io::ErrorKind::InvalidInput);

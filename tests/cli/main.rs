@@ -10,6 +10,7 @@ mod budget;
 // suite, where its programs run confined.
 #[cfg(target_os = "linux")]
 mod confine;
+// Windows confines in an AppContainer, proved with cmd.exe and PowerShell.
 #[cfg(windows)]
 mod confine_windows;
 mod extensions;

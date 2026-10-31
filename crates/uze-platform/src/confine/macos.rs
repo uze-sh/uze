@@ -51,5 +51,6 @@ fn real_paths(confinement: &Confinement) -> io::Result<Confinement> {
         devices: resolve(&confinement.devices)?,
         network: confinement.network,
         limits: confinement.limits,
+        namespace: confinement.namespace.clone(),
     })
 }
