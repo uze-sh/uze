@@ -2,7 +2,7 @@
 //! is held, and opened in the code surface by ctrl+click (`pane_link`).
 
 use super::*;
-use crate::ui::orchestrator::pane_link::{self, Clicked, PaneLink};
+use crate::ui::orchestrator::pane_link::{self, Clicked, HeldClick, PaneLink, Settled};
 
 /// Whether the pointer's gesture follows links: ctrl, as in a terminal,
 /// or the platform key a terminal reports in its place.
@@ -25,16 +25,23 @@ impl Attach<'_> {
     }
 
     /// A ctrl+click that never moved: the path under it opens in the code
-    /// surface, now or once the disk says it is there. Answers whether the
-    /// click was the path's; one on anything else is the program's.
+    /// surface, now or once the disk says it is there, and the click is
+    /// held back from the program until then. Answers whether the click
+    /// was taken; one on anything else is the program's at once.
     pub(super) fn follow_pane_link(&mut self, mouse: MouseEvent, area: Rect) -> bool {
+        self.let_go_of_held_click();
         if !follows_links(mouse.modifiers) {
             return false;
         }
         let Some(link) = self.pane_link_at(mouse.column, mouse.row, area) else {
             return false;
         };
-        match self.model.pane_links.click(link, Instant::now()) {
+        let click = HeldClick {
+            link,
+            release: mouse,
+            area,
+        };
+        match self.model.pane_links.click(click, Instant::now()) {
             Clicked::Open(link) => self.model.open_pane_link(&link),
             Clicked::Waiting(Some(target)) => {
                 spawn_path_check(target, self.channels.path_checks.sender.clone());
@@ -48,15 +55,40 @@ impl Attach<'_> {
     /// What the disk said about the paths asked after.
     pub(super) fn absorb_path_checks(&mut self) {
         while let Ok(check) = self.channels.path_checks.receiver.try_recv() {
-            let (drawn, open) =
+            let (drawn, settled) =
                 self.model
                     .pane_links
                     .absorb(check.target, check.found, Instant::now());
             self.model.dirty |= drawn;
-            if let Some(link) = open {
-                self.model.open_pane_link(&link);
+            match settled {
+                Some(Settled::Open(link)) => self.model.open_pane_link(&link),
+                Some(Settled::Release(click)) => self.hand_click_to_program(&click),
+                None => {}
             }
         }
+    }
+
+    /// Gives up on a held click, as a key or another click does: it goes
+    /// to the program it was held from.
+    pub(super) fn let_go_of_held_click(&mut self) {
+        if let Some(click) = self.model.pane_links.let_go() {
+            self.hand_click_to_program(&click);
+        }
+    }
+
+    /// The press and release of `click`, delivered together to the pane it
+    /// landed in, as a click that was never a drag is
+    /// (`release_selection`) — unless that pane is no longer in front.
+    fn hand_click_to_program(&mut self, click: &HeldClick) {
+        if click.link.pane != self.model.focused_pane() {
+            return;
+        }
+        let press = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            ..click.release
+        };
+        forward_mouse(&mut self.stream, &self.model, click.area, press);
+        forward_mouse(&mut self.stream, &self.model, click.area, click.release);
     }
 
     /// The path written under (`column`, `row`) of the pane drawn in

@@ -8,6 +8,8 @@
 //! (`reads::spawn_path_check`) and remembered for a moment, so a pointer
 //! moving along one path asks once.
 
+use crossterm::event::MouseEvent;
+use ratatui::layout::Rect;
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -61,9 +63,10 @@ pub(super) struct PaneLinks {
     pub(super) hovered: Option<PaneLink>,
     /// The link under the pointer whose path is still being asked about.
     waiting: Option<PaneLink>,
-    /// A ctrl+click on a path still being asked about, opened when the
-    /// answer says it is there.
-    opening: Option<PaneLink>,
+    /// A ctrl+click on a path still being asked about, held back from the
+    /// pane's program until the answer says whether it opens the path or
+    /// is the program's after all.
+    opening: Option<HeldClick>,
     asked: HashSet<PathBuf>,
     answered: HashMap<PathBuf, (Instant, bool)>,
 }
@@ -80,13 +83,32 @@ pub(super) enum Pointed {
     Asking(Option<PathBuf>),
 }
 
+/// A ctrl+click held back while its path is asked about: the release, and
+/// the pane's area it was resolved against, to hand to the program when
+/// the path is not there.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct HeldClick {
+    pub(super) link: PaneLink,
+    pub(super) release: MouseEvent,
+    pub(super) area: Rect,
+}
+
+/// What an answer settles about a held click.
+#[derive(Debug, Eq, PartialEq)]
+pub(super) enum Settled {
+    /// Its path is there: open it.
+    Open(PaneLink),
+    /// Its path is not: the click goes to the program it was held from.
+    Release(HeldClick),
+}
+
 /// What a ctrl+click on a path comes to.
 #[derive(Debug, Eq, PartialEq)]
 pub(super) enum Clicked {
     /// Its path is there: open it.
     Open(PaneLink),
-    /// Not known yet: it opens when the answer says it is there. `Some`
-    /// is the path to ask about.
+    /// Not known yet: held until the answer settles it. `Some` is the path
+    /// to ask about.
     Waiting(Option<PathBuf>),
     /// Its path is not there: the click is the program's.
     NotALink,
@@ -131,26 +153,34 @@ impl PaneLinks {
         (before != self.hovered, ask)
     }
 
-    /// A ctrl+click on `link`.
-    pub(super) fn click(&mut self, link: PaneLink, now: Instant) -> Clicked {
-        match self.point(&link, now) {
-            Pointed::Found => Clicked::Open(link),
+    /// A ctrl+click on `click.link`. Only one click is held at a time: the
+    /// one before must have been let go of (`let_go`).
+    pub(super) fn click(&mut self, click: HeldClick, now: Instant) -> Clicked {
+        match self.point(&click.link, now) {
+            Pointed::Found => Clicked::Open(click.link),
             Pointed::Missing => Clicked::NotALink,
             Pointed::Asking(ask) => {
-                self.opening = Some(link);
+                self.opening = Some(click);
                 Clicked::Waiting(ask)
             }
         }
     }
 
+    /// The held click, given up on: the person moved on before its answer
+    /// came, so it is the program's rather than a surface opening later
+    /// over whatever they turned to.
+    pub(super) fn let_go(&mut self) -> Option<HeldClick> {
+        self.opening.take()
+    }
+
     /// What was found about `target`. Answers whether what is drawn
-    /// changed, and the link a click was waiting on, to open now.
+    /// changed, and what it settles about the click held for it.
     pub(super) fn absorb(
         &mut self,
         target: PathBuf,
         found: bool,
         now: Instant,
-    ) -> (bool, Option<PaneLink>) {
+    ) -> (bool, Option<Settled>) {
         self.asked.remove(&target);
         if self.answered.len() >= REMEMBERED_AT_MOST {
             self.answered.clear();
@@ -170,14 +200,18 @@ impl PaneLinks {
                 drawn = self.hovered.take().is_some();
             }
         }
-        let open = match self.opening.take() {
-            Some(link) if link.target == target => found.then_some(link),
+        let settled = match self.opening.take() {
+            Some(click) if click.link.target == target => Some(if found {
+                Settled::Open(click.link)
+            } else {
+                Settled::Release(click)
+            }),
             other => {
                 self.opening = other;
                 None
             }
         };
-        (drawn, open)
+        (drawn, settled)
     }
 
     /// Forgets the link drawn and the ones asked about for the pointer,
@@ -500,23 +534,54 @@ mod tests {
         assert!(links.hovered.is_none());
     }
 
+    fn held(target: &str) -> HeldClick {
+        HeldClick {
+            link: link(target, 0),
+            release: MouseEvent {
+                kind: crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left),
+                column: 0,
+                row: 0,
+                modifiers: crossterm::event::KeyModifiers::CONTROL,
+            },
+            area: Rect::new(0, 0, 80, 24),
+        }
+    }
+
     #[test]
     fn a_click_on_a_path_being_asked_about_opens_it_once_it_is_there() {
         let now = Instant::now();
         let mut links = PaneLinks::default();
         assert_eq!(
-            links.click(link("/a", 0), now),
+            links.click(held("/a"), now),
             Clicked::Waiting(Some(PathBuf::from("/a")))
         );
-        let (_, open) = links.absorb(PathBuf::from("/a"), true, now);
-        assert_eq!(open, Some(link("/a", 0)));
+        let (_, settled) = links.absorb(PathBuf::from("/a"), true, now);
+        assert_eq!(settled, Some(Settled::Open(link("/a", 0))));
         assert_eq!(
-            links.click(link("/a", 0), now),
+            links.click(held("/a"), now),
             Clicked::Open(link("/a", 0)),
             "remembered"
         );
         let _ = links.absorb(PathBuf::from("/b"), false, now);
-        assert_eq!(links.click(link("/b", 0), now), Clicked::NotALink);
+        assert_eq!(links.click(held("/b"), now), Clicked::NotALink);
+    }
+
+    #[test]
+    fn a_click_held_for_a_path_that_is_not_there_is_handed_back() {
+        let now = Instant::now();
+        let mut links = PaneLinks::default();
+        let _ = links.click(held("/gone"), now);
+        let (_, settled) = links.absorb(PathBuf::from("/gone"), false, now);
+        assert_eq!(settled, Some(Settled::Release(held("/gone"))));
+    }
+
+    #[test]
+    fn a_click_let_go_of_opens_nothing_when_its_answer_comes() {
+        let now = Instant::now();
+        let mut links = PaneLinks::default();
+        let _ = links.click(held("/a"), now);
+        assert_eq!(links.let_go(), Some(held("/a")));
+        assert_eq!(links.absorb(PathBuf::from("/a"), true, now).1, None);
     }
 
     #[test]

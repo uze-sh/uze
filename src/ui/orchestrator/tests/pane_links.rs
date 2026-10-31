@@ -14,6 +14,14 @@ const LINE: &str = "see src/main.rs or src/gone.rs now";
 /// A checkout holding `src/main.rs`, and a pane standing in it showing
 /// [`LINE`].
 fn a_pane_naming_a_file(scratch: &str) -> (std::path::PathBuf, WorkspaceModel) {
+    a_pane_naming_a_file_to(scratch, MouseMode::default())
+}
+
+/// The same, its program asking for the mouse as `mouse` says.
+fn a_pane_naming_a_file_to(
+    scratch: &str,
+    mouse: MouseMode,
+) -> (std::path::PathBuf, WorkspaceModel) {
     let root = uze_testkit::temp::scratch(scratch);
     std::fs::create_dir_all(root.join("src")).unwrap();
     std::fs::write(root.join("src/main.rs"), "fn main() {}\n").unwrap();
@@ -32,7 +40,7 @@ fn a_pane_naming_a_file(scratch: &str) -> (std::path::PathBuf, WorkspaceModel) {
             rows: 24,
             cursor: Cursor { column: 0, row: 5 },
             alternate_screen: false,
-            mouse: MouseMode::default(),
+            mouse,
             bracketed_paste: false,
             cells,
         },
@@ -117,6 +125,10 @@ fn a_path_that_is_not_there_is_never_underlined() {
     let (column, row) = at(&driven, "gone.rs");
 
     driven.mouse_holding(column, row, MouseEventKind::Moved, KeyModifiers::CONTROL);
+    assert!(
+        driven.attach.model.pane_links.is_asking(),
+        "the disk is asked"
+    );
     assert!(pumped_until(&mut driven, |model| !model
         .pane_links
         .is_asking()));
@@ -175,4 +187,51 @@ fn a_ctrl_click_on_a_word_and_a_plain_click_on_a_path_open_nothing() {
             .showing(uze_extensions::code::CATALOG.id)
     );
     assert!(!driven.attach.model.pane_links.is_asking());
+}
+
+/// A program that asked for the mouse (an editor, say, whose ctrl+click
+/// is its own) gets a ctrl+click on a path that is not there: the click
+/// was held only while the disk was asked.
+#[test]
+fn a_ctrl_click_on_a_path_that_is_not_there_reaches_the_program() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("pane-link-handback-home"));
+    let (_root, model) = a_pane_naming_a_file_to(
+        "pane-link-handback",
+        MouseMode {
+            reports_clicks: true,
+            reports_drag: true,
+            sgr: true,
+        },
+    );
+    let mut driven = driven(model, &home).on_a_roomy_terminal();
+    driven.frame();
+    let (column, row) = at(&driven, "gone.rs");
+    let _ = driven.sent();
+
+    for kind in [
+        MouseEventKind::Down(MouseButton::Left),
+        MouseEventKind::Up(MouseButton::Left),
+    ] {
+        driven.mouse_holding(column, row, kind, KeyModifiers::CONTROL);
+    }
+    assert!(
+        driven.attach.model.pane_links.is_asking(),
+        "held while asked"
+    );
+    assert!(pumped_until(&mut driven, |model| !model
+        .pane_links
+        .is_asking()));
+
+    let inputs = driven
+        .sent()
+        .into_iter()
+        .filter(|request| matches!(request, uze_terminal::ClientRequest::Input { .. }))
+        .count();
+    assert_eq!(inputs, 2, "the press and the release reached the program");
+    assert!(
+        !driven
+            .attach
+            .model
+            .showing(uze_extensions::code::CATALOG.id)
+    );
 }
