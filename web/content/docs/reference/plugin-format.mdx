@@ -8,6 +8,12 @@ description: Every file a plugin can ship, and how each one reaches each agent
     <Folder name="agents">
       <File name="<name>.md" />
     </Folder>
+    <Folder name="extensions">
+      <Folder name="<id>">
+        <File name="extension.kdl" />
+        <File name="<component>.uze" />
+      </Folder>
+    </Folder>
     <Folder name="rules">
       <File name="<name>.md" />
     </Folder>
@@ -196,6 +202,37 @@ plugin something, ship a rule with `trigger: always_on` under `rules/`
 ([Rules](/docs/plugins/rules)); `uze agent plugin create --rules` scaffolds
 one. `uze agent plugin check` warns about an `AGENTS.md` left at the plugin's
 root.
+
+## Extensions
+
+`extensions/<id>/`, one directory per extension: what the plugin adds to the
+[workspace](/docs/workspace#extensions), which no harness receives. Its
+`extension.kdl` declares the surfaces, sources, actions and the grants it
+asks for; `.uze` components hold each view and its script; `fixtures/` and
+`tests/` feed and test it.
+
+```kdl title="extensions/todo/extension.kdl"
+protocol 1
+id "todo"
+name "Todo"
+description "The open items of the checkout's TODO.md"
+
+wants "read:checkout"
+
+surface "list" slot="drawer" view="list.uze" source="items" title="Todo"
+
+source "items" {
+    script "items.uze"
+    input file="TODO.md"
+}
+```
+
+Nothing in `plugin.json` names an extension: the directory is enough. (Its
+`extensions` field is the standard's settings per tool, and unrelated.) A
+plugin may carry several, and one that carries only extensions is listed as
+an extension rather than a plugin. Installing the plugin stores them; none
+runs anything until the operator allows its grants and enables it. How to
+write one is in [Extensions](/docs/plugins/extensions).
 
 ## Files your plugin ships
 
