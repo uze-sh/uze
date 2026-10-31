@@ -2214,7 +2214,14 @@ fn drawn_with_caret(line: &ContentLine, width: u16, column: usize) -> ratatui::b
     let mut terminal = Terminal::new(TestBackend::new(area.width, area.height)).unwrap();
     terminal
         .draw(|frame| {
-            render_line(frame, area, line, GUTTER_WIDTH, true, Token::TextDim);
+            render_line(
+                frame,
+                area,
+                line,
+                GUTTER_WIDTH,
+                true,
+                lines::LineLight::Rest,
+            );
             render_caret(frame, area, line, column, GUTTER_WIDTH);
         })
         .unwrap();
@@ -2871,11 +2878,11 @@ fn a_sections_cut_line_slides_by_the_hosts_hover_beat() {
     assert!(!line(40).contains("Tokenize"), "moved on: {:?}", line(40));
 }
 
-/// A line a click types on lifts its number under the pointer, and the
-/// line the caret is on reads as the active one; lines a click only marks
+/// A line a click types on lifts, the whole row, under the pointer, and
+/// the line the caret is on reads as the active one; lines a click only marks
 /// stay as they rest, since nothing that is not clickable looks it.
 #[test]
-fn an_editable_line_lights_its_number_under_the_pointer_and_at_the_caret() {
+fn an_editable_line_is_banded_under_the_pointer_and_at_the_caret() {
     let numbers = |editable: bool| {
         let mut view = sample();
         view.navigator = None;
@@ -2931,22 +2938,45 @@ fn an_editable_line_lights_its_number_under_the_pointer_and_at_the_caret() {
             let digit = (0..buffer.area.width)
                 .find(|&column| buffer[(column, row)].symbol().trim().parse::<u8>().is_ok())
                 .expect("its number is drawn");
-            buffer[(digit, row)].fg
+            // Past the text, where only the row's ground is drawn: the
+            // band runs the whole line, not just under its characters.
+            let past = buffer.area.width - 4;
+            (buffer[(digit, row)].fg, buffer[(past, row)].bg)
         })
     };
     let [rest, pointed, caret] = numbers(true);
-    assert_eq!(rest, theme::color(Token::TextDim), "a line at rest");
+    assert_eq!(
+        rest,
+        (
+            theme::color(Token::TextDim),
+            theme::color(Token::SurfaceBackground)
+        ),
+        "a line at rest"
+    );
     assert_eq!(
         pointed,
-        theme::color(Token::TextSecondary),
-        "under the pointer"
+        (
+            theme::color(Token::TextSecondary),
+            theme::color(Token::SurfaceHover)
+        ),
+        "under the pointer, the whole line lifts"
     );
-    assert_eq!(caret, theme::color(Token::TextBright), "the caret's line");
+    assert_eq!(
+        caret,
+        (
+            theme::color(Token::TextBright),
+            theme::color(Token::SurfaceSelected)
+        ),
+        "the caret's line is banded as the active one"
+    );
 
     let [_, pointed, _] = numbers(false);
     assert_eq!(
         pointed,
-        theme::color(Token::TextDim),
+        (
+            theme::color(Token::TextDim),
+            theme::color(Token::SurfaceBackground)
+        ),
         "a line a click does not type on does not lift"
     );
 }

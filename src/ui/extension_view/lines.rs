@@ -117,16 +117,14 @@ pub(super) fn render_lines(
             break;
         }
         let row = Rect::new(content.x, y, content.width, height);
-        // The line being typed on reads as the active one, as in every
-        // editor; the one under the pointer lifts to say a click lands there.
-        let number = if caret.is_some_and(|caret| caret.line == offset) {
-            Token::TextBright
+        let light = if caret.is_some_and(|caret| caret.line == offset) {
+            LineLight::Caret
         } else if pointed == Some(offset) {
-            Token::TextSecondary
+            LineLight::Pointed
         } else {
-            Token::TextDim
+            LineLight::Rest
         };
-        render_line(frame, row, line, gutter, true, number);
+        render_line(frame, row, line, gutter, true, light);
         if medium == Medium::Text {
             let rows = text_rows(
                 line,
@@ -518,16 +516,48 @@ pub(super) fn line_height(line: &ContentLine, width: u16, gutter: u16) -> u16 {
     u16::try_from(row + 1).unwrap_or(u16::MAX)
 }
 
+/// How a line of text stands out from its neighbours, across the whole
+/// row the way an editor marks one: the line being typed on reads as the
+/// active one, and the one under the pointer lifts to say a click lands
+/// there.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum LineLight {
+    Rest,
+    Pointed,
+    Caret,
+}
+
+impl LineLight {
+    fn number(self) -> Token {
+        match self {
+            Self::Rest => Token::TextDim,
+            Self::Pointed => Token::TextSecondary,
+            Self::Caret => Token::TextBright,
+        }
+    }
+
+    /// The ground under the whole row. A diff's own tint wins over it:
+    /// what changed is the line's meaning, the band only where it is.
+    fn band(self) -> Option<Token> {
+        match self {
+            Self::Rest => None,
+            Self::Pointed => Some(Token::SurfaceHover),
+            Self::Caret => Some(Token::SurfaceSelected),
+        }
+    }
+}
+
 pub(super) fn render_line(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     line: &ContentLine,
     gutter: u16,
     wrapped: bool,
-    number: Token,
+    light: LineLight,
 ) {
+    let number = light.number();
     let (marker_style, background) = match line.tone {
-        LineTone::Neutral => (theme::fg(Token::TextFaint), None),
+        LineTone::Neutral => (theme::fg(Token::TextFaint), light.band().map(theme::color)),
         LineTone::Added => (
             theme::fg(Token::StateSuccess),
             Some(theme::color(Token::StateDiffAdded)),

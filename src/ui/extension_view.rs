@@ -562,7 +562,7 @@ fn render_board(
                 .enumerate()
             {
                 let rect = Rect::new(board.x, board.y + row as u16, board.width, 1);
-                render_line(frame, rect, line, gutter, false, Token::TextDim);
+                render_line(frame, rect, line, gutter, false, lines::LineLight::Rest);
                 // Cut at the edge rather than folded: the whole line is
                 // one row, however far past the edge it runs.
                 if *medium == Medium::Text {
