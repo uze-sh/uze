@@ -741,6 +741,9 @@ pub(crate) struct SidebarNotice<'a> {
     pub(crate) headline: &'a str,
     /// The second row, quieter: what it means or what to do about it.
     pub(crate) detail: &'a str,
+    /// Where the notice opens something, how the pointer stands on it: its
+    /// detail is then a link, underlined at rest and lit under the pointer.
+    pub(crate) link: Option<widget::ChipState>,
 }
 
 /// What a drawn notice answers to.
@@ -823,7 +826,15 @@ impl SidebarNotice<'_> {
                     self.detail,
                     usize::from(area.width.saturating_sub(gutter + TRAILING_PAD)),
                 ),
-                theme::fg(theme::Token::TextDim),
+                match self.link {
+                    None => theme::fg(theme::Token::TextDim),
+                    Some(widget::ChipState::Resting) => theme::fg(theme::Token::TextSecondary)
+                        .add_modifier(ratatui::style::Modifier::UNDERLINED),
+                    Some(widget::ChipState::Hovered | widget::ChipState::Pressed) => {
+                        theme::fg(theme::Token::TextBright)
+                            .add_modifier(ratatui::style::Modifier::UNDERLINED)
+                    }
+                },
             ),
         ];
         frame.render_widget(Paragraph::new(Line::from(spans)), detail);

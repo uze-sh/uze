@@ -103,6 +103,10 @@ on "cancel" must not save first.
 - Everything clickable has a hover, and nothing that isn't clickable does.
 - Hover is a change of colour only (a "realce"): never underline, an arrow
   or a background overlay.
+- A line of text that opens something (a notice's "see what's new") is a
+  link: underlined at rest, so it reads as one, in a secondary tone that
+  the pointer lifts to bright. The underline marks the link; the hover is
+  still the colour alone.
 - Hover keeps the word's weight. A word that is bold at rest stays bold; a
   word that is not never turns bold under the pointer or while pressed.
   Manage's version and health are the reference.
