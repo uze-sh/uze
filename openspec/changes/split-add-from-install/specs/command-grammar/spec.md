@@ -50,6 +50,17 @@ wants the machine half while standing in a project.
 - **WHEN** a root verb runs where there is no project, with and without `-m`
 - **THEN** both behave identically
 
+### Requirement: One spelling per operation
+
+No operation SHALL have two command spellings, save `uze
+<plugin>@<marketplace>`, which is `uze add` without its verb. The `plugin`
+namespace SHALL NOT exist, and no alias for its removed verbs SHALL be kept.
+
+#### Scenario: The removed namespace is gone
+- **WHEN** a command under the removed namespace is invoked
+- **THEN** it is not recognized, and the message names the verb that
+  replaced it
+
 ## ADDED Requirements
 
 ### Requirement: Install reproduces the project and adds nothing
