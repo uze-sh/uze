@@ -126,10 +126,12 @@ on "cancel" must not save first.
   one keeps its tab with `mark.unsaved` where its close mark stands (the
   close mark again under the pointer). Moving away from unsaved work never
   refuses; the buffer is kept and the tree says `unsaved`.
-- A search lives in a fixed field over its list (`Navigator::field`, drawn
-  by `widget::Field`), what it found said under it, its results grouped
-  by file with a count; a match is set apart by a ground, in the list and
-  in the file.
+- The code surface's search is the files list's own, never a half of its
+  own: a fixed field over the tree (`Navigator::field`, drawn by
+  `widget::Field`) whose results take the tree's place while it holds
+  text, and `Esc` gives the tree back. What it found is said under the
+  field, its results grouped by file with a count; a match is set apart by
+  a ground, in the list and in the file.
 - Hover keeps the word's weight. A word that is bold at rest stays bold; a
   word that is not never turns bold under the pointer or while pressed.
   Manage's version and health are the reference.

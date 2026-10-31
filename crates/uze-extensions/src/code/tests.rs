@@ -3182,12 +3182,7 @@ fn the_header_offers_the_halves_on_one_side_and_the_renderings_on_the_other() {
     let drawn = render::view(&view, space());
     assert_eq!(
         chips(&drawn.subjects),
-        [
-            ("Files", true),
-            ("Search", false),
-            ("Map", false),
-            ("Changes", false)
-        ]
+        [("Files", true), ("Map", false), ("Changes", false)]
     );
     assert_eq!(chips(&drawn.modes), [("Preview", true), ("Source", false)]);
     // Each half is a thing, and says which. A way of *drawing* one is
@@ -3198,12 +3193,7 @@ fn the_header_offers_the_halves_on_one_side_and_the_renderings_on_the_other() {
             .iter()
             .map(|mode| mode.icon)
             .collect::<Vec<_>>(),
-        [
-            RowIcon::Directory,
-            RowIcon::Search,
-            RowIcon::Map,
-            RowIcon::Changes
-        ]
+        [RowIcon::Directory, RowIcon::Map, RowIcon::Changes]
     );
     assert!(
         drawn.modes.iter().all(|mode| mode.icon == RowIcon::None),
@@ -3220,12 +3210,7 @@ fn the_header_offers_the_halves_on_one_side_and_the_renderings_on_the_other() {
     let drawn = render::view(&view, space());
     assert_eq!(
         chips(&drawn.subjects),
-        [
-            ("Files", true),
-            ("Search", false),
-            ("Map", false),
-            ("Changes", false)
-        ],
+        [("Files", true), ("Map", false), ("Changes", false)],
         "the halves never come and go — the row that says where you are \
          is the one thing that may not move when it is used"
     );
@@ -3267,12 +3252,7 @@ fn the_map_takes_the_frame_and_says_which_level_it_is_on() {
     assert_eq!(steps, ["repo"], "the checkout, and nothing entered yet");
     assert_eq!(
         chips(&drawn.subjects),
-        [
-            ("Files", false),
-            ("Search", false),
-            ("Map", true),
-            ("Changes", false)
-        ],
+        [("Files", false), ("Map", true), ("Changes", false)],
         "which half you are in, and the way to the others as chips \
          somebody can point at rather than keys they have to know"
     );
@@ -3832,14 +3812,24 @@ fn a_search_finds_lines_in_every_file_and_opens_one() {
     let open = view.open.as_ref().expect("the file it was found in");
     assert_eq!(open.path, Path::new("/w/a.txt"));
     assert_eq!(open.caret, Caret { line: 1, column: 4 });
+    let drawn = render::view(&view, space());
     assert_eq!(
-        render::view(&view, space())
+        drawn
             .subjects
             .iter()
             .find(|mode| mode.active)
             .map(|mode| mode.label.as_str()),
-        Some("Search"),
-        "the list beside it is still the search"
+        Some("Files"),
+        "the search is the files' own"
+    );
+    assert!(
+        drawn
+            .navigator
+            .expect("a list")
+            .rows
+            .iter()
+            .any(|row| matches!(row, NavigatorRow::Found { .. })),
+        "the list beside it is still what the search found"
     );
 }
 
@@ -3957,7 +3947,7 @@ fn leaving_the_map_returns_to_the_search_it_was_entered_from() {
     press(&mut view, Command::Find);
     type_text(&mut view, "fog");
     settle(&mut view, &machine);
-    press(&mut view, Command::Close);
+    press(&mut view, Command::SelectNext);
     view.absorb_measure(measured());
 
     press(&mut view, Command::ToggleMap);
@@ -3969,4 +3959,35 @@ fn leaving_the_map_returns_to_the_search_it_was_entered_from() {
         .expect("the search's field, again");
     assert_eq!(field.text, "fog");
     assert_eq!(field.summary.text, "1 result in 1 file");
+}
+
+/// The search stands over the files' tree: typing into it lists what it
+/// found in the tree's place, and Esc lets go of it, tree back.
+#[test]
+fn the_files_search_replaces_the_tree_while_it_holds_text() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    let list = |view: &CodeView| render::view(view, space()).navigator.expect("a list");
+    let tree = list(&view);
+    assert_eq!(tree.field.expect("a field over the tree").text, "");
+    assert!(
+        matches!(tree.rows[0], NavigatorRow::Item { .. }),
+        "the tree"
+    );
+
+    handle_mouse(&mut view, Some(ViewHit::FocusField), space());
+    type_text(&mut view, "fog");
+    settle(&mut view, &machine);
+    assert!(matches!(list(&view).rows[0], NavigatorRow::Found { .. }));
+
+    press(&mut view, Command::Close);
+    assert!(!view.typing());
+    let back = list(&view);
+    assert_eq!(back.field.expect("the field").text, "");
+    assert!(
+        matches!(back.rows[0], NavigatorRow::Item { .. }),
+        "the tree, back"
+    );
+    assert_eq!(press(&mut view, Command::Close), CodeOutcome::Close);
 }

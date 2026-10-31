@@ -19,8 +19,8 @@ content.
   preview tab that the next one replaces. A changed file keeps its tab and
   shows the unsaved dot. A tab is closed by its mark or `Ctrl+W`, and
   closing one with unsaved changes asks once.
-- A Search half, next to Files, Map and Changes, puts a field over the
-  list. `git grep` runs as the text is typed, off the drawing thread.
+- The files list gains a search field over its tree; while it holds
+  text, its results take the tree's place, and `Esc` gives the tree back. `git grep` runs as the text is typed, off the drawing thread.
   Results are grouped by file with a count, each line with the match on a
   ground of its own. A result opens with the caret on the match, and the
   match is highlighted in the file too.

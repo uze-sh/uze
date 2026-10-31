@@ -185,8 +185,6 @@ pub(super) enum Half {
     Map,
     /// What is different from the branch this one started from.
     Changes,
-    /// Every file, searched.
-    Search,
 }
 
 /// One entry of the control that says how the half on show is *drawn* —
@@ -268,9 +266,6 @@ pub struct CodeView {
     /// A tab with unsaved changes asked to close, waiting for the second
     /// ask that discards them.
     closing_tab: Option<PathBuf>,
-    /// Whether the list beside the content is the search's rather than
-    /// the tree's. The content is a file either way.
-    searching: bool,
     search: search::Search,
     /// What the host still has to do for the files half, oldest first.
     queue: VecDeque<FileRequest>,
@@ -403,7 +398,6 @@ impl CodeView {
             parked: BTreeMap::new(),
             tabs: Vec::new(),
             closing_tab: None,
-            searching: false,
             search: search::Search::default(),
             queue: VecDeque::new(),
             error: None,
@@ -508,7 +502,11 @@ impl CodeView {
     fn navigator(&self) -> NavigatorMode {
         match self.content {
             ContentMode::Diff => NavigatorMode::Changes,
-            ContentMode::Contents | ContentMode::Preview if self.searching => NavigatorMode::Search,
+            // The files' list is the tree until something is typed into its
+            // search, and what that found while it holds text.
+            ContentMode::Contents | ContentMode::Preview if !self.search.query.is_empty() => {
+                NavigatorMode::Search
+            }
             ContentMode::Contents | ContentMode::Preview | ContentMode::Map => NavigatorMode::Files,
         }
     }
@@ -599,9 +597,9 @@ impl CodeView {
         self.editing() || self.renaming.is_some() || self.typing_a_search()
     }
 
-    /// Whether keys land in the search's field.
+    /// Whether keys land in the search's field, over the files' list.
     fn typing_a_search(&self) -> bool {
-        self.navigator() == NavigatorMode::Search && self.search.typing
+        self.search.typing && matches!(self.content, ContentMode::Contents | ContentMode::Preview)
     }
 
     /// The path the cursor stands on, whichever half it is in.
@@ -1203,8 +1201,8 @@ impl CodeView {
     /// when you use it: a control whose members come and go is one you
     /// have to look at again after every press, and the eye was already
     /// on the place the chip used to be.
-    pub(super) fn halves(&self) -> [Half; 4] {
-        [Half::Files, Half::Search, Half::Map, Half::Changes]
+    pub(super) fn halves(&self) -> [Half; 3] {
+        [Half::Files, Half::Map, Half::Changes]
     }
 
     /// Which of them is on show.
@@ -1212,7 +1210,6 @@ impl CodeView {
         match self.content {
             ContentMode::Map => Half::Map,
             ContentMode::Diff => Half::Changes,
-            ContentMode::Contents | ContentMode::Preview if self.searching => Half::Search,
             ContentMode::Contents | ContentMode::Preview => Half::Files,
         }
     }
@@ -1225,19 +1222,7 @@ impl CodeView {
     /// a way through the files. It is; going there is also leaving the
     /// changes, and that is what the press said.
     pub(super) fn show_half(&mut self, half: Half) {
-        // The map is entered over whichever list was on show, and leaving
-        // it goes back to that list, so it leaves the choice alone.
-        if half != Half::Map {
-            self.searching = half == Half::Search;
-        }
         match half {
-            // The content beside a search is the file a line of it was
-            // found in, which is the files half's content.
-            Half::Search => {
-                if matches!(self.content, ContentMode::Diff | ContentMode::Map) {
-                    self.show(ContentMode::Contents);
-                }
-            }
             Half::Changes => self.show(ContentMode::Diff),
             // As whatever the selection is: a document opens as the
             // document it is, which is the same rule arriving at a file
@@ -1651,9 +1636,18 @@ impl CodeView {
         if let Some(open) = self.open.as_mut() {
             open.editing = false;
         }
-        self.show_half(Half::Search);
+        if !matches!(self.content, ContentMode::Contents | ContentMode::Preview) {
+            self.show_half(Half::Files);
+        }
         self.search.typing = true;
         self.focus = Focus::Navigator;
+    }
+
+    /// Lets go of the search: the field empties and the tree is back.
+    fn clear_search(&mut self) {
+        self.search.typing = false;
+        self.search.query.clear();
+        self.ask_search();
     }
 
     /// Asks again for what the field holds now, in place of any search
@@ -1939,6 +1933,13 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         return CodeOutcome::Stay;
     }
 
+    // What a search found is a level over the tree: the way out of it
+    // comes before the way out of the surface, as the map's levels do.
+    if command == Command::Close && view.navigator() == NavigatorMode::Search {
+        view.clear_search();
+        return CodeOutcome::Stay;
+    }
+
     match command {
         Command::Close => {
             // Unsaved work is never closed away on one keystroke. The
@@ -2073,7 +2074,8 @@ fn search_field_command(view: &mut CodeView, command: Command) {
             view.search.query.pop();
             view.ask_search();
         }
-        Command::Close => view.search.typing = false,
+        // Out of the field and back to the tree, as a filter is let go of.
+        Command::Close => view.clear_search(),
         Command::SelectNext => {
             view.search.typing = false;
             view.search.step(true);
@@ -2231,6 +2233,10 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
     }
     if view.menu.is_some() {
         return row_menu::mouse(view, hit);
+    }
+    // A click anywhere but the field takes the keys out of it.
+    if hit != Some(ViewHit::FocusField) {
+        view.search.typing = false;
     }
     match hit {
         Some(ViewHit::SelectTab(index)) => view.show_tab(index),

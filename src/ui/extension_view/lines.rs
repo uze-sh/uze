@@ -195,7 +195,6 @@ pub(super) fn icon_symbol(icon: RowIcon) -> Option<Symbol> {
         RowIcon::Contract => Symbol::Contract,
         RowIcon::Finished => Symbol::Finished,
         RowIcon::Decision => Symbol::Decision,
-        RowIcon::Search => Symbol::IconSearch,
     })
 }
 

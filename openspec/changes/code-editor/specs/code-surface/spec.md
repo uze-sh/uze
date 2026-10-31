@@ -35,13 +35,14 @@ once, and asking again SHALL discard them without writing.
 - **WHEN** the viewer closes the tab of a file with unsaved changes, then closes it again
 - **THEN** the first close only says so, and the second removes the tab and leaves the file on disk unchanged
 
-### Requirement: A search of every file stands beside the content
-The Search half SHALL put a field over the list and search every file of
+### Requirement: The files list searches every file
+The files list SHALL keep a search field over its tree and search every file of
 the checkout that Git does not ignore as the text is typed, ignoring case,
 off the drawing thread. An answer to text the field no longer holds SHALL
 be dropped. Results SHALL be grouped by file with a count, and each match
-SHALL be set apart. Opening a result SHALL show its file with the caret on
-the match.
+SHALL be set apart, in the tree's place while the field holds text. Opening a
+result SHALL show its file with the caret on the match. Letting go of the
+search SHALL bring the tree back.
 
 #### Scenario: Searching and opening a result
 - **WHEN** the viewer types `fog` into the field and presses Enter

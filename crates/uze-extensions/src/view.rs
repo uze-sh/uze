@@ -436,8 +436,6 @@ pub enum RowIcon {
     Finished,
     /// A decision the project keeps.
     Decision,
-    /// Finding something in every file.
-    Search,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

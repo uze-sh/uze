@@ -760,7 +760,10 @@ fn render_field(
     field: &uze_extensions::view::Field,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) -> Rect {
-    let taken = 3.min(rows.height);
+    // The line under it only while it has something to say, so an empty
+    // field over a tree costs the tree one row less.
+    let said = !field.summary.text.is_empty();
+    let taken = (2 + u16::from(said)).min(rows.height);
     let line = Rect::new(
         rows.x + 1,
         rows.y,
@@ -771,7 +774,7 @@ fn render_field(
         .focused(field.focused)
         .render(frame, line);
     hits.push((line, ViewHit::FocusField));
-    if taken == 3 && !field.summary.text.is_empty() {
+    if said && taken == 3 {
         frame.render_widget(
             Paragraph::new(Line::from(styled(&field.summary))),
             Rect::new(rows.x + 1, rows.y + 2, rows.width.saturating_sub(1), 1),
