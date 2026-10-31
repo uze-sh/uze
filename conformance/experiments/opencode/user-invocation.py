@@ -220,6 +220,7 @@ for d in pa pb pc tui; do mkdir -p /work/$d; (cd /work/$d && git init -q . && ec
 
 
 def script():
+    # decision: headless-permissions
     run = "timeout 150 opencode run --standalone --auto --format json"
     return prelude() + f"""
 echo "===== config"
@@ -500,7 +501,7 @@ def run(cfg, prov_ip):
     if fast_costs:
         common.check(
             "append-handler-cost",
-            True,
+            max(fast_costs) < 50,
             f"n={len(fast_costs)} max={max(fast_costs):.3f}ms mean={sum(fast_costs) / len(fast_costs):.3f}ms (all={len(costs)})",
         )
     tui_phase(cfg, prov_ip)

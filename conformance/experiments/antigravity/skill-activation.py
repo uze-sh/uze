@@ -85,6 +85,7 @@ def final_script():
     # decision: experiment-isolation
     return f"""
 cd /work && mkdir -p project && cd project
+# decision: experiment-isolation
 agy --print "write the probe report" --output-format stream-json \\
   --dangerously-skip-permissions --print-timeout 90s --log-file /work/agy.log >/dev/null 2>&1 || true
 echo '===== hook log ====='

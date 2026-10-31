@@ -165,6 +165,7 @@ def _final(prompt, flags=""):
 cd /work && mkdir -p project && cd project
 echo notes > {NOTES}
 start=$(date +%s%N)
+# decision: experiment-isolation
 agy --print {json.dumps(prompt)} {flags} --output-format stream-json \\
   --dangerously-skip-permissions --print-timeout 150s --log-file /work/agy.log > /work/stream.out 2>&1 || true
 end=$(date +%s%N)
