@@ -64,7 +64,7 @@ pub use delivery::{
 };
 pub use machine::{
     detection_cache, harness_runtime, home, inventory, launcher, path, portable_shell, process_cwd,
-    provisioning, requirement_check, shell, subprocess,
+    provisioning, requirement_check, shell, subprocess, usage,
 };
 pub use package::{acquisition, authoring, hosts, naming, requirement, store, trust};
 pub use project::{

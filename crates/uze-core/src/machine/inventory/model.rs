@@ -219,6 +219,9 @@ pub struct HarnessReport {
     /// Whether the harness could list what it carries.
     pub inventory_known: bool,
     pub sessions: Option<SessionCounts>,
+    /// Whether its session records could be read for uses.
+    #[serde(default)]
+    pub uses_known: bool,
 }
 
 /// Who manages a resource, as the Overview shows it.
@@ -291,9 +294,22 @@ pub struct OverviewResource {
     #[serde(default)]
     pub checked: bool,
     pub removal: Option<String>,
+    /// How often it was used, for a skill, an agent or an MCP server whose
+    /// uses some harness carrying it could read; `None` otherwise.
+    #[serde(default)]
+    pub uses: Option<crate::usage::Uses>,
 }
 
 impl OverviewResource {
+    /// Nothing is wrong with it, and no use of it is found in the last
+    /// `days` on any harness that carries it, every one of them read.
+    pub fn unused(&self, days: u32) -> bool {
+        self.status == Status::Ok
+            && self
+                .uses
+                .is_some_and(|uses| uses.complete && uses.within(days) == 0)
+    }
+
     pub fn reaches(&self, harness: &str) -> bool {
         self.locations
             .iter()

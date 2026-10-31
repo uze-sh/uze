@@ -641,6 +641,13 @@ impl UzeHome {
         self.cache_dir().join("machine-overview.json")
     }
 
+    /// What the machine Overview kept of each harness's session records
+    /// between readings (see `machine::usage`): read again from the start
+    /// whenever it is missing or cannot be read.
+    pub fn machine_usage_cache_path(&self) -> PathBuf {
+        self.cache_dir().join("machine-usage.json")
+    }
+
     /// Cross-invocation cache of per-receipt attachment *read* results
     /// (see `application::inspection_cache` and ADR 018). Same
     /// reconstructable-optimization caveat as the detection cache: never

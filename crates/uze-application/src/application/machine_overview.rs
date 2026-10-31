@@ -7,6 +7,7 @@
 //! reached by a CLI command, the runtime shim or a launch.
 
 use std::{
+    collections::BTreeMap,
     panic::{AssertUnwindSafe, catch_unwind},
     sync::atomic::{AtomicBool, Ordering},
     time::SystemTime,
@@ -14,7 +15,9 @@ use std::{
 
 use uze_core::{
     integration::IntegrationPort,
+    UzeHome,
     inventory::{self, HarnessInventory, MachineOverview},
+    usage,
 };
 
 use super::UzeApplication;
@@ -26,9 +29,10 @@ impl UzeApplication {
     }
 
     /// Collects the Overview: every detected harness's inventory first,
-    /// one at a time, then their session counts. `answer` is handed the
-    /// Overview after each harness's inventory and once more with the
-    /// sessions. Returns `None` when `cancelled` was set
+    /// one at a time, then their session counts, then their uses from
+    /// their session records. `answer` is handed the Overview after each
+    /// harness's inventory, once more with the sessions, and after each
+    /// harness's uses. Returns `None` when `cancelled` was set
     /// before the end; what is complete is then left unsaved.
     pub fn collect_machine_overview(
         &self,
@@ -62,12 +66,34 @@ impl UzeApplication {
             }
             gathered[index].sessions = answered(|| integration.session_counts(now));
         }
-        let overview = inventory::assemble(gathered, &receipts);
+        let mut overview = inventory::assemble(gathered.clone(), &receipts);
         answer(&overview);
+        let mut ledger = usage::Ledger::load(&self.home);
+        let mut tallies = BTreeMap::new();
+        for (index, integration) in detected.iter().enumerate() {
+            let carried = gathered[index].found.as_deref().unwrap_or_default();
+            let read = answered(|| Some(ledger.read(*integration, carried, now, cancelled)));
+            if cancelled.load(Ordering::Relaxed) {
+                save_ledger(&self.home, &ledger);
+                return None;
+            }
+            tallies.insert(integration.id().to_owned(), read.flatten());
+            usage::count_uses(&mut overview, &tallies, now);
+            answer(&overview);
+        }
+        save_ledger(&self.home, &ledger);
         if let Err(error) = inventory::save_snapshot(&self.home, &overview, now) {
             tracing::warn!("machine overview not remembered: {error}");
         }
         Some(overview)
+    }
+}
+
+/// What was read is kept even when the collection stops part way: each
+/// record in it is whole, so the next reading continues from there.
+fn save_ledger(home: &UzeHome, ledger: &usage::Ledger) {
+    if let Err(error) = ledger.save(home) {
+        tracing::warn!("machine usage not remembered: {error}");
     }
 }
 

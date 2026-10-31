@@ -23,3 +23,4 @@ pub mod provisioning;
 pub mod requirement_check;
 pub mod shell;
 pub mod subprocess;
+pub mod usage;

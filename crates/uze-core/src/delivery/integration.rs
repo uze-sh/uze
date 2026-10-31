@@ -553,6 +553,25 @@ pub trait IntegrationPort: Send + Sync {
         None
     }
 
+    /// The records this harness kept of sessions active since `since`,
+    /// subagents' included, from their metadata alone: nothing is opened to
+    /// answer. `None` is "this harness's uses are not known".
+    fn usage_records(&self, _since: std::time::SystemTime) -> Option<Vec<crate::usage::UsageRecord>> {
+        None
+    }
+
+    /// The skills, agents and MCP servers used in `record`, read from
+    /// `from` on, each named the way this harness's inventory names it, and
+    /// where the next reading resumes. Only which resource, by whom and
+    /// when is taken. `None`: a shape this build cannot read.
+    fn read_usage(
+        &self,
+        _record: &crate::usage::UsageRecord,
+        _from: crate::usage::Resume,
+    ) -> Option<crate::usage::UsageRead> {
+        None
+    }
+
     /// The flags this harness's launch takes that are worth offering an
     /// operator, which of them UZE composes itself, and the grammar the
     /// harness reads them in. Kept to the

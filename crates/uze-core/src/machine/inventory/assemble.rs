@@ -32,6 +32,7 @@ pub fn assemble(
             name: harness.name.clone(),
             inventory_known: harness.found.is_some(),
             sessions: harness.sessions,
+            uses_known: false,
         });
         for resource in harness.found.into_iter().flatten() {
             let origin = origin_of(&resource, &harness.id, receipts);
@@ -323,6 +324,7 @@ fn rows(found: Vec<Measured>) -> Vec<OverviewResource> {
                 removal: group
                     .iter()
                     .find_map(|measured| measured.found.removal.clone()),
+                uses: None,
             }
         })
         .collect();

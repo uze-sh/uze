@@ -25,6 +25,7 @@ fn harness(id: &str, name: &str, sessions: u64) -> HarnessReport {
             days_30: sessions,
             days_90: sessions * 2,
         }),
+        uses_known: true,
     }
 }
 
@@ -52,6 +53,7 @@ fn resource(
         status: Status::Ok,
         checked: true,
         removal: None,
+        uses: None,
     }
 }
 

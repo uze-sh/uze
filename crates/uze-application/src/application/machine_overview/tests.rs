@@ -91,8 +91,8 @@ fn every_detected_harness_answers_and_the_result_is_remembered() {
     assert_eq!(overview.resources.len(), 1);
     assert_eq!(overview.harnesses[0].sessions.unwrap().days_30, 2);
     assert_eq!(
-        answers, 3,
-        "one answer per harness's inventory, one with the sessions"
+        answers, 5,
+        "one answer per harness's inventory, one with the sessions, one per harness's uses"
     );
     let (remembered, _) = app.machine_overview_snapshot().unwrap();
     assert_eq!(remembered, overview);
