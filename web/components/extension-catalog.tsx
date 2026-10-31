@@ -18,7 +18,7 @@ export function ExtensionCatalog({ items }: { items: Extension[] }) {
   return (
     <ul className="not-prose my-8 divide-y divide-fd-border border-y border-fd-border">
       {items.map((extension) => (
-        <li key={extension.id} className="grid gap-5 py-6 sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] sm:items-center">
+        <li key={extension.id} className="grid gap-5 py-6 sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] sm:items-start">
           <a href={extension.href} className="block rounded-[16px] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent">
             <Frame small>
               <img src={extension.gif} alt="" loading="lazy" width={1649} height={980} className="block h-auto w-full" />
