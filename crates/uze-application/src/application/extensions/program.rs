@@ -28,40 +28,9 @@ use uze_platform::confine::{Confinement, Limits};
 
 use super::{ExtensionCheckout, ExtensionConsent};
 
-/// The prefixes a program may read and execute beneath: where a system
-/// keeps its programs and the libraries they load. Only those that exist
-/// are granted, since a grant of a missing path fails the run.
-const SYSTEM_PREFIXES: &[&str] = &[
-    "/usr",
-    "/bin",
-    "/sbin",
-    "/lib",
-    "/lib32",
-    "/lib64",
-    "/libx32",
-    "/etc",
-    "/opt",
-    "/nix/store",
-    "/snap",
-];
-
-/// What a program reads that is no file of anybody's: randomness and the
-/// empty devices every runtime opens.
-const SYSTEM_READS: &[&str] = &[
-    "/dev/zero",
-    "/dev/random",
-    "/dev/urandom",
-    "/proc/self",
-    "/proc/sys/kernel/random",
-    "/proc/sys/kernel/osrelease",
-];
-
 /// What the objects a confinement makes for itself are named under (on
 /// Windows, each run's container and the capability a grant writes).
 const CONFINEMENT_NAMESPACE: &str = "uze";
-
-/// Where a declared path beneath it is a device: spoken to, not read.
-const DEVICES: &str = "/dev/";
 
 static RUNS: AtomicU64 = AtomicU64::new(0);
 
@@ -420,18 +389,22 @@ fn confinement(
         paths.dedup();
         paths
     };
-    let (devices, reads): (Vec<PathBuf>, Vec<PathBuf>) = asked
-        .reads
-        .iter()
-        .map(PathBuf::from)
-        .partition(|path| path.starts_with(DEVICES));
-    let read_execute = SYSTEM_PREFIXES
+    let system = uze_platform::confine::system();
+    let (devices, reads): (Vec<PathBuf>, Vec<PathBuf>) =
+        asked.reads.iter().map(PathBuf::from).partition(|path| {
+            system
+                .devices
+                .is_some_and(|devices| path.starts_with(devices))
+        });
+    let read_execute = system
+        .read_execute
         .iter()
         .map(PathBuf::from)
         .chain([bin.to_path_buf()])
         .chain(executes_from)
         .collect();
-    let read = SYSTEM_READS
+    let read = system
+        .read
         .iter()
         .map(PathBuf::from)
         .chain([
@@ -444,7 +417,12 @@ fn confinement(
     Confinement {
         read: existing(read),
         read_execute: existing(read_execute),
-        write: existing(vec![scratch.to_path_buf(), PathBuf::from("/dev/null")]),
+        write: existing(
+            [scratch.to_path_buf()]
+                .into_iter()
+                .chain(system.null.map(PathBuf::from))
+                .collect(),
+        ),
         devices: existing(devices),
         network: false,
         limits: Limits::with_cpu_seconds(asked.program.time_limit().as_secs().saturating_mul(2)),
@@ -479,15 +457,6 @@ const CURL_KEEPS: &[&str] = &[
     "SSL_CERT_FILE",
     "SSL_CERT_DIR",
     "CURL_CA_BUNDLE",
-];
-
-/// Where name resolution reads, beneath `/etc` and wherever its links
-/// lead (`/run/systemd/resolve` on most desktops).
-const RESOLVER_FILES: &[&str] = &[
-    "/etc/resolv.conf",
-    "/etc/hosts",
-    "/etc/nsswitch.conf",
-    "/etc/gai.conf",
 ];
 
 /// Runs `run` through the program runner: in its own scratch directory,
@@ -557,16 +526,20 @@ fn curl_confinement(run: &CurlRun<'_>, scratch: &Path, certificates: Vec<PathBuf
         paths.dedup();
         paths
     };
-    let resolver = RESOLVER_FILES
+    let system = uze_platform::confine::system();
+    let resolver = system
+        .resolver
         .iter()
         .filter_map(|file| std::fs::canonicalize(file).ok());
-    let read = SYSTEM_READS
+    let read = system
+        .read
         .iter()
         .map(PathBuf::from)
         .chain(resolver)
         .chain(certificates)
         .collect();
-    let read_execute = SYSTEM_PREFIXES
+    let read_execute = system
+        .read_execute
         .iter()
         .map(PathBuf::from)
         .chain(run.curl.parent().map(Path::to_path_buf))
@@ -574,7 +547,12 @@ fn curl_confinement(run: &CurlRun<'_>, scratch: &Path, certificates: Vec<PathBuf
     Confinement {
         read: existing(read),
         read_execute: existing(read_execute),
-        write: existing(vec![scratch.to_path_buf(), PathBuf::from("/dev/null")]),
+        write: existing(
+            [scratch.to_path_buf()]
+                .into_iter()
+                .chain(system.null.map(PathBuf::from))
+                .collect(),
+        ),
         devices: Vec::new(),
         network: true,
         limits: Limits::with_cpu_seconds(run.time_limit.as_secs().saturating_mul(2)),

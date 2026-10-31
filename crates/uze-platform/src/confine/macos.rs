@@ -5,6 +5,8 @@ use std::{ffi::OsString, io, os::unix::process::CommandExt, path::Path, process:
 
 use super::{Availability, Confinement, rlimit, seatbelt};
 
+pub(super) const SYSTEM: super::System = super::UNIX;
+
 const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
 
 pub(super) fn availability() -> Availability {

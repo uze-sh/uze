@@ -19,6 +19,8 @@ use landlock::{
 
 use super::{Availability, Confinement, rlimit};
 
+pub(super) const SYSTEM: super::System = super::UNIX;
+
 const LANDLOCK_CREATE_RULESET_VERSION: libc::c_uint = 1;
 
 pub(super) fn availability() -> Availability {

@@ -75,6 +75,11 @@ const INTERNET_CLIENT: &str = "S-1-15-3-1";
 const ENABLED: u32 = 0x4;
 const PROFILE_MAPPINGS: &str = "Software\\Classes\\Local Settings\\Software\\Microsoft\\Windows\\CurrentVersion\\AppContainer\\Mappings";
 
+/// Every app container reads and executes the system and the programs
+/// installed for every user, through `ALL APPLICATION PACKAGES`, and
+/// Windows names no device by a path.
+pub(super) const SYSTEM: super::System = super::System::NONE;
+
 pub(super) fn availability() -> Availability {
     Availability::of_app_container()
 }

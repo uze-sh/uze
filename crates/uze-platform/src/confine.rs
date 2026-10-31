@@ -85,6 +85,76 @@ impl Limits {
     }
 }
 
+/// What every confined program needs of the system it runs on, beyond what
+/// its own run grants. Only the paths that exist are to be granted, since a
+/// grant of a missing path fails the run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct System {
+    /// Where the system keeps its programs and the libraries they load:
+    /// read and executed beneath.
+    pub read_execute: &'static [&'static str],
+    /// What a program reads that is no file of anybody's: randomness and
+    /// the empty devices every runtime opens.
+    pub read: &'static [&'static str],
+    /// What name resolution reads, for a program given the network.
+    pub resolver: &'static [&'static str],
+    /// The device a program writes what it discards to, where it is a path.
+    pub null: Option<&'static str>,
+    /// Beneath it, a path a program declares is a device: spoken to, not
+    /// read.
+    pub devices: Option<&'static str>,
+}
+
+impl System {
+    /// A system whose own files every confined program already reaches.
+    pub const NONE: Self = Self {
+        read_execute: &[],
+        read: &[],
+        resolver: &[],
+        null: None,
+        devices: None,
+    };
+}
+
+/// A Unix system's: what Landlock and Seatbelt are told about.
+#[cfg(unix)]
+const UNIX: System = System {
+    read_execute: &[
+        "/usr",
+        "/bin",
+        "/sbin",
+        "/lib",
+        "/lib32",
+        "/lib64",
+        "/libx32",
+        "/etc",
+        "/opt",
+        "/nix/store",
+        "/snap",
+    ],
+    read: &[
+        "/dev/zero",
+        "/dev/random",
+        "/dev/urandom",
+        "/proc/self",
+        "/proc/sys/kernel/random",
+        "/proc/sys/kernel/osrelease",
+    ],
+    resolver: &[
+        "/etc/resolv.conf",
+        "/etc/hosts",
+        "/etc/nsswitch.conf",
+        "/etc/gai.conf",
+    ],
+    null: Some("/dev/null"),
+    devices: Some("/dev/"),
+};
+
+/// This machine's [`System`].
+pub fn system() -> System {
+    imp::SYSTEM
+}
+
 /// What confines a program on this machine.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
@@ -413,6 +483,18 @@ mod tests {
         assert_eq!(limits.file_size, 64 << 20);
         assert_eq!(limits.open_files, 256);
         assert_eq!(limits.address_space, 2 << 30);
+    }
+
+    /// A Unix path means nothing on Windows: `/usr` there is a folder at
+    /// the root of whatever drive the run starts on.
+    #[test]
+    fn only_a_unix_system_names_unix_paths() {
+        if cfg!(windows) {
+            assert_eq!(system(), System::NONE);
+        } else if cfg!(unix) {
+            assert_eq!(system().null, Some("/dev/null"));
+            assert!(system().read_execute.contains(&"/usr"));
+        }
     }
 
     #[test]
