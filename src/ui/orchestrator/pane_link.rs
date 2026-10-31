@@ -285,8 +285,9 @@ pub(super) fn written_at(
     let runs_on_from_above = start == 0
         && row > 0
         && cells
-            .get(from - 1)
-            .is_some_and(|cell| in_path(cell.character));
+            .get(from - width..from)
+            .and_then(|above| glyphs(above).last().copied())
+            .is_some_and(|glyph| glyph.is_none_or(in_path));
     let runs_on_below = end == width
         && cells
             .get(from + width)
@@ -542,6 +543,15 @@ mod tests {
             Some("/src/lib.rs"),
             "a row that ends in a space ends what it wrote"
         );
+    }
+
+    /// The wide character a row ends on spills into its last cell, which
+    /// the terminal fills with a space: the row still runs on.
+    #[test]
+    fn a_path_running_on_after_a_wide_character_is_not_read_in_halves() {
+        let mut cells = row("see crates/日 ", 13);
+        cells.extend(row("本 /src/x.rs  ", 13));
+        assert_eq!(written_at(&cells, 13, 1, 3), None);
     }
 
     #[test]
