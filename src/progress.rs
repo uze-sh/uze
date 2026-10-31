@@ -519,7 +519,7 @@ pub fn change_detail(kind: Change, subject: &str, detail: Option<&str>) -> Strin
 
 /// A whole change report: which command is speaking, a line per thing
 /// changed, and one closing line with the outcome and how long it took —
-/// `uze install v1.0.0` over `1 plugin installed [652ms]`, as bun does.
+/// `uze add v1.0.0` over `1 plugin installed [652ms]`, as bun does.
 pub fn change_report(verb: &str, lines: &str, outcome: &str) -> String {
     let took = STARTED
         .get()

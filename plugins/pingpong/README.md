@@ -42,7 +42,7 @@ uze add -m pingpong@uze       # the machine only: no rules
 ```
 
 The marketplace is linked to this checkout, so an edit here reaches the
-harnesses on the next `uze install` with no commit. `uze remove -m
+harnesses on the next `uze update pingpong` with no commit. `uze remove -m
 pingpong@uze` takes it off again. Its MCP server is built from a uze
 checkout, so outside one the rest of the plugin works and `pingpong` alone
 does not start.

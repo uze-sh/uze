@@ -25,7 +25,7 @@ fn contains_fixture_skill(entries: &[PathBuf]) -> bool {
 
 /// `uze install -m` through a staged test marketplace — the product
 /// rejects direct-path installs, so the test exercises the real user flow:
-/// `market add` first, then `install -m <name>@<market>`.
+/// `market add` first, then `add -m <name>@<market>`.
 fn install_via_marketplace_json(
     home: &std::path::Path,
     uze_home: &std::path::Path,

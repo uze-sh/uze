@@ -1039,7 +1039,7 @@ fn same_named_plugins_from_two_marketplaces_coexist_and_require_qualified_lookup
     assert!(app.plugins().list().unwrap().is_empty());
 }
 
-/// `uze install flow@second --alias flow-second` inside a project, on a
+/// `uze add flow@second --alias flow-second` inside a project, on a
 /// machine where `flow` is already active from another marketplace: the
 /// collision question ADR-036 asks is answered by the caller on the
 /// project path exactly as on the machine one, and the project declares
