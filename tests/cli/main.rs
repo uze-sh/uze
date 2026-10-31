@@ -5,10 +5,13 @@
 
 mod agent_report;
 mod budget;
-// Landlock and seccomp are Linux's: the kernel the helper is proved
-// against; macOS's profile is proved as text in uze-platform.
+// Each platform's confinement is proved against its own kernel, with the
+// programs that platform ships: macOS's is proved through the lifecycle
+// suite, where its programs run confined.
 #[cfg(target_os = "linux")]
 mod confine;
+#[cfg(windows)]
+mod confine_windows;
 mod extensions;
 mod grammar;
 mod machine;
