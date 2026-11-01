@@ -11,8 +11,7 @@
 //! it is easiest to break.
 
 use super::{
-    CodeView, ContentMode, Focus, Half, MapShowing, NavigatorMode, Showing, diff::content_line,
-    editor::OpenFile,
+    CodeView, ContentMode, Focus, Half, MapShowing, NavigatorMode, Showing, editor::OpenFile,
 };
 use crate::Unreadable;
 use crate::shared::{canvas::Glyphs, checkout};
@@ -81,21 +80,17 @@ pub fn view(code: &CodeView, space: Size) -> View {
         title,
         caption,
         navigator: listing(code).then(|| match code.navigator() {
-            NavigatorMode::Changes => changes_navigator(code),
             NavigatorMode::Files => files_navigator(code),
             NavigatorMode::Search => search_navigator(code),
         }),
         content: match code.content {
-            ContentMode::Diff => diff_content(code, space),
             ContentMode::Contents => contents_content(code, space),
             ContentMode::Preview => preview_content(code, space),
             ContentMode::Map => unreachable!("the map took the frame above"),
         },
         footer,
         notice: notice(code),
-        confirm: super::row_menu::confirm(code)
-            .or_else(|| super::row_menu::rename_confirm(code))
-            .or_else(|| delete_confirm(code)),
+        confirm: super::row_menu::rename_confirm(code).or_else(|| delete_confirm(code)),
         modes: modes(code),
         subjects: subjects(code),
         layout: Layout::Sidebar,
@@ -152,6 +147,7 @@ fn plain_line(text: String) -> ContentLine {
         number: String::new(),
         tone: LineTone::Neutral,
         spans: vec![Span::new(text, Role::Default)],
+        marked: false,
     }
 }
 
@@ -172,8 +168,7 @@ fn map_trail(code: &CodeView) -> Vec<TrailStep> {
 /// The ways this surface can show what it is showing.
 ///
 /// Only for a document, and only while its contents are what is on
-/// screen: offering "preview" beside a diff would be offering to leave
-/// the diff, which is what the diff's own door is for. The map is
+/// screen. The map is
 /// offered wherever there is one, because it is the same checkout seen
 /// another way — and the entry that leaves it is what makes the toggle a
 /// control somebody can point at rather than a key they have to know.
@@ -195,9 +190,8 @@ fn modes(code: &CodeView) -> Vec<Mode> {
         .collect()
 }
 
-/// The halves of this surface, named as the three places they are: the
-/// checkout's files, a picture of where its lines are, and what changed
-/// in it.
+/// The halves of this surface, named as the places they are: the
+/// checkout's files, and a picture of where its lines are.
 ///
 /// Never named after the *rendering* the map happens to be in — that is
 /// what the control below is for, and a chip that said "ASCII" here
@@ -210,12 +204,10 @@ fn subjects(code: &CodeView) -> Vec<Mode> {
             label: match half {
                 Half::Files => "Files".to_owned(),
                 Half::Map => "Map".to_owned(),
-                Half::Changes => "Changes".to_owned(),
             },
             icon: match half {
                 Half::Files => RowIcon::Directory,
                 Half::Map => RowIcon::Map,
-                Half::Changes => RowIcon::Changes,
             },
             active: half == here,
         })
@@ -233,7 +225,6 @@ fn mode_label(showing: Showing) -> String {
     match showing {
         Showing::Selection(ContentMode::Preview) => "Preview".to_owned(),
         Showing::Selection(ContentMode::Contents) => "Source".to_owned(),
-        Showing::Selection(ContentMode::Diff) => "Changes".to_owned(),
         Showing::Selection(ContentMode::Map) => "Map".to_owned(),
         Showing::Measured(MapShowing::Unicode) => "Unicode".to_owned(),
         Showing::Measured(MapShowing::Ascii) => "ASCII".to_owned(),
@@ -303,7 +294,7 @@ fn notice(code: &CodeView) -> Option<Span> {
 fn footer(code: &CodeView) -> Vec<Command> {
     // A question names its own keys in its border, by what each does now;
     // the footer would name enter by what it does on a row.
-    if code.confirming_delete.is_some() || code.discarding.is_some() || code.renaming.is_some() {
+    if code.confirming_delete.is_some() || code.renaming.is_some() {
         return Vec::new();
     }
     if code.confirming_discard {
@@ -342,10 +333,6 @@ fn footer(code: &CodeView) -> Vec<Command> {
     }
     match code.navigator() {
         NavigatorMode::Search => commands.push(Command::Activate),
-        NavigatorMode::Changes if code.selected_change().is_some() => {
-            commands.push(Command::OpenMenu);
-        }
-        NavigatorMode::Changes => {}
         NavigatorMode::Files if code.selected_is_a_file() => {
             commands.push(Command::OpenMenu);
             commands.push(Command::Edit);
@@ -369,12 +356,10 @@ fn footer(code: &CodeView) -> Vec<Command> {
     commands
 }
 
-/// Whether there is a list beside the content. No changes, or no way to
-/// read them, is a message and nothing else: an empty column with a zero
-/// over it pushes the message aside to say what the message already says.
-fn listing(code: &CodeView) -> bool {
-    code.navigator() != NavigatorMode::Changes
-        || (code.changes.error.is_none() && !code.changes.files.is_empty())
+/// Whether there is a list beside the content: always, since the tree is
+/// what this surface navigates.
+fn listing(_code: &CodeView) -> bool {
+    true
 }
 
 /// The files' list while its search holds text: the field, then each file
@@ -390,54 +375,6 @@ fn search_navigator(code: &CodeView) -> Navigator {
         choosing: None,
         menu: None,
         field: Some(code.search.field(focused)),
-    }
-}
-
-/// The changes as one flat list, each file named first and its directory
-/// after it, quieter: what a reviewer scans for is the file, and a tree
-/// spends a row on every directory above it to say what one caption can.
-pub(super) fn changes_navigator(code: &CodeView) -> Navigator {
-    let selected = code.selected_change();
-    Navigator {
-        field: None,
-        heading: "CHANGES".to_owned(),
-        badge: code.changes.files.len().to_string(),
-        focused: code.focus == Focus::Navigator,
-        anchor: selected,
-        choosing: None,
-        menu: code.menu.as_ref().and_then(|menu| {
-            code.changes
-                .position_of(Some(menu.path()))
-                .map(|row| menu.describe(row))
-        }),
-        rows: code
-            .changes
-            .files
-            .iter()
-            .enumerate()
-            .map(|(index, file)| {
-                let relative = file.path.strip_prefix(&code.root).unwrap_or(&file.path);
-                let name = relative
-                    .file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                NavigatorRow::Item {
-                    id: index,
-                    // The status is the mark this list exists for, and a
-                    // kind icon beside it would be a second one per row.
-                    icon: RowIcon::None,
-                    detail: relative
-                        .parent()
-                        .map(|parent| parent.to_string_lossy().into_owned())
-                        .unwrap_or_default(),
-                    name,
-                    depth: 0,
-                    marker: Span::new(file.status.glyph(), file.status.role()),
-                    marker_side: MarkerSide::Trailing,
-                    selected: selected == Some(index),
-                }
-            })
-            .collect(),
     }
 }
 
@@ -474,15 +411,7 @@ fn files_navigator(code: &CodeView) -> Navigator {
                 false => NavigatorRow::Item {
                     id: index,
                     name: row.name.clone(),
-                    // A file that changed says so here too, so the two
-                    // lists mark the same file the same way.
-                    marker: match code.changes.position_of(Some(&row.path)) {
-                        Some(index) => Span::new(
-                            code.changes.files[index].status.glyph(),
-                            code.changes.files[index].status.role(),
-                        ),
-                        None => Span::new(String::new(), Role::Muted),
-                    },
+                    marker: Span::new(String::new(), Role::Muted),
                     marker_side: MarkerSide::Leading,
                     // Said beside the name rather than in the marker, which
                     // is the change Git sees: a parked buffer is a change
@@ -496,91 +425,6 @@ fn files_navigator(code: &CodeView) -> Navigator {
                     icon: super::files::icon_for(&row.name, false, false),
                 },
             })
-            .collect(),
-    }
-}
-
-fn diff_content(code: &CodeView, space: Size) -> Content {
-    if let Some(message) = &code.changes.error {
-        return Content::Message {
-            text: message.clone(),
-            hint: None,
-            role: Role::Danger,
-        };
-    }
-    if code.changes.files.is_empty() {
-        return Content::Message {
-            text: "Nothing has changed".to_owned(),
-            hint: Some("This checkout matches the branch it started from.".to_owned()),
-            role: Role::Muted,
-        };
-    }
-    let Some(index) = code.selected_change() else {
-        return Content::Message {
-            text: "No file selected".to_owned(),
-            hint: Some("Pick one on the left to read what changed in it, line by line.".to_owned()),
-            role: Role::Muted,
-        };
-    };
-    if code.changes.diff_pending {
-        // The selection moved and its diff is still being read. Saying so
-        // beats showing the previous file's diff under the new file's
-        // name, and beats an empty pane that reads as "no changes".
-        return Content::Message {
-            text: "reading…".to_owned(),
-            hint: None,
-            role: Role::Muted,
-        };
-    }
-    if let Some(message) = &code.changes.diff_error {
-        return Content::Message {
-            text: message.clone(),
-            hint: None,
-            role: Role::Danger,
-        };
-    }
-    let path = &code.changes.files[index].path;
-    if let Some(picture) = code
-        .changes
-        .diff_picture
-        .as_ref()
-        .filter(|_| code.changes.diff_binary)
-    {
-        return Content::Picture {
-            heading: path.display().to_string(),
-            picture: picture.clone(),
-        };
-    }
-    if code.changes.diff_binary {
-        return not_text(
-            path,
-            "Git records that it changed, but has no lines to compare in it.",
-        );
-    }
-    let diff = &code.changes.diff;
-    Content::Lines {
-        caret: None,
-        editable: false,
-        medium: Medium::Text,
-        total: diff.len(),
-        heading: format!(
-            "DIFF · {}",
-            path.strip_prefix(&code.root)
-                .map(|path| path.display().to_string())
-                .unwrap_or_else(|_| code.display_root.clone())
-        ),
-        scroll: code.scroll,
-        first: code.scroll,
-        // Twice the space rather than exactly it: a wrapped line occupies
-        // more than one row, and only the host — which does the wrapping
-        // — knows how many. Erring long costs a few unrendered lines;
-        // erring short would show blank rows at the bottom of a long
-        // diff.
-        lines: diff
-            .iter()
-            .skip(code.scroll)
-            .take(usize::from(space.height).saturating_mul(2))
-            .map(content_line)
             .collect(),
     }
 }
@@ -751,10 +595,12 @@ fn contents_content(code: &CodeView, space: Size) -> Content {
                                         ground: None,
                                         bold: false,
                                         italic: false,
+                                        pressable: false,
                                     })
                                     .collect()
                             })
                             .unwrap_or_else(|| vec![Span::new(text.clone(), Role::Default)]),
+                        marked: false,
                     },
                 )
             })

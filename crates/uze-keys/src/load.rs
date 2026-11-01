@@ -483,8 +483,37 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::CodeEditing, "ctrl+w", Action::CloseFileTab),
         bind(Scope::CodeEditing, "ctrl+pagedown", Action::NextFileTab),
         bind(Scope::CodeEditing, "ctrl+pageup", Action::PreviousFileTab),
+        bind(Scope::Review, "esc", Action::Dismiss),
+        bind(Scope::Review, "tab", Action::FocusNext),
+        bind(Scope::Review, "down", Action::SelectNext),
+        bind(Scope::Review, "up", Action::SelectPrevious),
+        bind(Scope::Review, "enter", Action::Activate),
+        bind(Scope::Review, "pagedown", Action::ScrollPageDown),
+        bind(Scope::Review, "pageup", Action::ScrollPageUp),
+        bind(Scope::Review, "alt+.", Action::OpenMenu),
+        bind(Scope::Review, "c", Action::ReviewComment),
+        bind(Scope::Review, "v", Action::ReviewViewed),
+        bind(Scope::Review, "o", Action::ReviewOpenInCode),
+        bind(Scope::Review, "r", Action::ReviewResolve),
+        bind(Scope::Review, "n", Action::ReviewNextThread),
+        bind(Scope::Review, "p", Action::ReviewPreviousThread),
+        bind(Scope::Review, "shift+down", Action::ReviewMarkDown),
+        bind(Scope::Review, "shift+up", Action::ReviewMarkUp),
         // Typing has a scope of its own so nothing behind it answers a
         // letter — the same reason the action index has one.
+        bind(Scope::ReviewComposing, "esc", Action::Dismiss),
+        // ctrl+s rather than ctrl+enter, which only a terminal speaking
+        // the enhanced keyboard protocol sends.
+        bind(Scope::ReviewComposing, "ctrl+s", Action::ReviewAdd),
+        bind(Scope::ReviewComposing, "up", Action::SelectPrevious),
+        bind(Scope::ReviewComposing, "down", Action::SelectNext),
+        bind(Scope::ReviewComposing, "left", Action::CaretLeft),
+        bind(Scope::ReviewComposing, "right", Action::CaretRight),
+        bind(Scope::ReviewComposing, "home", Action::CaretLineStart),
+        bind(Scope::ReviewComposing, "end", Action::CaretLineEnd),
+        bind(Scope::ReviewComposing, "enter", Action::InsertNewline),
+        bind(Scope::ReviewComposing, "backspace", Action::EraseBack),
+        bind(Scope::ReviewComposing, "delete", Action::EraseForward),
         bind(Scope::CodeEditing, "esc", Action::Dismiss),
         bind(Scope::CodeEditing, "ctrl+s", Action::SaveFile),
         bind(Scope::CodeEditing, "up", Action::SelectPrevious),
@@ -779,6 +808,10 @@ mod tests {
                 // letter of its own would be one of the four nobody could
                 // guess.
                 "choose-area",
+                // The review's drafts are sent from their drawer's button,
+                // where they are read first: a letter that sent them blind
+                // was what the operator asked to take away.
+                "review-send",
                 // Delivering every task at once is rare and wide: the
                 // index offers it wherever there is a space to deliver.
                 "deliver-all-tasks",

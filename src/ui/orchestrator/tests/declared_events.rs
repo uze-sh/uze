@@ -76,6 +76,7 @@ fn hosting(root: &Path, compiled: CompiledExtension) -> WorkspaceModel {
         [
             uze_extensions::code::CATALOG.id.to_owned(),
             uze_extensions::spec::CATALOG.id.to_owned(),
+            uze_extensions::review::CATALOG.id.to_owned(),
         ]
         .into(),
     );
@@ -275,6 +276,7 @@ fn an_extension_without_refresh_on_has_nothing_watched() {
         [
             uze_extensions::code::CATALOG.id.to_owned(),
             uze_extensions::spec::CATALOG.id.to_owned(),
+            uze_extensions::review::CATALOG.id.to_owned(),
             super::switch_id(&identity()),
         ]
         .into(),

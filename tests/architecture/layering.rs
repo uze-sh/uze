@@ -1860,6 +1860,58 @@ fn only_the_declared_engine_asks_a_source() {
     );
 }
 
+/// The review a person wrote for an agent is read and rewritten through
+/// the host from one place, the review extension (`review-extension` D1, D6):
+/// a declared extension may not read what an operator wrote about another
+/// agent's work, nor a built-in other than the one that keeps it.
+#[test]
+fn only_the_review_extension_reaches_review_records() {
+    let root = repository_root();
+    let mut failures = Vec::new();
+    let mut extensions = Vec::new();
+    collect_rust_files(&root.join("crates/uze-extensions/src"), &mut extensions);
+    for file in extensions {
+        let relative = file
+            .strip_prefix(&root)
+            .unwrap_or(&file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        // A test module's double hands every call through to the host it
+        // wraps; it is no caller.
+        if relative.ends_with("tests.rs") {
+            continue;
+        }
+        // `lib.rs` declares the host's methods and hands them through.
+        let review = relative == "crates/uze-extensions/src/review.rs"
+            || relative.starts_with("crates/uze-extensions/src/review/")
+            || relative == "crates/uze-extensions/src/lib.rs";
+        let source = strip_test_modules(&fs::read_to_string(&file).unwrap_or_default());
+        let reaches = source
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .any(|line| line.contains("review_record("));
+        if reaches && !review {
+            failures.push(format!("  {relative} reaches a review record"));
+        }
+        let discards = source
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .any(|line| line.contains(".restore_to_head("));
+        // Only the review's discard job throws a change away; the rest of
+        // the review reads and keeps what the operator wrote.
+        let discard_job = relative == "crates/uze-extensions/src/review/extension.rs"
+            || relative == "crates/uze-extensions/src/lib.rs";
+        if discards && !discard_job {
+            failures.push(format!("  {relative} throws a change away"));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "only the review extension reaches `Host::review_record` and `restore_to_head`:\n{}",
+        failures.join("\n")
+    );
+}
+
 /// What a declared extension says reaches the terminal only through
 /// `Clean` (`extension-platform` D7, S14): the declared engine makes a
 /// `view::Span` with `Span::clean`, which takes nothing but a `Clean`, and

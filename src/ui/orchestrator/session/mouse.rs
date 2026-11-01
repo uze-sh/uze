@@ -459,6 +459,22 @@ impl Attach<'_> {
                     _ => {}
                 }
             }
+            _ if on_surface && self.presses_on_line_number(mouse.column, mouse.row) => {
+                let extend = carries_the_mark(mouse.modifiers);
+                self.mark_line_at(mouse.column, mouse.row, extend);
+                self.model.marking_lines = true;
+            }
+            // Shift+click on a line's text carries the mark as in an
+            // editor, and so do ctrl and alt, which reach where the
+            // terminal keeps shift for its own selection.
+            _ if on_surface
+                && carries_the_mark(mouse.modifiers)
+                && self.model.surface_frame.content_marks_lines
+                && self.presses_on_text(mouse.column, mouse.row) =>
+            {
+                self.mark_line_at(mouse.column, mouse.row, true);
+                self.model.marking_lines = true;
+            }
             _ if on_surface && self.presses_on_text(mouse.column, mouse.row) => {
                 self.mark_text_from(mouse.column, mouse.row);
             }
@@ -543,6 +559,9 @@ impl Attach<'_> {
                 for request in requests {
                     self.send_selection_request(request, mouse, layout.pane);
                 }
+            }
+            _ if self.model.marking_lines => {
+                self.mark_line_at(mouse.column, mouse.row, true);
             }
             _ if matches!(&self.model.selection, Some(Selection::Text(marking)) if marking.held()) =>
             {
@@ -694,6 +713,9 @@ impl Attach<'_> {
         {
             over.grabbed = false;
             self.model.dirty = true;
+            return Flow::Continue;
+        }
+        if std::mem::take(&mut self.model.marking_lines) {
             return Flow::Continue;
         }
         match &self.model.selection {
@@ -920,14 +942,14 @@ impl Attach<'_> {
     /// The right button: the tab/space context menu, anchored where it
     /// was asked for.
     pub(super) fn open_context_menu(&mut self, mouse: MouseEvent) -> Flow {
-        // A row of the code surface asks the surface for its actions: the
-        // menu is the extension's, and only the gesture is the host's.
+        // A row of the surface in front asks it for its actions, whichever
+        // surface it is (the code tree's, the review's list): the menu is
+        // the extension's, and only the gesture is the host's, as Alt+. is.
         if let Some(WorkspaceHit::Extension(ExtensionHit {
             slot,
             hit: ViewHit::SelectItem(row) | ViewHit::ToggleGroup(row),
         })) = self.model.hit_at(mouse.column, mouse.row)
             && self.model.open_slot == Some(slot)
-            && self.model.showing(code::CATALOG.id)
         {
             self.model.menu_at = Some(Rect::new(mouse.column, mouse.row, 1, 1));
             let space = self.surface_space();
@@ -1951,4 +1973,13 @@ impl Attach<'_> {
         };
         compute_layout(frame, self.model.sidebar_width, reserved).pane
     }
+}
+
+/// Whether a press on a line's number carries the mark there rather than
+/// starting a new one: with any key held. Shift alone is what an editor
+/// uses, but Windows Terminal, among others, keeps shift+click for its own
+/// selection and never reports it, so ctrl and alt carry it too; a press
+/// on a number has nothing else for them to mean.
+pub(in crate::ui::orchestrator) fn carries_the_mark(modifiers: KeyModifiers) -> bool {
+    modifiers.intersects(KeyModifiers::SHIFT | KeyModifiers::CONTROL | KeyModifiers::ALT)
 }

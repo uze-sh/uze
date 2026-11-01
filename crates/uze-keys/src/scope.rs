@@ -159,6 +159,12 @@ scopes! {
     /// The same surface with a file open for typing. Its own scope
     /// because it takes text — nothing behind it may answer a letter.
     CodeEditing => "code-editing", "Editing a file", Workspace, seals: true, text: true;
+    /// The review surface: an agent's branch against its target, read
+    /// file by file and commented on line by line.
+    Review => "review", "Review", Workspace, seals: true, text: false;
+    /// The same surface with a comment being written. Its own scope
+    /// because it takes text.
+    ReviewComposing => "review-composing", "Writing a comment", Workspace, seals: true, text: true;
     /// The architect surface: a diagram on a board that moves under the
     /// keys the way it moves under the pointer.
     Architect => "architect", "Architect", Workspace, seals: true, text: false;

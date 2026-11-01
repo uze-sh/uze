@@ -374,7 +374,7 @@ fn a_withheld_surface_says_why_and_a_click_on_it_asks_to_review() {
         node: root.id,
         act: crate::view::NodeAct::Review,
     };
-    assert_eq!(engine.hit(SECTION, review, space), Outcome::Review);
+    assert_eq!(engine.hit(SECTION, review, space), Outcome::Consent);
 }
 
 #[test]

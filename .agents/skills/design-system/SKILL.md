@@ -101,6 +101,9 @@ on "cancel" must not save first.
 
 **Hover:**
 - Everything clickable has a hover, and nothing that isn't clickable does.
+  A surface's chips (the content's modes, the bar's subjects: `viewed`,
+  `files · map`, `all · uncommitted`) are lifted by the host under the
+  pointer (`lines::lift_pointed_chip`), whatever surface draws them.
 - Hover is a change of colour only (a "realce"): never underline, an arrow
   or a background overlay.
 - The one exception: a line of text that opens something (a notice's
@@ -157,6 +160,84 @@ on "cancel" must not save first.
   pointer and while pressed: use `mark::close_tone(state)`, never a tone
   of your own.
 - Anything that reveals itself on hover needs a hint saying what it means.
+
+**The review:**
+- Its door is the `+N -M` on the tab strip, and it is always there while
+  the review is on: a clean checkout reads `review`, held back, never
+  nothing. It counts the branch and nothing more: no drafts, answers or
+  working mark ride it (the operator took the `◆n` off); what waits is
+  read inside the review, on the threads' walk. The door is drawn from
+  the extension's own `door_badge`, never from a read the host makes.
+- A line is marked by its number: a press on the number column marks it,
+  a drag down the numbers or a press with any key held, on a number or
+  on the line's text, carries the mark (shift, ctrl or alt: Windows
+  Terminal keeps shift+click for its own selection and never reports
+  it); a plain press on the text still selects text. Only numbered text
+  nobody types into marks from its text: in a file typed into, a press is
+  the caret's. Under the marked run stands one line that
+  opens a comment on it (`comment on 3 lines`), the affordance a
+  pointer needs where the key is `c`. The marked run wears
+  `state.diff-marked`, a draft comment's gold held faint, over the diff's
+  red and green, across the whole line, its sign and number included; never the list's `SurfaceSelected`, which the operator
+  could not tell from a line passed over.
+- The comment mark `◆` stands where comments are and nowhere else: the
+  gutter of a commented line and a comment card's first line. Never on the
+  threads' walk, the list's rows, the affordance under a marked run, the
+  foot or the door (the operator asked for it, more than once). What waits
+  to be sent is the bar's item to say, never a count on the foot.
+- A comment stands under the lines it is about on a card the host draws
+  (`LineTone::Card(role)`), never a box the extension draws: its lines on
+  `SurfaceRaised` with a row of air above and below, and `bar.medium`
+  down its left in the hue of what waits on it (a draft `warning`, sent
+  `info`, answered `success`, the one being written `accent`). The
+  operator asked for that rule: read without it, a comment was lost among
+  the code. Its first line says where and what state
+  (`◆ L52–56 · draft`), with its actions as words on that line
+  (`edit`, `delete`, `resolve`). Words of a line that act are
+  `Span::pressable`: the host makes each a target of its own and lifts it
+  under the pointer in its own hue (`ViewHit::Press`), never text a press
+  happens to land on, which has no hover. A fenced block in it is drawn as code,
+  coloured as the file is, on a faint ground; a backticked span in the
+  badge hue.
+- The composer is a card in the content (`LineTone::Card`): its lines on
+  `SurfaceRaised` in the text's column, the numbers beside it on the
+  content's ground, with a row of air inside it top and bottom. It is
+  typed into in the design system's way: bright text, the accent caret, a
+  faint placeholder, and room for four lines before anything is typed: a
+  field one line tall reads as a title. Its one control is a word on its
+  first line, `{ } code block`, which inserts an empty block fenced in the
+  file's language with the caret inside (never the marked lines, never a
+  second control for inline code, which backticks type), and its foot holds `save`
+  (the accent, the one meant next) and `discard`, which are `ctrl+s` and
+  `esc`; never `ctrl+enter` alone, which only an enhanced keyboard
+  sends.
+- What waits in the review rides the bar beside the agent's pane (a
+  bundled item stands only while the agent's own pane is in front; over a
+  view the review says it its own way): the
+  `comment` icon and a count, drafts in gold, else answers in green, else
+  the sent ones held back, gone once nothing is open. It opens the
+  comments drawer, by file, each comment opening the review on itself,
+  and `send N drafts to the agent` (primary) at its foot: the one way to
+  send, never a bare letter that sends what was not read again.
+- The open threads are walked from chips beside `viewed`, GitLab's way:
+  `‹`, `2/5` (current of total, `1/5` before any is gone to), `›`, the steps drawn
+  by the host from `step.previous`/`step.next` (`RowIcon::Previous`,
+  `Next`), a chip of a mark alone with no space after it; `n` and `p` are
+  the same steps. A step crosses files, round the ends, and shows the
+  thread with its lines marked; nothing is offered while no thread is
+  open.
+- A file read is marked viewed: the list's row carries the host's
+  `mark.viewed` icon (success), `mark.unviewed` (dim) before it is read,
+  and the warning hue once the file changed since; the chip over its diff
+  says it in words. A mark whose file changed is not counted, on show or
+  not.
+- A file's actions open on its row (`Alt+.`, the foot's `Actions`, a
+  right-click), never a dialog straight away, on every file, as the code
+  tree's do: `Open file` (not on one the change deleted), `Copy path`,
+  `Copy relative path`, and `Discard changes…` only where something is not
+  committed. The question discarding asks says what it does to this file:
+  deletes one the last commit lacks, takes a rename back, or puts the
+  file back.
 
 **Wheel:**
 - The wheel scrolls the view, never the selection, and never toggles
@@ -336,10 +417,16 @@ on "cancel" must not save first.
 - Keyboard users must never lose a path.
 
 **What is UZE's and what is a plugin's:**
-- The tab strip holds UZE's own surfaces only. Everything a plugin adds
-  (the doors to its views and drawers, the items it draws) stands in the
-  bar under the agent area, the tab strip's mirror at the content column's
-  foot, which takes its rows only while a plugin puts something there.
+- Placement follows hierarchy: the tab strip holds UZE's own surfaces and
+  the bundled extensions'; the bar under the agent area (the tab strip's
+  mirror at the content column's foot) takes what any extension adds, and
+  is the only place a plugin may stand: the doors to its views and
+  drawers, the items it draws. A bundled extension may use both. The bar
+  takes its row while a plugin puts something there, or while a bundled
+  item has something to say (the review's comments), never for an empty
+  bundled item. A bundled drawer has no door; its item opens it. Items
+  stand two columns apart, counted from what each draws, never from the
+  room it asked for (its inset doubled the air).
 - A plugin's list in a sidebar section reads as the sidebar's own rows: no
   ground on hover or selection, its text held back at rest and lit in its
   own hues under the pointer or once chosen, as the tasks section is.

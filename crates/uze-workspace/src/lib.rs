@@ -31,6 +31,7 @@ pub mod overrides;
 pub mod project_labels;
 pub mod prompt_history;
 pub mod reports;
+pub mod review;
 pub mod task;
 pub mod worktree;
 

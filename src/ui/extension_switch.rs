@@ -77,7 +77,8 @@ pub(crate) fn declared_id(identity: &uze_application::ExtensionIdentity) -> Stri
 /// asked.
 pub(crate) fn owner(action: Action) -> Option<&'static str> {
     match action {
-        Action::ToggleChanges | Action::ToggleFiles => Some(code::CATALOG.id),
+        Action::ToggleChanges => Some(uze_extensions::review::CATALOG.id),
+        Action::ToggleFiles => Some(code::CATALOG.id),
         Action::ToggleArchitect => Some(architect::CATALOG.id),
         Action::ToggleSpec => Some(spec::CATALOG.id),
         _ => None,
@@ -118,8 +119,14 @@ mod tests {
     #[test]
     fn switching_an_extension_off_withdraws_only_its_own_actions() {
         let disabled = BTreeSet::from([code::CATALOG.id.to_owned()]);
-        assert!(!offered(Action::ToggleChanges, &disabled));
+        assert!(
+            offered(Action::ToggleChanges, &disabled),
+            "the review's own"
+        );
         assert!(!offered(Action::ToggleFiles, &disabled));
+        let disabled = BTreeSet::from([uze_extensions::review::CATALOG.id.to_owned()]);
+        assert!(!offered(Action::ToggleChanges, &disabled));
+        assert!(offered(Action::ToggleFiles, &disabled));
         assert!(offered(Action::ToggleSpec, &disabled));
         assert!(offered(Action::NewAgent, &disabled));
     }

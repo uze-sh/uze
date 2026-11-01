@@ -757,6 +757,7 @@ fn source_lines(text: &str, path: &Path, theme: &str) -> Vec<ContentLine> {
                     .map(|(colour, piece)| Span::new(piece, Tone::Default).coloured(colour))
                     .collect()
             },
+            marked: false,
         })
         .collect()
 }

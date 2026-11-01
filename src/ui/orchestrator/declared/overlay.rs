@@ -104,7 +104,7 @@ impl WorkspaceModel {
     pub(in crate::ui::orchestrator) fn follow_overlay(&mut self, outcome: Outcome) {
         let id = self.open_overlay;
         match outcome {
-            Outcome::Stay | Outcome::OpenCommit { .. } | Outcome::Review => {}
+            Outcome::Stay | Outcome::OpenCommit { .. } | Outcome::Consent => {}
             Outcome::Agent(request) => {
                 // Putting an agent in front is what a picker is for: the
                 // card it was chosen on gives way to it.
@@ -118,9 +118,13 @@ impl WorkspaceModel {
             }
             Outcome::Close => self.close_overlay(),
             Outcome::Notice(span) => self.overlay_notice = Some(span),
-            Outcome::OpenPath { project, target } => {
+            Outcome::OpenPath {
+                project,
+                target,
+                line,
+            } => {
                 self.close_overlay();
-                open_code_at(self, &project, &target);
+                open_code_at(self, &project, &target, line);
             }
             Outcome::Copy(text) => self.copy_answered_by(text, id),
             Outcome::Toast(text) => {

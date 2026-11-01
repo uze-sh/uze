@@ -102,7 +102,7 @@ pub fn measure(host: &dyn Host, within: &Path) -> Result<Measure, String> {
     )?;
     // The changes half's own status, word for word, so the host can answer
     // both with one walk of the tree.
-    let status = host.git(&root, super::changes::STATUS_ARGS, &[])?;
+    let status = host.git(&root, crate::shared::git_status::STATUS_ARGS, &[])?;
 
     let mut commits: HashMap<&str, u32> = HashMap::new();
     for path in touched.split('\0').map(|path| path.trim_matches('\n')) {

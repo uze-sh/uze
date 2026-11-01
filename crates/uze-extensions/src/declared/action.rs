@@ -243,6 +243,7 @@ impl DeclaredExtension {
             action: action.to_owned(),
             label,
             unattended: false,
+            summary: None,
         })
     }
 
@@ -388,7 +389,11 @@ impl DeclaredExtension {
                 Outcome::Stay
             }
             Run::Copy(text) => Outcome::Copy(text),
-            Run::OpenPath { project, target } => Outcome::OpenPath { project, target },
+            Run::OpenPath { project, target } => Outcome::OpenPath {
+                project,
+                target,
+                line: None,
+            },
             Run::Open(target) => Outcome::Show(target),
             Run::Agent(request) => Outcome::Agent(Box::new(request)),
         }

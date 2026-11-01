@@ -62,6 +62,9 @@ pub enum Outcome {
     OpenPath {
         project: PathBuf,
         target: PathBuf,
+        /// The line to show, counted from one, when the path was written
+        /// with one.
+        line: Option<u32>,
     },
     /// Show the account of commit `hash` of the checkout at `project`,
     /// beside the row it was chosen on: where a history ends and what one
@@ -90,7 +93,27 @@ pub enum Outcome {
     Agent(Box<AgentRequest>),
     /// Show this extension where the operator answers why it is withheld:
     /// its consent, its enabling here, its held update.
-    Review,
+    Consent,
+}
+
+/// What an extension's view door says on the tab strip, beside the
+/// doors the host names itself: a count rather than a name, because the
+/// door is a badge as much as a way in.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct DoorBadge {
+    pub spans: Vec<Span>,
+    /// Nothing to say beyond the door being there: drawn held back, at the
+    /// strength of a door nobody needs yet.
+    pub quiet: bool,
+}
+
+/// What came of a write an extension asked of an agent: typed, refused
+/// with the reason, or declined by the operator at the confirmation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AgentWritten {
+    Typed,
+    Refused(String),
+    Declined,
 }
 
 /// What an extension asks the host to do to an agent.
@@ -106,6 +129,12 @@ pub struct AgentRequest {
     pub label: String,
     /// Sent by an agent's event rather than a gesture.
     pub unattended: bool,
+    /// What a bundled extension asks, in the operator's words, for the
+    /// confirmation to say instead of the text it types: that text is
+    /// UZE's own, written for the agent, and the operator is not who runs
+    /// it. A plugin's is ignored, and what it types is shown whole, since
+    /// nothing a plugin types goes unread (D182).
+    pub summary: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -150,8 +179,13 @@ pub enum Entry {
     /// The extension's own name for a way in, which a person chose before
     /// pressing anything: reviewing or navigating.
     Door(String),
-    /// `target`, inside the checkout the surface opens on.
-    Path { target: PathBuf, directory: bool },
+    /// `target`, inside the checkout the surface opens on, at `line`
+    /// (counted from one) when there is one.
+    Path {
+        target: PathBuf,
+        directory: bool,
+        line: Option<u32>,
+    },
     /// The tab this surface was put away for came back to the front: what
     /// [`Extension::hold`] took is handed to `resume` right after `open`.
     Return,
@@ -446,4 +480,25 @@ pub trait Extension: Send {
     }
 
     fn restore_memory(&mut self, _memory: Opaque) {}
+
+    /// A built-in that is told what agents do, as a declared extension
+    /// granted `agent:observe` is: which agent works where, and when a turn
+    /// ends.
+    fn observes_agents(&self) -> bool {
+        false
+    }
+
+    /// What the door of this extension's view says on the tab strip, for
+    /// the checkout it is focused on, or `None` for a door that is a name.
+    fn door_badge(&self) -> Option<DoorBadge> {
+        None
+    }
+
+    /// What came of the write to an agent the extension asked for with
+    /// the action `action`: whether it can count it as done.
+    fn agent_write(&mut self, _action: &str, _written: AgentWritten) {}
+
+    /// The viewer's text selection over `surface` settled across `lines`
+    /// (indices into the content's whole lines), covering `text`.
+    fn selected(&mut self, _surface: &str, _lines: std::ops::Range<usize>, _text: &str) {}
 }

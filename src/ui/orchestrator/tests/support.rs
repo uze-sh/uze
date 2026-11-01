@@ -1242,3 +1242,64 @@ pub(super) fn spec_slot(model: &WorkspaceModel, surface: &str) -> u32 {
         .builtin_slot(uze_extensions::spec::CATALOG.id, surface)
         .expect("the spec has the slot")
 }
+
+/// The review open in the pane on the checkout in front, listing `diffs`
+/// and showing the first, as Git would have answered.
+pub(super) fn reviewing(model: &mut WorkspaceModel, diffs: &[(&str, &str)]) {
+    crate::ui::orchestrator::open_review(model);
+    let root = model.focused_cwd().unwrap_or_default();
+    if let Some(engine) = model
+        .remembered
+        .declared
+        .engines
+        .get_mut(&super::Owner::Builtin(uze_extensions::review::CATALOG.id))
+    {
+        engine.review_showing(root, diffs);
+    }
+}
+
+/// The review in the pane as it draws now.
+pub(super) fn review_on_show(model: &WorkspaceModel) -> uze_extensions::view::View {
+    model
+        .remembered
+        .declared
+        .engine(&super::Owner::Builtin(uze_extensions::review::CATALOG.id))
+        .and_then(|engine| {
+            engine.view(
+                uze_extensions::review::SURFACE,
+                uze_extensions::view::Size {
+                    width: 80,
+                    height: 20,
+                },
+            )
+        })
+        .expect("the review stands in the pane")
+}
+
+/// The review of the checkout in front holds a draft on `path`, as its
+/// read of the record would have found.
+pub(super) fn drafted(model: &mut WorkspaceModel, path: &str) {
+    let root = model.focused_cwd().unwrap_or_default();
+    if let Some(engine) = model
+        .remembered
+        .declared
+        .engines
+        .get_mut(&super::Owner::Builtin(uze_extensions::review::CATALOG.id))
+    {
+        engine.review_drafted(root, path, "check this");
+    }
+}
+
+/// The review's door says the checkout in front adds `additions` lines and
+/// removes `deletions`, as its read would have found.
+pub(super) fn counted(model: &mut WorkspaceModel, additions: u32, deletions: u32) {
+    let root = model.focused_cwd().unwrap_or_default();
+    if let Some(engine) = model
+        .remembered
+        .declared
+        .engines
+        .get_mut(&super::Owner::Builtin(uze_extensions::review::CATALOG.id))
+    {
+        engine.review_counted(root, additions, deletions);
+    }
+}

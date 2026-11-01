@@ -1093,34 +1093,6 @@ pub(super) fn spawn_join(
     });
 }
 
-/// A finished read of the badge, tagged with the checkout it answers
-/// about: the selection can move while a read is in flight, and an answer
-/// about a checkout the workspace has since left must never be drawn as
-/// the current one.
-pub(super) struct GitResolution {
-    pub(super) cwd: PathBuf,
-    pub(super) summary: Option<code::ChangeSummary>,
-    /// How long the read took — what the next one waits in proportion to.
-    pub(super) took: Duration,
-}
-
-/// Reads the badge off the UI thread.
-///
-/// It launches `git` several times (`rev-parse`, `status`), which is why
-/// it cannot run where a frame is drawn: on a large repository `status
-/// --untracked-files=all` alone outlasts several frames, and it used to run
-/// inside the `dirty` branch immediately before `terminal.draw`.
-pub(super) fn spawn_git_read(cwd: PathBuf, sender: mpsc::Sender<GitResolution>) {
-    let parent = tracing::Span::current();
-    thread::spawn(move || {
-        let _pass = crate::telemetry::background_pass!("tui.git_read", parent: &parent);
-        let started = Instant::now();
-        let summary = answered_or(|| code::change_summary(&WorkspaceHost, &cwd), None);
-        let took = started.elapsed();
-        let _ = sender.send(GitResolution { cwd, summary, took });
-    });
-}
-
 /// One commit's account, read off the UI thread.
 ///
 /// Tagged with the commit asked about so an answer that arrives after the

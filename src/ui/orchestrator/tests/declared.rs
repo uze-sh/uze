@@ -118,6 +118,7 @@ impl Extension for Board {
             Command::Back => Outcome::OpenPath {
                 project: PathBuf::from("/project"),
                 target: PathBuf::from("src/lib.rs"),
+                line: None,
             },
             _ => Outcome::Stay,
         }
@@ -1767,6 +1768,7 @@ fn a_hosted_engines_jobs_run_off_the_frame_and_answer_it() {
         [
             uze_extensions::spec::CATALOG.id.to_owned(),
             uze_extensions::code::CATALOG.id.to_owned(),
+            uze_extensions::review::CATALOG.id.to_owned(),
         ]
         .into(),
     );

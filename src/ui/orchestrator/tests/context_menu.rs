@@ -244,3 +244,83 @@ fn starting_at_home_lands_in_the_workspace_rather_than_adding_to_it() {
         "a directory somebody chose is a request for a space in it"
     );
 }
+
+/// A right-click on a row of the surface in front asks that surface for
+/// its actions, as Alt+. does, whichever extension it is: the host turns
+/// the gesture into the surface's own hit and never asks which surface.
+#[test]
+fn a_right_click_on_a_surface_row_opens_that_rows_menu() {
+    use uze_extensions::view::ViewHit;
+    use uze_extensions::{DirEntry, ExtensionHit, Unreadable, code};
+
+    struct OneFile;
+    impl uze_extensions::Host for OneFile {
+        fn git(&self, _: &Path, _: &[&str], _: &[i32]) -> Result<String, String> {
+            Err("no git here".to_owned())
+        }
+        fn repository_root(&self, _: &Path) -> Result<PathBuf, String> {
+            Err("no git here".to_owned())
+        }
+        fn read_file(&self, _: &Path) -> Result<String, Unreadable> {
+            Ok("hello\n".to_owned())
+        }
+        fn list_dir(&self, _: &Path) -> Result<Vec<DirEntry>, String> {
+            Ok(vec![DirEntry {
+                directory: false,
+                name: "notes.txt".to_owned(),
+            }])
+        }
+        fn write_file(&self, _: &Path, _: &Path, _: &str) -> Result<(), String> {
+            Err("read only".to_owned())
+        }
+        fn delete_file(&self, _: &Path, _: &Path) -> Result<(), String> {
+            Err("read only".to_owned())
+        }
+        fn restore_to_head(&self, _: &Path, _: &[PathBuf]) -> Result<(), String> {
+            Err("read only".to_owned())
+        }
+        fn syntax_theme(&self) -> String {
+            String::new()
+        }
+    }
+
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-surface-row-menu"));
+    let mut model = model_of(session("/tmp"));
+    let mut view = code::CodeView::opening(
+        PathBuf::from("/w"),
+        "/w".to_owned(),
+        code::ContentMode::Contents,
+    );
+    while let Some(request) = view.take_request() {
+        view.absorb(code::fulfill(&OneFile, request));
+    }
+    show_code(&mut model, view);
+    let mut driven = driven(model, &home);
+    driven.frame();
+    let row = driven.hit(|hit| {
+        matches!(
+            hit,
+            WorkspaceHit::Extension(ExtensionHit {
+                hit: ViewHit::SelectItem(_),
+                ..
+            })
+        )
+    });
+    driven.mouse(row.x + 1, row.y, MouseEventKind::Down(MouseButton::Right));
+    let space = uze_extensions::view::Size {
+        width: 60,
+        height: 20,
+    };
+    let menu = code::view(code_view(&driven.attach.model).unwrap(), space)
+        .navigator
+        .and_then(|navigator| navigator.menu)
+        .expect("the row's menu is open");
+    assert!(
+        menu.entries.iter().any(|entry| entry == "Copy path"),
+        "{menu:?}"
+    );
+    assert!(
+        driven.attach.model.context_menu.is_none(),
+        "and the tabs' own menu is not"
+    );
+}

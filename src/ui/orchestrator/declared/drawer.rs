@@ -35,10 +35,17 @@ impl WorkspaceModel {
             .map(|session| session.workspace.selected_space)
     }
 
-    /// The declared drawers the tab strip offers, in slot order.
+    /// The plugins' drawers the bar has doors for, in slot order. A
+    /// bundled extension's drawer is opened by its own item instead.
     pub(in crate::ui::orchestrator) fn declared_drawers(
         &self,
     ) -> impl Iterator<Item = &HostedSlot> {
+        self.offered_drawers()
+            .filter(|slot| slot.owner.declared().is_some())
+    }
+
+    /// Every drawer offered, a bundled extension's among them.
+    fn offered_drawers(&self) -> impl Iterator<Item = &HostedSlot> {
         self.remembered
             .declared
             .slots
@@ -224,7 +231,7 @@ impl WorkspaceModel {
             return Some(open);
         }
         let viewing = self.slot_in_pane().map(|slot| &slot.owner);
-        self.declared_drawers()
+        self.offered_drawers()
             .find(|slot| Some(&slot.owner) == viewing)
             .or_else(|| self.declared_drawers().next())
             .map(|slot| slot.id)
@@ -350,7 +357,11 @@ impl WorkspaceModel {
                 self.asked_in_drawer = true;
                 self.dock_notice = Some(span);
             }
-            Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
+            Outcome::OpenPath {
+                project,
+                target,
+                line,
+            } => open_code_at(self, &project, &target, line),
             Outcome::Copy(text) => self.copy_answered_by(text, self.open_drawer()),
             Outcome::Toast(text) => {
                 if let Some(owner) = self.open_drawer_slot().map(|slot| slot.owner.clone()) {
@@ -366,7 +377,7 @@ impl WorkspaceModel {
                 let detail = self.attributed(self.open_drawer(), detail);
                 self.say_failed(&title, detail);
             }
-            Outcome::OpenCommit { .. } | Outcome::Review => {}
+            Outcome::OpenCommit { .. } | Outcome::Consent => {}
         }
         self.dirty = true;
     }

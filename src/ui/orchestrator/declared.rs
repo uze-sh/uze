@@ -28,7 +28,7 @@ use uze_extensions::declared::{
 };
 use uze_extensions::view::{Command, Role, ScrollTarget, Section, SectionRow, Size, View};
 
-mod agent;
+pub(super) mod agent;
 mod band;
 mod bar;
 mod bridge;
@@ -112,6 +112,18 @@ pub(super) trait Hosted: Extension {
     fn inspect(&self, _surface: &str) -> Inspection {
         Inspection::default()
     }
+    /// The review's door counts, as a read of them would have found them:
+    /// how the client's tests stand in for Git. Nothing by default.
+    #[cfg(test)]
+    fn review_counted(&mut self, _root: PathBuf, _additions: u32, _deletions: u32) {}
+    /// A draft the review's record holds for `root`, as its read would
+    /// have found it. Nothing by default.
+    #[cfg(test)]
+    fn review_drafted(&mut self, _root: PathBuf, _path: &str, _text: &str) {}
+    /// The review open on `root`, listing `diffs` and showing the first,
+    /// as Git would have answered. Nothing by default.
+    #[cfg(test)]
+    fn review_showing(&mut self, _root: PathBuf, _diffs: &[(&str, &str)]) {}
     /// Lets go of where the viewer was on `surface`. Nothing by default:
     /// an engine that keeps no place has none to forget.
     fn forget(&mut self, _surface: &str) {}
@@ -243,6 +255,21 @@ impl Hosted for DeclaredExtension {
 
 impl Hosted for uze_extensions::architect::ArchitectExtension {}
 impl Hosted for uze_extensions::spec::SpecExtension {}
+impl Hosted for uze_extensions::review::ReviewExtension {
+    #[cfg(test)]
+    fn review_counted(&mut self, root: PathBuf, additions: u32, deletions: u32) {
+        let files = usize::from(additions + deletions > 0);
+        self.counted(root, additions, deletions, files);
+    }
+    #[cfg(test)]
+    fn review_drafted(&mut self, root: PathBuf, path: &str, text: &str) {
+        self.drafted(root, path, text);
+    }
+    #[cfg(test)]
+    fn review_showing(&mut self, root: PathBuf, diffs: &[(&str, &str)]) {
+        self.showing(root, diffs);
+    }
+}
 impl Hosted for code::CodeExtension {
     #[cfg(test)]
     fn code_view(&self) -> Option<&code::CodeView> {
@@ -258,6 +285,10 @@ impl Hosted for code::CodeExtension {
 /// The built-ins hosted on the slot path, each with its engine.
 fn builtins() -> Vec<(&'static str, Box<dyn Hosted>)> {
     vec![
+        (
+            uze_extensions::review::CATALOG.id,
+            Box::new(uze_extensions::review::ReviewExtension::default()),
+        ),
         (code::CATALOG.id, Box::new(code::CodeExtension::default())),
         (
             architect::CATALOG.id,
@@ -1177,7 +1208,11 @@ impl WorkspaceModel {
                 self.asked_in_drawer = false;
                 self.open_notice = Some(span);
             }
-            Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
+            Outcome::OpenPath {
+                project,
+                target,
+                line,
+            } => open_code_at(self, &project, &target, line),
             Outcome::Copy(text) => self.copy_answered_by(text, self.open_slot),
             Outcome::Toast(text) => {
                 if let Some(owner) = self.slot_in_pane().map(|slot| slot.owner.clone()) {
@@ -1196,7 +1231,7 @@ impl WorkspaceModel {
             // Only the timeline's rows ask, and their click opens it
             // beside the row (see `open_commit_detail`); only a click on
             // what it drew reviews it, and `hit_surface` takes that.
-            Outcome::OpenCommit { .. } | Outcome::Review => {}
+            Outcome::OpenCommit { .. } | Outcome::Consent => {}
         }
         self.dirty = true;
     }
@@ -1209,7 +1244,7 @@ impl WorkspaceModel {
             | Outcome::Close
             | Outcome::Notice(_)
             | Outcome::OpenCommit { .. }
-            | Outcome::Review => {}
+            | Outcome::Consent => {}
             Outcome::Agent(request) => {
                 if let Some(owner) = self
                     .remembered
@@ -1220,7 +1255,11 @@ impl WorkspaceModel {
                     self.ask_of_agent(owner, *request);
                 }
             }
-            Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
+            Outcome::OpenPath {
+                project,
+                target,
+                line,
+            } => open_code_at(self, &project, &target, line),
             Outcome::Copy(text) => self.copy_answered_by(text, Some(id)),
             Outcome::Toast(text) => {
                 if let Some(owner) = self
@@ -1363,7 +1402,7 @@ impl WorkspaceModel {
             return;
         }
         // The Extensions screen is the session's to open, on its next pass.
-        if outcome == Outcome::Review {
+        if outcome == Outcome::Consent {
             self.review_extension = self
                 .remembered
                 .declared

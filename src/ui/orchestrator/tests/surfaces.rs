@@ -4,8 +4,7 @@
 use super::WorkspaceHit;
 use super::support::*;
 use super::{
-    ExtensionHit, GitBadge, GitResolution, WorkStateView, WorkspaceModel, open_architect,
-    open_code, open_spec,
+    ExtensionHit, WorkStateView, WorkspaceModel, open_architect, open_code, open_spec,
     render::{LeadingSlot, render_tab_strip},
 };
 use crate::ui::theme::{self, Token};
@@ -14,7 +13,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::{Terminal, backend::TestBackend};
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use uze_core::UzeHome;
 use uze_terminal::{ClientEvent, ClientRequest};
 
@@ -161,24 +160,26 @@ fn the_surface_chords_walk_between_surfaces_without_closing_first() {
             code_view(model).map(CodeView::showing),
             model.showing(uze_extensions::architect::CATALOG.id),
             model.showing(uze_extensions::spec::CATALOG.id),
+            model.showing(uze_extensions::review::CATALOG.id),
         ) {
-            (Some(mode), false, false) => format!("code {mode:?}"),
-            (None, true, false) => "architect".to_owned(),
-            (None, false, true) => "spec".to_owned(),
-            (None, false, false) => "pane".to_owned(),
+            (Some(mode), false, false, false) => format!("code {mode:?}"),
+            (None, true, false, false) => "architect".to_owned(),
+            (None, false, true, false) => "spec".to_owned(),
+            (None, false, false, true) => "review".to_owned(),
+            (None, false, false, false) => "pane".to_owned(),
             _ => panic!("two surfaces at once"),
         }
     };
     for (key, expected) in [
         ('e', "code Contents"),
-        ('g', "code Diff"),
+        ('g', "review"),
         ('e', "code Contents"),
         ('a', "architect"),
-        ('g', "code Diff"),
+        ('g', "review"),
         ('a', "architect"),
         ('e', "code Contents"),
         ('e', "pane"),
-        ('g', "code Diff"),
+        ('g', "review"),
         ('g', "pane"),
         ('a', "architect"),
         ('a', "pane"),
@@ -187,7 +188,7 @@ fn the_surface_chords_walk_between_surfaces_without_closing_first() {
         ('x', "spec"),
         ('e', "code Contents"),
         ('x', "spec"),
-        ('g', "code Diff"),
+        ('g', "review"),
         ('x', "spec"),
         ('x', "pane"),
     ] {
@@ -205,7 +206,7 @@ fn a_lit_surface_button_closes_it_in_one_click() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-lit-button"));
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
-    open_code(&mut model, uze_extensions::code::CHANGES);
+    open_code(&mut model, uze_extensions::code::FILES);
     let mut driven = driven(model, &home);
     driven.frame();
 
@@ -224,6 +225,53 @@ fn a_lit_surface_button_closes_it_in_one_click() {
             .model
             .showing(uze_extensions::code::CATALOG.id),
         "closed in one click"
+    );
+}
+
+/// The review's door is the review: a click on it opens the review, as
+/// its key does, and a click on it again puts it away.
+#[test]
+fn a_click_on_the_review_door_is_pressing_its_key() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-review-door"));
+    let (mut model, first, _second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    let mut driven = driven(model, &home);
+    driven.frame();
+    let door = |driven: &Driven<'_>| {
+        driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .find(|(_, hit)| *hit == WorkspaceHit::OpenChanges)
+            .map(|(rect, _)| *rect)
+            .expect("the review's door stands on a clean checkout")
+    };
+    let rect = door(&driven);
+    driven.press(rect.x, rect.y);
+    let review = uze_extensions::review::CATALOG.id;
+    assert!(driven.attach.model.showing(review), "a click opens it");
+    driven.frame();
+    let rect = door(&driven);
+    driven.press(rect.x, rect.y);
+    assert!(!driven.attach.model.showing(review), "and closes it");
+
+    driven.press_key(KeyEvent::new(KeyCode::Char('g'), KeyModifiers::ALT));
+    assert!(driven.attach.model.showing(review), "as its key does");
+}
+
+/// Switching the review off takes its door off the strip.
+#[test]
+fn the_review_switched_off_has_no_door() {
+    let mut model = agent_with_task(WorkStateView::Ready, 3);
+    model.follow_extension_switch(switched_off(&[uze_extensions::review::CATALOG.id]));
+    let (_, hits) = tab_strip(&model);
+    assert!(
+        !hits
+            .iter()
+            .any(|(_, hit)| *hit == WorkspaceHit::OpenChanges),
+        "no door for a review that is off"
     );
 }
 
@@ -368,6 +416,7 @@ fn every_extension_switched_off_takes_the_whole_button_group() {
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
     model.follow_extension_switch(switched_off(&[
+        uze_extensions::review::CATALOG.id,
         uze_extensions::code::CATALOG.id,
         uze_extensions::architect::CATALOG.id,
         uze_extensions::spec::CATALOG.id,
@@ -399,29 +448,20 @@ fn every_extension_switched_off_takes_the_whole_button_group() {
 fn a_switched_off_extension_reads_nothing_for_the_sidebar() {
     let mut model = agent_session_in("/repo");
     model.follow_extension_switch(switched_off(&[
+        uze_extensions::review::CATALOG.id,
         uze_extensions::code::CATALOG.id,
         uze_extensions::spec::CATALOG.id,
     ]));
     let home = UzeHome::at(uze_testkit::temp::scratch(
         "orchestrator-switched-off-reads",
     ));
-    let (git, _git_answers) = std::sync::mpsc::channel();
     let (engines, _engine_answers) = std::sync::mpsc::channel();
 
-    model.schedule_git_read(&git);
     assert_eq!(
         model.schedule_engine_jobs(&home, &engines),
         0,
         "the spec counts nothing"
     );
-
-    assert!(model.remembered.git_pending.is_none());
-    assert!(!model.absorb_git_read(GitResolution {
-        cwd: PathBuf::from("/repo"),
-        summary: None,
-        took: Duration::ZERO,
-    }));
-    assert!(model.remembered.git_badge.is_none());
 }
 
 /// Switching back on puts it all back: the button returns and a key
@@ -808,14 +848,7 @@ fn a_button_group_is_divided_by_where_its_fill_changes_and_by_nothing_drawn() {
 #[test]
 fn the_changes_count_answers_with_its_hue_and_never_with_a_ground() {
     let mut model = agent_with_task(WorkStateView::Ready, 3);
-    model.remembered.git_badge = Some(GitBadge {
-        cwd: PathBuf::from("/repo"),
-        summary: Some(uze_extensions::code::ChangeSummary {
-            additions: 476,
-            deletions: 286,
-        }),
-        checked_at: Instant::now(),
-    });
+    counted(&mut model, 476, 286);
     let (_, hits) = tab_strip(&model);
     let rect = hits
         .iter()
@@ -867,15 +900,12 @@ fn the_changes_count_answers_with_its_hue_and_never_with_a_ground() {
     );
 }
 
-/// The changes badge is a count that is also a door: it says how much
-/// changed, so with nothing to say it says nothing. Two things that
-/// must not cost: reachability — the code button never leaves the
-/// pair, and the diff is one mode switch away inside the surface it
-/// opens — and steadiness, since the badge comes and goes on a Git
-/// read nobody asked for. It takes its room to the left, so the pair
-/// sits at the same columns whether or not there is work to report.
+/// The review's door stands on a clean checkout as on a busy one, and
+/// what it counts takes its room to the left: the code button sits at the
+/// same columns whether or not there is work to report, so it never moves
+/// under the pointer when a count arrives.
 #[test]
-fn the_changes_badge_comes_with_the_work_and_the_code_button_never_leaves() {
+fn the_review_door_counts_to_the_left_and_the_code_button_never_moves() {
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
 
@@ -887,23 +917,15 @@ fn the_changes_badge_comes_with_the_work_and_the_code_button_never_leaves() {
             .map(|(rect, _)| *rect)
     };
 
-    model.remembered.git_badge = None;
     full_frame(&mut model);
     let clean =
         button(&model, WorkspaceHit::OpenFiles).expect("a clean checkout still offers its files");
     assert!(
-        button(&model, WorkspaceHit::OpenChanges).is_none(),
-        "and says nothing about changes rather than saying zero"
+        button(&model, WorkspaceHit::OpenChanges).is_some(),
+        "and the review's door stands on a clean checkout too"
     );
 
-    model.remembered.git_badge = Some(GitBadge {
-        cwd: PathBuf::from("/repo/.worktrees/a"),
-        summary: Some(uze_extensions::code::ChangeSummary {
-            additions: 3,
-            deletions: 1,
-        }),
-        checked_at: Instant::now(),
-    });
+    counted(&mut model, 3, 1);
     full_frame(&mut model);
     let changes =
         button(&model, WorkspaceHit::OpenChanges).expect("work arriving brings the badge");
@@ -1450,4 +1472,203 @@ fn moving_to_the_agents_shell_under_the_overview_keeps_the_surface() {
 
     driven.attach.model.dismiss_space_overview();
     assert!(showing_architect(&driven.attach.model));
+}
+
+/// A draft waiting in the review rides the bar under the agent area, a
+/// bundled extension's item beside the plugins' own: a click on it opens
+/// the comments beside the pane, review open or not.
+#[test]
+fn a_draft_waiting_rides_the_bar_and_opens_the_comments() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-review-item"));
+    let (mut model, first, _second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    full_frame(&mut model);
+    let item = |model: &WorkspaceModel| {
+        model
+            .bar_items()
+            .into_iter()
+            .find(|slot| slot.owner == super::Owner::Builtin(uze_extensions::review::CATALOG.id))
+            .map(|slot| slot.id)
+    };
+    assert!(
+        item(&model).is_some(),
+        "a bundled extension may stand on the bar"
+    );
+    let rows = frame_rows(&mut model);
+    assert!(
+        !rows.iter().any(|row| row.contains("✎")),
+        "nothing waits, nothing drawn"
+    );
+
+    assert!(!model.has_bar(), "an empty bundled item takes no row");
+    assert!(!model.reserved().bar);
+    drafted(&mut model, "src/naming.rs");
+    assert!(model.reserved().bar, "a draft waiting stands the bar up");
+    let mut driven = driven(model, &home);
+    // Room for the comments beside the pane, which a narrow window
+    // refuses to open.
+    driven.area = ratatui::layout::Rect::new(0, 0, 160, 40);
+    driven.frame();
+    let target = driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .find(|(_, hit)| matches!(hit, WorkspaceHit::ToggleDrawer(_)))
+        .map(|(rect, hit)| (*rect, *hit))
+        .expect("the item opens the comments");
+    let (rect, WorkspaceHit::ToggleDrawer(drawer)) = target else {
+        unreachable!()
+    };
+    driven.press(rect.x, rect.y);
+    assert_eq!(
+        driven.attach.model.open_drawer(),
+        Some(drawer),
+        "the comments open"
+    );
+    let comments = driven
+        .attach
+        .model
+        .remembered
+        .declared
+        .slot(drawer)
+        .unwrap();
+    assert_eq!(comments.surface.id, uze_extensions::review::COMMENTS);
+}
+
+const TWO_FILES: [(&str, &str); 2] = [
+    (
+        "naming.rs",
+        "diff --git a/naming.rs b/naming.rs\n--- a/naming.rs\n+++ b/naming.rs\n@@ -1,1 +1,4 @@\n fn a() {}\n+fn b() {}\n+fn c() {}\n+fn d() {}\n",
+    ),
+    ("tests.rs", ""),
+];
+
+/// A right-click on a row of the review's list opens that file's actions,
+/// as Alt+. does: the host turns the gesture into the surface's own hit,
+/// whichever surface it is.
+#[test]
+fn a_right_click_on_the_reviews_list_opens_that_files_actions() {
+    use crossterm::event::{MouseButton, MouseEventKind};
+    use uze_extensions::{ExtensionHit, view::ViewHit};
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-review-row-menu"));
+    let (mut model, first, _second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    reviewing(&mut model, &TWO_FILES);
+    let mut driven = driven(model, &home);
+    driven.frame();
+    let row = driven.hit(|hit| {
+        matches!(
+            hit,
+            WorkspaceHit::Extension(ExtensionHit {
+                hit: ViewHit::SelectItem(1),
+                ..
+            })
+        )
+    });
+    driven.mouse(row.x + 1, row.y, MouseEventKind::Down(MouseButton::Right));
+    let menu = review_on_show(&driven.attach.model)
+        .navigator
+        .and_then(|navigator| navigator.menu)
+        .expect("the row's actions are open");
+    assert_eq!(menu.entries[0], "Open file", "{menu:?}");
+}
+
+/// A press with a key held on a diff line's text carries the mark there,
+/// as one on its number does: the terminal may keep shift for itself, and
+/// ctrl reaches.
+#[test]
+fn a_held_key_on_a_diff_lines_text_carries_the_mark_there() {
+    use crossterm::event::{KeyModifiers, MouseButton, MouseEventKind};
+    use uze_extensions::{
+        ExtensionHit,
+        view::{Content, ViewHit},
+    };
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-review-mark-text"));
+    let (mut model, first, _second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    reviewing(&mut model, &TWO_FILES);
+    let mut driven = driven(model, &home);
+    driven.frame();
+    let number = driven.hit(|hit| {
+        matches!(
+            hit,
+            WorkspaceHit::Extension(ExtensionHit {
+                hit: ViewHit::LineNumber { line: 0, .. },
+                ..
+            })
+        )
+    });
+    driven.press(number.x, number.y);
+    // Marked, the run grows a line under it: the frame is drawn again
+    // before the next press, as the operator sees it.
+    driven.frame();
+    let Content::Lines { lines, .. } = review_on_show(&driven.attach.model).content else {
+        panic!("a diff")
+    };
+    let third = lines
+        .iter()
+        .position(|line| line.text().contains("fn c"))
+        .expect("the third line of the diff");
+    let text = driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .find(|(_, hit)| {
+            matches!(
+                hit,
+                WorkspaceHit::Extension(ExtensionHit {
+                    hit: ViewHit::PlaceCaret { line, cell: 0 },
+                    ..
+                }) if *line == third
+            )
+        })
+        .map(|(rect, _)| *rect)
+        .expect("the third line's text is drawn");
+    let gutter = driven.attach.model.surface_frame.content_gutter;
+    driven.mouse_holding(
+        text.x + gutter + 2,
+        text.y,
+        MouseEventKind::Down(MouseButton::Left),
+        KeyModifiers::CONTROL,
+    );
+    driven.mouse(
+        text.x + gutter + 2,
+        text.y,
+        MouseEventKind::Up(MouseButton::Left),
+    );
+    let Content::Lines { lines, .. } = review_on_show(&driven.attach.model).content else {
+        panic!("a diff")
+    };
+    let marked: Vec<String> = lines
+        .iter()
+        .filter(|line| line.marked)
+        .map(|line| line.text())
+        .collect();
+    assert_eq!(
+        marked.len(),
+        3,
+        "the run carried to the text pressed: {marked:?}"
+    );
+}
+
+/// The comments' item stands on the bar while the agent's pane is in
+/// front, and nowhere a view holds the pane: the review says what waits in
+/// its own way there.
+#[test]
+fn the_comments_item_stands_only_beside_the_agents_pane() {
+    let (mut model, first, _second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    drafted(&mut model, "src/naming.rs");
+    let standing = |model: &WorkspaceModel| {
+        model
+            .bar_items()
+            .into_iter()
+            .any(|slot| slot.owner == super::Owner::Builtin(uze_extensions::review::CATALOG.id))
+    };
+    assert!(standing(&model), "beside the agent");
+    crate::ui::orchestrator::open_review(&mut model);
+    assert!(!standing(&model), "not over the review");
+    assert!(!model.has_bar(), "nor a row taken for it");
 }

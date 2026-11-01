@@ -13,6 +13,8 @@
     "mark.close": "x",
     "mark.failed": "x",
     "mark.done": "v",
+    "mark.viewed": "x",
+    "mark.unviewed": "-",
     "mark.dot": "-",
     "mark.unsaved": "*",
     "mark.more": "...",

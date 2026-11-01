@@ -33,59 +33,6 @@ impl WorkspaceModel {
         self.agent_directory_in_front().map(Path::to_path_buf)
     }
 
-    /// Asks for the badge again once it is due, on a thread of its own.
-    ///
-    /// Cheap enough to call every tick — it compares two instants and a
-    /// path — which is the point: the read it schedules is the expensive
-    /// half, and it now happens where nobody is waiting for a frame.
-    pub(super) fn schedule_git_read(&mut self, sender: &mpsc::Sender<GitResolution>) {
-        if !self.offers_extension(code::CATALOG.id) {
-            return;
-        }
-        let Some(cwd) = self.focused_cwd() else {
-            self.remembered.git_badge = None;
-            return;
-        };
-        if self.remembered.git_pending.is_some() {
-            return;
-        }
-        let every = paced(GIT_BADGE_REFRESH, self.remembered.git_took);
-        let fresh = self
-            .remembered
-            .git_badge
-            .as_ref()
-            .is_some_and(|badge| badge.cwd == cwd && badge.checked_at.elapsed() < every);
-        if fresh {
-            return;
-        }
-        self.remembered.git_pending = Some(cwd.clone());
-        spawn_git_read(cwd, sender.clone());
-    }
-
-    /// Installs a finished read, or drops it.
-    ///
-    /// Returns whether anything on screen changed. An answer about a
-    /// checkout the selection has since left is released — its key must
-    /// not stay reserved — and then discarded: it is not wrong, it is no
-    /// longer the question being asked.
-    pub(super) fn absorb_git_read(&mut self, resolution: GitResolution) -> bool {
-        if self.remembered.git_pending.as_ref() == Some(&resolution.cwd) {
-            self.remembered.git_pending = None;
-        }
-        self.remembered.git_took = resolution.took;
-        if self.focused_cwd().as_ref() != Some(&resolution.cwd)
-            || !self.offers_extension(code::CATALOG.id)
-        {
-            return false;
-        }
-        self.remembered.git_badge = Some(GitBadge {
-            cwd: resolution.cwd,
-            summary: resolution.summary,
-            checked_at: Instant::now(),
-        });
-        true
-    }
-
     /// Whether a commit account is on screen *or* on its way — both are
     /// states a keystroke or a click dismisses, so an answer still in
     /// flight cannot open over a viewer who has already moved on.

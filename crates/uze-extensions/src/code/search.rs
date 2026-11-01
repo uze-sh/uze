@@ -468,7 +468,7 @@ mod tests {
     #[test]
     fn every_occurrence_is_found_whatever_its_case() {
         assert_eq!(occurrences("Fog fog FOG", "fog"), [0..3, 4..7, 8..11]);
-        assert_eq!(occurrences("aaa", "aa"), [0..2], "not overlapping");
+        assert_eq!(occurrences("aaa", "aa"), vec![(0..2)], "not overlapping");
         assert!(occurrences("abc", "").is_empty());
     }
 

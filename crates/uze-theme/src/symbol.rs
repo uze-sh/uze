@@ -143,6 +143,11 @@ vocabulary! {
         MarkDone = "mark.done",
         /// Something new is created here.
         MarkSparkle = "mark.sparkle",
+        /// A file read in a review: a checklist's ticked box, apart from
+        /// [`MarkDone`](Self::MarkDone)'s step so a theme can draw a box.
+        MarkViewed = "mark.viewed",
+        /// A file not yet read in a review: the checklist's empty box.
+        MarkUnviewed = "mark.unviewed",
         /// Selectable, currently off.
         MarkToggleOff = "mark.toggle-off",
         /// Selectable, currently on.

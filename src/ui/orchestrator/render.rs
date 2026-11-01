@@ -211,6 +211,10 @@ pub(super) struct Reserved {
     pub(super) bar: bool,
 }
 
+/// The most an item of the bar takes, so one extension's line cannot push
+/// every other off it.
+pub(in crate::ui::orchestrator) const BAR_ITEM_MAX: u16 = 32;
+
 /// The fewest rows the pane keeps under its bands: a band that would
 /// leave it fewer is not laid out, so a short window keeps its agent.
 pub(super) const PANE_MIN_ROWS: u16 = 6;
@@ -391,7 +395,13 @@ pub(super) fn render(
                 }),
                 None => render_extension(frame, surface_area, model, open, hits, metrics),
             };
-            render_extension_navigation(frame, slot, surface_area, open, hits);
+            let pointed = match model.hovered {
+                Some(WorkspaceHit::Extension(ExtensionHit { slot, hit })) if slot == open.tag => {
+                    Some(hit)
+                }
+                _ => None,
+            };
+            render_extension_navigation(frame, slot, surface_area, open, pointed, hits);
             render_declared_overlays(frame, surface_area, inspector_area, model, hits);
             question
         }
@@ -678,6 +688,7 @@ fn render_extension_navigation(
     slot: Rect,
     surface: Rect,
     open: &OpenExtension,
+    pointed: Option<ViewHit>,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
     let mut navigation_hits = Vec::new();
@@ -686,6 +697,7 @@ fn render_extension_navigation(
         &open.view,
         slot,
         surface,
+        pointed,
         &mut navigation_hits,
     );
     hits.splice(
@@ -720,6 +732,10 @@ fn open_extension(model: &WorkspaceModel, area: Rect) -> Option<OpenExtension> {
     };
     let scope = match &slot.owner {
         Owner::Builtin(id) if *id == uze_extensions::code::CATALOG.id => uze_keys::Scope::Code,
+        Owner::Builtin(id) if *id == uze_extensions::review::CATALOG.id && model.open_typing() => {
+            uze_keys::Scope::ReviewComposing
+        }
+        Owner::Builtin(id) if *id == uze_extensions::review::CATALOG.id => uze_keys::Scope::Review,
         Owner::Builtin(id) if *id == uze_extensions::architect::CATALOG.id => {
             uze_keys::Scope::Architect
         }

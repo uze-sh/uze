@@ -369,6 +369,7 @@ fn a_two_step_action_fills_its_prompt_from_the_answer_on_the_gesture() {
             action: "review".into(),
             label: "Review next".into(),
             unattended: false,
+            summary: None,
         }))]
     );
     assert!(

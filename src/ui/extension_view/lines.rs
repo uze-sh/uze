@@ -25,6 +25,9 @@ pub(super) struct Lines<'a> {
     /// The line under the pointer, when a click there would place a
     /// caret: its number is lit, the hover of a line that answers one.
     pub(super) pointed: Option<usize>,
+    /// The pressable span under the pointer, by line and span: lifted, as
+    /// a button is.
+    pub(super) pressing: Option<(usize, usize)>,
     pub(super) medium: Medium,
     pub(super) selection: Option<&'a TextSelection>,
     pub(super) modes: &'a [Mode],
@@ -44,6 +47,7 @@ pub(super) fn render_lines(
         total,
         caret,
         pointed,
+        pressing,
         medium,
         selection,
         modes,
@@ -142,6 +146,27 @@ pub(super) fn render_lines(
             }
             drawn.extend(rows);
         }
+        // Words that act are targets of their own, ahead of the text's
+        // hit, which the first match wins over: a press on them acts and
+        // never starts a selection.
+        for (span, cells) in pressable_cells(line, row, gutter, text_width) {
+            if pressing == Some((offset, span)) {
+                lift_cells(frame, cells);
+            }
+            hits.push((cells, ViewHit::Press { line: offset, span }));
+        }
+        // The number is about the line rather than its text: a press on
+        // it marks the line, where one on the text would select text. Ahead
+        // of the text's own hit, which the first match wins over.
+        if medium == Medium::Text && gutter > 0 && !line.number.is_empty() {
+            hits.push((
+                Rect::new(row.x, row.y, gutter.min(row.width), 1),
+                ViewHit::LineNumber {
+                    line: offset,
+                    extend: false,
+                },
+            ));
+        }
         // One hit per *visual* row, not per line: a wrapped line covers
         // several, and which one the pointer is on is half of where in
         // the text it landed. The cell offset here is the row's own
@@ -166,6 +191,61 @@ pub(super) fn render_lines(
     let at_end = at_end && first + lines.len() >= total;
     let bar = render_scrollbar(frame, bar, scroll, hits, ViewHit::DragContentScrollbar);
     (bar, at_end, drawn)
+}
+
+/// Where each pressable span of `line` stands on its first row, by its
+/// index among the line's spans. A span that would run past the first row
+/// is not offered there: the pressable words of a line are its few
+/// actions, drawn where they fit.
+fn pressable_cells(
+    line: &ContentLine,
+    row: Rect,
+    gutter: u16,
+    text_width: usize,
+) -> Vec<(usize, Rect)> {
+    use unicode_width::UnicodeWidthStr as _;
+    let mut at = 0usize;
+    let mut cells = Vec::new();
+    for (index, span) in line.spans.iter().enumerate() {
+        let width = span.text.width();
+        if span.pressable && width > 0 && at + width <= text_width {
+            let x = row.x.saturating_add(gutter).saturating_add(at as u16);
+            cells.push((index, Rect::new(x, row.y, width as u16, 1)));
+        }
+        at += width;
+    }
+    cells
+}
+
+/// The chip under the pointer, a mode of the content or a subject of the
+/// bar, lifted in its own ink, as every control is: it answers a click,
+/// so it answers the pointer passing over it.
+pub(super) fn lift_pointed_chip(
+    frame: &mut ratatui::Frame<'_>,
+    hits: &[(Rect, ViewHit)],
+    pointed: Option<ViewHit>,
+) {
+    let Some(pointed) =
+        pointed.filter(|hit| matches!(hit, ViewHit::SelectMode(_) | ViewHit::SelectSubject(_)))
+    else {
+        return;
+    };
+    if let Some((rect, _)) = hits.iter().find(|(_, hit)| *hit == pointed) {
+        lift_cells(frame, *rect);
+    }
+}
+
+/// Draws the cells of `area` again in their own ink lifted, the hover of
+/// words that act: colour only, the weight kept.
+fn lift_cells(frame: &mut ratatui::Frame<'_>, area: Rect) {
+    let buffer = frame.buffer_mut();
+    let area = area.intersection(buffer.area);
+    for y in area.top()..area.bottom() {
+        for x in area.left()..area.right() {
+            let cell = &mut buffer[(x, y)];
+            cell.fg = theme::lifted_ink(cell.fg);
+        }
+    }
 }
 
 // What an empty surface says is the widget vocabulary's, shared with the
@@ -198,6 +278,10 @@ pub(super) fn icon_symbol(icon: RowIcon) -> Option<Symbol> {
         RowIcon::Contract => Symbol::Contract,
         RowIcon::Finished => Symbol::Finished,
         RowIcon::Decision => Symbol::Decision,
+        RowIcon::Viewed => Symbol::MarkViewed,
+        RowIcon::Previous => Symbol::StepPrevious,
+        RowIcon::Next => Symbol::StepNext,
+        RowIcon::NotViewed | RowIcon::ViewedThenChanged => Symbol::MarkUnviewed,
     })
 }
 
@@ -226,8 +310,14 @@ pub(super) fn row_mark(mark: RowMark) -> (String, u16) {
 pub(super) fn row_icon(icon: RowIcon) -> Option<TextSpan<'static>> {
     // Muted on purpose: the icon classifies, the name identifies, and an
     // icon drawn at the name's weight competes with the thing the reader
-    // is actually scanning for.
-    Some(icon_span(icon)?.style(theme::fg(Token::TextDim)))
+    // is actually scanning for. A checklist's box is the exception: its
+    // hue is what a reader working down the list reads.
+    let token = match icon {
+        RowIcon::Viewed => Token::StateSuccess,
+        RowIcon::ViewedThenChanged => Token::StateWarning,
+        _ => Token::TextDim,
+    };
+    Some(icon_span(icon)?.style(theme::fg(token)))
 }
 
 /// The mark and the space after it, or nothing at all where the glyph
@@ -251,6 +341,12 @@ pub(super) fn modes_width(modes: &[Mode]) -> u16 {
 /// where the glyph set has one to draw.
 pub(super) fn mode_width(mode: &Mode) -> u16 {
     let icon = icon_cells(mode.icon);
+    // A chip that is its mark alone (a step) has no word to stand apart
+    // from, so no space after the mark either.
+    let icon = match mode.label.is_empty() {
+        true => icon.saturating_sub(1),
+        false => icon,
+    };
     TextSpan::raw(&mode.label).width() as u16 + icon + 2 * MODE_PAD
 }
 
@@ -344,6 +440,10 @@ pub(super) fn render_chips(
         let pad = " ".repeat(MODE_PAD as usize);
         let mut spans = vec![TextSpan::styled(pad.clone(), style)];
         if let Some(mark) = icon_span(mode.icon) {
+            let mark = match mode.label.is_empty() {
+                true => TextSpan::raw(mark.content.trim_end().to_owned()),
+                false => mark,
+            };
             spans.push(mark.style(style));
         }
         spans.push(TextSpan::styled(format!("{}{pad}", mode.label), style));
@@ -388,9 +488,16 @@ pub(super) fn gutter_width(lines: &[ContentLine]) -> u16 {
     if !numbered {
         return 0;
     }
-    let lead = match lines.iter().any(|line| !line.gutter.is_empty()) {
-        true => MARKER_COLUMNS,
-        false => 1,
+    // As wide as the widest marker and the space after it: one column
+    // for `+` or `-`, two where a comment's mark leads one.
+    let widest = lines
+        .iter()
+        .map(|line| text::columns(&line.gutter) as u16)
+        .max()
+        .unwrap_or(0);
+    let lead = match widest {
+        0 => 1,
+        widest => (widest + 1).max(MARKER_COLUMNS),
     };
     lead + number_columns(lines) + 1
 }
@@ -590,7 +697,10 @@ pub(super) fn render_line(
     wrapped: bool,
     light: LineLight,
 ) {
-    let number = light.number();
+    let number = match line.marked {
+        true => Token::TextBright,
+        false => light.number(),
+    };
     let (marker_style, background) = match line.tone {
         LineTone::Neutral => (theme::fg(Token::TextFaint), light.band().map(theme::color)),
         LineTone::Added => (
@@ -601,6 +711,23 @@ pub(super) fn render_line(
             theme::fg(Token::StateDanger),
             Some(theme::color(Token::StateDiffRemoved)),
         ),
+        LineTone::Card(_) => (
+            theme::fg(Token::TextFaint),
+            Some(theme::color(Token::SurfaceRaised)),
+        ),
+    };
+    // A marked run is the reader's own, and it reads over the diff's wash:
+    // the gold of a draft comment, the sign keeping the change's hue.
+    let background = match line.marked {
+        true => Some(theme::color(Token::StateDiffMarked)),
+        false => background,
+    };
+    // A marked run is the whole line, its sign and number with it; a card
+    // stands in the text's column, the numbers beside it on the content's
+    // ground.
+    let gutter_ground = match line.tone {
+        LineTone::Card(_) if !line.marked => None,
+        _ => background,
     };
     let mut content_spans: Vec<TextSpan<'static>> = line.spans.iter().map(styled).collect();
     if let Some(background) = background {
@@ -613,18 +740,32 @@ pub(super) fn render_line(
         .constraints([Constraint::Length(gutter), Constraint::Min(1)])
         .split(area);
     if gutter > 0 {
+        let (commented, marker) = match line.gutter.strip_prefix(COMMENT_MARK) {
+            Some(rest) => (true, rest),
+            None => (false, line.gutter.as_str()),
+        };
         let lead = match line.gutter.is_empty() {
             true => " ".to_owned(),
-            false => format!("{} ", line.gutter),
+            false => format!("{marker} "),
         };
-        let digits = usize::from(gutter).saturating_sub(text::columns(&lead) + 1);
+        let mut spans = Vec::new();
+        if commented {
+            spans.push(TextSpan::styled(
+                COMMENT_MARK.to_string(),
+                theme::fg(Token::StateWarning),
+            ));
+        }
+        let taken = text::columns(&lead) + usize::from(commented);
+        let digits = usize::from(gutter).saturating_sub(taken + 1);
+        spans.push(TextSpan::styled(lead, marker_style));
+        spans.push(TextSpan::styled(
+            format!("{:>digits$} ", line.number),
+            theme::fg(number),
+        ));
         frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                TextSpan::styled(lead, marker_style),
-                TextSpan::styled(format!("{:>digits$} ", line.number), theme::fg(number)),
-            ]))
-            .style(
-                Style::default().bg(background.unwrap_or(theme::color(Token::SurfaceBackground))),
+            Paragraph::new(Line::from(spans)).style(
+                Style::default()
+                    .bg(gutter_ground.unwrap_or(theme::color(Token::SurfaceBackground))),
             ),
             columns[0],
         );
@@ -653,4 +794,23 @@ pub(super) fn render_line(
     let text = Paragraph::new(lines)
         .style(Style::default().bg(background.unwrap_or(theme::color(Token::SurfaceBackground))));
     frame.render_widget(text, columns[1]);
+    if let LineTone::Card(role) = line.tone {
+        card_rule(frame, columns[1], role, background);
+    }
+}
+
+/// The rule down a card's left, over the first cell of each of its rows:
+/// what tells a comment from the code around it at a glance.
+fn card_rule(frame: &mut ratatui::Frame<'_>, area: Rect, role: Role, ground: Option<Color>) {
+    let mut style = Style::default().fg(super::prose::color(role));
+    if let Some(ground) = ground {
+        style = style.bg(ground);
+    }
+    let rule = theme::glyph(Symbol::BarMedium);
+    let buffer = frame.buffer_mut();
+    for y in area.top()..area.bottom() {
+        if buffer.area.contains((area.x, y).into()) {
+            buffer[(area.x, y)].set_symbol(&rule).set_style(style);
+        }
+    }
 }

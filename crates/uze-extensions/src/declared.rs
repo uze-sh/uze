@@ -775,6 +775,7 @@ impl DeclaredExtension {
                         action: action.id.clone(),
                         label: Clean::label(&action.label).into_string(),
                         unattended: true,
+                        summary: None,
                     }),
                     _ => None,
                 })
@@ -1296,7 +1297,7 @@ impl Extension for DeclaredExtension {
             ViewHit::Node {
                 act: NodeAct::Review,
                 ..
-            } => Outcome::Review,
+            } => Outcome::Consent,
             ViewHit::Node { node, act } => match self.act(surface, space, node) {
                 Some(meaning) => self.perform(surface, meaning, act),
                 None => Outcome::Stay,

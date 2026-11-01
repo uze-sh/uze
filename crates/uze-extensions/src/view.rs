@@ -92,6 +92,11 @@ pub struct Span {
     /// difference: `*this*` and `**this**` mean different things and must
     /// look different, whatever the palette says.
     pub italic: bool,
+    /// A press on it acts, as a button's does: in a [`ContentLine`], the
+    /// host makes it a target of its own ([`ViewHit::Press`]) and lifts it
+    /// under the pointer. Words of a line that act (a comment's `edit`)
+    /// are this, never text a press happens to land on.
+    pub pressable: bool,
 }
 
 impl Span {
@@ -106,6 +111,7 @@ impl Span {
             ground: None,
             bold: false,
             italic: false,
+            pressable: false,
         }
     }
 
@@ -123,6 +129,12 @@ impl Span {
 
     pub fn italic(mut self) -> Self {
         self.italic = true;
+        self
+    }
+
+    /// See [`Span::pressable`].
+    pub fn pressable(mut self) -> Self {
+        self.pressable = true;
         self
     }
 
@@ -433,6 +445,18 @@ pub enum RowIcon {
     Finished,
     /// A decision the project keeps.
     Decision,
+    /// A file read in a review: a checklist's ticked box, in the hue of
+    /// what is done.
+    Viewed,
+    /// A file not yet read in a review: the empty box.
+    NotViewed,
+    /// A file read in a review whose diff has moved since: the empty box,
+    /// in the hue of what waits on the reader.
+    ViewedThenChanged,
+    /// The one before, in a walk through several: a chip's step back.
+    Previous,
+    /// The one after: a chip's step on.
+    Next,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1060,11 +1084,16 @@ pub struct Caret {
 pub struct ContentLine {
     /// One character before the number: `+`, `-`, or blank — or empty,
     /// for lines that never carry one (a file's own), which the host then
-    /// draws without the column, closer to the edge.
+    /// draws without the column, closer to the edge. It may lead with
+    /// [`COMMENT_MARK`], which the host draws in the hue of what waits on
+    /// the reader: a line someone commented on.
     pub gutter: String,
     pub number: String,
     pub tone: LineTone,
     pub spans: Vec<Span>,
+    /// Marked by the reader, as a run to act on: drawn on the selection's
+    /// ground, over whatever wash its tone has, with its number lit.
+    pub marked: bool,
 }
 
 impl ContentLine {
@@ -1075,6 +1104,9 @@ impl ContentLine {
     }
 }
 
+/// What leads a [`ContentLine::gutter`] on a line that carries a comment.
+pub const COMMENT_MARK: char = '◆';
+
 /// What a line means, which the host turns into a background wash. Naming
 /// the meaning rather than the colour is what keeps the wash consistent
 /// with the rest of the TUI's surfaces.
@@ -1084,6 +1116,12 @@ pub enum LineTone {
     Neutral,
     Added,
     Removed,
+    /// A line of a card standing in the content, a comment: its text on
+    /// a raised ground with a rule down its left in the role's hue, so it
+    /// reads apart from the file around it; the gutter stays the
+    /// content's. The rule is the host's to draw, over the line's first
+    /// cell, which the extension leaves blank.
+    Card(Role),
 }
 
 /// A collapsible section an extension contributes to one of the host's
@@ -1221,6 +1259,21 @@ pub enum ViewHit {
     /// answer, and it is not known until it is released or moved, so the
     /// host resolves it from the track it drew.
     DragContentScrollbar,
+    /// The number of a line of [`Content::Lines`], pressed: mark that
+    /// line, or with `extend`, carry the mark from where it stands to it
+    /// (a drag down the numbers, or a press with shift held). Apart from
+    /// [`ViewHit::PlaceCaret`] because a press on a line's text selects
+    /// text, and a press on its number is about the line.
+    LineNumber {
+        line: usize,
+        extend: bool,
+    },
+    /// A [`Span::pressable`] span of a content line, pressed: by the
+    /// line's index and the span's, in the order the extension gave them.
+    Press {
+        line: usize,
+        span: usize,
+    },
     /// A [`Content::Tree`] node, acted on — by the node's own id.
     Node {
         node: usize,
@@ -1372,6 +1425,29 @@ pub enum Command {
     /// Show the checkout as a map, or leave the map for whatever was on
     /// show before it.
     ToggleMap,
+
+    // --- Asked of a review -----------------------------------------------
+    //
+    // A fourth kind of surface: one that is written on, line by line, and
+    // that hands what was written to someone else.
+    /// Write a comment on what is marked.
+    Comment,
+    /// Keep the comment being written.
+    AddComment,
+    /// Hand what was written to whoever it is for.
+    Send,
+    /// Mark what is on show as read, and go on to the next not read.
+    MarkViewed,
+    /// Show the marked line where it can be edited.
+    OpenInCode,
+    /// Put an answered comment away.
+    Resolve,
+    /// Carry the mark one line further this way.
+    ExtendMark(ScrollDirection),
+    /// Go to the next open thread, in whichever file it is.
+    NextThread,
+    /// Go to the open thread before.
+    PreviousThread,
 
     // --- Asked of a surface with files open in tabs ----------------------
     /// Search, wherever the search lives — and into its field.

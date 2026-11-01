@@ -450,3 +450,23 @@ fn forwarded_input(driven: &mut Driven<'_>) -> Vec<Vec<u8>> {
         })
         .collect()
 }
+
+/// A press on a line's number with a key held carries the mark, whichever
+/// key the terminal lets through: shift where it reports it, ctrl or alt
+/// where it keeps shift+click for its own selection.
+#[test]
+fn a_held_key_on_a_line_number_carries_the_mark_whichever_reaches() {
+    use super::session::mouse::carries_the_mark;
+    use crossterm::event::KeyModifiers;
+    assert!(
+        !carries_the_mark(KeyModifiers::NONE),
+        "a plain press starts a mark"
+    );
+    for held in [
+        KeyModifiers::SHIFT,
+        KeyModifiers::CONTROL,
+        KeyModifiers::ALT,
+    ] {
+        assert!(carries_the_mark(held), "{held:?}");
+    }
+}

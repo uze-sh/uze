@@ -402,7 +402,9 @@ fn sample() -> View {
                     ground: None,
                     bold: false,
                     italic: false,
+                    pressable: false,
                 }],
+                marked: false,
             }],
         },
         footer: vec![Command::Close],
@@ -518,7 +520,7 @@ fn framed(
                 &mut hits,
             );
             let mut navigation = Vec::new();
-            render_navigation(frame, view, slot, surface, &mut navigation);
+            render_navigation(frame, view, slot, surface, None, &mut navigation);
             hits.splice(0..0, navigation);
         })
         .unwrap();
@@ -797,6 +799,7 @@ fn the_navigation_is_the_bars_and_does_not_move_with_the_layout() {
                 number: "1".to_owned(),
                 tone: LineTone::Neutral,
                 spans: vec![Span::new("fn main() {}", Role::Default)],
+                marked: false,
             }],
             caret: None,
             editable: false,
@@ -1192,6 +1195,7 @@ fn a_board_click_resolves_in_the_space_the_frame_drew_in() {
                 number: String::new(),
                 tone: LineTone::Neutral,
                 spans: vec![Span::new("x".repeat(space.width as usize), Role::Default)],
+                marked: false,
             })
             .collect();
         let view = View {
@@ -1738,7 +1742,9 @@ fn unnumbered_content_is_inset_where_numbered_content_leans_on_its_gutter() {
             ground: None,
             bold: false,
             italic: false,
+            pressable: false,
         }],
+        marked: false,
     };
 
     let mut view = sample();
@@ -1896,12 +1902,14 @@ fn unnumbered_lines_are_not_indented_by_an_empty_gutter() {
         number: "12".to_owned(),
         tone: LineTone::Added,
         spans: vec![Span::new("code", Role::Default)],
+        marked: false,
     }];
     let prose = [ContentLine {
         gutter: " ".to_owned(),
         number: String::new(),
         tone: LineTone::Neutral,
         spans: vec![Span::new("a paragraph", Role::Default)],
+        marked: false,
     }];
 
     assert_eq!(gutter_width(&numbered), GUTTER_WIDTH);
@@ -2009,6 +2017,7 @@ fn prose_breaks_at_words_and_each_character_is_recorded_where_it_was_drawn() {
         number: String::new(),
         tone: LineTone::Neutral,
         spans: vec![Span::new(text, Role::Default)],
+        marked: false,
     }];
 
     let (buffer, rendered) = drawn_rows(&view);
@@ -2036,6 +2045,7 @@ fn prose(text: &str) -> ContentLine {
         number: String::new(),
         tone: LineTone::Neutral,
         spans: vec![Span::new(text, Role::Default)],
+        marked: false,
     }
 }
 
@@ -2217,6 +2227,7 @@ fn code_line(text: &str) -> ContentLine {
         number: "1".to_owned(),
         tone: LineTone::Neutral,
         spans: vec![Span::new(text, Role::Default)],
+        marked: false,
     }
 }
 
@@ -2379,6 +2390,7 @@ fn a_line_too_long_for_the_column_occupies_more_than_one_row() {
         number: "1".to_owned(),
         tone: LineTone::Neutral,
         spans: vec![Span::new("abcdefgh", Role::Default)],
+        marked: false,
     };
     assert_eq!(line_height(&line, GUTTER_WIDTH + 4, GUTTER_WIDTH), 2);
     assert_eq!(line_height(&line, GUTTER_WIDTH + 8, GUTTER_WIDTH), 1);
@@ -2907,6 +2919,7 @@ fn an_editable_line_is_banded_under_the_pointer_and_at_the_caret() {
             number: number.to_owned(),
             tone: LineTone::Neutral,
             spans: vec![Span::new(text, Role::Default)],
+            marked: false,
         };
         view.content = Content::Lines {
             first: 0,
@@ -3137,6 +3150,7 @@ fn a_gutter_is_as_wide_as_its_numbers_and_marks() {
         number: number.to_owned(),
         tone: LineTone::Neutral,
         spans: Vec::new(),
+        marked: false,
     };
     assert_eq!(gutter_width(&[line("", "1"), line("", "26")]), 5);
     assert_eq!(
@@ -3144,4 +3158,268 @@ fn a_gutter_is_as_wide_as_its_numbers_and_marks() {
         GUTTER_WIDTH
     );
     assert_eq!(gutter_width(&[line("", "12345")]), 7);
+}
+
+/// Every key the review's foot can name is one a hint can carry, so a
+/// click on the hint is pressing it.
+#[test]
+fn every_review_command_is_named_by_a_key_its_hint_carries() {
+    use uze_extensions::view::{Command, ScrollDirection};
+    for command in [
+        Command::Comment,
+        Command::AddComment,
+        Command::MarkViewed,
+        Command::OpenInCode,
+        Command::Resolve,
+        Command::NextThread,
+        Command::PreviousThread,
+        Command::ExtendMark(ScrollDirection::Down),
+        Command::ExtendMark(ScrollDirection::Up),
+    ] {
+        let action = action_of(command).unwrap_or_else(|| panic!("{command:?} has no key"));
+        assert_eq!(
+            command_for(action),
+            Some(command),
+            "{command:?} round-trips"
+        );
+        assert!(
+            [uze_keys::Scope::Review, uze_keys::Scope::ReviewComposing]
+                .iter()
+                .any(|scope| uze_keys::default_keymap()
+                    .chord_for(
+                        action,
+                        &[uze_keys::Scope::Global, uze_keys::Scope::Workspace, *scope]
+                    )
+                    .is_some()),
+            "{command:?} is bound in the review"
+        );
+    }
+}
+
+/// A run marked to comment on wears a draft comment's gold over the
+/// diff's own wash, so it reads as the reader's and never as a change.
+#[test]
+fn a_marked_line_wears_the_comment_gold_over_the_diffs_wash() {
+    let mut line = code_line("fn a() {}");
+    line.tone = LineTone::Added;
+    let at = (GUTTER_WIDTH, 0);
+    assert_eq!(
+        drawn_with_caret(&line, 20, 99)[at].bg,
+        theme::color(Token::StateDiffAdded)
+    );
+    line.marked = true;
+    let marked = drawn_with_caret(&line, 20, 99);
+    assert_eq!(marked[at].bg, theme::color(Token::StateDiffMarked));
+    assert_eq!(
+        marked[(0, 0)].bg,
+        theme::color(Token::StateDiffMarked),
+        "the sign and the number marked with it"
+    );
+}
+
+/// Words a line declares pressable are a target of their own, ahead of
+/// the text's, and lift under the pointer in their own hue, as a button
+/// does; the words beside them stay as they were.
+#[test]
+fn a_pressable_span_is_its_own_target_and_lifts_under_the_pointer() {
+    let mut view = sample();
+    let Content::Lines { lines, .. } = &mut view.content else {
+        unreachable!("the sample is lines")
+    };
+    lines.push(ContentLine {
+        gutter: String::new(),
+        number: String::new(),
+        tone: LineTone::Neutral,
+        spans: vec![
+            Span::new("draft  ", Role::Muted),
+            Span::new("delete", Role::Faint).pressable(),
+        ],
+        marked: false,
+    });
+    let draw = |sliding: Option<(ViewHit, usize)>| {
+        let mut terminal = Terminal::new(TestBackend::new(80, 16)).unwrap();
+        let mut hits = Vec::new();
+        terminal
+            .draw(|frame| {
+                render(
+                    frame,
+                    &view,
+                    frame.area(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                        sliding,
+                    },
+                    FooterKeys {
+                        scope: uze_keys::Scope::Review,
+                        hovered: None,
+                        host: &[],
+                    },
+                    None,
+                    &mut hits,
+                );
+            })
+            .unwrap();
+        (terminal.backend().buffer().clone(), hits)
+    };
+    let pressed = ViewHit::Press { line: 1, span: 1 };
+    let (rest, hits) = draw(None);
+    let (rect, _) = *hits
+        .iter()
+        .find(|(_, hit)| *hit == pressed)
+        .expect("the pressable words are a target");
+    let first_match = hits
+        .iter()
+        .find(|(area, _)| area.contains((rect.x, rect.y).into()))
+        .map(|(_, hit)| *hit);
+    assert_eq!(first_match, Some(pressed), "ahead of the line's text");
+    let (hovered, _) = draw(Some((pressed, 0)));
+    let at = (rect.x, rect.y);
+    assert_eq!(hovered[at].symbol(), "d");
+    assert_eq!(
+        hovered[at].fg,
+        theme::lifted_ink(rest[at].fg),
+        "lifted in its own hue"
+    );
+    assert_eq!(hovered[at].modifier, rest[at].modifier, "the weight kept");
+    let before = (rect.x - 2, rect.y);
+    assert_eq!(
+        hovered[before].fg, rest[before].fg,
+        "the words beside it stay"
+    );
+}
+
+/// A card's line stands on the raised ground in the text's column, a
+/// rule down its left in its hue, and the numbers beside it stay on the
+/// content's ground.
+#[test]
+fn a_card_line_is_raised_in_the_text_column_only() {
+    let mut line = code_line(" what should change");
+    line.tone = LineTone::Card(Role::Warning);
+    let drawn = drawn_with_caret(&line, 20, 99);
+    let rule = drawn[(GUTTER_WIDTH, 0)].clone();
+    assert_eq!(rule.symbol(), theme::glyph(Symbol::BarMedium));
+    assert_eq!(
+        rule.fg,
+        theme::color(Token::StateWarning),
+        "in the card's hue"
+    );
+    assert_eq!(
+        drawn[(GUTTER_WIDTH, 0)].bg,
+        theme::color(Token::SurfaceRaised)
+    );
+    assert_eq!(
+        drawn[(GUTTER_WIDTH + 19, 0)].bg,
+        theme::color(Token::SurfaceRaised),
+        "to its end"
+    );
+    assert_eq!(drawn[(0, 0)].bg, theme::color(Token::SurfaceBackground));
+}
+
+/// A diff's lines are marked by their numbers, and so by a press on their
+/// text with a key held; a file typed into keeps every press for its
+/// caret.
+#[test]
+fn only_numbered_text_nobody_types_into_marks_lines_from_its_text() {
+    let marks = |editable: bool| {
+        let mut view = sample();
+        if let Content::Lines { editable: e, .. } = &mut view.content {
+            *e = editable;
+        }
+        let mut terminal = Terminal::new(TestBackend::new(80, 16)).unwrap();
+        let mut hits = Vec::new();
+        let mut rendered = None;
+        terminal
+            .draw(|frame| {
+                rendered = Some(render(
+                    frame,
+                    &view,
+                    frame.area(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                        sliding: None,
+                    },
+                    FooterKeys {
+                        scope: uze_keys::Scope::Review,
+                        hovered: None,
+                        host: &[],
+                    },
+                    None,
+                    &mut hits,
+                ));
+            })
+            .unwrap();
+        rendered.unwrap().content_marks_lines
+    };
+    assert!(marks(false), "a diff");
+    assert!(!marks(true), "a file typed into");
+}
+
+/// A chip over the content answers the pointer as every control does:
+/// the one under it is lifted in its own ink, the one beside it is not.
+#[test]
+fn a_chip_lifts_under_the_pointer() {
+    let mut view = sample();
+    view.modes = vec![
+        Mode {
+            label: "viewed".to_owned(),
+            active: false,
+            icon: RowIcon::None,
+        },
+        Mode {
+            label: "other".to_owned(),
+            active: false,
+            icon: RowIcon::None,
+        },
+    ];
+    let draw = |sliding: Option<(ViewHit, usize)>| {
+        let mut terminal = Terminal::new(TestBackend::new(80, 16)).unwrap();
+        let mut hits = Vec::new();
+        terminal
+            .draw(|frame| {
+                render(
+                    frame,
+                    &view,
+                    frame.area(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                        sliding,
+                    },
+                    FooterKeys {
+                        scope: uze_keys::Scope::Review,
+                        hovered: None,
+                        host: &[],
+                    },
+                    None,
+                    &mut hits,
+                );
+            })
+            .unwrap();
+        (terminal.backend().buffer().clone(), hits)
+    };
+    let (rest, hits) = draw(None);
+    let at = |mode: usize| {
+        let (rect, _) = hits
+            .iter()
+            .find(|(_, hit)| *hit == ViewHit::SelectMode(mode))
+            .expect("each chip is a target");
+        (rect.x + 1, rect.y)
+    };
+    let (pointed, _) = draw(Some((ViewHit::SelectMode(0), 0)));
+    assert_eq!(
+        pointed[at(0)].fg,
+        theme::lifted_ink(rest[at(0)].fg),
+        "lifted"
+    );
+    assert_eq!(
+        pointed[at(0)].modifier,
+        rest[at(0)].modifier,
+        "its weight kept"
+    );
+    assert_eq!(pointed[at(1)].fg, rest[at(1)].fg, "the other stays");
 }

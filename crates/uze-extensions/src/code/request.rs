@@ -71,12 +71,6 @@ pub enum FileRequest {
         from: PathBuf,
         to: PathBuf,
     },
-    /// Throw away what changed at `paths`, putting each back as `root`'s
-    /// last commit has it.
-    Restore {
-        root: PathBuf,
-        paths: Vec<PathBuf>,
-    },
     /// Find `query` in every file of `root` Git would show — tracked or
     /// not, never what it ignores — ignoring case.
     Search {
@@ -128,10 +122,6 @@ pub enum FileAnswer {
     },
     Deleted {
         path: PathBuf,
-        outcome: Result<(), String>,
-    },
-    Restored {
-        paths: Vec<PathBuf>,
         outcome: Result<(), String>,
     },
     /// What [`FileRequest::Search`] found, beside the query it was for.
@@ -203,10 +193,6 @@ pub fn unanswered(request: &FileRequest, reason: &str) -> FileAnswer {
         FileRequest::Rename { from, to, .. } => FileAnswer::Renamed {
             from: from.clone(),
             to: to.clone(),
-            outcome: Err(reason.to_owned()),
-        },
-        FileRequest::Restore { paths, .. } => FileAnswer::Restored {
-            paths: paths.clone(),
             outcome: Err(reason.to_owned()),
         },
         FileRequest::Search { query, .. } => FileAnswer::Found {
@@ -283,10 +269,6 @@ pub fn fulfill(host: &dyn Host, request: FileRequest) -> FileAnswer {
             outcome: host.rename_path(&root, &from, &to),
             from,
             to,
-        },
-        FileRequest::Restore { root, paths } => FileAnswer::Restored {
-            outcome: host.restore_to_head(&root, &paths),
-            paths,
         },
         FileRequest::Search { root, query } => FileAnswer::Found {
             outcome: search(host, &root, &query),

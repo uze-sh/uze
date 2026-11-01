@@ -67,13 +67,26 @@ impl Bridge {
 impl WorkspaceModel {
     /// The extensions switched on that hold `agent:observe`.
     fn observers(&self) -> Vec<Owner> {
-        self.remembered
+        let builtins = self
+            .remembered
             .declared
-            .extensions
+            .engines
             .iter()
-            .filter(|(_, extension)| extension.observes_agents)
-            .map(|(identity, _)| Owner::Declared(identity.clone()))
-            .filter(|owner| self.offers_declared(owner))
+            .filter(|(owner, engine)| {
+                matches!(owner, Owner::Builtin(_)) && engine.observes_agents()
+            })
+            .map(|(owner, _)| owner.clone())
+            .filter(|owner| self.offers_declared(owner));
+        builtins
+            .chain(
+                self.remembered
+                    .declared
+                    .extensions
+                    .iter()
+                    .filter(|(_, extension)| extension.observes_agents)
+                    .map(|(identity, _)| Owner::Declared(identity.clone()))
+                    .filter(|owner| self.offers_declared(owner)),
+            )
             .collect()
     }
 

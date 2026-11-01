@@ -19,9 +19,9 @@ use ratatui::{
     widgets::{Clear, Padding, Paragraph},
 };
 use uze_extensions::view::{
-    Caret, Choosing, Command, Content, ContentLine, Layout as ViewLayout, LineTone, MarkerSide,
-    Medium, Mode, Navigator, NavigatorRow, PROSE_INSET, PanDirection, Role, RowIcon, RowMark,
-    ScrollTarget, Section, Size, Span, TAB_WIDTH, TEXT_PADDING, TrailStep, View, ViewHit,
+    COMMENT_MARK, Caret, Choosing, Command, Content, ContentLine, Layout as ViewLayout, LineTone,
+    MarkerSide, Medium, Mode, Navigator, NavigatorRow, PROSE_INSET, PanDirection, Role, RowIcon,
+    RowMark, ScrollTarget, Section, Size, Span, TAB_WIDTH, TEXT_PADDING, TrailStep, View, ViewHit,
 };
 
 use crate::ui::selection::{Glyph, TextRow, TextSelection};
@@ -86,6 +86,10 @@ pub(crate) struct Rendered {
     /// the map is a tile or two over, and near an edge is nothing at
     /// all.
     pub(crate) content_gutter: u16,
+    /// Whether a line of the content is marked by its number, and so by a
+    /// press on its text with a key held: numbered text nobody types
+    /// into, a diff's. In a file typed into, a press is the caret's.
+    pub(crate) content_marks_lines: bool,
     /// Whether the content's last line is on screen, so the wheel knows
     /// to stop. Only the drawing can say: lines wrap, and how many rows
     /// the last ones took is settled here and nowhere else.
@@ -242,6 +246,7 @@ fn render_surface(
     widget::fill(frame, area, Token::SurfaceBackground);
     if view.layout == ViewLayout::Board {
         let mut rendered = render_board(frame, view, area, keys, held.sliding, selection, hits);
+        lines::lift_pointed_chip(frame, hits, held.sliding.map(|(hit, _)| hit));
         rendered.content_space = board_space(area);
         rendered.content_area = geometry::board_rows(area).1;
         return rendered;
@@ -336,6 +341,8 @@ fn render_surface(
             medium,
         } => {
             rendered.content_gutter = gutter_width(lines);
+            rendered.content_marks_lines =
+                *medium == Medium::Text && !*editable && rendered.content_gutter > 0;
             rendered.heading = heading.clone();
             (
                 rendered.content_bar,
@@ -355,6 +362,10 @@ fn render_surface(
                         Some((ViewHit::PlaceCaret { line, .. }, _)) if *editable => Some(line),
                         _ => None,
                     },
+                    pressing: match held.sliding {
+                        Some((ViewHit::Press { line, span }, _)) => Some((line, span)),
+                        _ => None,
+                    },
                     medium: *medium,
                     selection,
                     modes: column_modes,
@@ -370,6 +381,7 @@ fn render_surface(
         keys,
         view.notice.as_ref().map(styled),
     );
+    lines::lift_pointed_chip(frame, hits, held.sliding.map(|(hit, _)| hit));
     rendered.content_space = uze_extensions::view::Size {
         width: content_area.width,
         height: content_area.height,
@@ -633,9 +645,11 @@ pub(crate) fn render_navigation(
     view: &View,
     slot: Rect,
     surface: Rect,
+    pointed: Option<ViewHit>,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) {
     render_subjects(frame, slot, &view.subjects, hits);
+    lines::lift_pointed_chip(frame, hits, pointed);
     if view.layout == ViewLayout::Board
         && let Some(navigator) = view.navigator.as_ref()
     {

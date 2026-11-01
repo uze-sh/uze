@@ -38,7 +38,7 @@ use uze_application::{
 };
 use uze_application::{Result, UzeError, UzeHome};
 use uze_extensions::{
-    ExtensionHit, architect, code, spec,
+    ExtensionHit, architect, code, review, spec,
     view::{ScrollDirection, ViewHit},
 };
 use uze_keys::{Action, Chord, Key};
@@ -93,22 +93,6 @@ const POLL: Duration = Duration::from_millis(16);
 /// The most input events handled between two frames, so a flood of input
 /// cannot hold the frame back indefinitely.
 const EVENTS_PER_FRAME: usize = 64;
-
-/// Git inspection runs locally but still launches a process. Refresh often
-/// enough to follow commands typed in the active pane without attaching that
-/// cost to every PTY damage redraw.
-const GIT_BADGE_REFRESH: Duration = Duration::from_millis(750);
-
-/// How far apart two reads of the same thing are kept: never closer than
-/// `floor`, and never closer than a few times what the last one took.
-///
-/// A fixed period assumes the read is cheap. On a large checkout a
-/// `status` takes longer than the period itself, and a read that starts
-/// the moment the last one ends is a core spent on Git for as long as the
-/// workspace is open — for an answer that changes a few times a minute.
-fn paced(floor: Duration, took: Duration) -> Duration {
-    floor.max(took * uze_extensions::code::PACE)
-}
 
 /// The theme's `status.working` frames configure the hidden `indicatif`
 /// spinner that schedules this animation. Ratatui owns the alternate screen,
@@ -230,7 +214,7 @@ use worktree_removal::*;
 mod input;
 mod recent;
 mod render;
-mod session;
+pub(super) mod session;
 use input::*;
 use recent::*;
 use render::*;
@@ -1574,10 +1558,6 @@ struct Channels {
     /// reason a delivery is: a discard is `git worktree remove` and a
     /// recursive directory removal.
     mutations: Answers<MutationResolution>,
-    /// The badge and the timeline behind it. Git is read off-thread like
-    /// everything else expensive here; it was the last subsystem still
-    /// answering inline on the render path.
-    git: Answers<GitResolution>,
     commit_details: Answers<CommitDetailResolution>,
     release_notes: Answers<ReleaseNotesResolution>,
     /// Preserved work across the machine. Off-thread like every other
@@ -1688,15 +1668,6 @@ struct Remembered {
     prompt_history_pending: Option<PromptsOf>,
     /// Whose recorded overrides a read is out for.
     agent_overrides_pending: Option<OverridesOf>,
-    /// Cached Git summary for the selected agent/shell tab's live cwd.
-    /// Stored client-side because it is display chrome, not terminal session
-    /// state that belongs in `uze-terminal`.
-    git_badge: Option<GitBadge>,
-    /// The checkout a background Git read is out for, so the workspace
-    /// asks once rather than once per frame — see [`spawn_git_read`].
-    git_pending: Option<PathBuf>,
-    /// How long the last of those reads took (see [`paced`]).
-    git_took: Duration,
     /// Per-pane reconstruction of the line being typed, flushed on Enter.
     prompt_buffers: BTreeMap<PaneId, PromptBuffer>,
     /// The surfaces plugins declare, each with the engine that answers for
@@ -2158,6 +2129,9 @@ struct WorkspaceModel {
     /// [`EdgeDrag`] — so the click it might turn out to be is kept here
     /// until release.
     board_grab: Option<DiagramGrab>,
+    /// A press landed on a line's number and the button is still down:
+    /// every row the pointer is dragged over carries the mark to it.
+    marking_lines: bool,
     /// User-dragged navigator width; `None` falls back to its own
     /// responsive default. Mirrors `sidebar_width`/`dragging_sidebar`
     /// above, kept on the model rather than on the view itself so it
@@ -2441,11 +2415,6 @@ impl Submission {
     }
 }
 
-struct GitBadge {
-    cwd: PathBuf,
-    summary: Option<code::ChangeSummary>,
-    checked_at: Instant,
-}
 /// The keys a hint drew, as targets.
 fn hint_targets(keys: Vec<(Rect, Action)>) -> impl Iterator<Item = (Rect, WorkspaceHit)> {
     keys.into_iter()

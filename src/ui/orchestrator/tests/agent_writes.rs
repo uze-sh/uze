@@ -22,6 +22,7 @@ fn prompt(text: &str) -> AgentRequest {
         action: "review".to_owned(),
         label: "Review".to_owned(),
         unattended: false,
+        summary: None,
     }
 }
 
@@ -190,6 +191,7 @@ fn on_its_own(action: &str, text: &str) -> AgentRequest {
         action: action.to_owned(),
         label: action.to_owned(),
         unattended: true,
+        summary: None,
     }
 }
 
@@ -312,6 +314,7 @@ fn skill(name: &str) -> AgentRequest {
         action: "run".to_owned(),
         label: "Run".to_owned(),
         unattended: false,
+        summary: None,
     }
 }
 
@@ -365,4 +368,133 @@ fn an_allowed_prompt_whose_agent_is_gone_is_said_not_dropped_silently() {
             .map(|toast| (&toast.text, &toast.detail))
             .collect::<Vec<_>>()
     );
+}
+
+/// An extension that only keeps what it was told about its writes.
+struct Listener(
+    std::sync::Arc<std::sync::Mutex<Vec<(String, uze_extensions::contract::AgentWritten)>>>,
+);
+
+impl uze_extensions::contract::Extension for Listener {
+    fn identity(&self) -> String {
+        "listener".to_owned()
+    }
+    fn surfaces(&self) -> Vec<uze_extensions::contract::SurfaceInfo> {
+        Vec::new()
+    }
+    fn view(&self, _: &str, _: uze_extensions::view::Size) -> Option<uze_extensions::view::View> {
+        None
+    }
+    fn section(&self, _: &str, _: bool) -> Option<uze_extensions::view::Section> {
+        None
+    }
+    fn command(
+        &mut self,
+        _: &str,
+        _: uze_extensions::view::Command,
+        _: uze_extensions::view::Size,
+    ) -> uze_extensions::contract::Outcome {
+        uze_extensions::contract::Outcome::Stay
+    }
+    fn hit(
+        &mut self,
+        _: &str,
+        _: uze_extensions::view::ViewHit,
+        _: uze_extensions::view::Size,
+    ) -> uze_extensions::contract::Outcome {
+        uze_extensions::contract::Outcome::Stay
+    }
+    fn scroll(
+        &mut self,
+        _: &str,
+        _: uze_extensions::view::ScrollTarget,
+        _: uze_extensions::view::ScrollDirection,
+        _: uze_extensions::view::Size,
+    ) {
+    }
+    fn agent_write(&mut self, action: &str, written: uze_extensions::contract::AgentWritten) {
+        self.0.lock().unwrap().push((action.to_owned(), written));
+    }
+}
+
+impl crate::ui::orchestrator::declared::Hosted for Listener {}
+
+#[test]
+fn the_asking_extension_is_told_whether_its_write_was_typed_refused_or_declined() {
+    use uze_extensions::contract::AgentWritten;
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-told"));
+    let mut driven = driven(launched_agent(), &home);
+    let told = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let owner = Owner::Builtin("listener");
+    driven
+        .attach
+        .model
+        .remembered
+        .declared
+        .engines
+        .insert(owner.clone(), Box::new(Listener(told.clone())));
+
+    driven
+        .attach
+        .model
+        .ask_of_agent(owner.clone(), prompt("first"));
+    driven.attach.model.answer_agent_write(false);
+    assert_eq!(
+        told.lock().unwrap().pop(),
+        Some(("review".to_owned(), AgentWritten::Declined))
+    );
+
+    driven
+        .attach
+        .model
+        .ask_of_agent(owner.clone(), prompt("/clear"));
+    assert!(matches!(
+        told.lock().unwrap().pop(),
+        Some((_, AgentWritten::Refused(_)))
+    ));
+
+    driven
+        .attach
+        .model
+        .ask_of_agent(owner.clone(), prompt("Review PLAN.md"));
+    driven.frame();
+    driven.attach.model.answer_agent_write(true);
+    driven.pump();
+    assert_eq!(
+        told.lock().unwrap().pop(),
+        Some(("review".to_owned(), AgentWritten::Typed))
+    );
+}
+
+/// A bundled extension's send is asked in the operator's words: what the
+/// agent is told and where its answers come back, never the commands the
+/// line names, which are the agent's. A plugin's summary is not taken: what
+/// a plugin types is shown whole.
+#[test]
+fn a_bundled_extensions_ask_is_said_in_the_operators_words_and_a_plugins_whole() {
+    let summarised = AgentRequest {
+        summary: Some("The agent is told your comment waits for it.".to_owned()),
+        ..prompt("run `uze agent review show` to read it")
+    };
+    let mut model = launched_agent();
+    model.ask_of_agent(Owner::Builtin("review"), summarised.clone());
+    let rows = frame_rows(&mut model).join("\n");
+    assert!(rows.contains("your comment waits"), "{rows}");
+    assert!(
+        !rows.contains("uze agent"),
+        "the agent's commands are not the operator's"
+    );
+}
+
+/// What will be typed is shown as it will be typed, backticks and all:
+/// the operator approves the very characters the agent receives (D182).
+#[test]
+fn what_will_be_typed_is_shown_to_the_character() {
+    let mut model = launched_agent();
+    model.ask_of_agent(
+        Owner::Builtin("probe"),
+        prompt("run `echo hi` and an odd ` mark"),
+    );
+    let rows = frame_rows(&mut model).join("\n");
+    assert!(rows.contains("run `echo hi` and an odd ` mark"), "{rows}");
 }

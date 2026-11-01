@@ -191,8 +191,17 @@ impl Attach<'_> {
         };
         let marked = marking.release();
         let copied = marked
-            .map(|marked| marked.text(&self.surface_text(marked.lines())))
-            .filter(|text| !text.is_empty());
+            .map(|marked| {
+                (
+                    marked.lines(),
+                    marked.text(&self.surface_text(marked.lines())),
+                )
+            })
+            .filter(|(_, text)| !text.is_empty());
+        if let Some((lines, text)) = &copied {
+            self.tell_selected(lines.clone(), text);
+        }
+        let copied = copied.map(|(_, text)| text);
         match copied {
             Some(text) => self.model.copy_selected(text),
             None => self.model.selection = None,
@@ -201,6 +210,21 @@ impl Attach<'_> {
             self.surface_mouse(click);
         }
         self.model.dirty = true;
+    }
+
+    /// Tells the surface in the pane what the viewer's selection settled
+    /// on, so a surface that acts on marked text can.
+    fn tell_selected(&mut self, lines: std::ops::Range<usize>, text: &str) {
+        let Some((owner, surface)) = self
+            .model
+            .slot_in_pane()
+            .map(|slot| (slot.owner.clone(), slot.surface.id.clone()))
+        else {
+            return;
+        };
+        if let Some(engine) = self.model.remembered.declared.engines.get_mut(&owner) {
+            engine.selected(&surface, lines, text);
+        }
     }
 
     /// A prompt chosen in the overview's Agent section.
@@ -213,6 +237,26 @@ impl Attach<'_> {
         {
             agent.selected = index;
         }
+    }
+
+    /// Whether a press here lands on a line's number, which marks the line
+    /// rather than starting a selection of its text.
+    pub(super) fn presses_on_line_number(&self, column: u16, row: u16) -> bool {
+        matches!(
+            self.surface_hit_at(column, row),
+            Some((_, ViewHit::LineNumber { .. }))
+        )
+    }
+
+    /// Hands the surface the line under the pointer as marked, or the mark
+    /// carried to it: the line of whatever row of text or number the
+    /// pointer is over, so a drag that strays onto the text still marks.
+    pub(super) fn mark_line_at(&mut self, column: u16, row: u16, extend: bool) {
+        let line = match self.surface_hit_at(column, row) {
+            Some((_, ViewHit::LineNumber { line, .. } | ViewHit::PlaceCaret { line, .. })) => line,
+            _ => return,
+        };
+        self.surface_mouse(ViewHit::LineNumber { line, extend });
     }
 
     /// Whether a press here starts a selection: on a row of text the last
@@ -351,7 +395,7 @@ impl Attach<'_> {
             Action::ToggleSpec if self.model.showing(spec::CATALOG.id) => {
                 self.model.close_surface();
             }
-            Action::ToggleChanges => open_code(&mut self.model, code::CHANGES),
+            Action::ToggleChanges => open_review(&mut self.model),
             Action::ToggleFiles => open_code(&mut self.model, code::FILES),
             Action::ToggleArchitect => open_architect(&mut self.model),
             Action::ToggleSpec => open_spec(&mut self.model),

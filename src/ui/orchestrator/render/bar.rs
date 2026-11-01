@@ -3,16 +3,19 @@
 //! mirror: a hairline toward the pane, then one row, on the same column.
 
 use super::*;
-use crate::ui::orchestrator::declared::{HostedSlot, drawn_tree, folded};
+use crate::ui::orchestrator::declared::{HostedSlot, folded};
 use tab_strip::{GroupButton, button_group, group_width};
 use uze_extensions::contract::SurfaceSlot;
 use uze_extensions::view::View;
 
 /// The most an item of the bar takes, so one extension's line cannot push
 /// every other off it.
-const ITEM_MAX: u16 = 32;
+const ITEM_MAX: u16 = super::BAR_ITEM_MAX;
 /// The columns kept between the bar's groups and items.
 const GAP: u16 = 1;
+/// The air between two items, counted from what each draws rather than
+/// from the room it asked for, whose inset doubled the gap.
+const ITEM_GAP: u16 = 2;
 /// The most a plugin's door's name takes of the bar: a title is the
 /// plugin's to make long.
 const DOOR_LABEL: usize = 16;
@@ -100,18 +103,7 @@ pub(super) fn render_bar(
         .bar_items()
         .into_iter()
         .filter_map(|slot| {
-            let view = model
-                .remembered
-                .declared
-                .engine(&slot.owner)?
-                .view(
-                    &slot.surface.id,
-                    uze_extensions::view::Size {
-                        width: ITEM_MAX,
-                        height: 1,
-                    },
-                )
-                .and_then(drawn_tree)?;
+            let view = model.bar_item_view(slot)?;
             // One line: a text is cut where the item ends, never wrapped.
             Some((slot, folded(view)))
         })
@@ -137,15 +129,10 @@ pub(super) fn render_bar(
         if x < left_x {
             break;
         }
-        animates |= render_item(
-            frame,
-            Rect::new(x, row.y, width, 1),
-            model,
-            slot,
-            view,
-            hits,
-        );
-        right_x = x.saturating_sub(GAP);
+        let rect = Rect::new(x, row.y, width, 1);
+        animates |= render_item(frame, rect, model, slot, view, hits);
+        let drawn_from = drawn_columns(frame, rect).map_or(x, |(first, _)| first);
+        right_x = drawn_from.saturating_sub(ITEM_GAP);
     }
     for (slot, view) in items
         .iter()
@@ -155,17 +142,25 @@ pub(super) fn render_bar(
         if left_x.saturating_add(width) > right_x {
             break;
         }
-        animates |= render_item(
-            frame,
-            Rect::new(left_x, row.y, width, 1),
-            model,
-            slot,
-            view,
-            hits,
-        );
-        left_x = left_x.saturating_add(width).saturating_add(GAP);
+        let rect = Rect::new(left_x, row.y, width, 1);
+        animates |= render_item(frame, rect, model, slot, view, hits);
+        let drawn_to = drawn_columns(frame, rect).map_or(rect.right(), |(_, last)| last + 1);
+        left_x = drawn_to.saturating_add(ITEM_GAP);
     }
     animates
+}
+
+/// The first and last columns of `rect` an item drew something in.
+fn drawn_columns(frame: &mut ratatui::Frame<'_>, rect: Rect) -> Option<(u16, u16)> {
+    let buffer = frame.buffer_mut();
+    let drawn = |x: u16| {
+        buffer
+            .cell((x, rect.y))
+            .is_some_and(|cell| cell.symbol() != " ")
+    };
+    let first = (rect.x..rect.right()).find(|&x| drawn(x))?;
+    let last = (rect.x..rect.right()).rev().find(|&x| drawn(x))?;
+    Some((first, last))
 }
 
 /// One item: its view, then a target under it for what it opens, so a
@@ -184,13 +179,18 @@ fn render_item(
         flush_right(frame, rect, &mut hits[drawn_from..]);
     }
     if let Some(target) = model.bar_target(slot) {
+        // The target is what the item drew, not the room it asked for: the
+        // next item stands in that room's margin, and must answer there.
+        let drawn = drawn_columns(frame, rect).map_or(rect, |(first, last)| {
+            Rect::new(first, rect.y, last + 1 - first, 1)
+        });
         // A door like the bar's own: held back at rest, lifted in its
         // own hues under the pointer.
         match model.hovered.as_ref() == Some(&target) {
-            true => widget::lift(frame, rect),
-            false => widget::hold_back(frame, rect),
+            true => widget::lift(frame, drawn),
+            false => widget::hold_back(frame, drawn),
         }
-        hits.push((rect, target));
+        hits.push((drawn, target));
     }
     animates
 }

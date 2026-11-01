@@ -1,78 +1,57 @@
-//! The workspace TUI's code surface — one place for the four things a
-//! person asks of the checkout a tab is standing in: what changed in it,
-//! what it contains, what happened to it, and what it is *made of*.
+//! The workspace TUI's code surface: what the checkout a tab is standing
+//! in contains, what happened to it, and what it is *made of*.
 //!
-//! # Why one extension and not two
+//! # What it is for, and what it is not
 //!
-//! The diff and the file tree shipped separately first, and using them
-//! showed why that is wrong. The flow this product is for is **agent
-//! first → diff → and only last, touch the real file**: the diff is where
-//! a person's contact with the work begins, and editing is the exception
-//! at the end. So "I see it in the diff, let me fix that line" is the
-//! most-crossed seam there is, and two surfaces put a close, an open and
-//! a re-navigation to *the same file* in the middle of it.
-//!
-//! The merge is not a de-duplication. What was genuinely shared already
-//! is: the host draws both (`src/ui/extension_view.rs`), and highlighting
-//! is `shared::highlight`. The two navigators only look alike —
-//! [`changes`] compacts a flat, complete list from `git status`, and
-//! [`files`] flattens a partial tree that grows as directories are
-//! opened. What one extension can have and two cannot is a **selection
-//! that survives the switch**, and that is the whole of the value.
+//! Reading and editing the checkout's files, and finding the one that
+//! carries the weight. Judging what an agent's branch adds is the review's
+//! (`crate::review`), which used to be this surface's first half and left
+//! once it kept work of its own and spoke to the agent; a line marked
+//! there opens here at that line ([`Entry::Path`](crate::contract::Entry)),
+//! which is the crossing that used to argue for one surface.
 //!
 //! # The rule that keeps it from rotting
 //!
 //! No handler branches on the mode to decide what the state *means*. The
 //! mode decides who is *asked*; each half answers about the same path and
-//! knows nothing about the other. [`changes`] answers "the diff of this
-//! path", [`files`] answers "the tree containing it", [`editor`] answers
-//! "the text of it".
+//! knows nothing about the other. [`files`] answers "the tree containing
+//! it", [`editor`] answers "the text of it", [`map`] "where it sits among
+//! everything else".
 //!
-//! This is why the selection is a [`PathBuf`] rather than an index into
-//! the changed files: an index cannot mean anything to a tree that lists
-//! directories on demand, and a path means the same thing to both — which
-//! is also what a person means by "this file".
+//! This is why the selection is a [`PathBuf`]: a path means the same thing
+//! to a tree that lists directories on demand and to a map of every file,
+//! which is also what a person means by "this file".
 //!
-//! [`map`] is the fourth half and the newest, and it is here for the same
-//! reason rather than beside the diagrams it was first drawn with. A
-//! treemap of a checkout looks like an architecture diagram and is not
-//! one: nobody writes it, it says nothing about what the project was
-//! meant to be, and every tile on it is a path — the same path the tree
-//! and the diff answer about. Finding the file that carries the weight
-//! and then reading it is the same seam as finding it in the diff and
-//! then editing it, and a surface of its own would put a close and an
-//! open in the middle of it.
+//! [`map`] is here rather than beside the diagrams it was first drawn
+//! with. A treemap of a checkout looks like an architecture diagram and is
+//! not one: nobody writes it, it says nothing about what the project was
+//! meant to be, and every tile on it is a path the tree answers about.
+//! Finding the file that carries the weight and then reading it is one
+//! seam, and a surface of its own would put a close and an open in the
+//! middle of it.
 //!
 //! # Scope
 //!
 //! The checkout the active tab is *in*, and nothing else. An agent UZE
 //! isolated works in `.worktrees/<name>`, and `git worktree list` answers
-//! repository-wide from anywhere inside it — so listing linked worktrees
-//! here would put every other agent's diff, plus every checkout nobody
-//! ever cleaned up, inside a tab that owns exactly one of them.
+//! repository-wide from anywhere inside it, so listing linked worktrees
+//! here would put every other agent's files inside a tab that owns
+//! exactly one of them.
 //!
 //! # Nothing here touches a disk
 //!
-//! Two cadences, both off the drawing thread. The changes half re-reads
-//! on a timer ([`Changes::read`]); the files half asks for what it needs
-//! one [`FileRequest`] at a time and the host answers. Neither can reach
-//! the other: a refresh installs a new [`Changes`] and nothing else,
-//! which is what keeps it from eating a buffer someone is typing into.
+//! The files half asks for what it needs one [`FileRequest`] at a time
+//! and the host answers, off the drawing thread; the map's measurement and
+//! the timeline are jobs of their own. None of them can reach a buffer
+//! someone is typing into.
 
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     path::{Path, PathBuf},
-    time::{Duration, Instant},
 };
 
-use crate::{
-    Host,
-    shared::checkout,
-    view::{Caret, Command, ContentLine, Role, ScrollDirection, Size, Span, ViewHit},
-};
+use crate::view::{Caret, Command, ContentLine, Role, ScrollDirection, Size, Span, ViewHit};
 
-mod changes;
-mod diff;
 mod editor;
 mod exclude;
 mod extension;
@@ -85,11 +64,10 @@ mod row_menu;
 mod search;
 mod treemap;
 
-pub use changes::{ChangeSummary, change_summary};
 pub use exclude::Exclusions;
 pub use extension::{
-    CHANGES, ChangesRead, CodeExtension, DiffRead, FILES, FileRead, MeasureRead, SURFACE, TIMELINE,
-    TIMELINE_COMMITS, TimelineRead,
+    BranchRead, CodeExtension, FILES, FileRead, MeasureRead, SURFACE, TIMELINE, TIMELINE_COMMITS,
+    TimelineRead,
 };
 pub use history::{Commit, CommitDetail, Timeline, commit_detail, timeline, timeline_section};
 pub use map::{FileMeasure, Measure, measure};
@@ -97,8 +75,6 @@ pub use render::view;
 pub use request::{FileAnswer, FileRequest, LoadedFile, fulfill, unanswered};
 pub use search::Findings;
 
-use changes::Changes;
-use diff::DiffLineKind;
 use editor::OpenFile;
 use files::Files;
 use map::{Followed, Map};
@@ -109,23 +85,13 @@ use map::{Followed, Map};
 pub const CATALOG: crate::registry::BuiltinExtension = crate::registry::BuiltinExtension {
     id: "code",
     name: "Code",
-    description: "Changes, contents, history and a map of the active checkout.",
+    description: "Contents, history and a map of the active checkout.",
     surface: "Workspace TUI",
-    usage: "The timeline sits in the sidebar; open the changes with Alt+G or the changes chip, and the files with Alt+E or the code chip. `m`, or the Map chip, shows the checkout as a map of where its lines are. Ctrl+F searches every file; open files stand as tabs over the content.",
+    usage: "The timeline sits in the sidebar; open the files with Alt+E or the code chip. `m`, or the Map chip, shows the checkout as a map of where its lines are. Ctrl+F searches every file; open files stand as tabs over the content. The changes are the review's, behind the +N -M door.",
 };
-
-const REFRESH_INTERVAL: Duration = Duration::from_millis(750);
 
 /// Lines kept above a line a search opened, so it is read in its place.
 const SEARCH_CONTEXT: usize = 5;
-
-/// How many times its own duration a periodic read waits before the next
-/// one: Git gets at most a fifth of the clock, however large the checkout.
-/// Below [`REFRESH_INTERVAL`] it changes nothing; on a checkout whose
-/// `status` takes a few hundred milliseconds, reading back to back would
-/// be a core spent on Git for as long as the surface is open. The host
-/// paces its own reads by the same factor.
-pub const PACE: u32 = 5;
 
 /// What to do after an event reaches an open [`CodeView`]: whether to keep
 /// the surface open, and anything it asked of the host on the way.
@@ -142,22 +108,17 @@ pub enum CodeOutcome {
 /// reads from, which is why it is derived rather than kept.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum NavigatorMode {
-    /// The files `git status` reports, compacted into a tree.
-    Changes,
     /// The checkout's own tree, listed as it is opened.
     Files,
     /// What a search of every file found.
     Search,
 }
 
-/// Which half answers for the selection. Also which door was used: the
-/// mode a person arrives in is the one they chose before pressing
-/// anything, which is why there are two entry points rather than one that
-/// asks again.
+/// Which half answers for the selection: the file read as its text or as
+/// the document it describes, or the checkout drawn as a map.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum ContentMode {
     #[default]
-    Diff,
     Contents,
     /// A markdown file as the document it describes, rather than as the
     /// markup that describes it. Offered only for a file that is one.
@@ -183,8 +144,6 @@ pub(super) enum Half {
     Files,
     /// A picture of where the lines are.
     Map,
-    /// What is different from the branch this one started from.
-    Changes,
 }
 
 /// One entry of the control that says how the half on show is *drawn* —
@@ -252,7 +211,6 @@ pub struct CodeView {
     map_showing: MapShowing,
     focus: Focus,
     scroll: usize,
-    changes: Changes,
     files: Files,
     open: Option<OpenFile>,
     /// Buffers with unsaved changes the viewer moved away from, by path.
@@ -279,10 +237,8 @@ pub struct CodeView {
     confirming_delete: Option<Deleting>,
     /// Closing with unsaved changes, waiting for its second Esc.
     confirming_discard: bool,
-    /// The actions open on a changed file, if any.
+    /// The actions open on a row of the tree, if any.
     menu: Option<row_menu::FileMenu>,
-    /// A discard asked for and not yet answered.
-    discarding: Option<row_menu::Discarding>,
     /// A new name being typed for a file or a directory.
     renaming: Option<row_menu::Renaming>,
 }
@@ -295,9 +251,10 @@ pub struct CodeView {
 /// [`CodeView::resuming`] the next time that checkout is opened.
 ///
 /// What it holds is navigation and nothing else — the file being read,
-/// the directories opened to reach it, and how far down it. Deliberately not the content mode: the mode is the door that
-/// was used (`Alt+G` reviews, `Alt+E` navigates), and a door that
-/// remembered where it last led would stop being one. Deliberately not a
+/// the directories opened to reach it, and how far down it. Deliberately
+/// not the content mode: the door decides where a fresh opening lands, and
+/// a door that remembered where it last led would stop being one.
+/// Deliberately not a
 /// buffer either: a surface put away with unsaved work is kept whole by
 /// the extension (`CodeExtension::kept`), and one closed on a discard the
 /// viewer answered must not resurrect the typing.
@@ -354,19 +311,6 @@ pub struct CodeHeld {
     focus: Focus,
 }
 
-/// What a viewer did inside an open [`CodeView`] that a re-read of the
-/// changes must not undo.
-///
-/// Opaque to the host — it takes one from [`CodeView::placement`] and
-/// hands it back with the answer without looking inside.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct ViewPlacement {
-    path: Option<PathBuf>,
-    /// What the diff already on screen was read from — so a re-read that
-    /// finds the same thing can say so instead of colouring it again.
-    diff: u64,
-}
-
 impl CodeView {
     /// A surface that has been asked for but not read yet.
     ///
@@ -375,8 +319,8 @@ impl CodeView {
     /// instant it is asked for, saying it is reading, and fills in when
     /// the host's answers land.
     ///
-    /// `mode` is the door: the changes chip and `Alt+G` open on the
-    /// diff, the code chip and `Alt+E` on the tree.
+    /// `mode` is where the door leads: the code chip and `Alt+E` open on
+    /// the tree.
     pub fn opening(cwd: PathBuf, display_root: String, mode: ContentMode) -> Self {
         let mut view = Self {
             root: cwd,
@@ -390,10 +334,6 @@ impl CodeView {
             map_showing: MapShowing::default(),
             focus: Focus::Navigator,
             scroll: 0,
-            changes: Changes {
-                diff_pending: true,
-                ..Changes::default()
-            },
             files: Files::default(),
             open: None,
             parked: BTreeMap::new(),
@@ -406,7 +346,6 @@ impl CodeView {
             confirming_delete: None,
             confirming_discard: false,
             menu: None,
-            discarding: None,
             renaming: None,
         };
         if view.navigator() == NavigatorMode::Files {
@@ -445,9 +384,6 @@ impl CodeView {
                 self.load_selection(None)
             }
             NavigatorMode::Files | NavigatorMode::Search => {}
-            // The list and the diff both arrive from the refresh the host
-            // schedules the moment the surface opens.
-            NavigatorMode::Changes => self.changes.diff_pending = true,
         }
         // After the read is asked for, not before: opening a file puts the
         // content back at the top, and this is the one case where the top
@@ -502,7 +438,6 @@ impl CodeView {
     /// The list that goes with what the content is showing.
     fn navigator(&self) -> NavigatorMode {
         match self.content {
-            ContentMode::Diff => NavigatorMode::Changes,
             // The files' list is the tree until something is typed into its
             // search, and what that found while it holds text.
             ContentMode::Contents | ContentMode::Preview if !self.search.query.is_empty() => {
@@ -632,142 +567,9 @@ impl CodeView {
         self.selected.as_deref()
     }
 
-    /// The one diff to read because only the selection moved — nothing a
-    /// `status` of the whole checkout has to come before. `None` while
-    /// the diff on screen is the selection's, or while the changed-file
-    /// list it has to be found in has not been read yet.
-    pub fn diff_request(&self) -> Option<DiffRequest> {
-        if !self.changes.diff_pending {
-            return None;
-        }
-        let file = self.changes.files.get(self.selected_change()?)?;
-        Some(DiffRequest {
-            path: file.path.clone(),
-            status: file.status,
-        })
-    }
-
-    /// Reads the diff a [`DiffRequest`] names. Takes no `&self`, for the
-    /// reason [`Self::refresh`] does not.
-    pub fn read_diff(host: &dyn Host, root: &Path, request: DiffRequest) -> DiffAnswer {
-        DiffAnswer(changes::read_diff(
-            host,
-            root,
-            &request.path,
-            request.status,
-            0,
-        ))
-    }
-
-    /// Installs a diff read on its own, if it is still the selection's.
-    pub fn absorb_diff(&mut self, answer: DiffAnswer) {
-        let DiffAnswer(read) = answer;
-        if self.selected.as_deref() != Some(read.path.as_path()) {
-            return;
-        }
-        self.changes.install_diff(read);
-        self.changes.diff_pending = false;
-    }
-
-    /// Whether the diff on screen is the selected file's yet.
-    pub fn diff_pending(&self) -> bool {
-        self.changes.diff_pending
-    }
-
-    pub fn refresh_due(&self) -> bool {
-        let every = REFRESH_INTERVAL.max(self.changes.took * PACE);
-        self.changes
-            .refreshed_at
-            .is_none_or(|at| at.elapsed() >= every)
-    }
-
-    /// Where the viewer is, for the re-read to answer about.
-    pub fn placement(&self) -> ViewPlacement {
-        ViewPlacement {
-            path: self.selected.clone(),
-            // A diff still being waited for is not one on screen, and
-            // must not be recognised as the answer to its own read.
-            diff: match self.changes.diff_pending {
-                true => 0,
-                false => self.changes.diff_digest,
-            },
-        }
-    }
-
-    /// Re-reads the changes half, and nothing else.
-    ///
-    /// Takes no `&self`: the read is the slow part and runs wherever the
-    /// host puts it, so nothing here may borrow the view being refreshed.
-    /// It answers with a [`Changes`] rather than a whole view, because
-    /// the view now holds a buffer — see the module doc.
-    pub fn refresh(host: &dyn Host, root: PathBuf, placement: ViewPlacement) -> RefreshedChanges {
-        let started = Instant::now();
-        let branch = checkout::branch_of(host, &root);
-        let mut changes = match host.repository_root(&root) {
-            Ok(resolved) => {
-                Changes::read(host, &resolved, placement.path.as_deref(), placement.diff)
-            }
-            Err(message) => Changes::failed(message),
-        };
-        changes.took = started.elapsed();
-        RefreshedChanges {
-            placement,
-            branch,
-            changes,
-        }
-    }
-
-    /// Installs a refresh, if it still describes where the viewer is.
-    pub fn absorb_changes(&mut self, refreshed: RefreshedChanges) {
-        let RefreshedChanges {
-            placement,
-            branch,
-            mut changes,
-        } = refreshed;
+    /// The branch the checkout is on, as a read of it found.
+    pub fn set_branch(&mut self, branch: String) {
         self.branch = branch;
-        changes.inherit(&mut self.changes);
-        if placement.path != self.selected {
-            // The selection moved while the read was out, so its diff is
-            // of a file nobody is looking at: the list is taken, and the
-            // diff on screen — or the one-file read already asked for it
-            // — is left as it stands.
-            changes.diff = std::mem::take(&mut self.changes.diff);
-            changes.diff_binary = self.changes.diff_binary;
-            changes.diff_picture = self.changes.diff_picture.take();
-            changes.diff_error = self.changes.diff_error.take();
-            changes.diff_digest = self.changes.diff_digest;
-            changes.diff_unchanged = false;
-            changes.diff_pending = self.changes.diff_pending;
-        } else if changes.diff_unchanged {
-            // The read found the diff exactly as it is here, so here is
-            // where it stays — the cells were never sent back.
-            changes.diff = std::mem::take(&mut self.changes.diff);
-            changes.diff_binary = self.changes.diff_binary;
-            changes.diff_picture = self.changes.diff_picture.take();
-        }
-        self.changes = changes;
-        if self.selected.is_none() {
-            self.selected = self.changes.files.first().map(|file| file.path.clone());
-            self.changes.diff_pending = self.selected.is_some();
-            self.read_selection_as_what_it_is();
-        }
-        self.land_on_a_change();
-    }
-
-    /// Selects the first changed file when the changes list is on show and
-    /// none of its rows is the selection — arriving from the tree on a file
-    /// nobody touched, or on one the last commit took off the list.
-    ///
-    /// A list with nothing highlighted beside an empty diff reads as a
-    /// surface that has nothing to say, when what it has is a list of
-    /// things to read and no opinion about which comes first.
-    fn land_on_a_change(&mut self) {
-        if self.navigator() != NavigatorMode::Changes || self.selected_change().is_some() {
-            return;
-        }
-        if let Some(first) = self.changes.files.first().map(|file| file.path.clone()) {
-            self.select(first);
-        }
     }
 
     /// The next thing the host should do for the files half, or `None`.
@@ -948,35 +750,6 @@ impl CodeView {
                 }
             }
             FileAnswer::Found { query, outcome } => self.search.absorb(&query, outcome),
-            FileAnswer::Restored { paths, outcome } => match outcome {
-                Ok(()) => {
-                    if let Some(path) = paths.first() {
-                        self.notice = Some(Span::new(
-                            format!("discarded changes to {}", file_name(path)),
-                            Role::Success,
-                        ));
-                    }
-                    if self
-                        .open
-                        .as_ref()
-                        .is_some_and(|open| paths.contains(&open.path))
-                    {
-                        self.open = None;
-                    }
-                    self.parked.retain(|parked, _| !paths.contains(parked));
-                    for parent in paths.iter().filter_map(|path| path.parent()) {
-                        if self.files.listings.contains_key(parent) {
-                            self.queue
-                                .push_back(FileRequest::List(parent.to_path_buf()));
-                        }
-                    }
-                    // The list and the diff on screen are both of a change
-                    // that is gone: read again now rather than on the clock.
-                    self.changes.refreshed_at = None;
-                    self.changes.diff_pending = true;
-                }
-                Err(message) => self.notice = Some(Span::new(message, Role::Danger)),
-            },
             FileAnswer::Deleted { path, outcome } => match outcome {
                 Ok(()) => {
                     self.notice = Some(Span::new(
@@ -1055,11 +828,6 @@ impl CodeView {
         }
     }
 
-    /// Where the selection sits in the changed-file list, if it changed.
-    fn selected_change(&self) -> Option<usize> {
-        self.changes.position_of(self.selected.as_deref())
-    }
-
     /// Points the surface at `path`: every mode follows.
     ///
     /// Unsaved work is never lost on the way. The buffer is the one thing
@@ -1081,11 +849,6 @@ impl CodeView {
         }
         self.selected = Some(path);
         self.scroll = 0;
-        self.changes.diff = Vec::new();
-        self.changes.diff_binary = false;
-        self.changes.diff_picture = None;
-        self.changes.diff_error = None;
-        self.changes.diff_pending = true;
         self.read_selection_as_what_it_is();
     }
 
@@ -1094,11 +857,9 @@ impl CodeView {
     ///
     /// Arriving at a README and being shown its markup is the wrong
     /// default — the markup is what `p` is for, and that choice lasts as
-    /// long as the file it was made about. Diff is never touched: a
-    /// document's changes are still changes, and the navigator would have
-    /// to change lists to show anything else.
+    /// long as the file it was made about.
     fn read_selection_as_what_it_is(&mut self) {
-        if matches!(self.content, ContentMode::Diff | ContentMode::Map) {
+        if self.content == ContentMode::Map {
             return;
         }
         self.content = if self.selected_is_markdown() {
@@ -1109,14 +870,8 @@ impl CodeView {
     }
 
     /// Shows `mode` for whatever is selected, bringing the selection with
-    /// it — the switch this whole surface exists for, and what the two
-    /// doors mean once the surface is already open.
-    ///
-    /// The line comes too where it is known: a diff row carries the line
-    /// number it has on the new side, so a reader who was looking at line
-    /// 42 of a diff lands on line 42 of the file. Carrying only the file
-    /// would leave them at the top of something they were reading the
-    /// middle of, which is most of the trip they were trying to avoid.
+    /// it, and the line the reader was on where there is one: a file left
+    /// for its preview and back lands where it was read.
     pub fn show(&mut self, mode: ContentMode) {
         if self.content == mode {
             return;
@@ -1130,12 +885,6 @@ impl CodeView {
                 self.reveal_selection();
                 self.load_selection(line);
                 self.colour_the_rest();
-            }
-            ContentMode::Diff => {
-                self.scroll = line
-                    .and_then(|line| self.diff_row_of(line))
-                    .unwrap_or(self.scroll);
-                self.land_on_a_change();
             }
             // Nothing to fetch: the map is already measured, and what it
             // shows is the checkout rather than the selection.
@@ -1208,9 +957,6 @@ impl CodeView {
                 Showing::Measured(MapShowing::Ascii),
                 Showing::Measured(MapShowing::Ranking),
             ],
-            // A diff is read one way. What is offered here is how to read
-            // the *selection*, and a change has no second form.
-            ContentMode::Diff => Vec::new(),
             _ if self.selected_is_markdown() => vec![
                 Showing::Selection(ContentMode::Preview),
                 Showing::Selection(ContentMode::Contents),
@@ -1226,15 +972,14 @@ impl CodeView {
     /// when you use it: a control whose members come and go is one you
     /// have to look at again after every press, and the eye was already
     /// on the place the chip used to be.
-    pub(super) fn halves(&self) -> [Half; 3] {
-        [Half::Files, Half::Map, Half::Changes]
+    pub(super) fn halves(&self) -> [Half; 2] {
+        [Half::Files, Half::Map]
     }
 
     /// Which of them is on show.
     pub(super) fn half(&self) -> Half {
         match self.content {
             ContentMode::Map => Half::Map,
-            ContentMode::Diff => Half::Changes,
             ContentMode::Contents | ContentMode::Preview => Half::Files,
         }
     }
@@ -1242,13 +987,9 @@ impl CodeView {
     /// Goes to one of them.
     ///
     /// The nav is the whole of this surface's navigation, so every half
-    /// is reachable from every other — including the map from the
-    /// changes, which used to be refused on the grounds that the map is
-    /// a way through the files. It is; going there is also leaving the
-    /// changes, and that is what the press said.
+    /// is reachable from every other.
     pub(super) fn show_half(&mut self, half: Half) {
         match half {
-            Half::Changes => self.show(ContentMode::Diff),
             // As whatever the selection is: a document opens as the
             // document it is, which is the same rule arriving at a file
             // any other way follows.
@@ -1306,23 +1047,9 @@ impl CodeView {
             ContentMode::Contents | ContentMode::Preview => {
                 self.open.as_ref().map(|open| open.caret.line + 1)
             }
-            ContentMode::Diff => self
-                .changes
-                .diff
-                .get(self.scroll)
-                .map(|cell| cell.line_no as usize),
             // A map has tiles, not lines: nothing to carry across.
             ContentMode::Map => None,
         }
-    }
-
-    /// The diff row that mentions `line` on the new side. A removal's
-    /// number is the old file's, so it never answers for the new one.
-    fn diff_row_of(&self, line: usize) -> Option<usize> {
-        self.changes
-            .diff
-            .iter()
-            .position(|cell| cell.kind != DiffLineKind::Removed && cell.line_no as usize == line)
     }
 
     /// Opens the directories containing the selection, so the tree can
@@ -1478,20 +1205,6 @@ impl CodeView {
     fn step(&mut self, direction: ScrollDirection) {
         match self.navigator() {
             NavigatorMode::Search => self.search.step(direction == ScrollDirection::Down),
-            NavigatorMode::Changes => {
-                let Some(from) = self.selected_change() else {
-                    if let Some(first) = self.changes.files.first().map(|file| file.path.clone()) {
-                        self.select(first);
-                    }
-                    return;
-                };
-                if let Some(index) = self.changes.neighbour(from, direction)
-                    && let Some(file) = self.changes.files.get(index)
-                {
-                    let path = file.path.clone();
-                    self.select(path);
-                }
-            }
             NavigatorMode::Files => {
                 let rows = self.files.rows(&self.root);
                 if rows.is_empty() {
@@ -1725,6 +1438,21 @@ impl CodeView {
         };
     }
 
+    /// Shows the selected file at `line`, counted from one, with the caret
+    /// on it and a little of what comes before above it: where another
+    /// surface sent the viewer, as a search result sends them.
+    pub fn go_to_line(&mut self, line: usize) {
+        let line = line.max(1);
+        self.load_selection(Some(line));
+        if let Some(open) = self.open.as_mut() {
+            open.caret = Caret {
+                line: line - 1,
+                column: 0,
+            };
+        }
+        self.scroll = line.saturating_sub(1 + SEARCH_CONTEXT);
+    }
+
     /// Keeps the caret on screen after it moved, given how many lines the
     /// host says fit.
     fn follow_caret(&mut self, visible: u16) {
@@ -1755,57 +1483,6 @@ struct OpenTab {
 struct Parked {
     open: OpenFile,
     scroll: usize,
-}
-
-/// A diff to read on its own — see [`CodeView::diff_request`].
-pub struct DiffRequest {
-    path: PathBuf,
-    status: changes::FileStatus,
-}
-
-/// What reading a [`DiffRequest`] found.
-pub struct DiffAnswer(changes::DiffRead);
-
-impl DiffAnswer {
-    /// What a diff read that never ran answers: the reason, where the
-    /// diff would be.
-    pub fn failed(request: &DiffRequest, reason: String) -> Self {
-        Self(changes::DiffRead {
-            path: request.path.clone(),
-            digest: 0,
-            binary: false,
-            picture: None,
-            outcome: Err(reason),
-        })
-    }
-}
-
-/// One answered refresh of the changes half, with the placement it was
-/// read for — so an answer describing where the viewer *was* can be told
-/// from one describing where they *are*.
-pub struct RefreshedChanges {
-    placement: ViewPlacement,
-    branch: String,
-    changes: Changes,
-}
-
-impl RefreshedChanges {
-    /// What a refresh that never ran answers.
-    ///
-    /// The host reserves the surface against a second refresh while one
-    /// is out and releases it when the answer lands, so a read that ends
-    /// without answering — a thread that unwound over whatever the
-    /// repository happened to contain — would leave the changes half
-    /// frozen for the rest of the session. This is the same shape a
-    /// checkout that is no repository already produces, which the view
-    /// draws as the reason where the diff would be.
-    pub fn failed(placement: ViewPlacement, reason: String) -> Self {
-        Self {
-            placement,
-            branch: String::new(),
-            changes: Changes::failed(reason),
-        }
-    }
 }
 
 fn file_name(path: &Path) -> String {
@@ -1936,10 +1613,6 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         row_menu::rename_command(view, command);
         return CodeOutcome::Stay;
     }
-    if view.discarding.is_some() {
-        row_menu::answer_command(view, command);
-        return CodeOutcome::Stay;
-    }
     if view.menu.is_some() {
         return row_menu::command(view, command);
     }
@@ -2031,15 +1704,8 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         Command::ScrollPageDown => {
             view.scroll = view.scroll.saturating_add(usize::from(space.height.max(1)))
         }
-        // The move the whole surface is for: from a line of the diff into
-        // that line of the file, ready to change it.
         Command::OpenMenu => match view.navigator() {
             NavigatorMode::Search => {}
-            NavigatorMode::Changes => {
-                if let Some(index) = view.selected_change() {
-                    row_menu::open(view, index);
-                }
-            }
             NavigatorMode::Files => {
                 if let Some(row) = view
                     .selected
@@ -2050,9 +1716,6 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
                 }
             }
         },
-        // A change is reviewed, kept or thrown away here; the file itself
-        // is edited and deleted in the files half, where it is the subject.
-        Command::Edit | Command::Delete if view.navigator() == NavigatorMode::Changes => {}
         // A search's list is lines of files, not files: nothing to delete.
         Command::Delete if view.navigator() == NavigatorMode::Search => {}
         Command::Edit => {
@@ -2206,11 +1869,6 @@ fn fold_tree_row(view: &mut CodeView) {
 fn activate_selection(view: &mut CodeView) {
     match view.navigator() {
         NavigatorMode::Search => view.open_hit(true),
-        NavigatorMode::Changes => {
-            if view.selected.is_some() {
-                view.focus = Focus::Content;
-            }
-        }
         NavigatorMode::Files => {
             let Some(row) = view
                 .selected
@@ -2241,6 +1899,12 @@ pub fn handle_hover(view: &mut CodeView, hit: Option<ViewHit>) -> bool {
 }
 
 pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> CodeOutcome {
+    // A file's line number is the start of its line here: nothing on this
+    // surface marks whole lines.
+    let hit = hit.map(|hit| match hit {
+        ViewHit::LineNumber { line, .. } => ViewHit::PlaceCaret { line, cell: 0 },
+        other => other,
+    });
     // Only its answers mean anything while the question is open.
     if view.confirming_delete.is_some() {
         if let Some(ViewHit::Answer(yes)) = hit {
@@ -2258,10 +1922,6 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
         row_menu::rename_mouse(view, hit);
         return CodeOutcome::Stay;
     }
-    if view.discarding.is_some() {
-        row_menu::answer_mouse(view, hit);
-        return CodeOutcome::Stay;
-    }
     if view.menu.is_some() {
         return row_menu::mouse(view, hit);
     }
@@ -2277,7 +1937,6 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
         Some(ViewHit::ClearField) => view.clear_search(),
         Some(ViewHit::OpenMenu(index)) => match view.navigator() {
             NavigatorMode::Search => {}
-            NavigatorMode::Changes => row_menu::open(view, index),
             NavigatorMode::Files => {
                 if let Some(row) = view.files.rows(&view.root).into_iter().nth(index) {
                     row_menu::open_in_tree(view, row.path, row.directory);
@@ -2292,12 +1951,6 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
                 view.search.cursor = view.search.hit_of(index);
                 view.open_hit(false);
             }
-            NavigatorMode::Changes => {
-                if let Some(file) = view.changes.files.get(index) {
-                    let path = file.path.clone();
-                    view.select(path);
-                }
-            }
             NavigatorMode::Files => {
                 if let Some(row) = view.files.rows(&view.root).into_iter().nth(index) {
                     view.select(row.path);
@@ -2307,8 +1960,6 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
             }
         },
         Some(ViewHit::ToggleGroup(row)) => match view.navigator() {
-            // A flat list has no groups to toggle.
-            NavigatorMode::Changes => {}
             NavigatorMode::Search => view.search.toggle(row),
             NavigatorMode::Files => {
                 if let Some(row) = view.files.rows(&view.root).into_iter().nth(row) {
@@ -2422,19 +2073,13 @@ pub fn handle_scroll(view: &mut CodeView, direction: ScrollDirection, at_end: bo
     };
 }
 
-/// The text of `lines` of the content on show, as it reads: a diff's
-/// lines without the gutter that says how they changed, a file's as they
-/// are in it. What the host copies when a reader marked them; a range
+/// The text of `lines` of the content on show, as it reads: a file's as
+/// they are in it. What the host copies when a reader marked them; a range
 /// past the end gives back only the lines there are, and the map, being
 /// a drawing, has none.
 pub fn text(view: &CodeView, lines: std::ops::Range<usize>) -> Vec<String> {
     let count = lines.len();
     match view.content {
-        ContentMode::Diff => view.changes.diff[lines.start.min(view.changes.diff.len())..]
-            .iter()
-            .take(count)
-            .map(|line| diff::content_line(line).text())
-            .collect(),
         ContentMode::Contents => view.open.as_ref().map_or_else(Vec::new, |open| {
             open.lines
                 .iter()

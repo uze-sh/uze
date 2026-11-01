@@ -9,7 +9,7 @@ use std::path::Path;
 use crate::view::{ContentLine, LineTone, Rgb, Role, Span};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum DiffLineKind {
+pub(crate) enum DiffLineKind {
     Context,
     Added,
     Removed,
@@ -17,33 +17,33 @@ pub(super) enum DiffLineKind {
 
 /// One line of a diff before it is coloured.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct DiffLine {
-    pub(super) kind: DiffLineKind,
+pub(crate) struct DiffLine {
+    pub(crate) kind: DiffLineKind,
     /// The line's number on the side it belongs to: the old file's for a
     /// removal, the new file's for an addition and for context.
-    pub(super) line_no: u32,
-    pub(super) text: String,
+    pub(crate) line_no: u32,
+    pub(crate) text: String,
 }
 
 /// One line of the diff, ready to draw.
-pub(super) struct DiffCell {
-    pub(super) line_no: u32,
-    pub(super) kind: DiffLineKind,
+pub(crate) struct DiffCell {
+    pub(crate) line_no: u32,
+    pub(crate) kind: DiffLineKind,
     /// Pre-highlighted (see `shared::highlight`) — no syntect types beyond this
     /// module's boundary, and the colour travels as data because it comes
     /// from the syntax theme rather than from the host's palette (see
     /// [`crate::view::Rgb`]).
-    pub(super) spans: Vec<(Rgb, String)>,
+    pub(crate) spans: Vec<(Rgb, String)>,
 }
 
 /// Parses and colours `git diff` output for the file at `path`.
-pub(super) fn read(output: &str, path: &Path, theme_name: &str) -> Vec<DiffCell> {
+pub(crate) fn read(output: &str, path: &Path, theme_name: &str) -> Vec<DiffCell> {
     highlight(parse_unified_diff(output), path, theme_name)
 }
 
 /// Whether Git answered with a note that the file is binary instead of
 /// hunks: `Binary files … differ`, or the header of a binary patch.
-pub(super) fn is_binary(output: &str) -> bool {
+pub(crate) fn is_binary(output: &str) -> bool {
     output
         .lines()
         .any(|line| line.starts_with("Binary files ") || line == "GIT binary patch")
@@ -53,7 +53,7 @@ pub(super) fn is_binary(output: &str) -> bool {
 /// classified lines in the order Git wrote them. Preamble lines
 /// (`diff --git`, `index`, `---`, `+++`) are skipped; only content inside a
 /// `@@` hunk is kept.
-pub(super) fn parse_unified_diff(output: &str) -> Vec<DiffLine> {
+pub(crate) fn parse_unified_diff(output: &str) -> Vec<DiffLine> {
     let mut lines = Vec::new();
     let mut old_no = 0u32;
     let mut new_no = 0u32;
@@ -99,7 +99,7 @@ pub(super) fn parse_unified_diff(output: &str) -> Vec<DiffLine> {
 /// `"-12,7 +12,7 @@ fn context_hint"` — returns the hunk's starting
 /// `(old_line, new_line)`, or `None` if the header doesn't parse (left as
 /// a pre-hunk preamble line rather than guessing).
-pub(super) fn parse_hunk_header(header: &str) -> Option<(u32, u32)> {
+pub(crate) fn parse_hunk_header(header: &str) -> Option<(u32, u32)> {
     let (old_part, rest) = header.split_once(' ')?;
     let (new_part, _) = rest.split_once(" @@")?;
     let old_start = old_part
@@ -133,7 +133,7 @@ const COLOURED_DIFF_LINES: usize = 2000;
 /// file, not one continuous stream. A removal feeds only the old one, an
 /// addition only the new, and context both — so each stream sees exactly
 /// the file it stands for.
-pub(super) fn highlight(lines: Vec<DiffLine>, path: &Path, theme_name: &str) -> Vec<DiffCell> {
+pub(crate) fn highlight(lines: Vec<DiffLine>, path: &Path, theme_name: &str) -> Vec<DiffCell> {
     // The new file's first line, when the diff reaches it: all a script
     // with no extension says about its language is its shebang, and a
     // new script is exactly the diff that starts there.
@@ -184,7 +184,7 @@ pub(super) fn highlight(lines: Vec<DiffLine>, path: &Path, theme_name: &str) -> 
         .collect()
 }
 
-pub(super) fn content_line(cell: &DiffCell) -> ContentLine {
+pub(crate) fn content_line(cell: &DiffCell) -> ContentLine {
     let (gutter, tone) = match cell.kind {
         DiffLineKind::Context => (" ", LineTone::Neutral),
         DiffLineKind::Added => ("+", LineTone::Added),
@@ -204,8 +204,10 @@ pub(super) fn content_line(cell: &DiffCell) -> ContentLine {
                 ground: None,
                 bold: false,
                 italic: false,
+                pressable: false,
             })
             .collect(),
+        marked: false,
     }
 }
 

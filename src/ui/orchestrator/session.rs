@@ -36,7 +36,7 @@ mod absorb;
 mod agents;
 mod keys;
 mod manage;
-mod mouse;
+pub(super) mod mouse;
 mod overlays;
 mod pane_input;
 mod pane_links;

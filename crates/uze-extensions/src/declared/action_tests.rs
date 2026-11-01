@@ -309,6 +309,7 @@ fn a_path_is_opened_only_inside_the_checkout() {
         Outcome::OpenPath {
             project: PathBuf::from("/work/a"),
             target: PathBuf::from("/work/a/src/auth.rs"),
+            line: None,
         }
     );
     assert_eq!(

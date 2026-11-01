@@ -14,6 +14,10 @@ pub(crate) fn run_agent(app: &UzeApplication, action: AgentAction) -> Result<()>
         AgentAction::Context { action } => run_context(app, action),
         AgentAction::Market { action } => run_agent_market(app, action),
         AgentAction::Plugin { action } => run_agent_plugin(app, action),
+        AgentAction::Review { action } => {
+            run_agent_review(app, action);
+            Ok(())
+        }
         AgentAction::Report {
             event,
             tool,
@@ -134,6 +138,34 @@ fn field_at(described: &serde_json::Value, path: &[&str]) -> Option<String> {
         .iter()
         .try_fold(described, |value, key| value.get(key))?;
     value.as_str().map(str::to_owned)
+}
+
+/// `uze agent review …`: what the operator's review says, and the agent's
+/// answers to it. Exits well whatever happens, saying on stderr why not,
+/// so an agent's turn is never failed by it.
+fn run_agent_review(app: &UzeApplication, action: AgentReviewAction) {
+    let done = launched_agent(uze_application::UzeError::AgentWork).and_then(|(id, key)| {
+        let cwd = cwd()?;
+        let claim = uze_application::Claim {
+            id: &id,
+            key: &key,
+            cwd: &cwd,
+        };
+        match &action {
+            AgentReviewAction::Show => {
+                print!("{}", app.workspace().review_show(claim)?);
+                Ok(())
+            }
+            AgentReviewAction::Reply { comment, answer } => {
+                app.workspace().review_reply(claim, comment, answer)?;
+                println!("answered {comment}");
+                Ok(())
+            }
+        }
+    });
+    if let Err(error) = done {
+        eprintln!("uze agent review: {error}");
+    }
 }
 
 /// Appends a report about this agent, saying on stderr why one was not

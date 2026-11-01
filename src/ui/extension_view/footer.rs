@@ -63,7 +63,7 @@ pub(super) fn render_footer(
 /// is bound to. Kept here, beside the render that needs it, rather than in
 /// the extension, which knows nothing of either. Where two actions reach
 /// one command, the first row is the one a footer names.
-pub(super) const COMMAND_ACTIONS: [(Command, uze_keys::Action); 42] = [
+pub(super) const COMMAND_ACTIONS: [(Command, uze_keys::Action); 52] = [
     (Command::Close, uze_keys::Action::Dismiss),
     (Command::FocusNext, uze_keys::Action::FocusNext),
     (Command::FocusNext, uze_keys::Action::FocusPrevious),
@@ -121,6 +121,25 @@ pub(super) const COMMAND_ACTIONS: [(Command, uze_keys::Action); 42] = [
     (Command::CloseTab, uze_keys::Action::CloseFileTab),
     (Command::NextTab, uze_keys::Action::NextFileTab),
     (Command::PreviousTab, uze_keys::Action::PreviousFileTab),
+    (Command::Comment, uze_keys::Action::ReviewComment),
+    (Command::AddComment, uze_keys::Action::ReviewAdd),
+    (Command::Send, uze_keys::Action::ReviewSend),
+    (Command::MarkViewed, uze_keys::Action::ReviewViewed),
+    (Command::OpenInCode, uze_keys::Action::ReviewOpenInCode),
+    (Command::Resolve, uze_keys::Action::ReviewResolve),
+    (Command::NextThread, uze_keys::Action::ReviewNextThread),
+    (
+        Command::PreviousThread,
+        uze_keys::Action::ReviewPreviousThread,
+    ),
+    (
+        Command::ExtendMark(uze_extensions::view::ScrollDirection::Down),
+        uze_keys::Action::ReviewMarkDown,
+    ),
+    (
+        Command::ExtendMark(uze_extensions::view::ScrollDirection::Up),
+        uze_keys::Action::ReviewMarkUp,
+    ),
 ];
 
 /// The action a command is named by. `None` for typing, which has no

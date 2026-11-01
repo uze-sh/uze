@@ -1,25 +1,26 @@
 ---
 title: Code
-description: "Read what an agent changed: the diff, the files and a map of the checkout"
+description: "The checkout an agent works in: its files, a map of them, and its history"
 ---
 
 <Demo
   cast="/casts/code.cast"
   posterAt={16.9}
   alt="The code surface: an agent's changed files and a diff, then the file tree, then the checkout as a treemap."
-  caption="Alt+G opens the changes, Alt+E the files, m the map."
+  caption="Alt+E opens the files, m the map."
 />
 
-Everything about the checkout the selected agent works in.
+The files of the checkout the selected agent works in. What the agent changed
+is read in the [Review](/docs/workspace/review), which opens a marked line here
+with `o`.
 
 | Key | Shows |
 | --- | --- |
-| `Alt+G` | What changed, with the diff |
 | `Alt+E` | The files. `p` switches a document between preview and source |
 | `m` | A map of the checkout: where its code is, and what changes most |
 | `Ctrl+F` | Search every file of the checkout |
 
-The file you select stays selected when you switch between them.
+The file you select stays selected when you switch between the files and the map.
 
 ## Editing
 
@@ -59,11 +60,8 @@ in focus. Matches are also highlighted in the open file. `Esc`, or the `×` at t
 end of the field, clears the search, leaves the field and brings the tree back,
 opened down to the file you are on. A search stops at 2000 results.
 
-Right-click a changed file, or press `Alt+.`, for what you can do with the change:
-open the file, copy its path (absolute or relative), or discard the change.
-Discarding asks once, then puts the file back the way the last commit has it.
-In the files, the same gesture copies a path, renames, or deletes (`d`),
-asking first. There is no stage or
+Right-click a file or a directory, or press `Alt+.`, to copy its path (absolute
+or relative), rename it, or delete it (`d`), asking first. There is no stage or
 commit here: the checkout belongs to the agent working in it, and the agent
 commits its own work.
 

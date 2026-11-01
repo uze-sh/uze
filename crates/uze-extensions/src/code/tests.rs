@@ -2,7 +2,7 @@
 //!
 //! Two kinds here, deliberately mixed: fixtures that build a surface in
 //! memory and prove what it *describes*, and a handful that drive real
-//! `git` in a scratch repository, because the porcelain this parses is a
+//! `git` in a scratch repository, because the history this reads is a
 //! contract with a program nobody here controls.
 
 use std::{
@@ -11,19 +11,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::{
-    changes::{ChangedFile, Changes, FileStatus},
-    diff,
-    render::changes_navigator as navigator,
-    *,
-};
+use super::*;
 use crate::{
-    DirEntry,
+    DirEntry, Host,
     shared::highlight::FALLBACK_SYNTAX_THEME,
-    view::{
-        Command, Content, LineTone, MarkerSide, NavigatorRow, Role, RowIcon, RowMark, Size, Span,
-        ViewHit,
-    },
+    view::{Command, Content, NavigatorRow, Role, RowIcon, RowMark, Size, Span, ViewHit},
 };
 
 fn space() -> Size {
@@ -31,13 +23,6 @@ fn space() -> Size {
         width: 80,
         height: 20,
     }
-}
-
-/// A changed file read whole, the way the changes list offers it: its
-/// menu, then the first entry.
-fn open_the_file_from_its_menu(view: &mut CodeView) {
-    press(view, Command::OpenMenu);
-    press(view, Command::Activate);
 }
 
 /// One command, the way the host hands one down.
@@ -53,201 +38,35 @@ fn type_text(view: &mut CodeView, text: &str) {
     }
 }
 
-/// The two halves in memory, with no host and no disk — what most of
-/// these are about.
-fn surface(root: &Path, files: Vec<ChangedFile>, selected: usize) -> CodeView {
-    let selected_path = files.get(selected).map(|file| file.path.clone());
-    CodeView {
-        branch: "main".to_owned(),
-        selected: selected_path,
-        changes: Changes {
-            files,
-            ..Changes::default()
-        },
-        ..CodeView::opening(
-            root.to_path_buf(),
-            root.display().to_string(),
-            ContentMode::Diff,
-        )
-    }
-}
-
-/// Two changed files, opened on the second, with a diff already read.
-fn fixture() -> CodeView {
-    let root = PathBuf::from("/repo");
-    let mut view = surface(
-        &root,
-        vec![
-            ChangedFile {
-                status: FileStatus::Modified,
-                path: root.join("src/ui/git_diff.rs"),
-                renamed_from: None,
-            },
-            ChangedFile {
-                status: FileStatus::Added,
-                path: root.join("src/ui.rs"),
-                renamed_from: None,
-            },
-        ],
-        1,
-    );
-    view.changes.diff = diff::read(
-        "@@ -1,3 +1,4 @@\n context\n-removed line\n+added line\n",
-        Path::new("/repo/src/ui.rs"),
-        FALLBACK_SYNTAX_THEME,
-    );
-    view.changes.diff_pending = false;
-    view
-}
-
-/// Git's porcelain for three files under two directories, in the order
-/// the index keeps them, opened on the deepest one.
-fn flat_fixture() -> CodeView {
-    let root = PathBuf::from("/repo");
-    let files = changes::parse_porcelain_status(
-        " M src/ui/git_diff.rs\0A  src/ui.rs\0?? README.md\0 M src/Main.rs\0",
-        &root,
-    );
-    let deepest = files
-        .iter()
-        .position(|file| file.path.ends_with("git_diff.rs"))
-        .expect("the deepest file is listed");
-    let mut view = surface(&root, files, deepest);
-    view.changes.diff_pending = false;
-    view
-}
-
-/// Each row as the reader scans it: the name, then where it sits.
-fn flat_rows(view: &CodeView) -> Vec<(String, String)> {
-    navigator(view)
-        .rows
-        .into_iter()
-        .filter_map(|row| match row {
-            NavigatorRow::Item { name, detail, .. } => Some((name, detail)),
-            _ => None,
-        })
-        .collect()
-}
-
-/// The changes are one flat list: no row for a directory, every file at
-/// the same depth, named first with its directory after it, grouped by
-/// that directory and by name within it — whatever order Git kept them in.
-#[test]
-fn the_changes_are_a_flat_list_named_first_and_placed_after() {
-    let view = flat_fixture();
-    let rows = navigator(&view).rows;
-
-    assert!(
-        rows.iter().all(|row| matches!(
-            row,
-            NavigatorRow::Item {
-                depth: 0,
-                marker_side: MarkerSide::Trailing,
-                ..
-            }
-        )),
-        "no directory rows, no indent, the status at the right edge"
-    );
-    assert_eq!(
-        flat_rows(&view),
-        [
-            ("README.md".to_owned(), String::new()),
-            ("Main.rs".to_owned(), "src".to_owned()),
-            ("ui.rs".to_owned(), "src".to_owned()),
-            ("git_diff.rs".to_owned(), "src/ui".to_owned()),
-        ]
-    );
-    assert_eq!(navigator(&view).anchor, Some(3), "the selection is its row");
-}
-
-/// The arrows walk the list as drawn, and hold at either end.
-#[test]
-fn the_arrows_walk_the_list_as_drawn() {
-    let mut view = flat_fixture();
-
-    press(&mut view, Command::SelectNext);
-    assert_eq!(view.selected_change(), Some(3), "the last row holds");
-    press(&mut view, Command::SelectPrevious);
-    assert_eq!(view.selected_change(), Some(2));
-    for _ in 0..5 {
-        press(&mut view, Command::SelectPrevious);
-    }
-    assert_eq!(view.selected_change(), Some(0), "the first row holds");
-}
-
-/// Nothing in a flat list opens or closes, so neither is offered.
-#[test]
-fn a_flat_list_offers_no_folding() {
-    let mut view = flat_fixture();
-    press(&mut view, Command::Collapse);
-    assert_eq!(flat_rows(&view).len(), 4);
-    assert!(
-        !super::view(&view, space())
-            .footer
-            .iter()
-            .any(|command| matches!(command, Command::Collapse | Command::Expand))
-    );
+/// A tree with a directory open over one file and a file beside it —
+/// `src`, `main.rs`, `README.md` — and the cursor on the file inside.
+fn tree_fixture() -> (CodeView, FakeMachine) {
+    let machine = FakeMachine::default()
+        .with_directory("/w/src")
+        .with_file("/w/src/main.rs", "fn main() {}\n")
+        .with_file("/w/README.md", "# hi\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    view.select(PathBuf::from("/w/src"));
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+    view.select(PathBuf::from("/w/src/main.rs"));
+    settle(&mut view, &machine);
+    (view, machine)
 }
 
 /// The entries of the menu the view describes, and the row it is on.
 fn menu_of(view: &CodeView) -> Option<(usize, Vec<String>, usize)> {
-    navigator(view)
+    navigator_of_tree(view)
         .menu
         .map(|menu| (menu.row, menu.entries, menu.highlighted))
-}
-
-/// The secondary button on a row opens that file's actions and selects
-/// it; while the menu is open the footer speaks only for the menu.
-#[test]
-fn a_changed_file_offers_its_actions_on_its_row() {
-    let mut view = flat_fixture();
-
-    handle_mouse(&mut view, Some(ViewHit::OpenMenu(1)), space());
-
-    assert_eq!(view.selected_change(), Some(1), "the row it was opened on");
-    assert_eq!(
-        menu_of(&view),
-        Some((
-            1,
-            vec![
-                "Open file".to_owned(),
-                "Copy path".to_owned(),
-                "Copy relative path".to_owned(),
-                "Discard changes…".to_owned()
-            ],
-            0
-        ))
-    );
-    assert_eq!(
-        super::view(&view, space()).footer,
-        [Command::SelectNext, Command::Activate, Command::Close]
-    );
-}
-
-/// The keyboard reaches the same menu, and the changes list offers it in
-/// place of editing and deleting, which belong to the files half.
-#[test]
-fn the_changes_list_offers_the_menu_rather_than_edit_and_delete() {
-    let mut view = flat_fixture();
-    let footer = super::view(&view, space()).footer;
-    assert!(footer.contains(&Command::OpenMenu));
-    assert!(!footer.contains(&Command::Edit) && !footer.contains(&Command::Delete));
-
-    press(&mut view, Command::Delete);
-    assert!(
-        view.confirming_delete.is_none(),
-        "nothing is deleted from here"
-    );
-
-    press(&mut view, Command::OpenMenu);
-    assert_eq!(menu_of(&view).map(|(row, ..)| row), Some(3));
 }
 
 /// Anything that is not a move or a pick shuts the menu and does nothing
 /// else — a key or a click elsewhere alike.
 #[test]
 fn the_menu_shuts_on_anything_that_is_not_meant_for_it() {
-    let mut view = flat_fixture();
+    let (mut view, _machine) = tree_fixture();
     press(&mut view, Command::OpenMenu);
     press(&mut view, Command::Close);
     assert!(menu_of(&view).is_none());
@@ -256,18 +75,22 @@ fn the_menu_shuts_on_anything_that_is_not_meant_for_it() {
         CodeOutcome::Close
     ));
 
-    let mut view = flat_fixture();
+    let (mut view, _machine) = tree_fixture();
     press(&mut view, Command::OpenMenu);
     handle_mouse(&mut view, Some(ViewHit::SelectItem(0)), space());
     assert!(menu_of(&view).is_none());
-    assert_eq!(view.selected_change(), Some(3), "the click only shut it");
+    assert_eq!(
+        view.selected.as_deref(),
+        Some(Path::new("/w/src/main.rs")),
+        "the click only shut it"
+    );
 }
 
 /// The pointer over an entry highlights it, the way the arrows do, and
 /// only a move onto another entry asks for a new frame.
 #[test]
 fn the_pointer_highlights_the_entry_it_is_over() {
-    let mut view = flat_fixture();
+    let (mut view, _machine) = tree_fixture();
     press(&mut view, Command::OpenMenu);
 
     assert!(handle_hover(&mut view, Some(ViewHit::MenuEntry(2))));
@@ -283,33 +106,14 @@ fn the_pointer_highlights_the_entry_it_is_over() {
     assert_eq!(menu_of(&view).map(|(.., highlighted)| highlighted), Some(2));
 }
 
-/// A deleted file has nothing on disk to open.
-#[test]
-fn a_deleted_file_is_not_offered_to_open() {
-    let root = PathBuf::from("/repo");
-    let mut view = surface(
-        &root,
-        changes::parse_porcelain_status(" D gone.rs\0", &root),
-        0,
-    );
-    press(&mut view, Command::OpenMenu);
-    let (_, entries, _) = menu_of(&view).expect("the menu opened");
-    assert_eq!(
-        entries,
-        ["Copy path", "Copy relative path", "Discard changes…"]
-    );
-}
-
 /// "Copy path" hands the host's clipboard the path as the machine spells
 /// it, for a tool outside the checkout.
 #[test]
 fn copying_a_path_hands_the_host_the_machines_spelling() {
-    let mut view = flat_fixture();
-    press(&mut view, Command::OpenMenu);
-    press(&mut view, Command::SelectNext);
+    let (mut view, _machine) = tree_fixture();
     assert_eq!(
-        press(&mut view, Command::Activate),
-        CodeOutcome::Copy(spelled(Path::new("/repo").join("src/ui/git_diff.rs")))
+        pick_from_menu(&mut view, 0),
+        CodeOutcome::Copy(spelled(Path::new("/w").join("src").join("main.rs")))
     );
     assert!(menu_of(&view).is_none());
 }
@@ -318,23 +122,11 @@ fn copying_a_path_hands_the_host_the_machines_spelling() {
 /// review or a prompt.
 #[test]
 fn copying_the_relative_path_hands_the_host_the_checkouts_own_spelling() {
-    let mut view = flat_fixture();
-    press(&mut view, Command::OpenMenu);
-    press(&mut view, Command::SelectNext);
-    press(&mut view, Command::SelectNext);
+    let (mut view, _machine) = tree_fixture();
     assert_eq!(
-        press(&mut view, Command::Activate),
-        CodeOutcome::Copy("src/ui/git_diff.rs".to_owned())
+        pick_from_menu(&mut view, 1),
+        CodeOutcome::Copy(spelled(Path::new("src").join("main.rs")))
     );
-}
-
-/// Picks "Discard changes…" from the selected file's menu.
-fn ask_to_discard(view: &mut CodeView) {
-    press(view, Command::OpenMenu);
-    for _ in 0..3 {
-        press(view, Command::SelectNext);
-    }
-    press(view, Command::Activate);
 }
 
 /// A row of the tree offers its own actions — its path both ways, a
@@ -528,125 +320,49 @@ fn navigator_of_tree(view: &CodeView) -> crate::view::Navigator {
         .expect("the tree is beside the content")
 }
 
-/// Throwing a change away cannot be undone, so it is asked as a dialog,
-/// with the keyboard on the way out; only a yes reaches the machine, and
-/// the list is read again at once.
-#[test]
-fn discarding_a_change_asks_first_and_then_restores_it() {
-    let machine = FakeMachine::default();
-    let mut view = flat_fixture();
-
-    ask_to_discard(&mut view);
-    assert!(
-        menu_of(&view).is_none(),
-        "the menu gave way to the question"
-    );
-    let asked = super::view(&view, space()).confirm.expect("a question");
-    assert_eq!(
-        (
-            asked.title.as_str(),
-            asked.subject.as_str(),
-            asked.confirm.as_str()
-        ),
-        ("Discard changes", "src/ui/git_diff.rs", "Discard")
-    );
-    assert!(!asked.on_confirm, "the keyboard starts on the way out");
-
-    press(&mut view, Command::SelectNext);
-    assert!(view.discarding.is_some(), "the question holds the keyboard");
-    press(&mut view, Command::Activate);
-    assert!(
-        view.discarding.is_none() && view.peek_request().is_none(),
-        "no restores nothing"
-    );
-
-    ask_to_discard(&mut view);
-    press(&mut view, Command::Expand);
-    press(&mut view, Command::Activate);
-    settle(&mut view, &machine);
-
-    assert_eq!(
-        *machine.restored.borrow(),
-        [PathBuf::from("/repo/src/ui/git_diff.rs")]
-    );
-    assert!(view.refresh_due(), "the list is read again now");
-    assert!(
-        view.diff_pending(),
-        "and the diff of a change that is gone with it"
-    );
-}
-
 /// The dialog's buttons answer it, and nothing else on the surface does.
 #[test]
 fn a_click_answers_the_question_only_on_its_buttons() {
-    let machine = FakeMachine::default();
-    let mut view = flat_fixture();
-    ask_to_discard(&mut view);
+    let (mut view, machine) = tree_fixture();
+    pick_from_menu(&mut view, 3);
 
-    handle_mouse(&mut view, Some(ViewHit::SelectItem(0)), space());
-    assert!(view.discarding.is_some());
-    assert_eq!(view.selected_change(), Some(3), "nothing behind it moved");
+    handle_mouse(&mut view, Some(ViewHit::SelectItem(2)), space());
+    assert!(view.confirming_delete.is_some());
+    assert_eq!(
+        view.selected.as_deref(),
+        Some(Path::new("/w/src/main.rs")),
+        "nothing behind it moved"
+    );
 
     handle_mouse(&mut view, Some(ViewHit::Answer(true)), space());
     settle(&mut view, &machine);
-    assert_eq!(machine.restored.borrow().len(), 1);
-}
-
-/// What agreeing does is said for the kind of change it undoes.
-#[test]
-fn the_question_says_what_discarding_this_change_does() {
-    let root = PathBuf::from("/repo");
-    let body = |porcelain: &str| {
-        let mut view = surface(&root, changes::parse_porcelain_status(porcelain, &root), 0);
-        ask_to_discard(&mut view);
-        super::view(&view, space()).confirm.expect("asked").body
-    };
-    assert!(body("?? new.rs\0").starts_with("Deletes the file"));
-    assert!(body(" M kept.rs\0").starts_with("Puts the file back"));
-    assert!(body("R  new.rs\0old.rs\0").contains("brings old.rs back"));
-}
-
-/// A rename is two paths, and throwing it away puts the old one back.
-#[test]
-fn discarding_a_rename_restores_both_of_its_paths() {
-    let machine = FakeMachine::default();
-    let root = PathBuf::from("/repo");
-    let mut view = surface(
-        &root,
-        changes::parse_porcelain_status("R  new.rs\0old.rs\0", &root),
-        0,
-    );
-    ask_to_discard(&mut view);
-    // The answer the keyboard starts on is the way out.
-    press(&mut view, Command::Expand);
-    press(&mut view, Command::Activate);
-    settle(&mut view, &machine);
-
-    assert_eq!(
-        *machine.restored.borrow(),
-        [root.join("new.rs"), root.join("old.rs")]
+    assert!(
+        !machine
+            .files
+            .borrow()
+            .contains_key(Path::new("/w/src/main.rs"))
     );
 }
 
-/// The view carries meaning, never appearance: a status mark is a
+/// The view carries meaning, never appearance: a row's mark is a
 /// [`Role`], not a colour, so the host's palette stays the only place
 /// chrome colour is decided.
 #[test]
 fn the_view_names_meaning_rather_than_colour() {
-    let view = view(&fixture(), space());
-    let navigator = view.navigator.expect("files to navigate");
-    assert_eq!(navigator.badge, "2");
+    let (view, _machine) = tree_fixture();
+    let navigator = navigator_of_tree(&view);
+    assert_eq!(navigator.badge, "2", "the files listed, not the directory");
     assert!(navigator.focused);
 
     let marker = navigator
         .rows
         .iter()
         .find_map(|row| match row {
-            NavigatorRow::Item { name, marker, .. } if name == "ui.rs" => Some(marker),
+            NavigatorRow::Item { name, marker, .. } if name == "main.rs" => Some(marker),
             _ => None,
         })
-        .expect("the added file is listed");
-    assert_eq!(marker.role, Role::Success, "added, not a colour");
+        .expect("the file is listed");
+    assert_eq!(marker.role, Role::Muted, "a role, not a colour");
     assert!(
         marker.color.is_none(),
         "chrome never carries its own colour"
@@ -657,12 +373,12 @@ fn the_view_names_meaning_rather_than_colour() {
 /// from a theme the extension ships, and a role would throw it away.
 #[test]
 fn syntax_colour_survives_as_the_extensions_own_data() {
-    let view = view(&fixture(), space());
-    let Content::Lines { lines, .. } = view.content else {
-        panic!("a selected file has a diff");
+    let machine =
+        FakeMachine::default().with_file("/w/main.rs", "fn main() {\n    let x = 1;\n}\n");
+    let view = reading(&machine, "/w/main.rs");
+    let Content::Lines { lines, .. } = super::view(&view, space()).content else {
+        panic!("an open file is lines");
     };
-    assert!(lines.iter().any(|line| line.tone == LineTone::Added));
-    assert!(lines.iter().any(|line| line.tone == LineTone::Removed));
     assert!(
         lines
             .iter()
@@ -672,89 +388,19 @@ fn syntax_colour_survives_as_the_extensions_own_data() {
     );
 }
 
-/// Outside a git repository the *changes* have nothing to say. The
-/// surface does not: the tree still works, which is why that failure is
-/// content rather than the whole view.
-#[test]
-fn a_checkout_that_is_no_repository_still_has_a_tree() {
-    let mut view = CodeView::opening(
-        PathBuf::from("/nope"),
-        "/nope".to_owned(),
-        ContentMode::Diff,
-    );
-    view.changes.error = Some("not a git repository".to_owned());
-    view.changes.diff_pending = false;
-
-    let rendered = super::view(&view, space());
-    assert!(
-        rendered.navigator.is_none(),
-        "no changes to list is the message alone"
-    );
-    assert!(matches!(
-        rendered.content,
-        Content::Message {
-            role: Role::Danger,
-            ..
-        }
-    ));
-
-    view.content = ContentMode::Contents;
-    assert!(
-        super::view(&view, space()).navigator.is_some(),
-        "the file tree is unaffected by git being absent"
-    );
-}
-
-/// A checkout with nothing changed is a message across the whole frame,
-/// asking nothing of a list that is not there.
-#[test]
-fn nothing_changed_is_a_message_without_a_list() {
-    let mut view = CodeView::opening(PathBuf::from("/w"), "/w".to_owned(), ContentMode::Diff);
-    view.changes.diff_pending = false;
-
-    let rendered = super::view(&view, space());
-    assert!(rendered.navigator.is_none());
-    assert!(!rendered.footer.contains(&Command::SelectNext));
-    assert!(!rendered.footer.contains(&Command::FocusNext));
-    assert!(
-        !rendered.subjects.is_empty(),
-        "the other halves stay a key away"
-    );
-}
-
-/// Moving the selection reads nothing — the property that keeps an arrow
-/// key off the thread that draws.
-#[test]
-fn selecting_a_file_asks_for_its_diff_rather_than_reading_it() {
-    let mut open = fixture();
-    assert!(!open.diff_pending(), "a fresh surface shows what it read");
-
-    let outcome = press(&mut open, Command::SelectPrevious);
-
-    assert!(matches!(outcome, CodeOutcome::Stay));
-    assert_eq!(open.selected_change(), Some(0), "the selection moved");
-    assert!(open.diff_pending(), "and a read is owed for it");
-    assert!(
-        open.changes.diff.is_empty(),
-        "the previous file's diff is not left under the new name"
-    );
-
-    assert!(
-        matches!(&view(&open, space()).content, Content::Message { text, .. } if text == "reading…"),
-    );
-}
-
 /// The wheel over the content scrolls the content and nothing else: the
 /// selection is not a scroll position.
 #[test]
 fn the_wheel_scrolls_the_content_and_leaves_the_selection_alone() {
-    let mut view = fixture();
+    let text: String = (1..=10).map(|n| format!("{n}\n")).collect();
+    let machine = FakeMachine::default().with_file("/w/notes.txt", &text);
+    let mut view = reading(&machine, "/w/notes.txt");
 
     handle_scroll(&mut view, ScrollDirection::Down, false);
 
     assert_eq!(view.scroll, 3);
-    assert_eq!(view.selected_change(), Some(1));
-    assert!(!view.diff_pending());
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/notes.txt")));
+    assert!(view.peek_request().is_none(), "and nothing is read for it");
 }
 
 /// The wheel stops once the last line is on screen: past it the content
@@ -762,7 +408,8 @@ fn the_wheel_scrolls_the_content_and_leaves_the_selection_alone() {
 /// take back before anything moves on the way up.
 #[test]
 fn the_wheel_stops_once_the_last_line_is_on_screen() {
-    let mut view = fixture();
+    let machine = FakeMachine::default().with_file("/w/notes.txt", "one\ntwo\nthree\nfour\n");
+    let mut view = reading(&machine, "/w/notes.txt");
     handle_scroll(&mut view, ScrollDirection::Down, false);
 
     handle_scroll(&mut view, ScrollDirection::Down, true);
@@ -814,223 +461,7 @@ fn the_timeline_section_names_meaning_rather_than_colour() {
     );
 }
 
-// --- the files half, and the switch between them -------------------------
-
-/// A repository that answers the same thing every time, and counts how
-/// often it was asked to diff.
-struct StillRepository {
-    diffs: std::cell::Cell<usize>,
-}
-
-impl Host for StillRepository {
-    fn git(&self, _root: &Path, args: &[&str], _answers: &[i32]) -> Result<String, String> {
-        match args.first() {
-            Some(&"status") => Ok(" M src/ui.rs\n".to_owned()),
-            Some(&"diff") => {
-                self.diffs.set(self.diffs.get() + 1);
-                Ok("@@ -1,2 +1,2 @@\n context\n-old line\n+new line\n".to_owned())
-            }
-            _ => Ok("main\n".to_owned()),
-        }
-    }
-
-    fn repository_root(&self, path: &Path) -> Result<PathBuf, String> {
-        Ok(path.to_path_buf())
-    }
-
-    fn read_file(&self, _path: &Path) -> Result<String, crate::Unreadable> {
-        Err(crate::Unreadable::Failed("nothing is read here".to_owned()))
-    }
-
-    fn list_dir(&self, _path: &Path) -> Result<Vec<DirEntry>, String> {
-        Ok(Vec::new())
-    }
-
-    fn write_file(&self, _root: &Path, _path: &Path, _contents: &str) -> Result<(), String> {
-        unreachable!("reading a repository writes nothing")
-    }
-
-    fn delete_file(&self, _root: &Path, _path: &Path) -> Result<(), String> {
-        unreachable!("reading a repository deletes nothing")
-    }
-
-    fn restore_to_head(&self, _root: &Path, _paths: &[PathBuf]) -> Result<(), String> {
-        unreachable!("reading a repository restores nothing")
-    }
-
-    fn syntax_theme(&self) -> String {
-        FALLBACK_SYNTAX_THEME.to_owned()
-    }
-}
-
-/// A repository whose one change is an image, counting how often its
-/// bytes were read.
-struct ChangedImage {
-    reads: std::cell::Cell<usize>,
-}
-
-impl Host for ChangedImage {
-    fn git(&self, _root: &Path, _args: &[&str], _answers: &[i32]) -> Result<String, String> {
-        Ok("diff --git a/logo.png b/logo.png\nindex 1..2 100644\nBinary files a/logo.png and b/logo.png differ\n".to_owned())
-    }
-
-    fn repository_root(&self, path: &Path) -> Result<PathBuf, String> {
-        Ok(path.to_path_buf())
-    }
-
-    fn read_file(&self, _path: &Path) -> Result<String, crate::Unreadable> {
-        Err(crate::Unreadable::NotText)
-    }
-
-    fn read_bytes(&self, _path: &Path) -> Result<Vec<u8>, crate::Unreadable> {
-        self.reads.set(self.reads.get() + 1);
-        let mut encoded = Vec::new();
-        let mut encoder = png::Encoder::new(&mut encoded, 1, 1);
-        encoder.set_color(png::ColorType::Rgb);
-        let mut writer = encoder.write_header().unwrap();
-        writer.write_image_data(&[1, 2, 3]).unwrap();
-        writer.finish().unwrap();
-        Ok(encoded)
-    }
-
-    fn list_dir(&self, _path: &Path) -> Result<Vec<DirEntry>, String> {
-        Ok(Vec::new())
-    }
-
-    fn write_file(&self, _root: &Path, _path: &Path, _contents: &str) -> Result<(), String> {
-        unreachable!("reading a repository writes nothing")
-    }
-
-    fn delete_file(&self, _root: &Path, _path: &Path) -> Result<(), String> {
-        unreachable!("reading a repository deletes nothing")
-    }
-
-    fn restore_to_head(&self, _root: &Path, _paths: &[PathBuf]) -> Result<(), String> {
-        unreachable!("reading a repository restores nothing")
-    }
-
-    fn syntax_theme(&self) -> String {
-        FALLBACK_SYNTAX_THEME.to_owned()
-    }
-}
-
-/// The timer that re-reads the changes would otherwise decode a changed
-/// image again every time it fires, for the picture already on screen.
-#[test]
-fn an_image_whose_diff_has_not_moved_is_not_read_again() {
-    let host = ChangedImage {
-        reads: std::cell::Cell::new(0),
-    };
-    let (root, path) = (Path::new("/repo"), Path::new("logo.png"));
-    let first = changes::read_diff(&host, root, path, FileStatus::Modified, 0);
-    assert!(first.picture.is_some(), "the image is drawn the first time");
-    assert_eq!(host.reads.get(), 1);
-
-    let again = changes::read_diff(&host, root, path, FileStatus::Modified, first.digest);
-    assert!(matches!(again.outcome, Ok(None)), "the diff has not moved");
-    assert_eq!(host.reads.get(), 1, "so the image is not read again");
-}
-
-/// The changes are re-read on a timer, because the checkout is under an
-/// agent's hands. Colouring a diff that did not move is the same picture
-/// drawn twice — the one unbounded cost this surface pays over and over
-/// if nothing notices.
-#[test]
-fn a_diff_that_has_not_moved_is_not_coloured_again() {
-    let host = StillRepository {
-        diffs: std::cell::Cell::new(0),
-    };
-    let root = PathBuf::from("/repo");
-    let mut view = CodeView::opening(root.clone(), "/repo".to_owned(), ContentMode::Diff);
-
-    // The first read has no selection yet, so there is no diff to ask
-    // about; it is what lands the selection.
-    let first = CodeView::refresh(&host, root.clone(), view.placement());
-    assert!(!first.changes.diff_unchanged);
-    view.absorb_changes(first);
-    let second = CodeView::refresh(&host, root.clone(), view.placement());
-    assert!(
-        !second.changes.diff_unchanged,
-        "the selected file's own diff"
-    );
-    view.absorb_changes(second);
-    let coloured = view.changes.diff.len();
-    assert!(coloured > 0, "there is a diff on screen");
-
-    let third = CodeView::refresh(&host, root.clone(), view.placement());
-    assert!(
-        third.changes.diff_unchanged,
-        "the same bytes in the same palette are the same picture"
-    );
-    assert!(third.changes.diff.is_empty(), "so none of it travels back");
-    view.absorb_changes(third);
-    assert_eq!(
-        view.changes.diff.len(),
-        coloured,
-        "and what is on screen stays on screen"
-    );
-    assert_eq!(
-        host.diffs.get(),
-        2,
-        "git is still asked every time — only the colouring is skipped"
-    );
-}
-
-/// Moving the selection costs the one diff it asks for: never a `status`
-/// of the whole checkout, which on a large repository is the difference
-/// between a click and a wait.
-#[test]
-fn moving_the_selection_reads_one_diff_and_no_status() {
-    let host = StillRepository {
-        diffs: std::cell::Cell::new(0),
-    };
-    let mut open = fixture();
-    press(&mut open, Command::SelectPrevious);
-    let request = open
-        .diff_request()
-        .expect("the moved selection is owed a diff");
-
-    let answer = CodeView::read_diff(&host, &PathBuf::from("/repo"), request);
-    open.absorb_diff(answer);
-
-    assert_eq!(host.diffs.get(), 1);
-    assert!(
-        !open.diff_pending(),
-        "the diff on screen is the selection's"
-    );
-    assert!(!open.changes.diff.is_empty());
-    assert!(open.diff_request().is_none(), "and nothing more is owed");
-}
-
-/// A periodic re-read asked for before the selection moved lands after
-/// the selection's own diff did. It brings the list, and leaves the diff
-/// on screen alone — wiping it would show the viewer an empty file and
-/// ask for the same diff twice.
-#[test]
-fn a_refresh_from_before_the_selection_moved_keeps_the_new_diff() {
-    let host = StillRepository {
-        diffs: std::cell::Cell::new(0),
-    };
-    let mut open = fixture();
-    let before = open.placement();
-    press(&mut open, Command::SelectPrevious);
-    let request = open.diff_request().expect("owed a diff");
-    open.absorb_diff(CodeView::read_diff(&host, &PathBuf::from("/repo"), request));
-    let shown = open.changes.diff.len();
-
-    let files = open.changes.files.clone();
-    open.absorb_changes(RefreshedChanges {
-        placement: before,
-        branch: "main".to_owned(),
-        changes: Changes {
-            files,
-            ..Changes::default()
-        },
-    });
-
-    assert_eq!(open.changes.diff.len(), shown, "the new diff stays");
-    assert!(!open.diff_pending(), "and is not asked for again");
-}
+// --- the files half ----------------------------------------------------
 
 /// A filesystem that only ever existed in memory, so these prove the
 /// surface's own behaviour rather than a temp directory's.
@@ -1039,7 +470,6 @@ struct FakeMachine {
     directories: RefCell<BTreeMap<PathBuf, Vec<DirEntry>>>,
     files: RefCell<BTreeMap<PathBuf, String>>,
     bytes: RefCell<BTreeMap<PathBuf, Vec<u8>>>,
-    restored: RefCell<Vec<PathBuf>>,
 }
 
 impl FakeMachine {
@@ -1196,9 +626,8 @@ impl Host for FakeMachine {
         Ok(())
     }
 
-    fn restore_to_head(&self, _root: &Path, paths: &[PathBuf]) -> Result<(), String> {
-        self.restored.borrow_mut().extend_from_slice(paths);
-        Ok(())
+    fn restore_to_head(&self, _root: &Path, _paths: &[PathBuf]) -> Result<(), String> {
+        unreachable!("the code surface throws no change away")
     }
 
     fn syntax_theme(&self) -> String {
@@ -1543,13 +972,19 @@ fn editing_a_file_and_saving_it_writes_what_was_typed() {
     );
 }
 
-/// Opens `path` from `machine` and starts typing into it.
-fn editing(machine: &FakeMachine, path: &str) -> CodeView {
+/// Opens `path` from `machine` to read.
+fn reading(machine: &FakeMachine, path: &str) -> CodeView {
     let mut view = files_at("/w");
     settle(&mut view, machine);
     view.select(PathBuf::from(path));
     view.load_selection(None);
     settle(&mut view, machine);
+    view
+}
+
+/// Opens `path` from `machine` and starts typing into it.
+fn editing(machine: &FakeMachine, path: &str) -> CodeView {
+    let mut view = reading(machine, path);
     press(&mut view, Command::Edit);
     assert!(view.editing(), "{path} opened for typing");
     view
@@ -1781,7 +1216,7 @@ fn deleting_asks_before_it_deletes() {
 }
 
 /// The question is asked in the dialog every other one is, and answered
-/// the way the discard question is: by its buttons, or by moving the
+/// the way every question is: by its buttons, or by moving the
 /// keyboard between them and activating one.
 #[test]
 fn deleting_is_asked_in_the_confirm_dialog() {
@@ -2025,51 +1460,6 @@ fn an_image_is_shown_where_its_contents_would_be_and_is_never_edited() {
         !view.open.as_ref().is_some_and(|open| open.editing),
         "an image is never opened for editing"
     );
-}
-
-/// Git answers a binary change with a note rather than hunks. Drawn as
-/// lines, that is an empty pane under the file's name, which reads as
-/// "nothing changed" about a file the list says did.
-#[test]
-fn a_binary_change_is_an_empty_state_rather_than_an_empty_diff() {
-    let output = "diff --git a/logo.png b/logo.png\nindex 1..2 100644\nBinary files a/logo.png and b/logo.png differ\n";
-    assert!(diff::is_binary(output));
-    assert!(!diff::is_binary(
-        "@@ -1 +1 @@\n-Binary files are fun\n+text\n"
-    ));
-
-    let mut view = fixture();
-    view.changes.diff = diff::read(output, Path::new("/repo/src/ui.rs"), FALLBACK_SYNTAX_THEME);
-    view.changes.diff_binary = true;
-
-    let Content::Message { text, role, .. } = super::view(&view, space()).content else {
-        panic!("a binary change has no lines to compare");
-    };
-    assert_eq!(role, Role::Muted, "nothing failed");
-    assert!(text.contains("ui.rs"), "it names the file: {text}");
-}
-
-/// One file's diff failing is about that file: the list beside it is
-/// still right, and is what the viewer moves away from it with.
-#[test]
-fn a_diff_that_fails_keeps_the_list_navigable() {
-    let mut view = fixture();
-    let path = view.selected.clone().expect("the fixture selects a change");
-    view.absorb_diff(DiffAnswer(changes::DiffRead {
-        path,
-        digest: 0,
-        binary: false,
-        picture: None,
-        outcome: Err("fatal: bad revision".to_owned()),
-    }));
-
-    let rendered = super::view(&view, space());
-    assert!(rendered.navigator.is_some(), "the changes are still listed");
-    let Content::Message { text, role, .. } = rendered.content else {
-        panic!("the failure is said where the diff would be");
-    };
-    assert_eq!(role, Role::Danger);
-    assert!(text.contains("bad revision"), "{text}");
 }
 
 /// A click says "this many cells into that line"; the caret has to end
@@ -2341,21 +1731,12 @@ fn closing_asks_about_every_unsaved_file() {
     assert_eq!(press(&mut view, Command::Close), CodeOutcome::Close);
 }
 
-/// A caret or a diff row past what a `u16` counts is reached exactly,
-/// rather than clamped to the last row sixteen bits can name.
+/// A caret past what a `u16` counts is reached exactly, rather than
+/// clamped to the last row sixteen bits can name.
 #[test]
 fn a_position_past_sixteen_bits_is_reached_exactly() {
-    let mut view = fixture();
+    let mut view = files_at("/repo");
     let far = usize::from(u16::MAX) + 10;
-    view.changes.diff = (0..=far)
-        .map(|line| diff::DiffCell {
-            kind: DiffLineKind::Context,
-            line_no: line as u32,
-            spans: Vec::new(),
-        })
-        .collect();
-    assert_eq!(view.diff_row_of(far), Some(far));
-
     let mut open = OpenFile::opening(PathBuf::from("/repo/long.rs"));
     open.editing = true;
     open.caret.line = far;
@@ -2363,28 +1744,6 @@ fn a_position_past_sixteen_bits_is_reached_exactly() {
     view.scroll = 0;
     view.follow_caret(20);
     assert_eq!(view.scroll, far - 19);
-}
-
-/// Moving to another file in the tree points every mode at it: the diff
-/// read for the file left behind is not left standing under the new one,
-/// by the arrows or by a click.
-#[test]
-fn moving_to_another_file_in_the_tree_asks_for_its_diff() {
-    let machine = FakeMachine::default()
-        .with_file("/w/a.txt", "aaa\n")
-        .with_file("/w/b.txt", "bbb\n");
-    let mut view = files_at("/w");
-    settle(&mut view, &machine);
-    view.changes.diff_pending = false;
-
-    press(&mut view, Command::SelectNext);
-    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/b.txt")));
-    assert!(view.diff_pending(), "the arrows moved to another file");
-
-    view.changes.diff_pending = false;
-    handle_mouse(&mut view, Some(ViewHit::SelectItem(0)), space());
-    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/a.txt")));
-    assert!(view.diff_pending(), "and so did the click");
 }
 
 /// The second colouring pass runs beside the reads rather than behind
@@ -2442,117 +1801,23 @@ fn a_read_that_arrives_late_does_not_replace_a_different_file() {
     );
 }
 
-// --- the switch this whole surface exists for ---------------------------
-
-/// The move the merge was for: from a line of the diff into that line of
-/// the file. Carrying only the file would leave the reader at the top of
-/// something they were reading the middle of.
-#[test]
-fn switching_from_a_diff_to_the_contents_keeps_the_file_and_the_line() {
-    let machine = FakeMachine::default().with_file("/w/a.rs", "one\ntwo\nthree\nfour\n");
-    let mut view = CodeView::opening(PathBuf::from("/w"), "/w".to_owned(), ContentMode::Diff);
-    view.selected = Some(PathBuf::from("/w/a.rs"));
-    view.changes.files = vec![ChangedFile {
-        status: FileStatus::Modified,
-        path: PathBuf::from("/w/a.rs"),
-        renamed_from: None,
-    }];
-    view.changes.diff = diff::read(
-        "@@ -1,4 +1,4 @@\n one\n two\n-old\n+three\n four\n",
-        Path::new("/w/a.rs"),
-        FALLBACK_SYNTAX_THEME,
-    );
-    view.changes.diff_pending = false;
-    // Scrolled to the replacement, which is line three of the new file.
-    view.scroll = 3;
-
-    open_the_file_from_its_menu(&mut view);
-    settle(&mut view, &machine);
-
-    let open = view.open.as_ref().expect("the file opened");
-    assert_eq!(open.path, PathBuf::from("/w/a.rs"), "the same file");
-    assert_eq!(
-        open.lines[open.caret.line], "three",
-        "and the line that was being read"
-    );
-    assert_eq!(view.content, ContentMode::Contents);
-    assert_eq!(
-        view.navigator(),
-        NavigatorMode::Files,
-        "the navigator follows the content"
-    );
-}
-
-/// A replacement of several lines is drawn in Git's order — every removal,
-/// then every addition — and the line carried across the switch is still
-/// the one on screen, both ways: an addition's number is the new file's,
-/// and a removal that shares it is not where the reader comes back to.
-#[test]
-fn a_multi_line_replacement_carries_the_line_both_ways() {
-    let machine = FakeMachine::default().with_file("/w/a.rs", "one\nc\nd\nfour\n");
-    let mut view = CodeView::opening(PathBuf::from("/w"), "/w".to_owned(), ContentMode::Diff);
-    view.selected = Some(PathBuf::from("/w/a.rs"));
-    view.changes.files = vec![ChangedFile {
-        status: FileStatus::Modified,
-        path: PathBuf::from("/w/a.rs"),
-        renamed_from: None,
-    }];
-    view.changes.diff = diff::read(
-        "@@ -1,4 +1,4 @@\n one\n-a\n-b\n+c\n+d\n four\n",
-        Path::new("/w/a.rs"),
-        FALLBACK_SYNTAX_THEME,
-    );
-    view.changes.diff_pending = false;
-    let Content::Lines { lines, .. } = super::view(&view, space()).content else {
-        panic!("a selected file has a diff");
-    };
-    assert_eq!(
-        lines
-            .iter()
-            .map(|line| (line.gutter.as_str(), line.number.as_str()))
-            .collect::<Vec<_>>(),
-        [
-            (" ", "1"),
-            ("-", "2"),
-            ("-", "3"),
-            ("+", "2"),
-            ("+", "3"),
-            (" ", "4")
-        ]
-    );
-    // On `+d`, line three of the new file.
-    view.scroll = 4;
-
-    open_the_file_from_its_menu(&mut view);
-    settle(&mut view, &machine);
-    let open = view.open.as_ref().expect("the file opened");
-    assert_eq!(open.lines[open.caret.line], "d");
-
-    press(&mut view, Command::Close);
-    view.show(ContentMode::Diff);
-    assert_eq!(
-        view.scroll, 4,
-        "back on `+d`, not on `-b` which shares its number"
-    );
-}
+// --- the switch between the halves --------------------------------------
 
 /// The selection is authoritative and the tree catches up to it: a file
-/// that changed may sit under directories nobody has opened.
+/// reached another way — a tile followed on the map — may sit under
+/// directories nobody has opened.
 #[test]
-fn switching_to_a_file_the_tree_has_not_listed_opens_its_ancestors() {
+fn returning_to_a_file_the_tree_has_not_listed_opens_its_ancestors() {
     let machine = FakeMachine::default()
         .with_directory("/w/src")
         .with_directory("/w/src/ui")
         .with_file("/w/src/ui/deep.rs", "fn deep() {}\n");
-    let mut view = CodeView::opening(PathBuf::from("/w"), "/w".to_owned(), ContentMode::Diff);
-    view.selected = Some(PathBuf::from("/w/src/ui/deep.rs"));
-    view.changes.files = vec![ChangedFile {
-        status: FileStatus::Modified,
-        path: PathBuf::from("/w/src/ui/deep.rs"),
-        renamed_from: None,
-    }];
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::ToggleMap);
+    view.select(PathBuf::from("/w/src/ui/deep.rs"));
 
-    open_the_file_from_its_menu(&mut view);
+    press(&mut view, Command::ToggleMap);
     settle(&mut view, &machine);
 
     assert!(
@@ -2562,24 +1827,26 @@ fn switching_to_a_file_the_tree_has_not_listed_opens_its_ancestors() {
     );
 }
 
-/// The doors are shortcuts once the surface is open: the same two the
-/// host uses to choose where to land also choose what to show.
+/// Once the surface is open, showing another mode switches to it, and the
+/// list beside the content is the one that mode reads from: a search the
+/// files hold stands aside for the map and is back with the files.
 #[test]
-fn the_doors_switch_modes_once_the_surface_is_open() {
-    let mut view = fixture();
-    assert_eq!(view.content, ContentMode::Diff);
+fn showing_another_mode_switches_to_it_and_the_navigator_follows() {
+    let mut view = files_at("/w");
+    view.search.query = "fog".to_owned();
+    assert_eq!(view.navigator(), NavigatorMode::Search);
 
-    view.show(ContentMode::Contents);
-    assert_eq!(view.content, ContentMode::Contents);
+    view.show(ContentMode::Map);
+    assert_eq!(view.content, ContentMode::Map);
     assert_eq!(
         view.navigator(),
         NavigatorMode::Files,
         "the navigator follows the content"
     );
 
-    view.show(ContentMode::Diff);
-    assert_eq!(view.content, ContentMode::Diff);
-    assert_eq!(view.navigator(), NavigatorMode::Changes);
+    view.show(ContentMode::Contents);
+    assert_eq!(view.content, ContentMode::Contents);
+    assert_eq!(view.navigator(), NavigatorMode::Search);
 }
 
 /// The frame's two edges: what the surface is on top, where it is open
@@ -2588,7 +1855,7 @@ fn the_doors_switch_modes_once_the_surface_is_open() {
 /// being read.
 #[test]
 fn the_frame_says_what_this_is_on_top_and_where_it_is_at_the_foot() {
-    let mut view = fixture();
+    let mut view = files_at("/w");
     view.branch = "feat/thing".to_owned();
     view.display_root = "~/uze/.worktrees/joipv0".to_owned();
 
@@ -2728,7 +1995,7 @@ fn a_document_is_read_as_one_however_it_was_reached() {
 
 /// Closing the surface and opening it again is returning to it: the file
 /// being read, the directories opened to reach it, and how far down it.
-/// Without this the commonest gesture in the product — glance at the diff,
+/// Without this the commonest gesture in the product — glance at a file,
 /// close, come back — costs the whole walk down the tree again.
 #[test]
 fn reopening_a_checkout_returns_to_where_the_viewer_was() {
@@ -2772,96 +2039,31 @@ fn reopening_a_checkout_returns_to_where_the_viewer_was() {
 }
 
 /// The door still decides what the surface is showing. A place that
-/// carried the mode would make `Alt+G` mean "wherever I was last time",
-/// which is the one thing a door must not mean.
+/// carried the mode would make the files' door mean "wherever I was last
+/// time" — the map, say — which is the one thing a door must not mean.
 #[test]
 fn a_restored_place_does_not_outrank_the_door_it_came_through() {
     let machine = FakeMachine::default().with_file("/w/a.rs", "one\n");
     let mut view = files_at("/w");
     settle(&mut view, &machine);
-    assert_eq!(view.content, ContentMode::Contents);
+    press(&mut view, Command::ToggleMap);
+    assert_eq!(view.content, ContentMode::Map);
 
     let place = view.place();
-    let view =
-        CodeView::opening(PathBuf::from("/w"), "/w".to_owned(), ContentMode::Diff).resuming(place);
+    let view = files_at("/w").resuming(place);
 
-    assert_eq!(view.content, ContentMode::Diff);
+    assert_eq!(view.content, ContentMode::Contents);
     assert_eq!(
         view.selected,
         Some(PathBuf::from("/w/a.rs")),
         "the file came with it, which is what makes the switch worth having"
     );
     assert!(
-        view.changes.diff_pending,
-        "and its diff is what the surface is now waiting for"
+        view.queue
+            .iter()
+            .any(|request| *request == FileRequest::Read(PathBuf::from("/w/a.rs"))),
+        "and its contents are what the surface is now waiting for"
     );
-}
-
-/// Reviewing a document is still reviewing. The preview reads one file as
-/// it is on disk and a diff is about two of them, so the half that answers
-/// for changes keeps its mode whatever the selection is.
-#[test]
-fn a_documents_diff_is_still_a_diff() {
-    let machine = FakeMachine::default().with_file("/w/README.md", "# Title\n");
-    let mut view = CodeView::opening(PathBuf::from("/w"), "/w".to_owned(), ContentMode::Diff);
-    view.changes.files = vec![
-        ChangedFile {
-            status: FileStatus::Modified,
-            path: PathBuf::from("/w/a.rs"),
-            renamed_from: None,
-        },
-        ChangedFile {
-            status: FileStatus::Modified,
-            path: PathBuf::from("/w/README.md"),
-            renamed_from: None,
-        },
-    ];
-    view.selected = Some(PathBuf::from("/w/a.rs"));
-
-    view.select(PathBuf::from("/w/README.md"));
-    settle(&mut view, &machine);
-
-    assert_eq!(view.selected, Some(PathBuf::from("/w/README.md")));
-    assert_eq!(
-        view.content,
-        ContentMode::Diff,
-        "a document selected in the changes is still being reviewed"
-    );
-}
-
-/// A refresh answers about the changes and nothing else. The same struct
-/// holds a buffer, and a refresh that could reach it would be one that
-/// eats what was typed.
-#[test]
-fn a_changes_refresh_leaves_an_unsaved_buffer_alone() {
-    let machine = FakeMachine::default().with_file("/w/notes.txt", "one\n");
-    let mut view = files_at("/w");
-    settle(&mut view, &machine);
-    press(&mut view, Command::Activate);
-    settle(&mut view, &machine);
-    press(&mut view, Command::Edit);
-    press(&mut view, Command::CaretLineEnd);
-    type_text(&mut view, "!");
-
-    view.absorb_changes(RefreshedChanges {
-        placement: view.placement(),
-        branch: "main".to_owned(),
-        changes: Changes {
-            files: vec![ChangedFile {
-                status: FileStatus::Modified,
-                path: PathBuf::from("/w/notes.txt"),
-                renamed_from: None,
-            }],
-            ..Changes::default()
-        },
-    });
-
-    assert_eq!(
-        view.open.as_ref().map(|open| open.lines.clone()),
-        Some(vec!["one!".to_owned()]),
-        "the buffer is untouched by a read of what changed"
-    );
-    assert!(view.open.as_ref().is_some_and(|open| open.modified));
 }
 
 /// A file tree's rows say what they *are*, so the host can mark them.
@@ -2892,22 +2094,6 @@ fn a_row_is_classified_by_what_it_is_rather_than_by_its_language() {
     assert_eq!(icon_for("README.MD", false, false), RowIcon::Markup);
     assert_eq!(icon_for("notes.qqq", false, false), RowIcon::File);
     assert_eq!(icon_for("noextension", false, false), RowIcon::File);
-}
-
-/// The changes list marks status, so it takes no file icon: two marks per
-/// row is one too many, and the status is the reason that list exists.
-#[test]
-fn the_changes_list_marks_status_rather_than_kind() {
-    let view = view(&fixture(), space());
-    let rows = &view.navigator.as_ref().expect("a navigator").rows;
-    assert!(
-        rows.iter().all(|row| match row {
-            crate::view::NavigatorRow::Group { icon, .. }
-            | crate::view::NavigatorRow::Item { icon, .. } => *icon == crate::view::RowIcon::None,
-            _ => true,
-        }),
-        "the changes list asked for a file icon: {rows:?}"
-    );
 }
 
 #[test]
@@ -2987,7 +2173,7 @@ fn coming_back_to_a_directory_row_reads_nothing_and_says_nothing_is_open() {
 
     // The other way to the same read: leave the files half with the
     // cursor on a directory, and come back to it.
-    again.show(ContentMode::Diff);
+    again.show(ContentMode::Map);
     again.show(ContentMode::Contents);
     settle(&mut again, &machine);
     assert!(
@@ -3008,7 +2194,7 @@ fn coming_back_to_a_directory_row_reads_nothing_and_says_nothing_is_open() {
 /// what they said.
 #[test]
 fn a_selected_tile_keeps_the_colour_that_says_how_hot_it_is() {
-    let mut view = surface(Path::new("/repo"), Vec::new(), 0);
+    let mut view = files_at("/repo");
     view.absorb_measure(measured());
     press(&mut view, Command::ToggleMap);
     assert_eq!(view.showing(), ContentMode::Map);
@@ -3104,8 +2290,7 @@ fn a_selected_tile_keeps_the_colour_that_says_how_hot_it_is() {
 
 #[test]
 fn a_tile_followed_on_the_map_is_the_file_the_surface_goes_back_to() {
-    let mut view = surface(Path::new("/repo"), Vec::new(), 0);
-    view.show(ContentMode::Contents);
+    let mut view = files_at("/repo");
     assert!(!view.has_map(), "nothing measured yet");
     press(&mut view, Command::ToggleMap);
     assert_eq!(view.showing(), ContentMode::Map, "entered all the same");
@@ -3180,10 +2365,7 @@ fn the_header_offers_the_halves_on_one_side_and_the_renderings_on_the_other() {
     press(&mut view, Command::Activate);
     settle(&mut view, &machine);
     let drawn = render::view(&view, space());
-    assert_eq!(
-        chips(&drawn.subjects),
-        [("Files", true), ("Map", false), ("Changes", false)]
-    );
+    assert_eq!(chips(&drawn.subjects), [("Files", true), ("Map", false)]);
     assert_eq!(chips(&drawn.modes), [("Preview", true), ("Source", false)]);
     // Each half is a thing, and says which. A way of *drawing* one is
     // not a thing, and carries no mark at all.
@@ -3193,7 +2375,7 @@ fn the_header_offers_the_halves_on_one_side_and_the_renderings_on_the_other() {
             .iter()
             .map(|mode| mode.icon)
             .collect::<Vec<_>>(),
-        [RowIcon::Directory, RowIcon::Map, RowIcon::Changes]
+        [RowIcon::Directory, RowIcon::Map]
     );
     assert!(
         drawn.modes.iter().all(|mode| mode.icon == RowIcon::None),
@@ -3210,7 +2392,7 @@ fn the_header_offers_the_halves_on_one_side_and_the_renderings_on_the_other() {
     let drawn = render::view(&view, space());
     assert_eq!(
         chips(&drawn.subjects),
-        [("Files", true), ("Map", false), ("Changes", false)],
+        [("Files", true), ("Map", false)],
         "the halves never come and go — the row that says where you are \
          is the one thing that may not move when it is used"
     );
@@ -3221,12 +2403,10 @@ fn the_header_offers_the_halves_on_one_side_and_the_renderings_on_the_other() {
 /// either/or with the tree, not a column beside it.
 #[test]
 fn the_map_takes_the_frame_and_says_which_level_it_is_on() {
-    let mut view = surface(Path::new("/repo"), Vec::new(), 0);
+    let mut view = files_at("/repo");
     view.absorb_measure(measured());
 
-    // One of the three halves, so it is reachable from each of the
-    // others — including the changes, where going to the map is also
-    // leaving them, which is what the press said.
+    // One of the halves, so it is reachable from the other.
     assert!(
         render::view(&view, space())
             .footer
@@ -3234,15 +2414,14 @@ fn the_map_takes_the_frame_and_says_which_level_it_is_on() {
         "a measured checkout offers it wherever you are in it"
     );
     press(&mut view, Command::ToggleMap);
-    assert_eq!(view.showing(), ContentMode::Map, "from the changes too");
+    assert_eq!(view.showing(), ContentMode::Map, "from the files");
     press(&mut view, Command::ToggleMap);
     assert_eq!(
         view.showing(),
-        ContentMode::Diff,
+        ContentMode::Contents,
         "and back to the half it was opened over"
     );
 
-    view.show(ContentMode::Contents);
     press(&mut view, Command::ToggleMap);
 
     let drawn = render::view(&view, space());
@@ -3252,7 +2431,7 @@ fn the_map_takes_the_frame_and_says_which_level_it_is_on() {
     assert_eq!(steps, ["repo"], "the checkout, and nothing entered yet");
     assert_eq!(
         chips(&drawn.subjects),
-        [("Files", false), ("Map", true), ("Changes", false)],
+        [("Files", false), ("Map", true)],
         "which half you are in, and the way to the others as chips \
          somebody can point at rather than keys they have to know"
     );
@@ -3311,73 +2490,13 @@ fn the_map_takes_the_frame_and_says_which_level_it_is_on() {
     );
 }
 
-/// The changes list opened on a file that is not among them — one the
-/// tree was on, or one the last commit took off the list — lands on the
-/// first change rather than beside an empty diff with nothing highlighted.
-#[test]
-fn the_changes_open_on_the_first_change_when_nothing_of_theirs_is_selected() {
-    let mut open = fixture();
-    open.selected = Some(PathBuf::from("/repo/README.md"));
-    let files = open.changes.files.clone();
-    open.absorb_changes(RefreshedChanges {
-        placement: open.placement(),
-        branch: "main".to_owned(),
-        changes: Changes {
-            files,
-            ..Changes::default()
-        },
-    });
-
-    assert_eq!(
-        open.selected(),
-        Some(Path::new("/repo/src/ui/git_diff.rs")),
-        "the first row of the list is the selection"
-    );
-    assert!(open.diff_request().is_some(), "and its diff is asked for");
-}
-
-/// The same arriving from the tree: the file it was on has no diff, so
-/// the list it switches to is read from its top.
-#[test]
-fn switching_to_the_changes_from_an_unchanged_file_selects_the_first_change() {
-    let mut view = fixture();
-    view.content = ContentMode::Contents;
-    view.selected = Some(PathBuf::from("/repo/README.md"));
-
-    view.show(ContentMode::Diff);
-
-    assert_eq!(view.selected(), Some(Path::new("/repo/src/ui/git_diff.rs")));
-}
-
-/// A changed file already selected is left where it is.
-#[test]
-fn switching_to_the_changes_keeps_a_changed_file_selected() {
-    let mut view = fixture();
-    view.content = ContentMode::Contents;
-
-    view.show(ContentMode::Diff);
-
-    assert_eq!(view.selected(), Some(Path::new("/repo/src/ui.rs")));
-}
-
-/// What the host copies from a diff is the lines' text, without the
-/// gutter that says how they changed.
-#[test]
-fn a_diff_reads_as_its_lines_without_the_gutter() {
-    let view = fixture();
-
-    assert_eq!(
-        text(&view, 1..3),
-        ["removed line".to_owned(), "added line".to_owned()]
-    );
-}
-
 /// A range that runs past the end gives back the lines there are.
 #[test]
 fn text_past_the_end_is_only_the_lines_there_are() {
-    let view = fixture();
+    let machine = FakeMachine::default().with_file("/w/notes.txt", "one\ntwo\nthree\n");
+    let view = reading(&machine, "/w/notes.txt");
 
-    assert_eq!(text(&view, 2..9), ["added line".to_owned()]);
+    assert_eq!(text(&view, 2..9), ["three".to_owned()]);
 }
 
 /// A file being read or edited reads as it is in the file; the map is a
@@ -3477,29 +2596,59 @@ mod hosted {
         }
     }
 
+    /// The files' door pressed over the map switches back to the files,
+    /// and pressed over the files shuts them.
     #[test]
     fn a_door_opens_its_half_shuts_itself_and_switches_to_the_other() {
         let mut extension = opened(FILES, "/w");
         let showing = |extension: &CodeExtension| extension.code_view().map(CodeView::showing);
         assert_eq!(showing(&extension), Some(ContentMode::Contents));
+        extension.code_view_mut().unwrap().show(ContentMode::Map);
         assert_eq!(
-            extension.enter(SURFACE, Entry::Door(CHANGES.to_owned())),
+            extension.enter(SURFACE, Entry::Door(FILES.to_owned())),
             Outcome::Stay
         );
-        assert_eq!(showing(&extension), Some(ContentMode::Diff), "switched");
+        assert_eq!(showing(&extension), Some(ContentMode::Contents), "switched");
         assert_eq!(
-            extension.enter(SURFACE, Entry::Door(CHANGES.to_owned())),
+            extension.enter(SURFACE, Entry::Door(FILES.to_owned())),
             Outcome::Close,
             "the door already open shuts it"
         );
 
-        let mut changes = opened(CHANGES, "/w");
-        assert_eq!(showing(&changes), Some(ContentMode::Diff));
-        changes.code_view_mut().unwrap().content = ContentMode::Preview;
+        let mut preview = opened(FILES, "/w");
+        preview.code_view_mut().unwrap().content = ContentMode::Preview;
         assert_eq!(
-            changes.enter(SURFACE, Entry::Door(FILES.to_owned())),
+            preview.enter(SURFACE, Entry::Door(FILES.to_owned())),
             Outcome::Close,
             "a preview is still the files half"
+        );
+    }
+
+    /// Outside a git repository the branch has nothing to say. The
+    /// surface does: the tree still works, and nothing on it is a failure.
+    #[test]
+    fn a_checkout_that_is_no_repository_still_has_a_tree() {
+        let machine = FakeMachine::default().with_file("/nope/a.rs", "fn a() {}\n");
+        let mut extension = opened(FILES, "/nope");
+        settle_hosted(&mut extension, &machine);
+
+        let view = extension.code_view().unwrap();
+        assert_eq!(
+            item_names_of_tree(view),
+            ["a.rs"],
+            "the file tree is unaffected by git being absent"
+        );
+        let rendered = render::view(view, space());
+        assert!(rendered.navigator.is_some());
+        assert!(
+            !matches!(
+                rendered.content,
+                Content::Message {
+                    role: Role::Danger,
+                    ..
+                }
+            ),
+            "and no failure stands where the contents are"
         );
     }
 
@@ -3545,12 +2694,12 @@ mod hosted {
         elsewhere.open(SURFACE, &checkout("/v"));
         assert!(!elsewhere.code_view().unwrap().has_unsaved());
         elsewhere.close(SURFACE);
-        elsewhere.enter(SURFACE, Entry::Door(CHANGES.to_owned()));
+        elsewhere.enter(SURFACE, Entry::Door(FILES.to_owned()));
         elsewhere.open(SURFACE, &checkout("/w"));
         let view = elsewhere.code_view().unwrap();
         assert_eq!(
             view.showing(),
-            ContentMode::Diff,
+            ContentMode::Contents,
             "the door still says which half"
         );
         assert!(view.has_unsaved(), "and the work is still there");
@@ -3591,6 +2740,30 @@ mod hosted {
     }
 
     #[test]
+    fn a_path_sent_with_a_line_opens_the_file_at_it() {
+        let mut extension = CodeExtension::default();
+        extension.enter(
+            SURFACE,
+            Entry::Path {
+                target: PathBuf::from("/w/src/main.rs"),
+                directory: false,
+                line: Some(53),
+            },
+        );
+        extension.open(SURFACE, &checkout("/w"));
+        let view = extension.code_view().unwrap();
+        assert_eq!(view.showing(), ContentMode::Contents);
+        assert_eq!(view.selected(), Some(Path::new("/w/src/main.rs")));
+        let open = view.open.as_ref().expect("the file is asked for");
+        assert_eq!(open.caret.line, 52, "the caret is on line 53");
+        assert!(
+            view.scroll <= 52 && view.scroll + 10 > 52,
+            "and it is in view: {}",
+            view.scroll
+        );
+    }
+
+    #[test]
     fn a_path_sent_from_another_surface_wins_over_the_last_place() {
         let mut extension = CodeExtension::default();
         extension.enter(
@@ -3598,6 +2771,7 @@ mod hosted {
             Entry::Path {
                 target: PathBuf::from("/w/src/main.rs"),
                 directory: false,
+                line: None,
             },
         );
         extension.open(SURFACE, &checkout("/w"));
@@ -3655,12 +2829,12 @@ mod hosted {
         assert_eq!(view.selected(), Some(Path::new("/w/README.md")));
 
         assert_eq!(
-            extension.enter(SURFACE, Entry::Door(CHANGES.to_owned())),
+            extension.enter(SURFACE, Entry::Door(FILES.to_owned())),
             Outcome::Stay
         );
         assert_eq!(
             extension.code_view().unwrap().showing(),
-            ContentMode::Diff,
+            ContentMode::Contents,
             "the door switched the half"
         );
     }
@@ -3670,15 +2844,20 @@ mod hosted {
     #[test]
     fn a_door_after_a_return_is_handed_the_place_not_what_was_held() {
         let mut extension = opened(FILES, "/w");
+        extension.code_view_mut().unwrap().show(ContentMode::Map);
         let place = extension
             .place(SURFACE)
             .expect("an open surface has a place");
         extension.close(SURFACE);
 
-        extension.enter(SURFACE, Entry::Door(CHANGES.to_owned()));
+        extension.enter(SURFACE, Entry::Door(FILES.to_owned()));
         extension.open(SURFACE, &checkout("/w"));
         extension.resume(SURFACE, place);
-        assert_eq!(extension.code_view().unwrap().showing(), ContentMode::Diff);
+        assert_eq!(
+            extension.code_view().unwrap().showing(),
+            ContentMode::Contents,
+            "the map it was put away on is not what the door opens"
+        );
     }
 
     #[test]

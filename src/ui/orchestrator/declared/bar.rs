@@ -1,15 +1,17 @@
 //! The bar under the agent area, the tab strip's mirror at the column's
-//! foot: what plugins add to the workspace, apart from what UZE ships. Its
-//! left holds the doors to their views and drawers, then the items that
-//! stand on the left; its right, the items that stand on the right. Items
-//! keep the order their extensions were installed in, so none can claim
-//! the bar's start.
+//! foot: what extensions add to the workspace. The tab strip is UZE's own
+//! and the bundled extensions'; the bar takes every extension's items, a
+//! plugin's and a bundled one's alike, since it is the one place a plugin
+//! may stand. Its left holds the doors to plugins' views and drawers, then
+//! the items that stand on the left; its right, the items that stand on
+//! the right. Items keep the order their extensions were installed in, so
+//! none can claim the bar's start.
 
 use super::*;
 
 impl WorkspaceModel {
     /// The items of the bar the checkout in front shows: as a status row,
-    /// only where its extension is enabled.
+    /// only where its extension is switched on and runs.
     pub(in crate::ui::orchestrator) fn bar_items(&self) -> Vec<&HostedSlot> {
         self.remembered
             .declared
@@ -17,11 +19,26 @@ impl WorkspaceModel {
             .iter()
             .filter(|slot| {
                 slot.is_bar()
-                    && slot.owner.declared().is_some()
                     && self.offers_declared(&slot.owner)
-                    && self.enabled_in_front(&slot.owner)
+                    && self.runs_in_front(&slot.owner)
             })
             .collect()
+    }
+
+    /// Whether `owner`'s item stands for the pane in front: a bundled
+    /// extension's while the agent's own pane is in front, since what it
+    /// says is about that agent and a view standing in the pane has its own
+    /// ways to say it; a plugin's where it is enabled in that pane's
+    /// project.
+    fn runs_in_front(&self, owner: &Owner) -> bool {
+        match owner {
+            Owner::Builtin(_) => {
+                self.focused_cwd().is_some()
+                    && self.open_slot.is_none()
+                    && self.space_overview.is_none()
+            }
+            Owner::Declared(_) => self.enabled_in_front(owner),
+        }
     }
 
     /// The views and drawers the bar has a door for: those of an extension
@@ -43,11 +60,41 @@ impl WorkspaceModel {
             .is_some_and(|project| self.enabled_in(owner, project))
     }
 
-    /// Whether a plugin puts anything in the bar: a door or an item.
+    /// Whether anything stands in the bar: a plugin's door or item, by
+    /// what is installed, so the pane is not resized by what one answers;
+    /// a bundled extension's item only while it has something to say,
+    /// since one is always installed and an empty row on every agent is a
+    /// row taken from each for nothing.
     pub(in crate::ui::orchestrator) fn has_bar(&self) -> bool {
         self.release_waiting().is_some()
             || !self.bar_doors().is_empty()
-            || !self.bar_items().is_empty()
+            || self
+                .bar_items()
+                .into_iter()
+                .any(|slot| slot.owner.declared().is_some() || self.item_draws(slot))
+    }
+
+    /// Whether `item` has anything to draw now.
+    fn item_draws(&self, item: &HostedSlot) -> bool {
+        self.bar_item_view(item).is_some()
+    }
+
+    /// What `item` draws on the bar now, or `None` when it draws nothing:
+    /// the one answer the layout's row and the drawing both read, so the
+    /// bar never stands for an item it does not draw, nor draws one it
+    /// took no row for.
+    pub(in crate::ui::orchestrator) fn bar_item_view(&self, item: &HostedSlot) -> Option<View> {
+        self.remembered
+            .declared
+            .engine(&item.owner)?
+            .view(
+                &item.surface.id,
+                uze_extensions::view::Size {
+                    width: crate::ui::orchestrator::render::BAR_ITEM_MAX,
+                    height: 1,
+                },
+            )
+            .and_then(super::status::drawn_tree)
     }
 
     /// The release installed and waiting on a restart, which the bar offers.

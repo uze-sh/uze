@@ -12,7 +12,7 @@
 
 use std::collections::VecDeque;
 
-use uze_extensions::contract::{AgentAsk, AgentRequest};
+use uze_extensions::contract::{AgentAsk, AgentRequest, AgentWritten};
 
 use crate::ui::orchestrator::*;
 use crate::ui::widget::ToastKind;
@@ -49,6 +49,9 @@ pub(in crate::ui::orchestrator) struct Write {
     pub(in crate::ui::orchestrator) text: String,
     pub(in crate::ui::orchestrator) label: String,
     pub(in crate::ui::orchestrator) unattended: bool,
+    /// What a bundled extension says it asks, in the operator's words,
+    /// shown instead of the text it types; never a plugin's.
+    pub(in crate::ui::orchestrator) summary: Option<String>,
 }
 
 /// What extensions may still write.
@@ -149,12 +152,18 @@ impl WorkspaceModel {
         request: AgentRequest,
     ) {
         let by = attribution(&owner);
+        let asker = owner.clone();
         let refuse = |model: &mut Self, reason: &str| {
             model.raise_toast(
                 ToastKind::Told,
                 "not sent",
                 format!("{by}: {}: {reason}", request.label),
                 None,
+            );
+            model.tell_written(
+                &asker,
+                &request.action,
+                AgentWritten::Refused(reason.to_owned()),
             );
         };
         if self.remembered.declared.bridge.writes.paused && !matches!(request.what, AgentAsk::Focus)
@@ -221,6 +230,7 @@ impl WorkspaceModel {
             text,
             label: request.label.clone(),
             unattended: request.unattended,
+            summary: summary_shown(&owner, &request),
         };
         let writes = &mut self.remembered.declared.bridge.writes;
         if request.unattended
@@ -242,6 +252,20 @@ impl WorkspaceModel {
             shown_whole: std::cell::Cell::new(false),
         });
         self.dirty = true;
+    }
+
+    /// Tells the extension that asked for a write what came of it, so it
+    /// counts as done only what was typed.
+    pub(in crate::ui::orchestrator) fn tell_written(
+        &mut self,
+        owner: &Owner,
+        action: &str,
+        written: AgentWritten,
+    ) {
+        if let Some(engine) = self.remembered.declared.engines.get_mut(owner) {
+            engine.agent_write(action, written);
+            self.dirty = true;
+        }
     }
 
     /// The agent of the tab in front, when it is one UZE launched.
@@ -268,6 +292,11 @@ impl WorkspaceModel {
             return;
         };
         if !allow {
+            self.tell_written(
+                &dialog.write.owner,
+                &dialog.write.action,
+                AgentWritten::Declined,
+            );
             return;
         }
         let writes = &mut self.remembered.declared.bridge.writes;
@@ -360,6 +389,11 @@ impl Attach<'_> {
                     format!("{by}: {}: that agent is no longer open", write.label),
                     None,
                 );
+                self.model.tell_written(
+                    &write.owner,
+                    &write.action,
+                    AgentWritten::Refused("that agent is no longer open".to_owned()),
+                );
                 continue;
             };
             if let Some(reason) = self.model.write_refusal(&write, pane, harness_in_front) {
@@ -369,9 +403,13 @@ impl Attach<'_> {
                     format!("{by}: {}: {reason}", write.label),
                     None,
                 );
+                self.model
+                    .tell_written(&write.owner, &write.action, AgentWritten::Refused(reason));
                 continue;
             }
             self.submit_notice(pane, &write.text);
+            self.model
+                .tell_written(&write.owner, &write.action, AgentWritten::Typed);
             self.model
                 .note_agent_prompt_submission(pane, &self.identities, None);
             let bridge = &mut self.model.remembered.declared.bridge;
@@ -390,7 +428,13 @@ impl Attach<'_> {
                 self.model.raise_toast(
                     ToastKind::Done,
                     "sent to agent",
-                    format!("{by}: {}", crate::ui::widget::text::elide(&write.text, 32)),
+                    match &write.summary {
+                        // What it did, as it was said before allowing it.
+                        Some(_) => format!("{by}: {}", write.label.to_lowercase()),
+                        None => {
+                            format!("{by}: {}", crate::ui::widget::text::elide(&write.text, 32))
+                        }
+                    },
                     None,
                 );
             }
@@ -441,8 +485,23 @@ impl Attach<'_> {
     }
 }
 
-/// The question, drawn over everything but the toasts: the exact text,
-/// which agent it goes to, and which extension asks.
+/// What the confirmation says in place of the text typed: a bundled
+/// extension's summary, since its text is UZE's own, written for the agent;
+/// never a plugin's, whose text is read whole (D182), whatever it says of
+/// itself.
+pub(in crate::ui::orchestrator) fn summary_shown(
+    owner: &Owner,
+    request: &AgentRequest,
+) -> Option<String> {
+    match owner {
+        Owner::Builtin(_) => request.summary.clone(),
+        Owner::Declared(_) => None,
+    }
+}
+
+/// The question, drawn over everything but the toasts: the exact text, or
+/// a bundled extension's words for it, which agent it goes to, and which
+/// extension asks.
 pub(in crate::ui::orchestrator) fn render_agent_write(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
@@ -450,6 +509,9 @@ pub(in crate::ui::orchestrator) fn render_agent_write(
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
     crate::ui::widget::scrim::render(frame, area);
+    // UZE's own words for a bundled extension's ask; anything else is
+    // shown as it will be typed, every character of it (D182).
+    let quotes_code = open.write.summary.is_some() && !open.write.unattended;
     let (title, body, confirm) = if open.write.unattended {
         (
             format!("Let {} prompt this agent on its own?", open.write.label),
@@ -463,6 +525,12 @@ pub(in crate::ui::orchestrator) fn render_agent_write(
             ],
             "Allow for a day",
         )
+    } else if let Some(summary) = &open.write.summary {
+        (
+            format!("{} to {}?", open.write.label, open.agent_label),
+            vec![summary.clone()],
+            "Send",
+        )
     } else {
         (
             format!("Type this into {}?", open.agent_label),
@@ -475,6 +543,7 @@ pub(in crate::ui::orchestrator) fn render_agent_write(
         title: title.as_str().into(),
         subject: Some(Line::from(attribution(&open.write.owner))),
         body,
+        quotes_code,
         confirm: Some(confirm),
         focus: Some(if open.on_allow { 1 } else { CANCEL }),
         field: None,

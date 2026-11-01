@@ -54,7 +54,11 @@ fn outcome(outcome: ArchitectOutcome) -> Outcome {
     match outcome {
         ArchitectOutcome::Stay => Outcome::Stay,
         ArchitectOutcome::Close => Outcome::Close,
-        ArchitectOutcome::OpenPath { project, target } => Outcome::OpenPath { project, target },
+        ArchitectOutcome::OpenPath { project, target } => Outcome::OpenPath {
+            project,
+            target,
+            line: None,
+        },
     }
 }
 

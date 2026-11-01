@@ -56,6 +56,7 @@ pub mod code;
 pub mod contract;
 pub mod declared;
 pub mod registry;
+pub mod review;
 pub mod shared;
 pub mod spec;
 pub mod view;
@@ -313,5 +314,24 @@ pub trait Host {
     /// host that runs no declared extension shows none.
     fn media(&self, _identity: &uze_contract::Identity, _name: &str) -> Result<Vec<u8>, String> {
         Err("this host shows no extension's pictures".to_owned())
+    }
+
+    /// The review kept for the agent whose checkout `checkout` is. Only
+    /// the review extension asks it. A host that keeps no reviews keeps
+    /// none.
+    fn review_record(&self, _checkout: &std::path::Path) -> Result<review::ReviewRecord, String> {
+        Err("this host keeps no reviews".to_owned())
+    }
+
+    /// Reads that review, lets `change` edit it and writes it back, as one
+    /// operation under the record's lock: the agent answers into the same
+    /// record from its own process. Answers what was written. Only the
+    /// review extension asks it.
+    fn update_review_record(
+        &self,
+        _checkout: &std::path::Path,
+        _change: &mut dyn FnMut(&mut review::ReviewRecord),
+    ) -> Result<review::ReviewRecord, String> {
+        Err("this host keeps no reviews".to_owned())
     }
 }

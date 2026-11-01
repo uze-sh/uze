@@ -810,9 +810,6 @@ impl Attach<'_> {
     pub(super) fn absorb_surface_answers(&mut self) {
         self.absorb_space_overview_answers();
         self.absorb_path_checks();
-        while let Ok(resolution) = self.channels.git.receiver.try_recv() {
-            self.model.dirty |= self.model.absorb_git_read(resolution);
-        }
         while let Ok(resolution) = self.channels.release_notes.receiver.try_recv() {
             if let Some(modal) = &mut self.model.release_notes {
                 self.model.dirty |= modal.absorb(&resolution.version, resolution.notes);
@@ -837,7 +834,6 @@ impl Attach<'_> {
 
     /// Asks whatever those same surfaces now show and have not read.
     pub(super) fn schedule_surface_reads(&mut self) {
-        self.model.schedule_git_read(&self.channels.git.sender);
         self.model.schedule_extension_jobs(
             self.home,
             crate::ui::extension_switch::plugins_revision(),

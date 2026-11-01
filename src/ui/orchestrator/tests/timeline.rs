@@ -4,8 +4,7 @@
 use super::WorkspaceHit;
 use super::support::*;
 use super::{
-    CommitDetailPopup, CommitDetailResolution, ExtensionHit, GitResolution, ScrollDirection,
-    open_commit_detail,
+    CommitDetailPopup, CommitDetailResolution, ExtensionHit, ScrollDirection, open_commit_detail,
     render::{self, render_commit_detail, timeline_height},
     scroll_timeline, toggle_timeline,
 };
@@ -13,92 +12,9 @@ use crate::ui::theme::{self, Token};
 use crossterm::event::{MouseButton, MouseEventKind};
 use ratatui::layout::Rect;
 use ratatui::{Terminal, backend::TestBackend};
-use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::path::PathBuf;
 use uze_core::UzeHome;
 use uze_extensions::view::ViewHit;
-
-/// Scheduling a read never answers one.
-///
-/// The point of the whole background path: `git status` and `git log`
-/// launch processes, and the loop that calls this is the loop that
-/// draws. It reserves the checkout and returns; the badge is whatever
-/// it already was.
-#[test]
-fn scheduling_a_git_read_reserves_the_checkout_and_answers_nothing() {
-    let mut model = agent_session_in("/repo");
-    let (sender, receiver) = std::sync::mpsc::channel();
-
-    model.schedule_git_read(&sender);
-
-    assert_eq!(
-        model.remembered.git_pending.as_deref(),
-        Some(Path::new("/repo")),
-        "the checkout is reserved while its read is out"
-    );
-    assert!(
-        model.remembered.git_badge.is_none(),
-        "nothing is read on the caller's thread"
-    );
-    assert!(
-        receiver.try_recv().is_err() || model.remembered.git_pending.is_some(),
-        "the answer arrives on the channel, not from the call"
-    );
-
-    // A reservation is what stops the next tick asking again.
-    model.schedule_git_read(&sender);
-    assert_eq!(
-        model.remembered.git_pending.as_deref(),
-        Some(Path::new("/repo"))
-    );
-}
-
-/// An answer about a checkout the selection has left is released and
-/// dropped — not drawn over the checkout now in front of the viewer.
-#[test]
-fn a_git_answer_for_another_checkout_is_released_and_dropped() {
-    let mut model = agent_session_in("/repo");
-    model.remembered.git_pending = Some(PathBuf::from("/elsewhere"));
-
-    let changed = model.absorb_git_read(GitResolution {
-        took: Duration::ZERO,
-        cwd: PathBuf::from("/elsewhere"),
-        summary: None,
-    });
-
-    assert!(!changed, "nothing on screen changed");
-    assert!(
-        model.remembered.git_pending.is_none(),
-        "the key is released whatever the answer, or the checkout is \
-         never asked about again"
-    );
-    assert!(
-        model.remembered.git_badge.is_none(),
-        "no badge for a checkout nobody is on"
-    );
-}
-
-/// The badge and the history are read apart, each on its own cadence: a
-/// read of the badge every 750ms leaves alone the history the 3s reads
-/// fill.
-#[test]
-fn a_badge_read_leaves_the_history_alone() {
-    let mut model = session_with_timeline(&["landed"]);
-
-    let changed = model.absorb_git_read(GitResolution {
-        took: Duration::ZERO,
-        cwd: PathBuf::from("/repo"),
-        summary: Some(uze_extensions::code::ChangeSummary {
-            additions: 2,
-            deletions: 1,
-        }),
-    });
-
-    assert!(changed);
-    assert_eq!(timeline_section(&model).rows.len(), 1, "the history stands");
-    let badge = model.remembered.git_badge.as_ref().expect("a badge");
-    assert!(badge.summary.is_some());
-}
 
 /// The history of the checkout in front is the code extension's read, run
 /// as a job, and a commit clicked in it asks for its account beside the
@@ -109,7 +25,13 @@ fn the_timeline_is_read_as_a_job_and_a_commit_asks_for_its_account() {
     repository.commit_file("a.txt", "a\n");
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-timeline-job-home"));
     let mut model = agent_session_in(&repository.root().display().to_string());
-    model.follow_extension_switch([uze_extensions::spec::CATALOG.id.to_owned()].into());
+    model.follow_extension_switch(
+        [
+            uze_extensions::spec::CATALOG.id.to_owned(),
+            uze_extensions::review::CATALOG.id.to_owned(),
+        ]
+        .into(),
+    );
     let (sender, receiver) = std::sync::mpsc::channel();
     assert_eq!(model.schedule_engine_jobs(&home, &sender), 1);
     assert_eq!(

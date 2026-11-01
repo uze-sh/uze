@@ -8,6 +8,18 @@ impl WorkspaceModel {
         !self.disabled_extensions.contains(id)
     }
 
+    /// What the review's door says for the checkout in front, while the
+    /// review is on.
+    pub(super) fn review_door_badge(&self) -> Option<uze_extensions::contract::DoorBadge> {
+        if !self.offers_extension(review::CATALOG.id) {
+            return None;
+        }
+        self.remembered
+            .declared
+            .engine(&Owner::Builtin(review::CATALOG.id))?
+            .door_badge()
+    }
+
     pub(super) fn offers_action(&self, action: Action) -> bool {
         crate::ui::extension_switch::offered(action, &self.disabled_extensions)
     }
@@ -22,7 +34,6 @@ impl WorkspaceModel {
         }
         self.disabled_extensions = disabled;
         if !self.offers_extension(code::CATALOG.id) {
-            self.remembered.git_badge = None;
             self.commit_detail = None;
             self.commit_detail_pending = None;
         }
@@ -253,8 +264,13 @@ pub(super) fn open_spec(model: &mut WorkspaceModel) {
 /// Rooted at the project rather than at the tab's directory, because the
 /// path was written relative to the project and may sit outside a tab
 /// that is somewhere below it.
-pub(super) fn open_code_at(model: &mut WorkspaceModel, project: &Path, target: &Path) {
-    open_code_on(model, project, target, target.is_dir());
+pub(super) fn open_code_at(
+    model: &mut WorkspaceModel,
+    project: &Path,
+    target: &Path,
+    line: Option<u32>,
+) {
+    open_code_on(model, project, target, target.is_dir(), line);
 }
 
 /// The code surface, opened on `target` already known to be a `directory`
@@ -264,6 +280,7 @@ pub(super) fn open_code_on(
     project: &Path,
     target: &Path,
     directory: bool,
+    line: Option<u32>,
 ) {
     let Some(slot) = code_slot(model) else {
         return;
@@ -274,6 +291,7 @@ pub(super) fn open_code_on(
     let entry = Entry::Path {
         target: target.to_path_buf(),
         directory,
+        line,
     };
     if let Some(engine) = code_engine(model) {
         engine.enter(code::SURFACE, entry);
@@ -296,6 +314,33 @@ pub(super) fn open_code(model: &mut WorkspaceModel, door: &str) {
     }
     let entered =
         code_engine(model).map(|engine| engine.enter(code::SURFACE, Entry::Door(door.to_owned())));
+    match entered {
+        Some(Outcome::Close) if standing => model.close_surface(),
+        _ if standing => model.dirty = true,
+        _ => open_surface(model, slot),
+    }
+}
+
+/// The review, through its door, on the active tab's checkout; pressed
+/// while it stands, the door shuts it.
+pub(super) fn open_review(model: &mut WorkspaceModel) {
+    let Some(slot) = model
+        .remembered
+        .declared
+        .builtin_slot(review::CATALOG.id, review::SURFACE)
+    else {
+        return;
+    };
+    let standing = model.open_slot == Some(slot);
+    if !standing && (!model.offers_extension(review::CATALOG.id) || model.focused_cwd().is_none()) {
+        return;
+    }
+    let entered = model
+        .remembered
+        .declared
+        .engines
+        .get_mut(&Owner::Builtin(review::CATALOG.id))
+        .map(|engine| engine.enter(review::SURFACE, Entry::Door(review::DOOR.to_owned())));
     match entered {
         Some(Outcome::Close) if standing => model.close_surface(),
         _ if standing => model.dirty = true,
