@@ -50,7 +50,6 @@ fn paced(every: Duration, took: Duration) -> Duration {
 struct DoorState {
     root: Option<PathBuf>,
     totals: Option<Totals>,
-    record: ReviewRecord,
     base: Base,
     at: Option<Instant>,
     reading: bool,
@@ -63,6 +62,10 @@ pub struct ReviewExtension {
     open: Option<ReviewView>,
     focus: Option<Checkout>,
     door: DoorState,
+    /// Each checkout's review as last read or written, kept per checkout
+    /// so the one in front never shows another's, and an agent come back
+    /// to shows its comments before its read lands.
+    records: std::collections::HashMap<PathBuf, ReviewRecord>,
     /// Each open agent, by the checkout it works in.
     agents: Vec<(String, PathBuf)>,
     sending: Option<(PathBuf, Sending)>,
@@ -139,10 +142,14 @@ struct DiffRead {
 
 struct DoorRead {
     took: Duration,
+    /// How many writes had been answered when it was asked.
+    generation: u64,
     root: PathBuf,
     base: Base,
     totals: Option<Totals>,
-    record: Option<ReviewRecord>,
+    /// The record as read, an error being a checkout that keeps none;
+    /// `None` when nothing was read.
+    record: Option<Result<ReviewRecord, String>>,
 }
 
 struct Written {
@@ -231,8 +238,10 @@ impl ReviewExtension {
         let root = &self.focus.as_ref()?.root;
         match &self.open {
             Some(view) if &view.root == root => Some((root, &view.record)),
-            _ if self.door.root.as_ref() == Some(root) => Some((root, &self.door.record)),
-            _ => None,
+            _ => self
+                .records
+                .get(root)
+                .map(|record| (root.as_path(), record)),
         }
     }
 
@@ -525,6 +534,7 @@ impl ReviewExtension {
         };
         let root = focus.root.clone();
         let fallback_root = root.clone();
+        let generation = self.generation;
         jobs.push(Job {
             run: Box::new(move |host| {
                 let started = Instant::now();
@@ -533,7 +543,8 @@ impl ReviewExtension {
                 Opaque::new(DoorRead {
                     took: started.elapsed(),
                     totals,
-                    record: host.review_record(&root).ok(),
+                    record: Some(host.review_record(&root)),
+                    generation,
                     root,
                     base,
                 })
@@ -541,6 +552,7 @@ impl ReviewExtension {
             fallback: Box::new(move || {
                 Opaque::new(DoorRead {
                     took: Duration::ZERO,
+                    generation,
                     root: fallback_root,
                     base: Base::default(),
                     totals: None,
@@ -571,15 +583,16 @@ impl ReviewExtension {
             root: root.clone(),
             target: None,
         });
-        self.door.root = Some(root);
+        self.door.root = Some(root.clone());
+        let record = self.records.entry(root).or_default();
         Change::Draft {
-            id: self.door.record.free_id(),
+            id: record.free_id(),
             path: path.to_owned(),
             rows: Vec::new(),
             excerpt: String::new(),
             text: text.to_owned(),
         }
-        .apply(&mut self.door.record);
+        .apply(record);
     }
 
     /// Lets a failed write be tried again at once, as the clock would.
@@ -589,6 +602,22 @@ impl ReviewExtension {
     }
 
     /// The changes a write is out for on `root`, if one is.
+    /// Keeps `record` as `root`'s, with what is still on its way to disk
+    /// laid over it: a read or a write answered before a change landed
+    /// never takes that change away from the bar or the drawer.
+    fn know(&mut self, root: PathBuf, mut record: ReviewRecord) {
+        let pending = self.in_flight_for(&root).into_iter().chain(
+            self.waiting
+                .iter()
+                .filter(|(waiting, _)| *waiting == root)
+                .flat_map(|(_, changes)| changes.clone()),
+        );
+        for change in pending {
+            change.apply(&mut record);
+        }
+        self.records.insert(root, record);
+    }
+
     fn in_flight_for(&self, root: &Path) -> Vec<Change> {
         self.in_flight
             .as_ref()
@@ -724,9 +753,9 @@ impl Extension for ReviewExtension {
             .partition(|(root, _)| *root == checkout.root);
         self.waiting = others;
         view.unwritten = mine.into_iter().flat_map(|(_, changes)| changes).collect();
-        if self.door.root.as_ref() == Some(&checkout.root) {
+        if let Some(record) = self.records.get(&checkout.root) {
             let in_flight = self.in_flight_for(&checkout.root);
-            view.absorb_record(Ok(self.door.record.clone()), &in_flight);
+            view.absorb_record(Ok(record.clone()), &in_flight);
         }
         view.open_on = self.open_on.take();
         self.listed_at = None;
@@ -749,9 +778,7 @@ impl Extension for ReviewExtension {
             // operator's work never waits on the surface staying open.
             // The door says what the surface last showed; laid again over
             // it, a change waiting to be written is a repeat.
-            if self.door.root.as_ref() == Some(&view.root) {
-                self.door.record = view.record.clone();
-            }
+            self.records.insert(view.root.clone(), view.record.clone());
             if !view.unwritten.is_empty() {
                 self.waiting.push((view.root.clone(), view.unwritten));
             }
@@ -895,8 +922,8 @@ impl Extension for ReviewExtension {
             // still stands to show it.
             // The door's record says it at once too, for the drawer and
             // the bar, open review or not.
-            if self.door.root.as_ref() == Some(&root) {
-                sent.apply(&mut self.door.record);
+            if let Some(record) = self.records.get_mut(&root) {
+                sent.apply(record);
             }
             match open {
                 Some(view) => view.change(sent),
@@ -958,13 +985,17 @@ impl Extension for ReviewExtension {
                 self.door.reading = false;
                 self.door.took = read.took;
                 if self.focus.as_ref().map(|focus| &focus.root) == Some(&read.root) {
-                    self.door.root = Some(read.root);
+                    self.door.root = Some(read.root.clone());
                     self.door.base = read.base;
                     self.door.totals = read.totals;
-                    if let Some(record) = read.record {
-                        self.door.record = record;
-                    }
                     self.door.at = Some(Instant::now());
+                }
+                // A read taken before a write landed is older than what is
+                // kept; one that failed is a checkout with no review here.
+                if let Some(read_record) = read.record
+                    && read.generation == self.generation
+                {
+                    self.know(read.root, read_record.unwrap_or_default());
                 }
             }
             return Outcome::Stay;
@@ -996,10 +1027,8 @@ impl Extension for ReviewExtension {
                     }
                 }
             }
-            if let Ok(record) = &written.record
-                && self.door.root.as_ref() == Some(&written.root)
-            {
-                self.door.record = record.clone();
+            if let Ok(record) = &written.record {
+                self.know(written.root.clone(), record.clone());
             }
             match self.open.as_mut().filter(|view| view.root == written.root) {
                 Some(view) => view.absorb_record(written.record, &[]),
@@ -1091,7 +1120,87 @@ fn grouped(n: u32) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
     use std::time::Duration;
+
+    use super::{Base, DoorRead, ReviewExtension, ReviewRecord};
+    use crate::contract::{AgentWritten, Checkout, Extension, Opaque};
+
+    fn checkout(root: &str) -> Checkout {
+        Checkout {
+            root: PathBuf::from(root),
+            display: root.to_owned(),
+            target: None,
+        }
+    }
+
+    /// What the door's read of `root` answers, asked at `generation`.
+    fn door_read(generation: u64, root: &str, record: Result<ReviewRecord, String>) -> Opaque {
+        Opaque::new(DoorRead {
+            took: Duration::ZERO,
+            generation,
+            root: PathBuf::from(root),
+            base: Base::default(),
+            totals: None,
+            record: Some(record),
+        })
+    }
+
+    fn drafts(extension: &ReviewExtension) -> usize {
+        extension
+            .record_in_front()
+            .map(|(_, record)| {
+                record
+                    .comments
+                    .iter()
+                    .filter(|comment| comment.status == super::super::CommentStatus::Draft)
+                    .count()
+            })
+            .unwrap_or(0)
+    }
+
+    /// A checkout that keeps no review (a shell, a checkout two agents
+    /// share) never shows the one before's: its failed read is no review.
+    #[test]
+    fn a_checkout_whose_review_cannot_be_read_never_shows_anothers() {
+        let mut extension = ReviewExtension::default();
+        extension.drafted(PathBuf::from("/a"), "a.rs", "check");
+        assert_eq!(drafts(&extension), 1);
+        extension.focus(Some(&checkout("/b")));
+        let read = door_read(0, "/b", Err("no agent works here".to_owned()));
+        extension.absorb(read);
+        assert_eq!(drafts(&extension), 0, "b's, not a's");
+        assert!(
+            extension
+                .view(super::ITEM, crate::view::Size::default())
+                .is_none()
+        );
+        extension.focus(Some(&checkout("/a")));
+        assert_eq!(drafts(&extension), 1, "a's again at once, before its read");
+    }
+
+    /// Sent from the drawer with the review put away, the drafts stay
+    /// sent though a read taken before the write landed says otherwise:
+    /// a second press must not type the same send again.
+    #[test]
+    fn a_read_from_before_the_send_landed_never_brings_the_drafts_back() {
+        let mut extension = ReviewExtension::default();
+        extension.drafted(PathBuf::from("/w"), "a.rs", "check");
+        extension.agents(&serde_json::json!([{ "id": "a1", "checkout": "/w" }]));
+        let before = extension.generation;
+        let on_disk = extension.records[&PathBuf::from("/w")].clone();
+        let _ = extension.send();
+        extension.agent_write(super::SEND_ACTION, AgentWritten::Typed);
+        assert_eq!(drafts(&extension), 0, "sent");
+        extension.absorb(door_read(before, "/w", Ok(on_disk.clone())));
+        assert_eq!(drafts(&extension), 0, "an old read is not news");
+        extension.absorb(door_read(extension.generation, "/w", Ok(on_disk)));
+        assert_eq!(
+            drafts(&extension),
+            0,
+            "nor a new one the write has not reached"
+        );
+    }
 
     #[test]
     fn a_slow_read_waits_five_times_its_own_length() {
