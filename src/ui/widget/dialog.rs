@@ -197,6 +197,24 @@ struct Content {
     buttons_row: u16,
 }
 
+/// `line` as spans, what stands between backticks in the code's ink and the
+/// backticks themselves left out; `quoting` says whether a quote is open
+/// where the line starts, and is left saying whether one is at its end.
+fn quoted(line: &str, style: ratatui::style::Style, quoting: &mut bool) -> Vec<Span<'static>> {
+    let code = theme::fg(Token::TextCode);
+    let mut spans = Vec::new();
+    for (index, part) in line.split('`').enumerate() {
+        if index > 0 {
+            *quoting = !*quoting;
+        }
+        if !part.is_empty() {
+            let ink = if *quoting { code } else { style };
+            spans.push(Span::styled(part.to_owned(), ink));
+        }
+    }
+    spans
+}
+
 fn content(dialog: &Dialog<'_>, measure: usize) -> Content {
     let hue = dialog.tone.token();
 
@@ -221,10 +239,14 @@ fn content(dialog: &Dialog<'_>, measure: usize) -> Content {
         } else {
             theme::fg(Token::TextMuted)
         };
+        // What a paragraph quotes between backticks is code, drawn as
+        // prose quotes it everywhere else; a quote may run across the
+        // fold, so whether it is open carries from one row to the next.
+        let mut quoting = false;
         lines.extend(
             text::fold(paragraph, measure)
                 .into_iter()
-                .map(|line| Line::from(Span::styled(line, style))),
+                .map(|line| Line::from(quoted(&line, style, &mut quoting))),
         );
     }
     if !dialog.table.is_empty() {
@@ -465,4 +487,39 @@ fn buttons<T: Clone>(
         ));
     }
     button_row(frame, row, &buttons, Align::Right)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::style::Style;
+
+    /// A body quoting code between backticks draws it as code, the
+    /// backticks gone, even where the quote runs over the fold.
+    #[test]
+    fn a_quote_between_backticks_is_drawn_as_code() {
+        let prose = theme::fg(Token::TextSecondary);
+        let code = theme::fg(Token::TextCode);
+        let mut quoting = false;
+        let first = quoted("run `uze agent", prose, &mut quoting);
+        let second = quoted("review show` to read", prose, &mut quoting);
+        let drawn = |spans: &[Span<'_>]| -> Vec<(String, Style)> {
+            spans
+                .iter()
+                .map(|span| (span.content.to_string(), span.style))
+                .collect()
+        };
+        assert_eq!(
+            drawn(&first),
+            [("run ".to_owned(), prose), ("uze agent".to_owned(), code)]
+        );
+        assert_eq!(
+            drawn(&second),
+            [
+                ("review show".to_owned(), code),
+                (" to read".to_owned(), prose)
+            ]
+        );
+        assert!(!quoting, "closed by the end");
+    }
 }
