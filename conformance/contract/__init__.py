@@ -33,6 +33,7 @@ from . import (
     lifecycle,
     mcp,
     memory,
+    repair,
     rules,
     skill,
     stores,
@@ -57,6 +58,7 @@ CONTRACTS = (
     rules,
     stores,
     upgrade,
+    repair,
 )
 
 

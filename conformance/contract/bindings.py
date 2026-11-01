@@ -460,6 +460,12 @@ class Bindings:
     #: no registry beyond the files it reads.
     registry_listing = None
 
+    #: Shell that registers UZE's marketplace with this harness at a root an
+    #: earlier release used, the way that release left it, for
+    #: `uze doctor --repair` to move back. `None` for a harness that keeps no
+    #: registration of it.
+    misplace_registration = None
+
     #: A shell command printing the plugins the vendor holds installed from
     #: UZE's marketplace, with whether each is enabled. `None` for a harness
     #: that receives the Lab's plugins as loose files, not as a plugin.

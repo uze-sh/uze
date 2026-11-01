@@ -25,6 +25,18 @@ class CodexBindings(Bindings):
         "codex plugin marketplace list --json; "
         "grep '^\\[plugins' \"$CODEX_HOME/config.toml\" || true"
     )
+    #: Where an earlier release registered UZE's marketplace with Codex: the
+    #: generated tree under `runtime/`, as `[marketplaces.uze-store] source`
+    #: of `config.toml` names it, with the marketplace's files there.
+    misplace_registration = "\n".join(
+        [
+            "OLD=/work/home/.uze/runtime/attachments/codex",
+            'mkdir -p "$OLD" && cp -a /work/home/.uze/store/codex/. "$OLD"/',
+            'sed -i \'s#^\\(source *= *\\)"[^"]*/store/codex/*"#\\1"\'"$OLD"\'"#\' '
+            '"$CODEX_HOME/config.toml"',
+            'grep -n "^source" "$CODEX_HOME/config.toml"',
+        ]
+    )
     plugin_listing = "codex plugin list --json --marketplace uze-store"
 
     def plugin_enabled(self, listing, plugin):
