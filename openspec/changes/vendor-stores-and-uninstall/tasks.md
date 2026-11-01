@@ -6,10 +6,9 @@
   - `file://` is refused on both;
   - Claude repoints with a same-name `add`;
   - Codex needs `remove` then `add`, and plugins stay enabled across it.
-- [ ] 1.2 Measure, per vendor, the command that refreshes a cached plugin after its marketplace is repointed (Claude `plugin update`, a Codex reinstall, an Antigravity reinstall). The cached `SKILL.md` and `.mcp.json` must stop naming `runtime/packages`.
-- [ ] 1.3 Measure Codex hook trust when a hook's command changes (design D5).
-- [ ] 1.4 Record each fact from 1.1–1.3 as a `HarnessFact` with the version it was measured on.
-- [ ] 1.5 Write `tests/integrations/vendor_neutral.rs::no_harness_artifact_names_outside_its_store`. It walks the whole fake home except `$UZE_HOME` after the canonical fixtures are installed, and must be red on the current code.
+- [ ] 1.2 Add the cache-refresh measurement to the Codex experiment: `codex plugin add <id>` over the installed plugin rewrites its cache in place (design D5, measured 2026-11-01).
+- [ ] 1.3 Record each fact from 1.1–1.2, and Codex's command-keyed hook trust (`codex/trust.rs`), as a `HarnessFact` with the version it was measured on.
+- [ ] 1.4 Write `tests/integrations/vendor_neutral.rs::no_harness_artifact_names_outside_its_store`. It walks the whole fake home except `$UZE_HOME` after the canonical fixtures are installed, and must be red on the current code.
 
 ## 2. The tiers
 
@@ -34,7 +33,7 @@
 - [ ] 3.4 Registration:
   - Claude repoints with a same-name `add`;
   - Codex runs `remove`, then `add`;
-  - each repointed plugin's vendor cache is refreshed with the command found in 1.2;
+  - each repointed plugin's vendor cache is refreshed (Codex: `codex plugin add` over the installed plugin; Antigravity: uninstall then install);
   - the old source is deleted only when every receipt that named it has moved.
 
 ## 4. Hooks, rules, OpenCode, the bundled plugin
@@ -45,7 +44,7 @@
 - [ ] 4.4 Attach the bundled `uze` plugin with receipts. `remove` refuses it, and only `uninstall --purge` detaches it.
 - [ ] 4.5 The bundled skills that run `uze` open with the line saying they do not apply when `uze` is not on `PATH`.
 - [ ] 4.6 Report the Codex hooks that need review after the wrapper moves, in the install report and in `doctor`.
-- [ ] 4.7 `no_harness_artifact_names_outside_its_store` (1.5) is green.
+- [ ] 4.7 `no_harness_artifact_names_outside_its_store` (1.4) is green.
 
 ## 5. `uze uninstall`
 

@@ -185,12 +185,25 @@ doctor sweep needs no change, because the references still point inside
    1. Publish the builds into `store/<vendor>`.
    2. Repoint the marketplace. Claude: a same-name `add`. Codex: `remove`,
       then `add`; measured to keep plugins enabled.
-   3. Refresh the vendor cache of each repointed plugin. The command per
-      vendor is measured in task 1.2.
+   3. Refresh the vendor cache of each repointed plugin (measured
+      2026-11-01):
+      - **Claude:** nothing to do. It reads the store in place, and its
+        cache is not what it loads.
+      - **Codex 0.166.0:** `codex plugin add <id>` over the installed plugin
+        rewrites `plugins/cache/<m>/<p>/<v>` in place; no `remove` is
+        needed. A version bump installs the new version's directory and
+        drops the old one.
+      - **Antigravity:** the existing re-delivery path, `agy plugin
+        uninstall` then `install`, because agy refuses a same-name
+        re-import.
    4. Retire the old receipts by inspect-before-detach.
    5. Move the wrapper.
    6. Report the Codex hooks that need review again. Codex keys trust by
-      the hook's command, so a moved wrapper reads as "Modified".
+      the hook's command, so a moved wrapper reads as "Modified". This
+      needs no new measurement: `codex/trust.rs` reproduces Codex's
+      identity hash, which includes `command`, and the Lab has evidence
+      for it (`experiments/codex/trust-store`). It is a one-time cost,
+      because `store/<vendor>` paths do not move again.
 3. `runtime/attachments/*` and `runtime/packages` are deleted only when no
    receipt names them.
 
