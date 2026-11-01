@@ -276,6 +276,49 @@ fn a_platform_without_a_wrapper_template_delivers_no_hook() {
     );
 }
 
+/// A package read in place, outside the sources, is its own whole root:
+/// its hook names a path where the package has it, never under the
+/// carried directory a build keeps.
+#[test]
+fn a_package_read_in_place_names_its_hook_paths_where_it_has_them() {
+    let home = UzeHome::at(Path::new("/tmp/uze-home"));
+    let package = Path::new("/pkg");
+    let mut hook = hook();
+    hook.handlers[0].command = uze_core::shell::ShellCommand::spelled(
+        "${PLUGIN_ROOT}/bin/check",
+        "& \"${PLUGIN_ROOT}/bin/check.ps1\"",
+    );
+    let resource = Resource::from_package(
+        uze_core::store::PackageId::from_plugin_name("demo", &package.join("plugin.json")).unwrap(),
+        package.to_path_buf(),
+        uze_core::capability::Capability {
+            kind: uze_core::capability::CapabilityKind::Hook,
+            path: package.join(HOOKS_FILE_NAME),
+            payload: serde_json::to_vec(&hook).unwrap(),
+        },
+    );
+    assert!(
+        crate::claude::STORE.carried.contains(&"bin"),
+        "the build of this harness carries `bin`"
+    );
+    let plan = crate::claude::HOOKS.entry_plan(
+        &home,
+        &resource,
+        PathBuf::from("/config/settings.json"),
+        "evidence.",
+    );
+    let ExposureMechanism::Managed(ManagedArtifact::HookConfigEntry { expected, .. }) =
+        plan.mechanism
+    else {
+        panic!("a harness with a template delivers: {:?}", plan.mechanism);
+    };
+    assert!(
+        !expected.contains(crate::shared::package_root::CARRIED_DIR),
+        "{expected}"
+    );
+    assert!(expected.contains("bin/check"), "{expected}");
+}
+
 /// The same answer one level up: the exposure plan reports Unsupported
 /// with the reason, rather than an entry pointing at something that is
 /// not there.

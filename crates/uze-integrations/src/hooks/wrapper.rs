@@ -325,26 +325,46 @@ pub(crate) fn sealed_wrapper_command_line(
 #[derive(Clone, Copy)]
 pub(crate) struct Roots<'a> {
     pub sources: &'a Path,
-    pub delivered: &'a Path,
-    /// What the build keeps under its carried directory
-    /// ([`crate::shared::package_root::PluginRoot`]).
-    pub carried: &'static [&'static str],
+    delivered: Delivered<'a>,
+}
+
+/// The root the harness is handed: the one the vendor store resolved, or
+/// the sources themselves where the package is read in place.
+#[derive(Clone, Copy)]
+enum Delivered<'a> {
+    Root(&'a crate::shared::package_root::PluginRoot),
+    #[cfg(test)]
+    Sources,
 }
 
 impl<'a> Roots<'a> {
+    /// The sources, and the root `${PLUGIN_ROOT}` resolves to for them.
+    pub(crate) fn new(
+        sources: &'a Path,
+        delivered: &'a crate::shared::package_root::PluginRoot,
+    ) -> Self {
+        Self {
+            sources,
+            delivered: Delivered::Root(delivered),
+        }
+    }
+
     /// One directory that is both.
     #[cfg(test)]
     pub(crate) fn same(root: &'a Path) -> Self {
         Self {
             sources: root,
-            delivered: root,
-            carried: &[],
+            delivered: Delivered::Sources,
         }
     }
 
     /// The root `${PLUGIN_ROOT}` resolves to in the harness.
     pub(crate) fn plugin_root(&self) -> crate::shared::package_root::PluginRoot {
-        crate::shared::package_root::PluginRoot::carrying(self.delivered, self.carried)
+        match self.delivered {
+            Delivered::Root(root) => root.clone(),
+            #[cfg(test)]
+            Delivered::Sources => crate::shared::package_root::PluginRoot::whole(self.sources),
+        }
     }
 }
 

@@ -301,11 +301,7 @@ impl HookTarget {
             }
             let wrapper = self.wrapper_path(uze_home, resource.package_id.as_str());
             let delivered = self.store.root_of(&resource.package_root);
-            let roots = Roots {
-                sources: &resource.package_root,
-                delivered: delivered.path(),
-                carried: self.store.carried,
-            };
+            let roots = Roots::new(&resource.package_root, &delivered);
             let entry = if self.names_entries() {
                 agy_named_entry(self, hook, &wrapper, roots)
             } else {
