@@ -124,4 +124,4 @@
   - the derived-artifact entry (rebuilt when its build key changes);
   - a new entry, "a harness reads only its own vendor store", tied to 1.3.
 - [x] 7.3 Update `docs/capabilities/portable-hooks.md` and the stale header comments in `claude.rs` and `shim.rs`. Document that removing `~/.uze` by hand is unsupported, naming `uze uninstall` and `uze doctor --repair`.
-- [ ] 7.4 Run `make check` and `openspec validate --all --strict`.
+- [x] 7.4 Run `make check` and `openspec validate --all --strict`.
