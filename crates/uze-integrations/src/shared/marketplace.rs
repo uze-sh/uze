@@ -447,7 +447,26 @@ pub(crate) fn republish<D: MarketplaceDialect>(
     packages: &[StoredPackage],
 ) -> Result<()> {
     let builds = listed_builds(uze_home, integration_id, Some(packages))?;
-    write_catalogue::<D>(uze_home, &builds)
+    write_catalogue::<D>(uze_home, &builds)?;
+    retire_earlier_roots::<D>(uze_home)
+}
+
+/// The roots earlier releases registered marketplaces at, under the runtime
+/// tree: `generated` (the earlier `uze-store`) and `explicit` (`uze-local`).
+/// Each goes once no receipt names a path inside it: a plugin still
+/// installed from one keeps it until its receipt is retired.
+fn retire_earlier_roots<D: MarketplaceDialect>(uze_home: &UzeHome) -> Result<()> {
+    let receipts = serde_json::to_string(&uze_core::state::receipts(uze_home, None)?)
+        .expect("receipts serialize");
+    let staging = crate::shared::path::attachment_root(uze_home, D::STORE.vendor);
+    for earlier in ["generated", "explicit"].map(|name| staging.join(name)) {
+        let named =
+            serde_json::to_string(&earlier.display().to_string()).expect("a path serializes");
+        if earlier.is_dir() && !receipts.contains(named.trim_matches('"')) {
+            fs::remove_dir_all(&earlier).map_err(UzeError::write(&earlier))?;
+        }
+    }
+    Ok(())
 }
 
 fn write_catalogue<D: MarketplaceDialect>(

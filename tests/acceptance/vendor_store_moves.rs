@@ -283,6 +283,12 @@ fn a_plugin_installed_through_uze_local_moves_to_uze_store_and_uze_local_goes() 
     );
     let ledger = ledger(&env).to_string();
     assert!(!ledger.contains("@uze-local"), "{ledger}");
+    assert!(
+        !env.uze_home
+            .join("runtime/attachments/codex/explicit")
+            .exists(),
+        "the root uze-local was registered at goes once nothing names it"
+    );
 }
 
 /// A Codex plugin the operator disabled under `uze-local` inspects as
