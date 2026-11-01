@@ -881,3 +881,38 @@ fn discarding_a_rename_from_its_old_name_says_which_side_goes() {
     assert!(body.contains("naming.rs returns"), "{body}");
     assert!(body.contains("named.rs goes"), "{body}");
 }
+
+#[test]
+fn the_door_counts_a_draft_made_just_before_the_review_closed() {
+    use crate::contract::Extension;
+    let mut extension = sending_extension();
+    extension.counted(PathBuf::from("/w"), 3, 1, 1);
+    extension.close(SURFACE);
+    assert!(
+        badge(&extension).ends_with('1'),
+        "one draft waits: {}",
+        badge(&extension)
+    );
+}
+
+/// The list's record arrives while the write of a new draft is still out:
+/// the draft stays on screen.
+#[test]
+fn a_record_read_while_a_write_is_out_keeps_what_it_writes() {
+    use crate::contract::Extension;
+    let mut extension = sending_extension();
+    let host = Keeping(std::sync::Mutex::new(ReviewRecord::default()));
+    let mut jobs = extension.jobs();
+    let write = jobs.pop().unwrap();
+    let answers: Vec<_> = jobs.into_iter().map(|job| (job.run)(&host)).collect();
+    for answer in answers {
+        extension.absorb(answer);
+    }
+    assert_eq!(extension.review_view().unwrap().drafts().len(), 1);
+    extension.absorb((write.run)(&host));
+    assert_eq!(
+        extension.review_view().unwrap().drafts().len(),
+        1,
+        "and once only"
+    );
+}

@@ -604,6 +604,11 @@ impl Extension for ReviewExtension {
             );
             // What was changed and not yet written is still written: the
             // operator's work never waits on the surface staying open.
+            // The door says what the surface last showed; laid again over
+            // it, a change waiting to be written is a repeat.
+            if self.door.root.as_ref() == Some(&view.root) {
+                self.door.record = view.record.clone();
+            }
             if !view.unwritten.is_empty() {
                 self.waiting.push((view.root.clone(), view.unwritten));
             }
@@ -847,6 +852,11 @@ impl Extension for ReviewExtension {
                         }
                     }
                 }
+            }
+            if let Ok(record) = &written.record
+                && self.door.root.as_ref() == Some(&written.root)
+            {
+                self.door.record = record.clone();
             }
             match self.open.as_mut().filter(|view| view.root == written.root) {
                 Some(view) => view.absorb_record(written.record, &[]),
