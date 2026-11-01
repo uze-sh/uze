@@ -103,6 +103,11 @@ pub enum UzeError {
     )]
     PackageNameCollides { first: PathBuf, second: PathBuf },
     #[error(
+        "the package ships `{0}`, a path UZE reserves inside every package's build for what it \
+         writes there itself; move the file elsewhere in the package"
+    )]
+    PackageShipsReservedPath(String),
+    #[error(
         "refusing a URL carrying inline credentials; UZE never stores a secret, \
          and authenticated Git is a separate mechanism"
     )]

@@ -17,7 +17,7 @@ use uze_core::{
     store::StoredPackage,
 };
 
-use crate::shared::marketplace::{MarketplaceDialect, Origin, detail_path, marketplace_entries};
+use crate::shared::marketplace::{MarketplaceDialect, detail_path, marketplace_entries};
 use crate::shared::path::normalize_declared_relative_path;
 use crate::shared::plan::blocked;
 use crate::shared::process::{json, run_quiet};
@@ -25,16 +25,30 @@ use crate::shared::process::{json, run_quiet};
 pub(super) struct CodexMarketplace;
 
 impl MarketplaceDialect for CodexMarketplace {
-    const VENDOR: &'static str = "codex";
+    const STORE: &'static crate::shared::build::VendorStore = &super::STORE;
+    const HOOKS: crate::hooks::HookTarget = super::HOOKS;
     const SETUP_NAME: &'static str = "codex";
     const CATALOGUE_NOUN: &'static str = "Codex catalogue";
     const ENVELOPE_DIR: &'static str = ".codex-plugin";
     const CATALOGUE_PATH: &'static str = ".agents/plugins/marketplace.json";
     const EXPLICIT_KIND: &'static str = "marketplace-plugin";
     const GENERATED_KIND: &'static str = "marketplace-plugin-generated";
-    const EXPLICIT_EVIDENCE: &'static str = "The preserved external .codex-plugin/plugin.json is exposed through UZE's generated, standard Codex local marketplace catalog for exactly the skills/mcpServers it declares; undeclared resources fall back to individual attachment.";
-    const GENERATED_EVIDENCE: &'static str = "No .codex-plugin/plugin.json was provided. UZE synthesizes one deterministically into a UZE-owned derived directory (never the Store) covering exactly the package's conventional skills/ directory and mcp.json-declared servers, published through a second, generated-only Codex marketplace.";
+    const EXPLICIT_EVIDENCE: &'static str = "The preserved external .codex-plugin/plugin.json is exposed through UZE's standard Codex local marketplace catalog, the vendor store, for exactly the skills/mcpServers it declares; undeclared resources fall back to individual attachment.";
+    const GENERATED_EVIDENCE: &'static str = "No .codex-plugin/plugin.json was provided. UZE synthesizes one deterministically into the package's build in Codex's vendor store (never the package sources), covering exactly the package's conventional skills/ directory and mcp.json-declared servers, published through UZE's one Codex marketplace.";
     const ENVELOPE_CARRIES_AGENTS: bool = false;
+    /// The manifest, the MCP file and the skills a generated envelope
+    /// writes itself, and the files Codex reads from a plugin root that the
+    /// canonical format does not define.
+    const NOT_PORTABLE: &'static [&'static str] = &[
+        ".codex-plugin",
+        ".mcp.json",
+        ".app.json",
+        "skills",
+        "hooks/hooks.json",
+    ];
+    // A same-name add from another root is refused until `remove` (measured
+    // on 0.166.0, `experiments/codex/source-tie.py`).
+    const ADD_REPOINTS: bool = false;
 
     fn catalogue_document(
         name: &str,
@@ -50,13 +64,9 @@ impl MarketplaceDialect for CodexMarketplace {
 
     /// Codex requires `policy`/`category` on every entry, and reads
     /// `source.path` relative to the marketplace root.
-    fn catalogue_entry(
-        package: &StoredPackage,
-        source: String,
-        _origin: Origin,
-    ) -> serde_json::Value {
+    fn catalogue_entry(name: &str, source: String, _build: &Path) -> serde_json::Value {
         serde_json::json!({
-            "name": package.active_name.as_str(),
+            "name": name,
             "source": { "source": "local", "path": source },
             "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
             "category": "Developer tools"
@@ -73,34 +83,23 @@ impl MarketplaceDialect for CodexMarketplace {
         !policy.is_invalid() && !(policy.model && !policy.user)
     }
 
-    fn materialize_envelope(package: &StoredPackage, dir: &Path) -> Result<()> {
-        super::generate::materialize_envelope(package, dir)
+    fn render_envelope(package: &StoredPackage, dir: &Path, root: &Path) -> Result<()> {
+        super::generate::render_envelope(package, dir, root)
     }
 
-    /// Codex reports an installed plugin at the directory it was catalogued
-    /// from — the generated one, not the Store package — so recording the
-    /// Store root would read as permanent drift against Codex's own report.
-    fn generated_receipt_root(_package: &StoredPackage, envelope_dir: &Path) -> PathBuf {
-        envelope_dir.to_path_buf()
-    }
-
-    fn marketplace_exists(executable: &Path, home: &Path, root: &Path) -> bool {
-        let Ok(listing) = json(
+    fn registered_root(executable: &Path, home: &Path, name: &str) -> Option<PathBuf> {
+        let listing = json(
             executable,
             home,
             &["plugin", "marketplace", "list", "--json"],
             "codex",
-        ) else {
-            return false;
-        };
-        marketplace_entries(&listing).is_some_and(|entries| {
-            entries.iter().any(|entry| {
-                entry
-                    .get("root")
-                    .and_then(serde_json::Value::as_str)
-                    .is_some_and(|candidate| Path::new(candidate) == root)
-            })
-        })
+        )
+        .ok()?;
+        marketplace_entries(&listing)?
+            .iter()
+            .find(|entry| entry.get("name").and_then(serde_json::Value::as_str) == Some(name))
+            .and_then(|entry| entry.get("root")?.as_str())
+            .map(PathBuf::from)
     }
 
     fn add_marketplace(executable: &Path, home: &Path, root: &Path) -> Result<()> {

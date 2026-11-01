@@ -19,7 +19,7 @@ use uze_core::{
 };
 
 use super::plugin::ClaudeMarketplace;
-use crate::shared::marketplace::{MarketplaceDialect, Origin as CatalogueOrigin};
+use crate::shared::marketplace::{MARKETPLACE, MarketplaceDialect, RETIRED_MARKETPLACE};
 
 /// The receipt kind uze's machine setup writes for its rules engine hook.
 const RULES_ENGINE_KIND: &str = "rules-engine";
@@ -144,9 +144,9 @@ fn plugins(config: &Path, settings: Option<&Value>) -> Vec<FoundResource> {
 
 /// The receipt kind of a plugin in one of uze's own catalogues.
 fn uze_catalogue_kind(marketplace: &str) -> Option<&'static str> {
-    if marketplace == CatalogueOrigin::Generated.marketplace_name() {
+    if marketplace == MARKETPLACE {
         Some(<ClaudeMarketplace as MarketplaceDialect>::GENERATED_KIND)
-    } else if marketplace == CatalogueOrigin::Explicit.marketplace_name() {
+    } else if marketplace == RETIRED_MARKETPLACE {
         Some(<ClaudeMarketplace as MarketplaceDialect>::EXPLICIT_KIND)
     } else {
         None

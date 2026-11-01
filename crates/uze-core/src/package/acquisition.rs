@@ -502,6 +502,7 @@ pub struct InspectedPackage {
 
 pub fn inspect_capabilities(package: &MaterializedPackage) -> Result<InspectedPackage> {
     crate::store::assert_self_contained(package.root())?;
+    crate::store::assert_no_reserved_path(package.root())?;
     let manifest = crate::store::read_plugin_manifest(package.root())?;
     let id = crate::store::PackageId::from_plugin_name(&manifest.name, &manifest.path)?;
     Ok(InspectedPackage {

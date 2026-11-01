@@ -358,7 +358,24 @@ impl Health<'_> {
         let mut outcomes = Vec::new();
         // A registry entry is the Store's sole claim that a package is
         // installed; prune false claims before anything below asks it.
-        if let Ok(pruned) = self.0.store.prune_ghost_registrations()
+        // An entry a harness still reads a build of is missing its bytes, not
+        // a ghost: it keeps its builds, its catalogue entries and its
+        // receipts until the bytes return.
+        // A ledger that cannot be read has not said which have builds, so
+        // nothing is pruned on its word.
+        let built: Option<BTreeSet<String>> =
+            state::receipts(&self.0.home, None).ok().map(|receipts| {
+                receipts
+                    .into_iter()
+                    .filter(uze_core::integration::is_build_receipt)
+                    .map(|receipt| receipt.package_id)
+                    .collect()
+            });
+        if let Some(built) = built
+            && let Ok(pruned) = self
+                .0
+                .store
+                .prune_ghost_registrations(|id| built.contains(id.as_str()))
             && !pruned.is_empty()
         {
             self.0.inspection_cache.invalidate();

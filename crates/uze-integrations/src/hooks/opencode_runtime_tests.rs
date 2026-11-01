@@ -5,17 +5,24 @@ use uze_core::hook::{CommandHandlerType, HookEvent};
 /// The location every driven plugin is set up for.
 const LOCATION: &str = "/lab/workspace";
 
+/// Writes `document` as the hook document of the build `package` in the
+/// vendor store `store`.
+fn write_document(store: &Path, package: &str, document: impl AsRef<[u8]>) {
+    let path = store.join(package).join(OPENCODE_DOCUMENT);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, document).unwrap();
+}
+
 /// Loads the runtime plugin's hooks section over one document carrying
 /// `hook` under `root`, and runs `calls` against it, answering with what it
 /// reported on the console.
 fn drive(root: &Path, hook: &PortableHook, calls: &str) -> Vec<String> {
     let documents = root.join("hook-groups");
-    fs::create_dir_all(&documents).unwrap();
-    fs::write(
-        documents.join("demo.json"),
+    write_document(
+        &documents,
+        "demo@market",
         opencode_hook_document(crate::opencode::HOOKS, &[hook], root),
-    )
-    .unwrap();
+    );
     fs::write(
         root.join("uze.ts"),
         crate::opencode::runtime_plugin::source(&[crate::opencode::runtime_plugin::Section {
@@ -530,12 +537,12 @@ fn every_packages_observers_see_the_real_call_a_later_package_denies() {
         ),
         10,
     );
-    for package in ["aa", "zz"] {
-        fs::write(
-            documents.join(format!("{package}.json")),
+    for package in ["aa@market", "zz@market"] {
+        write_document(
+            &documents,
+            package,
             opencode_hook_document(crate::opencode::HOOKS, &[&observer], &root),
-        )
-        .unwrap();
+        );
     }
     let reported = drive(
         &root,
@@ -566,7 +573,7 @@ fn an_unreadable_document_refuses_every_call() {
     let root = uze_testkit::temp::scratch("opencode-runtime-unreadable");
     let documents = root.join("hook-groups");
     fs::create_dir_all(&documents).unwrap();
-    fs::write(documents.join("broken.json"), "{").unwrap();
+    write_document(&documents, "broken@market", "{");
     let reported = drive(
         &root,
         &observing("true", 10),
@@ -578,7 +585,7 @@ console.error(`tool ${call.tool}`);"#,
         reported
             .iter()
             .any(|line| line.starts_with("tool read (refused by a hook: ")
-                && line.contains("broken.json cannot be read")),
+                && line.contains("broken@market/hooks/uze-groups.json cannot be read")),
         "{reported:?}"
     );
     let _ = fs::remove_dir_all(root);

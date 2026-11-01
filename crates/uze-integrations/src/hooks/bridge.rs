@@ -21,20 +21,26 @@ pub(crate) fn opencode_bridge_path(config_root: &Path, package_id: &str) -> Path
 /// a document of another version is unreadable to it, and refuses calls.
 pub(crate) const OPENCODE_DOCUMENT_VERSION: u32 = 1;
 
-/// Where OpenCode's runtime plugin reads every package's hook groups: one
-/// document per package, generated from the Store like the other
-/// harnesses' wrapper beside it.
+/// Where a package's hook document sits inside its build: a path reserved
+/// in every package, like the wrapper's beside it.
+pub(crate) const OPENCODE_DOCUMENT: &str = "hooks/uze-groups.json";
+
+/// Where OpenCode's runtime plugin reads every package's hook groups: the
+/// vendor store, one document inside each package's build.
 pub(crate) fn opencode_documents_dir(uze_home: &UzeHome, target: HookTarget) -> PathBuf {
-    crate::shared::path::attachment_root(uze_home, target.key).join("hook-groups")
+    target.store.root(uze_home)
 }
 
-/// One package's hook document.
+/// One package's hook document, inside its build.
 pub(crate) fn opencode_document_path(
     uze_home: &UzeHome,
     target: HookTarget,
     package_id: &str,
 ) -> PathBuf {
-    opencode_documents_dir(uze_home, target).join(format!("{package_id}.json"))
+    target
+        .store
+        .build_dir(uze_home, package_id)
+        .join(OPENCODE_DOCUMENT)
 }
 
 /// The document for one package: the root its handlers run in and its
@@ -87,7 +93,7 @@ pub(super) fn bridge_hooks(
     package_root: &Path,
 ) -> serde_json::Value {
     let store_root = package_root;
-    let package_root = &crate::shared::package_root::delivered(package_root);
+    let package_root = &target.store.root_of(package_root);
     serde_json::Value::Array(
         hooks
             .iter()
@@ -254,6 +260,7 @@ pub(crate) fn bridge_carries_groups(
 pub(crate) fn opencode_hooks_section(target: HookTarget, documents: &Path) -> String {
     let documents = serde_json::to_string(&documents.display().to_string())
         .expect("a path serializes as a JSON string");
+    let document = serde_json::to_string(OPENCODE_DOCUMENT).expect("a path serializes");
     let version = OPENCODE_DOCUMENT_VERSION;
     let aliases = bridge_alias_table(target);
     let prompting = match target.runner {
@@ -278,11 +285,13 @@ pub(crate) fn opencode_hooks_section(target: HookTarget, documents: &Path) -> St
 // bounded by the deadline its author declared, and no HOOK_* value is longer
 // than {value_limit} bytes.
 //
-// Every package's groups are one document each in DOCUMENTS, read in package
-// order and again whenever the directory changes, so every group sees a call
-// in one pass, and the first denial, from whichever package, stops the rest.
+// Every package's groups are one document inside its build in STORE, read in
+// package order and again whenever the store changes, so every group sees a
+// call in one pass, and the first denial, from whichever package, stops the
+// rest.
 async function hooks(ctx) {{
-  const DOCUMENTS = {documents};
+  const STORE = {documents};
+  const DOCUMENT = {document};
   const VERSION = {version};
   // The words that run a handler's shell line on this platform.
   const SHELL = {shell};
@@ -309,10 +318,14 @@ async function hooks(ctx) {{
     const broken = [];
     let names = [];
     try {{
-      names = readdirSync(DOCUMENTS).filter((name) => name.endsWith(".json")).sort();
+      names = readdirSync(STORE, {{ withFileTypes: true }})
+        .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+        .map((entry) => entry.name)
+        .sort();
     }} catch {{}}
     for (const name of names) {{
-      const path = join(DOCUMENTS, name);
+      const path = join(STORE, name, DOCUMENT);
+      if (!existsSync(path)) continue;
       try {{
         const document = JSON.parse(readFileSync(path, "utf8"));
         if (document?.version !== VERSION || typeof document.root !== "string" || !Array.isArray(document.groups)) {{
@@ -621,7 +634,7 @@ async function hooks(ctx) {{
   follow().catch((error) => report("hooks", error));
   let watcher = null;
   try {{
-    watcher = watch(DOCUMENTS, load);
+    watcher = watch(STORE, {{ recursive: true }}, load);
   }} catch {{}}
   return () => watcher?.close();
 }}"#

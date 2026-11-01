@@ -30,7 +30,7 @@ fn invocation(hook: &PortableHook) -> HookInvocation {
     HookInvocation::Line(wrapper_command_line(
         Path::new("/state/hooks/exec"),
         hook,
-        Path::new("/pkg"),
+        Roots::same(Path::new("/pkg")),
     ))
 }
 
@@ -262,7 +262,10 @@ fn a_platform_without_a_wrapper_template_delivers_no_hook() {
     else {
         panic!("a harness with a template delivers: {:?}", plan.mechanism);
     };
-    assert_eq!(wrapper, crate::claude::HOOKS.wrapper_path(&home));
+    assert_eq!(
+        wrapper,
+        crate::claude::HOOKS.wrapper_path(&home, resource.package_id.as_str())
+    );
     let entry: serde_json::Value = serde_json::from_str(&expected).unwrap();
     let (program, _) = uze_platform::shell::script(&wrapper.display().to_string());
     assert_eq!(entry["hooks"][0]["command"], program);
@@ -366,11 +369,11 @@ fn a_stop_entry_is_flat_while_a_tool_event_stays_grouped() {
     let value = serde_json::json!({
         "protect-env": agy_named_entry(crate::antigravity::HOOKS, &hook(),
             Path::new("/state/hooks/exec"),
-            Path::new("/pkg"),
+            Roots::same(Path::new("/pkg")),
         ),
         "archive": agy_named_entry(crate::antigravity::HOOKS, &stop,
             Path::new("/state/hooks/exec"),
-            Path::new("/pkg"),
+            Roots::same(Path::new("/pkg")),
         ),
     });
 
@@ -390,7 +393,7 @@ fn a_stop_entry_is_flat_while_a_tool_event_stays_grouped() {
     assert!(flat.get("matcher").is_none(), "Stop matches no tool");
     // Compared through the sealed line rather than read out of it: on
     // Windows that line is encoded against `cmd /c`.
-    let arguments = wrapper_arguments(&stop, Path::new("/pkg"), &stop.handlers);
+    let arguments = wrapper_arguments(&stop, Roots::same(Path::new("/pkg")), &stop.handlers);
     assert_eq!(arguments[1..3], ["stop", "observe"]);
     assert_eq!(
         flat["command"],
@@ -406,7 +409,7 @@ fn agy_named_entry_carries_the_wrapper_and_is_deterministic() {
         crate::antigravity::HOOKS,
         &hook(),
         Path::new("/state/hooks/exec"),
-        Path::new("/pkg"),
+        Roots::same(Path::new("/pkg")),
     );
     let document = serde_json::to_string(&entry).unwrap();
     assert_eq!(entry["PreToolUse"][0]["matcher"], "run_command|Write");
@@ -416,7 +419,7 @@ fn agy_named_entry_carries_the_wrapper_and_is_deterministic() {
     );
     // Compared through the sealed line rather than read out of it: on
     // Windows that line is encoded against `cmd /c`.
-    let arguments = wrapper_arguments(&hook(), Path::new("/pkg"), &hook().handlers);
+    let arguments = wrapper_arguments(&hook(), Roots::same(Path::new("/pkg")), &hook().handlers);
     assert_eq!(arguments[..3], ["/pkg", "pre_tool_use", "deny"]);
     assert_eq!(
         entry["PreToolUse"][0]["hooks"][0]["command"],
@@ -433,7 +436,7 @@ fn agy_named_entry_carries_the_wrapper_and_is_deterministic() {
             crate::antigravity::HOOKS,
             &hook(),
             Path::new("/state/hooks/exec"),
-            Path::new("/pkg")
+            Roots::same(Path::new("/pkg"))
         ),
     );
 }
@@ -456,7 +459,7 @@ fn a_named_merge_leaves_every_foreign_hook_intact() {
         crate::antigravity::HOOKS,
         &hook(),
         Path::new("/state/hooks/exec"),
-        Path::new("/pkg"),
+        Roots::same(Path::new("/pkg")),
     );
     let expected = serde_json::to_string(&entry).unwrap();
 
@@ -499,7 +502,7 @@ fn a_drifted_or_unreadable_named_entry_is_never_removed() {
         crate::antigravity::HOOKS,
         &hook(),
         Path::new("/state/hooks/exec"),
-        Path::new("/pkg"),
+        Roots::same(Path::new("/pkg")),
     );
     let expected = serde_json::to_string(&entry).unwrap();
     merge_named_entry(&config, name, &entry, &[]).unwrap();
@@ -538,7 +541,7 @@ fn a_named_config_that_uze_created_is_removed_with_its_last_entry() {
         crate::antigravity::HOOKS,
         &hook(),
         Path::new("/state/hooks/exec"),
-        Path::new("/pkg"),
+        Roots::same(Path::new("/pkg")),
     );
     let expected = serde_json::to_string(&entry).unwrap();
     merge_named_entry(&config, name, &entry, &[]).unwrap();
@@ -559,7 +562,7 @@ fn a_named_entry_is_replaced_only_when_a_receipt_recorded_it() {
         crate::antigravity::HOOKS,
         &hook(),
         Path::new("/state/hooks/exec"),
-        Path::new("/pkg"),
+        Roots::same(Path::new("/pkg")),
     );
     let edited = serde_json::json!({ "PreToolUse": [{ "command": "hand-edited" }] });
     fs::write(&config, serde_json::json!({ name: edited }).to_string()).unwrap();
@@ -593,7 +596,7 @@ fn an_emptied_config_behind_a_link_is_written_not_removed() {
         crate::antigravity::HOOKS,
         &hook(),
         Path::new("/state/hooks/exec"),
-        Path::new("/pkg"),
+        Roots::same(Path::new("/pkg")),
     );
     let expected = serde_json::to_string(&entry).unwrap();
     fs::write(&managed, "{}").unwrap();
@@ -850,7 +853,8 @@ fn the_opencode_hooks_are_one_runtime_over_each_packages_document() {
     assert!(section.contains("ctx.tool.hook(\"execute.before\""));
     assert!(section.contains("ctx.tool.hook(\"execute.after\""));
     assert!(section.contains("Bun.spawn"));
-    assert!(section.contains("const DOCUMENTS = \"/state/hook-groups\";"));
+    assert!(section.contains("const STORE = \"/state/hook-groups\";"));
+    assert!(section.contains("const DOCUMENT = \"hooks/uze-groups.json\";"));
     assert!(
         section.contains("shell: { tool: \"shell\", fields: (input) => ({ HOOK_COMMAND:"),
         "the alias table comes from the one vocabulary"
@@ -982,89 +986,51 @@ fn a_wrapper_that_lost_its_executable_bit_is_drift_and_is_repaired() {
     let _ = fs::remove_dir_all(root);
 }
 
-fn hook_receipt(
-    config: &Path,
-    entry_name: &str,
-    expected: &str,
-    wrapper: &Path,
-) -> uze_core::integration::AttachmentReceipt {
-    uze_core::integration::AttachmentReceipt {
-        package_id: "pkg@market".to_owned(),
-        resource_identity: None,
-        integration: "antigravity".to_owned(),
-        artifact: uze_core::integration::ManagedArtifact::HookConfigEntry {
-            config_file: config.to_path_buf(),
-            entry_name: entry_name.to_owned(),
-            event: HookEvent::PreToolUse,
-            expected: expected.to_owned(),
-            wrapper: wrapper.to_path_buf(),
-        },
-    }
-}
-
-/// The shared wrapper outlives every entry but the last one. The prune
-/// runs inside a detach, while the ledger still lists the receipt being
-/// detached — so "still used" has to be read from the harness's config,
-/// not from the ledger, or the wrapper is never removed at all. Told on
-/// Antigravity's named entries, which only the POSIX wrapper serves.
-#[cfg(unix)]
-#[test]
-fn the_last_detached_hook_entry_takes_the_shared_wrapper_with_it() {
-    let root = uze_testkit::temp::scratch("hooks-prune");
-    fs::create_dir_all(&root).unwrap();
-    let home = UzeHome::at(root.join("home"));
-    let config = root.join("hooks.json");
-    let wrapper = crate::antigravity::HOOKS.wrapper_path(&home);
-    materialize_wrapper(
-        &wrapper,
-        &wrapper_source(crate::antigravity::HOOKS).unwrap(),
-    )
-    .unwrap();
-
-    let entry = agy_named_entry(
-        crate::antigravity::HOOKS,
-        &hook(),
-        &wrapper,
-        Path::new("/pkg"),
-    );
-    let expected = serde_json::to_string(&entry).unwrap();
-    let names = ["pkg@market:protect-env", "other@market:protect-env"];
-    for name in names {
-        merge_named_entry(&config, name, &entry, &[]).unwrap();
-        uze_core::state::record_receipt(&home, hook_receipt(&config, name, &expected, &wrapper))
-            .unwrap();
-    }
-
-    remove_named_entry(&config, names[0], &expected).unwrap();
-    prune_shared_wrapper(&home, "antigravity", crate::antigravity::HOOKS);
-    assert!(
-        wrapper.exists(),
-        "a wrapper another entry still runs is kept"
-    );
-
-    remove_named_entry(&config, names[1], &expected).unwrap();
-    prune_shared_wrapper(&home, "antigravity", crate::antigravity::HOOKS);
-    assert!(
-        !wrapper.exists(),
-        "the last detached entry takes the shared wrapper with it"
-    );
-    let _ = fs::remove_dir_all(root);
-}
-
-/// A generated plugin whose own `hooks.json` runs the shared wrapper keeps
-/// it alive after the last shared-file entry goes: an entry moving into the
-/// plugin is detached from the shared file, and taking the wrapper with it
-/// would leave the plugin's hooks exiting 127. Told on Antigravity, whose
-/// generated plugin carries its hooks.
+/// The wrapper is a file of the package's build at the reserved path: the
+/// build renders it when the package has hooks, every entry names its own
+/// package's copy, and detaching an entry leaves it for the build, which
+/// takes it when the package goes.
 // Antigravity's named entries are served by the POSIX wrapper alone.
 #[cfg(unix)]
 #[test]
-fn a_plugin_that_runs_the_wrapper_keeps_it_after_the_last_entry() {
-    let root = uze_testkit::temp::scratch("hooks-prune-plugin");
+fn each_build_carries_its_own_wrapper_and_an_entry_leaves_it_to_the_build() {
+    let root = uze_testkit::temp::scratch("hooks-build-wrapper");
     fs::create_dir_all(&root).unwrap();
     let home = UzeHome::at(root.join("home"));
+    let wrapper = crate::antigravity::HOOKS.wrapper_path(&home, "pkg@market");
+    assert_eq!(
+        wrapper,
+        crate::antigravity::STORE
+            .build_dir(&home, "pkg@market")
+            .join(WRAPPER_RELATIVE_PATH),
+        "the wrapper sits inside the package's build"
+    );
+    assert_ne!(
+        wrapper,
+        crate::antigravity::HOOKS.wrapper_path(&home, "other@market"),
+        "no wrapper is shared between packages"
+    );
+
+    let package_root = root.join("package");
+    fs::create_dir_all(&package_root).unwrap();
+    fs::write(package_root.join("plugin.json"), r#"{"name":"pkg"}"#).unwrap();
+    let package = crate::shared::test_support::stored_at(&package_root, "pkg");
+    let build = root.join("build");
+    fs::create_dir_all(&build).unwrap();
+    render_wrapper(crate::antigravity::HOOKS, &package, &build).unwrap();
+    assert!(
+        !build.join(WRAPPER_RELATIVE_PATH).exists(),
+        "a package without hooks gets no wrapper"
+    );
+    fs::write(
+        package_root.join(HOOKS_FILE_NAME),
+        r#"{"hooks":{"PreToolUse":[{"id":"guard","matcher":"shell","effect":"deny","hooks":[{"type":"command","command":"${PLUGIN_ROOT}/guard","timeout":10}]}]}}"#,
+    )
+    .unwrap();
+    render_wrapper(crate::antigravity::HOOKS, &package, &build).unwrap();
+    assert!(build.join(WRAPPER_RELATIVE_PATH).is_file());
+
     let config = root.join("hooks.json");
-    let wrapper = crate::antigravity::HOOKS.wrapper_path(&home);
     materialize_wrapper(
         &wrapper,
         &wrapper_source(crate::antigravity::HOOKS).unwrap(),
@@ -1074,159 +1040,39 @@ fn a_plugin_that_runs_the_wrapper_keeps_it_after_the_last_entry() {
         crate::antigravity::HOOKS,
         &hook(),
         &wrapper,
-        Path::new("/pkg"),
+        Roots::same(Path::new("/pkg")),
     );
     let expected = serde_json::to_string(&entry).unwrap();
     let name = "pkg@market:protect-env";
     merge_named_entry(&config, name, &entry, &[]).unwrap();
-    uze_core::state::record_receipt(&home, hook_receipt(&config, name, &expected, &wrapper))
+    let detached = crate::antigravity::HOOKS
+        .detach_entry(&HookEntry {
+            config_file: &config,
+            entry_name: name,
+            event: HookEvent::PreToolUse,
+            expected: &expected,
+            wrapper: &wrapper,
+        })
         .unwrap();
-    uze_core::state::record_receipt(
-        &home,
-        uze_core::integration::AttachmentReceipt {
-            package_id: "pkg@market".to_owned(),
-            resource_identity: None,
-            integration: "antigravity".to_owned(),
-            artifact: uze_core::integration::ManagedArtifact::IntegrationOwned {
-                kind: "antigravity-plugin-generated".to_owned(),
-                selector: "pkg".to_owned(),
-                detail: [(RUNS_HOOK_WRAPPER.to_owned(), serde_json::json!(true))]
-                    .into_iter()
-                    .collect(),
-            },
-        },
-    )
-    .unwrap();
-
-    remove_named_entry(&config, name, &expected).unwrap();
-    prune_shared_wrapper(&home, "antigravity", crate::antigravity::HOOKS);
-    assert!(wrapper.exists(), "the plugin's hooks still run the wrapper");
-    let _ = fs::remove_dir_all(root);
-}
-
-/// A ledger that cannot be read has not answered "nothing uses it"; it
-/// has not answered at all. Deleting a wrapper live entries still run
-/// leaves every one of them exiting 127 — which every harness reads as
-/// non-blocking. Told on Antigravity's named entries, which only the POSIX
-/// wrapper serves.
-#[cfg(unix)]
-#[test]
-fn an_unreadable_ledger_keeps_the_shared_wrapper() {
-    let root = uze_testkit::temp::scratch("hooks-prune-ledger");
-    fs::create_dir_all(&root).unwrap();
-    let home = UzeHome::at(root.join("home"));
-    let config = root.join("hooks.json");
-    let wrapper = crate::antigravity::HOOKS.wrapper_path(&home);
-    materialize_wrapper(
-        &wrapper,
-        &wrapper_source(crate::antigravity::HOOKS).unwrap(),
-    )
-    .unwrap();
-
-    let entry = agy_named_entry(
-        crate::antigravity::HOOKS,
-        &hook(),
-        &wrapper,
-        Path::new("/pkg"),
-    );
-    let expected = serde_json::to_string(&entry).unwrap();
-    merge_named_entry(&config, "pkg@market:protect-env", &entry, &[]).unwrap();
-    uze_core::state::record_receipt(
-        &home,
-        hook_receipt(&config, "pkg@market:protect-env", &expected, &wrapper),
-    )
-    .unwrap();
-
-    let ledger = home.state_dir().join("attachments.json");
-    assert!(ledger.exists(), "the receipt was recorded where it is read");
-    fs::write(&ledger, b"{ this is not json").unwrap();
-
-    prune_shared_wrapper(&home, "antigravity", crate::antigravity::HOOKS);
-    assert!(
-        wrapper.exists(),
-        "an unreadable ledger blocks the destructive step, it does not authorize it"
-    );
-    let _ = fs::remove_dir_all(root);
-}
-
-/// "Still used" is about what runs the wrapper, not about what matches
-/// the receipt. A hand-edited entry is drift — the harness still fires
-/// it, and on an event-array config it reads as *absent*, so the
-/// wrapper's own path in the file is what settles it.
-#[test]
-fn an_entry_that_drifted_still_counts_as_using_the_wrapper() {
-    let root = uze_testkit::temp::scratch("hooks-prune-drift");
-    fs::create_dir_all(&root).unwrap();
-    let home = UzeHome::at(root.join("home"));
-    let config = root.join("settings.json");
-    let wrapper = crate::claude::HOOKS.wrapper_path(&home);
-    materialize_wrapper(&wrapper, &wrapper_source(crate::claude::HOOKS).unwrap()).unwrap();
-
-    let entry = group_entry(
-        crate::claude::HOOKS,
-        &hook(),
-        &wrapper_exec(&wrapper, &hook(), Path::new("/pkg")),
-    );
-    let expected = serde_json::to_string(&entry).unwrap();
-    merge_event_entry(&config, HookEvent::PreToolUse, &entry, &[]).unwrap();
-    let mut receipt = hook_receipt(&config, "pkg@market:protect-env", &expected, &wrapper);
-    receipt.integration = "claude".to_owned();
-    uze_core::state::record_receipt(&home, receipt).unwrap();
-
-    // The user edits the timeout: the entry no longer matches the
-    // receipt, and still runs the wrapper on every tool call.
-    let mut document: serde_json::Value =
-        serde_json::from_str(&fs::read_to_string(&config).unwrap()).unwrap();
-    document["hooks"]["PreToolUse"][0]["hooks"][0]["timeout"] = serde_json::json!(99);
-    fs::write(&config, serde_json::to_string_pretty(&document).unwrap()).unwrap();
-    assert_eq!(
-        inspect_event_entry(&config, HookEvent::PreToolUse, &expected).state,
-        AttachmentState::Drifted
-    );
-
-    prune_shared_wrapper(&home, "claude", crate::claude::HOOKS);
-    assert!(
-        wrapper.exists(),
-        "a wrapper a live entry still names is never removed"
-    );
-    let _ = fs::remove_dir_all(root);
-}
-
-/// A config file is JSON, so a wrapper path with a backslash in it (every
-/// Windows path) sits in the file escaped; the fallback looks for it as
-/// JSON spells it.
-#[test]
-fn a_wrapper_path_is_found_as_json_spells_it() {
-    let root = uze_testkit::temp::scratch("hooks-attached-escaped");
-    fs::create_dir_all(&root).unwrap();
-    let config = root.join("settings.json");
-    let wrapper = Path::new(r"C:\state\hooks\exec");
-    let edited = serde_json::json!({
-        "hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": wrapper.display().to_string()}]}]}
-    });
-    fs::write(&config, serde_json::to_string(&edited).unwrap()).unwrap();
-    let mut receipt = hook_receipt(&config, "pkg@market:protect-env", "{}", wrapper);
-    receipt.integration = "claude".to_owned();
-
-    assert!(entry_is_attached(&receipt, crate::claude::HOOKS));
+    assert_eq!(detached.state, AttachmentState::Missing);
+    assert!(wrapper.exists(), "the wrapper is the build's to take");
     let _ = fs::remove_dir_all(root);
 }
 
 /// A build that changes the template must not strand every hook it
-/// delivered before: the wrapper is generated tier, so an earlier
-/// build's copy is still UZE's to remove, and the next attach
-/// reproduces the current one.
+/// delivered before: an earlier build's wrapper is still UZE's, so its
+/// entry still removes, and the next delivery renders the current one.
 #[test]
 fn a_wrapper_an_earlier_build_wrote_still_removes() {
     let root = uze_testkit::temp::scratch("hooks-stale-wrapper");
     fs::create_dir_all(&root).unwrap();
     let home = UzeHome::at(root.join("home"));
     let config = root.join("settings.json");
-    let wrapper = crate::claude::HOOKS.wrapper_path(&home);
+    let wrapper = crate::claude::HOOKS.wrapper_path(&home, "pkg@market");
     let earlier =
         format!("{WRAPPER_HEADER}, from a template this build no longer writes\nexit 0\n");
     materialize_wrapper(&wrapper, &earlier).unwrap();
-    let entry = crate::claude::HOOKS.event_entry(&hook(), Path::new("/pkg"), &wrapper);
+    let entry = crate::claude::HOOKS.event_entry(&hook(), Roots::same(Path::new("/pkg")), &wrapper);
     let expected = serde_json::to_string(&entry).unwrap();
     merge_event_entry(&config, HookEvent::PreToolUse, &entry, &[]).unwrap();
     let delivered = HookEntry {
@@ -1242,14 +1088,10 @@ fn a_wrapper_an_earlier_build_wrote_still_removes() {
         AttachmentState::Matched
     );
     assert_eq!(
-        crate::claude::HOOKS
-            .detach_entry(&home, "claude", &delivered)
-            .unwrap()
-            .state,
+        crate::claude::HOOKS.detach_entry(&delivered).unwrap().state,
         AttachmentState::Missing
     );
     assert!(!config.exists(), "the entry went with the receipt");
-    assert!(!wrapper.exists(), "the last entry took the wrapper with it");
     let _ = fs::remove_dir_all(root);
 }
 
@@ -1281,7 +1123,7 @@ fn an_edited_event_entry_is_drift_on_both_invocation_forms() {
     let wrapper = Path::new("/state/hooks/exec");
     for target in [crate::claude::HOOKS, crate::codex::HOOKS] {
         let config = root.join(format!("{target}.json"));
-        let entry = target.event_entry(&hook(), Path::new("/pkg"), wrapper);
+        let entry = target.event_entry(&hook(), Roots::same(Path::new("/pkg")), wrapper);
         let expected = serde_json::to_string(&entry).unwrap();
         merge_event_entry(&config, HookEvent::PreToolUse, &entry, &[]).unwrap();
         let mut document: serde_json::Value =
@@ -1313,8 +1155,9 @@ fn another_packages_entry_through_the_same_wrapper_is_not_drift() {
     fs::create_dir_all(&root).unwrap();
     let config = root.join("hooks.json");
     let wrapper = Path::new("/state/hooks/exec");
-    let ours = crate::codex::HOOKS.event_entry(&hook(), Path::new("/pkg"), wrapper);
-    let theirs = crate::codex::HOOKS.event_entry(&hook(), Path::new("/pkg-other"), wrapper);
+    let ours = crate::codex::HOOKS.event_entry(&hook(), Roots::same(Path::new("/pkg")), wrapper);
+    let theirs =
+        crate::codex::HOOKS.event_entry(&hook(), Roots::same(Path::new("/pkg-other")), wrapper);
     merge_event_entry(&config, HookEvent::PreToolUse, &theirs, &[]).unwrap();
     assert_eq!(
         inspect_event_entry(

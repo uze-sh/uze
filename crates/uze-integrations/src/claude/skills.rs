@@ -59,7 +59,7 @@ impl ClaudeIntegration {
             .expect("SKILL.md has a parent");
         let delivered = crate::shared::dialect::delivered_skill(
             &resource.capability.payload,
-            &resource.package_root,
+            &super::STORE.root_of(&resource.package_root),
             &super::generate::CLAUDE_KEYS,
         );
         attach_skill_tree(

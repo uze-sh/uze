@@ -3,6 +3,8 @@ name: rules
 description: Writing a project's rules, the instructions that apply only when they are relevant, under `.agents/rules/`. Covers deciding whether something is a rule, `AGENTS.md` or a Skill, choosing the trigger, writing patterns in the supported glob dialect, wording a rule as a convention, deciding when a rule belongs in a shared plugin and moving it there, and proving it with `uze agent rules check`. Use when asked to create, add or write a rule, when an instruction "only applies to src/…" or to one kind of file, when `AGENTS.md` has grown sections that only matter under one path and should be split, or when a rule does not seem to fire.
 ---
 
+> This skill runs `uze`. If `uze` is not on `PATH`, UZE is not installed here and nothing below applies.
+
 # UZE: a project's rules, written once
 
 A rule is a Markdown file directly under `.agents/rules/` in the checkout,

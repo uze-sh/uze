@@ -55,6 +55,9 @@ pub(crate) use wrapper::*;
 pub(crate) struct HookTarget {
     /// The harness's name in UZE's own state and in `HOOK_HARNESS`.
     pub key: &'static str,
+    /// The harness's vendor store, where each package's build carries its
+    /// wrapper.
+    pub store: &'static crate::shared::build::VendorStore,
     pub events: &'static [HookEvent],
     pub effects: &'static [HookEffect],
     /// The harness's binding of the portable tool vocabulary: the single
@@ -255,11 +258,13 @@ impl HookTarget {
         }
     }
 
-    /// Where this harness keeps its shared wrapper: one file under UZE's own
-    /// state, never in the Store and never in the harness's own directories.
-    /// Byte-identical for every package, so one file serves them all.
-    pub(crate) fn wrapper_path(self, uze_home: &UzeHome) -> PathBuf {
-        crate::shared::path::attachment_root(uze_home, self.key()).join(WRAPPER_RELATIVE_PATH)
+    /// Where one package's wrapper sits: at the reserved path inside its
+    /// build in this harness's vendor store, so the entry naming it names
+    /// nothing outside that store, and the wrapper leaves with the package.
+    pub(crate) fn wrapper_path(self, uze_home: &UzeHome, package_id: &str) -> PathBuf {
+        self.store
+            .build_dir(uze_home, package_id)
+            .join(WRAPPER_RELATIVE_PATH)
     }
 
     /// Whether a wrapper can be written and run for this harness here.
@@ -294,11 +299,16 @@ impl HookTarget {
             if !self.deliverable() {
                 return None;
             }
-            let wrapper = self.wrapper_path(uze_home);
+            let wrapper = self.wrapper_path(uze_home, resource.package_id.as_str());
+            let delivered = self.store.root_of(&resource.package_root);
+            let roots = Roots {
+                sources: &resource.package_root,
+                delivered: &delivered,
+            };
             let entry = if self.names_entries() {
-                agy_named_entry(self, hook, &wrapper, &resource.package_root)
+                agy_named_entry(self, hook, &wrapper, roots)
             } else {
-                self.event_entry(hook, &resource.package_root, &wrapper)
+                self.event_entry(hook, roots, &wrapper)
             };
             Some(ManagedArtifact::HookConfigEntry {
                 config_file,
@@ -310,7 +320,8 @@ impl HookTarget {
         })
     }
 
-    /// Writes the wrapper, then the entry that names it.
+    /// Writes the wrapper where the package's build has not (a build is
+    /// rendered first, and carries it), then the entry that names it.
     pub(crate) fn attach_entry(
         self,
         uze_home: &UzeHome,
@@ -351,20 +362,14 @@ impl HookTarget {
         }
     }
 
-    /// Removes a matched entry, then the shared wrapper once nothing runs it.
-    pub(crate) fn detach_entry(
-        self,
-        uze_home: &UzeHome,
-        integration_id: &str,
-        entry: &HookEntry,
-    ) -> Result<AttachmentInspection> {
-        let detached = if self.names_entries() {
-            remove_named_entry(entry.config_file, entry.entry_name, entry.expected)?
+    /// Removes a matched entry. Its wrapper is a file of the package's
+    /// build, which leaves with the build.
+    pub(crate) fn detach_entry(self, entry: &HookEntry) -> Result<AttachmentInspection> {
+        if self.names_entries() {
+            remove_named_entry(entry.config_file, entry.entry_name, entry.expected)
         } else {
-            remove_event_entry(entry.config_file, entry.event, entry.expected)?
-        };
-        prune_shared_wrapper(uze_home, integration_id, self);
-        Ok(detached)
+            remove_event_entry(entry.config_file, entry.event, entry.expected)
+        }
     }
 
     /// The entry alone, without the wrapper it names.
@@ -381,13 +386,13 @@ impl HookTarget {
     fn event_entry(
         self,
         hook: &PortableHook,
-        package_root: &Path,
+        roots: Roots<'_>,
         wrapper: &Path,
     ) -> serde_json::Value {
         let invocation = if self.entry_shape() == Some(EntryShape::EventExec) {
-            wrapper_exec(wrapper, hook, package_root)
+            wrapper_exec(wrapper, hook, roots)
         } else {
-            HookInvocation::Line(wrapper_command_line(wrapper, hook, package_root))
+            HookInvocation::Line(wrapper_command_line(wrapper, hook, roots))
         };
         group_entry(self, hook, &invocation)
     }

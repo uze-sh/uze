@@ -44,6 +44,14 @@ mod trust;
 mod usage;
 
 pub(crate) use hooks::{HOOKS, RULES};
+
+/// This harness's vendor store: the one directory under `$UZE_HOME` it
+/// reads, holding one build per package.
+pub(crate) const STORE: crate::shared::build::VendorStore = crate::shared::build::VendorStore {
+    vendor: "codex",
+    dialect: 1,
+    build_name: crate::shared::build::package_id_name,
+};
 pub use mcp::detach_mcp_entry;
 
 use crate::hooks::HookEntry;
@@ -536,7 +544,7 @@ impl IntegrationPort for CodexIntegration {
     }
 
     fn package_receipt_serves(&self, receipt: &AttachmentReceipt) -> bool {
-        marketplace::receipt_serves::<CodexMarketplace>(&self.uze_home, receipt)
+        marketplace::receipt_serves::<CodexMarketplace>(receipt)
     }
 
     fn package_exposure_plan(
@@ -614,11 +622,31 @@ impl IntegrationPort for CodexIntegration {
     }
 
     fn republish_packages(&self, packages: &[StoredPackage]) -> Result<()> {
-        marketplace::republish::<CodexMarketplace>(&self.uze_home, packages)
+        marketplace::republish::<CodexMarketplace>(&self.uze_home, self.id(), packages)
     }
 
     fn publication(&self, packages: &[StoredPackage]) -> PublicationStatus {
-        marketplace::publication::<CodexMarketplace>(&self.uze_home, packages)
+        marketplace::publication::<CodexMarketplace>(&self.uze_home, self.id(), packages)
+    }
+
+    fn publish_build(
+        &self,
+        package: &StoredPackage,
+        inputs: &uze_core::integration::BuildInputs<'_>,
+        recorded: Option<&AttachmentReceipt>,
+    ) -> Result<Option<AttachmentReceipt>> {
+        crate::shared::build::publish(
+            crate::shared::build::Publication::new(
+                &STORE,
+                &self.uze_home,
+                self.id(),
+                package,
+                inputs,
+                recorded,
+            ),
+            |dir, root| marketplace::render_build::<CodexMarketplace>(package, dir, root),
+        )
+        .map(Some)
     }
 
     /// Codex skips a project's `AGENTS.md` only when the person marked the
@@ -686,6 +714,9 @@ impl IntegrationPort for CodexIntegration {
             artifact if crate::rules::is_rules_artifact(artifact) => {
                 crate::rules::inspect(artifact)
             }
+            artifact if crate::shared::build::is_build(artifact) => {
+                crate::shared::build::inspect(receipt)
+            }
             ManagedArtifact::IntegrationOwned {
                 kind,
                 selector,
@@ -714,17 +745,17 @@ impl IntegrationPort for CodexIntegration {
                 mcp::detach_mcp_entry(Path::new(&executable), &self.command_home, entry_name)?;
             }
             artifact @ ManagedArtifact::HookConfigEntry { .. } => {
-                return HOOKS.detach_entry(
-                    &self.uze_home,
-                    self.id(),
-                    &HookEntry::recorded(artifact).expect("a hook config entry"),
-                );
+                return HOOKS
+                    .detach_entry(&HookEntry::recorded(artifact).expect("a hook config entry"));
             }
             artifact if crate::rules::is_rules_artifact(artifact) => {
                 return crate::rules::detach(artifact);
             }
+            artifact if crate::shared::build::is_build(artifact) => {
+                return crate::shared::build::detach(receipt);
+            }
             ManagedArtifact::IntegrationOwned { kind, selector, .. }
-                if let Some(origin) = marketplace::receipt_origin::<CodexMarketplace>(kind) =>
+                if marketplace::receipt_origin::<CodexMarketplace>(kind).is_some() =>
             {
                 let executable = self.provisioning_executable();
                 marketplace::detach_package::<CodexMarketplace>(
@@ -733,7 +764,6 @@ impl IntegrationPort for CodexIntegration {
                     &self.uze_home,
                     receipt,
                     selector,
-                    origin,
                 )?;
             }
             _ => {
@@ -822,7 +852,7 @@ const CODEX_AGENT_DIALECT: AgentDialect = AgentDialect {
 
 fn codex_agent_toml(resource: &Resource, label: &str, keys: &[&str]) -> String {
     let document = AgentDocument::parse(&resource.capability.payload).unwrap_or_default();
-    let instructions = resolve_text(&document.body, &resource.package_root);
+    let instructions = resolve_text(&document.body, &STORE.root_of(&resource.package_root));
     format!(
         "name = {}\ndescription = {}\n{}",
         toml_string(label),

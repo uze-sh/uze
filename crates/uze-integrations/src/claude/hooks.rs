@@ -14,6 +14,7 @@ use crate::rules::{RulesDelivery, RulesTarget};
 /// `SessionStart` also fires natively, matched on the session's source.
 pub(crate) const HOOKS: HookTarget = HookTarget {
     key: "claude",
+    store: &super::STORE,
     events: &[
         HookEvent::PreToolUse,
         HookEvent::PostToolUse,
@@ -96,7 +97,7 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
 /// no matcher (every source, a compaction included) and a `PostToolUse`
 /// entry on its file and shell tools, in `settings.json`, exec form.
 pub(crate) const RULES: RulesTarget = RulesTarget {
-    key: "claude",
+    store: &super::STORE,
     delivery: RulesDelivery::Entries {
         shape: EntryShape::EventExec,
         tools: "Read|Edit|MultiEdit|Write|Bash",

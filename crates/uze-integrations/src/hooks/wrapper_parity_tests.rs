@@ -14,7 +14,7 @@ use uze_core::shell::ShellCommand;
 
 use super::HookTarget;
 use super::fixture_set::*;
-use super::wrapper::{WRAPPER_RELATIVE_PATH, wrapper_arguments, wrapper_source};
+use super::wrapper::{Roots, WRAPPER_RELATIVE_PATH, wrapper_arguments, wrapper_source};
 
 /// The fixture set's handlers, each written for both shells.
 fn package(label: &str) -> std::path::PathBuf {
@@ -111,7 +111,11 @@ fn answered(target: HookTarget, index: usize, fixture: &Fixture) -> serde_json::
         wrapper_source(target).expect("a wrapper here").as_bytes(),
     );
     let (program, mut arguments) = uze_platform::shell::script(&wrapper.display().to_string());
-    arguments.extend(wrapper_arguments(&hook, &package_root, &hook.handlers));
+    arguments.extend(wrapper_arguments(
+        &hook,
+        Roots::same(&package_root),
+        &hook.handlers,
+    ));
     let workspace = root.join("workspace");
     std::fs::create_dir_all(&workspace).unwrap();
     let workspace = uze_platform::path::canonical(&workspace).unwrap();

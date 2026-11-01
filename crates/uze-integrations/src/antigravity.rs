@@ -90,6 +90,14 @@ mod usage;
 
 pub(crate) use hooks::HOOKS;
 
+/// This harness's vendor store: the one directory under `$UZE_HOME` it
+/// reads, holding one build per package.
+pub(crate) const STORE: crate::shared::build::VendorStore = crate::shared::build::VendorStore {
+    vendor: "antigravity",
+    dialect: 1,
+    build_name: generate::sanitize_for_agy_path,
+};
+
 use crate::hooks::HookEntry;
 use crate::shared::agent::{
     MarkdownAgent, PORTABLE_AGENT_FIELDS, agent_file_plan, fields_not_carried, markdown_agent,
@@ -102,7 +110,6 @@ use crate::shared::process::{is_cli_safe_token, real_executable};
 use crate::shared::provision::{
     OfficialRoute, native_installer_destination, official_installer, provision_cli,
 };
-use generate::remove_generated_plugin_by_id;
 use mcp::attach_mcp_entry;
 use plugin::{
     GENERATED_PLUGIN_KIND, PLUGIN_KIND, attach_generated_plugin, holders_of,
@@ -637,8 +644,45 @@ impl IntegrationPort for AntigravityIntegration {
 
     // `republish_packages` deliberately remains its default no-op, exactly
     // like every no-catalogue integration: Antigravity needs no catalogue —
-    // `plugin install` points straight at a package directory. Publication
+    // `plugin install` points straight at a package's build. Publication
     // stays optional, not a Codex-shaped concept.
+
+    /// The build is the package mirrored for Antigravity and, when the
+    /// package is delivered as a plugin, the plugin UZE generates around it:
+    /// what `agy plugin install` copies, and the root `${PLUGIN_ROOT}` names
+    /// on every route here.
+    fn publish_build(
+        &self,
+        package: &StoredPackage,
+        inputs: &uze_core::integration::BuildInputs<'_>,
+        recorded: Option<&AttachmentReceipt>,
+    ) -> Result<Option<AttachmentReceipt>> {
+        crate::shared::build::publish(
+            crate::shared::build::Publication::new(
+                &STORE,
+                &self.uze_home,
+                self.id(),
+                package,
+                inputs,
+                recorded,
+            ),
+            |dir, root| {
+                crate::shared::build::mirror_package(package, dir, generate::NOT_PORTABLE)?;
+                let resources = uze_core::engine::package_resources_at(&package.id, &package.root)?;
+                let resources: Vec<&Resource> = resources.iter().collect();
+                let origin = if self.package_exposure_plan(package, &resources).is_some() {
+                    let PluginContents { hooks, agents } = self.plugin_contents(package)?;
+                    generate::render_plugin(package, dir, root, &hooks, &agents)?;
+                    Some(crate::shared::build::Origin::Generated)
+                } else {
+                    None
+                };
+                crate::hooks::render_wrapper(HOOKS, package, dir)?;
+                Ok(origin)
+            },
+        )
+        .map(Some)
+    }
 
     fn attach_package(
         &self,
@@ -692,6 +736,9 @@ impl IntegrationPort for AntigravityIntegration {
 
     fn inspect_receipt(&self, receipt: &AttachmentReceipt) -> AttachmentInspection {
         match &receipt.artifact {
+            artifact if crate::shared::build::is_build(artifact) => {
+                crate::shared::build::inspect(receipt)
+            }
             ManagedArtifact::IntegrationOwned {
                 kind,
                 selector,
@@ -729,9 +776,14 @@ impl IntegrationPort for AntigravityIntegration {
             return Ok(inspection);
         }
         match &receipt.artifact {
-            ManagedArtifact::IntegrationOwned { kind, selector, .. }
-                if kind == PLUGIN_KIND || kind == GENERATED_PLUGIN_KIND =>
-            {
+            artifact if crate::shared::build::is_build(artifact) => {
+                return crate::shared::build::detach(receipt);
+            }
+            ManagedArtifact::IntegrationOwned {
+                kind,
+                selector,
+                detail,
+            } if kind == PLUGIN_KIND || kind == GENERATED_PLUGIN_KIND => {
                 // `uninstall` removes by name, and the manifest inspection
                 // just read cannot see a marketplace plugin of the same
                 // name: the CLI is asked, and a name held twice is left
@@ -752,8 +804,14 @@ impl IntegrationPort for AntigravityIntegration {
                     &["plugin", "uninstall", selector],
                     "agy plugin uninstall",
                 )?;
-                if kind == GENERATED_PLUGIN_KIND {
-                    remove_generated_plugin_by_id(&self.uze_home, &receipt.package_id)?;
+                // What an earlier release generated under the runtime tree
+                // goes with the plugin it was installed from; a build is its
+                // own receipt's.
+                if let Some(earlier) = detail_str(detail, "source_path").map(PathBuf::from)
+                    && earlier.starts_with(self.uze_home.runtime_attachments_dir())
+                    && earlier.is_dir()
+                {
+                    fs::remove_dir_all(&earlier).map_err(UzeError::write(&earlier))?;
                 }
             }
             ManagedArtifact::VendorConfigEntry { entry_name, .. } => {
@@ -770,11 +828,8 @@ impl IntegrationPort for AntigravityIntegration {
                 )?;
             }
             artifact @ ManagedArtifact::HookConfigEntry { .. } => {
-                return HOOKS.detach_entry(
-                    &self.uze_home,
-                    self.id(),
-                    &HookEntry::recorded(artifact).expect("a hook config entry"),
-                );
+                return HOOKS
+                    .detach_entry(&HookEntry::recorded(artifact).expect("a hook config entry"));
             }
             _ => {
                 return crate::shared::path::detach_skill_link(receipt, |target| {
@@ -801,6 +856,7 @@ fn detail_str(detail: &BTreeMap<String, serde_json::Value>, key: &str) -> Option
 /// Claude-style `model: haiku` or string `tools:` it cannot read (measured
 /// on 1.2.12), so only the label and the description are written.
 const ANTIGRAVITY_AGENT: MarkdownAgent = MarkdownAgent {
+    store: &STORE,
     name_in_frontmatter: true,
     set: &[],
     keep: |_| false,

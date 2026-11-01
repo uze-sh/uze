@@ -187,7 +187,7 @@ fn a_plugin_with_several_hook_groups_removes_cleanly() {
     );
     let bridge = env
         .uze_home
-        .join("runtime/attachments/opencode/hook-groups/hooked@test.json");
+        .join("store/opencode/hooked@test/hooks/uze-groups.json");
     assert!(bridge.is_file(), "the OpenCode hook document was delivered");
 
     let remove = env.run_ok(uze_bin(), &["remove", "-m", "hooked", "--format", "json"]);

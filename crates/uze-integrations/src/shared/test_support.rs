@@ -7,6 +7,26 @@ use std::path::{Path, PathBuf};
 use uze_core::capability::{Capability, CapabilityKind, Resource};
 use uze_core::store::StoredPackage;
 
+/// A package read in place at `root`, named `name` in the `local`
+/// marketplace.
+pub(crate) fn stored_at(root: &Path, name: &str) -> StoredPackage {
+    let id = uze_core::store::PackageId::from_plugin_name(name, &root.join("plugin.json")).unwrap();
+    StoredPackage {
+        active_name: id.plugin_name().to_owned(),
+        id,
+        root: root.to_path_buf(),
+        manifest: root.join("plugin.json"),
+        provenance: uze_core::acquisition::Provenance {
+            requested: uze_core::acquisition::PackageSource::Local {
+                path: root.to_path_buf(),
+            },
+            resolved: uze_core::acquisition::ResolvedSource::Local {
+                path: root.to_path_buf(),
+            },
+        },
+    }
+}
+
 pub(crate) fn temp_root(label: &str) -> PathBuf {
     uze_testkit::temp::scratch(label)
 }

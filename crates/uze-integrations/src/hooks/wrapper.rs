@@ -214,6 +214,26 @@ pub(crate) fn materialize_wrapper(path: &Path, source: &str) -> Result<()> {
     make_executable(path)
 }
 
+/// Writes `target`'s wrapper into a package's build being rendered at
+/// `dir`, at the reserved path, when the package has hooks and a wrapper
+/// can run here. Each build carries its own, so an entry names nothing
+/// outside its package's build, and the wrapper leaves with it.
+pub(crate) fn render_wrapper(
+    target: HookTarget,
+    package: &uze_core::store::StoredPackage,
+    dir: &Path,
+) -> Result<()> {
+    if !matches!(target.runner, HookRunner::Wrapper { .. }) {
+        return Ok(());
+    }
+    let has_hooks =
+        super::package_hook_groups(&package.root).is_ok_and(|groups| !groups.is_empty());
+    match wrapper_source(target) {
+        Some(source) if has_hooks => materialize_wrapper(&dir.join(WRAPPER_RELATIVE_PATH), &source),
+        _ => Ok(()),
+    }
+}
+
 /// Whether the wrapper on disk can be run at all. A harness that cannot
 /// execute it reports exit 126, which a `deny` group turns into a
 /// permanent block — so this is drift, not a cosmetic difference. On a
@@ -229,95 +249,20 @@ pub(super) fn make_executable(path: &Path) -> Result<()> {
     })
 }
 
-/// Removes a shared wrapper once no hook entry of this integration is left
-/// to run it. A wrapper another group's entry still points at is kept: it
-/// is one file serving every package.
-///
-/// "Left" is read from the harness's own config files, not from the receipt
-/// ledger. The prune runs inside a detach, and the lifecycle forgets a
-/// receipt only once its detach has returned — so the receipt being
-/// detached is still listed there while its entry is already gone from the
-/// config.
-pub(super) fn prune_shared_wrapper(uze_home: &UzeHome, integration_id: &str, target: HookTarget) {
-    // A ledger that cannot be read has not said the wrapper is unused; it
-    // has said nothing. Deleting on that answer is a destructive mutation
-    // authorized by an unreadable ledger, which is exactly what receipts
-    // exist to refuse.
-    let still_used = match uze_core::state::receipts(uze_home, None) {
-        Ok(ledger) => ledger.iter().any(|receipt| {
-            receipt.integration == integration_id
-                && (entry_is_attached(receipt, target) || runs_the_wrapper(receipt))
-        }),
-        Err(_) => true,
-    };
-    if still_used {
-        return;
-    }
-    let path = target.wrapper_path(uze_home);
-    let _ = fs::remove_file(&path);
-    if let Some(parent) = path.parent() {
-        let _ = fs::remove_dir(parent);
-    }
-}
-
-/// The detail key a receipt for something other than a hook entry carries
-/// when what it delivered runs the shared wrapper (a generated plugin with
-/// its own `hooks.json`), so the wrapper outlives the last entry.
-pub(crate) const RUNS_HOOK_WRAPPER: &str = "runs_hook_wrapper";
-
-fn runs_the_wrapper(receipt: &uze_core::integration::AttachmentReceipt) -> bool {
-    matches!(
-        &receipt.artifact,
-        uze_core::integration::ManagedArtifact::IntegrationOwned { detail, .. }
-            if detail.get(RUNS_HOOK_WRAPPER) == Some(&serde_json::Value::Bool(true))
-    )
-}
-
-/// Whether this receipt's hook entry is still in the harness's config file.
-/// The wrapper is deliberately not part of the question: it is what the
-/// prune is deciding about, so inspecting it would answer "nothing is
-/// attached" for every entry the moment it went missing.
-///
-/// The target decides the file's shape — Antigravity keys its entries by
-/// name, the other command-hook harnesses by event — and every receipt
-/// records its event either way, so the shape cannot be read off the
-/// receipt.
-///
-/// The question is "does anything still run this wrapper", not "is this
-/// entry exactly as UZE wrote it": only an entry that is *absent* has
-/// stopped running it. An unreadable config, drift, a hand-edited entry —
-/// each of those still fires the wrapper, and an event-array config reports
-/// an edited entry as absent, so the wrapper's own path in the file is the
-/// last word.
-pub(super) fn entry_is_attached(
-    receipt: &uze_core::integration::AttachmentReceipt,
-    target: HookTarget,
-) -> bool {
-    let Some(entry) = HookEntry::recorded(&receipt.artifact) else {
-        return false;
-    };
-    if target.entry_state(&entry).state != AttachmentState::Missing {
-        return true;
-    }
-    // The path as JSON spells it: on Windows its backslashes are escaped
-    // in the file, so the bare path would never be found there.
-    let spelled =
-        serde_json::to_string(&entry.wrapper.display().to_string()).expect("a string serializes");
-    let spelled = spelled.trim_matches('"');
-    fs::read_to_string(entry.config_file).is_ok_and(|config| config.contains(spelled))
-}
-
 /// The native command an entry runs: the wrapper, the package root, the
 /// group's event and effect, then the author's handlers — each as
 /// `<seconds>:<command>`, with its declared deadline and `${PLUGIN_ROOT}`
 /// already resolved. Everything harness-specific is decided here, at
 /// generation time, so the native entry reads as what will run.
+///
+/// `roots` are where the package's files are read from and the root the
+/// harness is handed (its build).
 pub(crate) fn wrapper_arguments(
     hook: &PortableHook,
-    store_root: &Path,
+    roots: Roots<'_>,
     handlers: &[CommandHook],
 ) -> Vec<String> {
-    let package_root = &crate::shared::package_root::delivered(store_root);
+    let (store_root, package_root) = (roots.sources, roots.delivered);
     let mut arguments = vec![
         package_root.display().to_string(),
         hook.event.abi_name().to_owned(),
@@ -339,9 +284,9 @@ pub(crate) fn wrapper_arguments(
 pub(crate) fn wrapper_exec(
     wrapper: &Path,
     hook: &PortableHook,
-    package_root: &Path,
+    roots: Roots<'_>,
 ) -> HookInvocation {
-    let (command, args) = wrapper_words(wrapper, hook, package_root);
+    let (command, args) = wrapper_words(wrapper, hook, roots);
     HookInvocation::Exec { command, args }
 }
 
@@ -351,9 +296,9 @@ pub(crate) fn wrapper_exec(
 pub(crate) fn wrapper_command_line(
     wrapper: &Path,
     hook: &PortableHook,
-    package_root: &Path,
+    roots: Roots<'_>,
 ) -> String {
-    let (program, arguments) = wrapper_words(wrapper, hook, package_root);
+    let (program, arguments) = wrapper_words(wrapper, hook, roots);
     uze_platform::shell::command_line(&program, &arguments)
 }
 
@@ -366,21 +311,37 @@ pub(crate) fn wrapper_command_line(
 pub(crate) fn sealed_wrapper_command_line(
     wrapper: &Path,
     hook: &PortableHook,
-    package_root: &Path,
+    roots: Roots<'_>,
 ) -> String {
     uze_platform::shell::sealed_script_line(
         &wrapper.display().to_string(),
-        &wrapper_arguments(hook, package_root, &hook.handlers),
+        &wrapper_arguments(hook, roots, &hook.handlers),
     )
 }
 
-fn wrapper_words(
-    wrapper: &Path,
-    hook: &PortableHook,
-    package_root: &Path,
-) -> (String, Vec<String>) {
+/// Where a package's files are read from, and the root its harness is
+/// handed: its sources and its build, or one directory for both where the
+/// package is read in place.
+#[derive(Clone, Copy)]
+pub(crate) struct Roots<'a> {
+    pub sources: &'a Path,
+    pub delivered: &'a Path,
+}
+
+impl<'a> Roots<'a> {
+    /// One directory that is both.
+    #[cfg(test)]
+    pub(crate) fn same(root: &'a Path) -> Self {
+        Self {
+            sources: root,
+            delivered: root,
+        }
+    }
+}
+
+fn wrapper_words(wrapper: &Path, hook: &PortableHook, roots: Roots<'_>) -> (String, Vec<String>) {
     let (program, mut arguments) = uze_platform::shell::script(&wrapper.display().to_string());
-    arguments.extend(wrapper_arguments(hook, package_root, &hook.handlers));
+    arguments.extend(wrapper_arguments(hook, roots, &hook.handlers));
     (program, arguments)
 }
 

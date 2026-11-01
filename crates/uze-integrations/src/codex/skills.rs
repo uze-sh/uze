@@ -27,7 +27,9 @@
 //! the user root Codex documents: the rendered `SKILL.md`, the policy
 //! sidecar when it applies, and the canonical supporting files copied.
 //! Codex does not list a `SKILL.md` that is a link, so nothing in it is one.
-//! OpenCode reads this root too, and its own root shadows it.
+//! This root is the Codex integration's: OpenCode reads it too (its own
+//! root shadows it), and every copy here names `${PLUGIN_ROOT}` as Codex's
+//! build of the package, in `store/codex`, whichever harness reads it.
 
 use crate::shared::package_root::resolve_bytes;
 use std::path::Path;
@@ -64,7 +66,10 @@ pub(super) fn rendered_skill_files(
     let label = skill_label(uze_home, resource).unwrap_or_else(|| resource.name());
     let skill = render_skill_wrapper(
         &label,
-        &resolve_bytes(&resource.capability.payload, &resource.package_root),
+        &resolve_bytes(
+            &resource.capability.payload,
+            &super::STORE.root_of(&resource.package_root),
+        ),
         &[],
         CODEX_KEYS,
     );

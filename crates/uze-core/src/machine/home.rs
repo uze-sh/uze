@@ -600,47 +600,52 @@ impl UzeHome {
         self.logs_dir().join(format!("gate-{agent}.log"))
     }
 
-    /// Everything UZE *generates* for one harness to read: generated
-    /// marketplaces, staged skill directories, the wrappers a bridge is
-    /// made of.
-    ///
-    /// Under the runtime tree rather than beside the records, because that
-    /// is what it is. It used to live at `state/attachments/`, one letter
-    /// from `attachments.json` — the ledger that says who owns what in
-    /// here — so the directory read as authoritative while every byte in
-    /// it is produced again from the Store and the Engine alone. An
-    /// operator deciding what is safe to delete had no way to tell the two
-    /// apart, and the answer is opposite for each.
+    /// Where an integration stages what it writes before it moves into place,
+    /// and where earlier releases kept what harnesses read: a generated
+    /// marketplace, a hook wrapper, the rules engine. No harness reads from
+    /// here any more ([`Self::vendor_store_dir`] is what they read), so
+    /// deleting it costs nothing; what an earlier release left here is
+    /// removed once no receipt names it.
     pub fn generated_attachments_dir(&self, vendor: &str) -> PathBuf {
         self.runtime_attachments_dir().join(vendor)
     }
 
-    /// The parent of every [`Self::generated_attachments_dir`].
+    /// The parent of every [`Self::generated_attachments_dir`]: staging only.
     pub fn runtime_attachments_dir(&self) -> PathBuf {
         self.runtime_dir().join("attachments")
     }
 
-    /// One installed package, whole, as every harness is handed it: the
-    /// directory `${PLUGIN_ROOT}` names. Generated from the Store, so a
-    /// harness or a hook writing into its own package root never writes the
-    /// Store, and deleting it costs one copy on the next delivery.
+    /// One package's build for one harness: everything that package needs
+    /// there, the plugin and the root `${PLUGIN_ROOT}` names alike, inside
+    /// that harness's vendor store. `name` is the directory the
+    /// integration names the build by (the package id, spelled as its
+    /// harness can take it).
+    pub fn build_dir(&self, vendor: &str, name: &str) -> PathBuf {
+        self.vendor_store_dir(vendor).join(name)
+    }
+
+    /// One installed package, whole, for UZE's own extension MCP launcher:
+    /// the root `${PLUGIN_ROOT}` names for a server UZE starts itself.
+    /// UZE-internal: no harness is ever pointed here (each reads its own
+    /// build, [`Self::build_dir`]), so deleting it costs one copy on the
+    /// next launch.
     pub fn delivered_package_dir(&self, id: &PackageId) -> PathBuf {
         self.delivered_packages_dir().join(id.as_str())
     }
 
-    /// The parent of every [`Self::delivered_package_dir`].
+    /// The parent of every [`Self::delivered_package_dir`]: UZE-internal.
     pub fn delivered_packages_dir(&self) -> PathBuf {
         self.runtime_dir().join("packages")
     }
 
-    /// [`Self::delivered_package_dir`] of the package whose Store root is
-    /// `plugin_dir`, read back from the Store's own layout
-    /// ([`Self::plugin_dir`]); `None` for a directory that is not one.
+    /// The home and package whose bytes are `plugin_dir`, read back from the
+    /// sources' own layout ([`Self::plugin_dir`]); `None` for a directory
+    /// that is not one.
     ///
-    /// Everything that resolves `${PLUGIN_ROOT}` is handed a package's Store
-    /// root, and a harness must be handed the delivered copy instead; this
+    /// Everything that resolves `${PLUGIN_ROOT}` is handed a package's
+    /// sources root, and a harness must be handed its build instead; this
     /// is the one place the two layouts meet.
-    pub fn delivered_package_dir_of(plugin_dir: &Path) -> Option<PathBuf> {
+    pub fn installed_package_of(plugin_dir: &Path) -> Option<(UzeHome, PackageId)> {
         let name = plugin_dir.file_name()?.to_str()?;
         let marketplace_dir = plugin_dir.parent()?;
         let marketplace = marketplace_dir.file_name()?.to_str()?;
@@ -652,7 +657,7 @@ impl UzeHome {
         let id =
             PackageId::from_marketplace_plugin(marketplace, name, &plugin_dir.join("plugin.json"))
                 .ok()?;
-        (home.plugin_dir(&id) == plugin_dir).then(|| home.delivered_package_dir(&id))
+        (home.plugin_dir(&id) == plugin_dir).then_some((home, id))
     }
 
     pub fn cache_dir(&self) -> PathBuf {
@@ -759,9 +764,12 @@ impl UzeHome {
     /// builders, so a new tenant cannot be swept by being forgotten here.
     ///
     /// `projects` holds one directory per project UZE has projected into,
-    /// each swept when its root goes. `attachments` and `packages` live as
-    /// long as what was delivered, which the receipt ledger answers for:
-    /// sweeping either would delete a live delivery on the next `doctor`.
+    /// each swept when its root goes. `attachments` is where integrations
+    /// stage, and where earlier releases kept what a harness read, which
+    /// their receipts still name until the next delivery retires them;
+    /// `packages` is UZE's own extension launcher's copy. No harness reads
+    /// either any more, but sweeping them under a receipt that names them
+    /// would make that receipt read as missing.
     /// `sessions` holds the context of conversations still running, which a
     /// harness reads on every request: sweeping it took that context away
     /// seconds after the launch that wrote it. `rules` holds which rules

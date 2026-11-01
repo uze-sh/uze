@@ -48,6 +48,14 @@ mod skills;
 mod usage;
 
 pub(crate) use hooks::{HOOKS, RULES};
+
+/// This harness's vendor store: the one directory under `$UZE_HOME` it
+/// reads, holding one build per package.
+pub(crate) const STORE: crate::shared::build::VendorStore = crate::shared::build::VendorStore {
+    vendor: "claude",
+    dialect: 1,
+    build_name: crate::shared::build::package_id_name,
+};
 pub use mcp::detach_mcp_entry;
 
 use crate::hooks::HookEntry;
@@ -469,7 +477,7 @@ impl IntegrationPort for ClaudeIntegration {
     }
 
     fn package_receipt_serves(&self, receipt: &AttachmentReceipt) -> bool {
-        marketplace::receipt_serves::<ClaudeMarketplace>(&self.uze_home, receipt)
+        marketplace::receipt_serves::<ClaudeMarketplace>(receipt)
     }
 
     fn package_exposure_plan(
@@ -539,14 +547,19 @@ impl IntegrationPort for ClaudeIntegration {
         served: &[&Resource],
     ) -> Vec<UnreadableDelivery> {
         match &receipt.artifact {
-            ManagedArtifact::IntegrationOwned { kind, selector, .. } => plugin::plugin_unreadable(
-                &self.command_home,
-                &self.uze_home,
-                package,
+            ManagedArtifact::IntegrationOwned {
                 kind,
                 selector,
-                served,
-            ),
+                detail,
+            } if marketplace::receipt_origin::<ClaudeMarketplace>(kind).is_some() => {
+                plugin::plugin_unreadable(
+                    &self.command_home,
+                    marketplace::detail_path(detail, "package_root")
+                        .unwrap_or_else(|| package.root.clone()),
+                    selector,
+                    served,
+                )
+            }
             ManagedArtifact::GeneratedFile { path, .. } => served
                 .iter()
                 .filter(|resource| resource.capability.kind == CapabilityKind::Agent)
@@ -617,11 +630,31 @@ impl IntegrationPort for ClaudeIntegration {
     }
 
     fn republish_packages(&self, packages: &[StoredPackage]) -> Result<()> {
-        marketplace::republish::<ClaudeMarketplace>(&self.uze_home, packages)
+        marketplace::republish::<ClaudeMarketplace>(&self.uze_home, self.id(), packages)
     }
 
     fn publication(&self, packages: &[StoredPackage]) -> PublicationStatus {
-        marketplace::publication::<ClaudeMarketplace>(&self.uze_home, packages)
+        marketplace::publication::<ClaudeMarketplace>(&self.uze_home, self.id(), packages)
+    }
+
+    fn publish_build(
+        &self,
+        package: &StoredPackage,
+        inputs: &uze_core::integration::BuildInputs<'_>,
+        recorded: Option<&AttachmentReceipt>,
+    ) -> Result<Option<AttachmentReceipt>> {
+        crate::shared::build::publish(
+            crate::shared::build::Publication::new(
+                &STORE,
+                &self.uze_home,
+                self.id(),
+                package,
+                inputs,
+                recorded,
+            ),
+            |dir, root| marketplace::render_build::<ClaudeMarketplace>(package, dir, root),
+        )
+        .map(Some)
     }
 
     fn attach(&self, resource: &Resource) -> Result<Option<ManagedArtifact>> {
@@ -677,6 +710,9 @@ impl IntegrationPort for ClaudeIntegration {
             artifact if crate::rules::is_rules_artifact(artifact) => {
                 crate::rules::inspect(artifact)
             }
+            artifact if crate::shared::build::is_build(artifact) => {
+                crate::shared::build::inspect(receipt)
+            }
             ManagedArtifact::IntegrationOwned {
                 kind,
                 selector,
@@ -708,14 +744,15 @@ impl IntegrationPort for ClaudeIntegration {
                     reason: "Claude managed MCP entry detached via CLI".to_owned(),
                 })
             }
-            artifact @ ManagedArtifact::HookConfigEntry { .. } => HOOKS.detach_entry(
-                &self.uze_home,
-                self.id(),
-                &HookEntry::recorded(artifact).expect("a hook config entry"),
-            ),
+            artifact @ ManagedArtifact::HookConfigEntry { .. } => {
+                HOOKS.detach_entry(&HookEntry::recorded(artifact).expect("a hook config entry"))
+            }
             artifact if crate::rules::is_rules_artifact(artifact) => crate::rules::detach(artifact),
+            artifact if crate::shared::build::is_build(artifact) => {
+                crate::shared::build::detach(receipt)
+            }
             ManagedArtifact::IntegrationOwned { kind, selector, .. }
-                if let Some(origin) = marketplace::receipt_origin::<ClaudeMarketplace>(kind) =>
+                if marketplace::receipt_origin::<ClaudeMarketplace>(kind).is_some() =>
             {
                 let executable = self.provisioning_executable();
                 marketplace::detach_package::<ClaudeMarketplace>(
@@ -724,7 +761,6 @@ impl IntegrationPort for ClaudeIntegration {
                     &self.uze_home,
                     receipt,
                     selector,
-                    origin,
                 )?;
                 Ok(AttachmentInspection {
                     state: AttachmentState::Missing,
@@ -752,6 +788,7 @@ const PLUGIN_AGENT_IGNORED_REASON: &str = "Claude Code ignores it on an agent a 
 /// Claude would honour them in a user agent, so a plugin could otherwise
 /// grant itself, by being delivered loose, what its envelope denies it.
 const CLAUDE_USER_AGENT: MarkdownAgent = MarkdownAgent {
+    store: &STORE,
     name_in_frontmatter: true,
     set: &[],
     keep: |field| !PLUGIN_AGENT_IGNORED.contains(&field),

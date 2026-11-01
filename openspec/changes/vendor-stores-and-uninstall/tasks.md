@@ -10,7 +10,7 @@
 
 ## 2. Tiers, layout and the fenced move
 
-- [ ] 2.1 `UzeHome`:
+- [x] 2.1 `UzeHome`:
   - `sources_dir()` and `sources/superseded/`;
   - `store_dir(vendor)`: one marketplace of builds (`<id>/`), with no structural subdirectories;
   - `runtime_attachments_dir` reduced to staging;
@@ -26,14 +26,14 @@
 
   The step runs whenever any such directory exists, so it is resumable.
 - [x] 2.5 Cache the package digest in `packages.json` at ingest, for packages installed after the move.
-- [ ] 2.6 "Bytes missing": catalogue membership, and each package's origin (from its build receipt), come from the registry and build keys, never from `sources/`. `prune_ghost_registrations` and orphan reconciliation skip an entry that still has a build. `doctor` reports the entry as missing its bytes.
+- [x] 2.6 "Bytes missing": catalogue membership, and each package's origin (from its build receipt), come from the registry and build keys, never from `sources/`. `prune_ghost_registrations` and orphan reconciliation skip an entry that still has a build. `doctor` reports the entry as missing its bytes.
 
 ## 3. Builds and publication
 
-- [ ] 3.1 The Codex and Antigravity builds mirror the whole package through `shared::tree`, with the exclusions Claude's build uses.
-- [ ] 3.2 `shared::package_root` resolves `${PLUGIN_ROOT}` to the build directory on every route and file kind of a harness.
-- [ ] 3.3 The build receipt has its own resource identity (`build`), and `attach.rs` filters receipts by kind, so a build receipt never reads as an installed plugin. Its `detail` records `origin`, `source: pinned | linked`, and the build key (package digest, UZE build version, dialect version, build root, active name) and the digest of every file UZE wrote.
-- [ ] 3.4 Publication into the one vendor marketplace (`uze-store`). `origin` is decided per package and per harness by ADR-013's precedence:
+- [x] 3.1 The Codex and Antigravity builds mirror the whole package through `shared::tree`, with the exclusions Claude's build uses.
+- [x] 3.2 `shared::package_root` resolves `${PLUGIN_ROOT}` to the build directory on every route and file kind of a harness.
+- [x] 3.3 The build receipt has its own resource identity (`build`), and `attach.rs` filters receipts by kind, so a build receipt never reads as an installed plugin. Its `detail` records `origin`, `source: pinned | linked`, and the build key (package digest, UZE build version, dialect version, build root, active name) and the digest of every file UZE wrote.
+- [x] 3.4 Publication into the one vendor marketplace (`uze-store`). `origin` is decided per package and per harness by ADR-013's precedence:
   - stage and swap only a build whose key differs;
   - swap the catalogue last;
   - receipt `IntegrationOwned { kind: "build" }` per (vendor, package), inspected by per-file digest, where a hook-added file is not drift;
@@ -50,7 +50,7 @@
   - offline without that commit's blobs, it reports that it needs the network and keeps the linked build.
 
   Add tests for each case.
-- [ ] 3.6 Rewrite `the_delivered_root_is_a_copy_a_write_cannot_carry_into_the_store` and its invariant for builds. Add unit tests that:
+- [x] 3.6 Rewrite `the_delivered_root_is_a_copy_a_write_cannot_carry_into_the_store` and its invariant for builds. Add unit tests that:
   - only a changed key rebuilds;
   - a hook-added file survives an unchanged package;
   - an edited file is `Drifted` and is kept on update;
@@ -58,17 +58,17 @@
 
 ## 4. Hooks, rules, OpenCode, the bundled plugin
 
-- [ ] 4.1 Hook wrapper (`uze-exec`, `uze-exec.ps1`) goes inside every build that has hooks, at the reserved `hooks/uze-exec`. Ingest refuses a package with a file at that path. Each entry names its own build's wrapper. Order the build before its entries on attach, and the reverse on detach. `materialize_wrapper`/`prune_shared_wrapper` and the "last entry" logic go.
-- [ ] 4.2 Rules engine: becomes a real file of `plugins/uze`, rendered into its build. The `SETUP_OWNER` entries name it there. Rule sessions stay in `runtime/rules/sessions` as the declared on-demand scratch exception.
+- [x] 4.1 Hook wrapper (`uze-exec`, `uze-exec.ps1`) goes inside every build that has hooks, at the reserved `hooks/uze-exec`. Ingest refuses a package with a file at that path. Each entry names its own build's wrapper. Order the build before its entries on attach, and the reverse on detach. `materialize_wrapper`/`prune_shared_wrapper` and the "last entry" logic go.
+- [x] 4.2 Rules engine: becomes a real file of `plugins/uze`, rendered into its build. The `SETUP_OWNER` entries name it there. Rule sessions stay in `runtime/rules/sessions` as the declared on-demand scratch exception.
 - [ ] 4.3 OpenCode: hook-group documents go inside each package's build, and `uze.ts` reads `store/opencode/*/`. Session documents stay in `runtime/sessions/opencode` (the on-demand scratch exception, since one shared server serves every launch). `uze.ts` gets a receipt.
-- [ ] 4.4 The Codex integration owns `~/.agents/skills`, and its copies resolve into `store/codex`. Document that OpenCode reads it too.
+- [x] 4.4 The Codex integration owns `~/.agents/skills`, and its copies resolve into `store/codex`. Document that OpenCode reads it too.
 - [ ] 4.5 Codex: UZE's hook groups are always written after the operator's groups in each event array.
   - Test that the trust keys of operator groups placed first never change.
   - Removing a package's groups, or purging, reports every hook whose trust key shifts, through `codex/trust.rs`.
 - [ ] 4.6 Attach the bundled `uze` plugin with receipts. `remove` refuses it, and only `uninstall --purge` detaches it.
-- [ ] 4.7 The bundled skills that run `uze` open with the line saying they do not apply when `uze` is not on `PATH`.
+- [x] 4.7 The bundled skills that run `uze` open with the line saying they do not apply when `uze` is not on `PATH`.
 - [ ] 4.8 Show a blocking Codex trust notice in install, `doctor` and the TUI. It names each UZE hook that Codex holds back and the review to do, and clears once `codex/trust.rs` reads the hook as trusted.
-- [ ] 4.9 `no_harness_artifact_names_outside_its_store` (1.3) is green.
+- [x] 4.9 `no_harness_artifact_names_outside_its_store` (1.3) is green.
 
 ## 5. `uze uninstall`
 

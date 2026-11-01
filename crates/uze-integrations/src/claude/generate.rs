@@ -43,7 +43,6 @@ use crate::shared::marketplace::manifest_fields;
 use crate::shared::mcp::delivered_mcp_servers;
 use crate::shared::package_root::resolve_text;
 use crate::shared::skill::write_file;
-use crate::shared::tree::mirror_tree;
 
 /// The description a generated manifest declares when the package's own
 /// canonical `plugin.json` states none.
@@ -84,21 +83,17 @@ pub(super) fn withheld_paths(package: &StoredPackage) -> Vec<WithheldPath> {
         .collect()
 }
 
-/// Writes the envelope into the fresh directory `dir`: the package's
-/// portable files, then the generated manifest, then the rewritten skill
-/// and agent definitions.
-pub(super) fn materialize_envelope(package: &StoredPackage, dir: &Path) -> Result<()> {
-    let package_root =
-        uze_core::path::canonical(&package.root).map_err(UzeError::read(&package.root))?;
-    let excluded = [NOT_PORTABLE, &[crate::rules::PACKAGE_RULES_DIR]].concat();
-    mirror_tree(&package.root, dir, &package_root, &excluded)?;
-    write_manifest(package, dir)?;
+/// Writes the envelope into `dir`, a build the package's portable files
+/// were just mirrored into, for the root `root` it is swapped into: the
+/// generated manifest, then the rewritten skill and agent definitions.
+pub(super) fn render_envelope(package: &StoredPackage, dir: &Path, root: &Path) -> Result<()> {
+    write_manifest(package, dir, root)?;
     let resources = uze_core::engine::package_resources_at(&package.id, &package.root)?;
     for resource in &resources {
         match resource.capability.kind {
-            CapabilityKind::AgentSkill => rewrite_skill(package, resource, dir)?,
+            CapabilityKind::AgentSkill => rewrite_skill(package, resource, dir, root)?,
             CapabilityKind::Agent => rewrite_definition(package, resource, dir, |text| {
-                plugin_agent(&resolve_text(text, &package.root))
+                plugin_agent(&resolve_text(text, root))
             })?,
             _ => {}
         }
@@ -132,7 +127,7 @@ pub(super) const CLAUDE_KEYS: [&str; 2] = ["claude-code", "claude"];
 /// package declares servers, and carried inline with the package root
 /// resolved. Claude scans `skills/` and `agents/` by default, so the
 /// manifest names neither.
-fn write_manifest(package: &StoredPackage, dir: &Path) -> Result<()> {
+fn write_manifest(package: &StoredPackage, dir: &Path, root: &Path) -> Result<()> {
     let (description, version) = manifest_fields(&package.manifest, GENERATED_DESCRIPTION);
     let mut manifest = serde_json::json!({
         "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
@@ -140,7 +135,7 @@ fn write_manifest(package: &StoredPackage, dir: &Path) -> Result<()> {
         "version": version,
         "description": description,
     });
-    if let Some(servers) = delivered_mcp_servers(package) {
+    if let Some(servers) = delivered_mcp_servers(package, root) {
         manifest["mcpServers"] = servers;
     }
     let plugin_dir = dir.join(".claude-plugin");
@@ -151,7 +146,12 @@ fn write_manifest(package: &StoredPackage, dir: &Path) -> Result<()> {
     )
 }
 
-fn rewrite_skill(package: &StoredPackage, resource: &Resource, dir: &Path) -> Result<()> {
+fn rewrite_skill(
+    package: &StoredPackage,
+    resource: &Resource,
+    dir: &Path,
+    root: &Path,
+) -> Result<()> {
     let policy = resource.skill_invocation();
     if policy.is_invalid() {
         let copied = envelope_path(package, resource, dir);
@@ -164,7 +164,7 @@ fn rewrite_skill(package: &StoredPackage, resource: &Resource, dir: &Path) -> Re
         .logical_capability_name()
         .unwrap_or_else(|| resource.name());
     rewrite_definition(package, resource, dir, |text| {
-        let text = resolve_text(text, &package.root);
+        let text = resolve_text(text, root);
         if policy.is_default() {
             String::from_utf8_lossy(&uze_core::capability::harness::skill_for(
                 text.as_bytes(),
@@ -462,10 +462,9 @@ mod generated_native_tests {
             "Store package tree must be byte-for-byte unchanged"
         );
         assert!(
-            dir.starts_with(uze_home.runtime_dir()),
-            "a generated package is produced again from the Store and the \
-             Engine alone, so it belongs with what UZE generates rather than \
-             with the records"
+            dir.starts_with(uze_home.vendor_store_dir("claude")),
+            "a build is what the harness reads, so it belongs in its vendor \
+             store, never with the records or the sources"
         );
         assert!(dir.join(".claude-plugin/plugin.json").is_file());
         // The envelope is made of real files: Claude's copy into its plugin
@@ -1024,13 +1023,16 @@ mod generated_native_tests {
         )
         .unwrap();
         let dir = _root.join("envelope");
-        super::materialize_envelope(&pkg, &dir).unwrap();
+        let root = _root.join("build");
+        crate::shared::build::mirror_package(&pkg, &dir, super::NOT_PORTABLE).unwrap();
+        super::render_envelope(&pkg, &dir, &root).unwrap();
         let manifest: serde_json::Value =
             serde_json::from_slice(&fs::read(dir.join(".claude-plugin/plugin.json")).unwrap())
                 .unwrap();
         assert_eq!(
             manifest["mcpServers"]["srv"]["args"][0],
-            format!("{}/scripts/server.py", pkg.root.display())
+            format!("{}/scripts/server.py", root.display()),
+            "the package root is the build the envelope is swapped into"
         );
         let _ = fs::remove_dir_all(_root);
     }
@@ -1104,7 +1106,7 @@ mod generated_native_tests {
         .unwrap();
         let uze_home = UzeHome::at(_root.join("uze"));
         let dir = materialize_generated_package(&uze_home, &pkg).unwrap();
-        let root = pkg.root.to_string_lossy();
+        let root = dir.to_string_lossy();
         let agent = fs::read_to_string(dir.join("agents/review/security.md")).unwrap();
         assert_eq!(
             agent,

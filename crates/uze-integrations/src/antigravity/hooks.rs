@@ -14,6 +14,7 @@ use crate::hooks::{
 /// run (`hooks > events`).
 pub(crate) const HOOKS: HookTarget = HookTarget {
     key: "antigravity",
+    store: &super::STORE,
     events: &[
         HookEvent::PreToolUse,
         HookEvent::PostToolUse,

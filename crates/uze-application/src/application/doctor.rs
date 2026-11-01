@@ -171,12 +171,19 @@ impl Health<'_> {
                     .iter()
                     .filter_map(package_store_inconsistency)
                     .collect::<Vec<_>>();
+                let missing_bytes: Vec<String> = packages
+                    .iter()
+                    .filter(|package| !package.root.is_dir())
+                    .map(|package| bytes_missing_sentence(package.id.as_str()))
+                    .collect();
                 let health = if !inconsistencies.is_empty() {
                     StoreHealth::Blocked(inconsistencies.join("; "))
                 } else {
                     match self.0.store.quarantined_registrations() {
-                        Ok(quarantined) if !quarantined.is_empty() => {
-                            StoreHealth::Quarantined(quarantined_sentences(&quarantined))
+                        Ok(quarantined) if !quarantined.is_empty() || !missing_bytes.is_empty() => {
+                            let mut sentences = quarantined_sentences(&quarantined);
+                            sentences.extend(missing_bytes);
+                            StoreHealth::Quarantined(sentences)
                         }
                         Ok(_) => StoreHealth::Ready,
                         Err(error) => StoreHealth::Blocked(error.to_string()),
@@ -477,12 +484,21 @@ fn integration_status(status: IntegrationStatus) -> String {
     .to_owned()
 }
 
+/// What doctor says of a package whose bytes are gone from `sources/`: a
+/// state, not a fault, since nothing a harness reads depends on them.
+pub(crate) fn bytes_missing_sentence(package: &str) -> String {
+    format!(
+        "`{package}` is missing its bytes: every harness keeps what was delivered of it, and it \
+         is not built again until they return (`uze add {package}` acquires them)"
+    )
+}
+
+/// A package whose bytes are there but unreadable as a package. One whose
+/// bytes are gone altogether is missing its bytes, which is reported apart
+/// ([`bytes_missing_sentence`]) and blocks nothing.
 fn package_store_inconsistency(package: &StoredPackage) -> Option<String> {
     if !package.root.is_dir() {
-        return Some(format!(
-            "package `{}` store directory is missing",
-            package.id.as_str()
-        ));
+        return None;
     }
     if !package.manifest.is_file() {
         return Some(format!(

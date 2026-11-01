@@ -91,6 +91,8 @@ pub(crate) fn agent_file_plan(
 /// always named with the label), the fields it needs set, and which
 /// authored fields it keeps.
 pub(crate) struct MarkdownAgent<'a> {
+    /// The harness's vendor store, whose build the body's package root names.
+    pub(crate) store: &'a crate::shared::build::VendorStore,
     pub(crate) name_in_frontmatter: bool,
     pub(crate) set: &'a [(&'a str, &'a str)],
     pub(crate) keep: fn(&str) -> bool,
@@ -107,7 +109,7 @@ pub(crate) fn markdown_agent(
     keys: &[&str],
 ) -> String {
     let document = AgentDocument::parse(&resource.capability.payload).unwrap_or_default();
-    let body = resolve_text(&document.body, &resource.package_root);
+    let body = resolve_text(&document.body, &shape.store.root_of(&resource.package_root));
     let name = shape.name_in_frontmatter.then_some(label);
     let (block, _) = crate::shared::dialect::agent_block(shape.dialect, keys, &document);
     document.render(name, shape.set, shape.keep, &block, &body)

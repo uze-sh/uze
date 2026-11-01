@@ -87,7 +87,7 @@ fn wrapper_invocation(words: &[String]) -> (PathBuf, Vec<String>) {
 /// Whether `path` is the wrapper UZE generates, under the name this
 /// platform's template gives it.
 fn is_generated_wrapper(path: &Path) -> bool {
-    path.file_stem().is_some_and(|stem| stem == "exec")
+    path.file_stem().is_some_and(|stem| stem == "uze-exec")
         && path
             .parent()
             .and_then(Path::file_name)
@@ -669,8 +669,8 @@ fn the_generated_wrapper_is_owned_alongside_the_entry_it_serves() {
         AttachmentState::Missing
     );
     assert!(
-        !wrapper.exists(),
-        "the last entry to need the wrapper takes it with it"
+        wrapper.exists(),
+        "the wrapper is a file of the package's build, which takes it; an entry never does"
     );
     let _ = fs::remove_dir_all(root);
 }
@@ -960,7 +960,7 @@ fn foreign_codex_hooks_survive_attach_and_detach() {
 
 /// Where the runtime plugin reads the test package's hook groups.
 fn opencode_document(home_root: &std::path::Path) -> PathBuf {
-    home_root.join("uze/runtime/attachments/opencode/hook-groups/hook-demo@local.json")
+    home_root.join("uze/store/opencode/hook-demo@local/hooks/uze-groups.json")
 }
 
 /// A delivered hook document in one canonical spelling, so a test can look
@@ -1563,8 +1563,13 @@ fn antigravity_delivers_hooks_as_named_entries_in_the_shared_config() {
     );
     let wrapper = wrapper.as_path();
     assert!(
-        wrapper.ends_with("runtime/attachments/antigravity/hooks/exec"),
-        "a shared config file has no plugin root, so the wrapper lives under UZE state: {}",
+        wrapper.ends_with("hooks/uze-exec")
+            && wrapper
+                .parent()
+                .and_then(Path::parent)
+                .and_then(Path::parent)
+                .is_some_and(|store| store.ends_with("store/antigravity")),
+        "a shared config file has no plugin root, so the wrapper is the one in the package's build: {}",
         wrapper.display()
     );
     assert!(

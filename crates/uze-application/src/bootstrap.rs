@@ -204,7 +204,13 @@ fn extract_embedded_snapshot() -> Result<PathBuf> {
             uze_platform::fs::private_file(fs::OpenOptions::new().write(true).create_new(true))
                 .open(&destination)
                 .map_err(UzeError::write(&destination))?;
-        std::io::Write::write_all(&mut file, bytes).map_err(UzeError::write(destination))?;
+        std::io::Write::write_all(&mut file, bytes).map_err(UzeError::write(&destination))?;
+        // A script is committed runnable and the embedding keeps no mode:
+        // the one it had is told by its first line.
+        if bytes.starts_with(b"#!") {
+            uze_platform::executable::make_runnable(&destination)
+                .map_err(UzeError::write(&destination))?;
+        }
     }
     Ok(scratch)
 }
@@ -313,6 +319,42 @@ mod tests {
                 .join("skills/architect/SKILL.md")
                 .is_file()
         );
+    }
+
+    /// A skill that runs `uze` is read by a harness that keeps it after UZE
+    /// is uninstalled, so it says first that it does not apply without it.
+    #[test]
+    fn every_bundled_skill_that_runs_uze_says_it_needs_uze_first() {
+        let materialized = materialize("uze").unwrap();
+        let skills = materialized.root().join("skills");
+        for entry in fs::read_dir(&skills).unwrap().flatten() {
+            let text = fs::read_to_string(entry.path().join("SKILL.md")).unwrap();
+            if !text.contains("`uze ") {
+                continue;
+            }
+            let body = text
+                .splitn(3, "---\n")
+                .nth(2)
+                .unwrap_or_default()
+                .trim_start();
+            assert!(
+                body.lines()
+                    .next()
+                    .is_some_and(|line| line.contains("`uze` is not on `PATH`")),
+                "{} opens without saying it needs `uze`",
+                entry.path().display()
+            );
+        }
+    }
+
+    /// The rules engine is a real file of the bundled package, and stays
+    /// runnable once extracted from the snapshot the binary carries.
+    #[test]
+    fn the_rules_engine_ships_runnable_in_the_bundled_package() {
+        let materialized = materialize("uze").unwrap();
+        let engine = materialized.root().join("engine/rules");
+        assert!(engine.is_file());
+        assert!(uze_platform::executable::is_marked_runnable(&engine));
     }
 
     #[test]

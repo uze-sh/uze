@@ -18,25 +18,44 @@
 //! byte copy; see [`super::plugin`]'s module doc for why that stays a
 //! Derived Artifact).
 
-use std::{collections::BTreeSet, fs, path::PathBuf};
+#[cfg(test)]
+use std::path::PathBuf;
+use std::{collections::BTreeSet, fs};
 
-use uze_core::{Result, UzeError, capability::Resource, home::UzeHome, store::StoredPackage};
+#[cfg(test)]
+use uze_core::home::UzeHome;
+use uze_core::{Result, UzeError, capability::Resource, store::StoredPackage};
 
+#[cfg(test)]
 use crate::shared::marketplace::remove_generated_dir;
 use crate::shared::mcp::delivered_mcp_servers;
 use crate::shared::skill::write_file;
-use crate::shared::tree::mirror_tree;
 
-/// Root of every package's generated plugin directory. Lives under
-/// `$UZE_HOME/runtime/attachments/antigravity/plugins/` — the same convention
-/// every other integration's generated envelopes use, never under the Store.
+/// Root of every package's build: Antigravity's vendor store, never the
+/// package sources.
+#[cfg(test)]
 pub(super) fn generated_root(uze_home: &UzeHome) -> PathBuf {
-    crate::shared::path::attachment_root(uze_home, "antigravity").join("plugins")
+    super::STORE.root(uze_home)
 }
 
+#[cfg(test)]
 fn generated_package_dir_for_id(uze_home: &UzeHome, package_id: &str) -> PathBuf {
-    generated_root(uze_home).join(sanitize_for_agy_path(package_id))
+    super::STORE.build_dir(uze_home, package_id)
 }
+
+/// What a build leaves out of the package: the files the generated plugin
+/// writes itself, and `agents/`, which agy would load from a plugin under
+/// their bare names beside the labelled ones the plugin declares (measured
+/// on 1.2.12), and `commands/`, delivered only through a plugin an author
+/// shipped.
+pub(super) const NOT_PORTABLE: &[&str] = &[
+    "plugin.json",
+    "hooks.json",
+    "mcp_config.json",
+    "agents",
+    "agents.json",
+    "commands",
+];
 
 /// `agy plugin install <path>` parses a final path segment shaped like
 /// `name@marketplace` as a marketplace-qualified selector rather than a
@@ -46,7 +65,7 @@ fn generated_package_dir_for_id(uze_home: &UzeHome, package_id: &str) -> PathBuf
 /// (ADR-036), so the `@` is replaced before it ever reaches the vendor CLI;
 /// `remove_generated_plugin_by_id` uses the same helper so create/remove
 /// always agree on the directory name.
-fn sanitize_for_agy_path(package_id: &str) -> String {
+pub(crate) fn sanitize_for_agy_path(package_id: &str) -> String {
     package_id.replace('@', "--")
 }
 
@@ -148,9 +167,9 @@ fn generated_plugin_document(package: &StoredPackage) -> serde_json::Value {
 /// 1.3.3 (`serverUrl` stays the legacy one it also reads), with `httpUrl`
 /// renamed to it. Nothing is dropped; stdio `command`, `args`, `env`, `cwd`
 /// carry only the package root resolved.
-fn translated_mcp_config(package: &StoredPackage) -> serde_json::Value {
+fn translated_mcp_config(package: &StoredPackage, root: &std::path::Path) -> serde_json::Value {
     let mut document = serde_json::json!({ "mcpServers": {} });
-    if let Some(serde_json::Value::Object(servers)) = delivered_mcp_servers(package) {
+    if let Some(serde_json::Value::Object(servers)) = delivered_mcp_servers(package, root) {
         for (name, mut server) in servers {
             if let Some(value) = server.as_object_mut()
                 && !value.contains_key("url")
@@ -164,14 +183,9 @@ fn translated_mcp_config(package: &StoredPackage) -> serde_json::Value {
     document
 }
 
-/// Materializes (or refreshes) one package's generated plugin directory.
-/// Idempotent and deterministic: recreated wholesale from the Store package
-/// on every call — the directory is entirely UZE-owned and
-/// non-authoritative (ADR-013 §5). `skills/` is mirrored as real files with
-/// the package root resolved in every `SKILL.md`; the MCP servers go into
-/// the vendor `mcp_config.json`. `commands/` is no longer a
-/// canonical surface (ADR-030): a vendor-authored `commands/` directory is
-/// only ever delivered through an explicit plugin the author shipped.
+/// Renders one package's build in place, with no receipt: the package
+/// mirrored, then its generated plugin. What a test of the rendering reads.
+#[cfg(test)]
 pub(super) fn materialize_generated_plugin(
     uze_home: &UzeHome,
     package: &StoredPackage,
@@ -180,83 +194,98 @@ pub(super) fn materialize_generated_plugin(
 ) -> Result<PathBuf> {
     let dir = generated_package_dir_for_id(uze_home, package.id.as_str());
     uze_core::persistence::replace_dir(&dir, |staging| {
-        let manifest = generated_plugin_document(package);
-        fs::write(
-            staging.join("plugin.json"),
-            serde_json::to_vec_pretty(&manifest).expect("generated manifest is serializable"),
-        )
-        .map_err(UzeError::write(staging.join("plugin.json")))?;
-
-        let skills_source = package.root.join("skills");
-        if skills_source.is_dir() {
-            let package_root =
-                uze_core::path::canonical(&package.root).map_err(UzeError::read(&package.root))?;
-            mirror_tree(&skills_source, &staging.join("skills"), &package_root, &[])?;
-            for resource in uze_core::engine::package_resources_at(&package.id, &package.root)? {
-                if resource.capability.kind != uze_core::capability::CapabilityKind::AgentSkill {
-                    continue;
-                }
-                if let std::borrow::Cow::Owned(resolved) = crate::shared::dialect::delivered_skill(
-                    &resource.capability.payload,
-                    &resource.package_root,
-                    super::skills::ANTIGRAVITY_KEYS,
-                ) && let Ok(relative) = resource.capability.path.strip_prefix(&package.root)
-                {
-                    write_file(&staging.join(relative), &resolved)?;
-                }
-            }
-        }
-        let author_mcp = package.root.join("mcp_config.json");
-        if author_mcp.is_file() {
-            fs::copy(&author_mcp, staging.join("mcp_config.json")).map_err(|source| {
-                UzeError::Write {
-                    path: staging.join("mcp_config.json"),
-                    source,
-                }
-            })?;
-        } else if canonical_mcp_servers(package).is_some() {
-            let mcp = translated_mcp_config(package);
-            fs::write(
-                staging.join("mcp_config.json"),
-                serde_json::to_vec_pretty(&mcp).expect("generated MCP config is serializable"),
-            )
-            .map_err(UzeError::write(staging.join("mcp_config.json")))?;
-        }
-        // The plugin's own `hooks.json`, one named hook per canonical group,
-        // each running the shared wrapper: Antigravity loads it from the
-        // plugin root (1.3.5, `experiments/antigravity/plugin-hooks`), so
-        // enabling or disabling the plugin governs its hooks too.
-        // Its agents, each under its label and declared by the plugin's root
-        // `agents.json` (1.3.3); the same definitions the global agents
-        // directory would hold.
-        if !agents.is_empty() {
-            let agents_dir = staging.join("agents");
-            fs::create_dir_all(&agents_dir).map_err(UzeError::write(&agents_dir))?;
-            for (file_name, content) in agents {
-                write_file(&agents_dir.join(file_name), content.as_bytes())?;
-            }
-            fs::write(
-                staging.join("agents.json"),
-                br#"{"entries":[{"path":"agents"}]}"#,
-            )
-            .map_err(UzeError::write(staging.join("agents.json")))?;
-        }
-        if !hooks.is_empty() {
-            fs::write(
-                staging.join("hooks.json"),
-                serde_json::to_vec_pretty(hooks).expect("generated hooks are serializable"),
-            )
-            .map_err(UzeError::write(staging.join("hooks.json")))?;
-        }
-        Ok(())
+        crate::shared::build::mirror_package(package, staging, NOT_PORTABLE)?;
+        render_plugin(package, staging, &dir, hooks, agents)
     })?;
     Ok(dir)
+}
+
+/// Writes the generated plugin into `staging`, a build the package was just
+/// mirrored into, for the root `root` it is swapped into: the manifest,
+/// every `SKILL.md` with the package root resolved, the MCP servers in the
+/// vendor `mcp_config.json`, and the plugin's own `hooks.json` and agents.
+/// `commands/` is no longer a canonical surface (ADR-030): a vendor-authored
+/// `commands/` directory is only ever delivered through an explicit plugin
+/// the author shipped.
+pub(super) fn render_plugin(
+    package: &StoredPackage,
+    staging: &std::path::Path,
+    root: &std::path::Path,
+    hooks: &serde_json::Map<String, serde_json::Value>,
+    agents: &[(String, String)],
+) -> Result<()> {
+    let manifest = generated_plugin_document(package);
+    fs::write(
+        staging.join("plugin.json"),
+        serde_json::to_vec_pretty(&manifest).expect("generated manifest is serializable"),
+    )
+    .map_err(UzeError::write(staging.join("plugin.json")))?;
+
+    if package.root.join("skills").is_dir() {
+        for resource in uze_core::engine::package_resources_at(&package.id, &package.root)? {
+            if resource.capability.kind != uze_core::capability::CapabilityKind::AgentSkill {
+                continue;
+            }
+            if let std::borrow::Cow::Owned(resolved) = crate::shared::dialect::delivered_skill(
+                &resource.capability.payload,
+                root,
+                super::skills::ANTIGRAVITY_KEYS,
+            ) && let Ok(relative) = resource.capability.path.strip_prefix(&package.root)
+            {
+                write_file(&staging.join(relative), &resolved)?;
+            }
+        }
+    }
+    let author_mcp = package.root.join("mcp_config.json");
+    if author_mcp.is_file() {
+        fs::copy(&author_mcp, staging.join("mcp_config.json")).map_err(|source| {
+            UzeError::Write {
+                path: staging.join("mcp_config.json"),
+                source,
+            }
+        })?;
+    } else if canonical_mcp_servers(package).is_some() {
+        let mcp = translated_mcp_config(package, root);
+        fs::write(
+            staging.join("mcp_config.json"),
+            serde_json::to_vec_pretty(&mcp).expect("generated MCP config is serializable"),
+        )
+        .map_err(UzeError::write(staging.join("mcp_config.json")))?;
+    }
+    // The plugin's own `hooks.json`, one named hook per canonical group,
+    // each running the wrapper in this build: Antigravity loads it from the
+    // plugin root (1.3.5, `experiments/antigravity/plugin-hooks`), so
+    // enabling or disabling the plugin governs its hooks too.
+    // Its agents, each under its label and declared by the plugin's root
+    // `agents.json` (1.3.3); the same definitions the global agents
+    // directory would hold.
+    if !agents.is_empty() {
+        let agents_dir = staging.join("agents");
+        fs::create_dir_all(&agents_dir).map_err(UzeError::write(&agents_dir))?;
+        for (file_name, content) in agents {
+            write_file(&agents_dir.join(file_name), content.as_bytes())?;
+        }
+        fs::write(
+            staging.join("agents.json"),
+            br#"{"entries":[{"path":"agents"}]}"#,
+        )
+        .map_err(UzeError::write(staging.join("agents.json")))?;
+    }
+    if !hooks.is_empty() {
+        fs::write(
+            staging.join("hooks.json"),
+            serde_json::to_vec_pretty(hooks).expect("generated hooks are serializable"),
+        )
+        .map_err(UzeError::write(staging.join("hooks.json")))?;
+    }
+    Ok(())
 }
 
 /// Removes one package's generated plugin directory by id alone — used at
 /// detach time, when only the receipt's `package_id` (not a full
 /// `StoredPackage`) is available. Safe unconditionally: this directory is
 /// never anything but a Derived Artifact (ADR-013 §5).
+#[cfg(test)]
 pub(super) fn remove_generated_plugin_by_id(uze_home: &UzeHome, package_id: &str) -> Result<()> {
     remove_generated_dir(package_id, |id| generated_package_dir_for_id(uze_home, id))
 }
@@ -408,7 +437,7 @@ mod generated_native_tests {
             r#"{"mcpServers":{"old":{"httpUrl":"https://old.example/mcp"},"new":{"url":"https://new.example/mcp","httpUrl":"https://ignored.example/mcp"}}}"#,
         )
         .unwrap();
-        let servers = &translated_mcp_config(&pkg)["mcpServers"];
+        let servers = &translated_mcp_config(&pkg, &pkg.root)["mcpServers"];
         assert_eq!(
             servers["old"],
             serde_json::json!({"url": "https://old.example/mcp"})
@@ -462,10 +491,9 @@ mod generated_native_tests {
             "Store package tree must be byte-for-byte unchanged"
         );
         assert!(
-            dir.starts_with(uze_home.runtime_dir()),
-            "a generated package is produced again from the Store and the \
-             Engine alone, so it belongs with what UZE generates rather than \
-             with the records"
+            dir.starts_with(uze_home.vendor_store_dir("antigravity")),
+            "a build is what the harness reads, so it belongs in its vendor \
+             store, never with the records or the sources"
         );
         let manifest: serde_json::Value =
             serde_json::from_slice(&fs::read(dir.join("plugin.json")).unwrap()).unwrap();
@@ -511,8 +539,8 @@ mod generated_native_tests {
             materialize_generated_plugin(&uze_home, &pkg, &serde_json::Map::new(), &[]).unwrap();
         let skill = fs::read_to_string(dir.join("skills/commit/SKILL.md")).unwrap();
         assert!(
-            skill.contains(&format!("Run {}/scripts/x.sh", pkg.root.display())),
-            "{skill}"
+            skill.contains(&format!("Run {}/scripts/x.sh", dir.display())),
+            "the package root is the build: {skill}"
         );
         assert!(!dir.join("agents").exists());
         let _ = fs::remove_dir_all(root);
@@ -631,7 +659,7 @@ mod generated_native_tests {
             serde_json::from_slice(&fs::read(dir.join("mcp_config.json")).unwrap()).unwrap();
         assert_eq!(
             delivered["mcpServers"]["srv"]["args"][0],
-            format!("{}/scripts/server.py", pkg.root.display())
+            format!("{}/scripts/server.py", dir.display())
         );
         let _ = fs::remove_dir_all(root);
     }

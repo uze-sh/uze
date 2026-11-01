@@ -486,6 +486,7 @@ impl UzeStore {
         // read or written, so nothing is read through a link that leaves the
         // package and a rejected package leaves nothing behind.
         assert_self_contained(source)?;
+        assert_no_reserved_path(source)?;
         let PluginManifest {
             name,
             path: manifest,
@@ -733,12 +734,20 @@ impl UzeStore {
     /// left to keep asserting something false. Returns the ids pruned, so
     /// a caller can also clean up anything that still references them
     /// (receipts, project locks).
-    pub fn prune_ghost_registrations(&self) -> Result<Vec<PackageId>> {
+    ///
+    /// `still_delivered` answers whether something a harness reads was built
+    /// from an entry: such an entry is missing its bytes, not a ghost, and
+    /// keeps its place (vendor-stores D3). The Store never asks a harness
+    /// itself; its caller does.
+    pub fn prune_ghost_registrations(
+        &self,
+        still_delivered: impl Fn(&PackageId) -> bool,
+    ) -> Result<Vec<PackageId>> {
         let mut registry = self.load_registry()?;
         let ghosts: Vec<PackageId> = registry
             .packages
             .keys()
-            .filter(|id| !self.home.plugin_dir(id).is_dir())
+            .filter(|id| !self.home.plugin_dir(id).is_dir() && !still_delivered(id))
             .cloned()
             .collect();
         if ghosts.is_empty() {
@@ -908,6 +917,28 @@ impl UzeStore {
 /// back out of a link: `s -> .` makes `s/s/../..` two levels up on disk and
 /// none on paper. A target that does that is refused rather than resolved,
 /// so each link's own check stays the whole answer.
+/// Paths, relative to a package, that UZE writes into the package's build on
+/// every harness — the hook wrapper and the hook document a runtime plugin
+/// reads — and so that no package may ship itself: its file would collide
+/// with UZE's own in every build.
+pub const RESERVED_BUILD_PATHS: &[&str] = &[
+    "hooks/uze-exec",
+    "hooks/uze-exec.ps1",
+    "hooks/uze-groups.json",
+];
+
+/// Refuses a package that ships a file at one of the
+/// [`RESERVED_BUILD_PATHS`].
+pub(crate) fn assert_no_reserved_path(root: &Path) -> Result<()> {
+    match RESERVED_BUILD_PATHS
+        .iter()
+        .find(|reserved| fs::symlink_metadata(root.join(reserved)).is_ok())
+    {
+        Some(reserved) => Err(UzeError::PackageShipsReservedPath((*reserved).to_owned())),
+        None => Ok(()),
+    }
+}
+
 pub(crate) fn assert_self_contained(root: &Path) -> Result<()> {
     let mut pending = vec![root.to_path_buf()];
     while let Some(directory) = pending.pop() {
@@ -1242,6 +1273,43 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    /// An entry whose bytes are gone but a harness still reads a build of
+    /// is missing its bytes, not a ghost: only an entry with neither goes.
+    #[test]
+    fn an_entry_still_delivered_is_missing_its_bytes_and_never_pruned() {
+        let root = uze_testkit::temp::scratch("registry-bytes-missing");
+        let home = UzeHome::at(&root);
+        let store = UzeStore::new(home.clone());
+        home.ensure_layout().unwrap();
+        let shape = <RawPackageRegistry as uze_document::Shaped>::SHAPE;
+        let entry = r#"{"provenance":{"requested":{"LOCAL":{"path":"/x"}},"resolved":{"LOCAL":{"path":"/x"}}},"active_name":null}"#;
+        fs::write(
+            home.registry_path(),
+            format!(
+                r#"{{"schema_version":{shape},"packages":{{"built@ai":{entry},"ghost@ai":{entry}}}}}"#
+            ),
+        )
+        .unwrap();
+
+        let pruned = store
+            .prune_ghost_registrations(|id| id.as_str() == "built@ai")
+            .unwrap();
+        assert_eq!(
+            pruned.iter().map(PackageId::as_str).collect::<Vec<_>>(),
+            ["ghost@ai"]
+        );
+        assert_eq!(
+            store
+                .package_ids()
+                .unwrap()
+                .iter()
+                .map(PackageId::as_str)
+                .collect::<Vec<_>>(),
+            ["built@ai"]
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[test]
     fn a_registry_from_a_newer_build_is_refused_and_nothing_is_pruned() {
         // The fence of the move to `sources/`, seen from the other side: a
@@ -1258,7 +1326,7 @@ mod tests {
 
         let refused = store.package_ids().unwrap_err().to_string();
         assert!(refused.contains("packages"), "{refused}");
-        assert!(store.prune_ghost_registrations().is_err());
+        assert!(store.prune_ghost_registrations(|_| false).is_err());
         assert_eq!(fs::read_to_string(home.registry_path()).unwrap(), written);
         let _ = fs::remove_dir_all(root);
     }

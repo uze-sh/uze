@@ -39,7 +39,7 @@ use crate::shared::tree::mirror_tree;
 /// Rebuilding wholesale from the Store on every materialization is what
 /// keeps the envelope non-authoritative; `codex plugin add` re-stages the
 /// cache from it even for an unchanged version (verified against 0.152.1).
-pub(super) fn materialize_envelope(package: &StoredPackage, dir: &Path) -> Result<()> {
+pub(super) fn render_envelope(package: &StoredPackage, dir: &Path, root: &Path) -> Result<()> {
     let (description, version) = manifest_fields(
         &package.manifest,
         "UZE-managed Codex plugin, generated from a vendor-neutral package.",
@@ -64,8 +64,8 @@ pub(super) fn materialize_envelope(package: &StoredPackage, dir: &Path) -> Resul
     )?;
     let package_root =
         uze_core::path::canonical(&package.root).map_err(UzeError::read(&package.root))?;
-    materialize_generated_skills(package, &package_root, dir)?;
-    if let Some(servers) = delivered_mcp_servers(package) {
+    materialize_generated_skills(package, &package_root, dir, root)?;
+    if let Some(servers) = delivered_mcp_servers(package, root) {
         write_file(
             &dir.join(".mcp.json"),
             &serde_json::to_vec_pretty(&serde_json::json!({ "mcpServers": servers }))
@@ -87,6 +87,7 @@ fn materialize_generated_skills(
     package: &StoredPackage,
     package_root: &Path,
     envelope_dir: &Path,
+    root: &Path,
 ) -> Result<()> {
     if !package.root.join("skills").is_dir() {
         return Ok(());
@@ -112,7 +113,7 @@ fn materialize_generated_skills(
             mirror_tree(canonical_dir, &target_dir, package_root, &[])?;
             let delivered = crate::shared::dialect::delivered_skill(
                 &resource.capability.payload,
-                &resource.package_root,
+                root,
                 super::skills::CODEX_KEYS,
             );
             if let Cow::Owned(resolved) = delivered {
@@ -124,7 +125,7 @@ fn materialize_generated_skills(
             &target_dir,
             canonical_dir,
             &resource,
-            package_root,
+            (package_root, root),
             &skill_name,
             &policy,
         )?;
@@ -139,7 +140,7 @@ fn materialize_user_only_skill_dir(
     target_dir: &Path,
     canonical_dir: &Path,
     resource: &uze_core::capability::Resource,
-    package_root: &Path,
+    (package_root, root): (&Path, &Path),
     skill_name: &str,
     policy: &uze_core::skill::SkillInvocationPolicy,
 ) -> Result<()> {
@@ -147,7 +148,7 @@ fn materialize_user_only_skill_dir(
         path: target_dir.to_path_buf(),
         source: source_error,
     })?;
-    let bytes = resolve_bytes(&resource.capability.payload, &resource.package_root);
+    let bytes = resolve_bytes(&resource.capability.payload, root);
     let name = crate::shared::skill::frontmatter_text(&bytes, "name")
         .unwrap_or_else(|| skill_name.to_owned());
     crate::shared::skill::write_file(
@@ -340,10 +341,9 @@ mod generated_native_tests {
             "Store package tree must be byte-for-byte unchanged"
         );
         assert!(
-            dir.starts_with(uze_home.runtime_dir()),
-            "a generated package is produced again from the Store and the \
-             Engine alone, so it belongs with what UZE generates rather than \
-             with the records"
+            dir.starts_with(uze_home.vendor_store_dir("codex")),
+            "a build is what the harness reads, so it belongs in its vendor \
+             store, never with the records or the sources"
         );
         assert!(dir.join(".codex-plugin/plugin.json").is_file());
         // Codex stages the envelope into its plugin cache without following
@@ -711,18 +711,17 @@ mod generated_native_tests {
         )
         .unwrap();
         let dir = _root.join("envelope");
-        materialize_envelope(&pkg, &dir).unwrap();
+        let root = _root.join("build");
+        crate::shared::build::mirror_package(&pkg, &dir, &[]).unwrap();
+        render_envelope(&pkg, &dir, &root).unwrap();
         let delivered: serde_json::Value =
             serde_json::from_slice(&fs::read(dir.join(".mcp.json")).unwrap()).unwrap();
         let server = &delivered["mcpServers"]["srv"];
         assert_eq!(
             server["args"][0],
-            format!("{}/scripts/server.py", pkg.root.display())
+            format!("{}/scripts/server.py", root.display())
         );
-        assert_eq!(
-            server["env"]["DATA"],
-            format!("{}/data", pkg.root.display())
-        );
+        assert_eq!(server["env"]["DATA"], format!("{}/data", root.display()));
         let _ = fs::remove_dir_all(_root);
     }
 }

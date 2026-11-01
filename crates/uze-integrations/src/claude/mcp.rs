@@ -42,6 +42,7 @@ impl ClaudeIntegration {
         }
         managed_stdio_plan(
             resource,
+            &super::STORE.root_of(&resource.package_root),
             entry_name,
             CompatibilityRoute::Adaptable,
             None,

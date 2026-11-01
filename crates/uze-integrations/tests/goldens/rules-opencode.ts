@@ -6,10 +6,7 @@
 async function rules(ctx) {
   // The words that start the engine on this platform, with its sessions
   // directory.
-  const ENGINE = [
-    "/machine/state/runtime/attachments/opencode/rules/engine",
-    "/machine/state/runtime/rules/sessions",
-  ];
+  const ENGINE = ["/machine/state/store/opencode/uze@uze/engine/rules", "/machine/state/runtime/rules/sessions"];
   const SECONDS = 10;
   // Where the session works: the location OpenCode set this plugin up for.
   // The events carry no directory, and a shared service runs in the home

@@ -20,6 +20,32 @@ use crate::{
 
 pub use crate::exposure::ManagedArtifact;
 
+/// The resource identity of a package's build receipt: one per package and
+/// harness, owning the build directory in that harness's vendor store. Its
+/// own identity, so it is never read as the receipt of the vendor install
+/// (which carries none) nor as a capability's.
+pub const BUILD_IDENTITY: &str = "build";
+
+/// The `IntegrationOwned` kind of a build receipt.
+pub const BUILD_KIND: &str = "build";
+
+/// What a package's build is rendered from besides its bytes.
+#[derive(Clone, Copy, Debug)]
+pub struct BuildInputs<'a> {
+    /// The package's recorded digest: part of the build key.
+    pub digest: &'a str,
+    /// Whether its bytes came from a checkout the operator develops in
+    /// (`uze market link`) rather than the commit the lock pins.
+    pub linked: bool,
+}
+
+/// Whether `receipt` owns a package's build rather than something a harness
+/// was handed from it. A build is attached before everything that names it
+/// and detached after.
+pub fn is_build_receipt(receipt: &AttachmentReceipt) -> bool {
+    receipt.resource_identity.as_deref() == Some(BUILD_IDENTITY)
+}
+
 /// Stable receipt for one harness-owned side effect. The ledger persists this
 /// intent; every destructive operation still asks the integration to inspect
 /// the real harness state first.
@@ -991,6 +1017,21 @@ pub trait IntegrationPort: Send + Sync {
         &self,
         _package: &StoredPackage,
         _plan: &PackageExposurePlan,
+    ) -> Result<Option<AttachmentReceipt>> {
+        Ok(None)
+    }
+
+    /// Renders `package`'s build into this harness's vendor store and returns
+    /// the receipt owning it, or `None` for a harness that reads no build.
+    /// `recorded` is the build receipt already in the ledger, if any. A
+    /// build whose key is unchanged is left exactly as it is (a file a hook
+    /// added survives), and one somebody edited is kept and its receipt
+    /// handed back: the edit is reported by inspection, never overwritten.
+    fn publish_build(
+        &self,
+        _package: &StoredPackage,
+        _inputs: &BuildInputs<'_>,
+        _recorded: Option<&AttachmentReceipt>,
     ) -> Result<Option<AttachmentReceipt>> {
         Ok(None)
     }

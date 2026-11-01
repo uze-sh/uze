@@ -9,6 +9,8 @@ invoke:
   user: true
 ---
 
+> This skill runs `uze`. If `uze` is not on `PATH`, UZE is not installed here and nothing below applies.
+
 Creating a plugin with uze is a loop of four deterministic verbs. Run them
 in this order; every one is non-interactive and fails with a reason, so a
 failure is an answer, not a dead end.

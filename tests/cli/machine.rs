@@ -631,6 +631,7 @@ fn setup_delivers_a_package_stored_before_the_harness_once_and_natively() {
             .filter(|receipt| {
                 receipt["integration"] == "claude-code"
                     && receipt["package_id"] == "uze-agent-skill-conformance@test"
+                    && receipt["resource_identity"] != "build"
             })
             .collect()
     };
@@ -965,7 +966,7 @@ fn setup_then_add_attaches_transparently_without_a_separate_sync_step() {
         claude_skills_entries.is_empty(),
         "no package should decompose into .claude/skills once generatable, got {claude_skills_entries:?}"
     );
-    let generated_root = uze_home.join("runtime/attachments/claude/generated");
+    let generated_root = uze_home.join("store/claude");
     assert!(
         generated_root
             .join("uze-agent-skill-conformance@test/.claude-plugin/plugin.json")
@@ -1135,7 +1136,7 @@ fn setup_then_add_attaches_the_mcp_fixture_idempotently_and_removal_works() {
     );
     let opencode_receipt = mcp_receipts
         .iter()
-        .find(|r| r["integration"] == "opencode")
+        .find(|r| r["integration"] == "opencode" && r["resource_identity"] != "build")
         .expect("opencode receipt missing");
     assert!(
         opencode_receipt["artifact"]
@@ -1148,26 +1149,36 @@ fn setup_then_add_attaches_the_mcp_fixture_idempotently_and_removal_works() {
     );
     let claude_receipt = mcp_receipts
         .iter()
-        .find(|r| r["integration"] == "claude-code")
+        .find(|r| r["integration"] == "claude-code" && r["resource_identity"] != "build")
         .expect("claude receipt missing");
     assert_eq!(
         claude_receipt["artifact"]["INTEGRATION_OWNED"]["kind"], "claude-plugin-generated",
         "claude's receipt for an envelope-less MCP-only package must be the generated package kind, not a resource-level VendorConfigEntry: {claude_receipt:?}"
     );
+    // Which envelope a package carries is its build's record.
+    let claude_build = mcp_receipts
+        .iter()
+        .find(|r| r["integration"] == "claude-code" && r["resource_identity"] == "build")
+        .expect("claude build receipt missing");
     assert_eq!(
-        claude_receipt["artifact"]["INTEGRATION_OWNED"]["origin"],
+        claude_build["artifact"]["INTEGRATION_OWNED"]["origin"],
         "generated"
     );
     let codex_receipt = mcp_receipts
         .iter()
-        .find(|r| r["integration"] == "codex")
+        .find(|r| r["integration"] == "codex" && r["resource_identity"] != "build")
         .expect("codex receipt missing");
     assert_eq!(
         codex_receipt["artifact"]["INTEGRATION_OWNED"]["kind"], "marketplace-plugin-generated",
         "codex's receipt for an envelope-less MCP-only package must be the generated package kind, not a resource-level VendorConfigEntry: {codex_receipt:?}"
     );
+    // Which envelope a package carries is its build's record.
+    let codex_build = mcp_receipts
+        .iter()
+        .find(|r| r["integration"] == "codex" && r["resource_identity"] == "build")
+        .expect("codex build receipt missing");
     assert_eq!(
-        codex_receipt["artifact"]["INTEGRATION_OWNED"]["origin"],
+        codex_build["artifact"]["INTEGRATION_OWNED"]["origin"],
         "generated"
     );
 

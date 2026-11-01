@@ -57,6 +57,14 @@ impl<T: IntegrationPort> IntegrationPort for AlwaysPresent<T> {
     fn id(&self) -> &'static str {
         self.0.id()
     }
+    fn publish_build(
+        &self,
+        package: &StoredPackage,
+        inputs: &uze_core::integration::BuildInputs<'_>,
+        recorded: Option<&uze_core::integration::AttachmentReceipt>,
+    ) -> uze_core::Result<Option<uze_core::integration::AttachmentReceipt>> {
+        self.0.publish_build(package, inputs, recorded)
+    }
     fn capabilities(&self) -> HarnessCapabilities {
         self.0.capabilities()
     }
@@ -303,8 +311,8 @@ fn codex_alone_keeps_the_user_only_skill_hidden_from_the_model() {
             )
             .expect("Codex-only user-only Skill installs");
         let envelope_skill = uze_home
-            .runtime_dir()
-            .join("attachments/codex/generated/flow@local/skills/review");
+            .build_dir("codex", "flow@local")
+            .join("skills/review");
         assert_eq!(
             fs::read_to_string(envelope_skill.join("agents/openai.yaml")).unwrap(),
             "policy:\n  allow_implicit_invocation: false\n",
@@ -362,7 +370,7 @@ fn an_update_rebuilds_the_directory_and_the_receipt_still_matches() {
         let receipt = uze_core::state::receipts(&uze_home, Some("flow@local"))
             .unwrap()
             .into_iter()
-            .find(|r| r.integration == "opencode")
+            .find(|r| r.integration == "opencode" && !uze_core::integration::is_build_receipt(r))
             .unwrap();
         assert!(matches!(
             receipt.artifact,
@@ -393,7 +401,7 @@ fn an_edited_skill_is_drift_and_is_left_as_the_operator_left_it() {
         let receipt = uze_core::state::receipts(&uze_home, Some("flow@local"))
             .unwrap()
             .into_iter()
-            .find(|r| r.integration == "opencode")
+            .find(|r| r.integration == "opencode" && !uze_core::integration::is_build_receipt(r))
             .unwrap();
         assert_eq!(
             receipt.artifact.inspect_standard().state,
@@ -429,7 +437,7 @@ fn an_entry_an_earlier_build_linked_is_replaced_by_a_directory() {
         let current = uze_core::state::receipts(&uze_home, Some("flow@local"))
             .unwrap()
             .into_iter()
-            .find(|r| r.integration == "opencode")
+            .find(|r| r.integration == "opencode" && !uze_core::integration::is_build_receipt(r))
             .unwrap();
         fs::remove_dir_all(opencode_skills.join(uze_core::path::file_name_for("flow:review")))
             .unwrap();
@@ -579,8 +587,8 @@ fn the_plugin_root_a_skill_names_is_a_delivered_copy_never_the_store() {
             .map(PathBuf::from)
             .expect("the body names the plan");
         assert!(
-            named.starts_with(uze_home.runtime_dir()),
-            "{}",
+            named.starts_with(uze_home.vendor_store_dir("opencode")),
+            "the root a harness is handed is its own build: {}",
             named.display()
         );
         assert!(
@@ -641,7 +649,7 @@ fn an_mcp_entry_an_earlier_build_rooted_in_the_store_is_restated() {
                     )
             })
             .expect("OpenCode holds the server as a config entry");
-        let delivered = uze_home.runtime_dir().join("packages").join("served@local");
+        let delivered = uze_home.build_dir("opencode", "served@local");
         let stored = uze_home.plugins_dir().join("local").join("served");
         // As the configuration's text spells them: a JSON string escapes
         // the separator Windows writes.

@@ -88,7 +88,6 @@ pub(crate) fn uze_home_references(env: &TestEnvironment) -> Vec<(PathBuf, String
 }
 
 #[test]
-#[ignore = "red until harnesses are delivered from their vendor store (vendor-stores-and-uninstall 4.9)"]
 fn no_harness_artifact_names_outside_its_store() {
     let env = TestEnvironment::isolated();
     let _harnesses = install_fake_harnesses(&env);
@@ -119,8 +118,13 @@ fn no_harness_artifact_names_outside_its_store() {
                 return false;
             }
             let relative = file.strip_prefix(env.root()).unwrap_or(file);
+            // The store itself is the marketplace a harness registers, so
+            // its root counts as inside it as much as a build does.
             match owning_vendor(relative) {
-                Some(vendor) => !path.starts_with(&format!("{uze_home}/store/{vendor}/")),
+                Some(vendor) => {
+                    let store = format!("{uze_home}/store/{vendor}");
+                    path != &store && !path.starts_with(&format!("{store}/"))
+                }
                 None => true,
             }
         })

@@ -144,6 +144,14 @@ impl<T: IntegrationPort> IntegrationPort for AlwaysPresent<T> {
     fn republish_packages(&self, packages: &[StoredPackage]) -> uze_core::Result<()> {
         self.0.republish_packages(packages)
     }
+    fn publish_build(
+        &self,
+        package: &StoredPackage,
+        inputs: &uze_core::integration::BuildInputs<'_>,
+        recorded: Option<&uze_core::integration::AttachmentReceipt>,
+    ) -> uze_core::Result<Option<uze_core::integration::AttachmentReceipt>> {
+        self.0.publish_build(package, inputs, recorded)
+    }
     fn publication(&self, packages: &[StoredPackage]) -> PublicationStatus {
         self.0.publication(packages)
     }
@@ -470,7 +478,8 @@ fn inspect_matched_missing_drifted_and_detach_all_still_work_under_new_naming() 
     );
 
     let inspection = application.plugins().inspect("acme").unwrap();
-    assert_eq!(inspection.managed_state.matched, 1);
+    // The skill and the package's build in OpenCode's vendor store.
+    assert_eq!(inspection.managed_state.matched, 2);
 
     // MISSING: remove the physical artifact by hand.
     fs::remove_dir_all(skills_dir.join(uze_core::path::file_name_for("acme:review"))).unwrap();
@@ -486,7 +495,8 @@ fn inspect_matched_missing_drifted_and_detach_all_still_work_under_new_naming() 
             .is_dir()
     );
     let inspection = application.plugins().inspect("acme").unwrap();
-    assert_eq!(inspection.managed_state.matched, 1);
+    // The skill and the package's build in OpenCode's vendor store.
+    assert_eq!(inspection.managed_state.matched, 2);
 
     // DRIFTED: edit the delivered SKILL.md by hand.
     let skill = skills_dir

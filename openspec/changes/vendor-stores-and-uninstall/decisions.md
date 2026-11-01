@@ -147,3 +147,63 @@
 - decided:  each is written now and marked `#[ignore]` with the task that removes the mark (4.9, 4.3/4.6, 4.3), the way D1 did for 1.3. The operator's-Codex-hooks scenario already holds and runs.
 - rejected: weakening them to what passes today.
 - blast:    three `#[ignore]` lines in `tests/acceptance/uninstall.rs`.
+
+## D3 — Builds are published by their own port method, first in every delivery
+
+- status:   pending
+- task:     3.3, 3.4
+- commit:
+- trigger:  the design gives each build a receipt, while `republish_packages` is documented as a receipt-free derived view and runs for the whole package set before a delivery; the build must exist before anything names it on every route, including OpenCode's and Antigravity's, which have no catalogue.
+- decided:  `IntegrationPort::publish_build(package, BuildInputs { digest, linked }, recorded) -> Option<receipt>` (default `None`), called by `deliver_package_to` before the package plan and every capability, the receipt recorded with identity `build`. `republish_packages` only rewrites the catalogue, from the build receipts of the registry's packages; `marketplace::attach_package` writes it too, so a build published a moment ago is listed before the vendor CLI is asked. A build rendered again (any key change) makes the delivery install the package again instead of taking the matched receipt's shortcut: that is the cache refresh of D5 step 3.4 (Codex `plugin add`, Antigravity `plugin install` over its own copy), so no separate refresh method exists.
+- rejected: rendering builds inside `republish_packages` (integrations would write receipts outside a delivery, and a harness not detected would get builds); a `refresh_package` port method (a second path doing what a re-attach already does).
+- blast:    `shared::build`, the four `publish_build` impls, `attempt_package_delivery`, `Plugins::take_off` ordering (builds detached last).
+
+## D4 — A build leaves out what its harness would misread, so it is not always the whole package
+
+- status:   pending
+- task:     3.1
+- commit:
+- trigger:  task 3.1 asks for "the exclusions Claude's build uses", while package-delivery-fidelity says the build "SHALL contain the whole package". Claude loads `bin/` onto the shell `PATH`, `commands/`, `hooks/hooks.json` and more from a plugin root; Codex reads `.mcp.json`/`.app.json`; Antigravity loads a plugin's `agents/` under bare names.
+- decided:  a build with an author envelope mirrors the whole package (minus `rules/`, which reaches harnesses per project); a generated or envelope-less build mirrors the package minus that harness's `NOT_PORTABLE` list (Claude's existing list; Codex: `.codex-plugin`, `.mcp.json`, `.app.json`, `skills` re-rendered by name, `hooks/hooks.json`; Antigravity: `plugin.json`, `hooks.json`, `mcp_config.json`, `agents`, `agents.json`, `commands`), then writes its envelope. OpenCode's build is the whole package.
+- rejected: shipping every path into every build (a package's `bin/` would land on Claude's `PATH`, a behaviour no canonical capability declared).
+- blast:    a package naming `${PLUGIN_ROOT}/bin/...` finds nothing there on Claude, as before the change for its plugin (it did find it in the old `runtime/packages` copy). Reported as a contradiction with the spec wording for the operator to settle.
+
+## D5 — Reserved build paths: the wrapper and OpenCode's hook document
+
+- status:   pending
+- task:     4.1, 4.3
+- commit:
+- trigger:  the design reserves `hooks/uze-exec` (and `.ps1`); OpenCode's hook document also moves inside each build and needs a path no package ships.
+- decided:  `uze_core::store::RESERVED_BUILD_PATHS` = `hooks/uze-exec`, `hooks/uze-exec.ps1`, `hooks/uze-groups.json`; ingest and `inspect_capabilities` refuse a package shipping any of them (`PackageShipsReservedPath`). The OpenCode runtime plugin reads `store/opencode/*/hooks/uze-groups.json` and watches the store recursively.
+- rejected: a dot-file document at the build root (invisible in review, and still a collision to reserve).
+- blast:    `store.rs`, `hooks/bridge.rs`.
+
+## D6 — The rules engine is `plugins/uze/engine/rules`, byte for byte the old template
+
+- status:   pending
+- task:     4.2
+- commit:
+- trigger:  the engine becomes a real file of the bundled package; its path must survive every harness's build exclusions (`bin/` is withheld on Claude, `rules/` everywhere), and the embedded snapshot keeps no file modes.
+- decided:  `plugins/uze/engine/rules` (committed executable), `rules::engine::SOURCE` is `include_str!` of it so the goldens and tests read the same bytes, and `RulesTarget::engine_path` names it inside the bundled package's build in that harness's vendor store. Extracting the embedded snapshot marks a file opening with `#!` runnable. Detaching a rules entry no longer removes the engine (the build owns it); an engine at the retired `rules/engine` path is still removed with its last entry.
+- rejected: rendering the engine per harness from a template (it is one byte-identical file); `bin/uze-rules` (withheld from Claude builds).
+- blast:    `rules.rs`, `rules/engine.rs`, `bootstrap.rs`, the OpenCode golden.
+
+## D7 — The ownership test counts the store's own root as inside the store
+
+- status:   pending
+- task:     4.9
+- commit:
+- trigger:  `no_harness_artifact_names_outside_its_store` required every path to start with `store/<vendor>/`, but the marketplace a harness registers *is* `store/<vendor>` (Claude's `known_marketplaces.json`, Codex's `config.toml`), and OpenCode's plugin watches it.
+- decided:  a path equal to `store/<vendor>` or under it is inside. The test is otherwise unchanged.
+- rejected: registering a subdirectory as the marketplace (contradicts D1: the vendor store is the marketplace).
+- blast:    one predicate in `tests/acceptance/store_ownership.rs`.
+
+## D8 — A repoint is not held back for a running harness session
+
+- status:   pending
+- task:     3.5
+- commit:
+- trigger:  design D5 3.3 says "never while a session of that harness runs"; nothing in UZE observes a harness process it did not start (`uze-platform::process` has no listing), and an integration has no view of the workspace's agents.
+- decided:  the repoint runs only when the registered root differs, which is once per machine (the move off `runtime/`). Claude's same-name `add` keeps its plugins installed; Codex's `remove` then `add` re-adds the old root when `add` fails. No session check is made; uninstall's liveness checks (5.1) are the place a process census would land, and the repoint can adopt it then.
+- rejected: refusing every repoint while any UZE agent runs (the workspace layer is out of reach of an integration, and a session started outside UZE would still pass).
+- blast:    `marketplace::ensure_registered`.
