@@ -62,6 +62,8 @@ pub struct ReviewExtension {
     in_flight: Option<(PathBuf, Vec<Change>)>,
     /// A write that failed is tried again from here, not on every pass.
     retry_at: Option<Instant>,
+    /// How many writes have been answered.
+    generation: u64,
     reading_diff: bool,
     writing: bool,
     /// What the next open is for: a return puts back what was held.
@@ -90,6 +92,9 @@ struct Held {
 }
 
 struct ListRead {
+    /// How many writes had been answered when it was asked: a record read
+    /// before a write landed is older than what is on screen.
+    generation: u64,
     root: PathBuf,
     filter: super::Filter,
     base: Base,
@@ -241,6 +246,7 @@ impl ReviewExtension {
         let filter = view.filter;
         let known = view.base.clone();
         let target = self.focus.as_ref().and_then(|focus| focus.target.clone());
+        let generation = self.generation;
         let fallback_root = root.clone();
         jobs.push(Job {
             run: Box::new(move |host| {
@@ -250,6 +256,7 @@ impl ReviewExtension {
                 };
                 let listing = git::listing(host, &root, base.commit.as_deref());
                 Opaque::new(ListRead {
+                    generation,
                     branch: crate::shared::checkout::branch_of(host, &root),
                     record: host.review_record(&root),
                     root,
@@ -260,6 +267,7 @@ impl ReviewExtension {
             }),
             fallback: Box::new(move || {
                 Opaque::new(ListRead {
+                    generation,
                     root: fallback_root,
                     filter,
                     base: Base::default(),
@@ -427,6 +435,15 @@ impl ReviewExtension {
         self.door.at = Some(Instant::now());
     }
 
+    /// The changes a write is out for on `root`, if one is.
+    fn in_flight_for(&self, root: &Path) -> Vec<Change> {
+        self.in_flight
+            .as_ref()
+            .filter(|(written, _)| written == root)
+            .map(|(_, changes)| changes.clone())
+            .unwrap_or_default()
+    }
+
     fn record_for_door(&self) -> &ReviewRecord {
         match (&self.open, &self.focus) {
             (Some(view), Some(focus)) if view.root == focus.root => &view.record,
@@ -523,7 +540,8 @@ impl Extension for ReviewExtension {
         self.waiting = others;
         view.unwritten = mine.into_iter().flat_map(|(_, changes)| changes).collect();
         if self.door.root.as_ref() == Some(&checkout.root) {
-            view.absorb_record(Ok(self.door.record.clone()));
+            let in_flight = self.in_flight_for(&checkout.root);
+            view.absorb_record(Ok(self.door.record.clone()), &in_flight);
         }
         self.listed_at = None;
         self.open = Some(view);
@@ -544,7 +562,6 @@ impl Extension for ReviewExtension {
             // What was changed and not yet written is still written: the
             // operator's work never waits on the surface staying open.
             if !view.unwritten.is_empty() {
-                self.door.record = view.record.clone();
                 self.waiting.push((view.root.clone(), view.unwritten));
             }
         }
@@ -724,9 +741,13 @@ impl Extension for ReviewExtension {
         if answer.0.is::<ListRead>() {
             if let Some(read) = answer.downcast::<ListRead>() {
                 self.listing = false;
+                let in_flight = self.in_flight_for(&read.root);
+                let current = read.generation == self.generation;
                 if let Some(view) = self.open.as_mut().filter(|view| view.root == read.root) {
                     view.absorb_listing(read.filter, read.base, read.branch, read.listing);
-                    view.absorb_record(read.record);
+                    if current {
+                        view.absorb_record(read.record, &in_flight);
+                    }
                 }
             }
             return Outcome::Stay;
@@ -760,6 +781,7 @@ impl Extension for ReviewExtension {
                 return Outcome::Stay;
             };
             self.writing = false;
+            self.generation += 1;
             let in_flight = self.in_flight.take();
             match &written.record {
                 Ok(_) => self.retry_at = None,
@@ -779,7 +801,7 @@ impl Extension for ReviewExtension {
                 }
             }
             match self.open.as_mut().filter(|view| view.root == written.root) {
-                Some(view) => view.absorb_record(written.record),
+                Some(view) => view.absorb_record(written.record, &[]),
                 None => {
                     if let Err(error) = written.record {
                         return Outcome::Failed {

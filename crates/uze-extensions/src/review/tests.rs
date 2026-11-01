@@ -389,6 +389,9 @@ impl crate::Host for Keeping {
     fn syntax_theme(&self) -> String {
         crate::shared::highlight::FALLBACK_SYNTAX_THEME.to_owned()
     }
+    fn review_record(&self, _: &Path) -> Result<ReviewRecord, String> {
+        Ok(self.0.lock().unwrap().clone())
+    }
     fn update_review_record(
         &self,
         _: &Path,
@@ -412,6 +415,7 @@ fn a_draft_kept_just_before_the_review_closes_is_still_written() {
     extension.open(SURFACE, &checkout);
     let view = extension.review_view_mut().unwrap();
     view.change(change::Change::Draft {
+        id: 1,
         path: "naming.rs".to_owned(),
         rows: Vec::new(),
         excerpt: String::new(),
@@ -499,6 +503,7 @@ fn sending_extension() -> ReviewExtension {
         .review_view_mut()
         .unwrap()
         .change(change::Change::Draft {
+            id: 1,
             path: "naming.rs".to_owned(),
             rows: Vec::new(),
             excerpt: String::new(),
@@ -564,4 +569,37 @@ fn a_send_typed_after_the_review_closed_still_sends_its_drafts() {
     let kept = host.0.lock().unwrap();
     assert_eq!(kept.comments[0].status, CommentStatus::Sent);
     assert_eq!(kept.comments[0].agent.as_deref(), Some("a1"));
+}
+
+/// A list read that began before a write landed is answered after it: the
+/// draft that write kept stays on screen.
+#[test]
+fn a_record_read_before_a_write_landed_never_takes_its_draft_away() {
+    use crate::contract::Extension;
+    let mut extension = sending_extension();
+    let host = Keeping(std::sync::Mutex::new(ReviewRecord::default()));
+    let jobs = extension.jobs();
+    // door, list, write: the list reads before the write runs.
+    let mut answers: Vec<_> = jobs.into_iter().map(|job| (job.run)(&host)).collect();
+    let written = answers.pop().unwrap();
+    let listed = answers.pop().unwrap();
+    // The list read again after the write: the draft is on disk now.
+    extension.absorb(written);
+    extension.absorb(listed);
+    assert_eq!(extension.review_view().unwrap().drafts().len(), 1);
+}
+
+#[test]
+fn a_draft_laid_again_over_a_record_holding_it_is_not_kept_twice() {
+    let mut record = ReviewRecord::default();
+    let draft = change::Change::Draft {
+        id: 1,
+        path: "a.rs".to_owned(),
+        rows: Vec::new(),
+        excerpt: String::new(),
+        text: "once".to_owned(),
+    };
+    draft.apply(&mut record);
+    draft.apply(&mut record);
+    assert_eq!(record.comments.len(), 1);
 }

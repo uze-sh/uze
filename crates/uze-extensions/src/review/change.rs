@@ -8,8 +8,10 @@ use super::record::{Comment, CommentStatus, ReviewRecord, Row};
 /// One edit the operator made to the review.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Change {
-    /// A new draft.
+    /// A new draft, under the id it was given where it was written: an
+    /// edit or a delete made before the record is read again names it so.
     Draft {
+        id: u64,
         path: String,
         rows: Vec<Row>,
         excerpt: String,
@@ -36,14 +38,21 @@ impl Change {
     pub(crate) fn apply(&self, record: &mut ReviewRecord) {
         match self {
             Change::Draft {
+                id,
                 path,
                 rows,
                 excerpt,
                 text,
             } => {
-                record.next_comment = record.next_comment.max(1);
-                let id = record.next_comment;
-                record.next_comment += 1;
+                // Laid again over a record that already holds it, it is a
+                // repeat; under an id another client took first, it steps
+                // past it.
+                let id = match record.comments.iter().find(|comment| comment.id == *id) {
+                    Some(kept) if kept.text == *text && kept.path == *path => return,
+                    Some(_) => record.free_id(),
+                    None => *id,
+                };
+                record.next_comment = record.next_comment.max(id + 1);
                 record.comments.push(Comment {
                     id,
                     path: path.clone(),
@@ -126,6 +135,7 @@ mod tests {
 
     fn drafted(record: &mut ReviewRecord, text: &str) -> u64 {
         Change::Draft {
+            id: record.free_id(),
             path: "a.rs".to_owned(),
             rows: Vec::new(),
             excerpt: String::new(),

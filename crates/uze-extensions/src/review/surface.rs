@@ -262,10 +262,16 @@ impl ReviewView {
 
     /// The review as the record keeps it now, with what was changed here
     /// and not yet written laid over it.
-    pub(crate) fn absorb_record(&mut self, record: Result<ReviewRecord, String>) {
+    /// `in_flight` is what a write is out for: not yet in what was read,
+    /// and laid over it with what is still to be written.
+    pub(crate) fn absorb_record(
+        &mut self,
+        record: Result<ReviewRecord, String>,
+        in_flight: &[Change],
+    ) {
         match record {
             Ok(mut record) => {
-                for change in &self.unwritten {
+                for change in in_flight.iter().chain(&self.unwritten) {
                     change.apply(&mut record);
                 }
                 self.record = record;
@@ -453,6 +459,7 @@ impl ReviewView {
         match composer.editing {
             Some(id) => self.change(Change::Edit { id, text }),
             None => self.change(Change::Draft {
+                id: self.record.free_id(),
                 path: self.relative(&path),
                 rows: composer.rows,
                 excerpt: composer.excerpt,

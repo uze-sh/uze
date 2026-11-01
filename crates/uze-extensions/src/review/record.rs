@@ -72,6 +72,19 @@ pub enum RowKind {
     Removed,
 }
 
+impl ReviewRecord {
+    /// An id no comment holds yet.
+    pub fn free_id(&self) -> u64 {
+        let highest = self
+            .comments
+            .iter()
+            .map(|comment| comment.id)
+            .max()
+            .unwrap_or(0);
+        self.next_comment.max(highest + 1).max(1)
+    }
+}
+
 impl Comment {
     /// `send/n`, once it was sent.
     pub fn reference(&self) -> Option<String> {
