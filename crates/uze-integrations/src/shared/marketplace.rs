@@ -128,8 +128,12 @@ pub(crate) trait MarketplaceDialect {
         detail: &BTreeMap<String, serde_json::Value>,
     ) -> AttachmentInspection;
     fn remove_plugin(executable: &Path, home: &Path, selector: &str) -> Result<()>;
-    /// Unregisters a marketplace by name, which also uninstalls the plugins
-    /// installed from it.
+    /// Unregisters a marketplace by name. What happens to the plugins
+    /// installed from it is the vendor's, as measured
+    /// (`experiments/{claude,codex}/source-tie.py`): Claude Code uninstalls
+    /// them; Codex drops them from its listing but keeps each one's
+    /// `[plugins."<id>"] enabled = true`, so they come back installed and
+    /// enabled once the marketplace is added again.
     fn remove_marketplace(executable: &Path, home: &Path, name: &str) -> Result<()>;
 }
 
