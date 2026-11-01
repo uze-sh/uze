@@ -110,6 +110,15 @@ pub fn replace_running(new: &Path, target: &Path) -> io::Result<()> {
     imp::replace_running(new, target)
 }
 
+/// Removes the program at `path`, `path` possibly being the image this
+/// very process runs; a file already gone is removed. Unix unlinks it at
+/// once, and the running process keeps the inode it started from. Windows
+/// refuses to delete a running image but lets it be renamed, so it steps
+/// aside and a detached process deletes it once this one has exited.
+pub fn remove_running(path: &Path) -> io::Result<()> {
+    imp::remove_running(path)
+}
+
 /// Puts a launcher for `program` at `at`, in a directory this process owns:
 /// running `at` runs `program`, which sees `at`'s name as its own.
 ///
@@ -230,6 +239,13 @@ mod imp {
 
     pub(super) fn sweep_replaced(_running: &Path) {}
 
+    pub(super) fn remove_running(path: &Path) -> io::Result<()> {
+        match fs::remove_file(path) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            removed => removed,
+        }
+    }
+
     pub(super) fn place_launcher(program: &Path, at: &Path) -> io::Result<()> {
         match fs::symlink_metadata(at) {
             Ok(metadata) if metadata.file_type().is_symlink() => {
@@ -317,6 +333,40 @@ mod imp {
                 let _ = crate::fs::rename(&aside, target);
             }
         })
+    }
+
+    /// Only this process's own image is in its way: any other is deleted
+    /// now. The one it runs is renamed aside, and a hidden PowerShell waits
+    /// for this process to end before deleting it.
+    pub(super) fn remove_running(path: &Path) -> io::Result<()> {
+        if !path.exists() {
+            return Ok(());
+        }
+        if !in_use(path) {
+            return fs::remove_file(path);
+        }
+        let aside = set_aside_name(path);
+        crate::fs::rename(path, &aside)?;
+        let quoted = aside.to_string_lossy().replace('\'', "''");
+        let script = format!(
+            "Wait-Process -Id {} -ErrorAction SilentlyContinue; \
+             Remove-Item -LiteralPath '{quoted}' -Force -ErrorAction SilentlyContinue",
+            std::process::id()
+        );
+        let mut command = std::process::Command::new("powershell.exe");
+        command
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+            ])
+            .arg(script)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        crate::process::spawn_detached(&mut command).map(|_| ())
     }
 
     pub(super) fn sweep_replaced(running: &Path) {

@@ -24,6 +24,15 @@ pub fn add_to_user_path(directory: &std::path::Path) -> std::io::Result<bool> {
     imp::add_to_user_path(directory)
 }
 
+/// Takes `directory` off the `PATH` every shell opened from now on searches,
+/// wherever an entry names it; whether one did. The undoing of
+/// [`add_to_user_path`]: on Windows the user's `Path` in the registry, its
+/// other entries kept as stored, and running programs told it changed. On
+/// Unix nothing was ever added, so nothing is taken away.
+pub fn remove_from_user_path(directory: &std::path::Path) -> std::io::Result<bool> {
+    imp::remove_from_user_path(directory)
+}
+
 /// Windows' alone: its user `Path` is the only search path UZE adds to.
 #[cfg(windows)]
 pub(crate) use imp::holds;
@@ -37,6 +46,10 @@ mod imp {
     }
 
     pub(super) fn add_to_user_path(_directory: &std::path::Path) -> std::io::Result<bool> {
+        Ok(false)
+    }
+
+    pub(super) fn remove_from_user_path(_directory: &std::path::Path) -> std::io::Result<bool> {
         Ok(false)
     }
 }
@@ -104,7 +117,67 @@ mod imp {
             path.push(";");
             path.push(&stored);
         }
-        let value = wide(&path);
+        write_user_path(&path)?;
+        Ok(true)
+    }
+
+    /// Every entry that names `directory`, as a new shell would expand it,
+    /// goes; the rest are written back exactly as stored.
+    pub(super) fn remove_from_user_path(directory: &std::path::Path) -> std::io::Result<bool> {
+        let Some(stored) = registry_string(HKEY_CURRENT_USER, USER, "Path", RRF_NOEXPAND)? else {
+            return Ok(false);
+        };
+        let stored = stored.to_string_lossy().into_owned();
+        let kept: Vec<&str> = stored
+            .split(';')
+            .filter(|entry| {
+                let expanded = expand(entry);
+                entry.is_empty() || !holds(OsStr::new(&expanded), directory)
+            })
+            .collect();
+        let path = kept.join(";");
+        if path == stored {
+            return Ok(false);
+        }
+        write_user_path(OsStr::new(&path))?;
+        Ok(true)
+    }
+
+    /// One entry with its `%VARIABLE%`s expanded from this process's
+    /// environment, as the shell reading it would.
+    fn expand(entry: &str) -> String {
+        let mut expanded = String::new();
+        let mut rest = entry;
+        while let Some(start) = rest.find('%') {
+            expanded.push_str(&rest[..start]);
+            let after = &rest[start + 1..];
+            match after.find('%') {
+                Some(end) => {
+                    let name = &after[..end];
+                    match std::env::var(name) {
+                        Ok(value) => expanded.push_str(&value),
+                        Err(_) => {
+                            expanded.push('%');
+                            expanded.push_str(name);
+                            expanded.push('%');
+                        }
+                    }
+                    rest = &after[end + 1..];
+                }
+                None => {
+                    expanded.push('%');
+                    rest = after;
+                }
+            }
+        }
+        expanded.push_str(rest);
+        expanded
+    }
+
+    /// Writes the user's `Path` as an expandable string, and tells running
+    /// programs the environment changed.
+    fn write_user_path(path: &OsStr) -> std::io::Result<()> {
+        let value = wide(path);
         let key = wide(OsStr::new(USER));
         let name = wide(OsStr::new("Path"));
         // SAFETY: every string is NUL-terminated, and the value's length is
@@ -137,7 +210,7 @@ mod imp {
                 &mut answer,
             )
         };
-        Ok(true)
+        Ok(())
     }
 }
 
