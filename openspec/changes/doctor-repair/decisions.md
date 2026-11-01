@@ -268,3 +268,13 @@
 - decided:  a type alias in the catalogue test; the store test builds its provenance through `Provenance::of_local_path`, a `#[cfg(test)]` constructor in `acquisition.rs`, so `store.rs` names no source mechanism.
 - result:   `make check` (with `UZE_AGENT`, `UZE_AGENT_KEY`, `UZE_PANE` unset): fmt, lint, deny, telemetry tests, python fmt/lint and artifacts pass; `test` fails only on the known environment failures — `command_approval::approving_needs_a_person_at_a_terminal`, `extensions::an_install_of_what_the_project_declares_says_the_same`, `extensions::an_install_off_a_terminal_leaves_a_script_extension_disabled_and_says_where_to_enable_it`, `uze-terminal` `foreground_status_*` (2) — plus one `uze-theme` test (`the_bundled_tables_and_the_themes_directory_agree`) that did not find its themes directory once and passed on rerun. `openspec validate --all --strict`: 101 passed.
 - blast:    `catalogue.rs`, `store.rs`, `acquisition.rs`.
+
+## R28 — Restoring a pin is not changing a revision
+
+- status:   pending
+- task:     review
+- commit:   (the commit recording this)
+- trigger:  the review found `repair.rs` running `restore_pins` while the spec said repair SHALL NOT change a revision.
+- decided:  the requirement says repair SHALL NOT change a *pinned* revision, and that restoring the commit pinned before a marketplace link is not a change: `agents.lock` never moves, and the restore puts back the revision it records.
+- rejected: dropping the restore from repair (a machine left on a link's working tree would need `uze update`, which moves pins).
+- blast:    `specs/machine-repair/spec.md`.

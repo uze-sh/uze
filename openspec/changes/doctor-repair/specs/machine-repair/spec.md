@@ -70,7 +70,8 @@ session of that harness, as the vendor-store migration does not.
 
 ### Requirement: Repair never overrides the operator or destroys irreplaceable state
 `--repair` SHALL NOT overwrite an artifact that drifted or conflicts, change
-a revision, grant or widen trust, set aside or rewrite the receipt ledger or
+a pinned revision (restoring the commit pinned before a marketplace link is
+not a change), grant or widen trust, set aside or rewrite the receipt ledger or
 an authorization, or change a project, a checkout, a branch or a ref. Each
 such finding SHALL be reported with the command that resolves it.
 
