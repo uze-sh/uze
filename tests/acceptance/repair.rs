@@ -625,10 +625,7 @@ fn a_projection_in_use_is_kept_however_old() {
     let months_ago =
         std::time::SystemTime::now() - std::time::Duration::from_secs(120 * 24 * 60 * 60);
     for dir in [&in_use, in_use.parent().unwrap()] {
-        fs::File::open(dir)
-            .unwrap()
-            .set_modified(months_ago)
-            .unwrap();
+        uze_platform::fs::set_modified(dir, months_ago).unwrap();
     }
 
     let (code, report) = repair_json(&env);
