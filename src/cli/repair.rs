@@ -7,7 +7,8 @@
 
 use crate::*;
 use uze_application::application::{
-    HealthFinding, RepairOutcome, RepairReport, Subject, TerminalEndpoint,
+    HealthFinding, RepairOutcome, RepairReport, SchemaEntry, SchemaFinding, Subject,
+    TerminalEndpoint,
 };
 
 /// The terminal runtime's own word on its endpoint.
@@ -23,11 +24,15 @@ impl TerminalEndpoint for WorkspaceEndpoint {
     }
 }
 
-pub(crate) fn run_repair(home: UzeHome, format: OutputFormat) -> Result<()> {
+pub(crate) fn run_repair(
+    home: UzeHome,
+    format: OutputFormat,
+    discard_leftovers: bool,
+) -> Result<()> {
     let app = UzeApplication::from_env(home.clone())?;
     let report = with_spinner("Repairing", || {
         let plan = app.repair_plan(&WorkspaceEndpoint);
-        Ok(app.repair(plan, &WorkspaceEndpoint))
+        Ok(app.repair(plan, &WorkspaceEndpoint, discard_leftovers))
     })?;
     emit(format, &report, |report| render_repair(home.root(), report));
     EXIT_CODE.store(report.exit_status(), std::sync::atomic::Ordering::Relaxed);
@@ -37,6 +42,12 @@ pub(crate) fn run_repair(home: UzeHome, format: OutputFormat) -> Result<()> {
 pub(crate) fn render_repair(home: &std::path::Path, report: &RepairReport) -> String {
     use progress::Change;
     let mut lines = format!("{}\n", progress::key_value("home", progress::path(home)));
+    if let Some(measured) = &report.measured {
+        lines.push_str(&format!(
+            "{}\n",
+            progress::key_value("size", uze::size::bytes_to_say(measured.total()))
+        ));
+    }
     if !report.entries.is_empty() {
         lines.push('\n');
     }
@@ -77,6 +88,7 @@ pub(crate) fn render_repair(home: &std::path::Path, report: &RepairReport) -> St
             }
         }
     }
+    lines.push_str(&render_home(home, &report.home));
     if !report.maintenance.outcomes.is_empty() {
         lines.push_str(&format!("\n{}\n", progress::title("Maintenance")));
         for outcome in &report.maintenance.outcomes {
@@ -109,6 +121,60 @@ pub(crate) fn render_repair(home: &std::path::Path, report: &RepairReport) -> St
         said.join(", ")
     };
     progress::change_report("doctor --repair", &lines, &outcome)
+}
+
+/// What the home holds that its schema does not account for: what was
+/// removed, and what is kept until the person says.
+fn render_home(home: &std::path::Path, entries: &[SchemaEntry]) -> String {
+    use progress::Change;
+    if entries.is_empty() {
+        return String::new();
+    }
+    let mut lines = format!("\n{}\n", progress::title("Home"));
+    for entry in entries {
+        let path = entry
+            .path
+            .strip_prefix(home)
+            .unwrap_or(&entry.path)
+            .display()
+            .to_string();
+        let size = entry.bytes.map(uze::size::bytes_to_say).unwrap_or_default();
+        let (kind, detail) = match (entry.finding, entry.removed) {
+            (SchemaFinding::Retired, true) => {
+                (Change::Removed, "left by an earlier version".to_owned())
+            }
+            (SchemaFinding::EmptyDirectory, true) => (Change::Removed, "empty".to_owned()),
+            (SchemaFinding::SetAside | SchemaFinding::Superseded, true) => {
+                (Change::Removed, format!("{size} discarded"))
+            }
+            (SchemaFinding::SetAside, false) => (
+                Change::Attention,
+                format!("{size}, a record set aside that nothing reads"),
+            ),
+            (SchemaFinding::Superseded, false) => (
+                Change::Attention,
+                format!("{size}, the only copy of a version a failed restore kept"),
+            ),
+            (SchemaFinding::Unknown, _) => (
+                Change::Attention,
+                "unknown, maybe from a newer uze: left as it is".to_owned(),
+            ),
+            (SchemaFinding::Retired | SchemaFinding::EmptyDirectory, false) => {
+                (Change::Failed, "could not be removed".to_owned())
+            }
+        };
+        lines.push_str(&progress::change(kind, &path, Some(&detail)));
+    }
+    if entries
+        .iter()
+        .any(|entry| entry.is_leftover() && !entry.removed)
+    {
+        lines.push_str(&format!(
+            "  {}\n",
+            progress::next_step("uze doctor --repair --discard-leftovers")
+        ));
+    }
+    lines
 }
 
 /// What a finding is about, with the harness it is on when that is not
@@ -188,7 +254,7 @@ mod tests {
                     },
                 },
             ],
-            maintenance: Default::default(),
+            ..RepairReport::default()
         };
         let text = plain(&render_repair(
             std::path::Path::new("/home/me/.uze"),
@@ -205,5 +271,48 @@ mod tests {
             "{text}"
         );
         assert_eq!(report.exit_status(), 1);
+    }
+
+    #[test]
+    fn the_home_says_what_it_kept_and_how_to_discard_it() {
+        let home = std::path::Path::new("/home/me/.uze");
+        let entry = |path: &str, finding, bytes, removed| SchemaEntry {
+            path: home.join(path),
+            tier: "record",
+            finding,
+            bytes,
+            removed,
+        };
+        let report = RepairReport {
+            home: vec![
+                entry("state/profiles.json", SchemaFinding::Retired, None, true),
+                entry(
+                    "state/hosts.json.unreadable-1",
+                    SchemaFinding::SetAside,
+                    Some(2048),
+                    false,
+                ),
+                entry("state/newer.json", SchemaFinding::Unknown, None, false),
+            ],
+            ..RepairReport::default()
+        };
+        let text = plain(&render_repair(home, &report));
+        assert!(
+            text.contains("state/profiles.json   left by an earlier version"),
+            "{text}"
+        );
+        assert!(
+            text.contains("state/hosts.json.unreadable-1   2.0 KB, a record set aside"),
+            "{text}"
+        );
+        assert!(
+            text.contains("state/newer.json   unknown, maybe from a newer uze"),
+            "{text}"
+        );
+        assert!(
+            text.contains("uze doctor --repair --discard-leftovers"),
+            "{text}"
+        );
+        assert!(text.contains("nothing to repair"), "{text}");
     }
 }

@@ -137,3 +137,113 @@
 - decided:  `uze_terminal::stale_endpoint` (something at the endpoint, nothing answers, no server claims the workspace) and `clear_stale_endpoint` (under the exclusive workspace lock; a held lock leaves it alone). `uze-application` declares `TerminalEndpoint`, which `src/cli/repair.rs` implements; plain `doctor` adds the finding in `src/main.rs`.
 - rejected: deleting the socket file from the application (would race a starting server).
 - blast:    `uze-terminal/runtime/endpoint.rs`, `src/cli/repair.rs`, `src/main.rs`.
+
+## R15 — `collect(&UzeHome)`, a registry per application, and one process-wide registration
+
+- status:   pending
+- task:     3.2
+- commit:   c958e63e
+- trigger:  design D7 gives `collect(&UzeHome)`, but two owners' rules read what the application holds (the installed extensions, the integrations), and the binary's collector cannot be named by `uze-application`.
+- decided:  `Collectable { name, roots, collect(&UzeHome) -> Collected }`. `UzeApplication::collectors()` builds the application's own collectors per call, borrowing what they need (`CompiledViews(&app)`, `IntegrationProjections(&integrations)`), then appends those registered through `register_collector`, a process-wide list the binary fills once in `main` with its log journals (`telemetry::Journals`). `Health::collect` runs each under `catch_unwind`. `every_disposable_root_has_one_collector` lives in `tests/architecture/collection.rs`, where the binary's registration is in the set it checks.
+- rejected: `collect(&UzeApplication)` (the binary's collector and the uze-workspace rule need no application); a registry stored in `UzeApplication` (every application a process builds — the TUI makes several — would need the binary to register again).
+- blast:    `collection.rs`, `src/telemetry.rs`, `src/main.rs`, `tests/architecture/collection.rs`.
+
+## R16 — Collectors run before the mutation lock; maintenance runs all of them
+
+- status:   pending
+- task:     3.3
+- commit:   c958e63e
+- trigger:  each collector takes its own lock, and `MutationLock` is a non-reentrant `flock`: a collector that takes it inside `maintain_locked` would wait on its own process.
+- decided:  `maintain()` and `repair()` run `Health::collect` after restoring pins and before taking the mutation lock. The compiled-views collector takes the mutation lock itself and reports `skipped` while another process holds it, as maintenance skipped it before. The projections collector therefore runs on every `doctor` and health pass too, not only the client's occupancy pass (its inline trigger, `prune_runtime_projections`, now calls the collector).
+- rejected: running collectors inside the lock with a "lock held" token (each owner's own lock is the design's point).
+- blast:    `maintenance.rs`, `repair.rs`.
+
+## R17 — Codex role files through `IntegrationPort::collect_runtime`
+
+- status:   pending
+- task:     3.3
+- commit:   3f4ce4a1, c958e63e
+- trigger:  the role-file sweep ran only inside a Codex launch, with the launch's own list of what it wrote; `uze-application` names no harness.
+- decided:  a default-empty `IntegrationPort::collect_runtime(&UzeHome)`; Codex answers it by sweeping, for each projected project whose root is still there, the `.toml` role files no current project agent maps to (the same file names a launch gives, `role_file_names`). A project with no agents any more loses its role files too, which a launch never swept. One application collector, "harness projections", owns `runtime_projection_dir` and asks every integration.
+- rejected: a Codex-named collector in `uze-application` (layering); declaring a Codex-only owned path in `UzeHome` (`uze-core` names no vendor).
+- blast:    `integration.rs`, `codex.rs`, `codex/runtime.rs`, `maintenance.rs`.
+
+## R18 — A conversation's document lives while a record names its conversation
+
+- status:   pending
+- task:     3.3
+- commit:   08ab32f4
+- trigger:  only `conversation::forget` removed a session document, so one a killed harness or a replaced conversation left stayed forever; "the session ended" needs a rule a collector can apply.
+- decided:  `conversation::collect_session_documents` keeps every `runtime/sessions/<integration>/<session>.md` some agent's conversation record names, and removes the rest. A launch records the conversation it assigned before it writes the document, so a starting launch is never raced. Nothing is removed while any conversation record cannot be read, or while the layout before project records were gathered is still present.
+- rejected: an age rule (an OpenCode session can run for days); collecting only documents of projects whose root is gone (misses the replaced conversation).
+- blast:    `uze-workspace/src/conversation.rs`, `maintenance.rs`.
+
+## R19 — Pictures keep their count bound at rest; a root builder added
+
+- status:   pending
+- task:     3.3
+- commit:   c958e63e
+- trigger:  `keep_pictures` bounds what one run keeps (16) but nothing bounded an extension's pictures across runs, and the collector needed the parent of every extension's pictures.
+- decided:  the pictures collector keeps the newest `KEPT_PICTURES` pictures per extension and removes the rest; `UzeHome::extension_pictures_root` names their parent (listed, generated, with the derived check).
+- rejected: a no-op collector (it would own a root and keep no rule).
+- blast:    `program.rs`, `home.rs`, `owned.rs`, `catalogue.rs`.
+
+## R20 — The retired list takes no lock of its own
+
+- status:   pending
+- task:     3.3
+- commit:   c958e63e
+- trigger:  the brief says the retired list runs under the mutation lock; the bootstrap never took it, and `a_machine_sheds_the_profiles_record_and_nothing_else_under_state` asserts the retirement leaves nothing else under `state/` (taking the lock writes `mutation.lock`).
+- decided:  `Retired` (in `setup.rs`) removes what of `RETIRED` is present with no lock on the bootstrap trigger and in maintenance; `uze setup` removes it under the lock it already holds. Only retired paths marked disposable are on the list: `pre_sources_layout` and `scattered_project_records` are carried across by their own steps and never removed by it.
+- rejected: taking the lock only when something retired is present (still fails the test above, and a retired path has no reader to race).
+- blast:    `setup.rs`, `owned.rs`.
+
+## R21 — Scratch by pid falls back to age where the platform cannot answer
+
+- status:   pending
+- task:     3.4
+- commit:   c958e63e
+- trigger:  `uze_platform::process::alive` answers `None` where the platform will not say, and a run directory not named `{pid}-{run}` has no pid.
+- decided:  a scratch directory is removed when its pid is not alive; kept while it is; and, with no answer, judged by the old one-hour age. The pid is the UZE process that made the run (the run name's first part). The age-only sweep stays as the test helper `sweep_stale_scratch`, so its test is unchanged.
+- rejected: keeping a directory forever when liveness is unknown.
+- blast:    `program.rs`.
+
+## R22 — How the home is compared with its schema
+
+- status:   pending
+- task:     3.5
+- commit:   (this commit)
+- trigger:  D8's table leaves open how a parameterised path matches, where the walk stops, and how the result is reported.
+- decided:  `OwnedPath::pattern/matches/lies_under` treat each `{…}` (and the placeholder package's segments) as any text within one segment. The walk skips the generated and remembered tiers and the opaque terminal subtree; a declared directory is entered only when a declared path lies under it (a package's bytes, a build, a memory directory are their owner's content). Set-aside names are found anywhere walked. An undeclared directory is entered when a declared path lies under it; otherwise an empty one in bytes, store or record is removed, and anything else is `unknown`. A retired path that a step still carries is passed over. Results are `RepairReport.home` (`SchemaEntry`: path, tier, finding, size for leftovers, removed), shown under "Home"; they do not change the exit status.
+- rejected: reporting each unknown as a `HealthFinding` (it would make the exit status 1 for a newer build's file).
+- blast:    `schema.rs`, `owned.rs`, `repair.rs`, `src/cli/repair.rs`, `src/cli/grammar.rs`.
+
+## R23 — The size figure
+
+- status:   pending
+- task:     3.6
+- commit:   (this commit)
+- trigger:  D8 asks plain `doctor` to show a recorded figure and `--repair` to refresh it.
+- decided:  `CollectionRecord { measured_at_unix, tiers }` in `cache/collection.json`, measured per tier by each top-level entry's tier (`Tier::of`, read-only, terminal state counted as a record). `--repair` writes it after its second observation and reports it as `size`; plain `doctor` reads it into `DoctorReport.collection` and shows a `size` row only when one was recorded. Plain `doctor`'s collectors read only what each owner's rule needs (markers, compiled headers, mirror `catalogue.json`, directory listings); `doctor_meets_the_budget` stays green.
+- rejected: measuring on plain `doctor` (a walk of every package's bytes).
+- blast:    `collection.rs`, `doctor.rs`, `read_models.rs`, `src/cli/status.rs`.
+
+## R24 — Collector moves committed by owner crate
+
+- status:   pending
+- task:     3.3
+- commit:   08ab32f4, 3f4ce4a1, c958e63e
+- trigger:  the brief asks for one commit per mechanism; the application's registration list and its coverage test only hold once every owner is in, and several owners share one file (`maintenance.rs`, `program.rs`).
+- decided:  one commit per crate that owns a rule outside the application (workspace, integrations), then one for the application's registry and owners. Each mechanism keeps its rule and its existing tests unchanged; the only test-visible behaviour change is scratch by pid (R21), with a test of its own.
+- rejected: hand-built intermediate commits that never existed as a working tree.
+- blast:    history only.
+
+## R25 — The "running session" scenario leaves the spec
+
+- status:   pending
+- task:     4.2
+- commit:   (this commit)
+- trigger:  R2 left the spec's "A running session" scenario, the requirement's "unless a session … is running" and design D4 promising a guard nothing implements.
+- decided:  the requirement now says repair repoints through the harness's own CLI and does not wait for or look for a session; the scenario is removed; design D4, its risk line, the proposal and task 2.3 say the same; the "repoints during a session" negative test is dropped from 4.2.
+- rejected: keeping the scenario as a declared limitation (it would be a requirement nothing meets).
+- blast:    `specs/machine-repair/spec.md`, `design.md`, `proposal.md`, `tasks.md`.

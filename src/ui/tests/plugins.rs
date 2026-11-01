@@ -226,6 +226,7 @@ fn attachment_health_is_never_unknown_after_a_refresh() {
         ssh_missing: false,
         machine_concerns: Vec::new(),
         health: Vec::new(),
+        collection: None,
     });
     let (terminal, _hits) = drawn_at(&model, 100, 40);
     let rows = buffer_rows(&terminal);

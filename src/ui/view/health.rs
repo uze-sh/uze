@@ -209,6 +209,7 @@ mod tests {
             ssh_missing: false,
             machine_concerns: Vec::new(),
             health: Vec::new(),
+            collection: None,
         }
     }
 
@@ -329,6 +330,7 @@ mod tests {
             ssh_missing: false,
             machine_concerns: Vec::new(),
             health: Vec::new(),
+            collection: None,
         };
         let alerts = actionable_alerts(Some(&doctor));
         assert_eq!(alerts[0].severity, Severity::High);

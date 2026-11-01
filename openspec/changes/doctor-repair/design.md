@@ -102,9 +102,11 @@ that were authorized.
 ### D4. Repoint carefully
 
 A repoint happens only when the registered root differs from the vendor
-store, and never while a session of that harness is running. Sessions are
-found through the platform's process listing, filtered by the harness
-executable.
+store. It does not wait for a session of that harness: there is no census
+of harness processes UZE did not start, and a guard over UZE's own agents
+alone would let a session started elsewhere through. This is the
+vendor-stores migration's own choice (its decisions D8 and D13), and the
+repoint reuses its code unchanged.
 
 - **Claude:** a same-name `marketplace add`.
 - **Codex:** `remove`, then `add`. If the `add` fails, the old root is
@@ -227,7 +229,8 @@ program.
   build to leave it alone.
 
 **Retired paths keep their trigger.** `collect(retired)` runs on every
-`setup` and bootstrap under the mutation lock, as today. A path goes on the
+`setup` (under the mutation lock it holds) and bootstrap (under none, as
+today: nothing reads a retired path, and a warm bootstrap writes nothing). A path goes on the
 retired list only once deleting it costs every supported build nothing:
 
 - a generated or remembered path; or
@@ -268,8 +271,9 @@ reported.
 
 ## Risks / Trade-offs
 
-- **[A repoint is visible in the harness]** → it is explicit, never runs
-  during a session, and is reported.
+- **[A repoint is visible in the harness]** → it is explicit, happens only
+  when the registered root differs, and is reported. A session running at
+  that moment keeps the plugins it loaded; the next one reads the store.
 - **[An unreadable ledger leaves the machine stuck until the person acts]**
   → this is intended (persisted-state). The report names the file and the
   error, and says that no delivery is touched meanwhile.
@@ -307,6 +311,7 @@ Choices taken without the operator, and those agreed in conversation, all for th
 | 16 | "Never delete the unknown" applies to the bytes, store, record and authored tiers only | Applying it to generated and remembered would break the projection sweep, which shipped releases already rely on. |
 | 17 | Extension scratch lives while its pid lives | A 1 h age would delete a long-running program's scratch once the collector runs on every maintenance pass. |
 | 18 | Retired paths stay on the bootstrap trigger; only paths no supported build reads may be retired | Moving retirement to `--repair` alone would stop it from happening. Retiring a record an older build still reads breaks two builds on one machine. |
+| 19 | A repoint does not wait for a running session (implementation decision R2) | A session guard needs a census of harness processes UZE did not start, which does not exist; vendor-stores D8/D13 made the same call. |
 
 ## Candidate ADRs
 

@@ -261,6 +261,7 @@ impl Health<'_> {
             program_confinement: super::read_models::ProgramConfinement::of_this_machine(),
             extension_costs: self.0.extensions().measured_costs(),
             health: Vec::new(),
+            collection: super::CollectionRecord::read(&self.0.home),
             machine_concerns: uze_platform::machine::concerns()
                 .into_iter()
                 .map(|concern| MachineConcern {

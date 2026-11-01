@@ -62,6 +62,7 @@ mod retired_regions;
 mod rules;
 mod rules_engine;
 mod runtime_shim;
+mod schema;
 pub mod services;
 mod setup;
 mod theme;
@@ -91,7 +92,7 @@ pub use uninstall::{
 pub use catalogue::{
     HealthCheck, HealthFinding, Inspection, Lane, REPAIR_COMMAND, Severity, Subject,
 };
-pub use collection::{Collectable, Collected, register_collector};
+pub use collection::{Collectable, Collected, CollectionRecord, register_collector};
 pub use maintenance::{MaintenanceOutcome, MaintenanceReport};
 pub use overview::{
     ContextState, MarketplaceState, OverviewMarketplace, OverviewWorkspaceSummary,
@@ -106,6 +107,7 @@ pub use project_environment::{
 pub use repair::{
     NoTerminalEndpoint, RepairEntry, RepairOutcome, RepairPlan, RepairReport, TerminalEndpoint,
 };
+pub use schema::{SchemaEntry, SchemaFinding};
 pub use uze_core::anchor::AnchorKind;
 pub use uze_core::rules::manifest::MANIFEST_FILE as RULES_MANIFEST_FILE;
 pub use uze_core::rules::plugin::ManifestChange as RulesManifestChange;

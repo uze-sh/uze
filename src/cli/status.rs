@@ -204,12 +204,24 @@ pub(crate) fn render_doctor(report: &DoctorReport) -> String {
             progress::label(format!("run as you: {}", confinement.summary))
         )
     };
-    let mut text = progress::aligned_rows(vec![
-        vec![progress::label("home"), progress::path(&report.uze_home)],
+    let mut head = vec![vec![
+        progress::label("home"),
+        progress::path(&report.uze_home),
+    ]];
+    // The size `doctor --repair` last measured: plain `doctor` walks
+    // nothing to answer it.
+    if let Some(collection) = &report.collection {
+        head.push(vec![
+            progress::label("size"),
+            uze::size::bytes_to_say(collection.total()),
+        ]);
+    }
+    head.extend([
         vec![progress::label("store"), store],
         vec![progress::label("plugins"), report.plugins.len().to_string()],
         vec![progress::label("programs"), programs],
     ]);
+    let mut text = progress::aligned_rows(head);
     text.push_str("\n\n");
     // One row per agent: what it runs, whether it is set up, and how much
     // of every installed plugin reached it — summed, since a column per

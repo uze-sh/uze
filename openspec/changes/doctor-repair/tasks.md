@@ -11,16 +11,16 @@
 
 - [x] 2.1 Add `UzeApplication::repair_plan()` from live inspection, and `repair(plan)` in design D5 order, under the mutation lock. The catalogue then observes again.
 - [x] 2.2 Add re-acquisition from the registry's provenance (Git at the recorded commit, local path, or linked target). Keep the bytes only on a digest match. Otherwise report `NeedsHuman` with `uze update <id>`. Offline, report `NeedsNetwork`. Embedded packages are re-ingested from the binary's snapshot, recording its digest.
-- [x] 2.3 Repoint a marketplace whose registered root differs from its vendor store, never during a session of that harness, reusing the vendor-stores registration code.
+- [x] 2.3 Repoint a marketplace whose registered root differs from its vendor store, reusing the vendor-stores registration code. No session guard (decision R2).
 - [x] 2.4 Clear a stale terminal-runtime endpoint, and recreate the shims.
 - [x] 2.5 Report each finding as `Repaired`, `NeedsHuman`, `NeedsNetwork` or `Unrepairable`, with its reason and command. Exit status 0, 1 or 2. The report follows the `design-system` skill.
 - [x] 2.6 Add `doctor --repair` to the grammar and help text. It skips bootstrap and is classified `JustifiedSlow`. `doctor_meets_the_budget` covers plain `doctor` reading the catalogue.
 
 ## 3. One collector
 
-- [ ] 3.1 Mark disposable roots on `UzeHome` (generated or remembered paths UZE may sweep). Declare `state/terminal/` an opaque subtree that is never collected, and add `cache/collection.json` as a remembered path.
-- [ ] 3.2 Add the `Collectable` trait (`roots()`, `collect(&UzeHome) -> Collected`) and the registry in `uze-application`. Add `every_disposable_root_has_one_collector`. The binary registers the telemetry collector.
-- [ ] 3.3 Move each mechanism of design D7 behind its own collector in its own step, keeping its rule, its lock and its tests:
+- [x] 3.1 Mark disposable roots on `UzeHome` (generated or remembered paths UZE may sweep). Declare `state/terminal/` an opaque subtree that is never collected, and add `cache/collection.json` as a remembered path.
+- [x] 3.2 Add the `Collectable` trait (`roots()`, `collect(&UzeHome) -> Collected`) and the registry in `uze-application`. Add `every_disposable_root_has_one_collector`. The binary registers the telemetry collector.
+- [x] 3.3 Move each mechanism of design D7 behind its own collector in its own step, keeping its rule, its lock and its tests:
   - projections;
   - rule sessions;
   - pictures;
@@ -32,23 +32,22 @@
   - the retired list (bootstrap trigger kept).
 
   Inline triggers call the owner's own `collect`.
-- [ ] 3.4 Extension scratch: alive while its pid is alive, through `uze-platform`. Add a test with a long-running program.
-- [ ] 3.5 Schema comparison under `--repair` (design D8), skipping `state/terminal/`. `sources/superseded/` and set-aside records are reported with their size and removed only with `--discard-leftovers`.
-- [ ] 3.6 Budget:
+- [x] 3.4 Extension scratch: alive while its pid is alive, through `uze-platform`. Add a test with a long-running program.
+- [x] 3.5 Schema comparison under `--repair` (design D8), skipping `state/terminal/`. `sources/superseded/` and set-aside records are reported with their size and removed only with `--discard-leftovers`.
+- [x] 3.6 Budget:
   - plain `doctor` runs collectors with the bounded reads named per owner, and shows the size figure recorded in `cache/collection.json`;
   - `--repair` measures sizes per tier and refreshes that figure;
   - `doctor_meets_the_budget` covers plain `doctor`.
-- [ ] 3.7 Write the retired-path rule into the `persistence-tiers` rule. A path is retired only when no supported build reads it, and a retired name is never reused.
+- [x] 3.7 Write the retired-path rule into the `persistence-tiers` rule. A path is retired only when no supported build reads it, and a retired name is never reused.
 
 ## 4. Proof
 
-- [ ] 4.1 Add `tests/acceptance/repair.rs`, a damage matrix. For each subject in design D2, damage it, run `doctor --repair`, and assert that the machine is healthy or that the expected `NeedsHuman` or `NeedsNetwork` is reported. A second run repairs nothing.
-- [ ] 4.2 Add negative tests. Repair never:
+- [x] 4.1 Add `tests/acceptance/repair.rs`, a damage matrix. For each subject in design D2, damage it, run `doctor --repair`, and assert that the machine is healthy or that the expected `NeedsHuman` or `NeedsNetwork` is reported. A second run repairs nothing.
+- [x] 4.2 Add negative tests. Repair never:
   - overwrites an edited build;
   - keeps bytes whose digest differs;
   - re-authorizes;
   - touches an unreadable ledger;
-  - repoints during a session;
   - touches a project;
   - deletes an unknown entry;
   - deletes a set-aside record without `--discard-leftovers`;

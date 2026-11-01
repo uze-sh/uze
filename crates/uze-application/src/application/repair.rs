@@ -12,6 +12,10 @@
 //! 4. the terminal runtime's endpoint, through the runtime itself;
 //! 5. shims.
 //!
+//! Every collector runs first, each under its own lock, and the home is
+//! then compared with its schema (`schema`), before it is measured again
+//! for plain `doctor` to show.
+//!
 //! Then the catalogue observes again, and that observation is the report:
 //! what is gone was repaired, and what is left says why. It never writes
 //! over what someone changed, never changes a revision, never asks for or
@@ -32,7 +36,9 @@ use uze_core::{
 };
 
 use super::catalogue::{HealthFinding, Inspection, Lane, Subject};
+use super::collection::CollectionRecord;
 use super::marketplace::{MarketplaceRequest, MirrorAt};
+use super::schema::SchemaEntry;
 use super::*;
 
 /// What the binary, which alone reaches the terminal runtime, says of the
@@ -96,6 +102,12 @@ pub struct RepairReport {
     pub entries: Vec<RepairEntry>,
     /// What the automatic lane did on the way, beyond the plan's findings.
     pub maintenance: MaintenanceReport,
+    /// What the home holds that its schema does not account for, and what
+    /// of it was removed.
+    pub home: Vec<SchemaEntry>,
+    /// The home measured once the repair was done, as plain `doctor` shows
+    /// it from then on.
+    pub measured: Option<CollectionRecord>,
 }
 
 impl RepairReport {
@@ -174,7 +186,12 @@ impl UzeApplication {
     /// Runs `plan` in dependency order under the mutation lock, then
     /// observes again: each finding is reported repaired, or why not.
     #[tracing::instrument(name = "repair.run", skip_all)]
-    pub fn repair(&self, plan: RepairPlan, endpoint: &dyn TerminalEndpoint) -> RepairReport {
+    pub fn repair(
+        &self,
+        plan: RepairPlan,
+        endpoint: &dyn TerminalEndpoint,
+        discard_leftovers: bool,
+    ) -> RepairReport {
         self.begin_operation();
         // Putting a pin back takes the lock itself, as plain maintenance
         // runs it.
@@ -183,6 +200,7 @@ impl UzeApplication {
         // repair takes the mutation lock.
         let collected = self.health().collect();
         let mut tried: BTreeMap<FindingKey, RepairOutcome> = BTreeMap::new();
+        let mut home = Vec::new();
         let maintenance = match MutationLock::acquire(&self.home) {
             Ok(_mutation) => {
                 for finding in plan.findings.iter().filter(|f| f.lane == Lane::Repair) {
@@ -205,6 +223,7 @@ impl UzeApplication {
                         tried.insert(key_of(finding), outcome);
                     }
                 }
+                home = super::schema::compare(&self.home, discard_leftovers);
                 maintenance
             }
             Err(error) => {
@@ -269,6 +288,8 @@ impl UzeApplication {
         RepairReport {
             entries,
             maintenance,
+            home,
+            measured: Some(CollectionRecord::measure(&self.home)),
         }
     }
 

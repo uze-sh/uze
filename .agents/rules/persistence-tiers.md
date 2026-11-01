@@ -31,7 +31,25 @@ in `UzeHome::owned_paths()` (`machine/home/owned.rs`):
 `every_path_uze_owns_is_named_in_the_map` in
 `tests/architecture/layering.rs` fails the build over a path composed
 anywhere else, or a builder the list leaves out. `uze-terminal` is the one sanctioned exception (the
-`terminal-runtime` rule).
+`terminal-runtime` rule): its `state/terminal/` is listed as an opaque form,
+which no collector, walk or comparison of the home enters.
+
+**What UZE sweeps is marked disposable**, and only a generated, remembered
+or retired path may be. Each has exactly one collector — a `Collectable`
+in the crate that knows its rule, registered in `UzeApplication::collectors`
+(the binary registers what only it writes) — which collects under its own
+lock; `every_disposable_root_has_one_collector` fails the build over a
+disposable path with none, or with two. Unknown entries under the bytes,
+store, record and authored tiers are reported, never deleted: two builds
+share one machine, and a newer one's state is unknown to an older one.
+
+**A path is retired only when no supported build reads it**: a generated or
+remembered path, or a record no supported build still reads, as a ladder
+step becomes deletable once no machine is below it. It stays in
+`owned_paths()` as `retired`, and the retired list removes it on every
+bootstrap (`disposable`) unless a step carries it across. **A retired name is
+never reused** for anything else: an older build that still finds it would
+read it as what it was.
 
 Inside a repository's Git directory, named in the workspace's worktree
 module:

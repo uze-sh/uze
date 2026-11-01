@@ -60,16 +60,13 @@ needing the network.
 
 ### Requirement: A marketplace registered elsewhere is repointed
 `--repair` SHALL repoint a marketplace UZE owns whose registered root is not
-its vendor store, unless a session of that harness is running, in which
-case it SHALL report it.
+its vendor store, through the harness's own CLI, and SHALL leave every
+plugin installed and enabled. It SHALL NOT wait for or look for a running
+session of that harness, as the vendor-store migration does not.
 
 #### Scenario: A root left in the old layout
 - **WHEN** Codex's UZE marketplace is still registered at a root under `runtime/`
 - **THEN** repair repoints it to Codex's vendor store, and every plugin stays installed and enabled
-
-#### Scenario: A running session
-- **WHEN** a Claude Code session is running
-- **THEN** repair leaves Claude's registration as it is and names the session
 
 ### Requirement: Repair never overrides the operator or destroys irreplaceable state
 `--repair` SHALL NOT overwrite an artifact that drifted or conflicts, change

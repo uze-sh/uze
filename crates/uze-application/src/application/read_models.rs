@@ -1439,6 +1439,9 @@ pub struct DoctorReport {
     /// Every finding of the health catalogue, each in the lane that puts
     /// it back.
     pub health: Vec<super::HealthFinding>,
+    /// What the home held when `doctor --repair` last measured it: read,
+    /// never measured here.
+    pub collection: Option<super::CollectionRecord>,
 }
 
 /// Whether this machine confines the programs extensions run, and how,

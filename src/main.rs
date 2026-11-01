@@ -460,11 +460,12 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
     // over.
     if let Command::Doctor {
         repair: true,
+        discard_leftovers,
         format,
     } = command
     {
         die_quietly_on_a_closed_pipe();
-        return run_repair(home, format);
+        return run_repair(home, format, discard_leftovers);
     }
     die_quietly_on_a_closed_pipe();
     let app = UzeApplication::from_env(home.clone())?;

@@ -42,7 +42,7 @@ part.
   - re-acquire missing package bytes from the registry's provenance,
     verified against the cached digest;
   - repoint a marketplace whose registered root differs from its vendor
-    store, never while that harness runs;
+    store, through the harness's own CLI;
   - clear a stale terminal-runtime endpoint;
   - recreate shims.
 - **What it never does**, and reports instead with the command that

@@ -18,7 +18,9 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Mutex};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+use uze_core::home::Tier;
 
 use super::services::Health;
 use super::*;
@@ -157,4 +159,58 @@ pub(crate) fn remove(path: &Path) -> bool {
         std::fs::remove_file(path)
     };
     removed.is_ok()
+}
+/// What the last measure of the home found, remembered in
+/// `cache/collection.json`: plain `doctor` shows it without walking
+/// anything, `doctor --repair` measures it again.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CollectionRecord {
+    /// When it was measured, in seconds since the epoch.
+    pub measured_at_unix: u64,
+    /// The bytes each tier held, by the tier's label.
+    pub tiers: Vec<(String, u64)>,
+}
+
+impl CollectionRecord {
+    pub fn total(&self) -> u64 {
+        self.tiers.iter().map(|(_, bytes)| bytes).sum()
+    }
+
+    /// The figure last recorded, when one was and it still reads.
+    pub fn read(home: &UzeHome) -> Option<Self> {
+        let bytes = std::fs::read(home.collection_record_path()).ok()?;
+        serde_json::from_slice(&bytes).ok()
+    }
+
+    /// Measures every tier of `home` now and remembers it.
+    pub(crate) fn measure(home: &UzeHome) -> Self {
+        let record = Self {
+            measured_at_unix: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |since| since.as_secs()),
+            tiers: Tier::ALL
+                .iter()
+                .map(|tier| (tier.label().to_owned(), tier_bytes(home, *tier)))
+                .collect(),
+        };
+        if let Ok(payload) = serde_json::to_vec_pretty(&record) {
+            let _ = uze_core::persistence::write_atomic_unsynced(
+                &home.collection_record_path(),
+                &payload,
+            );
+        }
+        record
+    }
+}
+
+/// The bytes the top-level entries of `home` in `tier` hold.
+fn tier_bytes(home: &UzeHome, tier: Tier) -> u64 {
+    std::fs::read_dir(home.root())
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| Tier::of(home, path) == Some(tier))
+        .map(|path| super::services::disk::measure(&path, &[]).0)
+        .sum()
 }
