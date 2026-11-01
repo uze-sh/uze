@@ -1,0 +1,63 @@
+---
+title: Review
+description: "Read what an agent's branch changes, comment on its lines, and send the comments to the agent"
+---
+
+Everything the selected agent's branch changes against its target, file by
+file. Comment on the lines you would change, send the comments to the agent,
+and read its answers under them.
+
+The `+N -M` on the tab strip opens it, as does `Alt+G`. It counts the lines the
+branch adds and removes against its target, committed or not. With nothing to
+review it reads `review`. `◆2` beside the counts means two comments wait to be
+sent; in green, two answers wait for you to read.
+
+| Key | Does |
+| --- | --- |
+| `↓` / `↑` | Next / previous file, or line once the diff has the keys (`Tab`) |
+| `Shift+↓` / `Shift+↑` | Mark lines from the cursor |
+| `c` | Comment on the marked lines, or the line under the cursor |
+| `v` | Mark the file viewed and go to the next one not viewed |
+| `s` | Send the comments to the agent |
+| `o` | Open the marked line in [Code](/docs/workspace/code) |
+| `r` | Resolve an answered comment |
+| `Alt+.` | Discard what is not committed in the file, asking first |
+
+## Marking lines
+
+Press a line's number to mark it, and drag down the numbers, or `Shift`-click
+another, to mark a run. Selecting text marks the lines it covers, and the
+comment quotes what you selected. A comment line under the run opens the
+comment; so does `c`.
+
+## Writing a comment
+
+Type under the lines. `{ } code block` puts the marked lines into the comment
+as a code block for you to edit into what they should say; `` ` code `` adds
+inline code. `Ctrl+S` adds the comment as a draft and `Esc` drops it. A draft can
+be edited or deleted until it is sent.
+
+## Sending
+
+`s` types one line into the agent saying how many comments wait. UZE shows it
+first and types it only once you allow it and the agent is ready. The agent
+reads the comments with `uze agent review show`, makes the changes, and answers
+each one; the answer appears under the comment, where you resolve it.
+
+A comment whose lines the agent rewrote stays at the end of its file, quoting
+the lines it was about.
+
+## Viewed
+
+`v` marks the file on show as read. The list says `viewed` beside it and counts
+how many are. When the agent changes a file after you viewed it, the mark says
+`changed since viewed` and stops counting.
+
+`all` shows the branch against its target; `uncommitted` only what is not
+committed yet. Comments and viewed marks are kept for the agent across
+sessions, and go when the agent does.
+
+<Cards>
+  <Card title="Code" href="/docs/workspace/code" />
+  <Card title="Agents" href="/docs/workspace/agents" />
+</Cards>
