@@ -9,7 +9,7 @@ C4Component
   ContainerDb(state, "Records", "Filesystem, JSON", "UZE_HOME/state: receipts, consents, each project's agents and conversations, the terminal's open spaces", $link="crates/uze-core/src/machine/home.rs")
   ContainerDb(runtime, "Generated tier", "Filesystem, JSON, JSONL", "UZE_HOME/runtime: plugins and mirrors harnesses read, rebuilt from the Store; each agent's report journal", $link="crates/uze-core/src/machine/home.rs")
   Container_Boundary(cli, "uze CLI") {
-    Component(client, "Workspace client", "Rust, ratatui, crossterm", "Spaces, agents and panes, and the spec, architect and code surfaces", $link="src/ui.rs")
+    Component(client, "Workspace client", "Rust, ratatui, crossterm", "Spaces, agents and panes, and the review, spec, architect and code surfaces", $link="src/ui.rs")
     Component(commands, "Command line", "Rust, clap", "Parses each command and dispatches it to the application", $link="src/main.rs")
     Component(app, "uze-application", "Rust library", "The workspace's services: tasks, checkouts, work, reports", $link="crates/uze-application/src/lib.rs")
     Component(core, "uze-core", "Rust library", "The shared foundation and the package manager, IntegrationPort among it", $link="crates/uze-core/src/lib.rs")

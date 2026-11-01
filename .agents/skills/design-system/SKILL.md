@@ -158,6 +158,33 @@ on "cancel" must not save first.
   of your own.
 - Anything that reveals itself on hover needs a hint saying what it means.
 
+**The review:**
+- Its door is the `+N -M` on the tab strip, and it is always there while
+  the review is on: a clean checkout reads `review`, held back, never
+  nothing. What waits on the operator rides it: `◆n` in the warning hue
+  for drafts, in the success hue for answers not yet resolved, a working
+  mark while the agent is on a send. The door is drawn from the
+  extension's own `door_badge`, never from a read the host makes.
+- A line is marked by its number: a press on the number column marks it,
+  shift or a drag down the numbers carries the mark, and a press on the
+  text still selects text. Under the marked run stands one line that
+  opens a comment on it (`◆ comment on 3 lines`), the affordance a
+  pointer needs where the key is `c`.
+- A comment stands under the lines it is about, set in from the edge,
+  never in a box the extension draws: its first line says where and what
+  state (`◆ L52–56 · draft`), with its actions as words on that line
+  (`edit`, `delete`, `resolve`). A fenced block in it is drawn as code,
+  coloured as the file is, on a faint ground; a backticked span in the
+  badge hue.
+- The composer is the comment's place, typed into in the design system's
+  way: bright text, the accent caret, a faint placeholder. Its controls
+  are words on its first line (`{ } code block`, `` ` code ``); add is
+  `ctrl+s` and the foot's hint, never `ctrl+enter` alone, which only an
+  enhanced keyboard sends.
+- A file read is marked `viewed`, said in words in the list's detail and
+  on the chip over its diff; a mark whose diff moved says `changed since
+  viewed` and is not counted.
+
 **Wheel:**
 - The wheel scrolls the view, never the selection, and never toggles
   anything.
