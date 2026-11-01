@@ -118,7 +118,7 @@
   - the generated tier is UZE's alone.
 
   Run `make artifacts` and `cargo test -p uze-extensions`.
-- [ ] 7.2 Update `docs/architecture/invariants.md`:
+- [x] 7.2 Update `docs/architecture/invariants.md`:
   - the `${PLUGIN_ROOT}` entry;
   - the Store entries (now `sources/`);
   - the derived-artifact entry (rebuilt when its build key changes);
