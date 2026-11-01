@@ -772,17 +772,6 @@ fn from_kept(kept: &uze_application::ReviewRecord) -> review::ReviewRecord {
 /// answers are the agent's, so they are carried over from what was kept,
 /// never from what the extension handed back.
 fn into_kept(record: &review::ReviewRecord, kept: &mut uze_application::ReviewRecord) {
-    let answers: std::collections::BTreeMap<u64, Vec<String>> = kept
-        .comments
-        .iter()
-        .map(|comment| (comment.id, comment.answers.clone()))
-        .collect();
-    let answered: std::collections::BTreeSet<u64> = kept
-        .comments
-        .iter()
-        .filter(|comment| comment.status == uze_application::ReviewCommentStatus::Answered)
-        .map(|comment| comment.id)
-        .collect();
     kept.comments = record
         .comments
         .iter()
@@ -806,17 +795,13 @@ fn into_kept(record: &review::ReviewRecord, kept: &mut uze_application::ReviewRe
             text: comment.text.clone(),
             status: match comment.status {
                 review::CommentStatus::Draft => uze_application::ReviewCommentStatus::Draft,
-                // A send the agent already answered stays answered.
-                review::CommentStatus::Sent if answered.contains(&comment.id) => {
-                    uze_application::ReviewCommentStatus::Answered
-                }
                 review::CommentStatus::Sent => uze_application::ReviewCommentStatus::Sent,
                 review::CommentStatus::Answered => uze_application::ReviewCommentStatus::Answered,
                 review::CommentStatus::Resolved => uze_application::ReviewCommentStatus::Resolved,
             },
             sent: comment.sent,
             agent: comment.agent.clone(),
-            answers: answers.get(&comment.id).cloned().unwrap_or_default(),
+            answers: comment.answers.clone(),
         })
         .collect();
     kept.viewed = record.viewed.clone();

@@ -226,14 +226,37 @@ pub fn of_checkout(home: &UzeHome, checkout: &Path) -> Result<ReviewRecord> {
     load(home, &project, &agent)
 }
 
-/// [`update`], for the agent working in `checkout`.
+/// [`update`], for the agent working in `checkout`, by the person
+/// reviewing: what the agent wrote is the agent's, so the answers on disk
+/// and an answered status stand whatever `change` leaves.
 pub fn update_checkout(
     home: &UzeHome,
     checkout: &Path,
     change: impl FnOnce(&mut ReviewRecord),
 ) -> Result<ReviewRecord> {
     let (project, agent) = agent_of_checkout(home, checkout)?;
-    update(home, &project, &agent, change).map(|(record, ())| record)
+    update(home, &project, &agent, |record| {
+        let agents: BTreeMap<u64, (Vec<String>, bool)> = record
+            .comments
+            .iter()
+            .map(|comment| {
+                let answered = comment.status == CommentStatus::Answered;
+                (comment.id, (comment.answers.clone(), answered))
+            })
+            .collect();
+        change(record);
+        for comment in &mut record.comments {
+            let Some((answers, answered)) = agents.get(&comment.id) else {
+                comment.answers.clear();
+                continue;
+            };
+            comment.answers.clone_from(answers);
+            if *answered && comment.status == CommentStatus::Sent {
+                comment.status = CommentStatus::Answered;
+            }
+        }
+    })
+    .map(|(record, ())| record)
 }
 
 /// What `uze agent review show` prints for the agent making `claim`: each
@@ -449,6 +472,37 @@ mod tests {
         let record = load(&home, &root, &first.0).unwrap();
         assert!(record.comments[0].answers.is_empty());
         assert_eq!(record.comments[0].status, CommentStatus::Sent);
+    }
+
+    /// The operator's client wrote from a record read before the agent
+    /// answered: the answer and its status stand.
+    #[test]
+    fn the_person_reviewing_never_writes_over_the_agents_answer() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("review-kept-answer"));
+        let root = uze_testkit::temp::scratch("review-kept-answer-project")
+            .canonical()
+            .unwrap();
+        let mut agent = Agent::in_the_root("claude-code");
+        let key = agent.issue_launch_key().unwrap();
+        let only = (agent.id.clone(), key);
+        let mut store = AgentStore::default();
+        store.upsert(agent);
+        task::save(&home, &root, &store).unwrap();
+        sent_to(&home, &root, &only.0);
+        let stale = load(&home, &root, &only.0).unwrap();
+        reply(&home, claim(&only, &root), "1/1", "done").unwrap();
+        let kept = update_checkout(&home, &root, |record| {
+            *record = stale.clone();
+            record.viewed.insert("naming.rs".to_owned(), 7);
+        })
+        .unwrap();
+        assert_eq!(kept.comments[0].answers, ["done"]);
+        assert_eq!(kept.comments[0].status, CommentStatus::Answered);
+        assert_eq!(
+            kept.viewed.get("naming.rs"),
+            Some(&7),
+            "and the person's change lands"
+        );
     }
 
     #[test]
