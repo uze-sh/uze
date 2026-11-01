@@ -112,7 +112,7 @@
 
 ## 7. Docs and diagrams
 
-- [ ] 7.1 Update `docs/architecture/containers.mmd`, `core-components.mmd`, `install-pipeline.mmd`, `install-sequence.mmd` and `attachment-lifecycle.mmd`:
+- [x] 7.1 Update `docs/architecture/containers.mmd`, `core-components.mmd`, `install-pipeline.mmd`, `install-sequence.mmd` and `attachment-lifecycle.mmd`:
   - harnesses read `store/<vendor>`;
   - the bytes are in `sources/`;
   - the generated tier is UZE's alone.
