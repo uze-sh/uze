@@ -667,7 +667,14 @@ impl IntegrationPort for CodexIntegration {
     }
 
     fn republish_packages(&self, packages: &[StoredPackage]) -> Result<()> {
-        marketplace::republish::<CodexMarketplace>(&self.uze_home, self.id(), packages)
+        let executable = self.provisioning_executable();
+        marketplace::republish::<CodexMarketplace>(
+            Path::new(&executable),
+            &self.command_home,
+            &self.uze_home,
+            self.id(),
+            packages,
+        )
     }
 
     fn publication(&self, packages: &[StoredPackage]) -> PublicationStatus {

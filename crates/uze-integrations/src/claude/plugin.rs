@@ -1299,7 +1299,11 @@ mod claude_native_coverage_tests {
 
 #[cfg(test)]
 mod explicit_marketplace_tests {
-    use std::{collections::BTreeMap, fs, path::PathBuf};
+    use std::{
+        collections::BTreeMap,
+        fs,
+        path::{Path, PathBuf},
+    };
 
     use uze_core::{
         home::UzeHome,
@@ -1365,6 +1369,8 @@ mod explicit_marketplace_tests {
         let package = explicit_package(&root);
         marketplace::publish_for_test::<ClaudeMarketplace>(&home, "claude", &package);
         marketplace::republish::<ClaudeMarketplace>(
+            Path::new("claude-absent"),
+            &root,
             &home,
             "claude",
             std::slice::from_ref(&package),
@@ -1438,6 +1444,8 @@ mod explicit_marketplace_tests {
             ]
         );
         marketplace::republish::<ClaudeMarketplace>(
+            Path::new("claude-absent"),
+            &root,
             &home,
             "claude",
             &[explicit.clone(), generated.clone()],

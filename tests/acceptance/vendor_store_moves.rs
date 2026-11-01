@@ -330,3 +330,60 @@ fn a_disabled_codex_plugin_under_uze_local_is_left_and_reported() {
         "{said}"
     );
 }
+
+/// A package removed right after an upgrade, before any delivery moved
+/// Codex's `uze-store`, leaves the earlier root Codex still has it
+/// registered at: the harness reads every registered marketplace, so the
+/// root stays until the registration moves.
+#[test]
+fn a_removal_keeps_the_earlier_root_codex_still_has_registered() {
+    let (env, _harnesses) = installed();
+    let earlier = env.uze_home.join("runtime/attachments/codex/generated");
+    let earlier_build = earlier.join("store-tie@test");
+    copy_tree(&env.uze_home.join("store/codex"), &earlier);
+    set_registered(
+        &env,
+        "codex",
+        &[("uze-store".to_owned(), earlier.display().to_string())],
+    );
+    let earlier_text = earlier.display().to_string();
+    let build_text = earlier_build.display().to_string();
+    rewrite_ledger(&env, move |receipt| {
+        if receipt["integration"] == "codex"
+            && receipt["resource_identity"].is_null()
+            && receipt["package_id"] == "store-tie@test"
+        {
+            let owned = &mut receipt["artifact"]["INTEGRATION_OWNED"];
+            owned["marketplace_root"] = serde_json::json!(earlier_text);
+            owned["package_root"] = serde_json::json!(build_text);
+        }
+        forget_builds(receipt)
+    });
+
+    env.run_ok(uze_bin(), &["remove", "-m", "store-tie"]);
+
+    let roots: Vec<String> = registered(&env, "codex")
+        .into_iter()
+        .filter(|(name, _)| name == "uze-store")
+        .map(|(_, root)| root)
+        .collect();
+    assert!(!roots.is_empty(), "uze-store stays registered");
+    for root in roots {
+        assert!(
+            Path::new(&root).is_dir(),
+            "uze-store is registered at {root}, which must still exist"
+        );
+    }
+}
+
+fn copy_tree(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap().flatten() {
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}
