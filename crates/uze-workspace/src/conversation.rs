@@ -374,6 +374,13 @@ pub fn forget(home: &UzeHome, project_root: &Path, agent: &AgentId) {
 /// records are still in the layout before they were gathered, nothing is
 /// removed: that record may be what names a document.
 pub fn collect_session_documents(home: &UzeHome) -> Vec<PathBuf> {
+    collect_session_documents_with(home, || {})
+}
+
+/// [`collect_session_documents`], running `between` after the documents
+/// are listed and before the records are read: where a launch landing
+/// mid-collection falls.
+fn collect_session_documents_with(home: &UzeHome, between: impl FnOnce()) -> Vec<PathBuf> {
     if home
         .scattered_project_records("")
         .directories
@@ -382,33 +389,28 @@ pub fn collect_session_documents(home: &UzeHome) -> Vec<PathBuf> {
     {
         return Vec::new();
     }
-    let mut named: std::collections::BTreeSet<(String, String)> = Default::default();
-    for project in fs::read_dir(home.projects_dir())
+    // Documents are listed before the records are read: a launch records
+    // its conversation before it writes the document, so any document this
+    // listing holds has its record on disk by the time the records are
+    // read. Read the other way round, a launch landing between the two
+    // reads would lose its fresh document.
+    let documents = session_documents(home);
+    between();
+    let Some(named) = named_conversations(home) else {
+        return Vec::new();
+    };
+    documents
         .into_iter()
-        .flatten()
-        .flatten()
-    {
-        let project = project.file_name().to_string_lossy().into_owned();
-        for entry in fs::read_dir(home.conversations_dir(&project))
-            .into_iter()
-            .flatten()
-            .flatten()
-        {
-            let path = entry.path();
-            if path.extension().is_none_or(|extension| extension != "json") {
-                continue;
-            }
-            let Ok(carried) = uze_document::read::<ConversationRecord>(&path) else {
-                return Vec::new();
-            };
-            for (integration, harness) in carried.record().into_iter().flat_map(|r| r.harnesses) {
-                if let Some(session) = harness.conversation {
-                    named.insert((integration, session.as_str().to_owned()));
-                }
-            }
-        }
-    }
-    let mut removed = Vec::new();
+        .filter(|(integration, session, _)| {
+            !named.contains(&(integration.clone(), session.clone()))
+        })
+        .filter_map(|(_, _, path)| fs::remove_file(&path).is_ok().then_some(path))
+        .collect()
+}
+
+/// Every session document on disk, as (integration, session, path).
+fn session_documents(home: &UzeHome) -> Vec<(String, String, PathBuf)> {
+    let mut documents = Vec::new();
     for integration in fs::read_dir(home.runtime_sessions_dir())
         .into_iter()
         .flatten()
@@ -425,17 +427,44 @@ pub fn collect_session_documents(home: &UzeHome) -> Vec<PathBuf> {
                 .file_name()
                 .and_then(|file| file.to_str())
                 .and_then(|file| file.strip_suffix(".md"))
+                .map(str::to_owned)
             else {
                 continue;
             };
-            if !named.contains(&(name.clone(), session.to_owned()))
-                && fs::remove_file(&path).is_ok()
-            {
-                removed.push(path);
+            documents.push((name.clone(), session, path));
+        }
+    }
+    documents
+}
+
+/// Every (integration, session) a conversation record names, or `None`
+/// when any record cannot be read.
+fn named_conversations(home: &UzeHome) -> Option<std::collections::BTreeSet<(String, String)>> {
+    let mut named = std::collections::BTreeSet::new();
+    for project in fs::read_dir(home.projects_dir())
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let project = project.file_name().to_string_lossy().into_owned();
+        for entry in fs::read_dir(home.conversations_dir(&project))
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            let path = entry.path();
+            if path.extension().is_none_or(|extension| extension != "json") {
+                continue;
+            }
+            let carried = uze_document::read::<ConversationRecord>(&path).ok()?;
+            for (integration, harness) in carried.record().into_iter().flat_map(|r| r.harnesses) {
+                if let Some(session) = harness.conversation {
+                    named.insert((integration, session.as_str().to_owned()));
+                }
             }
         }
     }
-    removed
+    Some(named)
 }
 
 /// Removes the links a context channel made to `context` in the project's
@@ -997,6 +1026,35 @@ mod tests {
             "another agent's link stays"
         );
         let _ = fs::remove_dir_all(root);
+    }
+
+    /// A launch that lands after the documents were listed and before the
+    /// records are read keeps its document; one no record names goes.
+    #[test]
+    fn a_launch_landing_mid_collection_keeps_its_document() {
+        let home = home("conversation-collect-race");
+        let root = project("conversation-collect-race-project");
+        let sessions = home.session_context_dir("claude-code");
+        fs::create_dir_all(&sessions).unwrap();
+        let orphan = sessions.join("orphan.md");
+        fs::write(&orphan, "ended\n").unwrap();
+        let fresh = sessions.join("fresh.md");
+        fs::write(&fresh, "starting\n").unwrap();
+
+        let removed = collect_session_documents_with(&home, || {
+            let mut record = ConversationRecord::new(AgentId::generate());
+            record.launched(
+                "claude-code",
+                ConversationOrigin::Assigned,
+                Some(SessionId::parse("fresh").unwrap()),
+                None,
+            );
+            save(&home, &root, &record).unwrap();
+        });
+
+        assert_eq!(removed, vec![orphan.clone()]);
+        assert!(fresh.is_file(), "the launch's document was collected");
+        assert!(!orphan.exists());
     }
 
     #[test]
