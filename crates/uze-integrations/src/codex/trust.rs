@@ -90,6 +90,60 @@ pub(crate) fn review(config_toml: &Path, entry: &HookEntry) -> Option<Review> {
     Some(review)
 }
 
+/// The hooks Codex will ask the person about again once the group
+/// `entry` records leaves its `hooks.json`: every handler of a later group
+/// in the same event that Codex holds a trust record for, since its key
+/// names its position, which moves down by one. Each is named by the key
+/// Codex reviews it under. Empty when the group is not where its receipt
+/// says, or nothing after it was trusted.
+pub(crate) fn shifted_by_removal(config_toml: &Path, entry: &HookEntry) -> Vec<String> {
+    let Some(hooks) = std::fs::read_to_string(entry.config_file)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+    else {
+        return Vec::new();
+    };
+    let Ok(expected) = serde_json::from_str::<Value>(entry.expected) else {
+        return Vec::new();
+    };
+    let Some(groups) = hooks
+        .get("hooks")
+        .and_then(|hooks| hooks.get(crate::hooks::hook_event_name(entry.event)))
+        .and_then(Value::as_array)
+    else {
+        return Vec::new();
+    };
+    let Some(removed) = groups.iter().position(|group| group == &expected) else {
+        return Vec::new();
+    };
+    let recorded = read_config(config_toml);
+    let trusted = |key: &str| {
+        recorded.as_ref().is_some_and(|document| {
+            document
+                .get("hooks")
+                .and_then(|hooks| hooks.get("state"))
+                .and_then(|state| state.get(key))
+                .and_then(|record| record.get("trusted_hash"))
+                .is_some()
+        })
+    };
+    let mut shifted = Vec::new();
+    for (group_index, group) in groups.iter().enumerate().skip(removed + 1) {
+        let handlers = group.get("hooks").and_then(Value::as_array);
+        for handler_index in 0..handlers.map_or(0, Vec::len) {
+            let key = format!(
+                "{}:{}:{group_index}:{handler_index}",
+                entry.config_file.display(),
+                entry.event.abi_name()
+            );
+            if trusted(&key) {
+                shifted.push(key);
+            }
+        }
+    }
+    shifted
+}
+
 /// Whether the person marked `project_root` untrusted in Codex — the one
 /// trust level that makes Codex skip the project's `AGENTS.md`.
 pub(crate) fn project_untrusted(
@@ -298,6 +352,71 @@ mod tests {
             &primary,
             || None
         ));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn group(command: &str) -> Value {
+        serde_json::json!({ "hooks": [{ "type": "command", "command": command, "timeout": 5 }] })
+    }
+
+    /// Codex keys a hook's trust by its group's position: UZE's groups go
+    /// after the operator's, so adding, replacing or removing one never
+    /// moves a group the operator placed first, and removing one names
+    /// every trusted group after it, whose review Codex will ask for again.
+    #[test]
+    fn uze_groups_never_move_an_operator_group_placed_first_and_a_removal_names_the_shifted() {
+        let root = uze_testkit::temp::scratch("codex-trust-shift");
+        std::fs::create_dir_all(&root).unwrap();
+        let hooks = root.join("hooks.json");
+        let operator = group("operator-guard");
+        std::fs::write(
+            &hooks,
+            serde_json::json!({ "hooks": { "PreToolUse": [operator.clone()] } }).to_string(),
+        )
+        .unwrap();
+        let ours = group("uze-exec ours");
+        let theirs = group("uze-exec theirs");
+        let merge = |entry: &Value, previous: &[String]| {
+            crate::hooks::merge_event_entry(&hooks, HookEvent::PreToolUse, entry, previous)
+                .unwrap();
+        };
+        merge(&ours, &[]);
+        merge(&theirs, &[]);
+        let ours_again = group("uze-exec ours, rendered again");
+        merge(&ours_again, &[ours.to_string()]);
+        let groups = |path: &Path| -> Vec<Value> {
+            serde_json::from_str::<Value>(&std::fs::read_to_string(path).unwrap()).unwrap()["hooks"]
+                ["PreToolUse"]
+                .as_array()
+                .unwrap()
+                .clone()
+        };
+        assert_eq!(
+            groups(&hooks),
+            [operator.clone(), ours_again.clone(), theirs.clone()],
+            "the operator's group keeps index 0, and a replaced group keeps its place"
+        );
+
+        let key = |index: usize| format!("{}:pre_tool_use:{index}:0", hooks.display());
+        let config = root.join("config.toml");
+        std::fs::write(
+            &config,
+            format!(
+                "[hooks.state.{:?}]\ntrusted_hash = \"a\"\n[hooks.state.{:?}]\ntrusted_hash = \"b\"\n",
+                key(0),
+                key(2)
+            ),
+        )
+        .unwrap();
+        let expected = ours_again.to_string();
+        let entry = HookEntry {
+            config_file: &hooks,
+            entry_name: "pkg@market:guard",
+            event: HookEvent::PreToolUse,
+            expected: &expected,
+            wrapper: Path::new("/store/codex/pkg@market/hooks/uze-exec"),
+        };
+        assert_eq!(shifted_by_removal(&config, &entry), [key(2)]);
         let _ = std::fs::remove_dir_all(&root);
     }
 

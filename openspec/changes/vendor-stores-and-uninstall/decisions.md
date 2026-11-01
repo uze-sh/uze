@@ -207,3 +207,13 @@
 - decided:  the repoint runs only when the registered root differs, which is once per machine (the move off `runtime/`). Claude's same-name `add` keeps its plugins installed; Codex's `remove` then `add` re-adds the old root when `add` fails. No session check is made; uninstall's liveness checks (5.1) are the place a process census would land, and the repoint can adopt it then.
 - rejected: refusing every repoint while any UZE agent runs (the workspace layer is out of reach of an integration, and a session started outside UZE would still pass).
 - blast:    `marketplace::ensure_registered`.
+
+## D9 — A Codex trust shift is said by the detach that causes it
+
+- status:   pending
+- task:     4.5
+- commit:
+- trigger:  removing a package's groups, or purging, should report every hook whose trust key shifts; a removal report has no field for a harness-specific consequence, and the UZE groups that shift are already named by the held-back notes on the next install or `doctor`.
+- decided:  `merge_event_entry` replaces an earlier version of a group where it stands and appends a new one after every group present, so an operator group placed first never moves. `codex::trust::shifted_by_removal` names each later handler Codex holds a trust record for; the Codex detach of a hook entry logs them as a warning and appends them to the detach inspection's reason. Shifted UZE hooks then show in "Waiting on you" through the existing held-back notes.
+- rejected: a new field on every removal report for one harness's consequence (CLI and TUI changes outside this group); re-sorting UZE's groups to the end on every merge (moves operator groups added after them).
+- blast:    `hooks/event_entry.rs`, `codex/trust.rs`, `codex.rs`.

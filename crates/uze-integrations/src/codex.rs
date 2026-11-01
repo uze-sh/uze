@@ -745,8 +745,23 @@ impl IntegrationPort for CodexIntegration {
                 mcp::detach_mcp_entry(Path::new(&executable), &self.command_home, entry_name)?;
             }
             artifact @ ManagedArtifact::HookConfigEntry { .. } => {
-                return HOOKS
-                    .detach_entry(&HookEntry::recorded(artifact).expect("a hook config entry"));
+                let entry = HookEntry::recorded(artifact).expect("a hook config entry");
+                let shifted = trust::shifted_by_removal(&self.config_toml_path(), &entry);
+                let mut detached = HOOKS.detach_entry(&entry)?;
+                if !shifted.is_empty() {
+                    // Codex keys its trust by position: every trusted group
+                    // after this one moves up, and is asked about again.
+                    tracing::warn!(
+                        hooks = %shifted.join(", "),
+                        "removing a hook group moves the trust keys of the groups after it; \
+                         Codex reviews them again"
+                    );
+                    detached.reason.push_str(&format!(
+                        "; Codex will ask you to review again: {}",
+                        shifted.join(", ")
+                    ));
+                }
+                return Ok(detached);
             }
             artifact if crate::rules::is_rules_artifact(artifact) => {
                 return crate::rules::detach(artifact);

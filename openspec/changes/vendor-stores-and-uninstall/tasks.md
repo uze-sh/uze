@@ -62,7 +62,7 @@
 - [x] 4.2 Rules engine: becomes a real file of `plugins/uze`, rendered into its build. The `SETUP_OWNER` entries name it there. Rule sessions stay in `runtime/rules/sessions` as the declared on-demand scratch exception.
 - [ ] 4.3 OpenCode: hook-group documents go inside each package's build, and `uze.ts` reads `store/opencode/*/`. Session documents stay in `runtime/sessions/opencode` (the on-demand scratch exception, since one shared server serves every launch). `uze.ts` gets a receipt.
 - [x] 4.4 The Codex integration owns `~/.agents/skills`, and its copies resolve into `store/codex`. Document that OpenCode reads it too.
-- [ ] 4.5 Codex: UZE's hook groups are always written after the operator's groups in each event array.
+- [x] 4.5 Codex: UZE's hook groups are always written after the operator's groups in each event array.
   - Test that the trust keys of operator groups placed first never change.
   - Removing a package's groups, or purging, reports every hook whose trust key shifts, through `codex/trust.rs`.
 - [ ] 4.6 Attach the bundled `uze` plugin with receipts. `remove` refuses it, and only `uninstall --purge` detaches it.
