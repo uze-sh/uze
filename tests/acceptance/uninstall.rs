@@ -440,29 +440,43 @@ fn the_operators_codex_hooks_keep_their_place() {
     assert_eq!(left["hooks"]["PreToolUse"], operator["hooks"]["PreToolUse"]);
 }
 
-/// A skill directory copied into a harness's own discovery root: the
-/// delivery a person edits by hand.
+/// A skill directory UZE copied into a harness's own discovery root, as
+/// its receipt names it: the delivery a person edits by hand. Read from
+/// the ledger, never found by walking the home: a vendor CLI keeps copies
+/// of its own there too (Antigravity's plugin cache), which no receipt
+/// owns, and which one a walk meets first depends on the file system's
+/// listing order.
 fn a_delivered_skill_copy(env: &TestEnvironment) -> Option<PathBuf> {
-    let mut pending = vec![env.home.clone()];
-    while let Some(directory) = pending.pop() {
-        for entry in fs::read_dir(&directory).into_iter().flatten().flatten() {
-            let path = entry.path();
-            let Ok(kind) = entry.file_type() else {
-                continue;
-            };
-            if !kind.is_dir() {
-                continue;
+    fn paths(value: &serde_json::Value, found: &mut Vec<PathBuf>) {
+        match value {
+            serde_json::Value::Object(entries) => {
+                for (key, value) in entries {
+                    match value {
+                        serde_json::Value::String(path) if key == "path" => {
+                            found.push(PathBuf::from(path));
+                        }
+                        other => paths(other, found),
+                    }
+                }
             }
-            let named = path
-                .file_name()
-                .is_some_and(|name| name.to_string_lossy().ends_with("locate"));
-            if named && path.join("SKILL.md").is_file() {
-                return Some(path);
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    paths(value, found);
+                }
             }
-            pending.push(path);
+            _ => {}
         }
     }
-    None
+    let ledger: serde_json::Value =
+        serde_json::from_slice(&fs::read(env.uze_home.join("state/attachments.json")).ok()?)
+            .ok()?;
+    let mut found = Vec::new();
+    paths(&ledger, &mut found);
+    found.into_iter().find(|path| {
+        path.file_name()
+            .is_some_and(|name| name.to_string_lossy().ends_with("locate"))
+            && path.join("SKILL.md").is_file()
+    })
 }
 
 #[test]
