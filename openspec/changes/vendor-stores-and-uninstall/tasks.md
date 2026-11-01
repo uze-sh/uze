@@ -100,7 +100,7 @@
   - the `uze-local` marketplace is removed once no receipt names it.
 
   Add tests for each case, and a changelog line saying enablement is not carried.
-- [ ] 5b.2 Turn the 2026-11-01 measurement that mixes origins in one marketplace into `conformance/experiments/{claude,codex}/marketplace-merge.py`, and record it as a `HarnessFact`.
+- [x] 5b.2 Turn the 2026-11-01 measurement that mixes origins in one marketplace into `conformance/experiments/{claude,codex}/marketplace-merge.py`, and record it as a `HarnessFact`.
 
 ## 6. Conformance
 

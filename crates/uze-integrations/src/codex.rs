@@ -1028,6 +1028,12 @@ const FACTS: &[HarnessFact] = &[
     },
     HarnessFact {
         subject: "marketplaces",
+        fact: "installs, enabled, a plugin removed from one local marketplace and added from another that lists it beside a generated plugin, which stays enabled; removing the first marketplace leaves no key of it",
+        measured_on: "0.166.0",
+        proven_by: "experiments/codex/marketplace-merge.py::_assert_merged_plugin_installs_enabled",
+    },
+    HarnessFact {
+        subject: "marketplaces",
         fact: "rewrites an installed plugin's cache in place, same version directory, on `codex plugin add` over it",
         measured_on: "0.166.0",
         proven_by: "experiments/codex/source-tie.py::_assert_add_rewrites_cache",

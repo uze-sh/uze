@@ -227,3 +227,13 @@
 - decided:  `IntegrationPort::setup_artifacts()` (default empty) names what setup delivered on no package's account; setup records each under `state::SETUP_OWNER` with identity `setup:<selector>`, after the rules engine. OpenCode answers `uze.ts` (`IntegrationOwned { kind: "runtime-plugin" }`), inspected by its owned header and detached by removing the file. The rules engine's own lookups now take only `rules:` receipts.
 - rejected: folding `uze.ts` into the rules engine's receipts (removing the rules route would then remove the hooks and agent context the plugin also carries).
 - blast:    `integration.rs`, `opencode.rs`, `opencode/runtime_plugin.rs`, `rules_engine.rs`.
+
+## D11 — The merge experiment measures the move UZE makes, and awaits a Lab run
+
+- status:   pending
+- task:     5b.2
+- commit:
+- trigger:  the 2026-11-01 measurement that mixed origins in one marketplace is already re-runnable as `source-tie.py` (1.1) and recorded as facts; what 5b.1 relies on beyond it is the move itself — a plugin taken out of `uze-local` and put into `uze-store` beside a generated one, and `uze-local` removed.
+- decided:  `conformance/experiments/{claude,codex}/marketplace-merge.py` reproduce that move with each vendor CLI alone (Claude also disables the plugin first, to show enablement is not carried) and assert it; one `HarnessFact` per harness cites it, on the versions of the 2026-11-01 sandbox. The scripts were written without a Lab run in this session (no harness binaries here); the first Lab run either confirms the facts or fails a check rather than a user.
+- rejected: re-citing `source-tie.py` (it never moves a plugin between marketplaces).
+- blast:    two experiment files, two facts.

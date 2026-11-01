@@ -983,6 +983,12 @@ const FACTS: &[HarnessFact] = &[
     },
     HarnessFact {
         subject: "marketplaces",
+        fact: "installs, enabled, a plugin uninstalled from one directory marketplace and installed from another that lists it beside a generated plugin, which stays enabled; removing the first leaves none of its plugins",
+        measured_on: "2.1.316",
+        proven_by: "experiments/claude/marketplace-merge.py::_assert_merged_plugin_comes_back_enabled",
+    },
+    HarnessFact {
+        subject: "marketplaces",
         fact: "reads an installed directory-marketplace plugin in place from the marketplace source, not from its cache copy",
         measured_on: "2.1.316",
         proven_by: "experiments/claude/source-tie.py::_assert_loads_in_place",
