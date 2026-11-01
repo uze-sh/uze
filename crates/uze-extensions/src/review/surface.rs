@@ -249,7 +249,11 @@ impl ReviewView {
             self.cursor = 0;
             self.mark = None;
         }
-        if let Some(id) = self.open_on.take() {
+        // A list that could not be read lists nothing to go to: the
+        // comment waits for one that does.
+        if self.list_error.is_none()
+            && let Some(id) = self.open_on.take()
+        {
             self.go_to_thread_id(id);
         }
         // Read the diff again only once the file, the commit or the base
@@ -361,6 +365,7 @@ impl ReviewView {
         };
         if self.selected.as_ref() != Some(&path) {
             let Some(index) = self.files.iter().position(|file| file.path == path) else {
+                self.not_listed(id);
                 return;
             };
             self.select_file(index);
@@ -375,6 +380,22 @@ impl ReviewView {
         if self.diff.as_ref().is_some_and(|diff| diff.path == path) {
             self.settle_jump();
         }
+    }
+
+    /// A thread whose file the list does not hold: under `uncommitted`,
+    /// the branch's whole list is read and the thread gone to then; on the
+    /// whole branch, its file no longer differs from the target, and that
+    /// is said rather than nothing happening.
+    fn not_listed(&mut self, id: u64) {
+        if self.filter == Filter::Uncommitted && self.composer.is_none() {
+            self.set_filter(Filter::All);
+            self.open_on = Some(id);
+            return;
+        }
+        self.notice = Some(Span::new(
+            "that comment's file no longer differs from the target",
+            crate::view::Role::Muted,
+        ));
     }
 
     /// Shows the thread gone to, once its file's diff is on show: its

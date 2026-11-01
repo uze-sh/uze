@@ -1417,3 +1417,51 @@ fn the_comment_mark_stands_only_on_commented_lines_and_their_cards() {
         assert!(allowed || !text.contains(&mark), "{:?}: {text}", line.line);
     }
 }
+
+/// A comment pressed in the drawer on a file the `uncommitted` list does
+/// not hold opens the whole branch's list and goes to it there; one whose
+/// file no longer differs at all says so; a list that failed keeps the
+/// comment waiting.
+#[test]
+fn a_comment_off_the_list_is_gone_to_on_the_whole_branch_or_said_to_be_gone() {
+    let mut view = reviewing();
+    thread_on(&mut view, 9, "naming.rs", 3, "    rename();");
+    let listed = |view: &mut ReviewView, filter, listing: Result<Listing, String>| {
+        view.absorb_listing(filter, Base::default(), "fix/naming".to_owned(), listing);
+    };
+    let only_tests = || Listing {
+        files: vec![ChangedFile {
+            status: FileStatus::Added,
+            path: PathBuf::from("/w/tests.rs"),
+            renamed_from: None,
+        }],
+        uncommitted: Default::default(),
+        partners: Default::default(),
+        stamps: Default::default(),
+        head: None,
+    };
+    view.set_filter(Filter::Uncommitted);
+    view.open_on = Some(9);
+    listed(&mut view, Filter::Uncommitted, Err("git failed".to_owned()));
+    assert_eq!(view.open_on, Some(9), "a failed list keeps it waiting");
+    listed(&mut view, Filter::Uncommitted, Ok(only_tests()));
+    assert_eq!(view.filter, Filter::All, "the whole branch is read for it");
+    assert_eq!(view.open_on, Some(9));
+    let files = reviewing().files;
+    listed(
+        &mut view,
+        Filter::All,
+        Ok(Listing {
+            files,
+            ..only_tests()
+        }),
+    );
+    assert_eq!(view.thread, Some(9), "and gone to there");
+    view.thread = None;
+    view.open_on = Some(9);
+    listed(&mut view, Filter::All, Ok(only_tests()));
+    assert!(
+        view.notice.is_some(),
+        "a file no longer changed is said, not skipped"
+    );
+}
