@@ -214,7 +214,7 @@ use worktree_removal::*;
 mod input;
 mod recent;
 mod render;
-mod session;
+pub(super) mod session;
 use input::*;
 use recent::*;
 use render::*;

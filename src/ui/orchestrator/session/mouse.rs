@@ -460,7 +460,7 @@ impl Attach<'_> {
                 }
             }
             _ if on_surface && self.presses_on_line_number(mouse.column, mouse.row) => {
-                let extend = mouse.modifiers.contains(KeyModifiers::SHIFT);
+                let extend = carries_the_mark(mouse.modifiers);
                 self.mark_line_at(mouse.column, mouse.row, extend);
                 self.model.marking_lines = true;
             }
@@ -1962,4 +1962,13 @@ impl Attach<'_> {
         };
         compute_layout(frame, self.model.sidebar_width, reserved).pane
     }
+}
+
+/// Whether a press on a line's number carries the mark there rather than
+/// starting a new one: with any key held. Shift alone is what an editor
+/// uses, but Windows Terminal, among others, keeps shift+click for its own
+/// selection and never reports it, so ctrl and alt carry it too; a press
+/// on a number has nothing else for them to mean.
+pub(in crate::ui::orchestrator) fn carries_the_mark(modifiers: KeyModifiers) -> bool {
+    modifiers.intersects(KeyModifiers::SHIFT | KeyModifiers::CONTROL | KeyModifiers::ALT)
 }
