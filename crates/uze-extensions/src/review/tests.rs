@@ -1511,3 +1511,23 @@ fn a_comment_being_written_names_its_own_buttons_when_it_holds_its_place() {
         .unwrap_or_default();
     assert!(said.contains("save") && said.contains("discard"), "{said}");
 }
+
+/// A comment pressed while the list is not read yet, or failed, waits for
+/// a list that is: nothing is said of a file no list has spoken about.
+#[test]
+fn a_comment_pressed_before_the_list_is_read_waits_for_it() {
+    let mut view = reviewing();
+    thread_on(&mut view, 9, "elsewhere.rs", 1, "x");
+    view.absorb_listing(
+        Filter::All,
+        Base::default(),
+        "fix/naming".to_owned(),
+        Err("git failed".to_owned()),
+    );
+    view.go_to_thread_id(9);
+    assert_eq!(view.open_on, Some(9));
+    assert!(
+        view.notice.is_none(),
+        "nothing said of a list that was not read"
+    );
+}

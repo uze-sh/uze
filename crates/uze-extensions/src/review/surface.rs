@@ -396,6 +396,12 @@ impl ReviewView {
     /// whole branch, its file no longer differs from the target, and that
     /// is said rather than nothing happening.
     fn not_listed(&mut self, id: u64) {
+        // A list not read yet, or that failed, says nothing of the file:
+        // the comment waits for one that is read.
+        if !self.listed || self.list_error.is_some() {
+            self.open_on = Some(id);
+            return;
+        }
         if self.filter == Filter::Uncommitted && self.composer.is_none() {
             self.set_filter(Filter::All);
             self.open_on = Some(id);
