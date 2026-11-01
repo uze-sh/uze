@@ -367,13 +367,6 @@ impl UzeApplication {
             .collect()
     }
 
-    /// The READ-ONLY cousin of `reconcile`: same report shape, but each
-    /// receipt's `Matched` verdict may come from the inspection cache
-    /// (ADR 018) instead of a live vendor-CLI probe. Anomalies are never
-    /// cached, so the report's warnings are always fresh. This is for
-    /// report/health surfaces only — removal planning and detach MUST keep
-    /// going through [`reconcile`](Self::reconcile), whose live verdict is
-    /// what makes ownership checks trustworthy.
     /// One receipt's inspection, a fresh `Matched` verdict served from the
     /// inspection cache as [`reconcile_cached_report`](Self::reconcile_cached_report)
     /// serves it, and a live one written back for the next reader.
@@ -395,6 +388,13 @@ impl UzeApplication {
         live
     }
 
+    /// The READ-ONLY cousin of `reconcile`: same report shape, but each
+    /// receipt's `Matched` verdict may come from the inspection cache
+    /// (ADR 018) instead of a live vendor-CLI probe. Anomalies are never
+    /// cached, so the report's warnings are always fresh. This is for
+    /// report/health surfaces only — removal planning and detach MUST keep
+    /// going through [`reconcile`](Self::reconcile), whose live verdict is
+    /// what makes ownership checks trustworthy.
     pub(crate) fn reconcile_cached_report(&self, package_id: &str) -> ReconciliationReport {
         reconcile_package_with(
             &self.home,
