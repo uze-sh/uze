@@ -25,14 +25,14 @@
 
   The step runs whenever any such directory exists, so it is resumable.
 - [ ] 2.5 Cache the package digest in `packages.json` at ingest, for packages installed after the move.
-- [ ] 2.6 "Bytes missing": catalogue membership, and each package's origin (from its build manifest), come from the registry and build keys, never from `sources/`. `prune_ghost_registrations` and orphan reconciliation skip an entry that still has a build. `doctor` reports the entry as missing its bytes.
+- [ ] 2.6 "Bytes missing": catalogue membership, and each package's origin (from its build receipt), come from the registry and build keys, never from `sources/`. `prune_ghost_registrations` and orphan reconciliation skip an entry that still has a build. `doctor` reports the entry as missing its bytes.
 
 ## 3. Builds and publication
 
 - [ ] 3.1 The Codex and Antigravity builds mirror the whole package through `shared::tree`, with the exclusions Claude's build uses.
 - [ ] 3.2 `shared::package_root` resolves `${PLUGIN_ROOT}` to the build directory on every route and file kind of a harness.
-- [ ] 3.3 The `.uze-build` manifest records the build key (package digest, UZE build version, dialect version, build root, active name) and the digest of every file UZE wrote.
-- [ ] 3.4 Publication into the one vendor marketplace (`uze-store`). The build manifest records `origin: explicit | generated`, decided per package and per harness by ADR-013's precedence:
+- [ ] 3.3 The build receipt's `detail` records `origin`, `source: pinned | linked`, and the build key (package digest, UZE build version, dialect version, build root, active name) and the digest of every file UZE wrote.
+- [ ] 3.4 Publication into the one vendor marketplace (`uze-store`). `origin` is decided per package and per harness by ADR-013's precedence:
   - stage and swap only a build whose key differs;
   - swap the catalogue last;
   - receipt `IntegrationOwned { kind: "build" }` per (vendor, package), inspected by per-file digest, where a hook-added file is not drift;
@@ -43,6 +43,12 @@
   - Codex runs `remove` then `add`, re-adding the old root if `add` fails;
   - refresh caches (Codex: `codex plugin add <id>`; Antigravity: uninstall then install);
   - delete the old root only when no receipt names it.
+- [ ] 3.5b Linked sources:
+  - a linked package's build receipt records `source: linked`, and an edit re-renders it in place;
+  - `uze market unlink` re-ingests the pinned commit from the cached clone and re-renders the build as `source: pinned`;
+  - offline with the commit absent, unlink reports that it needs the network and keeps the linked build.
+
+  Add tests for each case.
 - [ ] 3.6 Rewrite `the_delivered_root_is_a_copy_a_write_cannot_carry_into_the_store` and its invariant for builds. Add unit tests that:
   - only a changed key rebuilds;
   - a hook-added file survives an unchanged package;

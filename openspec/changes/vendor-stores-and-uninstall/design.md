@@ -129,7 +129,7 @@ needs in one harness. Nothing structural sits beside them.
   and per harness**. A package that ships an author envelope for that
   harness is built from it; otherwise UZE generates one. The fixture
   `route-explicit` is explicit on Codex and generated on Claude. The origin
-  is therefore a field of the build manifest (`origin: explicit |
+  is therefore a field of the build's receipt (`origin: explicit |
   generated`), not a directory. A plugin-name collision between two
   packages is resolved when the name is chosen (ADR-029), exactly as two
   generated plugins are today.
@@ -187,31 +187,70 @@ is detached with the package's other receipts when the package is removed
 
 ### D3. Builds are keyed, gated and inspected by content
 
-The package digest is cached in `packages.json` at ingest. Each build
-writes a `.uze-build` manifest holding:
+The package digest is cached in `packages.json` at ingest. Each build is
+owned by one receipt, `IntegrationOwned { kind: "build" }`, whose `detail`
+holds:
 
 - the **build key** `(package digest, UZE build version, dialect version,
   build root, active name)`;
-- the `origin`;
+- `origin: explicit | generated`;
+- `source: pinned | linked` (D3b);
 - the digest of every file UZE wrote into the build.
+
+The build directory therefore holds **only the plugin**, exactly what the
+vendor expects to see. No UZE file appears in a vendor's cache or in its
+`plugin validate`. The receipt is already the source of truth for what UZE
+wrote. If the records are lost, the builds become unknown to UZE, which is
+what persisted-state says losing a record costs.
+
+*Rejected: a `.uze-build` file inside each build.* It duplicates the receipt
+and leaks a UZE file into every vendor copy.
 
 | step | rule |
 |---|---|
 | publish | stage and swap a build only when its key differs, then swap the catalogue last. A UZE upgrade changes the key, so a stale render never survives one. |
-| inspect | `Matched` when every listed file still has its digest; `Drifted` when one was edited; `Missing` when the directory or manifest is gone. A file a hook *added* is not listed, so it is not drift. |
-| receipt | `IntegrationOwned { kind: "build" }`, one per (vendor, package) |
+| inspect | `Matched` when every file the receipt lists still has its digest; `Drifted` when one was edited; `Missing` when the directory is gone. A file a hook *added* is not listed, so it is not drift. |
+| receipt | one per (vendor, package) |
 
-**Catalogue membership comes from the registry and the build manifests,
+**Catalogue membership comes from the registry and the build receipts,
 never from the bytes.** A registry entry whose `sources/` directory is
 missing becomes **bytes missing**:
 
 - it stays in the catalogue with the build it has, and its origin is read
-  from that build's manifest;
+  from that build's receipt;
 - it is never pruned as a ghost and its receipts are never orphaned;
 - it is not rebuilt until the bytes return.
 
 `prune_ghost_registrations` applies only to an entry that has neither bytes
 nor a build.
+
+### D3b. A linked source: same identity, another source
+
+`uze market link` (from `plugin-freshness-and-linked-marketplaces`) points a
+marketplace at a checkout the operator develops. That checkout lives
+**outside `$UZE_HOME`**, in the operator's own directory.
+
+- **What that change already does, and keeps doing.** It ingests the
+  checkout into `sources/<id>` whenever the checkout's tree changes, and
+  ingest enforces the containment rules: Git-ignored files are dropped, and
+  a link that escapes the package is refused. That change rejected reading
+  the checkout in place, so that delivery keeps one path, and this design
+  respects that.
+- **What this change adds:**
+  - **Same identity.** The build stays `store/<vendor>/<id>`, with the
+    same selector, enablement and receipts. Its receipt records
+    `source: linked`. An edit changes the digest, so the build key changes
+    and the build is rendered again in place.
+  - **Unlinking restores the original build.** `uze market unlink`
+    re-ingests the pinned commit from the marketplace's cached partial
+    clone. This works offline whenever the clone holds that commit, and is
+    `NeedsNetwork` for `doctor-repair` otherwise. The digest returns to the
+    pinned one and the build is rendered again as `source: pinned`.
+  - **The pin never moves from linked work.** `agents.lock` is not written
+    from a linked source, as that change already guarantees.
+
+*Rejected: keeping a separate copy of the linked tree inside `$UZE_HOME`.*
+It is a second snapshot beside `sources/`, and the build is already one.
 
 ### D4. Machine material finds its natural home
 
@@ -403,6 +442,8 @@ the reinstall-then-purge path.
 | 13 | No reference counting; one build per package per vendor | Packages are machine-wide with one registry entry. A scope model does not exist and is not needed. |
 
 | 19 | No `.uze/` in the store: the wrapper goes in each build, the rules engine in the bundled plugin's build, sessions in `$TMPDIR`, OpenCode documents in builds or the launch environment (revision 5, with the operator) | A nested `.uze/` mixed disposable scratch into the store tier and kept the wrapper shared, which needed "removed with the last entry" bookkeeping. |
+| 21 | The build's key, origin, source and file digests live in its receipt; the build holds only the plugin | A `.uze-build` file duplicates the receipt and leaks into every vendor copy. |
+| 22 | A linked source keeps the build's identity; unlinking re-ingests the pinned commit from the cached clone | Reading the checkout in place forks delivery, which `plugin-freshness` rejected for containment. A separate linked snapshot in `$UZE_HOME` is redundant with the build. |
 | 20 | A Codex plugin the operator disabled under `@uze-local` is not re-added during the merge, and is reported | Re-adding enables it, because Codex has no disable verb. Editing `config.toml` breaks ADR-009. |
 
 ## Candidate ADRs

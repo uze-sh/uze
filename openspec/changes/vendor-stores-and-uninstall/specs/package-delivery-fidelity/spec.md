@@ -35,3 +35,19 @@ route of that harness.
 
 - **WHEN** a file UZE wrote into a build was edited and the package is then updated
 - **THEN** the build is kept as it is and reported as drifted, naming the file
+
+## ADDED Requirements
+
+### Requirement: A linked source keeps the build's identity and unlinking restores it
+While a marketplace is linked to a checkout, each of its packages' builds
+SHALL keep its place, selector, enablement and receipts, SHALL record that
+its source is linked, and SHALL be rendered again when the checkout changes.
+Unlinking SHALL render each build again from the pinned commit.
+
+#### Scenario: An edit while linked
+- **WHEN** a file changes in the linked checkout
+- **THEN** the package's build is rendered again in place, and the harness still lists the same plugin, enabled as before
+
+#### Scenario: Unlinking offline
+- **WHEN** the marketplace is unlinked with no network and its cached clone holds the pinned commit
+- **THEN** the build is rendered again from the pinned commit, and `agents.lock` is unchanged

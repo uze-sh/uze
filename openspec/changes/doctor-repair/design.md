@@ -62,7 +62,7 @@ an `observe` that yields findings, and a lane:
 | subject | observe | lane |
 |---|---|---|
 | receipts (all kinds) | existing `IntegrationPort` inspection, through the inspection cache on plain `doctor` | `Missing` → automatic (ADR-037); `Drifted`/`Conflict` → none (operator) |
-| vendor-store builds | build manifest (vendor-stores D3) | `Missing` → automatic; `Drifted` → none |
+| vendor-store builds | build receipt (vendor-stores D3) | `Missing` → automatic; `Drifted` → none |
 | package bytes (`sources/`) | registry entry with no directory ("bytes missing") | `--repair` (network, digest-verified) |
 | marketplace registration | registered root against its vendor store | `--repair` (repoint) |
 | terminal-runtime endpoint | `uze-terminal`'s own probe, run from `src/` | `--repair`, through `uze-terminal`'s clear under its workspace lock |
