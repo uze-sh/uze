@@ -1088,3 +1088,15 @@ fn the_comment_being_written_is_a_card_with_room_and_its_own_buttons() {
     assert!(!discarded.typing());
     assert!(discarded.drafts().is_empty(), "discard lets it go");
 }
+
+/// A right-click on a file's row reaches the review as that row's menu:
+/// the file is selected and its actions open on it.
+#[test]
+fn a_right_click_on_a_row_opens_that_files_menu() {
+    let mut view = reviewing();
+    handle_hit(&mut view, ViewHit::OpenMenu(1), SPACE);
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/tests.rs")));
+    let drawn = super::view(&view, SPACE).navigator.unwrap();
+    assert_eq!(drawn.menu.map(|menu| menu.row), drawn.anchor, "on its row");
+    assert_eq!(menu_entries(&view)[0], "Open file");
+}

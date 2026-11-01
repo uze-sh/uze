@@ -942,14 +942,14 @@ impl Attach<'_> {
     /// The right button: the tab/space context menu, anchored where it
     /// was asked for.
     pub(super) fn open_context_menu(&mut self, mouse: MouseEvent) -> Flow {
-        // A row of the code surface asks the surface for its actions: the
-        // menu is the extension's, and only the gesture is the host's.
+        // A row of the surface in front asks it for its actions, whichever
+        // surface it is (the code tree's, the review's list): the menu is
+        // the extension's, and only the gesture is the host's, as Alt+. is.
         if let Some(WorkspaceHit::Extension(ExtensionHit {
             slot,
             hit: ViewHit::SelectItem(row) | ViewHit::ToggleGroup(row),
         })) = self.model.hit_at(mouse.column, mouse.row)
             && self.model.open_slot == Some(slot)
-            && self.model.showing(code::CATALOG.id)
         {
             self.model.menu_at = Some(Rect::new(mouse.column, mouse.row, 1, 1));
             let space = self.surface_space();
