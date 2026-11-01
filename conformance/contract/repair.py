@@ -43,6 +43,7 @@ DOCTOR_BEFORE = "UZE_REPAIR_DOCTOR_BEFORE"
 DOCTOR_AFTER = "UZE_REPAIR_DOCTOR_AFTER"
 REPAIRED = "UZE_REPAIR_REPORT"
 LISTED = "UZE_REPAIR_PLUGINS"
+BEGIN = "_BEGIN"
 END = "_END"
 
 #: The findings the damage makes, as `uze doctor --format json` names their
@@ -53,13 +54,14 @@ REGISTRATION = "registrations"
 
 
 def _between(output, marker):
-    if marker not in output:
+    begin = marker + BEGIN
+    if begin not in output:
         return None
-    return output.rsplit(marker, 1)[1].split(marker + END, 1)[0]
+    return output.rsplit(begin, 1)[1].split(marker + END, 1)[0]
 
 
 def _printed(marker, command):
-    return f"echo {marker}; ( {command} ) 2>&1; echo {marker}{END}"
+    return f"echo {marker}{BEGIN}; ( {command} ) 2>&1 || true; echo {marker}{END}"
 
 
 DIGESTS = f'grep -o \'"digest": *"[^"]*"\' {UZE_HOME}/state/packages.json | sort'
@@ -76,7 +78,8 @@ STALE_ENDPOINT = "\n".join(
         f"  find {UZE_HOME}/state/terminal /tmp -type s 2>/dev/null | grep -q . && break",
         "  sleep 0.1",
         "done",
-        "kill -9 $SERVE 2>/dev/null; wait $SERVE 2>/dev/null",
+        "kill -9 $SERVE 2>/dev/null || true",
+        "wait $SERVE 2>/dev/null || true",
     ]
 )
 
@@ -89,7 +92,7 @@ def damage(bindings):
             "cd /work",
             _printed(DIGESTS_BEFORE, DIGESTS),
             f"rm -rf {UZE_HOME}/sources",
-            bindings.misplace_registration or "true",
+            f"( {bindings.misplace_registration or 'true'} ) || true",
             STALE_ENDPOINT,
             _printed(DOCTOR_BEFORE, DOCTOR),
             _printed(
