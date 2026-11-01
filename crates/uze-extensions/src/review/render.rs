@@ -41,7 +41,6 @@ pub(crate) enum Act {
     Delete(u64),
     Resolve(u64),
     CodeBlock,
-    InlineCode,
     Comment,
     /// The comment being written, kept as a draft.
     Save,
@@ -545,8 +544,6 @@ fn composer(review: &ReviewView, drawn: &mut Vec<Drawn>) {
             .push(Span::new(COMMENT_MARK.to_string(), Role::Warning))
             .push(Span::new(format!(" {lines} · {what}   "), Role::Muted))
             .act("{ } code block", Act::CodeBlock, Role::Secondary)
-            .push(Span::new("   ", Role::Default))
-            .act("` code", Act::InlineCode, Role::Secondary)
             .drawn(Line::ComposerHeader),
     );
     if !composer.excerpt.is_empty() {

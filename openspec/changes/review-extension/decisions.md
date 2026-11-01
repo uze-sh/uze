@@ -97,3 +97,13 @@
 - decided:  `all · uncommitted` are the view's subjects, drawn on the bar's leading slot where the code surface says files or map, whatever the content shows; the empty message says to choose all; the content's chip is the viewed mark alone
 - rejected: drawing chips over a message, which changes the host for every surface to put back a control that belongs on the bar
 - blast:    the review's look
+
+## D11 — One code-block control, an empty fence in the file's language, superseding D3
+
+- status:   pending
+- task:     6.4
+- commit:   
+- trigger:  the operator, writing a comment, read `{ } code block` and `` ` code `` as two names for one thing, and the block arrived holding the marked lines rather than room to write what they should say
+- decided:  one control, `{ } code block`, inserting an empty block fenced with the file's extension (`` ```rs ``) on lines of its own, the caret on its empty line; inline code is typed with backticks and still drawn as code
+- rejected: keeping the marked lines in the block, which the operator then deletes to write the fix, and the inline control, a pair of backticks a key already types
+- blast:    the spec's "A comment carries code" requirement

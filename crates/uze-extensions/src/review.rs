@@ -286,11 +286,6 @@ fn perform(view: &mut ReviewView, act: Act, space: Size) {
                 composer.insert_block();
             }
         }
-        Act::InlineCode => {
-            if let Some(composer) = view.composer.as_mut() {
-                composer.insert_inline();
-            }
-        }
         Act::Save => view.add_comment(),
         Act::Discard => view.cancel_composer(),
     }

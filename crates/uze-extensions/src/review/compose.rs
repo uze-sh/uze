@@ -183,33 +183,25 @@ impl Composer {
         };
     }
 
-    /// The marked lines, as they read now, fenced as a block on lines of
-    /// their own at the caret: what the operator then edits into what the
-    /// lines should say.
+    /// An empty fenced block in the file's language, on lines of its
+    /// own, with the caret on its one empty line: what goes in it is the
+    /// operator's to write.
     pub(crate) fn insert_block(&mut self) {
-        let code: Vec<String> = self
-            .rows
-            .iter()
-            .filter(|row| row.kind != super::record::RowKind::Removed)
-            .map(|row| row.text.clone())
-            .collect();
+        let language = self
+            .path
+            .extension()
+            .map(|extension| extension.to_string_lossy().into_owned())
+            .unwrap_or_default();
         if !self.lines[self.caret.line].is_empty() {
             self.line_end();
             self.newline();
         }
-        self.insert("```\n");
-        for line in &code {
-            self.insert(line);
-            self.newline();
-        }
-        self.insert("```");
+        self.insert(&format!("```{language}"));
         self.newline();
-    }
-
-    /// A pair of backticks with the caret between them.
-    pub(crate) fn insert_inline(&mut self) {
-        self.insert("``");
-        self.left();
+        let inside = self.caret.line;
+        self.newline();
+        self.insert("```");
+        self.place(inside, 0);
     }
 }
 
@@ -312,33 +304,32 @@ mod tests {
         assert_eq!(composer.text(), "abd");
     }
 
+    /// The block is empty, fenced in the file's language, and what is
+    /// typed next goes inside it; a file with no extension gets a bare
+    /// fence.
     #[test]
-    fn the_marked_lines_become_a_fenced_block_without_their_removals() {
-        let rows = vec![
-            Row {
-                kind: RowKind::Removed,
-                line: 3,
-                text: "old();".to_owned(),
-            },
-            Row {
-                kind: RowKind::Added,
-                line: 3,
-                text: "new();".to_owned(),
-            },
-        ];
-        let mut composer = Composer::new(std::path::PathBuf::from("a.rs"), rows, String::new());
+    fn a_code_block_is_an_empty_fence_in_the_files_language_typed_into() {
+        let mut composer = Composer::new(
+            std::path::PathBuf::from("/w/a.rs"),
+            Vec::new(),
+            String::new(),
+        );
         typed(&mut composer, "Rather:");
         composer.insert_block();
-        assert_eq!(composer.text(), "Rather:\n```\nnew();\n```\n");
-    }
-
-    #[test]
-    fn inline_code_leaves_the_caret_between_the_backticks() {
-        let mut composer =
-            Composer::new(std::path::PathBuf::from("a.rs"), Vec::new(), String::new());
-        composer.insert_inline();
-        typed(&mut composer, "x");
-        assert_eq!(composer.text(), "`x`");
+        typed(&mut composer, "new();");
+        assert_eq!(composer.text(), "Rather:\n```rs\nnew();\n```");
+        let mut bare = Composer::new(
+            std::path::PathBuf::from("/w/Makefile"),
+            Vec::new(),
+            String::new(),
+        );
+        bare.insert_block();
+        typed(&mut bare, "x");
+        assert_eq!(
+            bare.text(),
+            "```\nx\n```",
+            "on the empty first line, no blank above"
+        );
     }
 
     #[test]

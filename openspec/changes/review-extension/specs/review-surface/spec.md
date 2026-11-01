@@ -117,16 +117,16 @@ editable and deletable until sent.
 ### Requirement: A comment carries code
 A comment SHALL draw a fenced block as code, coloured as the file's
 language, and a backticked span as inline code. The composer SHALL offer
-one control that inserts the marked lines as a fenced block at the caret,
-and one that inserts a pair of backticks with the caret between them.
+one control, which inserts an empty fenced block named for the file's
+language on lines of its own, with the caret on its empty line.
 
-#### Scenario: The marked lines as a block
-- **WHEN** the operator presses the code-block control with lines 53-54 marked and nothing selected
-- **THEN** the text gains those lines inside a fenced block, and the saved comment draws them as code
+#### Scenario: An empty block to write in
+- **WHEN** the operator presses the code-block control on a comment about `naming.rs` and types `refuse(name)?;`
+- **THEN** the text holds `refuse(name)?;` inside a block fenced as `rs`, and the saved comment draws it as code
 
-#### Scenario: Inline code
-- **WHEN** the operator presses the inline-code control and types `rev-parse`
-- **THEN** the comment holds `` `rev-parse` ``, drawn as code
+#### Scenario: Inline code typed
+- **WHEN** the operator types `` `rev-parse` `` in a comment
+- **THEN** the saved comment draws `rev-parse` as code
 
 ### Requirement: A file can be marked viewed
 Each listed file SHALL carry a viewed mark the operator toggles by pointer

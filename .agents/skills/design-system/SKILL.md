@@ -191,8 +191,10 @@ on "cancel" must not save first.
   content's ground, with a row of air inside it top and bottom. It is
   typed into in the design system's way: bright text, the accent caret, a
   faint placeholder, and room for four lines before anything is typed: a
-  field one line tall reads as a title. Its controls are words on its
-  first line (`{ } code block`, `` ` code ``), and its foot holds `save`
+  field one line tall reads as a title. Its one control is a word on its
+  first line, `{ } code block`, which inserts an empty block fenced in the
+  file's language with the caret inside (never the marked lines, never a
+  second control for inline code, which backticks type), and its foot holds `save`
   (the accent, the one meant next) and `discard`, which are `ctrl+s` and
   `esc`; never `ctrl+enter` alone, which only an enhanced keyboard
   sends.
