@@ -63,6 +63,37 @@ fn no_status_mark_is_drawn_from_the_pictographic_blocks() {
     }
 }
 
+/// Each task state has a symbol of its own so no two share a glyph, and
+/// that holds in every glyph set an operator can choose, not only the
+/// default one.
+#[test]
+fn no_two_task_states_share_a_glyph_in_any_glyph_set() {
+    for set in ["default", "nerd", "ascii"] {
+        let mut layers = vec![uze_theme::default_file()];
+        layers.extend(uze_theme::glyph_set_file(set));
+        let theme = uze_theme::resolve_stack(
+            &uze_theme::Identity::from_file(set, uze_theme::default_file()),
+            &layers,
+        )
+        .expect("the bundled set resolves")
+        .theme;
+        uze_theme::with_active(theme, || {
+            let marks: Vec<String> = every_task_state()
+                .iter()
+                .chain([&WorkStateView::InReview])
+                .filter_map(task_mark)
+                .map(|(mark, _)| mark)
+                .collect();
+            for (index, mark) in marks.iter().enumerate() {
+                assert!(
+                    !marks[index + 1..].contains(mark),
+                    "{set}: two states draw `{mark}`: {marks:?}"
+                );
+            }
+        });
+    }
+}
+
 /// Color is what tells the marks apart at a glance — three states
 /// sharing `theme::color(Token::TextDim)` meant the column read as one undifferentiated
 /// smudge. The glyphs are distinct for the same reason, and `Ready`

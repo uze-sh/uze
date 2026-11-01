@@ -41,7 +41,7 @@
     "task.review": "@",
     "task.published": ">",
     "task.delivering": "...",
-    "task.delivered": "^",
+    "task.delivered": "#",
     "task.shelved": "=",
 
     "status.working": ["|", "/", "-", "\\"],
