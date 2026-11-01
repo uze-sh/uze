@@ -43,6 +43,9 @@ pub(crate) enum Line {
     ComposerHeader,
     /// A line of the comment being written, by its index there.
     Composer(usize),
+    /// The card's own room around the comment being written: a press there
+    /// puts the caret at the end of what is written.
+    ComposerPad,
     Blank,
 }
 

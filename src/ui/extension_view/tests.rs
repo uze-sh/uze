@@ -3285,3 +3285,22 @@ fn a_pressable_span_is_its_own_target_and_lifts_under_the_pointer() {
         "the words beside it stay"
     );
 }
+
+/// A card's line stands on the raised ground in the text's column, and
+/// the numbers beside it stay on the content's.
+#[test]
+fn a_card_line_is_raised_in_the_text_column_only() {
+    let mut line = code_line("what should change");
+    line.tone = LineTone::Card;
+    let drawn = drawn_with_caret(&line, 20, 99);
+    assert_eq!(
+        drawn[(GUTTER_WIDTH, 0)].bg,
+        theme::color(Token::SurfaceRaised)
+    );
+    assert_eq!(
+        drawn[(GUTTER_WIDTH + 19, 0)].bg,
+        theme::color(Token::SurfaceRaised),
+        "to its end"
+    );
+    assert_eq!(drawn[(0, 0)].bg, theme::color(Token::SurfaceBackground));
+}

@@ -243,6 +243,11 @@ pub(crate) fn handle_hit(view: &mut ReviewView, hit: ViewHit, space: Size) -> As
                         composer.place(index, cell.saturating_sub(prefix));
                     }
                 }
+                (Some(Line::ComposerPad), None) => {
+                    if let Some(composer) = view.composer.as_mut() {
+                        composer.place(usize::MAX, usize::MAX);
+                    }
+                }
                 (Some(Line::Cell(index)), None) if view.composer.is_none() => {
                     view.focus = Focus::Content;
                     view.cursor = index;
@@ -275,6 +280,8 @@ fn perform(view: &mut ReviewView, act: Act, space: Size) {
                 composer.insert_inline();
             }
         }
+        Act::Save => view.add_comment(),
+        Act::Discard => view.cancel_composer(),
     }
 }
 

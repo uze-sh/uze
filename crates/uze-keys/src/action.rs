@@ -368,7 +368,7 @@ actions! {
     ReviewComment => "review-comment", false,
         "Comment", "Write a comment on the marked lines, or on the line under the cursor";
     ReviewAdd => "review-add", false,
-        "Add", "Keep the comment being written as a draft of the review";
+        "Save", "Keep the comment being written as a draft of the review";
     ReviewSend => "review-send", false,
         "Send", "Tell the agent its review's drafts wait for it";
     ReviewViewed => "review-viewed", false,

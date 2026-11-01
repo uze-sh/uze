@@ -681,6 +681,16 @@ pub(super) fn render_line(
             theme::fg(Token::StateDanger),
             Some(theme::color(Token::StateDiffRemoved)),
         ),
+        LineTone::Card => (
+            theme::fg(Token::TextFaint),
+            Some(theme::color(Token::SurfaceRaised)),
+        ),
+    };
+    // A card stands in the text's column; the numbers beside it stay on
+    // the content's ground.
+    let gutter_ground = match line.tone {
+        LineTone::Card => None,
+        _ => background,
     };
     // A marked run is the reader's own, and it reads over the diff's wash:
     // the gold of a draft comment, the sign keeping the change's hue.
@@ -723,7 +733,8 @@ pub(super) fn render_line(
         ));
         frame.render_widget(
             Paragraph::new(Line::from(spans)).style(
-                Style::default().bg(background.unwrap_or(theme::color(Token::SurfaceBackground))),
+                Style::default()
+                    .bg(gutter_ground.unwrap_or(theme::color(Token::SurfaceBackground))),
             ),
             columns[0],
         );

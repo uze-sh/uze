@@ -23,6 +23,10 @@ use crate::view::{
 
 use super::record::{Comment, CommentStatus};
 
+/// How many lines the comment being written stands on before its text
+/// needs more.
+const COMPOSER_ROWS: usize = 4;
+
 /// What a comment's lines are set in by, after the gutter.
 const INDENT: &str = "  ";
 /// What sets a comment's body lines, and the comment being written, in
@@ -39,6 +43,10 @@ pub(crate) enum Act {
     CodeBlock,
     InlineCode,
     Comment,
+    /// The comment being written, kept as a draft.
+    Save,
+    /// The comment being written, let go.
+    Discard,
 }
 
 /// One line of the content, what it is, and the stretches of it a press
@@ -54,6 +62,7 @@ struct Building {
     spans: Vec<Span>,
     width: usize,
     acts: Vec<(Range<usize>, Act)>,
+    tone: LineTone,
 }
 
 impl Building {
@@ -62,7 +71,14 @@ impl Building {
             spans: Vec::new(),
             width: 0,
             acts: Vec::new(),
+            tone: LineTone::Neutral,
         }
+    }
+
+    /// A line of the comment being written, on its card's ground.
+    fn on_card(mut self) -> Self {
+        self.tone = LineTone::Card;
+        self
     }
 
     fn push(mut self, span: Span) -> Self {
@@ -84,7 +100,7 @@ impl Building {
             content: ContentLine {
                 gutter: String::new(),
                 number: String::new(),
-                tone: LineTone::Neutral,
+                tone: self.tone,
                 spans: self.spans,
                 marked: false,
             },
@@ -521,8 +537,10 @@ fn composer(review: &ReviewView, drawn: &mut Vec<Drawn>) {
         Some(_) => "editing",
         None => "new comment",
     };
+    let card = || Building::new().on_card();
+    drawn.push(card().drawn(Line::ComposerPad));
     drawn.push(
-        Building::new()
+        card()
             .push(Span::new(INDENT, Role::Default))
             .push(Span::new(COMMENT_MARK.to_string(), Role::Warning))
             .push(Span::new(format!(" {lines} · {what}   "), Role::Muted))
@@ -533,12 +551,13 @@ fn composer(review: &ReviewView, drawn: &mut Vec<Drawn>) {
     );
     if !composer.excerpt.is_empty() {
         drawn.push(
-            Building::new()
+            card()
                 .push(Span::new(RULE, Role::Faint))
                 .push(Span::new(format!("on “{}”", composer.excerpt), Role::Muted))
-                .drawn(Line::Blank),
+                .drawn(Line::ComposerPad),
         );
     }
+    drawn.push(card().drawn(Line::ComposerPad));
     let empty = composer.lines.len() == 1 && composer.lines[0].is_empty();
     for (index, text) in composer.lines.iter().enumerate() {
         let span = if empty {
@@ -547,12 +566,27 @@ fn composer(review: &ReviewView, drawn: &mut Vec<Drawn>) {
             Span::new(text.clone(), Role::Bright)
         };
         drawn.push(
-            Building::new()
+            card()
                 .push(Span::new(RULE, Role::Accent))
                 .push(span)
                 .drawn(Line::Composer(index)),
         );
     }
+    // Room to write in from the start: a comment is a few lines, and a
+    // field one line tall reads as a title.
+    for _ in composer.lines.len()..COMPOSER_ROWS {
+        drawn.push(card().drawn(Line::ComposerPad));
+    }
+    drawn.push(card().drawn(Line::ComposerPad));
+    drawn.push(
+        card()
+            .push(Span::new(RULE, Role::Default))
+            .act("save", Act::Save, Role::Accent)
+            .push(Span::new("   ", Role::Default))
+            .act("discard", Act::Discard, Role::Muted)
+            .drawn(Line::ComposerPad),
+    );
+    drawn.push(card().drawn(Line::ComposerPad));
     drawn.push(blank());
 }
 

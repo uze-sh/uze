@@ -184,11 +184,16 @@ on "cancel" must not save first.
   happens to land on, which has no hover. A fenced block in it is drawn as code,
   coloured as the file is, on a faint ground; a backticked span in the
   badge hue.
-- The composer is the comment's place, typed into in the design system's
-  way: bright text, the accent caret, a faint placeholder. Its controls
-  are words on its first line (`{ } code block`, `` ` code ``); add is
-  `ctrl+s` and the foot's hint, never `ctrl+enter` alone, which only an
-  enhanced keyboard sends.
+- The composer is a card in the content (`LineTone::Card`): its lines on
+  `SurfaceRaised` in the text's column, the numbers beside it on the
+  content's ground, with a row of air inside it top and bottom. It is
+  typed into in the design system's way: bright text, the accent caret, a
+  faint placeholder, and room for four lines before anything is typed: a
+  field one line tall reads as a title. Its controls are words on its
+  first line (`{ } code block`, `` ` code ``), and its foot holds `save`
+  (the accent, the one meant next) and `discard`, which are `ctrl+s` and
+  `esc`; never `ctrl+enter` alone, which only an enhanced keyboard
+  sends.
 - A file read is marked viewed: the list's row carries the host's
   `mark.viewed` icon (success), `mark.unviewed` (dim) before it is read,
   and the warning hue once the file changed since; the chip over its diff

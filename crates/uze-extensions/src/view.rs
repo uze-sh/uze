@@ -1112,6 +1112,10 @@ pub enum LineTone {
     Neutral,
     Added,
     Removed,
+    /// A line of a card standing in the content, such as the comment
+    /// being written: its text on a raised ground, so it reads apart from
+    /// the file around it; the gutter stays the content's.
+    Card,
 }
 
 /// A collapsible section an extension contributes to one of the host's

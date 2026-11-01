@@ -956,3 +956,65 @@ fn a_drafts_actions_are_pressed_as_buttons_are() {
     handle_hit(&mut view, ViewHit::Press { line, span: delete }, SPACE);
     assert!(view.drafts().is_empty(), "pressed, it deleted");
 }
+
+/// The comment being written is a card: every line of it on the card's
+/// ground, room for a few lines before anything is typed, and its own
+/// save and discard, which do what ctrl+s and esc do.
+#[test]
+fn the_comment_being_written_is_a_card_with_room_and_its_own_buttons() {
+    use crate::view::LineTone;
+    let open = || {
+        let mut view = reviewing();
+        handle_hit(
+            &mut view,
+            ViewHit::LineNumber {
+                line: 2,
+                extend: false,
+            },
+            SPACE,
+        );
+        handle_command(&mut view, Command::Comment, SPACE);
+        handle_command(&mut view, Command::Type('x'), SPACE);
+        view
+    };
+    let view = open();
+    let drawn = render::lines(&view);
+    let card: Vec<&render::Drawn> = drawn
+        .iter()
+        .filter(|drawn| drawn.content.tone == LineTone::Card)
+        .collect();
+    let writing = card
+        .iter()
+        .filter(|drawn| {
+            matches!(
+                drawn.line,
+                surface::Line::Composer(_) | surface::Line::ComposerPad
+            )
+        })
+        .count();
+    assert!(writing >= 4, "room for a few lines: {writing}");
+    let button = |word: &str| {
+        drawn
+            .iter()
+            .enumerate()
+            .find_map(|(line, drawn)| {
+                let span = drawn
+                    .content
+                    .spans
+                    .iter()
+                    .position(|span| span.text == word)?;
+                drawn.content.spans[span]
+                    .pressable
+                    .then_some(ViewHit::Press { line, span })
+            })
+            .unwrap_or_else(|| panic!("a {word} button"))
+    };
+    let mut saved = open();
+    handle_hit(&mut saved, button("save"), SPACE);
+    assert!(!saved.typing());
+    assert_eq!(saved.drafts().len(), 1, "save keeps it as a draft");
+    let mut discarded = open();
+    handle_hit(&mut discarded, button("discard"), SPACE);
+    assert!(!discarded.typing());
+    assert!(discarded.drafts().is_empty(), "discard lets it go");
+}
