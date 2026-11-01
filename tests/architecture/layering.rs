@@ -1876,11 +1876,15 @@ fn only_the_review_extension_reaches_review_records() {
             .unwrap_or(&file)
             .to_string_lossy()
             .replace('\\', "/");
-        // A test double hands a call through to the host it wraps.
+        // A test module's double hands every call through to the host it
+        // wraps; it is no caller.
+        if relative.ends_with("tests.rs") {
+            continue;
+        }
+        // `lib.rs` declares the host's methods and hands them through.
         let review = relative == "crates/uze-extensions/src/review.rs"
             || relative.starts_with("crates/uze-extensions/src/review/")
-            || relative == "crates/uze-extensions/src/lib.rs"
-            || relative.ends_with("tests.rs");
+            || relative == "crates/uze-extensions/src/lib.rs";
         let source = strip_test_modules(&fs::read_to_string(&file).unwrap_or_default());
         let reaches = source
             .lines()
@@ -1893,7 +1897,11 @@ fn only_the_review_extension_reaches_review_records() {
             .lines()
             .filter(|line| !line.trim_start().starts_with("//"))
             .any(|line| line.contains(".restore_to_head("));
-        if discards && !review {
+        // Only the review's discard job throws a change away; the rest of
+        // the review reads and keeps what the operator wrote.
+        let discard_job = relative == "crates/uze-extensions/src/review/extension.rs"
+            || relative == "crates/uze-extensions/src/lib.rs";
+        if discards && !discard_job {
             failures.push(format!("  {relative} throws a change away"));
         }
     }
