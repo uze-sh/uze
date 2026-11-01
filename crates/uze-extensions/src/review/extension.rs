@@ -1048,12 +1048,22 @@ impl Extension for ReviewExtension {
                     self.door.totals = read.totals;
                     self.door.at = Some(Instant::now());
                 }
-                // A read taken before a write landed is older than what is
-                // kept; one that failed is a checkout with no review here.
-                if let Some(read_record) = read.record
-                    && read.generation == self.generation
-                {
-                    self.know(read.root, read_record.unwrap_or_default());
+                match read.record {
+                    // Older than the last write answered: not taken, and
+                    // asked again on the next pass rather than a period on.
+                    Some(_) if read.generation != self.generation => {
+                        if self.door.root.as_ref() == Some(&read.root) {
+                            self.door.at = None;
+                        }
+                    }
+                    Some(Ok(record)) => self.know(read.root, record),
+                    // A checkout never read that answers none keeps no
+                    // review (a shell, a shared checkout); one read before
+                    // keeps what it held through a read that failed.
+                    Some(Err(_)) => {
+                        self.records.entry(read.root).or_default();
+                    }
+                    None => {}
                 }
             }
             return Outcome::Stay;
@@ -1263,6 +1273,28 @@ mod tests {
         );
         extension.agent_events(&[finished("a1")], std::time::Instant::now());
         assert!(extension.door.at.is_none() && extension.listed_at.is_none());
+    }
+
+    /// A read that fails keeps what the checkout held; one older than
+    /// the last write is not taken and is asked again on the next pass.
+    #[test]
+    fn a_failed_read_keeps_the_comments_and_an_old_one_asks_again_at_once() {
+        let mut extension = ReviewExtension::default();
+        extension.drafted(PathBuf::from("/w"), "a.rs", "check");
+        extension.counted(PathBuf::from("/w"), 1, 0, 1);
+        extension.absorb(door_read(
+            extension.generation,
+            "/w",
+            Err("the record could not be read".to_owned()),
+        ));
+        assert_eq!(drafts(&extension), 1, "kept through a failed read");
+        extension.generation += 1;
+        extension.absorb(door_read(0, "/w", Ok(ReviewRecord::default())));
+        assert_eq!(drafts(&extension), 1, "an old read is not taken");
+        assert!(
+            extension.door.at.is_none(),
+            "and the door asks again at once"
+        );
     }
 
     /// What the drawer says of one checkout's send stays that checkout's:
