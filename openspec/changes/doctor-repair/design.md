@@ -149,7 +149,7 @@ It reads each vendor's registration file read-only instead:
 
 ### D7. One collector: owners decide, one executor runs
 
-There are fourteen collection mechanisms today, each with its own rule,
+There are twelve collection mechanisms today, each with its own rule,
 trigger, lock and log:
 
 | mechanism | rule | trigger, lock |
@@ -164,7 +164,7 @@ trigger, lock and log:
 | `conversation::forget` (`runtime/sessions/<integration>`) | the session ended; a killed harness leaks it | `uze-workspace` |
 | `telemetry::prune_to_size` (`logs/`) | size budget | `src/` |
 | `retire_records_of_earlier_releases` | a hard-coded list | every `setup` and bootstrap, `MutationLock` |
-| `store/superseded/` | nothing collects it | — |
+| `sources/superseded/` | nothing collects it | — |
 | `delivery/leftovers.rs` | report only | `doctor` |
 
 Out of scope, on purpose:
@@ -283,7 +283,9 @@ reported.
 - **[The catalogue grows with every feature]** → the coverage test makes that
   growth explicit, which is the point.
 
-## Decision log (revision 2, taken without the operator)
+## Decision log
+
+Choices taken without the operator, and those agreed in conversation, all for the operator to confirm.
 
 | # | chosen | rejected, and why |
 |---|---|---|
@@ -297,14 +299,14 @@ reported.
 | 8 | Embedded packages are re-ingested from the binary's snapshot, with no digest match required | A digest match would turn every post-upgrade restore of the bundled plugin into `NeedsHuman`. |
 | 9 | A read-only `config.toml` reader for Codex marketplaces | Spawning `codex plugin marketplace list` on plain `doctor` breaks its budget. |
 | 10 | A `Collectable` per owner, one registry, and coverage of every disposable root. `uze-core` only marks roots disposable. | A `Retention` enum on `UzeHome` cannot express "current OR recent", "newest per identity", budgets or pid liveness. A central collector that judges liveness itself would need every domain's knowledge. |
-| 15 | The terminal runtime's subtree is opaque and never collected; endpoint repair goes through `uze-terminal`'s own probe, called from `src/` | Collecting it by looking at the disk would delete a live socket, lock and operator key. `uze-application` does not depend on `uze-terminal`. |
-| 16 | "Never delete the unknown" applies to the bytes, store, record and authored tiers only | Applying it to generated and remembered would break the projection sweep, which shipped releases already rely on. |
-| 17 | Extension scratch lives while its pid lives | A 1 h age would delete a long-running program's scratch once the collector runs on every maintenance pass. |
-| 18 | Retired paths stay on the bootstrap trigger; only paths no supported build reads may be retired | Moving retirement to `--repair` alone would stop it from happening. Retiring a record an older build still reads breaks two builds on one machine. |
 | 11 | Process lifecycle, project Git and registry hygiene stay outside the collector | A process is not a path with a retention, branches live outside `$UZE_HOME`, and ghost pruning decides ownership, not disposal. |
 | 12 | Unknown entries are reported, never deleted | Two builds on one machine: a newer build's state is unknown to an older one. |
 | 13 | Set-aside records leave only with `--discard-leftovers` | Persisted-state keeps them because they may be the operator's lost work. |
 | 14 | Owners keep their inline triggers through `collect(path)` | Moving every trigger to maintenance would delay collection that happens today exactly when it matters. |
+| 15 | The terminal runtime's subtree is opaque and never collected; endpoint repair goes through `uze-terminal`'s own probe, called from `src/` | Collecting it by looking at the disk would delete a live socket, lock and operator key. `uze-application` does not depend on `uze-terminal`. |
+| 16 | "Never delete the unknown" applies to the bytes, store, record and authored tiers only | Applying it to generated and remembered would break the projection sweep, which shipped releases already rely on. |
+| 17 | Extension scratch lives while its pid lives | A 1 h age would delete a long-running program's scratch once the collector runs on every maintenance pass. |
+| 18 | Retired paths stay on the bootstrap trigger; only paths no supported build reads may be retired | Moving retirement to `--repair` alone would stop it from happening. Retiring a record an older build still reads breaks two builds on one machine. |
 
 ## Candidate ADRs
 

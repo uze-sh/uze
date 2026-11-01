@@ -64,6 +64,10 @@ or writing packages into the new layout.
 - **THEN** it refuses the package registry and the receipt ledger as newer and names them, and no package or receipt is lost
 - **AND** the next run of the new build removes any empty directory the older build left under `store/`
 
+#### Scenario: An older UZE is still running
+- **WHEN** a background upgrade installed the new build while a workspace of the older one is still open
+- **THEN** nothing is fenced or moved until that workspace has restarted into the new release
+
 #### Scenario: Packages installed before the move
 - **WHEN** the move completes on a machine whose registry has no digests
 - **THEN** every moved package has a digest recorded

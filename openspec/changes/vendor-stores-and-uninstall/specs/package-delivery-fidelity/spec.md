@@ -42,12 +42,13 @@ route of that harness.
 While a marketplace is linked to a checkout, each of its packages' builds
 SHALL keep its place, selector, enablement and receipts, SHALL record that
 its source is linked, and SHALL be rendered again when the checkout changes.
-Unlinking SHALL render each build again from the pinned commit.
+After unlinking, the next resolution SHALL render each build again from the
+commit pinned before the link.
 
 #### Scenario: An edit while linked
 - **WHEN** a file changes in the linked checkout
 - **THEN** the package's build is rendered again in place, and the harness still lists the same plugin, enabled as before
 
 #### Scenario: Unlinking offline
-- **WHEN** the marketplace is unlinked with no network and its cached clone holds the pinned commit
-- **THEN** the build is rendered again from the pinned commit, and `agents.lock` is unchanged
+- **WHEN** the marketplace is unlinked with no network, and its cached clone holds the pinned commit's blobs
+- **THEN** the next resolution renders the build again from that commit, and `agents.lock` is unchanged

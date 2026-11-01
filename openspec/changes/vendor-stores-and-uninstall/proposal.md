@@ -30,7 +30,8 @@ a time, and nothing undoes `setup`.
     marketplace UZE registers with that harness, and it holds only builds:
     `store/<vendor>/<id>/` is everything one package needs there, including
     the plugin, its `${PLUGIN_ROOT}` and its hook wrapper. The rules engine
-    ships in the bundled `uze` plugin's build.
+    is a file of the bundled `uze` package. Session scratch stays in
+    `runtime/` and is recreated on demand.
   - No file a harness reads and no configuration entry UZE writes names a
     path outside that directory. The workspace's per-process launch context
     is the one exception.
@@ -52,8 +53,8 @@ a time, and nothing undoes `setup`.
 - **Missing bytes never cost a delivery.** A package whose `sources/` entry
   is gone keeps its builds, its catalogue entries and its receipts, and is
   reported as missing its bytes.
-- **One build per harness, with no extra copy.** Each build carries the whole
-  package and is its own root. `runtime/packages` is removed.
+- **One build per harness, with no extra harness-facing copy.** Each build carries the whole
+  package and is its own root. Harnesses stop reading `runtime/packages`, which remains only for UZE's own extension MCP launcher.
 - **`runtime/` and `cache/` are disposable for real.** They hold staging,
   launch context and UZE's own extension processes.
 - **Codex hook trust is respected.** UZE's groups always come after the

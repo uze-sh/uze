@@ -4,8 +4,8 @@
 No configuration or discovery file of a harness that UZE, or a vendor CLI on
 its behalf, writes SHALL name a path under `$UZE_HOME` outside that harness's
 vendor store. The exceptions are a launch argument or environment for one
-process, an earlier artifact reported as drifted, and the harness's own
-transcripts.
+process, a scratch directory its reader recreates on demand, an earlier
+artifact reported as drifted, and the harness's own transcripts.
 
 #### Scenario: Every harness file points only into its store
 - **WHEN** plugins with skills, agents, MCP servers, hooks and rules are installed for every harness
@@ -50,7 +50,12 @@ recording its origin. Publishing SHALL replace only builds whose key changed.
 
 #### Scenario: An earlier install moves without losing its plugins
 - **WHEN** a machine with plugins under `uze-local` and `uze-store`, pointing into `runtime/`, is upgraded and installs again
-- **THEN** every plugin is installed from the vendor store's one marketplace, and no receipt still names `uze-local`
+- **THEN** every plugin is installed from the vendor store's one marketplace, no receipt still names `uze-local`, and `uze-local` is no longer registered
+- **AND** every `uze-store` plugin was repointed, not uninstalled and installed again
+
+#### Scenario: A disabled Codex plugin under uze-local
+- **WHEN** the operator had disabled a Codex plugin installed under `uze-local`
+- **THEN** it is left as it is and reported, and it is not installed a second time
 
 #### Scenario: A repoint that fails on Codex
 - **WHEN** re-adding Codex's marketplace from the vendor store fails

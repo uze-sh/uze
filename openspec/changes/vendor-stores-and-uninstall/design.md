@@ -112,7 +112,7 @@ The code also writes ties outside the harness homes:
   sources/superseded/<id>/       BYTES      a failed restore's only copy (today's store/superseded)
   store/<vendor>/                STORE      the one marketplace UZE registers with that harness
     <marketplace manifest>       .claude-plugin/marketplace.json, .agents/plugins/marketplace.json
-    <id>/                        the build of <id> for <vendor>: plugin, ${PLUGIN_ROOT}, hooks/exec
+    <id>/                        the build of <id> for <vendor>: plugin, ${PLUGIN_ROOT}, hooks/uze-exec
     uze/                         the bundled plugin's build, which also carries the rules engine
   state/                         RECORD     receipts, registry, tasks, memory
   config.toml keys.json themes/  AUTHORED   the operator's own text
@@ -162,7 +162,7 @@ whole package:
 - `SKILL.md` with that harness's frontmatter;
 - agents and MCP in that harness's format;
 - hooks compiled to its dialect;
-- **the hook wrapper** (`hooks/exec`, `exec.ps1`);
+- **the hook wrapper** at the reserved path `hooks/uze-exec` (and `.ps1`);
 - every supporting file.
 
 `${PLUGIN_ROOT}` resolves to the build's own directory on every route of
@@ -197,11 +197,18 @@ holds:
 - `source: pinned | linked` (D3b);
 - the digest of every file UZE wrote into the build.
 
-The build directory therefore holds **only the plugin**, exactly what the
-vendor expects to see. No UZE file appears in a vendor's cache or in its
-`plugin validate`. The receipt is already the source of truth for what UZE
-wrote. If the records are lost, the builds become unknown to UZE, which is
-what persisted-state says losing a record costs.
+The build directory therefore holds the plugin, plus the hook wrapper at the
+reserved path `hooks/uze-exec` (and `hooks/uze-exec.ps1`) when the package has
+hooks. Ingest refuses a package that ships a file at a reserved path, so an
+author's own `hooks/` directory never collides with it. No bookkeeping file
+of UZE's appears in a vendor's cache or in its `plugin validate`. The
+receipt is already the source of truth for what UZE wrote. If the records
+are lost, the builds become unknown to UZE, which is what persisted-state
+says losing a record costs.
+
+The build receipt carries a resource identity of its own (`build`), so it is
+never mistaken for the receipt of the vendor install that `attach` checks
+before installing a plugin. `attach.rs` filters receipts by kind.
 
 *Rejected: a `.uze-build` file inside each build.* It duplicates the receipt
 and leaks a UZE file into every vendor copy.
@@ -210,7 +217,7 @@ and leaks a UZE file into every vendor copy.
 |---|---|
 | publish | stage and swap a build only when its key differs, then swap the catalogue last. A UZE upgrade changes the key, so a stale render never survives one. |
 | inspect | `Matched` when every file the receipt lists still has its digest; `Drifted` when one was edited; `Missing` when the directory is gone. A file a hook *added* is not listed, so it is not drift. |
-| receipt | one per (vendor, package) |
+| receipt | one per (vendor, package), identity `build` |
 
 **Catalogue membership comes from the registry and the build receipts,
 never from the bytes.** A registry entry whose `sources/` directory is
@@ -241,11 +248,17 @@ marketplace at a checkout the operator develops. That checkout lives
     same selector, enablement and receipts. Its receipt records
     `source: linked`. An edit changes the digest, so the build key changes
     and the build is rendered again in place.
-  - **Unlinking restores the original build.** `uze market unlink`
-    re-ingests the pinned commit from the marketplace's cached partial
-    clone. This works offline whenever the clone holds that commit, and is
-    `NeedsNetwork` for `doctor-repair` otherwise. The digest returns to the
-    pinned one and the build is rendered again as `source: pinned`.
+  - **Unlinking restores the original build.** The link record also
+    keeps the commit the package was pinned to before linking, because
+    linked ingest records `Local { checkout }` as its provenance. After
+    `uze market unlink`, the next resolution re-ingests that commit from the
+    marketplace's cached partial clone. That resolution is whatever runs
+    next: install, update or maintenance. This matches
+    `plugin-freshness-and-linked-marketplaces`: unlink restores resolution
+    from the registered source and leaves the bytes alone until something
+    asks for them. The build is then rendered again as `source: pinned`.
+    This works offline when the clone holds that commit's blobs;
+    otherwise it is `NeedsNetwork` for `doctor-repair`.
   - **The pin never moves from linked work.** `agents.lock` is not written
     from a linked source, as that change already guarantees.
 
@@ -258,11 +271,11 @@ It is a second snapshot beside `sources/`, and the build is already one.
 
 | item | before | after |
 |---|---|---|
-| hook wrapper | one shared copy per harness | inside every build that has hooks. The entry names its own build's `hooks/exec`, and the wrapper leaves with the package. This was ADR-040's original intent. `HookConfigEntry.wrapper` then names a file the build receipt already owns, and its "removed once no entry needs it" logic goes. |
-| rules engine | a shared file per harness | inside the bundled `uze` plugin's build (`store/<vendor>/uze/rules/`). Rules are UZE's feature, and that plugin is delivered to every harness and leaves only with `--purge`. The `SETUP_OWNER` entries name it there. |
-| rule-engine sessions | `runtime/rules/sessions` | computed by the engine at run time under `${TMPDIR:-/tmp}/uze-rules-$UID`. No configuration names it, and nothing disposable sits in the store tier. |
+| hook wrapper | one shared copy per harness | inside every build that has hooks, at the reserved `hooks/uze-exec`. The entry names its own build's wrapper, and the wrapper leaves with the package. This was ADR-040's original intent. `HookConfigEntry.wrapper` then names a file the build receipt already owns, and its "removed once no entry needs it" logic goes. |
+| rules engine | a shared file per harness | a real file of the bundled `uze` package (`plugins/uze`), rendered into its build like any package file. The `SETUP_OWNER` entries name it there. No package is special-cased: `plugins/uze` stays "not privileged" (`bootstrap.rs`), and it simply ships the engine. |
+| rule-engine sessions | `runtime/rules/sessions` | **unchanged**: a scratch directory under `runtime/` that its reader recreates on demand (`rules/engine.rs`). Deleting it changes nothing a harness does, so it is the declared exception to "a harness reads only its store". |
 | OpenCode hook groups | `runtime/attachments/opencode/hook-groups` | inside each package's build. `uze.ts` reads `store/opencode/*/`. |
-| OpenCode session documents | `runtime/sessions/opencode`, a path baked into `uze.ts` | the workspace passes the document's path in the launched process's environment, which is within the per-process exception. *Measured:* an OpenCode 2.2.5 plugin reads the launch environment. |
+| OpenCode session documents | `runtime/sessions/opencode`, baked into `uze.ts` | **unchanged**: the same declared on-demand scratch exception. The launch environment cannot carry it, because one shared OpenCode server serves every launch and keeps the environment of whichever launch started it (`opencode/agent_context.rs`). |
 
 `uze.ts` and the bundled `uze` plugin's deliveries gain receipts. `remove`
 keeps refusing the bundled plugin, and only `uninstall --purge` detaches
@@ -283,6 +296,14 @@ not apply when it is absent.
 
 ### D5. Migration, fenced against older builds
 
+0. **Never under a running older UZE.** A background `uze upgrade` replaces
+   the binary while an older workspace client or terminal runtime keeps
+   running. Until that process restarts into the new release, it reads the
+   documents the fence would bump. So the fence and the move run only when
+   no UZE process of another version is alive. A process is detected through
+   the terminal runtime's endpoint and the client records, each carrying its
+   version. Until then, the new build works on the current layout and says
+   that the move waits for the restart.
 1. **Fence first.** Under the mutation lock, `packages.json` and
    `attachments.json` are both written at their new shape
    (`RawPackageRegistry::SHAPE` and the ledger shape are bumped, and a ladder
@@ -301,19 +322,24 @@ not apply when it is absent.
    before it refuses. The new build removes it when it is empty.
 3. **Re-deliver.** On the next `setup`, `install` or `update`, for each
    harness:
-   1. Publish the builds into `store/<vendor>/{local,generated}`.
-   2. Retire `uze-local` through the existing generic rule. No bespoke
-      merge code: "a receipt from an earlier shape is retired before the
-      current one is attached" (`transparent-harness-attachment`) handles it.
-      - Each matched `<p>@uze-local` receipt is detached through the vendor
-        CLI (uninstall the plugin, then remove the marketplace).
-      - `<p>@uze-store` is then attached.
+   1. Publish the builds into `store/<vendor>`.
+   2. Retire `uze-local` with three explicit steps:
+      - **`uze-store` receipts are matched by marketplace name.**
+        `receipt_serves` keys on the name, not the root, so the root
+        change is handled by the repoint (step 3) and never by an
+        uninstall and reinstall.
+      - **`<p>@uze-local` is retired.** Each matched receipt is detached
+        through the vendor CLI and `<p>@uze-store` is attached. Enablement
+        is not carried, because UZE is in beta and keeps no legacy paths. A
+        plugin the operator had disabled comes back enabled once, and the
+        changelog says so. On Codex, a disabled plugin inspects as
+        `Drifted`: it is **left and reported**, never installed beside
+        itself.
+      - **The `uze-local` marketplace is removed** once no receipt names it.
+        `detach_package` never removes a marketplace by itself.
 
-      Because UZE is in beta and carries no legacy paths, enable/disable
-      state is **not** carried. An author-enveloped plugin that the
-      operator had disabled comes back enabled once on both vendors, and the
-      changelog says so. Each vendor keeps an empty `cache/uze-local` of
-      its own, which is vendor bookkeeping UZE leaves alone.
+      Each vendor keeps an empty `cache/uze-local` of its own, which is
+      vendor bookkeeping UZE leaves alone.
    3. Repoint each marketplace only when its registered root differs, and
       never while a session of that harness is running:
       - **Claude:** a same-name `marketplace add`.
@@ -418,7 +444,9 @@ the reinstall-then-purge path.
   `Drifted`, is kept and is reported. The next package change does not
   overwrite it until the person resolves it. This is rare and visible.
 
-## Decision log (revision 4, taken without the operator)
+## Decision log
+
+Choices taken without the operator, and those agreed in conversation, all for the operator to confirm.
 
 | # | chosen | rejected, and why |
 |---|---|---|
@@ -435,11 +463,11 @@ the reinstall-then-purge path.
 | 11 | The ownership test walks configuration and discovery files, not transcripts | Transcripts legitimately quote expanded paths and are the vendor's history. |
 | 12 | Write both fenced documents, then move the bytes, then backfill digests during the move | Moving first lets an older build prune and detach. A ladder rung cannot compute digests from disk. |
 | 13 | No reference counting; one build per package per vendor | Packages are machine-wide with one registry entry. A scope model does not exist and is not needed. |
-
-| 19 | No `.uze/` in the store: the wrapper goes in each build, the rules engine in the bundled plugin's build, sessions in `$TMPDIR`, OpenCode documents in builds or the launch environment (revision 5, with the operator) | A nested `.uze/` mixed disposable scratch into the store tier and kept the wrapper shared, which needed "removed with the last entry" bookkeeping. |
+| 19 | No nested `.uze/` in the store. The wrapper sits in each build at a reserved path, the rules engine is a real file of `plugins/uze`, and session scratch stays in `runtime/` as a declared on-demand exception. | A nested `.uze/` mixed scratch into the store tier, and a shared wrapper needed "last entry" bookkeeping. `$TMPDIR` sessions break `UzeHome`'s map and `$UID` is unset in `sh`. The launch environment cannot reach OpenCode's shared server. |
+| 20 | `uze-local` is retired explicitly: match `uze-store` by name, detach each `@uze-local` receipt, then remove the marketplace. Enablement is not carried, and a disabled Codex plugin is left and reported. | The generic earlier-shape rule removes no marketplace, would uninstall every `uze-store` plugin on the root change, and would install a disabled Codex plugin twice. |
 | 21 | The build's key, origin, source and file digests live in its receipt; the build holds only the plugin | A `.uze-build` file duplicates the receipt and leaks into every vendor copy. |
 | 22 | A linked source keeps the build's identity; unlinking re-ingests the pinned commit from the cached clone | Reading the checkout in place forks delivery, which `plugin-freshness` rejected for containment. A separate linked snapshot in `$UZE_HOME` is redundant with the build. |
-| 20 | `uze-local` is retired by the generic earlier-shape rule; enablement is not carried (beta, no legacy paths) | A bespoke merge (carrying disabled state on Claude, skipping on Codex) is legacy code for a beta-only population. Editing Codex's TOML breaks ADR-009. |
+| 23 | Fence and move wait until no older UZE process is alive | A background upgrade leaves an older workspace running, and it would start reading documents it refuses. |
 
 ## Candidate ADRs
 

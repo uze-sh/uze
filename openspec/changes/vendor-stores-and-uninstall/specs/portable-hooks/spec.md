@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Delivered hooks run without the packager
-The system SHALL deliver a package's portable hooks as a self-contained artifact in each harness's own hook form: the harness invokes a wrapper inside that harness's vendor store, never the `uze` binary, and the artifact SHALL name no path outside that store. A delivered hook SHALL keep working after `uze uninstall` without `--purge`, which removes the binary and keeps the vendor stores.
+The system SHALL deliver a package's portable hooks as a self-contained artifact in each harness's own hook form: the harness invokes a wrapper inside the package's own build in that harness's vendor store, never the `uze` binary, and the artifact SHALL name no path outside that store. A delivered hook SHALL keep working after `uze uninstall` without `--purge`, which removes the binary and keeps the vendor stores.
 
 #### Scenario: Hook keeps working after UZE is uninstalled
 - **WHEN** a package with a `deny` pre-tool hook was installed for Claude Code, Codex or Antigravity and `uze uninstall --yes` has run
@@ -10,7 +10,7 @@ The system SHALL deliver a package's portable hooks as a self-contained artifact
 
 #### Scenario: Native entry names only the delivered artifact
 - **WHEN** the native hook configuration for a package is inspected on Claude Code, Codex or Antigravity
-- **THEN** each entry's command resolves to the wrapper inside that harness's vendor store, with the group's effect and the handler paths inside the package's build as arguments
+- **THEN** each entry's command resolves to the wrapper inside the package's build in that harness's vendor store, with the group's effect and the handler paths inside the package's build as arguments
 - **AND** no entry contains the path of the `uze` executable
 
 #### Scenario: OpenCode receives the runtime as a plugin
