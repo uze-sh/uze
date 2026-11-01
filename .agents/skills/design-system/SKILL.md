@@ -214,10 +214,7 @@ on "cancel" must not save first.
 - What waits in the review rides the bar wherever the operator is: the
   `comment` icon and a count, drafts in gold, else answers in green, else
   the sent ones held back, gone once nothing is open. It opens the
-  comments drawer, by file, each comment opening the review on itself
-  (docked, pushing the agent's pane aside, while the agent is in front;
-  floating over the review or any view, whose room it would only take:
-  `Extension::drawer_away_from_agent`),
+  comments drawer, by file, each comment opening the review on itself,
   and `send N drafts to the agent` (primary) at its foot: the one way to
   send, never a bare letter that sends what was not read again.
 - The open threads are walked from chips beside `viewed`, GitLab's way:
