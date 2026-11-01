@@ -124,7 +124,7 @@
 - task:     9.1
 - commit:   
 - trigger:  the operator saved two comments and found the agent had none: `s` sent from the review alone, nothing outside it said the drafts were unsent, and the gold count had left the door (D12)
-- decided:  the review declares a bar item (the comment mark and what waits: drafts in gold, else answers in green, else the sent ones held back) and a drawer it opens, the comments by file, each opening the review on itself, `send N drafts to the agent` at its foot; `s` is unbound, the send stays in the action index; the bridge's confirmation stays, its body drawing backticked text as code
+- decided:  the review declares a bar item (the comment mark and what waits: drafts in gold, else answers in green, else the sent ones held back) and a drawer it opens, the comments by file, each opening the review on itself, `send N drafts to the agent` at its foot; `s` is unbound, the send stays in the action index; the bridge's confirmation stays, asked in the operator's words (D15)
 - rejected: sending without the confirmation, which is the host's guard for every extension that writes to an agent; keeping `s`, a letter that sends unread
 - blast:    the send requirement; journey 30's send step; the bar takes a bundled extension's item (D14)
 
@@ -137,3 +137,13 @@
 - decided:  `bar_items` takes a bundled extension's item wherever a checkout is in front; a plugin's door and item stand the bar by what is installed, a bundled item only while it draws, since one is always installed and an empty row on every agent costs each a row; a bundled drawer gets no door, its item opens it
 - rejected: standing the bar for the review whenever it is on, which takes a row from every agent's pane for an item that is mostly empty
 - blast:    the design system's bar rule; the pane gains or loses a row when the first draft is kept or the last comment resolved
+
+## D15 — A bundled extension's ask is shown in the operator's words; a plugin's whole
+
+- status:   pending
+- task:     9.1
+- commit:   
+- trigger:  the operator, reading the send's confirmation, found it told them to run `uze agent review show`, a command for the agent, not for them
+- decided:  `AgentRequest::summary`, honoured for a bundled extension alone: its confirmation says what the agent is told and where its answers come back, with Send; a plugin's text is shown to the character, backticks included, since what a plugin types is never typed unread (D182); a dialog draws backticked code only when the words are UZE's own
+- rejected: drawing backticked code in every dialog, which hid characters of a plugin's text from the operator approving it; hiding a plugin's text behind its own summary
+- blast:    the agent bridge's confirmation for bundled extensions; the spec's send requirement; journey 30's send scene

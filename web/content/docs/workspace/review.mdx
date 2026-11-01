@@ -18,7 +18,6 @@ review, beside `viewed`, where `‹` and `›` (or `n` and `p`) step through the
 | `Shift+↓` / `Shift+↑` | Mark lines from the cursor |
 | `c` | Comment on the marked lines, or the line under the cursor |
 | `v` | Mark the file viewed and go to the next one not viewed |
-| `s` | Send the comments to the agent |
 | `o` | Open the marked line in [Code](/docs/workspace/code) |
 | `r` | Resolve an answered comment |
 | `n` / `p` | Go to the next or previous open comment, in whichever file it is |
@@ -47,11 +46,10 @@ A comment you keep is a draft until you send it. While one waits, the bar under
 the agent area shows the comment mark and a count, in gold for drafts and in
 green for answers to read, wherever you are. Click it to open the comments,
 listed by file: click one to open the review on it, or **send N drafts to the
-agent** at the foot. That types one line into the agent saying how many
-comments wait; UZE shows it first and types it only once you allow it and the
-agent is ready. The agent
-reads the comments with `uze agent review show`, makes the changes, and answers
-each one; the answer appears under the comment, where you resolve it.
+agent** at the foot. UZE asks first, saying what the agent will be told, and
+tells it only once you allow it and the agent is ready. The agent reads the
+comments, makes the changes, and answers each one; the answer appears under
+the comment, where you resolve it.
 
 A comment whose lines the agent rewrote stays at the end of its file, quoting
 the lines it was about.

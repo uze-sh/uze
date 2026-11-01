@@ -22,20 +22,20 @@ of reading the same tree.
 - The review diffs the checkout against its target's merge base, working
   tree included, with an `uncommitted` filter for what is not committed yet.
 - The `+N −M` count on the tab strip becomes the review's door and is always
-  drawn. With nothing to review it reads `review`; with drafts it adds `◆n`;
-  with answers waiting it turns them to the success hue. Today it disappears
-  on a clean checkout.
+  drawn. With nothing to review it reads `review`; it counts the branch
+  alone (D12). Today it disappears on a clean checkout.
 - Lines are marked by dragging over line numbers, shift-extending from the
   keyboard, or selecting text. `c` opens a comment under the marked lines.
 - A comment is plain text with inline code and fenced code blocks. One
-  control inserts the marked lines as a block, and another wraps the
-  selection as code. Both kinds of code are drawn as code in the diff.
+  control inserts an empty block fenced in the file's language (D11).
+  Both kinds of code are drawn as code in the diff.
 - Each file can be marked viewed (`v` marks it and moves to the next unviewed
   file). A mark falls away when the file changes after it was given.
 - Comments and viewed marks are kept per agent among the project's
   records, across sessions, slot moves and the agent naming its work.
-- `s` types one line into the agent through the existing agent bridge,
-  which shows it first and refuses a busy agent. The line says how many
+- The comments drawer, opened from the bar, sends: one line typed into the
+  agent through the existing agent bridge, which asks first and refuses a
+  busy agent (D13, D15). The line says how many
   comments wait and how to read them. The bridge only carries one line of
   bounded text, so the review itself travels by CLI.
 - A launched agent reads the review with `uze agent review show` and

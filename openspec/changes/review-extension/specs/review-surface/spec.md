@@ -178,14 +178,15 @@ drafts at its foot.
 
 ### Requirement: A send tells the agent where the review is
 The send, pressed in the comments drawer, SHALL type one line into the
-review's agent through the
-agent bridge, which shows it first and refuses an agent that is not ready:
-how many comments wait and the command that shows them. Drafts SHALL
-become sent comments of a numbered send only once the line is typed.
+review's agent through the agent bridge, which asks first and refuses an
+agent that is not ready: how many comments wait and the command that shows
+them. The question SHALL say what the agent is told in the operator's
+words, never the agent's commands. Drafts SHALL become sent comments of a
+numbered send only once the line is typed.
 
 #### Scenario: Two drafts sent
 - **WHEN** the operator sends with two drafts and the agent is ready
-- **THEN** one line saying two review comments wait, and naming `uze agent review show`, is shown and then typed, and both comments read `sent`
+- **THEN** the question says the agent is told the two comments wait, and once allowed one line naming `uze agent review show` is typed and both comments read `sent`
 
 #### Scenario: A busy agent
 - **WHEN** the operator sends while the agent's turn is running

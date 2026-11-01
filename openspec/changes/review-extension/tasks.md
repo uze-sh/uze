@@ -29,7 +29,7 @@
 ## 4. The door
 
 - [x] 4.1 Compute the door's counts in the review's own `jobs()` on the badge's cadence; delete `GitBadge`, `spawn_git_read` and `absorb_git_read`, and move the `offers_extension` gate from code to review
-- [x] 4.2 Answer `door_badge`: `+a -d`, drafts `◆n`, answers `◆n` in the success hue, the working mark from `Typed` to the agent's next `turn.finished` (via `agent_events`), or `review`
+- [x] 4.2 Answer `door_badge`: `+a -d`, or `review` (D12: what waits rides the bar's item instead); read the review again at the sent agent's next `turn.finished` (via `agent_events`)
 - [x] 4.3 Draw the door from `door_badge` in `render/tab_strip.rs`, always while the review is on, held back at rest and lit under the pointer; rewrite the comment at `tab_strip.rs:230`
 - [x] 4.4 Route `WorkspaceHit::OpenChanges` and `ToggleChanges` to the review, closing it when it is in front
 - [x] 4.5 Invert the clean-checkout test in `src/ui/orchestrator/tests/surfaces.rs` (the door is drawn); add tests: no door with the review switched off, and a click on the door equals its key
