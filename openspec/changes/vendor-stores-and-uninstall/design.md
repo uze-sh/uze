@@ -296,14 +296,6 @@ not apply when it is absent.
 
 ### D5. Migration, fenced against older builds
 
-0. **Never under a running older UZE.** A background `uze upgrade` replaces
-   the binary while an older workspace client or terminal runtime keeps
-   running. Until that process restarts into the new release, it reads the
-   documents the fence would bump. So the fence and the move run only when
-   no UZE process of another version is alive. A process is detected through
-   the terminal runtime's endpoint and the client records, each carrying its
-   version. Until then, the new build works on the current layout and says
-   that the move waits for the restart.
 1. **Fence first.** Under the mutation lock, `packages.json` and
    `attachments.json` are both written at their new shape
    (`RawPackageRegistry::SHAPE` and the ledger shape are bumped, and a ladder
@@ -433,6 +425,11 @@ the reinstall-then-purge path.
 - **[`rm -rf ~/.uze` by hand]** → Claude plugins fail to load, Codex's
   `plugin list` fails, and deny hooks block. It is unsupported, and the
   docs, the uninstall report and the installers point to `uze uninstall`.
+- **[An older workspace left open across a background upgrade]** → after
+  the move it refuses the fenced documents and shows errors until restarted.
+  It writes nothing and loses nothing, and its agents keep running, because
+  the terminal runtime's state is untouched. Its restart notice already
+  exists. Accepted for the beta.
 - **[Codex deny hooks pause after migration until reviewed]** → there is a
   blocking notice everywhere UZE speaks. UZE never answers Codex's review
   for the person (`codex/trust.rs`).
@@ -467,7 +464,7 @@ Choices taken without the operator, and those agreed in conversation, all for th
 | 20 | `uze-local` is retired explicitly: match `uze-store` by name, detach each `@uze-local` receipt, then remove the marketplace. Enablement is not carried, and a disabled Codex plugin is left and reported. | The generic earlier-shape rule removes no marketplace, would uninstall every `uze-store` plugin on the root change, and would install a disabled Codex plugin twice. |
 | 21 | The build's key, origin, source and file digests live in its receipt; the build holds only the plugin | A `.uze-build` file duplicates the receipt and leaks into every vendor copy. |
 | 22 | A linked source keeps the build's identity; unlinking re-ingests the pinned commit from the cached clone | Reading the checkout in place forks delivery, which `plugin-freshness` rejected for containment. A separate linked snapshot in `$UZE_HOME` is redundant with the build. |
-| 23 | Fence and move wait until no older UZE process is alive | A background upgrade leaves an older workspace running, and it would start reading documents it refuses. |
+| 23 | No guard for an older UZE still running after a background upgrade. It refuses the fenced documents by name, shows errors and writes nothing, and its existing restart notice resolves it. | Making the new build wait and keep working on the old layout until every older process restarts needs code that reads both layouts, a legacy path the beta does not carry. |
 
 ## Candidate ADRs
 

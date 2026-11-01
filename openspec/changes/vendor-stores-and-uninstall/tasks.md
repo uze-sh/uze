@@ -19,7 +19,6 @@
   - `delivered_package_dir_of` (today it recognises only `store/plugins`) and `services/disk.rs` (`HomeTier::Packages`) follow `sources_dir`.
 - [ ] 2.2 Extend the owned-paths layering test (`every_path_uze_owns_is_named_in_the_map`) to cover `sources_dir` and `store_dir(vendor)`.
 - [ ] 2.3 Add the fence, which runs first. Bump `RawPackageRegistry::SHAPE` and the `attachments.json` shape, each with a ladder rung that carries every entry across, and write both documents before any byte moves. Test that an older shape's reader refuses both by name before it prunes or detaches anything.
-- [ ] 2.3b The guard: fence and move run only when no UZE process of another version is alive (terminal runtime endpoint, client records). Find out what version each one carries today and add it where missing. Until then the new build stays on the current layout and says why. Add a test with an older-version process held alive.
 - [ ] 2.4 Add the move and backfill, under the mutation lock, per package:
   - rename `store/plugins/<id>` and `store/superseded/<id>` into `sources/`;
   - compute the digest from the moved bytes and write it into the registry;
