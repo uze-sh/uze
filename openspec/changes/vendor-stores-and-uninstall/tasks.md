@@ -42,7 +42,7 @@
   - repoint only when the registered root differs, and never while a session of that harness runs;
   - Claude repoints with a same-name `add`;
   - Codex runs `remove` then `add`, re-adding the old root if `add` fails;
-  - refresh caches (Codex: `codex plugin add <id>`; Antigravity: uninstall then install);
+  - refresh caches (Codex: `codex plugin add <id>`; Antigravity: `agy plugin install` again, which replaces its copy);
   - delete the old root only when no receipt names it.
 - [ ] 3.5b Linked sources:
   - a linked package's build receipt records `source: linked`, and an edit re-renders it in place;

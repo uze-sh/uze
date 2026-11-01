@@ -63,8 +63,9 @@ The code also writes ties outside the harness homes:
     `config.toml` clean.
   - `file://` is refused.
 - **Antigravity 1.4.12**
-  - `agy plugin install` copies into `config/plugins/<name>` and refuses a
-    same-name re-import.
+  - `agy plugin install` copies into `config/plugins/<name>`; installing
+    again under the same name replaces that copy ("replaced existing
+    installation", `experiments/antigravity/source-tie.py`).
 
 **Code facts the reviews established:**
 - Claude and Codex each have **two** UZE marketplaces: `uze-local` (author
@@ -340,7 +341,8 @@ not apply when it is absent.
    4. Refresh the vendor caches (measured):
       - **Claude:** nothing, because it reads in place.
       - **Codex:** `codex plugin add <id>` over the installed plugin.
-      - **Antigravity:** the existing uninstall-then-install re-delivery.
+      - **Antigravity:** `agy plugin install` again, which replaces its copy
+        (measured).
    5. Retire the old receipts by inspect-before-detach.
    6. The wrappers now sit in the builds.
 4. **Codex trust.** The wrapper path is in the hashed command, so every UZE
