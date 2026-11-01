@@ -84,15 +84,16 @@ scenes:
         expect_timeout: 10
       - click: "send 1 draft to the agent"
         say: send the review from the comments
-        expect: "Type this into agent 1"
+        expect: "Send the review to agent 1"
         expect_timeout: 10
       - wait: screen
-        until: "uze agent review show"
+        until: "your comment waits for it"
         timeout: 5
-        say: the line names how the agent reads the review
-      - click: "Type it"
+        say: the question says what the agent is told, in the operator's words
+      - click: "Send"
+        occurrence: last
         say: allow it
-        expect: '(?s)\A(?!.*Type this into agent 1)'
+        expect: '(?s)\A(?!.*Send the review to agent 1)'
         expect_timeout: 10
       - wait: shell
         until: "grep -q 'review comment waits' {home}/.claude/projects/*/*.jsonl"
@@ -101,7 +102,7 @@ scenes:
     then:
       - file: "{home}/.claude/projects/*/*.jsonl"
         contains: "1 review comment waits for you (send 1)"
-        about: the agent received the one line the question showed
+        about: the agent received the one line the question stood for
       - json: "{uze_home}/state/projects/*/reviews/*.json"
         at: comments.*.status
         equals: "sent"
