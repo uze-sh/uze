@@ -1239,7 +1239,7 @@ mod tests {
                 record
                     .comments
                     .iter()
-                    .filter(|comment| comment.status == super::super::CommentStatus::Draft)
+                    .filter(|comment| comment.status == crate::review::CommentStatus::Draft)
                     .count()
             })
             .unwrap_or(0)
