@@ -15,7 +15,7 @@ use uze_testkit::{
     temp::TestEnvironment,
 };
 
-use crate::store_ownership::uze_home_references;
+use crate::store_ownership::{is_on_demand_scratch, uze_home_references};
 use crate::util::{install_fake_harnesses, uze_bin};
 
 /// A machine UZE set up for every fake harness, with a plugin delivered
@@ -293,15 +293,16 @@ fn default_uninstall_keeps_the_packages_the_stores_the_records_and_the_settings(
 /// Every path a harness was pointed at still exists once the program is
 /// gone: what "every harness still loads every plugin" rests on.
 #[test]
-#[ignore = "red until harnesses are delivered from their vendor store (vendor-stores-and-uninstall 4.9)"]
 fn default_uninstall_leaves_every_harness_pointed_at_something_that_exists() {
     let env = delivered();
 
     let output = uninstall(&env, &["--yes"]);
 
     assert!(output.status.success(), "{}", said(&output));
+    let uze_home = env.uze_home.to_string_lossy().into_owned();
     let dangling: Vec<_> = uze_home_references(&env)
         .into_iter()
+        .filter(|(_, path)| !is_on_demand_scratch(path, &uze_home))
         .filter(|(_, path)| !Path::new(path).exists())
         .collect();
     assert!(dangling.is_empty(), "pointed at what is gone: {dangling:?}");
@@ -361,7 +362,6 @@ fn a_purge_where_everything_matches_leaves_no_trace() {
 
 /// No configuration or discovery file names `$UZE_HOME` once it is purged.
 #[test]
-#[ignore = "red until OpenCode's uze.ts and every machine delivery carry a receipt (vendor-stores-and-uninstall 4.3, 4.6)"]
 fn a_purge_leaves_no_harness_file_naming_the_home() {
     let env = delivered();
 
@@ -462,7 +462,6 @@ fn a_purge_leaves_an_edited_skill_and_lists_it() {
 }
 
 #[test]
-#[ignore = "needs OpenCode's uze.ts and its documents attached by receipt (vendor-stores-and-uninstall 4.3)"]
 fn a_purge_interrupted_on_opencode_leaves_it_whole_or_without_uze_ts() {
     let env = delivered();
     let plugin = env.home.join(".config/opencode/plugins/uze.ts");

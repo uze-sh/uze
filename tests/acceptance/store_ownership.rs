@@ -32,7 +32,7 @@ fn owning_vendor(relative: &Path) -> Option<&'static str> {
 
 /// Scratch directories a reader recreates on demand: the one declared
 /// exception to "a harness reads only its store".
-fn is_on_demand_scratch(path: &str, uze_home: &str) -> bool {
+pub(crate) fn is_on_demand_scratch(path: &str, uze_home: &str) -> bool {
     ["runtime/sessions", "runtime/rules/sessions"]
         .iter()
         .any(|scratch| path.starts_with(&format!("{uze_home}/{scratch}")))
@@ -78,7 +78,9 @@ pub(crate) fn uze_home_references(env: &TestEnvironment) -> Vec<(PathBuf, String
         while let Some(at) = rest.find(&uze_home) {
             let tail = &rest[at..];
             let end = tail
-                .find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | ',' | ')' | ']'))
+                .find(|c: char| {
+                    c.is_whitespace() || matches!(c, '"' | '\'' | ',' | ')' | ']' | '`' | '…')
+                })
                 .unwrap_or(tail.len());
             found.push((file.clone(), tail[..end].to_owned()));
             rest = &tail[end..];
