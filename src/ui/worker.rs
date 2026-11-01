@@ -1774,6 +1774,7 @@ mod tests {
                 shell_refusal: None,
                 ssh_missing: false,
                 machine_concerns: Vec::new(),
+                health: Vec::new(),
             }),
             ..RefreshData::default()
         }

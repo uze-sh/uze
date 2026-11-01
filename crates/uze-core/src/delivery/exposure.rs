@@ -119,6 +119,34 @@ pub enum ManagedArtifact {
 }
 
 impl ManagedArtifact {
+    /// The name of every kind of artifact a receipt can own, as
+    /// [`Self::kind`] spells it: what the health catalogue's coverage test
+    /// reads.
+    pub const KINDS: [&'static str; 8] = [
+        "symlink_reference",
+        "vendor_config_entry",
+        "managed_text_region",
+        "integration_owned",
+        "hook_config_entry",
+        "managed_hook_file",
+        "generated_file",
+        "generated_tree",
+    ];
+
+    /// The name of this artifact's kind, one of [`Self::KINDS`].
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::SymlinkReference { .. } => "symlink_reference",
+            Self::VendorConfigEntry { .. } => "vendor_config_entry",
+            Self::ManagedTextRegion { .. } => "managed_text_region",
+            Self::IntegrationOwned { .. } => "integration_owned",
+            Self::HookConfigEntry { .. } => "hook_config_entry",
+            Self::ManagedHookFile { .. } => "managed_hook_file",
+            Self::GeneratedFile { .. } => "generated_file",
+            Self::GeneratedTree { .. } => "generated_tree",
+        }
+    }
+
     /// Creates or verifies an artifact whose full desired state the artifact
     /// itself carries — a symlink reference or a text region. Never touches
     /// an entry UZE does not already own. Every other artifact is attached

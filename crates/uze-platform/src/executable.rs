@@ -133,6 +133,13 @@ pub fn place_launcher(program: &Path, at: &Path) -> io::Result<()> {
     imp::place_launcher(program, at)
 }
 
+/// Whether the launcher at `at` runs `program`, as [`place_launcher`] would
+/// leave it: a link to it on Unix, a copy of it (same length, same
+/// modification time) on Windows.
+pub fn is_launcher_of(program: &Path, at: &Path) -> bool {
+    imp::is_launcher_of(program, at)
+}
+
 /// A file of its own at `at` that runs what `program` runs and knows itself
 /// by `at`'s name, wherever what runs one file is seen on another: a hard
 /// link on Unix (a copy where the two filesystems differ), which costs
@@ -244,6 +251,10 @@ mod imp {
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
             removed => removed,
         }
+    }
+
+    pub(super) fn is_launcher_of(program: &Path, at: &Path) -> bool {
+        fs::read_link(at).is_ok_and(|target| target == program)
     }
 
     pub(super) fn place_launcher(program: &Path, at: &Path) -> io::Result<()> {
@@ -387,6 +398,13 @@ mod imp {
                 let _ = fs::remove_file(entry.path());
             }
         }
+    }
+
+    pub(super) fn is_launcher_of(program: &Path, at: &Path) -> bool {
+        let (Ok(source), Ok(placed)) = (fs::metadata(program), fs::metadata(at)) else {
+            return false;
+        };
+        placed.len() == source.len() && placed.modified().ok() == source.modified().ok()
     }
 
     pub(super) fn place_launcher(program: &Path, at: &Path) -> io::Result<()> {

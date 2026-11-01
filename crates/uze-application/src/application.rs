@@ -36,6 +36,7 @@ use crate::bootstrap;
 
 mod agent_context;
 mod authoring;
+pub mod catalogue;
 mod context;
 mod doctor;
 mod extensions;
@@ -85,6 +86,9 @@ pub use uninstall::{
     ReceiptUninstall, UninstallMode, UninstallPlan, UninstallReport, UnlandedCheckout,
 };
 
+pub use catalogue::{
+    HealthCheck, HealthFinding, Inspection, Lane, REPAIR_COMMAND, Severity, Subject,
+};
 pub use maintenance::{MaintenanceOutcome, MaintenanceReport};
 pub use overview::{
     ContextState, MarketplaceState, OverviewMarketplace, OverviewWorkspaceSummary,

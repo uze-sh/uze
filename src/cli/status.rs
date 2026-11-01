@@ -143,6 +143,17 @@ pub(crate) fn doctor_findings(report: &DoctorReport) -> DoctorFindings {
             "shell  {refusal}; setup steps, gates and hooks need it"
         ));
     }
+    for finding in report
+        .health
+        .iter()
+        .filter(|finding| !finding.has_own_row())
+    {
+        let line = health_finding_line(finding);
+        match finding.severity {
+            uze_application::application::Severity::Problem => problems.push(line),
+            uze_application::application::Severity::Warning => warnings.push(line),
+        }
+    }
     if let Some(error) = &report.ledger_error {
         problems.push(format!("ledger  {error}"));
     }
@@ -150,6 +161,16 @@ pub(crate) fn doctor_findings(report: &DoctorReport) -> DoctorFindings {
         problems.push(format!("setup records  {error}"));
     }
     DoctorFindings { problems, warnings }
+}
+
+/// One catalogue finding as `doctor` lists it: what it is about, what is
+/// wrong, and what to run about it when something does.
+pub(crate) fn health_finding_line(finding: &uze_application::application::HealthFinding) -> String {
+    let mut line = format!("{}  {}", finding.about, finding.detail);
+    if let Some(action) = finding.action() {
+        line.push_str(&format!("\n  {}", progress::next_step(action)));
+    }
+    line
 }
 
 pub(crate) fn render_doctor(report: &DoctorReport) -> String {

@@ -25,26 +25,34 @@ impl Health<'_> {
     pub fn report(&self) -> DoctorReport {
         let maintenance = self.maintain();
         let mut report = self.doctor_shell();
+        let reconciliations: Vec<ReconciliationReport> = report
+            .plugins
+            .iter()
+            .map(|plugin| self.0.reconcile_cached_report(&plugin.id))
+            .collect();
         let (attachments, deliveries) = report
             .plugins
             .iter()
-            .map(|plugin: &PluginSummary| {
-                let reconciliation = self.0.reconcile_cached_report(&plugin.id);
-                let deliveries = PackageDeliveryHealth {
-                    plugin: plugin.id.clone(),
-                    harnesses: self.delivery_health(plugin, &reconciliation),
-                };
-                let attachments = PackageManagedState {
-                    plugin: plugin.id.clone(),
-                    state: managed_state(&reconciliation),
-                    hooks: self.hook_health(&reconciliation),
-                };
-                (attachments, deliveries)
-            })
+            .zip(&reconciliations)
+            .map(
+                |(plugin, reconciliation): (&PluginSummary, &ReconciliationReport)| {
+                    let deliveries = PackageDeliveryHealth {
+                        plugin: plugin.id.clone(),
+                        harnesses: self.delivery_health(plugin, reconciliation),
+                    };
+                    let attachments = PackageManagedState {
+                        plugin: plugin.id.clone(),
+                        state: managed_state(reconciliation),
+                        hooks: self.hook_health(reconciliation),
+                    };
+                    (attachments, deliveries)
+                },
+            )
             .unzip();
         report.attachments = attachments;
         report.deliveries = deliveries;
         report.maintenance = maintenance;
+        report.health = self.observe(super::Inspection::Cached, &reconciliations);
         report
     }
 
@@ -171,19 +179,12 @@ impl Health<'_> {
                     .iter()
                     .filter_map(package_store_inconsistency)
                     .collect::<Vec<_>>();
-                let missing_bytes: Vec<String> = packages
-                    .iter()
-                    .filter(|package| !package.root.is_dir())
-                    .map(|package| bytes_missing_sentence(package.id.as_str()))
-                    .collect();
                 let health = if !inconsistencies.is_empty() {
                     StoreHealth::Blocked(inconsistencies.join("; "))
                 } else {
                     match self.0.store.quarantined_registrations() {
-                        Ok(quarantined) if !quarantined.is_empty() || !missing_bytes.is_empty() => {
-                            let mut sentences = quarantined_sentences(&quarantined);
-                            sentences.extend(missing_bytes);
-                            StoreHealth::Quarantined(sentences)
+                        Ok(quarantined) if !quarantined.is_empty() => {
+                            StoreHealth::Quarantined(quarantined_sentences(&quarantined))
                         }
                         Ok(_) => StoreHealth::Ready,
                         Err(error) => StoreHealth::Blocked(error.to_string()),
@@ -259,6 +260,7 @@ impl Health<'_> {
                 && !uze_core::acquisition::git::ssh_available(),
             program_confinement: super::read_models::ProgramConfinement::of_this_machine(),
             extension_costs: self.0.extensions().measured_costs(),
+            health: Vec::new(),
             machine_concerns: uze_platform::machine::concerns()
                 .into_iter()
                 .map(|concern| MachineConcern {
@@ -484,18 +486,9 @@ fn integration_status(status: IntegrationStatus) -> String {
     .to_owned()
 }
 
-/// What doctor says of a package whose bytes are gone from `sources/`: a
-/// state, not a fault, since nothing a harness reads depends on them.
-pub(crate) fn bytes_missing_sentence(package: &str) -> String {
-    format!(
-        "`{package}` is missing its bytes: every harness keeps what was delivered of it, and it \
-         is not built again until they return (`uze add {package}` acquires them)"
-    )
-}
-
 /// A package whose bytes are there but unreadable as a package. One whose
-/// bytes are gone altogether is missing its bytes, which is reported apart
-/// ([`bytes_missing_sentence`]) and blocks nothing.
+/// bytes are gone altogether is missing its bytes, which the health
+/// catalogue reports apart and which blocks nothing.
 fn package_store_inconsistency(package: &StoredPackage) -> Option<String> {
     if !package.root.is_dir() {
         return None;

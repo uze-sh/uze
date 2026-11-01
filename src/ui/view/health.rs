@@ -2,7 +2,7 @@
 //! status and the dialog it opens.
 
 use uze_application::AttachmentState;
-use uze_application::application::{DeliveryFindingKind, DoctorReport};
+use uze_application::application::{DeliveryFindingKind, DoctorReport, Severity as HealthSeverity};
 
 pub(crate) use crate::ui::widget::alerts::{Alert, Severity};
 
@@ -28,6 +28,25 @@ pub(crate) fn actionable_alerts(doctor: Option<&DoctorReport>) -> Vec<Alert> {
                 detail: detail.clone(),
             });
         }
+    }
+    // What only an explicit repair, or the person, puts back: each names
+    // what to run, `uze doctor --repair` for the repair lane.
+    for finding in doctor
+        .health
+        .iter()
+        .filter(|finding| !finding.has_own_row())
+    {
+        alerts.push(Alert {
+            severity: match finding.severity {
+                HealthSeverity::Problem => Severity::High,
+                HealthSeverity::Warning => Severity::Medium,
+            },
+            label: finding.headline(),
+            detail: match finding.action() {
+                Some(action) => format!("{}. Run {action}", finding.detail),
+                None => finding.detail.clone(),
+            },
+        });
     }
     // Not `High`: nothing is broken and nothing is waiting. It is here so
     // that an upgrade which could not carry something across is met by a
@@ -189,7 +208,33 @@ mod tests {
             shell_refusal: None,
             ssh_missing: false,
             machine_concerns: Vec::new(),
+            health: Vec::new(),
         }
+    }
+
+    /// A package whose bytes are gone waits on an explicit repair, and the
+    /// alert says which command that is.
+    #[test]
+    fn missing_bytes_name_the_repair() {
+        use uze_application::application::{HealthFinding, Lane, Subject};
+        let mut doctor = doctor_with(Vec::new());
+        doctor.health.push(HealthFinding {
+            subject: Subject::PackageBytes,
+            lane: Lane::Repair,
+            severity: HealthSeverity::Warning,
+            about: "flow@ai".to_owned(),
+            detail: "its bytes are missing".to_owned(),
+            path: Some("plugin_dir"),
+            command: None,
+        });
+        let alerts = actionable_alerts(Some(&doctor));
+        assert_eq!(alerts.len(), 1, "{alerts:?}");
+        assert_eq!(alerts[0].label, "flow@ai is missing its bytes");
+        assert!(
+            alerts[0].detail.ends_with("Run uze doctor --repair"),
+            "{}",
+            alerts[0].detail
+        );
     }
 
     #[test]
@@ -281,6 +326,7 @@ mod tests {
             shell_refusal: None,
             ssh_missing: false,
             machine_concerns: Vec::new(),
+            health: Vec::new(),
         };
         let alerts = actionable_alerts(Some(&doctor));
         assert_eq!(alerts[0].severity, Severity::High);
