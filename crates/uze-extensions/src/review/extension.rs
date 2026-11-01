@@ -30,6 +30,16 @@ const SEND_ACTION: &str = "review-send";
 const LIST_EVERY: Duration = Duration::from_millis(1500);
 /// How often the door reads its counts and the record behind them.
 const DOOR_EVERY: Duration = Duration::from_millis(2000);
+/// How many times its own duration a periodic read waits before the next:
+/// Git gets at most a fifth of the clock, however large the checkout. On a
+/// checkout whose `status` takes seconds, reading back to back would be a
+/// core spent on Git for as long as the workspace is open.
+const PACE: u32 = 5;
+
+/// When a read that took `took` is next due, every `every` at the least.
+fn paced(every: Duration, took: Duration) -> Duration {
+    every.max(took * PACE)
+}
 
 /// What the door last learned about the checkout in front.
 #[derive(Default)]
@@ -40,6 +50,8 @@ struct DoorState {
     base: Base,
     at: Option<Instant>,
     reading: bool,
+    /// How long the last read of it took.
+    took: Duration,
 }
 
 #[derive(Default)]
@@ -55,6 +67,8 @@ pub struct ReviewExtension {
     working: Option<(String, PathBuf)>,
     listing: bool,
     listed_at: Option<Instant>,
+    /// How long the last list read took.
+    list_took: Duration,
     /// Changes made on a review that closed before they were written, by
     /// checkout: written all the same, and handed back if it opens first.
     waiting: Vec<(PathBuf, Vec<Change>)>,
@@ -95,6 +109,7 @@ struct Held {
 }
 
 struct ListRead {
+    took: Duration,
     /// How many writes had been answered when it was asked: a record read
     /// before a write landed is older than what is on screen.
     generation: u64,
@@ -114,6 +129,7 @@ struct DiffRead {
 }
 
 struct DoorRead {
+    took: Duration,
     root: PathBuf,
     base: Base,
     totals: Option<Totals>,
@@ -241,7 +257,8 @@ impl ReviewExtension {
         let Some(view) = self.open.as_mut() else {
             return;
         };
-        let due = view.relist || self.listed_at.is_none_or(|at| at.elapsed() >= LIST_EVERY);
+        let every = paced(LIST_EVERY, self.list_took);
+        let due = view.relist || self.listed_at.is_none_or(|at| at.elapsed() >= every);
         if !due {
             return;
         }
@@ -256,15 +273,18 @@ impl ReviewExtension {
         let fallback_root = root.clone();
         jobs.push(Job {
             run: Box::new(move |host| {
+                let started = Instant::now();
                 let base = match filter {
                     super::Filter::All => git::base(host, &root, target.as_deref(), &known),
                     super::Filter::Uncommitted => Base::default(),
                 };
                 let listing = git::listing(host, &root, base.commit.as_deref());
+                let record = host.review_record(&root);
                 Opaque::new(ListRead {
+                    took: started.elapsed(),
+                    record,
                     generation,
                     branch: crate::shared::checkout::branch_of(host, &root),
-                    record: host.review_record(&root),
                     root,
                     filter,
                     base,
@@ -273,6 +293,7 @@ impl ReviewExtension {
             }),
             fallback: Box::new(move || {
                 Opaque::new(ListRead {
+                    took: Duration::ZERO,
                     generation,
                     root: fallback_root,
                     filter,
@@ -397,7 +418,10 @@ impl ReviewExtension {
             return;
         };
         let fresh = self.door.root.as_ref() == Some(&focus.root)
-            && self.door.at.is_some_and(|at| at.elapsed() < DOOR_EVERY);
+            && self
+                .door
+                .at
+                .is_some_and(|at| at.elapsed() < paced(DOOR_EVERY, self.door.took));
         if fresh {
             return;
         }
@@ -410,9 +434,12 @@ impl ReviewExtension {
         let fallback_root = root.clone();
         jobs.push(Job {
             run: Box::new(move |host| {
+                let started = Instant::now();
                 let base = git::base(host, &root, focus.target.as_deref(), &known);
+                let totals = git::totals(host, &root, base.commit.as_deref());
                 Opaque::new(DoorRead {
-                    totals: git::totals(host, &root, base.commit.as_deref()),
+                    took: started.elapsed(),
+                    totals,
                     record: host.review_record(&root).ok(),
                     root,
                     base,
@@ -420,6 +447,7 @@ impl ReviewExtension {
             }),
             fallback: Box::new(move || {
                 Opaque::new(DoorRead {
+                    took: Duration::ZERO,
                     root: fallback_root,
                     base: Base::default(),
                     totals: None,
@@ -753,6 +781,7 @@ impl Extension for ReviewExtension {
         if answer.0.is::<ListRead>() {
             if let Some(read) = answer.downcast::<ListRead>() {
                 self.listing = false;
+                self.list_took = read.took;
                 let in_flight = self.in_flight_for(&read.root);
                 let current = read.generation == self.generation;
                 if let Some(view) = self.open.as_mut().filter(|view| view.root == read.root) {
@@ -776,6 +805,7 @@ impl Extension for ReviewExtension {
         if answer.0.is::<DoorRead>() {
             if let Some(read) = answer.downcast::<DoorRead>() {
                 self.door.reading = false;
+                self.door.took = read.took;
                 if self.focus.as_ref().map(|focus| &focus.root) == Some(&read.root) {
                     self.door.root = Some(read.root);
                     self.door.base = read.base;
@@ -918,6 +948,18 @@ fn grouped(n: u32) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    #[test]
+    fn a_slow_read_waits_five_times_its_own_length() {
+        let every = Duration::from_millis(1500);
+        assert_eq!(super::paced(every, Duration::from_millis(100)), every);
+        assert_eq!(
+            super::paced(every, Duration::from_secs(2)),
+            Duration::from_secs(10)
+        );
+    }
+
     #[test]
     fn a_count_sets_its_thousands_apart() {
         assert_eq!(super::grouped(672), "672");
