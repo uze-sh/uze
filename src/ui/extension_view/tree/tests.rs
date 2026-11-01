@@ -1972,11 +1972,11 @@ fn an_icon_draws_in_the_glyph_set_the_operator_chose() {
     ] {
         uze_theme::with_active(in_glyph_set(set), || {
             let drawn = draw(&icons(), 20, 1, 0, at(0));
-            // A name nothing knows draws no cell, and the row still keeps
-            // its gap, as it does for an empty `Text`.
+            // A name nothing knows draws no cell and takes no gap: the
+            // label after it starts where it would without it.
             assert_eq!(
                 drawn.rows()[0].trim_end(),
-                format!("{clock} {declared}  end"),
+                format!("{clock} {declared} end"),
                 "{set}"
             );
             assert_eq!(drawn.fg(0, 0), color(Role::Info), "{set}");

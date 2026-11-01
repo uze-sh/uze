@@ -3,7 +3,7 @@
  │ GSD                                         │
  │                                             ┃
  │  Fechamento de caixa — Trilho A      v1.7   ┃
- │  ⎇ main  ·  0 de 3 fases  ·  0%             ┃
+ │  main  ·  0 de 3 fases  ·  0%               ┃
  │                                             ┃
  │  ■ Código completo — não commitado, não     ┃
  │    validado em staging                      ┃
@@ -48,7 +48,7 @@
  a bbb                                         a
  a                                             c
  a  dddddddddd dd ddddd d dddddd d      eeee   c
- a  b bbbb  b  b bb b bbbbb  b  bb             c
+ a  bbbb  b  b bb b bbbbb  b  bb               c
  a                                             c
  a  f ffffff ffffffff f fff ffffffffff fff     c
  a    ffffffff ff fffffff                      c

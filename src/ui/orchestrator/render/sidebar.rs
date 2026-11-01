@@ -1756,12 +1756,10 @@ pub(in crate::ui::orchestrator) fn task_tone(state: &WorkStateView) -> Option<(S
         // A quiet hue, because nothing is being asked of the operator, and
         // deliberately not `Integrated`'s arrow,
         // which claims the work is in the target.
-        WorkStateView::Published => (Symbol::ArrowExternal, Token::StatePublished),
+        WorkStateView::Published => (Symbol::TaskPublished, Token::StatePublished),
         // In somebody else's hands: a request is open for it.
         WorkStateView::InReview => (Symbol::TaskInReview, Token::StatePublished),
-        // The midline ellipsis, not the text one: that sits on the
-        // baseline, below every other mark in the column.
-        WorkStateView::Integrating => (Symbol::MarkMore, Token::StateInFlight),
+        WorkStateView::Integrating => (Symbol::TaskDelivering, Token::StateInFlight),
         // Split, where one warning mark used to cover both: a paused rebase
         // wants your hands in the slot, a failed gate wants the code fixed —
         // different work, and the sidebar was the one surface that never

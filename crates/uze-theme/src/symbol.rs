@@ -205,6 +205,12 @@ vocabulary! {
         /// else's hands now. Its own symbol for the same reason
         /// `TaskReady` is.
         TaskInReview = "task.review",
+        /// Work on the remote with no request yet. Its own symbol rather
+        /// than [`ArrowExternal`](Self::ArrowExternal), a link's mark.
+        TaskPublished = "task.published",
+        /// Work being rebased, checked and merged or pushed. Its own symbol
+        /// rather than the text ellipsis, which sits on the baseline.
+        TaskDelivering = "task.delivering",
         /// Work that reached its target. Its own symbol rather than
         /// [`ArrowUp`](Self::ArrowUp), which a push waiting also wears.
         TaskDelivered = "task.delivered",

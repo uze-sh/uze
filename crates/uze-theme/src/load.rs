@@ -802,7 +802,11 @@ mod tests {
             // icons for all of them, which is one of the things
             // installing one buys.
             let iconless = symbol.to_string();
+            // A file kind, and an icon the default terminal fonts do not all
+            // carry at one size, are left blank in the default set: the
+            // label beside it says what it is, and the nerd set draws it.
             if iconless.starts_with("file.")
+                || iconless.starts_with("icon.")
                 || matches!(
                     iconless.as_str(),
                     "code"

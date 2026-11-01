@@ -691,13 +691,22 @@ operator rather than assume.
   a hint.
 - Glyphs say something and are all the same size. Nerd-only icons appear
   only under the nerd scheme. "The same size" is measured, not judged by
-  eye: a default glyph is checked in Hack and DejaVu Sans Mono (a missing
-  one comes from a fallback font, at its size and baseline) and matches
-  its column's height and vertical centre. The operator flagged the
-  status legend's tiny dot, the baseline `…` and the Shift-key `⇧`. A
-  mark never borrows a glyph that means something else on screen (the
-  text ellipsis, the menu's `≡`, the sync count's `↑`): it gets a
-  `Symbol` of its own.
+  eye, against the fonts terminals ship by default on every platform:
+  Cascadia Mono (Windows Terminal), DejaVu Sans Mono (Linux; Menlo on a
+  Mac derives from it), Noto Sans Mono (Fedora) and Adwaita Mono (GNOME).
+  A glyph one of them lacks is drawn from a fallback font, at its size
+  and baseline. Geometric Shapes (`● ○ ◉ ◌ ◐ ◆ ▲ △ □ ◷…`) is the one block
+  all four carry at one size, so the status column is drawn from it;
+  arrows and operators beyond `↑ ↓ → ± × ≡` are not safe. A mark never
+  borrows a glyph that means something else on screen (the text
+  ellipsis, the menu's `≡`, the sync count's `↑`): it gets a `Symbol` of
+  its own.
+- An extension icon the four default fonts do not all carry at one size
+  is left blank in the default set, never drawn from a fallback font
+  (the operator: the label beside it already says it); the nerd set
+  draws it. A blank icon takes no cell and no gap. The exception is an
+  icon with no label beside it, which keeps a glyph (the review's `✎`
+  count).
 - The spinner is `Symbol::StatusWorking`, whose frames the theme declares
   (a quarter-filled circle turning, `◐◓◑◒`, in the default theme, one
   size in every frame); the CLI's is

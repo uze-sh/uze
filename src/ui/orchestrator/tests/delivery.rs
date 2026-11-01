@@ -303,7 +303,9 @@ fn a_branch_level_with_its_request_reports_the_sync_instead_of_a_count() {
     }
     let (synced, hits) = tab_strip(&model);
     let synced = synced.join("\n");
-    assert!(synced.contains("#20 ↗"), "{synced}");
+    let (published, _) =
+        super::render::task_mark(&WorkStateView::Published).expect("published is marked");
+    assert!(synced.contains(&format!("#20 {published}")), "{synced}");
     assert!(
         !synced.contains("↑6"),
         "the target is still six commits away, and that is not this button's question: {synced}"

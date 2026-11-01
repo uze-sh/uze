@@ -411,6 +411,21 @@ fn sum(widths: impl IntoIterator<Item = u16>) -> u16 {
     widths.into_iter().fold(0, u16::saturating_add)
 }
 
+/// An icon the glyph set has no glyph for: it takes no cells, and no gap
+/// beside it either, so the label it stood before starts where it would.
+fn draws_nothing(node: &Node) -> bool {
+    matches!(&node.kind, NodeKind::Icon { glyph, .. } if theme::icon(glyph).1 == 0)
+}
+
+/// The children of a row that draw something, which are the ones a gap
+/// stands between.
+fn drawn(children: &[Node]) -> usize {
+    children
+        .iter()
+        .filter(|child| !draws_nothing(child))
+        .count()
+}
+
 /// The cells a node asks for when nothing tells it otherwise.
 fn natural(node: &Node) -> u16 {
     let own = match &node.kind {
@@ -418,7 +433,7 @@ fn natural(node: &Node) -> u16 {
         NodeKind::Icon { glyph, .. } => theme::icon(glyph).1,
         NodeKind::Stack { .. } => node.children.iter().map(natural).max().unwrap_or(0),
         NodeKind::Row { gap, .. } => sum(node.children.iter().map(natural))
-            .saturating_add(gap.saturating_mul(cells_of(node.children.len().saturating_sub(1)))),
+            .saturating_add(gap.saturating_mul(cells_of(drawn(&node.children).saturating_sub(1)))),
         NodeKind::Text { spans, .. } => {
             sum(spans.iter().map(|span| cells_of(text::columns(&span.text))))
         }
@@ -876,7 +891,7 @@ fn row_widths(children: &[Node], gap: u16, align: Align, width: u16) -> (u16, Ve
     if children.is_empty() {
         return (0, Vec::new());
     }
-    let gaps = gap.saturating_mul(cells_of(children.len() - 1));
+    let gaps = gap.saturating_mul(cells_of(drawn(children).saturating_sub(1)));
     let room = width.saturating_sub(gaps);
     let mut widths: Vec<u16> = children
         .iter()
@@ -1422,6 +1437,9 @@ impl Painter<'_, '_> {
                 let (offset, widths) = row_widths(&node.children, *gap, *align, width);
                 let mut at = x.saturating_add(offset);
                 for (child, width) in node.children.iter().zip(widths) {
+                    if draws_nothing(child) {
+                        continue;
+                    }
                     if !self.node(child, at, width, y) {
                         return false;
                     }

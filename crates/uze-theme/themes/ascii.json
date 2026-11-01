@@ -39,6 +39,8 @@
 
     "task.ready": "^",
     "task.review": "@",
+    "task.published": ">",
+    "task.delivering": "...",
     "task.delivered": "^",
     "task.shelved": "=",
 

@@ -794,7 +794,13 @@ impl SidebarNotice<'_> {
 
         let headline = Rect::new(area.x, area.y, area.width, 1);
         let detail = Rect::new(area.x, area.y + 1, area.width, 1);
-        let gutter = theme::width(self.marker) + 1;
+        // A glyph set with no glyph for the mark takes the gutter with it,
+        // so the headline starts at the column's edge rather than a space in.
+        let mark = theme::glyph(self.marker);
+        let gutter = match mark.is_empty() {
+            true => 0,
+            false => theme::width(self.marker) + 1,
+        };
         // The room the headline has once its gutter, the gap `push_trailing`
         // keeps and the dismissing mark are paid for.
         let room = usize::from(
@@ -804,7 +810,10 @@ impl SidebarNotice<'_> {
 
         let mut spans = vec![
             Span::styled(
-                format!("{} ", theme::glyph(self.marker)),
+                match mark.is_empty() {
+                    true => String::new(),
+                    false => format!("{mark} "),
+                },
                 theme::fg(self.tone),
             ),
             Span::styled(
