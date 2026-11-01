@@ -1876,9 +1876,11 @@ fn only_the_review_extension_reaches_review_records() {
             .unwrap_or(&file)
             .to_string_lossy()
             .replace('\\', "/");
+        // A test double hands a call through to the host it wraps.
         let review = relative == "crates/uze-extensions/src/review.rs"
             || relative.starts_with("crates/uze-extensions/src/review/")
-            || relative == "crates/uze-extensions/src/lib.rs";
+            || relative == "crates/uze-extensions/src/lib.rs"
+            || relative.ends_with("tests.rs");
         let source = strip_test_modules(&fs::read_to_string(&file).unwrap_or_default());
         let reaches = source
             .lines()
@@ -1887,10 +1889,17 @@ fn only_the_review_extension_reaches_review_records() {
         if reaches && !review {
             failures.push(format!("  {relative} reaches a review record"));
         }
+        let discards = source
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .any(|line| line.contains(".restore_to_head("));
+        if discards && !review {
+            failures.push(format!("  {relative} throws a change away"));
+        }
     }
     assert!(
         failures.is_empty(),
-        "only the review extension reaches `Host::review_record`:\n{}",
+        "only the review extension reaches `Host::review_record` and `restore_to_head`:\n{}",
         failures.join("\n")
     );
 }

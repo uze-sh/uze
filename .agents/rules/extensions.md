@@ -36,7 +36,11 @@ a harness reads (ADR-041).
   in memory; neither is written down.
 - `Host` grants every capability, including the five that write
   (`write_file`, `delete_file`, `delete_dir`, `rename_path`,
-  `restore_to_head`), whose only caller is `code/request.rs`.
+  `restore_to_head`): the first four are called from `code/request.rs`
+  alone, and `restore_to_head` from the review's discard alone
+  (`review/extension.rs`). The review record (`review_record`,
+  `update_review_record`) is reached from `review/` alone; the
+  architecture suite fails on any other caller.
 - A picture a declared extension draws is asked by identity and name
   (`Host::media`, called only from `declared/media.rs`), never by path:
   the host reads the installed extension's own files, or what its
@@ -84,13 +88,15 @@ a harness reads (ADR-041).
   engine.
 - What more than one extension needs lives under `shared/`, and only once
   a second one actually needs it; `shared.rs` says why each module joined.
-- `code` is **one** extension covering the checkout's changes, files,
-  history and map, because the selection must survive a switch between them
-  and a selection cannot live above two extensions. No handler branches on
-  the mode to decide what the state *means*: the mode decides who is
-  *asked*, and each half answers about the same path knowing nothing about
-  the other. The map sits there, not with the diagrams, because every tile
-  on it is a path the other halves already answer about.
+- `code` is the checkout's files, history and map; `review` is its
+  changes against the target. They stand apart because a review keeps what
+  the operator wrote, speaks to the agent and diffs against the target,
+  none of which reading a file does; a line marked in the review crosses
+  to `code` through `Outcome::OpenPath` with its line. Within `code` no
+  handler branches on the mode to decide what the state *means*: the mode
+  decides who is *asked*, and each half answers about the same path. The
+  map sits there, not with the diagrams, because every tile on it is a
+  path the tree already answers about.
 - `architect` draws what somebody *wrote down* about the project, never
   anything measured. `spec` reads what a checkout *intends*: a spec tool's
   units, found by the tool's marker, and decision records, found by their
