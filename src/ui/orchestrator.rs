@@ -2158,6 +2158,9 @@ struct WorkspaceModel {
     /// [`EdgeDrag`] — so the click it might turn out to be is kept here
     /// until release.
     board_grab: Option<DiagramGrab>,
+    /// A press landed on a line's number and the button is still down:
+    /// every row the pointer is dragged over carries the mark to it.
+    marking_lines: bool,
     /// User-dragged navigator width; `None` falls back to its own
     /// responsive default. Mirrors `sidebar_width`/`dragging_sidebar`
     /// above, kept on the model rather than on the view itself so it

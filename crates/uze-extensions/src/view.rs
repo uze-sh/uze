@@ -1060,7 +1060,9 @@ pub struct Caret {
 pub struct ContentLine {
     /// One character before the number: `+`, `-`, or blank — or empty,
     /// for lines that never carry one (a file's own), which the host then
-    /// draws without the column, closer to the edge.
+    /// draws without the column, closer to the edge. It may lead with
+    /// [`COMMENT_MARK`], which the host draws in the hue of what waits on
+    /// the reader: a line someone commented on.
     pub gutter: String,
     pub number: String,
     pub tone: LineTone,
@@ -1074,6 +1076,9 @@ impl ContentLine {
         self.spans.iter().map(|span| span.text.as_str()).collect()
     }
 }
+
+/// What leads a [`ContentLine::gutter`] on a line that carries a comment.
+pub const COMMENT_MARK: char = '◆';
 
 /// What a line means, which the host turns into a background wash. Naming
 /// the meaning rather than the colour is what keeps the wash consistent
@@ -1221,6 +1226,15 @@ pub enum ViewHit {
     /// answer, and it is not known until it is released or moved, so the
     /// host resolves it from the track it drew.
     DragContentScrollbar,
+    /// The number of a line of [`Content::Lines`], pressed: mark that
+    /// line, or with `extend`, carry the mark from where it stands to it
+    /// (a drag down the numbers, or a press with shift held). Apart from
+    /// [`ViewHit::PlaceCaret`] because a press on a line's text selects
+    /// text, and a press on its number is about the line.
+    LineNumber {
+        line: usize,
+        extend: bool,
+    },
     /// A [`Content::Tree`] node, acted on — by the node's own id.
     Node {
         node: usize,

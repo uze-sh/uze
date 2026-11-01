@@ -2256,6 +2256,12 @@ pub fn handle_hover(view: &mut CodeView, hit: Option<ViewHit>) -> bool {
 }
 
 pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> CodeOutcome {
+    // A file's line number is the start of its line here: nothing on this
+    // surface marks whole lines.
+    let hit = hit.map(|hit| match hit {
+        ViewHit::LineNumber { line, .. } => ViewHit::PlaceCaret { line, cell: 0 },
+        other => other,
+    });
     // Only its answers mean anything while the question is open.
     if view.confirming_delete.is_some() {
         if let Some(ViewHit::Answer(yes)) = hit {

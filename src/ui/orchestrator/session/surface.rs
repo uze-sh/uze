@@ -239,6 +239,26 @@ impl Attach<'_> {
         }
     }
 
+    /// Whether a press here lands on a line's number, which marks the line
+    /// rather than starting a selection of its text.
+    pub(super) fn presses_on_line_number(&self, column: u16, row: u16) -> bool {
+        matches!(
+            self.surface_hit_at(column, row),
+            Some((_, ViewHit::LineNumber { .. }))
+        )
+    }
+
+    /// Hands the surface the line under the pointer as marked, or the mark
+    /// carried to it: the line of whatever row of text or number the
+    /// pointer is over, so a drag that strays onto the text still marks.
+    pub(super) fn mark_line_at(&mut self, column: u16, row: u16, extend: bool) {
+        let line = match self.surface_hit_at(column, row) {
+            Some((_, ViewHit::LineNumber { line, .. } | ViewHit::PlaceCaret { line, .. })) => line,
+            _ => return,
+        };
+        self.surface_mouse(ViewHit::LineNumber { line, extend });
+    }
+
     /// Whether a press here starts a selection: on a row of text the last
     /// frame drew, with nothing of the surface's own — a menu, a
     /// question — lying over it.

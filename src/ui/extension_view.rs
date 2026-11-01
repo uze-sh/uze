@@ -19,9 +19,9 @@ use ratatui::{
     widgets::{Clear, Padding, Paragraph},
 };
 use uze_extensions::view::{
-    Caret, Choosing, Command, Content, ContentLine, Layout as ViewLayout, LineTone, MarkerSide,
-    Medium, Mode, Navigator, NavigatorRow, PROSE_INSET, PanDirection, Role, RowIcon, RowMark,
-    ScrollTarget, Section, Size, Span, TAB_WIDTH, TEXT_PADDING, TrailStep, View, ViewHit,
+    COMMENT_MARK, Caret, Choosing, Command, Content, ContentLine, Layout as ViewLayout, LineTone,
+    MarkerSide, Medium, Mode, Navigator, NavigatorRow, PROSE_INSET, PanDirection, Role, RowIcon,
+    RowMark, ScrollTarget, Section, Size, Span, TAB_WIDTH, TEXT_PADDING, TrailStep, View, ViewHit,
 };
 
 use crate::ui::selection::{Glyph, TextRow, TextSelection};

@@ -1375,6 +1375,9 @@ pub fn handle_mouse(
         Some(ViewHit::PlaceCaret { line, cell }) if state.showing != Showing::Source => {
             return state.click(cell as i32, line as i32, space);
         }
+        Some(ViewHit::LineNumber { line, .. }) if state.showing != Showing::Source => {
+            return state.click(0, line as i32, space);
+        }
         Some(ViewHit::SelectTrail(step)) => state.go_to(step, space),
         _ => {}
     }

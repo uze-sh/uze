@@ -142,6 +142,18 @@ pub(super) fn render_lines(
             }
             drawn.extend(rows);
         }
+        // The number is about the line rather than its text: a press on
+        // it marks the line, where one on the text would select text. Ahead
+        // of the text's own hit, which the first match wins over.
+        if medium == Medium::Text && gutter > 0 && !line.number.is_empty() {
+            hits.push((
+                Rect::new(row.x, row.y, gutter.min(row.width), 1),
+                ViewHit::LineNumber {
+                    line: offset,
+                    extend: false,
+                },
+            ));
+        }
         // One hit per *visual* row, not per line: a wrapped line covers
         // several, and which one the pointer is on is half of where in
         // the text it landed. The cell offset here is the row's own
@@ -388,9 +400,16 @@ pub(super) fn gutter_width(lines: &[ContentLine]) -> u16 {
     if !numbered {
         return 0;
     }
-    let lead = match lines.iter().any(|line| !line.gutter.is_empty()) {
-        true => MARKER_COLUMNS,
-        false => 1,
+    // As wide as the widest marker and the space after it: one column
+    // for `+` or `-`, two where a comment's mark leads one.
+    let widest = lines
+        .iter()
+        .map(|line| text::columns(&line.gutter) as u16)
+        .max()
+        .unwrap_or(0);
+    let lead = match widest {
+        0 => 1,
+        widest => (widest + 1).max(MARKER_COLUMNS),
     };
     lead + number_columns(lines) + 1
 }
@@ -613,17 +632,30 @@ pub(super) fn render_line(
         .constraints([Constraint::Length(gutter), Constraint::Min(1)])
         .split(area);
     if gutter > 0 {
+        let (commented, marker) = match line.gutter.strip_prefix(COMMENT_MARK) {
+            Some(rest) => (true, rest),
+            None => (false, line.gutter.as_str()),
+        };
         let lead = match line.gutter.is_empty() {
             true => " ".to_owned(),
-            false => format!("{} ", line.gutter),
+            false => format!("{marker} "),
         };
-        let digits = usize::from(gutter).saturating_sub(text::columns(&lead) + 1);
+        let mut spans = Vec::new();
+        if commented {
+            spans.push(TextSpan::styled(
+                COMMENT_MARK.to_string(),
+                theme::fg(Token::StateWarning),
+            ));
+        }
+        let taken = text::columns(&lead) + usize::from(commented);
+        let digits = usize::from(gutter).saturating_sub(taken + 1);
+        spans.push(TextSpan::styled(lead, marker_style));
+        spans.push(TextSpan::styled(
+            format!("{:>digits$} ", line.number),
+            theme::fg(number),
+        ));
         frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                TextSpan::styled(lead, marker_style),
-                TextSpan::styled(format!("{:>digits$} ", line.number), theme::fg(number)),
-            ]))
-            .style(
+            Paragraph::new(Line::from(spans)).style(
                 Style::default().bg(background.unwrap_or(theme::color(Token::SurfaceBackground))),
             ),
             columns[0],

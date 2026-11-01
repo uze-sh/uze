@@ -459,6 +459,11 @@ impl Attach<'_> {
                     _ => {}
                 }
             }
+            _ if on_surface && self.presses_on_line_number(mouse.column, mouse.row) => {
+                let extend = mouse.modifiers.contains(KeyModifiers::SHIFT);
+                self.mark_line_at(mouse.column, mouse.row, extend);
+                self.model.marking_lines = true;
+            }
             _ if on_surface && self.presses_on_text(mouse.column, mouse.row) => {
                 self.mark_text_from(mouse.column, mouse.row);
             }
@@ -543,6 +548,9 @@ impl Attach<'_> {
                 for request in requests {
                     self.send_selection_request(request, mouse, layout.pane);
                 }
+            }
+            _ if self.model.marking_lines => {
+                self.mark_line_at(mouse.column, mouse.row, true);
             }
             _ if matches!(&self.model.selection, Some(Selection::Text(marking)) if marking.held()) =>
             {
@@ -694,6 +702,9 @@ impl Attach<'_> {
         {
             over.grabbed = false;
             self.model.dirty = true;
+            return Flow::Continue;
+        }
+        if std::mem::take(&mut self.model.marking_lines) {
             return Flow::Continue;
         }
         match &self.model.selection {
