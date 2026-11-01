@@ -214,6 +214,16 @@ fn update_receipts(home: &UzeHome, change: impl FnOnce(&mut Vec<AttachmentReceip
     let mut ledger: AttachmentLedger = read_json_or_default(&path)?;
     ledger.schema_version = <AttachmentLedger as uze_document::Shaped>::SHAPE;
     change(&mut ledger.receipts);
+    // A change that changes nothing writes nothing: a warm command that
+    // re-records what is already recorded must leave the home untouched.
+    // Compared with the bytes on disk, not with what was read, so a ledger
+    // carried up from an older shape is still written in this one.
+    let on_disk = std::fs::read(&path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+    if on_disk.is_some() && on_disk == serde_json::to_value(&ledger).ok() {
+        return Ok(());
+    }
     write_json(&path, &ledger)
 }
 

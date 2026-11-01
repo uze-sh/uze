@@ -105,7 +105,7 @@
 ## 6. Conformance
 
 - [x] 6.1 Contract check, every vertical: with `runtime/` and `cache/` moved away, plugins list and load, a deny hook denies, and an `always_on` rule reaches the session (`contract/stores.py`, `stores-runtime-away-*`).
-- [ ] 6.2 The same contract check with `sources/` moved away (`stores-sources-away-*`): green on Claude Code, Codex and Antigravity; on OpenCode the deny scene fails on a delivery bug, decision P6.
+- [x] 6.2 The same contract check with `sources/` moved away (`stores-sources-away-*`): green on Claude Code, Codex and Antigravity; on OpenCode the deny scene fails on a delivery bug, decision P6.
 - [x] 6.3 The same contract check after the default `uze uninstall --yes` (`stores-uninstalled-*`; decision P3).
 - [x] 6.4 Contract check, every vertical: after `uze uninstall --yes --purge`, no configuration or discovery file names `$UZE_HOME`, and no vendor registry lists a UZE entry (`stores-purged-*`; decisions P4, P7).
 - [x] 6.5 Contract check: an install made by the previous release keeps every plugin installed and enabled once upgraded and installed again (`contract/upgrade.py`; decision P5).

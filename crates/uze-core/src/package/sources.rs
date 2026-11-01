@@ -176,6 +176,25 @@ mod tests {
     }
 
     #[test]
+    fn the_receipt_ledger_is_fenced_even_when_no_receipt_changes() {
+        let home = home("ledger-fence");
+        old_package(&home, "ai", "flow");
+        fs::create_dir_all(home.state_dir()).unwrap();
+        fs::write(
+            home.attachments_path(),
+            r#"{"schema_version":3,"receipts":[]}"#,
+        )
+        .unwrap();
+
+        carry_into_sources(&home).unwrap();
+
+        let written: serde_json::Value =
+            serde_json::from_slice(&fs::read(home.attachments_path()).unwrap()).unwrap();
+        assert_eq!(written["schema_version"], 4, "{written}");
+        fs::remove_dir_all(home.root()).unwrap();
+    }
+
+    #[test]
     fn an_empty_directory_an_older_build_recreated_is_removed() {
         let home = home("empty");
         fs::create_dir_all(home.store_dir().join("plugins")).unwrap();

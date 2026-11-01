@@ -146,8 +146,7 @@ fn vendor_state(env: &TestEnvironment, vendor: &str) -> (String, Option<String>)
 fn placed_by_the_installer(env: &TestEnvironment, directory: &Path) -> PathBuf {
     fs::create_dir_all(directory).unwrap();
     let binary = directory.join(uze_platform::executable::file_name("uze"));
-    fs::copy(uze_bin(), &binary).unwrap();
-    uze_platform::executable::make_runnable(&binary).unwrap();
+    uze_platform::executable::install(&binary, &fs::read(uze_bin()).unwrap()).unwrap();
     let state = env.uze_home.join("state");
     fs::create_dir_all(&state).unwrap();
     fs::write(
@@ -754,8 +753,9 @@ fn a_binary_installed_by_cargo_is_left_with_the_command_that_removes_it() {
         .join("bin")
         .join(uze_platform::executable::file_name("uze"));
     fs::create_dir_all(binary.parent().unwrap()).unwrap();
-    fs::copy(uze_bin(), &binary).unwrap();
-    uze_platform::executable::make_runnable(&binary).unwrap();
+    // Written through a process of its own, so no sibling test's fork holds
+    // a write descriptor to it when it runs (ETXTBSY).
+    uze_platform::executable::install(&binary, &fs::read(uze_bin()).unwrap()).unwrap();
 
     let output = env
         .command(&binary)
