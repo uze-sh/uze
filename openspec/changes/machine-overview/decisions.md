@@ -136,7 +136,7 @@
 - task:     7.8
 - commit:
 - trigger:  Beside `unused`, a green `✓ ok` read as "used" and drew the eye to every row that needed nothing; the marks did not line up.
-- decided:  Statuses are `broken`, `duplicate`, `unused`, `in use` (sound and used, `●`, the filled pair of `○`) and `ok` (sound, uses not counted or not known). Only broken and duplicate take a state hue; unused is held back; in use and ok are neutral. The column stands against its left edge, two cells clear of the uses figure. A `mark.in-use` symbol joins every glyph set.
+- decided:  Statuses are `broken`, `duplicate`, `unused`, `in use` (sound and used, `●`, the filled pair of `○`) and `ok` (sound, uses not counted or not known). Broken and duplicate take their state hues, unused is held back, and in use and ok keep the success hue (a neutral tone was tried and the operator kept the green). The column stands against its left edge, two cells clear of the uses figure. A `mark.in-use` symbol joins every glyph set.
 - rejected: Leaving healthy rows blank: D9 asked for a status that always says something.
 - blast:    `machine::Standing`, `view/overview.rs::{status_cell, standing_tone}`, `uze-theme` symbols and glyph sets, the design-system skill's colour and alignment rules.
 

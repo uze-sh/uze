@@ -99,7 +99,7 @@ A resource SHALL read `broken` only when a fact on disk proves it cannot work: a
 - **THEN** it is not judged broken, since nothing on disk can prove it
 
 ### Requirement: Status orders each kind
-Each resource SHALL carry one status — `broken`, `duplicate`, `unused`, `in use` or `ok` — and within a kind they SHALL come in that order, then by tokens per session, heaviest first. `in use` is a sound resource with a use recorded; `ok` a sound one whose uses are not counted or not known, shown only where a fact on disk was checked. Only `broken` and `duplicate` SHALL be drawn in a state's hue.
+Each resource SHALL carry one status — `broken`, `duplicate`, `unused`, `in use` or `ok` — and within a kind they SHALL come in that order, then by tokens per session, heaviest first. `in use` is a sound resource with a use recorded; `ok` a sound one whose uses are not counted or not known, shown only where a fact on disk was checked. `unused` SHALL be held back; `broken`, `duplicate`, `in use` and `ok` SHALL each take their state's hue.
 
 #### Scenario: Ordering skills
 - **WHEN** the skills group holds one broken skill, one duplicate and three others
@@ -111,7 +111,7 @@ Each resource SHALL carry one status — `broken`, `duplicate`, `unused`, `in us
 
 #### Scenario: A used skill
 - **WHEN** a sound skill has a use in the records
-- **THEN** it reads `in use`, in a neutral tone
+- **THEN** it reads `in use`, in the success hue
 
 #### Scenario: A server reached by URL
 - **WHEN** an MCP server is reached by URL and nothing is found against it

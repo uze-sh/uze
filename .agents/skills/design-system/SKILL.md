@@ -548,12 +548,12 @@ Toasts:
   gives up in the catalog's own words. Those words are what is lost, a
   noun phrase the detail's verb completes (`-c turns off uze's own value
   for this key`), never a sentence of their own.
-- A table's status column colours only what asks for action: the danger
-  and warning hues for what is wrong, a held-back tone for what nobody
-  uses, and a neutral tone for every row that is fine. A row of green
-  checks draws the eye to the rows that need nothing. Each status says
-  one thing (`in use` for a resource used and sound, `ok` only where
-  uses are not counted), never one word answering two questions.
+- A table's status column: the danger and warning hues for what is
+  wrong, a held-back tone for what nobody uses, and the success hue for
+  every row that is sound (the operator kept the green over a neutral
+  tone). Each status says one thing (`in use` for a resource used and
+  sound, `ok` only where uses are not counted), never one word answering
+  two questions.
 - A focused or selected container gets a subtle, slightly darker overlay.
 - The sidebar is transparent: only the space in front is lifted onto the
   panel, every other space stands on the column itself, and the row in

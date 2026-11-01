@@ -731,14 +731,14 @@ fn status_cell(resource: &OverviewResource, on: On<'_>) -> Span<'static> {
     )
 }
 
-/// Colour only where there is something to do: what is wrong in its hue,
-/// what nobody uses held back, and everything that is fine neutral.
+/// What is wrong in its hue, what nobody uses held back, and what is sound
+/// in the success hue.
 fn standing_tone(standing: Standing) -> Token {
     match standing {
         Standing::Broken => Token::StateDanger,
         Standing::Duplicate => Token::StateWarning,
         Standing::Unused | Standing::Unjudged => Token::TextFaint,
-        Standing::InUse | Standing::Ok => Token::TextSecondary,
+        Standing::InUse | Standing::Ok => Token::StateSuccess,
     }
 }
 
