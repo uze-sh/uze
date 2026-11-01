@@ -54,6 +54,11 @@ pub(crate) struct Dialog<'a> {
     pub(crate) subject: Option<Line<'static>>,
     /// What answering yes does, one paragraph per entry.
     pub(crate) body: Vec<String>,
+    /// Draws what the body quotes between backticks as code, the
+    /// backticks left out. Only for words UZE wrote: a body that shows
+    /// what something else will do (what a plugin types into an agent)
+    /// is shown as it is, every character of it.
+    pub(crate) quotes_code: bool,
     /// What it is asked for, under the body: a name and what it means a
     /// row, the names in one column as the workspace's offer lays them.
     pub(crate) table: Vec<(String, String)>,
@@ -243,11 +248,12 @@ fn content(dialog: &Dialog<'_>, measure: usize) -> Content {
         // prose quotes it everywhere else; a quote may run across the
         // fold, so whether it is open carries from one row to the next.
         let mut quoting = false;
-        lines.extend(
-            text::fold(paragraph, measure)
-                .into_iter()
-                .map(|line| Line::from(quoted(&line, style, &mut quoting))),
-        );
+        lines.extend(text::fold(paragraph, measure).into_iter().map(
+            |line| match dialog.quotes_code {
+                true => Line::from(quoted(&line, style, &mut quoting)),
+                false => Line::from(Span::styled(line, style)),
+            },
+        ));
     }
     if !dialog.table.is_empty() {
         lines.push(Line::default());

@@ -508,6 +508,9 @@ pub(in crate::ui::orchestrator) fn render_agent_write(
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
     crate::ui::widget::scrim::render(frame, area);
+    // UZE's own words for a bundled extension's ask; anything else is
+    // shown as it will be typed, every character of it (D182).
+    let quotes_code = open.write.summary.is_some() && !open.write.unattended;
     let (title, body, confirm) = if open.write.unattended {
         (
             format!("Let {} prompt this agent on its own?", open.write.label),
@@ -539,6 +542,7 @@ pub(in crate::ui::orchestrator) fn render_agent_write(
         title: title.as_str().into(),
         subject: Some(Line::from(attribution(&open.write.owner))),
         body,
+        quotes_code,
         confirm: Some(confirm),
         focus: Some(if open.on_allow { 1 } else { CANCEL }),
         field: None,

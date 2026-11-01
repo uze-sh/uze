@@ -485,3 +485,16 @@ fn a_bundled_extensions_ask_is_said_in_the_operators_words_and_a_plugins_whole()
         "the agent's commands are not the operator's"
     );
 }
+
+/// What will be typed is shown as it will be typed, backticks and all:
+/// the operator approves the very characters the agent receives (D182).
+#[test]
+fn what_will_be_typed_is_shown_to_the_character() {
+    let mut model = launched_agent();
+    model.ask_of_agent(
+        Owner::Builtin("probe"),
+        prompt("run `echo hi` and an odd ` mark"),
+    );
+    let rows = frame_rows(&mut model).join("\n");
+    assert!(rows.contains("run `echo hi` and an odd ` mark"), "{rows}");
+}
