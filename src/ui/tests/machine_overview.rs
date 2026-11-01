@@ -689,3 +689,24 @@ fn what_the_workspace_synced_is_drawn_unless_the_overview_is_reading() {
     );
     assert!(screen.absorb(id, None, None, true));
 }
+
+#[test]
+fn a_resource_used_and_sound_reads_in_use_and_one_uncounted_reads_ok() {
+    let mut model = model();
+    let mut overview = overview();
+    used_on(
+        &mut overview.resources[0],
+        &["claude-code", "codex"],
+        3,
+        false,
+    );
+    model.remembered.machine.overview = Some(overview);
+    let drawn = rows(&model);
+    let commit = drawn.iter().find(|row| row.contains("git:commit")).unwrap();
+    assert!(commit.contains("in use"), "{commit}");
+    let vercel = drawn
+        .iter()
+        .find(|row| row.contains("vercel:nextjs"))
+        .unwrap();
+    assert!(vercel.contains(" ok"), "uses not known: {vercel}");
+}

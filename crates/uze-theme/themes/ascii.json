@@ -138,6 +138,7 @@
     "sort.ascending": "^",
     "sort.descending": "v",
     "mark.unused": "o",
+    "mark.in-use": "*",
     "chevron.collapsed": ">",
     "chevron.expanded": "v",
     "submenu": ">",

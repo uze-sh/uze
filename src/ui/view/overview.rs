@@ -21,7 +21,7 @@ use uze_application::machine_overview::{
 use crate::ui::content_area;
 use crate::ui::hit::Hit;
 use crate::ui::machine::{
-    self, Column, Field, Group, Line as TreeLine, MachineScreen, On, Pane, kind_word,
+    self, Column, Field, Group, Line as TreeLine, MachineScreen, On, Pane, Standing, kind_word,
 };
 use crate::ui::model::{Focus, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
@@ -36,6 +36,7 @@ const PAD: u16 = crate::ui::CONTENT_INSET_LEFT;
 const FROM_WIDTH: usize = 16;
 const TOKENS_WIDTH: usize = 15;
 const USES_WIDTH: usize = 8;
+const STATUS_GAP: &str = "  ";
 const STATUS_WIDTH: usize = 20;
 /// Below this table width the `from` column gives way to the name.
 const FROM_NEEDS: u16 = 64;
@@ -606,7 +607,10 @@ impl Columns {
         }
         spans.push(cell(tokens, TOKENS_WIDTH, true));
         spans.push(cell(uses, USES_WIDTH, true));
-        spans.push(cell(status, STATUS_WIDTH, true));
+        // Against its left edge, so every mark lines up, two columns clear
+        // of the figure before it, which stands against its right.
+        let status = Span::styled(format!("{STATUS_GAP}{}", status.content), status.style);
+        spans.push(cell(status, STATUS_WIDTH, false));
         spans.push(Span::raw(" ".repeat(TRAILING)));
         Line::from(spans)
     }
@@ -711,26 +715,30 @@ fn uses_cell(resource: &OverviewResource, on: On<'_>) -> Span<'static> {
 /// found against it; a dash for what nothing on disk can judge; unused for
 /// what nobody used in the period, every harness carrying it read.
 fn status_cell(resource: &OverviewResource, on: On<'_>) -> Span<'static> {
-    if resource.unused(on.harness) {
-        return Span::styled(
-            format!("{} unused", theme::glyph(Symbol::MarkUnused)),
-            theme::fg(Token::TextMuted),
-        );
-    }
-    match &resource.status {
-        Status::Ok if resource.checked => Span::styled(
-            format!("{} ok", theme::glyph(Symbol::MarkOk)),
-            theme::fg(Token::StateSuccess),
-        ),
-        Status::Ok => Span::styled("—", theme::fg(Token::TextFaint)),
-        Status::Duplicate { .. } => Span::styled(
-            format!("{} duplicate", theme::glyph(Symbol::MarkAttention)),
-            theme::fg(Token::StateWarning),
-        ),
-        Status::Broken { .. } => Span::styled(
-            format!("{} broken", theme::glyph(Symbol::MarkFailed)),
-            theme::fg(Token::StateDanger),
-        ),
+    let standing = machine::standing(resource, on);
+    let tone = standing_tone(standing);
+    let mark = match standing {
+        Standing::Broken => Symbol::MarkFailed,
+        Standing::Duplicate => Symbol::MarkAttention,
+        Standing::Unused => Symbol::MarkUnused,
+        Standing::InUse => Symbol::MarkInUse,
+        Standing::Ok => Symbol::MarkOk,
+        Standing::Unjudged => return Span::styled(standing.word(), theme::fg(tone)),
+    };
+    Span::styled(
+        format!("{} {}", theme::glyph(mark), standing.word()),
+        theme::fg(tone),
+    )
+}
+
+/// Colour only where there is something to do: what is wrong in its hue,
+/// what nobody uses held back, and everything that is fine neutral.
+fn standing_tone(standing: Standing) -> Token {
+    match standing {
+        Standing::Broken => Token::StateDanger,
+        Standing::Duplicate => Token::StateWarning,
+        Standing::Unused | Standing::Unjudged => Token::TextFaint,
+        Standing::InUse | Standing::Ok => Token::TextSecondary,
     }
 }
 
@@ -764,17 +772,8 @@ fn figure(tokens: Option<u32>) -> Span<'static> {
 }
 
 fn status_style(resource: &OverviewResource, on: On<'_>) -> (&'static str, Token) {
-    if resource.unused(on.harness) {
-        return ("unused", Token::TextMuted);
-    }
-    let status = &resource.status;
-    let word = machine::status_word(status);
-    let tone = match status {
-        Status::Broken { .. } => Token::StateDanger,
-        Status::Duplicate { .. } => Token::StateWarning,
-        Status::Ok => Token::TextMuted,
-    };
-    (word, tone)
+    let standing = machine::standing(resource, on);
+    (standing.word(), standing_tone(standing))
 }
 
 /// A resource's uses in the panel, with what the figure rests on.

@@ -181,7 +181,7 @@ impl Sort {
             Column::From => origin_word(&a.origin).cmp(&origin_word(&b.origin)),
             Column::PerSession => a.per_session.cmp(&b.per_session),
             Column::Uses => uses_within(a, on).cmp(&uses_within(b, on)),
-            Column::Status => status_rank(a, on).cmp(&status_rank(b, on)),
+            Column::Status => standing(a, on).cmp(&standing(b, on)),
         };
         let primary = if self.ascending {
             primary
@@ -189,7 +189,7 @@ impl Sort {
             primary.reverse()
         };
         primary
-            .then_with(|| status_rank(a, on).cmp(&status_rank(b, on)))
+            .then_with(|| standing(a, on).cmp(&standing(b, on)))
             .then_with(|| b.per_session.cmp(&a.per_session))
             .then_with(|| a.name.cmp(&b.name))
     }
@@ -199,18 +199,6 @@ impl Sort {
 #[derive(Clone, Copy)]
 pub(crate) struct On<'a> {
     pub(crate) harness: Option<&'a str>,
-}
-
-/// What needs looking at first: broken, duplicate, unused, checked,
-/// unjudged.
-fn status_rank(resource: &OverviewResource, on: On<'_>) -> u8 {
-    match resource.status {
-        Status::Broken { .. } => 0,
-        Status::Duplicate { .. } => 1,
-        Status::Ok if resource.unused(on.harness) => 2,
-        Status::Ok if resource.checked => 3,
-        Status::Ok => 4,
-    }
 }
 
 fn uses_within(resource: &OverviewResource, on: On<'_>) -> Option<u64> {
@@ -356,7 +344,7 @@ impl MachineScreen {
             || origin_word(&resource.origin)
                 .to_lowercase()
                 .contains(&filter)
-            || status_word(&resource.status).starts_with(&filter)
+            || standing(resource, self.on()).word().starts_with(&filter)
     }
 
     pub(crate) fn filtering(&self) -> bool {
@@ -501,11 +489,49 @@ pub(crate) fn origin_word(origin: &Origin) -> String {
     }
 }
 
-pub(crate) fn status_word(status: &Status) -> &'static str {
-    match status {
-        Status::Broken { .. } => "broken",
-        Status::Duplicate { .. } => "duplicate",
-        Status::Ok => "ok",
+/// Where a resource stands, in the order it needs looking at: what is
+/// wrong with it first, then whether anyone uses it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Standing {
+    Broken,
+    Duplicate,
+    /// No record of any harness carrying it holds a use, every one read.
+    Unused,
+    /// Nothing is wrong with it, and it was used.
+    InUse,
+    /// Nothing is wrong with it; its uses are not counted or not known.
+    Ok,
+    /// Nothing on disk can judge it.
+    Unjudged,
+}
+
+impl Standing {
+    pub(crate) fn word(self) -> &'static str {
+        match self {
+            Self::Broken => "broken",
+            Self::Duplicate => "duplicate",
+            Self::Unused => "unused",
+            Self::InUse => "in use",
+            Self::Ok => "ok",
+            Self::Unjudged => "—",
+        }
+    }
+}
+
+pub(crate) fn standing(resource: &OverviewResource, on: On<'_>) -> Standing {
+    match resource.status {
+        Status::Broken { .. } => Standing::Broken,
+        Status::Duplicate { .. } => Standing::Duplicate,
+        Status::Ok if resource.unused(on.harness) => Standing::Unused,
+        Status::Ok
+            if resource
+                .uses_on(on.harness)
+                .is_some_and(|uses| uses.total > 0) =>
+        {
+            Standing::InUse
+        }
+        Status::Ok if resource.checked => Standing::Ok,
+        Status::Ok => Standing::Unjudged,
     }
 }
 

@@ -130,3 +130,13 @@
 - rejected: Collecting from the CLI or a hook: cost on paths the Overview promised to leave alone. Summing the archive by day: a record listed again would count twice. Keeping it in `cache/`: deleting it would lose uses no harness keeps any more.
 - blast:    `usage::Archive`, `UzeHome::{machine_usage_path, machine_usage_lock_path}`, `collect_machine_overview`, `orchestrator::reads`, the session loop, `machine::SYNC_EVERY`, the architecture test that names who may collect, the spec's scheduling and privacy requirements.
 
+## D14 — A status says one thing, and only what is wrong is coloured
+
+- status:   pending
+- task:     7.8
+- commit:
+- trigger:  Beside `unused`, a green `✓ ok` read as "used" and drew the eye to every row that needed nothing; the marks did not line up.
+- decided:  Statuses are `broken`, `duplicate`, `unused`, `in use` (sound and used, `●`, the filled pair of `○`) and `ok` (sound, uses not counted or not known). Only broken and duplicate take a state hue; unused is held back; in use and ok are neutral. The column stands against its left edge, two cells clear of the uses figure. A `mark.in-use` symbol joins every glyph set.
+- rejected: Leaving healthy rows blank: D9 asked for a status that always says something.
+- blast:    `machine::Standing`, `view/overview.rs::{status_cell, standing_tone}`, `uze-theme` symbols and glyph sets, the design-system skill's colour and alignment rules.
+
