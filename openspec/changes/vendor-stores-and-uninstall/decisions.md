@@ -347,3 +347,13 @@
 - evidence: `prepare_detected_integrations` (`uze-application/src/application/setup.rs`) calls `integration.install`, whose OpenCode body runs `runtime_plugin::ensure`; `record_setup_artifacts` is called only from `deliver_rules_engine` (`rules_engine.rs`), i.e. on an explicit setup, and after its early return when the route needs no engine. The contract's purge world runs the workspace setup first, so `stores-purged-no-file-names-the-home` passes on OpenCode; the gap is the add-only machine.
 - decided:  recorded, not fixed here (delivery code). The fix records the setup receipts wherever `install` runs, independently of the rules route.
 - blast:    OpenCode purge after add-only installs.
+
+## P8 — The fail-closed scene deletes the wrapper where the builds carry it
+
+- status:   pending
+- task:     4.1, 6.1
+- commit:   83a79c60
+- trigger:  the full Codex contract leg escalated the registered `hooks-fail-closed-unrun-tool-blocked` ("measurement found the control"). The scene deleted `runtime/attachments/*/hooks/exec`, which no longer exists since the wrapper moved into each build (4.1): nothing was deleted, the guard ran ("Blocked by hook lab-hook-denied: effect-guard"), and the same scene had been passing vacuously on the other harnesses.
+- decided:  `contract/hooks.py::WRAPPERS` names `store/*/*/hooks/uze-exec`; the Codex vendor scene's evidence `find` reads `store/codex`. Re-measured with `--contract hooks`: Codex 0.166.0 reproduces its registered limitation (68/68, 3 declared), Claude Code 2.1.316 85/85, OpenCode v2.2.5 82/82, Antigravity 1.4.12 84/84, the call blocked with the wrapper really gone.
+- rejected: re-registering the escalation (it was a Lab defect, not a vendor change).
+- blast:    one constant, one evidence path.
