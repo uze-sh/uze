@@ -178,6 +178,19 @@ pub(crate) fn handle_hit(view: &mut ReviewView, hit: ViewHit, space: Size) -> As
         }
         return Asked::Stay;
     }
+    // A comment being written holds the file and the filter it is on
+    // until it is added or cancelled.
+    let moves = matches!(
+        hit,
+        ViewHit::SelectItem(_) | ViewHit::OpenMenu(_) | ViewHit::SelectSubject(_)
+    );
+    if moves && view.composer.is_some() {
+        view.notice = Some(Span::new(
+            "add the comment or cancel it first",
+            crate::view::Role::Muted,
+        ));
+        return Asked::Stay;
+    }
     match hit {
         ViewHit::Close => return Asked::Close,
         ViewHit::SelectItem(index) => {

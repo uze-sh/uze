@@ -211,7 +211,17 @@ impl ReviewView {
             }
             Ok(listing) => {
                 self.list_error = None;
+                // The file a comment is being written on stays listed
+                // until the comment is added or cancelled, though the
+                // agent committed it meanwhile.
+                let held = self
+                    .composer
+                    .as_ref()
+                    .and_then(|composer| self.files.iter().find(|file| file.path == composer.path))
+                    .filter(|held| !listing.files.iter().any(|file| file.path == held.path))
+                    .cloned();
                 self.files = listing.files;
+                self.files.extend(held);
                 self.uncommitted = listing.uncommitted;
                 self.partners = listing.partners;
                 self.stamps = listing.stamps;
@@ -360,7 +370,7 @@ impl ReviewView {
     }
 
     pub(crate) fn set_filter(&mut self, filter: Filter) {
-        if self.filter != filter {
+        if self.filter != filter && self.composer.is_none() {
             self.filter = filter;
             self.relist = true;
             self.listed = false;

@@ -462,6 +462,10 @@ fn a_comment_being_written_stays_with_its_file_while_the_list_moves() {
     handle_command(&mut view, Command::Type('x'), SPACE);
     handle_hit(&mut view, ViewHit::SelectItem(1), SPACE);
     assert!(view.typing(), "a click on another file keeps the comment");
+    handle_hit(&mut view, ViewHit::OpenMenu(1), SPACE);
+    assert!(!view.menu, "nor opens actions on the file being commented");
+    handle_hit(&mut view, ViewHit::SelectSubject(1), SPACE);
+    assert_eq!(view.filter, Filter::All, "nor switches the filter under it");
     // The agent commits naming.rs: the list no longer holds it.
     view.absorb_listing(
         Filter::All,
@@ -478,6 +482,10 @@ fn a_comment_being_written_stays_with_its_file_while_the_list_moves() {
             stamps: Default::default(),
             head: None,
         }),
+    );
+    assert!(
+        view.selected_file().is_some(),
+        "the file stays listed while its comment is written"
     );
     handle_command(&mut view, Command::AddComment, SPACE);
     assert_eq!(view.drafts().len(), 1);
