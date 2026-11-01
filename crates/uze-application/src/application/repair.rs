@@ -404,14 +404,24 @@ impl UzeApplication {
                         )
                     })
                     .map_err(|miss| match miss {
-                        super::marketplace::CachedMiss::Unreached(Some(error))
-                        | super::marketplace::CachedMiss::Absent(error) => offline(error),
+                        super::marketplace::CachedMiss::Unreached(Some(error)) => offline(error),
                         super::marketplace::CachedMiss::Unreached(None) => {
                             RepairOutcome::NeedsNetwork {
                                 reason: "the commit is not in the marketplace's cached clone"
                                     .to_owned(),
                             }
                         }
+                        // The marketplace answered, and what was installed
+                        // is no longer in it: no network brings it back.
+                        super::marketplace::CachedMiss::Absent(error) => RepairOutcome::NeedsHuman {
+                            reason: format!(
+                                "commit {} is no longer in its marketplace ({error}): update it, \
+                                 or remove it with uze remove -m {}",
+                                super::lifecycle::update::short_commit(commit),
+                                installed.id.as_str()
+                            ),
+                            command: Some(format!("uze update {}", installed.id.as_str())),
+                        },
                     })?
             }
             (

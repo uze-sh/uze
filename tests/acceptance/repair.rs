@@ -282,6 +282,46 @@ fn offline_the_package_waits_on_the_network_and_deliveries_keep_working() {
     assert_eq!(snapshot(&build), built);
 }
 
+/// The marketplace answers, and the commit recorded at install is no
+/// longer in it: no network brings it back, so the person is told to
+/// update or remove the plugin rather than to wait.
+#[test]
+fn a_commit_gone_from_its_reachable_marketplace_is_left_for_the_person() {
+    let env = delivered();
+    let mut packages = registry(&env);
+    let recorded = packages["packages"][PACKAGE]["provenance"]["resolved"]["GIT"]["commit"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no recorded commit: {packages:#}"))
+        .to_owned();
+    let gone = "0".repeat(recorded.len());
+    packages["packages"][PACKAGE]["provenance"]["resolved"]["GIT"]["commit"] =
+        serde_json::json!(gone);
+    fs::write(
+        env.uze_home.join("state/packages.json"),
+        serde_json::to_vec_pretty(&packages).unwrap(),
+    )
+    .unwrap();
+    fs::remove_dir_all(package_bytes(&env, PACKAGE)).unwrap();
+
+    let (status, report) = repair_json(&env);
+
+    assert_eq!(status, Some(1), "{report:#}");
+    assert!(
+        outcomes(&report).contains(&(
+            "package_bytes".to_owned(),
+            PACKAGE.to_owned(),
+            "needs_human".to_owned()
+        )),
+        "{report:#}"
+    );
+    assert!(
+        report
+            .to_string()
+            .contains(&format!("uze update {PACKAGE}")),
+        "{report:#}"
+    );
+}
+
 /// Codex's marketplace left under the runtime tree, as an earlier release
 /// registered it, is moved to its vendor store and its plugin stays.
 #[test]
