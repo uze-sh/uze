@@ -1,11 +1,11 @@
 ## 1. Contract and vocabulary
 
-- [ ] 1.1 Rename `Outcome::Review` to `Outcome::Consent` across `uze-extensions` and `src/ui`, so `review` names one thing
-- [ ] 1.2 Add `Extension::door_badge(&self) -> Option<DoorBadge>` (default `None`) and `DoorBadge` as styled spans
-- [ ] 1.3 Add `Extension::agent_write(&mut self, action, outcome)` with `Typed | Refused(reason) | Declined` (default no-op); call it from `answer_agent_write` on decline and from `type_agent_writes`; test each path
-- [ ] 1.4 Add `Extension::selected(&mut self, surface, rows, excerpt)` (default no-op), called when a host text selection over an extension view settles
-- [ ] 1.5 Add `line: Option<u32>` to `Entry::Path` and `Outcome::OpenPath`; pass the pane link's parsed `:line` through `session/pane_links.rs`, and `None` from the architect
-- [ ] 1.6 Add `Host::review_record` and `Host::write_review_record`, with defaults answering nothing; test that a declared extension's host refuses both
+- [x] 1.1 Rename `Outcome::Review` to `Outcome::Consent` across `uze-extensions` and `src/ui`, so `review` names one thing
+- [x] 1.2 Add `Extension::door_badge(&self) -> Option<DoorBadge>` (default `None`) and `DoorBadge` as styled spans
+- [x] 1.3 Add `Extension::agent_write(&mut self, action, outcome)` with `Typed | Refused(reason) | Declined` (default no-op); call it from `answer_agent_write` on decline and from `type_agent_writes`; test each path
+- [x] 1.4 Add `Extension::selected(&mut self, surface, rows, excerpt)` (default no-op), called when a host text selection over an extension view settles
+- [x] 1.5 Add `line: Option<u32>` to `Entry::Path` and `Outcome::OpenPath`; pass the pane link's parsed `:line` through `session/pane_links.rs`, and `None` from the architect
+- [x] 1.6 Add `Host::review_record` and `Host::write_review_record`, with defaults answering nothing; test that a declared extension's host refuses both
 
 ## 2. Split the changes out of code
 

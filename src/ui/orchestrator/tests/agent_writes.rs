@@ -366,3 +366,99 @@ fn an_allowed_prompt_whose_agent_is_gone_is_said_not_dropped_silently() {
             .collect::<Vec<_>>()
     );
 }
+
+/// An extension that only keeps what it was told about its writes.
+struct Listener(
+    std::sync::Arc<std::sync::Mutex<Vec<(String, uze_extensions::contract::AgentWritten)>>>,
+);
+
+impl uze_extensions::contract::Extension for Listener {
+    fn identity(&self) -> String {
+        "listener".to_owned()
+    }
+    fn surfaces(&self) -> Vec<uze_extensions::contract::SurfaceInfo> {
+        Vec::new()
+    }
+    fn view(&self, _: &str, _: uze_extensions::view::Size) -> Option<uze_extensions::view::View> {
+        None
+    }
+    fn section(&self, _: &str, _: bool) -> Option<uze_extensions::view::Section> {
+        None
+    }
+    fn command(
+        &mut self,
+        _: &str,
+        _: uze_extensions::view::Command,
+        _: uze_extensions::view::Size,
+    ) -> uze_extensions::contract::Outcome {
+        uze_extensions::contract::Outcome::Stay
+    }
+    fn hit(
+        &mut self,
+        _: &str,
+        _: uze_extensions::view::ViewHit,
+        _: uze_extensions::view::Size,
+    ) -> uze_extensions::contract::Outcome {
+        uze_extensions::contract::Outcome::Stay
+    }
+    fn scroll(
+        &mut self,
+        _: &str,
+        _: uze_extensions::view::ScrollTarget,
+        _: uze_extensions::view::ScrollDirection,
+        _: uze_extensions::view::Size,
+    ) {
+    }
+    fn agent_write(&mut self, action: &str, written: uze_extensions::contract::AgentWritten) {
+        self.0.lock().unwrap().push((action.to_owned(), written));
+    }
+}
+
+impl crate::ui::orchestrator::declared::Hosted for Listener {}
+
+#[test]
+fn the_asking_extension_is_told_whether_its_write_was_typed_refused_or_declined() {
+    use uze_extensions::contract::AgentWritten;
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-told"));
+    let mut driven = driven(launched_agent(), &home);
+    let told = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let owner = Owner::Builtin("listener");
+    driven
+        .attach
+        .model
+        .remembered
+        .declared
+        .engines
+        .insert(owner.clone(), Box::new(Listener(told.clone())));
+
+    driven
+        .attach
+        .model
+        .ask_of_agent(owner.clone(), prompt("first"));
+    driven.attach.model.answer_agent_write(false);
+    assert_eq!(
+        told.lock().unwrap().pop(),
+        Some(("review".to_owned(), AgentWritten::Declined))
+    );
+
+    driven
+        .attach
+        .model
+        .ask_of_agent(owner.clone(), prompt("/clear"));
+    assert!(matches!(
+        told.lock().unwrap().pop(),
+        Some((_, AgentWritten::Refused(_)))
+    ));
+
+    driven
+        .attach
+        .model
+        .ask_of_agent(owner.clone(), prompt("Review PLAN.md"));
+    driven.frame();
+    driven.attach.model.answer_agent_write(true);
+    driven.pump();
+    assert_eq!(
+        told.lock().unwrap().pop(),
+        Some(("review".to_owned(), AgentWritten::Typed))
+    );
+}

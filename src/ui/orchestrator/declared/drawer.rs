@@ -350,7 +350,11 @@ impl WorkspaceModel {
                 self.asked_in_drawer = true;
                 self.dock_notice = Some(span);
             }
-            Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
+            Outcome::OpenPath {
+                project,
+                target,
+                line,
+            } => open_code_at(self, &project, &target, line),
             Outcome::Copy(text) => self.copy_answered_by(text, self.open_drawer()),
             Outcome::Toast(text) => {
                 if let Some(owner) = self.open_drawer_slot().map(|slot| slot.owner.clone()) {
@@ -366,7 +370,7 @@ impl WorkspaceModel {
                 let detail = self.attributed(self.open_drawer(), detail);
                 self.say_failed(&title, detail);
             }
-            Outcome::OpenCommit { .. } | Outcome::Review => {}
+            Outcome::OpenCommit { .. } | Outcome::Consent => {}
         }
         self.dirty = true;
     }

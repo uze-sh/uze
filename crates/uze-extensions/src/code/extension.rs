@@ -93,7 +93,11 @@ struct History {
 /// return to the tab the surface was put away for.
 enum Arrival {
     Door(ContentMode),
-    Sent { target: PathBuf, directory: bool },
+    Sent {
+        target: PathBuf,
+        directory: bool,
+        line: Option<u32>,
+    },
     Return,
 }
 
@@ -570,7 +574,15 @@ impl Extension for CodeExtension {
                 }
                 Arrival::Door(wanted)
             }
-            Entry::Path { target, directory } => Arrival::Sent { target, directory },
+            Entry::Path {
+                target,
+                directory,
+                line,
+            } => Arrival::Sent {
+                target,
+                directory,
+                line,
+            },
             Entry::Return => Arrival::Return,
         };
         self.arrival = Some(arrival);
@@ -588,13 +600,21 @@ impl Extension for CodeExtension {
         if surface != SURFACE {
             return;
         }
+        let mut sent_line = None;
         let (mode, sent, awaiting) = match self.arrival.take() {
             Some(Arrival::Door(mode)) => (mode, None, Awaiting::Place),
-            Some(Arrival::Sent { target, directory }) => (
-                ContentMode::Contents,
-                Some(CodePlace::at(&checkout.root, &target, directory)),
-                Awaiting::Nothing,
-            ),
+            Some(Arrival::Sent {
+                target,
+                directory,
+                line,
+            }) => {
+                sent_line = line;
+                (
+                    ContentMode::Contents,
+                    Some(CodePlace::at(&checkout.root, &target, directory)),
+                    Awaiting::Nothing,
+                )
+            }
             Some(Arrival::Return) => (ContentMode::Diff, None, Awaiting::Held),
             None => (ContentMode::Diff, None, Awaiting::Place),
         };
@@ -606,6 +626,9 @@ impl Extension for CodeExtension {
                 None if awaiting == Awaiting::Place => view.show(mode),
                 None => {}
             }
+            if let Some(line) = sent_line {
+                view.go_to_line(line as usize);
+            }
             self.awaiting = Awaiting::Nothing;
             self.measure_asked = None;
             self.open = Some(view);
@@ -615,6 +638,9 @@ impl Extension for CodeExtension {
         self.awaiting = awaiting;
         if let Some(place) = sent {
             view = view.resuming(place);
+        }
+        if let Some(line) = sent_line {
+            view.go_to_line(line as usize);
         }
         if let Some((_, measure)) = self.measures.get(&checkout.root) {
             view.absorb_measure(measure.clone());

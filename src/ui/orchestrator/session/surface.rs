@@ -191,8 +191,17 @@ impl Attach<'_> {
         };
         let marked = marking.release();
         let copied = marked
-            .map(|marked| marked.text(&self.surface_text(marked.lines())))
-            .filter(|text| !text.is_empty());
+            .map(|marked| {
+                (
+                    marked.lines(),
+                    marked.text(&self.surface_text(marked.lines())),
+                )
+            })
+            .filter(|(_, text)| !text.is_empty());
+        if let Some((lines, text)) = &copied {
+            self.tell_selected(lines.clone(), text);
+        }
+        let copied = copied.map(|(_, text)| text);
         match copied {
             Some(text) => self.model.copy_selected(text),
             None => self.model.selection = None,
@@ -201,6 +210,21 @@ impl Attach<'_> {
             self.surface_mouse(click);
         }
         self.model.dirty = true;
+    }
+
+    /// Tells the surface in the pane what the viewer's selection settled
+    /// on, so a surface that acts on marked text can.
+    fn tell_selected(&mut self, lines: std::ops::Range<usize>, text: &str) {
+        let Some((owner, surface)) = self
+            .model
+            .slot_in_pane()
+            .map(|slot| (slot.owner.clone(), slot.surface.id.clone()))
+        else {
+            return;
+        };
+        if let Some(engine) = self.model.remembered.declared.engines.get_mut(&owner) {
+            engine.selected(&surface, lines, text);
+        }
     }
 
     /// A prompt chosen in the overview's Agent section.

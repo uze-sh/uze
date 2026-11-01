@@ -437,6 +437,18 @@ fn reads_as_path(text: &str) -> bool {
         && (separated || has_extension)
 }
 
+/// The line a `:line` or `:line:column` after the path names, counted
+/// from one, when `text` carries one.
+pub(super) fn line_of(text: &str) -> Option<u32> {
+    let after = text.strip_prefix(without_location(text))?;
+    after
+        .split(':')
+        .nth(1)?
+        .parse()
+        .ok()
+        .filter(|line| *line > 0)
+}
+
 /// `text` without a `:line` or `:line:column` after it. A drive's colon
 /// (`C:\`) is followed by a separator, never by digits alone, so it stays.
 fn without_location(text: &str) -> &str {
@@ -491,6 +503,14 @@ mod tests {
 
     fn found(text: &str, column: u16) -> Option<String> {
         written_at(&row(text, 80), 80, 0, column).map(|written| written.text)
+    }
+
+    #[test]
+    fn a_located_path_names_its_line() {
+        assert_eq!(super::line_of("src/main.rs:42"), Some(42));
+        assert_eq!(super::line_of("src/main.rs:42:7"), Some(42));
+        assert_eq!(super::line_of("src/main.rs"), None);
+        assert_eq!(super::line_of(r"C:\src\main.rs"), None);
     }
 
     #[test]

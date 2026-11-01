@@ -118,6 +118,7 @@ impl Extension for Board {
             Command::Back => Outcome::OpenPath {
                 project: PathBuf::from("/project"),
                 target: PathBuf::from("src/lib.rs"),
+                line: None,
             },
             _ => Outcome::Stay,
         }

@@ -1725,6 +1725,21 @@ impl CodeView {
         };
     }
 
+    /// Shows the selected file at `line`, counted from one, with the caret
+    /// on it and a little of what comes before above it: where another
+    /// surface sent the viewer, as a search result sends them.
+    pub fn go_to_line(&mut self, line: usize) {
+        let line = line.max(1);
+        self.load_selection(Some(line));
+        if let Some(open) = self.open.as_mut() {
+            open.caret = Caret {
+                line: line - 1,
+                column: 0,
+            };
+        }
+        self.scroll = line.saturating_sub(1 + SEARCH_CONTEXT);
+    }
+
     /// Keeps the caret on screen after it moved, given how many lines the
     /// host says fit.
     fn follow_caret(&mut self, visible: u16) {

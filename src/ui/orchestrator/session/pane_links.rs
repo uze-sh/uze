@@ -154,7 +154,8 @@ impl WorkspaceModel {
             return;
         }
         self.pane_links.leave();
-        open_code_on(self, &link.root, &link.target, directory);
+        let line = crate::ui::orchestrator::pane_link::line_of(&link.written.text);
+        open_code_on(self, &link.root, &link.target, directory, line);
         self.dirty = true;
     }
 }

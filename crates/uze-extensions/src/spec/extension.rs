@@ -141,7 +141,11 @@ fn outcome(outcome: SpecOutcome) -> Outcome {
     match outcome {
         SpecOutcome::Stay => Outcome::Stay,
         SpecOutcome::Close => Outcome::Close,
-        SpecOutcome::OpenPath { project, target } => Outcome::OpenPath { project, target },
+        SpecOutcome::OpenPath { project, target } => Outcome::OpenPath {
+            project,
+            target,
+            line: None,
+        },
     }
 }
 

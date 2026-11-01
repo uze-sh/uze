@@ -12,7 +12,7 @@
 
 use std::collections::VecDeque;
 
-use uze_extensions::contract::{AgentAsk, AgentRequest};
+use uze_extensions::contract::{AgentAsk, AgentRequest, AgentWritten};
 
 use crate::ui::orchestrator::*;
 use crate::ui::widget::ToastKind;
@@ -149,12 +149,18 @@ impl WorkspaceModel {
         request: AgentRequest,
     ) {
         let by = attribution(&owner);
+        let asker = owner.clone();
         let refuse = |model: &mut Self, reason: &str| {
             model.raise_toast(
                 ToastKind::Told,
                 "not sent",
                 format!("{by}: {}: {reason}", request.label),
                 None,
+            );
+            model.tell_written(
+                &asker,
+                &request.action,
+                AgentWritten::Refused(reason.to_owned()),
             );
         };
         if self.remembered.declared.bridge.writes.paused && !matches!(request.what, AgentAsk::Focus)
@@ -244,6 +250,20 @@ impl WorkspaceModel {
         self.dirty = true;
     }
 
+    /// Tells the extension that asked for a write what came of it, so it
+    /// counts as done only what was typed.
+    pub(in crate::ui::orchestrator) fn tell_written(
+        &mut self,
+        owner: &Owner,
+        action: &str,
+        written: AgentWritten,
+    ) {
+        if let Some(engine) = self.remembered.declared.engines.get_mut(owner) {
+            engine.agent_write(action, written);
+            self.dirty = true;
+        }
+    }
+
     /// The agent of the tab in front, when it is one UZE launched.
     fn agent_in_front(&self) -> Option<String> {
         let tab = self.session.as_ref()?.selected_tab();
@@ -268,6 +288,11 @@ impl WorkspaceModel {
             return;
         };
         if !allow {
+            self.tell_written(
+                &dialog.write.owner,
+                &dialog.write.action,
+                AgentWritten::Declined,
+            );
             return;
         }
         let writes = &mut self.remembered.declared.bridge.writes;
@@ -360,6 +385,11 @@ impl Attach<'_> {
                     format!("{by}: {}: that agent is no longer open", write.label),
                     None,
                 );
+                self.model.tell_written(
+                    &write.owner,
+                    &write.action,
+                    AgentWritten::Refused("that agent is no longer open".to_owned()),
+                );
                 continue;
             };
             if let Some(reason) = self.model.write_refusal(&write, pane, harness_in_front) {
@@ -369,9 +399,13 @@ impl Attach<'_> {
                     format!("{by}: {}: {reason}", write.label),
                     None,
                 );
+                self.model
+                    .tell_written(&write.owner, &write.action, AgentWritten::Refused(reason));
                 continue;
             }
             self.submit_notice(pane, &write.text);
+            self.model
+                .tell_written(&write.owner, &write.action, AgentWritten::Typed);
             self.model
                 .note_agent_prompt_submission(pane, &self.identities, None);
             let bridge = &mut self.model.remembered.declared.bridge;

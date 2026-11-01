@@ -1177,7 +1177,11 @@ impl WorkspaceModel {
                 self.asked_in_drawer = false;
                 self.open_notice = Some(span);
             }
-            Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
+            Outcome::OpenPath {
+                project,
+                target,
+                line,
+            } => open_code_at(self, &project, &target, line),
             Outcome::Copy(text) => self.copy_answered_by(text, self.open_slot),
             Outcome::Toast(text) => {
                 if let Some(owner) = self.slot_in_pane().map(|slot| slot.owner.clone()) {
@@ -1196,7 +1200,7 @@ impl WorkspaceModel {
             // Only the timeline's rows ask, and their click opens it
             // beside the row (see `open_commit_detail`); only a click on
             // what it drew reviews it, and `hit_surface` takes that.
-            Outcome::OpenCommit { .. } | Outcome::Review => {}
+            Outcome::OpenCommit { .. } | Outcome::Consent => {}
         }
         self.dirty = true;
     }
@@ -1209,7 +1213,7 @@ impl WorkspaceModel {
             | Outcome::Close
             | Outcome::Notice(_)
             | Outcome::OpenCommit { .. }
-            | Outcome::Review => {}
+            | Outcome::Consent => {}
             Outcome::Agent(request) => {
                 if let Some(owner) = self
                     .remembered
@@ -1220,7 +1224,11 @@ impl WorkspaceModel {
                     self.ask_of_agent(owner, *request);
                 }
             }
-            Outcome::OpenPath { project, target } => open_code_at(self, &project, &target),
+            Outcome::OpenPath {
+                project,
+                target,
+                line,
+            } => open_code_at(self, &project, &target, line),
             Outcome::Copy(text) => self.copy_answered_by(text, Some(id)),
             Outcome::Toast(text) => {
                 if let Some(owner) = self
@@ -1363,7 +1371,7 @@ impl WorkspaceModel {
             return;
         }
         // The Extensions screen is the session's to open, on its next pass.
-        if outcome == Outcome::Review {
+        if outcome == Outcome::Consent {
             self.review_extension = self
                 .remembered
                 .declared

@@ -253,8 +253,13 @@ pub(super) fn open_spec(model: &mut WorkspaceModel) {
 /// Rooted at the project rather than at the tab's directory, because the
 /// path was written relative to the project and may sit outside a tab
 /// that is somewhere below it.
-pub(super) fn open_code_at(model: &mut WorkspaceModel, project: &Path, target: &Path) {
-    open_code_on(model, project, target, target.is_dir());
+pub(super) fn open_code_at(
+    model: &mut WorkspaceModel,
+    project: &Path,
+    target: &Path,
+    line: Option<u32>,
+) {
+    open_code_on(model, project, target, target.is_dir(), line);
 }
 
 /// The code surface, opened on `target` already known to be a `directory`
@@ -264,6 +269,7 @@ pub(super) fn open_code_on(
     project: &Path,
     target: &Path,
     directory: bool,
+    line: Option<u32>,
 ) {
     let Some(slot) = code_slot(model) else {
         return;
@@ -274,6 +280,7 @@ pub(super) fn open_code_on(
     let entry = Entry::Path {
         target: target.to_path_buf(),
         directory,
+        line,
     };
     if let Some(engine) = code_engine(model) {
         engine.enter(code::SURFACE, entry);

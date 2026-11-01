@@ -3591,6 +3591,30 @@ mod hosted {
     }
 
     #[test]
+    fn a_path_sent_with_a_line_opens_the_file_at_it() {
+        let mut extension = CodeExtension::default();
+        extension.enter(
+            SURFACE,
+            Entry::Path {
+                target: PathBuf::from("/w/src/main.rs"),
+                directory: false,
+                line: Some(53),
+            },
+        );
+        extension.open(SURFACE, &checkout("/w"));
+        let view = extension.code_view().unwrap();
+        assert_eq!(view.showing(), ContentMode::Contents);
+        assert_eq!(view.selected(), Some(Path::new("/w/src/main.rs")));
+        let open = view.open.as_ref().expect("the file is asked for");
+        assert_eq!(open.caret.line, 52, "the caret is on line 53");
+        assert!(
+            view.scroll <= 52 && view.scroll + 10 > 52,
+            "and it is in view: {}",
+            view.scroll
+        );
+    }
+
+    #[test]
     fn a_path_sent_from_another_surface_wins_over_the_last_place() {
         let mut extension = CodeExtension::default();
         extension.enter(
@@ -3598,6 +3622,7 @@ mod hosted {
             Entry::Path {
                 target: PathBuf::from("/w/src/main.rs"),
                 directory: false,
+                line: None,
             },
         );
         extension.open(SURFACE, &checkout("/w"));
