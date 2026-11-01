@@ -8,6 +8,7 @@ use uze_core::{
     trust::{self, SourceOrigin, TrustAuthority},
 };
 
+use crate::application::marketplace::{CachedMiss, Fetch};
 use crate::application::services::Plugins;
 use crate::application::*;
 
@@ -34,10 +35,14 @@ impl Plugins<'_> {
     /// Read from the marketplace's cached clone, never from its ref: the
     /// bytes come back as they were before the link, `agents.lock` is not
     /// written, and moving to anything newer is the next update's.
+    ///
+    /// `fetch` says whether the clone may be fetched when it lacks the
+    /// commit: maintenance never fetches, and leaves that to a command.
     pub(crate) fn restore_pinned(
         &self,
         installed: &uze_core::StoredPackage,
         authority: &dyn TrustAuthority,
+        fetch: Fetch,
     ) -> Option<Result<PinRestoration>> {
         let marketplace = installed.id.marketplace();
         let plugin = installed.id.plugin_name();
@@ -58,7 +63,7 @@ impl Plugins<'_> {
             }
             return None;
         }
-        Some(self.restore_commit(installed, &record, commit, authority))
+        Some(self.restore_commit(installed, &record, commit, authority, fetch))
     }
 
     fn restore_commit(
@@ -67,12 +72,14 @@ impl Plugins<'_> {
         record: &state::MarketplaceRecord,
         commit: String,
         authority: &dyn TrustAuthority,
+        fetch: Fetch,
     ) -> Result<PinRestoration> {
         let marketplace = installed.id.marketplace();
         let plugin = installed.id.plugin_name();
         // A local marketplace's source that is gone is as unreachable as a
         // remote one offline: said for this plugin, never failing the rest.
         let materialized = crate::application::marketplace::MarketplaceRequest::of(&record.source)
+            .map_err(|error| CachedMiss::Unreached(Some(error)))
             .and_then(|request| {
                 request.materialize_cached(
                     plugin,
@@ -84,13 +91,14 @@ impl Plugins<'_> {
                         catalogues: &self.0.marketplace_catalogues,
                     },
                     &commit,
+                    fetch,
                 )
             });
         let materialized = match materialized {
             Ok(materialized) => materialized,
             Err(error) => {
                 tracing::warn!(
-                    %error,
+                    error = ?error,
                     plugin = installed.id.as_str(),
                     commit,
                     "the commit pinned before the link is not in the cached clone"
@@ -179,7 +187,11 @@ impl Plugins<'_> {
 
         // The first resolution after `uze market unlink` puts back what was
         // pinned before the link.
-        if let Some(restoration) = self.restore_pinned(&installed, authority) {
+        if let Some(restoration) = self.restore_pinned(
+            &installed,
+            authority,
+            crate::application::marketplace::Fetch::Allowed,
+        ) {
             return match restoration? {
                 PinRestoration::Restored { report, .. } => Ok(report),
                 PinRestoration::NeedsNetwork(error) => Err(error),

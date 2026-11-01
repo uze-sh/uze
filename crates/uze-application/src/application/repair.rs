@@ -195,7 +195,9 @@ impl UzeApplication {
         self.begin_operation();
         // Putting a pin back takes the lock itself, as plain maintenance
         // runs it.
-        let restored = self.health().restore_pins();
+        let restored = self
+            .health()
+            .restore_pins(super::marketplace::Fetch::Allowed);
         // Each collector takes its own lock, so all of them run before the
         // repair takes the mutation lock.
         let collected = self.health().collect();
@@ -386,6 +388,7 @@ impl UzeApplication {
             ) => {
                 let entry = self.marketplace_entry(marketplace, &record.source, subdirectory);
                 MarketplaceRequest::of(&record.source)
+                    .map_err(|error| super::marketplace::CachedMiss::Unreached(Some(error)))
                     .and_then(|request| {
                         request.materialize_cached(
                             entry.as_deref().unwrap_or(plugin),
@@ -397,9 +400,19 @@ impl UzeApplication {
                                 catalogues: &self.marketplace_catalogues,
                             },
                             commit,
+                            super::marketplace::Fetch::Allowed,
                         )
                     })
-                    .map_err(offline)?
+                    .map_err(|miss| match miss {
+                        super::marketplace::CachedMiss::Unreached(Some(error))
+                        | super::marketplace::CachedMiss::Absent(error) => offline(error),
+                        super::marketplace::CachedMiss::Unreached(None) => {
+                            RepairOutcome::NeedsNetwork {
+                                reason: "the commit is not in the marketplace's cached clone"
+                                    .to_owned(),
+                            }
+                        }
+                    })?
             }
             (
                 ResolvedSource::Git {

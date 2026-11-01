@@ -896,7 +896,11 @@ impl Project<'_> {
             // The first resolution after `uze market unlink` puts back the
             // commit pinned before the link, and leaves the lock as it is.
             if let Ok(installed) = self.0.package_by_name(&qualified)
-                && let Some(restoration) = self.0.plugins().restore_pinned(&installed, authority)
+                && let Some(restoration) = self.0.plugins().restore_pinned(
+                    &installed,
+                    authority,
+                    crate::application::marketplace::Fetch::Allowed,
+                )
             {
                 outcomes.push(restored_outcome(name, restoration)?);
                 continue;
@@ -1051,7 +1055,11 @@ impl Project<'_> {
         for id in targets {
             let before = self.installed_revision(&id);
             if let Ok(installed) = self.0.package_by_name(&id)
-                && let Some(restoration) = self.0.plugins().restore_pinned(&installed, authority)
+                && let Some(restoration) = self.0.plugins().restore_pinned(
+                    &installed,
+                    authority,
+                    crate::application::marketplace::Fetch::Allowed,
+                )
             {
                 outcomes.push(restored_outcome(id, restoration)?);
                 continue;
@@ -1146,7 +1154,11 @@ impl Project<'_> {
             let Ok(installed) = self.0.package_by_name(&format!("{name}@{marketplace}")) else {
                 continue;
             };
-            let Some(restoration) = self.0.plugins().restore_pinned(&installed, authority) else {
+            let Some(restoration) = self.0.plugins().restore_pinned(
+                &installed,
+                authority,
+                crate::application::marketplace::Fetch::Allowed,
+            ) else {
                 continue;
             };
             let skip = |reason: String| SkippedPlugin {

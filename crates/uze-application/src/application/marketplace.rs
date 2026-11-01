@@ -71,6 +71,29 @@ pub(crate) struct MirrorAt<'a> {
     pub(crate) catalogues: &'a super::marketplace_catalogue::MarketplaceCatalogues,
 }
 
+/// Whether reading a pinned commit from a marketplace's cached clone may
+/// fetch it when the clone lacks it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Fetch {
+    /// A command a person ran: one fetch may reach the commit.
+    Allowed,
+    /// Maintenance, which never contacts the network (ADR-037): only what
+    /// the clone already holds.
+    Never,
+}
+
+/// Why a plugin's bytes at a pinned commit did not come from its
+/// marketplace's cached clone.
+#[derive(Debug)]
+pub(crate) enum CachedMiss {
+    /// The clone lacks the commit, and no fetch reached it: the fetch
+    /// failed (its error), or none was allowed.
+    Unreached(Option<UzeError>),
+    /// The marketplace was reached, or the clone already held the commit,
+    /// and the commit, its manifest or the plugin in it is not there.
+    Absent(UzeError),
+}
+
 /// Brings every marketplace an operation is about to read up to date at
 /// once, so a project drawing from four marketplaces waits for the slowest
 /// of them rather than for all four in a row.
@@ -262,31 +285,41 @@ impl MarketplaceRequest {
 
     /// One plugin's bytes at `commit`, from the marketplace's cached clone
     /// and nothing else: the commit a linked plugin was pinned to before the
-    /// link, put back once it is unlinked. Fails when the clone lacks the
-    /// commit or its content and no fetch reaches them, which is the
-    /// caller's to report as needing the network.
+    /// link, put back once it is unlinked. When the clone lacks the commit,
+    /// one fetch is tried if `fetch` allows it; what is missing then is
+    /// told apart from what could not be reached ([`CachedMiss`]).
     pub(crate) fn materialize_cached(
         &self,
         plugin: &str,
         at: MirrorAt<'_>,
         commit: &str,
-    ) -> Result<MaterializedPackage> {
+        fetch: Fetch,
+    ) -> std::result::Result<MaterializedPackage, CachedMiss> {
         let repository = super::marketplace_catalogue::mirror_dir(at.home, at.marketplace);
         if acquisition::mirror::resolve(&repository, Some(commit)).is_err() {
+            if fetch == Fetch::Never {
+                return Err(CachedMiss::Unreached(None));
+            }
             // A clone pruned or never filled: one fetch may still reach the
             // commit, and offline it fails here rather than later.
-            let held = at.catalogues.hold(at.marketplace)?;
+            let held = at
+                .catalogues
+                .hold(at.marketplace)
+                .map_err(|error| CachedMiss::Unreached(Some(error)))?;
             acquisition::mirror::ensure_for(
                 &self.repository.fetch,
                 &self.repository.identity,
                 &repository,
                 self.reference.as_deref(),
                 None,
-            )?;
+            )
+            .map_err(|error| CachedMiss::Unreached(Some(error)))?;
             at.catalogues.absorb_fetch(at.home, at.marketplace, &held);
         }
-        let commit = acquisition::mirror::resolve(&repository, Some(commit))?;
+        let commit =
+            acquisition::mirror::resolve(&repository, Some(commit)).map_err(CachedMiss::Absent)?;
         self.materialize_at(plugin, &repository, &commit)
+            .map_err(CachedMiss::Absent)
     }
 
     fn materialize_at(

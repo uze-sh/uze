@@ -856,6 +856,35 @@ fn maintenance_after_an_unlink_puts_back_the_pinned_commit() {
     assert!(stored_skill(&unlinked.application).contains("pinned body"));
 }
 
+/// Maintenance never contacts the network (ADR-037): a pinned commit the
+/// cached clone lacks is reported as needing the network, with no fetch,
+/// though the marketplace is reachable; `update` is what fetches it.
+#[test]
+fn maintenance_fetches_no_pinned_commit_the_cached_clone_lacks() {
+    let unlinked = unlinked_after_an_edit("unlink-maintain-offline");
+    fs::remove_dir_all(unlinked.home.marketplace_cache_dir()).unwrap();
+
+    let report = unlinked.application.health().maintain();
+
+    assert!(
+        report.outcomes.iter().any(|outcome| matches!(
+            outcome,
+            uze_application::application::MaintenanceOutcome::NeedsNetwork { .. }
+        )),
+        "{report:?}"
+    );
+    assert!(
+        !unlinked.home.marketplace_cache_dir().exists(),
+        "maintenance cloned the marketplace"
+    );
+    assert!(stored_skill(&unlinked.application).contains("edited, never committed"));
+    assert_eq!(
+        pins_before_link(&unlinked.home).get("flow"),
+        Some(&unlinked.pinned),
+        "the pin waits for a command that may fetch"
+    );
+}
+
 /// Linking refuses a checkout holding some other repository: a link says
 /// "read this marketplace here", and a directory holding a different
 /// project is not that marketplace wherever it sits.

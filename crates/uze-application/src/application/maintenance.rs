@@ -20,6 +20,7 @@ use super::collection::{Collectable, Collected};
 
 use super::lifecycle::remove::ReceiptTeardown;
 use super::lifecycle::update::PinRestoration;
+use super::marketplace::Fetch;
 use super::services::Health;
 
 #[derive(Clone, Debug, Serialize)]
@@ -266,8 +267,9 @@ impl Health<'_> {
     pub fn maintain(&self) -> MaintenanceReport {
         // Before the lock, which putting a pin back takes itself; asking
         // nobody, so a pinned commit that would run something new waits for
-        // a command that can ask.
-        let restored = self.restore_pins();
+        // a command that can ask; and fetching nothing, so one the cached
+        // clone lacks waits for `doctor --repair` or `update`.
+        let restored = self.restore_pins(Fetch::Never);
         // Before the lock too: each collector takes its own.
         let collected = self.collect();
         let Ok(_mutation) = MutationLock::acquire(&self.0.home) else {
@@ -542,8 +544,9 @@ impl Health<'_> {
     /// Puts back the commit each plugin of an unlinked marketplace was
     /// pinned to before the link ([`PinRestoration`]). A pin whose commit
     /// would run something new, or whose detach is refused, is left for an
-    /// update to settle.
-    pub(crate) fn restore_pins(&self) -> Vec<MaintenanceOutcome> {
+    /// update to settle. With [`Fetch::Never`], a commit the cached clone
+    /// lacks is reported as needing the network and left to a command.
+    pub(crate) fn restore_pins(&self, fetch: Fetch) -> Vec<MaintenanceOutcome> {
         let pending = state::marketplace_list(&self.0.home).is_ok_and(|marketplaces| {
             marketplaces
                 .values()
@@ -557,7 +560,10 @@ impl Health<'_> {
             .installed_packages()
             .iter()
             .filter_map(|package| {
-                let restoration = self.0.plugins().restore_pinned(package, &authority)?;
+                let restoration = self
+                    .0
+                    .plugins()
+                    .restore_pinned(package, &authority, fetch)?;
                 let plugin = package.id.as_str().to_owned();
                 Some(match restoration {
                     Ok(PinRestoration::Restored {
