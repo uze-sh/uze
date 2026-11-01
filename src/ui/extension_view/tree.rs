@@ -1956,7 +1956,7 @@ impl Painter<'_, '_> {
             }
             let rows = height(child, width);
             if self.held.fold && !self.fits(at, rows) {
-                return self.fold_at(at, children.len() - index);
+                return self.fold_at(at, drawn(&children[index..]));
             }
             if !self.node(child, x, width, at) {
                 return false;

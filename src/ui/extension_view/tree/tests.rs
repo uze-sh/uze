@@ -2046,6 +2046,64 @@ fn a_blank_icon_takes_no_gap_in_a_box_or_a_stack() {
     assert_eq!(draw(&in_a_stack, 10, 3, 0, at(0)).rows()[0].trim_end(), "x");
 }
 
+/// What a blank icon leaves out is measured as it is drawn: a stack or a
+/// column box of it and one line is one row tall, and a row box holding it
+/// is as wide as its label.
+#[test]
+fn a_blank_icon_is_measured_as_it_is_drawn() {
+    use uze_extensions::view::BoxLayout;
+    let in_a_stack = stack(0, 1, vec![blank_icon(1), words(2, "x", Role::Default)]);
+    assert_eq!(tree_height(&in_a_stack, 10), 1);
+    let in_a_column = holding(
+        boxed(
+            0,
+            BoxLayout {
+                gap: 1,
+                ..BoxLayout::default()
+            },
+        ),
+        vec![blank_icon(1), words(2, "x", Role::Default)],
+    );
+    assert_eq!(tree_height(&in_a_column, 10), 1);
+    let in_a_row_box = holding(
+        boxed(
+            0,
+            BoxLayout {
+                row: true,
+                gap: 1,
+                ..BoxLayout::default()
+            },
+        ),
+        vec![blank_icon(1), words(2, "main", Role::Default)],
+    );
+    assert_eq!(tree_width(&in_a_row_box), 4);
+}
+
+/// A folded stack counts what it left out by what would have drawn: a
+/// blank icon past the fold is not one more.
+#[test]
+fn a_folded_stack_does_not_count_a_blank_icon() {
+    let root = stack(
+        0,
+        0,
+        vec![
+            words(1, "one", Role::Default),
+            words(2, "two", Role::Default),
+            blank_icon(3),
+            words(4, "three", Role::Default),
+        ],
+    );
+    let held = TreeFrame {
+        fold: true,
+        ..at(0)
+    };
+    let more = theme::glyph(Symbol::MarkMore);
+    assert_eq!(
+        draw(&root, 20, 2, 0, held).rows(),
+        ["one", &format!("{more} 2 more")]
+    );
+}
+
 /// A cut line answers the pointer: resting on it, it holds still, then
 /// slides sideways to show all of itself; off it, it is cut with an
 /// ellipsis; `marquee=#false` keeps it cut and gives it no target.
