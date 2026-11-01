@@ -700,7 +700,19 @@ fn the_terminal_runtime_is_untouched_while_a_workspace_runs() {
     let _ = server.kill();
     let _ = server.wait();
     assert!(answers, "the running server's endpoint was taken");
-    assert_eq!(after, before);
+    // The running server persists its own documents whenever it likes, so
+    // what is compared is that nothing was taken away, and that what this
+    // test planted is byte for byte what it planted.
+    for (path, bytes) in &before {
+        let kept = after.iter().find(|(found, _)| found == path);
+        assert!(kept.is_some(), "{} was removed", path.display());
+        if path
+            .file_name()
+            .is_some_and(|name| name == "unknown" || name == "workspace.json.unreadable-1700000000")
+        {
+            assert_eq!(&kept.unwrap().1, bytes, "{} changed", path.display());
+        }
+    }
     assert!(terminal.join("empty").is_dir());
 }
 
