@@ -188,7 +188,7 @@ fn an_extensions_notice_takes_the_release_notices_place_until_put_away() {
         headline
             .trim_start()
             .starts_with(&format!("{} Approval", theme::glyph(Symbol::MarkStanding))),
-        "the notice wears the standing mark, in every glyph set: {headline:?}"
+        "the notice wears the standing mark: {headline:?}"
     );
     assert!(
         !rows.iter().any(|line| line.contains("v0.0.0-alpha.14")),
