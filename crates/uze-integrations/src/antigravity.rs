@@ -750,7 +750,7 @@ impl IntegrationPort for AntigravityIntegration {
     fn inspect_receipt(&self, receipt: &AttachmentReceipt) -> AttachmentInspection {
         match &receipt.artifact {
             artifact if crate::shared::build::is_build(artifact) => {
-                crate::shared::build::inspect(receipt)
+                crate::shared::build::inspect(&STORE, &self.uze_home, receipt)
             }
             ManagedArtifact::IntegrationOwned {
                 kind,
@@ -790,7 +790,7 @@ impl IntegrationPort for AntigravityIntegration {
         }
         match &receipt.artifact {
             artifact if crate::shared::build::is_build(artifact) => {
-                return crate::shared::build::detach(receipt);
+                return crate::shared::build::detach(&STORE, &self.uze_home, receipt);
             }
             ManagedArtifact::IntegrationOwned {
                 kind,

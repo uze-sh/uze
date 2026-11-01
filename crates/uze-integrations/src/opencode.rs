@@ -599,7 +599,7 @@ impl IntegrationPort for OpenCodeIntegration {
             return crate::rules::inspect(&receipt.artifact);
         }
         if crate::shared::build::is_build(&receipt.artifact) {
-            return crate::shared::build::inspect(receipt);
+            return crate::shared::build::inspect(&STORE, &self.uze_home, receipt);
         }
         if let Some(path) = runtime_plugin_path(&receipt.artifact) {
             return runtime_plugin::inspect(&path);
@@ -625,7 +625,7 @@ impl IntegrationPort for OpenCodeIntegration {
             return crate::rules::detach(&receipt.artifact);
         }
         if crate::shared::build::is_build(&receipt.artifact) {
-            return crate::shared::build::detach(receipt);
+            return crate::shared::build::detach(&STORE, &self.uze_home, receipt);
         }
         if let Some(path) = runtime_plugin_path(&receipt.artifact) {
             return runtime_plugin::detach(&path);

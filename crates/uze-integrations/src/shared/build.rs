@@ -15,6 +15,8 @@
 //!   digest (`Matched`), one was edited or deleted (`Drifted`), or the
 //!   directory is gone (`Missing`). A file somebody *added* is not listed,
 //!   so it is not drift.
+//!   A receipt whose root is not its package's build in this vendor store,
+//!   or that lists no file, is `Blocked`.
 //! - **Detach** removes a matched build, after everything that names it.
 
 use std::{
@@ -274,7 +276,7 @@ pub(crate) fn publish(
         name: package.active_name.clone(),
     };
     if let Some(recorded) = recorded {
-        let inspection = inspect(recorded);
+        let inspection = inspect(store, uze_home, recorded);
         // The same bytes from a link and then from the pinned commit are two
         // builds: the receipt says which source it was rendered from.
         let same_key = RecordedBuild::of(recorded)
@@ -362,12 +364,33 @@ fn collect(root: &Path, dir: &Path, digests: &mut BTreeMap<String, String>) -> R
 }
 
 /// A build's state, by content (see the module doc).
-pub(crate) fn inspect(receipt: &AttachmentReceipt) -> AttachmentInspection {
+pub(crate) fn inspect(
+    store: &VendorStore,
+    uze_home: &UzeHome,
+    receipt: &AttachmentReceipt,
+) -> AttachmentInspection {
     let Some(build) = RecordedBuild::of(receipt) else {
         return state(AttachmentState::Blocked, "the build receipt is unreadable");
     };
     if !build.root.is_dir() {
         return state(AttachmentState::Missing, "the build is absent");
+    }
+    // The root comes from the ledger: only the package's own build in this
+    // vendor store is ever inspected as one, and so ever removed.
+    let own_build = is_valid_qualified_id(&receipt.package_id)
+        && build.root == store.build_dir(uze_home, &receipt.package_id);
+    if !own_build {
+        return state(
+            AttachmentState::Blocked,
+            "the build receipt names a directory that is not the package's build",
+        );
+    }
+    // A receipt that lists no file proves nothing about the directory.
+    if build.files.is_empty() {
+        return state(
+            AttachmentState::Blocked,
+            "the build receipt lists none of the build's files",
+        );
     }
     let edited: Vec<&str> = build
         .files
@@ -395,25 +418,16 @@ pub(crate) fn inspect(receipt: &AttachmentReceipt) -> AttachmentInspection {
 
 /// Removes a matched build. Anything else is answered with its inspection
 /// and left where it is.
-pub(crate) fn detach(receipt: &AttachmentReceipt) -> Result<AttachmentInspection> {
-    let inspection = inspect(receipt);
+pub(crate) fn detach(
+    store: &VendorStore,
+    uze_home: &UzeHome,
+    receipt: &AttachmentReceipt,
+) -> Result<AttachmentInspection> {
+    let inspection = inspect(store, uze_home, receipt);
     if inspection.state != AttachmentState::Matched {
         return Ok(inspection);
     }
     let build = RecordedBuild::of(receipt).expect("an inspected build receipt");
-    // The root comes from the ledger: refuse one that is not a build of a
-    // package id rather than remove whatever it names.
-    let named = build
-        .root
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| is_valid_qualified_id(&receipt.package_id) && !name.starts_with('.'));
-    if !named {
-        return Ok(state(
-            AttachmentState::Blocked,
-            "the build receipt names no build directory",
-        ));
-    }
     fs::remove_dir_all(&build.root).map_err(UzeError::write(&build.root))?;
     Ok(state(AttachmentState::Missing, "the build was removed"))
 }

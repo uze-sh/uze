@@ -767,7 +767,7 @@ impl IntegrationPort for CodexIntegration {
                 crate::rules::inspect(artifact)
             }
             artifact if crate::shared::build::is_build(artifact) => {
-                crate::shared::build::inspect(receipt)
+                crate::shared::build::inspect(&STORE, &self.uze_home, receipt)
             }
             ManagedArtifact::IntegrationOwned {
                 kind,
@@ -819,7 +819,7 @@ impl IntegrationPort for CodexIntegration {
                 return crate::rules::detach(artifact);
             }
             artifact if crate::shared::build::is_build(artifact) => {
-                return crate::shared::build::detach(receipt);
+                return crate::shared::build::detach(&STORE, &self.uze_home, receipt);
             }
             ManagedArtifact::IntegrationOwned { kind, selector, .. }
                 if marketplace::receipt_origin::<CodexMarketplace>(kind).is_some() =>

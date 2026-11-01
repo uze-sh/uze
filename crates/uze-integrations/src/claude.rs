@@ -748,7 +748,7 @@ impl IntegrationPort for ClaudeIntegration {
                 crate::rules::inspect(artifact)
             }
             artifact if crate::shared::build::is_build(artifact) => {
-                crate::shared::build::inspect(receipt)
+                crate::shared::build::inspect(&STORE, &self.uze_home, receipt)
             }
             ManagedArtifact::IntegrationOwned {
                 kind,
@@ -786,7 +786,7 @@ impl IntegrationPort for ClaudeIntegration {
             }
             artifact if crate::rules::is_rules_artifact(artifact) => crate::rules::detach(artifact),
             artifact if crate::shared::build::is_build(artifact) => {
-                crate::shared::build::detach(receipt)
+                crate::shared::build::detach(&STORE, &self.uze_home, receipt)
             }
             ManagedArtifact::IntegrationOwned { kind, selector, .. }
                 if marketplace::receipt_origin::<ClaudeMarketplace>(kind).is_some() =>

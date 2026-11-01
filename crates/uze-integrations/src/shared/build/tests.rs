@@ -94,7 +94,10 @@ fn a_build_is_rendered_into_the_vendor_store_and_inspected_by_content() {
     assert_eq!(recorded.origin, Some(Origin::Generated));
     assert_eq!(recorded.source, Some(BuildSource::Pinned));
     assert!(recorded.files.contains_key("guides/plan.md"));
-    assert_eq!(inspect(&receipt).state, AttachmentState::Matched);
+    assert_eq!(
+        inspect(&STORE, &machine.home, &receipt).state,
+        AttachmentState::Matched
+    );
     assert_eq!(
         STORE.root_of(&machine.package.root).path(),
         build,
@@ -111,7 +114,7 @@ fn only_a_changed_key_renders_again_and_a_file_a_hook_added_survives() {
     fs::create_dir_all(build.join("node_modules")).unwrap();
     fs::write(build.join("node_modules/dep.js"), "built").unwrap();
     assert_eq!(
-        inspect(&first).state,
+        inspect(&STORE, &machine.home, &first).state,
         AttachmentState::Matched,
         "a file a hook added is not drift"
     );
@@ -170,7 +173,7 @@ fn an_edited_build_is_drift_and_is_kept_on_update() {
     let first = publish_with(&machine, &STORE, "one", None, &mut renders);
     let build = machine.home.build_dir("test", "flow@market");
     fs::write(build.join("guides/plan.md"), "edited by hand").unwrap();
-    let inspection = inspect(&first);
+    let inspection = inspect(&STORE, &machine.home, &first);
     assert_eq!(inspection.state, AttachmentState::Drifted);
     assert!(
         inspection.reason.contains("guides/plan.md"),
@@ -186,7 +189,7 @@ fn an_edited_build_is_drift_and_is_kept_on_update() {
         "edited by hand"
     );
     assert_eq!(
-        detach(&first).unwrap().state,
+        detach(&STORE, &machine.home, &first).unwrap().state,
         AttachmentState::Drifted,
         "nor removed"
     );
@@ -202,7 +205,10 @@ fn a_build_whose_bytes_are_missing_is_kept_and_not_rendered() {
     let kept = publish_with(&machine, &STORE, "two", Some(&first), &mut renders);
     assert_eq!(renders, 1);
     assert_eq!(kept, first);
-    assert_eq!(inspect(&kept).state, AttachmentState::Matched);
+    assert_eq!(
+        inspect(&STORE, &machine.home, &kept).state,
+        AttachmentState::Matched
+    );
 }
 
 #[test]
@@ -211,9 +217,15 @@ fn a_matched_build_is_removed_and_a_missing_one_said() {
     let mut renders = 0;
     let receipt = publish_with(&machine, &STORE, "one", None, &mut renders);
     let build = machine.home.build_dir("test", "flow@market");
-    assert_eq!(detach(&receipt).unwrap().state, AttachmentState::Missing);
+    assert_eq!(
+        detach(&STORE, &machine.home, &receipt).unwrap().state,
+        AttachmentState::Missing
+    );
     assert!(!build.exists());
-    assert_eq!(inspect(&receipt).state, AttachmentState::Missing);
+    assert_eq!(
+        inspect(&STORE, &machine.home, &receipt).state,
+        AttachmentState::Missing
+    );
 }
 
 #[test]
@@ -228,4 +240,53 @@ fn a_write_into_the_build_never_reaches_the_sources() {
         "plan",
         "a write into the build never reaches the sources"
     );
+}
+
+/// A receipt whose recorded root is not its package's build in this
+/// vendor store is never matched, so nothing it names is removed.
+#[test]
+fn a_build_receipt_naming_a_directory_outside_the_store_is_blocked() {
+    let machine = machine("build-elsewhere");
+    let mut renders = 0;
+    let mut receipt = publish_with(&machine, &STORE, "one", None, &mut renders);
+    let elsewhere = machine.home.root().join("elsewhere/flow@market");
+    fs::create_dir_all(elsewhere.join("guides")).unwrap();
+    fs::write(elsewhere.join("plugin.json"), r#"{"name":"flow"}"#).unwrap();
+    fs::write(elsewhere.join("guides/plan.md"), "plan").unwrap();
+    if let ManagedArtifact::IntegrationOwned { detail, .. } = &mut receipt.artifact {
+        detail.insert("root".to_owned(), serde_json::json!(elsewhere));
+    }
+
+    assert_eq!(
+        inspect(&STORE, &machine.home, &receipt).state,
+        AttachmentState::Blocked
+    );
+    assert_eq!(
+        detach(&STORE, &machine.home, &receipt).unwrap().state,
+        AttachmentState::Blocked
+    );
+    assert!(elsewhere.join("guides/plan.md").is_file());
+}
+
+/// A receipt that lists no files proves nothing about the directory, so
+/// it is not matched, and the build stays.
+#[test]
+fn a_build_receipt_without_files_is_not_matched() {
+    let machine = machine("build-no-files");
+    let mut renders = 0;
+    let mut receipt = publish_with(&machine, &STORE, "one", None, &mut renders);
+    if let ManagedArtifact::IntegrationOwned { detail, .. } = &mut receipt.artifact {
+        detail.remove("files");
+    }
+    let build = machine.home.build_dir("test", "flow@market");
+
+    assert_ne!(
+        inspect(&STORE, &machine.home, &receipt).state,
+        AttachmentState::Matched
+    );
+    assert_ne!(
+        detach(&STORE, &machine.home, &receipt).unwrap().state,
+        AttachmentState::Missing
+    );
+    assert!(build.is_dir());
 }
