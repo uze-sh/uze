@@ -1,44 +1,29 @@
 ## 1. The catalogue
 
-- [ ] 1.1 Tag every `UzeHome` path with its tier in `uze-core`: bytes, store, record, generated, remembered.
-- [ ] 1.2 Add the `HealthCheck` catalogue in `uze-application`. Each check has a subject, a tier, `observe` and an optional `repair` with its preconditions. Cover:
-  - every `UzeHome` path;
-  - every receipt kind, through `IntegrationPort` inspection;
-  - every vendor store and registration;
-  - the mutation lock, the terminal-runtime endpoint and the shims.
-- [ ] 1.3 Add `every_owned_path_has_a_health_check` beside `every_path_uze_owns_is_named_in_the_map`.
-- [ ] 1.4 Plain `doctor`, `doctor --repair` and the TUI read the catalogue. Automatic maintenance keeps exactly its ADR-037 subset.
+- [ ] 1.1 Make `UzeHome` enumerable: one list of owned paths, each with its tier (bytes, store, record, authored, generated, remembered). `every_path_uze_owns_is_named_in_the_map` reads this list.
+- [ ] 1.2 Add the `HealthCheck` catalogue in `uze-application`, with the subjects, observations and lanes of design D2.
+- [ ] 1.3 Add `every_owned_path_has_a_health_check`.
+- [ ] 1.4 Plain `doctor`, `doctor --repair` and the TUI read the catalogue. The automatic lane keeps exactly its ADR-037 subset. A finding whose lane is `--repair` shows `uze doctor --repair` as its action.
+- [ ] 1.5 Make `doctor` isolate every check's failure. Add a test that corrupts each record in turn and still gets every other finding.
 
-## 2. Recovery before the application
+## 2. Repair
 
-- [ ] 2.1 Add `recover_home(&UzeHome)`:
-  - finish interrupted layout moves;
-  - run each record's ladder and floor;
-  - clear a mutation lock whose holder is dead, through a `uze-platform` process-liveness concept.
-- [ ] 2.2 Wire `src/main.rs`:
-  - `doctor` runs `recover_home` before `from_env`;
-  - `--repair` skips `ensure_default_plugins`;
-  - other commands that fail in `from_env` name `uze doctor --repair`.
+- [ ] 2.1 Add `UzeApplication::repair_plan()` from live inspection, and `repair(plan)` in design D5 order, under the mutation lock. The catalogue then observes again.
+- [ ] 2.2 Add re-acquisition from the registry's provenance (Git at the recorded commit, local path, linked target, or the embedded snapshot). Keep the bytes only on a digest match. Otherwise report `NeedsHuman` with `uze update <id>`. Offline, report `NeedsNetwork`.
+- [ ] 2.3 Repoint a marketplace whose registered root differs from its vendor store, never during a session of that harness, reusing the vendor-stores registration code.
+- [ ] 2.4 Clear a stale terminal-runtime endpoint, and recreate the shims.
+- [ ] 2.5 Report each finding as `Repaired`, `NeedsHuman`, `NeedsNetwork` or `Unrepairable`, with its reason and command. Exit status 0, 1 or 2. The report follows the `design-system` skill.
+- [ ] 2.6 Add `doctor --repair` to the grammar and help text. It skips bootstrap and is classified `JustifiedSlow`. `doctor_meets_the_budget` covers plain `doctor` reading the catalogue.
 
-## 3. Repair
+## 3. Proof
 
-- [ ] 3.1 Add `UzeApplication::repair_plan()` from live inspection, and `repair(plan)`. They run in dependency order (design D5), under the mutation lock, then the catalogue re-observes.
-- [ ] 3.2 Store repairs:
-  - rebuild builds from `sources/`;
-  - re-register or repoint the marketplace (Claude: a same-name `add`; Codex: `remove`, then `add`);
-  - refresh the vendor cache;
-  - re-seed the bundled plugin.
-- [ ] 3.3 Bytes repair: acquire again at the receipt's pinned revision, only when the authorization record exists. Otherwise report `NeedsHuman` with the `add` command. Offline, report `NeedsNetwork`.
-- [ ] 3.4 Record repair: ladder, then floor. Report what the vendor stores and registrations still show, with the commands that re-adopt it.
-- [ ] 3.5 Process state: clear a stale terminal-runtime endpoint and recreate the shims.
-- [ ] 3.6 Report each finding as `Repaired`, `NeedsHuman`, `NeedsNetwork` or `Unrepairable`, with its reason and command. Exit status 0, 1 or 2 (design D6). The report follows the `design-system` skill.
-- [ ] 3.7 Add `doctor --repair` to the grammar and help text, and classify it `JustifiedSlow`. Plain `doctor` keeps its budget.
-- [ ] 3.8 Findings beyond the automatic lane name `uze doctor --repair` in `doctor` and in the TUI.
-
-## 4. Proof
-
-- [ ] 4.1 Add `tests/acceptance/repair.rs` as a damage matrix. For each owned thing, delete it or corrupt it, then run `doctor --repair` and assert the machine is healthy or the right `NeedsHuman` is reported. A second run repairs nothing.
-- [ ] 4.2 Add negative tests. Repair never overwrites a drifted skill, never changes a pinned revision, never re-authorizes, never deletes a record, and never touches a project.
-- [ ] 4.3 Add a test that `doctor` starts and repairs on a home where `from_env` fails.
-- [ ] 4.4 Add a conformance check on every vertical. Delete `sources/` and the vendor store and corrupt `attachments.json`, then run `uze doctor --repair`. Plugins must load, a deny hook must deny, and an `always_on` rule must reach the session.
-- [ ] 4.5 Run `make check` and `openspec validate --all --strict`.
+- [ ] 3.1 Add `tests/acceptance/repair.rs`, a damage matrix. For each subject in design D2, damage it, run `doctor --repair`, and assert that the machine is healthy or that the expected `NeedsHuman` or `NeedsNetwork` is reported. A second run repairs nothing.
+- [ ] 3.2 Add negative tests. Repair never:
+  - overwrites an edited build;
+  - keeps bytes whose digest differs;
+  - re-authorizes;
+  - touches an unreadable ledger;
+  - repoints during a session;
+  - touches a project.
+- [ ] 3.3 Add a conformance check on every vertical. Delete `sources/`, register Codex's marketplace at an old root, and leave a stale endpoint. Then run `uze doctor --repair`. Plugins must load, a deny hook must deny, an `always_on` rule must reach the session, and every package's digest must be unchanged.
+- [ ] 3.4 Run `make check` and `openspec validate --all --strict`.

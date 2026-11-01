@@ -1,101 +1,93 @@
 ## Why
 
-`uze doctor` already heals the narrowest kind of damage. Bounded maintenance
-(ADR-037, `add-environment-maintenance-engine`) recreates a receipt-proven
-`Missing` artifact without asking. Everything else is reported and left to
-the person:
+`uze doctor` already heals the narrowest kind of damage without asking.
+Bounded maintenance (ADR-037, `add-environment-maintenance-engine`)
+recreates any receipt-proven `Missing` artifact it can rebuild locally.
+After `vendor-stores-and-uninstall`, that includes a deleted vendor-store
+build. Damage that needs more than a local rebuild is only reported, and
+the fix is left to the person:
 
-- a deleted `sources/` or vendor store;
-- a vendor marketplace pointing at a directory that is gone;
-- a stale lock or terminal-runtime endpoint;
-- an unreadable record.
-
-Some damage is worse still. When `state/` cannot be read,
-`UzeApplication::from_env` fails before any command runs, `doctor` included,
-so the tool meant to diagnose the home cannot start.
+- package bytes deleted from `sources/`, which `vendor-stores-and-uninstall`
+  keeps delivering as "bytes missing" but can no longer rebuild;
+- a vendor marketplace registered at a root other than its vendor store;
+- a stale terminal-runtime endpoint;
+- missing shims.
 
 `vendor-stores-and-uninstall` makes `uze uninstall` the supported way out
-and declares removing parts of `~/.uze` by hand unsupported. That only holds
-up if there is a supported way back. A person who deleted or corrupted
-something, or an upgrade that went wrong, needs one deterministic command that
-knows the layout of `~/.uze` and puts it back. That command cannot depend on
-an agent, a harness or the workspace, since any of those may be the broken
+and declares removing parts of `~/.uze` by hand unsupported. That stance
+needs a supported way back: one deterministic command that knows the layout
+of `~/.uze` and puts back what can be put back. It cannot depend on an
+agent, a harness or the workspace, since any of those may be the broken
 part.
 
 ## What Changes
 
-- **`uze doctor --repair`**: an explicit, deterministic repair of everything
-  UZE owns on the machine.
-  - It plans first and executes under the mutation lock.
-  - It re-inspects afterwards and reports each finding as `Repaired`,
-    `NeedsHuman` (with the reason and the command), `NeedsNetwork` or
-    `Unrepairable`.
-  - It is idempotent.
-- **One health model, declared once.** Every path in `UzeHome`, every receipt
-  kind, every vendor store and every registration that UZE asks a vendor
-  for has a check. Each check carries a repair, or a stated reason why it
-  has none. The repair follows from the tier:
-  - **generated and remembered:** produced again;
-  - **store:** rebuilt from `sources/` and re-registered;
-  - **bytes:** re-acquired at the pinned revision;
-  - **records:** carried by the ladder or set aside by its floor, never
-    invented.
+- **`uze doctor --repair`**: an explicit, deterministic repair of UZE's own
+  machine state.
+  - It plans from live inspection, executes under the mutation lock, then
+    observes again.
+  - It reports each finding as `Repaired`, `NeedsHuman` (with the reason and
+    the command), `NeedsNetwork` or `Unrepairable`.
+  - It is idempotent, with exit status 0, 1 or 2.
+  - It runs no bootstrap.
+- **One health catalogue, declared once.** Every path in `UzeHome`, every
+  receipt kind, every vendor store and every registration UZE asks a vendor
+  for has a check. Each check names its repair lane:
+  - **automatic**: ADR-037's lane, unchanged;
+  - **`--repair`**;
+  - **none**, with the reason.
 
-  A test fails when an owned path has no check.
-- **Recovery before the application.** `doctor` (with or without `--repair`)
-  first runs a home-level recovery that needs only `uze-document` and
-  `uze-platform`:
-  - finish the layout migration;
-  - set aside a record that cannot be read;
-  - clear a lock whose holder is dead.
-
-  Only then does it build the application, so `doctor` starts on a home
-  that `from_env` would refuse. `doctor --repair` runs no bootstrap.
-- **The boundaries stay exactly where ADR-037 drew them.** `--repair` never
-  does any of the following:
-  - overwrite an artifact the operator edited (`Drifted`, `Conflict`);
-  - change a pinned revision;
+  A coverage test fails when an owned path has no check.
+- **What `--repair` adds over the automatic lane:**
+  - re-acquire missing package bytes from the registry's provenance,
+    verified against the cached digest;
+  - repoint a marketplace whose registered root differs from its vendor
+    store, never while that harness runs;
+  - clear a stale terminal-runtime endpoint;
+  - recreate shims.
+- **What it never does**, and reports instead with the command that
+  resolves it:
+  - overwrite an artifact the operator edited;
+  - change a revision;
   - grant trust;
-  - delete a record;
-  - touch a project, a checkout or unlanded work.
-
-  Plain `doctor` keeps its automatic, network-free lane unchanged.
-- **The TUI and the CLI name the command.** A finding beyond the automatic
-  lane says `uze doctor --repair` instead of describing a manual fix.
+  - set aside or rewrite an irreplaceable record (the receipt ledger,
+    authorizations);
+  - touch a project or unlanded work.
+- **Doctor never aborts on one bad record.** Each check isolates its own
+  failure. `doctor` already does this for the ledger; it becomes a
+  requirement, tested with every record corrupted in turn.
+- **Findings name their lane.** Wherever `doctor` or the TUI shows a finding
+  that only `--repair` fixes, the action it shows is `uze doctor --repair`.
 
 ## Capabilities
 
 ### New Capabilities
-- `machine-repair`: the explicit repair of UZE's own machine state. Covers the
-  health model and its coverage, the recovery that runs before the
-  application, what repair may and may not do, and how it reports.
+- `machine-repair`: the explicit repair of UZE's own machine state. It covers
+  the health catalogue and its coverage, the lanes, what repair may and may
+  not do, and how it reports.
 
 ### Modified Capabilities
-<!-- none: `doctor`'s existing requirements (caching, package requirements)
-and `environment-maintenance`'s automatic lane are unchanged; this change
-adds an explicit mode beside them. -->
+<!-- none: `doctor`'s caching and requirement reporting and
+`environment-maintenance`'s automatic lane are unchanged; this change adds
+an explicit lane beside them. -->
 
 ## Impact
 
+- `crates/uze-core`: `UzeHome` becomes enumerable (each owned path with
+  its tier), so the catalogue and the coverage test read one list.
 - `crates/uze-application`:
-  - a health catalogue (checks plus repairs) shared by `doctor`,
-    `doctor --repair` and the TUI;
-  - a repair service (plan, execute, re-inspect);
-  - a `recover_home` entry point that does not need a constructed
-    application.
-- `crates/uze-core`: tier metadata on `UzeHome` entries, so that the health
-  catalogue and the coverage test read one map.
-- `src/main.rs` and `src/cli/`:
-  - `doctor --repair` runs the recovery, skips bootstrap and renders the
-    report;
-  - `doctor` runs the recovery before `from_env`;
-  - `--repair` is classified `JustifiedSlow`.
+  - the health catalogue, shared by `doctor`, `doctor --repair` and the TUI;
+  - the repair service (plan, execute, observe again);
+  - re-acquisition from provenance.
+- `src/main.rs` and `src/cli/`: `doctor --repair` skips bootstrap, renders
+  the report and is classified `JustifiedSlow`. Plain `doctor` stays
+  Budgeted, and its budget test covers the catalogue.
 - Tests:
-  - `tests/acceptance/repair.rs` is the damage matrix: delete or corrupt each
-    owned thing, repair, then healthy;
-  - the coverage test `every_owned_path_has_a_health_check`.
-- Conformance: on real harnesses, delete `sources/` and a vendor store and
-  corrupt `attachments.json`, then `doctor --repair`, then plugins load.
-- Depends on `vendor-stores-and-uninstall`, for the store tier and
-  `sources/`, and builds on `add-environment-maintenance-engine`, which
-  provides the automatic lane and the outcome vocabulary.
+  - `tests/acceptance/repair.rs`, the damage matrix;
+  - `every_owned_path_has_a_health_check`;
+  - `doctor` with each record corrupted.
+- Conformance: on real harnesses, delete `sources/` and corrupt a
+  marketplace root, run `doctor --repair`, then check that plugins load.
+- Depends on `vendor-stores-and-uninstall` for the store tier, the cached
+  digest and "bytes missing". It extends `add-environment-maintenance-engine`
+  and does not change its lane.
