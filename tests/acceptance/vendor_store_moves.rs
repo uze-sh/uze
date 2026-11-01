@@ -15,7 +15,7 @@ use uze_testkit::temp::TestEnvironment;
 use crate::util::{install_fake_harnesses, uze_bin};
 
 /// A machine with `store-tie` installed for every harness.
-fn installed() -> (TestEnvironment, Vec<uze_testkit::fake_harness::FakeHarness>) {
+pub(crate) fn installed() -> (TestEnvironment, Vec<uze_testkit::fake_harness::FakeHarness>) {
     let env = TestEnvironment::isolated();
     let harnesses = install_fake_harnesses(&env);
     env.run(uze_bin(), &["setup"]);
@@ -34,11 +34,11 @@ fn installed() -> (TestEnvironment, Vec<uze_testkit::fake_harness::FakeHarness>)
     (env, harnesses)
 }
 
-fn fake_state(env: &TestEnvironment, vendor: &str) -> PathBuf {
+pub(crate) fn fake_state(env: &TestEnvironment, vendor: &str) -> PathBuf {
     env.root().join("fake-state").join(vendor)
 }
 
-fn lines(path: &Path) -> Vec<String> {
+pub(crate) fn lines(path: &Path) -> Vec<String> {
     std::fs::read_to_string(path)
         .unwrap_or_default()
         .lines()
@@ -47,7 +47,7 @@ fn lines(path: &Path) -> Vec<String> {
 }
 
 /// The marketplaces a fake vendor CLI has registered, as `(name, root)`.
-fn registered(env: &TestEnvironment, vendor: &str) -> Vec<(String, String)> {
+pub(crate) fn registered(env: &TestEnvironment, vendor: &str) -> Vec<(String, String)> {
     lines(&fake_state(env, vendor).join("marketplaces"))
         .into_iter()
         .filter_map(|line| {
@@ -57,7 +57,11 @@ fn registered(env: &TestEnvironment, vendor: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-fn set_registered(env: &TestEnvironment, vendor: &str, marketplaces: &[(String, String)]) {
+pub(crate) fn set_registered(
+    env: &TestEnvironment,
+    vendor: &str,
+    marketplaces: &[(String, String)],
+) {
     let text: String = marketplaces
         .iter()
         .map(|(name, root)| format!("{name}\t{root}\n"))
@@ -65,14 +69,17 @@ fn set_registered(env: &TestEnvironment, vendor: &str, marketplaces: &[(String, 
     std::fs::write(fake_state(env, vendor).join("marketplaces"), text).unwrap();
 }
 
-fn ledger(env: &TestEnvironment) -> serde_json::Value {
+pub(crate) fn ledger(env: &TestEnvironment) -> serde_json::Value {
     serde_json::from_slice(&std::fs::read(env.uze_home.join("state/attachments.json")).unwrap())
         .unwrap()
 }
 
 /// Rewrites the receipt ledger as an earlier release left it: `change`
 /// sees every receipt, and one it answers `false` for is dropped.
-fn rewrite_ledger(env: &TestEnvironment, change: impl Fn(&mut serde_json::Value) -> bool) {
+pub(crate) fn rewrite_ledger(
+    env: &TestEnvironment,
+    change: impl Fn(&mut serde_json::Value) -> bool,
+) {
     let mut ledger = ledger(env);
     let receipts = ledger["receipts"].as_array_mut().unwrap();
     receipts.retain_mut(|receipt| change(receipt));
@@ -85,11 +92,11 @@ fn rewrite_ledger(env: &TestEnvironment, change: impl Fn(&mut serde_json::Value)
 
 /// An earlier release had no builds: dropping their receipts makes the next
 /// delivery render every build, as it does on the first run after upgrade.
-fn forget_builds(receipt: &mut serde_json::Value) -> bool {
+pub(crate) fn forget_builds(receipt: &mut serde_json::Value) -> bool {
     receipt["resource_identity"] != "build"
 }
 
-fn invocations(env: &TestEnvironment) -> Vec<String> {
+pub(crate) fn invocations(env: &TestEnvironment) -> Vec<String> {
     let mut found = Vec::new();
     if let Ok(entries) = std::fs::read_dir(env.fake_bin.join(".invocations")) {
         for entry in entries.flatten() {

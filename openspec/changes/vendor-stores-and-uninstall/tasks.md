@@ -81,7 +81,7 @@
 - [x] 5.5 `install.sh` and `install.ps1` uninstall delegates to `uze uninstall --yes [--purge]` when the binary is present. Otherwise it removes only what the installer placed and prints the reinstall-then-purge path. It never deletes `~/.uze` itself. Update their headers.
 - [x] 5.6 Add the `uze uninstall [--yes] [--purge]` grammar, a report following the `design-system` skill, `JustifiedSlow` in `src/command_performance.rs`, and help text.
 - [x] 5.7 Add `tests/acceptance/uninstall.rs` with one test per scenario in `specs/machine-uninstall/spec.md`, using fake harnesses and fake processes for the refusals.
-- [ ] 5.8 Add `tests/acceptance/migration.rs` covering:
+- [x] 5.8 Add `tests/acceptance/migration.rs` covering:
   - the move and digest backfill;
   - an interrupted move;
   - an older shape refusing the fenced documents with no package or receipt lost, and the leftover empty `store/plugins` removed;
