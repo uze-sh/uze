@@ -1652,3 +1652,23 @@ fn a_held_key_on_a_diff_lines_text_carries_the_mark_there() {
         "the run carried to the text pressed: {marked:?}"
     );
 }
+
+/// The comments' item stands on the bar while the agent's pane is in
+/// front, and nowhere a view holds the pane: the review says what waits in
+/// its own way there.
+#[test]
+fn the_comments_item_stands_only_beside_the_agents_pane() {
+    let (mut model, first, _second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    drafted(&mut model, "src/naming.rs");
+    let standing = |model: &WorkspaceModel| {
+        model
+            .bar_items()
+            .into_iter()
+            .any(|slot| slot.owner == super::Owner::Builtin(uze_extensions::review::CATALOG.id))
+    };
+    assert!(standing(&model), "beside the agent");
+    crate::ui::orchestrator::open_review(&mut model);
+    assert!(!standing(&model), "not over the review");
+    assert!(!model.has_bar(), "nor a row taken for it");
+}

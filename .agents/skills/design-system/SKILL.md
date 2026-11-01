@@ -211,7 +211,9 @@ on "cancel" must not save first.
   (the accent, the one meant next) and `discard`, which are `ctrl+s` and
   `esc`; never `ctrl+enter` alone, which only an enhanced keyboard
   sends.
-- What waits in the review rides the bar wherever the operator is: the
+- What waits in the review rides the bar beside the agent's pane (a
+  bundled item stands only while the agent's own pane is in front; over a
+  view the review says it its own way): the
   `comment` icon and a count, drafts in gold, else answers in green, else
   the sent ones held back, gone once nothing is open. It opens the
   comments drawer, by file, each comment opening the review on itself,

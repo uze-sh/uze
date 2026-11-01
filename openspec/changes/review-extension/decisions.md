@@ -147,3 +147,13 @@
 - decided:  `AgentRequest::summary`, honoured for a bundled extension alone: its confirmation says what the agent is told and where its answers come back, with Send; a plugin's text is shown to the character, backticks included, since what a plugin types is never typed unread (D182); a dialog draws backticked code only when the words are UZE's own
 - rejected: drawing backticked code in every dialog, which hid characters of a plugin's text from the operator approving it; hiding a plugin's text behind its own summary
 - blast:    the agent bridge's confirmation for bundled extensions; the spec's send requirement; journey 30's send scene
+
+## D16 — The comments' item stands only beside the agent's pane
+
+- status:   pending
+- task:     9.1
+- commit:   
+- trigger:  the comments drawer pushed whatever stood in the pane aside; the operator first asked it to float over a view, then chose instead to show its bar item only on the agent's tab
+- decided:  a bundled extension's bar item stands while the agent's own pane is in front, and not while a view or the overview holds the pane; the comments drawer keeps its declared place, docked beside the agent
+- rejected: a drawer that floats over a view (`Extension::drawer_away_from_agent`, built and reverted), which kept a second way to the comments over a view that already shows them
+- blast:    the bar's row while a view stands in the pane; the review's page and the design-system skill

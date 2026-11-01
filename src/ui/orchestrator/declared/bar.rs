@@ -25,12 +25,18 @@ impl WorkspaceModel {
             .collect()
     }
 
-    /// Whether `owner` runs for the pane in front: a bundled extension
-    /// wherever there is a checkout in front, a plugin's where it is
-    /// enabled in that pane's project.
+    /// Whether `owner`'s item stands for the pane in front: a bundled
+    /// extension's while the agent's own pane is in front, since what it
+    /// says is about that agent and a view standing in the pane has its own
+    /// ways to say it; a plugin's where it is enabled in that pane's
+    /// project.
     fn runs_in_front(&self, owner: &Owner) -> bool {
         match owner {
-            Owner::Builtin(_) => self.focused_cwd().is_some(),
+            Owner::Builtin(_) => {
+                self.focused_cwd().is_some()
+                    && self.open_slot.is_none()
+                    && self.space_overview.is_none()
+            }
             Owner::Declared(_) => self.enabled_in_front(owner),
         }
     }
