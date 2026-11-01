@@ -181,9 +181,15 @@ on "cancel" must not save first.
   are words on its first line (`{ } code block`, `` ` code ``); add is
   `ctrl+s` and the foot's hint, never `ctrl+enter` alone, which only an
   enhanced keyboard sends.
-- A file read is marked `viewed`, said in words in the list's detail and
-  on the chip over its diff; a mark whose diff moved says `changed since
-  viewed` and is not counted.
+- A file read is marked viewed: the list's row carries the host's
+  `mark.viewed` icon (success), `mark.unviewed` (dim) before it is read,
+  and the warning hue once the file changed since; the chip over its diff
+  says it in words. A mark whose file changed is not counted, on show or
+  not.
+- A file's actions open on its row (`Alt+.`, the foot's `Actions`), never
+  a dialog straight away; the question discarding asks says what it does
+  to this file: deletes one the last commit lacks, takes a rename back,
+  or puts the file back.
 
 **Wheel:**
 - The wheel scrolls the view, never the selection, and never toggles

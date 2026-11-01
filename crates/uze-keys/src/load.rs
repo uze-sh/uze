@@ -483,8 +483,6 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::CodeEditing, "ctrl+w", Action::CloseFileTab),
         bind(Scope::CodeEditing, "ctrl+pagedown", Action::NextFileTab),
         bind(Scope::CodeEditing, "ctrl+pageup", Action::PreviousFileTab),
-        // Typing has a scope of its own so nothing behind it answers a
-        // letter — the same reason the action index has one.
         bind(Scope::Review, "esc", Action::Dismiss),
         bind(Scope::Review, "tab", Action::FocusNext),
         bind(Scope::Review, "down", Action::SelectNext),
@@ -500,9 +498,11 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Review, "r", Action::ReviewResolve),
         bind(Scope::Review, "shift+down", Action::ReviewMarkDown),
         bind(Scope::Review, "shift+up", Action::ReviewMarkUp),
+        // Typing has a scope of its own so nothing behind it answers a
+        // letter — the same reason the action index has one.
+        bind(Scope::ReviewComposing, "esc", Action::Dismiss),
         // ctrl+s rather than ctrl+enter, which only a terminal speaking
         // the enhanced keyboard protocol sends.
-        bind(Scope::ReviewComposing, "esc", Action::Dismiss),
         bind(Scope::ReviewComposing, "ctrl+s", Action::ReviewAdd),
         bind(Scope::ReviewComposing, "up", Action::SelectPrevious),
         bind(Scope::ReviewComposing, "down", Action::SelectNext),
