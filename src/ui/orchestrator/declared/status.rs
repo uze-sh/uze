@@ -84,10 +84,7 @@ fn draws_nothing(node: &Node) -> bool {
             node.children.iter().all(draws_nothing)
         }
         NodeKind::Text { spans, .. } => spans.iter().all(|span| span.text.trim().is_empty()),
-        // An icon the glyph set has no glyph for, holding no room of its own.
-        NodeKind::Icon { glyph, .. } => {
-            node.min_width == 0 && !node.grow && crate::ui::theme::icon(glyph).1 == 0
-        }
+        NodeKind::Icon { .. } => crate::ui::extension_view::tree::draws_nothing(node),
         _ => false,
     }
 }

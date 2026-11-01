@@ -415,7 +415,7 @@ fn sum(widths: impl IntoIterator<Item = u16>) -> u16 {
 /// no cell and no gap in any container, so the label it stood before starts
 /// where it would. One given `min-width` or `grow` keeps that room, which
 /// is what lines a column up across glyph sets.
-fn draws_nothing(node: &Node) -> bool {
+pub(crate) fn draws_nothing(node: &Node) -> bool {
     node.min_width == 0
         && !node.grow
         && matches!(&node.kind, NodeKind::Icon { glyph, .. } if theme::icon(glyph).1 == 0)
