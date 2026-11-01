@@ -69,8 +69,10 @@ pub struct ReviewExtension {
     /// Each open agent, by the checkout it works in.
     agents: Vec<(String, PathBuf)>,
     sending: Option<(PathBuf, Sending)>,
-    /// What the drawer last had to say about a send: refused, declined.
-    drawer_notice: Option<Span>,
+    /// What the drawer last had to say about a send (refused, declined),
+    /// and the checkout it was said of: another checkout's drawer never
+    /// shows it.
+    drawer_notice: Option<(PathBuf, Span)>,
     /// A comment a press in the drawer asked the review to open on.
     open_on: Option<u64>,
     /// The agent a send was typed into and the checkout it works in, until
@@ -245,13 +247,13 @@ impl ReviewExtension {
         }
     }
 
-    /// Says `span` where the send was asked: the review, when it is open,
-    /// and the drawer.
-    fn say(&mut self, span: Span) {
-        if let Some(view) = self.open.as_mut() {
+    /// Says `span` of `root`'s send where it was asked: its review, when
+    /// that is open, and its drawer.
+    fn say(&mut self, root: &Path, span: Span) {
+        if let Some(view) = self.open.as_mut().filter(|view| view.root == root) {
             view.notice = Some(span.clone());
         }
-        self.drawer_notice = Some(span);
+        self.drawer_notice = Some((root.to_path_buf(), span));
     }
 
     /// Asks the bridge to tell the agent of the checkout in front that its
@@ -271,18 +273,24 @@ impl ReviewExtension {
             .collect();
         let next_send = record.next_send.max(1);
         if ids.is_empty() {
-            self.say(Span::new("no drafts to send", Role::Muted));
+            self.say(&root, Span::new("no drafts to send", Role::Muted));
             return Outcome::Stay;
         }
         let Some(agent) = self.agent_of(&root) else {
-            self.say(Span::new(
-                "no agent UZE launched works in this checkout",
-                Role::Warning,
-            ));
+            self.say(
+                &root,
+                Span::new(
+                    "no agent UZE launched works in this checkout",
+                    Role::Warning,
+                ),
+            );
             return Outcome::Stay;
         };
         if self.sending.is_some() {
-            self.say(Span::new("a send is waiting for your answer", Role::Muted));
+            self.say(
+                &root,
+                Span::new("a send is waiting for your answer", Role::Muted),
+            );
             return Outcome::Stay;
         }
         self.drawer_notice = None;
@@ -671,7 +679,10 @@ impl Extension for ReviewExtension {
                 Some(super::drawer::drawer(
                     record,
                     self.agent_of(root).is_some(),
-                    self.drawer_notice.as_ref(),
+                    self.drawer_notice
+                        .as_ref()
+                        .filter(|(said, _)| said == root)
+                        .map(|(_, span)| span),
                 ))
             }
             _ => None,
@@ -935,9 +946,12 @@ impl Extension for ReviewExtension {
         match written {
             AgentWritten::Typed => {}
             AgentWritten::Refused(reason) => {
-                self.say(Span::new(format!("not sent: {reason}"), Role::Warning));
+                self.say(
+                    &root,
+                    Span::new(format!("not sent: {reason}"), Role::Warning),
+                );
             }
-            AgentWritten::Declined => self.say(Span::new("not sent", Role::Muted)),
+            AgentWritten::Declined => self.say(&root, Span::new("not sent", Role::Muted)),
         }
     }
 
@@ -1177,6 +1191,25 @@ mod tests {
         );
         extension.focus(Some(&checkout("/a")));
         assert_eq!(drafts(&extension), 1, "a's again at once, before its read");
+    }
+
+    /// What the drawer says of one checkout's send stays that checkout's:
+    /// declined in one, another's drawer says nothing of it.
+    #[test]
+    fn a_send_declined_in_one_checkout_is_not_said_in_anothers_drawer() {
+        let mut extension = ReviewExtension::default();
+        extension.drafted(PathBuf::from("/b"), "b.rs", "check");
+        extension.drafted(PathBuf::from("/a"), "a.rs", "check");
+        extension.agents(&serde_json::json!([{ "id": "a1", "checkout": "/a" }]));
+        let _ = extension.send();
+        extension.agent_write(super::SEND_ACTION, AgentWritten::Declined);
+        let said = |extension: &ReviewExtension| {
+            let view = extension.view(super::COMMENTS, crate::view::Size::default());
+            format!("{view:?}").contains("not sent")
+        };
+        assert!(said(&extension), "said where it was declined");
+        extension.focus(Some(&checkout("/b")));
+        assert!(!said(&extension), "and nowhere else");
     }
 
     /// Sent from the drawer with the review put away, the drafts stay
