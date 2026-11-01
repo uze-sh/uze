@@ -586,6 +586,14 @@ impl UzeHome {
         self.sources_dir().join("superseded").join(id.as_str())
     }
 
+    /// Where a repair puts the bytes of `id` it acquired again while their
+    /// digest is compared with the one recorded at ingest: beside the
+    /// sources rather than in [`Self::plugins_dir`], so nothing that reads
+    /// the installed packages takes them for one before they are kept.
+    pub fn restoring_dir(&self, id: &PackageId) -> PathBuf {
+        self.sources_dir().join("restoring").join(id.as_str())
+    }
+
     /// One project's prompt history, beside its other records.
     pub fn prompt_history_path(&self, project_id: &str) -> PathBuf {
         self.project_dir(project_id).join("prompt-history.json")

@@ -405,6 +405,29 @@ impl uze_document::Shaped for RawPackageRegistry {
     }
 }
 
+/// Which digest bytes put back by [`UzeStore::restore_bytes`] must have.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RecordedDigest {
+    /// The one recorded at ingest, which stays.
+    Kept,
+    /// Any: the one they have is recorded instead.
+    Replaced,
+}
+
+/// What [`UzeStore::restore_bytes`] did.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Restored {
+    Restored,
+    /// The bytes were there already; nothing was acquired.
+    AlreadyThere,
+    /// The source now yields other bytes, which were not kept.
+    DigestDiffers {
+        found: String,
+    },
+    /// No digest was recorded to compare them with, so they were not kept.
+    NothingToCompare,
+}
+
 /// A `packages.json` entry this UZE cannot read, and why.
 ///
 /// Quarantined rather than fatal: the registry is a ledger of independent
@@ -859,6 +882,81 @@ impl UzeStore {
         ))
     }
 
+    /// Puts the bytes of `id` back from `package`, a fresh acquisition of
+    /// the source the registry recorded, when they are gone: kept only when
+    /// their digest is the one recorded at ingest, so what comes back is
+    /// exactly what was authorized. `RecordedDigest::Replaced` takes them
+    /// whatever their digest and records it instead — the bundled plugin's
+    /// snapshot, which is this binary's own version of it.
+    ///
+    /// Staged beside the sources and moved into place whole, so a reader
+    /// never meets half of them, and a mismatch leaves nothing behind.
+    pub fn restore_bytes(
+        &self,
+        id: &PackageId,
+        package: &MaterializedPackage,
+        digest: RecordedDigest,
+    ) -> Result<Restored> {
+        let _span = tracing::info_span!("store.restore", id = %id.as_str()).entered();
+        let destination = self.home.plugin_dir(id);
+        if destination.is_dir() {
+            return Ok(Restored::AlreadyThere);
+        }
+        let mut registry = self.load_registry()?;
+        let recorded = registry
+            .packages
+            .get(id)
+            .ok_or_else(|| UzeError::UnknownPackage(id.as_str().to_owned()))?
+            .digest
+            .clone();
+        let source = package.root();
+        assert_self_contained(source)?;
+        assert_no_reserved_path(source)?;
+        let staging = self.home.restoring_dir(id);
+        if staging.exists() {
+            fs::remove_dir_all(&staging).map_err(UzeError::write(&staging))?;
+        }
+        fs::create_dir_all(&staging).map_err(UzeError::write(&staging))?;
+        let staged = (|| {
+            copy_tree(source, &staging)?;
+            crate::digest::tree_sha256_with_links(&staging, package.links())
+                .map_err(UzeError::read(&staging))
+        })();
+        let found = match staged {
+            Ok(found) => found,
+            Err(error) => {
+                let _ = fs::remove_dir_all(&staging);
+                return Err(error);
+            }
+        };
+        let keep = match digest {
+            RecordedDigest::Kept => recorded.as_deref() == Some(found.as_str()),
+            RecordedDigest::Replaced => true,
+        };
+        if !keep {
+            let _ = fs::remove_dir_all(&staging);
+            return Ok(match recorded {
+                Some(_) => Restored::DigestDiffers { found },
+                None => Restored::NothingToCompare,
+            });
+        }
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent).map_err(UzeError::write(parent))?;
+        }
+        fs::rename(&staging, &destination).map_err(UzeError::write(&destination))?;
+        if let Some(emptied) = staging.parent() {
+            let _ = fs::remove_dir(emptied);
+        }
+        if digest == RecordedDigest::Replaced
+            && let Some(registration) = registry.packages.get_mut(id)
+        {
+            registration.digest = Some(found);
+            registration.links = package.links().clone();
+            self.save_registry(&registry)?;
+        }
+        Ok(Restored::Restored)
+    }
+
     /// The digest recorded for `id` at ingest, without walking its bytes;
     /// `None` for an id that is not registered or whose entry predates the
     /// cache.
@@ -1096,6 +1194,75 @@ fn copy_symlink(source: &Path, destination: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use crate::UzeHome;
+
+    fn local_package(root: &Path, body: &str) -> MaterializedPackage {
+        fs::create_dir_all(root.join("skills/flow")).unwrap();
+        fs::write(root.join("plugin.json"), "{\"name\":\"flow\"}\n").unwrap();
+        fs::write(root.join("skills/flow/SKILL.md"), body).unwrap();
+        let provenance = Provenance {
+            requested: crate::PackageSource::Local {
+                path: root.to_path_buf(),
+            },
+            resolved: crate::ResolvedSource::Local {
+                path: root.to_path_buf(),
+            },
+        };
+        MaterializedPackage::borrowed(root.to_path_buf(), provenance)
+    }
+
+    /// Bytes acquired again are kept only when they are the ones recorded
+    /// at ingest; a source that moved on leaves the sources as they were,
+    /// and the bundled snapshot records its own digest instead.
+    #[test]
+    fn restored_bytes_are_kept_only_with_the_digest_recorded_at_ingest() {
+        let scratch = uze_testkit::temp::scratch("restore-bytes");
+        let store = UzeStore::new(UzeHome::at(scratch.join("home")));
+        let source = scratch.join("flow");
+        let stored = store
+            .ingest(&local_package(&source, "# Flow\n"), "local", None)
+            .unwrap();
+        let recorded = store.recorded_digest(&stored.id).unwrap();
+        fs::remove_dir_all(&stored.root).unwrap();
+
+        let moved_on = local_package(&scratch.join("flow-edited"), "# Flow, edited\n");
+        assert!(matches!(
+            store
+                .restore_bytes(&stored.id, &moved_on, RecordedDigest::Kept)
+                .unwrap(),
+            Restored::DigestDiffers { .. }
+        ));
+        assert!(!stored.root.exists());
+        assert!(!store.home().restoring_dir(&stored.id).exists());
+
+        let as_ingested = local_package(&source, "# Flow\n");
+        assert_eq!(
+            store
+                .restore_bytes(&stored.id, &as_ingested, RecordedDigest::Kept)
+                .unwrap(),
+            Restored::Restored
+        );
+        assert_eq!(store.digest(&stored).unwrap(), recorded.clone().unwrap());
+        assert_eq!(
+            store
+                .restore_bytes(&stored.id, &as_ingested, RecordedDigest::Kept)
+                .unwrap(),
+            Restored::AlreadyThere
+        );
+
+        fs::remove_dir_all(&stored.root).unwrap();
+        assert_eq!(
+            store
+                .restore_bytes(&stored.id, &moved_on, RecordedDigest::Replaced)
+                .unwrap(),
+            Restored::Restored
+        );
+        assert_ne!(store.recorded_digest(&stored.id).unwrap(), recorded);
+        assert_eq!(
+            store.recorded_digest(&stored.id).unwrap(),
+            Some(store.digest(&stored).unwrap())
+        );
+        fs::remove_dir_all(scratch).ok();
+    }
 
     #[test]
     fn a_package_shipping_the_carried_directory_is_refused_by_name() {

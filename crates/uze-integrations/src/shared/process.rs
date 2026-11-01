@@ -113,6 +113,16 @@ type Inspection = (Instant, std::result::Result<serde_json::Value, String>);
 static INSPECTIONS: LazyLock<Mutex<HashMap<InspectionKey, Inspection>>> =
     LazyLock::new(Mutex::default);
 
+/// Forgets every vendor answer this process holds: what a caller that has
+/// just changed what the harnesses read itself, rather than through their
+/// CLIs, asks before it observes again (`uze doctor --repair`).
+pub fn forget_vendor_answers() {
+    INSPECTIONS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clear();
+}
+
 fn forget_inspections_of(program: &Path) {
     INSPECTIONS
         .lock()

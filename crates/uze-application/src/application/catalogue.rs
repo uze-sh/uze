@@ -111,6 +111,10 @@ pub struct HealthFinding {
     /// record.
     pub about: String,
     pub detail: String,
+    /// The harness it concerns, by the name the report shows.
+    pub harness: Option<String>,
+    /// Where the artifact it concerns is, when it is one.
+    pub location: Option<std::path::PathBuf>,
     /// The owned path it concerns, by the builder that composes it.
     pub path: Option<&'static str>,
     /// The command that resolves it, for a finding the operator resolves.
@@ -165,6 +169,8 @@ impl HealthFinding {
                 "{} is left by a terminal server that is no longer running",
                 endpoint.display()
             ),
+            harness: None,
+            location: None,
             path: None,
             command: None,
         }
@@ -177,6 +183,8 @@ impl HealthFinding {
             severity: Severity::Problem,
             about: format!("{subject:?}").to_lowercase(),
             detail: format!("could not be checked: {reason}"),
+            harness: None,
+            location: None,
             path: None,
             command: None,
         }
@@ -235,7 +243,7 @@ pub const CATALOGUE: &[HealthCheck] = &[
     },
     HealthCheck {
         subject: Subject::PackageBytes,
-        paths: &["sources_dir", "plugins_dir", "plugin_dir"],
+        paths: &["sources_dir", "plugins_dir", "plugin_dir", "restoring_dir"],
         artifacts: &[],
         registrations: &[],
         lanes: &[(
@@ -432,7 +440,7 @@ impl Health<'_> {
     ) -> Vec<HealthFinding> {
         let mut findings = Vec::new();
         findings.extend(isolated(Subject::Receipts, || {
-            Ok(receipt_findings(reconciliations))
+            Ok(self.receipt_findings(reconciliations))
         }));
         findings.extend(isolated(Subject::PackageBytes, || {
             self.missing_bytes().map_err(|error| error.to_string())
@@ -461,6 +469,8 @@ impl Health<'_> {
                 detail: "its bytes are missing: every harness keeps what was delivered of it, \
                          and it is not built again until they return"
                     .to_owned(),
+                harness: None,
+                location: Some(package.root.clone()),
                 path: Some("plugin_dir"),
                 command: None,
             })
@@ -499,6 +509,8 @@ impl Health<'_> {
                                 .display(),
                             registration.expected.display()
                         ),
+                        harness: Some(integration.display_name().to_owned()),
+                        location: registration.registered.clone(),
                         path: None,
                         command: None,
                     })
@@ -529,6 +541,8 @@ impl Health<'_> {
                     severity: Severity::Warning,
                     about: integration.display_name().to_owned(),
                     detail,
+                    harness: Some(integration.display_name().to_owned()),
+                    location: Some(shim),
                     path: Some("shim_path"),
                     command: None,
                 })
@@ -616,6 +630,8 @@ impl Health<'_> {
                     severity: Severity::Problem,
                     about: about.to_owned(),
                     detail: error,
+                    harness: None,
+                    location: None,
                     path: Some(path),
                     command: None,
                 })
@@ -661,52 +677,75 @@ fn isolated(
     }
 }
 
-/// What the receipts' inspection says is wrong, in the lane that puts each
-/// back: a missing artifact its receipt carries whole, or a missing build,
-/// is maintenance's; anything edited is the person's.
-fn receipt_findings(reconciliations: &[ReconciliationReport]) -> Vec<HealthFinding> {
-    let mut findings = Vec::new();
-    for report in reconciliations {
-        for entry in &report.receipts {
-            let build = is_build_receipt(&entry.receipt);
-            let subject = if build {
-                Subject::Builds
-            } else {
-                Subject::Receipts
-            };
-            let (lane, command) = match entry.inspection.state {
-                AttachmentState::Matched => continue,
-                AttachmentState::Missing if build || restored_from_receipt(&entry.receipt) => {
-                    (Lane::Automatic, None)
-                }
-                AttachmentState::Missing => (
-                    Lane::Operator,
-                    Some(format!("uze setup {}", entry.receipt.integration)),
-                ),
-                AttachmentState::Drifted | AttachmentState::Conflict | AttachmentState::Blocked => {
-                    (
+impl Health<'_> {
+    /// What the receipts' inspection says is wrong, in the lane that puts
+    /// each back: a missing artifact its receipt carries whole, a missing
+    /// build, or one a delivery wrote inside a vendor store, is
+    /// maintenance's; anything edited is the person's.
+    fn receipt_findings(&self, reconciliations: &[ReconciliationReport]) -> Vec<HealthFinding> {
+        let store = self.0.home.store_dir();
+        let mut findings = Vec::new();
+        for report in reconciliations {
+            // An inspection that compares what was delivered with the
+            // package cannot answer while the package's bytes are gone: it
+            // waits on them, and so on the repair that brings them back.
+            let bytes_missing = self
+                .0
+                .package_by_name(&report.package_id)
+                .is_ok_and(|package| !package.root.is_dir());
+            for entry in &report.receipts {
+                let build = is_build_receipt(&entry.receipt);
+                let subject = if build {
+                    Subject::Builds
+                } else {
+                    Subject::Receipts
+                };
+                let location = entry.receipt.artifact.location();
+                let local = build
+                    || restored_from_receipt(&entry.receipt)
+                    || (entry.receipt.resource_identity.is_some() && location.starts_with(&store));
+                let (lane, command) = match entry.inspection.state {
+                    AttachmentState::Matched => continue,
+                    AttachmentState::Blocked if bytes_missing => (Lane::Repair, None),
+                    AttachmentState::Missing if local => (Lane::Automatic, None),
+                    AttachmentState::Missing => (
+                        Lane::Operator,
+                        Some(format!("uze setup {}", entry.receipt.integration)),
+                    ),
+                    AttachmentState::Drifted
+                    | AttachmentState::Conflict
+                    | AttachmentState::Blocked => (
                         Lane::Operator,
                         Some(format!("uze inspect {}", report.package_id)),
-                    )
-                }
-            };
-            findings.push(HealthFinding {
-                subject,
-                lane,
-                severity: Severity::Problem,
-                about: report.package_id.clone(),
-                detail: format!(
-                    "{:?} at {}: {}",
-                    entry.inspection.state,
-                    entry.receipt.artifact.location().display(),
-                    entry.inspection.reason
-                ),
-                path: build.then_some("build_dir"),
-                command,
-            });
+                    ),
+                };
+                findings.push(HealthFinding {
+                    subject,
+                    lane,
+                    severity: Severity::Problem,
+                    about: report.package_id.clone(),
+                    detail: format!(
+                        "{:?} at {}: {}",
+                        entry.inspection.state,
+                        location.display(),
+                        entry.inspection.reason
+                    ),
+                    harness: Some(
+                        self.0
+                            .integration_named(&entry.receipt.integration)
+                            .map_or_else(
+                                || entry.receipt.integration.clone(),
+                                |integration| integration.display_name().to_owned(),
+                            ),
+                    ),
+                    location: Some(location),
+                    path: build.then_some("build_dir"),
+                    command,
+                });
+            }
         }
+        findings
     }
-    findings
 }
 
 /// Whether a missing artifact is put back from its receipt alone, as

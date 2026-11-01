@@ -14,3 +14,4 @@ pub(crate) mod rules;
 mod shared;
 
 pub use shared::mcp::stdio_server_launch;
+pub use shared::process::forget_vendor_answers;

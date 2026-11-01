@@ -18,6 +18,7 @@ mod package_and_workspace;
 mod package_only;
 mod portable_commands;
 mod project_rules;
+mod repair;
 mod runtime_shim;
 mod session_continuity;
 mod store_ownership;

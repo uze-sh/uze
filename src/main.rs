@@ -455,6 +455,16 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         die_quietly_on_a_closed_pipe();
         return run_uninstall(home, yes, purge);
     }
+    // And for the way back: what it repairs may be what a bootstrap trips
+    // over.
+    if let Command::Doctor {
+        repair: true,
+        format,
+    } = command
+    {
+        die_quietly_on_a_closed_pipe();
+        return run_repair(home, format);
+    }
     die_quietly_on_a_closed_pipe();
     let app = UzeApplication::from_env(home.clone())?;
     // Seed the default marketplace plugins (`plugins/uze`) on every CLI
@@ -640,9 +650,20 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         Command::Agent { action } => run_agent(&app, action)?,
         Command::Config { action } => run_config(&app, &home, action, verbose)?,
         Command::Market { action } => run_market(&app, action)?,
-        Command::Doctor { format } => {
+        Command::Doctor { format, .. } => {
             let spinner = progress::spinner("Running diagnostics");
             let mut report = app.health().report();
+            // The terminal runtime is this binary's to ask about its own
+            // endpoint, not the application's.
+            if let Some(stale) =
+                uze_application::application::TerminalEndpoint::stale(&WorkspaceEndpoint)
+            {
+                report
+                    .health
+                    .push(uze_application::application::HealthFinding::stale_endpoint(
+                        &stale,
+                    ));
+            }
             // The keyboard is this binary's, not the application's: what the
             // installed extensions' keys meet is asked of the keymap in force.
             report.machine_concerns.extend(

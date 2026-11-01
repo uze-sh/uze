@@ -182,7 +182,11 @@ impl MarketplaceRequest {
     /// reproducible: `agents.lock` refuses to pin it, which is the whole
     /// point, since a pin taken from unpublished work is one a
     /// collaborator cannot reach.
-    fn materialize_from_link(&self, plugin: &str, checkout: &Path) -> Result<MaterializedPackage> {
+    pub(crate) fn materialize_from_link(
+        &self,
+        plugin: &str,
+        checkout: &Path,
+    ) -> Result<MaterializedPackage> {
         let within = self
             .repository
             .subpath

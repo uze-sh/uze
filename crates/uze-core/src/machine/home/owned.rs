@@ -200,6 +200,9 @@ const OWNED: &[OwnedPath] = &[
     owned("superseded_dir", Bytes, Directory, |home| {
         home.superseded_dir(&package())
     }),
+    owned("restoring_dir", Bytes, Directory, |home| {
+        home.restoring_dir(&package())
+    }),
     retired("pre_sources_layout", Bytes, Directory, |home| {
         home.pre_sources_layout()[0].0.clone()
     }),

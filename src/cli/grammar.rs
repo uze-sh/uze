@@ -125,7 +125,17 @@ pub(crate) enum Command {
         action: MarketAction,
     },
     /// Run diagnostics
+    ///
+    /// Every check of uze's own state on this machine, and what it already
+    /// put back on its own. `--repair` also puts back what needs more than
+    /// that: package bytes from where they came from, a marketplace
+    /// registered elsewhere, a stale workspace endpoint and the agents'
+    /// launchers. It never writes over what you changed. It exits 1 when
+    /// something is left for you, and 2 when only the network is missing.
     Doctor {
+        /// Put back what uze can of its own state, then check again
+        #[arg(long)]
+        repair: bool,
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },

@@ -224,6 +224,8 @@ mod tests {
             severity: HealthSeverity::Warning,
             about: "flow@ai".to_owned(),
             detail: "its bytes are missing".to_owned(),
+            harness: None,
+            location: None,
             path: Some("plugin_dir"),
             command: None,
         });

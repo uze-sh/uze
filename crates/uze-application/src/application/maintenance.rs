@@ -10,10 +10,12 @@ use serde::Serialize;
 
 use uze_core::{
     harness_runtime,
-    integration::{AttachmentState, ManagedArtifact},
+    integration::{AttachmentState, ManagedArtifact, is_build_receipt},
     persistence::MutationLock,
     state,
 };
+
+use super::catalogue::Inspection;
 
 use super::extensions::prune_compiled_cache;
 use super::lifecycle::remove::ReceiptTeardown;
@@ -195,7 +197,17 @@ impl Health<'_> {
                 }],
             };
         };
+        self.maintain_locked(restored, Inspection::Cached)
+    }
 
+    /// The pass [`maintain`](Self::maintain) makes once it holds the
+    /// mutation lock, for a caller already holding it: a repair, which
+    /// inspects every receipt live rather than trusting a cached `Matched`.
+    pub(crate) fn maintain_locked(
+        &self,
+        restored: Vec<MaintenanceOutcome>,
+        inspection: Inspection,
+    ) -> MaintenanceReport {
         let mut report = MaintenanceReport { outcomes: restored };
         let extensions = self.0.extensions().installed();
         prune_compiled_cache(&self.0.home, &extensions);
@@ -240,11 +252,17 @@ impl Health<'_> {
             }
 
             let entries: Vec<_> = match &ledger {
-                Ok(receipts) => receipts
-                    .iter()
-                    .filter(|receipt| receipt.package_id == package.id.as_str())
-                    .cloned()
-                    .collect(),
+                // Builds first: what is delivered inside one is written
+                // again once the build it sits in is.
+                Ok(receipts) => {
+                    let mut entries: Vec<_> = receipts
+                        .iter()
+                        .filter(|receipt| receipt.package_id == package.id.as_str())
+                        .cloned()
+                        .collect();
+                    entries.sort_by_key(|receipt| !is_build_receipt(receipt));
+                    entries
+                }
                 Err(error) => {
                     report.outcomes.push(MaintenanceOutcome::NeedsHumanAction {
                         plugin: package.id.as_str().to_owned(),
@@ -258,17 +276,35 @@ impl Health<'_> {
             };
 
             // Maintenance only probes receipt kinds it knows how to restore
-            // exactly. Other attachments are still inspected once by the
-            // subsequent doctor report, avoiding a second vendor CLI call on
-            // every anomalous report.
+            // exactly: what a receipt carries whole, a build, rendered again
+            // from the package's bytes, and what a delivery wrote inside a
+            // vendor store, attached again from them. Other attachments are
+            // still inspected once by the subsequent doctor report, avoiding
+            // a second vendor CLI call on every anomalous report.
+            let in_store = |receipt: &uze_core::integration::AttachmentReceipt| {
+                !is_build_receipt(receipt)
+                    && receipt.resource_identity.is_some()
+                    && receipt
+                        .artifact
+                        .location()
+                        .starts_with(self.0.home.store_dir())
+            };
             for receipt in entries.into_iter().filter(|receipt| {
                 matches!(
                     receipt.artifact,
                     ManagedArtifact::SymlinkReference { .. }
                         | ManagedArtifact::ManagedTextRegion { .. }
                         | ManagedArtifact::GeneratedFile { .. }
-                )
+                ) || is_build_receipt(receipt)
+                    || in_store(receipt)
             }) {
+                let build = is_build_receipt(&receipt);
+                // What is built from a package whose bytes are gone is kept
+                // as it is until they return: that is the repair's to bring
+                // back, not this.
+                if (build || in_store(&receipt)) && !package.root.is_dir() {
+                    continue;
+                }
                 let ledger_key = receipt.cache_key();
                 let Some(integration) = self
                     .0
@@ -285,12 +321,46 @@ impl Health<'_> {
                     });
                     continue;
                 };
-                let inspection = integration.inspect_receipt(&receipt);
+                // A build's inspection digests every file it holds, so a
+                // plain pass takes a fresh `Matched` from the cache the
+                // report fills; a repair never does.
+                let inspection = match inspection {
+                    Inspection::Cached if build => self
+                        .0
+                        .inspect_receipt_cached(&receipt, integration.as_ref()),
+                    _ => integration.inspect_receipt(&receipt),
+                };
+                let repaired = |receipt: &uze_core::integration::AttachmentReceipt| {
+                    if build {
+                        self.0
+                            .publish_build(package, integration.as_ref())
+                            .map(|_| true)
+                    } else if in_store(receipt) {
+                        self.attach_again(package, integration.as_ref(), receipt)
+                    } else {
+                        integration.repair_missing_receipt(receipt)
+                    }
+                };
                 match inspection.state {
                     AttachmentState::Matched => {}
-                    AttachmentState::Missing => match integration.repair_missing_receipt(&receipt) {
+                    AttachmentState::Missing => match repaired(&receipt) {
                         Ok(true) => {
-                            let after = integration.inspect_receipt(&receipt);
+                            // A build rendered again is owned by the receipt
+                            // that rendering recorded.
+                            let current = if build {
+                                state::receipts(&self.0.home, Some(package.id.as_str()))
+                                    .ok()
+                                    .and_then(|receipts| {
+                                        receipts.into_iter().find(|candidate| {
+                                            candidate.integration == receipt.integration
+                                                && is_build_receipt(candidate)
+                                        })
+                                    })
+                                    .unwrap_or_else(|| receipt.clone())
+                            } else {
+                                receipt.clone()
+                            };
+                            let after = integration.inspect_receipt(&current);
                             if after.state == AttachmentState::Matched {
                                 report.outcomes.push(MaintenanceOutcome::Repaired {
                                     plugin: package.id.as_str().to_owned(),
@@ -360,11 +430,35 @@ impl Health<'_> {
         report
     }
 
+    /// Attaches again the resource a missing receipt inside a vendor store
+    /// delivered, from the package's bytes, recording what it attached:
+    /// the store is UZE's own tier, so nothing there is anyone else's to
+    /// keep. `false` when the package no longer carries that resource.
+    fn attach_again(
+        &self,
+        package: &uze_core::store::StoredPackage,
+        integration: &dyn uze_core::integration::IntegrationPort,
+        receipt: &uze_core::integration::AttachmentReceipt,
+    ) -> uze_core::Result<bool> {
+        let resources = uze_core::engine::package_resources(package)?;
+        let Some(resource) = resources
+            .iter()
+            .find(|resource| receipt.resource_identity.as_deref() == Some(&resource.identity()))
+        else {
+            return Ok(false);
+        };
+        let Some(attached) = integration.attach_receipt(resource)? else {
+            return Ok(false);
+        };
+        state::record_receipt(&self.0.home, attached)?;
+        Ok(true)
+    }
+
     /// Puts back the commit each plugin of an unlinked marketplace was
     /// pinned to before the link ([`PinRestoration`]). A pin whose commit
     /// would run something new, or whose detach is refused, is left for an
     /// update to settle.
-    fn restore_pins(&self) -> Vec<MaintenanceOutcome> {
+    pub(crate) fn restore_pins(&self) -> Vec<MaintenanceOutcome> {
         let pending = state::marketplace_list(&self.0.home).is_ok_and(|marketplaces| {
             marketplaces
                 .values()

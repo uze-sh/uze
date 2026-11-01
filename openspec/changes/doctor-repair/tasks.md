@@ -3,18 +3,18 @@
 - [x] 1.1 Make `UzeHome` enumerable: one list of owned paths, each with its tier (bytes, store, record, authored, generated, remembered). `every_path_uze_owns_is_named_in_the_map` reads this list.
 - [x] 1.2 Add the `HealthCheck` catalogue in `uze-application`, with the subjects, observations and lanes of design D2.
 - [x] 1.3 Add `every_owned_path_has_a_health_check`, covering every `UzeHome` path, every `ManagedArtifact` kind and every vendor registration kind.
-- [ ] 1.4 Plain `doctor`, `doctor --repair` and the TUI read the catalogue. The automatic lane keeps exactly its ADR-037 subset. A finding whose lane is `--repair` shows `uze doctor --repair` as its action.
+- [x] 1.4 Plain `doctor`, `doctor --repair` and the TUI read the catalogue. The automatic lane keeps exactly its ADR-037 subset. A finding whose lane is `--repair` shows `uze doctor --repair` as its action.
 - [x] 1.5 Make `doctor` isolate every check's failure. Add a test that corrupts each record in turn and still gets every other finding.
 - [x] 1.6 Add a read-only `[marketplaces.*]` reader to `codex/inventory.rs`, so plain `doctor` checks Codex's registration without spawning the vendor CLI.
 
 ## 2. Repair
 
-- [ ] 2.1 Add `UzeApplication::repair_plan()` from live inspection, and `repair(plan)` in design D5 order, under the mutation lock. The catalogue then observes again.
-- [ ] 2.2 Add re-acquisition from the registry's provenance (Git at the recorded commit, local path, or linked target). Keep the bytes only on a digest match. Otherwise report `NeedsHuman` with `uze update <id>`. Offline, report `NeedsNetwork`. Embedded packages are re-ingested from the binary's snapshot, recording its digest.
-- [ ] 2.3 Repoint a marketplace whose registered root differs from its vendor store, never during a session of that harness, reusing the vendor-stores registration code.
-- [ ] 2.4 Clear a stale terminal-runtime endpoint, and recreate the shims.
-- [ ] 2.5 Report each finding as `Repaired`, `NeedsHuman`, `NeedsNetwork` or `Unrepairable`, with its reason and command. Exit status 0, 1 or 2. The report follows the `design-system` skill.
-- [ ] 2.6 Add `doctor --repair` to the grammar and help text. It skips bootstrap and is classified `JustifiedSlow`. `doctor_meets_the_budget` covers plain `doctor` reading the catalogue.
+- [x] 2.1 Add `UzeApplication::repair_plan()` from live inspection, and `repair(plan)` in design D5 order, under the mutation lock. The catalogue then observes again.
+- [x] 2.2 Add re-acquisition from the registry's provenance (Git at the recorded commit, local path, or linked target). Keep the bytes only on a digest match. Otherwise report `NeedsHuman` with `uze update <id>`. Offline, report `NeedsNetwork`. Embedded packages are re-ingested from the binary's snapshot, recording its digest.
+- [x] 2.3 Repoint a marketplace whose registered root differs from its vendor store, never during a session of that harness, reusing the vendor-stores registration code.
+- [x] 2.4 Clear a stale terminal-runtime endpoint, and recreate the shims.
+- [x] 2.5 Report each finding as `Repaired`, `NeedsHuman`, `NeedsNetwork` or `Unrepairable`, with its reason and command. Exit status 0, 1 or 2. The report follows the `design-system` skill.
+- [x] 2.6 Add `doctor --repair` to the grammar and help text. It skips bootstrap and is classified `JustifiedSlow`. `doctor_meets_the_budget` covers plain `doctor` reading the catalogue.
 
 ## 3. One collector
 

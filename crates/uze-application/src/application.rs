@@ -55,6 +55,7 @@ mod overview;
 mod project_environment;
 mod project_labels;
 mod read_models;
+mod repair;
 mod requirements;
 mod retired_regions;
 mod rules;
@@ -99,6 +100,9 @@ pub use project_environment::{
     InstallReport, PluginRulesReport, PluginRulesStatus, ProjectLockStatus,
     RemoveProjectPluginReport, RuleCopies, RuleCopyFinding, UpdateOutcome, UpdateReport,
     UpdateScope,
+};
+pub use repair::{
+    NoTerminalEndpoint, RepairEntry, RepairOutcome, RepairPlan, RepairReport, TerminalEndpoint,
 };
 pub use uze_core::anchor::AnchorKind;
 pub use uze_core::rules::manifest::MANIFEST_FILE as RULES_MANIFEST_FILE;
@@ -366,6 +370,27 @@ impl UzeApplication {
     /// report/health surfaces only — removal planning and detach MUST keep
     /// going through [`reconcile`](Self::reconcile), whose live verdict is
     /// what makes ownership checks trustworthy.
+    /// One receipt's inspection, a fresh `Matched` verdict served from the
+    /// inspection cache as [`reconcile_cached_report`](Self::reconcile_cached_report)
+    /// serves it, and a live one written back for the next reader.
+    pub(crate) fn inspect_receipt_cached(
+        &self,
+        receipt: &uze_core::integration::AttachmentReceipt,
+        integration: &dyn IntegrationPort,
+    ) -> uze_core::integration::AttachmentInspection {
+        let ledger_key = receipt.cache_key();
+        let fingerprint = receipt.artifact.fingerprint();
+        if let Some(cached) = self
+            .inspection_cache
+            .get(&ledger_key, fingerprint.as_deref())
+        {
+            return cached;
+        }
+        let live = integration.inspect_receipt(receipt);
+        self.inspection_cache.put(&ledger_key, &live, fingerprint);
+        live
+    }
+
     pub(crate) fn reconcile_cached_report(&self, package_id: &str) -> ReconciliationReport {
         reconcile_package_with(
             &self.home,
