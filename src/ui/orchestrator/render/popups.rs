@@ -1223,7 +1223,8 @@ pub(super) fn status_notification(
         // is the one that moves: a rebase, a gate and a push take as long
         // as the project's checks do, and a still mark for that many
         // seconds reads as a screen that has stopped. The sidebar's mark
-        // keeps `Symbol::Ellipsis` — a single cell has no room to turn.
+        // stays still (`Symbol::TaskDelivering`) — a single cell has no
+        // room to turn.
         WorkStateView::Integrating => agent_activity_frame(tick),
         _ => theme::glyph(symbol),
     };

@@ -1747,15 +1747,14 @@ pub(in crate::ui::orchestrator) fn task_tone(state: &WorkStateView) -> Option<(S
         // Nothing to report, and for the same reason: a task that has not
         // committed yet and one whose agent left with nothing both hold
         // no work. `Closed` in particular must not wear `Integrated`'s
-        // arrow — that arrow claims a delivery.
+        // mark — that mark claims a delivery.
         WorkStateView::Running | WorkStateView::Closed => return None,
         WorkStateView::Uncommitted => (Symbol::PlusMinus, Token::StateInfo),
         WorkStateView::Ready => (Symbol::TaskReady, Token::StateSuccess),
-        // The one mark that points away from UZE, because the work does:
-        // it is on the forge, and what happens to it next happens there.
-        // A quiet hue, because nothing is being asked of the operator, and
-        // deliberately not `Integrated`'s arrow,
-        // which claims the work is in the target.
+        // Ready's shape held open, because the work left: it is on the
+        // forge, and what happens to it next happens there. A quiet hue,
+        // because nothing is being asked of the operator, and deliberately
+        // not `Integrated`'s mark, which claims the work is in the target.
         WorkStateView::Published => (Symbol::TaskPublished, Token::StatePublished),
         // In somebody else's hands: a request is open for it.
         WorkStateView::InReview => (Symbol::TaskInReview, Token::StatePublished),
