@@ -25,6 +25,11 @@ pub use imp::MAX_SOCKET_PATH;
 /// Reaches the server listening at `endpoint` directly: what a client
 /// that must not replace that server does instead of attaching.
 pub use imp::connect;
+/// Whether something a server bound outlasts it at `endpoint`: a socket
+/// file stays until someone removes it, a named pipe goes with its last
+/// handle. What tells a stopped server's leftover from an endpoint that
+/// was never there.
+pub use imp::lingers;
 /// Whether the process at the other end of an accepted connection runs as
 /// another user, as the kernel recorded it: true only when the platform
 /// says so. The endpoint's own permissions already admit nobody else; a
@@ -175,6 +180,23 @@ mod tests {
         writer.join().unwrap();
         server.join().unwrap();
         super::clear(&endpoint);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// A listener that is gone leaves its endpoint behind only where the
+    /// endpoint is a file, and clearing it leaves nothing either way.
+    #[test]
+    fn a_stopped_listener_lingers_only_where_its_endpoint_is_a_file() {
+        let scratch = uze_testkit::temp::socket_scratch("endpoint-lingers");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let endpoint = super::scratch_endpoint(&scratch, "gone.sock");
+        assert!(!super::lingers(&endpoint), "nothing was ever bound");
+
+        drop(super::bind(&endpoint).unwrap());
+
+        assert_eq!(super::lingers(&endpoint), cfg!(unix));
+        super::clear(&endpoint);
+        assert!(!super::lingers(&endpoint));
         let _ = std::fs::remove_dir_all(&scratch);
     }
 }

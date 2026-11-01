@@ -406,9 +406,10 @@ pub fn clear_stale_endpoint() -> Result<bool, RuntimeError> {
     Ok(cleared)
 }
 
-/// Whether something sits at `socket` that nothing answers at.
+/// Whether something a server left sits at `socket` and nothing answers
+/// there.
 fn left_behind(socket: &Path) -> bool {
-    transport::identity(socket).is_some()
+    transport::lingers(socket)
         && matches!(
             transport::connect(socket),
             Err(error) if matches!(
