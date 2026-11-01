@@ -54,6 +54,13 @@ pub struct ReviewExtension {
     working: Option<String>,
     listing: bool,
     listed_at: Option<Instant>,
+    /// Changes made on a review that closed before they were written, by
+    /// checkout: written all the same, and handed back if it opens first.
+    waiting: Vec<(PathBuf, Vec<Change>)>,
+    /// The changes a write is out for, put back if it fails.
+    in_flight: Option<(PathBuf, Vec<Change>)>,
+    /// A write that failed is tried again from here, not on every pass.
+    retry_at: Option<Instant>,
     reading_diff: bool,
     writing: bool,
     /// What the next open is for: a return puts back what was held.
@@ -302,15 +309,21 @@ impl ReviewExtension {
     }
 
     fn write_job(&mut self, jobs: &mut Vec<Job>) {
-        if self.writing {
+        if self.writing || self.retry_at.is_some_and(|at| Instant::now() < at) {
             return;
         }
-        let Some(view) = self.open.as_mut().filter(|view| !view.unwritten.is_empty()) else {
+        let from_view = self
+            .open
+            .as_mut()
+            .filter(|view| !view.unwritten.is_empty())
+            .map(|view| (view.root.clone(), std::mem::take(&mut view.unwritten)));
+        let Some((root, changes)) =
+            from_view.or_else(|| (!self.waiting.is_empty()).then(|| self.waiting.remove(0)))
+        else {
             return;
         };
-        let changes: Vec<Change> = std::mem::take(&mut view.unwritten);
         self.writing = true;
-        let root = view.root.clone();
+        self.in_flight = Some((root.clone(), changes.clone()));
         let fallback_root = root.clone();
         jobs.push(Job {
             run: Box::new(move |host| {
@@ -497,6 +510,13 @@ impl Extension for ReviewExtension {
             view.selected = place.selected.clone();
             view.filter = place.filter;
         }
+        // Changes still waiting to be written are this view's again, so
+        // every record it reads is shown with them laid over it.
+        let (mine, others): (Vec<_>, Vec<_>) = std::mem::take(&mut self.waiting)
+            .into_iter()
+            .partition(|(root, _)| *root == checkout.root);
+        self.waiting = others;
+        view.unwritten = mine.into_iter().flat_map(|(_, changes)| changes).collect();
         if self.door.root.as_ref() == Some(&checkout.root) {
             view.absorb_record(Ok(self.door.record.clone()));
         }
@@ -516,10 +536,11 @@ impl Extension for ReviewExtension {
                     filter: view.filter,
                 },
             );
-            // What was changed and not yet written goes with the door's
-            // copy, to be written the next time the review opens.
+            // What was changed and not yet written is still written: the
+            // operator's work never waits on the surface staying open.
             if !view.unwritten.is_empty() {
                 self.door.record = view.record.clone();
+                self.waiting.push((view.root.clone(), view.unwritten));
             }
         }
     }
@@ -719,6 +740,24 @@ impl Extension for ReviewExtension {
                 return Outcome::Stay;
             };
             self.writing = false;
+            let in_flight = self.in_flight.take();
+            match &written.record {
+                Ok(_) => self.retry_at = None,
+                // Put back, to be tried again on the list's cadence: a
+                // failed write must not drop what the operator wrote.
+                Err(_) => {
+                    self.retry_at = Some(Instant::now() + LIST_EVERY);
+                    if let Some((root, changes)) = in_flight {
+                        match self.open.as_mut().filter(|view| view.root == root) {
+                            Some(view) => {
+                                let newer = std::mem::take(&mut view.unwritten);
+                                view.unwritten = changes.into_iter().chain(newer).collect();
+                            }
+                            None => self.waiting.insert(0, (root, changes)),
+                        }
+                    }
+                }
+            }
             match self.open.as_mut().filter(|view| view.root == written.root) {
                 Some(view) => view.absorb_record(written.record),
                 None => {

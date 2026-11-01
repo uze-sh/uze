@@ -223,12 +223,14 @@ pub(crate) fn file_diff(
     })
 }
 
-/// One number standing for a diff as Git wrote it.
+/// One number standing for a diff as Git wrote it, kept in the review's
+/// record beside a viewed mark. FNV-1a rather than the standard library's
+/// hasher, whose output may change with the compiler: a mark has to mean
+/// the same diff after an upgrade.
 pub(crate) fn fingerprint(output: &str) -> u64 {
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    output.hash(&mut hasher);
-    hasher.finish()
+    output.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+    })
 }
 
 /// What the door counts.
@@ -330,6 +332,12 @@ mod tests {
         let found = base(&DiskHost, repository.root(), Some(&main), &Base::default());
         assert_eq!(found.commit, None);
         assert!(found.reason.unwrap().contains("its own target"));
+    }
+
+    #[test]
+    fn a_fingerprint_is_the_same_number_on_every_build() {
+        assert_eq!(fingerprint(""), 0xcbf2_9ce4_8422_2325);
+        assert_eq!(fingerprint("a"), 0xaf63_dc4c_8601_ec8c);
     }
 
     #[test]

@@ -315,3 +315,79 @@ fn marked_lines_say_so_whatever_their_tone() {
         "a removal and an addition among them"
     );
 }
+
+/// A host that keeps one review in memory, as the workspace's keeps it on
+/// disk.
+struct Keeping(std::sync::Mutex<ReviewRecord>);
+
+impl crate::Host for Keeping {
+    fn git(&self, _: &Path, _: &[&str], _: &[i32]) -> Result<String, String> {
+        Err("no git here".to_owned())
+    }
+    fn repository_root(&self, path: &Path) -> Result<PathBuf, String> {
+        Ok(path.to_path_buf())
+    }
+    fn read_file(&self, _: &Path) -> Result<String, crate::Unreadable> {
+        Err(crate::Unreadable::NotText)
+    }
+    fn list_dir(&self, _: &Path) -> Result<Vec<crate::DirEntry>, String> {
+        Ok(Vec::new())
+    }
+    fn write_file(&self, _: &Path, _: &Path, _: &str) -> Result<(), String> {
+        unreachable!()
+    }
+    fn delete_file(&self, _: &Path, _: &Path) -> Result<(), String> {
+        unreachable!()
+    }
+    fn rename_path(&self, _: &Path, _: &Path, _: &Path) -> Result<(), String> {
+        unreachable!()
+    }
+    fn restore_to_head(&self, _: &Path, _: &[PathBuf]) -> Result<(), String> {
+        unreachable!()
+    }
+    fn syntax_theme(&self) -> String {
+        crate::shared::highlight::FALLBACK_SYNTAX_THEME.to_owned()
+    }
+    fn update_review_record(
+        &self,
+        _: &Path,
+        change: &mut dyn FnMut(&mut ReviewRecord),
+    ) -> Result<ReviewRecord, String> {
+        let mut kept = self.0.lock().unwrap();
+        change(&mut kept);
+        Ok(kept.clone())
+    }
+}
+
+#[test]
+fn a_draft_kept_just_before_the_review_closes_is_still_written() {
+    use crate::contract::{Checkout, Extension};
+    let mut extension = ReviewExtension::default();
+    let checkout = Checkout {
+        root: PathBuf::from("/w"),
+        display: "/w".to_owned(),
+        target: None,
+    };
+    extension.open(SURFACE, &checkout);
+    let view = extension.review_view_mut().unwrap();
+    view.change(change::Change::Draft {
+        path: "naming.rs".to_owned(),
+        rows: Vec::new(),
+        excerpt: String::new(),
+        text: "kept".to_owned(),
+    });
+    extension.close(SURFACE);
+
+    let host = Keeping(std::sync::Mutex::new(ReviewRecord::default()));
+    for job in extension.jobs() {
+        let answer = (job.run)(&host);
+        extension.absorb(answer);
+    }
+    let kept = host.0.lock().unwrap();
+    assert_eq!(
+        kept.comments.len(),
+        1,
+        "written though the surface had closed"
+    );
+    assert_eq!(kept.comments[0].text, "kept");
+}
