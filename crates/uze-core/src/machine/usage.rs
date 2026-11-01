@@ -5,6 +5,8 @@
 //! not depend on which harness answered is decided here, once:
 //! - which records to read again, and from where ([`Resume`]);
 //! - what is kept between readings, in the `cache/` tier ([`Ledger`]);
+//! - what a harness's deleted records held, in the `state/` tier
+//!   ([`Archive`]), so a use outlives the harness's own retention;
 //! - every use the records still hold, and the day of the last one.
 //!
 //! No hook counts anything: a use is read after the fact, so an agent's turn
@@ -184,6 +186,52 @@ fn unix_seconds(time: SystemTime) -> u64 {
         .unwrap_or(0)
 }
 
+/// The uses of records a harness has since deleted, per harness and record.
+///
+/// A record: it is the only place they are left, so it is in `state/` and
+/// declares its shape. Kept per record, not summed, so a record the harness
+/// lists again is read live and never counted twice. Only names, days and
+/// counts, like everything else here.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Archive {
+    #[serde(default)]
+    harnesses: BTreeMap<String, BTreeMap<String, Vec<Tally>>>,
+}
+
+impl uze_document::Shaped for Archive {
+    const SHAPE: u32 = uze_document::FIRST_SHAPE;
+    const KIND: &'static str = "machine usage";
+}
+
+impl Archive {
+    /// `None` when it is there and cannot be taken (a newer build's, or
+    /// unreadable): it is then neither added to nor written over.
+    pub fn load(home: &UzeHome) -> Option<Self> {
+        uze_document::read::<Self>(&home.machine_usage_path())
+            .ok()
+            .map(uze_document::Carried::or_default)
+    }
+
+    pub fn save(&self, home: &UzeHome) -> Result<()> {
+        let path = home.machine_usage_path();
+        let payload = serde_json::to_vec(self).map_err(|source| crate::UzeError::Json {
+            path: path.clone(),
+            source,
+        })?;
+        write_atomic(&path, &payload)
+    }
+
+    /// The day of the oldest use kept for `harness`.
+    pub fn oldest_day(&self, harness: &str) -> Option<u64> {
+        self.harnesses
+            .get(harness)?
+            .values()
+            .flatten()
+            .map(|tally| tally.day)
+            .min()
+    }
+}
+
 /// What was kept between readings, per harness and record: remembered, so
 /// losing it costs one fresh reading and nothing else.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -217,12 +265,15 @@ impl Ledger {
     }
 
     /// Brings what is kept of `harness` up to date with its records and
-    /// answers its tallies. Only records whose stamp changed are read, an
-    /// appended one from where it was left. `None` when the harness cannot
+    /// answers its tallies, the archived ones included. Only records whose
+    /// stamp changed are read, an appended one from where it was left. A
+    /// record the harness no longer lists moves to `archive`; with no
+    /// archive to take it, it stays here. `None` when the harness cannot
     /// list its records or one of them cannot be read: its uses are then
     /// unknown, never zero. Stops at the next record once `cancelled`.
     pub fn read(
         &mut self,
+        mut archive: Option<&mut Archive>,
         harness: &dyn IntegrationPort,
         carried: &[FoundResource],
         cancelled: &AtomicBool,
@@ -231,7 +282,25 @@ impl Ledger {
         let known = Carried::of(carried);
         let kept = self.harnesses.entry(harness.id().to_owned()).or_default();
         let listed: BTreeSet<&str> = records.iter().map(|record| record.id.as_str()).collect();
-        kept.retain(|id, _| listed.contains(id.as_str()));
+        if let Some(archive) = archive.as_deref_mut() {
+            let archived = archive
+                .harnesses
+                .entry(harness.id().to_owned())
+                .or_default();
+            archived.retain(|id, _| !listed.contains(id.as_str()));
+            let vanished: Vec<String> = kept
+                .keys()
+                .filter(|id| !listed.contains(id.as_str()))
+                .cloned()
+                .collect();
+            for id in vanished {
+                if let Some(gone) = kept.remove(&id)
+                    && !gone.tallies.is_empty()
+                {
+                    archived.insert(id, gone.tallies);
+                }
+            }
+        }
         let mut complete = true;
         for record in &records {
             if cancelled.load(Ordering::Relaxed) {
@@ -269,9 +338,14 @@ impl Ledger {
                 },
             );
         }
+        let archived = archive
+            .and_then(|archive| archive.harnesses.get(harness.id()))
+            .into_iter()
+            .flat_map(|records| records.values().flatten().cloned());
         complete.then(|| {
             kept.values()
                 .flat_map(|kept| kept.tallies.iter().cloned())
+                .chain(archived)
                 .collect()
         })
     }
@@ -310,6 +384,15 @@ pub fn count_uses(overview: &mut MachineOverview, tallies: &BTreeMap<String, Opt
                 uses.count(tally);
             }
         }
+    }
+}
+
+/// Says, for every harness of `overview`, the day of the oldest use the
+/// archive keeps for it: how far back its uses reach now that the harness's
+/// own records may not.
+pub fn date_archives(overview: &mut MachineOverview, archive: &Archive) {
+    for report in &mut overview.harnesses {
+        report.uses_since = archive.oldest_day(&report.id);
     }
 }
 

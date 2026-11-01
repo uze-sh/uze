@@ -483,19 +483,34 @@ fn summary(model: &TuiModel) -> String {
                 machine::tokens(per_session)
             ));
         }
-        let sessions: Vec<SessionCounts> = overview
+        let shown_harnesses: Vec<_> = overview
             .harnesses
             .iter()
             .filter(|harness| screen.harness.as_ref().is_none_or(|h| *h == harness.id))
+            .collect();
+        let sessions: Vec<SessionCounts> = shown_harnesses
+            .iter()
             .filter_map(|harness| harness.sessions)
             .collect();
         if !sessions.is_empty() {
             let total: u64 = sessions.iter().map(|counts| counts.total).sum();
-            let mut said = counted(total as usize, "session");
-            if let Some(oldest) = sessions.iter().filter_map(|counts| counts.oldest).min() {
-                said.push_str(&format!(" in {}", reach(oldest)));
-            }
-            parts.push(said);
+            parts.push(counted(total as usize, "session"));
+        }
+        let since = shown_harnesses
+            .iter()
+            .flat_map(|harness| {
+                [
+                    harness
+                        .sessions
+                        .and_then(|counts| counts.oldest)
+                        .map(|at| at / 86_400),
+                    harness.uses_since,
+                ]
+            })
+            .flatten()
+            .min();
+        if let Some(day) = since {
+            parts.push(format!("since {}", date_said(day)));
         }
         let look = shown
             .iter()
@@ -778,11 +793,39 @@ fn uses_said(resource: &OverviewResource, on: On<'_>) -> String {
     said
 }
 
-/// How far back the records reach, from the oldest one's last change:
-/// `29 days of records`.
-fn reach(oldest: u64) -> String {
-    let days = now_seconds().saturating_sub(oldest) / 86_400 + 1;
-    format!("{} of records", counted(days as usize, "day"))
+/// A day since the epoch as `Oct 22`, with its year when it is not this
+/// one's: how far back what the Overview counts reaches.
+fn date_said(day: u64) -> String {
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let (year, month, date) = civil(day);
+    let (this_year, _, _) = civil(now_seconds() / 86_400);
+    let month = MONTHS[(month - 1) as usize];
+    if year == this_year {
+        format!("{month} {date}")
+    } else {
+        format!("{month} {date} {year}")
+    }
+}
+
+/// A day since 1970-01-01 as its proleptic Gregorian year, month and day
+/// (Howard Hinnant's `civil_from_days`).
+fn civil(day: u64) -> (i64, u64, u64) {
+    let days = day as i64 + 719_468;
+    let era = days.div_euclid(146_097);
+    let of_era = days - era * 146_097;
+    let year_of_era = (of_era - of_era / 1_460 + of_era / 36_524 - of_era / 146_096) / 365;
+    let of_year = of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_index = (5 * of_year + 2) / 153;
+    let date = (of_year - (153 * month_index + 2) / 5 + 1) as u64;
+    let month = if month_index < 10 {
+        month_index + 3
+    } else {
+        month_index - 9
+    } as u64;
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    (year, month, date)
 }
 
 /// A day in days since the epoch, as near as it is to today.
@@ -1147,5 +1190,15 @@ fn resource_detail(model: &TuiModel, resource: &OverviewResource) -> Detail {
             .map(|location| crate::ui::display_project_path(&location.path)),
         description: resource.description.clone(),
         fields,
+    }
+}
+
+#[cfg(test)]
+mod dates {
+    #[test]
+    fn a_day_reads_as_its_calendar_date() {
+        assert_eq!(super::civil(0), (1970, 1, 1));
+        assert_eq!(super::civil(20_748), (2026, 10, 22));
+        assert_eq!(super::civil(19_782), (2024, 2, 29));
     }
 }

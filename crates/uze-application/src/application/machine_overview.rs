@@ -10,6 +10,7 @@ use std::{
     collections::BTreeMap,
     panic::{AssertUnwindSafe, catch_unwind},
     sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
     time::SystemTime,
 };
 
@@ -17,6 +18,7 @@ use uze_core::{
     UzeHome,
     integration::IntegrationPort,
     inventory::{self, HarnessInventory, MachineOverview},
+    persistence::FileLock,
     usage,
 };
 
@@ -32,13 +34,20 @@ impl UzeApplication {
     /// one at a time, then their session counts, then their uses from
     /// their session records. `answer` is handed the Overview after each
     /// harness's inventory, once more with the sessions, and after each
-    /// harness's uses. Returns `None` when `cancelled` was set
-    /// before the end; what is complete is then left unsaved.
+    /// harness's uses. Returns `None` when `cancelled` was set before the
+    /// end, what is complete then left unsaved, or when another process is
+    /// collecting: one collection reads and moves the records at a time.
     pub fn collect_machine_overview(
         &self,
         cancelled: &AtomicBool,
         mut answer: impl FnMut(&MachineOverview),
     ) -> Option<MachineOverview> {
+        let _collecting = FileLock::acquire(
+            &self.home.machine_usage_lock_path(),
+            Duration::ZERO,
+            Duration::ZERO,
+        )
+        .ok()?;
         let receipts = uze_core::state::receipts(&self.home, None).unwrap_or_default();
         let detected: Vec<&dyn IntegrationPort> = self
             .integrations
@@ -69,19 +78,24 @@ impl UzeApplication {
         let mut overview = inventory::assemble(gathered.clone(), &receipts);
         answer(&overview);
         let mut ledger = usage::Ledger::load(&self.home);
+        let mut archive = usage::Archive::load(&self.home);
         let mut tallies = BTreeMap::new();
         for (index, integration) in detected.iter().enumerate() {
             let carried = gathered[index].found.as_deref().unwrap_or_default();
-            let read = answered(|| Some(ledger.read(*integration, carried, cancelled)));
+            let read =
+                answered(|| Some(ledger.read(archive.as_mut(), *integration, carried, cancelled)));
             if cancelled.load(Ordering::Relaxed) {
-                save_ledger(&self.home, &ledger);
+                keep(&self.home, &ledger, archive.as_ref());
                 return None;
             }
             tallies.insert(integration.id().to_owned(), read.flatten());
             usage::count_uses(&mut overview, &tallies);
+            if let Some(archive) = &archive {
+                usage::date_archives(&mut overview, archive);
+            }
             answer(&overview);
         }
-        save_ledger(&self.home, &ledger);
+        keep(&self.home, &ledger, archive.as_ref());
         if let Err(error) = inventory::save_snapshot(&self.home, &overview, now) {
             tracing::warn!("machine overview not remembered: {error}");
         }
@@ -90,8 +104,16 @@ impl UzeApplication {
 }
 
 /// What was read is kept even when the collection stops part way: each
-/// record in it is whole, so the next reading continues from there.
-fn save_ledger(home: &UzeHome, ledger: &usage::Ledger) {
+/// record in it is whole, so the next reading continues from there. The
+/// archive is written first: a record left in both is archived again under
+/// the same name, never counted twice, while one in neither would be lost.
+fn keep(home: &UzeHome, ledger: &usage::Ledger, archive: Option<&usage::Archive>) {
+    if let Some(archive) = archive
+        && let Err(error) = archive.save(home)
+    {
+        tracing::warn!("machine usage archive not written: {error}");
+        return;
+    }
     if let Err(error) = ledger.save(home) {
         tracing::warn!("machine usage not remembered: {error}");
     }

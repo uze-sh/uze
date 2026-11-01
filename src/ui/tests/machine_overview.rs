@@ -25,6 +25,7 @@ fn harness(id: &str, name: &str, sessions: u64) -> HarnessReport {
             oldest: Some(now_seconds() - 29 * 86_400),
         }),
         uses_known: true,
+        uses_since: None,
     }
 }
 
@@ -150,7 +151,10 @@ fn the_menu_lists_every_kind_with_its_count_and_what_needs_looking_at() {
         "a kind with nothing still has its place: {drawn:#?}"
     );
     assert!(drawn.iter().any(|row| row.contains("every harness")));
-    assert!(drawn.iter().any(|row| row.contains("30 days")));
+    assert!(
+        !drawn.iter().any(|row| row.contains("days ›")),
+        "no period field: every figure covers all the records"
+    );
 }
 
 #[test]
@@ -275,13 +279,11 @@ fn now_seconds() -> u64 {
 }
 
 #[test]
-fn the_header_counts_every_session_and_says_how_far_back_the_records_reach() {
+fn the_header_counts_every_session_and_says_since_when() {
     let model = model();
     let drawn = rows(&model);
     assert!(
-        drawn
-            .iter()
-            .any(|row| row.contains("45 sessions in 30 days of records")),
+        drawn.iter().any(|row| row.contains("45 sessions · since ")),
         "{drawn:#?}"
     );
 }

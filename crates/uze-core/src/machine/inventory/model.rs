@@ -209,6 +209,10 @@ pub struct HarnessReport {
     /// Whether its session records could be read for uses.
     #[serde(default)]
     pub uses_known: bool,
+    /// The day of the oldest use uze kept after the harness deleted its
+    /// record, in days since the epoch.
+    #[serde(default)]
+    pub uses_since: Option<u64>,
 }
 
 /// Who manages a resource, as the Overview shows it.

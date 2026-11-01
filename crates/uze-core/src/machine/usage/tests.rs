@@ -105,7 +105,7 @@ fn total(tallies: &[Tally]) -> u32 {
 }
 
 fn read(ledger: &mut Ledger, harness: &Harness, carried: &[FoundResource]) -> Option<Vec<Tally>> {
-    ledger.read(harness, carried, &AtomicBool::new(false))
+    ledger.read(None, harness, carried, &AtomicBool::new(false))
 }
 
 #[test]
@@ -149,15 +149,93 @@ fn a_record_that_shrank_is_read_whole_and_replaces_what_was_kept() {
 }
 
 #[test]
-fn a_record_no_longer_listed_is_forgotten() {
+fn a_record_the_harness_deleted_still_counts_from_the_archive() {
     let mut harness = Harness::default();
     harness.write("a", vec![typed("review")]);
     harness.write("b", vec![typed("review")]);
     let carried = [skill("review")];
     let mut ledger = Ledger::default();
+    let mut archive = Archive::default();
+    let read = |ledger: &mut Ledger, archive: &mut Archive, harness: &Harness| {
+        ledger.read(Some(archive), harness, &carried, &AtomicBool::new(false))
+    };
+    read(&mut ledger, &mut archive, &harness);
+    harness.records.remove("a");
+    assert_eq!(
+        total(&read(&mut ledger, &mut archive, &harness).unwrap()),
+        2
+    );
+    assert_eq!(archive.oldest_day("probe"), Some(day_of(days_ago(1))));
+    let mut lost_cache = Ledger::default();
+    assert_eq!(
+        total(&read(&mut lost_cache, &mut archive, &harness).unwrap()),
+        2,
+        "the archive outlives the cache"
+    );
+}
+
+#[test]
+fn a_record_listed_again_is_read_live_and_never_counted_twice() {
+    let mut harness = Harness::default();
+    harness.write("a", vec![typed("review")]);
+    let carried = [skill("review")];
+    let mut ledger = Ledger::default();
+    let mut archive = Archive::default();
+    let read = |ledger: &mut Ledger, archive: &mut Archive, harness: &Harness| {
+        ledger.read(Some(archive), harness, &carried, &AtomicBool::new(false))
+    };
+    read(&mut ledger, &mut archive, &harness);
+    let gone = harness.records.remove("a").unwrap();
+    read(&mut ledger, &mut archive, &harness);
+    harness.records.insert("a".into(), gone);
+    assert_eq!(
+        total(&read(&mut ledger, &mut archive, &harness).unwrap()),
+        1
+    );
+    assert_eq!(archive.oldest_day("probe"), None);
+}
+
+#[test]
+fn with_no_archive_a_deleted_record_stays_where_it_was_kept() {
+    let mut harness = Harness::default();
+    harness.write("a", vec![typed("review")]);
+    let carried = [skill("review")];
+    let mut ledger = Ledger::default();
     read(&mut ledger, &harness, &carried);
     harness.records.remove("a");
     assert_eq!(total(&read(&mut ledger, &harness, &carried).unwrap()), 1);
+}
+
+#[test]
+fn an_archive_reads_back_as_it_was_saved_and_a_newer_one_is_left_alone() {
+    let root = uze_testkit::temp::TempDir::new("machine-usage-archive");
+    let home = UzeHome::at(root.path());
+    assert!(Archive::load(&home).is_some(), "none yet is an empty one");
+    let mut harness = Harness::default();
+    harness.write("a", vec![typed("review")]);
+    let mut archive = Archive::default();
+    let mut ledger = Ledger::default();
+    ledger.read(
+        Some(&mut archive),
+        &harness,
+        &[skill("review")],
+        &AtomicBool::new(false),
+    );
+    harness.records.clear();
+    ledger.read(
+        Some(&mut archive),
+        &harness,
+        &[skill("review")],
+        &AtomicBool::new(false),
+    );
+    std::fs::create_dir_all(home.state_dir()).unwrap();
+    archive.save(&home).unwrap();
+    assert_eq!(
+        Archive::load(&home).unwrap().oldest_day("probe"),
+        archive.oldest_day("probe")
+    );
+    std::fs::write(home.machine_usage_path(), br#"{"schema_version": 99}"#).unwrap();
+    assert!(Archive::load(&home).is_none());
 }
 
 #[test]
@@ -188,7 +266,7 @@ fn a_cancelled_reading_answers_nothing() {
     let cancelled = AtomicBool::new(true);
     assert!(
         ledger
-            .read(&harness, &[skill("review")], &cancelled)
+            .read(None, &harness, &[skill("review")], &cancelled)
             .is_none()
     );
     assert!(harness.reads.lock().unwrap().is_empty());
@@ -244,6 +322,7 @@ fn overview(rows: Vec<OverviewResource>) -> MachineOverview {
                 inventory_known: true,
                 sessions: None,
                 uses_known: false,
+                uses_since: None,
             })
             .collect(),
         resources: rows,

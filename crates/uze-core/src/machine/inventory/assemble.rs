@@ -33,6 +33,7 @@ pub fn assemble(
             inventory_known: harness.found.is_some(),
             sessions: harness.sessions,
             uses_known: false,
+            uses_since: None,
         });
         for resource in harness.found.into_iter().flatten() {
             let origin = origin_of(&resource, &harness.id, receipts);
