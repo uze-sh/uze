@@ -1211,27 +1211,37 @@ fn resource_detail(model: &TuiModel, resource: &OverviewResource) -> Detail {
 /// panel is redrawn on every key, pointer move and tick. One entry, because
 /// the panel shows one description.
 fn description_rows(description: &str, width: usize) -> Vec<Line<'static>> {
+    /// The last description drawn, and what it was drawn from.
+    struct Rendered {
+        text: String,
+        theme: String,
+        width: usize,
+        rows: Vec<Line<'static>>,
+    }
     thread_local! {
-        static RENDERED: std::cell::RefCell<Option<(String, String, usize, Vec<Line<'static>>)>> =
+        static RENDERED: std::cell::RefCell<Option<Rendered>> =
             const { std::cell::RefCell::new(None) };
     }
     let theme = uze_theme::active().syntax_theme().to_owned();
     RENDERED.with_borrow_mut(|cached| {
-        let current = cached
-            .as_ref()
-            .is_some_and(|(text, drawn_in, drawn_at, _)| {
-                text == description && *drawn_in == theme && *drawn_at == width
-            });
+        let current = cached.as_ref().is_some_and(|cached| {
+            cached.text == description && cached.theme == theme && cached.width == width
+        });
         if !current {
             let rows = uze_extensions::shared::markdown::render(description, &theme, width)
                 .iter()
                 .flat_map(|line| crate::ui::extension_view::prose_rows(line, width))
                 .collect();
-            *cached = Some((description.to_owned(), theme, width, rows));
+            *cached = Some(Rendered {
+                text: description.to_owned(),
+                theme,
+                width,
+                rows,
+            });
         }
         cached
             .as_ref()
-            .map(|(_, _, _, rows)| rows.clone())
+            .map(|cached| cached.rows.clone())
             .unwrap_or_default()
     })
 }
