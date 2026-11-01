@@ -37,6 +37,13 @@ irm https://uze.sh/i | iex
 Then follow the [quickstart](https://uze.sh/docs/quickstart), or read the
 [full documentation](https://uze.sh/docs).
 
+To take uze off the machine, run `uze uninstall`: it removes the program and
+leaves every plugin it delivered working. `uze uninstall --purge` also takes
+back everything it delivered to your coding agents and removes `~/.uze`.
+Removing `~/.uze` by hand is not supported: your coding agents read their
+plugins from it. If something in it was deleted or damaged,
+`uze doctor` reports it.
+
 ## Two tools, one binary
 
 Each works without the other: use the package manager with agents you start

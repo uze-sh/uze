@@ -260,17 +260,20 @@ unsupported there and not delivered.
 
 | Harness | Delivered artifact | Route |
 |---|---|---|
-| Claude Code | one merged entry per group in `~/.claude/settings.json`, `command` = the generated `hooks/exec` with the group's arguments (exec form: no shell parsing) | native |
-| Codex | one merged entry per group in `~/.codex/hooks.json`, one quoted shell line invoking the same wrapper | native; held back until the person trusts it — Codex runs a hook from `hooks.json` only once its review recorded a hash for it (a TUI session asks; `codex exec` skips it in silence), and asks again after a change. `uze status`, `uze inspect`, `uze doctor` and the install report name every hook waiting on that review, read from Codex's own record and never written to it |
-| Antigravity CLI | one named hook per group in the generated plugin's own root `hooks.json` (the document root *is* the named-hook map), keyed `<package>:<group-id>` — grouped (`matcher` + `hooks`) for the tool events, a flat handler list for `Stop` and `SessionStart` — whose command is the shared `hooks/exec` wrapper by absolute path; the same entries go into the shared `~/.gemini/config/hooks.json` when the package is delivered capability by capability | native (in the plugin since 1.3.4, so enabling or disabling the plugin governs its hooks); through 1.1.24 an API-key session ran no hook at all (#893). The Lab measures the vendor's execution gate (`hooks > vendor`) every run, and every claimed cell through the hooks contract |
-| OpenCode | one document of the package's groups, `$UZE_HOME/runtime/attachments/opencode/hook-groups/<package>.json`, read by the hooks section of the one auto-discovered plugin uze writes, `<config root>/plugins/uze.ts`: that section *is* the wrapper, and it runs every package's groups in one pass, so first-deny-wins holds across packages; a document it cannot read refuses every call until it is written again | adapted: every event and effect rides OpenCode's own plugin API (tool hooks, `permission.evaluate`, the `session.created` and `session.execution.succeeded` bus events); `SessionStart` reports `startup` only |
+| Claude Code | one merged entry per group in `~/.claude/settings.json`, `command` = the wrapper in the package's build, `store/claude/<id>/hooks/uze-exec`, with the group's arguments (exec form: no shell parsing) | native |
+| Codex | one merged entry per group in `~/.codex/hooks.json`, one quoted shell line invoking the wrapper in the package's Codex build | native; held back until the person trusts it — Codex runs a hook from `hooks.json` only once its review recorded a hash for it (a TUI session asks; `codex exec` skips it in silence), and asks again after a change. `uze status`, `uze inspect`, `uze doctor` and the install report name every hook waiting on that review, read from Codex's own record and never written to it |
+| Antigravity CLI | one named hook per group in the generated plugin's own root `hooks.json` (the document root *is* the named-hook map), keyed `<package>:<group-id>` — grouped (`matcher` + `hooks`) for the tool events, a flat handler list for `Stop` and `SessionStart` — whose command is the wrapper in the package's build by absolute path; the same entries go into the shared `~/.gemini/config/hooks.json` when the package is delivered capability by capability | native (in the plugin since 1.3.4, so enabling or disabling the plugin governs its hooks); through 1.1.24 an API-key session ran no hook at all (#893). The Lab measures the vendor's execution gate (`hooks > vendor`) every run, and every claimed cell through the hooks contract |
+| OpenCode | one document of the package's groups, `store/opencode/<id>/hooks/uze-groups.json` in the package's build, read by the hooks section of the one auto-discovered plugin uze writes, `<config root>/plugins/uze.ts`: that section *is* the wrapper, and it runs every package's groups in one pass, so first-deny-wins holds across packages; a document it cannot read refuses every call until it is written again | adapted: every event and effect rides OpenCode's own plugin API (tool hooks, `permission.evaluate`, the `session.created` and `session.execution.succeeded` bus events); `SessionStart` reports `startup` only |
 
 The `sh` wrapper is one file per harness, byte-identical for every package,
-and depends on `sh` and `jq`. Claude, Codex and Antigravity each keep one
-copy under `$UZE_HOME/runtime/attachments/<harness>/hooks/exec`, and every
-entry names it by absolute path — a shared vendor config file has no plugin
-root to resolve against, and Antigravity runs a hook from the directory that
-holds its `hooks.json`.
+and depends on `sh` and `jq`. Each build that has hooks carries its own copy
+at the reserved path `hooks/uze-exec` (a package that ships a file there is
+refused at install), so the wrapper leaves with its package; every entry
+names it by absolute path — a shared vendor config file has no plugin root
+to resolve against, and Antigravity runs a hook from the directory that
+holds its `hooks.json`. Nothing a hook entry names lies outside its
+harness's vendor store, so a hook keeps working after a default
+`uze uninstall`.
 
 A native entry runs it as:
 

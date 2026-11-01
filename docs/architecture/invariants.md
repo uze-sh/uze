@@ -13,8 +13,9 @@ with no such test does not belong on this page.
 
 ### Store owns packages, not harness artifacts
 
-The Store writes package bytes and its own registry. It never writes anything
-a harness reads.
+The Store writes package bytes, under `sources/`, and its own registry. It
+never writes anything a harness reads: that is each vendor store's, under
+`store/<vendor>`.
 
 > `tests/integrations/vendor_neutral.rs::the_store_writes_no_harness_owned_artifact_of_its_own_accord`
 
@@ -57,9 +58,9 @@ Codex stages a plugin into its own cache without following symlinks, so a
 generated Codex envelope carries real bytes: every default-policy Skill and
 the `.mcp.json` are mirrored from the Store, a symlink the package keeps
 inside itself is resolved to the file it names, and a link that escapes the
-package is refused by name rather than dropped. The envelope is still a
-Derived Artifact (ADR-013 §5, amended): rebuilt wholesale from the Store on
-every materialization, never authoritative.
+package is refused by name rather than dropped. The envelope is the
+package's Codex build: a Derived Artifact (ADR-013 §5, amended), rendered
+again whole whenever its build key changes, never authoritative.
 
 > `crates/uze-integrations/src/codex/generate.rs::generated_native_tests::materialize_generated_package_never_writes_into_the_store_package`
 > `crates/uze-integrations/src/codex/generate.rs::generated_native_tests::envelope_mirrors_supporting_files_and_resolves_in_package_symlinks`
@@ -2695,6 +2696,30 @@ describes it, authoritative-looking and entirely reproducible.
 
 > `crates/uze-core/src/machine/home.rs::tests::nothing_a_record_needs_sits_in_a_tier_that_can_be_deleted`
 > `crates/uze-core/src/machine/harness_runtime.rs::tests::the_sweep_keeps_the_tenants_and_nothing_else`
+
+### A harness reads only its own vendor store
+
+Every `$UZE_HOME` path a harness's configuration or discovery files name lies
+in that harness's vendor store, `store/<vendor>/`, save the scratch a reader
+recreates on demand under `runtime/`. Deleting `runtime/`, `cache/` or
+`sources/` therefore changes nothing a harness does, and a default
+`uze uninstall`, which removes the program and keeps the stores, leaves every
+harness pointed at something that exists.
+
+> `tests/acceptance/store_ownership.rs::no_harness_artifact_names_outside_its_store`
+> `tests/acceptance/uninstall.rs::default_uninstall_leaves_every_harness_pointed_at_something_that_exists`
+
+### The move to `sources/` is fenced before a byte moves
+
+A machine still keeping package bytes under `store/` has its package
+registry and receipt ledger written in the new shape first, so an older
+build refuses both by name instead of pruning entries whose bytes it cannot
+find; only then do the bytes move, one directory at a time, and each
+package's digest is recorded from the moved bytes.
+
+> `crates/uze-core/src/package/sources.rs::tests::the_fence_is_written_and_every_moved_package_gets_its_digest`
+> `crates/uze-core/src/package/sources.rs::tests::the_bytes_move_and_nothing_is_overwritten`
+> `crates/uze-core/src/package/store.rs::tests::a_registry_from_a_newer_build_is_refused_and_nothing_is_pruned`
 
 ### Every path UZE owns is named in one place
 
