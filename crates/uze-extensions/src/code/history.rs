@@ -9,8 +9,8 @@
 
 use std::{collections::BTreeSet, path::Path};
 
-use super::changes::parse_numstat;
 use crate::shared::checkout;
+use crate::shared::git_status::parse_numstat;
 use crate::{
     Host,
     view::{Role, RowMark, Section, SectionRow, Span},

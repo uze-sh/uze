@@ -284,7 +284,7 @@ actions! {
     PreviousAgent => "previous-agent", false,
         "Previous agent", "Move to the previous agent in this space";
     ToggleChanges => "toggle-changes", false,
-        "Changes", "Open or close the changes in the selected tab's checkout";
+        "Review", "Open or close the review of the selected agent's branch against its target";
     ToggleFiles => "toggle-files", false,
         "Files", "Open or close the files of the selected tab's checkout";
     ToggleArchitect => "toggle-architect", false,
@@ -363,6 +363,24 @@ actions! {
         "Indent", "Insert one level of the file's own indentation at the caret";
     EraseForward => "erase-forward", false,
         "Delete", "Delete the character under the caret";
+
+    // --- The review surface ----------------------------------------------
+    ReviewComment => "review-comment", false,
+        "Comment", "Write a comment on the marked lines, or on the line under the cursor";
+    ReviewAdd => "review-add", false,
+        "Add", "Keep the comment being written as a draft of the review";
+    ReviewSend => "review-send", false,
+        "Send", "Tell the agent its review's drafts wait for it";
+    ReviewViewed => "review-viewed", false,
+        "Viewed", "Mark the file viewed and go on to the next one not viewed, or unmark it";
+    ReviewOpenInCode => "review-open-in-code", false,
+        "Open in code", "Open the marked line in the code surface";
+    ReviewResolve => "review-resolve", false,
+        "Resolve", "Take an answered comment out of the review";
+    ReviewMarkDown => "review-mark-down", false,
+        "Mark down", "Carry the marked lines one line further down";
+    ReviewMarkUp => "review-mark-up", false,
+        "Mark up", "Carry the marked lines one line further up";
 
     // --- Workspace, the work --------------------------------------------
     DeliverTask => "deliver-task", false,

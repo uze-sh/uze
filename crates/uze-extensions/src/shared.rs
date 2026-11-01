@@ -40,6 +40,10 @@
 //! file into straight-alpha pixels, and an `Image` or a `Sprite`'s sheet
 //! is read the same way, under the bounds a declared extension is held to.
 //!
+//! [`git_status`] joined it when the changes left the code surface for the
+//! review: the review lists what `git status` says, and the code surface's
+//! map and history still read the same output.
+//!
 //! Only [`markdown`] is public: the host renders Markdown that belongs to no
 //! extension (release notes, a plugin's preview) and reads it from here,
 //! not through the code surface that happened to render it first.
@@ -49,6 +53,7 @@ pub(crate) mod checkout;
 #[cfg(test)]
 mod disk_host;
 pub(crate) mod front_matter;
+pub(crate) mod git_status;
 pub(crate) mod highlight;
 pub mod markdown;
 pub(crate) mod nearest;

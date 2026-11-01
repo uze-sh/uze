@@ -1387,6 +1387,25 @@ pub enum Command {
     /// show before it.
     ToggleMap,
 
+    // --- Asked of a review -----------------------------------------------
+    //
+    // A fourth kind of surface: one that is written on, line by line, and
+    // that hands what was written to someone else.
+    /// Write a comment on what is marked.
+    Comment,
+    /// Keep the comment being written.
+    AddComment,
+    /// Hand what was written to whoever it is for.
+    Send,
+    /// Mark what is on show as read, and go on to the next not read.
+    MarkViewed,
+    /// Show the marked line where it can be edited.
+    OpenInCode,
+    /// Put an answered comment away.
+    Resolve,
+    /// Carry the mark one line further this way.
+    ExtendMark(ScrollDirection),
+
     // --- Asked of a surface with files open in tabs ----------------------
     /// Search, wherever the search lives — and into its field.
     Find,
