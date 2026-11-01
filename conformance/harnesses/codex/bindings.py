@@ -8,7 +8,7 @@ import time
 import pexpect
 
 from contract import continuity
-from contract.bindings import Bindings, hook_prelude
+from contract.bindings import Bindings, hook_prelude, json_documents
 from contract.tui import Tui
 
 from .scenarios import codex_container, drive_onboarding
@@ -17,6 +17,29 @@ from .scenarios import codex_container, drive_onboarding
 class CodexBindings(Bindings):
     harness = "codex"
     display_name = "Codex"
+
+    #: Codex keeps the plugins it installed as `[plugins."<id>"]` tables of
+    #: its `config.toml`; listing them by marketplace would name the one
+    #: that is gone in its error.
+    registry_listing = (
+        "codex plugin marketplace list --json; "
+        "grep '^\\[plugins' \"$CODEX_HOME/config.toml\" || true"
+    )
+    plugin_listing = "codex plugin list --json --marketplace uze-store"
+
+    def plugin_enabled(self, listing, plugin):
+        """`codex plugin list --json`: `{"installed": [{"name", "installed",
+        "enabled"}]}` (0.166.0)."""
+        return any(
+            isinstance(entry, dict)
+            and entry.get("name") == plugin
+            and entry.get("installed") is True
+            and entry.get("enabled") is True
+            for document in json_documents(listing)
+            if isinstance(document, dict)
+            for entry in document.get("installed", [])
+        )
+
     compact_command = "/compact"
     launch = "exec codex"
     help_snapshots = (

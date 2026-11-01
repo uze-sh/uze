@@ -99,6 +99,10 @@ class Config:
         #: scenario can read what a hook handler wrote inside it while the
         #: harness is still running (`harness_files`).
         self.harness_container = None
+        #: The previous release's `uze` on the host, mounted into every
+        #: harness container while a contract that upgrades from it runs
+        #: (`shared/previous.py`).
+        self.previous_uze = None
         self._containers = 0
         os.makedirs(self.outdir, exist_ok=True)
 
@@ -1225,6 +1229,10 @@ def docker_base(cfg, prov_ip, final_cmd, tty=True):
         cmd += ["--add-host", f"{h}:{prov_ip}"]
     cmd += marketplace_mount()
     cmd += ca_mount(cfg)
+    if cfg.previous_uze:
+        from shared.previous import IN_CONTAINER
+
+        cmd += ["-v", f"{cfg.previous_uze}:{IN_CONTAINER}:ro"]
     cmd += [
         "--tmpfs",
         "/tmp:rw,exec,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=700",

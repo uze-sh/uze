@@ -455,6 +455,21 @@ class Bindings:
         than as having decided."""
         return "hook error" in plain.lower()
 
+    #: A shell command printing what the vendor's own registry lists: its
+    #: marketplaces and the plugins it holds. `None` for a harness that keeps
+    #: no registry beyond the files it reads.
+    registry_listing = None
+
+    #: A shell command printing the plugins the vendor holds installed from
+    #: UZE's marketplace, with whether each is enabled. `None` for a harness
+    #: that receives the Lab's plugins as loose files, not as a plugin.
+    plugin_listing = None
+
+    def plugin_enabled(self, listing, plugin):
+        """Whether `listing` (what `plugin_listing` printed) holds `plugin`
+        installed and enabled."""
+        raise NotImplementedError
+
     def unsupported(self, capability):
         """A reason this harness cannot express `capability`, or `None`.
 
@@ -464,3 +479,23 @@ class Bindings:
         cannot is a failed check, which is the honest outcome too.
         """
         return None
+
+
+def json_documents(text):
+    """Every JSON value printed in `text`, in order: a listing command may
+    print several, with other lines between them."""
+    decoder = json.JSONDecoder()
+    found, at = [], 0
+    while at < len(text):
+        starts = [i for i in (text.find("[", at), text.find("{", at)) if i >= 0]
+        if not starts:
+            break
+        start = min(starts)
+        try:
+            value, end = decoder.raw_decode(text, start)
+        except ValueError:
+            at = start + 1
+            continue
+        found.append(value)
+        at = end
+    return found

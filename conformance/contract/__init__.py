@@ -35,6 +35,8 @@ from . import (
     memory,
     rules,
     skill,
+    stores,
+    upgrade,
 )
 
 #: Every capability contract, in the order a run exercises them.
@@ -53,6 +55,8 @@ CONTRACTS = (
     instructions,
     memory,
     rules,
+    stores,
+    upgrade,
 )
 
 
