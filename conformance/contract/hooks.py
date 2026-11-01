@@ -438,8 +438,9 @@ def _fail_closed(cfg, bindings, expected):
         )
 
 
-#: The generated wrapper every delivered hook entry starts, under UZE_HOME.
-WRAPPERS = "/work/home/.uze/runtime/attachments/*/hooks/exec"
+#: The wrapper each build that has hooks carries, at its reserved path in
+#: the harness's vendor store (`hooks/uze-exec`).
+WRAPPERS = "/work/home/.uze/store/*/*/hooks/uze-exec"
 
 
 def _fail_closed_unrun(cfg, bindings, expected):
