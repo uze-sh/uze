@@ -710,3 +710,21 @@ fn a_resource_used_and_sound_reads_in_use_and_one_uncounted_reads_ok() {
         .unwrap();
     assert!(vercel.contains(" ok"), "uses not known: {vercel}");
 }
+
+#[test]
+fn the_status_column_fits_its_widest_word_and_no_more() {
+    let mut model = model();
+    let mut overview = overview();
+    overview.resources[0].status = Status::Duplicate { others: Vec::new() };
+    model.remembered.machine.overview = Some(overview);
+    let drawn = rows(&model);
+    let commit = drawn.iter().find(|row| row.contains("git:commit")).unwrap();
+    let table = commit.split('│').next().unwrap();
+    assert!(
+        table.trim_end().ends_with("duplicate"),
+        "the word whole, and only the row's own margin after it: {commit}"
+    );
+    // The cell's clear column, the row's trailing two, and the room before
+    // the panel's divider: what every row ends with, and nothing more.
+    assert!(table.len() - table.trim_end().len() <= 6, "{commit}");
+}

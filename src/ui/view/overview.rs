@@ -37,7 +37,10 @@ const FROM_WIDTH: usize = 16;
 const TOKENS_WIDTH: usize = 15;
 const USES_WIDTH: usize = 8;
 const STATUS_GAP: &str = "  ";
-const STATUS_WIDTH: usize = 20;
+/// The status column: its gap, then its widest word (`! duplicate`), and
+/// the one column a cell keeps clear. Standing against its left edge, any
+/// room past that would only open a hole before the row's end.
+const STATUS_WIDTH: usize = 14;
 /// Below this table width the `from` column gives way to the name.
 const FROM_NEEDS: u16 = 64;
 /// The menu's width, and the air between it and the table.
