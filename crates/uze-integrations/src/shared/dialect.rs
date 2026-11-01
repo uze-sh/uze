@@ -17,7 +17,6 @@
 //! to the same rule.
 
 use std::borrow::Cow;
-use std::path::Path;
 
 use uze_core::capability::{
     agent::AgentDocument,
@@ -284,7 +283,7 @@ fn conforms(shape: Shape, value: &serde_yaml::Value) -> Result<(), String> {
 /// the `harness:` block taken out and this harness's fields merged in.
 pub(crate) fn delivered_skill<'a>(
     payload: &'a [u8],
-    package_root: &Path,
+    package_root: &crate::shared::package_root::PluginRoot,
     keys: &[&str],
 ) -> Cow<'a, [u8]> {
     let resolved = resolve_bytes(payload, package_root);

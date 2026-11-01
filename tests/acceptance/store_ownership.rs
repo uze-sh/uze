@@ -208,3 +208,83 @@ fn opencodes_runtime_plugin_is_owned_by_a_receipt() {
         "{text}"
     );
 }
+
+/// What a build names inside itself — Claude's generated manifest naming
+/// `${PLUGIN_ROOT}/bin/server` above all, a path Claude would put on its
+/// `PATH` were it at the plugin root — is a file the build holds.
+#[test]
+fn every_path_a_build_names_is_a_file_it_holds() {
+    let env = TestEnvironment::isolated();
+    let _harnesses = install_fake_harnesses(&env);
+    env.run(uze_bin(), &["setup"]);
+    let (market, add) = uze_testkit::marketplace::marketplace_add_args(
+        env.root(),
+        &fixtures::canonical("store-tie"),
+    );
+    env.run_ok(
+        uze_bin(),
+        &market.iter().map(String::as_str).collect::<Vec<_>>(),
+    );
+    env.run_ok(
+        uze_bin(),
+        &add.iter().map(String::as_str).collect::<Vec<_>>(),
+    );
+
+    let claude_store = env.uze_home.join("store/claude");
+    let build = std::fs::read_dir(&claude_store)
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("store-tie@"))
+        })
+        .expect("store-tie has a Claude build");
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(build.join(".claude-plugin/plugin.json")).unwrap())
+            .unwrap();
+    let command = manifest["mcpServers"]["store-tie"]["command"]
+        .as_str()
+        .unwrap();
+    assert!(
+        Path::new(command).is_file(),
+        "Claude's MCP server names {command}, which the build does not hold"
+    );
+    assert!(
+        !build.join("bin").exists(),
+        "a `bin/` at the plugin root would land on Claude's PATH"
+    );
+
+    let uze_home = env.uze_home.to_string_lossy().into_owned();
+    let mut files = Vec::new();
+    files_under(&env.uze_home.join("store"), &[], &mut files);
+    let dangling: Vec<_> = files
+        .iter()
+        .filter(|file| {
+            !file
+                .components()
+                .any(|component| component.as_os_str() == ".uze-carried")
+        })
+        .flat_map(|file| {
+            let text = std::fs::read_to_string(file).unwrap_or_default();
+            text.match_indices(&uze_home)
+                .map(|(at, _)| {
+                    let tail = &text[at..];
+                    let end = tail
+                        .find(|c: char| {
+                            c.is_whitespace()
+                                || matches!(c, '"' | '\'' | ',' | ')' | ']' | '`' | '…')
+                        })
+                        .unwrap_or(tail.len());
+                    (file.clone(), tail[..end].to_owned())
+                })
+                .collect::<Vec<_>>()
+        })
+        .filter(|(_, path)| !is_on_demand_scratch(path, &uze_home))
+        .filter(|(_, path)| !Path::new(path).exists())
+        .collect();
+    assert!(
+        dangling.is_empty(),
+        "a build names what it does not hold: {dangling:?}"
+    );
+}

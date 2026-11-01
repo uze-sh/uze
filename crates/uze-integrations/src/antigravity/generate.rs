@@ -167,7 +167,10 @@ fn generated_plugin_document(package: &StoredPackage) -> serde_json::Value {
 /// 1.3.3 (`serverUrl` stays the legacy one it also reads), with `httpUrl`
 /// renamed to it. Nothing is dropped; stdio `command`, `args`, `env`, `cwd`
 /// carry only the package root resolved.
-fn translated_mcp_config(package: &StoredPackage, root: &std::path::Path) -> serde_json::Value {
+fn translated_mcp_config(
+    package: &StoredPackage,
+    root: &crate::shared::package_root::PluginRoot,
+) -> serde_json::Value {
     let mut document = serde_json::json!({ "mcpServers": {} });
     if let Some(serde_json::Value::Object(servers)) = delivered_mcp_servers(package, root) {
         for (name, mut server) in servers {
@@ -194,7 +197,7 @@ pub(super) fn materialize_generated_plugin(
 ) -> Result<PathBuf> {
     let dir = generated_package_dir_for_id(uze_home, package.id.as_str());
     uze_core::persistence::replace_dir(&dir, |staging| {
-        crate::shared::build::mirror_package(package, staging, NOT_PORTABLE)?;
+        crate::shared::build::mirror_package(package, staging, NOT_PORTABLE, NOT_PORTABLE)?;
         render_plugin(package, staging, &dir, hooks, agents)
     })?;
     Ok(dir)
@@ -214,6 +217,7 @@ pub(super) fn render_plugin(
     hooks: &serde_json::Map<String, serde_json::Value>,
     agents: &[(String, String)],
 ) -> Result<()> {
+    let root = &super::STORE.build_root(root);
     let manifest = generated_plugin_document(package);
     fs::write(
         staging.join("plugin.json"),
@@ -437,7 +441,10 @@ mod generated_native_tests {
             r#"{"mcpServers":{"old":{"httpUrl":"https://old.example/mcp"},"new":{"url":"https://new.example/mcp","httpUrl":"https://ignored.example/mcp"}}}"#,
         )
         .unwrap();
-        let servers = &translated_mcp_config(&pkg, &pkg.root)["mcpServers"];
+        let servers = &translated_mcp_config(
+            &pkg,
+            &crate::shared::package_root::PluginRoot::whole(&pkg.root),
+        )["mcpServers"];
         assert_eq!(
             servers["old"],
             serde_json::json!({"url": "https://old.example/mcp"})

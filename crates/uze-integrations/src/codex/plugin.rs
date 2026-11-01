@@ -36,16 +36,6 @@ impl MarketplaceDialect for CodexMarketplace {
     const EXPLICIT_EVIDENCE: &'static str = "The preserved external .codex-plugin/plugin.json is exposed through UZE's standard Codex local marketplace catalog, the vendor store, for exactly the skills/mcpServers it declares; undeclared resources fall back to individual attachment.";
     const GENERATED_EVIDENCE: &'static str = "No .codex-plugin/plugin.json was provided. UZE synthesizes one deterministically into the package's build in Codex's vendor store (never the package sources), covering exactly the package's conventional skills/ directory and mcp.json-declared servers, published through UZE's one Codex marketplace.";
     const ENVELOPE_CARRIES_AGENTS: bool = false;
-    /// The manifest, the MCP file and the skills a generated envelope
-    /// writes itself, and the files Codex reads from a plugin root that the
-    /// canonical format does not define.
-    const NOT_PORTABLE: &'static [&'static str] = &[
-        ".codex-plugin",
-        ".mcp.json",
-        ".app.json",
-        "skills",
-        "hooks/hooks.json",
-    ];
     // A same-name add from another root is refused until `remove` (measured
     // on 0.166.0, `experiments/codex/source-tie.py`).
     const ADD_REPOINTS: bool = false;

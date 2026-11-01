@@ -262,9 +262,9 @@ pub(crate) fn wrapper_arguments(
     roots: Roots<'_>,
     handlers: &[CommandHook],
 ) -> Vec<String> {
-    let (store_root, package_root) = (roots.sources, roots.delivered);
+    let (store_root, package_root) = (roots.sources, roots.plugin_root());
     let mut arguments = vec![
-        package_root.display().to_string(),
+        package_root.path().display().to_string(),
         hook.event.abi_name().to_owned(),
         hook.effect.abi_name().to_owned(),
     ];
@@ -272,7 +272,7 @@ pub(crate) fn wrapper_arguments(
         arguments.push(format!(
             "{}:{}",
             handler.timeout,
-            super::handler_line(handler, store_root, package_root)
+            super::handler_line(handler, store_root, &package_root)
         ));
     }
     arguments
@@ -326,6 +326,9 @@ pub(crate) fn sealed_wrapper_command_line(
 pub(crate) struct Roots<'a> {
     pub sources: &'a Path,
     pub delivered: &'a Path,
+    /// What the build keeps under its carried directory
+    /// ([`crate::shared::package_root::PluginRoot`]).
+    pub carried: &'static [&'static str],
 }
 
 impl<'a> Roots<'a> {
@@ -335,7 +338,13 @@ impl<'a> Roots<'a> {
         Self {
             sources: root,
             delivered: root,
+            carried: &[],
         }
+    }
+
+    /// The root `${PLUGIN_ROOT}` resolves to in the harness.
+    pub(crate) fn plugin_root(&self) -> crate::shared::package_root::PluginRoot {
+        crate::shared::package_root::PluginRoot::carrying(self.delivered, self.carried)
     }
 }
 

@@ -917,14 +917,21 @@ impl UzeStore {
 /// back out of a link: `s -> .` makes `s/s/../..` two levels up on disk and
 /// none on paper. A target that does that is refused rather than resolved,
 /// so each link's own check stays the whole answer.
+/// Where a build keeps, under their own relative paths, the parts of the
+/// package its harness would misread at the plugin root (Claude's `bin/`,
+/// `commands/`, ...): out of the harness's reach as components, still
+/// there for the `${PLUGIN_ROOT}` references that name them.
+pub const CARRIED_DIR: &str = ".uze-carried";
+
 /// Paths, relative to a package, that UZE writes into the package's build on
-/// every harness — the hook wrapper and the hook document a runtime plugin
-/// reads — and so that no package may ship itself: its file would collide
-/// with UZE's own in every build.
+/// every harness — the hook wrapper, the hook document a runtime plugin
+/// reads, the carried parts ([`CARRIED_DIR`]) — and so that no package may
+/// ship itself: its file would collide with UZE's own in every build.
 pub const RESERVED_BUILD_PATHS: &[&str] = &[
     "hooks/uze-exec",
     "hooks/uze-exec.ps1",
     "hooks/uze-groups.json",
+    CARRIED_DIR,
 ];
 
 /// Refuses a package that ships a file at one of the
@@ -1089,6 +1096,18 @@ fn copy_symlink(source: &Path, destination: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use crate::UzeHome;
+
+    #[test]
+    fn a_package_shipping_the_carried_directory_is_refused_by_name() {
+        let root = uze_testkit::temp::scratch("reserved-carried");
+        fs::create_dir_all(root.join(CARRIED_DIR).join("bin")).unwrap();
+        fs::write(root.join(CARRIED_DIR).join("bin/server"), "#!/bin/sh\n").unwrap();
+        assert!(matches!(
+            assert_no_reserved_path(&root),
+            Err(UzeError::PackageShipsReservedPath(path)) if path == CARRIED_DIR
+        ));
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn reads_the_declared_name_of_a_plugin_manifest() {

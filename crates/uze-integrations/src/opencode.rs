@@ -60,6 +60,7 @@ pub(crate) const STORE: crate::shared::build::VendorStore = crate::shared::build
     vendor: "opencode",
     dialect: 1,
     build_name: crate::shared::build::package_id_name,
+    carried: &[],
 };
 
 use crate::hooks as hook_projection;
@@ -580,7 +581,7 @@ impl IntegrationPort for OpenCodeIntegration {
                 recorded,
             ),
             |dir, _root| {
-                crate::shared::build::mirror_package(package, dir, &[])?;
+                crate::shared::build::mirror_package(package, dir, &[], &[])?;
                 Ok(None)
             },
         )

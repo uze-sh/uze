@@ -28,6 +28,29 @@ pub(crate) fn mirror_tree(
     mirror_dir(source, source, destination, package_root, excluded)
 }
 
+/// Mirrors the one path `relative` of `source` — a file or a whole
+/// directory, by the rules of [`mirror_tree`] — to the same relative path
+/// under `destination`. A path `source` does not have is nothing to mirror.
+pub(crate) fn mirror_path(
+    source: &Path,
+    relative: &str,
+    destination: &Path,
+    package_root: &Path,
+) -> Result<()> {
+    let from = source.join(relative);
+    if fs::symlink_metadata(&from).is_err() {
+        return Ok(());
+    }
+    let to = destination.join(relative);
+    if let Some(parent) = to.parent() {
+        fs::create_dir_all(parent).map_err(|error| UzeError::Write {
+            path: parent.to_path_buf(),
+            source: error,
+        })?;
+    }
+    mirror_entry(source, &from, &to, package_root, &[])
+}
+
 fn mirror_dir(
     base: &Path,
     source: &Path,
@@ -45,25 +68,40 @@ fn mirror_dir(
         if excluded.iter().any(|path| relative == Path::new(path)) {
             continue;
         }
-        let to = destination.join(entry.file_name());
-        let metadata = fs::symlink_metadata(&from).map_err(|error| UzeError::Read {
-            path: from.clone(),
-            source: error,
-        })?;
-        if metadata.is_dir() {
-            mirror_dir(base, &from, &to, package_root, excluded)?;
-        } else if metadata.is_file() {
-            mirror_file(&from, &to)?;
-        } else if metadata.file_type().is_symlink() {
-            mirror_link(&from, &to, package_root)?;
-        } else {
-            return Err(UzeError::ExposureUnavailable(format!(
-                "a generated envelope cannot carry special filesystem entry `{}`",
-                from.display()
-            )));
-        }
+        mirror_entry(
+            base,
+            &from,
+            &destination.join(entry.file_name()),
+            package_root,
+            excluded,
+        )?;
     }
     Ok(())
+}
+
+fn mirror_entry(
+    base: &Path,
+    from: &Path,
+    to: &Path,
+    package_root: &Path,
+    excluded: &[&str],
+) -> Result<()> {
+    let metadata = fs::symlink_metadata(from).map_err(|error| UzeError::Read {
+        path: from.to_path_buf(),
+        source: error,
+    })?;
+    if metadata.is_dir() {
+        mirror_dir(base, from, to, package_root, excluded)
+    } else if metadata.is_file() {
+        mirror_file(from, to)
+    } else if metadata.file_type().is_symlink() {
+        mirror_link(from, to, package_root)
+    } else {
+        Err(UzeError::ExposureUnavailable(format!(
+            "a generated envelope cannot carry special filesystem entry `{}`",
+            from.display()
+        )))
+    }
 }
 
 fn mirror_link(link: &Path, destination: &Path, package_root: &Path) -> Result<()> {
@@ -171,6 +209,23 @@ mod tests {
                 .mode();
             assert_eq!(mode & 0o111, 0o111);
         }
+
+        mirror_path(&source, "bin", &target.join("carried"), &package_root).unwrap();
+        mirror_path(
+            &source,
+            "hooks/hooks.json",
+            &target.join("carried"),
+            &package_root,
+        )
+        .unwrap();
+        mirror_path(&source, "absent", &target.join("carried"), &package_root).unwrap();
+        assert_eq!(
+            fs::read_to_string(target.join("carried/bin/tool")).unwrap(),
+            "tool"
+        );
+        assert!(target.join("carried/hooks/hooks.json").is_file());
+        assert!(!target.join("carried/hooks/ensure.sh").exists());
+        assert!(!target.join("carried/absent").exists());
 
         fs::write(root.join("secret"), "outside").unwrap();
         uze_core::persistence::create_symlink(&root.join("secret"), &source.join("leak")).unwrap();

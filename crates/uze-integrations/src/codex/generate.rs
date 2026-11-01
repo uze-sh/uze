@@ -18,7 +18,7 @@ use uze_core::{Result, UzeError, store::StoredPackage};
 
 use crate::shared::marketplace::manifest_fields;
 use crate::shared::mcp::delivered_mcp_servers;
-use crate::shared::package_root::resolve_bytes;
+use crate::shared::package_root::{PluginRoot, resolve_bytes};
 use crate::shared::skill::write_file;
 use crate::shared::tree::mirror_tree;
 
@@ -40,6 +40,7 @@ use crate::shared::tree::mirror_tree;
 /// keeps the envelope non-authoritative; `codex plugin add` re-stages the
 /// cache from it even for an unchanged version (verified against 0.152.1).
 pub(super) fn render_envelope(package: &StoredPackage, dir: &Path, root: &Path) -> Result<()> {
+    let root = &super::STORE.build_root(root);
     let (description, version) = manifest_fields(
         &package.manifest,
         "UZE-managed Codex plugin, generated from a vendor-neutral package.",
@@ -87,7 +88,7 @@ fn materialize_generated_skills(
     package: &StoredPackage,
     package_root: &Path,
     envelope_dir: &Path,
-    root: &Path,
+    root: &PluginRoot,
 ) -> Result<()> {
     if !package.root.join("skills").is_dir() {
         return Ok(());
@@ -140,7 +141,7 @@ fn materialize_user_only_skill_dir(
     target_dir: &Path,
     canonical_dir: &Path,
     resource: &uze_core::capability::Resource,
-    (package_root, root): (&Path, &Path),
+    (package_root, root): (&Path, &PluginRoot),
     skill_name: &str,
     policy: &uze_core::skill::SkillInvocationPolicy,
 ) -> Result<()> {
@@ -712,7 +713,7 @@ mod generated_native_tests {
         .unwrap();
         let dir = _root.join("envelope");
         let root = _root.join("build");
-        crate::shared::build::mirror_package(&pkg, &dir, &[]).unwrap();
+        crate::shared::build::mirror_package(&pkg, &dir, &[], &[]).unwrap();
         render_envelope(&pkg, &dir, &root).unwrap();
         let delivered: serde_json::Value =
             serde_json::from_slice(&fs::read(dir.join(".mcp.json")).unwrap()).unwrap();

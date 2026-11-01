@@ -94,8 +94,10 @@ pub(crate) use hooks::HOOKS;
 /// reads, holding one build per package.
 pub(crate) const STORE: crate::shared::build::VendorStore = crate::shared::build::VendorStore {
     vendor: "antigravity",
-    dialect: 1,
+    // 2: what a build leaves out of the plugin root is carried in it.
+    dialect: 2,
     build_name: generate::sanitize_for_agy_path,
+    carried: generate::NOT_PORTABLE,
 };
 
 use crate::hooks::HookEntry;
@@ -667,7 +669,12 @@ impl IntegrationPort for AntigravityIntegration {
                 recorded,
             ),
             |dir, root| {
-                crate::shared::build::mirror_package(package, dir, generate::NOT_PORTABLE)?;
+                crate::shared::build::mirror_package(
+                    package,
+                    dir,
+                    generate::NOT_PORTABLE,
+                    generate::NOT_PORTABLE,
+                )?;
                 let resources = uze_core::engine::package_resources_at(&package.id, &package.root)?;
                 let resources: Vec<&Resource> = resources.iter().collect();
                 let origin = if self.package_exposure_plan(package, &resources).is_some() {

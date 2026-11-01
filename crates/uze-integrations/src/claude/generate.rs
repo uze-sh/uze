@@ -41,7 +41,7 @@ use uze_core::{
 
 use crate::shared::marketplace::manifest_fields;
 use crate::shared::mcp::delivered_mcp_servers;
-use crate::shared::package_root::resolve_text;
+use crate::shared::package_root::{PluginRoot, resolve_text};
 use crate::shared::skill::write_file;
 
 /// The description a generated manifest declares when the package's own
@@ -87,6 +87,7 @@ pub(super) fn withheld_paths(package: &StoredPackage) -> Vec<WithheldPath> {
 /// were just mirrored into, for the root `root` it is swapped into: the
 /// generated manifest, then the rewritten skill and agent definitions.
 pub(super) fn render_envelope(package: &StoredPackage, dir: &Path, root: &Path) -> Result<()> {
+    let root = &super::STORE.build_root(root);
     write_manifest(package, dir, root)?;
     let resources = uze_core::engine::package_resources_at(&package.id, &package.root)?;
     for resource in &resources {
@@ -127,7 +128,7 @@ pub(super) const CLAUDE_KEYS: [&str; 2] = ["claude-code", "claude"];
 /// package declares servers, and carried inline with the package root
 /// resolved. Claude scans `skills/` and `agents/` by default, so the
 /// manifest names neither.
-fn write_manifest(package: &StoredPackage, dir: &Path, root: &Path) -> Result<()> {
+fn write_manifest(package: &StoredPackage, dir: &Path, root: &PluginRoot) -> Result<()> {
     let (description, version) = manifest_fields(&package.manifest, GENERATED_DESCRIPTION);
     let mut manifest = serde_json::json!({
         "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
@@ -150,7 +151,7 @@ fn rewrite_skill(
     package: &StoredPackage,
     resource: &Resource,
     dir: &Path,
-    root: &Path,
+    root: &PluginRoot,
 ) -> Result<()> {
     let policy = resource.skill_invocation();
     if policy.is_invalid() {
@@ -1024,7 +1025,8 @@ mod generated_native_tests {
         .unwrap();
         let dir = _root.join("envelope");
         let root = _root.join("build");
-        crate::shared::build::mirror_package(&pkg, &dir, super::NOT_PORTABLE).unwrap();
+        crate::shared::build::mirror_package(&pkg, &dir, super::NOT_PORTABLE, super::NOT_PORTABLE)
+            .unwrap();
         super::render_envelope(&pkg, &dir, &root).unwrap();
         let manifest: serde_json::Value =
             serde_json::from_slice(&fs::read(dir.join(".claude-plugin/plugin.json")).unwrap())
@@ -1036,6 +1038,38 @@ mod generated_native_tests {
         );
         let _ = fs::remove_dir_all(_root);
     }
+
+    #[test]
+    fn a_server_in_a_carried_path_is_named_where_the_build_carries_it() {
+        let (_root, pkg) = make_plain_package("mcp-carried-root", false);
+        fs::write(
+            pkg.root.join("mcp.json"),
+            r#"{"mcpServers":{"srv":{"command":"${PLUGIN_ROOT}/bin/server"}}}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(pkg.root.join("bin")).unwrap();
+        fs::write(pkg.root.join("bin/server"), "#!/bin/sh\n").unwrap();
+        let uze_home = UzeHome::at(_root.join("uze"));
+        let dir = materialize_generated_package(&uze_home, &pkg).unwrap();
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(dir.join(".claude-plugin/plugin.json")).unwrap())
+                .unwrap();
+        let command = manifest["mcpServers"]["srv"]["command"].as_str().unwrap();
+        assert_eq!(
+            command,
+            format!("{}/.uze-carried/bin/server", dir.display())
+        );
+        assert!(
+            Path::new(command).is_file(),
+            "{command} exists in the build"
+        );
+        assert!(
+            !dir.join("bin").exists(),
+            "Claude puts no `bin/` on its PATH"
+        );
+        let _ = fs::remove_dir_all(_root);
+    }
+
     #[test]
     fn the_envelope_is_the_package_minus_what_is_not_portable() {
         let (_root, pkg) = make_plain_package("whole-package", false);
@@ -1071,9 +1105,21 @@ mod generated_native_tests {
                 !dir.join(excluded).exists(),
                 "{excluded} is a Claude-only component and is never delivered"
             );
+            assert!(
+                dir.join(".uze-carried").join(excluded).exists(),
+                "{excluded} is carried out of Claude's reach, for the references naming it"
+            );
         }
+        assert_eq!(
+            fs::read_to_string(dir.join(".uze-carried/bin/tool")).unwrap(),
+            "tool"
+        );
         assert!(
-            !dir.join("rules").exists(),
+            !dir.join(".uze-carried/phases").exists(),
+            "only what is left out of the plugin root is carried"
+        );
+        assert!(
+            !dir.join("rules").exists() && !dir.join(".uze-carried/rules").exists(),
             "a package's rules never ride a plugin installed for every project"
         );
         let withheld = super::withheld_paths(&pkg);

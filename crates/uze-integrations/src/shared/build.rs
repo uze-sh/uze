@@ -33,6 +33,8 @@ use uze_core::{
     store::{StoredPackage, is_valid_qualified_id},
 };
 
+use crate::shared::package_root::{CARRIED_DIR, PluginRoot};
+
 /// What one harness's vendor store is called and how its builds are named.
 pub(crate) struct VendorStore {
     /// The vendor word `UzeHome::vendor_store_dir` takes.
@@ -42,6 +44,10 @@ pub(crate) struct VendorStore {
     pub dialect: u32,
     /// The directory name of a package's build, from its id.
     pub build_name: fn(&str) -> String,
+    /// What a build leaves out of the plugin root because this harness
+    /// would misread it there: every build keeps it under
+    /// [`CARRIED_DIR`], where `${PLUGIN_ROOT}` references into it resolve.
+    pub carried: &'static [&'static str],
 }
 
 /// The package id itself, for a harness that takes it as a directory name.
@@ -60,12 +66,17 @@ impl VendorStore {
 
     /// The root `${PLUGIN_ROOT}` names on this harness for the package whose
     /// sources are `package_root`: its build. A root outside the sources
-    /// (a package read in place by a test or a launcher) is its own.
-    pub(crate) fn root_of(&self, package_root: &Path) -> PathBuf {
+    /// (a package read in place by a test or a launcher) is its own, whole.
+    pub(crate) fn root_of(&self, package_root: &Path) -> PluginRoot {
         match UzeHome::installed_package_of(package_root) {
-            Some((home, id)) => self.build_dir(&home, id.as_str()),
-            None => package_root.to_path_buf(),
+            Some((home, id)) => self.build_root(self.build_dir(&home, id.as_str())),
+            None => PluginRoot::whole(package_root),
         }
+    }
+
+    /// The build at `build` as the root `${PLUGIN_ROOT}` names.
+    pub(crate) fn build_root(&self, build: impl Into<PathBuf>) -> PluginRoot {
+        PluginRoot::carrying(build, self.carried)
     }
 }
 
@@ -438,20 +449,30 @@ fn state(state: AttachmentState, reason: &str) -> AttachmentInspection {
     }
 }
 
-/// Mirrors the whole package into a build being rendered, as real files,
-/// leaving out `excluded` (paths relative to the package that the harness
-/// would read as something the canonical format does not define, or that
-/// the build replaces) and the package's rules, which reach a harness per
-/// project and never machine-wide.
+/// Mirrors the whole package into a build being rendered, as real files:
+/// everything but `excluded` and the package's rules where the package has
+/// it, and each of `carried` (the paths this harness would misread at a
+/// plugin root, [`VendorStore::carried`]) under [`CARRIED_DIR`] as well, so
+/// a `${PLUGIN_ROOT}` reference into one names a file that exists.
+/// `excluded` is either `carried` (a generated build) or nothing (a build
+/// the author shipped the harness's envelope for). The rules reach a
+/// harness per project and never machine-wide.
 pub(crate) fn mirror_package(
     package: &StoredPackage,
     staging: &Path,
     excluded: &[&str],
+    carried: &[&str],
 ) -> Result<()> {
     let package_root =
         uze_core::path::canonical(&package.root).map_err(UzeError::read(&package.root))?;
-    let excluded = [excluded, &[crate::rules::PACKAGE_RULES_DIR]].concat();
-    crate::shared::tree::mirror_tree(&package.root, staging, &package_root, &excluded)
+    let rules = &[crate::rules::PACKAGE_RULES_DIR];
+    let excluded = [excluded, rules].concat();
+    crate::shared::tree::mirror_tree(&package.root, staging, &package_root, &excluded)?;
+    let carried_root = staging.join(CARRIED_DIR);
+    for path in carried {
+        crate::shared::tree::mirror_path(&package.root, path, &carried_root, &package_root)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -73,10 +73,6 @@ pub(crate) trait MarketplaceDialect {
     /// under the plugin: a generated envelope then carries the package's
     /// agents, and no agent is delivered beside it.
     const ENVELOPE_CARRIES_AGENTS: bool;
-    /// What a generated build leaves out of the package: paths the harness
-    /// would load from a plugin root as something the canonical format does
-    /// not define, and those the generated envelope writes itself.
-    const NOT_PORTABLE: &'static [&'static str];
     /// Whether registering the marketplace again under its name from
     /// another root moves it there (measured on Claude Code), rather than
     /// being refused until the old registration is removed (Codex).
@@ -188,12 +184,16 @@ pub(crate) fn render_build<D: MarketplaceDialect>(
 ) -> Result<Option<Origin>> {
     let origin = origin_of::<D>(package);
     match origin {
-        Some(Origin::Explicit) => crate::shared::build::mirror_package(package, dir, &[])?,
+        Some(Origin::Explicit) => {
+            crate::shared::build::mirror_package(package, dir, &[], D::STORE.carried)?;
+        }
         Some(Origin::Generated) => {
-            crate::shared::build::mirror_package(package, dir, D::NOT_PORTABLE)?;
+            crate::shared::build::mirror_package(package, dir, D::STORE.carried, D::STORE.carried)?;
             D::render_envelope(package, dir, root)?;
         }
-        None => crate::shared::build::mirror_package(package, dir, D::NOT_PORTABLE)?,
+        None => {
+            crate::shared::build::mirror_package(package, dir, D::STORE.carried, D::STORE.carried)?;
+        }
     }
     crate::hooks::render_wrapper(D::HOOKS, package, dir)?;
     Ok(origin)

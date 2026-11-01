@@ -43,7 +43,6 @@ impl MarketplaceDialect for ClaudeMarketplace {
     const EXPLICIT_EVIDENCE: &'static str = "The preserved external .claude-plugin/plugin.json is exposed through UZE's Claude marketplace, the vendor store. Claude Code owns Skill and MCP loading for this plugin, so UZE must not attach them a second time.";
     const GENERATED_EVIDENCE: &'static str = "No .claude-plugin/plugin.json was provided. UZE synthesizes one deterministically into the package's build in Claude Code's vendor store (never the package sources): a copy of the package carrying its skills, agents and mcp.json-declared servers, published through UZE's one Claude marketplace, so Claude names every skill and agent under the plugin.";
     const ENVELOPE_CARRIES_AGENTS: bool = true;
-    const NOT_PORTABLE: &'static [&'static str] = super::generate::NOT_PORTABLE;
     // A same-name `marketplace add` from another root repoints it and keeps
     // its plugins (measured on 2.1.316, `experiments/claude/source-tie.py`).
     const ADD_REPOINTS: bool = true;

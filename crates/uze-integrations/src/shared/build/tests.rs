@@ -12,6 +12,7 @@ const STORE: VendorStore = VendorStore {
     vendor: "test",
     dialect: 1,
     build_name: package_id_name,
+    carried: &[],
 };
 
 struct Machine {
@@ -69,7 +70,7 @@ fn publish_with(
         ),
         |dir, _root| {
             *renders += 1;
-            mirror_package(&machine.package, dir, &[])?;
+            mirror_package(&machine.package, dir, &[], &[])?;
             Ok(Some(Origin::Generated))
         },
     )
@@ -95,7 +96,7 @@ fn a_build_is_rendered_into_the_vendor_store_and_inspected_by_content() {
     assert!(recorded.files.contains_key("guides/plan.md"));
     assert_eq!(inspect(&receipt).state, AttachmentState::Matched);
     assert_eq!(
-        STORE.root_of(&machine.package.root),
+        STORE.root_of(&machine.package.root).path(),
         build,
         "`${{PLUGIN_ROOT}}` names the build, never the sources"
     );

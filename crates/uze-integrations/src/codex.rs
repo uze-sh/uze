@@ -49,9 +49,22 @@ pub(crate) use hooks::{HOOKS, RULES};
 /// reads, holding one build per package.
 pub(crate) const STORE: crate::shared::build::VendorStore = crate::shared::build::VendorStore {
     vendor: "codex",
-    dialect: 1,
+    // 2: what a build leaves out of the plugin root is carried in it.
+    dialect: 2,
     build_name: crate::shared::build::package_id_name,
+    carried: NOT_PORTABLE,
 };
+
+/// The manifest, the MCP file and the skills a generated envelope writes
+/// itself, and the files Codex reads from a plugin root that the canonical
+/// format does not define.
+const NOT_PORTABLE: &[&str] = &[
+    ".codex-plugin",
+    ".mcp.json",
+    ".app.json",
+    "skills",
+    "hooks/hooks.json",
+];
 pub use mcp::detach_mcp_entry;
 
 use crate::hooks::HookEntry;

@@ -136,7 +136,7 @@ pub(super) fn runs_in_own_runtime(handler: &uze_core::hook::CommandHook) -> bool
 fn bridged_handler(
     handler: &uze_core::hook::CommandHook,
     store_root: &Path,
-    delivered_root: &Path,
+    delivered_root: &crate::shared::package_root::PluginRoot,
 ) -> serde_json::Value {
     if runs_in_own_runtime(handler)
         && let Some(script) = handler.script()
@@ -153,7 +153,7 @@ fn bridged_handler(
     }
     match handler.invocation(
         store_root,
-        delivered_root,
+        &delivered_root.base_for(handler.script().unwrap_or_default()),
         uze_platform::shell::FAMILY,
         &uze_core::launcher::python_answers,
     ) {
@@ -164,9 +164,9 @@ fn bridged_handler(
         }),
         uze_core::hook::Invocation::Line(line) => serde_json::json!({
             "command": uze_platform::shell::script_text(&uze_platform::shell::substitute(
-                &line,
+                &delivered_root.carry_references(&line),
                 crate::shared::package_root::TOKEN,
-                &delivered_root.display().to_string(),
+                &delivered_root.path().display().to_string(),
             )),
             "timeout": handler.timeout,
         }),

@@ -7,13 +7,22 @@ every text file it delivers that the author may use it in — `mcp.json`,
 `hooks.json`, `SKILL.md` and agent definitions — and in no other file. The
 delivered package root SHALL be the package's build in that harness's vendor
 store, SHALL contain the whole package, and SHALL be the same on every
-route of that harness.
+route of that harness. A path that harness would load as a harness-only
+component from a plugin root SHALL be held under the build's `.uze-carried/`
+at its own relative path, and a placeholder naming that path SHALL resolve
+there.
 
 #### Scenario: A skill names a file by the placeholder
 
 - **WHEN** a skill body contains `${PLUGIN_ROOT}/phases/plan.md`
 - **THEN** the body a harness loads names a path that exists
 - **AND** the canonical `SKILL.md` in the package sources still contains the placeholder
+
+#### Scenario: A server in a harness-only path
+
+- **WHEN** a package's MCP server command is `${PLUGIN_ROOT}/bin/server` and it is delivered to Claude Code
+- **THEN** the command Claude Code is handed names a file that exists in the package's build
+- **AND** the build has no `bin/` at its plugin root
 
 #### Scenario: One root on every route
 
@@ -35,6 +44,25 @@ route of that harness.
 
 - **WHEN** a file UZE wrote into a build was edited and the package is then updated
 - **THEN** the build is kept as it is and reported as drifted, naming the file
+
+### Requirement: A harness-only component is not carried into a generated plugin
+
+A path the harness would load as a component the canonical format does not
+define SHALL NOT be placed where the harness loads it from the generated
+plugin; the build holds it only under `.uze-carried/`. `uze inspect` SHALL
+name each such path the package contains as not delivered to that harness.
+For Claude Code these are `commands/`, `bin/`, `output-styles/`,
+`workflows/`, `themes/`, `monitors/`, `settings.json`, `.lsp.json`, and its
+own `hooks/hooks.json` and `.mcp.json`.
+
+#### Scenario: A harness-only component is not delivered
+
+- **WHEN** a package contains `bin/tool` and `commands/legacy.md`
+- **THEN** neither is present at the generated Claude Code plugin's root
+- **AND** both are held under the build's `.uze-carried/`
+- **AND** both remain in the package sources
+- **AND** `uze inspect` names `bin` and `commands` as not delivered to Claude
+  Code
 
 ## ADDED Requirements
 

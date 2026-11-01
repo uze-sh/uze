@@ -53,8 +53,10 @@ pub(crate) use hooks::{HOOKS, RULES};
 /// reads, holding one build per package.
 pub(crate) const STORE: crate::shared::build::VendorStore = crate::shared::build::VendorStore {
     vendor: "claude",
-    dialect: 1,
+    // 2: what a build leaves out of the plugin root is carried in it.
+    dialect: 2,
     build_name: crate::shared::build::package_id_name,
+    carried: generate::NOT_PORTABLE,
 };
 pub use mcp::detach_mcp_entry;
 

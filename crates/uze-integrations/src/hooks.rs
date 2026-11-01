@@ -303,7 +303,8 @@ impl HookTarget {
             let delivered = self.store.root_of(&resource.package_root);
             let roots = Roots {
                 sources: &resource.package_root,
-                delivered: &delivered,
+                delivered: delivered.path(),
+                carried: self.store.carried,
             };
             let entry = if self.names_entries() {
                 agy_named_entry(self, hook, &wrapper, roots)
@@ -475,18 +476,18 @@ const NOTHING_RUNS_HERE: &str = "exit 1";
 pub(crate) fn handler_line(
     handler: &CommandHook,
     store_root: &Path,
-    delivered_root: &Path,
+    delivered_root: &crate::shared::package_root::PluginRoot,
 ) -> String {
     match handler.invocation(
         store_root,
-        delivered_root,
+        &delivered_root.base_for(handler.script().unwrap_or_default()),
         uze_platform::shell::FAMILY,
         &uze_core::launcher::python_answers,
     ) {
         Invocation::Line(line) => uze_platform::shell::substitute(
-            &line,
+            &delivered_root.carry_references(&line),
             crate::shared::package_root::TOKEN,
-            &delivered_root.display().to_string(),
+            &delivered_root.path().display().to_string(),
         ),
         Invocation::Argv { argv, .. } => match argv.split_first() {
             Some((program, arguments)) => uze_platform::shell::command_line(program, arguments),
