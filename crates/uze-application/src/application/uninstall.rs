@@ -57,6 +57,17 @@ pub struct UninstallPlan {
     /// keep, and said so.
     pub provisioned: Vec<String>,
     pub binary: BinaryPlan,
+    /// The `uze` running this uninstall, when it is not the binary the
+    /// installer placed: left, with the command that removes it.
+    pub running: Option<LeftBinary>,
+}
+
+/// A `uze` binary uninstall leaves, and the command for the way it was
+/// put there, when a path says it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct LeftBinary {
+    pub path: PathBuf,
+    pub remove_with: Option<String>,
 }
 
 impl UninstallPlan {
@@ -183,6 +194,8 @@ pub struct UninstallReport {
     pub kept: Vec<PathBuf>,
     pub home_removed: bool,
     pub binary: BinaryOutcome,
+    /// The running `uze`, left because the installer did not place it.
+    pub running: Option<LeftBinary>,
     /// What uninstall could not do itself, each with what the person does
     /// instead: the run went on without it, and its exit status says so.
     pub manual: Vec<String>,
@@ -233,6 +246,7 @@ impl UzeApplication {
     #[tracing::instrument(name = "uninstall.plan", skip_all, fields(mode = ?mode))]
     pub fn uninstall_plan(&self, mode: UninstallMode) -> UninstallPlan {
         let home_present = self.home.root().is_dir();
+        let (binary, running) = self.binary_plan();
         let harnesses = if home_present {
             self.harnesses_to_uninstall(mode)
         } else {
@@ -246,7 +260,8 @@ impl UzeApplication {
             entries: self.home_entries(mode),
             projects: self.projects_work(),
             provisioned: self.provisioned_harnesses(),
-            binary: self.binary_plan(),
+            binary,
+            running,
         }
     }
 
@@ -287,6 +302,7 @@ impl UzeApplication {
             kept: Vec::new(),
             home_removed: false,
             binary: BinaryOutcome::Unknown,
+            running: plan.running.clone(),
             manual: Vec::new(),
             projects: plan.projects.clone(),
             provisioned: plan.provisioned.clone(),
@@ -547,24 +563,48 @@ impl UzeApplication {
             .collect()
     }
 
-    fn binary_plan(&self) -> BinaryPlan {
+    fn binary_plan(&self) -> (BinaryPlan, Option<LeftBinary>) {
         let receipt = fs::read(self.home.install_receipt_path())
             .ok()
-            .and_then(|bytes| serde_json::from_slice::<InstallReceipt>(&bytes).ok())
-            .filter(|receipt| receipt.binary.exists());
-        if let Some(receipt) = receipt {
-            return BinaryPlan::Placed {
-                path: receipt.binary,
-                path_entry: receipt.path_entry,
+            .and_then(|bytes| serde_json::from_slice::<InstallReceipt>(&bytes).ok());
+        binary_plan(receipt, std::env::current_exe().ok())
+    }
+}
+
+/// Whose the binary is to remove: the one the installer's `receipt` names
+/// while it exists, else the `running` one, left to whatever put it there.
+/// When both exist and differ, the running one is left and named too
+/// (decision U6), so a person is never told uze is gone while it is not.
+fn binary_plan(
+    receipt: Option<InstallReceipt>,
+    running: Option<PathBuf>,
+) -> (BinaryPlan, Option<LeftBinary>) {
+    let left = |path: PathBuf| LeftBinary {
+        remove_with: removal_command(&path),
+        path,
+    };
+    match receipt.filter(|receipt| receipt.binary.exists()) {
+        Some(receipt) => {
+            let same = |path: &Path| {
+                uze_platform::path::canonical(path).ok()
+                    == uze_platform::path::canonical(&receipt.binary).ok()
             };
+            let running = running.filter(|path| !same(path)).map(left);
+            (
+                BinaryPlan::Placed {
+                    path: receipt.binary,
+                    path_entry: receipt.path_entry,
+                },
+                running,
+            )
         }
-        match std::env::current_exe() {
-            Ok(path) => BinaryPlan::Elsewhere {
-                remove_with: removal_command(&path),
-                path,
-            },
-            Err(_) => BinaryPlan::Unknown,
-        }
+        None => match running {
+            Some(path) => {
+                let LeftBinary { path, remove_with } = left(path);
+                (BinaryPlan::Elsewhere { path, remove_with }, None)
+            }
+            None => (BinaryPlan::Unknown, None),
+        },
     }
 }
 
@@ -764,6 +804,47 @@ mod tests {
             path: PathBuf::from("/opt/uze/bin/uze"),
             path_entry: Some(PathBuf::from("/opt/uze/bin")),
         }
+    }
+
+    #[test]
+    fn a_running_binary_other_than_the_installers_is_left_and_named() {
+        let root = uze_testkit::temp::scratch("uninstall-two-binaries");
+        let placed = root.join("installed/uze");
+        let running = root.join("cargo/bin/uze");
+        for binary in [&placed, &running] {
+            fs::create_dir_all(binary.parent().unwrap()).unwrap();
+            fs::write(binary, "").unwrap();
+        }
+        let receipt = InstallReceipt {
+            binary: placed.clone(),
+            path_entry: None,
+        };
+
+        let (plan, left) = binary_plan(Some(receipt), Some(running.clone()));
+
+        assert!(
+            matches!(&plan, BinaryPlan::Placed { path, .. } if *path == placed),
+            "{plan:?}"
+        );
+        assert_eq!(left.map(|left| left.path), Some(running));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_installers_binary_running_is_not_named_twice() {
+        let root = uze_testkit::temp::scratch("uninstall-one-binary");
+        let placed = root.join("installed/uze");
+        fs::create_dir_all(placed.parent().unwrap()).unwrap();
+        fs::write(&placed, "").unwrap();
+        let receipt = InstallReceipt {
+            binary: placed.clone(),
+            path_entry: None,
+        };
+
+        let (_, left) = binary_plan(Some(receipt), Some(placed));
+
+        assert_eq!(left, None);
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

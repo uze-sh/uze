@@ -264,6 +264,12 @@ fn untouched(plan: &UninstallPlan) -> Vec<Vec<String>> {
             progress::label(binary_left_to_say(remove_with.as_deref())),
         ]);
     }
+    if let Some(running) = &plan.running {
+        rows.push(vec![
+            progress::path(&running.path),
+            progress::label(binary_left_to_say(running.remove_with.as_deref())),
+        ]);
+    }
     rows.extend(work_rows(&plan.projects));
     rows
 }
@@ -392,6 +398,12 @@ pub(crate) fn render_report(report: &UninstallReport) -> String {
         notes.push(vec![
             progress::path(path),
             progress::label(binary_left_to_say(remove_with.as_deref())),
+        ]);
+    }
+    if let Some(running) = &report.running {
+        notes.push(vec![
+            progress::path(&running.path),
+            progress::label(binary_left_to_say(running.remove_with.as_deref())),
         ]);
     }
     notes.extend(work_rows(&report.projects));

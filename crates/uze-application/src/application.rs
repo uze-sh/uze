@@ -85,7 +85,7 @@ pub use rules_engine::RulesSetup;
 pub use setup::ProvisionRoute;
 pub use theme::{GlyphSetSummary, ThemeSummary};
 pub use uninstall::{
-    BinaryOutcome, BinaryPlan, HarnessUninstall, HomeEntry, ProjectWork, ReceiptFate,
+    BinaryOutcome, BinaryPlan, HarnessUninstall, HomeEntry, LeftBinary, ProjectWork, ReceiptFate,
     ReceiptUninstall, UninstallMode, UninstallPlan, UninstallReport, UnlandedCheckout,
 };
 
