@@ -775,6 +775,7 @@ impl DeclaredExtension {
                         action: action.id.clone(),
                         label: Clean::label(&action.label).into_string(),
                         unattended: true,
+                        summary: None,
                     }),
                     _ => None,
                 })

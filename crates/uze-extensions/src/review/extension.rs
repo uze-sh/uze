@@ -278,6 +278,7 @@ impl ReviewExtension {
         }
         self.drawer_notice = None;
         let line = change::send_line(ids.len(), next_send);
+        let summary = change::send_summary(ids.len());
         self.sending = Some((
             root,
             Sending {
@@ -291,6 +292,7 @@ impl ReviewExtension {
             action: SEND_ACTION.to_owned(),
             label: "Send the review".to_owned(),
             unattended: false,
+            summary: Some(summary),
         }))
     }
 

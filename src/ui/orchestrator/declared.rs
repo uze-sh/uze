@@ -28,7 +28,7 @@ use uze_extensions::declared::{
 };
 use uze_extensions::view::{Command, Role, ScrollTarget, Section, SectionRow, Size, View};
 
-mod agent;
+pub(super) mod agent;
 mod band;
 mod bar;
 mod bridge;

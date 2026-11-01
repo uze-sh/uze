@@ -129,6 +129,12 @@ pub struct AgentRequest {
     pub label: String,
     /// Sent by an agent's event rather than a gesture.
     pub unattended: bool,
+    /// What a bundled extension asks, in the operator's words, for the
+    /// confirmation to say instead of the text it types: that text is
+    /// UZE's own, written for the agent, and the operator is not who runs
+    /// it. A plugin's is ignored, and what it types is shown whole, since
+    /// nothing a plugin types goes unread (D182).
+    pub summary: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

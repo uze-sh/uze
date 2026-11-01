@@ -243,6 +243,7 @@ impl DeclaredExtension {
             action: action.to_owned(),
             label,
             unattended: false,
+            summary: None,
         })
     }
 

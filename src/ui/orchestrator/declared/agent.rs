@@ -49,6 +49,9 @@ pub(in crate::ui::orchestrator) struct Write {
     pub(in crate::ui::orchestrator) text: String,
     pub(in crate::ui::orchestrator) label: String,
     pub(in crate::ui::orchestrator) unattended: bool,
+    /// What a bundled extension says it asks, in the operator's words,
+    /// shown instead of the text it types; never a plugin's.
+    pub(in crate::ui::orchestrator) summary: Option<String>,
 }
 
 /// What extensions may still write.
@@ -227,6 +230,7 @@ impl WorkspaceModel {
             text,
             label: request.label.clone(),
             unattended: request.unattended,
+            summary: summary_shown(&owner, &request),
         };
         let writes = &mut self.remembered.declared.bridge.writes;
         if request.unattended
@@ -424,7 +428,13 @@ impl Attach<'_> {
                 self.model.raise_toast(
                     ToastKind::Done,
                     "sent to agent",
-                    format!("{by}: {}", crate::ui::widget::text::elide(&write.text, 32)),
+                    match &write.summary {
+                        // What it did, as it was said before allowing it.
+                        Some(_) => format!("{by}: {}", write.label.to_lowercase()),
+                        None => {
+                            format!("{by}: {}", crate::ui::widget::text::elide(&write.text, 32))
+                        }
+                    },
                     None,
                 );
             }
@@ -477,6 +487,20 @@ impl Attach<'_> {
 
 /// The question, drawn over everything but the toasts: the exact text,
 /// which agent it goes to, and which extension asks.
+/// What the confirmation says in place of the text typed: a bundled
+/// extension's summary, since its text is UZE's own, written for the agent;
+/// never a plugin's, whose text is read whole (D182), whatever it says of
+/// itself.
+pub(in crate::ui::orchestrator) fn summary_shown(
+    owner: &Owner,
+    request: &AgentRequest,
+) -> Option<String> {
+    match owner {
+        Owner::Builtin(_) => request.summary.clone(),
+        Owner::Declared(_) => None,
+    }
+}
+
 pub(in crate::ui::orchestrator) fn render_agent_write(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
@@ -496,6 +520,12 @@ pub(in crate::ui::orchestrator) fn render_agent_write(
                 "A few times an hour at most. F8 pauses every extension.".to_owned(),
             ],
             "Allow for a day",
+        )
+    } else if let Some(summary) = &open.write.summary {
+        (
+            format!("{} to {}?", open.write.label, open.agent_label),
+            vec![summary.clone()],
+            "Send",
         )
     } else {
         (

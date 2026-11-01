@@ -22,6 +22,7 @@ fn prompt(text: &str) -> AgentRequest {
         action: "review".to_owned(),
         label: "Review".to_owned(),
         unattended: false,
+        summary: None,
     }
 }
 
@@ -190,6 +191,7 @@ fn on_its_own(action: &str, text: &str) -> AgentRequest {
         action: action.to_owned(),
         label: action.to_owned(),
         unattended: true,
+        summary: None,
     }
 }
 
@@ -312,6 +314,7 @@ fn skill(name: &str) -> AgentRequest {
         action: "run".to_owned(),
         label: "Run".to_owned(),
         unattended: false,
+        summary: None,
     }
 }
 
@@ -460,5 +463,25 @@ fn the_asking_extension_is_told_whether_its_write_was_typed_refused_or_declined(
     assert_eq!(
         told.lock().unwrap().pop(),
         Some(("review".to_owned(), AgentWritten::Typed))
+    );
+}
+
+/// A bundled extension's send is asked in the operator's words: what the
+/// agent is told and where its answers come back, never the commands the
+/// line names, which are the agent's. A plugin's summary is not taken: what
+/// a plugin types is shown whole.
+#[test]
+fn a_bundled_extensions_ask_is_said_in_the_operators_words_and_a_plugins_whole() {
+    let summarised = AgentRequest {
+        summary: Some("The agent is told your comment waits for it.".to_owned()),
+        ..prompt("run `uze agent review show` to read it")
+    };
+    let mut model = launched_agent();
+    model.ask_of_agent(Owner::Builtin("review"), summarised.clone());
+    let rows = frame_rows(&mut model).join("\n");
+    assert!(rows.contains("your comment waits"), "{rows}");
+    assert!(
+        !rows.contains("uze agent"),
+        "the agent's commands are not the operator's"
     );
 }

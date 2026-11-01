@@ -129,6 +129,20 @@ pub(crate) fn send_line(count: usize, send: u32) -> String {
     )
 }
 
+/// What a send does, as the operator reads it before allowing it: what the
+/// agent is told and where its answers come back, never the commands it is
+/// told to run, which are the agent's.
+pub(crate) fn send_summary(count: usize) -> String {
+    let waits = match count {
+        1 => "your comment waits".to_owned(),
+        many => format!("your {many} comments wait"),
+    };
+    format!(
+        "The agent is told {waits} for it. It reads them, makes the changes, \
+         and answers each one here, under the comment, where you resolve it."
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
