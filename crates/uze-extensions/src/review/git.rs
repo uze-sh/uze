@@ -301,6 +301,28 @@ mod tests {
         );
     }
 
+    /// A sibling agent's checkout of the same repository holds a change;
+    /// the review of this checkout lists nothing of it.
+    #[test]
+    fn a_review_reads_its_own_checkout_and_never_a_siblings() {
+        let repository = uze_testkit::git::Repository::new("review-one-checkout");
+        let sibling = repository
+            .root()
+            .with_file_name("review-one-checkout-sibling");
+        repository.git(&[
+            "worktree",
+            "add",
+            "-b",
+            "sibling",
+            &sibling.display().to_string(),
+        ]);
+        std::fs::write(sibling.join("theirs.rs"), "fn theirs() {}\n").unwrap();
+        let listed = listing(&DiskHost, repository.root(), None).unwrap();
+        assert!(listed.files.is_empty(), "{:?}", listed.files);
+        let theirs = listing(&DiskHost, &sibling, None).unwrap();
+        assert_eq!(theirs.files.len(), 1);
+    }
+
     #[test]
     fn a_branch_that_is_its_own_target_shows_what_is_uncommitted_and_says_why() {
         let repository = uze_testkit::git::Repository::new("review-own-target");

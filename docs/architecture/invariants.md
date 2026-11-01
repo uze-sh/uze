@@ -942,9 +942,8 @@ they are driven from every mention of the host is inside a
 > `tests/architecture/layering.rs::architecture_rules_hold` ("drawing the workspace reaches nothing")
 > `tests/architecture/layering.rs::architecture_rules_hold` ("drawing the workspace reaches nothing, by any name")
 > `tests/architecture/layering.rs::the_workspace_client_reaches_for_git_only_from_a_thread`
-> `src/ui/orchestrator/tests/timeline.rs::scheduling_a_git_read_reserves_the_checkout_and_answers_nothing`
+> `src/ui/orchestrator/tests/declared.rs::a_hosted_engines_jobs_run_off_the_frame_and_answer_it`
 > `src/ui/orchestrator/tests/tasks.rs::discarding_a_preserved_task_is_asked_for_rather_than_done_on_the_keystroke`
-> `crates/uze-extensions/src/code/tests.rs::selecting_a_file_asks_for_its_diff_rather_than_reading_it`
 
 ### An answer that arrives late is dropped, never drawn
 
@@ -954,7 +953,7 @@ question the viewer has since moved past releases its key and is
 discarded; it is not wrong, it is no longer what is being asked. This is
 what makes an unbounded read safe to start from a keystroke.
 
-> `src/ui/orchestrator/tests/timeline.rs::a_git_answer_for_another_checkout_is_released_and_dropped`
+> `crates/uze-extensions/src/review/tests.rs::a_diff_read_for_a_file_no_longer_selected_is_dropped`
 > `src/ui/orchestrator/tests/timeline.rs::a_commit_account_arrives_only_for_the_row_last_clicked`
 
 ### Every background read answers, and the answer is what releases its key
@@ -2083,13 +2082,13 @@ resume after naming states the new branch.
 
 ### A change view shows one checkout, never the repository
 
-The code surface is scoped to the checkout the active tab is in, and
+The review is scoped to the checkout the active tab is in, and
 resolves every `git` call against it. `git worktree list` answers
 repository-wide from anywhere inside the repository, so listing linked
 worktrees would put the operator's diff and every sibling agent's — including
 slots whose agent is long gone — inside a tab that owns exactly one of them.
 
-> `crates/uze-extensions/src/code/changes.rs::repository_tests::discovers_main_and_configured_linked_worktrees`
+> `crates/uze-extensions/src/review/git.rs::tests::a_review_reads_its_own_checkout_and_never_a_siblings`
 
 ### An unknown lock field is rejected, never silently dropped
 

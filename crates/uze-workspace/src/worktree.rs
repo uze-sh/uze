@@ -601,10 +601,7 @@ impl WorktreePolicy {
                  both checkouts and run `uze agent work join <topic>` to bring its commits \
                  back; on a conflict, resolve it in the subagent's checkout, run `git \
                  rebase --continue` there, and join again; `uze agent work list` shows them. Never \
-                 make a worktree with Git for this: UZE only knows the checkouts it made.\n\
-                 - When UZE tells you review comments wait for you, run `uze agent review \
-                 show`, address each one, and answer each with `uze agent review reply \
-                 <send>/<n> \"<answer>\"`: what you changed, or why you did not.\n",
+                 make a worktree with Git for this: UZE only knows the checkouts it made.\n",
                 target = self
                     .target
                     .as_deref()
@@ -621,10 +618,7 @@ impl WorktreePolicy {
                  uncommitted work is theirs. The branch keeps the name it has, and nothing \
                  about delivery applies to you.{naming_in_place}\n\
                  - You have no branch of your own to join a subagent's work into: run subagents \
-                 that write files one after another, never in parallel.\n\
-                 - When UZE tells you review comments wait for you, run `uze agent review \
-                 show`, address each one, and answer each with `uze agent review reply \
-                 <send>/<n> \"<answer>\"`: what you changed, or why you did not.\n",
+                 that write files one after another, never in parallel.\n",
                 naming_in_place = if self.branch.names_work() {
                     " Naming your work still applies here, first: it names your label, never \
                      their branch."

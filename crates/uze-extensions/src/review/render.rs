@@ -25,8 +25,10 @@ use super::record::{Comment, CommentStatus};
 
 /// What a comment's lines are set in by, after the gutter.
 const INDENT: &str = "  ";
-/// What leads a comment's body lines, and the comment being written.
-const RULE: &str = "  │ ";
+/// What sets a comment's body lines, and the comment being written, in
+/// under its first line. Air rather than a drawn rule: a rule is chrome,
+/// and chrome is the host's to draw.
+const RULE: &str = "    ";
 
 /// What a press on a stretch of a comment's line does.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -135,9 +137,9 @@ fn viewed_mode(review: &ReviewView) -> Vec<Mode> {
         .collect();
     modes.push(Mode {
         label: match viewed {
-            Viewed::Yes => "✓ viewed".to_owned(),
-            Viewed::Changed => "● changed".to_owned(),
-            Viewed::No => "○ viewed".to_owned(),
+            Viewed::Yes => "viewed".to_owned(),
+            Viewed::Changed => "changed since viewed".to_owned(),
+            Viewed::No => "mark viewed".to_owned(),
         },
         active: viewed == Viewed::Yes,
         icon: RowIcon::None,
@@ -178,17 +180,18 @@ fn navigator(review: &ReviewView) -> Navigator {
                         comment.path == path && comment.status != CommentStatus::Resolved
                     })
                     .count();
+                // Viewed is what a reviewer working down the list reads,
+                // said first; then what waits on it, then where it sits.
+                let viewed = match review.viewed(&file.path) {
+                    Viewed::Yes => "viewed · ",
+                    Viewed::Changed => "changed since viewed · ",
+                    Viewed::No => "",
+                };
                 let detail = match comments {
-                    0 => directory,
-                    n => format!("{COMMENT_MARK}{n} {directory}"),
+                    0 => format!("{viewed}{directory}"),
+                    n => format!("{viewed}{COMMENT_MARK}{n} {directory}"),
                 };
-                // Viewed is what a reviewer working down the list reads;
-                // a file not yet viewed says what kind of change it is.
-                let marker = match review.viewed(&file.path) {
-                    Viewed::Yes => Span::new("✓", Role::Success),
-                    Viewed::Changed => Span::new("●", Role::Warning),
-                    Viewed::No => Span::new(file.status.glyph(), file.status.role()),
-                };
+                let marker = Span::new(file.status.glyph(), file.status.role());
                 NavigatorRow::Item {
                     id: index,
                     icon: RowIcon::None,
@@ -418,9 +421,9 @@ fn card(review: &ReviewView, comment: &Comment, gone: bool, drawn: &mut Vec<Draw
             .push(Span::new("   ", Role::Default))
             .act("edit", Act::Edit(id), Role::Muted)
             .push(Span::new("  ", Role::Default))
-            .act("×", Act::Delete(id), Role::Faint),
+            .act("delete", Act::Delete(id), Role::Faint),
         CommentStatus::Answered => header.push(Span::new("   ", Role::Default)).act(
-            "✓ resolve",
+            "resolve",
             Act::Resolve(id),
             Role::Muted,
         ),

@@ -364,6 +364,38 @@ fn affordances() -> BTreeMap<Action, Affordance> {
         Action::ToggleAllChoices,
         Control("the switch all beside a list to choose from's count"),
     );
+    put(
+        Action::ReviewComment,
+        Control("the comment line under the marked lines in the review"),
+    );
+    put(
+        Action::ReviewAdd,
+        Control("the add hint along the review's foot while a comment is written"),
+    );
+    put(
+        Action::ReviewSend,
+        Control("the send hint along the review's foot while drafts wait"),
+    );
+    put(
+        Action::ReviewViewed,
+        Control("the viewed chip over the review's diff, and its hint"),
+    );
+    put(
+        Action::ReviewOpenInCode,
+        Control("the open in code hint along the review's foot"),
+    );
+    put(
+        Action::ReviewResolve,
+        Control("the resolve word on an answered comment's first line"),
+    );
+    put(
+        Action::ReviewMarkDown,
+        Control("a press on a line's number, and a drag down the numbers"),
+    );
+    put(
+        Action::ReviewMarkUp,
+        Control("a press on a line's number, and a drag up the numbers"),
+    );
     for position in 1..=9u8 {
         put(Action::SelectTab(position), Control("clicking the tab"));
     }
