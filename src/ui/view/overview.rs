@@ -343,7 +343,7 @@ fn empty_hint(section: Group) -> &'static str {
         Group::Kind(ResourceKind::Mcp) => "no harness here starts or reaches an MCP server",
         Group::Kind(ResourceKind::Hook) => "no harness here runs a command on its events",
         Group::Kind(ResourceKind::Rule) => {
-            "no instruction file is read in every project, like ~/.claude/CLAUDE.md"
+            "no harness here reads an instruction file in every project"
         }
     }
 }
