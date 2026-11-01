@@ -9,7 +9,8 @@ delivered to the harnesses working or removing every trace of it.
 `uze uninstall` SHALL act on the machine and SHALL first report, per
 harness and per top-level entry of `$UZE_HOME`, what it will remove, keep or
 leave and why. It SHALL remove nothing until the person confirms or `--yes`
-is given.
+is given. Run interactively without `--purge`, it SHALL ask whether to keep
+what was delivered or remove every trace.
 
 #### Scenario: The plan is declined
 - **WHEN** a person runs `uze uninstall` and answers no
@@ -27,20 +28,32 @@ plugin is seeded, no harness is prepared and no catalogue is published.
 - **WHEN** `uze uninstall --purge` is run again after a run that detached the bundled plugin
 - **THEN** the bundled plugin is not delivered again
 
-### Requirement: By default, what was delivered keeps working
-Without `--purge`, uninstall SHALL remove the binary, the package sources and
-the generated, remembered and shim directories. It SHALL keep the vendor
-stores and the records, so every delivered plugin keeps working and a
-reinstalled UZE adopts it by its receipts.
+### Requirement: By default, only the program is removed
+Without `--purge`, uninstall SHALL remove the binary, the workspace links into
+`$UZE_HOME` and the generated, remembered and shim directories. It SHALL keep
+the package sources, the vendor stores, the records and the operator's
+authored files. Every delivered plugin then keeps working, and a reinstalled
+UZE resumes with no network and no new delivery. Its report SHALL say how to
+remove every trace later.
 
 #### Scenario: Default uninstall
 - **WHEN** `uze uninstall --yes` completes
 - **THEN** every harness still loads every UZE-delivered plugin, and its hooks and rules still run
-- **AND** only `store/` and `state/` remain under `$UZE_HOME`
+- **AND** `$UZE_HOME` holds only `sources/`, `store/`, `state/` and the authored files
 
 #### Scenario: Reinstalled
-- **WHEN** UZE is installed again after a default uninstall
-- **THEN** `uze status -m` lists the delivered plugins as installed, and no harness is delivered to twice
+- **WHEN** UZE is installed again after a default uninstall, offline
+- **THEN** `uze status -m` lists every delivered plugin as installed, and no harness is delivered to again
+
+### Requirement: The installers delegate to uninstall
+The installers' uninstall option SHALL run `uze uninstall` with the same
+choice of mode when the binary is present. Otherwise it SHALL remove only
+what the installer placed, and say how to remove the rest. It SHALL NOT
+delete `$UZE_HOME` itself.
+
+#### Scenario: Windows installer purge
+- **WHEN** `install.ps1 -Uninstall -Purge` runs with `uze` installed
+- **THEN** it runs `uze uninstall --yes --purge`, and every delivered plugin is detached before `$UZE_HOME` is removed
 
 ### Requirement: Purge removes every trace by receipt
 With `--purge`, uninstall SHALL detach every receipt whose artifact still
@@ -51,8 +64,12 @@ left and listed.
 
 #### Scenario: Everything matches
 - **WHEN** `uze uninstall --yes --purge` runs where nothing UZE wrote was edited
-- **THEN** no file under the home directory names `$UZE_HOME`, and `$UZE_HOME` is gone
-- **AND** the vendor registries list no UZE marketplace, plugin or MCP entry
+- **THEN** no harness configuration or discovery file names `$UZE_HOME`, and `$UZE_HOME` is gone
+- **AND** the vendor registries list no UZE marketplace, plugin or MCP entry, and Codex's configuration holds no entry for a UZE plugin
+
+#### Scenario: The operator's Codex hooks keep their trust
+- **WHEN** the operator has trusted Codex hooks of their own and purge removes UZE's
+- **THEN** each of the operator's hooks is still trusted
 
 #### Scenario: An edited skill
 - **WHEN** a delivered skill directory was edited by hand
@@ -72,8 +89,8 @@ remains, including removing the binary, and SHALL report nothing for what is
 already gone.
 
 #### Scenario: Interrupted
-- **WHEN** an uninstall is interrupted after removing the package sources
-- **THEN** running it again removes the binary and the rest of what its mode removes
+- **WHEN** a purge is interrupted after detaching some harnesses
+- **THEN** running it again detaches the rest and removes the binary and `$UZE_HOME`
 
 ### Requirement: Uninstall refuses while UZE runs
 Uninstall SHALL refuse, naming what is running, inside a workspace pane and

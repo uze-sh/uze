@@ -28,5 +28,10 @@ route of that harness.
 
 #### Scenario: A changed package replaces its build
 
-- **WHEN** a package whose build holds a hook-written file is updated to new content
+- **WHEN** a package whose build holds a hook-added file is updated to new content
 - **THEN** its build is replaced whole by the new content
+
+#### Scenario: An edited build is kept
+
+- **WHEN** a file UZE wrote into a build was edited and the package is then updated
+- **THEN** the build is kept as it is and reported as drifted, naming the file

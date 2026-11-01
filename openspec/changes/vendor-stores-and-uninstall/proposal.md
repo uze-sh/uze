@@ -35,27 +35,46 @@ a time, and nothing undoes `setup`.
   - Deleting `store/<vendor>` uninstalls that harness's plugins, and
     persisted-state says so as a tier of its own.
 - **BREAKING (on-disk): the canonical package bytes move from `store/` to
-  `sources/`.** They are unchanged, and no harness reads them. The
-  directory is renamed by the persisted-state ladder.
+  `sources/`.** The bytes are unchanged, and no harness reads them. The
+  package registry and the receipt ledger change shape in the same step, so
+  an older build refuses them by name instead of writing into the new
+  layout. The supported way back is `uze uninstall --purge` followed by a
+  reinstall.
+- **Two marketplaces per vendor stay two.** `store/<vendor>/local/` holds
+  author-enveloped builds (`uze-local`) and `store/<vendor>/generated/`
+  holds generated ones (`uze-store`), so no plugin is renamed and no
+  enablement is lost.
+- **Missing bytes never cost a delivery.** A package whose `sources/` entry
+  is gone keeps its builds, its catalogue entries and its receipts, and is
+  reported as missing its bytes.
 - **One build per harness, with no extra copy.** Each build carries the whole
   package and is its own root. `runtime/packages` is removed.
 - **`runtime/` and `cache/` are disposable for real.** They hold staging,
   launch context and UZE's own extension processes.
+- **Codex hook trust is respected.** UZE's groups always come after the
+  operator's own, so adding or removing them never shifts the operator's
+  trust keys. The one-time move of the wrapper is announced with a blocking
+  notice, because Codex holds back a hook whose command changed until the
+  person reviews it.
 - **Machine-level deliveries are ordinary deliveries.** The rules engine,
   OpenCode's `uze.ts`, its hook documents and the bundled `uze` plugin are
   attached with receipts. Skills that call `uze` say they do not apply when
   it is absent.
 - **New `uze uninstall`.** A machine-scope command that runs no bootstrap,
-  shows a plan first and acts only once confirmed:
-  - **Default:** removes the binary, `sources/`, `runtime/`, `cache/` and
-    `shims/`. Keeps `store/` and `state/`, so what was delivered keeps
-    working, and a reinstalled UZE adopts it again by its receipts.
-  - **`--purge`:** also uninstalls every delivered plugin through its
-    vendor CLI, removes UZE's configuration entries, and removes `$UZE_HOME`
-    entirely.
-  - **Always:** refuses inside a workspace pane and while UZE agents,
-    clients or the runtime are alive. Never touches a project or unlanded
-    work. Leaves edited artifacts in place and lists them.
+  shows a plan, and acts only once confirmed. Run interactively, it asks
+  which mode.
+  - **Default** removes the program: the binary, `runtime/`, `cache/`,
+    `shims/` and the workspace links. It keeps `sources/`, `store/`,
+    `state/` and the operator's authored files. Everything delivered keeps
+    working, and a reinstall resumes offline with no new delivery.
+  - **`--purge`** also uninstalls every delivered plugin through its
+    vendor's CLI, removes UZE's configuration entries (keeping the
+    operator's Codex hook trust intact), and removes `$UZE_HOME`.
+  - **In either mode** it refuses inside a workspace pane and while UZE
+    agents, clients or the runtime are alive. It never touches a project or
+    unlanded work, and it leaves edited artifacts in place and lists them.
+  - The installers' `-Uninstall`/`--uninstall` delegate to it, instead of
+    deleting `~/.uze` themselves.
 - **Removing `~/.uze` by hand is unsupported and documented as such.**
   `uze uninstall` is the way out. `doctor-repair` (a separate change) is the
   way back from a damaged home.
