@@ -1769,6 +1769,7 @@ mod tests {
                         integration: "fixture".to_owned(),
                         receipt: "fixture:skill".to_owned(),
                     }],
+                    collected: Vec::new(),
                 },
                 git_found: true,
                 shell_refusal: None,

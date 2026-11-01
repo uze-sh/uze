@@ -179,6 +179,9 @@ impl UzeApplication {
         // Putting a pin back takes the lock itself, as plain maintenance
         // runs it.
         let restored = self.health().restore_pins();
+        // Each collector takes its own lock, so all of them run before the
+        // repair takes the mutation lock.
+        let collected = self.health().collect();
         let mut tried: BTreeMap<FindingKey, RepairOutcome> = BTreeMap::new();
         let maintenance = match MutationLock::acquire(&self.home) {
             Ok(_mutation) => {
@@ -261,6 +264,8 @@ impl UzeApplication {
                     outcome: left_as_it_is(now),
                 }),
         );
+        let mut maintenance = maintenance;
+        maintenance.collected = collected;
         RepairReport {
             entries,
             maintenance,

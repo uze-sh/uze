@@ -310,6 +310,7 @@ fn run(cli: Cli, leaf: &str) -> Result<()> {
         _ => uze::telemetry::Sink::Stderr,
     };
     let _telemetry = uze::telemetry::init(sink);
+    uze::telemetry::register_collector();
     if !opens_the_tui {
         progress::follow_steps(cli.verbose);
     }

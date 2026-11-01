@@ -616,6 +616,12 @@ const OWNED: &[OwnedPath] = &[
         home.extension_scratch_dir("{run}")
     })
     .swept(),
+    owned(
+        "extension_pictures_root",
+        Generated,
+        Directory,
+        UzeHome::extension_pictures_root,
+    ),
     owned("extension_pictures_dir", Generated, Directory, |home| {
         home.extension_pictures_dir(PLUGIN, EXTENSION)
     })

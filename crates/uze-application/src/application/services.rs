@@ -216,7 +216,7 @@ pub enum WorkspaceEntry {
 mod artifacts;
 mod checkouts;
 mod declaration;
-mod disk;
+pub(crate) mod disk;
 mod launchers;
 mod overrides;
 mod policy_commands;

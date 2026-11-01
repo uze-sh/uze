@@ -144,16 +144,25 @@ fn cache_key(identity: &Identity, loaded: &Loaded) -> String {
 /// on generated files. This must not read extension sources: health runs
 /// independently of opening the workspace and should stay proportional to
 /// the cache, rather than to an extension's total source bytes.
+#[cfg(test)]
 pub(crate) fn prune_compiled_cache(
     home: &uze_core::UzeHome,
     installed: &[InstalledExtension],
 ) -> usize {
+    pruned_compiled_cache(home, installed).len()
+}
+
+/// [`prune_compiled_cache`], answering each file it removed.
+fn pruned_compiled_cache(
+    home: &uze_core::UzeHome,
+    installed: &[InstalledExtension],
+) -> Vec<PathBuf> {
     let installed: BTreeSet<_> = installed
         .iter()
         .map(|extension| &extension.identity)
         .collect();
     let Ok(entries) = std::fs::read_dir(home.compiled_extensions_dir()) else {
-        return 0;
+        return Vec::new();
     };
     let mut cached = Vec::new();
     for entry in entries.flatten() {
@@ -204,7 +213,35 @@ pub(crate) fn prune_compiled_cache(
             })
         })
         .filter(|(_, path, _)| std::fs::remove_file(path).is_ok())
-        .count()
+        .map(|(_, path, _)| path)
+        .collect()
+}
+
+/// The compiled views: the newest per installed extension, and none of an
+/// extension no longer installed. Under the mutation lock, as maintenance
+/// always ran it, since what is installed is what it keeps; reads the
+/// compiled files only, never an extension's sources.
+pub(crate) struct CompiledViews<'a>(pub(crate) &'a crate::UzeApplication);
+
+impl crate::application::Collectable for CompiledViews<'_> {
+    fn name(&self) -> &'static str {
+        "compiled extensions"
+    }
+
+    fn roots(&self) -> &'static [&'static str] {
+        &["compiled_extension_path"]
+    }
+
+    fn collect(&self, home: &uze_core::UzeHome) -> crate::application::Collected {
+        let _mutation = match uze_core::persistence::MutationLock::acquire(home) {
+            Ok(mutation) => mutation,
+            Err(error) => {
+                return crate::application::Collected::skipped(self.name(), error.to_string());
+            }
+        };
+        let installed = self.0.extensions().installed();
+        crate::application::Collected::removed(self.name(), pruned_compiled_cache(home, &installed))
+    }
 }
 
 fn compiled_cache_key(path: &Path) -> Option<&str> {

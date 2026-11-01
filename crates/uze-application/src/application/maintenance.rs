@@ -16,8 +16,8 @@ use uze_core::{
 };
 
 use super::catalogue::Inspection;
+use super::collection::{Collectable, Collected};
 
-use super::extensions::prune_compiled_cache;
 use super::lifecycle::remove::ReceiptTeardown;
 use super::lifecycle::update::PinRestoration;
 use super::services::Health;
@@ -138,9 +138,83 @@ impl std::fmt::Display for MaintenanceOutcome {
     }
 }
 
+/// The runtime projections, by whether their project is still there
+/// (`harness_runtime::prune_projections`), and anything under `runtime/`
+/// that is none of its tenants. Takes no lock, as
+/// [`Health::prune_runtime_projections`] says why.
+pub(crate) struct Projections;
+
+impl Collectable for Projections {
+    fn name(&self) -> &'static str {
+        "projections"
+    }
+
+    fn roots(&self) -> &'static [&'static str] {
+        &["runtime_dir", "runtime_project_dir"]
+    }
+
+    fn collect(&self, home: &uze_core::UzeHome) -> Collected {
+        Collected::removed(self.name(), harness_runtime::prune_projection_paths(home))
+    }
+}
+
+/// What each integration generated inside its own runtime projections, by
+/// that integration's rule (`IntegrationPort::collect_runtime`): Codex's
+/// role files, kept while the project still has their agent. Takes no
+/// lock, as a launch refreshing a projection takes none.
+pub(crate) struct IntegrationProjections<'a>(
+    pub(crate) &'a [Box<dyn uze_core::integration::IntegrationPort>],
+);
+
+impl Collectable for IntegrationProjections<'_> {
+    fn name(&self) -> &'static str {
+        "harness projections"
+    }
+
+    fn roots(&self) -> &'static [&'static str] {
+        &["runtime_projection_dir"]
+    }
+
+    fn collect(&self, home: &uze_core::UzeHome) -> Collected {
+        Collected::removed(
+            self.name(),
+            self.0
+                .iter()
+                .flat_map(|integration| integration.collect_runtime(home))
+                .collect(),
+        )
+    }
+}
+
+/// The context documents of conversations that ended, by the workspace's
+/// rule (`conversation::collect_session_documents`): kept while an agent's
+/// record names their conversation. Takes no lock: a launch records its
+/// conversation before it writes the document.
+pub(crate) struct ConversationSessions;
+
+impl Collectable for ConversationSessions {
+    fn name(&self) -> &'static str {
+        "conversation sessions"
+    }
+
+    fn roots(&self) -> &'static [&'static str] {
+        &["session_context_dir"]
+    }
+
+    fn collect(&self, home: &uze_core::UzeHome) -> Collected {
+        Collected::removed(
+            self.name(),
+            uze_workspace::conversation::collect_session_documents(home),
+        )
+    }
+}
+
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct MaintenanceReport {
     pub outcomes: Vec<MaintenanceOutcome>,
+    /// What each collector removed on the way.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub collected: Vec<super::Collected>,
 }
 
 impl MaintenanceReport {
@@ -177,7 +251,12 @@ impl Health<'_> {
     /// its own next launch.
     #[tracing::instrument(name = "health.prune_runtime_projections", skip_all)]
     pub fn prune_runtime_projections(&self) -> Vec<String> {
-        harness_runtime::prune_projections(&self.0.home)
+        Projections
+            .collect(&self.0.home)
+            .removed
+            .iter()
+            .filter_map(|path| Some(path.file_name()?.to_string_lossy().into_owned()))
+            .collect()
     }
 
     /// Bounded, local maintenance used by health presenters. It only repairs
@@ -189,15 +268,20 @@ impl Health<'_> {
         // nobody, so a pinned commit that would run something new waits for
         // a command that can ask.
         let restored = self.restore_pins();
+        // Before the lock too: each collector takes its own.
+        let collected = self.collect();
         let Ok(_mutation) = MutationLock::acquire(&self.0.home) else {
             return MaintenanceReport {
                 outcomes: vec![MaintenanceOutcome::Unavailable {
                     integration: "environment".to_owned(),
                     reason: "another UZE mutation is in progress".to_owned(),
                 }],
+                collected,
             };
         };
-        self.maintain_locked(restored, Inspection::Cached)
+        let mut report = self.maintain_locked(restored, Inspection::Cached);
+        report.collected = collected;
+        report
     }
 
     /// The pass [`maintain`](Self::maintain) makes once it holds the
@@ -208,9 +292,10 @@ impl Health<'_> {
         restored: Vec<MaintenanceOutcome>,
         inspection: Inspection,
     ) -> MaintenanceReport {
-        let mut report = MaintenanceReport { outcomes: restored };
-        let extensions = self.0.extensions().installed();
-        prune_compiled_cache(&self.0.home, &extensions);
+        let mut report = MaintenanceReport {
+            outcomes: restored,
+            collected: Vec::new(),
+        };
         // Prunes any Store registration whose directory is gone and cleans
         // every receipt left behind under an id nothing answers to any
         // more — first, so `installed_packages` below never treats a

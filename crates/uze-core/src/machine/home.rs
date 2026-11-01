@@ -383,11 +383,12 @@ impl UzeHome {
     /// show one as `scratch:<file>`: generated, since its program writes
     /// them again on its next run.
     pub fn extension_pictures_dir(&self, plugin: &str, id: &str) -> PathBuf {
-        self.runtime_dir()
-            .join("extensions")
-            .join("pictures")
-            .join(plugin)
-            .join(id)
+        self.extension_pictures_root().join(plugin).join(id)
+    }
+
+    /// Every extension's [`Self::extension_pictures_dir`].
+    pub fn extension_pictures_root(&self) -> PathBuf {
+        self.runtime_dir().join("extensions").join("pictures")
     }
 
     /// What each declared extension cost the workspace that last measured

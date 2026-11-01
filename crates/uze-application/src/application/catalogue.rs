@@ -388,6 +388,7 @@ pub const CATALOGUE: &[HealthCheck] = &[
             "compiled_extension_path",
             "extension_scratch_root",
             "extension_scratch_dir",
+            "extension_pictures_root",
             "extension_pictures_dir",
             "extension_costs_path",
             "agent_reports_path",
@@ -951,7 +952,8 @@ mod tests {
     /// findings.
     #[test]
     fn doctor_reports_every_check_whichever_record_is_corrupt() {
-        let records: [(&str, fn(&UzeHome) -> std::path::PathBuf); 8] = [
+        type Record = (&'static str, fn(&UzeHome) -> std::path::PathBuf);
+        let records: [Record; 8] = [
             ("registry_path", UzeHome::registry_path),
             ("attachments_path", UzeHome::attachments_path),
             ("provisioning_state_path", UzeHome::provisioning_state_path),
