@@ -783,6 +783,9 @@ mod tests {
 
     #[test]
     fn the_builtin_default_is_complete_and_resolves() {
+        /// Icons a bundled surface draws as the row's only signal: the
+        /// review's comment count, the focus timer, a finished gsd phase.
+        const LABELLESS: &[&str] = &["icon.comment", "icon.timer", "icon.check"];
         let theme = default_theme();
         // Every token and symbol answers — the property every other
         // surface's "always has a colour" rests on.
@@ -791,8 +794,8 @@ mod tests {
         }
         for symbol in Symbol::ALL {
             // "Draw nothing" is an answer rather than a hole in exactly
-            // two places, for one reason: plain Unicode has no mark for
-            // the thing. The `file.` family is folders and documents,
+            // three places, for one reason: plain Unicode has no mark for
+            // the thing the default terminal fonts all draw at one size. The `file.` family is folders and documents,
             // which a terminal only draws by reaching into its emoji
             // font, and this vocabulary carries no emoji. The rest are
             // ideas — a checkout's code, a project's shape, what it
@@ -802,11 +805,11 @@ mod tests {
             // icons for all of them, which is one of the things
             // installing one buys.
             let iconless = symbol.to_string();
-            // A file kind, and an icon the default terminal fonts do not all
-            // carry at one size, are left blank in the default set: the
-            // label beside it says what it is, and the nerd set draws it.
+            // The third is an extension icon, beside a label that says what
+            // it is; the nerd set draws it. One a surface draws with no
+            // label beside it is held to a glyph below.
             if iconless.starts_with("file.")
-                || iconless.starts_with("icon.")
+                || (iconless.starts_with("icon.") && !LABELLESS.contains(&iconless.as_str()))
                 || matches!(
                     iconless.as_str(),
                     "code"

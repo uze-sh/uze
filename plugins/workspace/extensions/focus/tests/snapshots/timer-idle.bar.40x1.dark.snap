@@ -1,7 +1,8 @@
 # uze snapshot · protocol 1 · bar 40x1 · dark
-  2/4 today
+  ◕ 2/4 today
 ---
-  aaa bbbbb
+  a bbb ccccc
 ---
-a text.bright
-b text.muted
+a text.faint
+b text.bright
+c text.muted
