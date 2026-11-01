@@ -815,6 +815,9 @@ mod tests {
                         | "contract"
                         | "finished"
                         | "decision"
+                        // Plain Unicode's pencil comes from a fallback font,
+                        // and the review's count names what it counts.
+                        | "icon.comment"
                 )
             {
                 continue;

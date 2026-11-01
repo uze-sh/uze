@@ -894,5 +894,5 @@ fn items_on_the_bar_stand_two_columns_apart() {
     answers(&mut model, "notes", "6h12 today");
     drafted(&mut model, "src/naming.rs");
     let bar = bar_row(&mut model);
-    assert!(bar.contains("✎ 1  6h12 today"), "{bar:?}");
+    assert!(bar.contains("1 draft  6h12 today"), "{bar:?}");
 }

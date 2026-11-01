@@ -1258,9 +1258,9 @@ fn walk<'a>(node: &'a crate::view::Node, out: &mut Vec<&'a crate::view::Node>) {
     }
 }
 
-/// The bar's item counts what waits on the operator, in its hue: drafts in
-/// gold, then answers in green, then the sent ones waiting on the agent,
-/// held back; nothing while nothing is open.
+/// The bar's item counts what waits on the operator and names it, in its
+/// hue: drafts in gold, then answers in green, then the sent ones waiting
+/// on the agent, held back; nothing while nothing is open.
 #[test]
 fn the_bars_item_counts_what_waits_in_its_hue() {
     use crate::contract::Extension;
@@ -1278,10 +1278,16 @@ fn the_bars_item_counts_what_waits_in_its_hue() {
         })
     };
     let mut extension = sending_extension();
-    assert_eq!(count(&extension), Some(("1".to_owned(), Role::Warning)));
+    assert_eq!(
+        count(&extension),
+        Some(("1 draft".to_owned(), Role::Warning))
+    );
     let view = extension.review_view_mut().unwrap();
     view.record.comments[0].status = CommentStatus::Answered;
-    assert_eq!(count(&extension), Some(("1".to_owned(), Role::Success)));
+    assert_eq!(
+        count(&extension),
+        Some(("1 answered".to_owned(), Role::Success))
+    );
     let view = extension.review_view_mut().unwrap();
     view.record.comments[0].status = CommentStatus::Resolved;
     assert_eq!(count(&extension), None, "nothing open, no item");

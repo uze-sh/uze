@@ -698,7 +698,10 @@ operator rather than assume.
   `● ○ ◉ ▲ □ ◷…` is the one block all of them carry at one size). The
   operator tried a stricter set, blanking what the fonts lack, and took it
   back as too large a change for no complaint: a change to a default glyph
-  waits for one, and is measured in those fonts when it comes. A task
+  waits for one, and is measured in those fonts when it comes. The one
+  exception is `icon.comment`, blank in the Unicode and ascii sets: the
+  review's bar count names what it counts (`1 draft`, `2 answered`), and
+  only the Nerd Font set leads it with a mark. A task
   state still gets a `Symbol` of its own (`task.published`,
   `task.delivering`, `task.delivered`, `task.shelved`), so its glyph can
   change without repainting an arrow, the ellipsis or the menu.
