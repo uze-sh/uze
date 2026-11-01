@@ -354,6 +354,15 @@ impl ReviewView {
     /// Goes to the open thread `id`, in whichever file it is: its file
     /// selected, its lines marked once that file's diff is read.
     pub(crate) fn go_to_thread_id(&mut self, id: u64) {
+        // A comment being written holds the file and the place it is on:
+        // going to another thread would scroll it away from under the keys.
+        if self.composer.is_some() {
+            self.notice = Some(Span::new(
+                "save the comment or discard it first",
+                crate::view::Role::Muted,
+            ));
+            return;
+        }
         let Some(path) = self
             .record
             .comments

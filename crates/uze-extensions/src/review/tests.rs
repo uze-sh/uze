@@ -1465,3 +1465,26 @@ fn a_comment_off_the_list_is_gone_to_on_the_whole_branch_or_said_to_be_gone() {
         "a file no longer changed is said, not skipped"
     );
 }
+
+/// While a comment is written, the threads' walk waits, as the list does:
+/// nothing scrolls the comment away from under the keys.
+#[test]
+fn the_threads_walk_waits_while_a_comment_is_written() {
+    let mut view = reviewing();
+    thread_on(&mut view, 1, "naming.rs", 3, "    rename();");
+    handle_hit(
+        &mut view,
+        ViewHit::LineNumber {
+            line: 0,
+            extend: false,
+        },
+        SPACE,
+    );
+    handle_command(&mut view, Command::Comment, SPACE);
+    let (mark, scroll) = (view.mark, view.scroll);
+    handle_hit(&mut view, ViewHit::SelectMode(2), SPACE);
+    handle_command(&mut view, Command::NextThread, SPACE);
+    assert!(view.typing());
+    assert_eq!((view.mark, view.scroll, view.thread), (mark, scroll, None));
+    assert!(view.notice.is_some(), "and says why");
+}
