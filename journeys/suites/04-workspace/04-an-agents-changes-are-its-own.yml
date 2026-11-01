@@ -78,8 +78,8 @@ scenes:
       - key: "M-."
         say: open the actions of the file it selected
         expect: "Discard changes"
-      - key: "Enter"
-        say: ask to discard it
+      - key: ["Down", "Down", "Down", "Enter"]
+        say: pick the last entry, discarding it, past open and the two copies
         # The change is a file the last commit does not have, so throwing
         # it away is deleting it — and the dialog says so.
         expect: "Deletes the file"

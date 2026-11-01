@@ -109,7 +109,7 @@ pub struct ReviewView {
     pub(crate) notice: Option<Span>,
     pub(crate) discarding: Option<Discarding>,
     /// What can be done to the selected file, open on its row.
-    pub(crate) menu: bool,
+    pub(crate) menu: Option<FileMenu>,
     /// Changes made here and not yet written to the record.
     pub(crate) unwritten: Vec<Change>,
     /// A discard to hand the host: the paths to put back as the last
@@ -152,7 +152,7 @@ impl ReviewView {
             scroll: 0,
             notice: None,
             discarding: None,
-            menu: false,
+            menu: None,
             unwritten: Vec::new(),
             restore: None,
             relist: true,
@@ -636,6 +636,37 @@ pub(crate) enum Viewed {
     Yes,
     /// Marked, on a diff that has moved since.
     Changed,
+}
+
+/// What can be done to one file of the list, from its row.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum FileAct {
+    /// The file in the code surface.
+    Open,
+    /// The path as the machine spells it.
+    CopyPath,
+    /// The path as the checkout spells it.
+    CopyRelativePath,
+    /// Asked first: what is not committed in it, thrown away.
+    Discard,
+}
+
+impl FileAct {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            FileAct::Open => "Open file",
+            FileAct::CopyPath => "Copy path",
+            FileAct::CopyRelativePath => "Copy relative path",
+            FileAct::Discard => "Discard changes…",
+        }
+    }
+}
+
+/// The menu open on the selected file's row.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct FileMenu {
+    pub(crate) acts: Vec<FileAct>,
+    pub(crate) highlighted: usize,
 }
 
 /// What a file's diff was read against: its content, the base, the commit

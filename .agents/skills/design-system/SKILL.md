@@ -201,10 +201,13 @@ on "cancel" must not save first.
   and the warning hue once the file changed since; the chip over its diff
   says it in words. A mark whose file changed is not counted, on show or
   not.
-- A file's actions open on its row (`Alt+.`, the foot's `Actions`), never
-  a dialog straight away; the question discarding asks says what it does
-  to this file: deletes one the last commit lacks, takes a rename back,
-  or puts the file back.
+- A file's actions open on its row (`Alt+.`, the foot's `Actions`, a
+  right-click), never a dialog straight away, on every file, as the code
+  tree's do: `Open file` (not on one the change deleted), `Copy path`,
+  `Copy relative path`, and `Discard changes…` only where something is not
+  committed. The question discarding asks says what it does to this file:
+  deletes one the last commit lacks, takes a rename back, or puts the
+  file back.
 
 **Wheel:**
 - The wheel scrolls the view, never the selection, and never toggles

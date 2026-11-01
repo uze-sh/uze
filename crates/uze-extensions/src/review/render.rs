@@ -188,12 +188,12 @@ fn navigator(review: &ReviewView) -> Navigator {
         choosing: None,
         menu: review
             .menu
-            .then_some(selected)
-            .flatten()
-            .map(|row| RowMenu {
+            .as_ref()
+            .zip(selected)
+            .map(|(menu, row)| RowMenu {
                 row,
-                entries: vec!["Discard changes…".to_owned()],
-                highlighted: 0,
+                entries: menu.acts.iter().map(|act| act.label().to_owned()).collect(),
+                highlighted: menu.highlighted,
             }),
         rows: review
             .files
@@ -613,7 +613,7 @@ fn footer(review: &ReviewView) -> Vec<Command> {
     if review.discarding.is_some() {
         return Vec::new();
     }
-    if review.menu {
+    if review.menu.is_some() {
         return vec![Command::Activate, Command::Close];
     }
     if review.composer.is_some() {

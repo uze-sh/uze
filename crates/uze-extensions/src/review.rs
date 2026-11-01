@@ -60,13 +60,23 @@ pub(crate) enum Asked {
     Close,
     Send,
     OpenInCode,
+    /// The selected file in the code surface, from its top.
+    OpenFile,
+    Copy(String),
 }
 
 pub(crate) fn handle_command(view: &mut ReviewView, command: Command, space: Size) -> Asked {
-    if view.menu {
-        view.menu = false;
-        if command == Command::Activate {
-            ask_discard(view);
+    if let Some(menu) = view.menu.as_mut() {
+        match command {
+            Command::SelectNext => {
+                menu.highlighted = (menu.highlighted + 1).min(menu.acts.len().saturating_sub(1));
+            }
+            Command::SelectPrevious => menu.highlighted = menu.highlighted.saturating_sub(1),
+            Command::Activate => {
+                let picked = menu.highlighted;
+                return pick(view, picked);
+            }
+            _ => view.menu = None,
         }
         return Asked::Stay;
     }
@@ -172,10 +182,11 @@ pub(crate) fn handle_hit(view: &mut ReviewView, hit: ViewHit, space: Size) -> As
         }
         return Asked::Stay;
     }
-    if std::mem::take(&mut view.menu) {
-        if hit == ViewHit::MenuEntry(0) {
-            ask_discard(view);
+    if view.menu.is_some() {
+        if let ViewHit::MenuEntry(entry) = hit {
+            return pick(view, entry);
         }
+        view.menu = None;
         return Asked::Stay;
     }
     // A comment being written holds the file and the filter it is on
@@ -314,20 +325,51 @@ fn resolve_near_cursor(view: &mut ReviewView) {
     }
 }
 
-/// What can be done to the selected file, on its row: what is not
-/// committed in it can be thrown away, and nothing else is offered here.
+/// What can be done to the selected file, on its row: open it, take its
+/// path, and throw away what is not committed in it, when there is some.
 fn open_menu(view: &mut ReviewView) {
     let Some(file) = view.selected_file() else {
         return;
     };
-    if !surface::discardable(view, file) {
-        view.notice = Some(Span::new(
-            "only what is not committed can be discarded",
-            crate::view::Role::Muted,
-        ));
-        return;
+    let mut acts = Vec::new();
+    // A file the change deleted has nothing to open.
+    if file.status != crate::shared::git_status::FileStatus::Deleted {
+        acts.push(surface::FileAct::Open);
     }
-    view.menu = true;
+    acts.extend([
+        surface::FileAct::CopyPath,
+        surface::FileAct::CopyRelativePath,
+    ]);
+    if surface::discardable(view, file) {
+        acts.push(surface::FileAct::Discard);
+    }
+    view.menu = Some(surface::FileMenu {
+        acts,
+        highlighted: 0,
+    });
+}
+
+/// The menu's entry `entry`, picked: the menu goes either way.
+fn pick(view: &mut ReviewView, entry: usize) -> Asked {
+    let Some(act) = view
+        .menu
+        .take()
+        .and_then(|menu| menu.acts.get(entry).copied())
+    else {
+        return Asked::Stay;
+    };
+    let Some(path) = view.selected_file().map(|file| file.path.clone()) else {
+        return Asked::Stay;
+    };
+    match act {
+        surface::FileAct::Open => Asked::OpenFile,
+        surface::FileAct::CopyPath => Asked::Copy(path.to_string_lossy().into_owned()),
+        surface::FileAct::CopyRelativePath => Asked::Copy(view.relative(&path)),
+        surface::FileAct::Discard => {
+            ask_discard(view);
+            Asked::Stay
+        }
+    }
 }
 
 fn ask_discard(view: &mut ReviewView) {
@@ -437,6 +479,7 @@ pub(crate) fn selected(view: &mut ReviewView, lines: std::ops::Range<usize>, tex
 pub(crate) fn outcome(asked: Asked) -> Outcome {
     match asked {
         Asked::Close => Outcome::Close,
-        Asked::Stay | Asked::Send | Asked::OpenInCode => Outcome::Stay,
+        Asked::Copy(text) => Outcome::Copy(text),
+        Asked::Stay | Asked::Send | Asked::OpenInCode | Asked::OpenFile => Outcome::Stay,
     }
 }

@@ -242,21 +242,92 @@ fn a_selection_marks_the_lines_it_covered_and_is_quoted() {
     assert_eq!(view.composer.as_ref().unwrap().excerpt, ".ok()?");
 }
 
+/// Opens the selected file's menu and picks its discard, as a click on
+/// the entry does.
+fn ask_to_discard(view: &mut ReviewView) {
+    handle_command(view, Command::OpenMenu, SPACE);
+    let entries = super::view(view, SPACE)
+        .navigator
+        .unwrap()
+        .menu
+        .unwrap()
+        .entries;
+    let discard = entries
+        .iter()
+        .position(|entry| entry == "Discard changes…")
+        .expect("a discard is offered");
+    handle_hit(view, ViewHit::MenuEntry(discard), SPACE);
+}
+
+fn menu_entries(view: &ReviewView) -> Vec<String> {
+    super::view(view, SPACE)
+        .navigator
+        .unwrap()
+        .menu
+        .map(|menu| menu.entries)
+        .unwrap_or_default()
+}
+
+/// A file's row opens what can be done to it, as the code tree's does:
+/// open it, take its path, and, only where something is not committed,
+/// throw that away.
 #[test]
-fn only_a_file_with_uncommitted_work_offers_a_discard() {
+fn a_files_menu_opens_copies_and_offers_a_discard_only_where_it_can() {
     let mut view = reviewing();
     handle_command(&mut view, Command::OpenMenu, SPACE);
-    assert!(view.menu, "naming.rs is uncommitted: its actions open");
-    let drawn = super::view(&view, SPACE);
-    let menu = drawn.navigator.unwrap().menu.expect("on its row");
-    assert_eq!(menu.entries, ["Discard changes…"]);
-    handle_hit(&mut view, ViewHit::MenuEntry(0), SPACE);
+    assert_eq!(
+        menu_entries(&view),
+        [
+            "Open file",
+            "Copy path",
+            "Copy relative path",
+            "Discard changes…"
+        ]
+    );
+    handle_command(&mut view, Command::Close, SPACE);
+    assert!(view.menu.is_none(), "esc puts it away");
+    ask_to_discard(&mut view);
     let asked = super::view(&view, SPACE).confirm.expect("asked first");
     assert!(asked.body.contains("Puts the file back"), "{}", asked.body);
     handle_command(&mut view, Command::Close, SPACE);
     view.select_file(1);
     handle_command(&mut view, Command::OpenMenu, SPACE);
-    assert!(!view.menu, "tests.rs is committed only");
+    assert_eq!(
+        menu_entries(&view),
+        ["Open file", "Copy path", "Copy relative path"],
+        "tests.rs is committed only"
+    );
+    handle_command(&mut view, Command::SelectNext, SPACE);
+    handle_command(&mut view, Command::SelectNext, SPACE);
+    assert!(matches!(
+        handle_command(&mut view, Command::Activate, SPACE),
+        Asked::Copy(path) if path == "tests.rs"
+    ));
+    assert!(view.menu.is_none(), "picked, the menu goes");
+    handle_command(&mut view, Command::OpenMenu, SPACE);
+    assert!(matches!(
+        handle_hit(&mut view, ViewHit::MenuEntry(1), SPACE),
+        Asked::Copy(path) if path == "/w/tests.rs"
+    ));
+}
+
+#[test]
+fn open_file_from_the_menu_opens_the_code_at_its_top() {
+    use crate::contract::{Extension, Outcome};
+    let mut extension = sending_extension();
+    let view = extension.review_view_mut().unwrap();
+    *view = reviewing();
+    let asked = extension.command(SURFACE, Command::OpenMenu, SPACE);
+    assert_eq!(asked, Outcome::Stay);
+    let opened = extension.command(SURFACE, Command::Activate, SPACE);
+    assert_eq!(
+        opened,
+        Outcome::OpenPath {
+            project: PathBuf::from("/w"),
+            target: PathBuf::from("/w/naming.rs"),
+            line: None,
+        }
+    );
 }
 
 #[test]
@@ -463,7 +534,10 @@ fn a_comment_being_written_stays_with_its_file_while_the_list_moves() {
     handle_hit(&mut view, ViewHit::SelectItem(1), SPACE);
     assert!(view.typing(), "a click on another file keeps the comment");
     handle_hit(&mut view, ViewHit::OpenMenu(1), SPACE);
-    assert!(!view.menu, "nor opens actions on the file being commented");
+    assert!(
+        view.menu.is_none(),
+        "nor opens actions on the file being commented"
+    );
     handle_hit(&mut view, ViewHit::SelectSubject(1), SPACE);
     assert_eq!(view.filter, Filter::All, "nor switches the filter under it");
     // The agent commits naming.rs: the list no longer holds it.
@@ -501,8 +575,7 @@ fn discarding_a_rename_puts_back_both_of_its_paths() {
     let mut view = reviewing();
     let (new, old) = (PathBuf::from("/w/naming.rs"), PathBuf::from("/w/old.rs"));
     view.partners = [(new.clone(), old.clone()), (old.clone(), new.clone())].into();
-    handle_command(&mut view, Command::OpenMenu, SPACE);
-    handle_command(&mut view, Command::Activate, SPACE);
+    ask_to_discard(&mut view);
     handle_hit(&mut view, ViewHit::Answer(true), SPACE);
     assert_eq!(view.restore, Some(vec![new, old]));
 }
@@ -805,13 +878,11 @@ fn open_in_code_lands_on_a_line_the_new_file_has() {
 #[test]
 fn a_discard_is_asked_first_and_only_then_handed_to_the_host() {
     let mut view = reviewing();
-    handle_command(&mut view, Command::OpenMenu, SPACE);
-    handle_command(&mut view, Command::Activate, SPACE);
+    ask_to_discard(&mut view);
     assert_eq!(view.restore, None, "asked, not done");
     handle_hit(&mut view, ViewHit::Answer(false), SPACE);
     assert_eq!(view.restore, None, "declined");
-    handle_command(&mut view, Command::OpenMenu, SPACE);
-    handle_command(&mut view, Command::Activate, SPACE);
+    ask_to_discard(&mut view);
     handle_hit(&mut view, ViewHit::Answer(true), SPACE);
     assert_eq!(view.restore, Some(vec![PathBuf::from("/w/naming.rs")]));
 }
@@ -875,8 +946,7 @@ fn discarding_a_rename_from_its_old_name_says_which_side_goes() {
     let (old, new) = (PathBuf::from("/w/naming.rs"), PathBuf::from("/w/named.rs"));
     view.files[0].status = FileStatus::Deleted;
     view.partners = [(new.clone(), old.clone()), (old.clone(), new)].into();
-    handle_command(&mut view, Command::OpenMenu, SPACE);
-    handle_command(&mut view, Command::Activate, SPACE);
+    ask_to_discard(&mut view);
     let body = super::view(&view, SPACE).confirm.unwrap().body;
     assert!(body.contains("naming.rs returns"), "{body}");
     assert!(body.contains("named.rs goes"), "{body}");

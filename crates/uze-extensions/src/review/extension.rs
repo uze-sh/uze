@@ -174,6 +174,7 @@ impl ReviewExtension {
         match asked {
             Asked::Send => self.send(),
             Asked::OpenInCode => self.open_in_code(),
+            Asked::OpenFile => self.open_file(),
             asked => outcome(asked),
         }
     }
@@ -223,6 +224,21 @@ impl ReviewExtension {
 
     /// The marked line, or the cursor's, in the code surface: the first
     /// marked line that still exists in the new file.
+    /// The selected file in the code surface, from its top.
+    fn open_file(&self) -> Outcome {
+        let Some(view) = self.open.as_ref() else {
+            return Outcome::Stay;
+        };
+        match view.selected.clone() {
+            Some(target) => Outcome::OpenPath {
+                project: view.root.clone(),
+                target,
+                line: None,
+            },
+            None => Outcome::Stay,
+        }
+    }
+
     fn open_in_code(&mut self) -> Outcome {
         let Some(view) = self.open.as_ref() else {
             return Outcome::Stay;
