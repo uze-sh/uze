@@ -327,7 +327,9 @@ fn a_commit_gone_from_its_reachable_marketplace_is_left_for_the_person() {
 #[test]
 fn a_codex_marketplace_registered_elsewhere_is_repointed() {
     let env = delivered();
-    let earlier = env.uze_home.join("runtime/attachments/codex/generated");
+    let earlier = env.uze_home.join(uze_testkit::process::native(
+        "runtime/attachments/codex/generated",
+    ));
     fs::create_dir_all(&earlier).unwrap();
     fs::write(
         fake_state(&env, "codex").join("marketplaces"),
@@ -342,7 +344,10 @@ fn a_codex_marketplace_registered_elsewhere_is_repointed() {
         registered(&env, "codex"),
         [(
             "uze-store".to_owned(),
-            env.uze_home.join("store/codex").display().to_string()
+            env.uze_home
+                .join(uze_testkit::process::native("store/codex"))
+                .display()
+                .to_string()
         )]
     );
     let installed = fs::read_to_string(fake_state(&env, "codex").join("installed")).unwrap();

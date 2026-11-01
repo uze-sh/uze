@@ -9,6 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use uze_testkit::fixtures;
+use uze_testkit::process::native;
 use uze_testkit::temp::TestEnvironment;
 
 use crate::util::{install_fake_harnesses, uze_bin};
@@ -341,8 +342,8 @@ fn deleting_one_vendor_store_stops_that_harness_until_the_next_delivery() {
         uze_bin(),
         &add.iter().map(String::as_str).collect::<Vec<_>>(),
     );
-    let claude_store = env.uze_home.join("store/claude");
-    let codex_store = env.uze_home.join("store/codex");
+    let claude_store = env.uze_home.join(native("store/claude"));
+    let codex_store = env.uze_home.join(native("store/codex"));
     let claude_before = tree(&claude_store);
     let codex_before = tree(&codex_store);
     assert!(

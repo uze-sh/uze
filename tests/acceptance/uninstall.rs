@@ -322,7 +322,9 @@ fn default_uninstall_leaves_every_harness_pointed_at_something_that_exists() {
 fn default_uninstall_on_the_layout_before_vendor_stores_moves_it_first() {
     use crate::vendor_store_moves::{forget_builds, rewrite_ledger, set_registered};
     let env = delivered();
-    let earlier = env.uze_home.join("runtime/attachments/codex/generated");
+    let earlier = env.uze_home.join(uze_testkit::process::native(
+        "runtime/attachments/codex/generated",
+    ));
     copy_tree(&env.uze_home.join("store/codex"), &earlier);
     set_registered(
         &env,
@@ -338,7 +340,10 @@ fn default_uninstall_on_the_layout_before_vendor_stores_moves_it_first() {
         registered(&env, "codex"),
         [(
             "uze-store".to_owned(),
-            env.uze_home.join("store/codex").display().to_string()
+            env.uze_home
+                .join(uze_testkit::process::native("store/codex"))
+                .display()
+                .to_string()
         )],
         "{}",
         said(&output)
@@ -604,7 +609,9 @@ fn a_purge_keeps_an_edited_build_and_the_store_that_holds_it() {
 
     assert!(output.status.success(), "{}", said(&output));
     assert_eq!(fs::read_to_string(&edited).unwrap(), "edited by hand\n");
-    let store = env.uze_home.join("store/claude");
+    let store = env
+        .uze_home
+        .join(uze_testkit::process::native("store/claude"));
     assert!(
         said(&output).contains(&store.display().to_string()),
         "{}",

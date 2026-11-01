@@ -10,6 +10,7 @@
 use std::path::{Path, PathBuf};
 
 use uze_testkit::fixtures;
+use uze_testkit::process::native;
 use uze_testkit::temp::TestEnvironment;
 
 use crate::util::{install_fake_harnesses, uze_bin};
@@ -112,8 +113,10 @@ pub(crate) fn invocations(env: &TestEnvironment) -> Vec<String> {
 #[test]
 fn a_codex_store_registered_under_the_runtime_tree_is_repointed_not_reinstalled() {
     let (env, _harnesses) = installed();
-    let store = env.uze_home.join("store/codex");
-    let earlier = env.uze_home.join("runtime/attachments/codex/generated");
+    let store = env.uze_home.join(native("store/codex"));
+    let earlier = env
+        .uze_home
+        .join(native("runtime/attachments/codex/generated"));
     std::fs::create_dir_all(&earlier).unwrap();
     set_registered(
         &env,
@@ -146,8 +149,10 @@ fn a_codex_store_registered_under_the_runtime_tree_is_repointed_not_reinstalled(
 #[test]
 fn a_claude_store_registered_under_the_runtime_tree_is_repointed_by_a_same_name_add() {
     let (env, _harnesses) = installed();
-    let store = env.uze_home.join("store/claude");
-    let earlier = env.uze_home.join("runtime/attachments/claude/generated");
+    let store = env.uze_home.join(native("store/claude"));
+    let earlier = env
+        .uze_home
+        .join(native("runtime/attachments/claude/generated"));
     std::fs::create_dir_all(&earlier).unwrap();
     set_registered(
         &env,
@@ -175,8 +180,10 @@ fn a_claude_store_registered_under_the_runtime_tree_is_repointed_by_a_same_name_
 #[test]
 fn a_codex_repoint_whose_add_fails_registers_the_earlier_root_again() {
     let (env, _harnesses) = installed();
-    let store = env.uze_home.join("store/codex");
-    let earlier = env.uze_home.join("runtime/attachments/codex/generated");
+    let store = env.uze_home.join(native("store/codex"));
+    let earlier = env
+        .uze_home
+        .join(native("runtime/attachments/codex/generated"));
     std::fs::create_dir_all(&earlier).unwrap();
     set_registered(
         &env,

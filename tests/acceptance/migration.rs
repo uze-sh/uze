@@ -249,7 +249,10 @@ fn a_build_older_than_the_documents_refuses_them_by_name_and_loses_nothing() {
             String::from_utf8_lossy(&refused.stderr)
         );
         assert!(!refused.status.success(), "{document}: {said}");
-        assert!(said.contains(file), "the refusal names {file}: {said}");
+        assert!(
+            said.contains(&uze_testkit::process::native(file)),
+            "the refusal names {file}: {said}"
+        );
         assert_eq!(std::fs::read(&path).unwrap(), ahead, "{document} untouched");
         for (tier, before) in [
             ("sources", &sources),
