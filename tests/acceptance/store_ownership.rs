@@ -139,3 +139,47 @@ fn no_harness_artifact_names_outside_its_store() {
             .join("\n")
     );
 }
+
+/// The bundled `uze` plugin is an ordinary delivery: setup attaches it to
+/// every harness with receipts (its build carries the rules engine), and
+/// `remove` refuses it, so only an uninstall that purges takes it off.
+#[test]
+fn the_bundled_plugin_is_delivered_with_receipts_and_remove_refuses_it() {
+    let env = TestEnvironment::isolated();
+    let _harnesses = install_fake_harnesses(&env);
+    env.run_ok(uze_bin(), &["setup"]);
+    let ledger = || -> Vec<serde_json::Value> {
+        let text = std::fs::read(env.uze_home.join("state/attachments.json")).unwrap();
+        let ledger: serde_json::Value = serde_json::from_slice(&text).unwrap();
+        ledger["receipts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|receipt| receipt["package_id"] == "uze@uze")
+            .cloned()
+            .collect()
+    };
+    let before = ledger();
+    for integration in ["claude-code", "codex", "opencode", "antigravity"] {
+        assert!(
+            before
+                .iter()
+                .any(|receipt| receipt["integration"] == integration
+                    && receipt["resource_identity"] == "build"),
+            "{integration} holds the bundled plugin's build: {before:?}"
+        );
+    }
+    assert!(
+        env.uze_home
+            .join("store/claude/uze@uze/engine/rules")
+            .is_file(),
+        "the rules engine rides the bundled plugin's build"
+    );
+
+    let refused = env.run(uze_bin(), &["remove", "-m", "uze"]);
+    assert!(
+        !refused.status.success(),
+        "remove refuses the bundled plugin"
+    );
+    assert_eq!(ledger(), before, "nothing it delivered was taken off");
+}
