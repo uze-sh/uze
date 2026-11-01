@@ -551,6 +551,11 @@ impl Extension for ReviewExtension {
         self.act(asked)
     }
 
+    fn hover(&mut self, surface: &str, hit: Option<ViewHit>) -> bool {
+        self.view_mut(surface)
+            .is_some_and(|view| super::hover(view, hit))
+    }
+
     fn scroll(
         &mut self,
         surface: &str,

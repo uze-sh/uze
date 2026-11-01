@@ -344,6 +344,20 @@ fn open_menu(view: &mut ReviewView) {
     });
 }
 
+/// The pointer over a menu entry highlights it, as the arrows do, the way
+/// the code tree's menu answers it. Answers whether the highlight moved.
+pub(crate) fn hover(view: &mut ReviewView, hit: Option<ViewHit>) -> bool {
+    match (view.menu.as_mut(), hit) {
+        (Some(menu), Some(ViewHit::MenuEntry(entry)))
+            if entry < menu.acts.len() && entry != menu.highlighted =>
+        {
+            menu.highlighted = entry;
+            true
+        }
+        _ => false,
+    }
+}
+
 /// The menu's entry `entry`, picked: the menu goes either way.
 fn pick(view: &mut ReviewView, entry: usize) -> Asked {
     let Some(act) = view

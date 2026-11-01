@@ -1100,3 +1100,32 @@ fn a_right_click_on_a_row_opens_that_files_menu() {
     assert_eq!(drawn.menu.map(|menu| menu.row), drawn.anchor, "on its row");
     assert_eq!(menu_entries(&view)[0], "Open file");
 }
+
+/// The pointer over a menu entry lights it, as the arrows do and as the
+/// code tree's menu does; Enter then takes the entry lit.
+#[test]
+fn a_menu_entry_lights_under_the_pointer() {
+    use crate::contract::{Extension, Outcome};
+    let mut extension = sending_extension();
+    *extension.review_view_mut().unwrap() = reviewing();
+    extension.command(SURFACE, Command::OpenMenu, SPACE);
+    assert!(
+        extension.hover(SURFACE, Some(ViewHit::MenuEntry(2))),
+        "drawn again"
+    );
+    let lit = super::view(extension.review_view().unwrap(), SPACE)
+        .navigator
+        .unwrap()
+        .menu
+        .unwrap()
+        .highlighted;
+    assert_eq!(lit, 2);
+    assert!(
+        !extension.hover(SURFACE, Some(ViewHit::MenuEntry(2))),
+        "already lit"
+    );
+    assert_eq!(
+        extension.command(SURFACE, Command::Activate, SPACE),
+        Outcome::Copy("naming.rs".to_owned())
+    );
+}
