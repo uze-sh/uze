@@ -205,6 +205,12 @@ vocabulary! {
         /// else's hands now. Its own symbol for the same reason
         /// `TaskReady` is.
         TaskInReview = "task.review",
+        /// Work that reached its target. Its own symbol rather than
+        /// [`ArrowUp`](Self::ArrowUp), which a push waiting also wears.
+        TaskDelivered = "task.delivered",
+        /// Work an agent left unfinished, set aside. Its own symbol rather
+        /// than [`Menu`](Self::Menu), which is a button.
+        TaskShelved = "task.shelved",
 
         // ── an agent's standing in the sidebar ─────────────────────────
         /// Producing output right now. An agent's own animation, which

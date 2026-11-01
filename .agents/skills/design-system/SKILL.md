@@ -690,11 +690,19 @@ operator rather than assume.
 - No heavy frames. No small caps: never for a title, a label, a badge or
   a hint.
 - Glyphs say something and are all the same size. Nerd-only icons appear
-  only under the nerd scheme.
+  only under the nerd scheme. "The same size" is measured, not judged by
+  eye: a default glyph is checked in Hack and DejaVu Sans Mono (a missing
+  one comes from a fallback font, at its size and baseline) and matches
+  its column's height and vertical centre. The operator flagged the
+  status legend's tiny dot, the baseline `…` and the Shift-key `⇧`. A
+  mark never borrows a glyph that means something else on screen (the
+  text ellipsis, the menu's `≡`, the sync count's `↑`): it gets a
+  `Symbol` of its own.
 - The spinner is `Symbol::StatusWorking`, whose frames the theme declares
-  (a small star pulsing, in the default theme); the CLI's is
+  (a quarter-filled circle turning, `◐◓◑◒`, in the default theme, one
+  size in every frame); the CLI's is
   `progress::spinner`. Never hand-pick frames.
-- The animated star is the agents' alone. A shell running a program wears
+- The animated circle is the agents' alone. A shell running a program wears
   `Symbol::StatusRunning` (`▸`, still) in `state.success`, selected or
   not: the runtime knows a shell runs something, not that it is producing
   output, so nothing about it pulses. When that program ends in a tab the

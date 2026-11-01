@@ -39,6 +39,8 @@
 
     "task.ready": "^",
     "task.review": "@",
+    "task.delivered": "^",
+    "task.shelved": "=",
 
     "status.working": ["|", "/", "-", "\\"],
     "status.completed": "*",

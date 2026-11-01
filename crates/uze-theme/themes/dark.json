@@ -104,10 +104,12 @@
     "file.git": "",
     "file.legal": "",
 
-    "task.ready": "⇧",
+    "task.ready": "⇡",
     "task.review": "◉",
+    "task.delivered": "↥",
+    "task.shelved": "⊟",
 
-    "status.working": ["·", "∙", "+", "∗", "+", "∙"],
+    "status.working": ["◐", "◓", "◑", "◒"],
     "status.completed": "✓",
     "status.selected": "●",
     "status.idle": "○",
