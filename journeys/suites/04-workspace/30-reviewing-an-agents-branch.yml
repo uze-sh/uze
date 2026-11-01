@@ -77,6 +77,10 @@ scenes:
 
   - scene: and then sending it types one line into the agent, once allowed
     when:
+      - key: "M-g"
+        say: put the review away, back to the agent's pane, where the draft rides the bar
+        expect: "✎ 1"
+        expect_timeout: 10
       - click: "✎ 1"
         in: bar
         say: open the comments from the draft waiting on the bar
