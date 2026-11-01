@@ -1199,6 +1199,8 @@ pub struct HeldBackNote {
     pub harness: String,
     pub plugin: String,
     pub capability: String,
+    /// What a person calls the capability: a hook's own id.
+    pub name: String,
     pub action: String,
 }
 

@@ -682,8 +682,8 @@ pub(crate) fn requirement_gap_text(gap: &uze_application::application::Requireme
 }
 
 /// What a harness holds back until the person acts in it: one line per
-/// plugin on a harness, naming how many of its capabilities wait, and the
-/// action under it. Empty when nothing waits.
+/// plugin on a harness, naming each capability that waits, and the action
+/// under it. Empty when nothing waits.
 pub(crate) fn render_held_back(notes: &[uze_application::application::HeldBackNote]) -> String {
     if notes.is_empty() {
         return String::new();
@@ -693,14 +693,12 @@ pub(crate) fn render_held_back(notes: &[uze_application::application::HeldBackNo
         left.harness == right.harness && left.plugin == right.plugin && left.action == right.action
     }) {
         let one = &group[0];
-        let count = match group.len() {
-            1 => "1 capability".to_owned(),
-            n => format!("{n} capabilities"),
-        };
+        let names: Vec<&str> = group.iter().map(|note| note.name.as_str()).collect();
         text.push_str(&format!(
-            "{} {}  {count} of {} held back\n  {}\n",
+            "{} {}  {} of {} held back\n  {}\n",
             progress::warning_icon(),
             one.harness,
+            names.join(", "),
             one.plugin,
             progress::label(&one.action)
         ));
@@ -1672,6 +1670,40 @@ mod extension_cost_tests {
         assert!(
             lines[3].contains("as the workspace measured them just now"),
             "{text}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod held_back_tests {
+    use uze_application::application::HeldBackNote;
+
+    use super::render_held_back;
+
+    #[test]
+    fn each_hook_a_harness_holds_back_is_named_with_the_review_to_do() {
+        let note = |name: &str| HeldBackNote {
+            harness: "Codex".to_owned(),
+            plugin: "guard@acme".to_owned(),
+            capability: format!("package:guard@acme:hooks.json:{name}"),
+            name: name.to_owned(),
+            action: "open Codex and trust it on its hook review".to_owned(),
+        };
+
+        let text = render_held_back(&[note("protect-env"), note("format")]);
+
+        assert!(text.contains("Waiting on you"), "{text}");
+        assert!(
+            text.contains("Codex  protect-env, format of guard@acme held back"),
+            "{text}"
+        );
+        assert!(
+            text.contains("open Codex and trust it on its hook review"),
+            "{text}"
+        );
+        assert!(
+            render_held_back(&[]).is_empty(),
+            "nothing waits once trusted"
         );
     }
 }

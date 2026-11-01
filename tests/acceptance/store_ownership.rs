@@ -288,3 +288,39 @@ fn every_path_a_build_names_is_a_file_it_holds() {
         "a build names what it does not hold: {dangling:?}"
     );
 }
+
+/// Codex runs no hook it has not reviewed, so the install names each UZE
+/// hook it holds back and the review to do, and `doctor` says it again.
+#[test]
+fn the_install_and_doctor_name_each_hook_codex_holds_back() {
+    let env = TestEnvironment::isolated();
+    let _harnesses = install_fake_harnesses(&env);
+    env.run(uze_bin(), &["setup"]);
+    let (market, add) = uze_testkit::marketplace::marketplace_add_args(
+        env.root(),
+        &fixtures::canonical("store-tie"),
+    );
+    env.run_ok(
+        uze_bin(),
+        &market.iter().map(String::as_str).collect::<Vec<_>>(),
+    );
+
+    let installed = env.run_ok(
+        uze_bin(),
+        &add.iter().map(String::as_str).collect::<Vec<_>>(),
+    );
+    let doctor = env.run(uze_bin(), &["doctor"]);
+
+    for output in [&installed, &doctor] {
+        let said = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            said.contains("guard of store-tie@test held back"),
+            "the held-back hook is named: {said}"
+        );
+        assert!(said.contains("hook review"), "the review to do: {said}");
+    }
+}

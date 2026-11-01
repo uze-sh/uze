@@ -2,7 +2,7 @@
 //! status and the dialog it opens.
 
 use uze_application::AttachmentState;
-use uze_application::application::DoctorReport;
+use uze_application::application::{DeliveryFindingKind, DoctorReport};
 
 pub(crate) use crate::ui::widget::alerts::{Alert, Severity};
 
@@ -115,6 +115,35 @@ pub(crate) fn actionable_alerts(doctor: Option<&DoctorReport>) -> Vec<Alert> {
             }
         }
     }
+    // A hook a harness holds back until its own review does not run at
+    // all, a deny guard included: nothing is broken, but nothing protects
+    // either until the person reviews it there. It stands until the
+    // harness reads it as trusted.
+    for package in &doctor.deliveries {
+        for harness in &package.harnesses {
+            let held: Vec<_> = harness
+                .findings
+                .iter()
+                .filter(|finding| finding.kind == DeliveryFindingKind::HeldBack)
+                .collect();
+            for group in held.chunk_by(|left, right| left.detail == right.detail) {
+                let names: Vec<&str> = group
+                    .iter()
+                    .map(|finding| finding.capability.as_str())
+                    .collect();
+                alerts.push(Alert {
+                    severity: Severity::High,
+                    label: format!(
+                        "{} holds back {} of {}",
+                        harness.display_name,
+                        names.join(", "),
+                        package.plugin
+                    ),
+                    detail: group[0].detail.clone(),
+                });
+            }
+        }
+    }
     for plugin in &doctor.plugins {
         // Startup already applies every update it can settle on its own,
         // so one still standing here is one that needs a person: an
@@ -139,6 +168,73 @@ mod tests {
     use uze_application::application::MaintenanceReport;
 
     use super::*;
+
+    fn doctor_with(
+        deliveries: Vec<uze_application::application::PackageDeliveryHealth>,
+    ) -> DoctorReport {
+        DoctorReport {
+            program_confinement: Default::default(),
+            extension_costs: None,
+            uze_home: PathBuf::from("/home"),
+            store: uze_application::application::StoreHealth::Ready,
+            plugins: Vec::new(),
+            harnesses: Vec::new(),
+            attachments: Vec::new(),
+            deliveries,
+            ledger_error: None,
+            provisioning_state_error: None,
+            leftovers: Default::default(),
+            maintenance: MaintenanceReport::default(),
+            git_found: true,
+            shell_refusal: None,
+            ssh_missing: false,
+            machine_concerns: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_hook_a_harness_holds_back_is_named_with_its_review_until_trusted() {
+        use uze_application::application::{
+            DeliveryFinding, HarnessDeliveryHealth, PackageDeliveryHealth,
+        };
+        let review = "Codex runs it only once you trust it: open Codex and choose \
+                      \"Trust all and continue\" on its hook review";
+        let held = |findings: Vec<DeliveryFinding>| {
+            doctor_with(vec![PackageDeliveryHealth {
+                plugin: "guard@acme".to_owned(),
+                harnesses: vec![HarnessDeliveryHealth {
+                    integration: "codex".to_owned(),
+                    display_name: "Codex".to_owned(),
+                    expected: 2,
+                    present: 2,
+                    findings,
+                }],
+            }])
+        };
+        let doctor = held(
+            ["protect-env", "format"]
+                .map(|hook| DeliveryFinding {
+                    capability: hook.to_owned(),
+                    kind: DeliveryFindingKind::HeldBack,
+                    detail: review.to_owned(),
+                })
+                .to_vec(),
+        );
+
+        let alerts = actionable_alerts(Some(&doctor));
+
+        assert_eq!(alerts.len(), 1, "{alerts:?}");
+        assert_eq!(alerts[0].severity, Severity::High);
+        assert_eq!(
+            alerts[0].label,
+            "Codex holds back protect-env, format of guard@acme"
+        );
+        assert_eq!(alerts[0].detail, review);
+        assert!(
+            actionable_alerts(Some(&held(Vec::new()))).is_empty(),
+            "once trusted, the notice is gone"
+        );
+    }
 
     #[test]
     fn overview_alerts_classify_conflicts_as_high_and_missing_as_low() {

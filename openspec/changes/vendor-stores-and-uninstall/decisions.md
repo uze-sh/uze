@@ -267,3 +267,13 @@
 - decided:  design.md now says what runs: the repoint happens only when the registered root differs, once per machine, with no session guard, as an accepted risk — Claude's same-name `add` keeps its plugins installed, and Codex's `remove` then `add` leaves a brief window in which a running session sees its plugins missing, with the old root re-added if the `add` fails. The transparent-harness-attachment delta never required a guard, so it is unchanged.
 - rejected: keeping the guard in the design as an unmet promise; a guard over UZE's own agents only (a session started outside UZE would still pass).
 - blast:    design.md (D5 step 3.3, decision row 7).
+
+## D15 — The Codex trust notice names each hook through the held-back notes UZE already reads
+
+- status:   pending
+- task:     4.8
+- commit:
+- trigger:  the task asks for a blocking notice in install, `doctor` and the TUI naming each UZE hook Codex holds back and the review to do; `doctor` already named them, an install named only a count ("2 capabilities of p held back") and only in `--verbose`, and the TUI said nothing.
+- decided:  `HeldBackNote` carries the hook's own name (its group id); install's "Waiting on you" names each (`guard, format of p held back`, the review under it) and is printed by the default summary too, not only `--verbose`; `doctor` names a held-back capability by the same name. The TUI's health alerts (`view::health::actionable_alerts`, the footer status and its dialog) gain one `High` alert per harness, plugin and review — `Codex holds back guard of p` with the review as its detail — read from the doctor report's delivery findings, so `src/` names no harness and the alert is gone the moment `codex/trust.rs` reads the hook as trusted. Nothing is written for the person: the review stays Codex's.
+- rejected: a new widget or toast (the alerts list is the TUI's place for what waits on a person; a toast is for what happened); `Medium` severity (a held-back deny guard enforces nothing until reviewed).
+- blast:    `read_models.rs`, `doctor.rs`, `src/cli/status.rs`, `src/cli/install.rs`, `src/ui/view/health.rs`. The rules engine's own Codex hooks (setup-owned, no package resource) are not in the notes; they were not before either.

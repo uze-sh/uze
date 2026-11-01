@@ -1105,10 +1105,12 @@ fn check_delivery(
                 });
             }
             for one in integration.held_back(package, &entry.receipt, &served_resources) {
-                let capability = served
-                    .iter()
-                    .find(|capability| capability.identity == one.capability)
-                    .map_or_else(|| one.capability.clone(), |capability| name_of(capability));
+                // Named as its author named it (a hook's id), the name the
+                // harness's own review shows beside its command.
+                let capability = resource_of(&one.capability).map_or_else(
+                    || one.capability.clone(),
+                    uze_core::capability::Resource::name,
+                );
                 failing.insert(one.capability);
                 findings.push(DeliveryFinding {
                     capability,
@@ -1253,9 +1255,14 @@ pub(crate) fn held_back_notes(app: &UzeApplication, plugin: Option<&str>) -> Vec
                 })
                 .collect();
             for one in integration.held_back(&package, receipt, &served) {
+                let name = served
+                    .iter()
+                    .find(|resource| resource.identity() == one.capability)
+                    .map_or_else(|| one.capability.clone(), |resource| resource.name());
                 notes.push(HeldBackNote {
                     harness: integration.display_name().to_owned(),
                     plugin: receipt.package_id.clone(),
+                    name,
                     capability: one.capability,
                     action: one.action,
                 });

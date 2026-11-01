@@ -67,7 +67,7 @@
   - Removing a package's groups, or purging, reports every hook whose trust key shifts, through `codex/trust.rs`.
 - [x] 4.6 Attach the bundled `uze` plugin with receipts. `remove` refuses it, and only `uninstall --purge` detaches it.
 - [x] 4.7 The bundled skills that run `uze` open with the line saying they do not apply when `uze` is not on `PATH`.
-- [ ] 4.8 Show a blocking Codex trust notice in install, `doctor` and the TUI. It names each UZE hook that Codex holds back and the review to do, and clears once `codex/trust.rs` reads the hook as trusted.
+- [x] 4.8 Show a blocking Codex trust notice in install, `doctor` and the TUI. It names each UZE hook that Codex holds back and the review to do, and clears once `codex/trust.rs` reads the hook as trusted.
 - [x] 4.9 `no_harness_artifact_names_outside_its_store` (1.3) is green.
 
 ## 5. `uze uninstall`
