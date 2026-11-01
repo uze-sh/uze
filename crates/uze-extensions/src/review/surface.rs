@@ -69,6 +69,7 @@ pub struct ReviewView {
     pub(crate) base: Base,
     pub(crate) files: Vec<ChangedFile>,
     pub(crate) uncommitted: BTreeSet<PathBuf>,
+    pub(crate) partners: std::collections::BTreeMap<PathBuf, PathBuf>,
     /// The list has been read at least once.
     pub(crate) listed: bool,
     pub(crate) list_error: Option<String>,
@@ -97,8 +98,9 @@ pub struct ReviewView {
     pub(crate) discarding: Option<Discarding>,
     /// Changes made here and not yet written to the record.
     pub(crate) unwritten: Vec<Change>,
-    /// A discard to hand the host.
-    pub(crate) restore: Option<PathBuf>,
+    /// A discard to hand the host: the paths to put back as the last
+    /// commit has them.
+    pub(crate) restore: Option<Vec<PathBuf>>,
     /// The list is to be read again now, not on its cadence.
     pub(crate) relist: bool,
 }
@@ -113,6 +115,7 @@ impl ReviewView {
             base: Base::default(),
             files: Vec::new(),
             uncommitted: BTreeSet::new(),
+            partners: std::collections::BTreeMap::new(),
             listed: false,
             list_error: None,
             selected: None,
@@ -194,6 +197,7 @@ impl ReviewView {
                 self.list_error = None;
                 self.files = listing.files;
                 self.uncommitted = listing.uncommitted;
+                self.partners = listing.partners;
             }
         }
         if self.selected_index().is_none() && self.composer.is_none() {

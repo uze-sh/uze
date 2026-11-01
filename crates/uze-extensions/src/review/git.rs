@@ -102,6 +102,9 @@ fn rev(host: &dyn Host, root: &Path, args: &[&str]) -> Option<String> {
 pub(crate) struct Listing {
     pub(crate) files: Vec<ChangedFile>,
     pub(crate) uncommitted: BTreeSet<PathBuf>,
+    /// Each side of an uncommitted rename, by the other: throwing one
+    /// away puts both back.
+    pub(crate) partners: std::collections::BTreeMap<PathBuf, PathBuf>,
 }
 
 /// Every file that differs from `base` in the working tree, untracked ones
@@ -109,14 +112,23 @@ pub(crate) struct Listing {
 pub(crate) fn listing(host: &dyn Host, root: &Path, base: Option<&str>) -> Result<Listing, String> {
     let status = host.git(root, STATUS_ARGS, &[])?;
     let uncommitted_files = parse_porcelain_status(&status, root);
-    let uncommitted: BTreeSet<PathBuf> = uncommitted_files
+    let mut uncommitted: BTreeSet<PathBuf> = uncommitted_files
         .iter()
         .map(|file| file.path.clone())
         .collect();
+    let mut partners = std::collections::BTreeMap::new();
+    for file in &uncommitted_files {
+        if let Some(from) = &file.renamed_from {
+            uncommitted.insert(from.clone());
+            partners.insert(file.path.clone(), from.clone());
+            partners.insert(from.clone(), file.path.clone());
+        }
+    }
     let Some(base) = base else {
         return Ok(Listing {
             files: uncommitted_files,
             uncommitted,
+            partners,
         });
     };
     let named = host.git(
@@ -139,7 +151,11 @@ pub(crate) fn listing(host: &dyn Host, root: &Path, base: Option<&str>) -> Resul
         )
     });
     files.dedup_by(|a, b| a.path == b.path);
-    Ok(Listing { files, uncommitted })
+    Ok(Listing {
+        files,
+        uncommitted,
+        partners,
+    })
 }
 
 /// `git diff --name-status -z`: a status letter, then the path, each
@@ -332,6 +348,31 @@ mod tests {
         let found = base(&DiskHost, repository.root(), Some(&main), &Base::default());
         assert_eq!(found.commit, None);
         assert!(found.reason.unwrap().contains("its own target"));
+    }
+
+    /// `git mv old.rs new.rs`: either side of the rename, discarded, puts
+    /// both back.
+    #[test]
+    fn a_rename_is_listed_with_its_source_as_the_other_half_to_put_back() {
+        let repository = uze_testkit::git::Repository::new("review-rename");
+        repository.commit_file("old.rs", "fn old() {}\n");
+        repository.git(&["mv", "old.rs", "new.rs"]);
+        let root = repository.root();
+        for base in [None, Some("HEAD")] {
+            let listed = listing(&DiskHost, root, base).unwrap();
+            assert_eq!(
+                listed.partners.get(&root.join("new.rs")),
+                Some(&root.join("old.rs"))
+            );
+            assert_eq!(
+                listed.partners.get(&root.join("old.rs")),
+                Some(&root.join("new.rs"))
+            );
+            assert!(
+                listed.uncommitted.contains(&root.join("old.rs")),
+                "its source is discardable"
+            );
+        }
     }
 
     #[test]

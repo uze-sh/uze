@@ -347,14 +347,17 @@ impl ReviewExtension {
         let Some(view) = self.open.as_mut() else {
             return;
         };
-        let Some(path) = view.restore.take() else {
+        let Some(paths) = view.restore.take() else {
+            return;
+        };
+        let Some(path) = paths.first().cloned() else {
             return;
         };
         let root = view.root.clone();
         let fallback = (root.clone(), path.clone());
         jobs.push(Job {
             run: Box::new(move |host| {
-                let outcome = host.restore_to_head(&root, std::slice::from_ref(&path));
+                let outcome = host.restore_to_head(&root, &paths);
                 Opaque::new(Restored {
                     root,
                     path,

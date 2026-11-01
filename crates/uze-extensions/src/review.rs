@@ -291,7 +291,10 @@ fn answer_discard(view: &mut ReviewView, yes: bool) {
         return;
     };
     if yes {
-        view.restore = Some(discarding.path);
+        // A rename is two paths, and throwing it away brings the old name
+        // back as well as taking the new one off.
+        let partner = view.partners.get(&discarding.path).cloned();
+        view.restore = Some(std::iter::once(discarding.path).chain(partner).collect());
     }
 }
 

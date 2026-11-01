@@ -58,6 +58,7 @@ pub(super) fn reviewing() -> ReviewView {
                 },
             ],
             uncommitted: [path.clone()].into(),
+            partners: Default::default(),
         }),
     );
     view.absorb_diff(path.clone(), Ok(diff_of(&path, NAMING)), "x".to_owned());
@@ -419,6 +420,7 @@ fn a_comment_being_written_stays_with_its_file_while_the_list_moves() {
                 renamed_from: None,
             }],
             uncommitted: Default::default(),
+            partners: Default::default(),
         }),
     );
     handle_command(&mut view, Command::AddComment, SPACE);
@@ -428,4 +430,14 @@ fn a_comment_being_written_stays_with_its_file_while_the_list_moves() {
         "naming.rs",
         "kept on the file it was written on"
     );
+}
+
+#[test]
+fn discarding_a_rename_puts_back_both_of_its_paths() {
+    let mut view = reviewing();
+    let (new, old) = (PathBuf::from("/w/naming.rs"), PathBuf::from("/w/old.rs"));
+    view.partners = [(new.clone(), old.clone()), (old.clone(), new.clone())].into();
+    handle_command(&mut view, Command::OpenMenu, SPACE);
+    handle_hit(&mut view, ViewHit::Answer(true), SPACE);
+    assert_eq!(view.restore, Some(vec![new, old]));
 }
