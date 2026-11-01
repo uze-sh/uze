@@ -884,3 +884,15 @@ fn the_restart_is_green_text_on_the_bars_ground() {
         "a stronger version of itself under the pointer"
     );
 }
+
+/// Two items on the bar stand two columns apart, counted from what each
+/// draws: the room each asks for carries an inset that used to double the
+/// air between them.
+#[test]
+fn items_on_the_bar_stand_two_columns_apart() {
+    let mut model = hosting_a_bar(uze_contract::BarAlign::Right);
+    answers(&mut model, "notes", "6h12 today");
+    drafted(&mut model, "src/naming.rs");
+    let bar = bar_row(&mut model);
+    assert!(bar.contains("✎ 1  6h12 today"), "{bar:?}");
+}

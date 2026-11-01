@@ -422,7 +422,9 @@ on "cancel" must not save first.
   drawers, the items it draws. A bundled extension may use both. The bar
   takes its row while a plugin puts something there, or while a bundled
   item has something to say (the review's comments), never for an empty
-  bundled item. A bundled drawer has no door; its item opens it.
+  bundled item. A bundled drawer has no door; its item opens it. Items
+  stand two columns apart, counted from what each draws, never from the
+  room it asked for (its inset doubled the air).
 - A plugin's list in a sidebar section reads as the sidebar's own rows: no
   ground on hover or selection, its text held back at rest and lit in its
   own hues under the pointer or once chosen, as the tasks section is.
