@@ -1488,3 +1488,26 @@ fn the_threads_walk_waits_while_a_comment_is_written() {
     assert_eq!((view.mark, view.scroll, view.thread), (mark, scroll, None));
     assert!(view.notice.is_some(), "and says why");
 }
+
+/// What a click away from a comment being written says names the
+/// buttons the comment carries, save and discard.
+#[test]
+fn a_comment_being_written_names_its_own_buttons_when_it_holds_its_place() {
+    let mut view = reviewing();
+    handle_hit(
+        &mut view,
+        ViewHit::LineNumber {
+            line: 2,
+            extend: false,
+        },
+        SPACE,
+    );
+    handle_command(&mut view, Command::Comment, SPACE);
+    handle_hit(&mut view, ViewHit::SelectItem(1), SPACE);
+    let said = view
+        .notice
+        .as_ref()
+        .map(|span| span.text.clone())
+        .unwrap_or_default();
+    assert!(said.contains("save") && said.contains("discard"), "{said}");
+}

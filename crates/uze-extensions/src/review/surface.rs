@@ -491,7 +491,7 @@ impl ReviewView {
         // would take it with it, so the move waits for it.
         if self.composer.is_some() {
             self.notice = Some(Span::new(
-                "add the comment or cancel it first",
+                "save the comment or discard it first",
                 crate::view::Role::Muted,
             ));
             return;

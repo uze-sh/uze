@@ -200,7 +200,7 @@ pub(crate) fn handle_hit(view: &mut ReviewView, hit: ViewHit, space: Size) -> As
     );
     if moves && view.composer.is_some() {
         view.notice = Some(Span::new(
-            "add the comment or cancel it first",
+            "save the comment or discard it first",
             crate::view::Role::Muted,
         ));
         return Asked::Stay;
