@@ -87,3 +87,13 @@
 - decided:  the tree marks nothing; the review lists what changed
 - rejected: a `git status` read kept in the code surface for its markers, which is the review's read made twice
 - blast:    a small loss of information in the tree; the map still marks what is uncommitted
+
+## D10 — Offer the filter on the bar's leading slot, superseding D7
+
+- status:   pending
+- task:     3.4
+- commit:   
+- trigger:  the operator, in the workspace, switched to `uncommitted` on a branch with nothing uncommitted and was left with no way back: an empty list is a message, and a message carries none of the content's chips
+- decided:  `all · uncommitted` are the view's subjects, drawn on the bar's leading slot where the code surface says files or map, whatever the content shows; the empty message says to choose all; the content's chip is the viewed mark alone
+- rejected: drawing chips over a message, which changes the host for every surface to put back a control that belongs on the bar
+- blast:    the review's look

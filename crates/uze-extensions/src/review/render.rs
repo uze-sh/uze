@@ -106,7 +106,7 @@ pub fn view(review: &ReviewView, space: Size) -> View {
         notice: notice(review),
         confirm: discard_confirm(review),
         modes: viewed_mode(review),
-        subjects: Vec::new(),
+        subjects: filter_chips(review),
         layout: Layout::Sidebar,
         trail: Vec::new(),
         label: String::new(),
@@ -114,12 +114,22 @@ pub fn view(review: &ReviewView, space: Size) -> View {
 }
 
 /// Which list is on show: the branch against its target, or what is not
-/// committed. Offered as the navigator's own subjects would be, by the
-/// host's chips, but kept on the content's row so it reads as how the
-/// diff is taken.
-pub(crate) fn filters(review: &ReviewView) -> Vec<(Filter, &'static str)> {
-    let _ = review;
-    vec![(Filter::All, "all"), (Filter::Uncommitted, "uncommitted")]
+/// committed. On the bar's leading slot, where the code surface says files
+/// or map, so the way back is there whatever the content shows: an empty
+/// list is a message, and a message carries no chips.
+pub(crate) fn filters() -> [(Filter, &'static str); 2] {
+    [(Filter::All, "all"), (Filter::Uncommitted, "uncommitted")]
+}
+
+fn filter_chips(review: &ReviewView) -> Vec<Mode> {
+    filters()
+        .into_iter()
+        .map(|(filter, label)| Mode {
+            label: label.to_owned(),
+            active: review.filter == filter,
+            icon: RowIcon::None,
+        })
+        .collect()
 }
 
 fn viewed_mode(review: &ReviewView) -> Vec<Mode> {
@@ -127,15 +137,7 @@ fn viewed_mode(review: &ReviewView) -> Vec<Mode> {
         return Vec::new();
     };
     let viewed = review.viewed(&file.path);
-    let mut modes: Vec<Mode> = filters(review)
-        .into_iter()
-        .map(|(filter, label)| Mode {
-            label: label.to_owned(),
-            active: review.filter == filter,
-            icon: RowIcon::None,
-        })
-        .collect();
-    modes.push(Mode {
+    vec![Mode {
         label: match viewed {
             Viewed::Yes => "viewed".to_owned(),
             Viewed::Changed => "changed since viewed".to_owned(),
@@ -143,8 +145,7 @@ fn viewed_mode(review: &ReviewView) -> Vec<Mode> {
         },
         active: viewed == Viewed::Yes,
         icon: RowIcon::None,
-    });
-    modes
+    }]
 }
 
 fn navigator(review: &ReviewView) -> Navigator {
@@ -223,7 +224,10 @@ fn content(review: &ReviewView, space: Size) -> Content {
         return match (&review.filter, &review.base.reason) {
             (Filter::Uncommitted, _) => message(
                 "Nothing is uncommitted",
-                Some("Everything on the branch is committed.".to_owned()),
+                Some(
+                    "Everything on the branch is committed. Choose all to read the whole branch."
+                        .to_owned(),
+                ),
                 Role::Muted,
             ),
             (Filter::All, Some(reason)) => message(

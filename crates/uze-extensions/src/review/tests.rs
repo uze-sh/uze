@@ -263,3 +263,30 @@ fn a_diff_read_for_a_file_no_longer_selected_is_dropped() {
         "and the selection's own read is still awaited"
     );
 }
+
+#[test]
+fn the_filter_stays_on_offer_when_nothing_is_uncommitted() {
+    let mut view = reviewing();
+    handle_hit(&mut view, ViewHit::SelectSubject(1), SPACE);
+    assert_eq!(view.filter, Filter::Uncommitted);
+    view.absorb_listing(
+        Filter::Uncommitted,
+        Base::default(),
+        "fix/naming".to_owned(),
+        Ok(Listing::default()),
+    );
+    let drawn = super::view(&view, SPACE);
+    assert!(matches!(drawn.content, Content::Message { .. }));
+    let offered: Vec<&str> = drawn
+        .subjects
+        .iter()
+        .map(|chip| chip.label.as_str())
+        .collect();
+    assert_eq!(
+        offered,
+        ["all", "uncommitted"],
+        "the way back is still there"
+    );
+    handle_hit(&mut view, ViewHit::SelectSubject(0), SPACE);
+    assert_eq!(view.filter, Filter::All);
+}

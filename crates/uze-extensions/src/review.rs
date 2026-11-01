@@ -175,13 +175,12 @@ pub(crate) fn handle_hit(view: &mut ReviewView, hit: ViewHit, space: Size) -> As
             view.select_file(index);
             ask_discard(view);
         }
-        ViewHit::SelectMode(mode) => {
-            let filters = render::filters(view);
-            match filters.get(mode) {
-                Some((filter, _)) => view.set_filter(*filter),
-                None => view.toggle_viewed(false),
+        ViewHit::SelectSubject(index) => {
+            if let Some((filter, _)) = render::filters().get(index) {
+                view.set_filter(*filter);
             }
         }
+        ViewHit::SelectMode(_) => view.toggle_viewed(false),
         ViewHit::LineNumber { line, extend } => {
             if view.composer.is_some() {
                 return Asked::Stay;
