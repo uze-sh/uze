@@ -411,6 +411,14 @@ impl ReviewView {
         if self.composer.is_some() || self.cells().is_empty() {
             return;
         }
+        // A comment that cannot be kept is not offered to be written.
+        if let Some(error) = &self.record_error {
+            self.notice = Some(Span::new(
+                format!("the review cannot be kept: {error}"),
+                crate::view::Role::Danger,
+            ));
+            return;
+        }
         let rows = self.marked_rows();
         if rows.is_empty() {
             return;

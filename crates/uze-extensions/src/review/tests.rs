@@ -629,3 +629,69 @@ fn a_comment_on_a_line_that_repeats_stands_under_the_one_it_was_written_on() {
         "the second brace, not the first"
     );
 }
+
+/// A host that refuses to keep any review: no agent works here.
+struct Refusing;
+
+impl crate::Host for Refusing {
+    fn git(&self, _: &Path, _: &[&str], _: &[i32]) -> Result<String, String> {
+        Err("no git here".to_owned())
+    }
+    fn repository_root(&self, path: &Path) -> Result<PathBuf, String> {
+        Ok(path.to_path_buf())
+    }
+    fn read_file(&self, _: &Path) -> Result<String, crate::Unreadable> {
+        Err(crate::Unreadable::NotText)
+    }
+    fn list_dir(&self, _: &Path) -> Result<Vec<crate::DirEntry>, String> {
+        Ok(Vec::new())
+    }
+    fn write_file(&self, _: &Path, _: &Path, _: &str) -> Result<(), String> {
+        unreachable!()
+    }
+    fn delete_file(&self, _: &Path, _: &Path) -> Result<(), String> {
+        unreachable!()
+    }
+    fn rename_path(&self, _: &Path, _: &Path, _: &Path) -> Result<(), String> {
+        unreachable!()
+    }
+    fn restore_to_head(&self, _: &Path, _: &[PathBuf]) -> Result<(), String> {
+        unreachable!()
+    }
+    fn syntax_theme(&self) -> String {
+        crate::shared::highlight::FALLBACK_SYNTAX_THEME.to_owned()
+    }
+}
+
+#[test]
+fn a_write_that_keeps_failing_is_said_once() {
+    use crate::contract::{Extension, Outcome};
+    let mut extension = sending_extension();
+    extension.close(SURFACE);
+    let mut said = 0;
+    for _ in 0..3 {
+        for job in extension.jobs() {
+            if matches!(
+                extension.absorb((job.run)(&Refusing)),
+                Outcome::Failed { .. }
+            ) {
+                said += 1;
+            }
+        }
+        extension.retry_now();
+    }
+    assert_eq!(said, 1, "tried again, said once");
+}
+
+#[test]
+fn a_comment_that_cannot_be_kept_is_not_offered() {
+    let mut view = reviewing();
+    view.absorb_record(
+        Err("no agent UZE launched works in this checkout".to_owned()),
+        &[],
+    );
+    view.focus = surface::Focus::Content;
+    handle_command(&mut view, Command::Comment, SPACE);
+    assert!(!view.typing());
+    assert!(view.notice.is_some(), "and says why");
+}

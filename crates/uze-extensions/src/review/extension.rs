@@ -64,6 +64,9 @@ pub struct ReviewExtension {
     retry_at: Option<Instant>,
     /// How many writes have been answered.
     generation: u64,
+    /// A failed write was said: the retries after it say nothing more
+    /// until one succeeds.
+    failure_told: bool,
     reading_diff: bool,
     writing: bool,
     /// What the next open is for: a return puts back what was held.
@@ -438,6 +441,12 @@ impl ReviewExtension {
         self.door.at = Some(Instant::now());
     }
 
+    /// Lets a failed write be tried again at once, as the clock would.
+    #[cfg(test)]
+    pub(crate) fn retry_now(&mut self) {
+        self.retry_at = None;
+    }
+
     /// The changes a write is out for on `root`, if one is.
     fn in_flight_for(&self, root: &Path) -> Vec<Change> {
         self.in_flight
@@ -787,7 +796,10 @@ impl Extension for ReviewExtension {
             self.generation += 1;
             let in_flight = self.in_flight.take();
             match &written.record {
-                Ok(_) => self.retry_at = None,
+                Ok(_) => {
+                    self.retry_at = None;
+                    self.failure_told = false;
+                }
                 // Put back, to be tried again on the list's cadence: a
                 // failed write must not drop what the operator wrote.
                 Err(_) => {
@@ -806,7 +818,9 @@ impl Extension for ReviewExtension {
             match self.open.as_mut().filter(|view| view.root == written.root) {
                 Some(view) => view.absorb_record(written.record, &[]),
                 None => {
-                    if let Err(error) = written.record {
+                    if let Err(error) = written.record
+                        && !std::mem::replace(&mut self.failure_told, true)
+                    {
                         return Outcome::Failed {
                             title: "the review was not kept".to_owned(),
                             detail: error,
